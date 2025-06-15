@@ -90,7 +90,7 @@ export class MCPManager {
         /** Listen for OAuth requirements */
         logger.info(`[MCP][${serverName}] Setting up OAuth event listener`);
         connection.on('oauthRequired', async (data) => {
-          logger.info(`[MCP][${serverName}] oauthRequired event received`);
+          logger.debug(`[MCP][${serverName}] oauthRequired event received`);
           const tokens = await this.handleOAuthRequired(data, flowManager);
 
           if (tokens && tokenMethods?.createToken) {

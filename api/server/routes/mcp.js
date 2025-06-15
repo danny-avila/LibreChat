@@ -23,7 +23,7 @@ router.get('/:serverName/oauth/initiate', requireJwtAuth, async (req, res) => {
       return res.status(403).json({ error: 'User mismatch' });
     }
 
-    logger.info('[MCP OAuth] Initiate request', { serverName, userId, flowId });
+    logger.debug('[MCP OAuth] Initiate request', { serverName, userId, flowId });
 
     const flowsCache = getLogStores(CacheKeys.FLOWS);
     const flowManager = getFlowStateManager(flowsCache);
@@ -49,7 +49,7 @@ router.get('/:serverName/oauth/initiate', requireJwtAuth, async (req, res) => {
       flowManager,
     );
 
-    logger.info('[MCP OAuth] OAuth flow initiated', { oauthFlowId, authorizationUrl });
+    logger.debug('[MCP OAuth] OAuth flow initiated', { oauthFlowId, authorizationUrl });
 
     // Redirect user to the authorization URL
     res.redirect(authorizationUrl);
@@ -68,7 +68,7 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
     const { serverName } = req.params;
     const { code, state, error: oauthError } = req.query;
 
-    logger.info('[MCP OAuth] Callback received', {
+    logger.debug('[MCP OAuth] Callback received', {
       serverName,
       code: code ? 'present' : 'missing',
       state,
@@ -92,7 +92,7 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
 
     // Extract flow ID from state
     const flowId = state;
-    logger.info('[MCP OAuth] Using flow ID from state', { flowId });
+    logger.debug('[MCP OAuth] Using flow ID from state', { flowId });
 
     const flowsCache = getLogStores(CacheKeys.FLOWS);
     const flowManager = getFlowStateManager(flowsCache);
@@ -114,30 +114,24 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
     });
 
     // Complete the OAuth flow
-    logger.info('[MCP OAuth] Completing OAuth flow');
+    logger.debug('[MCP OAuth] Completing OAuth flow');
     const tokens = await MCPOAuthHandler.completeOAuthFlow(flowId, code, flowManager);
-    logger.info('[MCP OAuth] OAuth flow completed, tokens received');
+    logger.info('[MCP OAuth] OAuth flow completed, tokens received in callback route');
 
     // For system-level OAuth, we need to store the tokens and retry the connection
     if (flowState.userId === 'system') {
-      logger.info(`[MCP OAuth] System-level OAuth completed for ${serverName}`);
-      // TODO: Implement a mechanism to retry the connection with the new tokens
-      // This could involve:
-      // 1. Storing tokens in a system-level token store
-      // 2. Notifying the MCP manager to retry the connection
-      // 3. Using a webhook or event system to trigger reconnection
+      logger.debug(`[MCP OAuth] System-level OAuth completed for ${serverName}`);
     }
 
     /** ID of the flow that the tool/connection is waiting for */
     const toolFlowId = flowState.metadata?.toolFlowId;
     if (toolFlowId) {
-      logger.info('[MCP OAuth] Completing tool flow', { toolFlowId });
+      logger.debug('[MCP OAuth] Completing tool flow', { toolFlowId });
       await flowManager.completeFlow(toolFlowId, 'mcp_oauth', tokens);
     }
 
-    // Redirect to success page with flow ID
+    /** Redirect to success page with flowId and serverName */
     const redirectUrl = `/oauth/success?flowId=${encodeURIComponent(flowId)}&serverName=${encodeURIComponent(serverName)}`;
-    logger.info('[MCP OAuth] Redirecting to success page', { redirectUrl });
     res.redirect(redirectUrl);
   } catch (error) {
     logger.error('[MCP OAuth] OAuth callback error', error);

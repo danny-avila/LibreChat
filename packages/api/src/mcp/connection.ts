@@ -418,7 +418,7 @@ export class MCPConnection extends EventEmitter {
           logger.warn(`${this.getLogPrefix()} OAuth authentication required`);
           this.oauthRequired = true;
           const serverUrl = this.url;
-          logger.info(`${this.getLogPrefix()} Server URL for OAuth: ${serverUrl}`);
+          logger.debug(`${this.getLogPrefix()} Server URL for OAuth: ${serverUrl}`);
 
           const oauthTimeout = this.options.initTimeout ?? 60000;
           /** Promise that will resolve when OAuth is handled */
