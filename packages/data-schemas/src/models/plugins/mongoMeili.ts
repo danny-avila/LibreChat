@@ -1,5 +1,6 @@
 import _ from 'lodash';
-import { MeiliSearch, Index } from 'meilisearch';
+import { MeiliSearch } from 'meilisearch';
+import type { SearchResponse, Index } from 'meilisearch';
 import type {
   CallbackWithoutResultAndOptionalError,
   FilterQuery,
@@ -9,6 +10,7 @@ import type {
   Types,
   Model,
 } from 'mongoose';
+import type { IConversation, IMessage } from '~/types';
 import logger from '~/config/meiliLogger';
 
 interface MongoMeiliOptions {
@@ -29,7 +31,7 @@ interface ContentItem {
   text?: string;
 }
 
-interface DocumentWithMeiliIndex extends Document {
+interface _DocumentWithMeiliIndex extends Document {
   _meiliIndex?: boolean;
   preprocessObjectForIndex?: () => Record<string, unknown>;
   addObjectToMeili?: (next: CallbackWithoutResultAndOptionalError) => Promise<void>;
@@ -38,19 +40,18 @@ interface DocumentWithMeiliIndex extends Document {
   postSaveHook?: (next: CallbackWithoutResultAndOptionalError) => void;
   postUpdateHook?: (next: CallbackWithoutResultAndOptionalError) => void;
   postRemoveHook?: (next: CallbackWithoutResultAndOptionalError) => void;
-  conversationId?: string;
-  content?: ContentItem[];
-  messageId?: string;
-  unfinished?: boolean;
-  messages?: unknown[];
-  title?: string;
-  toJSON(): Record<string, unknown>;
 }
 
-interface SchemaWithMeiliMethods extends Model<DocumentWithMeiliIndex> {
+export type DocumentWithMeiliIndex = _DocumentWithMeiliIndex & IConversation & Partial<IMessage>;
+
+export interface SchemaWithMeiliMethods extends Model<DocumentWithMeiliIndex> {
   syncWithMeili(): Promise<void>;
   setMeiliIndexSettings(settings: Record<string, unknown>): Promise<unknown>;
-  meiliSearch(q: string, params: Record<string, unknown>, populate: boolean): Promise<unknown>;
+  meiliSearch(
+    q: string,
+    params?: Record<string, unknown>,
+    populate?: boolean,
+  ): Promise<SearchResponse<MeiliIndexable, Record<string, unknown>>>;
 }
 
 // Environment flags
@@ -247,7 +248,7 @@ const createMeiliMongooseModel = ({
       q: string,
       params: Record<string, unknown>,
       populate: boolean,
-    ): Promise<unknown> {
+    ): Promise<SearchResponse<MeiliIndexable, Record<string, unknown>>> {
       const data = await index.search(q, params);
 
       if (populate) {
