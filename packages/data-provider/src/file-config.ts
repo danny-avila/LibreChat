@@ -188,7 +188,7 @@ export const fileConfig = {
   serverFileSizeLimit: defaultSizeLimit,
   avatarSizeLimit: mbToBytes(2),
   clientSideImageResize: {
-    enabled: false, // Disabled by default as per Danny's requirement
+    enabled: false,
     maxWidth: 1900,
     maxHeight: 1900,
     quality: 0.92,
