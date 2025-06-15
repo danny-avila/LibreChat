@@ -22,18 +22,13 @@ import type {
 type SDKOAuthMetadata = Parameters<typeof registerClient>[1]['metadata'];
 
 export class MCPOAuthHandler {
-  private flowManager: FlowStateManager<MCPOAuthTokens>;
-  private readonly FLOW_TYPE = 'mcp_oauth';
-  private readonly FLOW_TTL = 10 * 60 * 1000; // 10 minutes
-
-  constructor(flowManager: FlowStateManager<MCPOAuthTokens>) {
-    this.flowManager = flowManager;
-  }
+  private static readonly FLOW_TYPE = 'mcp_oauth';
+  private static readonly FLOW_TTL = 10 * 60 * 1000; // 10 minutes
 
   /**
    * Discovers OAuth metadata from the server
    */
-  private async discoverMetadata(serverUrl: string): Promise<{
+  private static async discoverMetadata(serverUrl: string): Promise<{
     metadata: OAuthMetadata;
     resourceMetadata?: OAuthProtectedResourceMetadata;
     authServerUrl: URL;
@@ -87,7 +82,7 @@ export class MCPOAuthHandler {
   /**
    * Registers an OAuth client dynamically
    */
-  private async registerOAuthClient(
+  private static async registerOAuthClient(
     serverUrl: string,
     metadata: OAuthMetadata,
     resourceMetadata?: OAuthProtectedResourceMetadata,
@@ -113,11 +108,12 @@ export class MCPOAuthHandler {
   /**
    * Initiates the OAuth flow for an MCP server
    */
-  async initiateOAuthFlow(
+  static async initiateOAuthFlow(
     serverName: string,
     serverUrl: string,
     userId: string,
-    config?: MCPOptions['oauth'],
+    config: MCPOptions['oauth'] | undefined,
+    flowManager: FlowStateManager<MCPOAuthTokens>,
   ): Promise<{ authorizationUrl: string; flowId: string }> {
     logger.info(`[MCPOAuth] initiateOAuthFlow called for ${serverName} with URL: ${serverUrl}`);
 
@@ -179,7 +175,7 @@ export class MCPOAuthHandler {
         };
 
         // @ts-ignore - accessing private property temporarily
-        await this.flowManager.keyv.set(flowKey, flowState, this.FLOW_TTL);
+        await flowManager.keyv.set(flowKey, flowState, this.FLOW_TTL);
 
         logger.info(`[MCPOAuth] Authorization URL generated: ${authorizationUrl.toString()}`);
         return {
@@ -266,7 +262,7 @@ export class MCPOAuthHandler {
       };
 
       // @ts-ignore - accessing private property temporarily
-      await this.flowManager.keyv.set(flowKey, flowState, this.FLOW_TTL);
+      await flowManager.keyv.set(flowKey, flowState, this.FLOW_TTL);
 
       logger.info(`[MCPOAuth] Authorization URL generated: ${authorizationUrl.toString()}`);
 
@@ -286,9 +282,13 @@ export class MCPOAuthHandler {
   /**
    * Completes the OAuth flow by exchanging the authorization code for tokens
    */
-  async completeOAuthFlow(flowId: string, authorizationCode: string): Promise<MCPOAuthTokens> {
+  static async completeOAuthFlow(
+    flowId: string,
+    authorizationCode: string,
+    flowManager: FlowStateManager<MCPOAuthTokens>,
+  ): Promise<MCPOAuthTokens> {
     try {
-      const flowState = await this.flowManager.getFlowState(flowId, this.FLOW_TYPE);
+      const flowState = await flowManager.getFlowState(flowId, this.FLOW_TYPE);
       if (!flowState) {
         throw new Error('OAuth flow not found or expired');
       }
@@ -320,12 +320,12 @@ export class MCPOAuthHandler {
         expires_at: tokens.expires_in ? Date.now() + tokens.expires_in * 1000 : undefined,
       };
 
-      await this.flowManager.completeFlow(flowId, this.FLOW_TYPE, mcpTokens);
+      await flowManager.completeFlow(flowId, this.FLOW_TYPE, mcpTokens);
 
       return mcpTokens;
     } catch (error) {
       logger.error('[MCPOAuth] Failed to complete OAuth flow', { error, flowId });
-      await this.flowManager.failFlow(flowId, this.FLOW_TYPE, error as Error);
+      await flowManager.failFlow(flowId, this.FLOW_TYPE, error as Error);
       throw error;
     }
   }
@@ -333,29 +333,32 @@ export class MCPOAuthHandler {
   /**
    * Gets the OAuth flow state
    */
-  async getFlowState(flowId: string): Promise<MCPOAuthFlowMetadata | null> {
-    const state = await this.flowManager.getFlowState(flowId, this.FLOW_TYPE);
+  static async getFlowState(
+    flowId: string,
+    flowManager: FlowStateManager<MCPOAuthTokens>,
+  ): Promise<MCPOAuthFlowMetadata | null> {
+    const state = await flowManager.getFlowState(flowId, this.FLOW_TYPE);
     return state?.metadata as unknown as MCPOAuthFlowMetadata | null;
   }
 
   /**
    * Generates a unique flow ID
    */
-  private generateFlowId(userId: string, serverName: string): string {
+  private static generateFlowId(userId: string, serverName: string): string {
     return `${userId}:${serverName}:${Date.now()}`;
   }
 
   /**
    * Generates a secure state parameter
    */
-  private generateState(): string {
+  private static generateState(): string {
     return randomBytes(32).toString('base64url');
   }
 
   /**
    * Gets the default redirect URI for a server
    */
-  private getDefaultRedirectUri(serverName?: string): string {
+  private static getDefaultRedirectUri(serverName?: string): string {
     const baseUrl = process.env.DOMAIN_SERVER || 'http://localhost:3080';
     return serverName
       ? `${baseUrl}/api/mcp/${serverName}/oauth/callback`

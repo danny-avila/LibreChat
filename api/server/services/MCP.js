@@ -1,5 +1,6 @@
 const { z } = require('zod');
 const { tool } = require('@langchain/core/tools');
+const { CacheKeys } = require('librechat-data-provider');
 const { normalizeServerName } = require('@librechat/api');
 const { Constants: AgentConstants, Providers } = require('@librechat/agents');
 const {
@@ -8,7 +9,8 @@ const {
   isAssistantsEndpoint,
   convertJsonSchemaToZod,
 } = require('librechat-data-provider');
-const { logger, getMCPManager } = require('~/config');
+const { logger, getMCPManager, getFlowStateManager } = require('~/config');
+const { getLogStores } = require('~/cache');
 
 /**
  * Creates a general tool for an entire action set.
@@ -54,6 +56,8 @@ async function createMCPTool({ req, res, toolKey, provider: _provider }) {
     const userId = config?.configurable?.user?.id || config?.configurable?.user_id;
 
     try {
+      const flowsCache = getLogStores(CacheKeys.FLOWS);
+      const flowManager = getFlowStateManager(flowsCache);
       const derivedSignal = config?.signal ? AbortSignal.any([config.signal]) : undefined;
       const mcpManager = getMCPManager(userId);
       const provider = (config?.metadata?.provider || _provider)?.toLowerCase();
@@ -66,6 +70,7 @@ async function createMCPTool({ req, res, toolKey, provider: _provider }) {
           signal: derivedSignal,
           user: config?.configurable?.user,
         },
+        flowManager,
       });
 
       if (isAssistantsEndpoint(provider) && Array.isArray(result)) {

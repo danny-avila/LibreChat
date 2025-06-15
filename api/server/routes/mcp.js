@@ -28,7 +28,7 @@ router.get('/:serverName/oauth/initiate', requireJwtAuth, async (req, res) => {
     const flowsCache = getLogStores(CacheKeys.FLOWS);
     const flowManager = getFlowStateManager(flowsCache);
 
-    // Get the flow state to retrieve OAuth config
+    /** Flow state to retrieve OAuth config */
     const flowState = await flowManager.getFlowState(flowId, 'mcp_oauth');
     if (!flowState) {
       logger.error('[MCP OAuth] Flow state not found', { flowId });
@@ -41,13 +41,12 @@ router.get('/:serverName/oauth/initiate', requireJwtAuth, async (req, res) => {
       return res.status(400).json({ error: 'Invalid flow state' });
     }
 
-    // Create OAuth handler and initiate the flow
-    const oauthHandler = new MCPOAuthHandler(flowManager);
-    const { authorizationUrl, flowId: oauthFlowId } = await oauthHandler.initiateOAuthFlow(
+    const { authorizationUrl, flowId: oauthFlowId } = await MCPOAuthHandler.initiateOAuthFlow(
       serverName,
       serverUrl,
       userId,
       oauthConfig,
+      flowManager,
     );
 
     logger.info('[MCP OAuth] OAuth flow initiated', { oauthFlowId, authorizationUrl });
@@ -97,10 +96,9 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
 
     const flowsCache = getLogStores(CacheKeys.FLOWS);
     const flowManager = getFlowStateManager(flowsCache);
-    const oauthHandler = new MCPOAuthHandler(flowManager);
 
     logger.debug('[MCP OAuth] Getting flow state for flowId: ' + flowId);
-    const flowState = await oauthHandler.getFlowState(flowId);
+    const flowState = await MCPOAuthHandler.getFlowState(flowId, flowManager);
 
     if (!flowState) {
       logger.error('[MCP OAuth] Flow state not found for flowId:', flowId);
@@ -117,7 +115,7 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
 
     // Complete the OAuth flow
     logger.info('[MCP OAuth] Completing OAuth flow');
-    const tokens = await oauthHandler.completeOAuthFlow(flowId, code);
+    const tokens = await MCPOAuthHandler.completeOAuthFlow(flowId, code, flowManager);
     logger.info('[MCP OAuth] OAuth flow completed, tokens received');
 
     // For system-level OAuth, we need to store the tokens and retry the connection
