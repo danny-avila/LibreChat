@@ -1,7 +1,6 @@
 const {
   FileSources,
   loadOCRConfig,
-  processMCPEnv,
   EModelEndpoint,
   loadMemoryConfig,
   getConfigDefaults,
@@ -28,7 +27,6 @@ const { initializeS3 } = require('./Files/S3/initialize');
 const { loadAndFormatTools } = require('./ToolService');
 const { isEnabled } = require('~/server/utils');
 const { initializeRoles } = require('~/models');
-const { getMCPManager } = require('~/config');
 const paths = require('~/config/paths');
 
 /**
@@ -76,11 +74,8 @@ const AppService = async (app) => {
     directory: paths.structuredTools,
   });
 
-  if (config.mcpServers != null) {
-    const mcpManager = getMCPManager();
-    await mcpManager.initializeMCP(config.mcpServers, processMCPEnv);
-    await mcpManager.mapAvailableTools(availableTools);
-  }
+  // Store MCP config for later initialization
+  const mcpConfig = config.mcpServers || null;
 
   const socialLogins =
     config?.registration?.socialLogins ?? configDefaults?.registration?.socialLogins;
@@ -101,6 +96,7 @@ const AppService = async (app) => {
     interfaceConfig,
     turnstileConfig,
     balance,
+    mcpConfig,
   };
 
   const agentsDefaults = agentsConfigSetup(config);

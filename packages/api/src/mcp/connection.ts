@@ -11,6 +11,7 @@ import { ResourceListChangedNotificationSchema } from '@modelcontextprotocol/sdk
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js';
+import type { OAuthTokens } from '@modelcontextprotocol/sdk/shared/auth.js';
 import type * as t from './types';
 
 function isStdioOptions(options: t.MCPOptions): options is t.StdioOptions {
@@ -71,11 +72,14 @@ export class MCPConnection extends EventEmitter {
   timeout?: number;
   private readonly userId?: string;
   private lastPingTime: number;
+  private oauthTokens?: OAuthTokens;
+  private oauthRequired = false;
 
   constructor(
     serverName: string,
     private readonly options: t.MCPOptions,
     userId?: string,
+    oauthTokens?: OAuthTokens,
   ) {
     super();
     this.serverName = serverName;
@@ -83,6 +87,7 @@ export class MCPConnection extends EventEmitter {
     this.iconPath = options.iconPath;
     this.timeout = options.timeout;
     this.lastPingTime = Date.now();
+    this.oauthTokens = oauthTokens;
     this.client = new Client(
       {
         name: '@librechat/api-client',
@@ -106,9 +111,10 @@ export class MCPConnection extends EventEmitter {
     serverName: string,
     options: t.MCPOptions,
     userId?: string,
+    oauthTokens?: OAuthTokens,
   ): MCPConnection {
     if (!MCPConnection.instance) {
-      MCPConnection.instance = new MCPConnection(serverName, options, userId);
+      MCPConnection.instance = new MCPConnection(serverName, options, userId, oauthTokens);
     }
     return MCPConnection.instance;
   }
@@ -173,17 +179,24 @@ export class MCPConnection extends EventEmitter {
           const url = new URL(options.url);
           logger.info(`${this.getLogPrefix()} Creating SSE transport: ${url.toString()}`);
           const abortController = new AbortController();
+
+          // Add OAuth token to headers if available
+          const headers = { ...options.headers };
+          if (this.oauthTokens?.access_token) {
+            headers['Authorization'] = `Bearer ${this.oauthTokens.access_token}`;
+          }
+
           const transport = new SSEClientTransport(url, {
             requestInit: {
-              headers: options.headers,
+              headers,
               signal: abortController.signal,
             },
             eventSourceInit: {
               fetch: (url, init) => {
-                const headers = new Headers(Object.assign({}, init?.headers, options.headers));
+                const fetchHeaders = new Headers(Object.assign({}, init?.headers, headers));
                 return fetch(url, {
                   ...init,
-                  headers,
+                  headers: fetchHeaders,
                 });
               },
             },
@@ -217,9 +230,15 @@ export class MCPConnection extends EventEmitter {
           );
           const abortController = new AbortController();
 
+          // Add OAuth token to headers if available
+          const headers = { ...options.headers };
+          if (this.oauthTokens?.access_token) {
+            headers['Authorization'] = `Bearer ${this.oauthTokens.access_token}`;
+          }
+
           const transport = new StreamableHTTPClientTransport(url, {
             requestInit: {
-              headers: options.headers,
+              headers,
               signal: abortController.signal,
             },
           });
@@ -283,7 +302,15 @@ export class MCPConnection extends EventEmitter {
   }
 
   private async handleReconnection(): Promise<void> {
-    if (this.isReconnecting || this.shouldStopReconnecting || this.isInitializing) {
+    if (
+      this.isReconnecting ||
+      this.shouldStopReconnecting ||
+      this.isInitializing ||
+      this.oauthRequired
+    ) {
+      if (this.oauthRequired) {
+        logger.info(`${this.getLogPrefix()} OAuth required, skipping reconnection attempts`);
+      }
       return;
     }
 
@@ -366,7 +393,7 @@ export class MCPConnection extends EventEmitter {
         this.transport = this.constructTransport(this.options);
         this.setupTransportDebugHandlers();
 
-        const connectTimeout = this.options.initTimeout ?? 10000;
+        const connectTimeout = this.options.initTimeout ?? 120000;
         await Promise.race([
           this.client.connect(this.transport),
           new Promise((_resolve, reject) =>
@@ -378,6 +405,46 @@ export class MCPConnection extends EventEmitter {
         this.emit('connectionChange', 'connected');
         this.reconnectAttempts = 0;
       } catch (error) {
+        // Check if it's an OAuth authentication error
+        if (this.isOAuthError(error)) {
+          logger.warn(`${this.getLogPrefix()} OAuth authentication required`);
+          this.oauthRequired = true;
+          const serverUrl = this.getServerUrl();
+          logger.info(`${this.getLogPrefix()} Server URL for OAuth: ${serverUrl}`);
+
+          // Create a promise that will resolve when OAuth is handled
+          const oauthHandledPromise = new Promise<void>((resolve) => {
+            const timeout = setTimeout(() => {
+              logger.warn(`${this.getLogPrefix()} OAuth handling timeout`);
+              resolve();
+            }, 60000); // 60 second timeout for OAuth
+
+            // Listen for a signal that OAuth has been handled
+            this.once('oauthHandled', () => {
+              clearTimeout(timeout);
+              resolve();
+            });
+          });
+
+          // Emit the event
+          this.emit('oauthRequired', {
+            serverName: this.serverName,
+            error,
+            serverUrl,
+            userId: this.userId,
+          });
+
+          // Wait for OAuth to be handled
+          await oauthHandledPromise;
+
+          // Reset the oauthRequired flag
+          this.oauthRequired = false;
+
+          // Don't throw the error - just return so connection can be retried
+          logger.info(`${this.getLogPrefix()} OAuth handled, connection will be retried`);
+          return;
+        }
+
         this.connectionState = 'error';
         this.emit('connectionChange', 'error');
         this.lastError = error instanceof Error ? error : new Error(String(error));
@@ -428,6 +495,16 @@ export class MCPConnection extends EventEmitter {
   private setupTransportErrorHandlers(transport: Transport): void {
     transport.onerror = (error) => {
       logger.error(`${this.getLogPrefix()} Transport error:`, error);
+
+      // Check if it's an OAuth authentication error
+      if (error && typeof error === 'object' && 'code' in error) {
+        const errorCode = (error as unknown as { code?: number }).code;
+        if (errorCode === 401 || errorCode === 403) {
+          logger.warn(`${this.getLogPrefix()} OAuth authentication error detected`);
+          this.emit('oauthError', error);
+        }
+      }
+
       this.emit('connectionChange', 'error');
     };
   }
@@ -572,5 +649,41 @@ export class MCPConnection extends EventEmitter {
 
   public getLastError(): Error | null {
     return this.lastError;
+  }
+
+  public setOAuthTokens(tokens: OAuthTokens): void {
+    this.oauthTokens = tokens;
+  }
+
+  private isOAuthError(error: unknown): boolean {
+    if (!error || typeof error !== 'object') {
+      return false;
+    }
+
+    // Check for SSE error with 401 status
+    if ('message' in error && typeof error.message === 'string') {
+      return error.message.includes('401') || error.message.includes('Non-200 status code (401)');
+    }
+
+    // Check for error code
+    if ('code' in error) {
+      const code = (error as { code?: number }).code;
+      return code === 401 || code === 403;
+    }
+
+    return false;
+  }
+
+  private getServerUrl(): string | undefined {
+    if ('url' in this.options && typeof this.options.url === 'string') {
+      // Extract base URL without path for OAuth discovery
+      try {
+        const url = new URL(this.options.url);
+        return `${url.protocol}//${url.host}`;
+      } catch {
+        return this.options.url;
+      }
+    }
+    return undefined;
   }
 }

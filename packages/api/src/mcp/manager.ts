@@ -2,10 +2,19 @@ import { logger } from '@librechat/data-schemas';
 import { CallToolResultSchema, ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import type { RequestOptions } from '@modelcontextprotocol/sdk/shared/protocol.js';
 import type { JsonSchemaType, MCPOptions, TUser } from 'librechat-data-provider';
+import type { OAuthTokens } from '@modelcontextprotocol/sdk/shared/auth.js';
+import type { TokenMethods } from '@librechat/data-schemas';
+import type { FlowStateManager } from '~/flow/manager';
+import type { MCPOAuthTokens } from './oauth/types';
 import type * as t from './types';
+import { MCPTokenStorage } from './oauth/tokenStorage';
+import { MCPOAuthHandler } from './oauth/handler';
 import { formatToolContent } from './parsers';
 import { MCPConnection } from './connection';
 import { CONSTANTS } from './enum';
+
+// System user ID for app-level OAuth tokens (all zeros ObjectId)
+const SYSTEM_USER_ID = '000000000000000000000000';
 
 export interface CallToolOptions extends RequestOptions {
   user?: TUser;
@@ -24,6 +33,14 @@ export class MCPManager {
   private processMCPEnv?: (obj: MCPOptions, user?: TUser) => MCPOptions; // Store the processing function
   /** Store MCP server instructions */
   private serverInstructions: Map<string, string> = new Map();
+  /** Store OAuth tokens for user connections */
+  private userOAuthTokens: Map<string, Map<string, OAuthTokens>> = new Map();
+  /** OAuth handler for managing OAuth flows */
+  private oauthHandler?: MCPOAuthHandler;
+  /** Flow manager for OAuth state */
+  private flowManager?: FlowStateManager<MCPOAuthTokens>;
+  /** Token storage for managing tokens */
+  private tokenStorage?: MCPTokenStorage;
 
   public static getInstance(): MCPManager {
     if (!MCPManager.instance) {
@@ -38,9 +55,30 @@ export class MCPManager {
   public async initializeMCP(
     mcpServers: t.MCPServers,
     processMCPEnv?: (obj: MCPOptions) => MCPOptions,
+    flowManager?: FlowStateManager<any>,
+    tokenMethods?: TokenMethods,
   ): Promise<void> {
     this.processMCPEnv = processMCPEnv; // Store the function
     this.mcpConfigs = mcpServers;
+    this.flowManager = flowManager as FlowStateManager<MCPOAuthTokens> | undefined;
+
+    logger.info('[MCP] Flow manager provided:', !!flowManager);
+    logger.info('[MCP] Token methods provided:', !!tokenMethods);
+    logger.info('[MCP] Creating OAuth handler:', !!flowManager);
+
+    if (flowManager) {
+      this.oauthHandler = new MCPOAuthHandler(flowManager as FlowStateManager<MCPOAuthTokens>);
+      logger.info('[MCP] OAuth handler created successfully');
+    } else {
+      logger.info('[MCP] No flow manager provided, OAuth will not be available');
+    }
+
+    if (tokenMethods) {
+      this.tokenStorage = new MCPTokenStorage(tokenMethods);
+      logger.info('[MCP] Token storage created successfully');
+    } else {
+      logger.info('[MCP] No token methods provided, token persistence will not be available');
+    }
 
     const entries = Object.entries(mcpServers);
     const initializedServers = new Set();
@@ -48,14 +86,60 @@ export class MCPManager {
       entries.map(async ([serverName, _config], i) => {
         /** Process env for app-level connections */
         const config = this.processMCPEnv ? this.processMCPEnv(_config) : _config;
-        const connection = new MCPConnection(serverName, config);
+
+        // Try to load existing tokens for system-level connections
+        let existingTokens: OAuthTokens | undefined;
+        if (this.tokenStorage) {
+          try {
+            const tokens = await this.tokenStorage.getTokens(SYSTEM_USER_ID, serverName);
+            if (tokens) {
+              existingTokens = tokens;
+              logger.info(`[MCP][${serverName}] Loaded existing OAuth tokens`);
+            }
+          } catch (error) {
+            logger.debug(`[MCP][${serverName}] No existing tokens found`);
+          }
+        }
+
+        const connection = new MCPConnection(serverName, config, undefined, existingTokens);
+
+        // Listen for OAuth requirements
+        logger.info(`[MCP][${serverName}] Setting up OAuth event listener`);
+        connection.on('oauthRequired', async (data) => {
+          logger.info(`[MCP][${serverName}] oauthRequired event received`);
+          const tokens = await this.handleOAuthRequired(data);
+
+          if (tokens) {
+            // Set the tokens on the connection
+            connection.setOAuthTokens(tokens);
+            // Store tokens for system-level connections
+            this.storeUserOAuthTokens(SYSTEM_USER_ID, serverName, tokens);
+
+            // Persist tokens to storage
+            if (this.tokenStorage) {
+              try {
+                await this.tokenStorage.storeTokens(SYSTEM_USER_ID, serverName, tokens);
+                logger.info(`[MCP][${serverName}] OAuth tokens saved to storage`);
+              } catch (error) {
+                logger.error(`[MCP][${serverName}] Failed to save OAuth tokens to storage`, error);
+              }
+            }
+          }
+
+          // Emit oauthHandled to unblock the connection
+          connection.emit('oauthHandled');
+        });
 
         try {
           const connectionTimeout = new Promise<void>((_, reject) =>
             setTimeout(() => reject(new Error('Connection timeout')), 30000),
           );
 
-          const connectionAttempt = this.initializeServer(connection, `[MCP][${serverName}]`);
+          const connectionAttempt = this.initializeServer(
+            connection,
+            `[MCP][${serverName}]`,
+            false,
+          );
           await Promise.race([connectionAttempt, connectionTimeout]);
 
           if (await connection.isConnected()) {
@@ -149,9 +233,14 @@ export class MCPManager {
   }
 
   /** Generic server initialization logic */
-  private async initializeServer(connection: MCPConnection, logPrefix: string): Promise<void> {
+  private async initializeServer(
+    connection: MCPConnection,
+    logPrefix: string,
+    handleOAuth = true,
+  ): Promise<void> {
     const maxAttempts = 3;
     let attempts = 0;
+    let oauthHandled = false;
 
     while (attempts < maxAttempts) {
       try {
@@ -162,6 +251,36 @@ export class MCPManager {
         throw new Error('Connection attempt succeeded but status is not connected');
       } catch (error) {
         attempts++;
+
+        // Check if it's an OAuth error
+        if (this.isOAuthError(error)) {
+          // Only handle OAuth if requested (not already handled by event listener)
+          if (handleOAuth) {
+            // Check if OAuth was already handled by the connection
+            const errorWithFlag = error as any;
+            if (!errorWithFlag.isOAuthError) {
+              // OAuth not handled yet by connection, handle it here
+              if (!oauthHandled) {
+                // Only handle OAuth once
+                oauthHandled = true;
+                const serverUrl = this.getServerUrl(connection);
+                if (serverUrl) {
+                  await this.handleOAuthRequired({
+                    serverName: connection.serverName,
+                    error,
+                    serverUrl,
+                  });
+                }
+              }
+            } else {
+              logger.info(`${logPrefix} OAuth already handled by connection`);
+            }
+          }
+          // Don't retry on OAuth errors - just throw
+          logger.info(`${logPrefix} OAuth required, stopping connection attempts`);
+          throw error;
+        }
+
         if (attempts === maxAttempts) {
           logger.error(`${logPrefix} Failed to connect after ${maxAttempts} attempts`, error);
           throw error; // Re-throw the last error
@@ -169,6 +288,33 @@ export class MCPManager {
         await new Promise((resolve) => setTimeout(resolve, 2000 * attempts));
       }
     }
+  }
+
+  private isOAuthError(error: unknown): boolean {
+    if (!error || typeof error !== 'object') {
+      return false;
+    }
+
+    // Check for SSE error with 401 status
+    if ('message' in error && typeof error.message === 'string') {
+      return error.message.includes('401') || error.message.includes('Non-200 status code (401)');
+    }
+
+    // Check for error code
+    if ('code' in error) {
+      const code = (error as { code?: number }).code;
+      return code === 401 || code === 403;
+    }
+
+    return false;
+  }
+
+  private getServerUrl(connection: MCPConnection): string | undefined {
+    const options = (connection as any).options;
+    if (options && 'url' in options && typeof options.url === 'string') {
+      return options.url;
+    }
+    return undefined;
   }
 
   /** Check for and disconnect idle connections */
@@ -202,7 +348,11 @@ export class MCPManager {
   }
 
   /** Gets or creates a connection for a specific user */
-  public async getUserConnection(serverName: string, user: TUser): Promise<MCPConnection> {
+  public async getUserConnection(
+    serverName: string,
+    user: TUser,
+    oauthTokens?: OAuthTokens,
+  ): Promise<MCPConnection> {
     const userId = user.id;
     if (!userId) {
       throw new McpError(ErrorCode.InvalidRequest, `[MCP] User object missing id property`);
@@ -226,6 +376,11 @@ export class MCPManager {
     } else if (connection) {
       if (await connection.isConnected()) {
         logger.debug(`[MCP][User: ${userId}][${serverName}] Reusing active connection`);
+        // Update OAuth tokens if provided
+        if (oauthTokens) {
+          connection.setOAuthTokens(oauthTokens);
+          this.storeUserOAuthTokens(userId, serverName, oauthTokens);
+        }
         // Update timestamp on reuse
         this.updateUserLastActivity(userId);
         return connection;
@@ -256,7 +411,60 @@ export class MCPManager {
       config = { ...(this.processMCPEnv(config, user) ?? {}) };
     }
 
-    connection = new MCPConnection(serverName, config, userId);
+    // Get stored OAuth tokens if not provided
+    const tokensToUse = oauthTokens || this.getUserOAuthTokens(userId, serverName);
+
+    // If no in-memory tokens, try loading from persistent storage
+    let persistentTokens: OAuthTokens | undefined;
+    if (!tokensToUse && this.tokenStorage) {
+      try {
+        const tokens = await this.tokenStorage.getTokens(userId, serverName);
+        if (tokens) {
+          persistentTokens = tokens;
+          logger.info(
+            `[MCP][User: ${userId}][${serverName}] Loaded existing OAuth tokens from storage`,
+          );
+        }
+      } catch (error) {
+        logger.error(
+          `[MCP][User: ${userId}][${serverName}] Error loading OAuth tokens from storage`,
+          error,
+        );
+      }
+    }
+
+    const finalTokens = tokensToUse || persistentTokens;
+
+    connection = new MCPConnection(serverName, config, userId, finalTokens);
+
+    // Listen for OAuth requirements on user connections
+    connection.on('oauthRequired', async (data) => {
+      logger.info(`[MCP][User: ${userId}][${serverName}] oauthRequired event received`);
+      const tokens = await this.handleOAuthRequired(data);
+
+      if (tokens) {
+        // Set the tokens on the connection
+        connection?.setOAuthTokens(tokens);
+        // Store tokens for user connections
+        this.storeUserOAuthTokens(userId, serverName, tokens);
+
+        // Persist tokens to storage
+        if (this.tokenStorage) {
+          try {
+            await this.tokenStorage.storeTokens(userId, serverName, tokens);
+            logger.info(`[MCP][User: ${userId}][${serverName}] OAuth tokens saved to storage`);
+          } catch (error) {
+            logger.error(
+              `[MCP][User: ${userId}][${serverName}] Failed to save OAuth tokens to storage`,
+              error,
+            );
+          }
+        }
+      }
+
+      // Emit oauthHandled to unblock the connection
+      connection?.emit('oauthHandled');
+    });
 
     try {
       const connectionTimeout = new Promise<void>((_, reject) =>
@@ -268,7 +476,7 @@ export class MCPManager {
       );
       await Promise.race([connectionAttempt, connectionTimeout]);
 
-      if (!(await connection.isConnected())) {
+      if (!(await connection?.isConnected())) {
         throw new Error('Failed to establish connection after initialization attempt.');
       }
 
@@ -276,6 +484,12 @@ export class MCPManager {
         this.userConnections.set(userId, new Map());
       }
       this.userConnections.get(userId)?.set(serverName, connection);
+
+      // Store OAuth tokens if provided
+      if (finalTokens) {
+        this.storeUserOAuthTokens(userId, serverName, finalTokens);
+      }
+
       logger.info(`[MCP][User: ${userId}][${serverName}] Connection successfully established`);
       // Update timestamp on creation
       this.updateUserLastActivity(userId);
@@ -283,7 +497,7 @@ export class MCPManager {
     } catch (error) {
       logger.error(`[MCP][User: ${userId}][${serverName}] Failed to establish connection`, error);
       // Ensure partial connection state is cleaned up if initialization fails
-      await connection.disconnect().catch((disconnectError) => {
+      await connection?.disconnect().catch((disconnectError) => {
         logger.error(
           `[MCP][User: ${userId}][${serverName}] Error during cleanup after failed connection`,
           disconnectError,
@@ -293,6 +507,19 @@ export class MCPManager {
       this.removeUserConnection(userId, serverName);
       throw error; // Re-throw the error to the caller
     }
+  }
+
+  /** Stores OAuth tokens for a user connection */
+  private storeUserOAuthTokens(userId: string, serverName: string, tokens: OAuthTokens): void {
+    if (!this.userOAuthTokens.has(userId)) {
+      this.userOAuthTokens.set(userId, new Map());
+    }
+    this.userOAuthTokens.get(userId)?.set(serverName, tokens);
+  }
+
+  /** Gets stored OAuth tokens for a user connection */
+  private getUserOAuthTokens(userId: string, serverName: string): OAuthTokens | undefined {
+    return this.userOAuthTokens.get(userId)?.get(serverName);
   }
 
   /** Removes a specific user connection entry */
@@ -305,6 +532,15 @@ export class MCPManager {
         this.userConnections.delete(userId);
         // Only remove user activity timestamp if all connections are gone
         this.userLastActivity.delete(userId);
+      }
+    }
+
+    // Remove OAuth tokens
+    const tokenMap = this.userOAuthTokens.get(userId);
+    if (tokenMap) {
+      tokenMap.delete(serverName);
+      if (tokenMap.size === 0) {
+        this.userOAuthTokens.delete(userId);
       }
     }
 
@@ -594,5 +830,58 @@ The following MCP servers are available with their specific instructions:
 ${formattedInstructions}
 
 Please follow these instructions when using tools from the respective MCP servers.`;
+  }
+
+  /** Handles OAuth authentication requirements */
+  private async handleOAuthRequired(data: {
+    serverName: string;
+    error: unknown;
+    serverUrl?: string;
+    userId?: string;
+  }): Promise<MCPOAuthTokens | null> {
+    const { serverName, serverUrl, userId = SYSTEM_USER_ID } = data;
+
+    logger.info(`[MCP][${serverName}] handleOAuthRequired called with serverUrl: ${serverUrl}`);
+    logger.info(`[MCP][${serverName}] OAuth handler available: ${!!this.oauthHandler}`);
+    logger.info(`[MCP][${serverName}] Flow manager available: ${!!this.flowManager}`);
+
+    if (!this.oauthHandler || !serverUrl || !this.flowManager) {
+      logger.error(
+        `[MCP][${serverName}] OAuth required but handler not available or server URL missing`,
+      );
+      logger.info(`[MCP][${serverName}] Please configure OAuth credentials for this server`);
+      return null;
+    }
+
+    try {
+      const config = this.mcpConfigs[serverName];
+      logger.info(`[MCP][${serverName}] Initiating OAuth flow...`);
+
+      const { authorizationUrl, flowId } = await this.oauthHandler.initiateOAuthFlow(
+        serverName,
+        serverUrl,
+        userId, // Use the provided userId
+        config?.oauth,
+      );
+
+      logger.info('═══════════════════════════════════════════════════════════════════════');
+      logger.info(`[MCP][${serverName}] OAuth authentication required`);
+      logger.info('');
+      logger.info('Please visit the following URL to authenticate:');
+      logger.info('');
+      logger.info(`  ${authorizationUrl}`);
+      logger.info('');
+      logger.info(`Flow ID: ${flowId}`);
+      logger.info('═══════════════════════════════════════════════════════════════════════');
+
+      // Wait for the OAuth flow to complete using the flow manager
+      const tokens = await this.flowManager.createFlow(flowId, 'mcp_oauth');
+
+      logger.info(`[MCP][${serverName}] OAuth flow completed, tokens received`);
+      return tokens;
+    } catch (error) {
+      logger.error(`[MCP][${serverName}] Failed to complete OAuth flow`, error);
+      return null;
+    }
   }
 }
