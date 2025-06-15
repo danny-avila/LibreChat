@@ -1,4 +1,5 @@
 require('dotenv').config();
+const fs = require('fs');
 const path = require('path');
 require('module-alias')({ base: path.resolve(__dirname, '..') });
 const cors = require('cors');
@@ -6,27 +7,21 @@ const axios = require('axios');
 const express = require('express');
 const passport = require('passport');
 const compression = require('compression');
+const cookieParser = require('cookie-parser');
+const { isEnabled } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 const mongoSanitize = require('express-mongo-sanitize');
-const { CacheKeys, processMCPEnv } = require('librechat-data-provider');
-const fs = require('fs');
-const cookieParser = require('cookie-parser');
 const { connectDb, indexSync } = require('~/db');
 
-const { jwtLogin, passportLogin } = require('~/strategies');
-const { isEnabled } = require('~/server/utils');
-const { ldapLogin } = require('~/strategies');
 const validateImageRequest = require('./middleware/validateImageRequest');
+const { jwtLogin, ldapLogin, passportLogin } = require('~/strategies');
 const errorController = require('./controllers/ErrorController');
+const initializeMCP = require('./services/initializeMCP');
 const configureSocialLogins = require('./socialLogins');
 const AppService = require('./services/AppService');
 const staticCache = require('./utils/staticCache');
 const noIndex = require('./middleware/noIndex');
 const routes = require('./routes');
-
-const { findToken, updateToken, createToken, deleteTokens } = require('~/models');
-const { getMCPManager, getFlowStateManager } = require('~/config');
-const { getLogStores } = require('~/cache');
 
 const { PORT, HOST, ALLOW_SOCIAL_LOGIN, DISABLE_COMPRESSION, TRUST_PROXY } = process.env ?? {};
 
@@ -149,30 +144,7 @@ const startServer = async () => {
       logger.info(`Server listening at http://${host == '0.0.0.0' ? 'localhost' : host}:${port}`);
     }
 
-    // Initialize MCP servers after the server is fully up and running
-    const mcpConfig = app.locals.mcpConfig;
-    if (mcpConfig) {
-      logger.info('Initializing MCP servers...');
-      const mcpManager = getMCPManager();
-      const flowsCache = getLogStores(CacheKeys.FLOWS);
-      const flowManager = flowsCache ? getFlowStateManager(flowsCache) : null;
-
-      mcpManager
-        .initializeMCP(mcpConfig, processMCPEnv, flowManager, {
-          findToken,
-          updateToken,
-          createToken,
-          deleteTokens,
-        })
-        .then(async () => {
-          // Update availableTools with MCP tools
-          await mcpManager.mapAvailableTools(app.locals.availableTools);
-          logger.info('MCP servers initialized successfully');
-        })
-        .catch((error) => {
-          logger.error('Failed to initialize MCP servers:', error);
-        });
-    }
+    initializeMCP(app);
   });
 };
 
@@ -215,5 +187,5 @@ process.on('uncaughtException', (err) => {
   process.exit(1);
 });
 
-// export app for easier testing purposes
+/** Export app for easier testing purposes */
 module.exports = app;
