@@ -797,47 +797,45 @@ Please follow these instructions when using tools from the respective MCP server
     flowManager?: FlowStateManager<MCPOAuthTokens>,
   ): Promise<MCPOAuthTokens | null> {
     const { serverName, serverUrl, userId = SYSTEM_USER_ID } = data;
-
-    logger.info(`[MCP][${serverName}] handleOAuthRequired called with serverUrl: ${serverUrl}`);
-    logger.info(`[MCP][${serverName}] Flow manager available: ${!!flowManager}`);
+    const userPart = userId ? `[User: ${userId}]` : '';
+    const logPrefix = `[MCP]${userPart}[${serverName}]`;
+    logger.debug(`${logPrefix} handleOAuthRequired called with serverUrl: ${serverUrl}`);
 
     if (!flowManager || !serverUrl) {
       logger.error(
-        `[MCP][${serverName}] OAuth required but flow manager not available or server URL missing`,
+        `${logPrefix} OAuth required but flow manager not available or server URL missing`,
       );
-      logger.info(`[MCP][${serverName}] Please configure OAuth credentials for this server`);
+      logger.warn(`${logPrefix} Please configure OAuth credentials for this server`);
       return null;
     }
 
     try {
       const config = this.mcpConfigs[serverName];
-      logger.info(`[MCP][${serverName}] Initiating OAuth flow...`);
+      logger.debug(`${logPrefix} Initiating OAuth flow...`);
 
       const { authorizationUrl, flowId } = await MCPOAuthHandler.initiateOAuthFlow(
         serverName,
         serverUrl,
-        userId, // Use the provided userId
+        userId,
         config?.oauth,
         flowManager,
       );
 
-      logger.info('═══════════════════════════════════════════════════════════════════════');
-      logger.info(`[MCP][${serverName}] OAuth authentication required`);
-      logger.info('');
-      logger.info('Please visit the following URL to authenticate:');
-      logger.info('');
-      logger.info(`  ${authorizationUrl}`);
-      logger.info('');
-      logger.info(`Flow ID: ${flowId}`);
-      logger.info('═══════════════════════════════════════════════════════════════════════');
+      logger.info(`═══════════════════════════════════════════════════════════════════════
+Please visit the following URL to authenticate:
 
-      // Wait for the OAuth flow to complete using the flow manager
+${authorizationUrl}
+
+${logPrefix} Flow ID: ${flowId}
+═══════════════════════════════════════════════════════════════════════`);
+
+      /** Awaited tokens from successful OAuth completion + exchange */
       const tokens = await flowManager.createFlow(flowId, 'mcp_oauth');
 
-      logger.info(`[MCP][${serverName}] OAuth flow completed, tokens received`);
+      logger.info(`${logPrefix} OAuth flow completed, tokens received`);
       return tokens;
     } catch (error) {
-      logger.error(`[MCP][${serverName}] Failed to complete OAuth flow`, error);
+      logger.error(`${logPrefix} Failed to complete OAuth flow`, error);
       return null;
     }
   }

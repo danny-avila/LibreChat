@@ -33,25 +33,25 @@ export class MCPOAuthHandler {
     resourceMetadata?: OAuthProtectedResourceMetadata;
     authServerUrl: URL;
   }> {
-    logger.info(`[MCPOAuth] discoverMetadata called with serverUrl: ${serverUrl}`);
+    logger.debug(`[MCPOAuth] discoverMetadata called with serverUrl: ${serverUrl}`);
 
     let authServerUrl = new URL(serverUrl);
     let resourceMetadata: OAuthProtectedResourceMetadata | undefined;
 
     try {
       // Try to discover resource metadata first
-      logger.info(
+      logger.debug(
         `[MCPOAuth] Attempting to discover protected resource metadata from ${serverUrl}`,
       );
       resourceMetadata = await discoverOAuthProtectedResourceMetadata(serverUrl);
 
       if (resourceMetadata?.authorization_servers?.length) {
         authServerUrl = new URL(resourceMetadata.authorization_servers[0]);
-        logger.info(
+        logger.debug(
           `[MCPOAuth] Found authorization server from resource metadata: ${authServerUrl}`,
         );
       } else {
-        logger.info(`[MCPOAuth] No authorization servers found in resource metadata`);
+        logger.debug(`[MCPOAuth] No authorization servers found in resource metadata`);
       }
     } catch (error) {
       logger.debug('[MCPOAuth] Resource metadata discovery failed, continuing with server URL', {
@@ -60,7 +60,7 @@ export class MCPOAuthHandler {
     }
 
     // Discover OAuth metadata
-    logger.info(`[MCPOAuth] Discovering OAuth metadata from ${authServerUrl}`);
+    logger.debug(`[MCPOAuth] Discovering OAuth metadata from ${authServerUrl}`);
     const rawMetadata = await discoverOAuthMetadata(authServerUrl);
 
     if (!rawMetadata) {
@@ -68,10 +68,10 @@ export class MCPOAuthHandler {
       throw new Error('Failed to discover OAuth metadata');
     }
 
-    logger.info(`[MCPOAuth] OAuth metadata discovered successfully`);
+    logger.debug(`[MCPOAuth] OAuth metadata discovered successfully`);
     const metadata = await OAuthMetadataSchema.parseAsync(rawMetadata);
 
-    logger.info(`[MCPOAuth] OAuth metadata parsed successfully`);
+    logger.debug(`[MCPOAuth] OAuth metadata parsed successfully`);
     return {
       metadata: metadata as unknown as OAuthMetadata,
       resourceMetadata,
@@ -115,17 +115,17 @@ export class MCPOAuthHandler {
     config: MCPOptions['oauth'] | undefined,
     flowManager: FlowStateManager<MCPOAuthTokens>,
   ): Promise<{ authorizationUrl: string; flowId: string }> {
-    logger.info(`[MCPOAuth] initiateOAuthFlow called for ${serverName} with URL: ${serverUrl}`);
+    logger.debug(`[MCPOAuth] initiateOAuthFlow called for ${serverName} with URL: ${serverUrl}`);
 
     const flowId = this.generateFlowId(userId, serverName);
     const state = this.generateState();
 
-    logger.info(`[MCPOAuth] Generated flowId: ${flowId}, state: ${state}`);
+    logger.debug(`[MCPOAuth] Generated flowId: ${flowId}, state: ${state}`);
 
     try {
       // Check if we have pre-configured OAuth settings
       if (config?.authorization_url && config?.token_url && config?.client_id) {
-        logger.info(`[MCPOAuth] Using pre-configured OAuth settings`);
+        logger.debug(`[MCPOAuth] Using pre-configured OAuth settings`);
         // Use pre-configured settings
         const metadata: OAuthMetadata = {
           authorization_endpoint: config.authorization_url,
@@ -141,7 +141,7 @@ export class MCPOAuthHandler {
           scope: config.scope,
         };
 
-        logger.info(`[MCPOAuth] Starting authorization with pre-configured settings`);
+        logger.debug(`[MCPOAuth] Starting authorization with pre-configured settings`);
         const { authorizationUrl, codeVerifier } = await startAuthorization(serverUrl, {
           metadata: metadata as unknown as SDKOAuthMetadata,
           clientInformation: clientInfo,
@@ -151,7 +151,7 @@ export class MCPOAuthHandler {
 
         // Add state parameter with flowId to the authorization URL
         authorizationUrl.searchParams.set('state', flowId);
-        logger.info(`[MCPOAuth] Added state parameter to authorization URL`);
+        logger.debug(`[MCPOAuth] Added state parameter to authorization URL`);
 
         const flowMetadata: MCPOAuthFlowMetadata = {
           serverName,
@@ -163,7 +163,7 @@ export class MCPOAuthHandler {
           metadata,
         };
 
-        logger.info(`[MCPOAuth] Creating flow in flow manager`);
+        logger.debug(`[MCPOAuth] Creating flow in flow manager`);
 
         // Create the flow state without waiting for completion
         const flowKey = `${this.FLOW_TYPE}:${flowId}`;
@@ -177,24 +177,24 @@ export class MCPOAuthHandler {
         // @ts-ignore - accessing private property temporarily
         await flowManager.keyv.set(flowKey, flowState, this.FLOW_TTL);
 
-        logger.info(`[MCPOAuth] Authorization URL generated: ${authorizationUrl.toString()}`);
+        logger.debug(`[MCPOAuth] Authorization URL generated: ${authorizationUrl.toString()}`);
         return {
           authorizationUrl: authorizationUrl.toString(),
           flowId,
         };
       }
 
-      logger.info(`[MCPOAuth] No pre-configured settings, starting auto-discovery`);
+      logger.debug(`[MCPOAuth] No pre-configured settings, starting auto-discovery`);
 
       // Auto-discover OAuth configuration
-      logger.info(`[MCPOAuth] Discovering OAuth metadata from ${serverUrl}`);
+      logger.debug(`[MCPOAuth] Discovering OAuth metadata from ${serverUrl}`);
       const { metadata, resourceMetadata, authServerUrl } = await this.discoverMetadata(serverUrl);
 
-      logger.info(`[MCPOAuth] OAuth metadata discovered, auth server URL: ${authServerUrl}`);
+      logger.debug(`[MCPOAuth] OAuth metadata discovered, auth server URL: ${authServerUrl}`);
 
       // Dynamic client registration
       const redirectUri = config?.redirect_uri || this.getDefaultRedirectUri(serverName);
-      logger.info(`[MCPOAuth] Registering OAuth client with redirect URI: ${redirectUri}`);
+      logger.debug(`[MCPOAuth] Registering OAuth client with redirect URI: ${redirectUri}`);
 
       const clientInfo = await this.registerOAuthClient(
         authServerUrl.toString(),
@@ -203,7 +203,7 @@ export class MCPOAuthHandler {
         redirectUri,
       );
 
-      logger.info(`[MCPOAuth] Client registered with ID: ${clientInfo.client_id}`);
+      logger.debug(`[MCPOAuth] Client registered with ID: ${clientInfo.client_id}`);
 
       // Start authorization
       const scope =
@@ -211,13 +211,13 @@ export class MCPOAuthHandler {
         resourceMetadata?.scopes_supported?.join(' ') ||
         metadata.scopes_supported?.join(' ');
 
-      logger.info(`[MCPOAuth] Starting authorization with scope: ${scope}`);
+      logger.debug(`[MCPOAuth] Starting authorization with scope: ${scope}`);
 
       let authorizationUrl: URL;
       let codeVerifier: string;
 
       try {
-        logger.info(`[MCPOAuth] Calling startAuthorization...`);
+        logger.debug(`[MCPOAuth] Calling startAuthorization...`);
         const authResult = await startAuthorization(serverUrl, {
           metadata: metadata as unknown as SDKOAuthMetadata,
           clientInformation: clientInfo,
@@ -228,12 +228,12 @@ export class MCPOAuthHandler {
         authorizationUrl = authResult.authorizationUrl;
         codeVerifier = authResult.codeVerifier;
 
-        logger.info(`[MCPOAuth] startAuthorization completed successfully`);
-        logger.info(`[MCPOAuth] Authorization URL: ${authorizationUrl.toString()}`);
+        logger.debug(`[MCPOAuth] startAuthorization completed successfully`);
+        logger.debug(`[MCPOAuth] Authorization URL: ${authorizationUrl.toString()}`);
 
         // Add state parameter with flowId to the authorization URL
         authorizationUrl.searchParams.set('state', flowId);
-        logger.info(`[MCPOAuth] Added state parameter to authorization URL`);
+        logger.debug(`[MCPOAuth] Added state parameter to authorization URL`);
       } catch (error) {
         logger.error(`[MCPOAuth] startAuthorization failed:`, error);
         throw error;
@@ -250,7 +250,7 @@ export class MCPOAuthHandler {
         resourceMetadata,
       };
 
-      logger.info(`[MCPOAuth] Creating flow in flow manager`);
+      logger.debug(`[MCPOAuth] Creating flow in flow manager`);
 
       // Create the flow state without waiting for completion
       const flowKey = `${this.FLOW_TYPE}:${flowId}`;
@@ -264,14 +264,14 @@ export class MCPOAuthHandler {
       // @ts-ignore - accessing private property temporarily
       await flowManager.keyv.set(flowKey, flowState, this.FLOW_TTL);
 
-      logger.info(`[MCPOAuth] Authorization URL generated: ${authorizationUrl.toString()}`);
+      logger.debug(`[MCPOAuth] Authorization URL generated: ${authorizationUrl.toString()}`);
 
       const result = {
         authorizationUrl: authorizationUrl.toString(),
         flowId,
       };
 
-      logger.info(`[MCPOAuth] Returning from initiateOAuthFlow with result:`, result);
+      logger.debug(`[MCPOAuth] Returning from initiateOAuthFlow with result:`, result);
       return result;
     } catch (error) {
       logger.error('[MCPOAuth] Failed to initiate OAuth flow', { error, serverName, userId });
