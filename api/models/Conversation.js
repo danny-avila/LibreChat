@@ -1,6 +1,7 @@
 const { logger } = require('@librechat/data-schemas');
 const { getMessages, deleteMessages } = require('./Message');
 const { Conversation } = require('~/db/models');
+const { createTempChatExpirationDate } = require('~/server/utils/tempChatRetention');
 
 /**
  * Searches for a conversation by conversationId and returns a lean document with only conversationId and user.
@@ -99,9 +100,7 @@ module.exports = {
       }
 
       if (req.body.isTemporary) {
-        const expiredAt = new Date();
-        expiredAt.setDate(expiredAt.getDate() + 30);
-        update.expiredAt = expiredAt;
+        update.expiredAt = createTempChatExpirationDate(req.app.locals?.config);
       } else {
         update.expiredAt = null;
       }
