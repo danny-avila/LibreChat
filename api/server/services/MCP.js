@@ -62,6 +62,13 @@ function createOAuthEnd({ res, stepId, toolCall }) {
     logger.debug('Sent OAuth login success to client');
   };
 }
+
+function createAbortHandler({ userId, serverName, toolName }) {
+  return function () {
+    logger.info(`[MCP][User: ${userId}][${serverName}][${toolName}] Tool call aborted`);
+  };
+}
+
 /**
  * Creates a general tool for an entire action set.
  *
@@ -104,6 +111,7 @@ async function createMCPTool({ req, res, toolKey, provider: _provider }) {
   /** @type {(toolArguments: Object | string, config?: GraphRunnableConfig) => Promise<unknown>} */
   const _call = async (toolArguments, config) => {
     const userId = config?.configurable?.user?.id || config?.configurable?.user_id;
+    let abortHandler = null;
 
     try {
       const flowsCache = getLogStores(CacheKeys.FLOWS);
@@ -123,6 +131,11 @@ async function createMCPTool({ req, res, toolKey, provider: _provider }) {
         stepId,
         toolCall,
       });
+
+      if (config?.signal) {
+        abortHandler = createAbortHandler({ userId, serverName, toolName });
+        config.signal.addEventListener('abort', abortHandler, { once: true });
+      }
 
       const result = await mcpManager.callTool({
         serverName,
@@ -171,6 +184,11 @@ async function createMCPTool({ req, res, toolKey, provider: _provider }) {
       throw new Error(
         `"${toolKey}" tool call failed${error?.message ? `: ${error?.message}` : '.'}`,
       );
+    } finally {
+      // Clean up abort handler to prevent memory leaks
+      if (abortHandler && config?.signal) {
+        config.signal.removeEventListener('abort', abortHandler);
+      }
     }
   };
 

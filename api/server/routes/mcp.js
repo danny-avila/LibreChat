@@ -131,7 +131,7 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
     }
 
     /** Redirect to success page with flowId and serverName */
-    const redirectUrl = `/oauth/success?flowId=${encodeURIComponent(flowId)}&serverName=${encodeURIComponent(serverName)}`;
+    const redirectUrl = `/oauth/success?serverName=${encodeURIComponent(serverName)}`;
     res.redirect(redirectUrl);
   } catch (error) {
     logger.error('[MCP OAuth] OAuth callback error', error);
