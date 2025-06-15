@@ -263,40 +263,96 @@ const useFileHandling = (params?: UseFileHandling) => {
     for (const originalFile of fileList) {
       const file_id = v4();
       try {
-        // Process file for HEIC conversion if needed
-        const processedFile = await processFileForUpload(originalFile);
-        const preview = URL.createObjectURL(processedFile);
+        // Create initial preview with original file
+        const initialPreview = URL.createObjectURL(originalFile);
         
-        const extendedFile: ExtendedFile = {
+        // Create initial ExtendedFile to show immediately
+        const initialExtendedFile: ExtendedFile = {
           file_id,
-          file: processedFile,
-          type: processedFile.type,
-          preview,
-          progress: 0.2,
-          size: processedFile.size,
+          file: originalFile,
+          type: originalFile.type,
+          preview: initialPreview,
+          progress: 0.1, // Show as processing
+          size: originalFile.size,
         };
 
         if (_toolResource != null && _toolResource !== '') {
-          extendedFile.tool_resource = _toolResource;
+          initialExtendedFile.tool_resource = _toolResource;
         }
 
-        const isImage = processedFile.type.split('/')[0] === 'image';
-        const tool_resource =
-          extendedFile.tool_resource ?? params?.additionalMetadata?.tool_resource;
-        if (isAgentsEndpoint(endpoint) && !isImage && tool_resource == null) {
-          /** Note: this needs to be removed when we can support files to providers */
-          setError('com_error_files_unsupported_capability');
-          continue;
+        // Add file immediately to show in UI
+        addFile(initialExtendedFile);
+
+        // Check if HEIC conversion is needed and show toast
+        const isHEIC = originalFile.type === 'image/heic' || originalFile.type === 'image/heif' || 
+                       originalFile.name.toLowerCase().match(/\.(heic|heif)$/);
+        
+        if (isHEIC) {
+          showToast({
+            message: localize('com_info_heic_converting'),
+            status: 'info',
+            duration: 3000,
+          });
         }
 
-        addFile(extendedFile);
+        // Process file for HEIC conversion if needed
+        const processedFile = await processFileForUpload(originalFile, 0.9, (conversionProgress) => {
+          // Update progress during HEIC conversion (0.1 to 0.5 range for conversion)
+          const adjustedProgress = 0.1 + (conversionProgress * 0.4);
+          replaceFile({
+            ...initialExtendedFile,
+            progress: adjustedProgress,
+          });
+        });
 
-        if (isImage) {
-          loadImage(extendedFile, preview);
-          continue;
+        // If file was converted, update with new file and preview
+        if (processedFile !== originalFile) {
+          URL.revokeObjectURL(initialPreview); // Clean up original preview
+          const newPreview = URL.createObjectURL(processedFile);
+          
+          const updatedExtendedFile: ExtendedFile = {
+            ...initialExtendedFile,
+            file: processedFile,
+            type: processedFile.type,
+            preview: newPreview,
+            progress: 0.5, // Conversion complete, ready for upload
+            size: processedFile.size,
+          };
+          
+          replaceFile(updatedExtendedFile);
+          
+          const isImage = processedFile.type.split('/')[0] === 'image';
+          if (isImage) {
+            loadImage(updatedExtendedFile, newPreview);
+            continue;
+          }
+          
+          await startUpload(updatedExtendedFile);
+        } else {
+          // File wasn't converted, proceed with original
+          const isImage = originalFile.type.split('/')[0] === 'image';
+          const tool_resource =
+            initialExtendedFile.tool_resource ?? params?.additionalMetadata?.tool_resource;
+          if (isAgentsEndpoint(endpoint) && !isImage && tool_resource == null) {
+            /** Note: this needs to be removed when we can support files to providers */
+            setError('com_error_files_unsupported_capability');
+            continue;
+          }
+
+          // Update progress to show ready for upload
+          const readyExtendedFile = {
+            ...initialExtendedFile,
+            progress: 0.2,
+          };
+          replaceFile(readyExtendedFile);
+
+          if (isImage) {
+            loadImage(readyExtendedFile, initialPreview);
+            continue;
+          }
+
+          await startUpload(readyExtendedFile);
         }
-
-        await startUpload(extendedFile);
       } catch (error) {
         deleteFileById(file_id);
         console.log('file handling error', error);
