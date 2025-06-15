@@ -1,11 +1,11 @@
-import { z } from 'zod';
 import type { ZodError } from 'zod';
-import type { TModelsConfig } from './types';
-import { EModelEndpoint, eModelEndpointSchema } from './schemas';
-import { specsConfigSchema, TSpecsConfig } from './models';
+import { z } from 'zod';
 import { fileConfigSchema } from './file-config';
-import { FileSources } from './types/files';
 import { MCPServersSchema } from './mcp';
+import { specsConfigSchema, TSpecsConfig } from './models';
+import { EModelEndpoint, eModelEndpointSchema } from './schemas';
+import type { TModelsConfig } from './types';
+import { FileSources } from './types/files';
 
 export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'discord', 'saml'];
 
@@ -503,6 +503,7 @@ export const intefaceSchema = z
     prompts: z.boolean().optional(),
     agents: z.boolean().optional(),
     temporaryChat: z.boolean().optional(),
+    temporaryChatRetentionDays: z.number().min(1).max(365).optional(),
     runCode: z.boolean().optional(),
     webSearch: z.boolean().optional(),
   })

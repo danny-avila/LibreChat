@@ -101,6 +101,7 @@ const AppService = async (app) => {
     interfaceConfig,
     turnstileConfig,
     balance,
+    config,
   };
 
   const agentsDefaults = agentsConfigSetup(config);
