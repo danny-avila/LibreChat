@@ -1,6 +1,7 @@
 import { logger } from '@librechat/data-schemas';
 import { CallToolResultSchema, ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import type { RequestOptions } from '@modelcontextprotocol/sdk/shared/protocol.js';
+import type { OAuthClientInformation } from '@modelcontextprotocol/sdk/shared/auth.js';
 import type { JsonSchemaType, MCPOptions, TUser } from 'librechat-data-provider';
 import type { TokenMethods } from '@librechat/data-schemas';
 import type { FlowStateManager } from '~/flow/manager';
@@ -71,10 +72,29 @@ export class MCPManager {
         let tokens: MCPOAuthTokens | null = null;
         if (tokenMethods?.findToken) {
           try {
+            /** Refresh function for app-level connections */
+            const refreshTokensFunction = async (
+              refreshToken: string,
+              metadata: { userId: string; serverName: string; identifier: string },
+            ) => {
+              /** URL from config if available */
+              const serverUrl = (config as t.SSEOptions | t.StreamableHTTPOptions).url;
+              return await MCPOAuthHandler.refreshOAuthTokens(
+                refreshToken,
+                {
+                  serverName: metadata.serverName,
+                  serverUrl,
+                },
+                config.oauth,
+              );
+            };
+
             tokens = await MCPTokenStorage.getTokens({
               userId: SYSTEM_USER_ID,
               serverName,
               findToken: tokenMethods.findToken,
+              refreshTokens: refreshTokensFunction,
+              updateToken: tokenMethods.updateToken,
             });
           } catch {
             logger.debug(`[MCP][${serverName}] No existing tokens found`);
@@ -91,19 +111,20 @@ export class MCPManager {
         logger.info(`[MCP][${serverName}] Setting up OAuth event listener`);
         connection.on('oauthRequired', async (data) => {
           logger.debug(`[MCP][${serverName}] oauthRequired event received`);
-          const tokens = await this.handleOAuthRequired({
+          const result = await this.handleOAuthRequired({
             ...data,
             flowManager,
           });
 
-          if (tokens && tokenMethods?.createToken) {
+          if (result?.tokens && tokenMethods?.createToken) {
             try {
-              connection.setOAuthTokens(tokens);
+              connection.setOAuthTokens(result.tokens);
               await MCPTokenStorage.storeTokens({
                 userId: SYSTEM_USER_ID,
                 serverName,
-                tokens,
+                tokens: result.tokens,
                 createToken: tokenMethods.createToken,
+                clientInfo: result.clientInfo,
               });
               logger.info(`[MCP][${serverName}] OAuth tokens saved to storage`);
             } catch (error) {
@@ -396,10 +417,30 @@ export class MCPManager {
     let tokens: MCPOAuthTokens | null = null;
     if (tokenMethods?.findToken) {
       try {
+        /** Refresh function for user-specific connections */
+        const refreshTokensFunction = async (
+          refreshToken: string,
+          metadata: { userId: string; serverName: string; identifier: string },
+        ) => {
+          /** URL from connection if available, or from config */
+          const serverUrl =
+            connection?.url || (config as t.SSEOptions | t.StreamableHTTPOptions).url;
+          return await MCPOAuthHandler.refreshOAuthTokens(
+            refreshToken,
+            {
+              serverName: metadata.serverName,
+              serverUrl,
+            },
+            config.oauth,
+          );
+        };
+
         tokens = await MCPTokenStorage.getTokens({
           userId,
           serverName,
           findToken: tokenMethods.findToken,
+          refreshTokens: refreshTokensFunction,
+          updateToken: tokenMethods.updateToken,
         });
       } catch (error) {
         logger.error(
@@ -419,21 +460,22 @@ export class MCPManager {
 
     connection.on('oauthRequired', async (data) => {
       logger.info(`[MCP][User: ${userId}][${serverName}] oauthRequired event received`);
-      const tokens = await this.handleOAuthRequired({
+      const result = await this.handleOAuthRequired({
         ...data,
         flowManager,
         oauthStart,
         oauthEnd,
       });
 
-      if (tokens && tokenMethods?.createToken) {
+      if (result?.tokens && tokenMethods?.createToken) {
         try {
-          connection?.setOAuthTokens(tokens);
+          connection?.setOAuthTokens(result.tokens);
           await MCPTokenStorage.storeTokens({
             userId,
             serverName,
-            tokens,
+            tokens: result.tokens,
             createToken: tokenMethods.createToken,
+            clientInfo: result.clientInfo,
           });
           logger.info(`[MCP][User: ${userId}][${serverName}] OAuth tokens saved to storage`);
         } catch (error) {
@@ -615,7 +657,7 @@ export class MCPManager {
           };
         }
       } catch (error) {
-        logger.warn(`[MCP][${serverName}] Error fetching tools for mapping:`, error);
+        logger.warn(`[MCP][${serverName}] Error fetching tools`, error);
       }
     }
   }
@@ -631,7 +673,9 @@ export class MCPManager {
         /** Attempt to ensure connection is active, with reconnection if needed */
         const isActive = await this.isConnectionActive(serverName, connection);
         if (!isActive) {
-          logger.warn(`[MCP][${serverName}] Connection not available. Skipping manifest loading.`);
+          logger.warn(
+            `[MCP][${serverName}] Connection not available for ${serverName} manifest loading. Skipping...`,
+          );
           continue;
         }
 
@@ -861,22 +905,22 @@ Please follow these instructions when using tools from the respective MCP server
     flowManager?: FlowStateManager<MCPOAuthTokens>;
     oauthStart?: (authURL: string) => void;
     oauthEnd?: () => void;
-  }): Promise<MCPOAuthTokens | null> {
+  }): Promise<{ tokens: MCPOAuthTokens; clientInfo?: OAuthClientInformation } | null> {
     const userPart = userId ? `[User: ${userId}]` : '';
     const logPrefix = `[MCP]${userPart}[${serverName}]`;
     logger.debug(`${logPrefix} \`handleOAuthRequired\` called with serverUrl: ${serverUrl}`);
 
     if (!flowManager || !serverUrl) {
       logger.error(
-        `${logPrefix} OAuth required but flow manager not available or server URL missing`,
+        `${logPrefix} OAuth required but flow manager not available or server URL missing for ${serverName}`,
       );
-      logger.warn(`${logPrefix} Please configure OAuth credentials for this server`);
+      logger.warn(`${logPrefix} Please configure OAuth credentials for ${serverName}`);
       return null;
     }
 
     try {
       const config = this.mcpConfigs[serverName];
-      logger.debug(`${logPrefix} Initiating OAuth flow...`);
+      logger.debug(`${logPrefix} Initiating OAuth flow for ${serverName}...`);
 
       const { authorizationUrl, flowId } = await MCPOAuthHandler.initiateOAuthFlow(
         serverName,
@@ -901,10 +945,22 @@ ${logPrefix} Flow ID: ${flowId}
       /** Awaited tokens from successful OAuth completion + exchange */
       const tokens = await flowManager.createFlow(flowId, 'mcp_oauth');
       oauthEnd?.();
-      logger.info(`${logPrefix} OAuth flow completed, tokens received`);
-      return tokens;
+      logger.info(`${logPrefix} OAuth flow completed, tokens received for ${serverName}`);
+
+      /** Get client information from the flow state */
+      let clientInfo: OAuthClientInformation | undefined;
+      try {
+        const flowState = await MCPOAuthHandler.getFlowState(flowId, flowManager);
+        clientInfo = flowState?.clientInfo;
+      } catch {
+        logger.debug(
+          `${logPrefix} Could not retrieve client info from flow state for ${serverName}`,
+        );
+      }
+
+      return { tokens, clientInfo };
     } catch (error) {
-      logger.error(`${logPrefix} Failed to complete OAuth flow`, error);
+      logger.error(`${logPrefix} Failed to complete OAuth flow for ${serverName}`, error);
       return null;
     }
   }

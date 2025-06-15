@@ -11,14 +11,14 @@ import { OAuthMetadataSchema } from '@modelcontextprotocol/sdk/shared/auth.js';
 import type { MCPOptions } from 'librechat-data-provider';
 import type { FlowStateManager } from '~/flow/manager';
 import type {
-  OAuthMetadata,
   OAuthClientInformation,
   OAuthProtectedResourceMetadata,
   MCPOAuthFlowMetadata,
   MCPOAuthTokens,
+  OAuthMetadata,
 } from './types';
 
-// Type for the OAuth metadata from the SDK
+/** Type for the OAuth metadata from the SDK */
 type SDKOAuthMetadata = Parameters<typeof registerClient>[1]['metadata'];
 
 export class MCPOAuthHandler {
@@ -88,18 +88,69 @@ export class MCPOAuthHandler {
     resourceMetadata?: OAuthProtectedResourceMetadata,
     redirectUri?: string,
   ): Promise<OAuthClientInformation> {
+    logger.debug(`[MCPOAuth] Starting client registration for ${serverUrl}, server metadata:`, {
+      grant_types_supported: metadata.grant_types_supported,
+      response_types_supported: metadata.response_types_supported,
+      token_endpoint_auth_methods_supported: metadata.token_endpoint_auth_methods_supported,
+      scopes_supported: metadata.scopes_supported,
+    });
+
+    /** Client metadata based on what the server supports */
     const clientMetadata = {
       client_name: 'LibreChat MCP Client',
       redirect_uris: [redirectUri || this.getDefaultRedirectUri()],
-      grant_types: ['authorization_code'],
-      response_types: ['code'],
+      grant_types: ['authorization_code'] as string[],
+      response_types: ['code'] as string[],
       token_endpoint_auth_method: 'client_secret_basic',
-      scope: resourceMetadata?.scopes_supported?.join(' ') || metadata.scopes_supported?.join(' '),
+      scope: undefined as string | undefined,
     };
+
+    const supportedGrantTypes = metadata.grant_types_supported || ['authorization_code'];
+    const requestedGrantTypes = ['authorization_code'];
+
+    if (supportedGrantTypes.includes('refresh_token')) {
+      requestedGrantTypes.push('refresh_token');
+      logger.debug(
+        `[MCPOAuth] Server ${serverUrl} supports \`refresh_token\` grant type, adding to request`,
+      );
+    } else {
+      logger.debug(`[MCPOAuth] Server ${serverUrl} does not support \`refresh_token\` grant type`);
+    }
+    clientMetadata.grant_types = requestedGrantTypes;
+
+    clientMetadata.response_types = metadata.response_types_supported || ['code'];
+
+    if (metadata.token_endpoint_auth_methods_supported) {
+      // Prefer client_secret_basic if supported, otherwise use the first supported method
+      if (metadata.token_endpoint_auth_methods_supported.includes('client_secret_basic')) {
+        clientMetadata.token_endpoint_auth_method = 'client_secret_basic';
+      } else if (metadata.token_endpoint_auth_methods_supported.includes('client_secret_post')) {
+        clientMetadata.token_endpoint_auth_method = 'client_secret_post';
+      } else if (metadata.token_endpoint_auth_methods_supported.includes('none')) {
+        clientMetadata.token_endpoint_auth_method = 'none';
+      } else {
+        clientMetadata.token_endpoint_auth_method =
+          metadata.token_endpoint_auth_methods_supported[0];
+      }
+    }
+
+    const availableScopes = resourceMetadata?.scopes_supported || metadata.scopes_supported;
+    if (availableScopes) {
+      clientMetadata.scope = availableScopes.join(' ');
+    }
+
+    logger.debug(`[MCPOAuth] Registering client for ${serverUrl} with metadata:`, clientMetadata);
 
     const clientInfo = await registerClient(serverUrl, {
       metadata: metadata as unknown as SDKOAuthMetadata,
       clientMetadata,
+    });
+
+    logger.debug(`[MCPOAuth] Client registered successfully for ${serverUrl}:`, {
+      client_id: clientInfo.client_id,
+      has_client_secret: !!clientInfo.client_secret,
+      grant_types: clientInfo.grant_types,
+      scope: clientInfo.scope,
     });
 
     return clientInfo;
@@ -125,8 +176,8 @@ export class MCPOAuthHandler {
     try {
       // Check if we have pre-configured OAuth settings
       if (config?.authorization_url && config?.token_url && config?.client_id) {
-        logger.debug(`[MCPOAuth] Using pre-configured OAuth settings`);
-        // Use pre-configured settings
+        logger.debug(`[MCPOAuth] Using pre-configured OAuth settings for ${serverName}`);
+        /** Metadata based on pre-configured settings */
         const metadata: OAuthMetadata = {
           authorization_endpoint: config.authorization_url,
           token_endpoint: config.token_url,
@@ -149,7 +200,7 @@ export class MCPOAuthHandler {
           scope: config.scope,
         });
 
-        // Add state parameter with flowId to the authorization URL
+        /** Add state parameter with flowId to the authorization URL */
         authorizationUrl.searchParams.set('state', flowId);
         logger.debug(`[MCPOAuth] Added state parameter to authorization URL`);
 
@@ -165,7 +216,7 @@ export class MCPOAuthHandler {
 
         logger.debug(`[MCPOAuth] Creating flow in flow manager`);
 
-        // Create the flow state without waiting for completion
+        /** Create the flow state without waiting for completion */
         const flowKey = `${this.FLOW_TYPE}:${flowId}`;
         const flowState = {
           type: this.FLOW_TYPE,
@@ -174,7 +225,7 @@ export class MCPOAuthHandler {
           createdAt: Date.now(),
         };
 
-        // @ts-ignore - accessing private property temporarily
+        /** @ts-ignore - accessing private property temporarily */
         await flowManager.keyv.set(flowKey, flowState, this.FLOW_TTL);
 
         logger.debug(`[MCPOAuth] Authorization URL generated: ${authorizationUrl.toString()}`);
@@ -184,15 +235,12 @@ export class MCPOAuthHandler {
         };
       }
 
-      logger.debug(`[MCPOAuth] No pre-configured settings, starting auto-discovery`);
-
-      // Auto-discover OAuth configuration
-      logger.debug(`[MCPOAuth] Discovering OAuth metadata from ${serverUrl}`);
+      logger.debug(`[MCPOAuth] Starting auto-discovery of OAuth metadata from ${serverUrl}`);
       const { metadata, resourceMetadata, authServerUrl } = await this.discoverMetadata(serverUrl);
 
       logger.debug(`[MCPOAuth] OAuth metadata discovered, auth server URL: ${authServerUrl}`);
 
-      // Dynamic client registration
+      /** Dynamic client registration based on the discovered metadata */
       const redirectUri = config?.redirect_uri || this.getDefaultRedirectUri(serverName);
       logger.debug(`[MCPOAuth] Registering OAuth client with redirect URI: ${redirectUri}`);
 
@@ -205,7 +253,7 @@ export class MCPOAuthHandler {
 
       logger.debug(`[MCPOAuth] Client registered with ID: ${clientInfo.client_id}`);
 
-      // Start authorization
+      /** Authorization Scope */
       const scope =
         config?.scope ||
         resourceMetadata?.scopes_supported?.join(' ') ||
@@ -231,7 +279,7 @@ export class MCPOAuthHandler {
         logger.debug(`[MCPOAuth] startAuthorization completed successfully`);
         logger.debug(`[MCPOAuth] Authorization URL: ${authorizationUrl.toString()}`);
 
-        // Add state parameter with flowId to the authorization URL
+        /** Add state parameter with flowId to the authorization URL */
         authorizationUrl.searchParams.set('state', flowId);
         logger.debug(`[MCPOAuth] Added state parameter to authorization URL`);
       } catch (error) {
@@ -250,9 +298,9 @@ export class MCPOAuthHandler {
         resourceMetadata,
       };
 
-      logger.debug(`[MCPOAuth] Creating flow in flow manager`);
+      logger.debug(`[MCPOAuth] Creating flow in flow manager for ${serverName}`);
 
-      // Create the flow state without waiting for completion
+      /** Create the flow state without waiting for completion */
       const flowKey = `${this.FLOW_TYPE}:${flowId}`;
       const flowState = {
         type: this.FLOW_TYPE,
@@ -261,17 +309,22 @@ export class MCPOAuthHandler {
         createdAt: Date.now(),
       };
 
-      // @ts-ignore - accessing private property temporarily
+      /** @ts-ignore - accessing private property temporarily */
       await flowManager.keyv.set(flowKey, flowState, this.FLOW_TTL);
 
-      logger.debug(`[MCPOAuth] Authorization URL generated: ${authorizationUrl.toString()}`);
+      logger.debug(
+        `[MCPOAuth] Authorization URL generated for ${serverName}: ${authorizationUrl.toString()}`,
+      );
 
       const result = {
         authorizationUrl: authorizationUrl.toString(),
         flowId,
       };
 
-      logger.debug(`[MCPOAuth] Returning from initiateOAuthFlow with result:`, result);
+      logger.debug(
+        `[MCPOAuth] Returning from initiateOAuthFlow with result ${flowId} for ${serverName}`,
+        result,
+      );
       return result;
     } catch (error) {
       logger.error('[MCPOAuth] Failed to initiate OAuth flow', { error, serverName, userId });
@@ -363,5 +416,204 @@ export class MCPOAuthHandler {
     return serverName
       ? `${baseUrl}/api/mcp/${serverName}/oauth/callback`
       : `${baseUrl}/api/mcp/oauth/callback`;
+  }
+
+  /**
+   * Refreshes OAuth tokens using a refresh token
+   */
+  static async refreshOAuthTokens(
+    refreshToken: string,
+    metadata: { serverName: string; serverUrl?: string; clientInfo?: OAuthClientInformation },
+    config?: MCPOptions['oauth'],
+  ): Promise<MCPOAuthTokens> {
+    logger.debug(`[MCPOAuth] Refreshing tokens for ${metadata.serverName}`);
+
+    try {
+      /** If we have stored client information from the original flow, use that first */
+      if (metadata.clientInfo?.client_id) {
+        logger.debug(
+          `[MCPOAuth] Using stored client information for token refresh for ${metadata.serverName}`,
+        );
+        logger.debug(
+          `[MCPOAuth] Client ID: ${metadata.clientInfo.client_id} for ${metadata.serverName}`,
+        );
+        logger.debug(
+          `[MCPOAuth] Has client secret: ${!!metadata.clientInfo.client_secret} for ${metadata.serverName}`,
+        );
+        logger.debug(`[MCPOAuth] Stored client info for ${metadata.serverName}:`, {
+          client_id: metadata.clientInfo.client_id,
+          has_client_secret: !!metadata.clientInfo.client_secret,
+          grant_types: metadata.clientInfo.grant_types,
+          scope: metadata.clientInfo.scope,
+        });
+
+        /** Use the stored client information and metadata to determine the token URL */
+        let tokenUrl: string;
+        if (config?.token_url) {
+          tokenUrl = config.token_url;
+        } else if (!metadata.serverUrl) {
+          throw new Error('No token URL available for refresh');
+        } else {
+          /** Auto-discover OAuth configuration for refresh */
+          const { metadata: oauthMetadata } = await this.discoverMetadata(metadata.serverUrl);
+          if (!oauthMetadata.token_endpoint) {
+            throw new Error('No token endpoint found in OAuth metadata');
+          }
+          tokenUrl = oauthMetadata.token_endpoint;
+        }
+
+        const body = new URLSearchParams({
+          grant_type: 'refresh_token',
+          refresh_token: refreshToken,
+        });
+
+        /** Add scope if available */
+        if (metadata.clientInfo.scope) {
+          body.append('scope', metadata.clientInfo.scope);
+        }
+
+        const headers: HeadersInit = {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          Accept: 'application/json',
+        };
+
+        /** Use client_secret for authentication if available */
+        if (metadata.clientInfo.client_secret) {
+          const clientAuth = Buffer.from(
+            `${metadata.clientInfo.client_id}:${metadata.clientInfo.client_secret}`,
+          ).toString('base64');
+          headers['Authorization'] = `Basic ${clientAuth}`;
+        } else {
+          /** For public clients, client_id must be in the body */
+          body.append('client_id', metadata.clientInfo.client_id);
+        }
+
+        logger.debug(`[MCPOAuth] Refresh request to: ${tokenUrl}`, {
+          body: body.toString(),
+          headers,
+        });
+
+        const response = await fetch(tokenUrl, {
+          method: 'POST',
+          headers,
+          body,
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(
+            `Token refresh failed: ${response.status} ${response.statusText} - ${errorText}`,
+          );
+        }
+
+        const tokens = await response.json();
+
+        return {
+          ...tokens,
+          obtained_at: Date.now(),
+          expires_at: tokens.expires_in ? Date.now() + tokens.expires_in * 1000 : undefined,
+        };
+      }
+
+      // Fallback: If we have pre-configured OAuth settings, use them
+      if (config?.token_url && config?.client_id) {
+        logger.debug(`[MCPOAuth] Using pre-configured OAuth settings for token refresh`);
+
+        const tokenUrl = new URL(config.token_url);
+        const clientAuth = config.client_secret
+          ? Buffer.from(`${config.client_id}:${config.client_secret}`).toString('base64')
+          : null;
+
+        const body = new URLSearchParams({
+          grant_type: 'refresh_token',
+          refresh_token: refreshToken,
+        });
+
+        if (config.scope) {
+          body.append('scope', config.scope);
+        }
+
+        const headers: HeadersInit = {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          Accept: 'application/json',
+        };
+
+        if (clientAuth) {
+          headers['Authorization'] = `Basic ${clientAuth}`;
+        } else {
+          // Use client_id in body for public clients
+          body.append('client_id', config.client_id);
+        }
+
+        const response = await fetch(tokenUrl, {
+          method: 'POST',
+          headers,
+          body,
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(
+            `Token refresh failed: ${response.status} ${response.statusText} - ${errorText}`,
+          );
+        }
+
+        const tokens = await response.json();
+
+        return {
+          ...tokens,
+          obtained_at: Date.now(),
+          expires_at: tokens.expires_in ? Date.now() + tokens.expires_in * 1000 : undefined,
+        };
+      }
+
+      /** For auto-discovered OAuth, we need the server URL */
+      if (!metadata.serverUrl) {
+        throw new Error('Server URL required for auto-discovered OAuth token refresh');
+      }
+
+      /** Auto-discover OAuth configuration for refresh */
+      const { metadata: oauthMetadata } = await this.discoverMetadata(metadata.serverUrl);
+
+      if (!oauthMetadata.token_endpoint) {
+        throw new Error('No token endpoint found in OAuth metadata');
+      }
+
+      const tokenUrl = new URL(oauthMetadata.token_endpoint);
+
+      const body = new URLSearchParams({
+        grant_type: 'refresh_token',
+        refresh_token: refreshToken,
+      });
+
+      const headers: HeadersInit = {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Accept: 'application/json',
+      };
+
+      const response = await fetch(tokenUrl, {
+        method: 'POST',
+        headers,
+        body,
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(
+          `Token refresh failed: ${response.status} ${response.statusText} - ${errorText}`,
+        );
+      }
+
+      const tokens = await response.json();
+
+      return {
+        ...tokens,
+        obtained_at: Date.now(),
+        expires_at: tokens.expires_in ? Date.now() + tokens.expires_in * 1000 : undefined,
+      };
+    } catch (error) {
+      logger.error(`[MCPOAuth] Failed to refresh tokens for ${metadata.serverName}`, error);
+      throw error;
+    }
   }
 }
