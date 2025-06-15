@@ -553,6 +553,41 @@ export class MCPManager {
     return this.connections;
   }
 
+  /** Attempts to reconnect an app-level connection if it's disconnected */
+  private async isConnectionActive(
+    serverName: string,
+    connection: MCPConnection,
+  ): Promise<boolean> {
+    if (await connection.isConnected()) {
+      return true;
+    }
+
+    logger.info(
+      `[MCP][${serverName}] App-level connection disconnected, attempting to reconnect...`,
+    );
+
+    try {
+      const config = this.mcpConfigs[serverName];
+      if (!config) {
+        logger.error(`[MCP][${serverName}] Configuration not found for reconnection`);
+        return false;
+      }
+
+      await this.initializeServer(connection, `[MCP][${serverName}]`);
+
+      if (await connection.isConnected()) {
+        logger.info(`[MCP][${serverName}] App-level connection successfully reconnected`);
+        return true;
+      } else {
+        logger.warn(`[MCP][${serverName}] App-level connection reconnection failed`);
+        return false;
+      }
+    } catch (error) {
+      logger.error(`[MCP][${serverName}] Error during app-level connection reconnection:`, error);
+      return false;
+    }
+  }
+
   /**
    * Maps available tools from all app-level connections into the provided object.
    * The object is modified in place.
@@ -560,8 +595,10 @@ export class MCPManager {
   public async mapAvailableTools(availableTools: t.LCAvailableTools): Promise<void> {
     for (const [serverName, connection] of this.connections.entries()) {
       try {
-        if ((await connection.isConnected()) !== true) {
-          logger.warn(`[MCP][${serverName}] Connection not established. Skipping tool mapping.`);
+        /** Attempt to ensure connection is active, with reconnection if needed */
+        const isActive = await this.isConnectionActive(serverName, connection);
+        if (!isActive) {
+          logger.warn(`[MCP][${serverName}] Connection not available. Skipping tool mapping.`);
           continue;
         }
 
@@ -591,10 +628,10 @@ export class MCPManager {
 
     for (const [serverName, connection] of this.connections.entries()) {
       try {
-        if ((await connection.isConnected()) !== true) {
-          logger.warn(
-            `[MCP][${serverName}] Connection not established. Skipping manifest loading.`,
-          );
+        /** Attempt to ensure connection is active, with reconnection if needed */
+        const isActive = await this.isConnectionActive(serverName, connection);
+        if (!isActive) {
+          logger.warn(`[MCP][${serverName}] Connection not available. Skipping manifest loading.`);
           continue;
         }
 
