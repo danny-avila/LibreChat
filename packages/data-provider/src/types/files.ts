@@ -48,6 +48,12 @@ export type FileConfig = {
   };
   serverFileSizeLimit?: number;
   avatarSizeLimit?: number;
+  clientSideImageResize?: {
+    enabled?: boolean;
+    maxWidth?: number;
+    maxHeight?: number;
+    quality?: number;
+  };
   checkType?: (fileType: string, supportedTypes: RegExp[]) => boolean;
 };
 
