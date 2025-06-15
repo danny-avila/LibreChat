@@ -553,6 +553,7 @@ async function loadAgentTools({ req, res, agent, tool_resources, openAIApiKey })
     tools: _agentTools,
     options: {
       req,
+      res,
       openAIApiKey,
       tool_resources,
       processFileURL,

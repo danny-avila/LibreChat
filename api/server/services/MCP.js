@@ -1,8 +1,8 @@
 const { z } = require('zod');
 const { tool } = require('@langchain/core/tools');
-const { CacheKeys } = require('librechat-data-provider');
-const { normalizeServerName } = require('@librechat/api');
-const { Constants: AgentConstants, Providers } = require('@librechat/agents');
+const { sendEvent, normalizeServerName } = require('@librechat/api');
+const { Time, CacheKeys, StepTypes } = require('librechat-data-provider');
+const { Constants: AgentConstants, Providers, GraphEvents } = require('@librechat/agents');
 const {
   Constants,
   ContentTypes,
@@ -13,6 +13,55 @@ const { logger, getMCPManager, getFlowStateManager } = require('~/config');
 const { findToken, createToken } = require('~/models');
 const { getLogStores } = require('~/cache');
 
+/**
+ * @param {object} params
+ * @param {ServerResponse} params.res - The Express response object for sending events.
+ * @param {string} params.stepId - The ID of the step in the flow.
+ * @param {ToolCallChunk} params.toolCall - The tool call object containing tool information.
+ */
+function createOAuthStart({ res, stepId, toolCall }) {
+  /**
+   * Creates a function to handle OAuth login requests.
+   * @param {string} authURL - The URL to redirect the user for OAuth authentication.
+   * @returns {boolean} Returns true to indicate the event was sent successfully.
+   */
+  return function (authURL) {
+    /** @type {{ id: string; delta: AgentToolCallDelta }} */
+    const data = {
+      id: stepId,
+      delta: {
+        type: StepTypes.TOOL_CALLS,
+        tool_calls: [{ ...toolCall, args: '' }],
+        auth: authURL,
+        expires_at: Date.now() + Time.TWO_MINUTES,
+      },
+    };
+    sendEvent(res, { event: GraphEvents.ON_RUN_STEP_DELTA, data });
+    logger.debug('Sent OAuth login request to client');
+    return true;
+  };
+}
+
+/**
+ * @param {object} params
+ * @param {ServerResponse} params.res - The Express response object for sending events.
+ * @param {string} params.stepId - The ID of the step in the flow.
+ * @param {ToolCallChunk} params.toolCall - The tool call object containing tool information.
+ */
+function createOAuthEnd({ res, stepId, toolCall }) {
+  return function () {
+    /** @type {{ id: string; delta: AgentToolCallDelta }} */
+    const data = {
+      id: stepId,
+      delta: {
+        type: StepTypes.TOOL_CALLS,
+        tool_calls: [{ ...toolCall }],
+      },
+    };
+    sendEvent(res, { event: GraphEvents.ON_RUN_STEP_DELTA, data });
+    logger.debug('Sent OAuth login success to client');
+  };
+}
 /**
  * Creates a general tool for an entire action set.
  *
@@ -62,6 +111,19 @@ async function createMCPTool({ req, res, toolKey, provider: _provider }) {
       const derivedSignal = config?.signal ? AbortSignal.any([config.signal]) : undefined;
       const mcpManager = getMCPManager(userId);
       const provider = (config?.metadata?.provider || _provider)?.toLowerCase();
+
+      const { args: _args, stepId, ...toolCall } = config.toolCall ?? {};
+      const oauthStart = createOAuthStart({
+        res,
+        stepId,
+        toolCall,
+      });
+      const oauthEnd = createOAuthEnd({
+        res,
+        stepId,
+        toolCall,
+      });
+
       const result = await mcpManager.callTool({
         serverName,
         toolName,
@@ -76,6 +138,8 @@ async function createMCPTool({ req, res, toolKey, provider: _provider }) {
           findToken,
           createToken,
         },
+        oauthStart,
+        oauthEnd,
       });
 
       if (isAssistantsEndpoint(provider) && Array.isArray(result)) {

@@ -91,7 +91,10 @@ export class MCPManager {
         logger.info(`[MCP][${serverName}] Setting up OAuth event listener`);
         connection.on('oauthRequired', async (data) => {
           logger.debug(`[MCP][${serverName}] oauthRequired event received`);
-          const tokens = await this.handleOAuthRequired(data, flowManager);
+          const tokens = await this.handleOAuthRequired({
+            ...data,
+            flowManager,
+          });
 
           if (tokens && tokenMethods?.createToken) {
             try {
@@ -251,14 +254,11 @@ export class MCPManager {
               logger.info(`${logPrefix} Handling OAuth`);
               const serverUrl = connection.url;
               if (serverUrl) {
-                await this.handleOAuthRequired(
-                  {
-                    serverName: connection.serverName,
-                    error,
-                    serverUrl,
-                  },
+                await this.handleOAuthRequired({
+                  serverName: connection.serverName,
+                  serverUrl,
                   flowManager,
-                );
+                });
               }
             } else {
               logger.info(`${logPrefix} OAuth already handled by connection`);
@@ -328,12 +328,21 @@ export class MCPManager {
   }
 
   /** Gets or creates a connection for a specific user */
-  public async getUserConnection(
-    serverName: string,
-    user: TUser,
-    tokenMethods?: TokenMethods,
-    flowManager?: FlowStateManager<MCPOAuthTokens>,
-  ): Promise<MCPConnection> {
+  public async getUserConnection({
+    user,
+    serverName,
+    flowManager,
+    tokenMethods,
+    oauthStart,
+    oauthEnd,
+  }: {
+    user: TUser;
+    serverName: string;
+    flowManager?: FlowStateManager<MCPOAuthTokens>;
+    tokenMethods?: TokenMethods;
+    oauthStart?: (authURL: string) => void;
+    oauthEnd?: () => void;
+  }): Promise<MCPConnection> {
     const userId = user.id;
     if (!userId) {
       throw new McpError(ErrorCode.InvalidRequest, `[MCP] User object missing id property`);
@@ -413,7 +422,12 @@ export class MCPManager {
 
     connection.on('oauthRequired', async (data) => {
       logger.info(`[MCP][User: ${userId}][${serverName}] oauthRequired event received`);
-      const tokens = await this.handleOAuthRequired(data, flowManager);
+      const tokens = await this.handleOAuthRequired({
+        ...data,
+        flowManager,
+        oauthStart,
+        oauthEnd,
+      });
 
       if (tokens && tokenMethods?.createToken) {
         try {
@@ -623,6 +637,8 @@ export class MCPManager {
     options,
     tokenMethods,
     flowManager,
+    oauthStart,
+    oauthEnd,
   }: {
     serverName: string;
     toolName: string;
@@ -631,6 +647,8 @@ export class MCPManager {
     options?: CallToolOptions;
     tokenMethods?: TokenMethods;
     flowManager?: FlowStateManager<MCPOAuthTokens>;
+    oauthStart?: (authURL: string) => void;
+    oauthEnd?: () => void;
   }): Promise<t.FormattedToolResponse> {
     let connection: MCPConnection | undefined;
     const { user, ...callOptions } = options ?? {};
@@ -641,7 +659,14 @@ export class MCPManager {
       if (userId && user) {
         this.updateUserLastActivity(userId);
         // Get or create user-specific connection
-        connection = await this.getUserConnection(serverName, user, tokenMethods, flowManager);
+        connection = await this.getUserConnection({
+          user,
+          serverName,
+          flowManager,
+          tokenMethods,
+          oauthStart,
+          oauthEnd,
+        });
       } else {
         // Use app-level connection
         connection = this.connections.get(serverName);
@@ -787,19 +812,24 @@ Please follow these instructions when using tools from the respective MCP server
   }
 
   /** Handles OAuth authentication requirements */
-  private async handleOAuthRequired(
-    data: {
-      serverName: string;
-      error: unknown;
-      serverUrl?: string;
-      userId?: string;
-    },
-    flowManager?: FlowStateManager<MCPOAuthTokens>,
-  ): Promise<MCPOAuthTokens | null> {
-    const { serverName, serverUrl, userId = SYSTEM_USER_ID } = data;
+  private async handleOAuthRequired({
+    serverName,
+    serverUrl,
+    flowManager,
+    userId = SYSTEM_USER_ID,
+    oauthStart,
+    oauthEnd,
+  }: {
+    serverName: string;
+    serverUrl?: string;
+    userId?: string;
+    flowManager?: FlowStateManager<MCPOAuthTokens>;
+    oauthStart?: (authURL: string) => void;
+    oauthEnd?: () => void;
+  }): Promise<MCPOAuthTokens | null> {
     const userPart = userId ? `[User: ${userId}]` : '';
     const logPrefix = `[MCP]${userPart}[${serverName}]`;
-    logger.debug(`${logPrefix} handleOAuthRequired called with serverUrl: ${serverUrl}`);
+    logger.debug(`${logPrefix} \`handleOAuthRequired\` called with serverUrl: ${serverUrl}`);
 
     if (!flowManager || !serverUrl) {
       logger.error(
@@ -821,6 +851,8 @@ Please follow these instructions when using tools from the respective MCP server
         flowManager,
       );
 
+      oauthStart?.(authorizationUrl);
+
       logger.info(`═══════════════════════════════════════════════════════════════════════
 Please visit the following URL to authenticate:
 
@@ -831,7 +863,7 @@ ${logPrefix} Flow ID: ${flowId}
 
       /** Awaited tokens from successful OAuth completion + exchange */
       const tokens = await flowManager.createFlow(flowId, 'mcp_oauth');
-
+      oauthEnd?.();
       logger.info(`${logPrefix} OAuth flow completed, tokens received`);
       return tokens;
     } catch (error) {

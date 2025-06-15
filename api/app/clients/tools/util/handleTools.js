@@ -299,6 +299,7 @@ Current Date & Time: ${replaceSpecialVars({ text: '{{iso_datetime}}' })}
       requestedTools[tool] = async () =>
         createMCPTool({
           req: options.req,
+          res: options.res,
           toolKey: tool,
           model: agent?.model ?? model,
           provider: agent?.provider ?? endpoint,
