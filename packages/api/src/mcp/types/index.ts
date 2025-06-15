@@ -14,7 +14,15 @@ export type StdioOptions = z.infer<typeof StdioOptionsSchema>;
 export type WebSocketOptions = z.infer<typeof WebSocketOptionsSchema>;
 export type SSEOptions = z.infer<typeof SSEOptionsSchema>;
 export type StreamableHTTPOptions = z.infer<typeof StreamableHTTPOptionsSchema>;
-export type MCPOptions = z.infer<typeof MCPOptionsSchema>;
+export type MCPOptions = z.infer<typeof MCPOptionsSchema> & {
+  customUserVars?: Record<
+    string,
+    {
+      title: string;
+      description: string;
+    }
+  >;
+};
 export type MCPServers = z.infer<typeof MCPServersSchema>;
 export interface MCPResource {
   uri: string;

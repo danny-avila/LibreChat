@@ -9,7 +9,6 @@ const {
   loadWebSearchAuth,
   replaceSpecialVars,
 } = require('librechat-data-provider');
-const { getUserPluginAuthValue } = require('~/server/services/PluginService');
 const {
   availableTools,
   manifestToolMap,
@@ -31,6 +30,10 @@ const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/pro
 const { createFileSearchTool, primeFiles: primeSearchFiles } = require('./fileSearch');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { getCachedTools } = require('~/server/services/Config');
+const {
+  getUsersPluginsAuthValuesMap,
+  getUserPluginAuthValue,
+} = require('~/server/services/PluginService');
 const { createMCPTool } = require('~/server/services/MCP');
 
 const mcpToolPattern = new RegExp(`^.+${Constants.mcp_delimiter}.+$`);
@@ -94,7 +97,7 @@ const validateTools = async (user, tools = []) => {
     return Array.from(validToolsSet.values());
   } catch (err) {
     logger.error('[validateTools] There was a problem validating tools', err);
-    throw new Error('There was a problem validating tools');
+    throw new Error(err);
   }
 };
 
@@ -239,6 +242,40 @@ const loadTools = async ({
   const toolContextMap = {};
   const appTools = (await getCachedTools({ includeGlobal: true })) ?? {};
 
+  // Pre-fetch customUserVars for all MCP tools
+  let allMcpCustomUserVars = {};
+  const mcpPluginKeysToFetch = [];
+  if (tools && tools.length > 0 && user) {
+    for (const toolKey of tools) {
+      if (toolKey && appTools[toolKey] && mcpToolPattern.test(toolKey)) {
+        const parts = toolKey.split(Constants.mcp_delimiter);
+        const serverName = parts[parts.length - 1];
+        const mcpPluginKey = `${Constants.mcp_prefix}${serverName}`;
+        if (!mcpPluginKeysToFetch.includes(mcpPluginKey)) {
+          mcpPluginKeysToFetch.push(mcpPluginKey);
+        }
+      }
+    }
+
+    if (mcpPluginKeysToFetch.length > 0) {
+      try {
+        allMcpCustomUserVars = await getUsersPluginsAuthValuesMap(
+          user,
+          mcpPluginKeysToFetch,
+          false,
+        );
+      } catch (err) {
+        logger.error(
+          `[handleTools] Error batch fetching customUserVars for MCP tools (keys: ${mcpPluginKeysToFetch.join(
+            ', ',
+          )}), user ${user}: ${err.message}`,
+          err,
+        );
+        // allMcpCustomUserVars will remain {} or whatever getUsersPluginsAuthValuesMap returned on error (empty map with throwError=false)
+      }
+    }
+  }
+
   for (const tool of tools) {
     if (tool === Tools.execute_code) {
       requestedTools[tool] = async () => {
@@ -297,13 +334,19 @@ Current Date & Time: ${replaceSpecialVars({ text: '{{iso_datetime}}' })}
       };
       continue;
     } else if (tool && appTools[tool] && mcpToolPattern.test(tool)) {
+      const parts = tool.split(Constants.mcp_delimiter);
+      const serverName = parts[parts.length - 1];
+      const mcpPluginKey = `${Constants.mcp_prefix}${serverName}`;
+      const customUserVars = allMcpCustomUserVars[mcpPluginKey] || {};
+
       requestedTools[tool] = async () =>
         createMCPTool({
           req: options.req,
           res: options.res,
-          toolKey: tool,
+          toolKey: tool, // Full tool key, e.g., "action_mcp_serverName"
           model: agent?.model ?? model,
           provider: agent?.provider ?? endpoint,
+          customUserVars,
         });
       continue;
     }

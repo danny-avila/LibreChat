@@ -16,6 +16,7 @@ import { MCPConnection } from './connection';
 
 export interface CallToolOptions extends RequestOptions {
   user?: TUser;
+  customUserVars: Record<string, string>;
 }
 
 export class MCPManager {
@@ -28,7 +29,11 @@ export class MCPManager {
   private userLastActivity: Map<string, number> = new Map();
   private readonly USER_CONNECTION_IDLE_TIMEOUT = 15 * 60 * 1000; // 15 minutes (TODO: make configurable)
   private mcpConfigs: t.MCPServers = {};
-  private processMCPEnv?: (obj: MCPOptions, user?: TUser) => MCPOptions; // Store the processing function
+  private processMCPEnv?: (
+    obj: MCPOptions,
+    user?: TUser,
+    customUserVars?: Record<string, string>,
+  ) => MCPOptions; // Store the processing function
   /** Store MCP server instructions */
   private serverInstructions: Map<string, string> = new Map();
 
@@ -63,7 +68,6 @@ export class MCPManager {
     if (!tokenMethods) {
       logger.info('[MCP] No token methods provided, token persistence will not be available');
     }
-
     const entries = Object.entries(mcpServers);
     const initializedServers = new Set();
     const connectionResults = await Promise.allSettled(
@@ -382,6 +386,7 @@ export class MCPManager {
     user,
     serverName,
     flowManager,
+    customUserVars,
     tokenMethods,
     oauthStart,
     oauthEnd,
@@ -390,6 +395,7 @@ export class MCPManager {
     user: TUser;
     serverName: string;
     flowManager: FlowStateManager<MCPOAuthTokens | null>;
+    customUserVars?: Record<string, string>;
     tokenMethods?: TokenMethods;
     oauthStart?: (authURL: string) => Promise<void>;
     oauthEnd?: () => Promise<void>;
@@ -444,9 +450,8 @@ export class MCPManager {
     }
 
     if (this.processMCPEnv) {
-      config = { ...(this.processMCPEnv(config, user) ?? {}) };
+      config = { ...(this.processMCPEnv(config, user, customUserVars) ?? {}) };
     }
-
     /** If no in-memory tokens, tokens from persistent storage */
     let tokens: MCPOAuthTokens | null = null;
     if (tokenMethods?.findToken) {
@@ -752,7 +757,6 @@ export class MCPManager {
     getServerTools?: (serverName: string) => Promise<t.LCManifestTool[] | undefined>;
   }): Promise<t.LCToolManifest> {
     const mcpTools: t.LCManifestTool[] = [];
-
     for (const [serverName, connection] of this.connections.entries()) {
       try {
         /** Attempt to ensure connection is active, with reconnection if needed */
@@ -784,13 +788,21 @@ export class MCPManager {
         const serverTools: t.LCManifestTool[] = [];
         for (const tool of tools) {
           const pluginKey = `${tool.name}${CONSTANTS.mcp_delimiter}${serverName}`;
+
+          const config = this.mcpConfigs[serverName];
           const manifestTool: t.LCManifestTool = {
             name: tool.name,
             pluginKey,
             description: tool.description ?? '',
             icon: connection.iconPath,
+            authConfig: config?.customUserVars
+              ? Object.entries(config.customUserVars).map(([key, value]) => ({
+                  authField: key,
+                  label: value.title || key,
+                  description: value.description || '',
+                }))
+              : undefined,
           };
-          const config = this.mcpConfigs[serverName];
           if (config?.chatMenu === false) {
             manifestTool.chatMenu = false;
           }
@@ -852,6 +864,7 @@ export class MCPManager {
           oauthStart,
           oauthEnd,
           signal: options?.signal,
+          customUserVars: options?.customUserVars,
         });
       } else {
         /** App-level connection */
