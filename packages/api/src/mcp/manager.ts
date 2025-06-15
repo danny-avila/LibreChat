@@ -133,20 +133,19 @@ export class MCPManager {
 
           if (await connection.isConnected()) {
             initializedServers.add(i);
-            this.connections.set(serverName, connection); // Store in app-level map
+            this.connections.set(serverName, connection);
 
-            // Handle unified serverInstructions configuration
+            /** Unified `serverInstructions` configuration */
             const configInstructions = config.serverInstructions;
 
             if (configInstructions !== undefined) {
               if (typeof configInstructions === 'string') {
-                // Custom instructions provided
                 this.serverInstructions.set(serverName, configInstructions);
                 logger.info(
                   `[MCP][${serverName}] Custom instructions stored for context inclusion: ${configInstructions}`,
                 );
               } else if (configInstructions === true) {
-                // Use server-provided instructions
+                /** Server-provided instructions */
                 const serverInstructions = connection.client.getInstructions();
 
                 if (serverInstructions) {
@@ -160,7 +159,6 @@ export class MCPManager {
                   );
                 }
               } else {
-                // configInstructions is false - explicitly disabled
                 logger.info(
                   `[MCP][${serverName}] Instructions explicitly disabled (serverInstructions=false)`,
                 );
@@ -230,6 +228,7 @@ export class MCPManager {
   ): Promise<void> {
     const maxAttempts = 3;
     let attempts = 0;
+    /** Whether OAuth has been handled by the connection */
     let oauthHandled = false;
 
     while (attempts < maxAttempts) {
@@ -242,14 +241,12 @@ export class MCPManager {
       } catch (error) {
         attempts++;
 
-        // Check if it's an OAuth error
         if (this.isOAuthError(error)) {
           // Only handle OAuth if requested (not already handled by event listener)
           if (handleOAuth) {
-            // Check if OAuth was already handled by the connection
+            /** Check if OAuth was already handled by the connection */
             const errorWithFlag = error as (Error & { isOAuthError?: boolean }) | undefined;
             if (!oauthHandled && errorWithFlag?.isOAuthError) {
-              // OAuth not handled yet by connection, handle it here
               oauthHandled = true;
               logger.info(`${logPrefix} Handling OAuth`);
               const serverUrl = connection.url;
@@ -650,6 +647,7 @@ export class MCPManager {
     oauthStart?: (authURL: string) => void;
     oauthEnd?: () => void;
   }): Promise<t.FormattedToolResponse> {
+    /** User-specific connection */
     let connection: MCPConnection | undefined;
     const { user, ...callOptions } = options ?? {};
     const userId = user?.id;
@@ -658,7 +656,7 @@ export class MCPManager {
     try {
       if (userId && user) {
         this.updateUserLastActivity(userId);
-        // Get or create user-specific connection
+        /** Get or create user-specific connection */
         connection = await this.getUserConnection({
           user,
           serverName,
@@ -668,7 +666,7 @@ export class MCPManager {
           oauthEnd,
         });
       } else {
-        // Use app-level connection
+        /** App-level connection */
         connection = this.connections.get(serverName);
         if (!connection) {
           throw new McpError(
@@ -679,7 +677,7 @@ export class MCPManager {
       }
 
       if (!(await connection.isConnected())) {
-        // This might happen if getUserConnection failed silently or app connection dropped
+        /** May happen if getUserConnection failed silently or app connection dropped */
         throw new McpError(
           ErrorCode.InternalError, // Use InternalError for connection issues
           `${logPrefix} Connection is not active. Cannot execute tool ${toolName}.`,
