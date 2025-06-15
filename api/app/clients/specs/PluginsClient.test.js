@@ -3,7 +3,7 @@ const { Constants } = require('librechat-data-provider');
 const { HumanMessage, AIMessage } = require('@langchain/core/messages');
 const PluginsClient = require('../PluginsClient');
 
-jest.mock('~/lib/db/connectDb');
+jest.mock('~/db/connect');
 jest.mock('~/models/Conversation', () => {
   return function () {
     return {

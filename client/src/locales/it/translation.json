@@ -613,7 +613,6 @@
   "com_ui_enter": "Invio",
   "com_ui_enter_api_key": "Inserisci API Key",
   "com_ui_enter_openapi_schema": "Inserisci qui il tuo schema OpenAPI",
-  "com_ui_enter_var": "Inserisci {{0}}",
   "com_ui_error": "Errore",
   "com_ui_error_connection": "Errore di connessione al server, prova ad aggiornare la pagina.",
   "com_ui_error_save_admin_settings": "Si è verificato un errore durante il salvataggio delle impostazioni amministrative.",

@@ -1,5 +1,5 @@
 /* eslint-disable jsx-a11y/media-has-caption */
-import { useEffect, useMemo } from 'react';
+import { useEffect } from 'react';
 import { useRecoilValue } from 'recoil';
 import type { TMessageAudio } from '~/common';
 import { useLocalize, useTTSBrowser, useTTSExternal } from '~/hooks';
@@ -7,7 +7,14 @@ import { VolumeIcon, VolumeMuteIcon, Spinner } from '~/components';
 import { logger } from '~/utils';
 import store from '~/store';
 
-export function BrowserTTS({ isLast, index, messageId, content, className }: TMessageAudio) {
+export function BrowserTTS({
+  isLast,
+  index,
+  messageId,
+  content,
+  className,
+  renderButton,
+}: TMessageAudio) {
   const localize = useLocalize();
   const playbackRate = useRecoilValue(store.playbackRate);
 
@@ -18,16 +25,16 @@ export function BrowserTTS({ isLast, index, messageId, content, className }: TMe
     content,
   });
 
-  const renderIcon = (size: string) => {
+  const renderIcon = () => {
     if (isLoading === true) {
-      return <Spinner size={size} />;
+      return <Spinner className="icon-md-heavy h-[18px] w-[18px]" />;
     }
 
     if (isSpeaking === true) {
-      return <VolumeMuteIcon size={size} />;
+      return <VolumeMuteIcon className="icon-md-heavy h-[18px] w-[18px]" />;
     }
 
-    return <VolumeIcon size={size} />;
+    return <VolumeIcon className="icon-md-heavy h-[18px] w-[18px]" />;
   };
 
   useEffect(() => {
@@ -46,21 +53,30 @@ export function BrowserTTS({ isLast, index, messageId, content, className }: TMe
     audioRef.current,
   );
 
+  const handleClick = () => {
+    if (audioRef.current) {
+      audioRef.current.muted = false;
+    }
+    toggleSpeech();
+  };
+
+  const title = isSpeaking === true ? localize('com_ui_stop') : localize('com_ui_read_aloud');
+
   return (
     <>
-      <button
-        className={className}
-        onClickCapture={() => {
-          if (audioRef.current) {
-            audioRef.current.muted = false;
-          }
-          toggleSpeech();
-        }}
-        type="button"
-        title={isSpeaking === true ? localize('com_ui_stop') : localize('com_ui_read_aloud')}
-      >
-        {renderIcon('19')}
-      </button>
+      {renderButton ? (
+        renderButton({
+          onClick: handleClick,
+          title: title,
+          icon: renderIcon(),
+          isActive: isSpeaking,
+          className,
+        })
+      ) : (
+        <button className={className} onClickCapture={handleClick} type="button" title={title}>
+          {renderIcon()}
+        </button>
+      )}
       <audio
         ref={audioRef}
         controls
@@ -84,7 +100,14 @@ export function BrowserTTS({ isLast, index, messageId, content, className }: TMe
   );
 }
 
-export function ExternalTTS({ isLast, index, messageId, content, className }: TMessageAudio) {
+export function ExternalTTS({
+  isLast,
+  index,
+  messageId,
+  content,
+  className,
+  renderButton,
+}: TMessageAudio) {
   const localize = useLocalize();
   const playbackRate = useRecoilValue(store.playbackRate);
 
@@ -95,16 +118,16 @@ export function ExternalTTS({ isLast, index, messageId, content, className }: TM
     content,
   });
 
-  const renderIcon = (size: string) => {
+  const renderIcon = () => {
     if (isLoading === true) {
-      return <Spinner size={size} />;
+      return <Spinner className="icon-md-heavy h-[18px] w-[18px]" />;
     }
 
     if (isSpeaking === true) {
-      return <VolumeMuteIcon size={size} />;
+      return <VolumeMuteIcon className="icon-md-heavy h-[18px] w-[18px]" />;
     }
 
-    return <VolumeIcon size={size} />;
+    return <VolumeIcon className="icon-md-heavy h-[18px] w-[18px]" />;
   };
 
   useEffect(() => {
@@ -125,19 +148,33 @@ export function ExternalTTS({ isLast, index, messageId, content, className }: TM
 
   return (
     <>
-      <button
-        className={className}
-        onClickCapture={() => {
-          if (audioRef.current) {
-            audioRef.current.muted = false;
-          }
-          toggleSpeech();
-        }}
-        type="button"
-        title={isSpeaking === true ? localize('com_ui_stop') : localize('com_ui_read_aloud')}
-      >
-        {renderIcon('19')}
-      </button>
+      {renderButton ? (
+        renderButton({
+          onClick: () => {
+            if (audioRef.current) {
+              audioRef.current.muted = false;
+            }
+            toggleSpeech();
+          },
+          title: isSpeaking === true ? localize('com_ui_stop') : localize('com_ui_read_aloud'),
+          icon: renderIcon(),
+          isActive: isSpeaking,
+          className,
+        })
+      ) : (
+        <button
+          onClickCapture={() => {
+            if (audioRef.current) {
+              audioRef.current.muted = false;
+            }
+            toggleSpeech();
+          }}
+          type="button"
+          title={isSpeaking === true ? localize('com_ui_stop') : localize('com_ui_read_aloud')}
+        >
+          {renderIcon()}
+        </button>
+      )}
       <audio
         ref={audioRef}
         controls

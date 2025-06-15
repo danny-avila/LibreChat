@@ -12,7 +12,7 @@ jest.mock('librechat-data-provider/react-query');
 const mockLogin = jest.fn();
 
 const mockStartupConfig: TStartupConfig = {
-  socialLogins: ['google', 'facebook', 'openid', 'github', 'discord'],
+  socialLogins: ['google', 'facebook', 'openid', 'github', 'discord', 'saml'],
   discordLoginEnabled: true,
   facebookLoginEnabled: true,
   githubLoginEnabled: true,
@@ -20,6 +20,9 @@ const mockStartupConfig: TStartupConfig = {
   openidLoginEnabled: true,
   openidLabel: 'Test OpenID',
   openidImageUrl: 'http://test-server.com',
+  samlLoginEnabled: true,
+  samlLabel: 'Test SAML',
+  samlImageUrl: 'http://test-server.com',
   registrationEnabled: true,
   emailLoginEnabled: true,
   socialLoginEnabled: true,

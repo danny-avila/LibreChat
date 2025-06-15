@@ -16,6 +16,8 @@ export * from './models';
 export * from './mcp';
 /* web search */
 export * from './web';
+/* memory */
+export * from './memory';
 /* RBAC */
 export * from './permissions';
 export * from './roles';
@@ -39,4 +41,6 @@ import * as dataService from './data-service';
 export * from './utils';
 export * from './actions';
 export { default as createPayload } from './createPayload';
+/* feedback */
+export * from './feedback';
 export * from './parameterSettings';

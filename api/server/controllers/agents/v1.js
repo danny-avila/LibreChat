@@ -18,6 +18,7 @@ const {
 } = require('~/models/Agent');
 const { uploadImageBuffer, filterFile } = require('~/server/services/Files/process');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
+const { resizeAvatar } = require('~/server/services/Files/images/avatar');
 const { refreshS3Url } = require('~/server/services/Files/S3/crud');
 const { updateAction, getActions } = require('~/models/Action');
 const { updateAgentProjects } = require('~/models/Agent');
@@ -111,7 +112,7 @@ const getAgentHandler = async (req, res) => {
       const originalUrl = agent.avatar.filepath;
       agent.avatar.filepath = await refreshS3Url(agent.avatar);
       if (originalUrl !== agent.avatar.filepath) {
-        await updateAgent({ id }, { avatar: agent.avatar }, req.user.id);
+        await updateAgent({ id }, { avatar: agent.avatar }, { updatingUserId: req.user.id });
       }
     }
 
@@ -168,12 +169,18 @@ const updateAgentHandler = async (req, res) => {
       });
     }
 
+    /** @type {boolean} */
+    const isProjectUpdate = (projectIds?.length ?? 0) > 0 || (removeProjectIds?.length ?? 0) > 0;
+
     let updatedAgent =
       Object.keys(updateData).length > 0
-        ? await updateAgent({ id }, updateData, req.user.id)
+        ? await updateAgent({ id }, updateData, {
+            updatingUserId: req.user.id,
+            skipVersioning: isProjectUpdate,
+          })
         : existingAgent;
 
-    if (projectIds || removeProjectIds) {
+    if (isProjectUpdate) {
       updatedAgent = await updateAgentProjects({
         user: req.user,
         agentId: id,
@@ -373,11 +380,26 @@ const uploadAgentAvatarHandler = async (req, res) => {
     }
 
     const buffer = await fs.readFile(req.file.path);
-    const image = await uploadImageBuffer({
-      req,
-      context: FileContext.avatar,
-      metadata: { buffer },
+
+    const fileStrategy = req.app.locals.fileStrategy;
+
+    const resizedBuffer = await resizeAvatar({
+      userId: req.user.id,
+      input: buffer,
     });
+
+    const { processAvatar } = getStrategyFunctions(fileStrategy);
+    const avatarUrl = await processAvatar({
+      buffer: resizedBuffer,
+      userId: req.user.id,
+      manual: 'false',
+      agentId: agent_id,
+    });
+
+    const image = {
+      filepath: avatarUrl,
+      source: fileStrategy,
+    };
 
     let _avatar;
     try {
@@ -403,11 +425,15 @@ const uploadAgentAvatarHandler = async (req, res) => {
     const data = {
       avatar: {
         filepath: image.filepath,
-        source: req.app.locals.fileStrategy,
+        source: image.source,
       },
     };
 
-    promises.push(await updateAgent({ id: agent_id, author: req.user.id }, data, req.user.id));
+    promises.push(
+      await updateAgent({ id: agent_id, author: req.user.id }, data, {
+        updatingUserId: req.user.id,
+      }),
+    );
 
     const resolved = await Promise.all(promises);
     res.status(201).json(resolved[0]);

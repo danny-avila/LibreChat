@@ -10,6 +10,7 @@ export enum FileSources {
   vectordb = 'vectordb',
   execute_code = 'execute_code',
   mistral_ocr = 'mistral_ocr',
+  azure_mistral_ocr = 'azure_mistral_ocr',
   text = 'text',
 }
 

@@ -2548,6 +2548,18 @@ html {
   margin-right: -2px;
 }
 
+.popover-animate {
+  opacity: 0;
+  transform: scale(0.95) translateY(-0.5rem);
+  transition:
+    opacity 150ms cubic-bezier(0.4, 0, 0.2, 1),
+    transform 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+.popover-animate[data-enter] {
+  opacity: 1;
+  transform: scale(1) translateY(0);
+}
+
 .popover-ui:focus-visible,
 .popover-ui[data-focus-visible] {
   outline: var(--bg-surface-hover);
@@ -2710,9 +2722,9 @@ html {
   position: relative;
   background: linear-gradient(
     90deg,
-    rgba(255, 255, 255, 0.8) 25%,
-    rgba(179, 179, 179, 0.25) 50%,
-    rgba(255, 255, 255, 0.8) 75%
+    rgb(33, 33, 33) 25%,
+    rgba(129, 130, 134, 0.18) 50%,
+    rgb(33, 33, 33) 75%
   );
   background-size: 200% 100%;
   background-clip: text;
@@ -2721,12 +2733,12 @@ html {
   animation: shimmer 4s linear infinite;
 }
 
-:global(.dark) .shimmer {
+.dark .shimmer {
   background: linear-gradient(
     90deg,
-    rgba(255, 255, 255) 25%,
-    rgba(129, 130, 134, 0.18) 50%,
-    rgb(255, 255, 255) 75%
+    rgba(255, 255, 255, 0.8) 25%,
+    rgba(179, 179, 179, 0.25) 50%,
+    rgba(255, 255, 255, 0.8) 75%
   );
   background-size: 200% 100%;
   background-clip: text;
