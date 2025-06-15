@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { Search, X } from 'lucide-react';
 import { Dialog, DialogPanel, DialogTitle, Description } from '@headlessui/react';
 import { useFormContext } from 'react-hook-form';
-import { isAgentsEndpoint } from 'librechat-data-provider';
+import { Constants, isAgentsEndpoint } from 'librechat-data-provider';
 import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
 import type {
   AssistantsEndpoint,
@@ -108,12 +108,19 @@ function ToolSelectDialog({
     const getAvailablePluginFromKey = tools?.find((p) => p.pluginKey === pluginKey);
     setSelectedPlugin(getAvailablePluginFromKey);
 
-    const { authConfig, authenticated = false } = getAvailablePluginFromKey ?? {};
+    const isMCPTool = pluginKey.includes(Constants.mcp_delimiter);
 
-    if (authConfig && authConfig.length > 0 && !authenticated) {
-      setShowPluginAuthForm(true);
-    } else {
+    if (isMCPTool) {
+      // MCP tools have their variables configured elsewhere (e.g., MCPPanel or MCPSelect),
+      // so we directly proceed to install without showing the auth form.
       handleInstall({ pluginKey, action: 'install', auth: null });
+    } else {
+      const { authConfig, authenticated = false } = getAvailablePluginFromKey ?? {};
+      if (authConfig && authConfig.length > 0 && !authenticated) {
+        setShowPluginAuthForm(true);
+      } else {
+        handleInstall({ pluginKey, action: 'install', auth: null });
+      }
     }
   };
 
