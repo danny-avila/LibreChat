@@ -68,12 +68,13 @@ export class MCPConnection extends EventEmitter {
   private isReconnecting = false;
   private isInitializing = false;
   private reconnectAttempts = 0;
-  iconPath?: string;
-  timeout?: number;
   private readonly userId?: string;
   private lastPingTime: number;
   private oauthTokens?: OAuthTokens;
   private oauthRequired = false;
+  iconPath?: string;
+  timeout?: number;
+  url?: string;
 
   constructor(
     serverName: string,
@@ -170,12 +171,14 @@ export class MCPConnection extends EventEmitter {
           if (!isWebSocketOptions(options)) {
             throw new Error('Invalid options for websocket transport.');
           }
+          this.url = options.url;
           return new WebSocketClientTransport(new URL(options.url));
 
         case 'sse': {
           if (!isSSEOptions(options)) {
             throw new Error('Invalid options for sse transport.');
           }
+          this.url = options.url;
           const url = new URL(options.url);
           logger.info(`${this.getLogPrefix()} Creating SSE transport: ${url.toString()}`);
           const abortController = new AbortController();
@@ -224,6 +227,7 @@ export class MCPConnection extends EventEmitter {
           if (!isStreamableHTTPOptions(options)) {
             throw new Error('Invalid options for streamable-http transport.');
           }
+          this.url = options.url;
           const url = new URL(options.url);
           logger.info(
             `${this.getLogPrefix()} Creating streamable-http transport: ${url.toString()}`,
@@ -409,7 +413,7 @@ export class MCPConnection extends EventEmitter {
         if (this.isOAuthError(error)) {
           logger.warn(`${this.getLogPrefix()} OAuth authentication required`);
           this.oauthRequired = true;
-          const serverUrl = this.getServerUrl();
+          const serverUrl = this.url;
           logger.info(`${this.getLogPrefix()} Server URL for OAuth: ${serverUrl}`);
 
           // Create a promise that will resolve when OAuth is handled
@@ -672,18 +676,5 @@ export class MCPConnection extends EventEmitter {
     }
 
     return false;
-  }
-
-  private getServerUrl(): string | undefined {
-    if ('url' in this.options && typeof this.options.url === 'string') {
-      // Extract base URL without path for OAuth discovery
-      try {
-        const url = new URL(this.options.url);
-        return `${url.protocol}//${url.host}`;
-      } catch {
-        return this.options.url;
-      }
-    }
-    return undefined;
   }
 }

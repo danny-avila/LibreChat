@@ -55,16 +55,16 @@ export class MCPManager {
   public async initializeMCP(
     mcpServers: t.MCPServers,
     processMCPEnv?: (obj: MCPOptions) => MCPOptions,
-    flowManager?: FlowStateManager<any>,
+    flowManager?: FlowStateManager<MCPOAuthTokens>,
     tokenMethods?: TokenMethods,
   ): Promise<void> {
     this.processMCPEnv = processMCPEnv; // Store the function
     this.mcpConfigs = mcpServers;
     this.flowManager = flowManager as FlowStateManager<MCPOAuthTokens> | undefined;
 
-    logger.info('[MCP] Flow manager provided:', !!flowManager);
-    logger.info('[MCP] Token methods provided:', !!tokenMethods);
-    logger.info('[MCP] Creating OAuth handler:', !!flowManager);
+    logger.debug('[MCP] Flow manager provided:', !!flowManager);
+    logger.debug('[MCP] Token methods provided:', !!tokenMethods);
+    logger.debug('[MCP] Creating OAuth handler:', !!flowManager);
 
     if (flowManager) {
       this.oauthHandler = new MCPOAuthHandler(flowManager as FlowStateManager<MCPOAuthTokens>);
@@ -87,7 +87,7 @@ export class MCPManager {
         /** Process env for app-level connections */
         const config = this.processMCPEnv ? this.processMCPEnv(_config) : _config;
 
-        // Try to load existing tokens for system-level connections
+        /** Existing tokens for system-level connections */
         let existingTokens: OAuthTokens | undefined;
         if (this.tokenStorage) {
           try {
@@ -96,14 +96,14 @@ export class MCPManager {
               existingTokens = tokens;
               logger.info(`[MCP][${serverName}] Loaded existing OAuth tokens`);
             }
-          } catch (error) {
+          } catch {
             logger.debug(`[MCP][${serverName}] No existing tokens found`);
           }
         }
 
         const connection = new MCPConnection(serverName, config, undefined, existingTokens);
 
-        // Listen for OAuth requirements
+        /** Listen for OAuth requirements */
         logger.info(`[MCP][${serverName}] Setting up OAuth event listener`);
         connection.on('oauthRequired', async (data) => {
           logger.info(`[MCP][${serverName}] oauthRequired event received`);
@@ -115,7 +115,6 @@ export class MCPManager {
             // Store tokens for system-level connections
             this.storeUserOAuthTokens(SYSTEM_USER_ID, serverName, tokens);
 
-            // Persist tokens to storage
             if (this.tokenStorage) {
               try {
                 await this.tokenStorage.storeTokens(SYSTEM_USER_ID, serverName, tokens);
@@ -126,7 +125,6 @@ export class MCPManager {
             }
           }
 
-          // Emit oauthHandled to unblock the connection
           connection.emit('oauthHandled');
         });
 
@@ -257,20 +255,18 @@ export class MCPManager {
           // Only handle OAuth if requested (not already handled by event listener)
           if (handleOAuth) {
             // Check if OAuth was already handled by the connection
-            const errorWithFlag = error as any;
-            if (!errorWithFlag.isOAuthError) {
+            const errorWithFlag = error as (Error & { isOAuthError?: boolean }) | undefined;
+            if (!oauthHandled && errorWithFlag?.isOAuthError) {
               // OAuth not handled yet by connection, handle it here
-              if (!oauthHandled) {
-                // Only handle OAuth once
-                oauthHandled = true;
-                const serverUrl = this.getServerUrl(connection);
-                if (serverUrl) {
-                  await this.handleOAuthRequired({
-                    serverName: connection.serverName,
-                    error,
-                    serverUrl,
-                  });
-                }
+              oauthHandled = true;
+              logger.info(`${logPrefix} Handling OAuth`);
+              const serverUrl = connection.url;
+              if (serverUrl) {
+                await this.handleOAuthRequired({
+                  serverName: connection.serverName,
+                  error,
+                  serverUrl,
+                });
               }
             } else {
               logger.info(`${logPrefix} OAuth already handled by connection`);
@@ -307,14 +303,6 @@ export class MCPManager {
     }
 
     return false;
-  }
-
-  private getServerUrl(connection: MCPConnection): string | undefined {
-    const options = (connection as any).options;
-    if (options && 'url' in options && typeof options.url === 'string') {
-      return options.url;
-    }
-    return undefined;
   }
 
   /** Check for and disconnect idle connections */
