@@ -4,17 +4,42 @@ import type { TokenMethods } from '@librechat/data-schemas';
 import type { MCPOAuthTokens, ExtendedOAuthTokens } from './types';
 import { encryptV2, decryptV2 } from '~/crypto';
 
-export class MCPTokenStorage {
-  constructor(private tokenMethods: TokenMethods) {}
+interface StoreTokensParams {
+  userId: string;
+  serverName: string;
+  tokens: OAuthTokens | ExtendedOAuthTokens | MCPOAuthTokens;
+  createToken: TokenMethods['createToken'];
+}
 
+interface GetTokensParams {
+  userId: string;
+  serverName: string;
+  findToken: TokenMethods['findToken'];
+}
+
+interface UpdateTokensParams {
+  userId: string;
+  serverName: string;
+  tokens: OAuthTokens | ExtendedOAuthTokens | MCPOAuthTokens;
+  updateToken: TokenMethods['updateToken'];
+}
+
+interface DeleteTokensParams {
+  userId: string;
+  serverName: string;
+  updateToken: TokenMethods['updateToken'];
+}
+
+export class MCPTokenStorage {
   /**
    * Stores OAuth tokens for an MCP server
    */
-  async storeTokens(
-    userId: string,
-    serverName: string,
-    tokens: OAuthTokens | ExtendedOAuthTokens | MCPOAuthTokens,
-  ): Promise<void> {
+  static async storeTokens({
+    userId,
+    serverName,
+    tokens,
+    createToken,
+  }: StoreTokensParams): Promise<void> {
     try {
       const identifier = `mcp:${serverName}`;
 
@@ -59,7 +84,7 @@ export class MCPTokenStorage {
       // Calculate expiresIn (seconds from now)
       const expiresIn = Math.floor((accessTokenExpiry.getTime() - Date.now()) / 1000);
 
-      await this.tokenMethods.createToken({
+      await createToken({
         userId,
         type: 'mcp_oauth',
         identifier,
@@ -78,7 +103,7 @@ export class MCPTokenStorage {
         // Calculate expiresIn for refresh token
         const refreshExpiresIn = Math.floor((refreshTokenExpiry.getTime() - Date.now()) / 1000);
 
-        await this.tokenMethods.createToken({
+        await createToken({
           userId,
           type: 'mcp_oauth_refresh',
           identifier: `${identifier}:refresh`,
@@ -99,12 +124,16 @@ export class MCPTokenStorage {
   /**
    * Retrieves OAuth tokens for an MCP server
    */
-  async getTokens(userId: string, serverName: string): Promise<MCPOAuthTokens | null> {
+  static async getTokens({
+    userId,
+    serverName,
+    findToken,
+  }: GetTokensParams): Promise<MCPOAuthTokens | null> {
     try {
       const identifier = `mcp:${serverName}`;
 
       // Get access token
-      const accessTokenData = await this.tokenMethods.findToken({
+      const accessTokenData = await findToken({
         userId,
         type: 'mcp_oauth',
         identifier,
@@ -117,7 +146,7 @@ export class MCPTokenStorage {
       // Check if access token is expired
       if (accessTokenData.expiresAt && new Date() >= accessTokenData.expiresAt) {
         // Try to refresh if we have a refresh token
-        const refreshTokenData = await this.tokenMethods.findToken({
+        const refreshTokenData = await findToken({
           userId,
           type: 'mcp_oauth_refresh',
           identifier: `${identifier}:refresh`,
@@ -136,7 +165,7 @@ export class MCPTokenStorage {
       const decryptedAccessToken = await decryptV2(accessTokenData.token);
 
       // Get refresh token if available
-      const refreshTokenData = await this.tokenMethods.findToken({
+      const refreshTokenData = await findToken({
         userId,
         type: 'mcp_oauth_refresh',
         identifier: `${identifier}:refresh`,
@@ -163,11 +192,12 @@ export class MCPTokenStorage {
   /**
    * Updates OAuth tokens for an MCP server
    */
-  async updateTokens(
-    userId: string,
-    serverName: string,
-    tokens: OAuthTokens | ExtendedOAuthTokens | MCPOAuthTokens,
-  ): Promise<void> {
+  static async updateTokens({
+    userId,
+    serverName,
+    tokens,
+    updateToken,
+  }: UpdateTokensParams): Promise<void> {
     try {
       const identifier = `mcp:${serverName}`;
 
@@ -187,7 +217,7 @@ export class MCPTokenStorage {
         accessTokenExpiry = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
       }
 
-      await this.tokenMethods.updateToken(
+      await updateToken(
         {
           userId,
           type: 'mcp_oauth',
@@ -207,7 +237,7 @@ export class MCPTokenStorage {
           ? new Date(Date.now() + extendedTokens.refresh_token_expires_in * 1000)
           : new Date(Date.now() + 365 * 24 * 60 * 60 * 1000); // Default to 1 year
 
-        await this.tokenMethods.updateToken(
+        await updateToken(
           {
             userId,
             type: 'mcp_oauth_refresh',
@@ -232,13 +262,17 @@ export class MCPTokenStorage {
   /**
    * Deletes OAuth tokens for an MCP server
    */
-  async deleteTokens(userId: string, serverName: string): Promise<void> {
+  static async deleteTokens({
+    userId,
+    serverName,
+    updateToken,
+  }: DeleteTokensParams): Promise<void> {
     try {
       const identifier = `mcp:${serverName}`;
 
       // Delete both access and refresh tokens
       await Promise.all([
-        this.tokenMethods.updateToken(
+        updateToken(
           {
             userId,
             type: 'mcp_oauth',
@@ -249,7 +283,7 @@ export class MCPTokenStorage {
             expiresAt: new Date(0),
           },
         ),
-        this.tokenMethods.updateToken(
+        updateToken(
           {
             userId,
             type: 'mcp_oauth_refresh',

@@ -2,7 +2,6 @@ import { logger } from '@librechat/data-schemas';
 import { CallToolResultSchema, ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import type { RequestOptions } from '@modelcontextprotocol/sdk/shared/protocol.js';
 import type { JsonSchemaType, MCPOptions, TUser } from 'librechat-data-provider';
-import type { OAuthTokens } from '@modelcontextprotocol/sdk/shared/auth.js';
 import type { TokenMethods } from '@librechat/data-schemas';
 import type { FlowStateManager } from '~/flow/manager';
 import type { MCPOAuthTokens } from './oauth/types';
@@ -33,14 +32,10 @@ export class MCPManager {
   private processMCPEnv?: (obj: MCPOptions, user?: TUser) => MCPOptions; // Store the processing function
   /** Store MCP server instructions */
   private serverInstructions: Map<string, string> = new Map();
-  /** Store OAuth tokens for user connections */
-  private userOAuthTokens: Map<string, Map<string, OAuthTokens>> = new Map();
   /** OAuth handler for managing OAuth flows */
   private oauthHandler?: MCPOAuthHandler;
   /** Flow manager for OAuth state */
   private flowManager?: FlowStateManager<MCPOAuthTokens>;
-  /** Token storage for managing tokens */
-  private tokenStorage?: MCPTokenStorage;
 
   public static getInstance(): MCPManager {
     if (!MCPManager.instance) {
@@ -62,10 +57,6 @@ export class MCPManager {
     this.mcpConfigs = mcpServers;
     this.flowManager = flowManager as FlowStateManager<MCPOAuthTokens> | undefined;
 
-    logger.debug('[MCP] Flow manager provided:', !!flowManager);
-    logger.debug('[MCP] Token methods provided:', !!tokenMethods);
-    logger.debug('[MCP] Creating OAuth handler:', !!flowManager);
-
     if (flowManager) {
       this.oauthHandler = new MCPOAuthHandler(flowManager as FlowStateManager<MCPOAuthTokens>);
       logger.info('[MCP] OAuth handler created successfully');
@@ -74,8 +65,7 @@ export class MCPManager {
     }
 
     if (tokenMethods) {
-      this.tokenStorage = new MCPTokenStorage(tokenMethods);
-      logger.info('[MCP] Token storage created successfully');
+      logger.info('[MCP] Token methods available for token persistence');
     } else {
       logger.info('[MCP] No token methods provided, token persistence will not be available');
     }
@@ -89,9 +79,13 @@ export class MCPManager {
 
         /** Existing tokens for system-level connections */
         let tokens: MCPOAuthTokens | null = null;
-        if (this.tokenStorage) {
+        if (tokenMethods?.findToken) {
           try {
-            tokens = await this.tokenStorage.getTokens(SYSTEM_USER_ID, serverName);
+            tokens = await MCPTokenStorage.getTokens({
+              userId: SYSTEM_USER_ID,
+              serverName,
+              findToken: tokenMethods.findToken,
+            });
           } catch {
             logger.debug(`[MCP][${serverName}] No existing tokens found`);
           }
@@ -109,10 +103,15 @@ export class MCPManager {
           logger.info(`[MCP][${serverName}] oauthRequired event received`);
           const tokens = await this.handleOAuthRequired(data);
 
-          if (tokens && this.tokenStorage) {
+          if (tokens && tokenMethods?.createToken) {
             try {
               connection.setOAuthTokens(tokens);
-              await this.tokenStorage.storeTokens(SYSTEM_USER_ID, serverName, tokens);
+              await MCPTokenStorage.storeTokens({
+                userId: SYSTEM_USER_ID,
+                serverName,
+                tokens,
+                createToken: tokenMethods.createToken,
+              });
               logger.info(`[MCP][${serverName}] OAuth tokens saved to storage`);
             } catch (error) {
               logger.error(`[MCP][${serverName}] Failed to save OAuth tokens to storage`, error);
@@ -334,7 +333,11 @@ export class MCPManager {
   }
 
   /** Gets or creates a connection for a specific user */
-  public async getUserConnection(serverName: string, user: TUser): Promise<MCPConnection> {
+  public async getUserConnection(
+    serverName: string,
+    user: TUser,
+    tokenMethods?: TokenMethods,
+  ): Promise<MCPConnection> {
     const userId = user.id;
     if (!userId) {
       throw new McpError(ErrorCode.InvalidRequest, `[MCP] User object missing id property`);
@@ -389,9 +392,13 @@ export class MCPManager {
 
     /** If no in-memory tokens, tokens from persistent storage */
     let tokens: MCPOAuthTokens | null = null;
-    if (this.tokenStorage) {
+    if (tokenMethods?.findToken) {
       try {
-        tokens = await this.tokenStorage.getTokens(userId, serverName);
+        tokens = await MCPTokenStorage.getTokens({
+          userId,
+          serverName,
+          findToken: tokenMethods.findToken,
+        });
       } catch (error) {
         logger.error(
           `[MCP][User: ${userId}][${serverName}] Error loading OAuth tokens from storage`,
@@ -412,10 +419,15 @@ export class MCPManager {
       logger.info(`[MCP][User: ${userId}][${serverName}] oauthRequired event received`);
       const tokens = await this.handleOAuthRequired(data);
 
-      if (tokens && this.tokenStorage) {
+      if (tokens && tokenMethods?.createToken) {
         try {
           connection?.setOAuthTokens(tokens);
-          await this.tokenStorage.storeTokens(userId, serverName, tokens);
+          await MCPTokenStorage.storeTokens({
+            userId,
+            serverName,
+            tokens,
+            createToken: tokenMethods.createToken,
+          });
           logger.info(`[MCP][User: ${userId}][${serverName}] OAuth tokens saved to storage`);
         } catch (error) {
           logger.error(
@@ -481,15 +493,6 @@ export class MCPManager {
         this.userConnections.delete(userId);
         // Only remove user activity timestamp if all connections are gone
         this.userLastActivity.delete(userId);
-      }
-    }
-
-    // Remove OAuth tokens
-    const tokenMap = this.userOAuthTokens.get(userId);
-    if (tokenMap) {
-      tokenMap.delete(serverName);
-      if (tokenMap.size === 0) {
-        this.userOAuthTokens.delete(userId);
       }
     }
 
@@ -620,12 +623,14 @@ export class MCPManager {
     provider,
     toolArguments,
     options,
+    tokenMethods,
   }: {
     serverName: string;
     toolName: string;
     provider: t.Provider;
     toolArguments?: Record<string, unknown>;
     options?: CallToolOptions;
+    tokenMethods?: TokenMethods;
   }): Promise<t.FormattedToolResponse> {
     let connection: MCPConnection | undefined;
     const { user, ...callOptions } = options ?? {};
@@ -636,7 +641,7 @@ export class MCPManager {
       if (userId && user) {
         this.updateUserLastActivity(userId);
         // Get or create user-specific connection
-        connection = await this.getUserConnection(serverName, user);
+        connection = await this.getUserConnection(serverName, user, tokenMethods);
       } else {
         // Use app-level connection
         connection = this.connections.get(serverName);
