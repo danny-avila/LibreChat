@@ -7,14 +7,11 @@ import type { TokenMethods } from '@librechat/data-schemas';
 import type { FlowStateManager } from '~/flow/manager';
 import type { MCPOAuthTokens } from './oauth/types';
 import type * as t from './types';
+import { CONSTANTS, isSystemUserId } from './enum';
 import { MCPOAuthHandler } from './oauth/handler';
 import { MCPTokenStorage } from './oauth/tokens';
 import { formatToolContent } from './parsers';
 import { MCPConnection } from './connection';
-import { CONSTANTS } from './enum';
-
-/** System user ID for app-level OAuth tokens (all zeros ObjectId) */
-const SYSTEM_USER_ID = '000000000000000000000000';
 
 export interface CallToolOptions extends RequestOptions {
   user?: TUser;
@@ -90,7 +87,7 @@ export class MCPManager {
             };
 
             tokens = await MCPTokenStorage.getTokens({
-              userId: SYSTEM_USER_ID,
+              userId: CONSTANTS.SYSTEM_USER_ID,
               serverName,
               findToken: tokenMethods.findToken,
               refreshTokens: refreshTokensFunction,
@@ -120,7 +117,7 @@ export class MCPManager {
             try {
               connection.setOAuthTokens(result.tokens);
               await MCPTokenStorage.storeTokens({
-                userId: SYSTEM_USER_ID,
+                userId: CONSTANTS.SYSTEM_USER_ID,
                 serverName,
                 tokens: result.tokens,
                 createToken: tokenMethods.createToken,
@@ -420,16 +417,21 @@ export class MCPManager {
         /** Refresh function for user-specific connections */
         const refreshTokensFunction = async (
           refreshToken: string,
-          metadata: { userId: string; serverName: string; identifier: string },
+          metadata: {
+            userId: string;
+            serverName: string;
+            identifier: string;
+            clientInfo?: OAuthClientInformation;
+          },
         ) => {
-          /** URL from connection if available, or from config */
-          const serverUrl =
-            connection?.url || (config as t.SSEOptions | t.StreamableHTTPOptions).url;
+          /** URL from config since connection doesn't exist yet */
+          const serverUrl = (config as t.SSEOptions | t.StreamableHTTPOptions).url;
           return await MCPOAuthHandler.refreshOAuthTokens(
             refreshToken,
             {
               serverName: metadata.serverName,
               serverUrl,
+              clientInfo: metadata.clientInfo,
             },
             config.oauth,
           );
@@ -895,7 +897,7 @@ Please follow these instructions when using tools from the respective MCP server
     serverName,
     serverUrl,
     flowManager,
-    userId = SYSTEM_USER_ID,
+    userId = CONSTANTS.SYSTEM_USER_ID,
     oauthStart,
     oauthEnd,
   }: {
@@ -906,7 +908,7 @@ Please follow these instructions when using tools from the respective MCP server
     oauthStart?: (authURL: string) => void;
     oauthEnd?: () => void;
   }): Promise<{ tokens: MCPOAuthTokens; clientInfo?: OAuthClientInformation } | null> {
-    const userPart = userId && userId !== SYSTEM_USER_ID ? `[User: ${userId}]` : '';
+    const userPart = isSystemUserId(userId) ? '' : `[User: ${userId}]`;
     const logPrefix = `[MCP]${userPart}[${serverName}]`;
     logger.debug(`${logPrefix} \`handleOAuthRequired\` called with serverUrl: ${serverUrl}`);
 

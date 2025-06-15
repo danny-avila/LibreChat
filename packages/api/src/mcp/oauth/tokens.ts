@@ -3,6 +3,7 @@ import type { OAuthTokens, OAuthClientInformation } from '@modelcontextprotocol/
 import type { TokenMethods } from '@librechat/data-schemas';
 import type { MCPOAuthTokens, ExtendedOAuthTokens } from './types';
 import { encryptV2, decryptV2 } from '~/crypto';
+import { isSystemUserId } from '~/mcp/enum';
 
 interface StoreTokensParams {
   userId: string;
@@ -49,6 +50,7 @@ export class MCPTokenStorage {
   }: StoreTokensParams): Promise<void> {
     try {
       const identifier = `mcp:${serverName}`;
+      const userType = isSystemUserId(userId) ? 'app-level connection' : `user ${userId}`;
 
       // Encrypt and store access token
       const encryptedAccessToken = await encryptV2(tokens.access_token);
@@ -135,9 +137,7 @@ export class MCPTokenStorage {
         });
       }
 
-      logger.debug(
-        `[MCPTokenStorage] Stored OAuth tokens for user ${userId}, server ${serverName}`,
-      );
+      logger.debug(`[MCPTokenStorage] Stored OAuth tokens for ${userType}, server ${serverName}`);
     } catch (error) {
       logger.error('[MCPTokenStorage] Failed to store tokens', { error, userId, serverName });
       throw error;
@@ -156,6 +156,7 @@ export class MCPTokenStorage {
   }: GetTokensParams): Promise<MCPOAuthTokens | null> {
     try {
       const identifier = `mcp:${serverName}`;
+      const userType = isSystemUserId(userId) ? 'app-level connection' : `user ${userId}`;
 
       // Get access token
       const accessTokenData = await findToken({
@@ -169,8 +170,8 @@ export class MCPTokenStorage {
       const isExpired = accessTokenData?.expiresAt && new Date() >= accessTokenData.expiresAt;
 
       if (isMissing || isExpired) {
-        logger.debug(
-          `[MCPTokenStorage] Access token ${isMissing ? 'missing' : 'expired'} for user ${userId}, server ${serverName}`,
+        logger.info(
+          `[MCPTokenStorage] Access token ${isMissing ? 'missing' : 'expired'} for ${userType}, server ${serverName}`,
         );
 
         /** Refresh data if we have a refresh token and refresh function */
@@ -181,29 +182,29 @@ export class MCPTokenStorage {
         });
 
         if (!refreshTokenData) {
-          logger.debug(
+          logger.info(
             `[MCPTokenStorage] Access token ${isMissing ? 'missing' : 'expired'} and no refresh token available`,
           );
           return null;
         }
 
         if (!refreshTokens) {
-          logger.debug(
-            `[MCPTokenStorage] Access token ${isMissing ? 'missing' : 'expired'}, refresh token available but no refresh function provided`,
+          logger.warn(
+            `[MCPTokenStorage] Access token ${isMissing ? 'missing' : 'expired'}, refresh token available but no \`refreshTokens\` provided`,
           );
           return null;
         }
 
         if (!updateToken) {
-          logger.debug(
-            `[MCPTokenStorage] Access token ${isMissing ? 'missing' : 'expired'}, refresh token available but no updateToken function provided`,
+          logger.warn(
+            `[MCPTokenStorage] Access token ${isMissing ? 'missing' : 'expired'}, refresh token available but no \`updateToken\` function provided`,
           );
           return null;
         }
 
         try {
-          logger.debug(
-            `[MCPTokenStorage] Attempting to refresh token for user ${userId}, server ${serverName}`,
+          logger.info(
+            `[MCPTokenStorage] Attempting to refresh token for ${userType}, server ${serverName}`,
           );
           const decryptedRefreshToken = await decryptV2(refreshTokenData.token);
 
@@ -244,7 +245,7 @@ export class MCPTokenStorage {
           });
 
           logger.info(
-            `[MCPTokenStorage] Successfully refreshed tokens for user ${userId}, server ${serverName}`,
+            `[MCPTokenStorage] Successfully refreshed tokens for ${userType}, server ${serverName}`,
           );
           return newTokens;
         } catch (refreshError) {
