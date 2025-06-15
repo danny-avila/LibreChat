@@ -48,6 +48,4 @@ async function connectDb() {
   return cached.conn;
 }
 
-module.exports = {
-  connectDb,
-};
+module.exports = { connectDb };
