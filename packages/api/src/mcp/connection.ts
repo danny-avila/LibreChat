@@ -401,7 +401,10 @@ export class MCPConnection extends EventEmitter {
         await Promise.race([
           this.client.connect(this.transport),
           new Promise((_resolve, reject) =>
-            setTimeout(() => reject(new Error('Connection timeout')), connectTimeout),
+            setTimeout(
+              () => reject(new Error(`Connection timeout after ${connectTimeout}ms`)),
+              connectTimeout,
+            ),
           ),
         ]);
 

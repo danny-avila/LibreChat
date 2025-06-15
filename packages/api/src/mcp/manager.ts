@@ -129,8 +129,12 @@ export class MCPManager {
         });
 
         try {
+          const connectTimeout = config.initTimeout ?? 30000;
           const connectionTimeout = new Promise<void>((_, reject) =>
-            setTimeout(() => reject(new Error('Connection timeout')), 30000),
+            setTimeout(
+              () => reject(new Error(`Connection timeout after ${connectTimeout}ms`)),
+              connectTimeout,
+            ),
           );
 
           const connectionAttempt = this.initializeServer(
@@ -455,8 +459,12 @@ export class MCPManager {
     });
 
     try {
+      const connectTimeout = config.initTimeout ?? 30000;
       const connectionTimeout = new Promise<void>((_, reject) =>
-        setTimeout(() => reject(new Error('Connection timeout')), 30000),
+        setTimeout(
+          () => reject(new Error(`Connection timeout after ${connectTimeout}ms`)),
+          connectTimeout,
+        ),
       );
       const connectionAttempt = this.initializeServer(
         connection,
