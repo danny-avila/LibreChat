@@ -12,7 +12,7 @@ import { formatToolContent } from './parsers';
 import { MCPConnection } from './connection';
 import { CONSTANTS } from './enum';
 
-// System user ID for app-level OAuth tokens (all zeros ObjectId)
+/** System user ID for app-level OAuth tokens (all zeros ObjectId) */
 const SYSTEM_USER_ID = '000000000000000000000000';
 
 export interface CallToolOptions extends RequestOptions {
