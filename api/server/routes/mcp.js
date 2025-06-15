@@ -1,10 +1,64 @@
 const { Router } = require('express');
 const { MCPOAuthHandler } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
+const { CacheKeys } = require('librechat-data-provider');
 const { requireJwtAuth } = require('~/server/middleware');
 const { getFlowStateManager } = require('~/config');
+const { getLogStores } = require('~/cache');
 
 const router = Router();
+
+/**
+ * Initiate OAuth flow
+ * This endpoint is called when the user clicks the auth link in the UI
+ */
+router.get('/:serverName/oauth/initiate', requireJwtAuth, async (req, res) => {
+  try {
+    const { serverName } = req.params;
+    const { userId, flowId } = req.query;
+    const user = req.user;
+
+    // Verify the userId matches the authenticated user
+    if (userId !== user.id) {
+      return res.status(403).json({ error: 'User mismatch' });
+    }
+
+    logger.info('[MCP OAuth] Initiate request', { serverName, userId, flowId });
+
+    const flowsCache = getLogStores(CacheKeys.FLOWS);
+    const flowManager = getFlowStateManager(flowsCache);
+
+    // Get the flow state to retrieve OAuth config
+    const flowState = await flowManager.getFlowState(flowId, 'mcp_oauth');
+    if (!flowState) {
+      logger.error('[MCP OAuth] Flow state not found', { flowId });
+      return res.status(404).json({ error: 'Flow not found' });
+    }
+
+    const { serverUrl, oauth: oauthConfig } = flowState.metadata || {};
+    if (!serverUrl || !oauthConfig) {
+      logger.error('[MCP OAuth] Missing server URL or OAuth config in flow state');
+      return res.status(400).json({ error: 'Invalid flow state' });
+    }
+
+    // Create OAuth handler and initiate the flow
+    const oauthHandler = new MCPOAuthHandler(flowManager);
+    const { authorizationUrl, flowId: oauthFlowId } = await oauthHandler.initiateOAuthFlow(
+      serverName,
+      serverUrl,
+      userId,
+      oauthConfig,
+    );
+
+    logger.info('[MCP OAuth] OAuth flow initiated', { oauthFlowId, authorizationUrl });
+
+    // Redirect user to the authorization URL
+    res.redirect(authorizationUrl);
+  } catch (error) {
+    logger.error('[MCP OAuth] Failed to initiate OAuth', error);
+    res.status(500).json({ error: 'Failed to initiate OAuth' });
+  }
+});
 
 /**
  * OAuth callback handler
@@ -41,26 +95,19 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
     const flowId = state;
     logger.info('[MCP OAuth] Using flow ID from state', { flowId });
 
-    const flowsCache = req.app.locals.flowsCache;
-    logger.info('[MCP OAuth] Flow cache available:', !!flowsCache);
-
+    const flowsCache = getLogStores(CacheKeys.FLOWS);
     const flowManager = getFlowStateManager(flowsCache);
-    logger.info('[MCP OAuth] Flow manager created:', !!flowManager);
-
     const oauthHandler = new MCPOAuthHandler(flowManager);
-    logger.info('[MCP OAuth] OAuth handler created');
 
-    // Get flow state to verify it exists
-    logger.info('[MCP OAuth] Getting flow state for flowId:', flowId);
+    logger.debug('[MCP OAuth] Getting flow state for flowId: ' + flowId);
     const flowState = await oauthHandler.getFlowState(flowId);
-    logger.info('[MCP OAuth] Flow state found:', !!flowState);
 
     if (!flowState) {
       logger.error('[MCP OAuth] Flow state not found for flowId:', flowId);
       return res.redirect('/oauth/error?error=invalid_state');
     }
 
-    logger.info('[MCP OAuth] Flow state details', {
+    logger.debug('[MCP OAuth] Flow state details', {
       serverName: flowState.serverName,
       userId: flowState.userId,
       hasMetadata: !!flowState.metadata,
@@ -81,6 +128,13 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
       // 1. Storing tokens in a system-level token store
       // 2. Notifying the MCP manager to retry the connection
       // 3. Using a webhook or event system to trigger reconnection
+    }
+
+    /** ID of the flow that the tool/connection is waiting for */
+    const toolFlowId = flowState.metadata?.toolFlowId;
+    if (toolFlowId) {
+      logger.info('[MCP OAuth] Completing tool flow', { toolFlowId });
+      await flowManager.completeFlow(toolFlowId, 'mcp_oauth', tokens);
     }
 
     // Redirect to success page with flow ID
@@ -111,7 +165,7 @@ router.get('/oauth/tokens/:flowId', requireJwtAuth, async (req, res) => {
       return res.status(403).json({ error: 'Access denied' });
     }
 
-    const flowsCache = req.app.locals.flowsCache;
+    const flowsCache = getLogStores(CacheKeys.FLOWS);
     const flowManager = getFlowStateManager(flowsCache);
 
     const flowState = await flowManager.getFlowState(flowId, 'mcp_oauth');
@@ -137,8 +191,7 @@ router.get('/oauth/tokens/:flowId', requireJwtAuth, async (req, res) => {
 router.get('/oauth/status/:flowId', async (req, res) => {
   try {
     const { flowId } = req.params;
-
-    const flowsCache = req.app.locals.flowsCache;
+    const flowsCache = getLogStores(CacheKeys.FLOWS);
     const flowManager = getFlowStateManager(flowsCache);
 
     const flowState = await flowManager.getFlowState(flowId, 'mcp_oauth');

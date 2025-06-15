@@ -15,12 +15,13 @@ const { logger, getMCPManager } = require('~/config');
  *
  * @param {Object} params - The parameters for loading action sets.
  * @param {ServerRequest} params.req - The Express request object, containing user/request info.
+ * @param {ServerResponse} params.res - The Express response object for sending events.
  * @param {string} params.toolKey - The toolKey for the tool.
  * @param {import('@librechat/agents').Providers | EModelEndpoint} params.provider - The provider for the tool.
  * @param {string} params.model - The model for the tool.
  * @returns { Promise<typeof tool | { _call: (toolInput: Object | string) => unknown}> } An object with `_call` method to execute the tool input.
  */
-async function createMCPTool({ req, toolKey, provider: _provider }) {
+async function createMCPTool({ req, res, toolKey, provider: _provider }) {
   const toolDefinition = req.app.locals.availableTools[toolKey]?.function;
   if (!toolDefinition) {
     logger.error(`Tool ${toolKey} not found in available tools`);
@@ -51,6 +52,7 @@ async function createMCPTool({ req, toolKey, provider: _provider }) {
   /** @type {(toolArguments: Object | string, config?: GraphRunnableConfig) => Promise<unknown>} */
   const _call = async (toolArguments, config) => {
     const userId = config?.configurable?.user?.id || config?.configurable?.user_id;
+
     try {
       const derivedSignal = config?.signal ? AbortSignal.any([config.signal]) : undefined;
       const mcpManager = getMCPManager(userId);
@@ -78,6 +80,20 @@ async function createMCPTool({ req, toolKey, provider: _provider }) {
         `[MCP][User: ${userId}][${serverName}] Error calling "${toolName}" MCP tool:`,
         error,
       );
+
+      /** OAuth error, provide a helpful message */
+      const isOAuthError =
+        error.message?.includes('401') ||
+        error.message?.includes('OAuth') ||
+        error.message?.includes('authentication') ||
+        error.message?.includes('Non-200 status code (401)');
+
+      if (isOAuthError) {
+        throw new Error(
+          `OAuth authentication required for ${serverName}. Please check the server logs for the authentication URL.`,
+        );
+      }
+
       throw new Error(
         `"${toolKey}" tool call failed${error?.message ? `: ${error?.message}` : '.'}`,
       );

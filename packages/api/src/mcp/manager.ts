@@ -88,20 +88,20 @@ export class MCPManager {
         const config = this.processMCPEnv ? this.processMCPEnv(_config) : _config;
 
         /** Existing tokens for system-level connections */
-        let existingTokens: OAuthTokens | undefined;
+        let tokens: MCPOAuthTokens | null = null;
         if (this.tokenStorage) {
           try {
-            const tokens = await this.tokenStorage.getTokens(SYSTEM_USER_ID, serverName);
-            if (tokens) {
-              existingTokens = tokens;
-              logger.info(`[MCP][${serverName}] Loaded existing OAuth tokens`);
-            }
+            tokens = await this.tokenStorage.getTokens(SYSTEM_USER_ID, serverName);
           } catch {
             logger.debug(`[MCP][${serverName}] No existing tokens found`);
           }
         }
 
-        const connection = new MCPConnection(serverName, config, undefined, existingTokens);
+        if (tokens) {
+          logger.info(`[MCP][${serverName}] Loaded existing OAuth tokens`);
+        }
+
+        const connection = new MCPConnection(serverName, config, undefined, tokens);
 
         /** Listen for OAuth requirements */
         logger.info(`[MCP][${serverName}] Setting up OAuth event listener`);
@@ -109,19 +109,13 @@ export class MCPManager {
           logger.info(`[MCP][${serverName}] oauthRequired event received`);
           const tokens = await this.handleOAuthRequired(data);
 
-          if (tokens) {
-            // Set the tokens on the connection
-            connection.setOAuthTokens(tokens);
-            // Store tokens for system-level connections
-            this.storeUserOAuthTokens(SYSTEM_USER_ID, serverName, tokens);
-
-            if (this.tokenStorage) {
-              try {
-                await this.tokenStorage.storeTokens(SYSTEM_USER_ID, serverName, tokens);
-                logger.info(`[MCP][${serverName}] OAuth tokens saved to storage`);
-              } catch (error) {
-                logger.error(`[MCP][${serverName}] Failed to save OAuth tokens to storage`, error);
-              }
+          if (tokens && this.tokenStorage) {
+            try {
+              connection.setOAuthTokens(tokens);
+              await this.tokenStorage.storeTokens(SYSTEM_USER_ID, serverName, tokens);
+              logger.info(`[MCP][${serverName}] OAuth tokens saved to storage`);
+            } catch (error) {
+              logger.error(`[MCP][${serverName}] Failed to save OAuth tokens to storage`, error);
             }
           }
 
@@ -340,11 +334,7 @@ export class MCPManager {
   }
 
   /** Gets or creates a connection for a specific user */
-  public async getUserConnection(
-    serverName: string,
-    user: TUser,
-    oauthTokens?: OAuthTokens,
-  ): Promise<MCPConnection> {
+  public async getUserConnection(serverName: string, user: TUser): Promise<MCPConnection> {
     const userId = user.id;
     if (!userId) {
       throw new McpError(ErrorCode.InvalidRequest, `[MCP] User object missing id property`);
@@ -368,12 +358,6 @@ export class MCPManager {
     } else if (connection) {
       if (await connection.isConnected()) {
         logger.debug(`[MCP][User: ${userId}][${serverName}] Reusing active connection`);
-        // Update OAuth tokens if provided
-        if (oauthTokens) {
-          connection.setOAuthTokens(oauthTokens);
-          this.storeUserOAuthTokens(userId, serverName, oauthTokens);
-        }
-        // Update timestamp on reuse
         this.updateUserLastActivity(userId);
         return connection;
       } else {
@@ -403,20 +387,11 @@ export class MCPManager {
       config = { ...(this.processMCPEnv(config, user) ?? {}) };
     }
 
-    // Get stored OAuth tokens if not provided
-    const tokensToUse = oauthTokens || this.getUserOAuthTokens(userId, serverName);
-
-    // If no in-memory tokens, try loading from persistent storage
-    let persistentTokens: OAuthTokens | undefined;
-    if (!tokensToUse && this.tokenStorage) {
+    /** If no in-memory tokens, tokens from persistent storage */
+    let tokens: MCPOAuthTokens | null = null;
+    if (this.tokenStorage) {
       try {
-        const tokens = await this.tokenStorage.getTokens(userId, serverName);
-        if (tokens) {
-          persistentTokens = tokens;
-          logger.info(
-            `[MCP][User: ${userId}][${serverName}] Loaded existing OAuth tokens from storage`,
-          );
-        }
+        tokens = await this.tokenStorage.getTokens(userId, serverName);
       } catch (error) {
         logger.error(
           `[MCP][User: ${userId}][${serverName}] Error loading OAuth tokens from storage`,
@@ -425,32 +400,28 @@ export class MCPManager {
       }
     }
 
-    const finalTokens = tokensToUse || persistentTokens;
+    if (tokens) {
+      logger.info(
+        `[MCP][User: ${userId}][${serverName}] Loaded existing OAuth tokens from storage`,
+      );
+    }
 
-    connection = new MCPConnection(serverName, config, userId, finalTokens);
+    connection = new MCPConnection(serverName, config, userId, tokens);
 
-    // Listen for OAuth requirements on user connections
     connection.on('oauthRequired', async (data) => {
       logger.info(`[MCP][User: ${userId}][${serverName}] oauthRequired event received`);
       const tokens = await this.handleOAuthRequired(data);
 
-      if (tokens) {
-        // Set the tokens on the connection
-        connection?.setOAuthTokens(tokens);
-        // Store tokens for user connections
-        this.storeUserOAuthTokens(userId, serverName, tokens);
-
-        // Persist tokens to storage
-        if (this.tokenStorage) {
-          try {
-            await this.tokenStorage.storeTokens(userId, serverName, tokens);
-            logger.info(`[MCP][User: ${userId}][${serverName}] OAuth tokens saved to storage`);
-          } catch (error) {
-            logger.error(
-              `[MCP][User: ${userId}][${serverName}] Failed to save OAuth tokens to storage`,
-              error,
-            );
-          }
+      if (tokens && this.tokenStorage) {
+        try {
+          connection?.setOAuthTokens(tokens);
+          await this.tokenStorage.storeTokens(userId, serverName, tokens);
+          logger.info(`[MCP][User: ${userId}][${serverName}] OAuth tokens saved to storage`);
+        } catch (error) {
+          logger.error(
+            `[MCP][User: ${userId}][${serverName}] Failed to save OAuth tokens to storage`,
+            error,
+          );
         }
       }
 
@@ -481,11 +452,6 @@ export class MCPManager {
       }
       this.userConnections.get(userId)?.set(serverName, connection);
 
-      // Store OAuth tokens if provided
-      if (finalTokens) {
-        this.storeUserOAuthTokens(userId, serverName, finalTokens);
-      }
-
       logger.info(`[MCP][User: ${userId}][${serverName}] Connection successfully established`);
       // Update timestamp on creation
       this.updateUserLastActivity(userId);
@@ -503,19 +469,6 @@ export class MCPManager {
       this.removeUserConnection(userId, serverName);
       throw error; // Re-throw the error to the caller
     }
-  }
-
-  /** Stores OAuth tokens for a user connection */
-  private storeUserOAuthTokens(userId: string, serverName: string, tokens: OAuthTokens): void {
-    if (!this.userOAuthTokens.has(userId)) {
-      this.userOAuthTokens.set(userId, new Map());
-    }
-    this.userOAuthTokens.get(userId)?.set(serverName, tokens);
-  }
-
-  /** Gets stored OAuth tokens for a user connection */
-  private getUserOAuthTokens(userId: string, serverName: string): OAuthTokens | undefined {
-    return this.userOAuthTokens.get(userId)?.get(serverName);
   }
 
   /** Removes a specific user connection entry */

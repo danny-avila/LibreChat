@@ -11,7 +11,7 @@ import { ResourceListChangedNotificationSchema } from '@modelcontextprotocol/sdk
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js';
-import type { OAuthTokens } from '@modelcontextprotocol/sdk/shared/auth.js';
+import type { MCPOAuthTokens } from './oauth/types';
 import type * as t from './types';
 
 function isStdioOptions(options: t.MCPOptions): options is t.StdioOptions {
@@ -70,7 +70,7 @@ export class MCPConnection extends EventEmitter {
   private reconnectAttempts = 0;
   private readonly userId?: string;
   private lastPingTime: number;
-  private oauthTokens?: OAuthTokens;
+  private oauthTokens?: MCPOAuthTokens | null;
   private oauthRequired = false;
   iconPath?: string;
   timeout?: number;
@@ -80,7 +80,7 @@ export class MCPConnection extends EventEmitter {
     serverName: string,
     private readonly options: t.MCPOptions,
     userId?: string,
-    oauthTokens?: OAuthTokens,
+    oauthTokens?: MCPOAuthTokens | null,
   ) {
     super();
     this.serverName = serverName;
@@ -88,7 +88,9 @@ export class MCPConnection extends EventEmitter {
     this.iconPath = options.iconPath;
     this.timeout = options.timeout;
     this.lastPingTime = Date.now();
-    this.oauthTokens = oauthTokens;
+    if (oauthTokens) {
+      this.oauthTokens = oauthTokens;
+    }
     this.client = new Client(
       {
         name: '@librechat/api-client',
@@ -112,10 +114,9 @@ export class MCPConnection extends EventEmitter {
     serverName: string,
     options: t.MCPOptions,
     userId?: string,
-    oauthTokens?: OAuthTokens,
   ): MCPConnection {
     if (!MCPConnection.instance) {
-      MCPConnection.instance = new MCPConnection(serverName, options, userId, oauthTokens);
+      MCPConnection.instance = new MCPConnection(serverName, options, userId);
     }
     return MCPConnection.instance;
   }
@@ -183,7 +184,7 @@ export class MCPConnection extends EventEmitter {
           logger.info(`${this.getLogPrefix()} Creating SSE transport: ${url.toString()}`);
           const abortController = new AbortController();
 
-          // Add OAuth token to headers if available
+          /** Add OAuth token to headers if available */
           const headers = { ...options.headers };
           if (this.oauthTokens?.access_token) {
             headers['Authorization'] = `Bearer ${this.oauthTokens.access_token}`;
@@ -419,14 +420,15 @@ export class MCPConnection extends EventEmitter {
           const serverUrl = this.url;
           logger.info(`${this.getLogPrefix()} Server URL for OAuth: ${serverUrl}`);
 
-          // Create a promise that will resolve when OAuth is handled
+          const oauthTimeout = this.options.initTimeout ?? 60000;
+          /** Promise that will resolve when OAuth is handled */
           const oauthHandledPromise = new Promise<void>((resolve) => {
             const timeout = setTimeout(() => {
-              logger.warn(`${this.getLogPrefix()} OAuth handling timeout`);
+              logger.warn(`${this.getLogPrefix()} OAuth handling timeout after ${oauthTimeout}ms`);
               resolve();
-            }, 60000); // 60 second timeout for OAuth
+            }, oauthTimeout);
 
-            // Listen for a signal that OAuth has been handled
+            /** Listen for a signal that OAuth has been handled */
             this.once('oauthHandled', () => {
               clearTimeout(timeout);
               resolve();
@@ -454,7 +456,6 @@ export class MCPConnection extends EventEmitter {
 
         this.connectionState = 'error';
         this.emit('connectionChange', 'error');
-        this.lastError = error instanceof Error ? error : new Error(String(error));
         throw error;
       } finally {
         this.connectPromise = null;
@@ -639,11 +640,6 @@ export class MCPConnection extends EventEmitter {
   //   }
   // }
 
-  // Public getters for state information
-  public getConnectionState(): t.ConnectionState {
-    return this.connectionState;
-  }
-
   public async isConnected(): Promise<boolean> {
     try {
       await this.client.ping();
@@ -654,11 +650,7 @@ export class MCPConnection extends EventEmitter {
     }
   }
 
-  public getLastError(): Error | null {
-    return this.lastError;
-  }
-
-  public setOAuthTokens(tokens: OAuthTokens): void {
+  public setOAuthTokens(tokens: MCPOAuthTokens): void {
     this.oauthTokens = tokens;
   }
 
