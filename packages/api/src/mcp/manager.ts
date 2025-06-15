@@ -906,7 +906,7 @@ Please follow these instructions when using tools from the respective MCP server
     oauthStart?: (authURL: string) => void;
     oauthEnd?: () => void;
   }): Promise<{ tokens: MCPOAuthTokens; clientInfo?: OAuthClientInformation } | null> {
-    const userPart = userId ? `[User: ${userId}]` : '';
+    const userPart = userId && userId !== SYSTEM_USER_ID ? `[User: ${userId}]` : '';
     const logPrefix = `[MCP]${userPart}[${serverName}]`;
     logger.debug(`${logPrefix} \`handleOAuthRequired\` called with serverUrl: ${serverUrl}`);
 
@@ -930,9 +930,11 @@ Please follow these instructions when using tools from the respective MCP server
         flowManager,
       );
 
-      oauthStart?.(authorizationUrl);
-
-      logger.info(`
+      if (typeof oauthStart === 'function') {
+        logger.info(`${logPrefix} OAuth flow started, issued authorization URL to user`);
+        oauthStart(authorizationUrl);
+      } else {
+        logger.info(`
 ═══════════════════════════════════════════════════════════════════════
 Please visit the following URL to authenticate:
 
@@ -941,6 +943,7 @@ ${authorizationUrl}
 ${logPrefix} Flow ID: ${flowId}
 ═══════════════════════════════════════════════════════════════════════
 `);
+      }
 
       /** Awaited tokens from successful OAuth completion + exchange */
       const tokens = await flowManager.createFlow(flowId, 'mcp_oauth');
