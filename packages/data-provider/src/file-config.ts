@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { EModelEndpoint } from './schemas';
-import type { FileConfig, EndpointFileConfig } from './types/files';
+import type { EndpointFileConfig, FileConfig } from './types/files';
 
 export const supportsFiles = {
   [EModelEndpoint.openAI]: true,
@@ -187,6 +187,12 @@ export const fileConfig = {
   },
   serverFileSizeLimit: defaultSizeLimit,
   avatarSizeLimit: mbToBytes(2),
+  clientSideImageResize: {
+    enabled: false, // Disabled by default as per Danny's requirement
+    maxWidth: 1900,
+    maxHeight: 1900,
+    quality: 0.92,
+  },
   checkType: function (fileType: string, supportedTypes: RegExp[] = supportedMimeTypes) {
     return supportedTypes.some((regex) => regex.test(fileType));
   },
@@ -227,6 +233,14 @@ export const fileConfigSchema = z.object({
       px: z.number().min(0).optional(),
     })
     .optional(),
+  clientSideImageResize: z
+    .object({
+      enabled: z.boolean().optional(),
+      maxWidth: z.number().min(0).optional(),
+      maxHeight: z.number().min(0).optional(),
+      quality: z.number().min(0).max(1).optional(),
+    })
+    .optional(),
 });
 
 /** Helper function to safely convert string patterns to RegExp objects */
@@ -253,6 +267,14 @@ export function mergeFileConfig(dynamic: z.infer<typeof fileConfigSchema> | unde
 
   if (dynamic.avatarSizeLimit !== undefined) {
     mergedConfig.avatarSizeLimit = mbToBytes(dynamic.avatarSizeLimit);
+  }
+
+  // Merge clientSideImageResize configuration
+  if (dynamic.clientSideImageResize !== undefined) {
+    mergedConfig.clientSideImageResize = {
+      ...mergedConfig.clientSideImageResize,
+      ...dynamic.clientSideImageResize,
+    };
   }
 
   if (!dynamic.endpoints) {

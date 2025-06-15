@@ -1,24 +1,25 @@
-import { v4 } from 'uuid';
-import debounce from 'lodash/debounce';
 import { useQueryClient } from '@tanstack/react-query';
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import {
-  QueryKeys,
-  EModelEndpoint,
-  mergeFileConfig,
-  isAgentsEndpoint,
-  isAssistantsEndpoint,
-  defaultAssistantsVersion,
-  fileConfig as defaultFileConfig,
-} from 'librechat-data-provider';
 import type { TEndpointsConfig, TError } from 'librechat-data-provider';
+import {
+    defaultAssistantsVersion,
+    fileConfig as defaultFileConfig,
+    EModelEndpoint,
+    isAgentsEndpoint,
+    isAssistantsEndpoint,
+    mergeFileConfig,
+    QueryKeys,
+} from 'librechat-data-provider';
+import debounce from 'lodash/debounce';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { v4 } from 'uuid';
 import type { ExtendedFile, FileSetter } from '~/common';
-import { useUploadFileMutation, useGetFileConfig } from '~/data-provider';
+import { useGetFileConfig, useUploadFileMutation } from '~/data-provider';
 import useLocalize, { TranslationKeys } from '~/hooks/useLocalize';
-import { useDelayedUploadToast } from './useDelayedUploadToast';
-import { useToastContext } from '~/Providers/ToastContext';
 import { useChatContext } from '~/Providers/ChatContext';
+import { useToastContext } from '~/Providers/ToastContext';
 import { logger, validateFiles } from '~/utils';
+import useClientSideResize from './useClientSideResize';
+import { useDelayedUploadToast } from './useDelayedUploadToast';
 import useUpdateFiles from './useUpdateFiles';
 
 type UseFileHandling = {
@@ -40,6 +41,7 @@ const useFileHandling = (params?: UseFileHandling) => {
   const { addFile, replaceFile, updateFileById, deleteFileById } = useUpdateFiles(
     params?.fileSetter ?? setFiles,
   );
+  const { resizeImageIfNeeded } = useClientSideResize();
 
   const agent_id = params?.additionalMetadata?.agent_id ?? '';
   const assistant_id = params?.additionalMetadata?.assistant_id ?? '';
@@ -262,21 +264,48 @@ const useFileHandling = (params?: UseFileHandling) => {
     for (const originalFile of fileList) {
       const file_id = v4();
       try {
-        const preview = URL.createObjectURL(originalFile);
+        let processedFile = originalFile;
+        
+        // Apply client-side resizing if available and appropriate
+        if (originalFile.type.startsWith('image/')) {
+          try {
+            const resizeResult = await resizeImageIfNeeded(originalFile);
+            processedFile = resizeResult.file;
+            
+            // Show toast notification if image was resized
+            if (resizeResult.resized && resizeResult.result) {
+              const { originalSize, newSize, compressionRatio } = resizeResult.result;
+              const originalSizeMB = (originalSize / (1024 * 1024)).toFixed(1);
+              const newSizeMB = (newSize / (1024 * 1024)).toFixed(1);
+              const savedPercent = Math.round((1 - compressionRatio) * 100);
+              
+              showToast({
+                message: `Image resized: ${originalSizeMB}MB → ${newSizeMB}MB (${savedPercent}% smaller)`,
+                status: 'success',
+                duration: 3000,
+              });
+            }
+          } catch (resizeError) {
+            console.warn('Image resize failed, using original:', resizeError);
+            // Continue with original file if resizing fails
+          }
+        }
+
+        const preview = URL.createObjectURL(processedFile);
         const extendedFile: ExtendedFile = {
           file_id,
-          file: originalFile,
-          type: originalFile.type,
+          file: processedFile,
+          type: processedFile.type,
           preview,
           progress: 0.2,
-          size: originalFile.size,
+          size: processedFile.size,
         };
 
         if (_toolResource != null && _toolResource !== '') {
           extendedFile.tool_resource = _toolResource;
         }
 
-        const isImage = originalFile.type.split('/')[0] === 'image';
+        const isImage = processedFile.type.split('/')[0] === 'image';
         const tool_resource =
           extendedFile.tool_resource ?? params?.additionalMetadata?.tool_resource;
         if (isAgentsEndpoint(endpoint) && !isImage && tool_resource == null) {
