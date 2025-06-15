@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { EModelEndpoint } from './schemas';
-import type { FileConfig, EndpointFileConfig } from './types/files';
+import type { EndpointFileConfig, FileConfig } from './types/files';
 
 export const supportsFiles = {
   [EModelEndpoint.openAI]: true,
@@ -49,6 +49,8 @@ export const fullMimeTypesList = [
   'text/javascript',
   'image/gif',
   'image/png',
+  'image/heic',
+  'image/heif',
   'application/x-tar',
   'application/typescript',
   'application/xml',
@@ -80,6 +82,8 @@ export const codeInterpreterMimeTypesList = [
   'text/javascript',
   'image/gif',
   'image/png',
+  'image/heic',
+  'image/heif',
   'application/x-tar',
   'application/typescript',
   'application/xml',
@@ -105,7 +109,7 @@ export const retrievalMimeTypesList = [
   'text/plain',
 ];
 
-export const imageExtRegex = /\.(jpg|jpeg|png|gif|webp)$/i;
+export const imageExtRegex = /\.(jpg|jpeg|png|gif|webp|heic|heif)$/i;
 
 export const excelMimeTypes =
   /^application\/(vnd\.ms-excel|msexcel|x-msexcel|x-ms-excel|x-excel|x-dos_ms_excel|xls|x-xls|vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet)$/;
@@ -116,7 +120,7 @@ export const textMimeTypes =
 export const applicationMimeTypes =
   /^(application\/(epub\+zip|csv|json|pdf|x-tar|typescript|vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|presentationml\.presentation|spreadsheetml\.sheet)|xml|zip))$/;
 
-export const imageMimeTypes = /^image\/(jpeg|gif|png|webp)$/;
+export const imageMimeTypes = /^image\/(jpeg|gif|png|webp|heic|heif)$/;
 
 export const supportedMimeTypes = [
   textMimeTypes,
