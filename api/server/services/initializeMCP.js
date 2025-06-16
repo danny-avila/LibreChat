@@ -10,8 +10,8 @@ const { findToken, updateToken, createToken, deleteTokens } = require('~/models'
  * @param {import('express').Application} app - Express app instance
  */
 async function initializeMCP(app) {
-  const mcpConfig = app.locals.mcpConfig;
-  if (!mcpConfig) {
+  const mcpServers = app.locals.mcpConfig;
+  if (!mcpServers) {
     return;
   }
 
@@ -21,11 +21,16 @@ async function initializeMCP(app) {
   const flowManager = flowsCache ? getFlowStateManager(flowsCache) : null;
 
   try {
-    await mcpManager.initializeMCP(mcpConfig, processMCPEnv, flowManager, {
-      findToken,
-      updateToken,
-      createToken,
-      deleteTokens,
+    await mcpManager.initializeMCP({
+      mcpServers,
+      flowManager,
+      tokenMethods: {
+        findToken,
+        updateToken,
+        createToken,
+        deleteTokens,
+      },
+      processMCPEnv,
     });
 
     delete app.locals.mcpConfig;
@@ -37,7 +42,7 @@ async function initializeMCP(app) {
     }
 
     const toolsCopy = { ...availableTools };
-    await mcpManager.mapAvailableTools(toolsCopy);
+    await mcpManager.mapAvailableTools(toolsCopy, flowManager);
     await setCachedTools(toolsCopy, { isGlobal: true });
 
     logger.info('MCP servers initialized successfully');

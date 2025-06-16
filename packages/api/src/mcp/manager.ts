@@ -42,12 +42,17 @@ export class MCPManager {
   }
 
   /** Stores configs and initializes app-level connections */
-  public async initializeMCP(
-    mcpServers: t.MCPServers,
-    processMCPEnv?: (obj: MCPOptions) => MCPOptions,
-    flowManager?: FlowStateManager<MCPOAuthTokens>,
-    tokenMethods?: TokenMethods,
-  ): Promise<void> {
+  public async initializeMCP({
+    mcpServers,
+    flowManager,
+    tokenMethods,
+    processMCPEnv,
+  }: {
+    mcpServers: t.MCPServers;
+    flowManager: FlowStateManager<MCPOAuthTokens | null>;
+    tokenMethods?: TokenMethods;
+    processMCPEnv?: (obj: MCPOptions) => MCPOptions;
+  }): Promise<void> {
     this.processMCPEnv = processMCPEnv; // Store the function
     this.mcpConfigs = mcpServers;
 
@@ -93,14 +98,22 @@ export class MCPManager {
               );
             };
 
-            tokens = await MCPTokenStorage.getTokens({
-              userId: CONSTANTS.SYSTEM_USER_ID,
-              serverName,
-              findToken: tokenMethods.findToken,
-              refreshTokens: refreshTokensFunction,
-              createToken: tokenMethods.createToken,
-              updateToken: tokenMethods.updateToken,
-            });
+            /** Flow state to prevent concurrent token operations */
+            const tokenFlowId = `tokens:${CONSTANTS.SYSTEM_USER_ID}:${serverName}`;
+            tokens = await flowManager.createFlowWithHandler(
+              tokenFlowId,
+              'mcp_get_tokens',
+              async () => {
+                return await MCPTokenStorage.getTokens({
+                  userId: CONSTANTS.SYSTEM_USER_ID,
+                  serverName,
+                  findToken: tokenMethods.findToken,
+                  refreshTokens: refreshTokensFunction,
+                  createToken: tokenMethods.createToken,
+                  updateToken: tokenMethods.updateToken,
+                });
+              },
+            );
           } catch {
             logger.debug(`[MCP][${serverName}] No existing tokens found`);
           }
@@ -158,12 +171,12 @@ export class MCPManager {
             ),
           );
 
-          const connectionAttempt = this.initializeServer(
+          const connectionAttempt = this.initializeServer({
             connection,
-            `[MCP][${serverName}]`,
-            false,
+            logPrefix: `[MCP][${serverName}]`,
             flowManager,
-          );
+            handleOAuth: false,
+          });
           await Promise.race([connectionAttempt, connectionTimeout]);
 
           if (await connection.isConnected()) {
@@ -255,12 +268,17 @@ export class MCPManager {
   }
 
   /** Generic server initialization logic */
-  private async initializeServer(
-    connection: MCPConnection,
-    logPrefix: string,
+  private async initializeServer({
+    connection,
+    logPrefix,
+    flowManager,
     handleOAuth = true,
-    flowManager?: FlowStateManager<MCPOAuthTokens>,
-  ): Promise<void> {
+  }: {
+    connection: MCPConnection;
+    logPrefix: string;
+    flowManager: FlowStateManager<MCPOAuthTokens | null>;
+    handleOAuth?: boolean;
+  }): Promise<void> {
     const maxAttempts = 3;
     let attempts = 0;
     /** Whether OAuth has been handled by the connection */
@@ -370,7 +388,7 @@ export class MCPManager {
   }: {
     user: TUser;
     serverName: string;
-    flowManager?: FlowStateManager<MCPOAuthTokens>;
+    flowManager: FlowStateManager<MCPOAuthTokens | null>;
     tokenMethods?: TokenMethods;
     oauthStart?: (authURL: string) => Promise<void>;
     oauthEnd?: () => Promise<void>;
@@ -454,14 +472,22 @@ export class MCPManager {
           );
         };
 
-        tokens = await MCPTokenStorage.getTokens({
-          userId,
-          serverName,
-          findToken: tokenMethods.findToken,
-          refreshTokens: refreshTokensFunction,
-          createToken: tokenMethods.createToken,
-          updateToken: tokenMethods.updateToken,
-        });
+        /** Flow state to prevent concurrent token operations */
+        const tokenFlowId = `tokens:${userId}:${serverName}`;
+        tokens = await flowManager.createFlowWithHandler(
+          tokenFlowId,
+          'mcp_get_tokens',
+          async () => {
+            return await MCPTokenStorage.getTokens({
+              userId,
+              serverName,
+              findToken: tokenMethods.findToken,
+              refreshTokens: refreshTokensFunction,
+              createToken: tokenMethods.createToken,
+              updateToken: tokenMethods.updateToken,
+            });
+          },
+        );
       } catch (error) {
         logger.error(
           `[MCP][User: ${userId}][${serverName}] Error loading OAuth tokens from storage`,
@@ -526,12 +552,11 @@ export class MCPManager {
           connectTimeout,
         ),
       );
-      const connectionAttempt = this.initializeServer(
+      const connectionAttempt = this.initializeServer({
         connection,
-        `[MCP][User: ${userId}][${serverName}]`,
-        true,
+        logPrefix: `[MCP][User: ${userId}][${serverName}]`,
         flowManager,
-      );
+      });
       await Promise.race([connectionAttempt, connectionTimeout]);
 
       if (!(await connection?.isConnected())) {
@@ -627,6 +652,7 @@ export class MCPManager {
   private async isConnectionActive(
     serverName: string,
     connection: MCPConnection,
+    flowManager: FlowStateManager<MCPOAuthTokens | null>,
   ): Promise<boolean> {
     if (await connection.isConnected()) {
       return true;
@@ -643,7 +669,11 @@ export class MCPManager {
         return false;
       }
 
-      await this.initializeServer(connection, `[MCP][${serverName}]`);
+      await this.initializeServer({
+        connection,
+        logPrefix: `[MCP][${serverName}]`,
+        flowManager,
+      });
 
       if (await connection.isConnected()) {
         logger.info(`[MCP][${serverName}] App-level connection successfully reconnected`);
@@ -662,11 +692,14 @@ export class MCPManager {
    * Maps available tools from all app-level connections into the provided object.
    * The object is modified in place.
    */
-  public async mapAvailableTools(availableTools: t.LCAvailableTools): Promise<void> {
+  public async mapAvailableTools(
+    availableTools: t.LCAvailableTools,
+    flowManager: FlowStateManager<MCPOAuthTokens | null>,
+  ): Promise<void> {
     for (const [serverName, connection] of this.connections.entries()) {
       try {
         /** Attempt to ensure connection is active, with reconnection if needed */
-        const isActive = await this.isConnectionActive(serverName, connection);
+        const isActive = await this.isConnectionActive(serverName, connection, flowManager);
         if (!isActive) {
           logger.warn(`[MCP][${serverName}] Connection not available. Skipping tool mapping.`);
           continue;
@@ -693,13 +726,16 @@ export class MCPManager {
   /**
    * Loads tools from all app-level connections into the manifest.
    */
-  public async loadManifestTools(manifestTools: t.LCToolManifest): Promise<t.LCToolManifest> {
+  public async loadManifestTools(
+    manifestTools: t.LCToolManifest,
+    flowManager: FlowStateManager<MCPOAuthTokens | null>,
+  ): Promise<t.LCToolManifest> {
     const mcpTools: t.LCManifestTool[] = [];
 
     for (const [serverName, connection] of this.connections.entries()) {
       try {
         /** Attempt to ensure connection is active, with reconnection if needed */
-        const isActive = await this.isConnectionActive(serverName, connection);
+        const isActive = await this.isConnectionActive(serverName, connection, flowManager);
         if (!isActive) {
           logger.warn(
             `[MCP][${serverName}] Connection not available for ${serverName} manifest loading. Skipping...`,
@@ -752,7 +788,7 @@ export class MCPManager {
     toolArguments?: Record<string, unknown>;
     options?: CallToolOptions;
     tokenMethods?: TokenMethods;
-    flowManager?: FlowStateManager<MCPOAuthTokens>;
+    flowManager: FlowStateManager<MCPOAuthTokens | null>;
     oauthStart?: (authURL: string) => Promise<void>;
     oauthEnd?: () => Promise<void>;
   }): Promise<t.FormattedToolResponse> {
@@ -928,12 +964,12 @@ Please follow these instructions when using tools from the respective MCP server
     oauthEnd,
   }: {
     serverName: string;
-    serverUrl?: string;
+    flowManager: FlowStateManager<MCPOAuthTokens | null>;
     userId?: string;
-    flowManager?: FlowStateManager<MCPOAuthTokens>;
+    serverUrl?: string;
     oauthStart?: (authURL: string) => Promise<void>;
     oauthEnd?: () => Promise<void>;
-  }): Promise<{ tokens: MCPOAuthTokens; clientInfo?: OAuthClientInformation } | null> {
+  }): Promise<{ tokens: MCPOAuthTokens | null; clientInfo?: OAuthClientInformation } | null> {
     const userPart = isSystemUserId(userId) ? '' : `[User: ${userId}]`;
     const logPrefix = `[MCP]${userPart}[${serverName}]`;
     logger.debug(`${logPrefix} \`handleOAuthRequired\` called with serverUrl: ${serverUrl}`);

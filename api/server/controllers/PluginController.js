@@ -1,8 +1,8 @@
 const { CacheKeys, AuthType } = require('librechat-data-provider');
 const { getCustomConfig, getCachedTools } = require('~/server/services/Config');
 const { getToolkitKey } = require('~/server/services/ToolService');
+const { getMCPManager, getFlowStateManager } = require('~/config');
 const { availableTools } = require('~/app/clients/tools');
-const { getMCPManager } = require('~/config');
 const { getLogStores } = require('~/cache');
 
 /**
@@ -109,7 +109,9 @@ const getAvailableTools = async (req, res) => {
     const customConfig = await getCustomConfig();
     if (customConfig?.mcpServers != null) {
       const mcpManager = getMCPManager();
-      pluginManifest = await mcpManager.loadManifestTools(pluginManifest);
+      const flowsCache = getLogStores(CacheKeys.FLOWS);
+      const flowManager = flowsCache ? getFlowStateManager(flowsCache) : null;
+      pluginManifest = await mcpManager.loadManifestTools(pluginManifest, flowManager);
     }
 
     /** @type {TPlugin[]} */
