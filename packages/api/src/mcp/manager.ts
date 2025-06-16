@@ -385,6 +385,7 @@ export class MCPManager {
     tokenMethods,
     oauthStart,
     oauthEnd,
+    signal,
   }: {
     user: TUser;
     serverName: string;
@@ -392,6 +393,7 @@ export class MCPManager {
     tokenMethods?: TokenMethods;
     oauthStart?: (authURL: string) => Promise<void>;
     oauthEnd?: () => Promise<void>;
+    signal?: AbortSignal;
   }): Promise<MCPConnection> {
     const userId = user.id;
     if (!userId) {
@@ -487,6 +489,7 @@ export class MCPManager {
               updateToken: tokenMethods.updateToken,
             });
           },
+          signal,
         );
       } catch (error) {
         logger.error(
@@ -809,6 +812,7 @@ export class MCPManager {
           tokenMethods,
           oauthStart,
           oauthEnd,
+          signal: options?.signal,
         });
       } else {
         /** App-level connection */
