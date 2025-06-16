@@ -1,4 +1,15 @@
-export * from './schemaMethods';
+export * from './avatar';
+import { webcrypto } from 'node:crypto';
+import bcrypt from 'bcryptjs';
+/**
+ * Creates Token and corresponding Hash for verification
+ * @returns {[string, string]}
+ */
+const createTokenHash = (): [string, string] => {
+  const token: string = Buffer.from(webcrypto.getRandomValues(new Uint8Array(32))).toString('hex');
+  const hash: string = bcrypt.hashSync(token, 10);
+  return [token, hash];
+};
 
 /**
  * Checks if the given value is truthy by being either the boolean `true` or a string
@@ -18,7 +29,7 @@ export * from './schemaMethods';
  * isEnabled(null);    // returns false
  * isEnabled();        // returns false
  */
-export function isEnabled(value: boolean | string) {
+function isEnabled(value: boolean | string) {
   if (typeof value === 'boolean') {
     return value;
   }
@@ -28,7 +39,7 @@ export function isEnabled(value: boolean | string) {
   return false;
 }
 
-export function checkEmailConfig() {
+function checkEmailConfig() {
   return (
     (!!process.env.EMAIL_SERVICE || !!process.env.EMAIL_HOST) &&
     !!process.env.EMAIL_USERNAME &&
@@ -36,3 +47,9 @@ export function checkEmailConfig() {
     !!process.env.EMAIL_FROM
   );
 }
+
+export { checkEmailConfig, isEnabled, createTokenHash };
+// export this helper so we can mock them
+export { sendEmail, sendVerificationEmail, verifyEmail, resendVerificationEmail } from './email';
+export { resizeAvatar, resizeAndConvert, getAvatarProcessFunction } from './avatar';
+export { requestPasswordReset, resetPassword } from './password';

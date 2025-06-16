@@ -1,6 +1,6 @@
 // file deepcode ignore NoHardcodedPasswords: No hard-coded passwords in tests
 const { errorsToString } = require('librechat-data-provider');
-const { loginSchema, registerSchema } = require('./validators');
+const { loginSchema, registerSchema } = require('@librechat/auth');
 
 describe('Zod Schemas', () => {
   describe('loginSchema', () => {
@@ -258,7 +258,7 @@ describe('Zod Schemas', () => {
         email: 'john@example.com',
         password: 'password123',
         confirm_password: 'password123',
-        extraField: 'I shouldn\'t be here',
+        extraField: "I shouldn't be here",
       });
       expect(result.success).toBe(true);
     });
@@ -407,7 +407,7 @@ describe('Zod Schemas', () => {
         'john{doe}', // Contains `{` and `}`
         'j', // Only one character
         'a'.repeat(81), // More than 80 characters
-        '\' OR \'1\'=\'1\'; --', // SQL Injection
+        "' OR '1'='1'; --", // SQL Injection
         '{$ne: null}', // MongoDB Injection
         '<script>alert("XSS")</script>', // Basic XSS
         '"><script>alert("XSS")</script>', // XSS breaking out of an attribute

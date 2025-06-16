@@ -1,7 +1,8 @@
-const { Strategy: GoogleStrategy } = require('passport-google-oauth20');
-const socialLogin = require('./socialLogin');
+import { Strategy as GoogleStrategy, Profile } from 'passport-google-oauth20';
+import socialLogin from './socialLogin';
+import { GetProfileDetails } from './types';
 
-const getProfileDetails = ({ profile }) => ({
+const getProfileDetails: GetProfileDetails = ({ profile }: Profile) => ({
   email: profile.emails[0].value,
   id: profile.id,
   avatarUrl: profile.photos[0].value,
@@ -10,9 +11,9 @@ const getProfileDetails = ({ profile }) => ({
   emailVerified: profile.emails[0].verified,
 });
 
-const googleLogin = socialLogin('google', getProfileDetails);
+const googleStrategy = socialLogin('google', getProfileDetails);
 
-module.exports = () =>
+const googleLogin = () =>
   new GoogleStrategy(
     {
       clientID: process.env.GOOGLE_CLIENT_ID,
@@ -20,5 +21,7 @@ module.exports = () =>
       callbackURL: `${process.env.DOMAIN_SERVER}${process.env.GOOGLE_CALLBACK_URL}`,
       proxy: true,
     },
-    googleLogin,
+    googleStrategy,
   );
+
+export default googleLogin;

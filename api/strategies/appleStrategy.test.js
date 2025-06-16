@@ -1,14 +1,10 @@
-const jwt = require('jsonwebtoken');
 const mongoose = require('mongoose');
-const { logger } = require('@librechat/data-schemas');
 const { Strategy: AppleStrategy } = require('passport-apple');
 const { MongoMemoryServer } = require('mongodb-memory-server');
-const { createSocialUser, handleExistingUser } = require('./process');
-const { isEnabled } = require('~/server/utils');
-const socialLogin = require('./socialLogin');
-const { findUser } = require('~/models');
+
 const { User } = require('~/db/models');
 
+const findUser = jest.fn();
 jest.mock('jsonwebtoken');
 jest.mock('@librechat/data-schemas', () => {
   const actualModule = jest.requireActual('@librechat/data-schemas');
@@ -18,19 +14,32 @@ jest.mock('@librechat/data-schemas', () => {
       error: jest.fn(),
       debug: jest.fn(),
     },
+    createMethods: jest.fn(() => {
+      return { findUser };
+    }),
   };
 });
-jest.mock('./process', () => ({
-  createSocialUser: jest.fn(),
-  handleExistingUser: jest.fn(),
-}));
+
+jest.mock('../../packages/auth/src/strategies/helpers', () => {
+  const actualModule = jest.requireActual('../../packages/auth/src/strategies/helpers');
+  return {
+    ...actualModule,
+    createSocialUser: jest.fn(),
+    handleExistingUser: jest.fn(),
+  };
+});
 jest.mock('~/server/utils', () => ({
   isEnabled: jest.fn(),
 }));
-jest.mock('~/models', () => ({
-  findUser: jest.fn(),
-}));
 
+const jwt = require('jsonwebtoken');
+const { logger } = require('@librechat/data-schemas');
+const { isEnabled } = require('~/server/utils');
+const {
+  createSocialUser,
+  handleExistingUser,
+} = require('../../packages/auth/src/strategies/helpers');
+const { socialLogin } = require('../../packages/auth/src/strategies/socialLogin');
 describe('Apple Login Strategy', () => {
   let mongoServer;
   let appleStrategyInstance;
@@ -107,6 +116,7 @@ describe('Apple Login Strategy', () => {
 
     // Initialize the strategy with the mocked getProfileDetails
     const appleLogin = socialLogin('apple', getProfileDetails);
+
     appleStrategyInstance = new AppleStrategy(
       {
         clientID: process.env.APPLE_CLIENT_ID,
@@ -209,9 +219,13 @@ describe('Apple Login Strategy', () => {
     const fakeAccessToken = 'fake_access_token';
     const fakeRefreshToken = 'fake_refresh_token';
 
-    beforeEach(() => {
+    beforeEach(async () => {
       jwt.decode.mockReturnValue(decodedToken);
       findUser.mockResolvedValue(null);
+
+      const { initAuth } = require('../../packages/auth/src/initAuth');
+      const saveBufferMock = jest.fn().mockResolvedValue('/fake/path/to/avatar.png');
+      await initAuth(mongoose, { enabled: false }, saveBufferMock); // mongoose: {}, fake balance config, dummy saveBuffer
     });
 
     it('should create a new user if one does not exist and registration is allowed', async () => {
@@ -241,7 +255,10 @@ describe('Apple Login Strategy', () => {
         );
       });
 
-      expect(mockVerifyCallback).toHaveBeenCalledWith(null, expect.any(User));
+      expect(mockVerifyCallback).toHaveBeenCalledWith(
+        null,
+        expect.objectContaining({ email: 'jane.doe@example.com' }),
+      );
       const user = mockVerifyCallback.mock.calls[0][1];
       expect(user.email).toBe('jane.doe@example.com');
       expect(user.username).toBe('jane.doe');

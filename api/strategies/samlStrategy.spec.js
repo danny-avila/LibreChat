@@ -1,20 +1,34 @@
-const fs = require('fs');
-const path = require('path');
-const fetch = require('node-fetch');
-const { Strategy: SamlStrategy } = require('@node-saml/passport-saml');
-const { findUser, createUser, updateUser } = require('~/models');
-const { setupSaml, getCertificateContent } = require('./samlStrategy');
+const passport = require('passport');
+const mongoose = require('mongoose');
 
 // --- Mocks ---
-jest.mock('fs');
-jest.mock('path');
-jest.mock('node-fetch');
+jest.mock('fs', () => ({
+  existsSync: jest.fn(),
+  statSync: jest.fn(),
+  readFileSync: jest.fn(),
+}));
+jest.mock('path', () => ({
+  isAbsolute: jest.fn(),
+  basename: jest.fn(),
+  dirname: jest.fn(),
+  join: jest.fn(),
+  normalize: jest.fn(),
+}));
 jest.mock('@node-saml/passport-saml');
-jest.mock('~/models', () => ({
+
+const mockedMethods = {
   findUser: jest.fn(),
   createUser: jest.fn(),
   updateUser: jest.fn(),
-}));
+};
+
+jest.mock('@librechat/data-schemas', () => {
+  const actual = jest.requireActual('@librechat/data-schemas');
+  return {
+    ...actual,
+    createMethods: jest.fn(() => mockedMethods),
+  };
+});
 jest.mock('~/server/services/Config', () => ({
   config: {
     registration: {
@@ -33,11 +47,7 @@ jest.mock('~/server/utils', () => ({
   isEnabled: jest.fn(() => false),
   isUserProvided: jest.fn(() => false),
 }));
-jest.mock('~/server/services/Files/strategies', () => ({
-  getStrategyFunctions: jest.fn(() => ({
-    saveBuffer: jest.fn().mockResolvedValue('/fake/path/to/avatar.png'),
-  })),
-}));
+
 jest.mock('~/server/utils/crypto', () => ({
   hashToken: jest.fn().mockResolvedValue('hashed-token'),
 }));
@@ -49,14 +59,12 @@ jest.mock('~/config', () => ({
   },
 }));
 
+const path = require('path');
+const fs = require('fs');
 // To capture the verify callback from the strategy, we grab it from the mock constructor
-let verifyCallback;
-SamlStrategy.mockImplementation((options, verify) => {
-  verifyCallback = verify;
-  return { name: 'saml', options, verify };
-});
-
 describe('getCertificateContent', () => {
+  const { getCertificateContent } = require('../../packages/auth/src/strategies/samlStrategy');
+  // const { getCertificateContent } = require('@librechat/auth');
   const certWithHeader = `-----BEGIN CERTIFICATE-----
 MIIDazCCAlOgAwIBAgIUKhXaFJGJJPx466rlwYORIsqCq7MwDQYJKoZIhvcNAQEL
 BQAwRTELMAkGA1UEBhMCQVUxEzARBgNVBAgMClNvbWUtU3RhdGUxITAfBgNVBAoM
@@ -132,6 +140,7 @@ u7wlOSk+oFzDIO/UILIA
     fs.readFileSync.mockReturnValue(certWithHeader);
 
     const actual = getCertificateContent(process.env.SAML_CERT);
+    console.log(actual);
     expect(actual).toBe(certWithHeader);
   });
 
@@ -185,6 +194,8 @@ u7wlOSk+oFzDIO/UILIA
 });
 
 describe('setupSaml', () => {
+  let verifyCallback;
+
   // Helper to wrap the verify callback in a promise
   const validate = (profile) =>
     new Promise((resolve, reject) => {
@@ -212,13 +223,12 @@ describe('setupSaml', () => {
     jest.clearAllMocks();
 
     // Configure mocks
-    const { findUser, createUser, updateUser } = require('~/models');
-    findUser.mockResolvedValue(null);
-    createUser.mockImplementation(async (userData) => ({
+    mockedMethods.findUser.mockResolvedValue(null);
+    mockedMethods.createUser.mockImplementation(async (userData) => ({
       _id: 'mock-user-id',
       ...userData,
     }));
-    updateUser.mockImplementation(async (id, userData) => ({
+    mockedMethods.updateUser.mockImplementation(async (id, userData) => ({
       _id: id,
       ...userData,
     }));
@@ -259,14 +269,24 @@ u7wlOSk+oFzDIO/UILIA
     delete process.env.SAML_PICTURE_CLAIM;
     delete process.env.SAML_NAME_CLAIM;
 
-    // Simulate image download
-    const fakeBuffer = Buffer.from('fake image');
-    fetch.mockResolvedValue({
+    // For image download, simulate a successful response
+    global.fetch = jest.fn().mockResolvedValue({
       ok: true,
-      buffer: jest.fn().mockResolvedValue(fakeBuffer),
+      arrayBuffer: jest.fn().mockResolvedValue(Buffer.from('fake image')),
     });
 
-    await setupSaml();
+    const { samlLogin } = require('../../packages/auth/src/strategies/samlStrategy');
+    const { initAuth } = require('../../packages/auth/src/initAuth');
+    const saveBufferMock = jest.fn().mockResolvedValue('/fake/path/to/avatar.png');
+    await initAuth(mongoose, { enabled: false }, saveBufferMock);
+
+    // Simulate the app's `passport.use(...)`
+    const SamlStrategy = samlLogin();
+    passport.use('saml', SamlStrategy);
+
+    console.log('SamlStrategy', SamlStrategy);
+    verifyCallback = SamlStrategy._signonVerify;
+    console.log('----', verifyCallback);
   });
 
   it('should create a new user with correct username when username claim exists', async () => {
@@ -403,7 +423,7 @@ u7wlOSk+oFzDIO/UILIA
 
     const { user } = await validate(profile);
 
-    expect(fetch).toHaveBeenCalled();
+    expect(global.fetch).toHaveBeenCalled();
     expect(user.avatar).toBe('/fake/path/to/avatar.png');
   });
 
@@ -413,6 +433,6 @@ u7wlOSk+oFzDIO/UILIA
 
     await validate(profile);
 
-    expect(fetch).not.toHaveBeenCalled();
+    expect(global.fetch).not.toHaveBeenCalled();
   });
 });

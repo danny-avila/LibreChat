@@ -1,7 +1,8 @@
-const { Strategy: GitHubStrategy } = require('passport-github2');
-const socialLogin = require('./socialLogin');
+import { Strategy as GitHubStrategy } from 'passport-github2';
+import socialLogin from './socialLogin';
+import { GetProfileDetails } from './types';
 
-const getProfileDetails = ({ profile }) => ({
+const getProfileDetails: GetProfileDetails = ({ profile }: any) => ({
   email: profile.emails[0].value,
   id: profile.id,
   avatarUrl: profile.photos[0].value,
@@ -10,9 +11,8 @@ const getProfileDetails = ({ profile }) => ({
   emailVerified: profile.emails[0].verified,
 });
 
-const githubLogin = socialLogin('github', getProfileDetails);
-
-module.exports = () =>
+const githubStrategy = socialLogin('github', getProfileDetails);
+const githubLogin = () =>
   new GitHubStrategy(
     {
       clientID: process.env.GITHUB_CLIENT_ID,
@@ -30,5 +30,6 @@ module.exports = () =>
         }),
       }),
     },
-    githubLogin,
+    githubStrategy,
   );
+export default githubLogin;

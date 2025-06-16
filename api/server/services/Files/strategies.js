@@ -59,7 +59,6 @@ const firebaseStrategy = () => ({
   deleteFile: deleteFirebaseFile,
   saveBuffer: saveBufferToFirebase,
   prepareImagePayload: prepareImageURL,
-  processAvatar: processFirebaseAvatar,
   handleImageUpload: uploadImageToFirebase,
   getDownloadStream: getFirebaseFileStream,
 });
@@ -74,7 +73,6 @@ const localStrategy = () => ({
   getFileURL: getLocalFileURL,
   saveBuffer: saveLocalBuffer,
   deleteFile: deleteLocalFile,
-  processAvatar: processLocalAvatar,
   handleImageUpload: uploadLocalImage,
   prepareImagePayload: prepareImagesLocal,
   getDownloadStream: getLocalFileStream,
@@ -91,7 +89,6 @@ const s3Strategy = () => ({
   deleteFile: deleteFileFromS3,
   saveBuffer: saveBufferToS3,
   prepareImagePayload: prepareImageURLS3,
-  processAvatar: processS3Avatar,
   handleImageUpload: uploadImageToS3,
   getDownloadStream: getS3FileStream,
 });
@@ -107,7 +104,6 @@ const azureStrategy = () => ({
   deleteFile: deleteFileFromAzure,
   saveBuffer: saveBufferToAzure,
   prepareImagePayload: prepareAzureImageURL,
-  processAvatar: processAzureAvatar,
   handleImageUpload: uploadImageToAzure,
   getDownloadStream: getAzureFileStream,
 });
@@ -123,8 +119,6 @@ const vectorStrategy = () => ({
   getFileURL: null,
   /** @type {typeof saveLocalBuffer | null} */
   saveBuffer: null,
-  /** @type {typeof processLocalAvatar | null} */
-  processAvatar: null,
   /** @type {typeof uploadLocalImage | null} */
   handleImageUpload: null,
   /** @type {typeof prepareImagesLocal | null} */
@@ -147,8 +141,6 @@ const openAIStrategy = () => ({
   getFileURL: null,
   /** @type {typeof saveLocalBuffer | null} */
   saveBuffer: null,
-  /** @type {typeof processLocalAvatar | null} */
-  processAvatar: null,
   /** @type {typeof uploadLocalImage | null} */
   handleImageUpload: null,
   /** @type {typeof prepareImagesLocal | null} */
@@ -170,8 +162,6 @@ const codeOutputStrategy = () => ({
   getFileURL: null,
   /** @type {typeof saveLocalBuffer | null} */
   saveBuffer: null,
-  /** @type {typeof processLocalAvatar | null} */
-  processAvatar: null,
   /** @type {typeof uploadLocalImage | null} */
   handleImageUpload: null,
   /** @type {typeof prepareImagesLocal | null} */
@@ -189,8 +179,6 @@ const mistralOCRStrategy = () => ({
   getFileURL: null,
   /** @type {typeof saveLocalBuffer | null} */
   saveBuffer: null,
-  /** @type {typeof processLocalAvatar | null} */
-  processAvatar: null,
   /** @type {typeof uploadLocalImage | null} */
   handleImageUpload: null,
   /** @type {typeof prepareImagesLocal | null} */

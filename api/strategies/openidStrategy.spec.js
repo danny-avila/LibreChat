@@ -1,26 +1,28 @@
-const fetch = require('node-fetch');
-const jwtDecode = require('jsonwebtoken/decode');
-const { setupOpenId } = require('./openidStrategy');
-const { findUser, createUser, updateUser } = require('~/models');
-
+const passport = require('passport');
+const mongoose = require('mongoose');
 // --- Mocks ---
-jest.mock('node-fetch');
 jest.mock('jsonwebtoken/decode');
-jest.mock('~/server/services/Files/strategies', () => ({
-  getStrategyFunctions: jest.fn(() => ({
-    saveBuffer: jest.fn().mockResolvedValue('/fake/path/to/avatar.png'),
-  })),
-}));
+
 jest.mock('~/server/services/Config', () => ({
   getBalanceConfig: jest.fn(() => ({
     enabled: false,
   })),
 }));
-jest.mock('~/models', () => ({
+
+const mockedMethods = {
   findUser: jest.fn(),
   createUser: jest.fn(),
   updateUser: jest.fn(),
-}));
+};
+
+jest.mock('@librechat/data-schemas', () => {
+  const actual = jest.requireActual('@librechat/data-schemas');
+  return {
+    ...actual,
+    createMethods: jest.fn(() => mockedMethods),
+  };
+});
+
 jest.mock('~/server/utils/crypto', () => ({
   hashToken: jest.fn().mockResolvedValue('hashed-token'),
 }));
@@ -44,7 +46,9 @@ jest.mock('~/cache/getLogStores', () =>
 
 // Mock the openid-client module and all its dependencies
 jest.mock('openid-client', () => {
+  const actual = jest.requireActual('openid-client');
   return {
+    ...actual,
     discovery: jest.fn().mockResolvedValue({
       clientId: 'fake_client_id',
       clientSecret: 'fake_client_secret',
@@ -63,13 +67,17 @@ jest.mock('openid-client', () => {
 
 jest.mock('openid-client/passport', () => {
   let verifyCallback;
-  const mockStrategy = jest.fn((options, verify) => {
+  const mockConstructor = jest.fn((options, verify) => {
     verifyCallback = verify;
-    return { name: 'openid', options, verify };
+    return {
+      name: 'openid',
+      options,
+      verify,
+    };
   });
 
   return {
-    Strategy: mockStrategy,
+    Strategy: mockConstructor,
     __getVerifyCallback: () => verifyCallback,
   };
 });
@@ -78,6 +86,8 @@ jest.mock('openid-client/passport', () => {
 jest.mock('passport', () => ({
   use: jest.fn(),
 }));
+
+const jwtDecode = require('jsonwebtoken/decode');
 
 describe('setupOpenId', () => {
   // Store a reference to the verify callback once it's set up
@@ -135,25 +145,31 @@ describe('setupOpenId', () => {
     });
 
     // By default, assume that no user is found, so createUser will be called
-    findUser.mockResolvedValue(null);
-    createUser.mockImplementation(async (userData) => {
+    mockedMethods.findUser.mockResolvedValue(null);
+    mockedMethods.createUser.mockImplementation(async (userData) => {
       // simulate created user with an _id property
       return { _id: 'newUserId', ...userData };
     });
-    updateUser.mockImplementation(async (id, userData) => {
+    mockedMethods.updateUser.mockImplementation(async (id, userData) => {
       return { _id: id, ...userData };
     });
 
     // For image download, simulate a successful response
-    const fakeBuffer = Buffer.from('fake image');
-    const fakeResponse = {
+    global.fetch = jest.fn().mockResolvedValue({
       ok: true,
-      buffer: jest.fn().mockResolvedValue(fakeBuffer),
-    };
-    fetch.mockResolvedValue(fakeResponse);
+      arrayBuffer: jest.fn().mockResolvedValue(Buffer.from('fake image')),
+    });
+    // const { initAuth, setupOpenId } = require('@librechat/auth');
+    const { setupOpenId } = require('../../packages/auth/src/strategies/openidStrategy');
+    const { initAuth } = require('../../packages/auth/src/initAuth');
+    const saveBufferMock = jest.fn().mockResolvedValue('/fake/path/to/avatar.png');
+    await initAuth(mongoose, { enabled: false }, saveBufferMock); // mongoose: {}, fake balance config, dummy saveBuffer
 
-    // Call the setup function and capture the verify callback
-    await setupOpenId();
+    const openidLogin = await setupOpenId({});
+
+    // Simulate the app's `passport.use(...)`
+    passport.use('openid', openidLogin);
+
     verifyCallback = require('openid-client/passport').__getVerifyCallback();
   });
 
@@ -166,7 +182,7 @@ describe('setupOpenId', () => {
 
     // Assert
     expect(user.username).toBe(userinfo.username);
-    expect(createUser).toHaveBeenCalledWith(
+    expect(mockedMethods.createUser).toHaveBeenCalledWith(
       expect.objectContaining({
         provider: 'openid',
         openidId: userinfo.sub,
@@ -192,7 +208,7 @@ describe('setupOpenId', () => {
 
     // Assert
     expect(user.username).toBe(expectUsername);
-    expect(createUser).toHaveBeenCalledWith(
+    expect(mockedMethods.createUser).toHaveBeenCalledWith(
       expect.objectContaining({ username: expectUsername }),
       { enabled: false },
       true,
@@ -212,7 +228,7 @@ describe('setupOpenId', () => {
 
     // Assert
     expect(user.username).toBe(expectUsername);
-    expect(createUser).toHaveBeenCalledWith(
+    expect(mockedMethods.createUser).toHaveBeenCalledWith(
       expect.objectContaining({ username: expectUsername }),
       { enabled: false },
       true,
@@ -230,7 +246,7 @@ describe('setupOpenId', () => {
 
     // Assert – username should equal the sub (converted as-is)
     expect(user.username).toBe(userinfo.sub);
-    expect(createUser).toHaveBeenCalledWith(
+    expect(mockedMethods.createUser).toHaveBeenCalledWith(
       expect.objectContaining({ username: userinfo.sub }),
       { enabled: false },
       true,
@@ -272,7 +288,7 @@ describe('setupOpenId', () => {
       username: '',
       name: '',
     };
-    findUser.mockImplementation(async (query) => {
+    mockedMethods.findUser.mockImplementation(async (query) => {
       if (query.openidId === tokenset.claims().sub || query.email === tokenset.claims().email) {
         return existingUser;
       }
@@ -285,7 +301,7 @@ describe('setupOpenId', () => {
     await validate(tokenset);
 
     // Assert – updateUser should be called and the user object updated
-    expect(updateUser).toHaveBeenCalledWith(
+    expect(mockedMethods.updateUser).toHaveBeenCalledWith(
       existingUser._id,
       expect.objectContaining({
         provider: 'openid',
@@ -301,7 +317,6 @@ describe('setupOpenId', () => {
     jwtDecode.mockReturnValue({
       roles: ['SomeOtherRole'],
     });
-    const userinfo = tokenset.claims();
 
     // Act
     const { user, details } = await validate(tokenset);
@@ -312,14 +327,12 @@ describe('setupOpenId', () => {
   });
 
   it('should attempt to download and save the avatar if picture is provided', async () => {
-    // Arrange – ensure userinfo contains a picture URL
-    const userinfo = tokenset.claims();
-
     // Act
     const { user } = await validate(tokenset);
 
     // Assert – verify that download was attempted and the avatar field was set via updateUser
-    expect(fetch).toHaveBeenCalled();
+    expect(global.fetch).toHaveBeenCalled();
+
     // Our mock getStrategyFunctions.saveBuffer returns '/fake/path/to/avatar.png'
     expect(user.avatar).toBe('/fake/path/to/avatar.png');
   });
@@ -333,7 +346,7 @@ describe('setupOpenId', () => {
     await validate({ ...tokenset, claims: () => userinfo });
 
     // Assert – fetch should not be called and avatar should remain undefined or empty
-    expect(fetch).not.toHaveBeenCalled();
+    expect(global.fetch).not.toHaveBeenCalled();
     // Depending on your implementation, user.avatar may be undefined or an empty string.
   });
 
@@ -341,7 +354,8 @@ describe('setupOpenId', () => {
     const OpenIDStrategy = require('openid-client/passport').Strategy;
 
     delete process.env.OPENID_USE_PKCE;
-    await setupOpenId();
+    const { setupOpenId } = require('../../packages/auth/src/strategies/openidStrategy');
+    await setupOpenId({});
 
     const callOptions = OpenIDStrategy.mock.calls[OpenIDStrategy.mock.calls.length - 1][0];
     expect(callOptions.usePKCE).toBe(false);

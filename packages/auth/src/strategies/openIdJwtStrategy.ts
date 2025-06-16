@@ -1,9 +1,11 @@
-const { SystemRoles } = require('librechat-data-provider');
-const { Strategy: JwtStrategy, ExtractJwt } = require('passport-jwt');
-const { updateUser, findUser } = require('~/models');
-const { logger } = require('~/config');
-const jwksRsa = require('jwks-rsa');
-const { isEnabled } = require('~/server/utils');
+import { SystemRoles } from 'librechat-data-provider';
+import { Strategy as JwtStrategy, ExtractJwt } from 'passport-jwt';
+import jwksRsa from 'jwks-rsa';
+import { isEnabled } from 'src/utils';
+import { getMethods } from 'src/initAuth';
+import { logger } from '@librechat/data-schemas';
+import * as client from 'openid-client';
+
 /**
  * @function openIdJwtLogin
  * @param {import('openid-client').Configuration} openIdConfig - Configuration object for the JWT strategy.
@@ -13,19 +15,20 @@ const { isEnabled } = require('~/server/utils');
  * The strategy extracts the JWT from the Authorization header as a Bearer token.
  * The JWT is then verified using the signing key, and the user is retrieved from the database.
  */
-const openIdJwtLogin = (openIdConfig) =>
+const openIdJwtLogin = (openIdConfig: client.Configuration) =>
   new JwtStrategy(
     {
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       secretOrKeyProvider: jwksRsa.passportJwtSecret({
-        cache: isEnabled(process.env.OPENID_JWKS_URL_CACHE_ENABLED) || true,
+        cache: isEnabled(process.env.OPENID_JWKS_URL_CACHE_ENABLED || 'true'),
         cacheMaxAge: process.env.OPENID_JWKS_URL_CACHE_TIME
           ? eval(process.env.OPENID_JWKS_URL_CACHE_TIME)
           : 60000,
-        jwksUri: openIdConfig.serverMetadata().jwks_uri,
+        jwksUri: openIdConfig.serverMetadata().jwks_uri ?? '',
       }),
     },
     async (payload, done) => {
+      const { findUser, updateUser } = getMethods();
       try {
         const user = await findUser({ openidId: payload?.sub });
 
@@ -49,4 +52,4 @@ const openIdJwtLogin = (openIdConfig) =>
     },
   );
 
-module.exports = openIdJwtLogin;
+export default openIdJwtLogin;

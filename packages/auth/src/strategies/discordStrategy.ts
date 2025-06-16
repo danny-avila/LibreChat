@@ -1,7 +1,9 @@
-const { Strategy: DiscordStrategy } = require('passport-discord');
-const socialLogin = require('./socialLogin');
+import { Profile } from 'passport';
+import { Strategy as DiscordStrategy } from 'passport-discord';
+import socialLogin from './socialLogin';
+import { GetProfileDetails } from './types';
 
-const getProfileDetails = ({ profile }) => {
+const getProfileDetails: GetProfileDetails = ({ profile }: any) => {
   let avatarUrl;
   if (profile.avatar) {
     const format = profile.avatar.startsWith('a_') ? 'gif' : 'png';
@@ -21,9 +23,9 @@ const getProfileDetails = ({ profile }) => {
   };
 };
 
-const discordLogin = socialLogin('discord', getProfileDetails);
+const discordStrategy = socialLogin('discord', getProfileDetails);
 
-module.exports = () =>
+const discordLogin = () =>
   new DiscordStrategy(
     {
       clientID: process.env.DISCORD_CLIENT_ID,
@@ -32,5 +34,7 @@ module.exports = () =>
       scope: ['identify', 'email'],
       authorizationURL: 'https://discord.com/api/oauth2/authorize?prompt=none',
     },
-    discordLogin,
+    discordStrategy,
   );
+
+export default discordLogin;

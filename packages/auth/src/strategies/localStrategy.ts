@@ -1,10 +1,11 @@
-const { logger } = require('@librechat/data-schemas');
-const { errorsToString } = require('librechat-data-provider');
-const { Strategy: PassportLocalStrategy } = require('passport-local');
-const { isEnabled } = require('~/server/utils');
-const { checkEmailConfig } = require('@librechat/auth');
-const { findUser, comparePassword, updateUser } = require('~/models');
-const { loginSchema } = require('./validators');
+import { IUser, logger } from '@librechat/data-schemas';
+import { errorsToString } from 'librechat-data-provider';
+import { Strategy as PassportLocalStrategy } from 'passport-local';
+import { getMethods } from '../initAuth';
+import { checkEmailConfig, isEnabled } from '../utils';
+import { loginSchema } from './validators';
+import bcrypt from 'bcryptjs';
+import { Request } from 'express';
 
 // Unix timestamp for 2024-06-07 15:20:18 Eastern Time
 const verificationEnabledTimestamp = 1717788018;
@@ -14,7 +15,34 @@ async function validateLoginRequest(req) {
   return error ? errorsToString(error.errors) : null;
 }
 
-async function passportLogin(req, email, password, done) {
+/**
+ * Compares the provided password with the user's password.
+ *
+ * @param {MongoUser} user - The user to compare the password for.
+ * @param {string} candidatePassword - The password to test against the user's password.
+ * @returns {Promise<boolean>} A promise that resolves to a boolean indicating if the password matches.
+ */
+const comparePassword = async (user: IUser, candidatePassword: string) => {
+  if (!user) {
+    throw new Error('No user provided');
+  }
+
+  return new Promise((resolve, reject) => {
+    bcrypt.compare(candidatePassword, user.password ?? '', (err, isMatch) => {
+      if (err) {
+        reject(err);
+      }
+      resolve(isMatch);
+    });
+  });
+};
+
+async function passportStrategy(
+  req: Request,
+  email: string,
+  password: string,
+  done: (error: any, user?: any, options?: { message: string }) => void,
+) {
   try {
     const validationError = await validateLoginRequest(req);
     if (validationError) {
@@ -23,6 +51,7 @@ async function passportLogin(req, email, password, done) {
       return done(null, false, { message: validationError });
     }
 
+    const { findUser, updateUser } = getMethods();
     const user = await findUser({ email: email.trim() });
     if (!user) {
       logError('Passport Local Strategy - User Not Found', { email });
@@ -49,7 +78,7 @@ async function passportLogin(req, email, password, done) {
       user.emailVerified = true;
     }
 
-    const unverifiedAllowed = isEnabled(process.env.ALLOW_UNVERIFIED_EMAIL_LOGIN);
+    const unverifiedAllowed = isEnabled(process.env.ALLOW_UNVERIFIED_EMAIL_LOGIN ?? '');
     if (user.expiresAt && unverifiedAllowed) {
       await updateUser(user._id, {});
     }
@@ -67,12 +96,12 @@ async function passportLogin(req, email, password, done) {
   }
 }
 
-function logError(title, parameters) {
+function logError(title: string, parameters: any) {
   const entries = Object.entries(parameters).map(([name, value]) => ({ name, value }));
   logger.error(title, { parameters: entries });
 }
 
-module.exports = () =>
+const passportLogin = () =>
   new PassportLocalStrategy(
     {
       usernameField: 'email',
@@ -80,5 +109,7 @@ module.exports = () =>
       session: false,
       passReqToCallback: true,
     },
-    passportLogin,
+    passportStrategy,
   );
+
+export default passportLogin;

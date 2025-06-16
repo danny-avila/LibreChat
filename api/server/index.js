@@ -11,10 +11,8 @@ const fs = require('fs');
 const cookieParser = require('cookie-parser');
 const { connectDb, indexSync } = require('~/db');
 
-const { jwtLogin, passportLogin } = require('~/strategies');
-const { initAuthModels } = require('@librechat/auth');
+const { initAuth, passportLogin, ldapLogin, jwtLogin } = require('@librechat/auth');
 const { isEnabled } = require('~/server/utils');
-const { ldapLogin } = require('~/strategies');
 const { logger } = require('~/config');
 const validateImageRequest = require('./middleware/validateImageRequest');
 const errorController = require('./controllers/ErrorController');
@@ -23,6 +21,9 @@ const AppService = require('./services/AppService');
 const staticCache = require('./utils/staticCache');
 const noIndex = require('./middleware/noIndex');
 const routes = require('./routes');
+const { getBalanceConfig } = require('./services/Config');
+const { getStrategyFunctions } = require('~/server/services/Files/strategies');
+const { FileSources } = require('librechat-data-provider');
 
 const { PORT, HOST, ALLOW_SOCIAL_LOGIN, DISABLE_COMPRESSION, TRUST_PROXY } = process.env ?? {};
 
@@ -38,7 +39,11 @@ const startServer = async () => {
     axios.defaults.headers.common['Accept-Encoding'] = 'gzip';
   }
   const mongooseInstance = await connectDb();
-  initAuthModels(mongooseInstance);
+
+  const balanceConfig = await getBalanceConfig();
+  const { saveBuffer } = getStrategyFunctions(process.env.CDN_PROVIDER ?? FileSources.local);
+  // initialize the auth package
+  initAuth(mongooseInstance, balanceConfig, saveBuffer);
 
   logger.info('Connected to MongoDB');
   await indexSync();

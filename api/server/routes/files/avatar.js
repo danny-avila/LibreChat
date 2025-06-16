@@ -1,7 +1,6 @@
 const fs = require('fs').promises;
 const express = require('express');
-const { getStrategyFunctions } = require('~/server/services/Files/strategies');
-const { resizeAvatar } = require('~/server/services/Files/images/avatar');
+const { getAvatarProcessFunction, resizeAvatar } = require('@librechat/auth');
 const { filterFile } = require('~/server/services/Files/process');
 const { logger } = require('~/config');
 
@@ -26,7 +25,7 @@ router.post('/', async (req, res) => {
       desiredFormat,
     });
 
-    const { processAvatar } = getStrategyFunctions(fileStrategy);
+    const processAvatar = getAvatarProcessFunction(fileStrategy);
     const url = await processAvatar({ buffer: resizedBuffer, userId, manual });
 
     res.json({ url });

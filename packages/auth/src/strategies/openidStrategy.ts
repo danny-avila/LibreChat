@@ -1,41 +1,36 @@
-const fetch = require('node-fetch');
-const passport = require('passport');
-const client = require('openid-client');
-const jwtDecode = require('jsonwebtoken/decode');
-const { CacheKeys } = require('librechat-data-provider');
-const { HttpsProxyAgent } = require('https-proxy-agent');
-const { hashToken, logger } = require('@librechat/data-schemas');
-const { Strategy: OpenIDStrategy } = require('openid-client/passport');
-const { getStrategyFunctions } = require('~/server/services/Files/strategies');
-const { findUser, createUser, updateUser } = require('~/models');
-const { getBalanceConfig } = require('~/server/services/Config');
-const getLogStores = require('~/cache/getLogStores');
-const { isEnabled } = require('~/server/utils');
+import passport from 'passport';
+import * as client from 'openid-client';
+// @ts-ignore
+import { Strategy as OpenIDStrategy } from 'openid-client/passport';
+import jwt from 'jsonwebtoken';
+import { HttpsProxyAgent } from 'https-proxy-agent';
+import { hashToken, logger } from '@librechat/data-schemas';
+import { isEnabled } from '../utils';
+import * as oauth from 'oauth4webapi';
+import { getBalanceConfig, getMethods, getSaveBufferStrategy } from '../initAuth';
 
-/**
- * @typedef {import('openid-client').ClientMetadata} ClientMetadata
- * @typedef {import('openid-client').Configuration} Configuration
- **/
-
-/** @typedef {Configuration | null}  */
-let openidConfig = null;
-
-//overload currenturl function because of express version 4 buggy req.host doesn't include port
-//More info https://github.com/panva/openid-client/pull/713
+let crypto: typeof import('node:crypto') | undefined;
 
 class CustomOpenIDStrategy extends OpenIDStrategy {
-  currentUrl(req) {
-    const hostAndProtocol = process.env.DOMAIN_SERVER;
+  constructor(options: any, verify: Function) {
+    super(options, verify);
+  }
+  currentUrl(req: any): URL {
+    const hostAndProtocol = process.env.DOMAIN_SERVER!;
     return new URL(`${hostAndProtocol}${req.originalUrl ?? req.url}`);
   }
-  authorizationRequestParams(req, options) {
+
+  authorizationRequestParams(req: any, options: any) {
     const params = super.authorizationRequestParams(req, options);
-    if (options?.state && !params.has('state')) {
-      params.set('state', options.state);
+    if (options?.state && !params?.has('state')) {
+      params?.set('state', options.state);
     }
     return params;
   }
 }
+
+let openidConfig: client.Configuration;
+let tokensCache: any;
 
 /**
  * Exchange the access token for a new access token using the on-behalf-of flow if required.
@@ -45,12 +40,19 @@ class CustomOpenIDStrategy extends OpenIDStrategy {
  * @param {boolean} fromCache - Indicates whether to use cached tokens.
  * @returns {Promise<string>} The new access token if exchanged, otherwise the original access token.
  */
-const exchangeAccessTokenIfNeeded = async (config, accessToken, sub, fromCache = false) => {
-  const tokensCache = getLogStores(CacheKeys.OPENID_EXCHANGED_TOKENS);
-  const onBehalfFlowRequired = isEnabled(process.env.OPENID_ON_BEHALF_FLOW_FOR_USERINFRO_REQUIRED);
+const exchangeAccessTokenIfNeeded = async (
+  config: client.Configuration,
+  accessToken: string,
+  sub: string,
+  fromCache: boolean = false,
+) => {
+  const onBehalfFlowRequired = isEnabled(
+    process.env.OPENID_ON_BEHALF_FLOW_FOR_USERINFRO_REQUIRED ?? '',
+  );
   if (onBehalfFlowRequired) {
     if (fromCache) {
       const cachedToken = await tokensCache.get(sub);
+
       if (cachedToken) {
         return cachedToken.access_token;
       }
@@ -69,7 +71,7 @@ const exchangeAccessTokenIfNeeded = async (config, accessToken, sub, fromCache =
       {
         access_token: grantResponse.access_token,
       },
-      grantResponse.expires_in * 1000,
+      (grantResponse?.expires_in ?? 0) * 1000,
     );
     return grantResponse.access_token;
   }
@@ -83,7 +85,11 @@ const exchangeAccessTokenIfNeeded = async (config, accessToken, sub, fromCache =
  * @param {string} sub - The subject identifier of the user. usually found as "sub" in the claims of the token
  * @returns {Promise<Object|null>}
  */
-const getUserInfo = async (config, accessToken, sub) => {
+const getUserInfo = async (
+  config: client.Configuration,
+  accessToken: string,
+  sub: string,
+): Promise<oauth.UserInfoResponse | null> => {
   try {
     const exchangedAccessToken = await exchangeAccessTokenIfNeeded(config, accessToken, sub);
     return await client.fetchUserInfo(config, exchangedAccessToken, sub);
@@ -92,7 +98,6 @@ const getUserInfo = async (config, accessToken, sub) => {
     return null;
   }
 };
-
 /**
  * Downloads an image from a URL using an access token.
  * @param {string} url
@@ -101,14 +106,19 @@ const getUserInfo = async (config, accessToken, sub) => {
  * @param {string} sub - The subject identifier of the user. usually found as "sub" in the claims of the token
  * @returns {Promise<Buffer | string>} The image buffer or an empty string if the download fails.
  */
-const downloadImage = async (url, config, accessToken, sub) => {
+const downloadImage = async (
+  url: string,
+  config: client.Configuration,
+  accessToken: string,
+  sub: string,
+) => {
   const exchangedAccessToken = await exchangeAccessTokenIfNeeded(config, accessToken, sub, true);
   if (!url) {
     return '';
   }
 
   try {
-    const options = {
+    const options: any = {
       method: 'GET',
       headers: {
         Authorization: `Bearer ${exchangedAccessToken}`,
@@ -118,11 +128,10 @@ const downloadImage = async (url, config, accessToken, sub) => {
     if (process.env.PROXY) {
       options.agent = new HttpsProxyAgent(process.env.PROXY);
     }
-
-    const response = await fetch(url, options);
-
+    const response: Response = await fetch(url, options);
     if (response.ok) {
-      const buffer = await response.buffer();
+      const arrayBuffer = await response.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
       return buffer;
     } else {
       throw new Error(`${response.statusText} (HTTP ${response.status})`);
@@ -145,9 +154,10 @@ const downloadImage = async (url, config, accessToken, sub) => {
  * @param {string} [userinfo.email] - The user's email address
  * @returns {string} The determined full name of the user
  */
-function getFullName(userinfo) {
-  if (process.env.OPENID_NAME_CLAIM) {
-    return userinfo[process.env.OPENID_NAME_CLAIM];
+function getFullName(userinfo: client.UserInfoResponse & { username?: string }): string {
+  const nameClaim = process.env.OPENID_NAME_CLAIM;
+  if (nameClaim && typeof userinfo[nameClaim] === 'string') {
+    return userinfo[nameClaim] as string;
   }
 
   if (userinfo.given_name && userinfo.family_name) {
@@ -162,7 +172,7 @@ function getFullName(userinfo) {
     return userinfo.family_name;
   }
 
-  return userinfo.username || userinfo.email;
+  return (userinfo?.username || userinfo?.email) ?? '';
 }
 
 /**
@@ -175,7 +185,7 @@ function getFullName(userinfo) {
  * @param {string} [defaultValue=''] - The default value to return if the input is falsy.
  * @returns {string} The processed input as a string suitable for a username.
  */
-function convertToUsername(input, defaultValue = '') {
+function convertToUsername(input: string | string[], defaultValue: string = '') {
   if (typeof input === 'string') {
     return input;
   } else if (Array.isArray(input)) {
@@ -195,76 +205,89 @@ function convertToUsername(input, defaultValue = '') {
  * @returns {Promise<Configuration | null>} A promise that resolves when the OpenID strategy is set up and returns the openid client config object.
  * @throws {Error} If an error occurs during the setup process.
  */
-async function setupOpenId() {
+async function setupOpenId(tokensCacheKv: any): Promise<any | null> {
   try {
+    tokensCache = tokensCacheKv;
     /** @type {ClientMetadata} */
     const clientMetadata = {
       client_id: process.env.OPENID_CLIENT_ID,
       client_secret: process.env.OPENID_CLIENT_SECRET,
     };
-
     /** @type {Configuration} */
     openidConfig = await client.discovery(
-      new URL(process.env.OPENID_ISSUER),
-      process.env.OPENID_CLIENT_ID,
+      new URL(process.env.OPENID_ISSUER ?? ''),
+      process.env.OPENID_CLIENT_ID ?? '',
       clientMetadata,
     );
+
+    const { findUser, createUser, updateUser } = getMethods();
     if (process.env.PROXY) {
       const proxyAgent = new HttpsProxyAgent(process.env.PROXY);
-      openidConfig[client.customFetch] = (...args) => {
+      const customFetch: client.CustomFetch = (...args: any[]) => {
         return fetch(args[0], { ...args[1], agent: proxyAgent });
       };
+      openidConfig[client.customFetch] = customFetch;
+
       logger.info(`[openidStrategy] proxy agent added: ${process.env.PROXY}`);
     }
+
     const requiredRole = process.env.OPENID_REQUIRED_ROLE;
     const requiredRoleParameterPath = process.env.OPENID_REQUIRED_ROLE_PARAMETER_PATH;
     const requiredRoleTokenKind = process.env.OPENID_REQUIRED_ROLE_TOKEN_KIND;
-    const usePKCE = isEnabled(process.env.OPENID_USE_PKCE);
+
+    const usePKCE: boolean = isEnabled(process.env.OPENID_USE_PKCE ?? '');
     const openidLogin = new CustomOpenIDStrategy(
       {
         config: openidConfig,
         scope: process.env.OPENID_SCOPE,
-        callbackURL: process.env.DOMAIN_SERVER + process.env.OPENID_CALLBACK_URL,
+        callbackURL: `${process.env.DOMAIN_SERVER}${process.env.OPENID_CALLBACK_URL}`,
         usePKCE,
       },
-      async (tokenset, done) => {
+      async (
+        tokenset: client.TokenEndpointResponse & client.TokenEndpointResponseHelpers,
+        done: passport.AuthenticateCallback,
+      ) => {
         try {
-          const claims = tokenset.claims();
-          let user = await findUser({ openidId: claims.sub });
+          const claims: oauth.IDToken | undefined = tokenset.claims();
+          let user = await findUser({ openidId: claims?.sub });
           logger.info(
-            `[openidStrategy] user ${user ? 'found' : 'not found'} with openidId: ${claims.sub}`,
+            `[openidStrategy] user ${user ? 'found' : 'not found'} with openidId: ${claims?.sub}`,
           );
 
           if (!user) {
-            user = await findUser({ email: claims.email });
+            user = await findUser({ email: claims?.email });
             logger.info(
               `[openidStrategy] user ${user ? 'found' : 'not found'} with email: ${
-                claims.email
-              } for openidId: ${claims.sub}`,
+                claims?.email
+              } for openidId: ${claims?.sub}`,
             );
           }
-          const userinfo = {
+          const userinfo: any = {
             ...claims,
-            ...(await getUserInfo(openidConfig, tokenset.access_token, claims.sub)),
+            ...(await getUserInfo(openidConfig, tokenset.access_token, claims?.sub ?? '')),
           };
           const fullName = getFullName(userinfo);
 
           if (requiredRole) {
-            let decodedToken = '';
+            let decodedToken = null;
             if (requiredRoleTokenKind === 'access') {
-              decodedToken = jwtDecode(tokenset.access_token);
+              decodedToken = jwt.decode(tokenset.access_token);
             } else if (requiredRoleTokenKind === 'id') {
-              decodedToken = jwtDecode(tokenset.id_token);
+              decodedToken = jwt.decode(tokenset.id_token ?? '');
             }
-            const pathParts = requiredRoleParameterPath.split('.');
+            const pathParts = requiredRoleParameterPath?.split('.');
             let found = true;
-            let roles = pathParts.reduce((o, key) => {
-              if (o === null || o === undefined || !(key in o)) {
-                found = false;
-                return [];
+            let roles: any = decodedToken;
+            if (pathParts) {
+              for (const key of pathParts) {
+                if (roles && typeof roles === 'object' && key in roles) {
+                  roles = (roles as Record<string, unknown>)[key];
+                } else {
+                  found = false;
+                  break;
+                }
               }
-              return o[key];
-            }, decodedToken);
+            }
 
             if (!found) {
               logger.error(
@@ -272,7 +295,7 @@ async function setupOpenId() {
               );
             }
 
-            if (!roles.includes(requiredRole)) {
+            if (!roles?.includes(requiredRole)) {
               return done(null, false, {
                 message: `You must have the "${requiredRole}" role to log in.`,
               });
@@ -280,11 +303,11 @@ async function setupOpenId() {
           }
 
           let username = '';
-          if (process.env.OPENID_USERNAME_CLAIM) {
-            username = userinfo[process.env.OPENID_USERNAME_CLAIM];
+          if (process.env.OPENID_USERNAME_CLAIM && userinfo[process.env.OPENID_USERNAME_CLAIM]) {
+            username = userinfo[process.env.OPENID_USERNAME_CLAIM] as string;
           } else {
             username = convertToUsername(
-              userinfo.username || userinfo.given_name || userinfo.email,
+              userinfo?.username ?? userinfo?.given_name ?? userinfo?.email,
             );
           }
 
@@ -298,8 +321,7 @@ async function setupOpenId() {
               name: fullName,
             };
 
-            const balanceConfig = await getBalanceConfig();
-
+            const balanceConfig = getBalanceConfig();
             user = await createUser(user, balanceConfig, true, true);
           } else {
             user.provider = 'openid';
@@ -308,11 +330,17 @@ async function setupOpenId() {
             user.name = fullName;
           }
 
-          if (!!userinfo && userinfo.picture && !user.avatar?.includes('manual=true')) {
+          if (!!userinfo && userinfo.picture && !user?.avatar?.includes('manual=true')) {
             /** @type {string | undefined} */
             const imageUrl = userinfo.picture;
 
             let fileName;
+            try {
+              crypto = await import('node:crypto');
+            } catch (err) {
+              logger.error('[openidStrategy] crypto support is disabled!', err);
+            }
+
             if (crypto) {
               fileName = (await hashToken(userinfo.sub)) + '.png';
             } else {
@@ -326,7 +354,7 @@ async function setupOpenId() {
               userinfo.sub,
             );
             if (imageBuffer) {
-              const { saveBuffer } = getStrategyFunctions(process.env.CDN_PROVIDER);
+              const saveBuffer = getSaveBufferStrategy();
               const imagePath = await saveBuffer({
                 fileName,
                 userId: user._id.toString(),
@@ -335,9 +363,7 @@ async function setupOpenId() {
               user.avatar = imagePath ?? '';
             }
           }
-
-          user = await updateUser(user._id, user);
-
+          user = await updateUser(user?._id, user);
           logger.info(
             `[openidStrategy] login success openidId: ${user.openidId} | email: ${user.email} | username: ${user.username} `,
             {
@@ -357,27 +383,23 @@ async function setupOpenId() {
         }
       },
     );
-    passport.use('openid', openidLogin);
-    return openidConfig;
+    return openidLogin;
   } catch (err) {
     logger.error('[openidStrategy]', err);
     return null;
   }
 }
+
 /**
  * @function getOpenIdConfig
  * @description Returns the OpenID client instance.
  * @throws {Error} If the OpenID client is not initialized.
  * @returns {Configuration}
  */
-function getOpenIdConfig() {
+function getOpenIdConfig(): client.Configuration {
   if (!openidConfig) {
     throw new Error('OpenID client is not initialized. Please call setupOpenId first.');
   }
   return openidConfig;
 }
-
-module.exports = {
-  setupOpenId,
-  getOpenIdConfig,
-};
+export { setupOpenId, getOpenIdConfig };

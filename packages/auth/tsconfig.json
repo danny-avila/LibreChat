@@ -13,9 +13,12 @@
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
     "sourceMap": true,
+    "baseUrl": ".",
     "paths": {
       "@librechat/data-schemas/*": ["./packages/data-schemas/*"]
-    }
+    },
+
+    "typeRoots": ["./src/types", "./node_modules/@types"]
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist", "tests"]

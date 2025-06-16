@@ -5,6 +5,7 @@ import {
   deleteMessages,
   deleteAllUserSessions,
 } from '@librechat/backend/models';
+import { createModels } from '@librechat/data-schemas';
 
 type TUser = { email: string; password: string };
 
@@ -41,7 +42,7 @@ export default async function cleanupUser(user: TUser) {
     await deleteAllUserSessions(userId.toString());
 
     // Get models from the registered models
-    const { User, Balance, Transaction } = getModels();
+    const { User, Balance, Transaction } = createModels(db);
 
     // Delete user, balance, and transactions using the registered models
     await User.deleteMany({ _id: userId });

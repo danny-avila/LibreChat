@@ -1,16 +1,24 @@
-const { logger } = require('@librechat/data-schemas');
-const { SystemRoles } = require('librechat-data-provider');
-const { Strategy: JwtStrategy, ExtractJwt } = require('passport-jwt');
-const { getUserById, updateUser } = require('~/models');
+import { getMethods } from '../initAuth';
+import { logger } from '@librechat/data-schemas';
+import { SystemRoles } from 'librechat-data-provider';
+import {
+  Strategy as JwtStrategy,
+  ExtractJwt,
+  StrategyOptionsWithoutRequest,
+  VerifiedCallback,
+} from 'passport-jwt';
+import { Strategy as PassportStrategy } from 'passport-strategy';
+import { JwtPayload } from './types';
 
 // JWT strategy
-const jwtLogin = () =>
+const jwtLogin = (): PassportStrategy =>
   new JwtStrategy(
     {
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       secretOrKey: process.env.JWT_SECRET,
-    },
-    async (payload, done) => {
+    } as StrategyOptionsWithoutRequest,
+    async (payload: JwtPayload, done: VerifiedCallback) => {
+      const { updateUser, getUserById } = getMethods();
       try {
         const user = await getUserById(payload?.id, '-password -__v -totpSecret');
         if (user) {
@@ -30,4 +38,4 @@ const jwtLogin = () =>
     },
   );
 
-module.exports = jwtLogin;
+export default jwtLogin;

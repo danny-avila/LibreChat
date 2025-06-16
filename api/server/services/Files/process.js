@@ -19,11 +19,8 @@ const {
   isAssistantsEndpoint,
 } = require('librechat-data-provider');
 const { EnvVar } = require('@librechat/agents');
-const {
-  convertImage,
-  resizeAndConvert,
-  resizeImageBuffer,
-} = require('~/server/services/Files/images');
+const { convertImage, resizeImageBuffer } = require('~/server/services/Files/images');
+const { resizeAndConvert } = require('@librechat/auth');
 const { addResourceFileId, deleteResourceFileId } = require('~/server/controllers/assistants/v2');
 const { addAgentResourceFile, removeAgentResourceFiles } = require('~/models/Agent');
 const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');

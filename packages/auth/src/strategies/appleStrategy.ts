@@ -1,7 +1,9 @@
-const socialLogin = require('./socialLogin');
-const { Strategy: AppleStrategy } = require('passport-apple');
-const { logger } = require('~/config');
-const jwt = require('jsonwebtoken');
+import { Strategy as AppleStrategy } from 'passport-apple';
+import { logger } from '@librechat/data-schemas';
+import jwt from 'jsonwebtoken';
+import { GetProfileDetails, GetProfileDetailsParams } from './types';
+import socialLogin from './socialLogin';
+import { Profile } from 'passport';
 
 /**
  * Extract profile details from the decoded idToken
@@ -10,13 +12,13 @@ const jwt = require('jsonwebtoken');
  * @param {Object} params.profile - The profile object (may contain partial info)
  * @returns {Object} - The extracted user profile details
  */
-const getProfileDetails = ({ idToken, profile }) => {
+const getProfileDetails: GetProfileDetails = ({ profile, idToken }: GetProfileDetailsParams) => {
   if (!idToken) {
     logger.error('idToken is missing');
     throw new Error('idToken is missing');
   }
 
-  const decoded = jwt.decode(idToken);
+  const decoded: any = jwt.decode(idToken);
 
   logger.debug(`Decoded Apple JWT: ${JSON.stringify(decoded, null, 2)}`);
 
@@ -33,9 +35,9 @@ const getProfileDetails = ({ idToken, profile }) => {
 };
 
 // Initialize the social login handler for Apple
-const appleLogin = socialLogin('apple', getProfileDetails);
+const appleStrategy = socialLogin('apple', getProfileDetails);
 
-module.exports = () =>
+const appleLogin = () =>
   new AppleStrategy(
     {
       clientID: process.env.APPLE_CLIENT_ID,
@@ -45,5 +47,7 @@ module.exports = () =>
       privateKeyLocation: process.env.APPLE_PRIVATE_KEY_PATH,
       passReqToCallback: false, // Set to true if you need to access the request in the callback
     },
-    appleLogin,
+    appleStrategy,
   );
+
+export default appleLogin;

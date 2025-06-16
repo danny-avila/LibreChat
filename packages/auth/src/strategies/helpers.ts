@@ -1,8 +1,8 @@
-const { FileSources } = require('librechat-data-provider');
-const { getStrategyFunctions } = require('~/server/services/Files/strategies');
-const { resizeAvatar } = require('~/server/services/Files/images/avatar');
-const { updateUser, createUser, getUserById } = require('~/models');
-const { getBalanceConfig } = require('~/server/services/Config');
+import { IUser } from '@librechat/data-schemas';
+import { FileSources } from 'librechat-data-provider';
+import { getBalanceConfig, getMethods } from '../initAuth';
+import { getAvatarProcessFunction, resizeAvatar } from '../utils/avatar';
+import { CreateSocialUserParams } from './types';
 
 /**
  * Updates the avatar URL of an existing user. If the user's avatar URL does not include the query parameter
@@ -17,24 +17,25 @@ const { getBalanceConfig } = require('~/server/services/Config');
  *
  * @throws {Error} Throws an error if there's an issue saving the updated user object.
  */
-const handleExistingUser = async (oldUser, avatarUrl) => {
-  const fileStrategy = process.env.CDN_PROVIDER;
+const handleExistingUser = async (oldUser: IUser, avatarUrl: string) => {
+  const fileStrategy = process.env.CDN_PROVIDER ?? FileSources.local;
   const isLocal = fileStrategy === FileSources.local;
 
-  let updatedAvatar = false;
-  if (isLocal && (oldUser.avatar === null || !oldUser.avatar.includes('?manual=true'))) {
+  let updatedAvatar = '';
+  if (isLocal && (oldUser.avatar === null || !oldUser.avatar?.includes('?manual=true'))) {
     updatedAvatar = avatarUrl;
-  } else if (!isLocal && (oldUser.avatar === null || !oldUser.avatar.includes('?manual=true'))) {
-    const userId = oldUser._id;
+  } else if (!isLocal && (oldUser.avatar === null || !oldUser.avatar?.includes('?manual=true'))) {
+    const userId = oldUser.id ?? '';
     const resizedBuffer = await resizeAvatar({
       userId,
       input: avatarUrl,
     });
-    const { processAvatar } = getStrategyFunctions(fileStrategy);
+    const processAvatar = getAvatarProcessFunction(fileStrategy);
     updatedAvatar = await processAvatar({ buffer: resizedBuffer, userId });
   }
 
-  if (updatedAvatar) {
+  if (updatedAvatar != '') {
+    const { updateUser } = getMethods();
     await updateUser(oldUser._id, { avatar: updatedAvatar });
   }
 };
@@ -68,7 +69,7 @@ const createSocialUser = async ({
   username,
   name,
   emailVerified,
-}) => {
+}: CreateSocialUserParams): Promise<IUser> => {
   const update = {
     email,
     avatar: avatarUrl,
@@ -78,10 +79,10 @@ const createSocialUser = async ({
     name,
     emailVerified,
   };
-
-  const balanceConfig = await getBalanceConfig();
+  const balanceConfig = getBalanceConfig();
+  const { createUser, getUserById, updateUser } = getMethods();
   const newUserId = await createUser(update, balanceConfig);
-  const fileStrategy = process.env.CDN_PROVIDER;
+  const fileStrategy = process.env.CDN_PROVIDER ?? FileSources.local;
   const isLocal = fileStrategy === FileSources.local;
 
   if (!isLocal) {
@@ -89,15 +90,11 @@ const createSocialUser = async ({
       userId: newUserId,
       input: avatarUrl,
     });
-    const { processAvatar } = getStrategyFunctions(fileStrategy);
+    const processAvatar = getAvatarProcessFunction(fileStrategy);
     const avatar = await processAvatar({ buffer: resizedBuffer, userId: newUserId });
     await updateUser(newUserId, { avatar });
   }
 
   return await getUserById(newUserId);
 };
-
-module.exports = {
-  handleExistingUser,
-  createSocialUser,
-};
+export { handleExistingUser, createSocialUser };

@@ -1,4 +1,5 @@
 // api/test/__mocks__/openid-client.js
+console.log('✅ MOCKED openid-client loaded');
 module.exports = {
   Issuer: {
     discover: jest.fn().mockResolvedValue({

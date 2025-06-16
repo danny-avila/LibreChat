@@ -5,14 +5,17 @@ const MemoryStore = require('memorystore')(session);
 const RedisStore = require('connect-redis').default;
 const {
   setupOpenId,
+  getOpenIdConfig,
   googleLogin,
   githubLogin,
   discordLogin,
   facebookLogin,
   appleLogin,
-  setupSaml,
+  samlLogin,
   openIdJwtLogin,
-} = require('~/strategies');
+} = require('@librechat/auth');
+const { CacheKeys } = require('librechat-data-provider');
+const getLogStores = require('~/cache/getLogStores');
 const { isEnabled } = require('~/server/utils');
 const keyvRedis = require('~/cache/keyvRedis');
 const { logger } = require('~/config');
@@ -64,10 +67,14 @@ const configureSocialLogins = async (app) => {
     }
     app.use(session(sessionOptions));
     app.use(passport.session());
-    const config = await setupOpenId();
+
+    const tokensCache = getLogStores(CacheKeys.OPENID_EXCHANGED_TOKENS);
+    const openidLogin = await setupOpenId(tokensCache);
+    passport.use('openid', openidLogin);
+
     if (isEnabled(process.env.OPENID_REUSE_TOKENS)) {
       logger.info('OpenID token reuse is enabled.');
-      passport.use('openidJwt', openIdJwtLogin(config));
+      passport.use('openidJwt', openIdJwtLogin(getOpenIdConfig()));
     }
     logger.info('OpenID Connect configured.');
   }
@@ -95,7 +102,8 @@ const configureSocialLogins = async (app) => {
     }
     app.use(session(sessionOptions));
     app.use(passport.session());
-    setupSaml();
+
+    passport.use('saml', samlLogin());
 
     logger.info('SAML Connect configured.');
   }
