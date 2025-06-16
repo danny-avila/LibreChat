@@ -121,6 +121,7 @@ describe('AppService', () => {
         sidePanel: true,
         presets: true,
       }),
+      mcpConfig: null,
       turnstileConfig: mockedTurnstileConfig,
       modelSpecs: undefined,
       availableTools: {
