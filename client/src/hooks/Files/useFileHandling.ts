@@ -265,7 +265,7 @@ const useFileHandling = (params?: UseFileHandling) => {
       try {
         // Create initial preview with original file
         const initialPreview = URL.createObjectURL(originalFile);
-        
+
         // Create initial ExtendedFile to show immediately
         const initialExtendedFile: ExtendedFile = {
           file_id,
@@ -284,9 +284,11 @@ const useFileHandling = (params?: UseFileHandling) => {
         addFile(initialExtendedFile);
 
         // Check if HEIC conversion is needed and show toast
-        const isHEIC = originalFile.type === 'image/heic' || originalFile.type === 'image/heif' || 
-                       originalFile.name.toLowerCase().match(/\.(heic|heif)$/);
-        
+        const isHEIC =
+          originalFile.type === 'image/heic' ||
+          originalFile.type === 'image/heif' ||
+          originalFile.name.toLowerCase().match(/\.(heic|heif)$/);
+
         if (isHEIC) {
           showToast({
             message: localize('com_info_heic_converting'),
@@ -296,20 +298,24 @@ const useFileHandling = (params?: UseFileHandling) => {
         }
 
         // Process file for HEIC conversion if needed
-        const processedFile = await processFileForUpload(originalFile, 0.9, (conversionProgress) => {
-          // Update progress during HEIC conversion (0.1 to 0.5 range for conversion)
-          const adjustedProgress = 0.1 + (conversionProgress * 0.4);
-          replaceFile({
-            ...initialExtendedFile,
-            progress: adjustedProgress,
-          });
-        });
+        const processedFile = await processFileForUpload(
+          originalFile,
+          0.9,
+          (conversionProgress) => {
+            // Update progress during HEIC conversion (0.1 to 0.5 range for conversion)
+            const adjustedProgress = 0.1 + conversionProgress * 0.4;
+            replaceFile({
+              ...initialExtendedFile,
+              progress: adjustedProgress,
+            });
+          },
+        );
 
         // If file was converted, update with new file and preview
         if (processedFile !== originalFile) {
           URL.revokeObjectURL(initialPreview); // Clean up original preview
           const newPreview = URL.createObjectURL(processedFile);
-          
+
           const updatedExtendedFile: ExtendedFile = {
             ...initialExtendedFile,
             file: processedFile,
@@ -318,15 +324,15 @@ const useFileHandling = (params?: UseFileHandling) => {
             progress: 0.5, // Conversion complete, ready for upload
             size: processedFile.size,
           };
-          
+
           replaceFile(updatedExtendedFile);
-          
+
           const isImage = processedFile.type.split('/')[0] === 'image';
           if (isImage) {
             loadImage(updatedExtendedFile, newPreview);
             continue;
           }
-          
+
           await startUpload(updatedExtendedFile);
         } else {
           // File wasn't converted, proceed with original

@@ -23,14 +23,14 @@ export const isHEICFile = async (file: File): Promise<boolean> => {
  * @returns Promise<File> - The converted JPEG file
  */
 export const convertHEICToJPEG = async (
-  file: File, 
+  file: File,
   quality: number = 0.9,
-  onProgress?: (progress: number) => void
+  onProgress?: (progress: number) => void,
 ): Promise<File> => {
   try {
     // Report conversion start
     onProgress?.(0.3);
-    
+
     const convertedBlob = await heicTo({
       blob: file,
       type: 'image/jpeg',
@@ -41,14 +41,10 @@ export const convertHEICToJPEG = async (
     onProgress?.(0.8);
 
     // Create a new File object with the converted blob
-    const convertedFile = new File(
-      [convertedBlob],
-      file.name.replace(/\.(heic|heif)$/i, '.jpg'),
-      {
-        type: 'image/jpeg',
-        lastModified: file.lastModified,
-      }
-    );
+    const convertedFile = new File([convertedBlob], file.name.replace(/\.(heic|heif)$/i, '.jpg'), {
+      type: 'image/jpeg',
+      lastModified: file.lastModified,
+    });
 
     // Report file creation completion
     onProgress?.(1.0);
@@ -68,16 +64,16 @@ export const convertHEICToJPEG = async (
  * @returns Promise<File> - The processed file (converted if it was HEIC, original otherwise)
  */
 export const processFileForUpload = async (
-  file: File, 
+  file: File,
   quality: number = 0.9,
-  onProgress?: (progress: number) => void
+  onProgress?: (progress: number) => void,
 ): Promise<File> => {
   const isHEIC = await isHEICFile(file);
-  
+
   if (isHEIC) {
     console.log('HEIC file detected, converting to JPEG...');
     return convertHEICToJPEG(file, quality, onProgress);
   }
-  
+
   return file;
-}; 
+};
