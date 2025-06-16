@@ -2,11 +2,11 @@ import { mergeFileConfig } from 'librechat-data-provider';
 import { useCallback } from 'react';
 import { useGetFileConfig } from '~/data-provider';
 import {
-    resizeImage,
-    shouldResizeImage,
-    supportsClientSideResize,
-    type ResizeOptions,
-    type ResizeResult,
+  resizeImage,
+  shouldResizeImage,
+  supportsClientSideResize,
+  type ResizeOptions,
+  type ResizeResult,
 } from '~/utils/imageResize';
 
 /**
@@ -19,6 +19,7 @@ export const useClientSideResize = () => {
   });
 
   // Safe access to clientSideImageResize config with fallbacks
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const config = (fileConfig as any)?.clientSideImageResize ?? {
     enabled: false,
     maxWidth: 1900,
@@ -66,7 +67,6 @@ export const useClientSideResize = () => {
         return { file: result.file, resized: true, result };
       } catch (error) {
         console.warn('Client-side image resizing failed:', error);
-        // Return original file on error
         return { file, resized: false };
       }
     },
@@ -81,4 +81,4 @@ export const useClientSideResize = () => {
   };
 };
 
-export default useClientSideResize; 
+export default useClientSideResize;

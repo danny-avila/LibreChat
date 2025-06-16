@@ -44,10 +44,10 @@ describe('imageResize utility', () => {
       const originalCanvas = global.HTMLCanvasElement;
       // @ts-ignore
       delete global.HTMLCanvasElement;
-      
+
       const result = supportsClientSideResize();
       expect(result).toBe(false);
-      
+
       global.HTMLCanvasElement = originalCanvas;
     });
   });
@@ -58,7 +58,7 @@ describe('imageResize utility', () => {
         type: 'image/jpeg',
         lastModified: Date.now(),
       });
-      
+
       // Mock large file size
       Object.defineProperty(largeImageFile, 'size', {
         value: 100 * 1024 * 1024, // 100MB
@@ -74,7 +74,7 @@ describe('imageResize utility', () => {
         type: 'image/jpeg',
         lastModified: Date.now(),
       });
-      
+
       // Mock small file size
       Object.defineProperty(smallImageFile, 'size', {
         value: 1024, // 1KB
@@ -90,7 +90,7 @@ describe('imageResize utility', () => {
         type: 'text/plain',
         lastModified: Date.now(),
       });
-      
+
       const result = shouldResizeImage(textFile);
       expect(result).toBe(false);
     });
@@ -100,9 +100,9 @@ describe('imageResize utility', () => {
         type: 'image/gif',
         lastModified: Date.now(),
       });
-      
+
       const result = shouldResizeImage(gifFile);
       expect(result).toBe(false);
     });
   });
-}); 
+});

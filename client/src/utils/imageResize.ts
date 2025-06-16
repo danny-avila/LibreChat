@@ -25,10 +25,10 @@ export interface ResizeResult {
  * We use slightly smaller values to ensure no backend resizing is triggered
  */
 const DEFAULT_RESIZE_OPTIONS: ResizeOptions = {
-  maxWidth: 1900,  // Slightly less than backend maxLongSide=2000
+  maxWidth: 1900, // Slightly less than backend maxLongSide=2000
   maxHeight: 1900, // Slightly less than backend maxLongSide=2000
-  quality: 0.92,   // High quality while reducing file size
-  format: 'jpeg',  // Most compatible format
+  quality: 0.92, // High quality while reducing file size
+  format: 'jpeg', // Most compatible format
 };
 
 /**
@@ -40,11 +40,11 @@ export function supportsClientSideResize(): boolean {
     if (typeof HTMLCanvasElement === 'undefined') return false;
     if (typeof FileReader === 'undefined') return false;
     if (typeof Image === 'undefined') return false;
-    
+
     // Test canvas creation
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
-    
+
     return !!(ctx && ctx.drawImage && canvas.toBlob);
   } catch {
     return false;
@@ -60,18 +60,18 @@ function calculateDimensions(
   maxWidth: number,
   maxHeight: number,
 ): { width: number; height: number } {
-  let { width, height } = { width: originalWidth, height: originalHeight };
-  
+  const { width, height } = { width: originalWidth, height: originalHeight };
+
   // If image is smaller than max dimensions, don't upscale
   if (width <= maxWidth && height <= maxHeight) {
     return { width, height };
   }
-  
+
   // Calculate scaling factor
   const widthRatio = maxWidth / width;
   const heightRatio = maxHeight / height;
   const scalingFactor = Math.min(widthRatio, heightRatio);
-  
+
   return {
     width: Math.round(width * scalingFactor),
     height: Math.round(height * scalingFactor),
@@ -91,19 +91,19 @@ export function resizeImage(
       reject(new Error('Browser does not support client-side image resizing'));
       return;
     }
-    
+
     // Only process image files
     if (!file.type.startsWith('image/')) {
       reject(new Error('File is not an image'));
       return;
     }
-    
+
     const opts = { ...DEFAULT_RESIZE_OPTIONS, ...options };
     const reader = new FileReader();
-    
+
     reader.onload = (event) => {
       const img = new Image();
-      
+
       img.onload = () => {
         try {
           const originalDimensions = { width: img.width, height: img.height };
@@ -113,7 +113,7 @@ export function resizeImage(
             opts.maxWidth!,
             opts.maxHeight!,
           );
-          
+
           // If no resizing needed, return original file
           if (
             newDimensions.width === originalDimensions.width &&
@@ -129,21 +129,21 @@ export function resizeImage(
             });
             return;
           }
-          
+
           // Create canvas and resize
           const canvas = document.createElement('canvas');
           const ctx = canvas.getContext('2d')!;
-          
+
           canvas.width = newDimensions.width;
           canvas.height = newDimensions.height;
-          
+
           // Use high-quality image smoothing
           ctx.imageSmoothingEnabled = true;
           ctx.imageSmoothingQuality = 'high';
-          
+
           // Draw resized image
           ctx.drawImage(img, 0, 0, newDimensions.width, newDimensions.height);
-          
+
           // Convert to blob
           canvas.toBlob(
             (blob) => {
@@ -151,17 +151,17 @@ export function resizeImage(
                 reject(new Error('Failed to create blob from canvas'));
                 return;
               }
-              
+
               // Create new file with same name but potentially different extension
               const extension = opts.format === 'jpeg' ? '.jpg' : `.${opts.format}`;
               const baseName = file.name.replace(/\.[^/.]+$/, '');
               const newFileName = `${baseName}${extension}`;
-              
+
               const resizedFile = new File([blob], newFileName, {
                 type: `image/${opts.format}`,
                 lastModified: Date.now(),
               });
-              
+
               resolve({
                 file: resizedFile,
                 originalSize: file.size,
@@ -178,11 +178,11 @@ export function resizeImage(
           reject(error);
         }
       };
-      
+
       img.onerror = () => reject(new Error('Failed to load image'));
       img.src = event.target?.result as string;
     };
-    
+
     reader.onerror = () => reject(new Error('Failed to read file'));
     reader.readAsDataURL(file);
   });
@@ -196,19 +196,20 @@ export function shouldResizeImage(
   fileSizeLimit: number = 512 * 1024 * 1024, // 512MB default
 ): boolean {
   // Don't resize if file is already small
-  if (file.size < fileSizeLimit * 0.1) { // Less than 10% of limit
+  if (file.size < fileSizeLimit * 0.1) {
+    // Less than 10% of limit
     return false;
   }
-  
+
   // Don't process non-images
   if (!file.type.startsWith('image/')) {
     return false;
   }
-  
+
   // Don't process GIFs (they might be animated)
   if (file.type === 'image/gif') {
     return false;
   }
-  
+
   return true;
-} 
+}

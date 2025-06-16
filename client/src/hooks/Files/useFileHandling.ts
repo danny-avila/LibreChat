@@ -265,20 +265,20 @@ const useFileHandling = (params?: UseFileHandling) => {
       const file_id = v4();
       try {
         let processedFile = originalFile;
-        
+
         // Apply client-side resizing if available and appropriate
         if (originalFile.type.startsWith('image/')) {
           try {
             const resizeResult = await resizeImageIfNeeded(originalFile);
             processedFile = resizeResult.file;
-            
+
             // Show toast notification if image was resized
             if (resizeResult.resized && resizeResult.result) {
               const { originalSize, newSize, compressionRatio } = resizeResult.result;
               const originalSizeMB = (originalSize / (1024 * 1024)).toFixed(1);
               const newSizeMB = (newSize / (1024 * 1024)).toFixed(1);
               const savedPercent = Math.round((1 - compressionRatio) * 100);
-              
+
               showToast({
                 message: `Image resized: ${originalSizeMB}MB → ${newSizeMB}MB (${savedPercent}% smaller)`,
                 status: 'success',
