@@ -20,7 +20,6 @@ const directories = [
   path.resolve(rootDir, 'packages', 'data-provider'),
   path.resolve(rootDir, 'packages', 'data-schemas'),
   path.resolve(rootDir, 'packages', 'api'),
-  path.resolve(rootDir, 'packages', 'auth'),
   path.resolve(rootDir, 'client'),
   path.resolve(rootDir, 'api'),
 ];
