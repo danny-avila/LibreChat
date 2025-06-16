@@ -135,7 +135,6 @@ export type MCPOptions = z.infer<typeof MCPOptionsSchema>;
  * These are non-sensitive string/boolean fields from the IUser interface.
  */
 const ALLOWED_USER_FIELDS = [
-  'id',
   'name',
   'username',
   'email',
@@ -204,7 +203,14 @@ export function processMCPEnv(obj: Readonly<MCPOptions>, user?: TUser, customUse
       }
     }
 
-    // 2. Replace standard user field placeholders (now includes USER_ID via ALLOWED_USER_FIELDS)
+    // 2.A. Special handling for LIBRECHAT_USER_ID placeholder
+    // This ensures {{LIBRECHAT_USER_ID}} is replaced only if user.id is available.
+    // If user.id is null/undefined, the placeholder remains
+    if (user && user.id != null && value.includes('{{LIBRECHAT_USER_ID}}')) {
+      value = value.replace(/\{\{LIBRECHAT_USER_ID\}\}/g, String(user.id));
+    }
+    
+    // 2.B. Replace other standard user field placeholders (e.g., {{LIBRECHAT_USER_EMAIL}})
     value = processUserPlaceholders(value, user);
 
     // 3. Replace system environment variables

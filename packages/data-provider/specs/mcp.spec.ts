@@ -668,15 +668,14 @@ describe('Environment Variable Extraction (MCP)', () => {
         CUSTOM_ENDPOINT_ID: 'ep123',
         ANOTHER_CUSTOM: 'another_val',
       };
-      process.env.SYS_REGION = 'eu-central-1';
 
-      const obj: MCPOptions = {
-        type: 'streamable-http',
+      const obj = {
+        type: 'streamable-http' as const,
         url: 'https://{{CUSTOM_ENDPOINT_ID}}.example.com/users/{{LIBRECHAT_USER_USERNAME}}',
         headers: {
           'X-Auth-Token': '{{CUSTOM_TOKEN_FROM_USER_SETTINGS}}', // Assuming this would be a custom var
           'X-User-ID': '{{LIBRECHAT_USER_ID}}',
-          'X-System-Region': '${SYS_REGION}',
+          'X-System-Test-Key': '${TEST_API_KEY}', // Using existing env var from beforeEach
         },
         env: {
           PROCESS_MODE: '{{PROCESS_MODE_CUSTOM}}', // Another custom var
@@ -692,21 +691,22 @@ describe('Environment Variable Extraction (MCP)', () => {
         PROCESS_MODE_CUSTOM: 'production',
       };
 
-      const result = processMCPEnv(obj, user, allCustomVarsForCall);
+      // Cast obj to MCPOptions when calling processMCPEnv.
+      // This acknowledges the object might not strictly conform to one schema in the union,
+      // but we are testing the function's ability to handle these properties if present.
+      const result = processMCPEnv(obj as MCPOptions, user, allCustomVarsForCall);
 
       expect('url' in result && result.url).toBe('https://ep123.example.com/users/john.doe');
       expect('headers' in result && result.headers).toEqual({
         'X-Auth-Token': 'secretToken123!',
         'X-User-ID': 'userXYZ',
-        'X-System-Region': 'eu-central-1',
+        'X-System-Test-Key': 'test-api-key-value', // Expecting value of TEST_API_KEY
       });
       expect('env' in result && result.env).toEqual({
         PROCESS_MODE: 'production',
         USER_HOME_DIR: '/home/john.doe',
         SYSTEM_PATH: process.env.PATH, // Actual value of PATH from the test environment
       });
-
-      delete process.env.SYS_REGION;
     });
   });
 });
