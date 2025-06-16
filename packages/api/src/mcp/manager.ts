@@ -73,7 +73,12 @@ export class MCPManager {
             /** Refresh function for app-level connections */
             const refreshTokensFunction = async (
               refreshToken: string,
-              metadata: { userId: string; serverName: string; identifier: string },
+              metadata: {
+                userId: string;
+                serverName: string;
+                identifier: string;
+                clientInfo?: OAuthClientInformation;
+              },
             ) => {
               /** URL from config if available */
               const serverUrl = (config as t.SSEOptions | t.StreamableHTTPOptions).url;
@@ -82,6 +87,7 @@ export class MCPManager {
                 {
                   serverName: metadata.serverName,
                   serverUrl,
+                  clientInfo: metadata.clientInfo,
                 },
                 config.oauth,
               );
