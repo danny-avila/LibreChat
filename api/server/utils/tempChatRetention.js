@@ -30,7 +30,7 @@ function getTempChatRetentionDays(config) {
       retentionDays = envValue;
     } else {
       logger.warn(
-        `Invalid TEMP_CHAT_RETENTION_DAYS environment variable: ${process.env.TEMP_CHAT_RETENTION_DAYS}. Using default: ${DEFAULT_RETENTION_DAYS} days.`
+        `Invalid TEMP_CHAT_RETENTION_DAYS environment variable: ${process.env.TEMP_CHAT_RETENTION_DAYS}. Using default: ${DEFAULT_RETENTION_DAYS} days.`,
       );
     }
   }
@@ -42,7 +42,7 @@ function getTempChatRetentionDays(config) {
       retentionDays = configValue;
     } else {
       logger.warn(
-        `Invalid temporaryChatRetentionDays in config: ${configValue}. Using ${retentionDays} days.`
+        `Invalid temporaryChatRetentionDays in config: ${configValue}. Using ${retentionDays} days.`,
       );
     }
   }
@@ -50,12 +50,12 @@ function getTempChatRetentionDays(config) {
   // Validate the retention period
   if (retentionDays < MIN_RETENTION_DAYS) {
     logger.warn(
-      `Temporary chat retention period ${retentionDays} is below minimum ${MIN_RETENTION_DAYS} days. Using minimum value.`
+      `Temporary chat retention period ${retentionDays} is below minimum ${MIN_RETENTION_DAYS} days. Using minimum value.`,
     );
     retentionDays = MIN_RETENTION_DAYS;
   } else if (retentionDays > MAX_RETENTION_DAYS) {
     logger.warn(
-      `Temporary chat retention period ${retentionDays} exceeds maximum ${MAX_RETENTION_DAYS} days. Using maximum value.`
+      `Temporary chat retention period ${retentionDays} exceeds maximum ${MAX_RETENTION_DAYS} days. Using maximum value.`,
     );
     retentionDays = MAX_RETENTION_DAYS;
   }
@@ -81,4 +81,4 @@ module.exports = {
   MAX_RETENTION_DAYS,
   getTempChatRetentionDays,
   createTempChatExpirationDate,
-}; 
+};

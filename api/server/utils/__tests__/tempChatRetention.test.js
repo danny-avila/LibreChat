@@ -91,12 +91,11 @@ describe('tempChatRetention', () => {
 
   describe('createTempChatExpirationDate', () => {
     it('should create expiration date with default retention period', () => {
-      const now = new Date();
       const result = createTempChatExpirationDate();
-      
+
       const expectedDate = new Date();
       expectedDate.setDate(expectedDate.getDate() + DEFAULT_RETENTION_DAYS);
-      
+
       // Allow for small time differences in test execution
       const timeDiff = Math.abs(result.getTime() - expectedDate.getTime());
       expect(timeDiff).toBeLessThan(1000); // Less than 1 second difference
@@ -108,13 +107,12 @@ describe('tempChatRetention', () => {
           temporaryChatRetentionDays: 7,
         },
       };
-      
-      const now = new Date();
+
       const result = createTempChatExpirationDate(config);
-      
+
       const expectedDate = new Date();
       expectedDate.setDate(expectedDate.getDate() + 7);
-      
+
       // Allow for small time differences in test execution
       const timeDiff = Math.abs(result.getTime() - expectedDate.getTime());
       expect(timeDiff).toBeLessThan(1000); // Less than 1 second difference
@@ -131,4 +129,4 @@ describe('tempChatRetention', () => {
       expect(result.getTime()).toBeGreaterThan(now.getTime());
     });
   });
-}); 
+});
