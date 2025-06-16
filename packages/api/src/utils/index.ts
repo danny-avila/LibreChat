@@ -1,3 +1,4 @@
+export * from './axios';
 export * from './azure';
 export * from './common';
 export * from './events';

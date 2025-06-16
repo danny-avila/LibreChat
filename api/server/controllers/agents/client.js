@@ -330,7 +330,7 @@ class AgentClient extends BaseClient {
 
     if (mcpServers.length > 0) {
       try {
-        const mcpInstructions = await getMCPManager().formatInstructionsForContext(mcpServers);
+        const mcpInstructions = getMCPManager().formatInstructionsForContext(mcpServers);
         if (mcpInstructions) {
           systemContent = [systemContent, mcpInstructions].filter(Boolean).join('\n\n');
           logger.debug('[AgentClient] Injected MCP instructions for servers:', mcpServers);
