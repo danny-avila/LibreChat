@@ -652,11 +652,15 @@ export class MCPManager {
   }
 
   /** Attempts to reconnect an app-level connection if it's disconnected */
-  private async isConnectionActive(
-    serverName: string,
-    connection: MCPConnection,
-    flowManager: FlowStateManager<MCPOAuthTokens | null>,
-  ): Promise<boolean> {
+  private async isConnectionActive({
+    serverName,
+    connection,
+    flowManager,
+  }: {
+    serverName: string;
+    connection: MCPConnection;
+    flowManager: FlowStateManager<MCPOAuthTokens | null>;
+  }): Promise<boolean> {
     if (await connection.isConnected()) {
       return true;
     }
@@ -702,7 +706,7 @@ export class MCPManager {
     for (const [serverName, connection] of this.connections.entries()) {
       try {
         /** Attempt to ensure connection is active, with reconnection if needed */
-        const isActive = await this.isConnectionActive(serverName, connection, flowManager);
+        const isActive = await this.isConnectionActive({ serverName, connection, flowManager });
         if (!isActive) {
           logger.warn(`[MCP][${serverName}] Connection not available. Skipping tool mapping.`);
           continue;
@@ -738,7 +742,7 @@ export class MCPManager {
     for (const [serverName, connection] of this.connections.entries()) {
       try {
         /** Attempt to ensure connection is active, with reconnection if needed */
-        const isActive = await this.isConnectionActive(serverName, connection, flowManager);
+        const isActive = await this.isConnectionActive({ serverName, connection, flowManager });
         if (!isActive) {
           logger.warn(
             `[MCP][${serverName}] Connection not available for ${serverName} manifest loading. Skipping...`,
