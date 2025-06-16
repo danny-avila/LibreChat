@@ -1,8 +1,8 @@
 const {
-  DEFAULT_RETENTION_DAYS,
-  MIN_RETENTION_DAYS,
-  MAX_RETENTION_DAYS,
-  getTempChatRetentionDays,
+  DEFAULT_RETENTION_HOURS,
+  MIN_RETENTION_HOURS,
+  MAX_RETENTION_HOURS,
+  getTempChatRetentionHours,
   createTempChatExpirationDate,
 } = require('../tempChatRetention');
 
@@ -12,80 +12,80 @@ describe('tempChatRetention', () => {
   beforeEach(() => {
     jest.resetModules();
     process.env = { ...originalEnv };
-    delete process.env.TEMP_CHAT_RETENTION_DAYS;
+    delete process.env.TEMP_CHAT_RETENTION_HOURS;
   });
 
   afterAll(() => {
     process.env = originalEnv;
   });
 
-  describe('getTempChatRetentionDays', () => {
-    it('should return default retention days when no config or env var is set', () => {
-      const result = getTempChatRetentionDays();
-      expect(result).toBe(DEFAULT_RETENTION_DAYS);
+  describe('getTempChatRetentionHours', () => {
+    it('should return default retention hours when no config or env var is set', () => {
+      const result = getTempChatRetentionHours();
+      expect(result).toBe(DEFAULT_RETENTION_HOURS);
     });
 
     it('should use environment variable when set', () => {
-      process.env.TEMP_CHAT_RETENTION_DAYS = '15';
-      const result = getTempChatRetentionDays();
-      expect(result).toBe(15);
+      process.env.TEMP_CHAT_RETENTION_HOURS = '48';
+      const result = getTempChatRetentionHours();
+      expect(result).toBe(48);
     });
 
     it('should use config value when set', () => {
       const config = {
         interface: {
-          temporaryChatRetentionDays: 7,
+          temporaryChatRetention: 12,
         },
       };
-      const result = getTempChatRetentionDays(config);
-      expect(result).toBe(7);
+      const result = getTempChatRetentionHours(config);
+      expect(result).toBe(12);
     });
 
     it('should prioritize config over environment variable', () => {
-      process.env.TEMP_CHAT_RETENTION_DAYS = '15';
+      process.env.TEMP_CHAT_RETENTION_HOURS = '48';
       const config = {
         interface: {
-          temporaryChatRetentionDays: 7,
+          temporaryChatRetention: 12,
         },
       };
-      const result = getTempChatRetentionDays(config);
-      expect(result).toBe(7);
+      const result = getTempChatRetentionHours(config);
+      expect(result).toBe(12);
     });
 
     it('should enforce minimum retention period', () => {
       const config = {
         interface: {
-          temporaryChatRetentionDays: 0,
+          temporaryChatRetention: 0,
         },
       };
-      const result = getTempChatRetentionDays(config);
-      expect(result).toBe(MIN_RETENTION_DAYS);
+      const result = getTempChatRetentionHours(config);
+      expect(result).toBe(MIN_RETENTION_HOURS);
     });
 
     it('should enforce maximum retention period', () => {
       const config = {
         interface: {
-          temporaryChatRetentionDays: 400,
+          temporaryChatRetention: 10000,
         },
       };
-      const result = getTempChatRetentionDays(config);
-      expect(result).toBe(MAX_RETENTION_DAYS);
+      const result = getTempChatRetentionHours(config);
+      expect(result).toBe(MAX_RETENTION_HOURS);
     });
 
     it('should handle invalid environment variable', () => {
-      process.env.TEMP_CHAT_RETENTION_DAYS = 'invalid';
-      const result = getTempChatRetentionDays();
-      expect(result).toBe(DEFAULT_RETENTION_DAYS);
+      process.env.TEMP_CHAT_RETENTION_HOURS = 'invalid';
+      const result = getTempChatRetentionHours();
+      expect(result).toBe(DEFAULT_RETENTION_HOURS);
     });
 
     it('should handle invalid config value', () => {
       const config = {
         interface: {
-          temporaryChatRetentionDays: 'invalid',
+          temporaryChatRetention: 'invalid',
         },
       };
-      const result = getTempChatRetentionDays(config);
-      expect(result).toBe(DEFAULT_RETENTION_DAYS);
+      const result = getTempChatRetentionHours(config);
+      expect(result).toBe(DEFAULT_RETENTION_HOURS);
     });
   });
 
@@ -94,7 +94,7 @@ describe('tempChatRetention', () => {
       const result = createTempChatExpirationDate();
 
       const expectedDate = new Date();
-      expectedDate.setDate(expectedDate.getDate() + DEFAULT_RETENTION_DAYS);
+      expectedDate.setHours(expectedDate.getHours() + DEFAULT_RETENTION_HOURS);
 
       // Allow for small time differences in test execution
       const timeDiff = Math.abs(result.getTime() - expectedDate.getTime());
@@ -104,14 +104,14 @@ describe('tempChatRetention', () => {
     it('should create expiration date with custom retention period', () => {
       const config = {
         interface: {
-          temporaryChatRetentionDays: 7,
+          temporaryChatRetention: 12,
         },
       };
 
       const result = createTempChatExpirationDate(config);
 
       const expectedDate = new Date();
-      expectedDate.setDate(expectedDate.getDate() + 7);
+      expectedDate.setHours(expectedDate.getHours() + 12);
 
       // Allow for small time differences in test execution
       const timeDiff = Math.abs(result.getTime() - expectedDate.getTime());

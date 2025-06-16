@@ -1,66 +1,66 @@
 const { logger } = require('~/config');
 
 /**
- * Default retention period for temporary chats in days
+ * Default retention period for temporary chats in hours
  */
-const DEFAULT_RETENTION_DAYS = 30;
+const DEFAULT_RETENTION_HOURS = 24 * 30; // 30 days
 
 /**
- * Minimum allowed retention period in days
+ * Minimum allowed retention period in hours
  */
-const MIN_RETENTION_DAYS = 1;
+const MIN_RETENTION_HOURS = 1;
 
 /**
- * Maximum allowed retention period in days (1 year)
+ * Maximum allowed retention period in hours (1 year = 8760 hours)
  */
-const MAX_RETENTION_DAYS = 365;
+const MAX_RETENTION_HOURS = 8760;
 
 /**
  * Gets the temporary chat retention period from environment variables or config
  * @param {TCustomConfig} [config] - The custom configuration object
- * @returns {number} The retention period in days
+ * @returns {number} The retention period in hours
  */
-function getTempChatRetentionDays(config) {
-  let retentionDays = DEFAULT_RETENTION_DAYS;
+function getTempChatRetentionHours(config) {
+  let retentionHours = DEFAULT_RETENTION_HOURS;
 
   // Check environment variable first
-  if (process.env.TEMP_CHAT_RETENTION_DAYS) {
-    const envValue = parseInt(process.env.TEMP_CHAT_RETENTION_DAYS, 10);
+  if (process.env.TEMP_CHAT_RETENTION_HOURS) {
+    const envValue = parseInt(process.env.TEMP_CHAT_RETENTION_HOURS, 10);
     if (!isNaN(envValue)) {
-      retentionDays = envValue;
+      retentionHours = envValue;
     } else {
       logger.warn(
-        `Invalid TEMP_CHAT_RETENTION_DAYS environment variable: ${process.env.TEMP_CHAT_RETENTION_DAYS}. Using default: ${DEFAULT_RETENTION_DAYS} days.`,
+        `Invalid TEMP_CHAT_RETENTION_HOURS environment variable: ${process.env.TEMP_CHAT_RETENTION_HOURS}. Using default: ${DEFAULT_RETENTION_HOURS} hours.`,
       );
     }
   }
 
   // Check config file (takes precedence over environment variable)
-  if (config?.interface?.temporaryChatRetentionDays !== undefined) {
-    const configValue = config.interface.temporaryChatRetentionDays;
+  if (config?.interface?.temporaryChatRetention !== undefined) {
+    const configValue = config.interface.temporaryChatRetention;
     if (typeof configValue === 'number' && !isNaN(configValue)) {
-      retentionDays = configValue;
+      retentionHours = configValue;
     } else {
       logger.warn(
-        `Invalid temporaryChatRetentionDays in config: ${configValue}. Using ${retentionDays} days.`,
+        `Invalid temporaryChatRetention in config: ${configValue}. Using ${retentionHours} hours.`,
       );
     }
   }
 
   // Validate the retention period
-  if (retentionDays < MIN_RETENTION_DAYS) {
+  if (retentionHours < MIN_RETENTION_HOURS) {
     logger.warn(
-      `Temporary chat retention period ${retentionDays} is below minimum ${MIN_RETENTION_DAYS} days. Using minimum value.`,
+      `Temporary chat retention period ${retentionHours} is below minimum ${MIN_RETENTION_HOURS} hours. Using minimum value.`,
     );
-    retentionDays = MIN_RETENTION_DAYS;
-  } else if (retentionDays > MAX_RETENTION_DAYS) {
+    retentionHours = MIN_RETENTION_HOURS;
+  } else if (retentionHours > MAX_RETENTION_HOURS) {
     logger.warn(
-      `Temporary chat retention period ${retentionDays} exceeds maximum ${MAX_RETENTION_DAYS} days. Using maximum value.`,
+      `Temporary chat retention period ${retentionHours} exceeds maximum ${MAX_RETENTION_HOURS} hours. Using maximum value.`,
     );
-    retentionDays = MAX_RETENTION_DAYS;
+    retentionHours = MAX_RETENTION_HOURS;
   }
 
-  return retentionDays;
+  return retentionHours;
 }
 
 /**
@@ -69,16 +69,16 @@ function getTempChatRetentionDays(config) {
  * @returns {Date} The expiration date
  */
 function createTempChatExpirationDate(config) {
-  const retentionDays = getTempChatRetentionDays(config);
+  const retentionHours = getTempChatRetentionHours(config);
   const expiredAt = new Date();
-  expiredAt.setDate(expiredAt.getDate() + retentionDays);
+  expiredAt.setHours(expiredAt.getHours() + retentionHours);
   return expiredAt;
 }
 
 module.exports = {
-  DEFAULT_RETENTION_DAYS,
-  MIN_RETENTION_DAYS,
-  MAX_RETENTION_DAYS,
-  getTempChatRetentionDays,
+  DEFAULT_RETENTION_HOURS,
+  MIN_RETENTION_HOURS,
+  MAX_RETENTION_HOURS,
+  getTempChatRetentionHours,
   createTempChatExpirationDate,
 };
