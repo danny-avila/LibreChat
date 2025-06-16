@@ -284,7 +284,7 @@ jobs:
             exit 1
           fi
 
-      - name: Check deployment status and logs
+      - name: Check deployment status, logs, and environment variables
         run: |
           echo "=== Deployment Status ==="
           doctl apps list-deployments ${{ secrets.DIGITALOCEAN_APP_ID }} --format ID,Phase,Created
@@ -296,5 +296,6 @@ jobs:
           echo "=== App Status ==="
           doctl apps get ${{ secrets.DIGITALOCEAN_APP_ID }}
 
-          echo "=== Environment Variables ==="
-          doctl apps get ${{ secrets.DIGITALOCEAN_APP_ID }} --format Spec.Services[0].Env 
+          echo "=== Environment Variables (all services) ==="
+          sudo apt-get update && sudo apt-get install -y jq
+          doctl apps get ${{ secrets.DIGITALOCEAN_APP_ID }} -o json | jq '.[0].spec.services[] | {name: .name, envs: .envs}' 
