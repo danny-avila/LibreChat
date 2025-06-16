@@ -16,6 +16,80 @@ const getLogStores = require('~/cache/getLogStores');
 
 const { PROXY } = process.env;
 
+/**
+ * List of allowed user fields that can be used in custom endpoint configurations.
+ * These are non-sensitive string/boolean fields that are available on the user object.
+ */
+const ALLOWED_USER_FIELDS = [
+  'name',
+  'username',
+  'email',
+  'provider',
+  'role',
+  'googleId',
+  'facebookId',
+  'openidId',
+  'samlId',
+  'ldapId',
+  'githubId',
+  'discordId',
+  'appleId',
+  'emailVerified',
+  'twoFactorEnabled',
+  'termsAccepted',
+];
+
+/**
+ * Processes a string value to replace user field placeholders
+ * @param value - The string value to process
+ * @param user - The user object
+ * @returns The processed string with placeholders replaced
+ */
+const processUserPlaceholders = (value, user) => {
+  if (!user || typeof value !== 'string') {
+    return value;
+  }
+
+  for (const field of ALLOWED_USER_FIELDS) {
+    const placeholder = `{{LIBRECHAT_USER_${field.toUpperCase()}}}`;
+    if (value.includes(placeholder)) {
+      const fieldValue = user[field];
+      const replacementValue = fieldValue != null ? String(fieldValue) : '';
+      value = value.replace(new RegExp(placeholder, 'g'), replacementValue);
+    }
+  }
+
+  return value;
+};
+
+/**
+ * Resolves headers by processing environment variables and user placeholders
+ * @param headers - The headers object to process
+ * @param user - The user object containing user fields
+ * @returns The processed headers object
+ */
+const resolveHeaders = (headers, user) => {
+  const resolvedHeaders = {};
+  if (headers && typeof headers === 'object') {
+    Object.entries(headers).forEach(([key, value]) => {
+      try {
+        // Handle special case for user ID (same as mcp.ts)
+        if (value === '{{LIBRECHAT_USER_ID}}' && user?.id != null) {
+          resolvedHeaders[key] = String(user.id);
+          return;
+        }
+
+        let processedValue = extractEnvVariable(value);
+        processedValue = processUserPlaceholders(processedValue, user);
+        resolvedHeaders[key] = processedValue;
+      } catch {
+        resolvedHeaders[key] = 'null';
+      }
+    });
+  }
+  return resolvedHeaders;
+};
+
 const initializeClient = async ({ req, res, endpointOption, optionsOnly, overrideEndpoint }) => {
   const { key: expiresAt } = req.body;
   const endpoint = overrideEndpoint ?? req.body.endpoint;
@@ -28,12 +102,7 @@ const initializeClient = async ({ req, res, endpointOption, optionsOnly, overrid
   const CUSTOM_API_KEY = extractEnvVariable(endpointConfig.apiKey);
   const CUSTOM_BASE_URL = extractEnvVariable(endpointConfig.baseURL);
 
-  let resolvedHeaders = {};
-  if (endpointConfig.headers && typeof endpointConfig.headers === 'object') {
-    Object.keys(endpointConfig.headers).forEach((key) => {
-      resolvedHeaders[key] = extractEnvVariable(endpointConfig.headers[key]);
-    });
-  }
+  const resolvedHeaders = resolveHeaders(endpointConfig.headers, req.user);
 
   if (CUSTOM_API_KEY.match(envVarRegex)) {
     throw new Error(`Missing API Key for ${endpoint}.`);
