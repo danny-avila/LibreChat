@@ -46,7 +46,6 @@ router.get('/:serverName/oauth/initiate', requireJwtAuth, async (req, res) => {
       serverUrl,
       userId,
       oauthConfig,
-      flowManager,
     );
 
     logger.debug('[MCP OAuth] OAuth flow initiated', { oauthFlowId, authorizationUrl });

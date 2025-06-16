@@ -18,14 +18,16 @@ const { getLogStores } = require('~/cache');
  * @param {ServerResponse} params.res - The Express response object for sending events.
  * @param {string} params.stepId - The ID of the step in the flow.
  * @param {ToolCallChunk} params.toolCall - The tool call object containing tool information.
+ * @param {string} params.loginFlowId - The ID of the login flow.
+ * @param {FlowStateManager<any>} params.flowManager - The flow manager instance.
  */
-function createOAuthStart({ res, stepId, toolCall }) {
+function createOAuthStart({ res, stepId, toolCall, loginFlowId, flowManager, signal }) {
   /**
    * Creates a function to handle OAuth login requests.
    * @param {string} authURL - The URL to redirect the user for OAuth authentication.
-   * @returns {boolean} Returns true to indicate the event was sent successfully.
+   * @returns {Promise<boolean>} Returns true to indicate the event was sent successfully.
    */
-  return function (authURL) {
+  return async function (authURL) {
     /** @type {{ id: string; delta: AgentToolCallDelta }} */
     const data = {
       id: stepId,
@@ -36,9 +38,17 @@ function createOAuthStart({ res, stepId, toolCall }) {
         expires_at: Date.now() + Time.TWO_MINUTES,
       },
     };
-    sendEvent(res, { event: GraphEvents.ON_RUN_STEP_DELTA, data });
-    logger.debug('Sent OAuth login request to client');
-    return true;
+    /** Used to ensure the handler (use of `sendEvent`) is only invoked once */
+    await flowManager.createFlowWithHandler(
+      loginFlowId,
+      'oauth_login',
+      async () => {
+        sendEvent(res, { event: GraphEvents.ON_RUN_STEP_DELTA, data });
+        logger.debug('Sent OAuth login request to client');
+        return true;
+      },
+      signal,
+    );
   };
 }
 
@@ -47,9 +57,11 @@ function createOAuthStart({ res, stepId, toolCall }) {
  * @param {ServerResponse} params.res - The Express response object for sending events.
  * @param {string} params.stepId - The ID of the step in the flow.
  * @param {ToolCallChunk} params.toolCall - The tool call object containing tool information.
+ * @param {string} params.loginFlowId - The ID of the login flow.
+ * @param {FlowStateManager<any>} params.flowManager - The flow manager instance.
  */
 function createOAuthEnd({ res, stepId, toolCall }) {
-  return function () {
+  return async function () {
     /** @type {{ id: string; delta: AgentToolCallDelta }} */
     const data = {
       id: stepId,
@@ -121,10 +133,14 @@ async function createMCPTool({ req, res, toolKey, provider: _provider }) {
       const provider = (config?.metadata?.provider || _provider)?.toLowerCase();
 
       const { args: _args, stepId, ...toolCall } = config.toolCall ?? {};
+      const loginFlowId = `${serverName}:oauth_login:${config.metadata.thread_id}:${config.metadata.run_id}`;
       const oauthStart = createOAuthStart({
         res,
         stepId,
         toolCall,
+        loginFlowId,
+        flowManager,
+        signal: derivedSignal,
       });
       const oauthEnd = createOAuthEnd({
         res,

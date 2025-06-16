@@ -164,8 +164,7 @@ export class MCPOAuthHandler {
     serverUrl: string,
     userId: string,
     config: MCPOptions['oauth'] | undefined,
-    flowManager: FlowStateManager<MCPOAuthTokens>,
-  ): Promise<{ authorizationUrl: string; flowId: string }> {
+  ): Promise<{ authorizationUrl: string; flowId: string; flowMetadata: MCPOAuthFlowMetadata }> {
     logger.debug(`[MCPOAuth] initiateOAuthFlow called for ${serverName} with URL: ${serverUrl}`);
 
     const flowId = this.generateFlowId(userId, serverName);
@@ -214,24 +213,11 @@ export class MCPOAuthHandler {
           metadata,
         };
 
-        logger.debug(`[MCPOAuth] Creating flow in flow manager`);
-
-        /** Create the flow state without waiting for completion */
-        const flowKey = `${this.FLOW_TYPE}:${flowId}`;
-        const flowState = {
-          type: this.FLOW_TYPE,
-          status: 'PENDING',
-          metadata: flowMetadata,
-          createdAt: Date.now(),
-        };
-
-        /** @ts-ignore - accessing private property temporarily */
-        await flowManager.keyv.set(flowKey, flowState, this.FLOW_TTL);
-
         logger.debug(`[MCPOAuth] Authorization URL generated: ${authorizationUrl.toString()}`);
         return {
           authorizationUrl: authorizationUrl.toString(),
           flowId,
+          flowMetadata,
         };
       }
 
@@ -298,20 +284,6 @@ export class MCPOAuthHandler {
         resourceMetadata,
       };
 
-      logger.debug(`[MCPOAuth] Creating flow in flow manager for ${serverName}`);
-
-      /** Create the flow state without waiting for completion */
-      const flowKey = `${this.FLOW_TYPE}:${flowId}`;
-      const flowState = {
-        type: this.FLOW_TYPE,
-        status: 'PENDING',
-        metadata: flowMetadata,
-        createdAt: Date.now(),
-      };
-
-      /** @ts-ignore - accessing private property temporarily */
-      await flowManager.keyv.set(flowKey, flowState, this.FLOW_TTL);
-
       logger.debug(
         `[MCPOAuth] Authorization URL generated for ${serverName}: ${authorizationUrl.toString()}`,
       );
@@ -319,6 +291,7 @@ export class MCPOAuthHandler {
       const result = {
         authorizationUrl: authorizationUrl.toString(),
         flowId,
+        flowMetadata,
       };
 
       logger.debug(
@@ -341,14 +314,20 @@ export class MCPOAuthHandler {
     flowManager: FlowStateManager<MCPOAuthTokens>,
   ): Promise<MCPOAuthTokens> {
     try {
+      /** Flow state which contains our metadata */
       const flowState = await flowManager.getFlowState(flowId, this.FLOW_TYPE);
       if (!flowState) {
-        throw new Error('OAuth flow not found or expired');
+        throw new Error('OAuth flow not found');
       }
 
-      const metadata = flowState.metadata as unknown as MCPOAuthFlowMetadata;
+      const flowMetadata = flowState.metadata as MCPOAuthFlowMetadata;
+      if (!flowMetadata) {
+        throw new Error('OAuth flow metadata not found');
+      }
+
+      const metadata = flowMetadata;
       if (!metadata.metadata || !metadata.clientInfo || !metadata.codeVerifier) {
-        throw new Error('Invalid flow state');
+        throw new Error('Invalid flow metadata');
       }
 
       const tokens = await exchangeAuthorization(metadata.serverUrl, {
@@ -373,6 +352,7 @@ export class MCPOAuthHandler {
         expires_at: tokens.expires_in ? Date.now() + tokens.expires_in * 1000 : undefined,
       };
 
+      /** Now complete the flow with the tokens */
       await flowManager.completeFlow(flowId, this.FLOW_TYPE, mcpTokens);
 
       return mcpTokens;
@@ -384,21 +364,25 @@ export class MCPOAuthHandler {
   }
 
   /**
-   * Gets the OAuth flow state
+   * Gets the OAuth flow metadata
    */
   static async getFlowState(
     flowId: string,
     flowManager: FlowStateManager<MCPOAuthTokens>,
   ): Promise<MCPOAuthFlowMetadata | null> {
-    const state = await flowManager.getFlowState(flowId, this.FLOW_TYPE);
-    return state?.metadata as unknown as MCPOAuthFlowMetadata | null;
+    const flowState = await flowManager.getFlowState(flowId, this.FLOW_TYPE);
+    if (!flowState) {
+      return null;
+    }
+    return flowState.metadata as MCPOAuthFlowMetadata;
   }
 
   /**
-   * Generates a unique flow ID
+   * Generates a flow ID for the OAuth flow
+   * @returns Consistent ID so concurrent requests share the same flow
    */
-  private static generateFlowId(userId: string, serverName: string): string {
-    return `${userId}:${serverName}:${Date.now()}`;
+  public static generateFlowId(userId: string, serverName: string): string {
+    return `${userId}:${serverName}`;
   }
 
   /**

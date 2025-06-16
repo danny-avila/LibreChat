@@ -1,4 +1,5 @@
 import type { OAuthTokens } from '@modelcontextprotocol/sdk/shared/auth.js';
+import type { FlowMetadata } from '~/flow/types';
 
 export interface OAuthMetadata {
   /** OAuth authorization endpoint */
@@ -72,7 +73,7 @@ export interface MCPOAuthState {
   timestamp: number;
 }
 
-export interface MCPOAuthFlowMetadata {
+export interface MCPOAuthFlowMetadata extends FlowMetadata {
   serverName: string;
   userId: string;
   serverUrl: string;

@@ -5,7 +5,8 @@ import type { OAuthClientInformation } from '@modelcontextprotocol/sdk/shared/au
 import type { JsonSchemaType, MCPOptions, TUser } from 'librechat-data-provider';
 import type { TokenMethods } from '@librechat/data-schemas';
 import type { FlowStateManager } from '~/flow/manager';
-import type { MCPOAuthTokens } from './oauth/types';
+import type { MCPOAuthTokens, MCPOAuthFlowMetadata } from './oauth/types';
+import type { FlowMetadata } from '~/flow/types';
 import type * as t from './types';
 import { CONSTANTS, isSystemUserId } from './enum';
 import { MCPOAuthHandler } from './oauth/handler';
@@ -355,8 +356,8 @@ export class MCPManager {
     serverName: string;
     flowManager?: FlowStateManager<MCPOAuthTokens>;
     tokenMethods?: TokenMethods;
-    oauthStart?: (authURL: string) => void;
-    oauthEnd?: () => void;
+    oauthStart?: (authURL: string) => Promise<void>;
+    oauthEnd?: () => Promise<void>;
   }): Promise<MCPConnection> {
     const userId = user.id;
     if (!userId) {
@@ -725,8 +726,8 @@ export class MCPManager {
     options?: CallToolOptions;
     tokenMethods?: TokenMethods;
     flowManager?: FlowStateManager<MCPOAuthTokens>;
-    oauthStart?: (authURL: string) => void;
-    oauthEnd?: () => void;
+    oauthStart?: (authURL: string) => Promise<void>;
+    oauthEnd?: () => Promise<void>;
   }): Promise<t.FormattedToolResponse> {
     /** User-specific connection */
     let connection: MCPConnection | undefined;
@@ -903,8 +904,8 @@ Please follow these instructions when using tools from the respective MCP server
     serverUrl?: string;
     userId?: string;
     flowManager?: FlowStateManager<MCPOAuthTokens>;
-    oauthStart?: (authURL: string) => void;
-    oauthEnd?: () => void;
+    oauthStart?: (authURL: string) => Promise<void>;
+    oauthEnd?: () => Promise<void>;
   }): Promise<{ tokens: MCPOAuthTokens; clientInfo?: OAuthClientInformation } | null> {
     const userPart = isSystemUserId(userId) ? '' : `[User: ${userId}]`;
     const logPrefix = `[MCP]${userPart}[${serverName}]`;
@@ -920,19 +921,41 @@ Please follow these instructions when using tools from the respective MCP server
 
     try {
       const config = this.mcpConfigs[serverName];
-      logger.debug(`${logPrefix} Initiating OAuth flow for ${serverName}...`);
+      logger.debug(`${logPrefix} Checking for existing OAuth flow for ${serverName}...`);
 
-      const { authorizationUrl, flowId } = await MCPOAuthHandler.initiateOAuthFlow(
-        serverName,
-        serverUrl,
-        userId,
-        config?.oauth,
-        flowManager,
-      );
+      /** Flow ID to check if a flow already exists */
+      const flowId = MCPOAuthHandler.generateFlowId(userId, serverName);
+
+      /** Check if there's already an ongoing OAuth flow for this flowId */
+      const existingFlow = await flowManager.getFlowState(flowId, 'mcp_oauth');
+      if (existingFlow && existingFlow.status === 'PENDING') {
+        logger.debug(
+          `${logPrefix} OAuth flow already exists for ${flowId}, waiting for completion`,
+        );
+        /** Tokens from existing flow to complete */
+        const tokens = await flowManager.createFlow(flowId, 'mcp_oauth');
+        if (typeof oauthEnd === 'function') {
+          await oauthEnd();
+        }
+        logger.info(`${logPrefix} OAuth flow completed, tokens received for ${serverName}`);
+
+        /** Client information from the existing flow metadata */
+        const existingMetadata = existingFlow.metadata as unknown as MCPOAuthFlowMetadata;
+        const clientInfo = existingMetadata?.clientInfo;
+
+        return { tokens, clientInfo };
+      }
+
+      logger.debug(`${logPrefix} Initiating new OAuth flow for ${serverName}...`);
+      const {
+        authorizationUrl,
+        flowId: newFlowId,
+        flowMetadata,
+      } = await MCPOAuthHandler.initiateOAuthFlow(serverName, serverUrl, userId, config?.oauth);
 
       if (typeof oauthStart === 'function') {
         logger.info(`${logPrefix} OAuth flow started, issued authorization URL to user`);
-        oauthStart(authorizationUrl);
+        await oauthStart(authorizationUrl);
       } else {
         logger.info(`
 ═══════════════════════════════════════════════════════════════════════
@@ -940,26 +963,24 @@ Please visit the following URL to authenticate:
 
 ${authorizationUrl}
 
-${logPrefix} Flow ID: ${flowId}
+${logPrefix} Flow ID: ${newFlowId}
 ═══════════════════════════════════════════════════════════════════════
 `);
       }
 
-      /** Awaited tokens from successful OAuth completion + exchange */
-      const tokens = await flowManager.createFlow(flowId, 'mcp_oauth');
-      oauthEnd?.();
+      /** Tokens from the new flow */
+      const tokens = await flowManager.createFlow(
+        newFlowId,
+        'mcp_oauth',
+        flowMetadata as FlowMetadata,
+      );
+      if (typeof oauthEnd === 'function') {
+        await oauthEnd();
+      }
       logger.info(`${logPrefix} OAuth flow completed, tokens received for ${serverName}`);
 
-      /** Get client information from the flow state */
-      let clientInfo: OAuthClientInformation | undefined;
-      try {
-        const flowState = await MCPOAuthHandler.getFlowState(flowId, flowManager);
-        clientInfo = flowState?.clientInfo;
-      } catch {
-        logger.debug(
-          `${logPrefix} Could not retrieve client info from flow state for ${serverName}`,
-        );
-      }
+      /** Client information from the flow metadata */
+      const clientInfo = flowMetadata?.clientInfo;
 
       return { tokens, clientInfo };
     } catch (error) {
