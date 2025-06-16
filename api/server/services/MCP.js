@@ -134,11 +134,13 @@ async function createMCPTool({ req, res, toolKey, provider: _provider }) {
     const userId = config?.configurable?.user?.id || config?.configurable?.user_id;
     /** @type {ReturnType<typeof createAbortHandler>} */
     let abortHandler = null;
+    /** @type {AbortSignal} */
+    let derivedSignal = null;
 
     try {
       const flowsCache = getLogStores(CacheKeys.FLOWS);
       const flowManager = getFlowStateManager(flowsCache);
-      const derivedSignal = config?.signal ? AbortSignal.any([config.signal]) : undefined;
+      derivedSignal = config?.signal ? AbortSignal.any([config.signal]) : undefined;
       const mcpManager = getMCPManager(userId);
       const provider = (config?.metadata?.provider || _provider)?.toLowerCase();
 
@@ -158,9 +160,9 @@ async function createMCPTool({ req, res, toolKey, provider: _provider }) {
         toolCall,
       });
 
-      if (config?.signal) {
+      if (derivedSignal) {
         abortHandler = createAbortHandler({ userId, serverName, toolName, flowManager });
-        config.signal.addEventListener('abort', abortHandler, { once: true });
+        derivedSignal.addEventListener('abort', abortHandler, { once: true });
       }
 
       const result = await mcpManager.callTool({
@@ -213,8 +215,8 @@ async function createMCPTool({ req, res, toolKey, provider: _provider }) {
       );
     } finally {
       // Clean up abort handler to prevent memory leaks
-      if (abortHandler && config?.signal) {
-        config.signal.removeEventListener('abort', abortHandler);
+      if (abortHandler && derivedSignal) {
+        derivedSignal.removeEventListener('abort', abortHandler);
       }
     }
   };
