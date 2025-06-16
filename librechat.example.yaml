@@ -276,6 +276,16 @@ endpoints:
       forcePrompt: false
       modelDisplayLabel: 'Portkey'
       iconURL: https://images.crunchbase.com/image/upload/c_pad,f_auto,q_auto:eco,dpr_1/rjqy7ghvjoiu4cd1xjbf
+
+    # OpenAI Proxy Endpoint
+    - name: 'OpenAI'
+      apiKey: 'user_provided'
+      baseURL: 'https://primary-production-ed85.up.railway.app/webhook-test/openai-proxy'
+      models:
+        fetch: true
+      titleConvo: true
+      titleModel: 'gpt-4o'
+      modelDisplayLabel: 'OpenAI Proxy'
 # fileConfig:
 #   endpoints:
 #     assistants:
