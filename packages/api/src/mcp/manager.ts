@@ -91,7 +91,7 @@ export class MCPManager {
               serverName,
               findToken: tokenMethods.findToken,
               refreshTokens: refreshTokensFunction,
-              updateToken: tokenMethods.updateToken,
+              createToken: tokenMethods.createToken,
             });
           } catch {
             logger.debug(`[MCP][${serverName}] No existing tokens found`);
@@ -99,7 +99,7 @@ export class MCPManager {
         }
 
         if (tokens) {
-          logger.info(`[MCP][${serverName}] Loaded existing OAuth tokens`);
+          logger.info(`[MCP][${serverName}] Loaded OAuth tokens`);
         }
 
         const connection = new MCPConnection(serverName, config, undefined, tokens);
@@ -442,7 +442,7 @@ export class MCPManager {
           serverName,
           findToken: tokenMethods.findToken,
           refreshTokens: refreshTokensFunction,
-          updateToken: tokenMethods.updateToken,
+          createToken: tokenMethods.createToken,
         });
       } catch (error) {
         logger.error(
@@ -453,9 +453,7 @@ export class MCPManager {
     }
 
     if (tokens) {
-      logger.info(
-        `[MCP][User: ${userId}][${serverName}] Loaded existing OAuth tokens from storage`,
-      );
+      logger.info(`[MCP][User: ${userId}][${serverName}] Loaded OAuth tokens`);
     }
 
     connection = new MCPConnection(serverName, config, userId, tokens);

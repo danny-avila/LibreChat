@@ -21,23 +21,16 @@ interface GetTokensParams {
     refreshToken: string,
     metadata: { userId: string; serverName: string; identifier: string },
   ) => Promise<MCPOAuthTokens>;
-  updateToken?: TokenMethods['updateToken'];
-}
-
-interface UpdateTokensParams {
-  userId: string;
-  serverName: string;
-  tokens: OAuthTokens | ExtendedOAuthTokens | MCPOAuthTokens;
-  updateToken: TokenMethods['updateToken'];
-}
-
-interface DeleteTokensParams {
-  userId: string;
-  serverName: string;
-  updateToken: TokenMethods['updateToken'];
+  createToken?: TokenMethods['createToken'];
 }
 
 export class MCPTokenStorage {
+  static getLogPrefix(userId: string, serverName: string): string {
+    return isSystemUserId(userId)
+      ? `[MCP][${serverName}]`
+      : `[MCP][User: ${userId}][${serverName}]`;
+  }
+
   /**
    * Stores OAuth tokens for an MCP server
    */
@@ -48,36 +41,37 @@ export class MCPTokenStorage {
     createToken,
     clientInfo,
   }: StoreTokensParams): Promise<void> {
+    const logPrefix = this.getLogPrefix(userId, serverName);
+
     try {
       const identifier = `mcp:${serverName}`;
-      const userType = isSystemUserId(userId) ? 'app-level connection' : `user ${userId}`;
 
       // Encrypt and store access token
       const encryptedAccessToken = await encryptV2(tokens.access_token);
 
       logger.debug(
-        `[MCPTokenStorage] Token expires_in: ${'expires_in' in tokens ? tokens.expires_in : 'N/A'}, expires_at: ${'expires_at' in tokens ? tokens.expires_at : 'N/A'}`,
+        `${logPrefix} Token expires_in: ${'expires_in' in tokens ? tokens.expires_in : 'N/A'}, expires_at: ${'expires_at' in tokens ? tokens.expires_at : 'N/A'}`,
       );
 
       // Handle both expires_in and expires_at formats
       let accessTokenExpiry: Date;
       if ('expires_at' in tokens && tokens.expires_at) {
         /** MCPOAuthTokens format - already has calculated expiry */
-        logger.debug(`[MCPTokenStorage] Using expires_at for ${serverName}: ${tokens.expires_at}`);
+        logger.debug(`${logPrefix} Using expires_at: ${tokens.expires_at}`);
         accessTokenExpiry = new Date(tokens.expires_at);
       } else if (tokens.expires_in) {
         /** Standard OAuthTokens format - calculate expiry */
-        logger.debug(`[MCPTokenStorage] Using expires_in for ${serverName}: ${tokens.expires_in}`);
+        logger.debug(`${logPrefix} Using expires_in: ${tokens.expires_in}`);
         accessTokenExpiry = new Date(Date.now() + tokens.expires_in * 1000);
       } else {
         /** No expiry provided - default to 1 year */
-        logger.debug(`[MCPTokenStorage] No expiry provided for ${serverName}, using default`);
+        logger.debug(`${logPrefix} No expiry provided, using default`);
         accessTokenExpiry = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
       }
 
-      logger.debug(`[MCPTokenStorage] Calculated expiry date: ${accessTokenExpiry.toISOString()}`);
+      logger.debug(`${logPrefix} Calculated expiry date: ${accessTokenExpiry.toISOString()}`);
       logger.debug(
-        `[MCPTokenStorage] Date object: ${JSON.stringify({
+        `${logPrefix} Date object: ${JSON.stringify({
           time: accessTokenExpiry.getTime(),
           valid: !isNaN(accessTokenExpiry.getTime()),
           iso: accessTokenExpiry.toISOString(),
@@ -86,7 +80,7 @@ export class MCPTokenStorage {
 
       // Ensure the date is valid before passing to createToken
       if (isNaN(accessTokenExpiry.getTime())) {
-        logger.error(`[MCPTokenStorage] Invalid expiry date calculated, using default`);
+        logger.error(`${logPrefix} Invalid expiry date calculated, using default`);
         accessTokenExpiry = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
       }
 
@@ -123,7 +117,7 @@ export class MCPTokenStorage {
 
       /** Store client information if provided */
       if (clientInfo) {
-        logger.debug(`[MCPTokenStorage] Storing client info for ${serverName}:`, {
+        logger.debug(`${logPrefix} Storing client info:`, {
           client_id: clientInfo.client_id,
           has_client_secret: !!clientInfo.client_secret,
         });
@@ -137,9 +131,10 @@ export class MCPTokenStorage {
         });
       }
 
-      logger.debug(`[MCPTokenStorage] Stored OAuth tokens for ${userType}, server ${serverName}`);
+      logger.debug(`${logPrefix} Stored OAuth tokens`);
     } catch (error) {
-      logger.error('[MCPTokenStorage] Failed to store tokens', { error, userId, serverName });
+      const logPrefix = this.getLogPrefix(userId, serverName);
+      logger.error(`${logPrefix} Failed to store tokens`, error);
       throw error;
     }
   }
@@ -151,12 +146,13 @@ export class MCPTokenStorage {
     userId,
     serverName,
     findToken,
+    createToken,
     refreshTokens,
-    updateToken,
   }: GetTokensParams): Promise<MCPOAuthTokens | null> {
+    const logPrefix = this.getLogPrefix(userId, serverName);
+
     try {
       const identifier = `mcp:${serverName}`;
-      const userType = isSystemUserId(userId) ? 'app-level connection' : `user ${userId}`;
 
       // Get access token
       const accessTokenData = await findToken({
@@ -170,9 +166,7 @@ export class MCPTokenStorage {
       const isExpired = accessTokenData?.expiresAt && new Date() >= accessTokenData.expiresAt;
 
       if (isMissing || isExpired) {
-        logger.info(
-          `[MCPTokenStorage] Access token ${isMissing ? 'missing' : 'expired'} for ${userType}, server ${serverName}`,
-        );
+        logger.info(`${logPrefix} Access token ${isMissing ? 'missing' : 'expired'}`);
 
         /** Refresh data if we have a refresh token and refresh function */
         const refreshTokenData = await findToken({
@@ -183,29 +177,27 @@ export class MCPTokenStorage {
 
         if (!refreshTokenData) {
           logger.info(
-            `[MCPTokenStorage] Access token ${isMissing ? 'missing' : 'expired'} and no refresh token available`,
+            `${logPrefix} Access token ${isMissing ? 'missing' : 'expired'} and no refresh token available`,
           );
           return null;
         }
 
         if (!refreshTokens) {
           logger.warn(
-            `[MCPTokenStorage] Access token ${isMissing ? 'missing' : 'expired'}, refresh token available but no \`refreshTokens\` provided`,
+            `${logPrefix} Access token ${isMissing ? 'missing' : 'expired'}, refresh token available but no \`refreshTokens\` provided`,
           );
           return null;
         }
 
-        if (!updateToken) {
+        if (!createToken) {
           logger.warn(
-            `[MCPTokenStorage] Access token ${isMissing ? 'missing' : 'expired'}, refresh token available but no \`updateToken\` function provided`,
+            `${logPrefix} Access token ${isMissing ? 'missing' : 'expired'}, refresh token available but no \`createToken\` function provided`,
           );
           return null;
         }
 
         try {
-          logger.info(
-            `[MCPTokenStorage] Attempting to refresh token for ${userType}, server ${serverName}`,
-          );
+          logger.info(`${logPrefix} Attempting to refresh token`);
           const decryptedRefreshToken = await decryptV2(refreshTokenData.token);
 
           /** Client information if available */
@@ -219,13 +211,13 @@ export class MCPTokenStorage {
             if (clientInfoData) {
               const decryptedClientInfo = await decryptV2(clientInfoData.token);
               clientInfo = JSON.parse(decryptedClientInfo);
-              logger.debug(`[MCPTokenStorage] Retrieved client info for ${serverName}:`, {
+              logger.debug(`${logPrefix} Retrieved client info:`, {
                 client_id: clientInfo.client_id,
                 has_client_secret: !!clientInfo.client_secret,
               });
             }
           } catch {
-            logger.debug(`[MCPTokenStorage] No client info found for ${userId}, ${serverName}`);
+            logger.debug(`${logPrefix} No client info found`);
           }
 
           const metadata = {
@@ -237,28 +229,25 @@ export class MCPTokenStorage {
 
           const newTokens = await refreshTokens(decryptedRefreshToken, metadata);
 
-          await this.updateTokens({
+          // Store the refreshed tokens (handles both create and update)
+          await this.storeTokens({
             userId,
             serverName,
             tokens: newTokens,
-            updateToken,
+            createToken,
+            clientInfo,
           });
 
-          logger.info(
-            `[MCPTokenStorage] Successfully refreshed tokens for ${userType}, server ${serverName}`,
-          );
+          logger.info(`${logPrefix} Successfully refreshed and stored OAuth tokens`);
           return newTokens;
         } catch (refreshError) {
-          logger.error(
-            `[MCPTokenStorage] Failed to refresh tokens for user ${userId}, server ${serverName}`,
-            refreshError,
-          );
+          logger.error(`${logPrefix} Failed to refresh tokens`, refreshError);
           // Check if it's an unauthorized_client error (refresh not supported)
           const errorMessage =
             refreshError instanceof Error ? refreshError.message : String(refreshError);
           if (errorMessage.includes('unauthorized_client')) {
             logger.info(
-              `[MCPTokenStorage] Server does not support refresh tokens for this client. New authentication required.`,
+              `${logPrefix} Server does not support refresh tokens for this client. New authentication required.`,
             );
           }
           return null;
@@ -290,124 +279,11 @@ export class MCPTokenStorage {
         tokens.refresh_token = await decryptV2(refreshTokenData.token);
       }
 
+      logger.debug(`${logPrefix} Loaded existing OAuth tokens from storage`);
       return tokens;
     } catch (error) {
-      logger.error('[MCPTokenStorage] Failed to retrieve tokens', { error, userId, serverName });
+      logger.error(`${logPrefix} Failed to retrieve tokens`, error);
       return null;
-    }
-  }
-
-  /**
-   * Updates OAuth tokens for an MCP server
-   */
-  static async updateTokens({
-    userId,
-    serverName,
-    tokens,
-    updateToken,
-  }: UpdateTokensParams): Promise<void> {
-    try {
-      const identifier = `mcp:${serverName}`;
-
-      /** Encrypted access token for update */
-      const encryptedAccessToken = await encryptV2(tokens.access_token);
-
-      /** Handle both expires_in and expires_at formats */
-      let accessTokenExpiry: Date;
-      if ('expires_at' in tokens && tokens.expires_at) {
-        accessTokenExpiry = new Date(tokens.expires_at);
-      } else if (tokens.expires_in) {
-        /** Standard OAuthTokens format - calculate expiry */
-        accessTokenExpiry = new Date(Date.now() + tokens.expires_in * 1000);
-      } else {
-        /** No expiry provided - default to 1 year */
-        accessTokenExpiry = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
-      }
-
-      await updateToken(
-        {
-          userId,
-          type: 'mcp_oauth',
-          identifier,
-        },
-        {
-          token: encryptedAccessToken,
-          expiresAt: accessTokenExpiry,
-        },
-      );
-
-      if (tokens.refresh_token) {
-        const encryptedRefreshToken = await encryptV2(tokens.refresh_token);
-        const extendedTokens = tokens as ExtendedOAuthTokens;
-        const refreshTokenExpiry = extendedTokens.refresh_token_expires_in
-          ? new Date(Date.now() + extendedTokens.refresh_token_expires_in * 1000)
-          : new Date(Date.now() + 365 * 24 * 60 * 60 * 1000); // Default to 1 year
-
-        await updateToken(
-          {
-            userId,
-            type: 'mcp_oauth_refresh',
-            identifier: `${identifier}:refresh`,
-          },
-          {
-            token: encryptedRefreshToken,
-            expiresAt: refreshTokenExpiry,
-          },
-        );
-      }
-
-      logger.debug(
-        `[MCPTokenStorage] Updated OAuth tokens for user ${userId}, server ${serverName}`,
-      );
-    } catch (error) {
-      logger.error('[MCPTokenStorage] Failed to update tokens', { error, userId, serverName });
-      throw error;
-    }
-  }
-
-  /**
-   * Deletes OAuth tokens for an MCP server
-   */
-  static async deleteTokens({
-    userId,
-    serverName,
-    updateToken,
-  }: DeleteTokensParams): Promise<void> {
-    try {
-      const identifier = `mcp:${serverName}`;
-
-      /** Delete both access and refresh tokens */
-      await Promise.all([
-        updateToken(
-          {
-            userId,
-            type: 'mcp_oauth',
-            identifier,
-          },
-          {
-            token: '',
-            expiresAt: new Date(0),
-          },
-        ),
-        updateToken(
-          {
-            userId,
-            type: 'mcp_oauth_refresh',
-            identifier: `${identifier}:refresh`,
-          },
-          {
-            token: '',
-            expiresAt: new Date(0),
-          },
-        ),
-      ]);
-
-      logger.debug(
-        `[MCPTokenStorage] Deleted OAuth tokens for user ${userId}, server ${serverName}`,
-      );
-    } catch (error) {
-      logger.error('[MCPTokenStorage] Failed to delete tokens', { error, userId, serverName });
-      throw error;
     }
   }
 }

@@ -10,7 +10,7 @@ const {
   convertJsonSchemaToZod,
 } = require('librechat-data-provider');
 const { logger, getMCPManager, getFlowStateManager } = require('~/config');
-const { findToken, createToken, updateToken } = require('~/models');
+const { findToken, createToken } = require('~/models');
 const { getLogStores } = require('~/cache');
 
 /**
@@ -150,7 +150,6 @@ async function createMCPTool({ req, res, toolKey, provider: _provider }) {
         tokenMethods: {
           findToken,
           createToken,
-          updateToken,
         },
         oauthStart,
         oauthEnd,
