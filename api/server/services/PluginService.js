@@ -204,7 +204,10 @@ const deleteUserPluginAuth = async (userId, authField, all = false, pluginKey) =
       const response = await PluginAuth.deleteMany(filter);
       return response;
     } catch (err) {
-      logger.error(`[deleteUserPluginAuth] Error deleting all auths for userId: ${userId}${pluginKey ? ` and pluginKey: ${pluginKey}` : ''}`, err);
+      logger.error(
+        `[deleteUserPluginAuth] Error deleting all auths for userId: ${userId}${pluginKey ? ` and pluginKey: ${pluginKey}` : ''}`,
+        err,
+      );
       return err;
     }
   }

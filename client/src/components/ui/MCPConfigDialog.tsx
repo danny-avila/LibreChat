@@ -6,7 +6,7 @@ import { useLocalize } from '~/hooks';
 
 export interface ConfigFieldDetail {
   title: string;
-  description:string;
+  description: string;
 }
 
 interface MCPConfigDialogProps {
@@ -35,7 +35,7 @@ export default function MCPConfigDialog({
     control,
     handleSubmit,
     reset,
-    formState: { errors, isDirty },
+    formState: { errors, _ },
   } = useForm<Record<string, string>>({
     defaultValues: initialValues,
   });
@@ -56,7 +56,6 @@ export default function MCPConfigDialog({
     }
   };
 
-
   const dialogTitle = localize('com_ui_configure_mcp_variables_for', { 0: serverName });
   const dialogDescription = localize('com_ui_mcp_dialog_desc');
 
@@ -68,7 +67,7 @@ export default function MCPConfigDialog({
         description={dialogDescription}
         headerClassName="px-6 pt-6 pb-4"
         main={
-          <form onSubmit={handleSubmit(onFormSubmit)} className="px-6 pb-2 space-y-4">
+          <form onSubmit={handleSubmit(onFormSubmit)} className="space-y-4 px-6 pb-2">
             {Object.entries(fieldsSchema).map(([key, details]) => (
               <div key={key} className="space-y-2">
                 <Label htmlFor={key} className="text-sm font-medium">
@@ -94,9 +93,7 @@ export default function MCPConfigDialog({
                     dangerouslySetInnerHTML={{ __html: details.description }}
                   />
                 )}
-                {errors[key] && (
-                  <p className="text-xs text-red-500">{errors[key]?.message}</p>
-                )}
+                {errors[key] && <p className="text-xs text-red-500">{errors[key]?.message}</p>}
               </div>
             ))}
           </form>

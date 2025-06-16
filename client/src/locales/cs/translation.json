@@ -294,6 +294,7 @@
   "com_nav_open_sidebar": "Otevřít boční panel",
   "com_nav_playback_rate": "Rychlost přehrávání zvuku",
   "com_nav_setting_mcp": "Nastavení MCP",
+  "com_ui_mcp_server_not_found": "Server nebyl nalezen.",
   "com_nav_plugin_auth_error": "Při ověřování pluginu došlo k chybě.",
   "com_nav_plugin_install": "Instalovat",
   "com_nav_plugin_search": "Hledat pluginy",

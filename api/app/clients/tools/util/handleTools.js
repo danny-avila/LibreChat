@@ -29,7 +29,8 @@ const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/pro
 const { createFileSearchTool, primeFiles: primeSearchFiles } = require('./fileSearch');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const {
-  getUsersPluginsAuthValuesMap, getUserPluginAuthValue,
+  getUsersPluginsAuthValuesMap,
+  getUserPluginAuthValue,
 } = require('~/server/services/PluginService');
 const { createMCPTool } = require('~/server/services/MCP');
 const { logger } = require('~/config');
@@ -162,7 +163,7 @@ const loadTools = async ({
     traversaal_search: TraversaalSearch,
     tavily_search_results_json: TavilySearchResults,
   };
-  
+
   const customConstructors = {
     serpapi: async (_toolContextMap) => {
       const authFields = getAuthFields('serpapi');
@@ -257,7 +258,11 @@ const loadTools = async ({
 
     if (mcpPluginKeysToFetch.length > 0) {
       try {
-        allMcpCustomUserVars = await getUsersPluginsAuthValuesMap(user, mcpPluginKeysToFetch, false);
+        allMcpCustomUserVars = await getUsersPluginsAuthValuesMap(
+          user,
+          mcpPluginKeysToFetch,
+          false,
+        );
       } catch (err) {
         logger.error(
           `[handleTools] Error batch fetching customUserVars for MCP tools (keys: ${mcpPluginKeysToFetch.join(

@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { useGetStartupConfig } from '~/data-provider';
 import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
-import {Constants, TUpdateUserPlugins} from 'librechat-data-provider';
+import { Constants, TUpdateUserPlugins } from 'librechat-data-provider';
 import { Button } from '~/components/ui';
 import { ChevronLeft } from 'lucide-react';
 import { useLocalize } from '~/hooks';
@@ -112,7 +112,7 @@ export default function MCPPanel() {
       setSelectedServerNameForEditing(null);
       return (
         <div className="p-4 text-center text-sm text-gray-500">
-          {localize('com_ui_error')}: Server not found.
+          {localize('com_ui_error')}: {localize('com_ui_mcp_server_not_found')}
         </div>
       );
     }
@@ -200,10 +200,7 @@ function MCPVariableEditor({ server, onSave, onRevoke, isSubmitting }: MCPVariab
   };
 
   return (
-    <form
-      onSubmit={handleSubmit(onFormSubmit)}
-      className="mt-2 mb-4 space-y-4"
-    >
+    <form onSubmit={handleSubmit(onFormSubmit)} className="mb-4 mt-2 space-y-4">
       {Object.entries(server.config.customUserVars).map(([key, details]) => (
         <div key={key} className="space-y-2">
           <Label htmlFor={`${server.serverName}-${key}`} className="text-sm font-medium">

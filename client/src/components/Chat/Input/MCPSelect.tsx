@@ -6,7 +6,7 @@ import {
   EModelEndpoint,
   LocalStorageKeys,
   TPlugin,
-  TUpdateUserPlugins
+  TUpdateUserPlugins,
 } from 'librechat-data-provider';
 import { useAvailableToolsQuery } from '~/data-provider'; // Removed useAgentToolMutation
 import useLocalStorage from '~/hooks/useLocalStorageAlt';
@@ -14,12 +14,10 @@ import MultiSelect from '~/components/ui/MultiSelect';
 import { ephemeralAgentByConvoId } from '~/store';
 import MCPIcon from '~/components/ui/MCPIcon';
 import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
-import MCPConfigDialog, {
-  type ConfigFieldDetail,
-} from '~/components/ui/MCPConfigDialog';
+import MCPConfigDialog, { type ConfigFieldDetail } from '~/components/ui/MCPConfigDialog';
 import { useLocalize } from '~/hooks';
 import { useToastContext } from '~/Providers';
-import {TPluginAuthConfig} from "librechat-data-provider/src";
+import { TPluginAuthConfig } from 'librechat-data-provider/src';
 
 interface McpServerInfo {
   name: string;
@@ -128,7 +126,7 @@ function MCPSelect({ conversationId }: { conversationId?: string | null }) {
     }
     hasSetFetched.current = key;
     if ((mcpToolDetails?.length ?? 0) > 0) {
-      setMCPValues(mcpValues.filter((mcp) => mcpToolDetails?.some(tool => tool.name === mcp)));
+      setMCPValues(mcpValues.filter((mcp) => mcpToolDetails?.some((tool) => tool.name === mcp)));
       return;
     }
     setMCPValues([]);
@@ -191,9 +189,7 @@ function MCPSelect({ conversationId }: { conversationId?: string | null }) {
       // Common wrapper for the main content (check mark + text)
       // Ensures Check & Text are adjacent and the group takes available space.
       const mainContentWrapper = (
-        <div className="flex flex-grow items-center">
-          {defaultContent}
-        </div>
+        <div className="flex flex-grow items-center">{defaultContent}</div>
       );
 
       if (tool && hasAuthConfig) {

@@ -5,7 +5,7 @@ const { getProjectByName } = require('~/models/Project');
 const { isEnabled } = require('~/server/utils');
 const { getLogStores } = require('~/cache');
 const { logger } = require('~/config');
-const {getCustomConfig} = require("~/server/services/Config/getCustomConfig");
+const { getCustomConfig } = require('~/server/services/Config/getCustomConfig');
 
 const router = express.Router();
 const emailLoginEnabled =
@@ -22,7 +22,7 @@ const publicSharedLinksEnabled =
 
 router.get('/', async function (req, res) {
   const cache = getLogStores(CacheKeys.CONFIG_STORE);
-  
+
   const cachedStartupConfig = await cache.get(CacheKeys.STARTUP_CONFIG);
   if (cachedStartupConfig) {
     res.send(cachedStartupConfig);

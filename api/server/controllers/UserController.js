@@ -2,7 +2,8 @@ const {
   Tools,
   FileSources,
   webSearchKeys,
-  extractWebSearchEnvVars, Constants,
+  extractWebSearchEnvVars,
+  Constants,
 } = require('librechat-data-provider');
 const { logger } = require('@librechat/data-schemas');
 const {
@@ -112,7 +113,11 @@ const updateUserPluginsController = async (req, res) => {
     // AND it's not web_search (which has special key handling to populate `keys` for uninstall)
     // AND it's NOT (an uninstall action FOR an MCP tool - we need to proceed for this case to clear all its auth)
     // THEN return.
-    if (keys.length === 0 && pluginKey !== Tools.web_search && !(action === 'uninstall' && isMCPTool)) {
+    if (
+      keys.length === 0 &&
+      pluginKey !== Tools.web_search &&
+      !(action === 'uninstall' && isMCPTool)
+    ) {
       return res.status(200).send();
     }
 
@@ -131,7 +136,7 @@ const updateUserPluginsController = async (req, res) => {
         config: webSearchConfig,
       });
     }
-    
+
     if (action === 'install') {
       for (let i = 0; i < keys.length; i++) {
         authService = await updateUserPluginAuth(user.id, keys[i], pluginKey, values[i]);
@@ -147,7 +152,10 @@ const updateUserPluginsController = async (req, res) => {
         // It means "delete all credentials associated with this MCP pluginKey".
         authService = await deleteUserPluginAuth(user.id, null, true, pluginKey);
         if (authService instanceof Error) {
-          logger.error(`[authService] Error deleting all auth for MCP tool ${pluginKey}:`, authService);
+          logger.error(
+            `[authService] Error deleting all auth for MCP tool ${pluginKey}:`,
+            authService,
+          );
           ({ status, message } = authService);
         }
       } else {
