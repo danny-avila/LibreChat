@@ -288,13 +288,13 @@ jobs:
         run: |
           echo "=== Deployment Status ==="
           doctl apps list-deployments ${{ secrets.DIGITALOCEAN_APP_ID }} --format ID,Phase,Created
-          
+
           echo "=== Latest Deployment Logs ==="
           LATEST_DEPLOYMENT=$(doctl apps list-deployments ${{ secrets.DIGITALOCEAN_APP_ID }} --format ID --no-header | head -n 1)
-          doctl apps get-deployment ${{ secrets.DIGITALOCEAN_APP_ID }} $LATEST_DEPLOYMENT --format Logs
-          
+          doctl apps logs ${{ secrets.DIGITALOCEAN_APP_ID }} --deployment $LATEST_DEPLOYMENT
+
           echo "=== App Status ==="
           doctl apps get ${{ secrets.DIGITALOCEAN_APP_ID }} --format Spec.Services[0].Name,Spec.Services[0].InstanceCount,Spec.Services[0].InstanceSizeSlug
-          
+
           echo "=== Environment Variables ==="
           doctl apps get ${{ secrets.DIGITALOCEAN_APP_ID }} --format Spec.Services[0].Env 
