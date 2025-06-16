@@ -1,6 +1,7 @@
 const { logger } = require('@librechat/data-schemas');
 const { CacheKeys, processMCPEnv } = require('librechat-data-provider');
 const { getMCPManager, getFlowStateManager } = require('~/config');
+const { getCachedTools, setCachedTools } = require('./Config');
 const { getLogStores } = require('~/cache');
 const { findToken, updateToken, createToken, deleteTokens } = require('~/models');
 
@@ -27,7 +28,18 @@ async function initializeMCP(app) {
       deleteTokens,
     });
 
-    await mcpManager.mapAvailableTools(app.locals.availableTools);
+    delete app.locals.mcpConfig;
+    const availableTools = await getCachedTools();
+
+    if (!availableTools) {
+      logger.warn('No available tools found in cache during MCP initialization');
+      return;
+    }
+
+    const toolsCopy = { ...availableTools };
+    await mcpManager.mapAvailableTools(toolsCopy);
+    await setCachedTools(toolsCopy, { isGlobal: true });
+
     logger.info('MCP servers initialized successfully');
   } catch (error) {
     logger.error('Failed to initialize MCP servers:', error);

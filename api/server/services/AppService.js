@@ -27,6 +27,7 @@ const { initializeS3 } = require('./Files/S3/initialize');
 const { loadAndFormatTools } = require('./ToolService');
 const { isEnabled } = require('~/server/utils');
 const { initializeRoles } = require('~/models');
+const { setCachedTools } = require('./Config');
 const paths = require('~/config/paths');
 
 /**
@@ -74,6 +75,8 @@ const AppService = async (app) => {
     directory: paths.structuredTools,
   });
 
+  await setCachedTools(availableTools, { isGlobal: true });
+
   // Store MCP config for later initialization
   const mcpConfig = config.mcpServers || null;
 
@@ -91,7 +94,6 @@ const AppService = async (app) => {
     socialLogins,
     filteredTools,
     includedTools,
-    availableTools,
     imageOutputType,
     interfaceConfig,
     turnstileConfig,

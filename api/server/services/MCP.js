@@ -1,5 +1,6 @@
 const { z } = require('zod');
 const { tool } = require('@langchain/core/tools');
+const { logger } = require('@librechat/data-schemas');
 const { Time, CacheKeys, StepTypes } = require('librechat-data-provider');
 const { sendEvent, normalizeServerName, MCPOAuthHandler } = require('@librechat/api');
 const { Constants: AgentConstants, Providers, GraphEvents } = require('@librechat/agents');
@@ -9,8 +10,9 @@ const {
   isAssistantsEndpoint,
   convertJsonSchemaToZod,
 } = require('librechat-data-provider');
-const { logger, getMCPManager, getFlowStateManager } = require('~/config');
+const { getMCPManager, getFlowStateManager } = require('~/config');
 const { findToken, createToken, updateToken } = require('~/models');
+const { getCachedTools } = require('./Config');
 const { getLogStores } = require('~/cache');
 
 /**
@@ -102,7 +104,8 @@ function createAbortHandler({ userId, serverName, toolName, flowManager }) {
  * @returns { Promise<typeof tool | { _call: (toolInput: Object | string) => unknown}> } An object with `_call` method to execute the tool input.
  */
 async function createMCPTool({ req, res, toolKey, provider: _provider }) {
-  const toolDefinition = req.app.locals.availableTools[toolKey]?.function;
+  const availableTools = await getCachedTools({ includeGlobal: true });
+  const toolDefinition = availableTools?.[toolKey]?.function;
   if (!toolDefinition) {
     logger.error(`Tool ${toolKey} not found in available tools`);
     return null;

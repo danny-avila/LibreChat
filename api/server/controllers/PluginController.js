@@ -1,6 +1,6 @@
 const { CacheKeys, AuthType } = require('librechat-data-provider');
+const { getCustomConfig, getCachedTools } = require('~/server/services/Config');
 const { getToolkitKey } = require('~/server/services/ToolService');
-const { getCustomConfig } = require('~/server/services/Config');
 const { availableTools } = require('~/app/clients/tools');
 const { getMCPManager } = require('~/config');
 const { getLogStores } = require('~/cache');
@@ -123,7 +123,7 @@ const getAvailableTools = async (req, res) => {
       }
     });
 
-    const toolDefinitions = req.app.locals.availableTools;
+    const toolDefinitions = await getCachedTools({ includeGlobal: true });
     const tools = authenticatedPlugins.filter(
       (plugin) =>
         toolDefinitions[plugin.pluginKey] !== undefined ||

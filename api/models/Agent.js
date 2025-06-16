@@ -11,6 +11,7 @@ const {
   removeAgentIdsFromProject,
   removeAgentFromAllProjects,
 } = require('./Project');
+const { getCachedTools } = require('~/server/services/Config');
 const getLogStores = require('~/cache/getLogStores');
 const { getActions } = require('./Action');
 const { Agent } = require('~/db/models');
@@ -57,10 +58,10 @@ const getAgent = async (searchParameter) => await Agent.findOne(searchParameter)
  * @param {import('@librechat/agents').ClientOptions} [params.model_parameters]
  * @returns {Agent|null} The agent document as a plain object, or null if not found.
  */
-const loadEphemeralAgent = ({ req, agent_id, endpoint, model_parameters: _m }) => {
+const loadEphemeralAgent = async ({ req, agent_id, endpoint, model_parameters: _m }) => {
   const { model, ...model_parameters } = _m;
   /** @type {Record<string, FunctionTool>} */
-  const availableTools = req.app.locals.availableTools;
+  const availableTools = await getCachedTools({ includeGlobal: true });
   /** @type {TEphemeralAgent | null} */
   const ephemeralAgent = req.body.ephemeralAgent;
   const mcpServers = new Set(ephemeralAgent?.mcp);
@@ -111,7 +112,7 @@ const loadAgent = async ({ req, agent_id, endpoint, model_parameters }) => {
     return null;
   }
   if (agent_id === EPHEMERAL_AGENT_ID) {
-    return loadEphemeralAgent({ req, agent_id, endpoint, model_parameters });
+    return await loadEphemeralAgent({ req, agent_id, endpoint, model_parameters });
   }
   const agent = await getAgent({
     id: agent_id,
