@@ -422,17 +422,45 @@ export class MCPConnection extends EventEmitter {
 
           const oauthTimeout = this.options.initTimeout ?? 60000;
           /** Promise that will resolve when OAuth is handled */
-          const oauthHandledPromise = new Promise<void>((resolve) => {
-            const timeout = setTimeout(() => {
-              logger.warn(`${this.getLogPrefix()} OAuth handling timeout after ${oauthTimeout}ms`);
+          const oauthHandledPromise = new Promise<void>((resolve, reject) => {
+            let timeoutId: NodeJS.Timeout | null = null;
+            let oauthHandledListener: (() => void) | null = null;
+            let oauthFailedListener: ((error: Error) => void) | null = null;
+
+            /** Cleanup function to remove listeners and clear timeout */
+            const cleanup = () => {
+              if (timeoutId) {
+                clearTimeout(timeoutId);
+              }
+              if (oauthHandledListener) {
+                this.off('oauthHandled', oauthHandledListener);
+              }
+              if (oauthFailedListener) {
+                this.off('oauthFailed', oauthFailedListener);
+              }
+            };
+
+            // Success handler
+            oauthHandledListener = () => {
+              cleanup();
               resolve();
+            };
+
+            // Failure handler
+            oauthFailedListener = (error: Error) => {
+              cleanup();
+              reject(error);
+            };
+
+            // Timeout handler
+            timeoutId = setTimeout(() => {
+              cleanup();
+              reject(new Error(`OAuth handling timeout after ${oauthTimeout}ms`));
             }, oauthTimeout);
 
-            /** Listen for a signal that OAuth has been handled */
-            this.once('oauthHandled', () => {
-              clearTimeout(timeout);
-              resolve();
-            });
+            // Listen for both success and failure events
+            this.once('oauthHandled', oauthHandledListener);
+            this.once('oauthFailed', oauthFailedListener);
           });
 
           // Emit the event
@@ -443,15 +471,23 @@ export class MCPConnection extends EventEmitter {
             userId: this.userId,
           });
 
-          // Wait for OAuth to be handled
-          await oauthHandledPromise;
-
-          // Reset the oauthRequired flag
-          this.oauthRequired = false;
-
-          // Don't throw the error - just return so connection can be retried
-          logger.info(`${this.getLogPrefix()} OAuth handled, connection will be retried`);
-          return;
+          try {
+            // Wait for OAuth to be handled
+            await oauthHandledPromise;
+            // Reset the oauthRequired flag
+            this.oauthRequired = false;
+            // Don't throw the error - just return so connection can be retried
+            logger.info(
+              `${this.getLogPrefix()} OAuth handled successfully, connection will be retried`,
+            );
+            return;
+          } catch (oauthError) {
+            // OAuth failed or timed out
+            this.oauthRequired = false;
+            logger.error(`${this.getLogPrefix()} OAuth handling failed:`, oauthError);
+            // Re-throw the original authentication error
+            throw error;
+          }
         }
 
         this.connectionState = 'error';

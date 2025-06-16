@@ -1,6 +1,6 @@
 import { logger } from '@librechat/data-schemas';
 import type { OAuthTokens, OAuthClientInformation } from '@modelcontextprotocol/sdk/shared/auth.js';
-import type { TokenMethods } from '@librechat/data-schemas';
+import type { TokenMethods, IToken } from '@librechat/data-schemas';
 import type { MCPOAuthTokens, ExtendedOAuthTokens } from './types';
 import { encryptV2, decryptV2 } from '~/crypto';
 import { isSystemUserId } from '~/mcp/enum';
@@ -10,7 +10,15 @@ interface StoreTokensParams {
   serverName: string;
   tokens: OAuthTokens | ExtendedOAuthTokens | MCPOAuthTokens;
   createToken: TokenMethods['createToken'];
+  updateToken?: TokenMethods['updateToken'];
+  findToken?: TokenMethods['findToken'];
   clientInfo?: OAuthClientInformation;
+  /** Optional: Pass existing token state to avoid duplicate DB calls */
+  existingTokens?: {
+    accessToken?: IToken | null;
+    refreshToken?: IToken | null;
+    clientInfoToken?: IToken | null;
+  };
 }
 
 interface GetTokensParams {
@@ -22,6 +30,7 @@ interface GetTokensParams {
     metadata: { userId: string; serverName: string; identifier: string },
   ) => Promise<MCPOAuthTokens>;
   createToken?: TokenMethods['createToken'];
+  updateToken?: TokenMethods['updateToken'];
 }
 
 export class MCPTokenStorage {
@@ -33,13 +42,19 @@ export class MCPTokenStorage {
 
   /**
    * Stores OAuth tokens for an MCP server
+   *
+   * @param params.existingTokens - Optional: Pass existing token state to avoid duplicate DB calls.
+   * This is useful when refreshing tokens, as getTokens() already has the token state.
    */
   static async storeTokens({
     userId,
     serverName,
     tokens,
     createToken,
+    updateToken,
+    findToken,
     clientInfo,
+    existingTokens,
   }: StoreTokensParams): Promise<void> {
     const logPrefix = this.getLogPrefix(userId, serverName);
 
@@ -87,13 +102,34 @@ export class MCPTokenStorage {
       // Calculate expiresIn (seconds from now)
       const expiresIn = Math.floor((accessTokenExpiry.getTime() - Date.now()) / 1000);
 
-      await createToken({
+      const accessTokenData = {
         userId,
         type: 'mcp_oauth',
         identifier,
         token: encryptedAccessToken,
         expiresIn: expiresIn > 0 ? expiresIn : 365 * 24 * 60 * 60, // Default to 1 year if negative
-      });
+      };
+
+      // Check if token already exists and update if it does
+      if (findToken && updateToken) {
+        // Use provided existing token state if available, otherwise look it up
+        const existingToken =
+          existingTokens?.accessToken !== undefined
+            ? existingTokens.accessToken
+            : await findToken({ userId, identifier });
+
+        if (existingToken) {
+          await updateToken({ userId, identifier }, accessTokenData);
+          logger.debug(`${logPrefix} Updated existing access token`);
+        } else {
+          await createToken(accessTokenData);
+          logger.debug(`${logPrefix} Created new access token`);
+        }
+      } else {
+        // Create new token if it's initial store or update methods not provided
+        await createToken(accessTokenData);
+        logger.debug(`${logPrefix} Created access token (no update methods available)`);
+      }
 
       // Store refresh token if available
       if (tokens.refresh_token) {
@@ -106,13 +142,36 @@ export class MCPTokenStorage {
         /** Calculated expiresIn for refresh token */
         const refreshExpiresIn = Math.floor((refreshTokenExpiry.getTime() - Date.now()) / 1000);
 
-        await createToken({
+        const refreshTokenData = {
           userId,
           type: 'mcp_oauth_refresh',
           identifier: `${identifier}:refresh`,
           token: encryptedRefreshToken,
           expiresIn: refreshExpiresIn > 0 ? refreshExpiresIn : 365 * 24 * 60 * 60,
-        });
+        };
+
+        // Check if refresh token already exists and update if it does
+        if (findToken && updateToken) {
+          // Use provided existing token state if available, otherwise look it up
+          const existingRefreshToken =
+            existingTokens?.refreshToken !== undefined
+              ? existingTokens.refreshToken
+              : await findToken({
+                  userId,
+                  identifier: `${identifier}:refresh`,
+                });
+
+          if (existingRefreshToken) {
+            await updateToken({ userId, identifier: `${identifier}:refresh` }, refreshTokenData);
+            logger.debug(`${logPrefix} Updated existing refresh token`);
+          } else {
+            await createToken(refreshTokenData);
+            logger.debug(`${logPrefix} Created new refresh token`);
+          }
+        } else {
+          await createToken(refreshTokenData);
+          logger.debug(`${logPrefix} Created refresh token (no update methods available)`);
+        }
       }
 
       /** Store client information if provided */
@@ -122,13 +181,37 @@ export class MCPTokenStorage {
           has_client_secret: !!clientInfo.client_secret,
         });
         const encryptedClientInfo = await encryptV2(JSON.stringify(clientInfo));
-        await createToken({
+
+        const clientInfoData = {
           userId,
           type: 'mcp_oauth_client',
           identifier: `${identifier}:client`,
           token: encryptedClientInfo,
           expiresIn: 365 * 24 * 60 * 60,
-        });
+        };
+
+        // Check if client info already exists and update if it does
+        if (findToken && updateToken) {
+          // Use provided existing token state if available, otherwise look it up
+          const existingClientInfo =
+            existingTokens?.clientInfoToken !== undefined
+              ? existingTokens.clientInfoToken
+              : await findToken({
+                  userId,
+                  identifier: `${identifier}:client`,
+                });
+
+          if (existingClientInfo) {
+            await updateToken({ userId, identifier: `${identifier}:client` }, clientInfoData);
+            logger.debug(`${logPrefix} Updated existing client info`);
+          } else {
+            await createToken(clientInfoData);
+            logger.debug(`${logPrefix} Created new client info`);
+          }
+        } else {
+          await createToken(clientInfoData);
+          logger.debug(`${logPrefix} Created client info (no update methods available)`);
+        }
       }
 
       logger.debug(`${logPrefix} Stored OAuth tokens`);
@@ -147,6 +230,7 @@ export class MCPTokenStorage {
     serverName,
     findToken,
     createToken,
+    updateToken,
     refreshTokens,
   }: GetTokensParams): Promise<MCPOAuthTokens | null> {
     const logPrefix = this.getLogPrefix(userId, serverName);
@@ -202,8 +286,9 @@ export class MCPTokenStorage {
 
           /** Client information if available */
           let clientInfo;
+          let clientInfoData;
           try {
-            const clientInfoData = await findToken({
+            clientInfoData = await findToken({
               userId,
               type: 'mcp_oauth_client',
               identifier: `${identifier}:client`,
@@ -230,12 +315,20 @@ export class MCPTokenStorage {
           const newTokens = await refreshTokens(decryptedRefreshToken, metadata);
 
           // Store the refreshed tokens (handles both create and update)
+          // Pass existing token state to avoid duplicate DB calls
           await this.storeTokens({
             userId,
             serverName,
             tokens: newTokens,
             createToken,
+            updateToken,
+            findToken,
             clientInfo,
+            existingTokens: {
+              accessToken: accessTokenData, // We know this is expired/missing
+              refreshToken: refreshTokenData, // We already have this
+              clientInfoToken: clientInfoData, // We already looked this up
+            },
           });
 
           logger.info(`${logPrefix} Successfully refreshed and stored OAuth tokens`);

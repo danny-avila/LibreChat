@@ -93,6 +93,7 @@ export class MCPManager {
               findToken: tokenMethods.findToken,
               refreshTokens: refreshTokensFunction,
               createToken: tokenMethods.createToken,
+              updateToken: tokenMethods.updateToken,
             });
           } catch {
             logger.debug(`[MCP][${serverName}] No existing tokens found`);
@@ -122,6 +123,8 @@ export class MCPManager {
                 serverName,
                 tokens: result.tokens,
                 createToken: tokenMethods.createToken,
+                updateToken: tokenMethods.updateToken,
+                findToken: tokenMethods.findToken,
                 clientInfo: result.clientInfo,
               });
               logger.info(`[MCP][${serverName}] OAuth tokens saved to storage`);
@@ -130,7 +133,14 @@ export class MCPManager {
             }
           }
 
-          connection.emit('oauthHandled');
+          // Only emit oauthHandled if we actually got tokens (OAuth succeeded)
+          if (result?.tokens) {
+            connection.emit('oauthHandled');
+          } else {
+            // OAuth failed, emit oauthFailed to properly reject the promise
+            logger.warn(`[MCP][${serverName}] OAuth failed, emitting oauthFailed event`);
+            connection.emit('oauthFailed', new Error('OAuth authentication failed'));
+          }
         });
 
         try {
@@ -444,6 +454,7 @@ export class MCPManager {
           findToken: tokenMethods.findToken,
           refreshTokens: refreshTokensFunction,
           createToken: tokenMethods.createToken,
+          updateToken: tokenMethods.updateToken,
         });
       } catch (error) {
         logger.error(
@@ -476,6 +487,8 @@ export class MCPManager {
             serverName,
             tokens: result.tokens,
             createToken: tokenMethods.createToken,
+            updateToken: tokenMethods.updateToken,
+            findToken: tokenMethods.findToken,
             clientInfo: result.clientInfo,
           });
           logger.info(`[MCP][User: ${userId}][${serverName}] OAuth tokens saved to storage`);
@@ -487,8 +500,16 @@ export class MCPManager {
         }
       }
 
-      // Emit oauthHandled to unblock the connection
-      connection?.emit('oauthHandled');
+      // Only emit oauthHandled if we actually got tokens (OAuth succeeded)
+      if (result?.tokens) {
+        connection?.emit('oauthHandled');
+      } else {
+        // OAuth failed, emit oauthFailed to properly reject the promise
+        logger.warn(
+          `[MCP][User: ${userId}][${serverName}] OAuth failed, emitting oauthFailed event`,
+        );
+        connection?.emit('oauthFailed', new Error('OAuth authentication failed'));
+      }
     });
 
     try {

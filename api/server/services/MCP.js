@@ -1,7 +1,7 @@
 const { z } = require('zod');
 const { tool } = require('@langchain/core/tools');
-const { sendEvent, normalizeServerName } = require('@librechat/api');
 const { Time, CacheKeys, StepTypes } = require('librechat-data-provider');
+const { sendEvent, normalizeServerName, MCPOAuthHandler } = require('@librechat/api');
 const { Constants: AgentConstants, Providers, GraphEvents } = require('@librechat/agents');
 const {
   Constants,
@@ -10,7 +10,7 @@ const {
   convertJsonSchemaToZod,
 } = require('librechat-data-provider');
 const { logger, getMCPManager, getFlowStateManager } = require('~/config');
-const { findToken, createToken } = require('~/models');
+const { findToken, createToken, updateToken } = require('~/models');
 const { getLogStores } = require('~/cache');
 
 /**
@@ -75,9 +75,18 @@ function createOAuthEnd({ res, stepId, toolCall }) {
   };
 }
 
-function createAbortHandler({ userId, serverName, toolName }) {
+/**
+ * @param {object} params
+ * @param {string} params.userId - The ID of the user.
+ * @param {string} params.serverName - The name of the server.
+ * @param {string} params.toolName - The name of the tool.
+ * @param {FlowStateManager<any>} params.flowManager - The flow manager instance.
+ */
+function createAbortHandler({ userId, serverName, toolName, flowManager }) {
   return function () {
     logger.info(`[MCP][User: ${userId}][${serverName}][${toolName}] Tool call aborted`);
+    const flowId = MCPOAuthHandler.generateFlowId(userId, serverName);
+    flowManager.failFlow(flowId, 'mcp_oauth', new Error('Tool call aborted'));
   };
 }
 
@@ -123,6 +132,7 @@ async function createMCPTool({ req, res, toolKey, provider: _provider }) {
   /** @type {(toolArguments: Object | string, config?: GraphRunnableConfig) => Promise<unknown>} */
   const _call = async (toolArguments, config) => {
     const userId = config?.configurable?.user?.id || config?.configurable?.user_id;
+    /** @type {ReturnType<typeof createAbortHandler>} */
     let abortHandler = null;
 
     try {
@@ -149,7 +159,7 @@ async function createMCPTool({ req, res, toolKey, provider: _provider }) {
       });
 
       if (config?.signal) {
-        abortHandler = createAbortHandler({ userId, serverName, toolName });
+        abortHandler = createAbortHandler({ userId, serverName, toolName, flowManager });
         config.signal.addEventListener('abort', abortHandler, { once: true });
       }
 
@@ -166,6 +176,7 @@ async function createMCPTool({ req, res, toolKey, provider: _provider }) {
         tokenMethods: {
           findToken,
           createToken,
+          updateToken,
         },
         oauthStart,
         oauthEnd,
