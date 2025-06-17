@@ -115,6 +115,7 @@ const SidePanelGroup = ({
             </ResizablePanel>
           </>
         )}
+        {/* Commenting out SidePanel temporarily
         {!hideSidePanel && interfaceConfig.sidePanel === true && (
           <SidePanel
             panelRef={panelRef}
@@ -131,6 +132,7 @@ const SidePanelGroup = ({
             interfaceConfig={interfaceConfig}
           />
         )}
+        */}
       </ResizablePanelGroup>
       <button
         aria-label="Close right side panel"
