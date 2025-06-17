@@ -169,6 +169,7 @@ class GoogleClient extends BaseClient {
 
     // Add thinking configuration
     this.modelOptions.thinkingConfig = {
+      includeThoughts: true,
       thinkingBudget:
         (this.modelOptions.thinking ?? googleSettings.thinking.default)
           ? this.modelOptions.thinkingBudget
@@ -695,11 +696,27 @@ class GoogleClient extends BaseClient {
         const result = await client.generateContentStream(requestOptions, {
           signal: abortController.signal,
         });
+        let isThinking = false;
         for await (const chunk of result.stream) {
           usageMetadata = !usageMetadata
             ? chunk?.usageMetadata
             : Object.assign(usageMetadata, chunk?.usageMetadata);
-          const chunkText = chunk.text();
+
+          let chunkText = '';
+          for (const part of chunk.candidates?.[0]?.content?.parts ?? []) {
+            if (!isThinking && part.thought) {
+              // Reasoning started
+              chunkText += ':::thinking\n' + part.text;
+              isThinking = true;
+            } else if (isThinking && !part.thought) {
+              // Reasoning ended
+              chunkText += '\n:::\n' + part.text;
+              isThinking = false;
+            } else {
+              chunkText += part.text;
+            }
+          }
+
           await this.generateTextStream(chunkText, onProgress, {
             delay,
           });
