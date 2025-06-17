@@ -12,7 +12,7 @@
 | Servicio | Costo Mensual (USD) | Notas |
 |----------|---------------------|-------|
 | Alojamiento de la Página Web | $30 | - |
-| Dominio | $1 | Costo anual de $12 dividido mensualmente. **Pago anticipado** |
+| Dominio | $1 | Costo anual de $12 dividido mensualmente. **Pago anual $12** |
 
 ### 📊 Resumen del Costo Total Mensual Estimado
 **Rango: $58 - $63 USD**
@@ -31,24 +31,40 @@
 - [ ] **Infraestructura del Servidor**
   - Finalizar configuración del host para LibreChat
   - Verificar funcionamiento completo del deployment
-  
 
 - [ ] **Dominio .cl**
   - Adquisición de dominio nacional
-  - Configuración de DNS
-  - Certificados SSL
+  - Configuración de DNS  
+
+- [ ] **Ajustes al Asistente y cambios leves en la interfaz**
+  - Optimización de respuestas del asistente
+  - Mejoras menores en la experiencia de usuario
 
 ---
 
-## 🚀 Características Adicionales (Próximas Iteraciones)
+## 💡 Adicionales, Sugerencias y/o Recomendaciones (Próximas Iteraciones)
 
 - [ ] **Adjuntar Archivos al Chatbot**
   - Capacidad de subir y procesar documentos
-  
 
-- [ ] **Unión de Bases de Datos**
-  - Integración entre chatbot escrito y chatbot voz ElevenLabs
-  
+- [ ] **Creación de cuentas para usuarios distintos o registro más abierto**
+  - Sistema de registro de usuarios
+  - Gestión de administración de usuarios (agregar-eliminar)
+
+- [ ] **Actualización automática frecuente del conocimiento en base a la página web (analizar)**
+  - Sincronización automática con contenido web
+  - Actualización de base de conocimientos
+
+- [ ] **Facilitar acceso a la base de datos para su análisis**
+  - Exportación de información para análisis
+
+- [ ] **Unificación de lógica ElevenLabs con LibreChat**
+  - Integración completa entre chatbot escrito y chatbot voz ElevenLabs
+  - Historial de conversación unificado  
+
+- [ ] **Insights/métricas desde las conversaciones**
+  - Análisis de patrones de conversación
+  - Reportes de efectividad del asistente
 
 ---
 
