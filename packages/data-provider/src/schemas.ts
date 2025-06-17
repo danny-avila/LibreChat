@@ -255,6 +255,15 @@ export const googleSettings = {
     step: 1 as const,
     default: 40 as const,
   },
+  thinking: {
+    default: true as const,
+  },
+  thinkingBudget: {
+    min: 0 as const,
+    max: 32768 as const,
+    step: 1 as const,
+    default: undefined,
+  },
 };
 
 const ANTHROPIC_MAX_OUTPUT = 128000 as const;
@@ -785,6 +794,8 @@ export const googleBaseSchema = tConversationSchema.pick({
   artifacts: true,
   topP: true,
   topK: true,
+  thinking: true,
+  thinkingBudget: true,
   iconURL: true,
   greeting: true,
   spec: true,
@@ -810,6 +821,12 @@ export const googleGenConfigSchema = z
     presencePenalty: coerceNumber.optional(),
     frequencyPenalty: coerceNumber.optional(),
     stopSequences: z.array(z.string()).optional(),
+    thinkingConfig: z
+      .object({
+        includeThoughts: z.boolean().optional(),
+        thinkingBudget: coerceNumber.optional(),
+      })
+      .optional(),
   })
   .strip()
   .optional();
