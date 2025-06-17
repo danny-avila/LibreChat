@@ -400,16 +400,16 @@ const deleteAgentHandler = async (req, res) => {
 const getListAgentsHandler = async (req, res) => {
   try {
     const userId = req.user.id;
-
+    const requiredPermission = req.query.requiredPermission || PermissionBits.VIEW;
     // Get agent IDs the user has VIEW access to via ACL
     const accessibleIds = await findAccessibleResources({
       userId,
       resourceType: 'agent',
-      requiredPermissions: PermissionBits.VIEW,
+      requiredPermissions: requiredPermission,
     });
     const publiclyAccessibleIds = await findPubliclyAccessibleResources({
       resourceType: 'agent',
-      requiredPermissions: PermissionBits.VIEW,
+      requiredPermissions: requiredPermission,
     });
     // Use the new ACL-aware function
     const data = await getListAgentsByAccess({
@@ -418,7 +418,7 @@ const getListAgentsHandler = async (req, res) => {
     });
     if (data?.data?.length) {
       data.data = data.data.map((agent) => {
-        if (publiclyAccessibleIds.some(id => id.equals(agent._id))) {
+        if (publiclyAccessibleIds.some((id) => id.equals(agent._id))) {
           agent.isPublic = true;
         }
         return agent;

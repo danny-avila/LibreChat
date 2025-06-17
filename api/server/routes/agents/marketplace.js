@@ -14,33 +14,22 @@ const checkAgentAccess = generateCheckAccess(PermissionTypes.AGENTS, [Permission
 router.use(checkAgentAccess);
 
 /**
+ * Unified marketplace agents endpoint with query string controls
+ * Query parameters:
+ * - category: string (filter by category, or 'all' for all agents, 'promoted' for promoted)
+ * - search: string (search term for name/description)
+ * - limit: number (page size, default 6)
+ * - cursor: base64 string (for cursor-based pagination)
+ * - promoted: 0|1 (filter promoted agents, 1=promoted only, 0=exclude promoted)
+ * - requiredPermission: number (permission level required to access agents, default 1)
+ * @route GET /agents/marketplace
+ */
+router.get('/', marketplace.getMarketplaceAgents);
+
+/**
  * Get all agent categories with counts
  * @route GET /agents/marketplace/categories
  */
 router.get('/categories', marketplace.getAgentCategories);
-
-/**
- * Get promoted/top picks agents with pagination
- * @route GET /agents/marketplace/promoted
- */
-router.get('/promoted', marketplace.getPromotedAgents);
-
-/**
- * Get all agents with pagination (for "all" category)
- * @route GET /agents/marketplace/all
- */
-router.get('/all', marketplace.getAllAgents);
-
-/**
- * Search agents with filters
- * @route GET /agents/marketplace/search
- */
-router.get('/search', marketplace.searchAgents);
-
-/**
- * Get agents by category with pagination
- * @route GET /agents/marketplace/category/:category
- */
-router.get('/category/:category', marketplace.getAgentsByCategory);
 
 module.exports = router;
