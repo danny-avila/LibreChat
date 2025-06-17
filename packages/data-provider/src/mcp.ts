@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { TUser } from './types';
 import { extractEnvVariable } from './utils';
+import { TokenExchangeMethodEnum } from './types/assistants';
 
 const BaseOptionsSchema = z.object({
   iconPath: z.string().optional(),
@@ -15,6 +16,29 @@ const BaseOptionsSchema = z.object({
    * - string: Use custom instructions (overrides server-provided)
    */
   serverInstructions: z.union([z.boolean(), z.string()]).optional(),
+  /**
+   * OAuth configuration for SSE and Streamable HTTP transports
+   * - Optional: OAuth can be auto-discovered on 401 responses
+   * - Pre-configured values will skip discovery steps
+   */
+  oauth: z
+    .object({
+      /** OAuth authorization endpoint (optional - can be auto-discovered) */
+      authorization_url: z.string().url().optional(),
+      /** OAuth token endpoint (optional - can be auto-discovered) */
+      token_url: z.string().url().optional(),
+      /** OAuth client ID (optional - can use dynamic registration) */
+      client_id: z.string().optional(),
+      /** OAuth client secret (optional - can use dynamic registration) */
+      client_secret: z.string().optional(),
+      /** OAuth scopes to request */
+      scope: z.string().optional(),
+      /** OAuth redirect URI (defaults to /api/mcp/{serverName}/oauth/callback) */
+      redirect_uri: z.string().url().optional(),
+      /** Token exchange method */
+      token_exchange_method: z.nativeEnum(TokenExchangeMethodEnum).optional(),
+    })
+    .optional(),
 });
 
 export const StdioOptionsSchema = BaseOptionsSchema.extend({

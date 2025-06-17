@@ -1,8 +1,8 @@
-import { FlowStateManager } from './manager';
 import { Keyv } from 'keyv';
+import { FlowStateManager } from './manager';
 import type { FlowState } from './types';
 
-// Create a mock class without extending Keyv
+/** Mock class without extending Keyv */
 class MockKeyv {
   private store: Map<string, FlowState<string>>;
 

@@ -1137,6 +1137,10 @@ export enum CacheKeys {
    */
   FLOWS = 'flows',
   /**
+   * Key for individual MCP Tool Manifests.
+   */
+  MCP_TOOLS = 'mcp_tools',
+  /**
    * Key for pending chat requests (concurrency check)
    */
   PENDING_REQ = 'pending_req',

@@ -20,7 +20,7 @@ export function createMethods(mongoose: typeof import('mongoose')) {
   };
 }
 
-export type { MemoryMethods, ShareMethods };
+export type { MemoryMethods, ShareMethods, TokenMethods };
 export type AllMethods = UserMethods &
   SessionMethods &
   TokenMethods &
