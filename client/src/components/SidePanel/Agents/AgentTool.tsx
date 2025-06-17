@@ -191,7 +191,7 @@ export default function AgentTool({
               <Checkbox
                 id={subTool.tool_id}
                 checked={selectedTools.includes(subTool.tool_id)}
-                onCheckedChange={(checked) => {
+                onCheckedChange={(_checked) => {
                   const newSelectedTools = selectedTools.includes(subTool.tool_id)
                     ? selectedTools.filter((t) => t !== subTool.tool_id)
                     : [...selectedTools, subTool.tool_id];
