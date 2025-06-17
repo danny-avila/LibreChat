@@ -191,19 +191,6 @@ const getResourcePermissions = async (req, res) => {
           localField: 'principalId',
           foreignField: '_id',
           as: 'userInfo',
-          pipeline: [
-            {
-              $project: {
-                _id: 1,
-                name: 1,
-                username: 1,
-                email: 1,
-                avatar: 1,
-                idOnTheSource: 1,
-                provider: 1,
-              },
-            },
-          ],
         },
       },
       // Lookup Group information (for group principals)
@@ -213,19 +200,6 @@ const getResourcePermissions = async (req, res) => {
           localField: 'principalId',
           foreignField: '_id',
           as: 'groupInfo',
-          pipeline: [
-            {
-              $project: {
-                _id: 1,
-                name: 1,
-                email: 1,
-                description: 1,
-                avatar: 1,
-                idOnTheSource: 1,
-                source: 1,
-              },
-            },
-          ],
         },
       },
       // Project final structure
