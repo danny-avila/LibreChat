@@ -1,6 +1,6 @@
 const { logger } = require('@librechat/data-schemas');
+const { encrypt, decrypt } = require('@librechat/api');
 const { ErrorTypes } = require('librechat-data-provider');
-const { encrypt, decrypt } = require('~/server/utils/crypto');
 const { updateUser } = require('~/models');
 const { Key } = require('~/db/models');
 
@@ -70,6 +70,7 @@ const getUserKeyValues = async ({ userId, name }) => {
   try {
     userValues = JSON.parse(userValues);
   } catch (e) {
+    logger.error('[getUserKeyValues]', e);
     throw new Error(
       JSON.stringify({
         type: ErrorTypes.INVALID_USER_KEY,

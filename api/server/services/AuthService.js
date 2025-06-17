@@ -1,5 +1,7 @@
 const bcrypt = require('bcryptjs');
 const { webcrypto } = require('node:crypto');
+const { isEnabled } = require('@librechat/api');
+const { logger } = require('@librechat/data-schemas');
 const { SystemRoles, errorsToString } = require('librechat-data-provider');
 const {
   findUser,
@@ -17,11 +19,10 @@ const {
   deleteUserById,
   generateRefreshToken,
 } = require('~/models');
-const { isEnabled, checkEmailConfig, sendEmail } = require('~/server/utils');
 const { isEmailDomainAllowed } = require('~/server/services/domains');
+const { checkEmailConfig, sendEmail } = require('~/server/utils');
 const { getBalanceConfig } = require('~/server/services/Config');
 const { registerSchema } = require('~/strategies/validators');
-const { logger } = require('~/config');
 
 const domains = {
   client: process.env.DOMAIN_CLIENT,

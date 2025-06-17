@@ -32,6 +32,25 @@ jest.mock('~/models', () => ({
 jest.mock('~/models/Role', () => ({
   updateAccessPermissions: jest.fn(),
 }));
+jest.mock('./Config', () => ({
+  setCachedTools: jest.fn(),
+  getCachedTools: jest.fn().mockResolvedValue({
+    ExampleTool: {
+      type: 'function',
+      function: {
+        description: 'Example tool function',
+        name: 'exampleFunction',
+        parameters: {
+          type: 'object',
+          properties: {
+            param1: { type: 'string', description: 'An example parameter' },
+          },
+          required: ['param1'],
+        },
+      },
+    },
+  }),
+}));
 jest.mock('./ToolService', () => ({
   loadAndFormatTools: jest.fn().mockReturnValue({
     ExampleTool: {
@@ -121,22 +140,9 @@ describe('AppService', () => {
         sidePanel: true,
         presets: true,
       }),
+      mcpConfig: null,
       turnstileConfig: mockedTurnstileConfig,
       modelSpecs: undefined,
-      availableTools: {
-        ExampleTool: {
-          type: 'function',
-          function: expect.objectContaining({
-            description: 'Example tool function',
-            name: 'exampleFunction',
-            parameters: expect.objectContaining({
-              type: 'object',
-              properties: expect.any(Object),
-              required: expect.arrayContaining(['param1']),
-            }),
-          }),
-        },
-      },
       paths: expect.anything(),
       ocr: expect.anything(),
       imageOutputType: expect.any(String),
@@ -223,14 +229,41 @@ describe('AppService', () => {
 
   it('should load and format tools accurately with defined structure', async () => {
     const { loadAndFormatTools } = require('./ToolService');
+    const { setCachedTools, getCachedTools } = require('./Config');
+
     await AppService(app);
 
     expect(loadAndFormatTools).toHaveBeenCalledWith({
+      adminFilter: undefined,
+      adminIncluded: undefined,
       directory: expect.anything(),
     });
 
-    expect(app.locals.availableTools.ExampleTool).toBeDefined();
-    expect(app.locals.availableTools.ExampleTool).toEqual({
+    // Verify setCachedTools was called with the tools
+    expect(setCachedTools).toHaveBeenCalledWith(
+      {
+        ExampleTool: {
+          type: 'function',
+          function: {
+            description: 'Example tool function',
+            name: 'exampleFunction',
+            parameters: {
+              type: 'object',
+              properties: {
+                param1: { type: 'string', description: 'An example parameter' },
+              },
+              required: ['param1'],
+            },
+          },
+        },
+      },
+      { isGlobal: true },
+    );
+
+    // Verify we can retrieve the tools from cache
+    const cachedTools = await getCachedTools({ includeGlobal: true });
+    expect(cachedTools.ExampleTool).toBeDefined();
+    expect(cachedTools.ExampleTool).toEqual({
       type: 'function',
       function: {
         description: 'Example tool function',
@@ -535,7 +568,6 @@ describe('AppService updating app.locals and issuing warnings', () => {
 
     expect(app.locals).toBeDefined();
     expect(app.locals.paths).toBeDefined();
-    expect(app.locals.availableTools).toBeDefined();
     expect(app.locals.fileStrategy).toEqual(FileSources.local);
     expect(app.locals.socialLogins).toEqual(defaultSocialLogins);
     expect(app.locals.balance).toEqual(
@@ -568,7 +600,6 @@ describe('AppService updating app.locals and issuing warnings', () => {
 
     expect(app.locals).toBeDefined();
     expect(app.locals.paths).toBeDefined();
-    expect(app.locals.availableTools).toBeDefined();
     expect(app.locals.fileStrategy).toEqual(customConfig.fileStrategy);
     expect(app.locals.socialLogins).toEqual(customConfig.registration.socialLogins);
     expect(app.locals.balance).toEqual(customConfig.balance);

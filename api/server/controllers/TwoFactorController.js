@@ -1,3 +1,4 @@
+const { encryptV3 } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 const {
   verifyTOTP,
@@ -7,7 +8,6 @@ const {
   generateBackupCodes,
 } = require('~/server/services/twoFactorService');
 const { getUserById, updateUser } = require('~/models');
-const { encryptV3 } = require('~/server/utils/crypto');
 
 const safeAppTitle = (process.env.APP_TITLE || 'LibreChat').replace(/\s+/g, '');
 

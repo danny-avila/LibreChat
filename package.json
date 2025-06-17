@@ -64,6 +64,7 @@
     "b:data": "cd packages/data-provider && bun run b:build",
     "b:mcp": "cd packages/api && bun run b:build",
     "b:data-schemas": "cd packages/data-schemas && bun run b:build",
+    "b:build:api": "cd packages/api && bun run b:build",
     "b:client": "bun --bun run b:data && bun --bun run b:mcp && bun --bun run b:data-schemas && cd client && bun --bun run b:build",
     "b:client:dev": "cd client && bun run b:dev",
     "b:test:client": "cd client && bun run b:test",
