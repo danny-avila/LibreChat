@@ -1,3 +1,4 @@
+import { TransportOptions, SendMailOptions } from 'nodemailer';
 export interface SendEmailParams {
   email: string;
   subject: string;
@@ -12,4 +13,21 @@ export interface SendEmailResponse {
   response: string;
   envelope: { from: string; to: string[] };
   messageId: string;
+}
+
+export interface MailgunEmailParams {
+  to: string;
+  from: string;
+  subject: string;
+  html: string;
+}
+
+export interface MailgunResponse {
+  id: string;
+  message: string;
+}
+
+export interface SMTPParams {
+  transporterOptions: any;
+  mailOptions: SendMailOptions;
 }

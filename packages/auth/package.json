@@ -48,11 +48,11 @@
     "@types/bcrypt": "^5.0.2",
     "@types/diff": "^6.0.0",
     "@types/express": "^5.0.0",
-    "@types/jest": "^29.5.2",
+    "@types/jest": "^29.5.14",
     "@types/node": "^20.3.0",
     "@types/passport-jwt": "^4.0.1",
     "@types/traverse": "^0.6.37",
-    "jest": "^29.5.0",
+    "jest": "^29.7.0",
     "jest-junit": "^16.0.0",
     "rimraf": "^5.0.1",
     "rollup": "^4.22.4",
@@ -63,14 +63,19 @@
     "typescript": "^5.0.4"
   },
   "dependencies": {
-    "@librechat/data-schemas": "^0.0.7",
+    "@librechat/api": "^1.2.3",
+    "@librechat/data-schemas": "^0.0.8",
     "@node-saml/passport-saml": "^5.0.1",
+    "@types/nodemailer": "^6.4.17",
+    "axios": "^1.10.0",
     "bcryptjs": "^3.0.2",
     "crypto": "^1.0.1",
+    "form-data": "^4.0.3",
     "handlebars": "^4.7.8",
     "jsonwebtoken": "^9.0.2",
     "jwks-rsa": "^3.2.0",
     "klona": "^2.0.6",
+    "mongodb-memory-server": "^10.1.4",
     "mongoose": "^8.12.1",
     "nodemailer": "^7.0.3",
     "openid-client": "^6.5.0",
@@ -85,9 +90,7 @@
     "passport-local": "^1.0.0",
     "passport-oauth2": "^1.8.0",
     "sharp": "^0.33.5",
-    "traverse": "^0.6.11",
-    "winston": "^3.17.0",
-    "winston-daily-rotate-file": "^5.0.0"
+    "traverse": "^0.6.11"
   },
   "peerDependencies": {
     "keyv": "^5.3.2"

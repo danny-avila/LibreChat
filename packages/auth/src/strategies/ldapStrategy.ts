@@ -2,8 +2,8 @@ import fs from 'fs';
 import LdapStrategy, { type Options } from 'passport-ldapauth';
 import { SystemRoles } from 'librechat-data-provider';
 import { logger } from '@librechat/data-schemas';
-import { isEnabled } from '../utils';
 import { getBalanceConfig, getMethods } from '../initAuth';
+import { isEnabled } from '../utils';
 
 const {
   LDAP_URL,
@@ -79,7 +79,7 @@ const ldapLogin = () => {
     usernameField: 'email',
     passwordField: 'password',
   };
-  return new LdapStrategy(ldapOptions, async (userinfo: any, done) => {
+  return new LdapStrategy(ldapOptions, async (userinfo: any, done: any) => {
     if (!userinfo) {
       return done(null, false, { message: 'Invalid credentials' });
     }

@@ -1,7 +1,9 @@
 const jwt = require('jsonwebtoken');
 const { nanoid } = require('nanoid');
 const { tool } = require('@langchain/core/tools');
+const { logger } = require('@librechat/data-schemas');
 const { GraphEvents, sleep } = require('@librechat/agents');
+const { sendEvent, logAxiosError } = require('@librechat/api');
 const {
   Time,
   CacheKeys,
@@ -13,11 +15,10 @@ const {
   actionDomainSeparator,
 } = require('librechat-data-provider');
 const { refreshAccessToken } = require('~/server/services/TokenService');
-const { logger, getFlowStateManager, sendEvent } = require('~/config');
 const { encryptV2, decryptV2 } = require('~/server/utils/crypto');
 const { getActions, deleteActions } = require('~/models/Action');
 const { deleteAssistant } = require('~/models/Assistant');
-const { logAxiosError } = require('~/utils');
+const { getFlowStateManager } = require('~/config');
 const { getLogStores } = require('~/cache');
 const { findToken } = require('~/models');
 
@@ -208,6 +209,7 @@ async function createActionTool({
                     userId: userId,
                     client_url: metadata.auth.client_url,
                     redirect_uri: `${process.env.DOMAIN_SERVER}/api/actions/${action_id}/oauth/callback`,
+                    token_exchange_method: metadata.auth.token_exchange_method,
                     /** Encrypted values */
                     encrypted_oauth_client_id: encrypted.oauth_client_id,
                     encrypted_oauth_client_secret: encrypted.oauth_client_secret,
@@ -262,6 +264,7 @@ async function createActionTool({
                     refresh_token,
                     client_url: metadata.auth.client_url,
                     encrypted_oauth_client_id: encrypted.oauth_client_id,
+                    token_exchange_method: metadata.auth.token_exchange_method,
                     encrypted_oauth_client_secret: encrypted.oauth_client_secret,
                   });
                 const flowsCache = getLogStores(CacheKeys.FLOWS);

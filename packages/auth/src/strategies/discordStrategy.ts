@@ -1,4 +1,3 @@
-import { Profile } from 'passport';
 import { Strategy as DiscordStrategy } from 'passport-discord';
 import socialLogin from './socialLogin';
 import { GetProfileDetails } from './types';

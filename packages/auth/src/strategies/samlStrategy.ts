@@ -276,7 +276,6 @@ const samlLogin = () => {
     wantAssertionsSigned: process.env.SAML_USE_AUTHN_RESPONSE_SIGNED === 'true' ? false : true,
     wantAuthnResponseSigned: process.env.SAML_USE_AUTHN_RESPONSE_SIGNED === 'true' ? true : false,
   };
-
   return new SamlStrategy(samlConfig, signOnVerify, () => {
     logger.info('saml logout!');
   });

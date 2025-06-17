@@ -1,6 +1,5 @@
 import { logger } from '@librechat/data-schemas';
 import { Profile } from 'passport';
-import { VerifyCallback } from 'passport-oauth2';
 import { getMethods } from '../initAuth';
 import { isEnabled } from '../utils';
 import { createSocialUser, handleExistingUser } from './helpers';
@@ -15,26 +14,29 @@ export function socialLogin(
     refreshToken: string,
     idToken: string,
     profile: Profile,
-    cb: VerifyCallback,
+    cb: any,
   ): Promise<void> => {
     try {
       const { email, id, avatarUrl, username, name, emailVerified } = getProfileDetails({
         idToken,
         profile,
       });
+
       const { findUser } = getMethods();
+
       const oldUser = await findUser({ email: email?.trim() });
       const ALLOW_SOCIAL_REGISTRATION = isEnabled(process.env.ALLOW_SOCIAL_REGISTRATION ?? '');
 
       if (oldUser) {
-        await handleExistingUser(oldUser, avatarUrl);
+        console.log('1', oldUser);
+        await handleExistingUser(oldUser, avatarUrl ?? '');
         return cb(null, oldUser);
       }
 
       if (ALLOW_SOCIAL_REGISTRATION) {
         const newUser = await createSocialUser({
-          email,
-          avatarUrl,
+          email: email ?? '',
+          avatarUrl: avatarUrl ?? '',
           provider,
           providerKey: `${provider}Id`,
           providerId: id,

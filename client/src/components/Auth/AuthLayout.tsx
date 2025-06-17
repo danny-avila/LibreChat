@@ -1,22 +1,11 @@
 import { TranslationKeys, useLocalize } from '~/hooks';
-import { BlinkAnimation } from './BlinkAnimation';
 import { TStartupConfig } from 'librechat-data-provider';
+import { ErrorMessage } from '~/components/Auth/ErrorMessage';
 import SocialLoginRender from './SocialLoginRender';
-import { ThemeSelector } from '~/components/ui';
+import { BlinkAnimation } from './BlinkAnimation';
+import { ThemeSelector } from '~/components';
 import { Banner } from '../Banners';
 import Footer from './Footer';
-
-const ErrorRender = ({ children }: { children: React.ReactNode }) => (
-  <div className="mt-16 flex justify-center">
-    <div
-      role="alert"
-      aria-live="assertive"
-      className="rounded-md border border-red-500 bg-red-500/10 px-3 py-2 text-sm text-gray-600 dark:text-gray-200"
-    >
-      {children}
-    </div>
-  </div>
-);
 
 function AuthLayout({
   children,
@@ -40,19 +29,29 @@ function AuthLayout({
   const hasStartupConfigError = startupConfigError !== null && startupConfigError !== undefined;
   const DisplayError = () => {
     if (hasStartupConfigError) {
-      return <ErrorRender>{localize('com_auth_error_login_server')}</ErrorRender>;
+      return (
+        <div className="mx-auto sm:max-w-sm">
+          <ErrorMessage>{localize('com_auth_error_login_server')}</ErrorMessage>
+        </div>
+      );
     } else if (error === 'com_auth_error_invalid_reset_token') {
       return (
-        <ErrorRender>
-          {localize('com_auth_error_invalid_reset_token')}{' '}
-          <a className="font-semibold text-green-600 hover:underline" href="/forgot-password">
-            {localize('com_auth_click_here')}
-          </a>{' '}
-          {localize('com_auth_to_try_again')}
-        </ErrorRender>
+        <div className="mx-auto sm:max-w-sm">
+          <ErrorMessage>
+            {localize('com_auth_error_invalid_reset_token')}{' '}
+            <a className="font-semibold text-green-600 hover:underline" href="/forgot-password">
+              {localize('com_auth_click_here')}
+            </a>{' '}
+            {localize('com_auth_to_try_again')}
+          </ErrorMessage>
+        </div>
       );
     } else if (error != null && error) {
-      return <ErrorRender>{localize(error)}</ErrorRender>;
+      return (
+        <div className="mx-auto sm:max-w-sm">
+          <ErrorMessage>{localize(error)}</ErrorMessage>
+        </div>
+      );
     }
     return null;
   };
@@ -87,8 +86,8 @@ function AuthLayout({
           {children}
           {!pathname.includes('2fa') &&
             (pathname.includes('login') || pathname.includes('register')) && (
-            <SocialLoginRender startupConfig={startupConfig} />
-          )}
+              <SocialLoginRender startupConfig={startupConfig} />
+            )}
         </div>
       </div>
       <Footer startupConfig={startupConfig} />

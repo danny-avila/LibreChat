@@ -1,31 +1,27 @@
 import { useEffect } from 'react';
+import { ChevronLeft } from 'lucide-react';
 import { useForm, FormProvider } from 'react-hook-form';
 import {
   AuthTypeEnum,
   AuthorizationTypeEnum,
   TokenExchangeMethodEnum,
 } from 'librechat-data-provider';
-import { ChevronLeft } from 'lucide-react';
-import type { AgentPanelProps, ActionAuthForm } from '~/common';
 import ActionsAuth from '~/components/SidePanel/Builder/ActionsAuth';
+import { useAgentPanelContext } from '~/Providers/AgentPanelContext';
 import { OGDialog, OGDialogTrigger, Label } from '~/components/ui';
 import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
 import { useDeleteAgentAction } from '~/data-provider';
+import type { ActionAuthForm } from '~/common';
 import useLocalize from '~/hooks/useLocalize';
 import { useToastContext } from '~/Providers';
 import { TrashIcon } from '~/components/svg';
 import ActionsInput from './ActionsInput';
 import { Panel } from '~/common';
 
-export default function ActionsPanel({
-  // activePanel,
-  action,
-  setAction,
-  agent_id,
-  setActivePanel,
-}: AgentPanelProps) {
+export default function ActionsPanel() {
   const localize = useLocalize();
   const { showToast } = useToastContext();
+  const { setActivePanel, action, setAction, agent_id } = useAgentPanelContext();
   const deleteAgentAction = useDeleteAgentAction({
     onSuccess: () => {
       showToast({
@@ -62,7 +58,7 @@ export default function ActionsPanel({
     },
   });
 
-  const { reset, watch } = methods;
+  const { reset } = methods;
 
   useEffect(() => {
     if (action?.metadata.auth) {
@@ -128,7 +124,7 @@ export default function ActionsPanel({
                     selectHandler: () => {
                       if (!agent_id) {
                         return showToast({
-                          message: 'No agent_id found, is the agent created?',
+                          message: localize('com_agents_no_agent_id_error'),
                           status: 'error',
                         });
                       }

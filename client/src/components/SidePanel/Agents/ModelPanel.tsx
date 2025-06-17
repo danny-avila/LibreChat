@@ -1,27 +1,28 @@
+import keyBy from 'lodash/keyBy';
 import React, { useMemo, useEffect } from 'react';
 import { ChevronLeft, RotateCcw } from 'lucide-react';
 import { useFormContext, useWatch, Controller } from 'react-hook-form';
+import { componentMapping } from '~/components/SidePanel/Parameters/components';
 import {
   alternateName,
   getSettingsKeys,
+  LocalStorageKeys,
   SettingDefinition,
   agentParamSettings,
 } from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
 import type { AgentForm, AgentModelPanelProps, StringOption } from '~/common';
-import { componentMapping } from '~/components/SidePanel/Parameters/components';
 import ControlCombobox from '~/components/ui/ControlCombobox';
 import { useGetEndpointsQuery } from '~/data-provider';
 import { getEndpointField, cn } from '~/utils';
 import { useLocalize } from '~/hooks';
 import { Panel } from '~/common';
-import keyBy from 'lodash/keyBy';
 
 export default function ModelPanel({
-  setActivePanel,
   providers,
+  setActivePanel,
   models: modelsData,
-}: AgentModelPanelProps) {
+}: Pick<AgentModelPanelProps, 'models' | 'providers' | 'setActivePanel'>) {
   const localize = useLocalize();
 
   const { control, setValue } = useFormContext<AgentForm>();
@@ -50,6 +51,8 @@ export default function ModelPanel({
         const newModels = modelsData[provider] ?? [];
         setValue('model', newModels[0] ?? '');
       }
+      localStorage.setItem(LocalStorageKeys.LAST_AGENT_MODEL, _model);
+      localStorage.setItem(LocalStorageKeys.LAST_AGENT_PROVIDER, provider);
     }
 
     if (provider && !_model) {

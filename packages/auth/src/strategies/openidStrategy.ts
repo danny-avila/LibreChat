@@ -1,27 +1,106 @@
-import passport from 'passport';
 import * as client from 'openid-client';
 // @ts-ignore
-import { Strategy as OpenIDStrategy } from 'openid-client/passport';
+import { Strategy as OpenIDStrategy, VerifyCallback } from 'openid-client/passport';
 import jwt from 'jsonwebtoken';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import { hashToken, logger } from '@librechat/data-schemas';
 import { isEnabled } from '../utils';
+import { safeStringify, logHeaders } from '@librechat/api';
 import * as oauth from 'oauth4webapi';
 import { getBalanceConfig, getMethods, getSaveBufferStrategy } from '../initAuth';
-
+import { fetch, Response as UndiciResponse, Headers } from 'undici';
+import { Request } from 'express';
 let crypto: typeof import('node:crypto') | undefined;
 
+/**
+ * @typedef {import('openid-client').ClientMetadata} ClientMetadata
+ * @typedef {import('openid-client').Configuration} Configuration
+ **/
+
+/**
+ * @param {string} url
+ * @param {client.CustomFetchOptions} options
+ */
+export async function customFetch(url: URL | string, options: any): Promise<UndiciResponse> {
+  const urlStr = url.toString();
+  logger.debug(`[openidStrategy] Request to: ${urlStr}`);
+  const debugOpenId = isEnabled(process.env.DEBUG_OPENID_REQUESTS ?? '');
+  if (debugOpenId) {
+    logger.debug(`[openidStrategy] Request method: ${options.method || 'GET'}`);
+    logger.debug(`[openidStrategy] Request headers: ${logHeaders(options.headers)}`);
+    if (options.body) {
+      let bodyForLogging = '';
+      if (options.body instanceof URLSearchParams) {
+        bodyForLogging = options.body.toString();
+      } else if (typeof options.body === 'string') {
+        bodyForLogging = options.body;
+      } else {
+        bodyForLogging = safeStringify(options.body);
+      }
+      logger.debug(`[openidStrategy] Request body: ${bodyForLogging}`);
+    }
+  }
+
+  try {
+    /** @type {undici.RequestInit} */
+    let fetchOptions = options;
+    if (process.env.PROXY) {
+      logger.info(`[openidStrategy] proxy agent configured: ${process.env.PROXY}`);
+      fetchOptions = {
+        ...options,
+        dispatcher: new HttpsProxyAgent(process.env.PROXY ?? ''),
+      };
+    }
+
+    const response: UndiciResponse = await fetch(url, fetchOptions);
+
+    if (debugOpenId) {
+      logger.debug(`[openidStrategy] Response status: ${response.status} ${response.statusText}`);
+      // logger.debug(`[openidStrategy] Response headers: ${logHeaders(response.headers)}`);
+    }
+
+    if (response.status === 200 && response.headers.has('www-authenticate')) {
+      const wwwAuth = response.headers.get('www-authenticate');
+      logger.warn(`[openidStrategy] Non-standard WWW-Authenticate header found in successful response (200 OK): ${wwwAuth}.
+This violates RFC 7235 and may cause issues with strict OAuth clients. Removing header for compatibility.`);
+
+      /** Cloned response without the WWW-Authenticate header */
+      const responseBody = await response.arrayBuffer();
+      const newHeaders = new Headers();
+      for (const [key, value] of response.headers.entries()) {
+        if (key.toLowerCase() !== 'www-authenticate') {
+          newHeaders.append(key, value);
+        }
+      }
+
+      return new UndiciResponse(responseBody, {
+        status: response.status,
+        statusText: response.statusText,
+        headers: newHeaders,
+      });
+    }
+
+    return response;
+  } catch (error: any) {
+    logger.error(`[openidStrategy] Fetch error: ${error.message}`);
+    throw error;
+  }
+}
+
+//overload currenturl function because of express version 4 buggy req.host doesn't include port
+//More info https://github.com/panva/openid-client/pull/713
+let openidConfig: client.Configuration;
 class CustomOpenIDStrategy extends OpenIDStrategy {
-  constructor(options: any, verify: Function) {
+  constructor(options: any, verify: VerifyCallback) {
     super(options, verify);
   }
-  currentUrl(req: any): URL {
+  currentUrl(req: Request): URL {
     const hostAndProtocol = process.env.DOMAIN_SERVER!;
     return new URL(`${hostAndProtocol}${req.originalUrl ?? req.url}`);
   }
 
-  authorizationRequestParams(req: any, options: any) {
-    const params = super.authorizationRequestParams(req, options);
+  authorizationRequestParams(req: Request, options: any): URLSearchParams {
+    const params = super.authorizationRequestParams(req, options) as URLSearchParams;
     if (options?.state && !params?.has('state')) {
       params?.set('state', options.state);
     }
@@ -29,7 +108,6 @@ class CustomOpenIDStrategy extends OpenIDStrategy {
   }
 }
 
-let openidConfig: client.Configuration;
 let tokensCache: any;
 
 /**
@@ -128,7 +206,7 @@ const downloadImage = async (
     if (process.env.PROXY) {
       options.agent = new HttpsProxyAgent(process.env.PROXY);
     }
-    const response: Response = await fetch(url, options);
+    const response: UndiciResponse = await fetch(url, options);
     if (response.ok) {
       const arrayBuffer = await response.arrayBuffer();
       const buffer = Buffer.from(arrayBuffer);
@@ -208,7 +286,7 @@ function convertToUsername(input: string | string[], defaultValue: string = '') 
 async function setupOpenId(tokensCacheKv: any): Promise<any | null> {
   try {
     tokensCache = tokensCacheKv;
-    /** @type {ClientMetadata} */
+
     const clientMetadata = {
       client_id: process.env.OPENID_CLIENT_ID,
       client_secret: process.env.OPENID_CLIENT_SECRET,
@@ -218,19 +296,13 @@ async function setupOpenId(tokensCacheKv: any): Promise<any | null> {
       new URL(process.env.OPENID_ISSUER ?? ''),
       process.env.OPENID_CLIENT_ID ?? '',
       clientMetadata,
+      undefined,
+      {
+        //@ts-ignore
+        [client.customFetch]: customFetch,
+      },
     );
-
     const { findUser, createUser, updateUser } = getMethods();
-    if (process.env.PROXY) {
-      const proxyAgent = new HttpsProxyAgent(process.env.PROXY);
-      const customFetch: client.CustomFetch = (...args: any[]) => {
-        return fetch(args[0], { ...args[1], agent: proxyAgent });
-      };
-      openidConfig[client.customFetch] = customFetch;
-
-      logger.info(`[openidStrategy] proxy agent added: ${process.env.PROXY}`);
-    }
-
     const requiredRole = process.env.OPENID_REQUIRED_ROLE;
     const requiredRoleParameterPath = process.env.OPENID_REQUIRED_ROLE_PARAMETER_PATH;
     const requiredRoleTokenKind = process.env.OPENID_REQUIRED_ROLE_TOKEN_KIND;
@@ -243,17 +315,13 @@ async function setupOpenId(tokensCacheKv: any): Promise<any | null> {
         callbackURL: `${process.env.DOMAIN_SERVER}${process.env.OPENID_CALLBACK_URL}`,
         usePKCE,
       },
-      async (
-        tokenset: client.TokenEndpointResponse & client.TokenEndpointResponseHelpers,
-        done: passport.AuthenticateCallback,
-      ) => {
+      async (tokenset: any, done) => {
         try {
           const claims: oauth.IDToken | undefined = tokenset.claims();
           let user = await findUser({ openidId: claims?.sub });
           logger.info(
             `[openidStrategy] user ${user ? 'found' : 'not found'} with openidId: ${claims?.sub}`,
           );
-
           if (!user) {
             user = await findUser({ email: claims?.email });
             logger.info(
@@ -267,7 +335,6 @@ async function setupOpenId(tokensCacheKv: any): Promise<any | null> {
             ...(await getUserInfo(openidConfig, tokenset.access_token, claims?.sub ?? '')),
           };
           const fullName = getFullName(userinfo);
-
           if (requiredRole) {
             let decodedToken = null;
             if (requiredRoleTokenKind === 'access') {
@@ -333,7 +400,6 @@ async function setupOpenId(tokensCacheKv: any): Promise<any | null> {
           if (!!userinfo && userinfo.picture && !user?.avatar?.includes('manual=true')) {
             /** @type {string | undefined} */
             const imageUrl = userinfo.picture;
-
             let fileName;
             try {
               crypto = await import('node:crypto');
@@ -346,7 +412,6 @@ async function setupOpenId(tokensCacheKv: any): Promise<any | null> {
             } else {
               fileName = userinfo.sub + '.png';
             }
-
             const imageBuffer = await downloadImage(
               imageUrl,
               openidConfig,

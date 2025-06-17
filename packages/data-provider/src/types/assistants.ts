@@ -22,6 +22,7 @@ export enum Tools {
   web_search = 'web_search',
   retrieval = 'retrieval',
   function = 'function',
+  memory = 'memory',
 }
 
 export enum EToolResources {
@@ -514,6 +515,8 @@ export type ActionAuth = {
   token_exchange_method?: TokenExchangeMethodEnum;
 };
 
+export type MCPAuth = ActionAuth;
+
 export type ActionMetadata = {
   api_key?: string;
   auth?: ActionAuth;
@@ -522,6 +525,16 @@ export type ActionMetadata = {
   raw_spec?: string;
   oauth_client_id?: string;
   oauth_client_secret?: string;
+};
+
+export type MCPMetadata = Omit<ActionMetadata, 'auth'> & {
+  name?: string;
+  description?: string;
+  url?: string;
+  tools?: string[];
+  auth?: MCPAuth;
+  icon?: string;
+  trust?: boolean;
 };
 
 export type ActionMetadataRuntime = ActionMetadata & {
@@ -538,6 +551,11 @@ export type Action = {
   settings?: Record<string, unknown>;
   metadata: ActionMetadata;
   version: number | string;
+} & ({ assistant_id: string; agent_id?: never } | { assistant_id?: never; agent_id: string });
+
+export type MCP = {
+  mcp_id: string;
+  metadata: MCPMetadata;
 } & ({ assistant_id: string; agent_id?: never } | { assistant_id?: never; agent_id: string });
 
 export type AssistantAvatar = {

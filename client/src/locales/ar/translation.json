@@ -537,7 +537,6 @@
   "com_ui_enter": "أدخل",
   "com_ui_enter_api_key": "أدخل مفتاح API",
   "com_ui_enter_openapi_schema": "أدخل مخطط OpenAPI هنا",
-  "com_ui_enter_var": "أدخل {{0}}",
   "com_ui_error": "خطأ",
   "com_ui_error_connection": "خطأ في الاتصال بالخادم، حاول تحديث الصفحة.",
   "com_ui_error_save_admin_settings": "حدث خطأ أثناء حفظ إعدادات المسؤول.",

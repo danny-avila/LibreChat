@@ -215,9 +215,6 @@ async function resizeAvatar({
     } else if (input instanceof Buffer) {
       imageBuffer = input;
     } else if (typeof input === 'object' && input instanceof File) {
-      console.log(input);
-      console.log('----');
-      // @ts-ignore
       const fileContent = await fs.promises.readFile(input?.path);
       imageBuffer = Buffer.from(fileContent);
     } else {
@@ -228,6 +225,21 @@ async function resizeAvatar({
     const width = metadata.width ?? 0;
     const height = metadata.height ?? 0;
     const minSize = Math.min(width, height);
+
+    if (metadata.format === 'gif') {
+      const resizedBuffer = await sharp(imageBuffer, { animated: true })
+        .extract({
+          left: Math.floor((width - minSize) / 2),
+          top: Math.floor((height - minSize) / 2),
+          width: minSize,
+          height: minSize,
+        })
+        .resize(250, 250)
+        .gif()
+        .toBuffer();
+
+      return resizedBuffer;
+    }
 
     const squaredBuffer = await sharp(imageBuffer)
       .extract({

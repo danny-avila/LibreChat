@@ -10,7 +10,7 @@ import { Request } from 'express';
 // Unix timestamp for 2024-06-07 15:20:18 Eastern Time
 const verificationEnabledTimestamp = 1717788018;
 
-async function validateLoginRequest(req) {
+async function validateLoginRequest(req: Request) {
   const { error } = loginSchema.safeParse(req.body);
   return error ? errorsToString(error.errors) : null;
 }
@@ -55,6 +55,12 @@ async function passportStrategy(
     const user = await findUser({ email: email.trim() });
     if (!user) {
       logError('Passport Local Strategy - User Not Found', { email });
+      logger.error(`[Login] [Login failed] [Username: ${email}] [Request-IP: ${req.ip}]`);
+      return done(null, false, { message: 'Email does not exist.' });
+    }
+
+    if (!user.password) {
+      logError('Passport Local Strategy - User has no password', { email });
       logger.error(`[Login] [Login failed] [Username: ${email}] [Request-IP: ${req.ip}]`);
       return done(null, false, { message: 'Email does not exist.' });
     }

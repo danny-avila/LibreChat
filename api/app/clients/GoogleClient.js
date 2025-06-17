@@ -1,4 +1,5 @@
 const { google } = require('googleapis');
+const { Tokenizer } = require('@librechat/api');
 const { concat } = require('@langchain/core/utils/stream');
 const { ChatVertexAI } = require('@langchain/google-vertexai');
 const { ChatGoogleGenerativeAI } = require('@langchain/google-genai');
@@ -19,7 +20,6 @@ const {
 } = require('librechat-data-provider');
 const { getSafetySettings } = require('~/server/services/Endpoints/google/llm');
 const { encodeAndFormat } = require('~/server/services/Files/images');
-const Tokenizer = require('~/server/services/Tokenizer');
 const { spendTokens } = require('~/models/spendTokens');
 const { getModelMaxTokens } = require('~/utils');
 const { sleep } = require('~/server/utils');
@@ -34,7 +34,8 @@ const BaseClient = require('./BaseClient');
 
 const loc = process.env.GOOGLE_LOC || 'us-central1';
 const publisher = 'google';
-const endpointPrefix = `${loc}-aiplatform.googleapis.com`;
+const endpointPrefix =
+  loc === 'global' ? 'aiplatform.googleapis.com' : `${loc}-aiplatform.googleapis.com`;
 
 const settings = endpointSettings[EModelEndpoint.google];
 const EXCLUDED_GENAI_MODELS = /gemini-(?:1\.0|1-0|pro)/;

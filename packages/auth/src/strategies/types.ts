@@ -1,4 +1,3 @@
-import { VerifyCallback } from 'passport-oauth2';
 import { Profile } from 'passport';
 import { IUser } from '@librechat/data-schemas';
 
@@ -8,14 +7,14 @@ export interface GetProfileDetailsParams {
 }
 export type GetProfileDetails = (
   params: GetProfileDetailsParams,
-) => Partial<IUser> & { avatarUrl: string };
+) => Partial<IUser> & { avatarUrl: string | null };
 
 export type SocialLoginStrategy = (
   accessToken: string,
   refreshToken: string,
   idToken: string,
   profile: Profile,
-  cb: VerifyCallback,
+  cb: any,
 ) => Promise<void>;
 
 export interface CreateSocialUserParams {

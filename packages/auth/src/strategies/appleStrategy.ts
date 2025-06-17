@@ -3,7 +3,6 @@ import { logger } from '@librechat/data-schemas';
 import jwt from 'jsonwebtoken';
 import { GetProfileDetails, GetProfileDetailsParams } from './types';
 import socialLogin from './socialLogin';
-import { Profile } from 'passport';
 
 /**
  * Extract profile details from the decoded idToken
@@ -27,7 +26,7 @@ const getProfileDetails: GetProfileDetails = ({ profile, idToken }: GetProfileDe
     id: decoded.sub,
     avatarUrl: null, // Apple does not provide an avatar URL
     username: decoded.email ? decoded.email.split('@')[0].toLowerCase() : `user_${decoded.sub}`,
-    name: decoded.name
+    displayName: decoded.name
       ? `${decoded.name.firstName} ${decoded.name.lastName}`
       : profile.displayName || null,
     emailVerified: true, // Apple verifies the email

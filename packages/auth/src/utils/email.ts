@@ -1,19 +1,88 @@
 import fs from 'fs';
 import path from 'path';
-import nodemailer, { TransportOptions } from 'nodemailer';
+import nodemailer, { SentMessageInfo } from 'nodemailer';
 import handlebars from 'handlebars';
-import { createTokenHash, isEnabled } from '.';
+import { createTokenHash } from '.';
+import {  logAxiosError } from '@librechat/api';
+import { isEnabled } from '.';
 import { IUser, logger } from '@librechat/data-schemas';
 import { getMethods } from '../initAuth';
 import { ObjectId } from 'mongoose';
 import bcrypt from 'bcryptjs';
 import { Request } from 'express';
-import { SendEmailParams, SendEmailResponse } from '../types/email';
+import FormData from 'form-data';
+import axios, { AxiosResponse } from 'axios';
+import { MailgunEmailParams, SendEmailParams, SMTPParams } from '../types/email';
 
 const genericVerificationMessage = 'Please check your email to verify your email address.';
 const domains = {
   client: process.env.DOMAIN_CLIENT,
   server: process.env.DOMAIN_SERVER,
+};
+
+/**
+ * Sends an email using Mailgun API.
+ *
+ * @async
+ * @function sendEmailViaMailgun
+ * @param {Object} params - The parameters for sending the email.
+ * @param {string} params.to - The recipient's email address.
+ * @param {string} params.from - The sender's email address.
+ * @param {string} params.subject - The subject of the email.
+ * @param {string} params.html - The HTML content of the email.
+ * @returns {Promise<Object>} - A promise that resolves to the response from Mailgun API.
+ */
+const sendEmailViaMailgun = async ({
+  to,
+  from,
+  subject,
+  html,
+}: MailgunEmailParams): Promise<SentMessageInfo> => {
+  const mailgunApiKey: string | undefined = process.env.MAILGUN_API_KEY;
+  const mailgunDomain: string | undefined = process.env.MAILGUN_DOMAIN;
+  const mailgunHost: string = process.env.MAILGUN_HOST || 'smtp.mailgun.org';
+
+  if (!mailgunApiKey || !mailgunDomain) {
+    throw new Error('Mailgun API key and domain are required');
+  }
+
+  const formData = new FormData();
+  formData.append('from', from);
+  formData.append('to', to);
+  formData.append('subject', subject);
+  formData.append('html', html);
+  formData.append('o:tracking-clicks', 'no');
+
+  try {
+    const response = await axios.post(`${mailgunHost}/v3/${mailgunDomain}/messages`, formData, {
+      headers: {
+        ...formData.getHeaders(),
+        Authorization: `Basic ${Buffer.from(`api:${mailgunApiKey}`).toString('base64')}`,
+      },
+    });
+
+    return response.data;
+  } catch (error: any) {
+    throw new Error(logAxiosError({ error, message: 'Failed to send email via Mailgun' }));
+  }
+};
+
+/**
+ * Sends an email using SMTP via Nodemailer.
+ *
+ * @async
+ * @function sendEmailViaSMTP
+ * @param {Object} params - The parameters for sending the email.
+ * @param {Object} params.transporterOptions - The transporter configuration options.
+ * @param {Object} params.mailOptions - The email options.
+ * @returns {Promise<Object>} - A promise that resolves to the info object of the sent email.
+ */
+const sendEmailViaSMTP = async ({
+  transporterOptions,
+  mailOptions,
+}: SMTPParams): Promise<SentMessageInfo> => {
+  const transporter = nodemailer.createTransport(transporterOptions);
+  return await transporter.sendMail(mailOptions);
 };
 export const sendEmail = async ({
   email,
@@ -21,9 +90,34 @@ export const sendEmail = async ({
   payload,
   template,
   throwError = true,
-}: SendEmailParams): Promise<SendEmailResponse | Error> => {
+}: SendEmailParams): Promise<SentMessageInfo | Error> => {
   try {
-    const transporterOptions: TransportOptions = {
+    // Read and compile the email template
+    const source = fs.readFileSync(path.join(__dirname, 'emails', template), 'utf8');
+    const compiledTemplate = handlebars.compile(source);
+    const html = compiledTemplate(payload);
+
+    // Prepare common email data
+    const fromName = process.env.EMAIL_FROM_NAME || process.env.APP_TITLE;
+    const fromEmail = process.env.EMAIL_FROM;
+    const fromAddress = `"${fromName}" <${fromEmail}>`;
+    const toAddress = `"${payload.name}" <${email}>`;
+
+    // Check if Mailgun is configured
+    if (process.env.MAILGUN_API_KEY && process.env.MAILGUN_DOMAIN) {
+      logger.debug('[sendEmail] Using Mailgun provider');
+      return await sendEmailViaMailgun({
+        from: fromAddress,
+        to: toAddress,
+        subject: subject,
+        html: html,
+      });
+    }
+
+    // Default to SMTP
+    logger.debug('[sendEmail] Using SMTP provider');
+
+    const transporterOptions: any = {
       secure: process.env.EMAIL_ENCRYPTION === 'tls',
       requireTLS: process.env.EMAIL_ENCRYPTION === 'starttls',
       tls: {
@@ -49,24 +143,21 @@ export const sendEmail = async ({
       transporterOptions.port = Number(process.env.EMAIL_PORT ?? 25);
     }
 
-    const transporter = nodemailer.createTransport(transporterOptions);
-
-    const templatePath = path.join(__dirname, 'utils/', template);
-    const source = fs.readFileSync(templatePath, 'utf8');
-    const compiledTemplate = handlebars.compile(source);
-
     const mailOptions = {
-      from: `"${process.env.EMAIL_FROM_NAME || process.env.APP_TITLE}" <${process.env.EMAIL_FROM}>`,
-      to: `"${payload.name}" <${email}>`,
+      // Header address should contain name-addr
+      from: fromAddress,
+      to: toAddress,
       envelope: {
-        from: process.env.EMAIL_FROM!,
+        // Envelope from should contain addr-spec
+        // Mistake in the Nodemailer documentation?
+        from: fromEmail,
         to: email,
       },
-      subject,
-      html: compiledTemplate(payload),
+      subject: subject,
+      html: html,
     };
 
-    return await transporter.sendMail(mailOptions);
+    return await sendEmailViaSMTP({ transporterOptions, mailOptions });
   } catch (error: any) {
     if (throwError) {
       throw error;

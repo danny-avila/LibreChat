@@ -1,5 +1,4 @@
 import { Schema } from 'mongoose';
-import mongoMeili from '~/models/plugins/mongoMeili';
 import { conversationPreset } from './defaults';
 import { IConversation } from '~/types';
 
@@ -47,15 +46,5 @@ const convoSchema: Schema<IConversation> = new Schema(
 convoSchema.index({ expiredAt: 1 }, { expireAfterSeconds: 0 });
 convoSchema.index({ createdAt: 1, updatedAt: 1 });
 convoSchema.index({ conversationId: 1, user: 1 }, { unique: true });
-
-if (process.env.MEILI_HOST && process.env.MEILI_MASTER_KEY) {
-  convoSchema.plugin(mongoMeili, {
-    host: process.env.MEILI_HOST,
-    apiKey: process.env.MEILI_MASTER_KEY,
-    /** Note: Will get created automatically if it doesn't exist already */
-    indexName: 'convos',
-    primaryKey: 'conversationId',
-  });
-}
 
 export default convoSchema;

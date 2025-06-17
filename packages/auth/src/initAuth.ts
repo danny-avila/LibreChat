@@ -1,5 +1,5 @@
-import { BalanceConfig, createMethods } from '@librechat/data-schemas';
 import type { Mongoose } from 'mongoose';
+import { BalanceConfig, createMethods } from '@librechat/data-schemas';
 
 // Flag to prevent re-initialization
 let initialized = false;
