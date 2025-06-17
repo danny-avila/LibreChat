@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import type { Response, Page, BrowserContext } from '@playwright/test';
 
-const basePath = 'http://localhost:3080/c/';
+const basePath = 'http://localhost:3090/c/';
 const initialUrl = `${basePath}new`;
 const endpoints = ['google', 'openAI', 'azureOpenAI', 'chatGPTBrowser', 'gptPlugins'];
 const endpoint = endpoints[1];

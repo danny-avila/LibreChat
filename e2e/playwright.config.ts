@@ -23,7 +23,7 @@ export default defineConfig({
   reporter: [['html', { outputFolder: 'playwright-report' }]],
   /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
   use: {
-    baseURL: 'http://localhost:3080',
+    baseURL: 'http://localhost:3090',
     video: 'on-first-retry',
     trace: 'retain-on-failure',
     ignoreHTTPSErrors: true,
@@ -54,7 +54,7 @@ export default defineConfig({
   /* Run your local dev server before starting the tests */
   webServer: {
     command: `node ${absolutePath}`,
-    port: 3080,
+    port: 3090,
     stdout: 'pipe',
     ignoreHTTPSErrors: true,
     // url: 'http://localhost:3080',
