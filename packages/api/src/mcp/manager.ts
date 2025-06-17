@@ -656,16 +656,25 @@ export class MCPManager {
     serverName,
     connection,
     flowManager,
+    skipReconnect = false,
   }: {
     serverName: string;
     connection: MCPConnection;
     flowManager: FlowStateManager<MCPOAuthTokens | null>;
+    skipReconnect?: boolean;
   }): Promise<boolean> {
     if (await connection.isConnected()) {
       return true;
     }
 
-    logger.info(
+    if (skipReconnect) {
+      logger.warn(
+        `[MCP][${serverName}] App-level connection is disconnected, skipping reconnection attempt`,
+      );
+      return false;
+    }
+
+    logger.warn(
       `[MCP][${serverName}] App-level connection disconnected, attempting to reconnect...`,
     );
 
@@ -733,24 +742,46 @@ export class MCPManager {
   /**
    * Loads tools from all app-level connections into the manifest.
    */
-  public async loadManifestTools(
-    manifestTools: t.LCToolManifest,
-    flowManager: FlowStateManager<MCPOAuthTokens | null>,
-  ): Promise<t.LCToolManifest> {
+  public async loadManifestTools({
+    flowManager,
+    serverToolsCallback,
+    getServerTools,
+  }: {
+    flowManager: FlowStateManager<MCPOAuthTokens | null>;
+    serverToolsCallback?: (serverName: string, tools: t.LCManifestTool[]) => Promise<void>;
+    getServerTools?: (serverName: string) => Promise<t.LCManifestTool[] | undefined>;
+  }): Promise<t.LCToolManifest> {
     const mcpTools: t.LCManifestTool[] = [];
 
     for (const [serverName, connection] of this.connections.entries()) {
       try {
         /** Attempt to ensure connection is active, with reconnection if needed */
-        const isActive = await this.isConnectionActive({ serverName, connection, flowManager });
+        const isActive = await this.isConnectionActive({
+          serverName,
+          connection,
+          flowManager,
+          skipReconnect: true,
+        });
         if (!isActive) {
           logger.warn(
-            `[MCP][${serverName}] Connection not available for ${serverName} manifest loading. Skipping...`,
+            `[MCP][${serverName}] Connection not available for ${serverName} manifest tools.`,
           );
+          if (typeof getServerTools !== 'function') {
+            logger.warn(
+              `[MCP][${serverName}] No \`getServerTools\` function provided, skipping tool loading.`,
+            );
+            continue;
+          }
+          const serverTools = await getServerTools(serverName);
+          if (serverTools && serverTools.length > 0) {
+            logger.info(`[MCP][${serverName}] Loaded tools from cache for manifest`);
+            mcpTools.push(...serverTools);
+          }
           continue;
         }
 
         const tools = await connection.fetchTools();
+        const serverTools: t.LCManifestTool[] = [];
         for (const tool of tools) {
           const pluginKey = `${tool.name}${CONSTANTS.mcp_delimiter}${serverName}`;
           const manifestTool: t.LCManifestTool = {
@@ -764,13 +795,17 @@ export class MCPManager {
             manifestTool.chatMenu = false;
           }
           mcpTools.push(manifestTool);
+          serverTools.push(manifestTool);
+        }
+        if (typeof serverToolsCallback === 'function') {
+          await serverToolsCallback(serverName, serverTools);
         }
       } catch (error) {
         logger.error(`[MCP][${serverName}] Error fetching tools for manifest:`, error);
       }
     }
 
-    return [...mcpTools, ...manifestTools];
+    return mcpTools;
   }
 
   /**

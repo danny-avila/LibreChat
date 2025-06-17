@@ -1,3 +1,4 @@
+const { logger } = require('@librechat/data-schemas');
 const { CacheKeys, AuthType } = require('librechat-data-provider');
 const { getCustomConfig, getCachedTools } = require('~/server/services/Config');
 const { getToolkitKey } = require('~/server/services/ToolService');
@@ -84,6 +85,45 @@ const getAvailablePluginsController = async (req, res) => {
   }
 };
 
+function createServerToolsCallback() {
+  /**
+   * @param {string} serverName
+   * @param {TPlugin[] | null} serverTools
+   */
+  return async function (serverName, serverTools) {
+    try {
+      const mcpToolsCache = getLogStores(CacheKeys.MCP_TOOLS);
+      if (!serverName || !mcpToolsCache) {
+        return;
+      }
+      await mcpToolsCache.set(serverName, serverTools);
+      logger.debug(`MCP tools for ${serverName} added to cache.`);
+    } catch (error) {
+      logger.error('Error retrieving MCP tools from cache:', error);
+    }
+  };
+}
+
+function createGetServerTools() {
+  /**
+   * Retrieves cached server tools
+   * @param {string} serverName
+   * @returns {Promise<TPlugin[] | null>}
+   */
+  return async function (serverName) {
+    try {
+      const mcpToolsCache = getLogStores(CacheKeys.MCP_TOOLS);
+      if (!mcpToolsCache) {
+        return null;
+      }
+      return await mcpToolsCache.get(serverName);
+    } catch (error) {
+      logger.error('Error retrieving MCP tools from cache:', error);
+      return null;
+    }
+  };
+}
+
 /**
  * Retrieves and returns a list of available tools, either from a cache or by reading a plugin manifest file.
  *
@@ -111,7 +151,14 @@ const getAvailableTools = async (req, res) => {
       const mcpManager = getMCPManager();
       const flowsCache = getLogStores(CacheKeys.FLOWS);
       const flowManager = flowsCache ? getFlowStateManager(flowsCache) : null;
-      pluginManifest = await mcpManager.loadManifestTools(pluginManifest, flowManager);
+      const serverToolsCallback = createServerToolsCallback();
+      const getServerTools = createGetServerTools();
+      const mcpTools = await mcpManager.loadManifestTools({
+        flowManager,
+        serverToolsCallback,
+        getServerTools,
+      });
+      pluginManifest = [...mcpTools, ...pluginManifest];
     }
 
     /** @type {TPlugin[]} */
