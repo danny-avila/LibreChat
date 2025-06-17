@@ -28,7 +28,6 @@ export function socialLogin(
       const ALLOW_SOCIAL_REGISTRATION = isEnabled(process.env.ALLOW_SOCIAL_REGISTRATION ?? '');
 
       if (oldUser) {
-        console.log('1', oldUser);
         await handleExistingUser(oldUser, avatarUrl ?? '');
         return cb(null, oldUser);
       }

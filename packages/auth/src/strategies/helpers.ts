@@ -18,7 +18,6 @@ import { CreateSocialUserParams } from './types';
  * @throws {Error} Throws an error if there's an issue saving the updated user object.
  */
 const handleExistingUser = async (oldUser: IUser, avatarUrl: string) => {
-  console.log(1111);
   const fileStrategy = process.env.CDN_PROVIDER ?? FileSources.local;
   const isLocal = fileStrategy === FileSources.local;
 
