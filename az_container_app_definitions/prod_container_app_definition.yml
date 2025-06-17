@@ -1,8 +1,11 @@
 identity:
   type: SystemAssigned
+  principalId: 6f004e25-0444-473e-b8e2-550860ee0565
+  tenantId: bcc529c5-dfce-4f97-b44f-debd50891d83
 properties:
   environmentId: "/subscriptions/9c0bd682-b2b9-49a2-996a-f33eb0af2fff/resourceGroups/rg-playai-eastus-prod-001/providers/Microsoft.App/managedEnvironments/cenv-playai-eastus-prod-001"
   workloadProfileName: paychexai
+  activeRevisionsMode: single
   configuration:
     secrets:
       - name: openid-session-secret
@@ -24,7 +27,7 @@ properties:
         keyVaultUrl: https://kv-pyxplayai-prod-001.vault.azure.net/secrets/PROD-RAG-API-MONGO-CONNECTION-STRING
         identity: system
       - name: client-secret
-        keyVaultUrl: https://kv-pyxplayai-prod-001.vault.azure.net/secrets/PROD-CLIENT-SECRET
+        keyVaultUrl: https://kv-pyxplayai-prod-001.vault.azure.net/secrets/PROD-OPENID-CLIENT-SECRET
         identity: system
       - name: creds-key
         keyVaultUrl: https://kv-pyxplayai-prod-001.vault.azure.net/secrets/PROD-CREDS-KEY
@@ -33,11 +36,17 @@ properties:
         keyVaultUrl: https://kv-pyxplayai-prod-001.vault.azure.net/secrets/PROD-MAAS-API-KEY
         identity: system
     ingress:
+      fqdn: "conpaichateastusprod001.agreeableflower-d1b0364a.eastus.azurecontainerapps.io"
       external: true
+      allowInsecure: false
       targetPort: 3080
       traffic:
-      - weight: 100
-        latestRevision: true
+        - weight: 100
+          latestRevision: true
+      customDomains:
+        - name: play.ai.paychex.com
+          certificateId: "/subscriptions/9c0bd682-b2b9-49a2-996a-f33eb0af2fff/resourceGroups/rg-playai-eastus-prod-001/providers/Microsoft.App/managedEnvironments/cenv-playai-eastus-prod-001/certificates/play-ai-paychex-com"
+          bindingType: SniEnabled
       stickySessions:
         affinity: sticky
       additionalPortMappings:
@@ -69,13 +78,13 @@ properties:
       - name: JWT_REFRESH_SECRET
         secretRef: jwt-refresh-secret
       - name: AZURE_OPENAI_BASEURL
-        value: "https://service-internal-prod.paychex.com/is/librechat/azure/openai/deployments/${DEPLOYMENT_NAME}"
+        value: "https://service-internal.paychex.com/is/librechat/azure/openai/deployments/${DEPLOYMENT_NAME}"
       - name: AZURE_OPENAI_API_KEY
         secretRef: maas-api-key
       - name: ALLOW_REGISTRATION
-        value: "FALSE"
+        value: "false"
       - name: ALLOW_EMAIL_LOGIN
-        value: "FALSE"
+        value: "false"
       - name: DOMAIN_CLIENT
         value: "https://play.ai.paychex.com"
       - name: DOMAIN_SERVER
@@ -87,13 +96,13 @@ properties:
       - name: CREDS_IV
         secretRef: creds-iv
       - name: ALLOW_SOCIAL_LOGIN
-        value: "TRUE"
+        value: "true"
       - name: NODE_EXTRA_CA_CERTS
         value: "/app/paychex-root.pem"
       - name: RAG_API_URL
         value: http://conpaichateastusprod001:8000
       resources:
-        cpu: 2
+        cpu: 1
         memory: 8Gi
         ephemeralStorage: 4Gi
     - image: conpaychexaiprod001.azurecr.io/paychex/rag_api:n1.latest
@@ -102,7 +111,7 @@ properties:
         - name: RAG_AZURE_OPENAI_API_KEY
           secretRef: maas-api-key
         - name: RAG_AZURE_OPENAI_ENDPOINT
-          value: https://service-internal-prod.paychex.com/is/librechat/azure/
+          value: https://service-internal.paychex.com/is/librechat/azure/
         - name: RAG_AZURE_OPENAI_API_VERSION
           value: 2024-10-21
         - name: EMBEDDINGS_PROVIDER
@@ -124,13 +133,13 @@ properties:
         - name: REQUESTS_CA_BUNDLE
           value: /etc/ssl/certs/ca-certificates.crt
         - name: RAG_USE_FULL_CONTEXT
-          value: 'true'
+          value: "true"
         - name: DEBUG_RAG_API
-          value: 'true'
+          value: "true"
         - name: CURL_CA_BUNDLE
           value: /app/paychex-root.pem
       resources:
-        cpu: 2
+        cpu: 1
         memory: 8Gi
         ephemeralStorage: 4Gi
       probes: []
