@@ -3,15 +3,11 @@ import _axios from 'axios';
 import { URL } from 'url';
 import crypto from 'crypto';
 import { load } from 'js-yaml';
-import type {
-  FunctionTool,
-  Schema,
-  Reference,
-  ActionMetadata,
-  ActionMetadataRuntime,
-} from './types/assistants';
+import type { ActionMetadata, ActionMetadataRuntime } from './types/agents';
+import type { FunctionTool, Schema, Reference } from './types/assistants';
+import { AuthTypeEnum, AuthorizationTypeEnum } from './types/agents';
 import type { OpenAPIV3 } from 'openapi-types';
-import { Tools, AuthTypeEnum, AuthorizationTypeEnum } from './types/assistants';
+import { Tools } from './types/assistants';
 
 export type ParametersSchema = {
   type: string;

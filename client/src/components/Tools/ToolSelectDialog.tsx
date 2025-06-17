@@ -9,10 +9,12 @@ import type {
   EModelEndpoint,
   TPluginAction,
   TError,
+  AgentToolType,
 } from 'librechat-data-provider';
-import type { TPluginStoreDialogProps } from '~/common/types';
 import { PluginPagination, PluginAuthForm } from '~/components/Plugins/Store';
+import { useAgentPanelContext } from '~/Providers/AgentPanelContext';
 import { useLocalize, usePluginDialogHelpers } from '~/hooks';
+import type { TPluginStoreDialogProps } from '~/common/types';
 import { useAvailableToolsQuery } from '~/data-provider';
 import ToolItem from './ToolItem';
 
@@ -28,6 +30,7 @@ function ToolSelectDialog({
   const localize = useLocalize();
   const { getValues, setValue } = useFormContext();
   const { data: tools } = useAvailableToolsQuery(endpoint);
+  const { groupedTools } = useAgentPanelContext();
   const isAgentTools = isAgentsEndpoint(endpoint);
 
   const {
@@ -69,8 +72,19 @@ function ToolSelectDialog({
   const handleInstall = (pluginAction: TPluginAction) => {
     const addFunction = () => {
       const fns = getValues(toolsFormKey).slice();
+      // Add the parent
       fns.push(pluginAction.pluginKey);
-      setValue(toolsFormKey, fns);
+
+      // If this tool is a group, add subtools too
+      const groupObj = groupedTools[pluginAction.pluginKey];
+      if (groupObj?.tools && groupObj.tools.length > 0) {
+        for (const sub of groupObj.tools) {
+          if (!fns.includes(sub.tool_id)) {
+            fns.push(sub.tool_id);
+          }
+        }
+      }
+      setValue(toolsFormKey, Array.from(new Set(fns))); // no duplicates just in case
     };
 
     if (!pluginAction.auth) {
@@ -87,16 +101,19 @@ function ToolSelectDialog({
     setShowPluginAuthForm(false);
   };
 
-  const onRemoveTool = (tool: string) => {
-    setShowPluginAuthForm(false);
+  const onRemoveTool = (tool) => {
+    const groupObj = groupedTools[tool];
+    let toolIDsToRemove = [tool];
+    if (groupObj?.tools && groupObj.tools.length > 0) {
+      toolIDsToRemove = toolIDsToRemove.concat(groupObj.tools.map((sub) => sub.tool_id));
+    }
+    // Remove these from the formTools
     updateUserPlugins.mutate(
-      { pluginKey: tool, action: 'uninstall', auth: null, isEntityTool: true },
+      { pluginKey: tool, action: 'uninstall', auth: {}, isEntityTool: true },
       {
-        onError: (error: unknown) => {
-          handleInstallError(error as TError);
-        },
+        onError: (error) => handleInstallError(error),
         onSuccess: () => {
-          const fns = getValues(toolsFormKey).filter((fn: string) => fn !== tool);
+          const fns = getValues(toolsFormKey).filter((fn) => !toolIDsToRemove.includes(fn));
           setValue(toolsFormKey, fns);
         },
       },
@@ -113,17 +130,33 @@ function ToolSelectDialog({
     if (authConfig && authConfig.length > 0 && !authenticated) {
       setShowPluginAuthForm(true);
     } else {
-      handleInstall({ pluginKey, action: 'install', auth: null });
+      handleInstall({
+        pluginKey,
+        action: 'install',
+        auth: {},
+      });
     }
   };
 
-  const filteredTools = tools?.filter((tool) =>
-    tool.name.toLowerCase().includes(searchValue.toLowerCase()),
+  const filteredTools = Object.values(groupedTools || {}).filter(
+    (tool: AgentToolType & { tools?: AgentToolType[] }) => {
+      // Check if the parent tool matches
+      if (tool.metadata?.name?.toLowerCase().includes(searchValue.toLowerCase())) {
+        return true;
+      }
+      // Check if any child tools match
+      if (tool.tools) {
+        return tool.tools.some((childTool) =>
+          childTool.metadata?.name?.toLowerCase().includes(searchValue.toLowerCase()),
+        );
+      }
+      return false;
+    },
   );
 
   useEffect(() => {
     if (filteredTools) {
-      setMaxPage(Math.ceil(filteredTools.length / itemsPerPage));
+      setMaxPage(Math.ceil(Object.keys(filteredTools || {}).length / itemsPerPage));
       if (searchChanged) {
         setCurrentPage(1);
         setSearchChanged(false);
@@ -155,7 +188,7 @@ function ToolSelectDialog({
       {/* Full-screen container to center the panel */}
       <div className="fixed inset-0 flex items-center justify-center p-4">
         <DialogPanel
-          className="relative w-full transform overflow-hidden overflow-y-auto rounded-lg bg-surface-secondary text-left shadow-xl transition-all max-sm:h-full sm:mx-7 sm:my-8 sm:max-w-2xl lg:max-w-5xl xl:max-w-7xl"
+          className="relative max-h-[90vh] w-full transform overflow-hidden overflow-y-auto rounded-lg bg-surface-secondary text-left shadow-xl transition-all max-sm:h-full sm:mx-7 sm:my-8 sm:max-w-2xl lg:max-w-5xl xl:max-w-7xl"
           style={{ minHeight: '610px' }}
         >
           <div className="flex items-center justify-between border-b-[1px] border-border-medium px-4 pb-4 pt-5 sm:p-6">
@@ -228,9 +261,9 @@ function ToolSelectDialog({
                       <ToolItem
                         key={index}
                         tool={tool}
-                        isInstalled={getValues(toolsFormKey).includes(tool.pluginKey)}
-                        onAddTool={() => onAddTool(tool.pluginKey)}
-                        onRemoveTool={() => onRemoveTool(tool.pluginKey)}
+                        isInstalled={getValues(toolsFormKey).includes(tool.tool_id)}
+                        onAddTool={() => onAddTool(tool.tool_id)}
+                        onRemoveTool={() => onRemoveTool(tool.tool_id)}
                       />
                     ))}
               </div>

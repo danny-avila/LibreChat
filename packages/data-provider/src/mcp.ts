@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { TUser } from './types';
 import { extractEnvVariable } from './utils';
-import { TokenExchangeMethodEnum } from './types/assistants';
+import { TokenExchangeMethodEnum } from './types/agents';
 
 const BaseOptionsSchema = z.object({
   iconPath: z.string().optional(),
