@@ -12,6 +12,7 @@ const {
   endpointSettings,
   parseTextParts,
   EModelEndpoint,
+  googleSettings,
   ContentTypes,
   VisionModes,
   ErrorTypes,
@@ -165,6 +166,16 @@ class GoogleClient extends BaseClient {
         }) must be less than or equal to maxContextTokens (${this.maxContextTokens})`,
       );
     }
+
+    // Add thinking configuration
+    this.modelOptions.thinkingConfig = {
+      thinkingBudget:
+        (this.modelOptions.thinking ?? googleSettings.thinking.default)
+          ? this.modelOptions.thinkingBudget
+          : 0,
+    };
+    delete this.modelOptions.thinking;
+    delete this.modelOptions.thinkingBudget;
 
     this.sender =
       this.options.sender ??
