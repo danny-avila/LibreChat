@@ -1,0 +1,94 @@
+identity:
+  type: SystemAssigned
+properties:
+  environmentId: "/subscriptions/819386da-14b6-4ae4-a16d-7475c98e6a9b/resourceGroups/rg-playai-eastus-n2a-001/providers/Microsoft.App/managedEnvironments/cenv-playai-eastus-n2a-001"
+  workloadProfileName: paychexai
+  configuration:
+    secrets:
+      - name: openid-session-secret
+        keyVaultUrl: https://kv-playai-n2a-001.vault.azure.net/secrets/N2A-OPENID-SESSION-SECRET
+        identity: system
+      - name: creds-iv
+        keyVaultUrl: https://kv-playai-n2a-001.vault.azure.net/secrets/N2A-LIBRECHAT-CREDS-IV
+        identity: system
+      - name: jwt-refresh-secret
+        keyVaultUrl: https://kv-playai-n2a-001.vault.azure.net/secrets/N2A-LIBRECHAT-JWT-REFRESH-SECRET
+        identity: system
+      - name: jwt-secret
+        keyVaultUrl: https://kv-playai-n2a-001.vault.azure.net/secrets/N2A-JWT-SECRET
+        identity: system
+      - name: mongo-connection-string
+        keyVaultUrl: https://kv-playai-n2a-001.vault.azure.net/secrets/N2A-LIBRECHAT-MONGO-URI
+        identity: system
+      - name: rag-mongo-connection-string
+        keyVaultUrl: https://kv-playai-n2a-001.vault.azure.net/secrets/N2A-RAG-API-MONGO-CONNECTION-STRING
+        identity: system
+      - name: client-secret
+        keyVaultUrl: https://kv-playai-n2a-001.vault.azure.net/secrets/N2A-LIBRECHAT-CLIENT-SECRET
+        identity: system
+      - name: creds-key
+        keyVaultUrl: https://kv-playai-n2a-001.vault.azure.net/secrets/N2A-LIBRECHAT-CREDS-KEY
+        identity: system
+      - name: maas-api-key
+        keyVaultUrl: https://kv-playai-n2a-001.vault.azure.net/secrets/N2A-LIBRECHAT-MAAS-API-KEY
+    ingress:
+      external: true
+      targetPort: 3080
+      traffic:
+      - weight: 100
+        latestRevision: true
+      stickySessions:
+        affinity: sticky
+    maxInactiveRevisions: 100
+  template:
+    containers:
+    - image: conpaychexaiprod001.azurecr.io/paychex/librechat:n2a.latest
+      name: conpaichat
+      env:
+      - name: OPENID_CALLBACK_URL
+        value: "/oauth/openid/callback"
+      - name: MONGO_URI
+        secretRef: mongo-connection-string
+      - name: OPENID_SCOPE
+        value: "openid profile email"
+      - name: OPENID_SESSION_SECRET
+        secretRef: openid-session-secret
+      - name: OPENID_ISSUER
+        value: "https://login.microsoftonline.com/bcc529c5-dfce-4f97-b44f-debd50891d83/v2.0/"
+      - name: OPENID_CLIENT_SECRET
+        secretRef: client-secret
+      - name: OPENID_CLIENT_ID
+        value: "1ebba027-b707-42b7-b509-44566c9ecff1"
+      - name: JWT_SECRET
+        secretRef: jwt-secret
+      - name: JWT_REFRESH_SECRET
+        secretRef: jwt-refresh-secret
+      - name: AZURE_OPENAI_BASEURL
+        value: "https://service-internal-n1.paychex.com/is/librechat/azure/openai/deployments/${DEPLOYMENT_NAME}"
+      - name: AZURE_OPENAI_API_KEY
+        secretRef: maas-api-key
+      - name: ALLOW_REGISTRATION
+        value: "FALSE"
+      - name: ALLOW_EMAIL_LOGIN
+        value: "FALSE"
+      - name: DOMAIN_CLIENT
+        value: "https://play.ain2a.paychex.com"
+      - name: DOMAIN_SERVER
+        value: "https://play.ain2a.paychex.com"
+      - name: HOST
+        value: "0.0.0.0"
+      - name: CREDS_KEY
+        secretRef: creds-key
+      - name: CREDS_IV
+        secretRef: creds-iv
+      - name: ALLOW_SOCIAL_LOGIN
+        value: "TRUE"
+      - name: NODE_EXTRA_CA_CERTS
+        value: "/app/paychex-root.pem"
+      resources:
+        cpu: 1
+        memory: 2Gi
+        ephemeralStorage: 4Gi
+    scale:
+      minReplicas: 3
+      maxReplicas: 6
