@@ -46,6 +46,14 @@ jobs:
                 docker build . -t ${{ env.ACR_HOST }}/paychex/librechat:n2a.latest
                 docker push ${{ env.ACR_HOST }}/paychex/librechat:n2a.latest
 
+            - name: Trigger rag_api Workflow
+              uses: BeewiseTechnologiesLTD/remote-workflow-trigger@v1
+              with:
+                target_repo: 'paychex/rag_api'
+                workflow_id: '.github/workflows/n2-build-and-push.yml'
+                github_token: ${{ secrets.CROSS_REPO_PAT }}
+                ref: 'main'
+
             - name: Update Azure Container App
               run: |
                 az login --identity

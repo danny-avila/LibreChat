@@ -1,4 +1,4 @@
-name: N2A - Build and Push
+name: prod - Build and Push
 
 env:
     # Azure ACR
@@ -45,6 +45,14 @@ jobs:
 
                 docker build . -t ${{ env.ACR_HOST }}/paychex/librechat:prod.latest
                 docker push ${{ env.ACR_HOST }}/paychex/librechat:prod.latest
+
+            - name: Trigger rag_api Workflow
+              uses: BeewiseTechnologiesLTD/remote-workflow-trigger@v1
+              with:
+                target_repo: 'paychex/rag_api'
+                workflow_id: '.github/workflows/prod-build-and-deploy.yml'
+                github_token: ${{ secrets.CROSS_REPO_PAT }}
+                ref: 'main'
 
             - name: Update Azure Container App
               run: |
