@@ -1,5 +1,5 @@
 module.exports = {
-  roots: ['<rootDir>/src'],
+  roots: ['<rootDir>/src', '<rootDir>/../terms'],
   testEnvironment: 'jsdom',
   testEnvironmentOptions: {
     url: 'http://localhost:3080',
@@ -29,6 +29,7 @@ module.exports = {
     '^test/(.*)$': '<rootDir>/test/$1',
     '^~/(.*)$': '<rootDir>/src/$1',
     '^librechat-data-provider/react-query$': '<rootDir>/../node_modules/librechat-data-provider/src/react-query',
+    '^.+\\.md\\?raw$': '<rootDir>/test/rawFileMock.js',
   },
   restoreMocks: true,
   testResultsProcessor: 'jest-junit',
