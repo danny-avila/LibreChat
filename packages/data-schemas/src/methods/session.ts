@@ -13,7 +13,9 @@ export class SessionError extends Error {
 }
 
 const { REFRESH_TOKEN_EXPIRY } = process.env ?? {};
-const expires = eval(REFRESH_TOKEN_EXPIRY ?? '0') ?? 1000 * 60 * 60 * 24 * 7; // 7 days default
+const expires = REFRESH_TOKEN_EXPIRY
+  ? eval(REFRESH_TOKEN_EXPIRY)
+  : 1000 * 60 * 60 * 24 * 7; // 7 days default
 
 // Factory function that takes mongoose instance and returns the methods
 export function createSessionMethods(mongoose: typeof import('mongoose')) {

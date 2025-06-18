@@ -44,11 +44,11 @@ export default function FilterPrompts({
     const categoryOptions = categories
       ? [...categories]
       : [
-        {
-          value: SystemCategories.NO_CATEGORY,
-          label: localize('com_ui_no_category'),
-        },
-      ];
+          {
+            value: SystemCategories.NO_CATEGORY,
+            label: localize('com_ui_no_category'),
+          },
+        ];
 
     return [...baseOptions, ...categoryOptions];
   }, [categories, localize]);

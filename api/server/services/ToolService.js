@@ -500,6 +500,8 @@ async function processRequiredActions(client, requiredActions) {
 async function loadAgentTools({ req, res, agent, tool_resources, openAIApiKey }) {
   if (!agent.tools || agent.tools.length === 0) {
     return {};
+  } else if (agent.tools && agent.tools.length === 1 && agent.tools[0] === AgentCapabilities.ocr) {
+    return {};
   }
 
   const endpointsConfig = await getEndpointsConfig(req);

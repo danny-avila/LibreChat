@@ -169,12 +169,18 @@ const updateAgentHandler = async (req, res) => {
       });
     }
 
+    /** @type {boolean} */
+    const isProjectUpdate = (projectIds?.length ?? 0) > 0 || (removeProjectIds?.length ?? 0) > 0;
+
     let updatedAgent =
       Object.keys(updateData).length > 0
-        ? await updateAgent({ id }, updateData, { updatingUserId: req.user.id })
+        ? await updateAgent({ id }, updateData, {
+            updatingUserId: req.user.id,
+            skipVersioning: isProjectUpdate,
+          })
         : existingAgent;
 
-    if (projectIds || removeProjectIds) {
+    if (isProjectUpdate) {
       updatedAgent = await updateAgentProjects({
         user: req.user,
         agentId: id,
@@ -387,6 +393,7 @@ const uploadAgentAvatarHandler = async (req, res) => {
       buffer: resizedBuffer,
       userId: req.user.id,
       manual: 'false',
+      agentId: agent_id,
     });
 
     const image = {

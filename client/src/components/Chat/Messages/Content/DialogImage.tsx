@@ -68,7 +68,7 @@ export default function DialogImage({ isOpen, onOpenChange, src = '', downloadIm
           />
           <div className="flex items-center gap-2">
             <TooltipAnchor
-              description={localize('com_ui_save')}
+              description={localize('com_ui_download')}
               render={
                 <Button onClick={() => downloadImage()} variant="ghost" className="h-10 w-10 p-0">
                   <ArrowDownToLine className="size-6" />
@@ -108,7 +108,7 @@ export default function DialogImage({ isOpen, onOpenChange, src = '', downloadIm
               alt="Image"
               className="max-h-full max-w-full object-contain"
               style={{
-                maxHeight: 'calc(100vh - 6rem)', // Account for header and padding
+                maxHeight: 'calc(100vh - 6rem)',
                 maxWidth: '100%',
               }}
             />
@@ -117,7 +117,7 @@ export default function DialogImage({ isOpen, onOpenChange, src = '', downloadIm
 
         {/* Side Panel */}
         <div
-          className={`shadow-l-lg fixed right-0 top-0 z-20 h-full w-80 transform rounded-l-2xl border-l border-border-light bg-surface-secondary transition-transform duration-500 ease-in-out ${
+          className={`shadow-l-lg fixed right-0 top-0 z-20 h-full w-80 transform rounded-l-2xl border-l border-border-light bg-surface-primary transition-transform duration-500 ease-in-out ${
             isPromptOpen ? 'translate-x-0' : 'translate-x-full'
           }`}
         >
@@ -132,7 +132,7 @@ export default function DialogImage({ isOpen, onOpenChange, src = '', downloadIm
             <div className="space-y-6">
               {/* Prompt Section */}
               <div>
-                <h4 className="mb-2 text-sm font-medium text-text-secondary">
+                <h4 className="mb-2 text-sm font-medium text-text-primary">
                   {localize('com_ui_prompt')}
                 </h4>
                 <div className="rounded-md bg-surface-tertiary p-3">
@@ -144,20 +144,18 @@ export default function DialogImage({ isOpen, onOpenChange, src = '', downloadIm
 
               {/* Generation Settings */}
               <div>
-                <h4 className="mb-3 text-sm font-medium text-text-secondary">
+                <h4 className="mb-3 text-sm font-medium text-text-primary">
                   {localize('com_ui_generation_settings')}
                 </h4>
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
-                    <span className="text-sm text-text-secondary">{localize('com_ui_size')}:</span>
+                    <span className="text-sm text-text-primary">{localize('com_ui_size')}:</span>
                     <span className="text-sm font-medium text-text-primary">
                       {args?.size || 'Unknown'}
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-sm text-text-secondary">
-                      {localize('com_ui_quality')}:
-                    </span>
+                    <span className="text-sm text-text-primary">{localize('com_ui_quality')}:</span>
                     <span
                       className={`rounded px-2 py-1 text-xs font-medium capitalize ${
                         args?.quality === 'high'
@@ -171,7 +169,7 @@ export default function DialogImage({ isOpen, onOpenChange, src = '', downloadIm
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-sm text-text-secondary">
+                    <span className="text-sm text-text-primary">
                       {localize('com_ui_file_size')}:
                     </span>
                     <span className="text-sm font-medium text-text-primary">

@@ -662,6 +662,7 @@ describe('models/Agent', () => {
     beforeAll(async () => {
       mongoServer = await MongoMemoryServer.create();
       const mongoUri = mongoServer.getUri();
+      Agent = mongoose.models.Agent || mongoose.model('Agent', agentSchema);
       await mongoose.connect(mongoUri);
     });
 
@@ -1323,6 +1324,7 @@ describe('models/Agent', () => {
     beforeAll(async () => {
       mongoServer = await MongoMemoryServer.create();
       const mongoUri = mongoServer.getUri();
+      Agent = mongoose.models.Agent || mongoose.model('Agent', agentSchema);
       await mongoose.connect(mongoUri);
     });
 
@@ -1504,6 +1506,7 @@ describe('models/Agent', () => {
     beforeAll(async () => {
       mongoServer = await MongoMemoryServer.create();
       const mongoUri = mongoServer.getUri();
+      Agent = mongoose.models.Agent || mongoose.model('Agent', agentSchema);
       await mongoose.connect(mongoUri);
     });
 
@@ -1797,6 +1800,7 @@ describe('models/Agent', () => {
     beforeAll(async () => {
       mongoServer = await MongoMemoryServer.create();
       const mongoUri = mongoServer.getUri();
+      Agent = mongoose.models.Agent || mongoose.model('Agent', agentSchema);
       await mongoose.connect(mongoUri);
     });
 
@@ -2342,6 +2346,233 @@ describe('models/Agent', () => {
       }
 
       Agent.updateOne = originalUpdateOne;
+    });
+  });
+
+  describe('Agent IDs Field in Version Detection', () => {
+    let mongoServer;
+
+    beforeAll(async () => {
+      mongoServer = await MongoMemoryServer.create();
+      const mongoUri = mongoServer.getUri();
+      Agent = mongoose.models.Agent || mongoose.model('Agent', agentSchema);
+      await mongoose.connect(mongoUri);
+    });
+
+    afterAll(async () => {
+      await mongoose.disconnect();
+      await mongoServer.stop();
+    });
+
+    beforeEach(async () => {
+      await Agent.deleteMany({});
+    });
+
+    test('should now create new version when agent_ids field changes', async () => {
+      const agentId = `agent_${uuidv4()}`;
+      const authorId = new mongoose.Types.ObjectId();
+
+      const agent = await createAgent({
+        id: agentId,
+        name: 'Test Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+        agent_ids: ['agent1', 'agent2'],
+      });
+
+      expect(agent).toBeDefined();
+      expect(agent.versions).toHaveLength(1);
+
+      const updated = await updateAgent(
+        { id: agentId },
+        { agent_ids: ['agent1', 'agent2', 'agent3'] },
+      );
+
+      // Since agent_ids is no longer excluded, this should create a new version
+      expect(updated.versions).toHaveLength(2);
+      expect(updated.agent_ids).toEqual(['agent1', 'agent2', 'agent3']);
+    });
+
+    test('should detect duplicate version if agent_ids is updated to same value', async () => {
+      const agentId = `agent_${uuidv4()}`;
+      const authorId = new mongoose.Types.ObjectId();
+
+      await createAgent({
+        id: agentId,
+        name: 'Test Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+        agent_ids: ['agent1', 'agent2'],
+      });
+
+      await updateAgent({ id: agentId }, { agent_ids: ['agent1', 'agent2', 'agent3'] });
+
+      await expect(
+        updateAgent({ id: agentId }, { agent_ids: ['agent1', 'agent2', 'agent3'] }),
+      ).rejects.toThrow('Duplicate version');
+    });
+
+    test('should handle agent_ids field alongside other fields', async () => {
+      const agentId = `agent_${uuidv4()}`;
+      const authorId = new mongoose.Types.ObjectId();
+
+      await createAgent({
+        id: agentId,
+        name: 'Test Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+        description: 'Initial description',
+        agent_ids: ['agent1'],
+      });
+
+      const updated = await updateAgent(
+        { id: agentId },
+        {
+          agent_ids: ['agent1', 'agent2'],
+          description: 'Updated description',
+        },
+      );
+
+      expect(updated.versions).toHaveLength(2);
+      expect(updated.agent_ids).toEqual(['agent1', 'agent2']);
+      expect(updated.description).toBe('Updated description');
+
+      const updated2 = await updateAgent({ id: agentId }, { description: 'Another description' });
+
+      expect(updated2.versions).toHaveLength(3);
+      expect(updated2.agent_ids).toEqual(['agent1', 'agent2']);
+      expect(updated2.description).toBe('Another description');
+    });
+
+    test('should skip version creation when skipVersioning option is used', async () => {
+      const agentId = `agent_${uuidv4()}`;
+      const authorId = new mongoose.Types.ObjectId();
+      const projectId1 = new mongoose.Types.ObjectId();
+      const projectId2 = new mongoose.Types.ObjectId();
+
+      // Create agent with initial projectIds
+      await createAgent({
+        id: agentId,
+        name: 'Test Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+        projectIds: [projectId1],
+      });
+
+      // Share agent using updateAgentProjects (which uses skipVersioning)
+      const shared = await updateAgentProjects({
+        user: { id: authorId.toString() }, // Use the same author ID
+        agentId: agentId,
+        projectIds: [projectId2.toString()],
+      });
+
+      // Should NOT create a new version due to skipVersioning
+      expect(shared.versions).toHaveLength(1);
+      expect(shared.projectIds.map((id) => id.toString())).toContain(projectId1.toString());
+      expect(shared.projectIds.map((id) => id.toString())).toContain(projectId2.toString());
+
+      // Unshare agent using updateAgentProjects
+      const unshared = await updateAgentProjects({
+        user: { id: authorId.toString() },
+        agentId: agentId,
+        removeProjectIds: [projectId1.toString()],
+      });
+
+      // Still should NOT create a new version
+      expect(unshared.versions).toHaveLength(1);
+      expect(unshared.projectIds.map((id) => id.toString())).not.toContain(projectId1.toString());
+      expect(unshared.projectIds.map((id) => id.toString())).toContain(projectId2.toString());
+
+      // Regular update without skipVersioning should create a version
+      const regularUpdate = await updateAgent(
+        { id: agentId },
+        { description: 'Updated description' },
+      );
+
+      expect(regularUpdate.versions).toHaveLength(2);
+      expect(regularUpdate.description).toBe('Updated description');
+
+      // Direct updateAgent with MongoDB operators should still create versions
+      const directUpdate = await updateAgent(
+        { id: agentId },
+        { $addToSet: { projectIds: { $each: [projectId1] } } },
+      );
+
+      expect(directUpdate.versions).toHaveLength(3);
+      expect(directUpdate.projectIds.length).toBe(2);
+    });
+
+    test('should preserve agent_ids in version history', async () => {
+      const agentId = `agent_${uuidv4()}`;
+      const authorId = new mongoose.Types.ObjectId();
+
+      await createAgent({
+        id: agentId,
+        name: 'Test Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+        agent_ids: ['agent1'],
+      });
+
+      await updateAgent({ id: agentId }, { agent_ids: ['agent1', 'agent2'] });
+
+      await updateAgent({ id: agentId }, { agent_ids: ['agent3'] });
+
+      const finalAgent = await getAgent({ id: agentId });
+
+      expect(finalAgent.versions).toHaveLength(3);
+      expect(finalAgent.versions[0].agent_ids).toEqual(['agent1']);
+      expect(finalAgent.versions[1].agent_ids).toEqual(['agent1', 'agent2']);
+      expect(finalAgent.versions[2].agent_ids).toEqual(['agent3']);
+      expect(finalAgent.agent_ids).toEqual(['agent3']);
+    });
+
+    test('should handle empty agent_ids arrays', async () => {
+      const agentId = `agent_${uuidv4()}`;
+      const authorId = new mongoose.Types.ObjectId();
+
+      await createAgent({
+        id: agentId,
+        name: 'Test Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+        agent_ids: ['agent1', 'agent2'],
+      });
+
+      const updated = await updateAgent({ id: agentId }, { agent_ids: [] });
+
+      expect(updated.versions).toHaveLength(2);
+      expect(updated.agent_ids).toEqual([]);
+
+      await expect(updateAgent({ id: agentId }, { agent_ids: [] })).rejects.toThrow(
+        'Duplicate version',
+      );
+    });
+
+    test('should handle agent without agent_ids field', async () => {
+      const agentId = `agent_${uuidv4()}`;
+      const authorId = new mongoose.Types.ObjectId();
+
+      const agent = await createAgent({
+        id: agentId,
+        name: 'Test Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+      });
+
+      expect(agent.agent_ids).toEqual([]);
+
+      const updated = await updateAgent({ id: agentId }, { agent_ids: ['agent1'] });
+
+      expect(updated.versions).toHaveLength(2);
+      expect(updated.agent_ids).toEqual(['agent1']);
     });
   });
 });
