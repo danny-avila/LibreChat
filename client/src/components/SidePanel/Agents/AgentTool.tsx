@@ -287,6 +287,9 @@ export default function AgentTool({
                     'ml-2 mr-1 focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-background',
                   )}
                   onClick={(e) => e.stopPropagation()}
+                  onKeyDown={(e) => {
+                    e.stopPropagation();
+                  }}
                   onMouseEnter={() => setHoveredToolId(subTool.tool_id)}
                   onMouseLeave={() => setHoveredToolId(null)}
                 >
@@ -300,13 +303,14 @@ export default function AgentTool({
                       updateFormTools(newSelectedTools);
                     }}
                     onKeyDown={(e) => {
+                      e.stopPropagation();
                       if (e.key === 'Enter' || e.key === ' ') {
                         e.preventDefault();
-                        e.stopPropagation();
                         const checkbox = e.currentTarget as HTMLButtonElement;
                         checkbox.click();
                       }
                     }}
+                    onClick={(e) => e.stopPropagation()}
                     className="relative float-left mr-2 inline-flex h-4 w-4 cursor-pointer rounded border border-gray-300 transition-[border-color] duration-200 hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background dark:border-gray-600 dark:hover:border-gray-500"
                   />
                   <span className="text-token-text-primary">{subTool.metadata.name}</span>
