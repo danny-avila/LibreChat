@@ -102,7 +102,7 @@ properties:
     revisionSuffix: ""
     terminationGracePeriodSeconds: null
     containers:
-      - image: conpaychexaiprod001.azurecr.io/paychex/librechat:n2a.latest
+      - image: conpaychexaiprod001.azurecr.io/paychex/librechat:n1.latest
         name: conpaichat
         env:
           - name: OPENID_CALLBACK_URL
