@@ -32,32 +32,36 @@ async function migrateAgentPermissionsEnhanced({ dryRun = true, batchSize = 100 
 
   logger.info(`Found ${globalAgentIds.size} agents in global project`);
 
-  // Find agents without ACL entries
+  // Find agents without ACL entries using DocumentDB-compatible approach
   const agentsToMigrate = await Agent.aggregate([
     {
       $lookup: {
         from: 'aclentries',
-        let: { agentId: '$_id' },
-        pipeline: [
-          {
-            $match: {
-              $expr: {
-                $and: [
-                  { $eq: ['$resourceType', 'agent'] },
-                  { $eq: ['$resourceId', '$$agentId'] },
-                  { $eq: ['$principalType', 'user'] },
-                ],
-              },
+        localField: '_id',
+        foreignField: 'resourceId',
+        as: 'aclEntries',
+      },
+    },
+    {
+      $addFields: {
+        userAclEntries: {
+          $filter: {
+            input: '$aclEntries',
+            as: 'aclEntry',
+            cond: {
+              $and: [
+                { $eq: ['$$aclEntry.resourceType', 'agent'] },
+                { $eq: ['$$aclEntry.principalType', 'user'] },
+              ],
             },
           },
-        ],
-        as: 'aclEntries',
+        },
       },
     },
     {
       $match: {
         author: { $exists: true, $ne: null },
-        $expr: { $eq: [{ $size: '$aclEntries' }, 0] },
+        userAclEntries: { $size: 0 },
       },
     },
     {
