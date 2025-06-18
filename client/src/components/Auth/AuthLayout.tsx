@@ -57,12 +57,15 @@ function AuthLayout({
     return null;
   };
   return (
-    <div className="relative flex min-h-screen flex-col bg-white dark:bg-gray-900">
+    <div className="relative flex min-h-screen flex-col bg-auth-background bg-cover bg-center bg-no-repeat bg-white dark:bg-gray-900">
       <Banner />
       <div className="absolute bottom-0 left-0 md:m-4">
         <ThemeSelector />
-      </div>      <div className="flex flex-grow items-center justify-center">
-        <div className="w-authPageWidth overflow-hidden bg-white px-6 py-4 dark:bg-gray-900 sm:max-w-md sm:rounded-lg">          <BlinkAnimation active={isFetching}>            <div className="mb-7 flex justify-center">
+      </div>
+      <div className="flex flex-grow items-center justify-center">
+        <div className="w-authPageWidth overflow-hidden bg-white/80 backdrop-blur-sm px-6 py-4 dark:bg-gray-900/80 sm:max-w-md sm:rounded-lg shadow-lg">
+          <BlinkAnimation active={isFetching}>
+            <div className="mb-7 flex justify-center">
               <div style={{ height: '90px', width: 'auto' }}>
                 <img
                   src={`/assets/logo.jpeg?v=${Date.now()}`}
