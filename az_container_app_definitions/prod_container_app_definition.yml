@@ -56,7 +56,7 @@ properties:
     maxInactiveRevisions: 100
   template:
     containers:
-    - image: conpaychexaiprod001.azurecr.io/paychex/librechat:n2a.895d2c4555a89ee6c1917500ae8af321df6c0326
+    - image: conpaychexaiprod001.azurecr.io/paychex/librechat:prod.895d2c4555a89ee6c1917500ae8af321df6c0326
       name: conpaichat
       env:
       - name: OPENID_CALLBACK_URL
@@ -105,7 +105,7 @@ properties:
         cpu: 1
         memory: 8Gi
         ephemeralStorage: 4Gi
-    - image: conpaychexaiprod001.azurecr.io/paychex/rag_api:n1.latest
+    - image: conpaychexaiprod001.azurecr.io/paychex/rag_api:prod.latest
       name: conpairag
       env:
         - name: RAG_AZURE_OPENAI_API_KEY
