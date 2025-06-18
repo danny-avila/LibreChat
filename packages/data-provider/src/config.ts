@@ -600,6 +600,7 @@ export type TStartupConfig = {
       >;
     }
   >;
+  mcpPlaceholder?: string;
 };
 
 export enum OCRStrategy {

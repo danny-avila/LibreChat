@@ -5,7 +5,7 @@ import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-quer
 import { Constants, EModelEndpoint, LocalStorageKeys } from 'librechat-data-provider';
 import type { TPlugin, TPluginAuthConfig, TUpdateUserPlugins } from 'librechat-data-provider';
 import MCPConfigDialog, { type ConfigFieldDetail } from '~/components/ui/MCPConfigDialog';
-import { useAvailableToolsQuery } from '~/data-provider';
+import { useAvailableToolsQuery, useGetStartupConfig } from '~/data-provider';
 import useLocalStorage from '~/hooks/useLocalStorageAlt';
 import MultiSelect from '~/components/ui/MultiSelect';
 import { ephemeralAgentByConvoId } from '~/store';
@@ -45,6 +45,7 @@ function MCPSelect({ conversationId }: { conversationId?: string | null }) {
   const { showToast } = useToastContext();
   const key = conversationId ?? Constants.NEW_CONVO;
   const hasSetFetched = useRef<string | null>(null);
+  const { data: startupConfig } = useGetStartupConfig();
   const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
   const [selectedToolForConfig, setSelectedToolForConfig] = useState<McpServerInfo | null>(null);
 
@@ -216,6 +217,7 @@ function MCPSelect({ conversationId }: { conversationId?: string | null }) {
     return null;
   }
 
+  const placeholderText = startupConfig?.mcpPlaceholder || localize('com_ui_mcp_servers');
   return (
     <>
       <MultiSelect
@@ -225,7 +227,7 @@ function MCPSelect({ conversationId }: { conversationId?: string | null }) {
         defaultSelectedValues={mcpValues ?? []}
         renderSelectedValues={renderSelectedValues}
         renderItemContent={renderItemContent}
-        placeholder={localize('com_ui_mcp_servers')}
+        placeholder={placeholderText}
         popoverClassName="min-w-fit"
         className="badge-icon min-w-fit"
         selectIcon={<MCPIcon className="icon-md text-text-primary" />}
