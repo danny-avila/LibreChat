@@ -3,9 +3,11 @@ import * as Ariakit from '@ariakit/react';
 import { ChevronDown } from 'lucide-react';
 import { VisuallyHidden } from '@ariakit/react';
 import { useFormContext } from 'react-hook-form';
+import * as AccordionPrimitive from '@radix-ui/react-accordion';
 import type { AgentToolType } from 'librechat-data-provider';
 import type { AgentForm } from '~/common';
 import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
+import { Accordion, AccordionItem, AccordionContent } from '~/components/ui/Accordion';
 import { OGDialog, OGDialogTrigger, Label, Checkbox } from '~/components/ui';
 import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
 import CircleHelpIcon from '~/components/svg/CircleHelpIcon';
@@ -23,8 +25,9 @@ export default function AgentTool({
   agent_id?: string;
 }) {
   const [isHovering, setIsHovering] = useState(false);
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [isFocused, setIsFocused] = useState(false);
   const [hoveredToolId, setHoveredToolId] = useState<string | null>(null);
+  const [accordionValue, setAccordionValue] = useState<string>('');
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const updateUserPlugins = useUpdateUserPluginsMutation();
@@ -72,192 +75,293 @@ export default function AgentTool({
 
   const isGroup = currentTool.tools && currentTool.tools.length > 0;
   const selectedTools = getSelectedTools();
+  const isExpanded = accordionValue === currentTool.tool_id;
 
-  return (
-    <OGDialog>
-      <div
-        className="flex w-full items-center rounded-lg text-sm"
-        onMouseEnter={() => setIsHovering(true)}
-        onMouseLeave={() => setIsHovering(false)}
-      >
+  if (!isGroup) {
+    return (
+      <OGDialog>
         <div
-          className="flex grow cursor-pointer items-center"
-          onClick={(e) => {
-            if (isGroup && !(e.target as HTMLElement).closest('input[type="checkbox"], label')) {
-              setIsExpanded(!isExpanded);
+          className="group relative flex w-full items-center gap-1 rounded-lg p-1 text-sm hover:bg-gray-50 dark:hover:bg-gray-800/50"
+          onMouseEnter={() => setIsHovering(true)}
+          onMouseLeave={() => setIsHovering(false)}
+          onFocus={() => setIsFocused(true)}
+          onBlur={(e) => {
+            // Check if focus is moving to a child element
+            if (!e.currentTarget.contains(e.relatedTarget)) {
+              setIsFocused(false);
             }
           }}
         >
-          {currentTool.metadata.icon && (
-            <div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-full">
-              <div
-                className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full bg-center bg-no-repeat dark:bg-white/20"
-                style={{
-                  backgroundImage: `url(${currentTool.metadata.icon})`,
-                  backgroundSize: 'cover',
-                }}
-              />
-            </div>
-          )}
-          <div
-            className="h-9 grow px-3 py-2"
-            style={{ textOverflow: 'ellipsis', wordBreak: 'break-all', overflow: 'hidden' }}
-          >
-            {currentTool.metadata.name}
-          </div>
-          {isGroup && (
-            <div className="flex items-center gap-2">
-              <div className="flex items-center gap-0.5">
+          <div className="flex grow items-center">
+            {currentTool.metadata.icon && (
+              <div className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full">
                 <div
-                  className={cn(
-                    'mr-2 mt-0.5 flex overflow-hidden transition-all duration-200',
-                    isExpanded ? 'w-4 opacity-100' : 'w-0 opacity-0',
-                    isHovering ? '-translate-x-9' : 'translate-x-0',
-                  )}
-                >
-                  <Checkbox
-                    id={`select-all-${currentTool.tool_id}`}
-                    checked={selectedTools.length === currentTool.tools?.length}
-                    onCheckedChange={(checked) => {
-                      if (currentTool.tools) {
-                        const newSelectedTools = checked
-                          ? currentTool.tools.map((t) => t.tool_id)
-                          : [];
-                        updateFormTools(newSelectedTools);
-                      }
-                    }}
-                    className="relative inline-flex h-4 w-4 cursor-pointer rounded border border-gray-300 transition-[border-color] duration-200 hover:border-gray-400 dark:border-gray-600 dark:hover:border-gray-500"
-                    onClick={(e) => e.stopPropagation()}
-                  />
-                </div>
-                <div className="relative flex items-center">
-                  <div
-                    className={cn(
-                      'mt-0.5 flex h-4 w-4 items-center justify-center transition-all duration-200',
-                      isExpanded ? 'rotate-180' : '',
-                      isHovering ? '-translate-x-9' : 'translate-x-0',
-                    )}
-                  >
-                    <ChevronDown className="h-4 w-4" />
-                  </div>
-                  <div
-                    className={cn(
-                      'absolute right-0 flex items-center transition-all duration-200',
-                      isHovering ? 'translate-x-0 opacity-100' : 'translate-x-4 opacity-0',
-                    )}
-                  >
-                    <OGDialogTrigger asChild>
-                      <button
-                        type="button"
-                        className="flex h-9 w-9 min-w-9 items-center justify-center rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <TrashIcon className="h-4 w-4" />
-                      </button>
-                    </OGDialogTrigger>
-                  </div>
-                </div>
+                  className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full bg-center bg-no-repeat dark:bg-white/20"
+                  style={{
+                    backgroundImage: `url(${currentTool.metadata.icon})`,
+                    backgroundSize: 'cover',
+                  }}
+                />
               </div>
+            )}
+            <div
+              className="grow px-2 py-1.5"
+              style={{ textOverflow: 'ellipsis', wordBreak: 'break-all', overflow: 'hidden' }}
+            >
+              {currentTool.metadata.name}
             </div>
-          )}
-        </div>
+          </div>
 
-        {isHovering && !isGroup && (
           <OGDialogTrigger asChild>
             <button
               type="button"
-              className="transition-color flex h-9 w-9 min-w-9 items-center justify-center rounded-lg duration-200 hover:bg-gray-200 dark:hover:bg-gray-700"
+              className={cn(
+                'flex h-7 w-7 items-center justify-center rounded transition-all duration-200',
+                'hover:bg-gray-200 dark:hover:bg-gray-700',
+                'focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1',
+                'focus:opacity-100',
+                isHovering || isFocused ? 'opacity-100' : 'pointer-events-none opacity-0',
+              )}
+              aria-label={`Delete ${currentTool.metadata.name}`}
+              tabIndex={0}
+              onFocus={() => setIsFocused(true)}
             >
-              <TrashIcon />
+              <TrashIcon className="h-4 w-4" />
             </button>
           </OGDialogTrigger>
-        )}
-      </div>
-      {isGroup && (
-        <div
-          className={cn(
-            'ml-4 space-y-1 border-l-2 border-border-medium pl-4 transition-all duration-300 ease-in-out',
-            isExpanded ? 'max-h-[500px] opacity-100' : 'max-h-0 overflow-hidden opacity-0',
-          )}
-        >
-          {currentTool.tools?.map((subTool) => (
-            <label
-              key={subTool.tool_id}
-              htmlFor={subTool.tool_id}
-              className="border-token-border-light hover:bg-token-surface-secondary flex cursor-pointer items-center rounded-lg border p-2"
-              onClick={(e) => e.stopPropagation()}
-              onMouseEnter={() => setHoveredToolId(subTool.tool_id)}
-              onMouseLeave={() => setHoveredToolId(null)}
-            >
-              <Checkbox
-                id={subTool.tool_id}
-                checked={selectedTools.includes(subTool.tool_id)}
-                onCheckedChange={(_checked) => {
-                  const newSelectedTools = selectedTools.includes(subTool.tool_id)
-                    ? selectedTools.filter((t) => t !== subTool.tool_id)
-                    : [...selectedTools, subTool.tool_id];
-                  updateFormTools(newSelectedTools);
-                }}
-                className="relative float-left mr-2 inline-flex h-4 w-4 cursor-pointer rounded border border-gray-300 transition-[border-color] duration-200 hover:border-gray-400 dark:border-gray-600 dark:hover:border-gray-500"
-              />
-              {/* {subTool.metadata.icon && (
-                <div className="mr-2 flex h-6 w-6 items-center justify-center overflow-hidden rounded-full">
-                  <img
-                    src={subTool.metadata.icon}
-                    alt={subTool.metadata.name}
-                    className="h-4 w-4 object-contain"
-                  />
-                </div>
-              )} */}
-              <span className="text-token-text-primary">{subTool.metadata.name}</span>
-              {subTool.metadata.description && (
-                <Ariakit.HovercardProvider placement="left-start">
-                  <div className="ml-auto flex h-6 w-6 items-center justify-center">
-                    <Ariakit.HovercardAnchor
-                      render={
-                        <Ariakit.Button
-                          className={cn(
-                            'flex h-5 w-5 cursor-help items-center rounded-full text-text-secondary transition-opacity duration-200',
-                            hoveredToolId === subTool.tool_id ? 'opacity-100' : 'opacity-0',
-                          )}
-                          aria-label={localize('com_ui_tool_info')}
-                        >
-                          <CircleHelpIcon className="h-4 w-4" />
-                          <VisuallyHidden>{localize('com_ui_tool_info')}</VisuallyHidden>
-                        </Ariakit.Button>
-                      }
-                    />
-                    <Ariakit.HovercardDisclosure
-                      className="rounded-full text-text-secondary focus:outline-none focus:ring-2 focus:ring-ring"
-                      aria-label={localize('com_ui_tool_more_info')}
-                      aria-expanded={hoveredToolId === subTool.tool_id}
-                      aria-controls={`tool-description-${subTool.tool_id}`}
-                    >
-                      <VisuallyHidden>{localize('com_ui_tool_more_info')}</VisuallyHidden>
-                      <ChevronDown className="h-4 w-4" />
-                    </Ariakit.HovercardDisclosure>
-                  </div>
-                  <Ariakit.Hovercard
-                    id={`tool-description-${subTool.tool_id}`}
-                    gutter={14}
-                    shift={40}
-                    flip={false}
-                    className="z-[999] w-80 scale-95 rounded-2xl border border-border-medium bg-surface-secondary p-4 text-text-primary opacity-0 shadow-md transition-all duration-200 data-[enter]:scale-100 data-[leave]:scale-95 data-[enter]:opacity-100 data-[leave]:opacity-0"
-                    portal={true}
-                    unmountOnHide={true}
-                    role="tooltip"
-                    aria-label={subTool.metadata.description}
-                  >
-                    <div className="space-y-2">
-                      <p className="text-sm text-text-secondary">{subTool.metadata.description}</p>
-                    </div>
-                  </Ariakit.Hovercard>
-                </Ariakit.HovercardProvider>
-              )}
-            </label>
-          ))}
         </div>
-      )}
+        <OGDialogTemplate
+          showCloseButton={false}
+          title={localize('com_ui_delete_tool')}
+          mainClassName="px-0"
+          className="max-w-[450px]"
+          main={
+            <Label className="text-left text-sm font-medium">
+              {localize('com_ui_delete_tool_confirm')}
+            </Label>
+          }
+          selection={{
+            selectHandler: () => removeTool(currentTool.tool_id),
+            selectClasses:
+              'bg-red-700 dark:bg-red-600 hover:bg-red-800 dark:hover:bg-red-800 transition-color duration-200 text-white',
+            selectText: localize('com_ui_delete'),
+          }}
+        />
+      </OGDialog>
+    );
+  }
+
+  // Group tool with accordion
+  return (
+    <OGDialog>
+      <Accordion type="single" value={accordionValue} onValueChange={setAccordionValue} collapsible>
+        <AccordionItem value={currentTool.tool_id} className="group relative w-full border-none">
+          <div
+            className="relative flex w-full items-center gap-1 rounded-lg p-1 hover:bg-gray-50 dark:hover:bg-gray-800/50"
+            onMouseEnter={() => setIsHovering(true)}
+            onMouseLeave={() => setIsHovering(false)}
+            onFocus={() => setIsFocused(true)}
+            onBlur={(e) => {
+              // Check if focus is moving to a child element
+              if (!e.currentTarget.contains(e.relatedTarget)) {
+                setIsFocused(false);
+              }
+            }}
+          >
+            <AccordionPrimitive.Header asChild>
+              <AccordionPrimitive.Trigger asChild>
+                <button
+                  type="button"
+                  className={cn(
+                    'flex grow items-center gap-1 rounded bg-transparent p-0 text-left transition-colors',
+                    'focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1',
+                  )}
+                >
+                  {currentTool.metadata.icon && (
+                    <div className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full">
+                      <div
+                        className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full bg-center bg-no-repeat dark:bg-white/20"
+                        style={{
+                          backgroundImage: `url(${currentTool.metadata.icon})`,
+                          backgroundSize: 'cover',
+                        }}
+                      />
+                    </div>
+                  )}
+                  <div
+                    className="grow px-2 py-1.5"
+                    style={{ textOverflow: 'ellipsis', wordBreak: 'break-all', overflow: 'hidden' }}
+                  >
+                    {currentTool.metadata.name}
+                  </div>
+                  <div className="flex items-center">
+                    {/* Container for grouped checkbox and chevron */}
+                    <div className="relative flex items-center">
+                      {/* Grouped checkbox and chevron that slide together */}
+                      <div
+                        className={cn(
+                          'flex items-center gap-2 transition-all duration-300',
+                          isHovering || isFocused ? '-translate-x-8' : 'translate-x-0',
+                        )}
+                      >
+                        <Checkbox
+                          id={`select-all-${currentTool.tool_id}`}
+                          checked={selectedTools.length === currentTool.tools?.length}
+                          onCheckedChange={(checked) => {
+                            if (currentTool.tools) {
+                              const newSelectedTools = checked
+                                ? currentTool.tools.map((t) => t.tool_id)
+                                : [];
+                              updateFormTools(newSelectedTools);
+                            }
+                          }}
+                          className={cn(
+                            'h-4 w-4 rounded border border-gray-300 transition-all duration-200 hover:border-gray-400 dark:border-gray-600 dark:hover:border-gray-500',
+                            isExpanded ? 'opacity-100' : 'opacity-0',
+                          )}
+                          onClick={(e) => e.stopPropagation()}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              const checkbox = e.currentTarget as HTMLButtonElement;
+                              checkbox.click();
+                            }
+                          }}
+                          tabIndex={isExpanded ? 0 : -1}
+                        />
+
+                        <div
+                          className={cn(
+                            'pointer-events-none flex h-4 w-4 items-center justify-center transition-transform duration-300',
+                            isExpanded ? 'rotate-180' : '',
+                          )}
+                          aria-hidden="true"
+                        >
+                          <ChevronDown className="h-4 w-4" />
+                        </div>
+                      </div>
+
+                      {/* Delete button slides in from behind */}
+                      <div
+                        className={cn(
+                          'absolute right-0 transition-all duration-300',
+                          isHovering || isFocused
+                            ? 'translate-x-0 opacity-100'
+                            : 'translate-x-8 opacity-0',
+                        )}
+                      >
+                        <OGDialogTrigger asChild>
+                          <button
+                            type="button"
+                            className={cn(
+                              'flex h-7 w-7 items-center justify-center rounded transition-colors duration-200',
+                              'hover:bg-gray-200 dark:hover:bg-gray-700',
+                              'focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1',
+                              'focus:translate-x-0 focus:opacity-100',
+                            )}
+                            onClick={(e) => e.stopPropagation()}
+                            aria-label={`Delete ${currentTool.metadata.name}`}
+                            tabIndex={0}
+                            onFocus={() => setIsFocused(true)}
+                          >
+                            <TrashIcon className="h-4 w-4" />
+                          </button>
+                        </OGDialogTrigger>
+                      </div>
+                    </div>
+                  </div>
+                </button>
+              </AccordionPrimitive.Trigger>
+            </AccordionPrimitive.Header>
+          </div>
+
+          <AccordionContent className="relative ml-1 pt-1 before:absolute before:bottom-2 before:left-0 before:top-0 before:w-0.5 before:bg-border-medium">
+            <div className="space-y-1">
+              {currentTool.tools?.map((subTool) => (
+                <label
+                  key={subTool.tool_id}
+                  htmlFor={subTool.tool_id}
+                  className={cn(
+                    'border-token-border-light hover:bg-token-surface-secondary flex cursor-pointer items-center rounded-lg border p-2',
+                    'ml-2 mr-1 focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-background',
+                  )}
+                  onClick={(e) => e.stopPropagation()}
+                  onMouseEnter={() => setHoveredToolId(subTool.tool_id)}
+                  onMouseLeave={() => setHoveredToolId(null)}
+                >
+                  <Checkbox
+                    id={subTool.tool_id}
+                    checked={selectedTools.includes(subTool.tool_id)}
+                    onCheckedChange={(_checked) => {
+                      const newSelectedTools = selectedTools.includes(subTool.tool_id)
+                        ? selectedTools.filter((t) => t !== subTool.tool_id)
+                        : [...selectedTools, subTool.tool_id];
+                      updateFormTools(newSelectedTools);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        const checkbox = e.currentTarget as HTMLButtonElement;
+                        checkbox.click();
+                      }
+                    }}
+                    className="relative float-left mr-2 inline-flex h-4 w-4 cursor-pointer rounded border border-gray-300 transition-[border-color] duration-200 hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background dark:border-gray-600 dark:hover:border-gray-500"
+                  />
+                  <span className="text-token-text-primary">{subTool.metadata.name}</span>
+                  {subTool.metadata.description && (
+                    <Ariakit.HovercardProvider placement="left-start">
+                      <div className="ml-auto flex h-6 w-6 items-center justify-center">
+                        <Ariakit.HovercardAnchor
+                          render={
+                            <Ariakit.Button
+                              className={cn(
+                                'flex h-5 w-5 cursor-help items-center rounded-full text-text-secondary transition-opacity duration-200',
+                                hoveredToolId === subTool.tool_id ? 'opacity-100' : 'opacity-0',
+                              )}
+                              aria-label={localize('com_ui_tool_info')}
+                            >
+                              <CircleHelpIcon className="h-4 w-4" />
+                              <VisuallyHidden>{localize('com_ui_tool_info')}</VisuallyHidden>
+                            </Ariakit.Button>
+                          }
+                        />
+                        <Ariakit.HovercardDisclosure
+                          className="rounded-full text-text-secondary focus:outline-none focus:ring-2 focus:ring-ring"
+                          aria-label={localize('com_ui_tool_more_info')}
+                          aria-expanded={hoveredToolId === subTool.tool_id}
+                          aria-controls={`tool-description-${subTool.tool_id}`}
+                        >
+                          <VisuallyHidden>{localize('com_ui_tool_more_info')}</VisuallyHidden>
+                          <ChevronDown className="h-4 w-4" />
+                        </Ariakit.HovercardDisclosure>
+                      </div>
+                      <Ariakit.Hovercard
+                        id={`tool-description-${subTool.tool_id}`}
+                        gutter={14}
+                        shift={40}
+                        flip={false}
+                        className="z-[999] w-80 scale-95 rounded-2xl border border-border-medium bg-surface-secondary p-4 text-text-primary opacity-0 shadow-md transition-all duration-200 data-[enter]:scale-100 data-[leave]:scale-95 data-[enter]:opacity-100 data-[leave]:opacity-0"
+                        portal={true}
+                        unmountOnHide={true}
+                        role="tooltip"
+                        aria-label={subTool.metadata.description}
+                      >
+                        <div className="space-y-2">
+                          <p className="text-sm text-text-secondary">
+                            {subTool.metadata.description}
+                          </p>
+                        </div>
+                      </Ariakit.Hovercard>
+                    </Ariakit.HovercardProvider>
+                  )}
+                </label>
+              ))}
+            </div>
+          </AccordionContent>
+        </AccordionItem>
+      </Accordion>
       <OGDialogTemplate
         showCloseButton={false}
         title={localize('com_ui_delete_tool')}
