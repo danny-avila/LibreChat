@@ -1,7 +1,7 @@
 import React, { memo, useRef, useMemo, useEffect, useCallback } from 'react';
 import { useRecoilState } from 'recoil';
 import { Constants, EModelEndpoint, LocalStorageKeys } from 'librechat-data-provider';
-import { useAvailableToolsQuery } from '~/data-provider';
+import { useAvailableToolsQuery, useGetStartupConfig } from '~/data-provider';
 import useLocalStorage from '~/hooks/useLocalStorageAlt';
 import MultiSelect from '~/components/ui/MultiSelect';
 import { ephemeralAgentByConvoId } from '~/store';
@@ -26,7 +26,7 @@ function MCPSelect({ conversationId }: { conversationId?: string | null }) {
   const localize = useLocalize();
   const key = conversationId ?? Constants.NEW_CONVO;
   const hasSetFetched = useRef<string | null>(null);
-
+  const { data: startupConfig } = useGetStartupConfig();
   const { data: mcpServerSet, isFetched } = useAvailableToolsQuery(EModelEndpoint.agents, {
     select: (data) => {
       const serverNames = new Set<string>();
@@ -104,6 +104,7 @@ function MCPSelect({ conversationId }: { conversationId?: string | null }) {
     return null;
   }
 
+  const placeholderText = startupConfig?.mcpPlaceholder || localize('com_ui_mcp_servers');
   return (
     <MultiSelect
       items={mcpServers ?? []}
@@ -111,7 +112,7 @@ function MCPSelect({ conversationId }: { conversationId?: string | null }) {
       setSelectedValues={setMCPValues}
       defaultSelectedValues={mcpValues ?? []}
       renderSelectedValues={renderSelectedValues}
-      placeholder={localize('com_ui_mcp_servers')}
+      placeholder={placeholderText}
       popoverClassName="min-w-fit"
       className="badge-icon min-w-fit"
       selectIcon={<MCPIcon className="icon-md text-text-primary" />}
