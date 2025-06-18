@@ -1,9 +1,12 @@
 const mongoose = require('mongoose');
 const { getTransactionSupport, logger } = require('@librechat/data-schemas');
+const { isEnabled } = require('~/server/utils');
 const {
   entraIdPrincipalFeatureEnabled,
   getUserEntraGroups,
+  getUserOwnedEntraGroups,
   getGroupMembers,
+  getGroupOwners,
 } = require('~/server/services/GraphApiService');
 const {
   findGroupByExternalId,
@@ -322,6 +325,20 @@ const ensureGroupPrincipalExists = async function (principal, authContext = null
           authContext.sub,
           principal.idOnTheSource,
         );
+
+        // Include group owners as members if feature is enabled
+        if (isEnabled(process.env.ENTRA_ID_INCLUDE_OWNERS_AS_MEMBERS)) {
+          const ownerIds = await getGroupOwners(
+            authContext.accessToken,
+            authContext.sub,
+            principal.idOnTheSource,
+          );
+          if (ownerIds && ownerIds.length > 0) {
+            memberIds.push(...ownerIds);
+            // Remove duplicates
+            memberIds = [...new Set(memberIds)];
+          }
+        }
       } catch (error) {
         logger.error('Failed to fetch group members from Graph API:', error);
       }
@@ -393,6 +410,7 @@ const ensureGroupPrincipalExists = async function (principal, authContext = null
 /**
  * Synchronize user's Entra ID group memberships on sign-in
  * Gets user's group IDs from GraphAPI and updates memberships only for existing groups in database
+ * Optionally includes groups the user owns if ENTRA_ID_INCLUDE_OWNERS_AS_MEMBERS is enabled
  * @param {Object} user - User object with authentication context
  * @param {string} user.openidId - User's OpenID subject identifier
  * @param {string} user.idOnTheSource - User's Entra ID (oid from token claims)
@@ -407,18 +425,28 @@ const syncUserEntraGroupMemberships = async (user, accessToken, session = null) 
       return;
     }
 
-    const entraGroupIds = await getUserEntraGroups(accessToken, user.openidId);
+    const memberGroupIds = await getUserEntraGroups(accessToken, user.openidId);
+    let allGroupIds = [...(memberGroupIds || [])];
 
-    if (!entraGroupIds || entraGroupIds.length === 0) {
+    // Include owned groups if feature is enabled
+    if (isEnabled(process.env.ENTRA_ID_INCLUDE_OWNERS_AS_MEMBERS)) {
+      const ownedGroupIds = await getUserOwnedEntraGroups(accessToken, user.openidId);
+      if (ownedGroupIds && ownedGroupIds.length > 0) {
+        allGroupIds.push(...ownedGroupIds);
+        // Remove duplicates
+        allGroupIds = [...new Set(allGroupIds)];
+      }
+    }
+
+    if (!allGroupIds || allGroupIds.length === 0) {
       return;
     }
 
     const sessionOptions = session ? { session } : {};
-    const entraGroupIdsList = entraGroupIds;
 
     await Group.updateMany(
       {
-        idOnTheSource: { $in: entraGroupIdsList },
+        idOnTheSource: { $in: allGroupIds },
         source: 'entra',
         memberIds: { $ne: user.idOnTheSource },
       },
@@ -430,7 +458,7 @@ const syncUserEntraGroupMemberships = async (user, accessToken, session = null) 
       {
         source: 'entra',
         memberIds: user.idOnTheSource,
-        idOnTheSource: { $nin: entraGroupIdsList },
+        idOnTheSource: { $nin: allGroupIds },
       },
       { $pull: { memberIds: user.idOnTheSource } },
       sessionOptions,
