@@ -276,6 +276,8 @@
   "com_error_files_upload": "An error occurred while uploading the file.",
   "com_error_files_upload_canceled": "The file upload request was canceled. Note: the file upload may still be processing and will need to be manually deleted.",
   "com_error_files_validation": "An error occurred while validating the file.",
+  "com_error_heic_conversion": "Failed to convert HEIC image to JPEG. Please try converting the image manually or use a different format.",
+  "com_info_heic_converting": "Converting HEIC image to JPEG...",
   "com_error_input_length": "The latest message token count is too long, exceeding the token limit, or your token limit parameters are misconfigured, adversely affecting the context window. More info: {{0}}. Please shorten your message, adjust the max context size from the conversation parameters, or fork the conversation to continue.",
   "com_error_invalid_agent_provider": "The \"{{0}}\" provider is not available for use with Agents. Please go to your agent's settings and select a currently available provider.",
   "com_error_invalid_user_key": "Invalid key provided. Please provide a valid key and try again.",
