@@ -1,4 +1,5 @@
 const fs = require('fs');
+const jwt = require('jsonwebtoken');
 const axios = require('axios');
 const FormData = require('form-data');
 const { logAxiosError } = require('@librechat/api');
@@ -23,7 +24,10 @@ const deleteVectors = async (req, file) => {
     return;
   }
   try {
-    const jwtToken = req.headers.authorization.split(' ')[1];
+    const jwtToken = jwt.sign({ id: req.user.id }, process.env.JWT_SECRET, {
+      expiresIn: '5m',
+      algorithm: 'HS256',
+    });
     return await axios.delete(`${process.env.RAG_API_URL}/documents`, {
       headers: {
         Authorization: `Bearer ${jwtToken}`,
@@ -70,7 +74,10 @@ async function uploadVectors({ req, file, file_id, entity_id }) {
   }
 
   try {
-    const jwtToken = req.headers.authorization.split(' ')[1];
+    const jwtToken = jwt.sign({ id: req.user.id }, process.env.JWT_SECRET, {
+      expiresIn: '5m',
+      algorithm: 'HS256',
+    });
     const formData = new FormData();
     formData.append('file_id', file_id);
     formData.append('file', fs.createReadStream(file.path));
