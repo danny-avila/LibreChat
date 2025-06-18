@@ -32,7 +32,7 @@ const MarkdownLite = memo(
               /** @ts-ignore */
               supersub,
               remarkGfm,
-              [remarkMath, { singleDollarTextMath: true }],
+              [remarkMath, { singleDollarTextMath: false }],
             ]}
             /** @ts-ignore */
             rehypePlugins={rehypePlugins}

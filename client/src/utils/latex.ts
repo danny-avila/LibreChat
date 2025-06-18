@@ -1,105 +1,42 @@
-// Regex to check if the processed content contains any potential LaTeX patterns
-const containsLatexRegex =
-  /\\\(.*?\\\)|\\\[.*?\\\]|\$.*?\$|\\begin\{equation\}.*?\\end\{equation\}/;
-
-// Regex for inline and block LaTeX expressions
-const inlineLatex = new RegExp(/\\\((.+?)\\\)/, 'g');
-const blockLatex = new RegExp(/\\\[(.*?[^\\])\\\]/, 'gs');
-
-// Function to restore code blocks
-const restoreCodeBlocks = (content: string, codeBlocks: string[]) => {
-  return content.replace(/<<CODE_BLOCK_(\d+)>>/g, (match, index) => codeBlocks[index]);
-};
-
-// Regex to identify code blocks and inline code
-const codeBlockRegex = /(```[\s\S]*?```|`.*?`)/g;
-
-export const processLaTeX = (_content: string) => {
-  let content = _content;
-  // Temporarily replace code blocks and inline code with placeholders
-  const codeBlocks: string[] = [];
-  let index = 0;
-  content = content.replace(codeBlockRegex, (match) => {
-    codeBlocks[index] = match;
-    return `<<CODE_BLOCK_${index++}>>`;
-  });
-
-  // Escape dollar signs followed by a digit or space and digit
-  let processedContent = content.replace(/(\$)(?=\s?\d)/g, '\\$');
-
-  // If no LaTeX patterns are found, restore code blocks and return the processed content
-  if (!containsLatexRegex.test(processedContent)) {
-    return restoreCodeBlocks(processedContent, codeBlocks);
-  }
-
-  // Convert LaTeX expressions to a markdown compatible format
-  processedContent = processedContent
-    .replace(inlineLatex, (match: string, equation: string) => `$${equation}$`) // Convert inline LaTeX
-    .replace(blockLatex, (match: string, equation: string) => `$$${equation}$$`); // Convert block LaTeX
-
-  // Restore code blocks
-  return restoreCodeBlocks(processedContent, codeBlocks);
-};
+/**
+ * Escapes mhchem package notation in LaTeX by converting single dollar delimiters to double dollars
+ * and escaping backslashes in mhchem commands.
+ *
+ * @param text - The input text containing potential mhchem notation
+ * @returns The processed text with properly escaped mhchem notation
+ *
+ * @example
+ * // Returns "$$\\ce{H2O}$$"
+ * escapeMhchem("$\\ce{H2O}$")
+ *
+ * @example
+ * // Returns "$$\\pu{123 kJ/mol}$$"
+ * escapeMhchem("$\\pu{123 kJ/mol}$")
+ */
+export function escapeMhchem(text: string) {
+  return text
+    .replace(/\$\\ce\{[^}]*\}\$/g, (match) => `$${match}$`) // $\\ce{...} -> $$\\ce{...}$$
+    .replace(/\$\\pu\{[^}]*\}\$/g, (match) => `$${match}$`) // $\\pu{...} -> $$\\pu{...}$$
+    .replaceAll('$\\ce{', '$\\\\ce{')
+    .replaceAll('$\\pu{', '$\\\\pu{');
+}
 
 /**
- * Preprocesses LaTeX content by replacing delimiters and escaping certain characters.
- *
+  Escape currency dollar signs
+  Matches: $ followed by digits with optional thousands separators and decimal places
+  Does not match: already escaped \$, double $$, or $ followed by letters (e.g., $2n)
+   */
+const currencyRegex = /(?<![\\$])\$(?!\$)(?=\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?(?:\s|$|[^a-zA-Z\d]))/g;
+
+/**
+ * Preprocesses LaTeX content by escaping currency indicators and converting single dollar math delimiters.
  * @param content The input string containing LaTeX expressions.
- * @returns The processed string with replaced delimiters and escaped characters.
+ * @returns The processed string with escaped currency indicators and converted math delimiters.
  */
 export function preprocessLaTeX(content: string): string {
-  // Step 1: Protect code blocks
-  const codeBlocks: string[] = [];
-  content = content.replace(/(```[\s\S]*?```|`[^`\n]+`)/g, (match, code) => {
-    codeBlocks.push(code);
-    return `<<CODE_BLOCK_${codeBlocks.length - 1}>>`;
-  });
-
-  // Step 2: Protect existing LaTeX expressions
-  const latexExpressions: string[] = [];
-  content = content.replace(/(\$\$[\s\S]*?\$\$|\\\[[\s\S]*?\\\]|\\\(.*?\\\))/g, (match) => {
-    latexExpressions.push(match);
-    return `<<LATEX_${latexExpressions.length - 1}>>`;
-  });
-
-  // Step 3: Escape dollar signs that are likely currency indicators
-  content = content.replace(/\$(?=\d)/g, '\\$');
-
-  // Step 4: Restore LaTeX expressions
-  content = content.replace(/<<LATEX_(\d+)>>/g, (_, index) => latexExpressions[parseInt(index)]);
-
-  // Step 5: Restore code blocks
-  content = content.replace(/<<CODE_BLOCK_(\d+)>>/g, (_, index) => codeBlocks[parseInt(index)]);
-
-  // Step 6: Apply additional escaping functions
-  content = escapeBrackets(content);
-  content = escapeMhchem(content);
-
-  return content;
-}
-
-export function escapeBrackets(text: string): string {
-  const pattern = /(```[\S\s]*?```|`.*?`)|\\\[([\S\s]*?[^\\])\\]|\\\((.*?)\\\)/g;
-  return text.replace(
-    pattern,
-    (
-      match: string,
-      codeBlock: string | undefined,
-      squareBracket: string | undefined,
-      roundBracket: string | undefined,
-    ): string => {
-      if (codeBlock != null) {
-        return codeBlock;
-      } else if (squareBracket != null) {
-        return `$$${squareBracket}$$`;
-      } else if (roundBracket != null) {
-        return `$${roundBracket}$`;
-      }
-      return match;
-    },
-  );
-}
-
-export function escapeMhchem(text: string) {
-  return text.replaceAll('$\\ce{', '$\\\\ce{').replaceAll('$\\pu{', '$\\\\pu{');
+  if (!content.includes('$')) return content;
+  let processed = escapeMhchem(content);
+  processed = processed.replace(currencyRegex, '\\$');
+  processed = processed.replace(/(?<![\\$])\$*(?<![\\$])\$/g, (match) => `$${match}$`);
+  return processed;
 }

@@ -143,7 +143,7 @@ export default function VariableForm({
         <div className="mb-6 max-h-screen max-w-[90vw] overflow-auto rounded-md bg-surface-tertiary p-4 text-text-secondary dark:bg-surface-primary sm:max-w-full md:max-h-96">
           <ReactMarkdown
             /** @ts-ignore */
-            remarkPlugins={[supersub, remarkGfm, [remarkMath, { singleDollarTextMath: true }]]}
+            remarkPlugins={[supersub, remarkGfm, [remarkMath, { singleDollarTextMath: false }]]}
             rehypePlugins={[
               /** @ts-ignore */
               [rehypeKatex],
