@@ -165,6 +165,11 @@ export default function ManagePermissionsDialog({
   const totalShares = managedShares.length + (managedIsPublic ? 1 : 0);
   const originalTotalShares = currentShares.length + (isPublic ? 1 : 0);
 
+  // Check if there's at least one owner (user, group, or public with owner role)
+  const hasAtLeastOneOwner =
+    managedShares.some((share) => share.accessRoleId === ACCESS_ROLE_IDS.AGENT_OWNER) ||
+    (managedIsPublic && managedPublicRole === ACCESS_ROLE_IDS.AGENT_OWNER);
+
   return (
     <OGDialog open={isModalOpen} onOpenChange={setIsModalOpen}>
       <OGDialogTrigger asChild>
@@ -281,7 +286,12 @@ export default function ManagePermissionsDialog({
             </OGDialogClose>
             <Button
               onClick={handleSaveChanges}
-              disabled={updatePermissionsMutation.isLoading || !hasChanges || isLoadingPermissions}
+              disabled={
+                updatePermissionsMutation.isLoading ||
+                !hasChanges ||
+                isLoadingPermissions ||
+                !hasAtLeastOneOwner
+              }
               className="min-w-[120px]"
             >
               {updatePermissionsMutation.isLoading ? (
@@ -298,6 +308,12 @@ export default function ManagePermissionsDialog({
           {hasChanges && (
             <div className="text-xs text-orange-600 dark:text-orange-400">
               * {localize('com_ui_unsaved_changes')}
+            </div>
+          )}
+
+          {!hasAtLeastOneOwner && hasChanges && (
+            <div className="text-xs text-red-600 dark:text-red-400">
+              * {localize('com_ui_at_least_one_owner_required')}
             </div>
           )}
         </div>
