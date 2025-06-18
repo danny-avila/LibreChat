@@ -1,16 +1,10 @@
 import React, { createContext, useContext, useState } from 'react';
 import { useAvailableToolsQuery, useGetActionsQuery } from '~/data-provider';
-import {
-  Action,
-  MCP,
-  EModelEndpoint,
-  Constants,
-  AgentToolType,
-  TPlugin,
-} from 'librechat-data-provider';
+import { Constants, EModelEndpoint } from 'librechat-data-provider';
+import type { TPlugin, AgentToolType, Action, MCP } from 'librechat-data-provider';
 import type { AgentPanelContextType } from '~/common';
-import { Panel } from '~/common';
 import { useLocalize } from '~/hooks';
+import { Panel } from '~/common';
 
 const AgentPanelContext = createContext<AgentPanelContextType | undefined>(undefined);
 

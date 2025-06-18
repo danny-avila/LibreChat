@@ -4,6 +4,7 @@ import { ChevronDown } from 'lucide-react';
 import { VisuallyHidden } from '@ariakit/react';
 import { useFormContext } from 'react-hook-form';
 import type { AgentToolType } from 'librechat-data-provider';
+import type { AgentForm } from '~/common';
 import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
 import { OGDialog, OGDialogTrigger, Label, Checkbox } from '~/components/ui';
 import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
@@ -27,7 +28,7 @@ export default function AgentTool({
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const updateUserPlugins = useUpdateUserPluginsMutation();
-  const { getValues, setValue } = useFormContext();
+  const { getValues, setValue } = useFormContext<AgentForm>();
   const currentTool = allTools[tool];
 
   const getSelectedTools = () => {
@@ -56,7 +57,7 @@ export default function AgentTool({
             showToast({ message: `Error while deleting the tool: ${error}`, status: 'error' });
           },
           onSuccess: () => {
-            const tools = getValues('tools').filter((fn: string) => !toolsToRemove.includes(fn));
+            const tools = getValues('tools')?.filter((fn: string) => !toolsToRemove.includes(fn));
             setValue('tools', tools);
             showToast({ message: 'Tool deleted successfully', status: 'success' });
           },
