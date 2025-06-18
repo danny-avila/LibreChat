@@ -22,7 +22,7 @@ jobs:
             - name: Create Config File
               run: |
                 touch librechat.yaml && chmod 755 librechat.yaml |
-                cat librechat.n2a.yaml >> librechat.yaml |
+                cat librechat.prod.yaml >> librechat.yaml |
                 rm -rf .dockerignore |
                 touch .dockerignore && chmod 755 .dockerignore |
                 cat .paychex.dockerignore >> .dockerignore |
@@ -40,18 +40,18 @@ jobs:
 
             - name: build and push docker container
               run: |
-                docker build . -t ${{ env.ACR_HOST }}/paychex/librechat:n2a.${{ github.sha }}
-                docker push ${{ env.ACR_HOST }}/paychex/librechat:n2a.${{ github.sha }}
+                docker build . -t ${{ env.ACR_HOST }}/paychex/librechat:prod.${{ github.sha }}
+                docker push ${{ env.ACR_HOST }}/paychex/librechat:prod.${{ github.sha }}
 
-                docker build . -t ${{ env.ACR_HOST }}/paychex/librechat:n2a.latest
-                docker push ${{ env.ACR_HOST }}/paychex/librechat:n2a.latest
+                docker build . -t ${{ env.ACR_HOST }}/paychex/librechat:prod.latest
+                docker push ${{ env.ACR_HOST }}/paychex/librechat:prod.latest
 
             - name: Update Azure Container App
               run: |
                 az login --identity
-                az account set --subscription "${{ secrets.AZURE_NONPROD_SUBSCRIPTION_ID }}"
+                az account set --subscription "${{ secrets.AZURE_PROD_SUBSCRIPTION_ID }}"
                 az containerapp update \
-                  --name conpaichateastusn2a001 \
-                  --resource-group rg-playai-eastus-n2a-001 \
-                  --yaml $GITHUB_WORKSPACE/az_container_app_definitions/n2_container_app_definition.yml
+                  --name conpaichateastusprod001 \
+                  --resource-group rg-playai-eastus-prod-001 \
+                  --yaml $GITHUB_WORKSPACE/az_container_app_definitions/prod_container_app_definition.yml
                 
