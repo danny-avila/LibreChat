@@ -51,7 +51,7 @@ export default function useChatFunctions({
   getMessages,
   setMessages,
   isSubmitting,
-  conversation,
+  conversation: immutableConversation,
   latestMessage,
   setSubmission,
   setLatestMessage,
@@ -81,6 +81,7 @@ export default function useChatFunctions({
   const customPromptMode = useRecoilValue(store.customPromptMode);
   const setShowStopButton = useSetRecoilState(store.showStopButtonByIndex(index));
   const resetLatestMultiMessage = useResetRecoilState(store.latestMessageFamily(index + 1));
+  const conversation = { ...immutableConversation };
 
   const ask: TAskFunction = (
     {
