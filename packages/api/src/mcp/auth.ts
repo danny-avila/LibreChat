@@ -16,52 +16,43 @@ export async function getUserMCPAuthMap({
   appTools: Record<string, unknown>;
   findPluginAuthsByKeys: PluginAuthMethods['findPluginAuthsByKeys'];
 }) {
-  let allMcpCustomUserVars: Record<string, Record<string, string>> = {};
-  const mcpPluginKeysToFetch: string[] = [];
-  if (tools && tools.length > 0) {
-    for (const tool of tools) {
-      const toolKey = tool.name;
-      if (toolKey && appTools[toolKey] && mcpToolPattern.test(toolKey)) {
-        const parts = toolKey.split(Constants.mcp_delimiter);
-        const serverName = parts[parts.length - 1];
-        const mcpPluginKey = `${Constants.mcp_prefix}${serverName}`;
-        if (!mcpPluginKeysToFetch.includes(mcpPluginKey)) {
-          mcpPluginKeysToFetch.push(mcpPluginKey);
-        }
-      }
-    }
-
-    if (mcpPluginKeysToFetch.length > 0) {
-      try {
-        allMcpCustomUserVars = await getPluginAuthMap({
-          userId,
-          pluginKeys: mcpPluginKeysToFetch,
-          throwError: false,
-          findPluginAuthsByKeys,
-        });
-      } catch (err) {
-        logger.error(
-          `[handleTools] Error batch fetching customUserVars for MCP tools (keys: ${mcpPluginKeysToFetch.join(
-            ', ',
-          )}), user ${userId}: ${err instanceof Error ? err.message : 'Unknown error'}`,
-          err,
-        );
-        // allMcpCustomUserVars will remain {} or whatever getUsersPluginsAuthValuesMap returned on error (empty map with throwError=false)
-      }
-    }
+  if (!tools || tools.length === 0) {
+    return {};
   }
 
-  const customUserVarsMap: Record<string, Record<string, string>> = {};
-  for (const tool of tools || []) {
+  const uniqueMcpServers = new Set<string>();
+
+  for (const tool of tools) {
     const toolKey = tool.name;
-    if (tool && appTools[toolKey] && mcpToolPattern.test(toolKey)) {
+    if (toolKey && appTools[toolKey] && mcpToolPattern.test(toolKey)) {
       const parts = toolKey.split(Constants.mcp_delimiter);
       const serverName = parts[parts.length - 1];
-      const mcpPluginKey = `${Constants.mcp_prefix}${serverName}`;
-      const customUserVars = allMcpCustomUserVars[mcpPluginKey] || {};
-      customUserVarsMap[mcpPluginKey] = customUserVars;
+      uniqueMcpServers.add(`${Constants.mcp_prefix}${serverName}`);
     }
   }
 
-  return customUserVarsMap;
+  if (uniqueMcpServers.size === 0) {
+    return {};
+  }
+
+  const mcpPluginKeysToFetch = Array.from(uniqueMcpServers);
+
+  let allMcpCustomUserVars: Record<string, Record<string, string>> = {};
+  try {
+    allMcpCustomUserVars = await getPluginAuthMap({
+      userId,
+      pluginKeys: mcpPluginKeysToFetch,
+      throwError: false,
+      findPluginAuthsByKeys,
+    });
+  } catch (err) {
+    logger.error(
+      `[handleTools] Error batch fetching customUserVars for MCP tools (keys: ${mcpPluginKeysToFetch.join(
+        ', ',
+      )}), user ${userId}: ${err instanceof Error ? err.message : 'Unknown error'}`,
+      err,
+    );
+  }
+
+  return allMcpCustomUserVars;
 }
