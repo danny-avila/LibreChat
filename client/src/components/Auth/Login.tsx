@@ -99,11 +99,11 @@ function Login() {
       
       {/* CCM Footer Image */}
       <div className="mt-8 flex justify-center">
-        <div className="rounded-lg bg-white/80 p-4 shadow-lg backdrop-blur-sm dark:bg-gray-800/80">
+        <div className="rounded-lg  p-4 ">
           <img 
-            src="/assets/ccm.jpg" 
+            src="/assets/ccm.png" 
             alt="CCM - Corporación Crecer Mejor" 
-            className="h-16 w-auto object-contain opacity-90 transition-opacity hover:opacity-100"
+            className="h-16 w-auto object-contain"
           />
         </div>
       </div>
