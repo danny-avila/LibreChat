@@ -1,4 +1,4 @@
-FROM node:18-bullseye
+FROM node:20-bullseye
 
 RUN npm install -g @anthropic-ai/claude-code
 RUN useradd -m -s /bin/bash vscode
