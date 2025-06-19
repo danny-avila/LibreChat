@@ -1,7 +1,9 @@
 import React, { createContext, useContext, useState } from 'react';
-import { Action, MCP, EModelEndpoint } from 'librechat-data-provider';
+import { Constants, EModelEndpoint } from 'librechat-data-provider';
+import type { TPlugin, AgentToolType, Action, MCP } from 'librechat-data-provider';
 import type { AgentPanelContextType } from '~/common';
-import { useGetActionsQuery } from '~/data-provider';
+import { useAvailableToolsQuery, useGetActionsQuery } from '~/data-provider';
+import { useLocalize } from '~/hooks';
 import { Panel } from '~/common';
 
 const AgentPanelContext = createContext<AgentPanelContextType | undefined>(undefined);
@@ -16,6 +18,7 @@ export function useAgentPanelContext() {
 
 /** Houses relevant state for the Agent Form Panels (formerly 'commonProps') */
 export function AgentPanelProvider({ children }: { children: React.ReactNode }) {
+  const localize = useLocalize();
   const [mcp, setMcp] = useState<MCP | undefined>(undefined);
   const [mcps, setMcps] = useState<MCP[] | undefined>(undefined);
   const [action, setAction] = useState<Action | undefined>(undefined);
@@ -25,6 +28,53 @@ export function AgentPanelProvider({ children }: { children: React.ReactNode }) 
   const { data: actions } = useGetActionsQuery(EModelEndpoint.agents, {
     enabled: !!agent_id,
   });
+
+  const { data: pluginTools } = useAvailableToolsQuery(EModelEndpoint.agents, {
+    enabled: !!agent_id,
+  });
+
+  const tools =
+    pluginTools?.map((tool) => ({
+      tool_id: tool.pluginKey,
+      metadata: tool as TPlugin,
+      agent_id: agent_id || '',
+    })) || [];
+
+  const groupedTools =
+    tools?.reduce(
+      (acc, tool) => {
+        if (tool.tool_id.includes(Constants.mcp_delimiter)) {
+          const [_toolName, serverName] = tool.tool_id.split(Constants.mcp_delimiter);
+          const groupKey = `${serverName.toLowerCase()}`;
+          if (!acc[groupKey]) {
+            acc[groupKey] = {
+              tool_id: groupKey,
+              metadata: {
+                name: `${serverName}`,
+                pluginKey: groupKey,
+                description: `${localize('com_ui_tool_collection_prefix')} ${serverName}`,
+                icon: tool.metadata.icon || '',
+              } as TPlugin,
+              agent_id: agent_id || '',
+              tools: [],
+            };
+          }
+          acc[groupKey].tools?.push({
+            tool_id: tool.tool_id,
+            metadata: tool.metadata,
+            agent_id: agent_id || '',
+          });
+        } else {
+          acc[tool.tool_id] = {
+            tool_id: tool.tool_id,
+            metadata: tool.metadata,
+            agent_id: agent_id || '',
+          };
+        }
+        return acc;
+      },
+      {} as Record<string, AgentToolType & { tools?: AgentToolType[] }>,
+    ) || {};
 
   const value = {
     action,
@@ -37,8 +87,10 @@ export function AgentPanelProvider({ children }: { children: React.ReactNode }) 
     setActivePanel,
     setCurrentAgentId,
     agent_id,
-    /** Query data for actions */
+    groupedTools,
+    /** Query data for actions and tools */
     actions,
+    tools,
   };
 
   return <AgentPanelContext.Provider value={value}>{children}</AgentPanelContext.Provider>;
