@@ -27,6 +27,8 @@ const edit = require('./edit');
 const keys = require('./keys');
 const user = require('./user');
 const ask = require('./ask');
+const adminProvidersRouter = require('./admin/providers');
+const adminApiKeysRouter = require('./admin/apiKeys');
 
 module.exports = {
   ask,
@@ -58,4 +60,6 @@ module.exports = {
   assistants,
   categories,
   staticRoute,
+  adminProvidersRouter,
+  adminApiKeysRouter,
 };

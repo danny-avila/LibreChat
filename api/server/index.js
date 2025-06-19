@@ -120,6 +120,10 @@ const startServer = async () => {
   app.use('/api/memories', routes.memories);
   app.use('/api/tags', routes.tags);
 
+  // Admin Routes
+  app.use('/api/admin/providers', routes.adminProvidersRouter);
+  app.use('/api/admin/apikeys', routes.adminApiKeysRouter);
+
   app.use((req, res) => {
     res.set({
       'Cache-Control': process.env.INDEX_CACHE_CONTROL || 'no-cache, no-store, must-revalidate',

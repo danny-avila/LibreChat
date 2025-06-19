@@ -21,6 +21,9 @@ import { createConversationTagModel } from './conversationTag';
 import { createSharedLinkModel } from './sharedLink';
 import { createToolCallModel } from './toolCall';
 import { createMemoryModel } from './memory';
+import { createProviderModel } from './provider';
+import { createApiKeyModel } from './apiKey';
+import { createModelModel } from './model';
 
 /**
  * Creates all database models for all collections
@@ -50,5 +53,8 @@ export function createModels(mongoose: typeof import('mongoose')) {
     SharedLink: createSharedLinkModel(mongoose),
     ToolCall: createToolCallModel(mongoose),
     MemoryEntry: createMemoryModel(mongoose),
+    Provider: createProviderModel(mongoose),
+    ApiKey: createApiKeyModel(mongoose),
+    Model: createModelModel(mongoose),
   };
 }
