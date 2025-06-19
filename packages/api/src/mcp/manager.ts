@@ -14,11 +14,6 @@ import { MCPTokenStorage } from './oauth/tokens';
 import { formatToolContent } from './parsers';
 import { MCPConnection } from './connection';
 
-export interface CallToolOptions extends RequestOptions {
-  user?: TUser;
-  customUserVars: Record<string, string>;
-}
-
 export class MCPManager {
   private static instance: MCPManager | null = null;
   /** App-level connections initialized at startup */
@@ -826,6 +821,7 @@ export class MCPManager {
    * for user-specific connections upon successful call initiation.
    */
   async callTool({
+    user,
     serverName,
     toolName,
     provider,
@@ -835,20 +831,22 @@ export class MCPManager {
     flowManager,
     oauthStart,
     oauthEnd,
+    customUserVars,
   }: {
+    user?: TUser;
     serverName: string;
     toolName: string;
     provider: t.Provider;
     toolArguments?: Record<string, unknown>;
-    options?: CallToolOptions;
+    options?: RequestOptions;
     tokenMethods?: TokenMethods;
+    customUserVars?: Record<string, string>;
     flowManager: FlowStateManager<MCPOAuthTokens | null>;
     oauthStart?: (authURL: string) => Promise<void>;
     oauthEnd?: () => Promise<void>;
   }): Promise<t.FormattedToolResponse> {
     /** User-specific connection */
     let connection: MCPConnection | undefined;
-    const { user, ...callOptions } = options ?? {};
     const userId = user?.id;
     const logPrefix = userId ? `[MCP][User: ${userId}][${serverName}]` : `[MCP][${serverName}]`;
 
@@ -864,7 +862,7 @@ export class MCPManager {
           oauthStart,
           oauthEnd,
           signal: options?.signal,
-          customUserVars: options?.customUserVars,
+          customUserVars,
         });
       } else {
         /** App-level connection */
@@ -896,7 +894,7 @@ export class MCPManager {
         CallToolResultSchema,
         {
           timeout: connection.timeout,
-          ...callOptions,
+          ...options,
         },
       );
       if (userId) {

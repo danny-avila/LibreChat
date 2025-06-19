@@ -103,7 +103,7 @@ function createAbortHandler({ userId, serverName, toolName, flowManager }) {
  * @param {string} params.model - The model for the tool.
  * @returns { Promise<typeof tool | { _call: (toolInput: Object | string) => unknown}> } An object with `_call` method to execute the tool input.
  */
-async function createMCPTool({ req, res, toolKey, provider: _provider, customUserVars = {} }) {
+async function createMCPTool({ req, res, toolKey, provider: _provider }) {
   const availableTools = await getCachedTools({ includeGlobal: true });
   const toolDefinition = availableTools?.[toolKey]?.function;
   if (!toolDefinition) {
@@ -168,6 +168,9 @@ async function createMCPTool({ req, res, toolKey, provider: _provider, customUse
         derivedSignal.addEventListener('abort', abortHandler, { once: true });
       }
 
+      const customUserVars =
+        config?.configurable?.userMCPAuthMap?.[`${Constants.mcp_prefix}${serverName}`];
+
       const result = await mcpManager.callTool({
         serverName,
         toolName,
@@ -175,9 +178,9 @@ async function createMCPTool({ req, res, toolKey, provider: _provider, customUse
         toolArguments,
         options: {
           signal: derivedSignal,
-          user: config?.configurable?.user,
-          customUserVars: customUserVars,
         },
+        user: config?.configurable?.user,
+        customUserVars,
         flowManager,
         tokenMethods: {
           findToken,
