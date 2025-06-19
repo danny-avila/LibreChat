@@ -36,10 +36,10 @@ const {
   createGetMCPAuthMap,
   checkCapability,
 } = require('~/server/services/Config');
-const { getFormattedMemories, deleteMemory, setMemory } = require('~/models');
 const { addCacheControl, createContextHandlers } = require('~/app/clients/prompts');
 const { initializeAgent } = require('~/server/services/Endpoints/agents/agent');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
+const { getFormattedMemories, deleteMemory, setMemory } = require('~/models');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const initOpenAI = require('~/server/services/Endpoints/openAI/initialize');
 const { checkAccess } = require('~/server/middleware/roles/access');

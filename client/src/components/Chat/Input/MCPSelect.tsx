@@ -1,23 +1,17 @@
 import React, { memo, useRef, useMemo, useEffect, useCallback, useState } from 'react';
 import { useRecoilState } from 'recoil';
 import { Settings2 } from 'lucide-react';
-import {
-  Constants,
-  EModelEndpoint,
-  LocalStorageKeys,
-  TPlugin,
-  TUpdateUserPlugins,
-} from 'librechat-data-provider';
-import { useAvailableToolsQuery } from '~/data-provider'; // Removed useAgentToolMutation
+import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
+import { Constants, EModelEndpoint, LocalStorageKeys } from 'librechat-data-provider';
+import type { TPlugin, TPluginAuthConfig, TUpdateUserPlugins } from 'librechat-data-provider';
+import MCPConfigDialog, { type ConfigFieldDetail } from '~/components/ui/MCPConfigDialog';
+import { useAvailableToolsQuery } from '~/data-provider';
 import useLocalStorage from '~/hooks/useLocalStorageAlt';
 import MultiSelect from '~/components/ui/MultiSelect';
 import { ephemeralAgentByConvoId } from '~/store';
-import MCPIcon from '~/components/ui/MCPIcon';
-import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
-import MCPConfigDialog, { type ConfigFieldDetail } from '~/components/ui/MCPConfigDialog';
-import { useLocalize } from '~/hooks';
 import { useToastContext } from '~/Providers';
-import { TPluginAuthConfig } from 'librechat-data-provider/src';
+import MCPIcon from '~/components/ui/MCPIcon';
+import { useLocalize } from '~/hooks';
 
 interface McpServerInfo {
   name: string;

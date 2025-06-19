@@ -299,7 +299,7 @@ Current Date & Time: ${replaceSpecialVars({ text: '{{iso_datetime}}' })}
         createMCPTool({
           req: options.req,
           res: options.res,
-          toolKey: tool, // Full tool key, e.g., "action_mcp_serverName"
+          toolKey: tool,
           model: agent?.model ?? model,
           provider: agent?.provider ?? endpoint,
         });

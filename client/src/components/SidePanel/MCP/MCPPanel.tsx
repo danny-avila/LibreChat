@@ -1,14 +1,14 @@
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
-import { useGetStartupConfig } from '~/data-provider';
-import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
-import { Constants, TUpdateUserPlugins } from 'librechat-data-provider';
-import { Button } from '~/components/ui';
 import { ChevronLeft } from 'lucide-react';
-import { useLocalize } from '~/hooks';
-import { useToastContext } from '~/Providers';
-import MCPPanelSkeleton from './MCPPanelSkeleton';
+import { Constants } from 'librechat-data-provider';
 import { useForm, Controller } from 'react-hook-form';
-import { Input, Label } from '~/components/ui';
+import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
+import type { TUpdateUserPlugins } from 'librechat-data-provider';
+import { Button, Input, Label } from '~/components/ui';
+import { useGetStartupConfig } from '~/data-provider';
+import MCPPanelSkeleton from './MCPPanelSkeleton';
+import { useToastContext } from '~/Providers';
+import { useLocalize } from '~/hooks';
 
 interface ServerConfigWithVars {
   serverName: string;

@@ -18,9 +18,9 @@ import PromptsAccordion from '~/components/Prompts/PromptsAccordion';
 import Parameters from '~/components/SidePanel/Parameters/Panel';
 import FilesPanel from '~/components/SidePanel/Files/Panel';
 import MCPPanel from '~/components/SidePanel/MCP/MCPPanel';
-import MCPIcon from '~/components/ui/MCPIcon';
 import { Blocks, AttachmentIcon } from '~/components/svg';
 import { useGetStartupConfig } from '~/data-provider';
+import MCPIcon from '~/components/ui/MCPIcon';
 import { useHasAccess } from '~/hooks';
 
 export default function useSideNavLinks({
