@@ -251,5 +251,12 @@
         "description": "Your WordPress password or application password"
       }
     ]
+  },
+  {
+    "name": "UserMemoryMongo",
+    "pluginKey": "user_memory_mongo",
+    "description": "Manage user memories with MongoDB backend for persistent storage across conversations",
+    "icon": "/assets/openweather.png",
+    "authConfig": []
   }
 ]
