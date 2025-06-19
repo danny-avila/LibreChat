@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import * as Tabs from '@radix-ui/react-tabs';
-import { MessageSquare, Command, DollarSign } from 'lucide-react';
+import { MessageSquare, Command, DollarSign, ShieldCheckIcon } from 'lucide-react'; // Added ShieldCheckIcon
 import { SettingsTabValues } from 'librechat-data-provider';
 import { useGetStartupConfig } from '~/data-provider';
 import type { TDialogProps } from '~/common';
@@ -23,6 +23,7 @@ import {
   Account,
   Balance,
   Personalization,
+  Admin, // Imported Admin
 } from './SettingsTabs';
 import { useMediaQuery, useLocalize, TranslationKeys } from '~/hooks';
 import usePersonalizationAccess from '~/hooks/usePersonalizationAccess';
@@ -47,6 +48,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
       SettingsTabValues.DATA,
       ...(startupConfig?.balance?.enabled ? [SettingsTabValues.BALANCE] : []),
       SettingsTabValues.ACCOUNT,
+      SettingsTabValues.ADMIN, // Added ADMIN to tabs array
     ];
     const currentIndex = tabs.indexOf(activeTab);
 
@@ -127,6 +129,11 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
       value: SettingsTabValues.ACCOUNT,
       icon: <UserIcon />,
       label: 'com_nav_setting_account',
+    },
+    { // Added Admin Tab definition
+      value: SettingsTabValues.ADMIN,
+      icon: <ShieldCheckIcon className="icon-sm" />,
+      label: 'com_nav_setting_admin' as TranslationKeys,
     },
   ];
 
@@ -260,6 +267,9 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                     )}
                     <Tabs.Content value={SettingsTabValues.ACCOUNT}>
                       <Account />
+                    </Tabs.Content>
+                    <Tabs.Content value={SettingsTabValues.ADMIN}>
+                      <Admin />
                     </Tabs.Content>
                   </div>
                 </Tabs.Root>

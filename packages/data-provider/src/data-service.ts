@@ -835,3 +835,12 @@ export const createMemory = (data: {
 }): Promise<{ created: boolean; memory: q.TUserMemory }> => {
   return request.post(endpoints.memories(), data);
 };
+
+// Admin Providers
+export function getAdminProviders(): Promise<t.TProvider[]> { // Assuming TProvider interface exists or will be created
+  return request.get(endpoints.adminProviders());
+}
+
+export function createAdminProvider(data: Partial<t.TProvider>): Promise<t.TProvider> {
+  return request.post(endpoints.adminProviders(), data);
+}

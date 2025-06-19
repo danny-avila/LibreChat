@@ -289,3 +289,8 @@ export const verifyTwoFactorTemp = () => '/api/auth/2fa/verify-temp';
 export const memories = () => '/api/memories';
 export const memory = (key: string) => `${memories()}/${encodeURIComponent(key)}`;
 export const memoryPreferences = () => `${memories()}/preferences`;
+
+// Admin
+export const adminProviders = () => '/api/admin/providers';
+export const adminProviderById = (id: string) => `/api/admin/providers/${id}`;
+export const adminFetchModelsForProvider = (id: string) => `/api/admin/providers/${id}/fetch-models`;

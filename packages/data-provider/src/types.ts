@@ -622,3 +622,13 @@ export type TBalanceResponse = {
   lastRefill?: Date;
   refillAmount?: number;
 };
+
+export interface TProvider {
+  id?: string; // Usually ObjectId as string from MongoDB
+  _id?: string | object; // MongoDB ObjectId
+  name: string;
+  baseURL?: string;
+  createdAt?: string | Date;
+  updatedAt?: string | Date;
+  // Add any other fields that are sent to/from the API
+}
