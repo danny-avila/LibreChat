@@ -21,6 +21,10 @@ class WebNavigator extends Tool {
   constructor(_fields = {}) {
     super();
 
+    this.firecrawlApiKey = _fields.FIRECRAWL_API_KEY || process.env.FIRECRAWL_API_KEY;
+    this.firecrawlApiUrl = _fields.FIRECRAWL_API_URL || process.env.FIRECRAWL_API_URL || 'https://api.firecrawl.dev';
+    this.useFirecrawl = this.firecrawlApiKey && (process.env.WEB_NAVIGATOR_USE_FIRECRAWL !== 'false');
+
     this.name = 'WebNavigator';
     this.description =
       'Simulates a curl action. Useful for making HTTP requests with various methods and parameters. Accepts an array of commands similar to curl.';
@@ -46,6 +50,12 @@ class WebNavigator extends Tool {
         - \`includeHeaders\`: Set to \`true\` to include all response headers in the result
         - \`fetchRelated\`: Set to \`true\` to fetch related non-binary resources (use cautiously)
         - \`imageDownloadLink\`: Set to image URL to save an image locally and return its path
+        - \`useFirecrawl\`: Set to \`false\` to disable Firecrawl if it's enabled by default
+        - \`firecrawlProxy\`: Set to \`"basic"\`, \`"stealth"\`, or \`"auto"\` to control proxy behavior with Firecrawl
+      - **Firecrawl Integration:**
+        - When a Firecrawl API key is configured, the tool can use Firecrawl's service to handle complex websites
+        - Firecrawl proxy modes: "basic" (fast, simple sites), "stealth" (bypasses protections), "auto" (intelligent selection)
+        - By default, stealth mode "auto" is used when Firecrawl is enabled
       - **Best Practices:**
         - Use \`returnOnlyTags: ["article"]\` to extract the main content of many websites
         - Use \`returnOnlyTags: ["header"]\` to get navigation and site information
@@ -135,6 +145,18 @@ class WebNavigator extends Tool {
         .optional()
         .describe(
           'URL of an image to download and save locally. Returns the file path of the saved image.'
+        ),
+      useFirecrawl: z
+        .boolean()
+        .optional()
+        .describe(
+          'If true, uses Firecrawl API for fetching content instead of direct HTTP requests. Only applies if Firecrawl API key is configured.'
+        ),
+      firecrawlProxy: z
+        .enum(['basic', 'stealth', 'auto'])
+        .optional()
+        .describe(
+          'Type of proxy to use with Firecrawl. "basic" for simple proxying, "stealth" for bypassing protection, "auto" to automatically determine the best option. Default is "auto".'
         ),
     });
   }
@@ -293,6 +315,10 @@ ADVANCED OPTIONS:
 6) Caching:
    - bypassCache: Set to true to bypass cache and fetch directly
 
+7) Firecrawl Integration:
+   - useFirecrawl: Boolean to enable/disable Firecrawl (if configured)
+   - firecrawlProxy: "basic", "stealth", or "auto" proxy mode for Firecrawl
+
 EXAMPLES:
 --------
 
@@ -338,6 +364,18 @@ EXAMPLES:
      "bypassCache": true
    }
 
+7) Use Firecrawl with stealth mode:
+   {
+     "url": "https://complex-site.com/protected-content",
+     "firecrawlProxy": "stealth"
+   }
+
+8) Disable Firecrawl for a specific request:
+   {
+     "url": "https://example.com",
+     "useFirecrawl": false
+   }
+
 TIPS:
 -----
 - For extracting main content, try "returnOnlyTags": ["article"] or ["main"]
@@ -345,6 +383,7 @@ TIPS:
 - When scraping multiple pages from the same site, reuse cookies
 - For API requests, set appropriate Content-Type headers
 - For JavaScript-heavy sites, try different browserImpersonation values
+- For sites with anti-bot protection, use Firecrawl with "stealth" or "auto" mode
 `.trim();
   }
 
@@ -397,6 +436,97 @@ TIPS:
     }
   }
 
+  // Helper function to process request with Firecrawl
+  async processFirecrawlRequest(url, options) {
+    const {
+      method = 'GET',
+      headers = {},
+      data,
+      firecrawlProxy = 'auto',
+      returnOnlyTags,
+      excludeTags,
+      includeAttributes = ['href', 'alt'],
+      returnTextOnly = false,
+    } = options;
+
+    // Construct the Firecrawl API request
+    const firecrawlRequestUrl = `${this.firecrawlApiUrl}/scrape`;
+    
+    // Default excludeTags if not provided
+    const defaultExcludeTags = [
+      'style',
+      'script',
+      'link[rel="stylesheet"]',
+      'link[rel="javascript"]',
+      'svg',
+      'path',
+    ];
+    const excludeTagsArray = Array.isArray(excludeTags) ? excludeTags : defaultExcludeTags;
+    
+    // Build the Firecrawl request payload
+    const requestBody = {
+      url,
+      formats: ['markdown', 'html'],
+      proxy: firecrawlProxy,
+      includeTags: Array.isArray(returnOnlyTags) ? returnOnlyTags : undefined,
+      excludeTags: excludeTagsArray,
+      headers,
+      method: method.toUpperCase(),
+      ...(data && { body: typeof data === 'string' ? data : JSON.stringify(data) }),
+    };
+
+    try {
+      const response = await fetch(firecrawlRequestUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.firecrawlApiKey}`,
+        },
+        body: JSON.stringify(requestBody),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Firecrawl request failed: ${response.status} ${response.statusText}. ${errorText}`);
+      }
+
+      const firecrawlResponse = await response.json();
+
+      if (!firecrawlResponse.success) {
+        throw new Error(`Firecrawl API error: ${firecrawlResponse.error || 'Unknown error'}`);
+      }
+
+      // Process the response
+      let content = returnTextOnly ? firecrawlResponse.data.markdown : firecrawlResponse.data.html;
+      let links = firecrawlResponse.data.links || [];
+
+      // Format links similar to the direct fetch approach
+      const formattedLinks = links.map(link => ({
+        href: link,
+        text: link, // Firecrawl doesn't provide link text
+      }));
+
+      return {
+        requestUrl: url,
+        requestHeaders: headers,
+        ...(data && { requestBody: typeof data === 'string' ? data : JSON.stringify(data) }),
+        responseStatus: 200, // Firecrawl handles the actual status codes
+        responseStatusText: 'OK',
+        text: returnTextOnly ? content : undefined,
+        links: formattedLinks.length > 0 ? formattedLinks : undefined,
+        responseBody: returnTextOnly ? undefined : content,
+        firecrawl: {
+          used: true,
+          proxy: firecrawlProxy,
+          metadata: firecrawlResponse.data.metadata || {},
+        },
+      };
+    } catch (error) {
+      console.error('Firecrawl request failed:', error);
+      throw error;
+    }
+  }
+
   async _call(input) {
     // Handle image download if requested
     if (input.imageDownloadLink) {
@@ -430,11 +560,74 @@ TIPS:
       includeAttributes = ['href', 'alt'], // Default attributes
       browserImpersonation = 'plain',
       bypassCache = false,
+      useFirecrawl = this.useFirecrawl, // Use the class property as default
+      firecrawlProxy = 'auto',
     } = input;
 
     // Validate URL
     if (!url) {
       throw new Error('URL is required.');
+    }
+
+    // Build the full URL with query parameters
+    const urlObject = new URL(url);
+    if (params && Object.keys(params).length > 0) {
+      urlObject.search = new URLSearchParams(params).toString();
+    }
+    const fullUrl = urlObject.toString();
+
+    // Check cache if not bypassing
+    const cacheKey = !bypassCache && this.db ? this.generateCacheKey(method, url, params, data) : null;
+    let cachedResult = null;
+
+    if (cacheKey && !bypassCache) {
+      cachedResult = this.getCachedResponse(cacheKey, headers);
+      if (cachedResult) {
+        // Add indication that this was a cached response
+        cachedResult.cached = true;
+        return JSON.stringify(cachedResult);
+      }
+    }
+
+    // Check if we should use Firecrawl
+    const shouldUseFirecrawl = useFirecrawl && this.firecrawlApiKey;
+
+    // Process with Firecrawl if enabled
+    if (shouldUseFirecrawl) {
+      try {
+        // Add cookies to headers if provided
+        const mergedHeaders = { ...headers };
+        if (cookies) {
+          mergedHeaders['Cookie'] = cookies;
+        }
+
+        // Process with Firecrawl
+        const mainResult = await this.processFirecrawlRequest(fullUrl, {
+          method,
+          headers: mergedHeaders,
+          data,
+          firecrawlProxy,
+          returnOnlyTags,
+          excludeTags,
+          includeAttributes,
+          returnTextOnly,
+        });
+
+        // Cache the result if caching is enabled
+        if (cacheKey && !bypassCache) {
+          this.cacheResponse(cacheKey, mainResult, headers);
+        }
+
+        // For Firecrawl, we don't handle fetchRelated currently
+        if (fetchRelated) {
+          console.warn('fetchRelated is not supported with Firecrawl and will be ignored');
+        }
+
+        return JSON.stringify(mainResult);
+      } catch (error) {
+        console.warn(`Firecrawl request failed, falling back to direct fetch: ${error.message}`);
+        // Continue with direct fetch as fallback
+      }
     }
 
     // Define default browser headers for each impersonation option
@@ -468,12 +661,6 @@ TIPS:
 
     // Determine the default headers based on browser impersonation
     const browserHeaders = browserHeadersMap[browserImpersonation] || {};
-
-    // Build the full URL with query parameters
-    const urlObject = new URL(url);
-    if (params && Object.keys(params).length > 0) {
-      urlObject.search = new URLSearchParams(params).toString();
-    }
 
     // Prepare fetch options
     const fetchOptions = {
@@ -600,21 +787,8 @@ TIPS:
       return result;
     };
 
-    // Check cache if not bypassing
-    const cacheKey = !bypassCache && this.db ? this.generateCacheKey(method, url, params, data) : null;
-    let cachedResult = null;
-
-    if (cacheKey && !bypassCache) {
-      cachedResult = this.getCachedResponse(cacheKey, headers);
-      if (cachedResult) {
-        // Add indication that this was a cached response
-        cachedResult.cached = true;
-        return JSON.stringify(cachedResult);
-      }
-    }
-
     // Process the main request
-    const mainResult = await processRequest(urlObject.toString());
+    const mainResult = await processRequest(fullUrl);
 
     // Cache the result if caching is enabled
     if (cacheKey && !bypassCache) {
