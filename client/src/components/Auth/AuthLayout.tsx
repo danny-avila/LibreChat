@@ -63,7 +63,7 @@ function AuthLayout({
         <ThemeSelector />
       </div>
       <div className="flex flex-grow items-center justify-center">
-        <div className="w-authPageWidth overflow-hidden bg-transparent px-6 py-4 sm:max-w-md sm:rounded-lg">
+        <div className="w-authPageWidth overflow-hidden bg-white/40 px-6 py-4 sm:max-w-md sm:rounded-lg">
           <BlinkAnimation active={isFetching}>
             <div className="mb-7 flex justify-center">
               <div style={{ height: '90px', width: 'auto' }}>
