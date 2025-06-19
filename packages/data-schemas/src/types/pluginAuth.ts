@@ -1,3 +1,14 @@
+import type { Document } from 'mongoose';
+
+export interface IPluginAuth extends Document {
+  authField: string;
+  value: string;
+  userId: string;
+  pluginKey?: string;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
 export interface PluginAuthQuery {
   userId: string;
   authField?: string;
