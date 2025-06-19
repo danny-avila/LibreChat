@@ -200,6 +200,43 @@ function processUserPlaceholders(value: string, user?: TUser): string {
   return value;
 }
 
+function processSingleValue({
+  originalValue,
+  customUserVars,
+  user,
+}: {
+  originalValue: string;
+  customUserVars?: Record<string, string>;
+  user?: TUser;
+}): string {
+  let value = originalValue;
+
+  // 1. Replace custom user variables
+  if (customUserVars) {
+    for (const [varName, varVal] of Object.entries(customUserVars)) {
+      /** Escaped varName for use in regex to avoid issues with special characters */
+      const escapedVarName = varName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const placeholderRegex = new RegExp(`\\{\\{${escapedVarName}\\}\\}`, 'g');
+      value = value.replace(placeholderRegex, varVal);
+    }
+  }
+
+  // 2.A. Special handling for LIBRECHAT_USER_ID placeholder
+  // This ensures {{LIBRECHAT_USER_ID}} is replaced only if user.id is available.
+  // If user.id is null/undefined, the placeholder remains
+  if (user && user.id != null && value.includes('{{LIBRECHAT_USER_ID}}')) {
+    value = value.replace(/\{\{LIBRECHAT_USER_ID\}\}/g, String(user.id));
+  }
+
+  // 2.B. Replace other standard user field placeholders (e.g., {{LIBRECHAT_USER_EMAIL}})
+  value = processUserPlaceholders(value, user);
+
+  // 3. Replace system environment variables
+  value = extractEnvVariable(value);
+
+  return value;
+}
+
 /**
  * Recursively processes an object to replace environment variables in string values
  * @param obj - The object to process
@@ -218,39 +255,10 @@ export function processMCPEnv(
 
   const newObj: MCPOptions = structuredClone(obj);
 
-  const processSingleValue = (originalValue: string): string => {
-    let value = originalValue;
-
-    // 1. Replace custom user variables
-    if (customUserVars) {
-      for (const [varName, varVal] of Object.entries(customUserVars)) {
-        // Escape varName for use in regex to avoid issues with special characters
-        const escapedVarName = varName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const placeholderRegex = new RegExp(`\\{\\{${escapedVarName}\\}\\}`, 'g');
-        value = value.replace(placeholderRegex, varVal);
-      }
-    }
-
-    // 2.A. Special handling for LIBRECHAT_USER_ID placeholder
-    // This ensures {{LIBRECHAT_USER_ID}} is replaced only if user.id is available.
-    // If user.id is null/undefined, the placeholder remains
-    if (user && user.id != null && value.includes('{{LIBRECHAT_USER_ID}}')) {
-      value = value.replace(/\{\{LIBRECHAT_USER_ID\}\}/g, String(user.id));
-    }
-
-    // 2.B. Replace other standard user field placeholders (e.g., {{LIBRECHAT_USER_EMAIL}})
-    value = processUserPlaceholders(value, user);
-
-    // 3. Replace system environment variables
-    value = extractEnvVariable(value);
-
-    return value;
-  };
-
   if ('env' in newObj && newObj.env) {
     const processedEnv: Record<string, string> = {};
     for (const [key, originalValue] of Object.entries(newObj.env)) {
-      processedEnv[key] = processSingleValue(originalValue);
+      processedEnv[key] = processSingleValue({ originalValue, customUserVars, user });
     }
     newObj.env = processedEnv;
   }
@@ -260,14 +268,14 @@ export function processMCPEnv(
   if ('headers' in newObj && newObj.headers) {
     const processedHeaders: Record<string, string> = {};
     for (const [key, originalValue] of Object.entries(newObj.headers)) {
-      processedHeaders[key] = processSingleValue(originalValue);
+      processedHeaders[key] = processSingleValue({ originalValue, customUserVars, user });
     }
     newObj.headers = processedHeaders;
   }
 
   // Process URL if it exists (for WebSocket, SSE, StreamableHTTP types)
   if ('url' in newObj && newObj.url) {
-    newObj.url = processSingleValue(newObj.url);
+    newObj.url = processSingleValue({ originalValue: newObj.url, customUserVars, user });
   }
 
   return newObj;
