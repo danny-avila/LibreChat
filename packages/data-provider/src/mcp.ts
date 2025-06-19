@@ -39,6 +39,15 @@ const BaseOptionsSchema = z.object({
       token_exchange_method: z.nativeEnum(TokenExchangeMethodEnum).optional(),
     })
     .optional(),
+  customUserVars: z
+    .record(
+      z.string(),
+      z.object({
+        title: z.string(),
+        description: z.string(),
+      }),
+    )
+    .optional(),
 });
 
 export const StdioOptionsSchema = BaseOptionsSchema.extend({
@@ -191,13 +200,55 @@ function processUserPlaceholders(value: string, user?: TUser): string {
   return value;
 }
 
+function processSingleValue({
+  originalValue,
+  customUserVars,
+  user,
+}: {
+  originalValue: string;
+  customUserVars?: Record<string, string>;
+  user?: TUser;
+}): string {
+  let value = originalValue;
+
+  // 1. Replace custom user variables
+  if (customUserVars) {
+    for (const [varName, varVal] of Object.entries(customUserVars)) {
+      /** Escaped varName for use in regex to avoid issues with special characters */
+      const escapedVarName = varName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const placeholderRegex = new RegExp(`\\{\\{${escapedVarName}\\}\\}`, 'g');
+      value = value.replace(placeholderRegex, varVal);
+    }
+  }
+
+  // 2.A. Special handling for LIBRECHAT_USER_ID placeholder
+  // This ensures {{LIBRECHAT_USER_ID}} is replaced only if user.id is available.
+  // If user.id is null/undefined, the placeholder remains
+  if (user && user.id != null && value.includes('{{LIBRECHAT_USER_ID}}')) {
+    value = value.replace(/\{\{LIBRECHAT_USER_ID\}\}/g, String(user.id));
+  }
+
+  // 2.B. Replace other standard user field placeholders (e.g., {{LIBRECHAT_USER_EMAIL}})
+  value = processUserPlaceholders(value, user);
+
+  // 3. Replace system environment variables
+  value = extractEnvVariable(value);
+
+  return value;
+}
+
 /**
  * Recursively processes an object to replace environment variables in string values
  * @param obj - The object to process
  * @param user - The user object containing all user fields
+ * @param customUserVars - vars that user set in settings
  * @returns - The processed object with environment variables replaced
  */
-export function processMCPEnv(obj: Readonly<MCPOptions>, user?: TUser): MCPOptions {
+export function processMCPEnv(
+  obj: Readonly<MCPOptions>,
+  user?: TUser,
+  customUserVars?: Record<string, string>,
+): MCPOptions {
   if (obj === null || obj === undefined) {
     return obj;
   }
@@ -206,32 +257,25 @@ export function processMCPEnv(obj: Readonly<MCPOptions>, user?: TUser): MCPOptio
 
   if ('env' in newObj && newObj.env) {
     const processedEnv: Record<string, string> = {};
-    for (const [key, value] of Object.entries(newObj.env)) {
-      let processedValue = extractEnvVariable(value);
-      processedValue = processUserPlaceholders(processedValue, user);
-      processedEnv[key] = processedValue;
+    for (const [key, originalValue] of Object.entries(newObj.env)) {
+      processedEnv[key] = processSingleValue({ originalValue, customUserVars, user });
     }
     newObj.env = processedEnv;
-  } else if ('headers' in newObj && newObj.headers) {
-    const processedHeaders: Record<string, string> = {};
-    for (const [key, value] of Object.entries(newObj.headers)) {
-      const userId = user?.id;
-      if (value === '{{LIBRECHAT_USER_ID}}' && userId != null) {
-        processedHeaders[key] = String(userId);
-        continue;
-      }
+  }
 
-      let processedValue = extractEnvVariable(value);
-      processedValue = processUserPlaceholders(processedValue, user);
-      processedHeaders[key] = processedValue;
+  // Process headers if they exist (for WebSocket, SSE, StreamableHTTP types)
+  // Note: `env` and `headers` are on different branches of the MCPOptions union type.
+  if ('headers' in newObj && newObj.headers) {
+    const processedHeaders: Record<string, string> = {};
+    for (const [key, originalValue] of Object.entries(newObj.headers)) {
+      processedHeaders[key] = processSingleValue({ originalValue, customUserVars, user });
     }
     newObj.headers = processedHeaders;
   }
 
+  // Process URL if it exists (for WebSocket, SSE, StreamableHTTP types)
   if ('url' in newObj && newObj.url) {
-    let processedUrl = extractEnvVariable(newObj.url);
-    processedUrl = processUserPlaceholders(processedUrl, user);
-    newObj.url = processedUrl;
+    newObj.url = processSingleValue({ originalValue: newObj.url, customUserVars, user });
   }
 
   return newObj;

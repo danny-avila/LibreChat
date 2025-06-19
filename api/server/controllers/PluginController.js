@@ -5,6 +5,7 @@ const { getToolkitKey } = require('~/server/services/ToolService');
 const { getMCPManager, getFlowStateManager } = require('~/config');
 const { availableTools } = require('~/app/clients/tools');
 const { getLogStores } = require('~/cache');
+const { Constants } = require('librechat-data-provider');
 
 /**
  * Filters out duplicate plugins from the list of plugins.
@@ -173,16 +174,56 @@ const getAvailableTools = async (req, res) => {
     });
 
     const toolDefinitions = await getCachedTools({ includeGlobal: true });
-    const tools = authenticatedPlugins.filter(
-      (plugin) =>
-        toolDefinitions[plugin.pluginKey] !== undefined ||
-        (plugin.toolkit === true &&
-          Object.keys(toolDefinitions).some((key) => getToolkitKey(key) === plugin.pluginKey)),
-    );
 
-    await cache.set(CacheKeys.TOOLS, tools);
-    res.status(200).json(tools);
+    const toolsOutput = [];
+    for (const plugin of authenticatedPlugins) {
+      const isToolDefined = toolDefinitions[plugin.pluginKey] !== undefined;
+      const isToolkit =
+        plugin.toolkit === true &&
+        Object.keys(toolDefinitions).some((key) => getToolkitKey(key) === plugin.pluginKey);
+
+      if (!isToolDefined && !isToolkit) {
+        continue;
+      }
+
+      const toolToAdd = { ...plugin };
+
+      if (!plugin.pluginKey.includes(Constants.mcp_delimiter)) {
+        toolsOutput.push(toolToAdd);
+        continue;
+      }
+
+      const parts = plugin.pluginKey.split(Constants.mcp_delimiter);
+      const serverName = parts[parts.length - 1];
+      const serverConfig = customConfig?.mcpServers?.[serverName];
+
+      if (!serverConfig?.customUserVars) {
+        toolsOutput.push(toolToAdd);
+        continue;
+      }
+
+      const customVarKeys = Object.keys(serverConfig.customUserVars);
+
+      if (customVarKeys.length === 0) {
+        toolToAdd.authConfig = [];
+        toolToAdd.authenticated = true;
+      } else {
+        toolToAdd.authConfig = Object.entries(serverConfig.customUserVars).map(([key, value]) => ({
+          authField: key,
+          label: value.title || key,
+          description: value.description || '',
+        }));
+        toolToAdd.authenticated = false;
+      }
+
+      toolsOutput.push(toolToAdd);
+    }
+
+    const finalTools = filterUniquePlugins(toolsOutput);
+    await cache.set(CacheKeys.TOOLS, finalTools);
+    res.status(200).json(finalTools);
   } catch (error) {
+    logger.error('[getAvailableTools]', error);
     res.status(500).json({ message: error.message });
   }
 };

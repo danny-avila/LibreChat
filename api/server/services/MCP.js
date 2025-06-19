@@ -168,6 +168,9 @@ async function createMCPTool({ req, res, toolKey, provider: _provider }) {
         derivedSignal.addEventListener('abort', abortHandler, { once: true });
       }
 
+      const customUserVars =
+        config?.configurable?.userMCPAuthMap?.[`${Constants.mcp_prefix}${serverName}`];
+
       const result = await mcpManager.callTool({
         serverName,
         toolName,
@@ -175,8 +178,9 @@ async function createMCPTool({ req, res, toolKey, provider: _provider }) {
         toolArguments,
         options: {
           signal: derivedSignal,
-          user: config?.configurable?.user,
         },
+        user: config?.configurable?.user,
+        customUserVars,
         flowManager,
         tokenMethods: {
           findToken,

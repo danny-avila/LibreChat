@@ -1,15 +1,14 @@
+const { mcpToolPattern } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 const { SerpAPI } = require('@langchain/community/tools/serpapi');
 const { Calculator } = require('@langchain/community/tools/calculator');
 const { EnvVar, createCodeExecutionTool, createSearchTool } = require('@librechat/agents');
 const {
   Tools,
-  Constants,
   EToolResources,
   loadWebSearchAuth,
   replaceSpecialVars,
 } = require('librechat-data-provider');
-const { getUserPluginAuthValue } = require('~/server/services/PluginService');
 const {
   availableTools,
   manifestToolMap,
@@ -29,11 +28,10 @@ const {
 } = require('../');
 const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
 const { createFileSearchTool, primeFiles: primeSearchFiles } = require('./fileSearch');
+const { getUserPluginAuthValue } = require('~/server/services/PluginService');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { getCachedTools } = require('~/server/services/Config');
 const { createMCPTool } = require('~/server/services/MCP');
-
-const mcpToolPattern = new RegExp(`^.+${Constants.mcp_delimiter}.+$`);
 
 /**
  * Validates the availability and authentication of tools for a user based on environment variables or user-specific plugin authentication values.
@@ -94,7 +92,7 @@ const validateTools = async (user, tools = []) => {
     return Array.from(validToolsSet.values());
   } catch (err) {
     logger.error('[validateTools] There was a problem validating tools', err);
-    throw new Error('There was a problem validating tools');
+    throw new Error(err);
   }
 };
 
