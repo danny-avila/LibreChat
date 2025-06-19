@@ -1040,5 +1040,8 @@
   "com_ui_trust_app": "I trust this application",
   "com_agents_mcp_trust_subtext": "Custom connectors are not verified by LibreChat",
   "com_ui_icon": "Icon",
-  "com_agents_mcp_icon_size": "Minimum size 128 x 128 px"
+  "com_agents_mcp_icon_size": "Minimum size 128 x 128 px",
+  "com_ui_tool_collection_prefix": "A collection of tools from",
+  "com_ui_tool_info": "Tool Information",
+  "com_ui_tool_more_info": "More information about this tool"
 }
