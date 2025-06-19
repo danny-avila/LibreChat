@@ -1,11 +1,6 @@
 const { logger } = require('@librechat/data-schemas');
 const { encrypt, decrypt } = require('@librechat/api');
-const {
-  findPluginAuthsByKeys,
-  findOnePluginAuth,
-  updatePluginAuth,
-  deletePluginAuth,
-} = require('~/models');
+const { findOnePluginAuth, updatePluginAuth, deletePluginAuth } = require('~/models');
 
 /**
  * Asynchronously retrieves and decrypts the authentication value for a user's plugin, based on a specified authentication field.
@@ -42,86 +37,6 @@ const getUserPluginAuthValue = async (userId, authField, throwError = true) => {
       return null;
     }
     logger.error('[getUserPluginAuthValue]', err);
-    throw err;
-  }
-};
-
-/**
- * Asynchronously retrieves and decrypts all authentication values for a user across multiple plugins.
- *
- * @param {string} userId - The unique identifier of the user.
- * @param {string[]} pluginKeys - An array of plugin keys to retrieve authentication values for.
- * @param {boolean} [throwError=true] - Whether to throw an error if issues occur.
- * @returns {Promise<Record<string, Record<string, string>>>} A promise that resolves to a map where keys are pluginKeys
- * and values are objects of authField:decryptedValue pairs. If a pluginKey has no auth values, its entry will be an empty object.
- *
- * @example
- * // To get all decrypted values for user '12345' for plugins 'pluginA' and 'pluginB':
- * getUsersPluginsAuthValuesMap('12345', ['pluginA', 'pluginB']).then(pluginsAuthMap => {
- *   console.log(pluginsAuthMap);
- *   // {
- *   //   "pluginA": { "API_KEY": "key_A", "SECRET": "secret_A" },
- *   //   "pluginB": { "TOKEN": "token_B" }
- *   // }
- * }).catch(err => {
- *   console.error(err);
- * });
- */
-const getUsersPluginsAuthValuesMap = async (userId, pluginKeys, throwError = true) => {
-  try {
-    if (!pluginKeys || pluginKeys.length === 0) {
-      return {};
-    }
-
-    const pluginAuths = await findPluginAuthsByKeys({ userId, pluginKeys });
-
-    const pluginsAuthMap = {};
-    for (const key of pluginKeys) {
-      pluginsAuthMap[key] = {};
-    }
-
-    await Promise.all(
-      pluginAuths.map(async (auth) => {
-        try {
-          const decryptedValue = await decrypt(auth.value);
-          if (pluginsAuthMap[auth.pluginKey]) {
-            pluginsAuthMap[auth.pluginKey][auth.authField] = decryptedValue;
-          } else {
-            // This case should ideally not happen if pluginKey in auth record is one of the requested pluginKeys.
-            // Logging a warning if it occurs.
-            logger.warn(
-              `[getUsersPluginsAuthValuesMap] Encountered auth record for unexpected pluginKey: ${auth.pluginKey} for userId ${userId}. Requested keys: ${pluginKeys.join(', ')}`,
-            );
-          }
-        } catch (decryptError) {
-          logger.error(
-            `[getUsersPluginsAuthValuesMap] Error decrypting value for userId ${userId}, pluginKey ${auth.pluginKey}, authField ${auth.authField}`,
-            decryptError,
-          );
-          if (throwError) {
-            throw new Error(
-              `Decryption failed for plugin ${auth.pluginKey}, field ${auth.authField}: ${decryptError.message}`,
-            );
-          }
-        }
-      }),
-    );
-
-    return pluginsAuthMap;
-  } catch (err) {
-    if (!throwError) {
-      const initialMap = {};
-      if (pluginKeys && pluginKeys.length > 0) {
-        for (const key of pluginKeys) {
-          initialMap[key] = {};
-        }
-      }
-      return initialMap;
-    }
-    logger.error(
-      `[getUsersPluginsAuthValuesMap] Error fetching auth values for userId ${userId}, pluginKeys: ${pluginKeys.join(', ')}`,
-      err,
-    );
     throw err;
   }
 };
@@ -204,7 +119,6 @@ const deleteUserPluginAuth = async (userId, authField, all = false, pluginKey) =
 
 module.exports = {
   getUserPluginAuthValue,
-  getUsersPluginsAuthValuesMap,
   updateUserPluginAuth,
   deleteUserPluginAuth,
 };
