@@ -1,9 +1,9 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { Controller, useWatch, useFormContext } from 'react-hook-form';
 import { EModelEndpoint, AgentCapabilities } from 'librechat-data-provider';
+import type { AgentForm, AgentPanelProps, IconComponentTypes } from '~/common';
 import { cn, defaultTextProps, removeFocusOutlines, getEndpointField, getIconKey } from '~/utils';
 import { useToastContext, useFileMapContext, useAgentPanelContext } from '~/Providers';
-import type { AgentForm, AgentPanelProps, IconComponentTypes } from '~/common';
 import Action from '~/components/SidePanel/Builder/Action';
 import { ToolSelectDialog } from '~/components/Tools';
 import { icons } from '~/hooks/Endpoint/Icons';
@@ -360,7 +360,6 @@ export default function AgentConfig({
       <ToolSelectDialog
         isOpen={showToolDialog}
         setIsOpen={setShowToolDialog}
-        toolsFormKey="tools"
         endpoint={EModelEndpoint.agents}
       />
     </>

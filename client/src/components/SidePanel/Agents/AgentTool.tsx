@@ -1,18 +1,16 @@
 import React, { useState } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { ChevronDown } from 'lucide-react';
-import { VisuallyHidden } from '@ariakit/react';
 import { useFormContext } from 'react-hook-form';
 import * as AccordionPrimitive from '@radix-ui/react-accordion';
+import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
 import type { AgentToolType } from 'librechat-data-provider';
 import type { AgentForm } from '~/common';
-import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
 import { Accordion, AccordionItem, AccordionContent } from '~/components/ui/Accordion';
 import { OGDialog, OGDialogTrigger, Label, Checkbox } from '~/components/ui';
+import { TrashIcon, CircleHelpIcon } from '~/components/svg';
 import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
-import CircleHelpIcon from '~/components/svg/CircleHelpIcon';
 import { useToastContext } from '~/Providers';
-import { TrashIcon } from '~/components/svg';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -48,20 +46,24 @@ export default function AgentTool({
     setValue('tools', [...otherTools, ...newSelectedTools]);
   };
 
-  const removeTool = (tool: string) => {
-    if (tool) {
-      const toolsToRemove =
-        isGroup && currentTool.tools ? [tool, ...currentTool.tools.map((t) => t.tool_id)] : [tool];
+  const removeTool = (toolId: string) => {
+    if (toolId) {
+      const toolIdsToRemove =
+        isGroup && currentTool.tools
+          ? [toolId, ...currentTool.tools.map((t) => t.tool_id)]
+          : [toolId];
 
       updateUserPlugins.mutate(
-        { pluginKey: tool, action: 'uninstall', auth: {}, isEntityTool: true },
+        { pluginKey: toolId, action: 'uninstall', auth: {}, isEntityTool: true },
         {
           onError: (error: unknown) => {
             showToast({ message: `Error while deleting the tool: ${error}`, status: 'error' });
           },
           onSuccess: () => {
-            const tools = getValues('tools')?.filter((fn: string) => !toolsToRemove.includes(fn));
-            setValue('tools', tools);
+            const remainingToolIds = getValues('tools')?.filter(
+              (toolId: string) => !toolIdsToRemove.includes(toolId),
+            );
+            setValue('tools', remainingToolIds);
             showToast({ message: 'Tool deleted successfully', status: 'success' });
           },
         },
@@ -204,32 +206,38 @@ export default function AgentTool({
                           isHovering || isFocused ? '-translate-x-8' : 'translate-x-0',
                         )}
                       >
-                        <Checkbox
-                          id={`select-all-${currentTool.tool_id}`}
-                          checked={selectedTools.length === currentTool.tools?.length}
-                          onCheckedChange={(checked) => {
-                            if (currentTool.tools) {
-                              const newSelectedTools = checked
-                                ? currentTool.tools.map((t) => t.tool_id)
-                                : [];
-                              updateFormTools(newSelectedTools);
-                            }
-                          }}
-                          className={cn(
-                            'h-4 w-4 rounded border border-gray-300 transition-all duration-200 hover:border-gray-400 dark:border-gray-600 dark:hover:border-gray-500',
-                            isExpanded ? 'opacity-100' : 'opacity-0',
-                          )}
+                        <div
+                          data-checkbox-container
                           onClick={(e) => e.stopPropagation()}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter' || e.key === ' ') {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              const checkbox = e.currentTarget as HTMLButtonElement;
-                              checkbox.click();
-                            }
-                          }}
-                          tabIndex={isExpanded ? 0 : -1}
-                        />
+                          className="mt-1"
+                        >
+                          <Checkbox
+                            id={`select-all-${currentTool.tool_id}`}
+                            checked={selectedTools.length === currentTool.tools?.length}
+                            onCheckedChange={(checked) => {
+                              if (currentTool.tools) {
+                                const newSelectedTools = checked
+                                  ? currentTool.tools.map((t) => t.tool_id)
+                                  : [];
+                                updateFormTools(newSelectedTools);
+                              }
+                            }}
+                            className={cn(
+                              'h-4 w-4 rounded border border-gray-300 transition-all duration-200 hover:border-gray-400 dark:border-gray-600 dark:hover:border-gray-500',
+                              isExpanded ? 'opacity-100' : 'opacity-0',
+                            )}
+                            onClick={(e) => e.stopPropagation()}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                const checkbox = e.currentTarget as HTMLButtonElement;
+                                checkbox.click();
+                              }
+                            }}
+                            tabIndex={isExpanded ? 0 : -1}
+                          />
+                        </div>
 
                         <div
                           className={cn(
@@ -327,7 +335,9 @@ export default function AgentTool({
                               aria-label={localize('com_ui_tool_info')}
                             >
                               <CircleHelpIcon className="h-4 w-4" />
-                              <VisuallyHidden>{localize('com_ui_tool_info')}</VisuallyHidden>
+                              <Ariakit.VisuallyHidden>
+                                {localize('com_ui_tool_info')}
+                              </Ariakit.VisuallyHidden>
                             </Ariakit.Button>
                           }
                         />
@@ -337,7 +347,9 @@ export default function AgentTool({
                           aria-expanded={hoveredToolId === subTool.tool_id}
                           aria-controls={`tool-description-${subTool.tool_id}`}
                         >
-                          <VisuallyHidden>{localize('com_ui_tool_more_info')}</VisuallyHidden>
+                          <Ariakit.VisuallyHidden>
+                            {localize('com_ui_tool_more_info')}
+                          </Ariakit.VisuallyHidden>
                           <ChevronDown className="h-4 w-4" />
                         </Ariakit.HovercardDisclosure>
                       </div>

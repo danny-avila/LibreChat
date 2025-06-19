@@ -22,9 +22,7 @@ function ToolSelectDialog({
   isOpen,
   endpoint,
   setIsOpen,
-  toolsFormKey,
 }: TPluginStoreDialogProps & {
-  toolsFormKey: string;
   endpoint: AssistantsEndpoint | EModelEndpoint.agents;
 }) {
   const localize = useLocalize();
@@ -69,22 +67,23 @@ function ToolSelectDialog({
     }, 5000);
   };
 
+  const toolsFormKey = 'tools';
   const handleInstall = (pluginAction: TPluginAction) => {
     const addFunction = () => {
-      const fns = getValues(toolsFormKey)?.slice();
+      const installedToolIds: string[] = getValues(toolsFormKey) || [];
       // Add the parent
-      fns.push(pluginAction.pluginKey);
+      installedToolIds.push(pluginAction.pluginKey);
 
       // If this tool is a group, add subtools too
       const groupObj = groupedTools[pluginAction.pluginKey];
       if (groupObj?.tools && groupObj.tools.length > 0) {
         for (const sub of groupObj.tools) {
-          if (!fns.includes(sub.tool_id)) {
-            fns.push(sub.tool_id);
+          if (!installedToolIds.includes(sub.tool_id)) {
+            installedToolIds.push(sub.tool_id);
           }
         }
       }
-      setValue(toolsFormKey, Array.from(new Set(fns))); // no duplicates just in case
+      setValue(toolsFormKey, Array.from(new Set(installedToolIds))); // no duplicates just in case
     };
 
     if (!pluginAction.auth) {
@@ -101,20 +100,21 @@ function ToolSelectDialog({
     setShowPluginAuthForm(false);
   };
 
-  const onRemoveTool = (tool) => {
-    const groupObj = groupedTools[tool];
-    let toolIDsToRemove = [tool];
+  const onRemoveTool = (toolId: string) => {
+    const groupObj = groupedTools[toolId];
+    const toolIdsToRemove = [toolId];
     if (groupObj?.tools && groupObj.tools.length > 0) {
-      toolIDsToRemove = toolIDsToRemove.concat(groupObj.tools.map((sub) => sub.tool_id));
+      toolIdsToRemove.push(...groupObj.tools.map((sub) => sub.tool_id));
     }
     // Remove these from the formTools
     updateUserPlugins.mutate(
-      { pluginKey: tool, action: 'uninstall', auth: {}, isEntityTool: true },
+      { pluginKey: toolId, action: 'uninstall', auth: {}, isEntityTool: true },
       {
         onError: (error: unknown) => handleInstallError(error as TError),
         onSuccess: () => {
-          const fns = getValues(toolsFormKey).filter((fn) => !toolIDsToRemove.includes(fn));
-          setValue(toolsFormKey, fns);
+          const remainingToolIds =
+            getValues(toolsFormKey)?.filter((toolId) => !toolIdsToRemove.includes(toolId)) || [];
+          setValue(toolsFormKey, remainingToolIds);
         },
       },
     );
@@ -261,7 +261,7 @@ function ToolSelectDialog({
                       <ToolItem
                         key={index}
                         tool={tool}
-                        isInstalled={getValues(toolsFormKey).includes(tool.tool_id)}
+                        isInstalled={getValues(toolsFormKey)?.includes(tool.tool_id) || false}
                         onAddTool={() => onAddTool(tool.tool_id)}
                         onRemoveTool={() => onRemoveTool(tool.tool_id)}
                       />

@@ -1,5 +1,5 @@
-import { AgentToolType } from 'librechat-data-provider';
 import { XCircle, PlusCircleIcon, Wrench } from 'lucide-react';
+import { AgentToolType } from 'librechat-data-provider';
 import { useLocalize } from '~/hooks';
 
 type ToolItemProps = {
@@ -22,8 +22,6 @@ function ToolItem({ tool, onAddTool, onRemoveTool, isInstalled = false }: ToolIt
   const name = tool.metadata?.name || tool.tool_id;
   const description = tool.metadata?.description || '';
   const icon = tool.metadata?.icon;
-  console.log(tool);
-  console.log(icon);
 
   return (
     <div className="flex flex-col gap-4 rounded border border-border-medium bg-transparent p-6">
