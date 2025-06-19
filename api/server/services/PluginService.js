@@ -1,6 +1,11 @@
 const { logger } = require('@librechat/data-schemas');
 const { encrypt, decrypt } = require('@librechat/api');
-const { PluginAuth } = require('~/db/models');
+const {
+  findPluginAuthsByKeys,
+  findOnePluginAuth,
+  updatePluginAuth,
+  deletePluginAuth,
+} = require('~/models');
 
 /**
  * Asynchronously retrieves and decrypts the authentication value for a user's plugin, based on a specified authentication field.
@@ -25,7 +30,7 @@ const { PluginAuth } = require('~/db/models');
  */
 const getUserPluginAuthValue = async (userId, authField, throwError = true) => {
   try {
-    const pluginAuth = await PluginAuth.findOne({ userId, authField }).lean();
+    const pluginAuth = await findOnePluginAuth({ userId, authField });
     if (!pluginAuth) {
       throw new Error(`No plugin auth ${authField} found for user ${userId}`);
     }
@@ -68,10 +73,7 @@ const getUsersPluginsAuthValuesMap = async (userId, pluginKeys, throwError = tru
       return {};
     }
 
-    const pluginAuths = await PluginAuth.find({
-      userId,
-      pluginKey: { $in: pluginKeys },
-    }).lean();
+    const pluginAuths = await findPluginAuthsByKeys({ userId, pluginKeys });
 
     const pluginsAuthMap = {};
     for (const key of pluginKeys) {
@@ -162,23 +164,12 @@ const getUsersPluginsAuthValuesMap = async (userId, pluginKeys, throwError = tru
 const updateUserPluginAuth = async (userId, authField, pluginKey, value) => {
   try {
     const encryptedValue = await encrypt(value);
-    const pluginAuth = await PluginAuth.findOne({ userId, pluginKey, authField }).lean();
-    if (pluginAuth) {
-      return await PluginAuth.findOneAndUpdate(
-        { userId, pluginKey, authField },
-        { $set: { value: encryptedValue } },
-        { new: true, upsert: true },
-      ).lean();
-    } else {
-      const newPluginAuth = await new PluginAuth({
-        userId,
-        authField,
-        value: encryptedValue,
-        pluginKey,
-      });
-      await newPluginAuth.save();
-      return newPluginAuth.toObject();
-    }
+    return await updatePluginAuth({
+      userId,
+      authField,
+      pluginKey,
+      value: encryptedValue,
+    });
   } catch (err) {
     logger.error('[updateUserPluginAuth]', err);
     return err;
@@ -195,27 +186,18 @@ const updateUserPluginAuth = async (userId, authField, pluginKey, value) => {
  * @throws {Error}
  */
 const deleteUserPluginAuth = async (userId, authField, all = false, pluginKey) => {
-  if (all) {
-    try {
-      const filter = { userId };
-      if (pluginKey) {
-        filter.pluginKey = pluginKey;
-      }
-      const response = await PluginAuth.deleteMany(filter);
-      return response;
-    } catch (err) {
-      logger.error(
-        `[deleteUserPluginAuth] Error deleting all auths for userId: ${userId}${pluginKey ? ` and pluginKey: ${pluginKey}` : ''}`,
-        err,
-      );
-      return err;
-    }
-  }
-
   try {
-    return await PluginAuth.deleteOne({ userId, authField });
+    return await deletePluginAuth({
+      userId,
+      authField,
+      pluginKey,
+      all,
+    });
   } catch (err) {
-    logger.error('[deleteUserPluginAuth]', err);
+    logger.error(
+      `[deleteUserPluginAuth] Error deleting ${all ? 'all' : 'single'} auth(s) for userId: ${userId}${pluginKey ? ` and pluginKey: ${pluginKey}` : ''}`,
+      err,
+    );
     return err;
   }
 };
