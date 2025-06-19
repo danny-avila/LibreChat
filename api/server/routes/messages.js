@@ -1,6 +1,7 @@
 const express = require('express');
 const { logger } = require('@librechat/data-schemas');
 const { ContentTypes } = require('librechat-data-provider');
+const { isEnabled } = require('~/server/utils');
 const {
   saveConvo,
   saveMessage,
@@ -261,6 +262,14 @@ router.put('/:conversationId/:messageId/feedback', validateMessageReq, async (re
   try {
     const { conversationId, messageId } = req.params;
     const { feedback } = req.body;
+
+    // Check if message feedback is enabled (defaults to true if not set)
+    const messageFeedbackEnabled =
+      process.env.ENABLE_MESSAGE_FEEDBACK === undefined ||
+      isEnabled(process.env.ENABLE_MESSAGE_FEEDBACK);
+    if (!messageFeedbackEnabled) {
+      return res.status(400).json({ error: 'Message feedback feature is disabled' });
+    }
 
     const updatedMessage = await updateMessage(
       req,

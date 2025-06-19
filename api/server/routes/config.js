@@ -20,6 +20,10 @@ const publicSharedLinksEnabled =
   (process.env.ALLOW_SHARED_LINKS_PUBLIC === undefined ||
     isEnabled(process.env.ALLOW_SHARED_LINKS_PUBLIC));
 
+const messageFeedbackEnabled =
+  process.env.ENABLE_MESSAGE_FEEDBACK === undefined ||
+  isEnabled(process.env.ENABLE_MESSAGE_FEEDBACK);
+
 router.get('/', async function (req, res) {
   const cache = getLogStores(CacheKeys.CONFIG_STORE);
 
@@ -93,6 +97,7 @@ router.get('/', async function (req, res) {
       balance: req.app.locals.balance,
       sharedLinksEnabled,
       publicSharedLinksEnabled,
+      messageFeedbackEnabled,
       analyticsGtmId: process.env.ANALYTICS_GTM_ID,
       instanceProjectId: instanceProject._id.toString(),
       bundlerURL: process.env.SANDPACK_BUNDLER_URL,
