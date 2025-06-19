@@ -182,33 +182,41 @@ const getAvailableTools = async (req, res) => {
         plugin.toolkit === true &&
         Object.keys(toolDefinitions).some((key) => getToolkitKey(key) === plugin.pluginKey);
 
-      if (isToolDefined || isToolkit) {
-        const toolToAdd = { ...plugin };
-        // For MCP tools, populate authConfig from customUserVars
-        if (plugin.pluginKey.includes(Constants.mcp_delimiter)) {
-          const parts = plugin.pluginKey.split(Constants.mcp_delimiter);
-          const serverName = parts[parts.length - 1];
-          const serverConfig = customConfig?.mcpServers?.[serverName];
-
-          if (serverConfig?.customUserVars) {
-            const customVarKeys = Object.keys(serverConfig.customUserVars);
-            if (customVarKeys.length > 0) {
-              toolToAdd.authConfig = Object.entries(serverConfig.customUserVars).map(
-                ([key, value]) => ({
-                  authField: key,
-                  label: value.title || key,
-                  description: value.description || '',
-                }),
-              );
-              toolToAdd.authenticated = false;
-            } else {
-              toolToAdd.authConfig = [];
-              toolToAdd.authenticated = true;
-            }
-          }
-        }
-        toolsOutput.push(toolToAdd);
+      if (!isToolDefined && !isToolkit) {
+        continue;
       }
+
+      const toolToAdd = { ...plugin };
+
+      if (!plugin.pluginKey.includes(Constants.mcp_delimiter)) {
+        toolsOutput.push(toolToAdd);
+        continue;
+      }
+
+      const parts = plugin.pluginKey.split(Constants.mcp_delimiter);
+      const serverName = parts[parts.length - 1];
+      const serverConfig = customConfig?.mcpServers?.[serverName];
+
+      if (!serverConfig?.customUserVars) {
+        toolsOutput.push(toolToAdd);
+        continue;
+      }
+
+      const customVarKeys = Object.keys(serverConfig.customUserVars);
+
+      if (customVarKeys.length === 0) {
+        toolToAdd.authConfig = [];
+        toolToAdd.authenticated = true;
+      } else {
+        toolToAdd.authConfig = Object.entries(serverConfig.customUserVars).map(([key, value]) => ({
+          authField: key,
+          label: value.title || key,
+          description: value.description || '',
+        }));
+        toolToAdd.authenticated = false;
+      }
+
+      toolsOutput.push(toolToAdd);
     }
 
     const finalTools = filterUniquePlugins(toolsOutput);
