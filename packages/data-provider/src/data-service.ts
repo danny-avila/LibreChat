@@ -151,7 +151,11 @@ export const updateUserPlugins = (payload: t.TUpdateUserPlugins) => {
 
 /* Config */
 
-export const getStartupConfig = (): Promise<config.TStartupConfig> => {
+export const getStartupConfig = (): Promise<
+  config.TStartupConfig & {
+    mcpCustomUserVars?: Record<string, { title: string; description: string }>;
+  }
+> => {
   return request.get(endpoints.config());
 };
 
