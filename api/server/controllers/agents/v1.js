@@ -400,6 +400,16 @@ const deleteAgentHandler = async (req, res) => {
 const getListAgentsHandler = async (req, res) => {
   try {
     const userId = req.user.id;
+    if (!req.query.requiredPermission) {
+      req.query.requiredPermission = PermissionBits.VIEW;
+    } else if (typeof req.query.requiredPermission === 'string') {
+      req.query.requiredPermission = parseInt(req.query.requiredPermission, 10);
+      if (isNaN(req.query.requiredPermission)) {
+        req.query.requiredPermission = PermissionBits.VIEW;
+      }
+    } else if (typeof req.query.requiredPermission !== 'number') {
+      req.query.requiredPermission = PermissionBits.VIEW;
+    }
     const requiredPermission = req.query.requiredPermission || PermissionBits.VIEW;
     // Get agent IDs the user has VIEW access to via ACL
     const accessibleIds = await findAccessibleResources({
