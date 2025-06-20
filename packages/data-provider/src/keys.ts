@@ -48,6 +48,10 @@ export enum QueryKeys {
   banner = 'banner',
   /* Memories */
   memories = 'memories',
+  principalSearch = 'principalSearch',
+  accessRoles = 'accessRoles',
+  resourcePermissions = 'resourcePermissions',
+  effectivePermissions = 'effectivePermissions',
 }
 
 export enum MutationKeys {
