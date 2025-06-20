@@ -9,6 +9,7 @@ export interface ProcessedAgentCategory {
   label: string; // Translated label
   value: string; // Category value
   className?: string;
+  icon?: string;
 }
 
 /**
