@@ -69,7 +69,7 @@
     "registry": "https://registry.npmjs.org/"
   },
   "peerDependencies": {
-    "@librechat/agents": "^2.4.37",
+    "@librechat/agents": "^2.4.41",
     "@librechat/data-schemas": "*",
     "@modelcontextprotocol/sdk": "^1.12.3",
     "axios": "^1.8.2",
@@ -80,6 +80,7 @@
     "librechat-data-provider": "*",
     "node-fetch": "2.7.0",
     "tiktoken": "^1.0.15",
+    "undici": "^7.10.0",
     "zod": "^3.22.4"
   }
 }

@@ -190,10 +190,11 @@ class AnthropicClient extends BaseClient {
         reverseProxyUrl: this.options.reverseProxyUrl,
       }),
       apiKey: this.apiKey,
+      fetchOptions: {},
     };
 
     if (this.options.proxy) {
-      options.httpAgent = new HttpsProxyAgent(this.options.proxy);
+      options.fetchOptions.agent = new HttpsProxyAgent(this.options.proxy);
     }
 
     if (this.options.reverseProxyUrl) {
