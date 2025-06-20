@@ -27,10 +27,12 @@ const edit = require('./edit');
 const keys = require('./keys');
 const user = require('./user');
 const ask = require('./ask');
+const accessPermissions = require('./accessPermissions');
 const mcp = require('./mcp');
 
 module.exports = {
   ask,
+  mcp,
   edit,
   auth,
   keys,
@@ -59,5 +61,5 @@ module.exports = {
   assistants,
   categories,
   staticRoute,
-  mcp,
+  accessPermissions,
 };

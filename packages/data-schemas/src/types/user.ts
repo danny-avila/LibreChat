@@ -35,6 +35,8 @@ export interface IUser extends Document {
   };
   createdAt?: Date;
   updatedAt?: Date;
+  /** Field for external source identification (for consistency with TPrincipal schema) */
+  idOnTheSource?: string;
 }
 
 export interface BalanceConfig {
