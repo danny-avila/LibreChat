@@ -557,6 +557,9 @@ export interface SwitcherProps {
   endpointKeyProvided: boolean;
   isCollapsed: boolean;
 }
+export interface CustomInterfaceConfig {
+  logoPath?: string;
+}
 export type TLoginLayoutContext = {
   startupConfig: t.TStartupConfig | null;
   startupConfigError: unknown;
