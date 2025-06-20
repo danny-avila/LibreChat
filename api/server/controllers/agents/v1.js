@@ -22,12 +22,12 @@ const {
   hasPublicPermission,
 } = require('~/server/services/PermissionService');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
-const { updateAgentProjects, revertAgentVersion } = require('~/models/Agent');
 const { resizeAvatar } = require('~/server/services/Files/images/avatar');
 const { refreshS3Url } = require('~/server/services/Files/S3/crud');
 const { filterFile } = require('~/server/services/Files/process');
 const { updateAction, getActions } = require('~/models/Action');
 const { getCachedTools } = require('~/server/services/Config');
+const { revertAgentVersion } = require('~/models/Agent');
 const { deleteFileByFilter } = require('~/models/File');
 
 const systemTools = {
@@ -193,7 +193,7 @@ const getAgentHandler = async (req, res, expandProperties = false) => {
 const updateAgentHandler = async (req, res) => {
   try {
     const id = req.params.id;
-    const { projectIds, removeProjectIds, _id, ...updateData } = req.body;
+    const { _id, ...updateData } = req.body;
     const existingAgent = await getAgent({ id });
 
     if (!existingAgent) {
@@ -204,18 +204,8 @@ const updateAgentHandler = async (req, res) => {
       Object.keys(updateData).length > 0
         ? await updateAgent({ id }, updateData, {
             updatingUserId: req.user.id,
-            skipVersioning: isProjectUpdate,
           })
         : existingAgent;
-
-    if (isProjectUpdate) {
-      updatedAgent = await updateAgentProjects({
-        user: req.user,
-        agentId: id,
-        projectIds,
-        removeProjectIds,
-      });
-    }
 
     if (updatedAgent.author) {
       updatedAgent.author = updatedAgent.author.toString();
@@ -417,7 +407,7 @@ const getListAgentsHandler = async (req, res) => {
     });
     if (data?.data?.length) {
       data.data = data.data.map((agent) => {
-        if (publiclyAccessibleIds.some(id => id.equals(agent._id))) {
+        if (publiclyAccessibleIds.some((id) => id.equals(agent._id))) {
           agent.isPublic = true;
         }
         return agent;
