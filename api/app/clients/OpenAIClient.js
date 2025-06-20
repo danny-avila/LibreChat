@@ -1159,6 +1159,7 @@ ${convo}
       logger.debug('[OpenAIClient] chatCompletion', { baseURL, modelOptions });
       const opts = {
         baseURL,
+        fetchOptions: {},
       };
 
       if (this.useOpenRouter) {
@@ -1177,7 +1178,7 @@ ${convo}
       }
 
       if (this.options.proxy) {
-        opts.httpAgent = new HttpsProxyAgent(this.options.proxy);
+        opts.fetchOptions.agent = new HttpsProxyAgent(this.options.proxy);
       }
 
       /** @type {TAzureConfig | undefined} */
@@ -1395,7 +1396,7 @@ ${convo}
           ...modelOptions,
           stream: true,
         };
-        const stream = await openai.beta.chat.completions
+        const stream = await openai.chat.completions
           .stream(params)
           .on('abort', () => {
             /* Do nothing here */
