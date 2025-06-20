@@ -57,7 +57,7 @@ const getCustomEndpointConfig = async (endpoint) => {
 async function createGetMCPAuthMap() {
   const customConfig = await getCustomConfig();
   const mcpServers = customConfig?.mcpServers;
-  const hasCustomUserVars = Object.values(mcpServers).some((server) => server.customUserVars);
+  const hasCustomUserVars = Object.values(mcpServers ?? {}).some((server) => server.customUserVars);
   if (!hasCustomUserVars) {
     return;
   }

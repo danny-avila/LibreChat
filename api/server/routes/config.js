@@ -29,8 +29,6 @@ router.get('/', async function (req, res) {
     return;
   }
 
-  const config = await getCustomConfig();
-
   const isBirthday = () => {
     const today = new Date();
     return today.getMonth() === 1 && today.getDate() === 11;
@@ -102,7 +100,8 @@ router.get('/', async function (req, res) {
     };
 
     payload.mcpServers = {};
-    if (config.mcpServers) {
+    const config = await getCustomConfig();
+    if (config?.mcpServers != null) {
       for (const serverName in config.mcpServers) {
         const serverConfig = config.mcpServers[serverName];
         payload.mcpServers[serverName] = {
