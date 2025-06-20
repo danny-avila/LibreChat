@@ -41,6 +41,7 @@ async function loadDefaultInterface(config, configDefaults, roleName = SystemRol
     sidePanel: interfaceConfig?.sidePanel ?? defaults.sidePanel,
     privacyPolicy: interfaceConfig?.privacyPolicy ?? defaults.privacyPolicy,
     termsOfService: interfaceConfig?.termsOfService ?? defaults.termsOfService,
+    mcpServers: interfaceConfig?.mcpServers ?? defaults.mcpServers,
     bookmarks: interfaceConfig?.bookmarks ?? defaults.bookmarks,
     memories: shouldDisableMemories ? false : (interfaceConfig?.memories ?? defaults.memories),
     prompts: interfaceConfig?.prompts ?? defaults.prompts,

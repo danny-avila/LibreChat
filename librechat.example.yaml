@@ -13,6 +13,9 @@ cache: true
 # Custom interface configuration
 interface:
   customWelcome: "Welcome to LibreChat! Enjoy your experience."
+  # MCP Servers UI configuration
+  mcpServers:
+    placeholder: 'MCP Servers'
   # Privacy policy settings
   privacyPolicy:
     externalUrl: 'https://librechat.ai/privacy-policy'

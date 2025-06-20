@@ -217,7 +217,8 @@ function MCPSelect({ conversationId }: { conversationId?: string | null }) {
     return null;
   }
 
-  const placeholderText = startupConfig?.mcpPlaceholder || localize('com_ui_mcp_servers');
+  const placeholderText =
+    startupConfig?.interface?.mcpServers?.placeholder || localize('com_ui_mcp_servers');
   return (
     <>
       <MultiSelect
