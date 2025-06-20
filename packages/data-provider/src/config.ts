@@ -492,6 +492,11 @@ export const intefaceSchema = z
       .optional(),
     termsOfService: termsOfServiceSchema.optional(),
     customWelcome: z.string().optional(),
+    mcpServers: z
+      .object({
+        placeholder: z.string().optional(),
+      })
+      .optional(),
     endpointsMenu: z.boolean().optional(),
     modelSelect: z.boolean().optional(),
     parameters: z.boolean().optional(),
