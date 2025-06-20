@@ -1395,7 +1395,7 @@ ${convo}
           ...modelOptions,
           stream: true,
         };
-        const stream = await openai.beta.chat.completions
+        const stream = await openai.chat.completions
           .stream(params)
           .on('abort', () => {
             /* Do nothing here */
