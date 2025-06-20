@@ -188,7 +188,10 @@ const getUserOwnedEntraGroups = async (accessToken, sub) => {
   try {
     const graphClient = await createGraphClient(accessToken, sub);
 
-    const groupsResponse = await graphClient.api('/me/ownedObjects/microsoft.graph.group').select('id').get();
+    const groupsResponse = await graphClient
+      .api('/me/ownedObjects/microsoft.graph.group')
+      .select('id')
+      .get();
 
     return (groupsResponse.value || []).map((group) => group.id);
   } catch (error) {

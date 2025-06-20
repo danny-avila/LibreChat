@@ -41,8 +41,8 @@ export default function GrantAccessDialog({
 
   const {
     data: permissionsData,
-    isLoading: isLoadingPermissions,
-    error: permissionsError,
+    // isLoading: isLoadingPermissions,
+    // error: permissionsError,
   } = useGetResourcePermissionsQuery(resourceType, agentDbId!, {
     enabled: !!agentDbId,
   });

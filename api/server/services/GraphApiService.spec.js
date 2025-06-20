@@ -60,7 +60,7 @@ describe('GraphApiService', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     await mongoose.connection.dropDatabase();
-    
+
     // Set up environment variable for People.Read scope
     process.env.OPENID_GRAPH_SCOPES = 'User.Read,People.Read,Group.Read.All';
 

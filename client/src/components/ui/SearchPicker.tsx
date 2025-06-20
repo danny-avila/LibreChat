@@ -6,7 +6,6 @@ import { Search, X } from 'lucide-react';
 import { cn } from '~/utils';
 import { Spinner } from '~/components/svg';
 import { Skeleton } from '~/components/ui';
-import { useLocation } from 'react-router-dom';
 import { useLocalize } from '~/hooks';
 
 type SearchPickerProps<TOption extends { key: string }> = {
@@ -31,7 +30,6 @@ export function SearchPicker<TOption extends { key: string; value: string }>({
   onQueryChange,
   query,
   label,
-  inputClassName,
   isSmallScreen = false,
   placeholder,
   resetValueOnHide = false,
@@ -39,8 +37,7 @@ export function SearchPicker<TOption extends { key: string; value: string }>({
   minQueryLengthForNoResults = 2,
 }: SearchPickerProps<TOption>) {
   const localize = useLocalize();
-  const location = useLocation();
-  const [open, setOpen] = React.useState(false);
+  const [_open, setOpen] = React.useState(false);
   const inputRef = React.useRef<HTMLInputElement>(null);
   const combobox = Ariakit.useComboboxStore({
     resetValueOnHide,
@@ -96,7 +93,7 @@ export function SearchPicker<TOption extends { key: string; value: string }>({
             value={query}
             // autoSelect
             placeholder={placeholder || localize('com_ui_select_options')}
-            className="m-0 mr-0 w-full rounded-md border-none bg-surface-secondary bg-transparent p-0 py-2 pl-7 pl-9 pr-3 text-sm leading-tight text-text-primary placeholder-text-secondary placeholder-opacity-100 focus:outline-none focus-visible:outline-none group-focus-within:placeholder-text-primary group-hover:placeholder-text-primary"
+            className="m-0 mr-0 w-full rounded-md border-none bg-transparent p-0 py-2 pl-9 pr-3 text-sm leading-tight text-text-primary placeholder-text-secondary placeholder-opacity-100 focus:outline-none focus-visible:outline-none group-focus-within:placeholder-text-primary group-hover:placeholder-text-primary"
           />
           <button
             type="button"

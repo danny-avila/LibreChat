@@ -484,7 +484,7 @@ const hasPublicPermission = async ({ resourceType, resourceId, requiredPermissio
 
     // Use public principal to check permissions
     const publicPrincipal = [{ principalType: 'public' }];
-    
+
     const entries = await findEntriesByPrincipalsAndResource(
       publicPrincipal,
       resourceType,
@@ -492,7 +492,7 @@ const hasPublicPermission = async ({ resourceType, resourceId, requiredPermissio
     );
 
     // Check if any entry has the required permission bits
-    return entries.some(entry => (entry.permBits & requiredPermissions) === requiredPermissions);
+    return entries.some((entry) => (entry.permBits & requiredPermissions) === requiredPermissions);
   } catch (error) {
     logger.error(`[PermissionService.hasPublicPermission] Error: ${error.message}`);
     // Re-throw validation errors

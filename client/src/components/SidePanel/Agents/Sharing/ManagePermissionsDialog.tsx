@@ -8,7 +8,6 @@ import {
   OGDialogClose,
   OGDialogContent,
   OGDialogTrigger,
-  Badge,
 } from '~/components/ui';
 import { cn, removeFocusOutlines } from '~/utils';
 import { useToastContext } from '~/Providers';
@@ -43,7 +42,10 @@ export default function ManagePermissionsDialog({
   } = useGetResourcePermissionsQuery(resourceType, agentDbId, {
     enabled: !!agentDbId,
   });
-  const { data: accessRoles, isLoading: rolesLoading } = useGetAccessRolesQuery(resourceType);
+  const {
+    data: accessRoles,
+    // isLoading,
+  } = useGetAccessRolesQuery(resourceType);
 
   const updatePermissionsMutation = useUpdateResourcePermissionsMutation();
 
@@ -165,10 +167,30 @@ export default function ManagePermissionsDialog({
   const totalShares = managedShares.length + (managedIsPublic ? 1 : 0);
   const originalTotalShares = currentShares.length + (isPublic ? 1 : 0);
 
-  // Check if there's at least one owner (user, group, or public with owner role)
+  /** Check if there's at least one owner (user, group, or public with owner role) */
   const hasAtLeastOneOwner =
     managedShares.some((share) => share.accessRoleId === ACCESS_ROLE_IDS.AGENT_OWNER) ||
     (managedIsPublic && managedPublicRole === ACCESS_ROLE_IDS.AGENT_OWNER);
+
+  let peopleLabel = localize('com_ui_people');
+  if (managedShares.length === 1) {
+    peopleLabel = localize('com_ui_person');
+  }
+
+  let buttonAriaLabel = localize('com_ui_manage_permissions_for') + ' agent';
+  if (agentName != null && agentName !== '') {
+    buttonAriaLabel = localize('com_ui_manage_permissions_for') + ` "${agentName}"`;
+  }
+
+  let dialogTitle = localize('com_ui_manage_permissions_for') + ' Agent';
+  if (agentName != null && agentName !== '') {
+    dialogTitle = localize('com_ui_manage_permissions_for') + ` "${agentName}"`;
+  }
+
+  let publicSuffix = '';
+  if (managedIsPublic) {
+    publicSuffix = localize('com_ui_and_public');
+  }
 
   return (
     <OGDialog open={isModalOpen} onOpenChange={setIsModalOpen}>
@@ -178,11 +200,7 @@ export default function ManagePermissionsDialog({
             'btn btn-neutral border-token-border-light relative h-9 rounded-lg font-medium',
             removeFocusOutlines,
           )}
-          aria-label={
-            agentName != null && agentName !== ''
-              ? localize('com_ui_manage_permissions_for') + ` "${agentName}"`
-              : localize('com_ui_manage_permissions_for') + ' agent'
-          }
+          aria-label={buttonAriaLabel}
           type="button"
         >
           <div className="flex items-center justify-center gap-2 text-blue-500">
@@ -197,9 +215,7 @@ export default function ManagePermissionsDialog({
         <OGDialogTitle>
           <div className="flex items-center gap-2">
             <Shield className="h-5 w-5 text-blue-500" />
-            {agentName != null && agentName !== ''
-              ? localize('com_ui_manage_permissions_for') + ` "${agentName}"`
-              : localize('com_ui_manage_permissions_for') + ' Agent'}
+            {dialogTitle}
           </div>
         </OGDialogTitle>
 
@@ -211,16 +227,16 @@ export default function ManagePermissionsDialog({
                   {localize('com_ui_current_access')}
                 </h3>
                 <p className="text-xs text-text-secondary">
-                  {totalShares === 0
-                    ? localize('com_ui_no_users_groups_access')
-                    : localize('com_ui_shared_with_count', {
-                        0: managedShares.length,
-                        1:
-                          managedShares.length === 1
-                            ? localize('com_ui_person')
-                            : localize('com_ui_people'),
-                        2: managedIsPublic ? localize('com_ui_and_public') : '',
-                      })}
+                  {(() => {
+                    if (totalShares === 0) {
+                      return localize('com_ui_no_users_groups_access');
+                    }
+                    return localize('com_ui_shared_with_count', {
+                      0: managedShares.length,
+                      1: peopleLabel,
+                      2: publicSuffix,
+                    });
+                  })()}
                 </p>
               </div>
               {(managedShares.length > 0 || managedIsPublic) && (
@@ -237,34 +253,44 @@ export default function ManagePermissionsDialog({
             </div>
           </div>
 
-          {isLoadingPermissions ? (
-            <div className="flex items-center justify-center p-8">
-              <Loader className="h-6 w-6 animate-spin" />
-              <span className="ml-2 text-sm text-text-secondary">
-                {localize('com_ui_loading_permissions')}
-              </span>
-            </div>
-          ) : managedShares.length > 0 ? (
-            <div>
-              <h3 className="mb-3 flex items-center gap-2 text-sm font-medium text-text-primary">
-                <UserCheck className="h-4 w-4" />
-                {localize('com_ui_user_group_permissions')} ({managedShares.length})
-              </h3>
-              <SelectedPrincipalsList
-                principles={managedShares}
-                onRemoveHandler={handleRemoveShare}
-                availableRoles={accessRoles || []}
-                onRoleChange={(id, newRole) => handleRoleChange(id, newRole)}
-              />
-            </div>
-          ) : (
-            <div className="rounded-lg border-2 border-dashed border-border-light p-8 text-center">
-              <Users className="mx-auto h-8 w-8 text-text-secondary" />
-              <p className="mt-2 text-sm text-text-secondary">
-                {localize('com_ui_no_individual_access')}
-              </p>
-            </div>
-          )}
+          {(() => {
+            if (isLoadingPermissions) {
+              return (
+                <div className="flex items-center justify-center p-8">
+                  <Loader className="h-6 w-6 animate-spin" />
+                  <span className="ml-2 text-sm text-text-secondary">
+                    {localize('com_ui_loading_permissions')}
+                  </span>
+                </div>
+              );
+            }
+
+            if (managedShares.length > 0) {
+              return (
+                <div>
+                  <h3 className="mb-3 flex items-center gap-2 text-sm font-medium text-text-primary">
+                    <UserCheck className="h-4 w-4" />
+                    {localize('com_ui_user_group_permissions')} ({managedShares.length})
+                  </h3>
+                  <SelectedPrincipalsList
+                    principles={managedShares}
+                    onRemoveHandler={handleRemoveShare}
+                    availableRoles={accessRoles || []}
+                    onRoleChange={(id, newRole) => handleRoleChange(id, newRole)}
+                  />
+                </div>
+              );
+            }
+
+            return (
+              <div className="rounded-lg border-2 border-dashed border-border-light p-8 text-center">
+                <Users className="mx-auto h-8 w-8 text-text-secondary" />
+                <p className="mt-2 text-sm text-text-secondary">
+                  {localize('com_ui_no_individual_access')}
+                </p>
+              </div>
+            );
+          })()}
 
           <div>
             <h3 className="mb-3 text-sm font-medium text-text-primary">
