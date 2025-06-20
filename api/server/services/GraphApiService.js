@@ -178,7 +178,28 @@ const getUserEntraGroups = async (accessToken, sub) => {
 };
 
 /**
+ * Get current user's owned Entra ID groups from Microsoft Graph
+ * Uses /me/ownedObjects/microsoft.graph.group endpoint to get groups the user owns
+ * @param {string} accessToken - OpenID Connect access token
+ * @param {string} sub - Subject identifier
+ * @returns {Promise<Array<string>>} Array of group ID strings (GUIDs)
+ */
+const getUserOwnedEntraGroups = async (accessToken, sub) => {
+  try {
+    const graphClient = await createGraphClient(accessToken, sub);
+
+    const groupsResponse = await graphClient.api('/me/ownedObjects/microsoft.graph.group').select('id').get();
+
+    return (groupsResponse.value || []).map((group) => group.id);
+  } catch (error) {
+    logger.error('[getUserOwnedEntraGroups] Error fetching user owned groups:', error);
+    return [];
+  }
+};
+
+/**
  * Get group members from Microsoft Graph API
+ * Recursively fetches all members using pagination (@odata.nextLink)
  * @param {string} accessToken - OpenID Connect access token
  * @param {string} sub - Subject identifier
  * @param {string} groupId - Entra ID group object ID
@@ -187,17 +208,57 @@ const getUserEntraGroups = async (accessToken, sub) => {
 const getGroupMembers = async (accessToken, sub, groupId) => {
   try {
     const graphClient = await createGraphClient(accessToken, sub);
+    const allMembers = [];
+    let nextLink = `/groups/${groupId}/members`;
 
-    const membersResponse = await graphClient.api(`/groups/${groupId}/members`).select('id').get();
+    while (nextLink) {
+      const membersResponse = await graphClient.api(nextLink).select('id').top(999).get();
 
-    const members = membersResponse.value || [];
-    return members.map((member) => member.id);
+      const members = membersResponse.value || [];
+      allMembers.push(...members.map((member) => member.id));
+
+      nextLink = membersResponse['@odata.nextLink']
+        ? membersResponse['@odata.nextLink'].split('/v1.0')[1]
+        : null;
+    }
+
+    return allMembers;
   } catch (error) {
     logger.error('[getGroupMembers] Error fetching group members:', error);
     return [];
   }
 };
+/**
+ * Get group owners from Microsoft Graph API
+ * Recursively fetches all owners using pagination (@odata.nextLink)
+ * @param {string} accessToken - OpenID Connect access token
+ * @param {string} sub - Subject identifier
+ * @param {string} groupId - Entra ID group object ID
+ * @returns {Promise<Array>} Array of owner IDs (idOnTheSource values)
+ */
+const getGroupOwners = async (accessToken, sub, groupId) => {
+  try {
+    const graphClient = await createGraphClient(accessToken, sub);
+    const allOwners = [];
+    let nextLink = `/groups/${groupId}/owners`;
 
+    while (nextLink) {
+      const ownersResponse = await graphClient.api(nextLink).select('id').top(999).get();
+
+      const owners = ownersResponse.value || [];
+      allOwners.push(...owners.map((member) => member.id));
+
+      nextLink = ownersResponse['@odata.nextLink']
+        ? ownersResponse['@odata.nextLink'].split('/v1.0')[1]
+        : null;
+    }
+
+    return allOwners;
+  } catch (error) {
+    logger.error('[getGroupOwners] Error fetching group owners:', error);
+    return [];
+  }
+};
 /**
  * Search for contacts (users only) using Microsoft Graph /me/people endpoint
  * Returns mapped TPrincipalSearchResult objects for users only
@@ -450,8 +511,10 @@ const mapContactToTPrincipalSearchResult = (contact) => {
 
 module.exports = {
   getGroupMembers,
+  getGroupOwners,
   createGraphClient,
   getUserEntraGroups,
+  getUserOwnedEntraGroups,
   testGraphApiAccess,
   searchEntraIdPrincipals,
   exchangeTokenForGraphAccess,

@@ -963,5 +963,6 @@
   "com_ui_unsaved_changes": "Sie haben ungespeicherte Änderungen",
   "com_ui_share_with_everyone": "Mit allen teilen",
   "com_ui_make_agent_available_all_users": "Diesen Agenten für alle LibreChat-Benutzer verfügbar machen",
-  "com_ui_public_access_level": "Öffentliche Zugriffsebene"
+  "com_ui_public_access_level": "Öffentliche Zugriffsebene",
+  "com_ui_at_least_one_owner_required": "Mindestens ein Besitzer ist erforderlich"
 }
