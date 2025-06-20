@@ -34,7 +34,7 @@
   },
   "homepage": "https://librechat.ai",
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.37.0",
+    "@anthropic-ai/sdk": "^0.52.0",
     "@aws-sdk/client-s3": "^3.758.0",
     "@aws-sdk/s3-request-presigner": "^3.758.0",
     "@azure/identity": "^4.7.0",

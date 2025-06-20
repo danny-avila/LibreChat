@@ -1,6 +1,5 @@
 import { ProxyAgent } from 'undici';
 import { KnownEndpoints } from 'librechat-data-provider';
-import type { RequestInit } from 'undici/types';
 import type * as t from '~/types';
 import { sanitizeModelName, constructAzureURL } from '~/utils/azure';
 import { isEnabled } from '~/utils/common';
@@ -102,13 +101,11 @@ export function getOpenAIConfig(
     configOptions.defaultQuery = defaultQuery;
   }
 
-  if (!configOptions.fetchOptions) {
-    configOptions.fetchOptions = {};
-  }
-
   if (proxy) {
     const proxyAgent = new ProxyAgent(proxy);
-    (configOptions.fetchOptions as RequestInit).dispatcher = proxyAgent;
+    configOptions.fetchOptions = {
+      dispatcher: proxyAgent,
+    };
   }
 
   if (azure) {
