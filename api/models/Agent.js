@@ -21,7 +21,7 @@ const { Agent } = require('~/db/models');
  * @throws {Error} If the agent creation fails.
  */
 const createAgent = async (agentData) => {
-  const { author, ...versionData } = agentData;
+  const { ...versionData } = agentData;
   const timestamp = new Date();
   const initialAgentData = {
     ...agentData,
@@ -151,7 +151,7 @@ const isDuplicateVersion = (updateData, currentData, versions, actionsHash = nul
     'actionsHash', // Exclude actionsHash from direct comparison
   ];
 
-  const { $push, $pull, $addToSet, ...directUpdates } = updateData;
+  const { ...directUpdates } = updateData;
 
   if (Object.keys(directUpdates).length === 0 && !actionsHash) {
     return null;
@@ -246,7 +246,7 @@ const updateAgent = async (searchParameter, updateData, options = {}) => {
 
   const currentAgent = await Agent.findOne(searchParameter);
   if (currentAgent) {
-    const { __v, _id, id, versions, author, ...versionData } = currentAgent.toObject();
+    const { __v, _id, versions, ...versionData } = currentAgent.toObject();
     const { $push, $pull, $addToSet, ...directUpdates } = updateData;
 
     let actionsHash = null;
@@ -446,18 +446,18 @@ const deleteAgent = async (searchParameter) => {
  * @param {string} [params.after] - Cursor for pagination - get agents after this cursor. // base64 encoded JSON string with updatedAt and _id.
  * @returns {Promise<Object>} A promise that resolves to an object containing the agents data and pagination info.
  */
-const getListAgentsByAccess = async ({ 
-  accessibleIds = [], 
+const getListAgentsByAccess = async ({
+  accessibleIds = [],
   otherParams = {},
   limit = null,
-  after = null 
+  after = null,
 }) => {
   const isPaginated = limit !== null && limit !== undefined;
   const normalizedLimit = isPaginated ? Math.min(Math.max(1, parseInt(limit) || 20), 100) : null;
-  
+
   // Build base query combining ACL accessible agents with other filters
   const baseQuery = { ...otherParams };
-  
+
   if (accessibleIds.length > 0) {
     baseQuery._id = { $in: accessibleIds };
   }
@@ -467,19 +467,19 @@ const getListAgentsByAccess = async ({
     try {
       const cursor = JSON.parse(Buffer.from(after, 'base64').toString('utf8'));
       const { updatedAt, _id } = cursor;
-      
+
       const cursorCondition = {
         $or: [
           { updatedAt: { $lt: new Date(updatedAt) } },
-          { updatedAt: new Date(updatedAt), _id: { $gt: mongoose.Types.ObjectId(_id) } }
-        ]
+          { updatedAt: new Date(updatedAt), _id: { $gt: mongoose.Types.ObjectId(_id) } },
+        ],
       };
-      
+
       // Merge cursor condition with base query
       if (Object.keys(baseQuery).length > 0) {
         baseQuery.$and = [{ ...baseQuery }, cursorCondition];
         // Remove the original conditions from baseQuery to avoid duplication
-        Object.keys(baseQuery).forEach(key => {
+        Object.keys(baseQuery).forEach((key) => {
           if (key !== '$and') delete baseQuery[key];
         });
       } else {
@@ -520,10 +520,12 @@ const getListAgentsByAccess = async ({
   let nextCursor = null;
   if (isPaginated && hasMore && data.length > 0) {
     const lastAgent = agents[normalizedLimit - 1];
-    nextCursor = Buffer.from(JSON.stringify({
-      updatedAt: lastAgent.updatedAt.toISOString(),
-      _id: lastAgent._id.toString()
-    })).toString('base64');
+    nextCursor = Buffer.from(
+      JSON.stringify({
+        updatedAt: lastAgent.updatedAt.toISOString(),
+        _id: lastAgent._id.toString(),
+      }),
+    ).toString('base64');
   }
 
   return {
@@ -532,7 +534,7 @@ const getListAgentsByAccess = async ({
     first_id: data.length > 0 ? data[0].id : null,
     last_id: data.length > 0 ? data[data.length - 1].id : null,
     has_more: hasMore,
-    after: nextCursor
+    after: nextCursor,
   };
 };
 
