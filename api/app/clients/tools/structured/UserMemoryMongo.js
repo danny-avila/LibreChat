@@ -8,17 +8,16 @@ const { logger } = require('~/config');
 /**
  * UserMemoryMongo Tool - Manages user memories using MongoDB and LibreChat's key-based system
  * 
- * This tool provides the same API as the SQLite-based UserMemory tool but uses
- * LibreChat's MongoDB infrastructure. It maps the original tag-based system to
- * LibreChat's key-based memory system.
+ * This tool provides a single-tag variation of the UserMemory tool but uses
+ * LibreChat's MongoDB infrastructure. It maps a single tag to LibreChat's key-based
+ * memory system.
  * 
- * Key differences from SQLite version:
- * - Uses MongoDB/Mongoose instead of SQLite
- * - Maps tags to LibreChat's key system (keys must be lowercase letters and underscores)
+ * Key features:
+ * - Uses MongoDB/Mongoose for storage
  * - Uses a single tag as the memory key (LibreChat supports only one key per memory)
- * - When multiple tags are provided, only the first tag is used as the primary key
+ * - Maps tags to LibreChat's key system (keys must be lowercase letters and underscores)
  * - Leverages LibreChat's existing MemoryEntry model
- * - Maintains API compatibility for seamless migration while adapting to LibreChat's constraints
+ * - API uses single 'tag' property instead of 'tags' array to be explicit about single-tag design
  */
 class UserMemoryMongo extends Tool {
   constructor(fields = {}) {
@@ -38,7 +37,7 @@ class UserMemoryMongo extends Tool {
       `Manages persistent user memories with a single tag per memory. Allows agents to store and retrieve information about users across sessions.
       
       Key Features:
-      - Store user-specific memories with content and a single optional tag
+      - Store user-specific memories with content and a single tag
       - Full CRUD operations on memories and tags
       - Tag-based filtering and organization
       - User isolation (memories are scoped per user_id)
@@ -47,7 +46,7 @@ class UserMemoryMongo extends Tool {
       - Remember user preferences, details, or context
       - Store business information (companies, projects, team members)
       - Track user goals, interests, or important facts
-      - Organize memories with a single tag for easy retrieval
+      - Organize memories with a tag for easy retrieval
       
       Examples:
       - "Jonathan owns a car wash called 'Make Yur Car Klean'" (tag: business)
@@ -55,11 +54,13 @@ class UserMemoryMongo extends Tool {
       - "The 'Acme Special Project' team members are Bob, Kathy and Tom" (tag: project)
       
       Guidelines:
-      - Use a single descriptive tag to organize each memory
+      - Always use a single descriptive tag for each memory
       - Keep to one fact per memory
-      - Retrieve tags before creating a memory or creating new tags
+      - Retrieve all tags before creating a memory 
       - Retrieve all memories at the beginning of the conversation
-      - Create new memories as you go
+      - Create new memories as you learn more about the user
+      
+      IMPORTANT: This tool only supports a single tag per memory, not an array of tags.
       `;
 
     // Database connection will be initialized lazily
@@ -609,7 +610,7 @@ class UserMemoryMongo extends Tool {
       content: memory.value,
       created_at: memory.created_at ? memory.created_at.getTime() : (memory.updated_at ? memory.updated_at.getTime() : Date.now()),
       updated_at: memory.updated_at ? memory.updated_at.getTime() : Date.now(),
-      tag: finalTag
+      tag: finalTag // Return single tag string
     };
   }
 
