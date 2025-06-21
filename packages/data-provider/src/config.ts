@@ -579,6 +579,7 @@ export type TStartupConfig = {
   modelSpecs?: TSpecsConfig;
   sharedLinksEnabled: boolean;
   publicSharedLinksEnabled: boolean;
+  messageFeedbackEnabled: boolean;
   analyticsGtmId?: string;
   instanceProjectId: string;
   bundlerURL?: string;

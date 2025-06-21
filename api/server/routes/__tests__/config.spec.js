@@ -39,6 +39,7 @@ afterEach(() => {
   delete process.env.LDAP_BIND_CREDENTIALS;
   delete process.env.LDAP_USER_SEARCH_BASE;
   delete process.env.LDAP_SEARCH_FILTER;
+  delete process.env.ENABLE_MESSAGE_FEEDBACK;
 });
 
 //TODO: This works/passes locally but http request tests fail with 404 in CI. Need to figure out why.
