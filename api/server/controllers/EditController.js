@@ -84,7 +84,7 @@ const EditController = async (req, res, next, initializeClient) => {
     }
 
     if (abortKey) {
-      logger.debug('[AskController] Cleaning up abort controller');
+      logger.debug('[EditController] Cleaning up abort controller');
       cleanupAbortController(abortKey);
       abortKey = null;
     }
