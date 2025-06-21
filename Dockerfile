@@ -39,23 +39,16 @@ RUN \
     npm cache clean --force
 
 RUN mkdir -p /app/client/public/images /app/api/logs
-
-# ---------- 4. entry-point for the YAML injection ------------------
-# *Create docker-entrypoint.sh in repo root with executable (+x) flag*
-COPY docker-entrypoint.sh /usr/local/bin/
+USER root
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
-# Tell LibreChat where the YAML will be written
+USER node
+
 ENV CONFIG_PATH=/app/librechat.yaml
 
-# ---------- 5. runtime config --------------------------------------
 EXPOSE 3080
 ENV HOST=0.0.0.0
 
-# Replace the default CMD with our entry-point + original command
 ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["npm", "run", "backend"]
-
-# -------------------------------------------------------------------
-# (Optional client-only nginx stage omitted for brevity)
-# -------------------------------------------------------------------
