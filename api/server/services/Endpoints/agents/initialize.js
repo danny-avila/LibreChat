@@ -61,6 +61,7 @@ const initializeClient = async ({ req, res, endpointOption }) => {
   }
 
   const primaryAgent = await endpointOption.agent;
+  delete endpointOption.agent;
   if (!primaryAgent) {
     throw new Error('Agent not found');
   }

@@ -4,5 +4,6 @@ export * from './common';
 export * from './events';
 export * from './files';
 export * from './generators';
+export * from './llm';
 export * from './openid';
 export { default as Tokenizer } from './tokenizer';
