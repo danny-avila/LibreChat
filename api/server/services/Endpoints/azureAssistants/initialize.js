@@ -109,11 +109,14 @@ const initializeClient = async ({ req, res, version, endpointOption, initAppClie
 
     apiKey = azureOptions.azureOpenAIApiKey;
     opts.defaultQuery = { 'api-version': azureOptions.azureOpenAIApiVersion };
-    opts.defaultHeaders = resolveHeaders({
-      ...headers,
-      'api-key': apiKey,
-      'OpenAI-Beta': `assistants=${version}`,
-    });
+    opts.defaultHeaders = resolveHeaders(
+      {
+        ...headers,
+        'api-key': apiKey,
+        'OpenAI-Beta': `assistants=${version}`,
+      },
+      req.user,
+    );
     opts.model = azureOptions.azureOpenAIApiDeploymentName;
 
     if (initAppClient) {

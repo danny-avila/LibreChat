@@ -47,6 +47,13 @@ function processUserPlaceholders(value: string, user?: TUser): string {
   return value;
 }
 
+/**
+ * Processes a single string value by replacing various types of placeholders
+ * @param originalValue - The original string value to process
+ * @param customUserVars - Optional custom user variables to replace placeholders
+ * @param user - Optional user object for replacing user field placeholders
+ * @returns The processed string with all placeholders replaced
+ */
 function processSingleValue({
   originalValue,
   customUserVars,
@@ -129,16 +136,26 @@ export function processMCPEnv(
 }
 
 /**
- * Resolves header values to env variables if detected
+ * Resolves header values by replacing user placeholders, custom variables, and environment variables
  * @param headers - The headers object to process
- * @returns - The processed headers with environment variables replaced
+ * @param user - Optional user object for replacing user field placeholders (can be partial with just id)
+ * @param customUserVars - Optional custom user variables to replace placeholders
+ * @returns - The processed headers with all placeholders replaced
  */
-export function resolveHeaders(headers: Record<string, string> | undefined) {
+export function resolveHeaders(
+  headers: Record<string, string> | undefined,
+  user?: Partial<TUser> | { id: string },
+  customUserVars?: Record<string, string>,
+) {
   const resolvedHeaders = { ...(headers ?? {}) };
 
   if (headers && typeof headers === 'object' && !Array.isArray(headers)) {
     Object.keys(headers).forEach((key) => {
-      resolvedHeaders[key] = extractEnvVariable(headers[key]);
+      resolvedHeaders[key] = processSingleValue({
+        originalValue: headers[key],
+        customUserVars,
+        user: user as TUser,
+      });
     });
   }
 
