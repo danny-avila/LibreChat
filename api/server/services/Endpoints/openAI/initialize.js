@@ -1,11 +1,7 @@
-const {
-  ErrorTypes,
-  EModelEndpoint,
-  resolveHeaders,
-  mapModelToAzureConfig,
-} = require('librechat-data-provider');
+const { ErrorTypes, EModelEndpoint, mapModelToAzureConfig } = require('librechat-data-provider');
 const {
   isEnabled,
+  resolveHeaders,
   isUserProvided,
   getOpenAIConfig,
   getAzureCredentials,

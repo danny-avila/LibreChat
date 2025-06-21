@@ -127,3 +127,20 @@ export function processMCPEnv(
 
   return newObj;
 }
+
+/**
+ * Resolves header values to env variables if detected
+ * @param headers - The headers object to process
+ * @returns - The processed headers with environment variables replaced
+ */
+export function resolveHeaders(headers: Record<string, string> | undefined) {
+  const resolvedHeaders = { ...(headers ?? {}) };
+
+  if (headers && typeof headers === 'object' && !Array.isArray(headers)) {
+    Object.keys(headers).forEach((key) => {
+      resolvedHeaders[key] = extractEnvVariable(headers[key]);
+    });
+  }
+
+  return resolvedHeaders;
+}
