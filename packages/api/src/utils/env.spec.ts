@@ -90,7 +90,7 @@ describe('resolveHeaders', () => {
     });
   });
 
-  it.skip('should not process user ID placeholder when user has no id', () => {
+  it('should not process user ID placeholder when user has no id', () => {
     const user = { id: '' };
     const headers = {
       'User-Id': '{{LIBRECHAT_USER_ID}}',
