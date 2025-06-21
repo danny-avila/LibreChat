@@ -1,5 +1,5 @@
 const { HttpsProxyAgent } = require('https-proxy-agent');
-const { resolveHeaders } = require('librechat-data-provider');
+const { resolveHeaders } = require('@librechat/api');
 const { createLLM } = require('~/app/clients/llm');
 
 /**
