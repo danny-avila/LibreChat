@@ -22,6 +22,7 @@ USER node
 
 # ---------- 3. copy source & install deps --------------------------
 COPY --chown=node:node . .
+RUN echo ">>>> /app files:" && ls -lah /app
 
 RUN \
     # placeholder .env so scripts don’t fail
@@ -45,7 +46,7 @@ RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 USER node
 
-ENV CONFIG_PATH=/app/librechat.yaml
+ENV CONFIG_PATH=/librechat.yaml
 
 EXPOSE 3080
 ENV HOST=0.0.0.0
