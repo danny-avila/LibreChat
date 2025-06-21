@@ -78,10 +78,13 @@ function initializeLLM(options) {
 
   if (headers && typeof headers === 'object' && !Array.isArray(headers)) {
     configOptions.baseOptions = {
-      headers: resolveHeaders({
-        ...headers,
-        ...configOptions?.baseOptions?.headers,
-      }),
+      headers: resolveHeaders(
+        {
+          ...headers,
+          ...configOptions?.baseOptions?.headers,
+        },
+        user,
+      ),
     };
   }
 

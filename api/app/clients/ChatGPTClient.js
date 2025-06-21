@@ -210,7 +210,7 @@ class ChatGPTClient extends BaseClient {
         modelGroupMap,
         groupMap,
       });
-      opts.headers = resolveHeaders(headers);
+      opts.headers = resolveHeaders(headers, this.user);
       this.langchainProxy = extractBaseURL(baseURL);
       this.apiKey = azureOptions.azureOpenAIApiKey;
 

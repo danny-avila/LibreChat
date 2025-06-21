@@ -670,10 +670,13 @@ class OpenAIClient extends BaseClient {
     const { headers } = this.options;
     if (headers && typeof headers === 'object' && !Array.isArray(headers)) {
       configOptions.baseOptions = {
-        headers: resolveHeaders({
-          ...headers,
-          ...configOptions?.baseOptions?.headers,
-        }),
+        headers: resolveHeaders(
+          {
+            ...headers,
+            ...configOptions?.baseOptions?.headers,
+          },
+          this.user,
+        ),
       };
     }
 
@@ -767,7 +770,7 @@ class OpenAIClient extends BaseClient {
         groupMap,
       });
 
-      this.options.headers = resolveHeaders(headers);
+      this.options.headers = resolveHeaders(headers, this.user);
       this.options.reverseProxyUrl = baseURL ?? null;
       this.langchainProxy = extractBaseURL(this.options.reverseProxyUrl);
       this.apiKey = azureOptions.azureOpenAIApiKey;
@@ -1199,7 +1202,7 @@ ${convo}
           modelGroupMap,
           groupMap,
         });
-        opts.defaultHeaders = resolveHeaders(headers);
+        opts.defaultHeaders = resolveHeaders(headers, this.user);
         this.langchainProxy = extractBaseURL(baseURL);
         this.apiKey = azureOptions.azureOpenAIApiKey;
 
