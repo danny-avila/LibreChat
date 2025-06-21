@@ -114,6 +114,7 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     getResponseSender({
       ...endpointOption,
       model: endpointOption.model_parameters.model,
+      modelLabel: endpointOption.model_parameters.modelLabel,
     });
 
   const client = new AgentClient({
