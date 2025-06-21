@@ -1,10 +1,10 @@
-import type { TUser } from 'librechat-data-provider';
 import {
-  StreamableHTTPOptionsSchema,
-  StdioOptionsSchema,
-  processMCPEnv,
   MCPOptions,
-} from '../src/mcp';
+  StdioOptionsSchema,
+  StreamableHTTPOptionsSchema,
+} from 'librechat-data-provider';
+import type { TUser } from 'librechat-data-provider';
+import { processMCPEnv } from '~/utils/env';
 
 // Helper function to create test user objects
 function createTestUser(

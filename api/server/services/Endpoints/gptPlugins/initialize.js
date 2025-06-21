@@ -1,9 +1,10 @@
+const { EModelEndpoint, mapModelToAzureConfig } = require('librechat-data-provider');
 const {
-  EModelEndpoint,
+  isEnabled,
+  isUserProvided,
+  getAzureCredentials,
   resolveHeaders,
-  mapModelToAzureConfig,
-} = require('librechat-data-provider');
-const { isEnabled, isUserProvided, getAzureCredentials } = require('@librechat/api');
+} = require('@librechat/api');
 const { getUserKeyValues, checkUserKeyExpiry } = require('~/server/services/UserService');
 const { PluginsClient } = require('~/app');
 
@@ -79,7 +80,10 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     });
 
     clientOptions.reverseProxyUrl = baseURL ?? clientOptions.reverseProxyUrl;
-    clientOptions.headers = resolveHeaders({ ...headers, ...(clientOptions.headers ?? {}) });
+    clientOptions.headers = resolveHeaders(
+      { ...headers, ...(clientOptions.headers ?? {}) },
+      req.user,
+    );
 
     clientOptions.titleConvo = azureConfig.titleConvo;
     clientOptions.titleModel = azureConfig.titleModel;
