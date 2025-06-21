@@ -1,5 +1,5 @@
 import debounce from 'lodash/debounce';
-import React, { memo, useMemo, useCallback, useRef } from 'react';
+import React, { memo, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useRecoilState } from 'recoil';
 import { TerminalSquareIcon } from 'lucide-react';
 import {
@@ -45,6 +45,9 @@ function CodeInterpreter({ conversationId }: { conversationId?: string | null })
     return ephemeralAgent?.execute_code ?? false;
   }, [ephemeralAgent?.execute_code]);
 
+  /** Track previous value to prevent infinite loops */
+  const prevIsCodeToggleEnabled = useRef(isCodeToggleEnabled);
+
   const { data } = useVerifyAgentToolAuth(
     { toolId: Tools.execute_code },
     {
@@ -60,7 +63,7 @@ function CodeInterpreter({ conversationId }: { conversationId?: string | null })
     (isChecked: boolean) => {
       setEphemeralAgent((prev) => ({
         ...prev,
-        execute_code: isChecked,
+        [Tools.execute_code]: isChecked,
       }));
     },
     [setEphemeralAgent],
@@ -89,6 +92,13 @@ function CodeInterpreter({ conversationId }: { conversationId?: string | null })
     () => debounce(handleChange, 50, { leading: true }),
     [handleChange],
   );
+
+  useEffect(() => {
+    if (prevIsCodeToggleEnabled.current !== isCodeToggleEnabled) {
+      setRunCode(isCodeToggleEnabled);
+    }
+    prevIsCodeToggleEnabled.current = isCodeToggleEnabled;
+  }, [isCodeToggleEnabled, runCode, setRunCode]);
 
   if (!canRunCode) {
     return null;
