@@ -1,5 +1,12 @@
 [
   {
+    "name": "User Memory",
+    "pluginKey": "user_memory_mongo",
+    "description": "Manage user memories and associated tags across conversations",
+    "icon": "/assets/usermemory.png",
+    "authConfig": []
+  },
+  {
     "name": "Traversaal",
     "pluginKey": "traversaal_search",
     "description": "Traversaal is a robust search API tailored for LLM Agents. Get an API key here: https://api.traversaal.ai",
