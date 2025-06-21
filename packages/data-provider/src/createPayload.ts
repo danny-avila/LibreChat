@@ -13,20 +13,17 @@ export default function createPayload(submission: t.TSubmission) {
     ephemeralAgent,
   } = submission;
   const { conversationId } = s.tConvoUpdateSchema.parse(conversation);
-  const { endpoint: _e, endpointType } = endpointOption as {
+  const { endpoint: _e } = endpointOption as {
     endpoint: s.EModelEndpoint;
     endpointType?: s.EModelEndpoint;
   };
+
   const endpoint = _e as s.EModelEndpoint;
-  let server = EndpointURLs[endpointType ?? endpoint];
+  let server = `${EndpointURLs[s.EModelEndpoint.agents]}/${endpoint}`;
   const isEphemeral = s.isEphemeralAgent(endpoint, ephemeralAgent);
 
   if (isEdited && s.isAssistantsEndpoint(endpoint)) {
     server += '/modify';
-  } else if (isEdited) {
-    server = server.replace('/ask/', '/edit/');
-  } else if (isEphemeral) {
-    server = `${EndpointURLs[s.EModelEndpoint.agents]}/${endpoint}`;
   }
 
   const payload: t.TPayload = {
