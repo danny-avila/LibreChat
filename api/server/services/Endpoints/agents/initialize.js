@@ -1,11 +1,17 @@
 const { logger } = require('@librechat/data-schemas');
 const { createContentAggregator } = require('@librechat/agents');
-const { Constants, EModelEndpoint, getResponseSender } = require('librechat-data-provider');
 const {
-  getDefaultHandlers,
+  Constants,
+  EModelEndpoint,
+  isAgentsEndpoint,
+  getResponseSender,
+} = require('librechat-data-provider');
+const {
   createToolEndCallback,
+  getDefaultHandlers,
 } = require('~/server/controllers/agents/callbacks');
 const { initializeAgent } = require('~/server/services/Endpoints/agents/agent');
+const { getCustomEndpointConfig } = require('~/server/services/Config');
 const { loadAgentTools } = require('~/server/services/ToolService');
 const AgentClient = require('~/server/controllers/agents/client');
 const { getAgent } = require('~/models/Agent');
@@ -109,11 +115,24 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     }
   }
 
+  let endpointConfig = req.app.locals[primaryConfig.endpoint];
+  if (!isAgentsEndpoint(primaryConfig.endpoint) && !endpointConfig) {
+    try {
+      endpointConfig = await getCustomEndpointConfig(primaryConfig.endpoint);
+    } catch (err) {
+      logger.error(
+        '[api/server/controllers/agents/client.js #titleConvo] Error getting custom endpoint config',
+        err,
+      );
+    }
+  }
+
   const sender =
     primaryAgent.name ??
     getResponseSender({
       ...endpointOption,
       model: endpointOption.model_parameters.model,
+      modelDisplayLabel: endpointConfig?.modelDisplayLabel,
       modelLabel: endpointOption.model_parameters.modelLabel,
     });
 
