@@ -61,6 +61,11 @@ class UserMemoryMongo extends Tool {
       - Create new memories as you learn more about the user
       
       IMPORTANT: This tool only supports a single tag per memory, not an array of tags.
+      
+      Get detailed help on usage and examples:
+      {
+        "action": "help"
+      }
       `;
 
     // Database connection will be initialized lazily
@@ -77,7 +82,8 @@ class UserMemoryMongo extends Tool {
         'create_tag',
         'get_tags',
         'update_tag',
-        'delete_tag'
+        'delete_tag',
+        'help'
       ]).describe('The action to perform'),
       
       memory_id: z.string().optional().describe('Memory ID for update/get/delete operations'),
@@ -445,7 +451,7 @@ class UserMemoryMongo extends Tool {
     }
   }
 
-  // Delete a tag - removes tag from all memories containing it
+  // Delete a tag - only allows deletion if no memories are using the tag
   async deleteTag(userId, tagId) {
     await this.ensureConnection();
     
@@ -461,71 +467,54 @@ class UserMemoryMongo extends Tool {
       
       let targetTagName = null;
       for (const memory of sampleMemories) {
-        const tags = this.extractTagsFromKey(memory.key);
-        for (const tag of tags) {
-          if (this.generateTagId(tag) === tagId) {
-            targetTagName = tag;
-            break;
-          }
+        const tag = this.extractTagFromKey(memory.key);
+        if (this.generateTagId(tag) === tagId) {
+          targetTagName = tag;
+          break;
         }
-        if (targetTagName) break;
       }
       
       if (!targetTagName) {
-        return false; // Tag not found
+        return {
+          success: false,
+          error: 'Tag not found'
+        };
       }
       
       // Escape the target tag name for regex
       const escapedTargetTag = targetTagName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       
-      // Find all memories containing the target tag using efficient regex
-      const memoriesToUpdate = await this.models.MemoryEntry.find({
+      // Check if there are any memories using this tag
+      const memoriesCount = await this.models.MemoryEntry.countDocuments({
         userId: userObjectId,
-        key: { $regex: `\\b${escapedTargetTag}\\b`, $options: 'i' }
-      }).select('_id key value').lean();
+        key: { $regex: `^${escapedTargetTag}_`, $options: 'i' }
+      });
       
-      if (memoriesToUpdate.length === 0) {
-        return false;
+      if (memoriesCount > 0) {
+        return {
+          success: false,
+          error: `Cannot delete tag "${targetTagName}" because it is used by ${memoriesCount} memories. Delete those memories first or update them to use a different tag.`
+        };
       }
       
-      // Update memories in batches to avoid timeout
-      const batchSize = 50;
-      let updatedCount = 0;
-      
-      for (let i = 0; i < memoriesToUpdate.length; i += batchSize) {
-        const batch = memoriesToUpdate.slice(i, i + batchSize);
-        const bulkOps = [];
-        
-        for (const memory of batch) {
-          const tags = this.extractTagsFromKey(memory.key);
-          if (tags.includes(targetTagName)) {
-            // Remove the target tag
-            const updatedTags = tags.filter(tag => tag !== targetTagName);
-            const newKey = this.generateLibreChatKey(memory.value, updatedTags);
-            
-            bulkOps.push({
-              updateOne: {
-                filter: { _id: memory._id },
-                update: { key: newKey, updated_at: new Date() }
-              }
-            });
-          }
-        }
-        
-        if (bulkOps.length > 0) {
-          const result = await this.models.MemoryEntry.bulkWrite(bulkOps);
-          updatedCount += result.modifiedCount;
-        }
-      }
-      
-      return updatedCount > 0;
+      // No actual database operation needed since tags are virtual and no memories use this tag
+      return {
+        success: true,
+        message: `Tag "${targetTagName}" deleted successfully`
+      };
     } catch (error) {
       if (error.name === 'CastError') {
         logger.warn('Invalid user ID format in deleteTag:', userId);
-        return false;
+        return {
+          success: false,
+          error: 'Invalid user ID format'
+        };
       }
       logger.error('Error deleting tag:', error);
-      return false;
+      return {
+        success: false,
+        error: 'Error processing tag deletion'
+      };
     }
   }
 
@@ -614,8 +603,129 @@ class UserMemoryMongo extends Tool {
     };
   }
 
+  showHelp() {
+    return `
+=== UserMemoryMongo Tool Help ===
+
+OVERVIEW:
+---------
+UserMemoryMongo is a tool for storing and retrieving persistent user memories with a single tag per memory.
+It uses MongoDB through LibreChat's infrastructure to store memories that persist across conversations.
+
+BASIC USAGE:
+-----------
+{
+  "action": "create_memory",
+  "content": "User likes chocolate ice cream",
+  "tag": "preferences"
+}
+
+ACTIONS:
+-------
+1) create_memory:
+   - Creates a new memory entry
+   - Required: "content" (the text to remember)
+   - Optional: "tag" (a single categorization tag)
+
+2) update_memory:
+   - Updates an existing memory entry
+   - Required: "memory_id", "content"
+   - Optional: "tag" (to change the categorization)
+
+3) get_memory:
+   - Retrieves a specific memory by ID
+   - Required: "memory_id"
+
+4) get_memories:
+   - Retrieves all memories, optionally filtered by tag
+   - Optional: "tag_filter" (single tag to filter by)
+
+5) delete_memory:
+   - Deletes a specific memory
+   - Required: "memory_id"
+
+6) create_tag:
+   - Creates a new tag (virtual operation)
+   - Required: "tag_name"
+
+7) get_tags:
+   - Lists all tags used in memories
+
+8) update_tag:
+   - Changes a tag name across all memories using it
+   - Required: "tag_id", "new_tag_name"
+
+9) delete_tag:
+   - Deletes a tag (only if no memories are using it)
+   - Required: "tag_id"
+
+10) help:
+   - Shows this help information
+
+EXAMPLES:
+--------
+
+1) Create a new memory with a tag:
+   {
+     "action": "create_memory",
+     "content": "User's favorite movie is The Matrix",
+     "tag": "preferences"
+   }
+
+2) Get all memories with a specific tag:
+   {
+     "action": "get_memories",
+     "tag_filter": "preferences"
+   }
+
+3) Update an existing memory:
+   {
+     "action": "update_memory",
+     "memory_id": "6151f3da3821a52634985432",
+     "content": "User's favorite movie is Inception",
+     "tag": "movies"
+   }
+
+4) Delete a memory:
+   {
+     "action": "delete_memory",
+     "memory_id": "6151f3da3821a52634985432"
+   }
+
+5) Get all available tags:
+   {
+     "action": "get_tags"
+   }
+
+6) Try to delete a tag (will fail if memories are using it):
+   {
+     "action": "delete_tag",
+     "tag_id": "6151f3da3821a52634985432" 
+   }
+
+7) Show this help information:
+   {
+     "action": "help"
+   }
+
+IMPORTANT NOTES:
+--------------
+- Only a single tag is supported per memory
+- Tags must be simple lowercase text with no spaces
+- Each memory has one fact/piece of information
+- Tag names should be descriptive (e.g., "preferences", "family", "work")
+- Tags can only be deleted if no memories are using them
+- To remove a tag with memories, first delete the memories or update them to use a different tag
+`;
+  }
+
   async _call(input) {
     try {
+      // Handle help action first
+      if (input.action === 'help') {
+        return this.showHelp();
+      }
+      
       // Validate input against schema
       const validationResult = this.schema.safeParse(input);
       
@@ -737,14 +847,10 @@ class UserMemoryMongo extends Tool {
           if (!tag_id) {
             return JSON.stringify({ error: 'tag_id is required for delete_tag' });
           }
-          const tagDeleted = await this.deleteTag(this.userId, tag_id);
-          if (!tagDeleted) {
-            return JSON.stringify({ error: 'Tag not found' });
-          }
-          return JSON.stringify({
-            success: true,
-            message: 'Tag deleted successfully'
-          });
+          const tagDeleteResult = await this.deleteTag(this.userId, tag_id);
+          
+          // Return the result directly since deleteTag now returns a formatted response
+          return JSON.stringify(tagDeleteResult);
 
         default:
           logger.warn(`Unknown action requested in UserMemoryMongo: ${action}`);
