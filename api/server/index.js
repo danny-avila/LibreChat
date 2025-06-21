@@ -39,7 +39,9 @@ const startServer = async () => {
   await connectDb();
 
   logger.info('Connected to MongoDB');
-  await indexSync();
+  indexSync().catch((err) => {
+    logger.error('[indexSync] Background sync failed:', err);
+  });
 
   app.disable('x-powered-by');
   app.set('trust proxy', trusted_proxy);
