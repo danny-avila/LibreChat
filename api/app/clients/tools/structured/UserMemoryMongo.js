@@ -15,9 +15,10 @@ const { logger } = require('~/config');
  * Key differences from SQLite version:
  * - Uses MongoDB/Mongoose instead of SQLite
  * - Maps tags to LibreChat's key system (keys must be lowercase letters and underscores)
- * - Each tag becomes a separate memory entry with a descriptive key
+ * - Uses a single tag as the memory key (LibreChat supports only one key per memory)
+ * - When multiple tags are provided, only the first tag is used as the primary key
  * - Leverages LibreChat's existing MemoryEntry model
- * - Maintains full API compatibility for seamless migration
+ * - Maintains API compatibility for seamless migration while adapting to LibreChat's constraints
  */
 class UserMemoryMongo extends Tool {
   constructor(fields = {}) {
@@ -30,14 +31,14 @@ class UserMemoryMongo extends Tool {
     
     this.name = 'user_memory_mongo';
     this.description = 
-      'Manage user memories and associated tags. Store, retrieve, update, and organize information about users across conversations. ' +
-      'Supports tagging for better organization and retrieval of memories.';
+      'Manage user memories with single tag keys. Store, retrieve, update, and organize information about users across conversations. ' +
+      'Supports a single tag per memory for better organization and retrieval.';
     
     this.description_for_model = 
-      `Manages persistent user memories with optional tagging system. Allows agents to store and retrieve information about users across sessions.
+      `Manages persistent user memories with a single tag per memory. Allows agents to store and retrieve information about users across sessions.
       
       Key Features:
-      - Store user-specific memories with content and optional tags
+      - Store user-specific memories with content and a single optional tag
       - Full CRUD operations on memories and tags
       - Tag-based filtering and organization
       - User isolation (memories are scoped per user_id)
@@ -46,15 +47,15 @@ class UserMemoryMongo extends Tool {
       - Remember user preferences, details, or context
       - Store business information (companies, projects, team members)
       - Track user goals, interests, or important facts
-      - Organize memories with tags for easy retrieval
+      - Organize memories with a single tag for easy retrieval
       
       Examples:
-      - "Jonathan owns a car wash called 'Make Yur Car Klean'" (tags: business, owner)
-      - "Bob has three children" (tags: personal, family)
-      - "The 'Acme Special Project' team members are Bob, Kathy and Tom" (tags: work, team, project)
+      - "Jonathan owns a car wash called 'Make Yur Car Klean'" (tag: business)
+      - "Bob has three children" (tag: family)
+      - "The 'Acme Special Project' team members are Bob, Kathy and Tom" (tag: project)
       
       Guidelines:
-      - Use the tags to organize the memories
+      - Use a single descriptive tag to organize each memory
       - Keep to one fact per memory
       - Retrieve tags before creating a memory or creating new tags
       - Retrieve all memories at the beginning of the conversation
@@ -82,9 +83,9 @@ class UserMemoryMongo extends Tool {
       
       content: z.string().min(1).max(10000).optional().describe('Memory content for create/update operations'),
       
-      tags: z.array(z.string().min(1).max(100)).max(50).optional().describe('Tag names to associate with memory'),
+      tag: z.string().min(1).max(100).optional().describe('Tag name to associate with memory'),
       
-      tag_filter: z.array(z.string().min(1).max(100)).max(50).optional().describe('Filter memories by these tag names'),
+      tag_filter: z.string().min(1).max(100).optional().describe('Filter memories by tag name'),
       
       tag_id: z.string().optional().describe('Tag ID for tag update/delete operations'),
       
@@ -133,14 +134,14 @@ class UserMemoryMongo extends Tool {
   }
 
   // Create a new memory
-  async createMemory(userId, content, tags = []) {
+  async createMemory(userId, content, tag = '') {
     await this.ensureConnection();
 
     try {
       const userObjectId = new Types.ObjectId(userId);
 
-      // Generate a proper LibreChat key from content and tags
-      const memoryKey = this.generateLibreChatKey(content, tags);
+      // Generate a proper LibreChat key from content and tag
+      const memoryKey = this.generateLibreChatKey(content, tag);
       
       // Check if memory with this key already exists
       const existingMemory = await this.models.MemoryEntry.findOne({ 
@@ -162,7 +163,7 @@ class UserMemoryMongo extends Tool {
         created_at: new Date()
       });
 
-      return this.formatMemoryForResponse(memoryEntry, tags);
+      return this.formatMemoryForResponse(memoryEntry, tag);
     } catch (error) {
       if (error.name === 'CastError') {
         throw new Error('Invalid user ID format');
@@ -176,7 +177,7 @@ class UserMemoryMongo extends Tool {
   }
 
   // Update an existing memory
-  async updateMemory(userId, memoryId, content, tags = null) {
+  async updateMemory(userId, memoryId, content, tag = null) {
     await this.ensureConnection();
 
     try {
@@ -192,20 +193,20 @@ class UserMemoryMongo extends Tool {
         throw new Error('Memory not found or access denied');
       }
 
-      // Update content and generate new key if tags provided
+      // Update content and generate new key if tag provided
       memory.value = content;
       memory.tokenCount = this.estimateTokenCount(content);
       memory.updated_at = new Date();
 
-      // Update key if tags are explicitly provided (not null or undefined)
-      if (tags !== undefined && tags !== null) {
-        const newKey = this.generateLibreChatKey(content, tags);
+      // Update key if tag is explicitly provided (not null or undefined)
+      if (tag !== undefined && tag !== null) {
+        const newKey = this.generateLibreChatKey(content, tag);
         memory.key = newKey;
       }
 
       await memory.save();
 
-      return this.formatMemoryForResponse(memory, tags);
+      return this.formatMemoryForResponse(memory, tag);
     } catch (error) {
       if (error.name === 'CastError') {
         throw new Error('Invalid memory ID or user ID format');
@@ -243,7 +244,7 @@ class UserMemoryMongo extends Tool {
     }
   }
 
-  // Get all memories for a user, optionally filtered by tags
+  // Get all memories for a user, optionally filtered by tag
   async getMemories(userId, tagFilter = null) {
     await this.ensureConnection();
 
@@ -251,17 +252,15 @@ class UserMemoryMongo extends Tool {
       const userObjectId = new Types.ObjectId(userId);
       let query = { userId: userObjectId };
 
-      // Apply tag filter if provided - search for tags in the key
+      // Apply tag filter if provided - search for tag in the key
       if (tagFilter && tagFilter.length > 0) {
         // Sanitize and escape regex special characters
-        const sanitizedTags = tagFilter
-          .map(tag => this.sanitizeKeyComponent(tag))
-          .filter(tag => tag.length > 0)
-          .map(tag => tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')); // Escape regex chars
+        const sanitizedTag = this.sanitizeKeyComponent(tagFilter)
+          .replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // Escape regex chars
         
-        if (sanitizedTags.length > 0) {
-          // Use word boundaries to avoid partial matches
-          const tagRegex = new RegExp(`\\b(${sanitizedTags.join('|')})\\b`, 'i');
+        if (sanitizedTag.length > 0) {
+          // Use a regex that matches keys starting with the tag
+          const tagRegex = new RegExp(`^${sanitizedTag}_`, 'i');
           query.key = { $regex: tagRegex };
         }
       }
@@ -532,7 +531,9 @@ class UserMemoryMongo extends Tool {
   // Helper methods
 
   // Generate LibreChat-compatible key (lowercase letters and underscores only)
-  generateLibreChatKey(content, tags = []) {
+  generateLibreChatKey(content, tag = '') {
+    // LibreChat only supports a single tag/key per memory
+    
     // Extract meaningful words from content for key generation
     const contentWords = content
       .toLowerCase()
@@ -541,19 +542,22 @@ class UserMemoryMongo extends Tool {
       .filter(word => word.length > 2) // Only meaningful words
       .slice(0, 3); // First 3 words max
     
-    // Combine content words with tags
-    const keyParts = [...contentWords];
+    // Start with content words
+    let baseKey = contentWords.join('_');
     
-    if (tags && tags.length > 0) {
-      const sanitizedTags = tags.map(tag => this.sanitizeKeyComponent(tag));
-      keyParts.push(...sanitizedTags);
+    // If tag is provided, use it as the primary key
+    if (tag) {
+      const primaryTag = this.sanitizeKeyComponent(tag);
+      if (primaryTag) {
+        baseKey = primaryTag; // Use the tag as the key
+      }
     }
     
-    // Join with underscores and ensure uniqueness
-    const baseKey = keyParts.join('_') || 'memory';
+    // Ensure we have a valid key
+    baseKey = baseKey || 'memory';
     
     // Add short hash for uniqueness while keeping key readable
-    const hash = require('crypto').createHash('md5').update(content + (tags || []).join('')).digest('hex');
+    const hash = require('crypto').createHash('md5').update(content + tag).digest('hex');
     
     return `${baseKey}_${hash.substring(0, 8)}`;
   }
@@ -576,24 +580,28 @@ class UserMemoryMongo extends Tool {
     return Math.ceil(text.length / 4);
   }
 
-  // Extract tags from LibreChat key - this is approximate since keys embed semantic info
-  extractTagsFromKey(key) {
-    // Split key by underscores and try to identify tag-like components
+  // Extract tag from LibreChat key - now we extract only the single primary tag
+  extractTagFromKey(key) {
+    // Split key by underscores to get the first part (the primary tag)
     const parts = key.split('_');
     
-    // Remove common prefixes and hash suffixes
-    const filteredParts = parts.filter(part => 
-      part.length > 2 && 
-      part !== 'memory' && 
-      !/^[a-f0-9]{8}$/.test(part) // Remove hash suffixes
-    );
+    // Get the first part, which should be the primary tag
+    const primaryTag = parts[0];
     
-    // Return the parts that might be tags (last few components)
-    return filteredParts.slice(-3); // Return last 3 as potential tags
+    // Validate it's not a hash suffix and not "memory"
+    if (primaryTag && primaryTag.length > 2 && 
+        primaryTag !== 'memory' && 
+        !/^[a-f0-9]{8}$/.test(primaryTag)) {
+      return primaryTag; // Return the tag directly
+    }
+    
+    // No valid tag found
+    return '';
   }
 
-  formatMemoryForResponse(memory, tags = null) {
-    const extractedTags = tags || this.extractTagsFromKey(memory.key);
+  formatMemoryForResponse(memory, tag = null) {
+    // If explicit tag is provided, use it; otherwise extract from key
+    const finalTag = tag || this.extractTagFromKey(memory.key);
     
     return {
       id: memory._id.toString(),
@@ -601,7 +609,7 @@ class UserMemoryMongo extends Tool {
       content: memory.value,
       created_at: memory.created_at ? memory.created_at.getTime() : (memory.updated_at ? memory.updated_at.getTime() : Date.now()),
       updated_at: memory.updated_at ? memory.updated_at.getTime() : Date.now(),
-      tags: extractedTags
+      tag: finalTag
     };
   }
 
@@ -622,7 +630,7 @@ class UserMemoryMongo extends Tool {
         action,
         memory_id,
         content,
-        tags,
+        tag,
         tag_filter,
         tag_id,
         tag_name,
@@ -640,7 +648,7 @@ class UserMemoryMongo extends Tool {
           if (!content) {
             return JSON.stringify({ error: 'content is required for create_memory' });
           }
-          const newMemory = await this.createMemory(this.userId, content, tags);
+          const newMemory = await this.createMemory(this.userId, content, tag);
           return JSON.stringify({
             success: true,
             memory: newMemory,
@@ -651,7 +659,7 @@ class UserMemoryMongo extends Tool {
           if (!memory_id || !content) {
             return JSON.stringify({ error: 'memory_id and content are required for update_memory' });
           }
-          const updatedMemory = await this.updateMemory(this.userId, memory_id, content, tags);
+          const updatedMemory = await this.updateMemory(this.userId, memory_id, content, tag);
           return JSON.stringify({
             success: true,
             memory: updatedMemory,
