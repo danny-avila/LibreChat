@@ -24,6 +24,8 @@ USER node
 COPY --chown=node:node . .
 RUN echo ">>>> /app files:" && ls -lah /app
 
+RUN echo ">>>> Searching for librechat.yaml in /app…" \
+    && find /app -type f -name 'librechat.yaml' -print
 RUN \
     # placeholder .env so scripts don’t fail
     touch .env && \
@@ -46,7 +48,7 @@ RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 USER node
 
-ENV CONFIG_PATH=/librechat.yaml
+ENV CONFIG_PATH=/app/config/librechat.yaml
 
 EXPOSE 3080
 ENV HOST=0.0.0.0
