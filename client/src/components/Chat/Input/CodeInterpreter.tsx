@@ -1,52 +1,25 @@
-import debounce from 'lodash/debounce';
-import React, { memo, useMemo, useCallback, useEffect, useRef } from 'react';
-import { useRecoilState } from 'recoil';
+import React, { memo, useMemo, useRef } from 'react';
 import { TerminalSquareIcon } from 'lucide-react';
 import {
   Tools,
   AuthType,
-  Constants,
-  LocalStorageKeys,
   PermissionTypes,
   Permissions,
+  LocalStorageKeys,
 } from 'librechat-data-provider';
 import ApiKeyDialog from '~/components/SidePanel/Agents/Code/ApiKeyDialog';
-import { useLocalize, useHasAccess, useCodeApiKeyForm } from '~/hooks';
+import { useLocalize, useHasAccess, useCodeApiKeyForm, useToolToggle } from '~/hooks';
 import CheckboxButton from '~/components/ui/CheckboxButton';
-import useLocalStorage from '~/hooks/useLocalStorageAlt';
 import { useVerifyAgentToolAuth } from '~/data-provider';
-import { ephemeralAgentByConvoId } from '~/store';
-
-const storageCondition = (value: unknown, rawCurrentValue?: string | null) => {
-  if (rawCurrentValue) {
-    try {
-      const currentValue = rawCurrentValue?.trim() ?? '';
-      if (currentValue === 'true' && value === false) {
-        return true;
-      }
-    } catch (e) {
-      console.error(e);
-    }
-  }
-  return value !== undefined && value !== null && value !== '' && value !== false;
-};
 
 function CodeInterpreter({ conversationId }: { conversationId?: string | null }) {
   const triggerRef = useRef<HTMLInputElement>(null);
   const localize = useLocalize();
-  const key = conversationId ?? Constants.NEW_CONVO;
 
   const canRunCode = useHasAccess({
     permissionType: PermissionTypes.RUN_CODE,
     permission: Permissions.USE,
   });
-  const [ephemeralAgent, setEphemeralAgent] = useRecoilState(ephemeralAgentByConvoId(key));
-  const isCodeToggleEnabled = useMemo(() => {
-    return ephemeralAgent?.execute_code ?? false;
-  }, [ephemeralAgent?.execute_code]);
-
-  /** Track previous value to prevent infinite loops */
-  const prevIsCodeToggleEnabled = useRef(isCodeToggleEnabled);
 
   const { data } = useVerifyAgentToolAuth(
     { toolId: Tools.execute_code },
@@ -59,46 +32,13 @@ function CodeInterpreter({ conversationId }: { conversationId?: string | null })
   const { methods, onSubmit, isDialogOpen, setIsDialogOpen, handleRevokeApiKey } =
     useCodeApiKeyForm({});
 
-  const setValue = useCallback(
-    (isChecked: boolean) => {
-      setEphemeralAgent((prev) => ({
-        ...prev,
-        [Tools.execute_code]: isChecked,
-      }));
-    },
-    [setEphemeralAgent],
-  );
-
-  const [runCode, setRunCode] = useLocalStorage<boolean>(
-    `${LocalStorageKeys.LAST_CODE_TOGGLE_}${key}`,
-    isCodeToggleEnabled,
-    setValue,
-    storageCondition,
-  );
-
-  const handleChange = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>, isChecked: boolean) => {
-      if (!isAuthenticated) {
-        setIsDialogOpen(true);
-        e.preventDefault();
-        return;
-      }
-      setRunCode(isChecked);
-    },
-    [setRunCode, setIsDialogOpen, isAuthenticated],
-  );
-
-  const debouncedChange = useMemo(
-    () => debounce(handleChange, 50, { leading: true }),
-    [handleChange],
-  );
-
-  useEffect(() => {
-    if (prevIsCodeToggleEnabled.current !== isCodeToggleEnabled) {
-      setRunCode(isCodeToggleEnabled);
-    }
-    prevIsCodeToggleEnabled.current = isCodeToggleEnabled;
-  }, [isCodeToggleEnabled, runCode, setRunCode]);
+  const { toggleState: runCode, debouncedChange } = useToolToggle({
+    conversationId,
+    isAuthenticated,
+    setIsDialogOpen,
+    toolKey: Tools.execute_code,
+    localStorageKey: LocalStorageKeys.LAST_CODE_TOGGLE_,
+  });
 
   if (!canRunCode) {
     return null;
