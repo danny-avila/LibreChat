@@ -935,12 +935,12 @@ pre {
   color: var(--tw-prose-code);
   font-size: 0.875em;
   font-weight: 600;
+  background-color: var(--gray-200);
+  padding: 0.125rem 0.25rem;
+  border-radius: 0.35rem;
 }
-.prose :where(code):not(:where([class~='not-prose'] *)):before {
-  content: '`';
-}
-.prose :where(code):not(:where([class~='not-prose'] *)):after {
-  content: '`';
+.dark .prose :where(code):not(:where([class~='not-prose'] *)):not(:where(pre *)) {
+  background-color: var(--gray-600);
 }
 .prose :where(a code):not(:where([class~='not-prose'] *)) {
   color: inherit;
@@ -967,7 +967,7 @@ pre {
 }
 .prose :where(pre):not(:where([class~='not-prose'] *)) {
   background-color: transparent;
-  border-radius: 0.375rem;
+  border-radius: 0.75rem;
   color: currentColor;
   font-size: 0.875em;
   font-weight: 400;
@@ -1794,11 +1794,11 @@ html {
   background-color: var(--gray-600);
 }
 .markdown th:first-child {
-  border-top-left-radius: 0.375rem;
+  border-top-left-radius: 0.75rem;
 }
 .markdown th:last-child {
   border-right-width: 1px;
-  border-top-right-radius: 0.375rem;
+  border-top-right-radius: 0.75rem;
 }
 .markdown td {
   border-bottom-width: 1px;
@@ -1817,10 +1817,10 @@ html {
   border-color: var(--gray-600);
 }
 .markdown tbody tr:last-child td:first-child {
-  border-bottom-left-radius: 0.375rem;
+  border-bottom-left-radius: 0.75rem;
 }
 .markdown tbody tr:last-child td:last-child {
-  border-bottom-right-radius: 0.375rem;
+  border-bottom-right-radius: 0.75rem;
 }
 .markdown a {
   text-decoration-line: underline;
