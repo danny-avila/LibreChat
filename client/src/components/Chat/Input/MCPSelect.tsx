@@ -1,17 +1,14 @@
-import React, { memo, useRef, useMemo, useEffect, useCallback, useState } from 'react';
-import { useRecoilState } from 'recoil';
+import React, { memo, useCallback, useState } from 'react';
 import { Settings2 } from 'lucide-react';
 import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
-import { Constants, EModelEndpoint, LocalStorageKeys } from 'librechat-data-provider';
+import { Constants, EModelEndpoint } from 'librechat-data-provider';
 import type { TPlugin, TPluginAuthConfig, TUpdateUserPlugins } from 'librechat-data-provider';
 import MCPConfigDialog, { type ConfigFieldDetail } from '~/components/ui/MCPConfigDialog';
 import { useToastContext, useBadgeRowContext } from '~/Providers';
 import { useAvailableToolsQuery } from '~/data-provider';
-import useLocalStorage from '~/hooks/useLocalStorageAlt';
+import { useLocalize, useMCPSelect } from '~/hooks';
 import MultiSelect from '~/components/ui/MultiSelect';
-import { ephemeralAgentByConvoId } from '~/store';
 import MCPIcon from '~/components/ui/MCPIcon';
-import { useLocalize } from '~/hooks';
 
 interface McpServerInfo {
   name: string;
@@ -26,26 +23,10 @@ const getBaseMCPPluginKey = (fullPluginKey: string): string => {
   return Constants.mcp_prefix + parts[parts.length - 1];
 };
 
-const storageCondition = (value: unknown, rawCurrentValue?: string | null) => {
-  if (rawCurrentValue) {
-    try {
-      const currentValue = rawCurrentValue?.trim() ?? '';
-      if (currentValue.length > 2) {
-        return true;
-      }
-    } catch (e) {
-      console.error(e);
-    }
-  }
-  return Array.isArray(value) && value.length > 0;
-};
-
 function MCPSelect() {
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const { conversationId } = useBadgeRowContext();
-  const key = conversationId ?? Constants.NEW_CONVO;
-  const hasSetFetched = useRef<string | null>(null);
   const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
   const [selectedToolForConfig, setSelectedToolForConfig] = useState<McpServerInfo | null>(null);
 
@@ -71,6 +52,12 @@ function MCPSelect() {
     },
   });
 
+  const { mcpValues, setMCPValues, mcpServerNames } = useMCPSelect({
+    conversationId,
+    mcpToolDetails,
+    isFetched,
+  });
+
   const updateUserPluginsMutation = useUpdateUserPluginsMutation({
     onSuccess: () => {
       setIsConfigModalOpen(false);
@@ -85,48 +72,6 @@ function MCPSelect() {
     },
   });
 
-  const [ephemeralAgent, setEphemeralAgent] = useRecoilState(ephemeralAgentByConvoId(key));
-  const mcpState = useMemo(() => {
-    return ephemeralAgent?.mcp ?? [];
-  }, [ephemeralAgent?.mcp]);
-
-  const setSelectedValues = useCallback(
-    (values: string[] | null | undefined) => {
-      if (!values) {
-        return;
-      }
-      if (!Array.isArray(values)) {
-        return;
-      }
-      setEphemeralAgent((prev) => ({
-        ...prev,
-        mcp: values,
-      }));
-    },
-    [setEphemeralAgent],
-  );
-  const [mcpValues, setMCPValues] = useLocalStorage<string[]>(
-    `${LocalStorageKeys.LAST_MCP_}${key}`,
-    mcpState,
-    setSelectedValues,
-    storageCondition,
-  );
-
-  useEffect(() => {
-    if (hasSetFetched.current === key) {
-      return;
-    }
-    if (!isFetched) {
-      return;
-    }
-    hasSetFetched.current = key;
-    if ((mcpToolDetails?.length ?? 0) > 0) {
-      setMCPValues(mcpValues.filter((mcp) => mcpToolDetails?.some((tool) => tool.name === mcp)));
-      return;
-    }
-    setMCPValues([]);
-  }, [isFetched, setMCPValues, mcpToolDetails, key, mcpValues]);
-
   const renderSelectedValues = useCallback(
     (values: string[], placeholder?: string) => {
       if (values.length === 0) {
@@ -139,10 +84,6 @@ function MCPSelect() {
     },
     [localize],
   );
-
-  const mcpServerNames = useMemo(() => {
-    return (mcpToolDetails ?? []).map((tool) => tool.name);
-  }, [mcpToolDetails]);
 
   const handleConfigSave = useCallback(
     (targetName: string, authData: Record<string, string>) => {
