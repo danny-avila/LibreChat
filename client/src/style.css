@@ -878,7 +878,9 @@ pre {
   color: var(--tw-prose-headings);
   font-size: 2.25em;
   font-weight: 800;
-  line-height: 1.0;
+  line-height: 1;
+  margin-bottom: 0.4em;
+  margin-top: 0.6em;
 }
 .prose :where(h1 strong):not(:where([class~='not-prose'] *)) {
   color: inherit;
@@ -889,6 +891,8 @@ pre {
   font-size: 1.5em;
   font-weight: 700;
   line-height: 1.1;
+  margin-bottom: 0.4em;
+  margin-top: 0.8em;
 }
 .prose :where(h2 strong):not(:where([class~='not-prose'] *)) {
   color: inherit;
@@ -899,8 +903,8 @@ pre {
   font-size: 1.25em;
   font-weight: 600;
   line-height: 1.3;
-  margin-bottom: 0.6em;
-  margin-top: 1.6em;
+  margin-bottom: 0.3em;
+  margin-top: 0.6em;
 }
 .prose :where(h3 strong):not(:where([class~='not-prose'] *)) {
   color: inherit;
@@ -910,8 +914,8 @@ pre {
   color: var(--tw-prose-headings);
   font-weight: 600;
   line-height: 1.2;
-  margin-bottom: 0.5em;
-  margin-top: 1.5em;
+  margin-bottom: 0.3em;
+  margin-top: 0.5em;
 }
 .prose :where(h4 strong):not(:where([class~='not-prose'] *)) {
   color: inherit;
@@ -1209,6 +1213,14 @@ pre {
 .prose-2xl :where(.prose > :last-child):not(:where([class~='not-prose'] *)) {
   margin-bottom: 0;
 }
+.prose :where(ul > li):has(input[type='checkbox']):not(:where([class~='not-prose'] *)) {
+  margin-bottom: 0;
+  margin-top: 0;
+}
+.prose :where(ul > li):has(input[type='checkbox']) p:not(:where([class~='not-prose'] *)) {
+  margin-bottom: 0;
+  margin-top: 0;
+}
 
 code,
 pre {
@@ -1492,8 +1504,8 @@ html {
 }
 
 .markdown h2 {
-  margin-bottom: 1rem;
-  margin-top: 2rem;
+  margin-bottom: 0.4rem;
+  margin-top: 0.8rem;
 }
 
 .markdown h3 {
@@ -1503,8 +1515,8 @@ html {
 
 .markdown h3,
 .markdown h4 {
-  margin-bottom: 0.5rem;
-  margin-top: 1rem;
+  margin-bottom: 0.3rem;
+  margin-top: 0.6rem;
 }
 
 .markdown h4 {
@@ -1519,7 +1531,7 @@ html {
 
 .markdown blockquote {
   --tw-border-opacity: 1;
-  border-color: rgba(142, 142, 160, var(--tw-border-opacity));
+  border-color: var(--gray-400);
   border-left-width: 2px;
   line-height: 1rem;
   padding-left: 1rem;
@@ -1748,16 +1760,16 @@ html {
   font-weight: 600;
 }
 .markdown h2 {
-  margin-bottom: 1rem;
-  margin-top: 2rem;
+  margin-bottom: 0.4rem;
+  margin-top: 0.8rem;
 }
 .markdown h3 {
   font-weight: 600;
 }
 .markdown h3,
 .markdown h4 {
-  margin-bottom: 0.5rem;
-  margin-top: 1rem;
+  margin-bottom: 0.3rem;
+  margin-top: 0.6rem;
 }
 .markdown h4 {
   font-weight: 400;
@@ -1767,10 +1779,13 @@ html {
 }
 .markdown blockquote {
   --tw-border-opacity: 1;
-  border-color: rgba(142, 142, 160, var(--tw-border-opacity));
+  border-color: var(--gray-300);
   border-left-width: 2px;
   line-height: 1rem;
   padding-left: 1rem;
+}
+.dark .markdown blockquote {
+  border-color: var(--gray-600);
 }
 .markdown table {
   --tw-border-spacing-x: 0px;
@@ -2022,8 +2037,8 @@ html {
 }
 
 .dark .assistant-item:after {
-  --tw-shadow: inset  0 0 0 1px rgba(0, 0, 0, 0.25);
-  --tw-shadow-colored: inset 0 0  0 0 1px var(--tw-shadow-color);
+  --tw-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.25);
+  --tw-shadow-colored: inset 0 0 0 0 1px var(--tw-shadow-color);
 }
 
 .result-streaming > :not(ol):not(ul):not(pre):last-child:after,
@@ -2260,12 +2275,24 @@ html {
 /* Nested unordered lists */
 .prose ul ul,
 .markdown ul ul {
-  list-style-type: circle;
+  list-style-type: disc;
+}
+
+.prose ul ul > li::marker,
+.markdown ul ul > li::marker {
+  color: var(--tw-prose-bullets);
+  font-size: 0.8em;
 }
 
 .prose ul ul ul,
 .markdown ul ul ul {
   list-style-type: square;
+}
+
+.prose ul ul ul > li::marker,
+.markdown ul ul ul > li::marker {
+  color: var(--tw-prose-bullets);
+  font-size: 0.7em;
 }
 
 /* Nested lists */
