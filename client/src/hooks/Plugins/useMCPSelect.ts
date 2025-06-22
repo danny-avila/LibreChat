@@ -1,6 +1,8 @@
 import { useRef, useEffect, useCallback, useMemo } from 'react';
 import { useRecoilState } from 'recoil';
-import { Constants, LocalStorageKeys } from 'librechat-data-provider';
+import { Constants, LocalStorageKeys, EModelEndpoint } from 'librechat-data-provider';
+import type { TPlugin, TPluginAuthConfig } from 'librechat-data-provider';
+import { useAvailableToolsQuery } from '~/data-provider';
 import useLocalStorage from '~/hooks/useLocalStorageAlt';
 import { ephemeralAgentByConvoId } from '~/store';
 
@@ -20,14 +22,40 @@ const storageCondition = (value: unknown, rawCurrentValue?: string | null) => {
 
 interface UseMCPSelectOptions {
   conversationId?: string | null;
-  mcpToolDetails?: Array<{ name: string }> | null;
-  isFetched: boolean;
 }
 
-export function useMCPSelect({ conversationId, mcpToolDetails, isFetched }: UseMCPSelectOptions) {
+export interface McpServerInfo {
+  name: string;
+  pluginKey: string;
+  authConfig?: TPluginAuthConfig[];
+  authenticated?: boolean;
+}
+
+export function useMCPSelect({ conversationId }: UseMCPSelectOptions) {
   const key = conversationId ?? Constants.NEW_CONVO;
   const hasSetFetched = useRef<string | null>(null);
   const [ephemeralAgent, setEphemeralAgent] = useRecoilState(ephemeralAgentByConvoId(key));
+  const { data: mcpToolDetails, isFetched } = useAvailableToolsQuery(EModelEndpoint.agents, {
+    select: (data: TPlugin[]) => {
+      const mcpToolsMap = new Map<string, McpServerInfo>();
+      data.forEach((tool) => {
+        const isMCP = tool.pluginKey.includes(Constants.mcp_delimiter);
+        if (isMCP && tool.chatMenu !== false) {
+          const parts = tool.pluginKey.split(Constants.mcp_delimiter);
+          const serverName = parts[parts.length - 1];
+          if (!mcpToolsMap.has(serverName)) {
+            mcpToolsMap.set(serverName, {
+              name: serverName,
+              pluginKey: tool.pluginKey,
+              authConfig: tool.authConfig,
+              authenticated: tool.authenticated,
+            });
+          }
+        }
+      });
+      return Array.from(mcpToolsMap.values());
+    },
+  });
 
   const mcpState = useMemo(() => {
     return ephemeralAgent?.mcp ?? [];
@@ -80,6 +108,7 @@ export function useMCPSelect({ conversationId, mcpToolDetails, isFetched }: UseM
     setMCPValues,
     mcpServerNames,
     ephemeralAgent,
+    mcpToolDetails,
     setEphemeralAgent,
   };
 }

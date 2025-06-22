@@ -1,40 +1,25 @@
 import React, { memo, useRef, useMemo } from 'react';
 import { Globe } from 'lucide-react';
-import { Tools, Permissions, PermissionTypes, LocalStorageKeys } from 'librechat-data-provider';
-import { useLocalize, useHasAccess, useSearchApiKeyForm, useToolToggle } from '~/hooks';
+import { Permissions, PermissionTypes } from 'librechat-data-provider';
 import ApiKeyDialog from '~/components/SidePanel/Agents/Search/ApiKeyDialog';
+import { useLocalize, useHasAccess, useSearchApiKeyForm } from '~/hooks';
 import CheckboxButton from '~/components/ui/CheckboxButton';
-import { useVerifyAgentToolAuth } from '~/data-provider';
 import { useBadgeRowContext } from '~/Providers';
 
 function WebSearch() {
   const triggerRef = useRef<HTMLInputElement>(null);
   const localize = useLocalize();
-  const { conversationId } = useBadgeRowContext();
+  const { webSearch: webSearchData } = useBadgeRowContext();
+  const { toggleState: webSearch, debouncedChange, authData } = webSearchData;
 
   const canUseWebSearch = useHasAccess({
     permissionType: PermissionTypes.WEB_SEARCH,
     permission: Permissions.USE,
   });
 
-  const { data } = useVerifyAgentToolAuth(
-    { toolId: Tools.web_search },
-    {
-      retry: 1,
-    },
-  );
-  const authTypes = useMemo(() => data?.authTypes ?? [], [data?.authTypes]);
-  const isAuthenticated = useMemo(() => data?.authenticated ?? false, [data?.authenticated]);
+  const authTypes = useMemo(() => authData?.authTypes ?? [], [authData?.authTypes]);
   const { methods, onSubmit, isDialogOpen, setIsDialogOpen, handleRevokeApiKey } =
     useSearchApiKeyForm({});
-
-  const { toggleState: webSearch, debouncedChange } = useToolToggle({
-    conversationId,
-    toolKey: Tools.web_search,
-    localStorageKey: LocalStorageKeys.LAST_WEB_SEARCH_TOGGLE_,
-    isAuthenticated,
-    setIsDialogOpen,
-  });
 
   if (!canUseWebSearch) {
     return null;
@@ -60,7 +45,7 @@ function WebSearch() {
         onRevoke={handleRevokeApiKey}
         onOpenChange={setIsDialogOpen}
         handleSubmit={methods.handleSubmit}
-        isToolAuthenticated={isAuthenticated}
+        isToolAuthenticated={authData?.authenticated ?? false}
       />
     </>
   );

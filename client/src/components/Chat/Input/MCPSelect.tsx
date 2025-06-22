@@ -1,23 +1,15 @@
 import React, { memo, useCallback, useState } from 'react';
 import { Settings2 } from 'lucide-react';
 import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
-import { Constants, EModelEndpoint } from 'librechat-data-provider';
-import type { TPlugin, TPluginAuthConfig, TUpdateUserPlugins } from 'librechat-data-provider';
+import { Constants } from 'librechat-data-provider';
+import type { TUpdateUserPlugins } from 'librechat-data-provider';
+import type { McpServerInfo } from '~/hooks/Plugins/useMCPSelect';
 import MCPConfigDialog, { type ConfigFieldDetail } from '~/components/ui/MCPConfigDialog';
 import { useToastContext, useBadgeRowContext } from '~/Providers';
-import { useAvailableToolsQuery } from '~/data-provider';
-import { useLocalize, useMCPSelect } from '~/hooks';
 import MultiSelect from '~/components/ui/MultiSelect';
 import MCPIcon from '~/components/ui/MCPIcon';
+import { useLocalize } from '~/hooks';
 
-interface McpServerInfo {
-  name: string;
-  pluginKey: string;
-  authConfig?: TPluginAuthConfig[];
-  authenticated?: boolean;
-}
-
-// Helper function to extract mcp_serverName from a full pluginKey like action_mcp_serverName
 const getBaseMCPPluginKey = (fullPluginKey: string): string => {
   const parts = fullPluginKey.split(Constants.mcp_delimiter);
   return Constants.mcp_prefix + parts[parts.length - 1];
@@ -26,37 +18,11 @@ const getBaseMCPPluginKey = (fullPluginKey: string): string => {
 function MCPSelect() {
   const localize = useLocalize();
   const { showToast } = useToastContext();
-  const { conversationId } = useBadgeRowContext();
+  const { mcpSelect } = useBadgeRowContext();
+  const { mcpValues, setMCPValues, mcpServerNames, mcpToolDetails } = mcpSelect;
+
   const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
   const [selectedToolForConfig, setSelectedToolForConfig] = useState<McpServerInfo | null>(null);
-
-  const { data: mcpToolDetails, isFetched } = useAvailableToolsQuery(EModelEndpoint.agents, {
-    select: (data: TPlugin[]) => {
-      const mcpToolsMap = new Map<string, McpServerInfo>();
-      data.forEach((tool) => {
-        const isMCP = tool.pluginKey.includes(Constants.mcp_delimiter);
-        if (isMCP && tool.chatMenu !== false) {
-          const parts = tool.pluginKey.split(Constants.mcp_delimiter);
-          const serverName = parts[parts.length - 1];
-          if (!mcpToolsMap.has(serverName)) {
-            mcpToolsMap.set(serverName, {
-              name: serverName,
-              pluginKey: tool.pluginKey,
-              authConfig: tool.authConfig,
-              authenticated: tool.authenticated,
-            });
-          }
-        }
-      });
-      return Array.from(mcpToolsMap.values());
-    },
-  });
-
-  const { mcpValues, setMCPValues, mcpServerNames } = useMCPSelect({
-    conversationId,
-    mcpToolDetails,
-    isFetched,
-  });
 
   const updateUserPluginsMutation = useUpdateUserPluginsMutation({
     onSuccess: () => {

@@ -2,6 +2,9 @@ import { useRef, useEffect, useCallback, useMemo } from 'react';
 import { useRecoilState } from 'recoil';
 import debounce from 'lodash/debounce';
 import { Constants, LocalStorageKeys } from 'librechat-data-provider';
+import type { VerifyToolAuthResponse } from 'librechat-data-provider';
+import type { UseQueryOptions } from '@tanstack/react-query';
+import { useVerifyAgentToolAuth } from '~/data-provider';
 import useLocalStorage from '~/hooks/useLocalStorageAlt';
 import { ephemeralAgentByConvoId } from '~/store';
 
@@ -25,17 +28,34 @@ interface UseToolToggleOptions {
   localStorageKey: LocalStorageKeys;
   isAuthenticated?: boolean;
   setIsDialogOpen?: (open: boolean) => void;
+  /** Options for auth verification */
+  authConfig?: {
+    toolId: string;
+    queryOptions?: UseQueryOptions<VerifyToolAuthResponse>;
+  };
 }
 
 export function useToolToggle({
   conversationId,
   toolKey,
   localStorageKey,
-  isAuthenticated,
+  isAuthenticated: externalIsAuthenticated,
   setIsDialogOpen,
+  authConfig,
 }: UseToolToggleOptions) {
   const key = conversationId ?? Constants.NEW_CONVO;
   const [ephemeralAgent, setEphemeralAgent] = useRecoilState(ephemeralAgentByConvoId(key));
+
+  const authQuery = useVerifyAgentToolAuth(
+    { toolId: authConfig?.toolId || '' },
+    {
+      enabled: !!authConfig?.toolId,
+      ...authConfig?.queryOptions,
+    },
+  );
+
+  const isAuthenticated =
+    externalIsAuthenticated ?? (authConfig ? (authQuery?.data?.authenticated ?? false) : false);
 
   const isToolEnabled = useMemo(() => {
     return ephemeralAgent?.[toolKey] ?? false;
@@ -93,5 +113,6 @@ export function useToolToggle({
     ephemeralAgent,
     debouncedChange,
     setEphemeralAgent,
+    authData: authQuery?.data,
   };
 }

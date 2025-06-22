@@ -1,46 +1,25 @@
 import React, { memo, useMemo, useRef } from 'react';
 import { TerminalSquareIcon } from 'lucide-react';
-import {
-  Tools,
-  AuthType,
-  PermissionTypes,
-  Permissions,
-  LocalStorageKeys,
-} from 'librechat-data-provider';
+import { AuthType, PermissionTypes, Permissions } from 'librechat-data-provider';
 import ApiKeyDialog from '~/components/SidePanel/Agents/Code/ApiKeyDialog';
-import { useLocalize, useHasAccess, useCodeApiKeyForm, useToolToggle } from '~/hooks';
+import { useLocalize, useHasAccess, useCodeApiKeyForm } from '~/hooks';
 import CheckboxButton from '~/components/ui/CheckboxButton';
-import { useVerifyAgentToolAuth } from '~/data-provider';
 import { useBadgeRowContext } from '~/Providers';
 
 function CodeInterpreter() {
   const triggerRef = useRef<HTMLInputElement>(null);
   const localize = useLocalize();
-  const { conversationId } = useBadgeRowContext();
+  const { codeInterpreter } = useBadgeRowContext();
+  const { toggleState: runCode, debouncedChange, authData } = codeInterpreter;
 
   const canRunCode = useHasAccess({
     permissionType: PermissionTypes.RUN_CODE,
     permission: Permissions.USE,
   });
 
-  const { data } = useVerifyAgentToolAuth(
-    { toolId: Tools.execute_code },
-    {
-      retry: 1,
-    },
-  );
-  const authType = useMemo(() => data?.message ?? false, [data?.message]);
-  const isAuthenticated = useMemo(() => data?.authenticated ?? false, [data?.authenticated]);
+  const authType = useMemo(() => authData?.message ?? false, [authData?.message]);
   const { methods, onSubmit, isDialogOpen, setIsDialogOpen, handleRevokeApiKey } =
     useCodeApiKeyForm({});
-
-  const { toggleState: runCode, debouncedChange } = useToolToggle({
-    conversationId,
-    isAuthenticated,
-    setIsDialogOpen,
-    toolKey: Tools.execute_code,
-    localStorageKey: LocalStorageKeys.LAST_CODE_TOGGLE_,
-  });
 
   if (!canRunCode) {
     return null;
@@ -65,8 +44,8 @@ function CodeInterpreter() {
         onRevoke={handleRevokeApiKey}
         onOpenChange={setIsDialogOpen}
         handleSubmit={methods.handleSubmit}
-        isToolAuthenticated={isAuthenticated}
         isUserProvided={authType === AuthType.USER_PROVIDED}
+        isToolAuthenticated={authData?.authenticated ?? false}
       />
     </>
   );
