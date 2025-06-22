@@ -3,9 +3,10 @@ import * as Ariakit from '@ariakit/react';
 import { Settings2, Globe, TerminalSquareIcon } from 'lucide-react';
 import { Permissions, PermissionTypes } from 'librechat-data-provider';
 import { TooltipAnchor, DropdownPopup } from '~/components';
-import { useBadgeRowContext } from '~/Providers';
 import { useLocalize, useHasAccess } from '~/hooks';
+import { useBadgeRowContext } from '~/Providers';
 import type { MenuItemProps } from '~/common';
+import { PinIcon } from '~/components/svg';
 import { cn } from '~/utils';
 
 interface ToolsDropdownProps {
@@ -14,8 +15,10 @@ interface ToolsDropdownProps {
 
 const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
   const localize = useLocalize();
-  const { webSearch, codeInterpreter } = useBadgeRowContext();
   const isDisabled = disabled ?? false;
+  const { webSearch, codeInterpreter } = useBadgeRowContext();
+  const { isPinned: isSearchPinned, setIsPinned: setIsSearchPinned } = webSearch;
+  const { isPinned: isCodePinned, setIsPinned: setIsCodePinned } = codeInterpreter;
   const [isPopoverActive, setIsPopoverActive] = useState(false);
 
   const canUseWebSearch = useHasAccess({
@@ -53,13 +56,30 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
     if (canUseWebSearch) {
       items.push({
         onClick: handleWebSearchToggle,
-        hideOnClick: true,
+        hideOnClick: false,
         render: (props) => (
-          <div className="flex w-full cursor-pointer items-center justify-between" {...props}>
+          <div {...props}>
             <div className="flex items-center gap-2">
               <Globe className="icon-md" />
               <span>{localize('com_ui_web_search')}</span>
             </div>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsSearchPinned(!isSearchPinned);
+              }}
+              className={cn(
+                'rounded p-1 transition-all duration-200',
+                'hover:bg-surface-tertiary hover:shadow-sm',
+                !isSearchPinned && 'text-text-secondary hover:text-text-primary',
+              )}
+              aria-label={isSearchPinned ? 'Unpin' : 'Pin'}
+            >
+              <div className="h-4 w-4">
+                <PinIcon unpin={isSearchPinned} />
+              </div>
+            </button>
           </div>
         ),
       });
@@ -68,20 +88,47 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
     if (canRunCode) {
       items.push({
         onClick: handleCodeInterpreterToggle,
-        hideOnClick: true,
+        hideOnClick: false,
         render: (props) => (
-          <div className="flex w-full cursor-pointer items-center justify-between" {...props}>
+          <div {...props}>
             <div className="flex items-center gap-2">
               <TerminalSquareIcon className="icon-md" />
               <span>{localize('com_assistants_code_interpreter')}</span>
             </div>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsCodePinned(!isCodePinned);
+              }}
+              className={cn(
+                'rounded p-1 transition-all duration-200',
+                'hover:bg-surface-tertiary hover:shadow-sm',
+                !isCodePinned && 'text-text-primary hover:text-text-primary',
+              )}
+              aria-label={isCodePinned ? 'Unpin' : 'Pin'}
+            >
+              <div className="h-4 w-4">
+                <PinIcon unpin={isCodePinned} />
+              </div>
+            </button>
           </div>
         ),
       });
     }
 
     return items;
-  }, [canUseWebSearch, canRunCode, localize, handleWebSearchToggle, handleCodeInterpreterToggle]);
+  }, [
+    localize,
+    canRunCode,
+    isCodePinned,
+    isSearchPinned,
+    setIsCodePinned,
+    canUseWebSearch,
+    setIsSearchPinned,
+    handleWebSearchToggle,
+    handleCodeInterpreterToggle,
+  ]);
 
   const menuTrigger = (
     <TooltipAnchor
@@ -107,6 +154,7 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
 
   return (
     <DropdownPopup
+      itemClassName="flex w-full cursor-pointer items-center justify-between"
       menuId="tools-dropdown-menu"
       isOpen={isPopoverActive}
       setIsOpen={setIsPopoverActive}

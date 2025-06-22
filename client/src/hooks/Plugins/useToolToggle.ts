@@ -74,6 +74,11 @@ export function useToolToggle({
     storageCondition,
   );
 
+  const [isPinned, setIsPinned] = useLocalStorage<boolean>(
+    `${localStorageKey}pinned_${key}`,
+    false,
+  );
+
   const handleChange = useCallback(
     ({ e, isChecked }: { e?: React.ChangeEvent<HTMLInputElement>; isChecked: boolean }) => {
       if (isAuthenticated !== undefined && !isAuthenticated && setIsDialogOpen) {
@@ -111,5 +116,7 @@ export function useToolToggle({
     debouncedChange,
     setEphemeralAgent,
     authData: authQuery?.data,
+    isPinned,
+    setIsPinned,
   };
 }

@@ -10,7 +10,7 @@ function CodeInterpreter() {
   const triggerRef = useRef<HTMLInputElement>(null);
   const localize = useLocalize();
   const { codeInterpreter, codeApiKeyForm } = useBadgeRowContext();
-  const { toggleState: runCode, debouncedChange, authData } = codeInterpreter;
+  const { toggleState: runCode, debouncedChange, authData, isPinned } = codeInterpreter;
   const { methods, onSubmit, isDialogOpen, setIsDialogOpen, handleRevokeApiKey } = codeApiKeyForm;
 
   const canRunCode = useHasAccess({
@@ -26,7 +26,7 @@ function CodeInterpreter() {
 
   return (
     <>
-      {runCode && (
+      {(runCode || isPinned) && (
         <CheckboxButton
           ref={triggerRef}
           className="max-w-fit"

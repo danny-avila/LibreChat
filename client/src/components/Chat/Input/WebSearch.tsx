@@ -10,7 +10,7 @@ function WebSearch() {
   const triggerRef = useRef<HTMLInputElement>(null);
   const localize = useLocalize();
   const { webSearch: webSearchData, searchApiKeyForm } = useBadgeRowContext();
-  const { toggleState: webSearch, debouncedChange, authData } = webSearchData;
+  const { toggleState: webSearch, debouncedChange, authData, isPinned } = webSearchData;
   const { methods, onSubmit, isDialogOpen, setIsDialogOpen, handleRevokeApiKey } = searchApiKeyForm;
 
   const canUseWebSearch = useHasAccess({
@@ -26,7 +26,7 @@ function WebSearch() {
 
   return (
     <>
-      {webSearch && (
+      {(webSearch || isPinned) && (
         <CheckboxButton
           ref={triggerRef}
           className="max-w-fit"
