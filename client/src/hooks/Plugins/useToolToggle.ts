@@ -54,8 +54,11 @@ export function useToolToggle({
     },
   );
 
-  const isAuthenticated =
-    externalIsAuthenticated ?? (authConfig ? (authQuery?.data?.authenticated ?? false) : false);
+  const isAuthenticated = useMemo(
+    () =>
+      externalIsAuthenticated ?? (authConfig ? (authQuery?.data?.authenticated ?? false) : false),
+    [externalIsAuthenticated, authConfig, authQuery.data?.authenticated],
+  );
 
   const isToolEnabled = useMemo(() => {
     return ephemeralAgent?.[toolKey] ?? false;
@@ -72,10 +75,10 @@ export function useToolToggle({
   );
 
   const handleChange = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>, isChecked: boolean) => {
+    ({ e, isChecked }: { e?: React.ChangeEvent<HTMLInputElement>; isChecked: boolean }) => {
       if (isAuthenticated !== undefined && !isAuthenticated && setIsDialogOpen) {
         setIsDialogOpen(true);
-        e.preventDefault();
+        e?.preventDefault?.();
         return;
       }
       setToggleState(isChecked);

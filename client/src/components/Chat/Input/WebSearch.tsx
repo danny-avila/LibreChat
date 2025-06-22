@@ -29,7 +29,7 @@ function WebSearch() {
       <CheckboxButton
         ref={triggerRef}
         className="max-w-fit"
-        defaultChecked={webSearch}
+        checked={webSearch}
         setValue={debouncedChange}
         label={localize('com_ui_search')}
         isCheckedClassName="border-blue-600/40 bg-blue-500/10 hover:bg-blue-700/10"

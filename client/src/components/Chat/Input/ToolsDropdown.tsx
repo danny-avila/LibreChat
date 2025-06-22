@@ -1,9 +1,11 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import * as Ariakit from '@ariakit/react';
-import { Settings2, Search, ImageIcon, Globe, PenTool } from 'lucide-react';
+import { Settings2, Globe, TerminalSquareIcon } from 'lucide-react';
+import { Permissions, PermissionTypes } from 'librechat-data-provider';
 import { TooltipAnchor, DropdownPopup } from '~/components';
 import { useBadgeRowContext } from '~/Providers';
-import { useLocalize } from '~/hooks';
+import { useLocalize, useHasAccess } from '~/hooks';
+import type { MenuItemProps } from '~/common';
 import { cn } from '~/utils';
 
 interface ToolsDropdownProps {
@@ -12,12 +14,32 @@ interface ToolsDropdownProps {
 
 const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
   const localize = useLocalize();
-  const { conversationId } = useBadgeRowContext();
+  const { webSearch, codeInterpreter } = useBadgeRowContext();
   const isDisabled = disabled ?? false;
   const [isPopoverActive, setIsPopoverActive] = useState(false);
 
+  const canUseWebSearch = useHasAccess({
+    permissionType: PermissionTypes.WEB_SEARCH,
+    permission: Permissions.USE,
+  });
+
+  const canRunCode = useHasAccess({
+    permissionType: PermissionTypes.RUN_CODE,
+    permission: Permissions.USE,
+  });
+
+  const handleWebSearchToggle = useCallback(() => {
+    const newValue = !webSearch.toggleState;
+    webSearch.debouncedChange({ isChecked: newValue });
+  }, [webSearch]);
+
+  const handleCodeInterpreterToggle = useCallback(() => {
+    const newValue = !codeInterpreter.toggleState;
+    codeInterpreter.debouncedChange({ isChecked: newValue });
+  }, [codeInterpreter]);
+
   const dropdownItems = useMemo(() => {
-    return [
+    const items: MenuItemProps[] = [
       {
         render: () => (
           <div className="px-3 py-2 text-xs font-semibold text-text-secondary">
@@ -26,41 +48,40 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
         ),
         hideOnClick: false,
       },
-      {
-        label: 'Search connectors',
-        onClick: () => {
-          // TODO: Implement search connectors functionality
-          console.log('Search connectors clicked');
-        },
-        icon: <Search className="icon-md" />,
-        badge: 'NEW',
-      },
-      {
-        label: 'Create an image',
-        onClick: () => {
-          // TODO: Implement create image functionality
-          console.log('Create an image clicked');
-        },
-        icon: <ImageIcon className="icon-md" />,
-      },
-      {
-        label: 'Search the web',
-        onClick: () => {
-          // TODO: Implement web search functionality
-          console.log('Search the web clicked');
-        },
-        icon: <Globe className="icon-md" />,
-      },
-      {
-        label: 'Write or code',
-        onClick: () => {
-          // TODO: Implement write or code functionality
-          console.log('Write or code clicked');
-        },
-        icon: <PenTool className="icon-md" />,
-      },
     ];
-  }, []);
+
+    if (canUseWebSearch) {
+      items.push({
+        onClick: handleWebSearchToggle,
+        hideOnClick: true,
+        render: (props) => (
+          <div className="flex w-full cursor-pointer items-center justify-between" {...props}>
+            <div className="flex items-center gap-2">
+              <Globe className="icon-md" />
+              <span>{localize('com_ui_web_search')}</span>
+            </div>
+          </div>
+        ),
+      });
+    }
+
+    if (canRunCode) {
+      items.push({
+        onClick: handleCodeInterpreterToggle,
+        hideOnClick: true,
+        render: (props) => (
+          <div className="flex w-full cursor-pointer items-center justify-between" {...props}>
+            <div className="flex items-center gap-2">
+              <TerminalSquareIcon className="icon-md" />
+              <span>{localize('com_assistants_code_interpreter')}</span>
+            </div>
+          </div>
+        ),
+      });
+    }
+
+    return items;
+  }, [canUseWebSearch, canRunCode, localize, handleWebSearchToggle, handleCodeInterpreterToggle]);
 
   const menuTrigger = (
     <TooltipAnchor
