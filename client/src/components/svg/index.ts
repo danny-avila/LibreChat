@@ -62,3 +62,4 @@ export { default as ThumbUpIcon } from './ThumbUpIcon';
 export { default as ThumbDownIcon } from './ThumbDownIcon';
 export { default as XAIcon } from './XAIcon';
 export { default as PersonalizationIcon } from './PersonalizationIcon';
+export { default as MCPIcon } from './MCPIcon';
