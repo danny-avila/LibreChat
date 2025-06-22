@@ -17,13 +17,14 @@ export default function DialogImage({ isOpen, onOpenChange, src = '', downloadIm
   const localize = useLocalize();
   const [isPromptOpen, setIsPromptOpen] = useState(false);
   const [imageSize, setImageSize] = useState<string | null>(null);
+
+  // Zoom and pan state
   const [zoom, setZoom] = useState(1);
   const [panX, setPanX] = useState(0);
   const [panY, setPanY] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
-  const [_imageLoaded, setImageLoaded] = useState(false);
-  const imageRef = useRef<HTMLImageElement>(null);
+
   const containerRef = useRef<HTMLDivElement>(null);
 
   const getImageSize = useCallback(async (url: string) => {
@@ -55,97 +56,129 @@ export default function DialogImage({ isOpen, onOpenChange, src = '', downloadIm
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
+  const getImageMaxWidth = () => {
+    // On mobile (when panel overlays), use full width minus padding
+    // On desktop, account for the side panel width
+    if (isPromptOpen) {
+      return window.innerWidth >= 640 ? 'calc(100vw - 22rem)' : 'calc(100vw - 2rem)';
+    }
+    return 'calc(100vw - 2rem)';
+  };
+
   const resetZoom = useCallback(() => {
     setZoom(1);
     setPanX(0);
     setPanY(0);
   }, []);
 
-  const handleWheel = useCallback(
-    (e: React.WheelEvent) => {
-      e.preventDefault();
+  const getCursor = () => {
+    if (zoom <= 1) return 'default';
+    return isDragging ? 'grabbing' : 'grab';
+  };
 
+  const handleDoubleClick = useCallback(() => {
+    if (zoom > 1) {
+      resetZoom();
+    } else {
+      // Zoom in to 2x on double click when at normal zoom
+      setZoom(2);
+    }
+  }, [zoom, resetZoom]);
+
+  const handleWheel = useCallback(
+    (e: React.WheelEvent<HTMLDivElement>) => {
+      e.preventDefault();
       if (!containerRef.current) return;
+
       const rect = containerRef.current.getBoundingClientRect();
-      const containerCenterX = rect.width / 2;
-      const containerCenterY = rect.height / 2;
       const mouseX = e.clientX - rect.left;
       const mouseY = e.clientY - rect.top;
-      const offsetX = mouseX - containerCenterX;
-      const offsetY = mouseY - containerCenterY;
-      const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
-      const newZoom = Math.min(Math.max(zoom * zoomFactor, 0.1), 5);
 
-      if (newZoom !== zoom) {
-        const zoomRatio = newZoom / zoom;
-        const newPanX = panX + offsetX * (1 - zoomRatio);
-        const newPanY = panY + offsetY * (1 - zoomRatio);
-        setZoom(newZoom);
-        setPanX(newPanX);
-        setPanY(newPanY);
+      // Calculate zoom factor
+      const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
+      const newZoom = Math.min(Math.max(zoom * zoomFactor, 1), 5);
+
+      if (newZoom === zoom) return;
+
+      // If zooming back to 1, reset pan to center the image
+      if (newZoom === 1) {
+        setZoom(1);
+        setPanX(0);
+        setPanY(0);
+        return;
       }
+
+      // Calculate the zoom center relative to the current viewport
+      const containerCenterX = rect.width / 2;
+      const containerCenterY = rect.height / 2;
+
+      // Calculate new pan position to zoom towards mouse cursor
+      const zoomRatio = newZoom / zoom;
+      const deltaX = (mouseX - containerCenterX - panX) * (zoomRatio - 1);
+      const deltaY = (mouseY - containerCenterY - panY) * (zoomRatio - 1);
+
+      setZoom(newZoom);
+      setPanX(panX - deltaX);
+      setPanY(panY - deltaY);
     },
     [zoom, panX, panY],
   );
 
   const handleMouseDown = useCallback(
-    (e: React.MouseEvent) => {
-      if (zoom <= 1) return;
-
-      setIsDragging(true);
-      setDragStart({ x: e.clientX - panX, y: e.clientY - panY });
+    (e: React.MouseEvent<HTMLDivElement>) => {
       e.preventDefault();
+      if (zoom <= 1) return;
+      setIsDragging(true);
+      setDragStart({
+        x: e.clientX - panX,
+        y: e.clientY - panY,
+      });
     },
     [zoom, panX, panY],
   );
 
   const handleMouseMove = useCallback(
-    (e: React.MouseEvent) => {
+    (e: React.MouseEvent<HTMLDivElement>) => {
       if (!isDragging || zoom <= 1) return;
-
       const newPanX = e.clientX - dragStart.x;
       const newPanY = e.clientY - dragStart.y;
-
       setPanX(newPanX);
       setPanY(newPanY);
     },
     [isDragging, dragStart, zoom],
   );
-
   const handleMouseUp = useCallback(() => {
     setIsDragging(false);
   }, []);
 
-  const getCursorStyle = () => {
-    if (zoom <= 1) return 'default';
-    return isDragging ? 'grabbing' : 'grab';
-  };
-
-  const handleImageLoad = useCallback(() => {
-    setImageLoaded(true);
-    resetZoom();
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && resetZoom();
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
   }, [resetZoom]);
 
   useEffect(() => {
     if (isOpen && src) {
       getImageSize(src).then(setImageSize);
-      setImageLoaded(false);
       resetZoom();
     }
   }, [isOpen, src, getImageSize, resetZoom]);
 
+  // Ensure image is centered when zoom changes to 1
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && zoom > 1) {
-        resetZoom();
-      }
-    };
-
-    if (isOpen) {
-      document.addEventListener('keydown', handleKeyDown);
-      return () => document.removeEventListener('keydown', handleKeyDown);
+    if (zoom === 1) {
+      setPanX(0);
+      setPanY(0);
     }
-  }, [isOpen, zoom, resetZoom]);
+  }, [zoom]);
+
+  // Reset pan when panel opens/closes to maintain centering
+  useEffect(() => {
+    if (zoom === 1) {
+      setPanX(0);
+      setPanY(0);
+    }
+  }, [isPromptOpen, zoom]);
 
   return (
     <OGDialog open={isOpen} onOpenChange={onOpenChange}>
@@ -171,6 +204,16 @@ export default function DialogImage({ isOpen, onOpenChange, src = '', downloadIm
             }
           />
           <div className="flex items-center gap-1 sm:gap-2">
+            {zoom > 1 && (
+              <TooltipAnchor
+                description={localize('com_ui_reset_zoom')}
+                render={
+                  <Button onClick={resetZoom} variant="ghost" className="h-10 w-10 p-0">
+                    <RotateCcw className="size-6" />
+                  </Button>
+                }
+              />
+            )}
             <TooltipAnchor
               description={localize('com_ui_download')}
               render={
@@ -179,16 +222,6 @@ export default function DialogImage({ isOpen, onOpenChange, src = '', downloadIm
                 </Button>
               }
             />
-            {zoom > 1 && (
-              <TooltipAnchor
-                description="Reset zoom"
-                render={
-                  <Button onClick={resetZoom} variant="ghost" className="h-10 w-10 p-0">
-                    <RotateCcw className="size-6" />
-                  </Button>
-                }
-              />
-            )}
             <TooltipAnchor
               description={
                 isPromptOpen
@@ -218,14 +251,17 @@ export default function DialogImage({ isOpen, onOpenChange, src = '', downloadIm
         >
           <div
             ref={containerRef}
-            className="flex flex-1 items-center justify-center overflow-hidden px-2 pb-4 pt-16 sm:px-4 sm:pt-20"
+            className="flex flex-1 items-center justify-center px-2 pb-4 pt-16 sm:px-4 sm:pt-20"
             onWheel={handleWheel}
             onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
             onMouseLeave={handleMouseUp}
+            onDoubleClick={handleDoubleClick}
             style={{
-              cursor: getCursorStyle(),
+              cursor: getCursor(),
+              overflow: zoom > 1 ? 'hidden' : 'visible',
+              minHeight: 0, // Allow flexbox to shrink
             }}
           >
             <div
@@ -233,21 +269,23 @@ export default function DialogImage({ isOpen, onOpenChange, src = '', downloadIm
               style={{
                 transform: `translate(${panX}px, ${panY}px) scale(${zoom})`,
                 transformOrigin: 'center center',
+                width: '100%',
+                height: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
               }}
             >
               <img
-                ref={imageRef}
                 src={src}
                 alt="Image"
-                className="block max-h-full max-w-full object-contain"
-                onLoad={handleImageLoad}
+                className="block object-contain"
                 style={{
                   maxHeight: 'calc(100vh - 8rem)',
-                  maxWidth: 'calc(100vw - 4rem)',
-                  userSelect: 'none',
-                  pointerEvents: 'none',
+                  maxWidth: getImageMaxWidth(),
+                  width: 'auto',
+                  height: 'auto',
                 }}
-                draggable={false}
               />
             </div>
           </div>
@@ -324,28 +362,6 @@ export default function DialogImage({ isOpen, onOpenChange, src = '', downloadIm
                       {imageSize || 'Loading...'}
                     </span>
                   </div>
-                  {zoom !== 1 && (
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-text-primary">
-                        {localize('com_ui_zoom') || 'Zoom'}:
-                      </span>
-                      <span className="text-sm font-medium text-text-primary">
-                        {Math.round(zoom * 100)}%
-                      </span>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Zoom Help */}
-              <div>
-                <h4 className="mb-2 text-sm font-medium text-text-primary">
-                  {localize('com_ui_controls') || 'Controls'}
-                </h4>
-                <div className="space-y-2 text-xs text-text-secondary">
-                  <div>{'• Mouse wheel to zoom in/out'}</div>
-                  <div>{'• Click and drag to pan when zoomed'}</div>
-                  <div>{'• ESC or reset button to return to fit'}</div>
                 </div>
               </div>
             </div>
