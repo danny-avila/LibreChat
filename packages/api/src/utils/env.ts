@@ -38,23 +38,26 @@ function processUserPlaceholders(value: string, user?: TUser): string {
 
   for (const field of ALLOWED_USER_FIELDS) {
     const placeholder = `{{LIBRECHAT_USER_${field.toUpperCase()}}}`;
-    if (value.includes(placeholder)) {
-      const fieldValue = user[field as keyof TUser];
+    if (!value.includes(placeholder)) {
+      continue;
+    }
 
-      // Special case for 'id' field: treat undefined as missing (leave placeholder unchanged)
-      // May be unnecessary, currently here just to pass mcp.spec.ts test: should support both id and _id properties for LIBRECHAT_USER_ID
-      if (field === 'id') {
-        if (fieldValue !== undefined && fieldValue !== '') {
-          const replacementValue = fieldValue != null ? String(fieldValue) : '';
-          value = value.replace(new RegExp(placeholder, 'g'), replacementValue);
-        }
-      } else {
-        // For all other fields: undefined and null become empty strings
-        if (field in user) {
-          const replacementValue = fieldValue != null ? String(fieldValue) : '';
-          value = value.replace(new RegExp(placeholder, 'g'), replacementValue);
-        }
-      }
+    const fieldValue = user[field as keyof TUser];
+
+    // Determine if we should replace the placeholder
+    let shouldReplace = false;
+
+    if (field === 'id') {
+      // Special case for 'id' field to pass mcp.spec.ts test: should support both id and _id properties for LIBRECHAT_USER_ID
+      shouldReplace = fieldValue !== undefined && fieldValue !== '';
+    } else {
+      // For all other fields: replace if field exists in user object
+      shouldReplace = field in user;
+    }
+
+    if (shouldReplace) {
+      const replacementValue = fieldValue === null ? '' : String(fieldValue);
+      value = value.replace(new RegExp(placeholder, 'g'), replacementValue);
     }
   }
 
