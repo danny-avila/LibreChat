@@ -1,12 +1,14 @@
 import React, { createContext, useContext } from 'react';
-import { useMCPSelect, useToolToggle, useCodeApiKeyForm, useSearchApiKeyForm } from '~/hooks';
 import { Tools, LocalStorageKeys } from 'librechat-data-provider';
+import { useMCPSelect, useToolToggle, useCodeApiKeyForm, useSearchApiKeyForm } from '~/hooks';
 
 interface BadgeRowContextType {
   conversationId?: string | null;
   mcpSelect: ReturnType<typeof useMCPSelect>;
-  codeInterpreter: ReturnType<typeof useToolToggle>;
   webSearch: ReturnType<typeof useToolToggle>;
+  codeInterpreter: ReturnType<typeof useToolToggle>;
+  codeApiKeyForm: ReturnType<typeof useCodeApiKeyForm>;
+  searchApiKeyForm: ReturnType<typeof useSearchApiKeyForm>;
 }
 
 const BadgeRowContext = createContext<BadgeRowContextType | undefined>(undefined);
@@ -25,11 +27,12 @@ interface BadgeRowProviderProps {
 }
 
 export default function BadgeRowProvider({ children, conversationId }: BadgeRowProviderProps) {
-  // MCPSelect hook
+  /** MCPSelect hook */
   const mcpSelect = useMCPSelect({ conversationId });
 
-  // CodeInterpreter hooks
-  const { setIsDialogOpen: setCodeDialogOpen } = useCodeApiKeyForm({});
+  /** CodeInterpreter hooks */
+  const codeApiKeyForm = useCodeApiKeyForm({});
+  const { setIsDialogOpen: setCodeDialogOpen } = codeApiKeyForm;
 
   const codeInterpreter = useToolToggle({
     conversationId,
@@ -42,8 +45,9 @@ export default function BadgeRowProvider({ children, conversationId }: BadgeRowP
     },
   });
 
-  // WebSearch hooks
-  const { setIsDialogOpen: setWebSearchDialogOpen } = useSearchApiKeyForm({});
+  /** WebSearch hooks */
+  const searchApiKeyForm = useSearchApiKeyForm({});
+  const { setIsDialogOpen: setWebSearchDialogOpen } = searchApiKeyForm;
 
   const webSearch = useToolToggle({
     conversationId,
@@ -57,10 +61,12 @@ export default function BadgeRowProvider({ children, conversationId }: BadgeRowP
   });
 
   const value: BadgeRowContextType = {
-    conversationId,
     mcpSelect,
-    codeInterpreter,
     webSearch,
+    conversationId,
+    codeApiKeyForm,
+    codeInterpreter,
+    searchApiKeyForm,
   };
 
   return <BadgeRowContext.Provider value={value}>{children}</BadgeRowContext.Provider>;

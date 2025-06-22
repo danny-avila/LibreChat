@@ -2,15 +2,16 @@ import React, { memo, useMemo, useRef } from 'react';
 import { TerminalSquareIcon } from 'lucide-react';
 import { AuthType, PermissionTypes, Permissions } from 'librechat-data-provider';
 import ApiKeyDialog from '~/components/SidePanel/Agents/Code/ApiKeyDialog';
-import { useLocalize, useHasAccess, useCodeApiKeyForm } from '~/hooks';
 import CheckboxButton from '~/components/ui/CheckboxButton';
+import { useLocalize, useHasAccess } from '~/hooks';
 import { useBadgeRowContext } from '~/Providers';
 
 function CodeInterpreter() {
   const triggerRef = useRef<HTMLInputElement>(null);
   const localize = useLocalize();
-  const { codeInterpreter } = useBadgeRowContext();
+  const { codeInterpreter, codeApiKeyForm } = useBadgeRowContext();
   const { toggleState: runCode, debouncedChange, authData } = codeInterpreter;
+  const { methods, onSubmit, isDialogOpen, setIsDialogOpen, handleRevokeApiKey } = codeApiKeyForm;
 
   const canRunCode = useHasAccess({
     permissionType: PermissionTypes.RUN_CODE,
@@ -18,8 +19,6 @@ function CodeInterpreter() {
   });
 
   const authType = useMemo(() => authData?.message ?? false, [authData?.message]);
-  const { methods, onSubmit, isDialogOpen, setIsDialogOpen, handleRevokeApiKey } =
-    useCodeApiKeyForm({});
 
   if (!canRunCode) {
     return null;

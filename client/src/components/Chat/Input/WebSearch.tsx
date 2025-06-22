@@ -2,15 +2,16 @@ import React, { memo, useRef, useMemo } from 'react';
 import { Globe } from 'lucide-react';
 import { Permissions, PermissionTypes } from 'librechat-data-provider';
 import ApiKeyDialog from '~/components/SidePanel/Agents/Search/ApiKeyDialog';
-import { useLocalize, useHasAccess, useSearchApiKeyForm } from '~/hooks';
 import CheckboxButton from '~/components/ui/CheckboxButton';
+import { useLocalize, useHasAccess } from '~/hooks';
 import { useBadgeRowContext } from '~/Providers';
 
 function WebSearch() {
   const triggerRef = useRef<HTMLInputElement>(null);
   const localize = useLocalize();
-  const { webSearch: webSearchData } = useBadgeRowContext();
+  const { webSearch: webSearchData, searchApiKeyForm } = useBadgeRowContext();
   const { toggleState: webSearch, debouncedChange, authData } = webSearchData;
+  const { methods, onSubmit, isDialogOpen, setIsDialogOpen, handleRevokeApiKey } = searchApiKeyForm;
 
   const canUseWebSearch = useHasAccess({
     permissionType: PermissionTypes.WEB_SEARCH,
@@ -18,8 +19,6 @@ function WebSearch() {
   });
 
   const authTypes = useMemo(() => authData?.authTypes ?? [], [authData?.authTypes]);
-  const { methods, onSubmit, isDialogOpen, setIsDialogOpen, handleRevokeApiKey } =
-    useSearchApiKeyForm({});
 
   if (!canUseWebSearch) {
     return null;
