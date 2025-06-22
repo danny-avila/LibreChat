@@ -64,20 +64,10 @@ export function useToolToggle({
   /** Track previous value to prevent infinite loops */
   const prevIsToolEnabled = useRef(isToolEnabled);
 
-  const setValue = useCallback(
-    (isChecked: boolean) => {
-      setEphemeralAgent((prev) => ({
-        ...prev,
-        [toolKey]: isChecked,
-      }));
-    },
-    [setEphemeralAgent, toolKey],
-  );
-
   const [toggleState, setToggleState] = useLocalStorage<boolean>(
     `${localStorageKey}${key}`,
     isToolEnabled,
-    setValue,
+    undefined,
     storageCondition,
   );
 
@@ -89,8 +79,12 @@ export function useToolToggle({
         return;
       }
       setToggleState(isChecked);
+      setEphemeralAgent((prev) => ({
+        ...prev,
+        [toolKey]: isChecked,
+      }));
     },
-    [setToggleState, setIsDialogOpen, isAuthenticated],
+    [setToggleState, setIsDialogOpen, isAuthenticated, setEphemeralAgent, toolKey],
   );
 
   const debouncedChange = useMemo(
