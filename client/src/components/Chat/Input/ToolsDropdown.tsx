@@ -1,13 +1,13 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { Settings2, Globe, TerminalSquareIcon } from 'lucide-react';
+import type { MenuItemProps } from '~/common';
 import { Permissions, PermissionTypes } from 'librechat-data-provider';
 import { TooltipAnchor, DropdownPopup } from '~/components';
 import MCPSubMenu from '~/components/Chat/Input/MCPSubMenu';
+import { PinIcon, VectorIcon } from '~/components/svg';
 import { useLocalize, useHasAccess } from '~/hooks';
 import { useBadgeRowContext } from '~/Providers';
-import type { MenuItemProps } from '~/common';
-import { PinIcon, VectorIcon } from '~/components/svg';
 import { cn } from '~/utils';
 
 interface ToolsDropdownProps {
