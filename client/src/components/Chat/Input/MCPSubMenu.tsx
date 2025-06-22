@@ -3,7 +3,6 @@ import * as Ariakit from '@ariakit/react';
 import { ChevronRight } from 'lucide-react';
 import { PinIcon, MCPIcon } from '~/components/svg';
 import { useLocalize } from '~/hooks';
-
 import { cn } from '~/utils';
 
 interface MCPSubMenuProps {
@@ -24,13 +23,23 @@ const MCPSubMenu = ({
 }: MCPSubMenuProps) => {
   const localize = useLocalize();
 
+  const menuStore = Ariakit.useMenuStore({
+    showTimeout: 100,
+    placement: 'right',
+  });
+
   return (
-    <Ariakit.MenuProvider>
-      <Ariakit.MenuButton {...props}>
+    <Ariakit.MenuProvider store={menuStore}>
+      <Ariakit.MenuItem
+        {...props}
+        render={
+          <Ariakit.MenuButton className="flex w-full cursor-pointer items-center justify-between rounded-lg p-2 hover:bg-surface-hover" />
+        }
+      >
         <div className="flex items-center gap-2">
           <MCPIcon className="icon-md" />
           <span>{localize('com_ui_mcp_servers')}</span>
-          <ChevronRight className="h-3 w-3" />
+          <ChevronRight className="ml-auto h-3 w-3" />
         </div>
         <button
           type="button"
@@ -49,13 +58,16 @@ const MCPSubMenu = ({
             <PinIcon unpin={isMCPPinned} />
           </div>
         </button>
-      </Ariakit.MenuButton>
+      </Ariakit.MenuItem>
       <Ariakit.Menu
-        gutter={4}
+        gutter={-4}
         shift={-8}
         unmountOnHide
         portal={true}
-        className="z-50 flex min-w-[200px] flex-col rounded-xl border border-border-light bg-surface-secondary p-1 shadow-lg"
+        className={cn(
+          'animate-popover-left z-50 ml-3 flex min-w-[200px] flex-col rounded-xl',
+          'border border-border-light bg-surface-secondary p-1 shadow-lg',
+        )}
       >
         {mcpServerNames.map((serverName) => (
           <Ariakit.MenuItem
