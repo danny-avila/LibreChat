@@ -5,11 +5,11 @@ import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-quer
 import { Constants, EModelEndpoint, LocalStorageKeys } from 'librechat-data-provider';
 import type { TPlugin, TPluginAuthConfig, TUpdateUserPlugins } from 'librechat-data-provider';
 import MCPConfigDialog, { type ConfigFieldDetail } from '~/components/ui/MCPConfigDialog';
+import { useToastContext, useBadgeRowContext } from '~/Providers';
 import { useAvailableToolsQuery } from '~/data-provider';
 import useLocalStorage from '~/hooks/useLocalStorageAlt';
 import MultiSelect from '~/components/ui/MultiSelect';
 import { ephemeralAgentByConvoId } from '~/store';
-import { useToastContext } from '~/Providers';
 import MCPIcon from '~/components/ui/MCPIcon';
 import { useLocalize } from '~/hooks';
 
@@ -40,9 +40,10 @@ const storageCondition = (value: unknown, rawCurrentValue?: string | null) => {
   return Array.isArray(value) && value.length > 0;
 };
 
-function MCPSelect({ conversationId }: { conversationId?: string | null }) {
+function MCPSelect() {
   const localize = useLocalize();
   const { showToast } = useToastContext();
+  const { conversationId } = useBadgeRowContext();
   const key = conversationId ?? Constants.NEW_CONVO;
   const hasSetFetched = useRef<string | null>(null);
   const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);

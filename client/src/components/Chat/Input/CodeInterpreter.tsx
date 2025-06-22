@@ -11,10 +11,12 @@ import ApiKeyDialog from '~/components/SidePanel/Agents/Code/ApiKeyDialog';
 import { useLocalize, useHasAccess, useCodeApiKeyForm, useToolToggle } from '~/hooks';
 import CheckboxButton from '~/components/ui/CheckboxButton';
 import { useVerifyAgentToolAuth } from '~/data-provider';
+import { useBadgeRowContext } from '~/Providers';
 
-function CodeInterpreter({ conversationId }: { conversationId?: string | null }) {
+function CodeInterpreter() {
   const triggerRef = useRef<HTMLInputElement>(null);
   const localize = useLocalize();
+  const { conversationId } = useBadgeRowContext();
 
   const canRunCode = useHasAccess({
     permissionType: PermissionTypes.RUN_CODE,

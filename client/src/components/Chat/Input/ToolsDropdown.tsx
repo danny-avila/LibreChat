@@ -2,16 +2,17 @@ import React, { useState, useMemo } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { Settings2, Search, ImageIcon, Globe, PenTool } from 'lucide-react';
 import { TooltipAnchor, DropdownPopup } from '~/components';
+import { useBadgeRowContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
 interface ToolsDropdownProps {
-  conversationId?: string | null;
   disabled?: boolean;
 }
 
-const ToolsDropdown = ({ disabled, conversationId }: ToolsDropdownProps) => {
+const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
   const localize = useLocalize();
+  const { conversationId } = useBadgeRowContext();
   const isDisabled = disabled ?? false;
   const [isPopoverActive, setIsPopoverActive] = useState(false);
 

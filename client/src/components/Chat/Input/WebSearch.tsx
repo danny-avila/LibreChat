@@ -5,10 +5,12 @@ import { useLocalize, useHasAccess, useSearchApiKeyForm, useToolToggle } from '~
 import ApiKeyDialog from '~/components/SidePanel/Agents/Search/ApiKeyDialog';
 import CheckboxButton from '~/components/ui/CheckboxButton';
 import { useVerifyAgentToolAuth } from '~/data-provider';
+import { useBadgeRowContext } from '~/Providers';
 
-function WebSearch({ conversationId }: { conversationId?: string | null }) {
+function WebSearch() {
   const triggerRef = useRef<HTMLInputElement>(null);
   const localize = useLocalize();
+  const { conversationId } = useBadgeRowContext();
 
   const canUseWebSearch = useHasAccess({
     permissionType: PermissionTypes.WEB_SEARCH,
