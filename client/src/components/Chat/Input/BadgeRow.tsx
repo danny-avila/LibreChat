@@ -14,6 +14,7 @@ import CodeInterpreter from './CodeInterpreter';
 import type { BadgeItem } from '~/common';
 import { useChatBadges } from '~/hooks';
 import { Badge } from '~/components/ui';
+import ToolsDropdown from './ToolsDropdown';
 import MCPSelect from './MCPSelect';
 import WebSearch from './WebSearch';
 import store from '~/store';
@@ -313,7 +314,8 @@ function BadgeRow({
   }, [dragState.draggedBadge, handleMouseMove, handleMouseUp]);
 
   return (
-    <div ref={containerRef} className="relative flex flex-wrap items-center gap-2">
+    <div ref={containerRef} className="relative flex flex-wrap items-center gap-1">
+      <ToolsDropdown conversationId={conversationId} />
       {tempBadges.map((badge, index) => (
         <React.Fragment key={badge.id}>
           {dragState.draggedBadge && dragState.insertIndex === index && ghostBadge && (
