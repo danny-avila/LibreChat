@@ -20,7 +20,6 @@ export default function createPayload(submission: t.TSubmission) {
 
   const endpoint = _e as s.EModelEndpoint;
   let server = `${EndpointURLs[s.EModelEndpoint.agents]}/${endpoint}`;
-  const isEphemeral = s.isEphemeralAgent(endpoint, ephemeralAgent);
 
   if (isEdited && s.isAssistantsEndpoint(endpoint)) {
     server += '/modify';
@@ -30,7 +29,7 @@ export default function createPayload(submission: t.TSubmission) {
     ...userMessage,
     ...endpointOption,
     endpoint,
-    ephemeralAgent: isEphemeral ? ephemeralAgent : undefined,
+    ephemeralAgent: s.isAssistantsEndpoint(endpoint) ? undefined : ephemeralAgent,
     isContinued: !!(isEdited && isContinued),
     conversationId,
     isTemporary,

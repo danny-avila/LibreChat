@@ -83,7 +83,7 @@ export function filterModels(
     let modelName = modelId;
 
     if (isAgentsEndpoint(endpoint.value) && agentsMap && agentsMap[modelId]) {
-      modelName = agentsMap[modelId].name || modelId;
+      modelName = agentsMap[modelId]?.name || modelId;
     } else if (
       isAssistantsEndpoint(endpoint.value) &&
       assistantsMap &&
