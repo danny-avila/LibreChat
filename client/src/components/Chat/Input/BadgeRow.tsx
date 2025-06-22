@@ -1,12 +1,12 @@
 import React, {
   memo,
-  useState,
   useRef,
-  useEffect,
-  useCallback,
   useMemo,
+  useState,
+  useEffect,
   forwardRef,
   useReducer,
+  useCallback,
 } from 'react';
 import { useRecoilValue, useRecoilCallback } from 'recoil';
 import type { LucideIcon } from 'lucide-react';
@@ -318,7 +318,7 @@ function BadgeRow({
   return (
     <BadgeRowProvider conversationId={conversationId}>
       <div ref={containerRef} className="relative flex flex-wrap items-center gap-2">
-        <ToolsDropdown />
+        {showEphemeralBadges === true && <ToolsDropdown />}
         {tempBadges.map((badge, index) => (
           <React.Fragment key={badge.id}>
             {dragState.draggedBadge && dragState.insertIndex === index && ghostBadge && (
