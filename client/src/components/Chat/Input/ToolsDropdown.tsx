@@ -7,7 +7,7 @@ import MCPSubMenu from '~/components/Chat/Input/MCPSubMenu';
 import { useLocalize, useHasAccess } from '~/hooks';
 import { useBadgeRowContext } from '~/Providers';
 import type { MenuItemProps } from '~/common';
-import { PinIcon } from '~/components/svg';
+import { PinIcon, VectorIcon } from '~/components/svg';
 import { cn } from '~/utils';
 
 interface ToolsDropdownProps {
@@ -18,9 +18,10 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
   const localize = useLocalize();
   const isDisabled = disabled ?? false;
   const [isPopoverActive, setIsPopoverActive] = useState(false);
-  const { webSearch, codeInterpreter, mcpSelect } = useBadgeRowContext();
+  const { webSearch, codeInterpreter, fileSearch, mcpSelect } = useBadgeRowContext();
   const { isPinned: isSearchPinned, setIsPinned: setIsSearchPinned } = webSearch;
   const { isPinned: isCodePinned, setIsPinned: setIsCodePinned } = codeInterpreter;
+  const { isPinned: isFileSearchPinned, setIsPinned: setIsFileSearchPinned } = fileSearch;
   const {
     mcpValues,
     mcpServerNames,
@@ -48,6 +49,11 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
     codeInterpreter.debouncedChange({ isChecked: newValue });
   }, [codeInterpreter]);
 
+  const handleFileSearchToggle = useCallback(() => {
+    const newValue = !fileSearch.toggleState;
+    fileSearch.debouncedChange({ isChecked: newValue });
+  }, [fileSearch]);
+
   const handleMCPToggle = useCallback(
     (serverName: string) => {
       const currentValues = mcpSelect.mcpValues ?? [];
@@ -70,6 +76,36 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
         hideOnClick: false,
       },
     ];
+
+    items.push({
+      onClick: handleFileSearchToggle,
+      hideOnClick: false,
+      render: (props) => (
+        <div {...props}>
+          <div className="flex items-center gap-2">
+            <VectorIcon className="icon-md" />
+            <span>{localize('com_assistants_file_search')}</span>
+          </div>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsFileSearchPinned(!isFileSearchPinned);
+            }}
+            className={cn(
+              'rounded p-1 transition-all duration-200',
+              'hover:bg-surface-secondary hover:shadow-sm',
+              !isFileSearchPinned && 'text-text-secondary hover:text-text-primary',
+            )}
+            aria-label={isFileSearchPinned ? 'Unpin' : 'Pin'}
+          >
+            <div className="h-4 w-4">
+              <PinIcon unpin={isFileSearchPinned} />
+            </div>
+          </button>
+        </div>
+      ),
+    });
 
     if (canUseWebSearch) {
       items.push({
@@ -160,13 +196,16 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
     isCodePinned,
     mcpServerNames,
     isSearchPinned,
+    isFileSearchPinned,
     setIsMCPPinned,
     canUseWebSearch,
     setIsCodePinned,
     handleMCPToggle,
     setIsSearchPinned,
+    setIsFileSearchPinned,
     handleWebSearchToggle,
     handleCodeInterpreterToggle,
+    handleFileSearchToggle,
   ]);
 
   const menuTrigger = (

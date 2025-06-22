@@ -7,6 +7,7 @@ interface BadgeRowContextType {
   mcpSelect: ReturnType<typeof useMCPSelect>;
   webSearch: ReturnType<typeof useToolToggle>;
   codeInterpreter: ReturnType<typeof useToolToggle>;
+  fileSearch: ReturnType<typeof useToolToggle>;
   codeApiKeyForm: ReturnType<typeof useCodeApiKeyForm>;
   searchApiKeyForm: ReturnType<typeof useSearchApiKeyForm>;
 }
@@ -60,9 +61,18 @@ export default function BadgeRowProvider({ children, conversationId }: BadgeRowP
     },
   });
 
+  /** FileSearch hook */
+  const fileSearch = useToolToggle({
+    conversationId,
+    toolKey: Tools.file_search,
+    localStorageKey: LocalStorageKeys.LAST_FILE_SEARCH_TOGGLE_,
+    isAuthenticated: true,
+  });
+
   const value: BadgeRowContextType = {
     mcpSelect,
     webSearch,
+    fileSearch,
     conversationId,
     codeApiKeyForm,
     codeInterpreter,
