@@ -853,8 +853,8 @@ pre {
 .prose :where(hr):not(:where([class~='not-prose'] *)) {
   border-color: var(--tw-prose-hr);
   border-top-width: 1px;
-  margin-bottom: 1em;
-  margin-top: 1em;
+  margin-bottom: 0.8em;
+  margin-top: 0.8em;
 }
 .prose :where(blockquote):not(:where([class~='not-prose'] *)) {
   border-left-color: var(--tw-prose-quote-borders);
@@ -1111,6 +1111,13 @@ pre {
 }
 .prose :where(h4 + *):not(:where([class~='not-prose'] *)) {
   margin-top: 0;
+}
+/* Ensure symmetrical spacing around hr */
+.prose :where(* + hr):not(:where([class~='not-prose'] *)) {
+  margin-top: 0.8em;
+}
+.prose :where(hr + h1, hr + h2, hr + h3, hr + h4):not(:where([class~='not-prose'] *)) {
+  margin-top: 0.4em;
 }
 .prose :where(thead th:first-child):not(:where([class~='not-prose'] *)) {
   padding-left: 0;
