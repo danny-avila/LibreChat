@@ -251,5 +251,12 @@
         "description": "Your WordPress password or application password"
       }
     ]
+  },
+  {
+    "name": "Collections",
+    "pluginKey": "collections",
+    "description": "Store and retrieve organized knowledge in collections with hierarchical structure. Supports keyword, semantic, and hybrid search across all notes.",
+    "icon": "/assets/usermemory.png",
+    "authConfig": []
   }
 ]
