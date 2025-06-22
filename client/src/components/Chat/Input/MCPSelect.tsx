@@ -1,13 +1,13 @@
 import React, { memo, useCallback, useState } from 'react';
-import { Settings2 } from 'lucide-react';
-import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
+import { SettingsIcon } from 'lucide-react';
 import { Constants } from 'librechat-data-provider';
+import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
 import type { TUpdateUserPlugins } from 'librechat-data-provider';
 import type { McpServerInfo } from '~/hooks/Plugins/useMCPSelect';
 import MCPConfigDialog, { type ConfigFieldDetail } from '~/components/ui/MCPConfigDialog';
 import { useToastContext, useBadgeRowContext } from '~/Providers';
 import MultiSelect from '~/components/ui/MultiSelect';
-import MCPIcon from '~/components/ui/MCPIcon';
+import { MCPIcon } from '~/components/svg';
 import { useLocalize } from '~/hooks';
 
 const getBaseMCPPluginKey = (fullPluginKey: string): string => {
@@ -19,7 +19,7 @@ function MCPSelect() {
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const { mcpSelect } = useBadgeRowContext();
-  const { mcpValues, setMCPValues, mcpServerNames, mcpToolDetails } = mcpSelect;
+  const { mcpValues, setMCPValues, mcpServerNames, mcpToolDetails, isPinned } = mcpSelect;
 
   const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
   const [selectedToolForConfig, setSelectedToolForConfig] = useState<McpServerInfo | null>(null);
@@ -106,10 +106,10 @@ function MCPSelect() {
                 setSelectedToolForConfig(tool);
                 setIsConfigModalOpen(true);
               }}
-              className="ml-2 flex h-6 w-6 items-center justify-center rounded p-1 hover:bg-black/10 dark:hover:bg-white/10"
+              className="ml-2 flex h-6 w-6 items-center justify-center rounded p-1 hover:bg-surface-secondary"
               aria-label={`Configure ${serverName}`}
             >
-              <Settings2 className={`h-4 w-4 ${tool.authenticated ? 'text-green-500' : ''}`} />
+              <SettingsIcon className={`h-4 w-4 ${tool.authenticated ? 'text-green-500' : ''}`} />
             </button>
           </div>
         );
@@ -119,6 +119,11 @@ function MCPSelect() {
     },
     [mcpToolDetails, setSelectedToolForConfig, setIsConfigModalOpen],
   );
+
+  // Don't render if no servers are selected and not pinned
+  if ((!mcpValues || mcpValues.length === 0) && !isPinned) {
+    return null;
+  }
 
   if (!mcpToolDetails || mcpToolDetails.length === 0) {
     return null;

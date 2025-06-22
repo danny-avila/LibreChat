@@ -1447,6 +1447,12 @@ export enum LocalStorageKeys {
   LAST_AGENT_PROVIDER = 'lastAgentProvider',
   /** Key for the last selected agent model */
   LAST_AGENT_MODEL = 'lastAgentModel',
+  /** Pin state for MCP tools per conversation ID */
+  PIN_MCP_ = 'PIN_MCP_',
+  /** Pin state for Web Search per conversation ID */
+  PIN_WEB_SEARCH_ = 'PIN_WEB_SEARCH_',
+  /** Pin state for Code Interpreter per conversation ID */
+  PIN_CODE_INTERPRETER_ = 'PIN_CODE_INTERPRETER_',
 }
 
 export enum ForkOptions {

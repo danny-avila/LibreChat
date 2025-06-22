@@ -84,6 +84,11 @@ export function useMCPSelect({ conversationId }: UseMCPSelectOptions) {
     storageCondition,
   );
 
+  const [isPinned, setIsPinned] = useLocalStorage<boolean>(
+    `${LocalStorageKeys.PIN_MCP_}${key}`,
+    true,
+  );
+
   useEffect(() => {
     if (hasSetFetched.current === key) {
       return;
@@ -110,5 +115,7 @@ export function useMCPSelect({ conversationId }: UseMCPSelectOptions) {
     ephemeralAgent,
     mcpToolDetails,
     setEphemeralAgent,
+    isPinned,
+    setIsPinned,
   };
 }

@@ -3,6 +3,7 @@ import * as Ariakit from '@ariakit/react';
 import { Settings2, Globe, TerminalSquareIcon } from 'lucide-react';
 import { Permissions, PermissionTypes } from 'librechat-data-provider';
 import { TooltipAnchor, DropdownPopup } from '~/components';
+import MCPSubMenu from '~/components/Chat/Input/MCPSubMenu';
 import { useLocalize, useHasAccess } from '~/hooks';
 import { useBadgeRowContext } from '~/Providers';
 import type { MenuItemProps } from '~/common';
@@ -16,10 +17,16 @@ interface ToolsDropdownProps {
 const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
   const localize = useLocalize();
   const isDisabled = disabled ?? false;
-  const { webSearch, codeInterpreter } = useBadgeRowContext();
+  const [isPopoverActive, setIsPopoverActive] = useState(false);
+  const { webSearch, codeInterpreter, mcpSelect } = useBadgeRowContext();
   const { isPinned: isSearchPinned, setIsPinned: setIsSearchPinned } = webSearch;
   const { isPinned: isCodePinned, setIsPinned: setIsCodePinned } = codeInterpreter;
-  const [isPopoverActive, setIsPopoverActive] = useState(false);
+  const {
+    mcpValues,
+    mcpServerNames,
+    isPinned: isMCPPinned,
+    setIsPinned: setIsMCPPinned,
+  } = mcpSelect;
 
   const canUseWebSearch = useHasAccess({
     permissionType: PermissionTypes.WEB_SEARCH,
@@ -40,6 +47,17 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
     const newValue = !codeInterpreter.toggleState;
     codeInterpreter.debouncedChange({ isChecked: newValue });
   }, [codeInterpreter]);
+
+  const handleMCPToggle = useCallback(
+    (serverName: string) => {
+      const currentValues = mcpSelect.mcpValues ?? [];
+      const newValues = currentValues.includes(serverName)
+        ? currentValues.filter((v) => v !== serverName)
+        : [...currentValues, serverName];
+      mcpSelect.setMCPValues(newValues);
+    },
+    [mcpSelect],
+  );
 
   const dropdownItems = useMemo(() => {
     const items: MenuItemProps[] = [
@@ -71,7 +89,7 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
               }}
               className={cn(
                 'rounded p-1 transition-all duration-200',
-                'hover:bg-surface-tertiary hover:shadow-sm',
+                'hover:bg-surface-secondary hover:shadow-sm',
                 !isSearchPinned && 'text-text-secondary hover:text-text-primary',
               )}
               aria-label={isSearchPinned ? 'Unpin' : 'Pin'}
@@ -103,7 +121,7 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
               }}
               className={cn(
                 'rounded p-1 transition-all duration-200',
-                'hover:bg-surface-tertiary hover:shadow-sm',
+                'hover:bg-surface-secondary hover:shadow-sm',
                 !isCodePinned && 'text-text-primary hover:text-text-primary',
               )}
               aria-label={isCodePinned ? 'Unpin' : 'Pin'}
@@ -117,14 +135,35 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
       });
     }
 
+    if (mcpServerNames && mcpServerNames.length > 0) {
+      items.push({
+        hideOnClick: false,
+        render: (props) => (
+          <MCPSubMenu
+            {...props}
+            mcpValues={mcpValues}
+            mcpServerNames={mcpServerNames}
+            isMCPPinned={isMCPPinned}
+            setIsMCPPinned={setIsMCPPinned}
+            handleMCPToggle={handleMCPToggle}
+          />
+        ),
+      });
+    }
+
     return items;
   }, [
     localize,
+    mcpValues,
     canRunCode,
+    isMCPPinned,
     isCodePinned,
+    mcpServerNames,
     isSearchPinned,
-    setIsCodePinned,
+    setIsMCPPinned,
     canUseWebSearch,
+    setIsCodePinned,
+    handleMCPToggle,
     setIsSearchPinned,
     handleWebSearchToggle,
     handleCodeInterpreterToggle,
@@ -154,7 +193,7 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
 
   return (
     <DropdownPopup
-      itemClassName="flex w-full cursor-pointer items-center justify-between"
+      itemClassName="flex w-full cursor-pointer items-center justify-between hover:bg-surface-hover gap-5"
       menuId="tools-dropdown-menu"
       isOpen={isPopoverActive}
       setIsOpen={setIsPopoverActive}
