@@ -44,21 +44,18 @@ function processUserPlaceholders(value: string, user?: TUser): string {
 
     const fieldValue = user[field as keyof TUser];
 
-    // Determine if we should replace the placeholder
-    let shouldReplace = false;
-
-    if (field === 'id') {
-      // Special case for 'id' field to pass mcp.spec.ts test: should support both id and _id properties for LIBRECHAT_USER_ID
-      shouldReplace = fieldValue !== undefined && fieldValue !== '';
-    } else {
-      // For all other fields: replace if field exists in user object
-      shouldReplace = field in user;
+    // Skip replacement if field doesn't exist in user object
+    if (!(field in user)) {
+      continue;
     }
 
-    if (shouldReplace) {
-      const replacementValue = fieldValue === null ? '' : String(fieldValue);
-      value = value.replace(new RegExp(placeholder, 'g'), replacementValue);
+    // Special case for 'id' field: skip if undefined or empty
+    if (field === 'id' && (fieldValue === undefined || fieldValue === '')) {
+      continue;
     }
+
+    const replacementValue = fieldValue == null ? '' : String(fieldValue);
+    value = value.replace(new RegExp(placeholder, 'g'), replacementValue);
   }
 
   return value;
