@@ -163,6 +163,11 @@ export type TCategory = {
   label: string;
 };
 
+export type TMarketplaceCategory = TCategory & {
+  count: number;
+  description?: string;
+};
+
 export type TError = {
   message: string;
   code?: number | string;
