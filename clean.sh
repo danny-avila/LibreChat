@@ -9,6 +9,3 @@ npm ci
 
 echo "Running frontend"
 npm run frontend
-
-echo "Running backend"
-npm run backend
