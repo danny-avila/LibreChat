@@ -99,17 +99,7 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
   const mcpPlaceholder = startupConfig?.interface?.mcpServers?.placeholder;
 
   const dropdownItems = useMemo(() => {
-    const items: MenuItemProps[] = [
-      {
-        render: () => (
-          <div className="px-3 py-2 text-xs font-semibold text-text-secondary">
-            {localize('com_ui_tools')}
-          </div>
-        ),
-        hideOnClick: false,
-      },
-    ];
-
+    const items: MenuItemProps[] = [];
     items.push({
       onClick: handleFileSearchToggle,
       hideOnClick: false,
