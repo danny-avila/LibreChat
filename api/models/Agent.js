@@ -740,6 +740,14 @@ const generateActionMetadataHash = async (actionIds, actions) => {
 
   return hashHex;
 };
+/**
+ * Counts the number of promoted agents.
+ * @returns  {Promise<number>} - The count of promoted agents
+ */
+const countPromotedAgents = async () => {
+  const count = await Agent.countDocuments({ is_promoted: true });
+  return count;
+};
 
 /**
  * Load a default agent based on the endpoint
@@ -760,4 +768,5 @@ module.exports = {
   getListAgentsByAccess,
   removeAgentResourceFiles,
   generateActionMetadataHash,
+  countPromotedAgents,
 };
