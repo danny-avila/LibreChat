@@ -8,9 +8,13 @@ const { Pool } = require('pg');
 // For embeddings - using OpenAI API directly
 const axios = require('axios');
 
+// Built-in URL validation function
+const { URL } = require('url');
+
 class Collections extends Tool {
   name = 'collections';
-  description_for_model = 'Allows the assistant to manage organized collections of notes, facts, sources, and information across sessions. You can create and organize collections in a hierarchical structure with parent-child relationships. Actions: create_collection, list_collections, search_collections, add_note, search_notes, delete_note, update_note, update_collection, delete_collection. Use add_note to store new information, search_notes to retrieve relevant information, and organize collections hierarchically.';
+  description_for_model =
+    'Allows the assistant to manage organized collections of notes, facts, sources, and information across sessions. You can create and organize collections in a hierarchical structure with parent-child relationships. Actions: create_collection, list_collections, search_collections, add_note, search_notes, delete_note, update_note, update_collection, delete_collection. Use add_note to store new information, search_notes to retrieve relevant information, and organize collections hierarchically.';
   description =
     'Store and retrieve organized knowledge in collections with hierarchical structure. ' +
     'Actions: create_collection, list_collections, search_collections, add_note, search_notes, delete_note, update_note, update_collection, delete_collection. ' +
@@ -19,39 +23,87 @@ class Collections extends Tool {
 
   schema = z.object({
     action: z.enum([
-      'create_collection', 
-      'list_collections', 
+      'create_collection',
+      'list_collections',
       'search_collections',
-      'add_note', 
-      'search_notes', 
+      'add_note',
+      'search_notes',
       'delete_note',
       'update_note',
       'update_collection',
-      'delete_collection'
+      'delete_collection',
     ]),
-    collection_name: z.string().optional(),
-    collection_description: z.string().optional(),
-    collection_tags: z.array(z.string()).optional(),
-    collection_id: z.string().optional(),
-    parent_collection_id: z.string().optional(),
-    note_title: z.string().optional(),
-    note_content: z.string().optional(),
-    note_source_url: z.string().optional(),
-    note_tags: z.array(z.string()).optional(),
-    note_id: z.string().optional(),
-    search_query: z.string().optional(),
+    collection_name: z.string().max(200).optional(),
+    collection_description: z.string().max(2000).optional(),
+    collection_tags: z.array(z.string().max(50)).max(20).optional(),
+    collection_id: z.string().uuid().optional(),
+    parent_collection_id: z.string().uuid().optional(),
+    note_title: z.string().max(500).optional(),
+    note_content: z.string().max(50000).optional(),
+    note_source_url: z.string().url().max(1000).optional(),
+    note_tags: z.array(z.string().max(50)).max(20).optional(),
+    note_id: z.string().uuid().optional(),
+    search_query: z.string().max(500).optional(),
     search_mode: z.enum(['keyword', 'semantic', 'hybrid']).optional(),
     limit: z.number().min(1).max(100).optional(),
-    tag_filter: z.array(z.string()).optional(),
+    tag_filter: z.array(z.string().max(50)).max(20).optional(),
     recursive: z.boolean().optional(),
   });
 
-  constructor(fields = {}) {
+  constructor(_fields = {}) {
     super();
     this.userId = null; // Will be set from request context
     this.pool = null;
     // store promise so callers can await readiness before executing queries
     this.ready = this.initializeDatabase();
+  }
+
+  // Input sanitization methods
+  sanitizeText(text) {
+    if (!text || typeof text !== 'string') return text;
+
+    // Remove null bytes and control characters except newlines, tabs, and carriage returns
+    // eslint-disable-next-line no-control-regex
+    return text.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '').trim();
+  }
+
+  sanitizeUrl(url) {
+    if (!url || typeof url !== 'string') return url;
+
+    const sanitized = this.sanitizeText(url);
+
+    // Basic URL validation using built-in URL constructor
+    if (sanitized) {
+      try {
+        // Try to parse as URL - if it has a protocol
+        if (sanitized.includes('://')) {
+          new URL(sanitized);
+        }
+        // If no protocol, just validate it's not obviously malicious
+        else if (!/^[a-zA-Z0-9][a-zA-Z0-9.-]*[a-zA-Z0-9]/.test(sanitized)) {
+          logger.warn('Potentially invalid URL provided:', sanitized);
+        }
+      } catch (_e) {
+        logger.warn('Invalid URL provided:', sanitized);
+      }
+    }
+
+    return sanitized;
+  }
+
+  sanitizeArray(arr) {
+    if (!Array.isArray(arr)) return arr;
+    return arr.map((item) => this.sanitizeText(item)).filter((item) => item && item.length > 0);
+  }
+
+  sanitizeSearchQuery(query) {
+    if (!query || typeof query !== 'string') return query;
+
+    // Remove special PostgreSQL characters that could cause issues
+    // but preserve basic search functionality
+    return this.sanitizeText(query)
+      .replace(/[\\';]/g, '') // Remove potential SQL injection chars
+      .replace(/\s+/g, ' '); // Normalize whitespace
   }
 
   async initializeDatabase() {
@@ -116,14 +168,25 @@ class Collections extends Tool {
       `);
 
       // Create indexes
-      await client.query('CREATE INDEX IF NOT EXISTS idx_collections_user_id ON collections(user_id)');
-      await client.query('CREATE INDEX IF NOT EXISTS idx_collections_parent_id ON collections(parent_id)');
-      await client.query('CREATE INDEX IF NOT EXISTS idx_collections_tags ON collections USING GIN(tags)');
-      await client.query('CREATE INDEX IF NOT EXISTS idx_notes_collection_id ON notes(collection_id)');
+      await client.query(
+        'CREATE INDEX IF NOT EXISTS idx_collections_user_id ON collections(user_id)',
+      );
+      await client.query(
+        'CREATE INDEX IF NOT EXISTS idx_collections_parent_id ON collections(parent_id)',
+      );
+      await client.query(
+        'CREATE INDEX IF NOT EXISTS idx_collections_tags ON collections USING GIN(tags)',
+      );
+      await client.query(
+        'CREATE INDEX IF NOT EXISTS idx_notes_collection_id ON notes(collection_id)',
+      );
       await client.query('CREATE INDEX IF NOT EXISTS idx_notes_tags ON notes USING GIN(tags)');
-      await client.query('CREATE INDEX IF NOT EXISTS idx_notes_content_fulltext ON notes USING GIN(to_tsvector(\'english\', content))');
-      await client.query('CREATE INDEX IF NOT EXISTS idx_note_vectors_embedding ON note_vectors USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100)');
-
+      await client.query(
+        "CREATE INDEX IF NOT EXISTS idx_notes_content_fulltext ON notes USING GIN(to_tsvector('english', content))",
+      );
+      await client.query(
+        'CREATE INDEX IF NOT EXISTS idx_note_vectors_embedding ON note_vectors USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100)',
+      );
     } finally {
       client.release();
     }
@@ -133,18 +196,27 @@ class Collections extends Tool {
     try {
       // Use OpenAI embeddings directly - no external service dependencies
       if (process.env.OPENAI_API_KEY) {
-        const response = await axios.post('https://api.openai.com/v1/embeddings', {
-          input: text,
-          model: 'text-embedding-3-small',
-        }, {
-          headers: {
-            'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-            'Content-Type': 'application/json',
+        const response = await axios.post(
+          'https://api.openai.com/v1/embeddings',
+          {
+            input: text,
+            model: 'text-embedding-3-small',
           },
-          timeout: 15000
-        });
-        
-        if (response.data && response.data.data && response.data.data[0] && response.data.data[0].embedding) {
+          {
+            headers: {
+              Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+              'Content-Type': 'application/json',
+            },
+            timeout: 15000,
+          },
+        );
+
+        if (
+          response.data &&
+          response.data.data &&
+          response.data.data[0] &&
+          response.data.data[0].embedding
+        ) {
           return response.data.data[0].embedding;
         } else {
           logger.error('OpenAI API returned invalid embedding response');
@@ -167,11 +239,20 @@ class Collections extends Tool {
   async createCollection(name, description = '', tags = [], parentId = null) {
     const client = await this.pool.connect();
     try {
+      // Sanitize inputs
+      const sanitizedName = this.sanitizeText(name);
+      const sanitizedDescription = this.sanitizeText(description);
+      const sanitizedTags = this.sanitizeArray(tags);
+
+      if (!sanitizedName) {
+        throw new Error('Collection name is required and cannot be empty');
+      }
+
       // If parent_id is provided, verify it exists and belongs to user
       if (parentId) {
         const parentCheck = await client.query(
           'SELECT id FROM collections WHERE id = $1 AND user_id = $2',
-          [parentId, this.userId]
+          [parentId, this.userId],
         );
 
         if (parentCheck.rows.length === 0) {
@@ -181,7 +262,7 @@ class Collections extends Tool {
 
       const result = await client.query(
         'INSERT INTO collections (user_id, name, description, tags, parent_id) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-        [this.userId, name, description, tags, parentId]
+        [this.userId, sanitizedName, sanitizedDescription, sanitizedTags, parentId],
       );
       return result.rows[0];
     } finally {
@@ -195,7 +276,7 @@ class Collections extends Tool {
       // Verify collection belongs to user
       const collectionCheck = await client.query(
         'SELECT id FROM collections WHERE id = $1 AND user_id = $2',
-        [collectionId, this.userId]
+        [collectionId, this.userId],
       );
 
       if (collectionCheck.rows.length === 0) {
@@ -208,18 +289,24 @@ class Collections extends Tool {
       let paramCounter = 2; // Start from $2
 
       if (updates.name !== undefined) {
+        const sanitizedName = this.sanitizeText(updates.name);
+        if (!sanitizedName) {
+          throw new Error('Collection name cannot be empty');
+        }
         updateFields.push(`name = $${paramCounter++}`);
-        queryParams.push(updates.name);
+        queryParams.push(sanitizedName);
       }
 
       if (updates.description !== undefined) {
+        const sanitizedDescription = this.sanitizeText(updates.description);
         updateFields.push(`description = $${paramCounter++}`);
-        queryParams.push(updates.description);
+        queryParams.push(sanitizedDescription);
       }
 
       if (updates.tags !== undefined) {
+        const sanitizedTags = this.sanitizeArray(updates.tags);
         updateFields.push(`tags = $${paramCounter++}`);
-        queryParams.push(updates.tags);
+        queryParams.push(sanitizedTags);
       }
 
       if (updates.parent_id !== undefined) {
@@ -227,7 +314,7 @@ class Collections extends Tool {
         if (updates.parent_id) {
           const parentCheck = await client.query(
             'SELECT id FROM collections WHERE id = $1 AND user_id = $2',
-            [updates.parent_id, this.userId]
+            [updates.parent_id, this.userId],
           );
 
           if (parentCheck.rows.length === 0) {
@@ -235,7 +322,11 @@ class Collections extends Tool {
           }
 
           // Prevent circular references
-          const isCircular = await this.wouldCreateCircularReference(client, collectionId, updates.parent_id);
+          const isCircular = await this.wouldCreateCircularReference(
+            client,
+            collectionId,
+            updates.parent_id,
+          );
           if (isCircular) {
             throw new Error('Cannot set parent: would create circular reference');
           }
@@ -286,10 +377,9 @@ class Collections extends Tool {
       visited.add(currentId);
 
       // Get the parent of the current node
-      const result = await client.query(
-        'SELECT parent_id FROM collections WHERE id = $1',
-        [currentId]
-      );
+      const result = await client.query('SELECT parent_id FROM collections WHERE id = $1', [
+        currentId,
+      ]);
 
       // If no results or no parent, we've reached the top
       if (result.rows.length === 0 || !result.rows[0].parent_id) {
@@ -314,7 +404,7 @@ class Collections extends Tool {
       // Verify collection belongs to user
       const collectionCheck = await client.query(
         'SELECT id FROM collections WHERE id = $1 AND user_id = $2',
-        [collectionId, this.userId]
+        [collectionId, this.userId],
       );
 
       if (collectionCheck.rows.length === 0) {
@@ -329,13 +419,12 @@ class Collections extends Tool {
       await client.query('BEGIN');
 
       // Perform the delete - this will cascade to notes and child collections
-      const result = await client.query(
-        'DELETE FROM collections WHERE id = $1 RETURNING *',
-        [collectionId]
-      );
+      const result = await client.query('DELETE FROM collections WHERE id = $1 RETURNING *', [
+        collectionId,
+      ]);
 
       await client.query('COMMIT');
-      
+
       return result.rows[0];
     } catch (error) {
       await client.query('ROLLBACK');
@@ -346,18 +435,16 @@ class Collections extends Tool {
   }
 
   async listCollections(params = {}) {
-    const {
-      parentId = null,
-      tagFilter = null,
-      limit = 50,
-      recursive = false
-    } = params;
+    const { parentId = null, tagFilter = null, limit = 50, recursive = false } = params;
 
     const client = await this.pool.connect();
     try {
+      // Sanitize inputs
+      const sanitizedTagFilter = tagFilter ? this.sanitizeArray(tagFilter) : null;
+
       // If recursive is true and parentId is provided, we need to get all descendants
       if (recursive && parentId) {
-        return this.listCollectionsRecursive(client, parentId, tagFilter, limit);
+        return this.listCollectionsRecursive(client, parentId, sanitizedTagFilter, limit);
       }
 
       // Basic query for direct children or top-level collections
@@ -374,13 +461,13 @@ class Collections extends Tool {
         queryParams.push(parentId);
       }
 
-      if (tagFilter && tagFilter.length > 0) {
+      if (sanitizedTagFilter && sanitizedTagFilter.length > 0) {
         query += ` AND tags && $${paramIndex++}`;
-        queryParams.push(tagFilter);
+        queryParams.push(sanitizedTagFilter);
       }
 
       query += ' ORDER BY updated_at DESC';
-      
+
       if (limit) {
         query += ` LIMIT $${paramIndex++}`;
         queryParams.push(limit);
@@ -394,6 +481,9 @@ class Collections extends Tool {
   }
 
   async listCollectionsRecursive(client, parentId, tagFilter = null, limit = null) {
+    // Sanitize inputs
+    const sanitizedTagFilter = tagFilter ? this.sanitizeArray(tagFilter) : null;
+
     // This is a recursive CTE (Common Table Expression) to get all descendants
     let query = `
       WITH RECURSIVE collection_tree AS (
@@ -416,13 +506,13 @@ class Collections extends Tool {
     let params = [parentId, this.userId];
     let paramIndex = 3;
 
-    if (tagFilter && tagFilter.length > 0) {
+    if (sanitizedTagFilter && sanitizedTagFilter.length > 0) {
       query += ` WHERE tags && $${paramIndex++}`;
-      params.push(tagFilter);
+      params.push(sanitizedTagFilter);
     }
 
     query += ' ORDER BY depth, updated_at DESC';
-    
+
     if (limit) {
       query += ` LIMIT $${paramIndex++}`;
       params.push(limit);
@@ -435,6 +525,14 @@ class Collections extends Tool {
   async searchCollections(searchQuery, tagFilter = null, limit = 20) {
     const client = await this.pool.connect();
     try {
+      // Sanitize inputs
+      const sanitizedSearchQuery = this.sanitizeSearchQuery(searchQuery);
+      const sanitizedTagFilter = tagFilter ? this.sanitizeArray(tagFilter) : null;
+
+      if (!sanitizedSearchQuery) {
+        throw new Error('Search query cannot be empty');
+      }
+
       // Search collections by name, description, and tags
       let query = `
         SELECT *, 
@@ -447,17 +545,17 @@ class Collections extends Tool {
           OR description ILIKE $3
         )
       `;
-      
-      let params = [searchQuery, this.userId, `%${searchQuery}%`];
+
+      let params = [sanitizedSearchQuery, this.userId, `%${sanitizedSearchQuery}%`];
       let paramIndex = 4;
 
-      if (tagFilter && tagFilter.length > 0) {
+      if (sanitizedTagFilter && sanitizedTagFilter.length > 0) {
         query += ` AND tags && $${paramIndex++}`;
-        params.push(tagFilter);
+        params.push(sanitizedTagFilter);
       }
 
       query += ' ORDER BY score DESC';
-      
+
       if (limit) {
         query += ` LIMIT $${paramIndex++}`;
         params.push(limit);
@@ -475,10 +573,24 @@ class Collections extends Tool {
     try {
       await client.query('BEGIN');
 
+      // Sanitize inputs
+      const sanitizedTitle = this.sanitizeText(title);
+      const sanitizedContent = this.sanitizeText(content);
+      const sanitizedSourceUrl = sourceUrl ? this.sanitizeUrl(sourceUrl) : null;
+      const sanitizedTags = this.sanitizeArray(tags);
+
+      if (!sanitizedTitle) {
+        throw new Error('Note title is required and cannot be empty');
+      }
+
+      if (!sanitizedContent) {
+        throw new Error('Note content is required and cannot be empty');
+      }
+
       // Verify collection belongs to user
       const collectionCheck = await client.query(
         'SELECT id FROM collections WHERE id = $1 AND user_id = $2',
-        [collectionId, this.userId]
+        [collectionId, this.userId],
       );
 
       if (collectionCheck.rows.length === 0) {
@@ -488,7 +600,7 @@ class Collections extends Tool {
       // Insert note
       const noteResult = await client.query(
         'INSERT INTO notes (collection_id, title, content, source_url, tags) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-        [collectionId, title, content, sourceUrl, tags]
+        [collectionId, sanitizedTitle, sanitizedContent, sanitizedSourceUrl, sanitizedTags],
       );
 
       const note = noteResult.rows[0];
@@ -496,22 +608,22 @@ class Collections extends Tool {
       // Generate and store embedding
       const embedding = await this.generateEmbedding(`${title}\n\n${content}`);
       if (embedding) {
-        // Convert JS array to pgvector literal '[v1,v2,...]'
-        const vectorLiteral = `[${embedding.join(',')}]`;
-        await client.query(
-          'INSERT INTO note_vectors (note_id, embedding) VALUES ($1, $2::vector)',
-          [note.id, vectorLiteral]
-        );
+        // Use proper vector parameter binding
+        await client.query('INSERT INTO note_vectors (note_id, embedding) VALUES ($1, $2)', [
+          note.id,
+          embedding,
+        ]);
         logger.debug(`Embedding stored for note ${note.id}`);
       } else {
-        logger.warn(`Failed to generate embedding for note ${note.id} - semantic search will not include this note`);
+        logger.warn(
+          `Failed to generate embedding for note ${note.id} - semantic search will not include this note`,
+        );
       }
 
       // Update collection timestamp
-      await client.query(
-        'UPDATE collections SET updated_at = CURRENT_TIMESTAMP WHERE id = $1',
-        [collectionId]
-      );
+      await client.query('UPDATE collections SET updated_at = CURRENT_TIMESTAMP WHERE id = $1', [
+        collectionId,
+      ]);
 
       await client.query('COMMIT');
       return note;
@@ -529,12 +641,15 @@ class Collections extends Tool {
       await client.query('BEGIN');
 
       // Verify note belongs to user (through collection ownership)
-      const noteCheck = await client.query(`
+      const noteCheck = await client.query(
+        `
         SELECT n.* 
         FROM notes n
         JOIN collections c ON n.collection_id = c.id
         WHERE n.id = $1 AND c.user_id = $2
-      `, [noteId, this.userId]);
+      `,
+        [noteId, this.userId],
+      );
 
       if (noteCheck.rows.length === 0) {
         throw new Error('Note not found or access denied');
@@ -546,30 +661,40 @@ class Collections extends Tool {
       let paramCounter = 2; // Start from $2
 
       if (updates.title !== undefined) {
+        const sanitizedTitle = this.sanitizeText(updates.title);
+        if (!sanitizedTitle) {
+          throw new Error('Note title cannot be empty');
+        }
         updateFields.push(`title = $${paramCounter++}`);
-        queryParams.push(updates.title);
+        queryParams.push(sanitizedTitle);
       }
 
       if (updates.content !== undefined) {
+        const sanitizedContent = this.sanitizeText(updates.content);
+        if (!sanitizedContent) {
+          throw new Error('Note content cannot be empty');
+        }
         updateFields.push(`content = $${paramCounter++}`);
-        queryParams.push(updates.content);
+        queryParams.push(sanitizedContent);
       }
 
       if (updates.source_url !== undefined) {
+        const sanitizedSourceUrl = updates.source_url ? this.sanitizeUrl(updates.source_url) : null;
         updateFields.push(`source_url = $${paramCounter++}`);
-        queryParams.push(updates.source_url);
+        queryParams.push(sanitizedSourceUrl);
       }
 
       if (updates.tags !== undefined) {
+        const sanitizedTags = this.sanitizeArray(updates.tags);
         updateFields.push(`tags = $${paramCounter++}`);
-        queryParams.push(updates.tags);
+        queryParams.push(sanitizedTags);
       }
 
       if (updates.collection_id !== undefined) {
         // If collection_id is being changed, verify it exists and belongs to user
         const collectionCheck = await client.query(
           'SELECT id FROM collections WHERE id = $1 AND user_id = $2',
-          [updates.collection_id, this.userId]
+          [updates.collection_id, this.userId],
         );
 
         if (collectionCheck.rows.length === 0) {
@@ -603,28 +728,24 @@ class Collections extends Tool {
       if (updates.title !== undefined || updates.content !== undefined) {
         const title = updates.title || note.title;
         const content = updates.content || note.content;
-        
+
         const embedding = await this.generateEmbedding(`${title}\n\n${content}`);
         if (embedding) {
-          // Convert JS array to pgvector literal '[v1,v2,...]'
-          const vectorLiteral = `[${embedding.join(',')}]`;
-          
           // Delete existing embedding if it exists
           await client.query('DELETE FROM note_vectors WHERE note_id = $1', [noteId]);
-          
-          // Insert new embedding
-          await client.query(
-            'INSERT INTO note_vectors (note_id, embedding) VALUES ($1, $2::vector)',
-            [noteId, vectorLiteral]
-          );
+
+          // Insert new embedding using proper parameter binding
+          await client.query('INSERT INTO note_vectors (note_id, embedding) VALUES ($1, $2)', [
+            noteId,
+            embedding,
+          ]);
         }
       }
 
       // Update collection timestamp
-      await client.query(
-        'UPDATE collections SET updated_at = CURRENT_TIMESTAMP WHERE id = $1',
-        [updatedNote.collection_id]
-      );
+      await client.query('UPDATE collections SET updated_at = CURRENT_TIMESTAMP WHERE id = $1', [
+        updatedNote.collection_id,
+      ]);
 
       await client.query('COMMIT');
       return updatedNote;
@@ -648,8 +769,16 @@ class Collections extends Tool {
 
     const client = await this.pool.connect();
     try {
+      // Sanitize inputs
+      const sanitizedSearchQuery = this.sanitizeSearchQuery(searchQuery);
+      const sanitizedTagFilter = tagFilter ? this.sanitizeArray(tagFilter) : null;
+
+      if (!sanitizedSearchQuery) {
+        throw new Error('Search query cannot be empty');
+      }
+
       let actualCollectionIds = collectionIds;
-      
+
       // If recursive flag is true and we have collectionIds, get all child collection IDs as well
       if (recursive && collectionIds && collectionIds.length > 0) {
         actualCollectionIds = await this.getAllChildCollectionIds(client, collectionIds);
@@ -669,10 +798,10 @@ class Collections extends Tool {
       }
 
       // Add tag filter
-      if (tagFilter && tagFilter.length > 0) {
+      if (sanitizedTagFilter && sanitizedTagFilter.length > 0) {
         paramCount++;
         whereConditions += ` AND n.tags && $${paramCount}`;
-        queryParams.push(tagFilter);
+        queryParams.push(sanitizedTagFilter);
       }
 
       if (searchMode === 'keyword') {
@@ -686,24 +815,22 @@ class Collections extends Tool {
           ORDER BY score DESC
           LIMIT $${paramCount + 1}
         `;
-        queryParams.push(searchQuery, limit);
+        queryParams.push(sanitizedSearchQuery, limit);
         const result = await client.query(query, queryParams);
         return result.rows;
-
       } else if (searchMode === 'semantic') {
-        const queryEmbedding = await this.generateEmbedding(searchQuery);
+        const queryEmbedding = await this.generateEmbedding(sanitizedSearchQuery);
         if (!queryEmbedding) {
           // Fallback to keyword search when embeddings fail
           logger.warn('Semantic search failed, falling back to keyword search');
           return this.searchNotes({ ...params, searchMode: 'keyword' });
         }
 
-        const vectorLiteral = `[${queryEmbedding.join(',')}]`;
         paramCount++;
         const query = `
           SELECT n.*, c.name as collection_name, 
                  CASE 
-                   WHEN v.embedding IS NOT NULL THEN (1 - (v.embedding <=> $${paramCount}::vector))
+                   WHEN v.embedding IS NOT NULL THEN (1 - (v.embedding <=> $${paramCount}))
                    ELSE 0
                  END as score
           FROM notes n
@@ -713,27 +840,24 @@ class Collections extends Tool {
           ORDER BY score DESC, n.created_at DESC
           LIMIT $${paramCount + 1}
         `;
-        queryParams.push(vectorLiteral, limit);
+        queryParams.push(queryEmbedding, limit);
         const result = await client.query(query, queryParams);
         return result.rows;
-
       } else if (searchMode === 'hybrid') {
-        const queryEmbedding = await this.generateEmbedding(searchQuery);
+        const queryEmbedding = await this.generateEmbedding(sanitizedSearchQuery);
         if (!queryEmbedding) {
           // Fallback to keyword search
           return this.searchNotes({ ...params, searchMode: 'keyword' });
         }
 
-        const vectorLiteral = `[${queryEmbedding.join(',')}]`;
-        
         // Build WHERE clause for CTEs based on existing conditions
         let cteWhereClause = 'WHERE c.user_id = $1';
         if (actualCollectionIds && actualCollectionIds.length > 0) {
-          const collectionParam = queryParams.findIndex(p => p === actualCollectionIds) + 1;
+          const collectionParam = queryParams.findIndex((p) => p === actualCollectionIds) + 1;
           cteWhereClause += ` AND n.collection_id = ANY($${collectionParam})`;
         }
-        if (tagFilter && tagFilter.length > 0) {
-          const tagParam = queryParams.findIndex(p => p === tagFilter) + 1;
+        if (sanitizedTagFilter && sanitizedTagFilter.length > 0) {
+          const tagParam = queryParams.findIndex((p) => p === sanitizedTagFilter) + 1;
           cteWhereClause += ` AND n.tags && $${tagParam}`;
         }
 
@@ -753,7 +877,7 @@ class Collections extends Tool {
             AND to_tsvector('english', n.content) @@ plainto_tsquery('english', $${textParam})
           ),
           semantic_scores AS (
-            SELECT n.id, (1 - (v.embedding <=> $${vectorParam}::vector)) as semantic_score
+            SELECT n.id, (1 - (v.embedding <=> $${vectorParam})) as semantic_score
             FROM notes n
             JOIN collections c ON n.collection_id = c.id
             LEFT JOIN note_vectors v ON n.id = v.note_id
@@ -771,11 +895,10 @@ class Collections extends Tool {
           ORDER BY score DESC
           LIMIT $${limitParam}
         `;
-        queryParams.push(searchQuery, vectorLiteral, limit);
+        queryParams.push(sanitizedSearchQuery, queryEmbedding, limit);
         const result = await client.query(query, queryParams);
         return result.rows;
       }
-
     } finally {
       client.release();
     }
@@ -802,21 +925,24 @@ class Collections extends Tool {
     `;
 
     const result = await client.query(query, [parentIds, this.userId]);
-    return result.rows.map(row => row.id);
+    return result.rows.map((row) => row.id);
   }
 
   async deleteNote(noteId) {
     const client = await this.pool.connect();
     try {
       // Verify note belongs to user (through collection ownership)
-      const result = await client.query(`
+      const result = await client.query(
+        `
         DELETE FROM notes n
         USING collections c
         WHERE n.collection_id = c.id
         AND c.user_id = $1
         AND n.id = $2
         RETURNING n.*
-      `, [this.userId, noteId]);
+      `,
+        [this.userId, noteId],
+      );
 
       return result.rows[0] || null;
     } finally {
@@ -837,24 +963,24 @@ class Collections extends Tool {
 
       switch (action) {
         case 'create_collection': {
-          const { 
-            collection_name, 
-            collection_description = '', 
-            collection_tags = [], 
-            parent_collection_id = null 
+          const {
+            collection_name,
+            collection_description = '',
+            collection_tags = [],
+            parent_collection_id = null,
           } = args;
-          
+
           if (!collection_name) {
             return JSON.stringify({ error: 'collection_name is required' });
           }
-          
+
           const collection = await this.createCollection(
-            collection_name, 
-            collection_description, 
-            collection_tags, 
-            parent_collection_id
+            collection_name,
+            collection_description,
+            collection_tags,
+            parent_collection_id,
           );
-          
+
           return JSON.stringify({
             success: true,
             collection: {
@@ -863,36 +989,36 @@ class Collections extends Tool {
               description: collection.description,
               parent_id: collection.parent_id,
               tags: collection.tags,
-              created_at: collection.created_at
-            }
+              created_at: collection.created_at,
+            },
           });
         }
 
         case 'update_collection': {
-          const { 
+          const {
             collection_id,
             collection_name,
             collection_description,
             collection_tags,
-            parent_collection_id
+            parent_collection_id,
           } = args;
-          
+
           if (!collection_id) {
             return JSON.stringify({ error: 'collection_id is required' });
           }
-          
+
           const updates = {};
           if (collection_name !== undefined) updates.name = collection_name;
           if (collection_description !== undefined) updates.description = collection_description;
           if (collection_tags !== undefined) updates.tags = collection_tags;
           if (parent_collection_id !== undefined) updates.parent_id = parent_collection_id;
-          
+
           const collection = await this.updateCollection(collection_id, updates);
-          
+
           if (!collection) {
             return JSON.stringify({ error: 'No updates were made to the collection' });
           }
-          
+
           return JSON.stringify({
             success: true,
             collection: {
@@ -901,49 +1027,44 @@ class Collections extends Tool {
               description: collection.description,
               parent_id: collection.parent_id,
               tags: collection.tags,
-              updated_at: collection.updated_at
-            }
+              updated_at: collection.updated_at,
+            },
           });
         }
 
         case 'delete_collection': {
           const { collection_id } = args;
-          
+
           if (!collection_id) {
             return JSON.stringify({ error: 'collection_id is required' });
           }
-          
+
           const deletedCollection = await this.deleteCollection(collection_id);
-          
+
           if (!deletedCollection) {
             return JSON.stringify({ error: 'Collection not found or access denied' });
           }
-          
+
           return JSON.stringify({
             success: true,
             message: 'Collection and all its contents deleted successfully',
-            deleted_collection_id: collection_id
+            deleted_collection_id: collection_id,
           });
         }
 
         case 'list_collections': {
-          const { 
-            parent_collection_id = null, 
-            tag_filter, 
-            limit = 50,
-            recursive = false
-          } = args;
-          
+          const { parent_collection_id = null, tag_filter, limit = 50, recursive = false } = args;
+
           const collections = await this.listCollections({
             parentId: parent_collection_id,
             tagFilter: tag_filter,
             limit,
-            recursive
+            recursive,
           });
-          
+
           return JSON.stringify({
             success: true,
-            collections: collections.map(c => ({
+            collections: collections.map((c) => ({
               id: c.id,
               name: c.name,
               description: c.description,
@@ -951,23 +1072,23 @@ class Collections extends Tool {
               tags: c.tags,
               created_at: c.created_at,
               updated_at: c.updated_at,
-              depth: c.depth // Only present for recursive queries
-            }))
+              depth: c.depth, // Only present for recursive queries
+            })),
           });
         }
 
         case 'search_collections': {
           const { search_query, tag_filter, limit = 20 } = args;
-          
+
           if (!search_query) {
             return JSON.stringify({ error: 'search_query is required' });
           }
-          
+
           const collections = await this.searchCollections(search_query, tag_filter, limit);
-          
+
           return JSON.stringify({
             success: true,
-            collections: collections.map(c => ({
+            collections: collections.map((c) => ({
               id: c.id,
               name: c.name,
               description: c.description,
@@ -975,20 +1096,28 @@ class Collections extends Tool {
               tags: c.tags,
               score: c.score,
               created_at: c.created_at,
-              updated_at: c.updated_at
-            }))
+              updated_at: c.updated_at,
+            })),
           });
         }
 
         case 'add_note': {
           const { collection_id, note_title, note_content, note_source_url, note_tags = [] } = args;
-          
+
           if (!collection_id || !note_title || !note_content) {
-            return JSON.stringify({ error: 'collection_id, note_title, and note_content are required' });
+            return JSON.stringify({
+              error: 'collection_id, note_title, and note_content are required',
+            });
           }
-          
-          const note = await this.addNote(collection_id, note_title, note_content, note_source_url, note_tags);
-          
+
+          const note = await this.addNote(
+            collection_id,
+            note_title,
+            note_content,
+            note_source_url,
+            note_tags,
+          );
+
           return JSON.stringify({
             success: true,
             note: {
@@ -998,34 +1127,28 @@ class Collections extends Tool {
               content: note.content,
               source_url: note.source_url,
               tags: note.tags,
-              created_at: note.created_at
-            }
+              created_at: note.created_at,
+            },
           });
         }
 
         case 'update_note': {
-          const { 
-            note_id, 
-            note_title, 
-            note_content,
-            note_source_url,
-            note_tags,
-            collection_id
-          } = args;
-          
+          const { note_id, note_title, note_content, note_source_url, note_tags, collection_id } =
+            args;
+
           if (!note_id) {
             return JSON.stringify({ error: 'note_id is required' });
           }
-          
+
           const updates = {};
           if (note_title !== undefined) updates.title = note_title;
           if (note_content !== undefined) updates.content = note_content;
           if (note_source_url !== undefined) updates.source_url = note_source_url;
           if (note_tags !== undefined) updates.tags = note_tags;
           if (collection_id !== undefined) updates.collection_id = collection_id;
-          
+
           const note = await this.updateNote(note_id, updates);
-          
+
           return JSON.stringify({
             success: true,
             note: {
@@ -1035,21 +1158,21 @@ class Collections extends Tool {
               content: note.content,
               source_url: note.source_url,
               tags: note.tags,
-              updated_at: note.updated_at
-            }
+              updated_at: note.updated_at,
+            },
           });
         }
 
         case 'search_notes': {
-          const { 
-            search_query, 
-            search_mode = 'hybrid', 
-            collection_id, 
-            tag_filter, 
+          const {
+            search_query,
+            search_mode = 'hybrid',
+            collection_id,
+            tag_filter,
             limit = 20,
-            recursive = false
+            recursive = false,
           } = args;
-          
+
           if (!search_query) {
             return JSON.stringify({ error: 'search_query is required' });
           }
@@ -1061,12 +1184,12 @@ class Collections extends Tool {
             collectionIds,
             recursive,
             tagFilter: tag_filter,
-            limit
+            limit,
           });
 
           return JSON.stringify({
             success: true,
-            notes: notes.map(n => ({
+            notes: notes.map((n) => ({
               id: n.id,
               collection_id: n.collection_id,
               collection_name: n.collection_name,
@@ -1075,37 +1198,36 @@ class Collections extends Tool {
               source_url: n.source_url,
               tags: n.tags,
               score: n.score,
-              created_at: n.created_at
+              created_at: n.created_at,
             })),
             search_mode: search_mode,
-            query: search_query
+            query: search_query,
           });
         }
 
         case 'delete_note': {
           const { note_id } = args;
-          
+
           if (!note_id) {
             return JSON.stringify({ error: 'note_id is required' });
           }
-          
+
           const deletedNote = await this.deleteNote(note_id);
-          
+
           if (!deletedNote) {
             return JSON.stringify({ error: 'Note not found or access denied' });
           }
-          
+
           return JSON.stringify({
             success: true,
             message: 'Note deleted successfully',
-            deleted_note_id: note_id
+            deleted_note_id: note_id,
           });
         }
 
         default:
           return JSON.stringify({ error: `Unknown action: ${action}` });
       }
-
     } catch (error) {
       logger.error('Collections tool error:', error);
       return JSON.stringify({ error: error.message });
