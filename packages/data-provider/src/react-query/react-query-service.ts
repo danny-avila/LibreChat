@@ -12,7 +12,6 @@ import * as q from '../types/queries';
 import { QueryKeys } from '../keys';
 import * as s from '../schemas';
 import * as t from '../types';
-import * as a from '../types/assistants';
 import * as permissions from '../accessPermissions';
 
 export { hasPermissions } from '../accessPermissions';
@@ -450,53 +449,4 @@ export const useGetEffectivePermissionsQuery = (
     staleTime: 30000,
     ...config,
   });
-};
-
-/* Marketplace */
-
-/**
- * Get agent categories with counts for marketplace tabs
- */
-export const useGetAgentCategoriesQuery = (
-  config?: UseQueryOptions<t.TMarketplaceCategory[]>,
-): QueryObserverResult<t.TMarketplaceCategory[]> => {
-  return useQuery<t.TMarketplaceCategory[]>(
-    [QueryKeys.agentCategories],
-    () => dataService.getAgentCategories(),
-    {
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
-      refetchOnMount: false,
-      staleTime: 5 * 60 * 1000, // Cache for 5 minutes
-      ...config,
-    },
-  );
-};
-
-/**
- * Unified marketplace agents query with query string controls
- */
-export const useGetMarketplaceAgentsQuery = (
-  params: {
-    requiredPermission: number;
-    category?: string;
-    search?: string;
-    limit?: number;
-    cursor?: string;
-    promoted?: 0 | 1;
-  },
-  config?: UseQueryOptions<a.AgentListResponse>,
-): QueryObserverResult<a.AgentListResponse> => {
-  return useQuery<a.AgentListResponse>(
-    [QueryKeys.marketplaceAgents, params],
-    () => dataService.getMarketplaceAgents(params),
-    {
-      enabled: !!params.requiredPermission,
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
-      refetchOnMount: false,
-      staleTime: 2 * 60 * 1000, // Cache for 2 minutes
-      ...config,
-    },
-  );
 };
