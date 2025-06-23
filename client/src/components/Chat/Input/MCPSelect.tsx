@@ -5,7 +5,6 @@ import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-quer
 import type { TUpdateUserPlugins, TPlugin } from 'librechat-data-provider';
 import MCPConfigDialog, { type ConfigFieldDetail } from '~/components/ui/MCPConfigDialog';
 import { useToastContext, useBadgeRowContext } from '~/Providers';
-import { useGetStartupConfig } from '~/data-provider';
 import MultiSelect from '~/components/ui/MultiSelect';
 import { MCPIcon } from '~/components/svg';
 import { useLocalize } from '~/hooks';
@@ -18,10 +17,9 @@ const getBaseMCPPluginKey = (fullPluginKey: string): string => {
 function MCPSelect() {
   const localize = useLocalize();
   const { showToast } = useToastContext();
-  const { mcpSelect } = useBadgeRowContext();
+  const { mcpSelect, startupConfig } = useBadgeRowContext();
   const { mcpValues, setMCPValues, mcpServerNames, mcpToolDetails, isPinned } = mcpSelect;
 
-  const { data: startupConfig } = useGetStartupConfig();
   const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
   const [selectedToolForConfig, setSelectedToolForConfig] = useState<TPlugin | null>(null);
 

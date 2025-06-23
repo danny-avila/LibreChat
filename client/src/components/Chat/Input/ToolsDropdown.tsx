@@ -8,7 +8,6 @@ import MCPSubMenu from '~/components/Chat/Input/MCPSubMenu';
 import { PinIcon, VectorIcon } from '~/components/svg';
 import { useLocalize, useHasAccess } from '~/hooks';
 import { useBadgeRowContext } from '~/Providers';
-import { useGetStartupConfig } from '~/data-provider';
 import { cn } from '~/utils';
 
 interface ToolsDropdownProps {
@@ -18,10 +17,16 @@ interface ToolsDropdownProps {
 const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
   const localize = useLocalize();
   const isDisabled = disabled ?? false;
-  const { data: startupConfig } = useGetStartupConfig();
   const [isPopoverActive, setIsPopoverActive] = useState(false);
-  const { webSearch, codeInterpreter, fileSearch, mcpSelect, searchApiKeyForm, codeApiKeyForm } =
-    useBadgeRowContext();
+  const {
+    webSearch,
+    mcpSelect,
+    fileSearch,
+    startupConfig,
+    codeApiKeyForm,
+    codeInterpreter,
+    searchApiKeyForm,
+  } = useBadgeRowContext();
   const { setIsDialogOpen: setIsCodeDialogOpen, menuTriggerRef: codeMenuTriggerRef } =
     codeApiKeyForm;
   const { setIsDialogOpen: setIsSearchDialogOpen, menuTriggerRef: searchMenuTriggerRef } =
@@ -90,6 +95,8 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
     },
     [mcpSelect],
   );
+
+  const mcpPlaceholder = startupConfig?.interface?.mcpServers?.placeholder;
 
   const dropdownItems = useMemo(() => {
     const items: MenuItemProps[] = [
@@ -248,11 +255,11 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
           <MCPSubMenu
             {...props}
             mcpValues={mcpValues}
-            mcpServerNames={mcpServerNames}
             isMCPPinned={isMCPPinned}
+            placeholder={mcpPlaceholder}
+            mcpServerNames={mcpServerNames}
             setIsMCPPinned={setIsMCPPinned}
             handleMCPToggle={handleMCPToggle}
-            placeholder={startupConfig?.interface?.mcpServers?.placeholder}
           />
         ),
       });
@@ -265,6 +272,7 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
     canRunCode,
     isMCPPinned,
     isCodePinned,
+    mcpPlaceholder,
     mcpServerNames,
     isSearchPinned,
     setIsMCPPinned,
@@ -283,7 +291,6 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
     setIsSearchDialogOpen,
     handleFileSearchToggle,
     handleCodeInterpreterToggle,
-    startupConfig,
   ]);
 
   const menuTrigger = (
