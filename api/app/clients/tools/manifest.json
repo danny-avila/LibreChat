@@ -1,9 +1,9 @@
 [
   {
-    "name": "User Memory",
-    "pluginKey": "user_memory_mongo",
-    "description": "Manage user memories and associated tags across conversations",
-    "icon": "/assets/usermemory.png",
+    "name": "QuickLC Memory",
+    "pluginKey": "quick_lc_memory",
+    "description": "Quick access to LibreChat user memories for persistent storage across conversations",
+    "icon": "/assets/quicklcmemory.png",
     "authConfig": []
   },
   {
@@ -258,12 +258,5 @@
         "description": "Your WordPress password or application password"
       }
     ]
-  },
-  {
-    "name": "UserMemoryMongo",
-    "pluginKey": "user_memory_mongo",
-    "description": "Manage user memories with MongoDB backend for persistent storage across conversations",
-    "icon": "/assets/openweather.png",
-    "authConfig": []
   }
 ]

@@ -30,7 +30,7 @@ const {
   WebNavigator,
   Quickchart,
   WordPress,
-  UserMemoryMongo,
+  QuickLCMemory,
 } = require('../');
 const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
 const { createFileSearchTool, primeFiles: primeSearchFiles } = require('./fileSearch');
@@ -170,7 +170,7 @@ const loadTools = async ({
     time_api: TimeAPI,
     quickchart: Quickchart,
     wordpress: WordPress,
-    user_memory_mongo: UserMemoryMongo,
+    quick_lc_memory: QuickLCMemory,
   };
 
   const customConstructors = {

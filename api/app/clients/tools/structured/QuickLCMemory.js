@@ -6,7 +6,7 @@ const { createModels } = require('@librechat/data-schemas');
 const { logger } = require('~/config');
 
 /**
- * UserMemoryMongo Tool - Manages user memories using MongoDB and LibreChat's key-based system
+ * QuickLCMemory Tool - Manages user memories using MongoDB and LibreChat's key-based system
  * 
  * This tool provides an interface to LibreChat's key-based memory system,
  * allowing an agent to manage user-specific information.
@@ -17,7 +17,7 @@ const { logger } = require('~/config');
  * - Leverages LibreChat's existing MemoryEntry model
  * - Provides full CRUD operations for user memories.
  */
-class UserMemoryMongo extends Tool {
+class QuickLCMemory extends Tool {
   constructor(fields = {}) {
     super();
     
@@ -26,7 +26,7 @@ class UserMemoryMongo extends Tool {
 
     this.userId = fields.userId;
     
-    this.name = 'user_memory_mongo';
+    this.name = 'quick_lc_memory';
     this.description = 
       'Manage user memories with simple keys. Store, retrieve, update, and organize information about users across conversations.';
     
@@ -102,10 +102,10 @@ class UserMemoryMongo extends Tool {
     try {
       const mongoose = await connectDb();
       this.models = createModels(mongoose);
-      logger.info('UserMemoryMongo database connection initialized successfully');
+      logger.info('QuickLCMemory database connection initialized successfully');
       return this.models;
     } catch (error) {
-      logger.error('Failed to initialize UserMemoryMongo database connection:', error);
+      logger.error('Failed to initialize QuickLCMemory database connection:', error);
       // Reset promise so next call can retry
       this._connectionPromise = null;
       throw error;
@@ -305,11 +305,11 @@ class UserMemoryMongo extends Tool {
 
   showHelp() {
     return `
-=== UserMemoryMongo Tool Help ===
+=== QuickLCMemory Tool Help ===
 
 OVERVIEW:
 ---------
-UserMemoryMongo is a tool for storing and retrieving persistent user memories using a key-value system.
+QuickLCMemory is a tool for storing and retrieving persistent user memories using a key-value system.
 It uses MongoDB through LibreChat's infrastructure to store memories that persist across conversations.
 
 BASIC USAGE:
@@ -405,7 +405,7 @@ IMPORTANT NOTES:
       const validationResult = this.schema.safeParse(input);
       
       if (!validationResult.success) {
-        logger.warn('UserMemoryMongo validation failed:', validationResult.error.errors);
+        logger.warn('QuickLCMemory validation failed:', validationResult.error.errors);
         return JSON.stringify({
           error: 'Invalid input parameters',
           code: 'VALIDATION_ERROR'
@@ -483,7 +483,7 @@ IMPORTANT NOTES:
           });
 
         default:
-          logger.warn(`Unknown action requested in UserMemoryMongo: ${action}`);
+          logger.warn(`Unknown action requested in QuickLCMemory: ${action}`);
           return JSON.stringify({
             error: 'Invalid action',
             code: 'INVALID_ACTION'
@@ -491,7 +491,7 @@ IMPORTANT NOTES:
       }
 
     } catch (error) {
-      logger.error('UserMemoryMongo error:', error);
+      logger.error('QuickLCMemory error:', error);
       return JSON.stringify({
         error: error.message || 'UserMemory operation failed',
         code: 'MEMORY_OPERATION_ERROR'
@@ -500,4 +500,4 @@ IMPORTANT NOTES:
   }
 }
 
-module.exports = UserMemoryMongo;
+module.exports = QuickLCMemory;
