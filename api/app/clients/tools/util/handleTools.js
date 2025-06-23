@@ -169,15 +169,14 @@ const loadTools = async ({
     time_api: TimeAPI,
     quickchart: Quickchart,
     wordpress: WordPress,
+    collections: Collections,
   };
 
   const customConstructors = {
     collections: async (_toolContextMap) => {
       const authFields = getAuthFields('collections');
       const authValues = await loadAuthValues({ userId: user, authFields });
-      const collectionsInstance = new Collections({ ...authValues, userId: user });
-      collectionsInstance.setUserId(user);
-      return collectionsInstance;
+      return new Collections({ ...authValues, userId: user });
     },
     serpapi: async (_toolContextMap) => {
       const authFields = getAuthFields('serpapi');
