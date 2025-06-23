@@ -1014,6 +1014,7 @@ class AgentClient extends BaseClient {
       optionsOnly: true,
       overrideEndpoint: endpoint,
       overrideModel: clientOptions.model,
+      endpointOption: { model_parameters: clientOptions },
     });
 
     let provider = options.provider ?? overrideProvider ?? agent.provider;
