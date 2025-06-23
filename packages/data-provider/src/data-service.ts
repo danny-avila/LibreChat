@@ -436,6 +436,80 @@ export const revertAgentVersion = ({
   version_index: number;
 }): Promise<a.Agent> => request.post(endpoints.revertAgentVersion(agent_id), { version_index });
 
+/* Marketplace */
+
+/**
+ * Get agent categories with counts for marketplace tabs
+ */
+export const getAgentCategories = (): Promise<t.TMarketplaceCategory[]> => {
+  return request.get(endpoints.agents({ path: 'marketplace/categories' }));
+};
+
+/**
+ * Get promoted/top picks agents with pagination
+ */
+export const getPromotedAgents = (params: {
+  page?: number;
+  limit?: number;
+  showAll?: string; // Add showAll parameter to get all shared agents instead of just promoted
+}): Promise<a.AgentListResponse> => {
+  return request.get(
+    endpoints.agents({
+      path: 'marketplace/promoted',
+      options: params,
+    }),
+  );
+};
+
+/**
+ * Get all agents with pagination (for "all" category)
+ */
+export const getAllAgents = (params: {
+  page?: number;
+  limit?: number;
+}): Promise<a.AgentListResponse> => {
+  return request.get(
+    endpoints.agents({
+      path: 'marketplace/all',
+      options: params,
+    }),
+  );
+};
+
+/**
+ * Get agents by category with pagination
+ */
+export const getAgentsByCategory = (params: {
+  category: string;
+  page?: number;
+  limit?: number;
+}): Promise<a.AgentListResponse> => {
+  const { category, ...options } = params;
+  return request.get(
+    endpoints.agents({
+      path: `marketplace/category/${category}`,
+      options,
+    }),
+  );
+};
+
+/**
+ * Search agents in marketplace
+ */
+export const searchAgents = (params: {
+  q: string;
+  category?: string;
+  page?: number;
+  limit?: number;
+}): Promise<a.AgentListResponse> => {
+  return request.get(
+    endpoints.agents({
+      path: 'marketplace/search',
+      options: params,
+    }),
+  );
+};
+
 /* Tools */
 
 export const getAvailableAgentTools = (): Promise<s.TPlugin[]> => {
