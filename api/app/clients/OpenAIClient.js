@@ -372,23 +372,12 @@ class OpenAIClient extends BaseClient {
     return files;
   }
 
-  async buildMessages(
-    messages,
-    parentMessageId,
-    { isChatCompletion = false, promptPrefix = null },
-    opts,
-  ) {
+  async buildMessages(messages, parentMessageId, { promptPrefix = null }, opts) {
     let orderedMessages = this.constructor.getMessagesForConversation({
       messages,
       parentMessageId,
       summary: this.shouldSummarize,
     });
-    if (!isChatCompletion) {
-      return await this.buildPrompt(orderedMessages, {
-        isChatGptModel: isChatCompletion,
-        promptPrefix,
-      });
-    }
 
     let payload;
     let instructions;
