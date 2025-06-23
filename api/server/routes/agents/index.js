@@ -20,6 +20,8 @@ router.use(requireJwtAuth);
 router.use(checkBan);
 router.use(uaParser);
 
+router.use('/marketplace', marketplace);
+
 router.use('/', v1);
 
 const chatRouter = express.Router();
@@ -39,6 +41,5 @@ chatRouter.use('/', chat);
 router.use('/chat', chatRouter);
 
 // Add marketplace routes
-router.use('/marketplace', marketplace);
 
 module.exports = router;

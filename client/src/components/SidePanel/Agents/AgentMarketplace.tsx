@@ -6,7 +6,8 @@ import { useSetRecoilState, useRecoilValue } from 'recoil';
 import type t from 'librechat-data-provider';
 import type { ContextType } from '~/common';
 
-import { useGetAgentCategoriesQuery, useGetEndpointsQuery } from '~/data-provider';
+import { useGetEndpointsQuery } from '~/data-provider';
+import { useGetAgentCategoriesQuery } from 'librechat-data-provider/react-query';
 import { useDocumentTitle } from '~/hooks';
 import useLocalize from '~/hooks/useLocalize';
 import { TooltipAnchor, Button } from '~/components/ui';
