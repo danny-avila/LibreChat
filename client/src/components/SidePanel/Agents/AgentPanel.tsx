@@ -8,6 +8,7 @@ import {
   SystemRoles,
   EModelEndpoint,
   TAgentsEndpoint,
+  PERMISSION_BITS,
   TEndpointsConfig,
   isAssistantsEndpoint,
 } from 'librechat-data-provider';
@@ -16,8 +17,10 @@ import {
   useCreateAgentMutation,
   useUpdateAgentMutation,
   useGetAgentByIdQuery,
+  useGetExpandedAgentByIdQuery,
 } from '~/data-provider';
 import { createProviderOption, getDefaultAgentFormValues } from '~/utils';
+import { useResourcePermissions } from '~/hooks/useResourcePermissions';
 import { useSelectAgent, useLocalize, useAuthContext } from '~/hooks';
 import { useAgentPanelContext } from '~/Providers/AgentPanelContext';
 import AgentPanelSkeleton from './AgentPanelSkeleton';
@@ -50,9 +53,28 @@ export default function AgentPanel({
   const { onSelect: onSelectAgent } = useSelectAgent();
 
   const modelsQuery = useGetModelsQuery();
-  const agentQuery = useGetAgentByIdQuery(current_agent_id ?? '', {
+
+  // Basic agent query for initial permission check
+  const basicAgentQuery = useGetAgentByIdQuery(current_agent_id ?? '', {
     enabled: !!(current_agent_id ?? '') && current_agent_id !== Constants.EPHEMERAL_AGENT_ID,
   });
+
+  const { hasPermission, isLoading: permissionsLoading } = useResourcePermissions(
+    'agent',
+    basicAgentQuery.data?._id || '',
+  );
+
+  const canEdit = hasPermission(PERMISSION_BITS.EDIT);
+
+  const expandedAgentQuery = useGetExpandedAgentByIdQuery(current_agent_id ?? '', {
+    enabled:
+      !!(current_agent_id ?? '') &&
+      current_agent_id !== Constants.EPHEMERAL_AGENT_ID &&
+      canEdit &&
+      !permissionsLoading,
+  });
+
+  const agentQuery = canEdit && expandedAgentQuery.data ? expandedAgentQuery : basicAgentQuery;
 
   const models = useMemo(() => modelsQuery.data ?? {}, [modelsQuery.data]);
   const methods = useForm<AgentForm>({
@@ -248,19 +270,16 @@ export default function AgentPanel({
   }, [agent_id, onSelectAgent]);
 
   const canEditAgent = useMemo(() => {
-    const canEdit =
-      (agentQuery.data?.isCollaborative ?? false)
-        ? true
-        : agentQuery.data?.author === user?.id || user?.role === SystemRoles.ADMIN;
+    if (!agentQuery.data?.id) {
+      return true;
+    }
 
-    return agentQuery.data?.id != null && agentQuery.data.id ? canEdit : true;
-  }, [
-    agentQuery.data?.isCollaborative,
-    agentQuery.data?.author,
-    agentQuery.data?.id,
-    user?.id,
-    user?.role,
-  ]);
+    if (agentQuery.data?.author === user?.id || user?.role === SystemRoles.ADMIN) {
+      return true;
+    }
+
+    return canEdit;
+  }, [agentQuery.data?.author, agentQuery.data?.id, user?.id, user?.role, canEdit]);
 
   return (
     <FormProvider {...methods}>
