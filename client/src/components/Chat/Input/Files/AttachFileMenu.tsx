@@ -73,10 +73,7 @@ const AttachFileMenu = ({ disabled, conversationId }: AttachFileMenuProps) => {
         label: localize('com_ui_upload_file_search'),
         onClick: () => {
           setToolResource(EToolResources.file_search);
-          setEphemeralAgent((prev) => ({
-            ...prev,
-            [EToolResources.file_search]: true,
-          }));
+          /** File search is not automatically enabled to simulate legacy behavior */
           handleUploadClick();
         },
         icon: <FileSearch className="icon-md" />,

@@ -26,7 +26,8 @@ export default function useDragHelpers() {
   );
 
   const handleOptionSelect = (toolResource: EToolResources | undefined) => {
-    if (toolResource) {
+    /** File search is not automatically enabled to simulate legacy behavior */
+    if (toolResource && toolResource !== EToolResources.file_search) {
       setEphemeralAgent((prev) => ({
         ...prev,
         [toolResource]: true,
