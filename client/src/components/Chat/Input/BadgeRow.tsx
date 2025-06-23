@@ -16,6 +16,7 @@ import ToolsDropdown from './ToolsDropdown';
 import type { BadgeItem } from '~/common';
 import { useChatBadges } from '~/hooks';
 import { Badge } from '~/components/ui';
+import ToolDialogs from './ToolDialogs';
 import FileSearch from './FileSearch';
 import MCPSelect from './MCPSelect';
 import WebSearch from './WebSearch';
@@ -391,6 +392,7 @@ function BadgeRow({
           </div>
         )}
       </div>
+      <ToolDialogs />
     </BadgeRowProvider>
   );
 }
