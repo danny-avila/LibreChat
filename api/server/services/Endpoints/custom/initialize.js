@@ -134,7 +134,7 @@ const initializeClient = async ({ req, res, endpointOption, optionsOnly, overrid
   };
 
   if (optionsOnly) {
-    const modelOptions = endpointOption.model_parameters;
+    const modelOptions = endpointOption?.model_parameters ?? {};
     if (endpoint !== Providers.OLLAMA) {
       clientOptions = Object.assign(
         {

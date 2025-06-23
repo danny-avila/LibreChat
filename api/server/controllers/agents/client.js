@@ -9,6 +9,7 @@ const {
 } = require('@librechat/api');
 const {
   Callback,
+  Providers,
   GraphEvents,
   formatMessage,
   formatAgentMessages,
@@ -31,17 +32,13 @@ const {
 } = require('librechat-data-provider');
 const { DynamicStructuredTool } = require('@langchain/core/tools');
 const { getBufferString, HumanMessage } = require('@langchain/core/messages');
-const {
-  getCustomEndpointConfig,
-  createGetMCPAuthMap,
-  checkCapability,
-} = require('~/server/services/Config');
+const { createGetMCPAuthMap, checkCapability } = require('~/server/services/Config');
 const { addCacheControl, createContextHandlers } = require('~/app/clients/prompts');
 const { initializeAgent } = require('~/server/services/Endpoints/agents/agent');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
 const { getFormattedMemories, deleteMemory, setMemory } = require('~/models');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
-const initOpenAI = require('~/server/services/Endpoints/openAI/initialize');
+const { getProviderConfig } = require('~/server/services/Endpoints');
 const { checkAccess } = require('~/server/middleware/roles/access');
 const BaseClient = require('~/app/clients/BaseClient');
 const { loadAgent } = require('~/models/Agent');
@@ -677,7 +674,7 @@ class AgentClient extends BaseClient {
           hide_sequential_outputs: this.options.agent.hide_sequential_outputs,
           user: this.options.req.user,
         },
-        recursionLimit: agentsEConfig?.recursionLimit,
+        recursionLimit: agentsEConfig?.recursionLimit ?? 25,
         signal: abortController.signal,
         streamMode: 'values',
         version: 'v2',
@@ -983,23 +980,26 @@ class AgentClient extends BaseClient {
       throw new Error('Run not initialized');
     }
     const { handleLLMEnd, collected: collectedMetadata } = createMetadataAggregator();
-    const endpoint = this.options.agent.endpoint;
-    const { req, res } = this.options;
+    const { req, res, agent } = this.options;
+    const endpoint = agent.endpoint;
+
     /** @type {import('@librechat/agents').ClientOptions} */
     let clientOptions = {
       maxTokens: 75,
+      model: agent.model_parameters.model,
     };
-    let endpointConfig = req.app.locals[endpoint];
+
+    const { getOptions, overrideProvider, customEndpointConfig } =
+      await getProviderConfig(endpoint);
+
+    /** @type {TEndpoint | undefined} */
+    const endpointConfig = req.app.locals[endpoint] ?? customEndpointConfig;
     if (!endpointConfig) {
-      try {
-        endpointConfig = await getCustomEndpointConfig(endpoint);
-      } catch (err) {
-        logger.error(
-          '[api/server/controllers/agents/client.js #titleConvo] Error getting custom endpoint config',
-          err,
-        );
-      }
+      logger.warn(
+        '[api/server/controllers/agents/client.js #titleConvo] Error getting endpoint config',
+      );
     }
+
     if (
       endpointConfig &&
       endpointConfig.titleModel &&
@@ -1007,30 +1007,40 @@ class AgentClient extends BaseClient {
     ) {
       clientOptions.model = endpointConfig.titleModel;
     }
+
+    const options = await getOptions({
+      req,
+      res,
+      optionsOnly: true,
+      overrideEndpoint: endpoint,
+      overrideModel: clientOptions.model,
+      endpointOption: { model_parameters: clientOptions },
+    });
+
+    let provider = options.provider ?? overrideProvider ?? agent.provider;
     if (
       endpoint === EModelEndpoint.azureOpenAI &&
-      clientOptions.model &&
-      this.options.agent.model_parameters.model !== clientOptions.model
+      options.llmConfig?.azureOpenAIApiInstanceName == null
     ) {
-      clientOptions =
-        (
-          await initOpenAI({
-            req,
-            res,
-            optionsOnly: true,
-            overrideModel: clientOptions.model,
-            overrideEndpoint: endpoint,
-            endpointOption: {
-              model_parameters: clientOptions,
-            },
-          })
-        )?.llmConfig ?? clientOptions;
+      provider = Providers.OPENAI;
     }
-    if (/\b(o\d)\b/i.test(clientOptions.model) && clientOptions.maxTokens != null) {
+
+    /** @type {import('@librechat/agents').ClientOptions} */
+    clientOptions = { ...options.llmConfig };
+    if (options.configOptions) {
+      clientOptions.configuration = options.configOptions;
+    }
+
+    // Ensure maxTokens is set for non-o1 models
+    if (!/\b(o\d)\b/i.test(clientOptions.model) && !clientOptions.maxTokens) {
+      clientOptions.maxTokens = 75;
+    } else if (/\b(o\d)\b/i.test(clientOptions.model) && clientOptions.maxTokens != null) {
       delete clientOptions.maxTokens;
     }
+
     try {
       const titleResult = await this.run.generateTitle({
+        provider,
         inputText: text,
         contentParts: this.contentParts,
         clientOptions,
@@ -1048,8 +1058,10 @@ class AgentClient extends BaseClient {
         let input_tokens, output_tokens;
 
         if (item.usage) {
-          input_tokens = item.usage.input_tokens || item.usage.inputTokens;
-          output_tokens = item.usage.output_tokens || item.usage.outputTokens;
+          input_tokens =
+            item.usage.prompt_tokens || item.usage.input_tokens || item.usage.inputTokens;
+          output_tokens =
+            item.usage.completion_tokens || item.usage.output_tokens || item.usage.outputTokens;
         } else if (item.tokenUsage) {
           input_tokens = item.tokenUsage.promptTokens;
           output_tokens = item.tokenUsage.completionTokens;

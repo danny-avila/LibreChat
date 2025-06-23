@@ -138,7 +138,7 @@ const initializeClient = async ({
   }
 
   if (optionsOnly) {
-    const modelOptions = endpointOption.model_parameters;
+    const modelOptions = endpointOption?.model_parameters ?? {};
     modelOptions.model = modelName;
     clientOptions = Object.assign({ modelOptions }, clientOptions);
     clientOptions.modelOptions.user = req.user.id;

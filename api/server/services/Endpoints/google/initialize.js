@@ -18,7 +18,7 @@ const initializeClient = async ({ req, res, endpointOption, overrideModel, optio
   let serviceKey = {};
   try {
     serviceKey = require('~/data/auth.json');
-  } catch (e) {
+  } catch (_e) {
     // Do nothing
   }
 
@@ -58,7 +58,7 @@ const initializeClient = async ({ req, res, endpointOption, overrideModel, optio
   if (optionsOnly) {
     clientOptions = Object.assign(
       {
-        modelOptions: endpointOption.model_parameters,
+        modelOptions: endpointOption?.model_parameters ?? {},
       },
       clientOptions,
     );

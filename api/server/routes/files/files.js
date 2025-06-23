@@ -283,7 +283,10 @@ router.post('/', async (req, res) => {
       message += ': ' + error.message;
     }
 
-    if (error.message?.includes('Invalid file format')) {
+    if (
+      error.message?.includes('Invalid file format') ||
+      error.message?.includes('No OCR result')
+    ) {
       message = error.message;
     }
 
