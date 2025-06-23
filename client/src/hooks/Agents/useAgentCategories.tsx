@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 
 import useLocalize from '~/hooks/useLocalize';
-import { useGetAgentCategoriesQuery } from 'librechat-data-provider/react-query';
+import { useGetAgentCategoriesQuery } from '~/data-provider/Agents';
 import { EMPTY_AGENT_CATEGORY } from '~/constants/agentCategories';
 
 // This interface matches the structure used by the ControlCombobox component

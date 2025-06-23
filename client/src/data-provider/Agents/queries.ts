@@ -1,6 +1,11 @@
 import { QueryKeys, dataService, EModelEndpoint, defaultOrderQuery } from 'librechat-data-provider';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type { QueryObserverResult, UseQueryOptions } from '@tanstack/react-query';
+import { useQuery, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
+import type {
+  QueryObserverResult,
+  UseQueryOptions,
+  UseInfiniteQueryOptions,
+  InfiniteData,
+} from '@tanstack/react-query';
 import type t from 'librechat-data-provider';
 
 /**
@@ -97,4 +102,61 @@ export const useGetExpandedAgentByIdQuery = (
       ...config,
     },
   );
+};
+
+/**
+ * MARKETPLACE
+ */
+/**
+ * Hook for getting agent categories for marketplace tabs
+ */
+export const useGetAgentCategoriesQuery = (
+  config?: UseQueryOptions<t.TMarketplaceCategory[]>,
+): QueryObserverResult<t.TMarketplaceCategory[]> => {
+  return useQuery<t.TMarketplaceCategory[]>(
+    [QueryKeys.agentCategories],
+    () => dataService.getAgentCategories(),
+    {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+      ...config,
+    },
+  );
+};
+
+/**
+ * Hook for infinite loading of marketplace agents with cursor-based pagination
+ */
+export const useMarketplaceAgentsInfiniteQuery = (
+  params: {
+    requiredPermission: number;
+    category?: string;
+    search?: string;
+    limit?: number;
+    promoted?: 0 | 1;
+    cursor?: string; // For pagination
+  },
+  config?: UseInfiniteQueryOptions<t.AgentListResponse, unknown>,
+) => {
+  return useInfiniteQuery<t.AgentListResponse>({
+    queryKey: [QueryKeys.marketplaceAgents, params],
+    queryFn: ({ pageParam }) => {
+      const queryParams = { ...params };
+      if (pageParam) {
+        queryParams.cursor = pageParam.toString();
+      }
+      return dataService.getMarketplaceAgents(queryParams);
+    },
+    getNextPageParam: (lastPage) => lastPage?.after ?? undefined,
+    enabled: !!params.requiredPermission,
+    keepPreviousData: true,
+    staleTime: 2 * 60 * 1000, // 2 minutes
+    cacheTime: 10 * 60 * 1000, // 10 minutes
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+    ...config,
+  });
 };

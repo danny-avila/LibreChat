@@ -1,7 +1,11 @@
 import { EarthIcon } from 'lucide-react';
 import { useCallback, useEffect, useRef } from 'react';
 import { useFormContext, Controller } from 'react-hook-form';
-import { AgentCapabilities, defaultAgentFormValues } from 'librechat-data-provider';
+import {
+  AgentCapabilities,
+  defaultAgentFormValues,
+  PERMISSION_BITS,
+} from 'librechat-data-provider';
 import type { UseMutationResult, QueryObserverResult } from '@tanstack/react-query';
 import type { Agent, AgentCreateParams } from 'librechat-data-provider';
 import type { TAgentCapabilities, AgentForm } from '~/common';
@@ -28,18 +32,21 @@ export default function AgentSelect({
   const { control, reset } = useFormContext();
 
   const { data: startupConfig } = useGetStartupConfig();
-  const { data: agents = null } = useListAgentsQuery(undefined, {
-    select: (res) =>
-      res.data.map((agent) =>
-        processAgentOption({
-          agent: {
-            ...agent,
-            name: agent.name || agent.id,
-          },
-          instanceProjectId: startupConfig?.instanceProjectId,
-        }),
-      ),
-  });
+  const { data: agents = null } = useListAgentsQuery(
+    { requiredPermission: PERMISSION_BITS.EDIT },
+    {
+      select: (res) =>
+        res.data.map((agent) =>
+          processAgentOption({
+            agent: {
+              ...agent,
+              name: agent.name || agent.id,
+            },
+            instanceProjectId: startupConfig?.instanceProjectId,
+          }),
+        ),
+    },
+  );
 
   const resetAgentForm = useCallback(
     (fullAgent: Agent) => {
