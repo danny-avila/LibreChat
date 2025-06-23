@@ -150,11 +150,11 @@ export function createAgentCategoryMethods(mongoose: typeof import('mongoose')) 
    */
   async function ensureDefaultCategories(): Promise<boolean> {
     const existingCategories = await getAllCategories();
-    
+
     if (existingCategories.length > 0) {
       return false; // Categories already exist
     }
-    
+
     const defaultCategories = [
       {
         value: 'general',
@@ -182,14 +182,14 @@ export function createAgentCategoryMethods(mongoose: typeof import('mongoose')) 
       },
       {
         value: 'it',
-        label: 'Information Technology',
+        label: 'IT',
         description: 'Agents for IT support, technical troubleshooting, and system administration',
         order: 4,
       },
       {
         value: 'sales',
-        label: 'Sales & Marketing',
-        description: 'Agents focused on sales processes, customer relations, and marketing',
+        label: 'Sales',
+        description: 'Agents focused on sales processes, customer relations.',
         order: 5,
       },
       {
@@ -199,7 +199,7 @@ export function createAgentCategoryMethods(mongoose: typeof import('mongoose')) 
         order: 6,
       },
     ];
-    
+
     await seedCategories(defaultCategories);
     return true; // Categories were seeded
   }
