@@ -353,7 +353,11 @@ export const uploadMistralOCR = async (context: OCRContext): Promise<MistralOCRU
       documentType,
     });
 
-    // Process result
+    if (!ocrResult || !ocrResult.pages || ocrResult.pages.length === 0) {
+      throw new Error(
+        'No OCR result returned from service, may be down or the file is not supported.',
+      );
+    }
     const { text, images } = processOCRResult(ocrResult);
 
     return {
@@ -400,6 +404,12 @@ export const uploadAzureMistralOCR = async (
       url: `${base64Prefix}${base64}`,
       documentType,
     });
+
+    if (!ocrResult || !ocrResult.pages || ocrResult.pages.length === 0) {
+      throw new Error(
+        'No OCR result returned from service, may be down or the file is not supported.',
+      );
+    }
 
     const { text, images } = processOCRResult(ocrResult);
 
