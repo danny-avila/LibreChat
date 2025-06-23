@@ -5,7 +5,7 @@ const { logger } = require('@librechat/data-schemas');
 // PostgreSQL client
 const { Pool } = require('pg');
 
-// For embeddings - using same approach as RAG API
+// For embeddings - using OpenAI API directly
 const axios = require('axios');
 
 class Collections extends Tool {
@@ -131,15 +131,7 @@ class Collections extends Tool {
 
   async generateEmbedding(text) {
     try {
-      // Try to use the same embedding service as the RAG API
-      if (process.env.RAG_API_URL) {
-        const response = await axios.post(`${process.env.RAG_API_URL}/embed-text`, {
-          text: text,
-        });
-        return response.data.embedding;
-      }
-
-      // Fallback to OpenAI if RAG API not available
+      // Use OpenAI embeddings directly - no external service dependencies
       if (process.env.OPENAI_API_KEY) {
         const response = await axios.post('https://api.openai.com/v1/embeddings', {
           input: text,
@@ -149,13 +141,21 @@ class Collections extends Tool {
             'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
             'Content-Type': 'application/json',
           },
+          timeout: 15000
         });
-        return response.data.data[0].embedding;
+        
+        if (response.data && response.data.data && response.data.data[0] && response.data.data[0].embedding) {
+          return response.data.data[0].embedding;
+        } else {
+          logger.error('OpenAI API returned invalid embedding response');
+        }
+      } else {
+        logger.error('No OpenAI API key configured for embeddings');
       }
 
-      throw new Error('No embedding service available');
+      return null;
     } catch (error) {
-      logger.error('Failed to generate embedding:', error);
+      logger.error('Failed to generate embedding:', error.message || error);
       return null;
     }
   }
@@ -502,6 +502,9 @@ class Collections extends Tool {
           'INSERT INTO note_vectors (note_id, embedding) VALUES ($1, $2::vector)',
           [note.id, vectorLiteral]
         );
+        logger.debug(`Embedding stored for note ${note.id}`);
+      } else {
+        logger.warn(`Failed to generate embedding for note ${note.id} - semantic search will not include this note`);
       }
 
       // Update collection timestamp
@@ -690,18 +693,24 @@ class Collections extends Tool {
       } else if (searchMode === 'semantic') {
         const queryEmbedding = await this.generateEmbedding(searchQuery);
         if (!queryEmbedding) {
-          throw new Error('Failed to generate query embedding');
+          // Fallback to keyword search when embeddings fail
+          logger.warn('Semantic search failed, falling back to keyword search');
+          return this.searchNotes({ ...params, searchMode: 'keyword' });
         }
 
         const vectorLiteral = `[${queryEmbedding.join(',')}]`;
         paramCount++;
         const query = `
-          SELECT n.*, c.name as collection_name, (1 - (v.embedding <=> $${paramCount}::vector)) as score
+          SELECT n.*, c.name as collection_name, 
+                 CASE 
+                   WHEN v.embedding IS NOT NULL THEN (1 - (v.embedding <=> $${paramCount}::vector))
+                   ELSE 0
+                 END as score
           FROM notes n
-          JOIN note_vectors v ON n.id = v.note_id
+          LEFT JOIN note_vectors v ON n.id = v.note_id
           ${joinCollections}
           ${whereConditions}
-          ORDER BY v.embedding <=> $${paramCount}::vector
+          ORDER BY score DESC, n.created_at DESC
           LIMIT $${paramCount + 1}
         `;
         queryParams.push(vectorLiteral, limit);
@@ -716,6 +725,18 @@ class Collections extends Tool {
         }
 
         const vectorLiteral = `[${queryEmbedding.join(',')}]`;
+        
+        // Build WHERE clause for CTEs based on existing conditions
+        let cteWhereClause = 'WHERE c.user_id = $1';
+        if (actualCollectionIds && actualCollectionIds.length > 0) {
+          const collectionParam = queryParams.findIndex(p => p === actualCollectionIds) + 1;
+          cteWhereClause += ` AND n.collection_id = ANY($${collectionParam})`;
+        }
+        if (tagFilter && tagFilter.length > 0) {
+          const tagParam = queryParams.findIndex(p => p === tagFilter) + 1;
+          cteWhereClause += ` AND n.tags && $${tagParam}`;
+        }
+
         paramCount++;
         const textParam = paramCount;
         paramCount++;
@@ -727,25 +748,26 @@ class Collections extends Tool {
           WITH keyword_scores AS (
             SELECT n.id, ts_rank(to_tsvector('english', n.content), plainto_tsquery('english', $${textParam})) as keyword_score
             FROM notes n
-            ${joinCollections}
-            ${whereConditions}
+            JOIN collections c ON n.collection_id = c.id
+            ${cteWhereClause}
             AND to_tsvector('english', n.content) @@ plainto_tsquery('english', $${textParam})
           ),
           semantic_scores AS (
             SELECT n.id, (1 - (v.embedding <=> $${vectorParam}::vector)) as semantic_score
             FROM notes n
-            JOIN note_vectors v ON n.id = v.note_id
-            ${joinCollections}
-            ${whereConditions}
+            JOIN collections c ON n.collection_id = c.id
+            LEFT JOIN note_vectors v ON n.id = v.note_id
+            ${cteWhereClause}
+            AND v.embedding IS NOT NULL
           )
           SELECT n.*, c.name as collection_name,
                  COALESCE(k.keyword_score * 0.3, 0) + COALESCE(s.semantic_score * 0.7, 0) as score
           FROM notes n
           ${joinCollections}
-          ${whereConditions}
           LEFT JOIN keyword_scores k ON n.id = k.id
           LEFT JOIN semantic_scores s ON n.id = s.id
-          WHERE (k.keyword_score IS NOT NULL OR s.semantic_score IS NOT NULL)
+          ${whereConditions}
+          AND (k.keyword_score IS NOT NULL OR s.semantic_score IS NOT NULL)
           ORDER BY score DESC
           LIMIT $${limitParam}
         `;
