@@ -206,18 +206,7 @@
     "description": "Navigate the web with advanced browsing capabilities and optional Firecrawl integration",
     "icon": "/assets/webnavigator.png",
     "isAuthRequired": "false",
-    "authConfig": [
-      {
-        "authField": "FIRECRAWL_API_KEY",
-        "label": "Firecrawl API Key (Optional)",
-        "description": "API Key for Firecrawl for enhanced web browsing capabilities. Get your API key at https://firecrawl.dev"
-      },
-      {
-        "authField": "FIRECRAWL_API_URL",
-        "label": "Firecrawl API URL (Optional)",
-        "description": "Custom Firecrawl API URL (if different from the default)"
-      }
-    ]
+    "authConfig": []
   },
   {
     "name": "E2BCode",
