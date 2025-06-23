@@ -27,6 +27,9 @@ export * from './types/mutations';
 export * from './types/queries';
 export * from './types/runs';
 export * from './types/web';
+export * from './types/graph';
+/* access permissions */
+export * from './accessPermissions';
 /* query/mutation keys */
 export * from './keys';
 /* api call helpers */
