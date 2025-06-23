@@ -1,5 +1,5 @@
 const { logger } = require('@librechat/data-schemas');
-const { EToolResources } = require('librechat-data-provider');
+const { EToolResources, FileContext } = require('librechat-data-provider');
 const { File } = require('~/db/models');
 
 /**
@@ -32,26 +32,24 @@ const getFiles = async (filter, _sortOptions, selectFields = { text: 0 }) => {
  * @returns {Promise<Array<MongoFile>>} Files that match the criteria
  */
 const getToolFilesByIds = async (fileIds, toolResourceSet) => {
-  if (!fileIds || !fileIds.length) {
+  if (!fileIds || !fileIds.length || !toolResourceSet?.size) {
     return [];
   }
 
   try {
     const filter = {
       file_id: { $in: fileIds },
+      $or: [],
     };
 
-    if (toolResourceSet.size) {
-      filter.$or = [{ text: { $exists: true, $ne: null } }];
-
-      if (toolResourceSet.has(EToolResources.file_search)) {
-        filter.$or.push({ embedded: true });
-      }
-      if (toolResourceSet.has(EToolResources.execute_code)) {
-        filter.$or.push({ 'metadata.fileIdentifier': { $exists: true } });
-      }
-    } else {
-      filter.text = { $exists: true, $ne: null };
+    if (toolResourceSet.has(EToolResources.ocr)) {
+      filter.$or.push({ text: { $exists: true, $ne: null }, context: FileContext.agents });
+    }
+    if (toolResourceSet.has(EToolResources.file_search)) {
+      filter.$or.push({ embedded: true });
+    }
+    if (toolResourceSet.has(EToolResources.execute_code)) {
+      filter.$or.push({ 'metadata.fileIdentifier': { $exists: true } });
     }
 
     const selectFields = { text: 0 };
