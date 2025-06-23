@@ -155,15 +155,15 @@ const Nav = memo(
     );
 
     const headerButtons = useMemo(
-      () => null,
-      // hasAccessToBookmarks && (
-      //   <>
-      //     <div className="mt-1.5" />
-      //     <Suspense fallback={null}>
-      //       <BookmarkNav tags={tags} setTags={setTags} isSmallScreen={isSmallScreen} />
-      //     </Suspense>
-      //   </>
-      // ),
+      () =>
+        hasAccessToBookmarks && (
+          <>
+            <div className="mt-1.5" />
+            <Suspense fallback={null}>
+              <BookmarkNav tags={tags} setTags={setTags} isSmallScreen={isSmallScreen} />
+            </Suspense>
+          </>
+        ),
       [hasAccessToBookmarks, tags, isSmallScreen],
     );
 

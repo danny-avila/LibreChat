@@ -36,10 +36,12 @@ function WebSearch({ conversationId }: { conversationId?: string | null }) {
   const localize = useLocalize();
   const key = conversationId ?? Constants.NEW_CONVO;
 
-  const canUseWebSearch = useHasAccess({
-    permissionType: PermissionTypes.WEB_SEARCH,
-    permission: Permissions.USE,
-  });
+  // TODO: Uncomment this when we have a way to use web search
+  const canUseWebSearch = false;
+  // const canUseWebSearch = useHasAccess({
+  //   permissionType: PermissionTypes.WEB_SEARCH,
+  //   permission: Permissions.USE,
+  // });
   const [ephemeralAgent, setEphemeralAgent] = useRecoilState(ephemeralAgentByConvoId(key));
   const isWebSearchToggleEnabled = useMemo(() => {
     return ephemeralAgent?.web_search ?? false;
@@ -96,7 +98,7 @@ function WebSearch({ conversationId }: { conversationId?: string | null }) {
 
   return (
     <>
-      {/* <CheckboxButton
+      <CheckboxButton
         ref={triggerRef}
         className="max-w-fit"
         defaultChecked={webSearch}
@@ -104,7 +106,7 @@ function WebSearch({ conversationId }: { conversationId?: string | null }) {
         label={localize('com_ui_search')}
         isCheckedClassName="border-blue-600/40 bg-blue-500/10 hover:bg-blue-700/10"
         icon={<Globe className="icon-md" />}
-      /> */}
+      />
       <ApiKeyDialog
         onSubmit={onSubmit}
         authTypes={authTypes}
