@@ -1,4 +1,4 @@
-import { QueryKeys, dataService, EModelEndpoint, defaultOrderQuery } from 'librechat-data-provider';
+import { QueryKeys, dataService, EModelEndpoint, PERMISSION_BITS } from 'librechat-data-provider';
 import { useQuery, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import type {
   QueryObserverResult,
@@ -11,7 +11,10 @@ import type t from 'librechat-data-provider';
 /**
  * AGENTS
  */
-
+export const defaultAgentParams: t.AgentListParams = {
+  limit: 10,
+  requiredPermission: PERMISSION_BITS.EDIT,
+};
 /**
  * Hook for getting all available tools for A
  */
@@ -32,7 +35,7 @@ export const useAvailableAgentToolsQuery = (): QueryObserverResult<t.TPlugin[]> 
  * Hook for listing all Agents, with optional parameters provided for pagination and sorting
  */
 export const useListAgentsQuery = <TData = t.AgentListResponse>(
-  params: t.AgentListParams = defaultOrderQuery,
+  params: t.AgentListParams = defaultAgentParams,
   config?: UseQueryOptions<t.AgentListResponse, unknown, TData>,
 ): QueryObserverResult<TData> => {
   const queryClient = useQueryClient();

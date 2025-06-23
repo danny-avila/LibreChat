@@ -286,11 +286,11 @@ export type AgentUpdateParams = {
 
 export type AgentListParams = {
   limit?: number;
-  before?: string | null;
-  after?: string | null;
-  order?: 'asc' | 'desc';
-  provider?: AgentProvider;
-  requiredPermission?: number;
+  requiredPermission: number;
+  category?: string;
+  search?: string;
+  cursor?: string;
+  promoted?: 0 | 1;
 };
 
 export type AgentListResponse = {

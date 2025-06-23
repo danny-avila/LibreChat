@@ -9,9 +9,7 @@ export default function useAgentsMap({
   isAuthenticated: boolean;
 }): TAgentsMap | undefined {
   const { data: agentsList = null } = useListAgentsQuery(
-    {
-      requiredPermission: PERMISSION_BITS.EDIT,
-    },
+    { requiredPermission: PERMISSION_BITS.EDIT },
     {
       select: (res) => mapAgents(res.data),
       enabled: isAuthenticated,
