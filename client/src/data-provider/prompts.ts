@@ -1,5 +1,5 @@
 import { useRecoilValue } from 'recoil';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { dataService, QueryKeys } from 'librechat-data-provider';
 import type { UseMutationResult } from '@tanstack/react-query';
 import type t from 'librechat-data-provider';
@@ -325,5 +325,133 @@ export const useMakePromptProduction = (options?: t.MakePromptProductionOptions)
         onSuccess(response, variables, context);
       }
     },
+  });
+};
+
+/* Prompt Favorites and Rankings */
+export const useTogglePromptFavorite = (
+  options?: t.UpdatePromptGroupOptions,
+): UseMutationResult<t.TPromptFavoriteResponse, unknown, { groupId: string }, unknown> => {
+  const { onMutate, onError, onSuccess } = options || {};
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (variables: { groupId: string }) =>
+      dataService.togglePromptFavorite(variables.groupId),
+    onMutate: async (variables: { groupId: string }) => {
+      // Cancel any outgoing refetches
+      await queryClient.cancelQueries({ queryKey: [QueryKeys.promptGroups] });
+      await queryClient.cancelQueries({ queryKey: [QueryKeys.userPromptPreferences] });
+
+      // Snapshot the previous values
+      const previousPreferences = queryClient.getQueryData<t.TGetUserPromptPreferencesResponse>([
+        QueryKeys.userPromptPreferences,
+      ]);
+
+      // Optimistically update the favorites
+      if (previousPreferences) {
+        const isFavorite = previousPreferences.favorites.includes(variables.groupId);
+        const newFavorites = isFavorite
+          ? previousPreferences.favorites.filter((id) => id !== variables.groupId)
+          : [...previousPreferences.favorites, variables.groupId];
+
+        queryClient.setQueryData<t.TGetUserPromptPreferencesResponse>(
+          [QueryKeys.userPromptPreferences],
+          {
+            ...previousPreferences,
+            favorites: newFavorites,
+          },
+        );
+      }
+
+      if (onMutate) {
+        return onMutate(variables);
+      }
+
+      return { previousPreferences };
+    },
+    onError: (err, variables, context) => {
+      // Revert optimistic update on error
+      if (context?.previousPreferences) {
+        queryClient.setQueryData([QueryKeys.userPromptPreferences], context.previousPreferences);
+      }
+      if (onError) {
+        onError(err, variables, context);
+      }
+    },
+    onSuccess: (response, variables, context) => {
+      // Invalidate and refetch related queries
+      queryClient.invalidateQueries({ queryKey: [QueryKeys.userPromptPreferences] });
+      queryClient.invalidateQueries({ queryKey: [QueryKeys.promptGroups] });
+
+      if (onSuccess) {
+        onSuccess(response, variables, context);
+      }
+    },
+  });
+};
+
+export const useUpdatePromptRankings = (
+  options?: t.UpdatePromptGroupOptions,
+): UseMutationResult<t.TPromptRankingResponse, unknown, t.TPromptRankingRequest, unknown> => {
+  const { onMutate, onError, onSuccess } = options || {};
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (variables: t.TPromptRankingRequest) => dataService.updatePromptRankings(variables),
+    onMutate: async (variables: t.TPromptRankingRequest) => {
+      // Cancel any outgoing refetches
+      await queryClient.cancelQueries({ queryKey: [QueryKeys.userPromptPreferences] });
+
+      // Snapshot the previous values
+      const previousPreferences = queryClient.getQueryData<t.TGetUserPromptPreferencesResponse>([
+        QueryKeys.userPromptPreferences,
+      ]);
+
+      // Optimistically update the rankings
+      if (previousPreferences) {
+        queryClient.setQueryData<t.TGetUserPromptPreferencesResponse>(
+          [QueryKeys.userPromptPreferences],
+          {
+            ...previousPreferences,
+            rankings: variables.rankings,
+          },
+        );
+      }
+
+      if (onMutate) {
+        return onMutate(variables);
+      }
+
+      return { previousPreferences };
+    },
+    onError: (err, variables, context) => {
+      // Revert optimistic update on error
+      if (context?.previousPreferences) {
+        queryClient.setQueryData([QueryKeys.userPromptPreferences], context.previousPreferences);
+      }
+      if (onError) {
+        onError(err, variables, context);
+      }
+    },
+    onSuccess: (response, variables, context) => {
+      // Don't automatically invalidate queries to prevent infinite loops
+      // The optimistic update in onMutate handles the UI update
+      // Manual invalidation can be done by components when needed
+
+      if (onSuccess) {
+        onSuccess(response, variables, context);
+      }
+    },
+  });
+};
+
+export const useGetUserPromptPreferences = () => {
+  return useQuery({
+    queryKey: [QueryKeys.userPromptPreferences],
+    queryFn: () => dataService.getUserPromptPreferences(),
+    staleTime: 1000 * 60 * 5, // 5 minutes
+    refetchOnWindowFocus: false, // Prevent refetch on window focus
+    refetchOnMount: false, // Prevent refetch on component mount
   });
 };
