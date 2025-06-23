@@ -8,6 +8,7 @@ import MCPSubMenu from '~/components/Chat/Input/MCPSubMenu';
 import { PinIcon, VectorIcon } from '~/components/svg';
 import { useLocalize, useHasAccess } from '~/hooks';
 import { useBadgeRowContext } from '~/Providers';
+import { useGetStartupConfig } from '~/data-provider';
 import { cn } from '~/utils';
 
 interface ToolsDropdownProps {
@@ -17,6 +18,7 @@ interface ToolsDropdownProps {
 const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
   const localize = useLocalize();
   const isDisabled = disabled ?? false;
+  const { data: startupConfig } = useGetStartupConfig();
   const [isPopoverActive, setIsPopoverActive] = useState(false);
   const { webSearch, codeInterpreter, fileSearch, mcpSelect, searchApiKeyForm, codeApiKeyForm } =
     useBadgeRowContext();
@@ -250,6 +252,7 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
             isMCPPinned={isMCPPinned}
             setIsMCPPinned={setIsMCPPinned}
             handleMCPToggle={handleMCPToggle}
+            placeholder={startupConfig?.interface?.mcpServers?.placeholder}
           />
         ),
       });
@@ -280,6 +283,7 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
     setIsSearchDialogOpen,
     handleFileSearchToggle,
     handleCodeInterpreterToggle,
+    startupConfig,
   ]);
 
   const menuTrigger = (

@@ -11,6 +11,7 @@ interface MCPSubMenuProps {
   mcpValues?: string[];
   mcpServerNames: string[];
   handleMCPToggle: (serverName: string) => void;
+  placeholder?: string;
 }
 
 const MCPSubMenu = ({
@@ -19,6 +20,7 @@ const MCPSubMenu = ({
   mcpServerNames,
   setIsMCPPinned,
   handleMCPToggle,
+  placeholder,
   ...props
 }: MCPSubMenuProps) => {
   const localize = useLocalize();
@@ -38,7 +40,7 @@ const MCPSubMenu = ({
       >
         <div className="flex items-center gap-2">
           <MCPIcon className="icon-md" />
-          <span>{localize('com_ui_mcp_servers')}</span>
+          <span>{placeholder || localize('com_ui_mcp_servers')}</span>
           <ChevronRight className="ml-auto h-3 w-3" />
         </div>
         <button
