@@ -237,6 +237,12 @@ export default function AgentPanel({
           status: 'error',
         });
       }
+      if (!name) {
+        return showToast({
+          message: localize('com_agents_missing_name'),
+          status: 'error',
+        });
+      }
 
       create.mutate({
         name,

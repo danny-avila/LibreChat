@@ -1121,5 +1121,7 @@
   "com_ui_share_with_everyone": "Share with everyone",
   "com_ui_make_agent_available_all_users": "Make this agent available to all LibreChat users",
   "com_ui_public_access_level": "Public access level",
-  "com_ui_at_least_one_owner_required": "At least one owner is required"
+  "com_ui_at_least_one_owner_required": "At least one owner is required",
+  "com_ui_agent_name_is_required": "Agent name is required",
+  "com_agents_missing_name": "Please type in a name before creating an agent."
 }
