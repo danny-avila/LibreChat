@@ -52,19 +52,16 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
     permission: Permissions.USE,
   });
 
-  // Check if web search auth types allow showing settings
   const showWebSearchSettings = useMemo(() => {
     const authTypes = webSearchAuthData?.authTypes ?? [];
     if (authTypes.length === 0) return true;
     return !authTypes.every(([, authType]) => authType === AuthType.SYSTEM_DEFINED);
   }, [webSearchAuthData?.authTypes]);
 
-  // Check if code interpreter auth types allow showing settings
-  const showCodeSettings = useMemo(() => {
-    const authTypes = codeAuthData?.authTypes ?? [];
-    if (authTypes.length === 0) return true;
-    return !authTypes.every(([, authType]) => authType === AuthType.SYSTEM_DEFINED);
-  }, [codeAuthData?.authTypes]);
+  const showCodeSettings = useMemo(
+    () => codeAuthData?.message !== AuthType.SYSTEM_DEFINED,
+    [codeAuthData?.message],
+  );
 
   const handleWebSearchToggle = useCallback(() => {
     const newValue = !webSearch.toggleState;
