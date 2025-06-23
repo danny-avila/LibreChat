@@ -275,12 +275,12 @@ export default function AgentPanel({
       return true;
     }
 
-    if (agentQuery.data?.author === user?.id || user?.role === SystemRoles.ADMIN) {
+    if (user?.role === SystemRoles.ADMIN) {
       return true;
     }
 
     return canEdit;
-  }, [agentQuery.data?.author, agentQuery.data?.id, user?.id, user?.role, canEdit]);
+  }, [agentQuery.data?.id, user?.id, user?.role, canEdit]);
 
   return (
     <FormProvider {...methods}>
