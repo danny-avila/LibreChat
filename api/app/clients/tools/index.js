@@ -18,6 +18,7 @@ const TimeAPI = require('./structured/TimeAPI');
 const Quickchart = require('./structured/Quickchart');
 const WordPress = require('./structured/WordPress');
 const Collections = require('./structured/Collections');
+const CollectionExport = require('./structured/CollectionExport');
 
 /** @type {Record<string, TPlugin | undefined>} */
 const manifestToolMap = {};
@@ -54,4 +55,5 @@ module.exports = {
   Quickchart,
   WordPress,
   Collections,
+  CollectionExport,
 };

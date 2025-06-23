@@ -1,9 +1,6 @@
 const { Tool } = require('@langchain/core/tools');
 const { z } = require('zod');
 const { logger } = require('@librechat/data-schemas');
-const fs = require('fs');
-const path = require('path');
-const { v4 } = require('uuid');
 
 // PostgreSQL client
 const { Pool } = require('pg');
@@ -14,20 +11,17 @@ const axios = require('axios');
 // Built-in URL validation function
 const { URL } = require('url');
 
-// File processing utilities - only load when needed
-let createFile, getStrategyFunctions, FileSources, FileContext;
-
 class Collections extends Tool {
   constructor(fields = {}) {
     super();
-    
+
     this.name = 'collections';
     this.description_for_model =
-      'Allows the assistant to manage organized collections of notes, facts, sources, and information across sessions. You can create and organize collections in a hierarchical structure with parent-child relationships. Actions: create_collection, list_collections, search_collections, add_note, search_notes, delete_note, update_note, update_collection, delete_collection, export_collection. Use add_note to store new information, search_notes to retrieve relevant information, organize collections hierarchically, and export_collection to generate downloadable files in JSON, XML, or PDF formats.';
+      'Allows the assistant to manage organized collections of notes, facts, sources, and information across sessions. You can create and organize collections in a hierarchical structure with parent-child relationships. Actions: create_collection, list_collections, search_collections, add_note, search_notes, delete_note, update_note, update_collection, delete_collection. Use add_note to store new information, search_notes to retrieve relevant information, organize collections hierarchically.';
     this.description =
       'Store and retrieve organized knowledge in collections with hierarchical structure. ' +
-      'Actions: create_collection, list_collections, search_collections, add_note, search_notes, delete_note, update_note, update_collection, delete_collection, export_collection. ' +
-      'Supports keyword, semantic, and hybrid search across all notes. Export collections as JSON, XML, or PDF files. ' +
+      'Actions: create_collection, list_collections, search_collections, add_note, search_notes, delete_note, update_note, update_collection, delete_collection. ' +
+      'Supports keyword, semantic, and hybrid search across all notes. ' +
       'Perfect for maintaining organized information across multiple chat sessions.';
 
     this.schema = z.object({
@@ -41,7 +35,6 @@ class Collections extends Tool {
         'update_note',
         'update_collection',
         'delete_collection',
-        'export_collection',
       ]),
       collection_name: z.string().max(200).optional(),
       collection_description: z.string().max(2000).optional(),
@@ -57,8 +50,6 @@ class Collections extends Tool {
       search_mode: z.enum(['keyword', 'semantic', 'hybrid']).optional(),
       limit: z.number().min(1).max(100).optional(),
       tag_filter: z.array(z.string().max(50)).max(20).optional(),
-      recursive: z.boolean().optional(),
-      export_format: z.enum(['json', 'xml', 'pdf']).optional(),
     });
 
     // Initialize properties from fields parameter
@@ -227,7 +218,9 @@ class Collections extends Tool {
           response.data.data[0] &&
           response.data.data[0].embedding
         ) {
-          return response.data.data[0].embedding;
+          // Ensure embedding values are numbers, not strings
+          const embedding = response.data.data[0].embedding;
+          return embedding.map(val => typeof val === 'string' ? parseFloat(val) : val);
         } else {
           logger.error('OpenAI API returned invalid embedding response');
         }
@@ -614,11 +607,10 @@ class Collections extends Tool {
       // Generate and store embedding
       const embedding = await this.generateEmbedding(`${title}\n\n${content}`);
       if (embedding) {
-        // Use proper vector parameter binding with array format
-        await client.query('INSERT INTO note_vectors (note_id, embedding) VALUES ($1, $2)', [
-          note.id,
-          `[${embedding.join(',')}]`,
-        ]);
+        // Use direct SQL insert for vector - pgvector has issues with prepared statements
+        await client.query(
+          `INSERT INTO note_vectors (note_id, embedding) VALUES ('${note.id}', '[${embedding.join(',')}]')`
+        );
         logger.debug(`Embedding stored for note ${note.id}`);
       } else {
         logger.warn(
@@ -740,11 +732,10 @@ class Collections extends Tool {
           // Delete existing embedding if it exists
           await client.query('DELETE FROM note_vectors WHERE note_id = $1', [noteId]);
 
-          // Insert new embedding using proper parameter binding with array format
-          await client.query('INSERT INTO note_vectors (note_id, embedding) VALUES ($1, $2)', [
-            noteId,
-            `[${embedding.join(',')}]`,
-          ]);
+          // Insert new embedding using direct SQL - pgvector has issues with prepared statements
+          await client.query(
+            `INSERT INTO note_vectors (note_id, embedding) VALUES ('${noteId}', '[${embedding.join(',')}]')`
+          );
         }
       }
 
@@ -836,7 +827,7 @@ class Collections extends Tool {
         const query = `
           SELECT n.*, c.name as collection_name, 
                  CASE 
-                   WHEN v.embedding IS NOT NULL THEN (1 - (v.embedding <=> $${paramCount}))
+                   WHEN v.embedding IS NOT NULL THEN (1 - (v.embedding <=> '[${queryEmbedding.join(',')}]'))
                    ELSE 0
                  END as score
           FROM notes n
@@ -844,9 +835,9 @@ class Collections extends Tool {
           ${joinCollections}
           ${whereConditions}
           ORDER BY score DESC, n.created_at DESC
-          LIMIT $${paramCount + 1}
+          LIMIT $${paramCount}
         `;
-        queryParams.push(queryEmbedding, limit);
+        queryParams.push(limit);
         const result = await client.query(query, queryParams);
         return result.rows;
       } else if (searchMode === 'hybrid') {
@@ -870,8 +861,6 @@ class Collections extends Tool {
         paramCount++;
         const textParam = paramCount;
         paramCount++;
-        const vectorParam = paramCount;
-        paramCount++;
         const limitParam = paramCount;
 
         const query = `
@@ -883,7 +872,7 @@ class Collections extends Tool {
             AND to_tsvector('english', n.content) @@ plainto_tsquery('english', $${textParam})
           ),
           semantic_scores AS (
-            SELECT n.id, (1 - (v.embedding <=> $${vectorParam})) as semantic_score
+            SELECT n.id, (1 - (v.embedding <=> '[${queryEmbedding.join(',')}]')) as semantic_score
             FROM notes n
             JOIN collections c ON n.collection_id = c.id
             LEFT JOIN note_vectors v ON n.id = v.note_id
@@ -901,7 +890,7 @@ class Collections extends Tool {
           ORDER BY score DESC
           LIMIT $${limitParam}
         `;
-        queryParams.push(sanitizedSearchQuery, queryEmbedding, limit);
+        queryParams.push(sanitizedSearchQuery, limit);
         const result = await client.query(query, queryParams);
         return result.rows;
       }
@@ -953,283 +942,6 @@ class Collections extends Tool {
       return result.rows[0] || null;
     } finally {
       client.release();
-    }
-  }
-
-  async getCollectionData(collectionId, recursive = false) {
-    const client = await this.pool.connect();
-    try {
-      // Get collection info
-      const collectionResult = await client.query(
-        'SELECT * FROM collections WHERE id = $1 AND user_id = $2',
-        [collectionId, this.userId],
-      );
-
-      if (collectionResult.rows.length === 0) {
-        throw new Error('Collection not found or access denied');
-      }
-
-      const collection = collectionResult.rows[0];
-
-      // Get all collection IDs to include (with children if recursive)
-      let collectionIds = [collectionId];
-      if (recursive) {
-        collectionIds = await this.getAllChildCollectionIds(client, [collectionId]);
-      }
-
-      // Get all collections data
-      const collectionsResult = await client.query(
-        'SELECT * FROM collections WHERE id = ANY($1) ORDER BY created_at',
-        [collectionIds],
-      );
-
-      // Get all notes for these collections
-      const notesResult = await client.query(
-        'SELECT * FROM notes WHERE collection_id = ANY($1) ORDER BY created_at',
-        [collectionIds],
-      );
-
-      return {
-        collection: collection,
-        collections: collectionsResult.rows,
-        notes: notesResult.rows,
-      };
-    } finally {
-      client.release();
-    }
-  }
-
-  generateJSON(data) {
-    return JSON.stringify(data, null, 2);
-  }
-
-  generateXML(data) {
-    const escapeXml = (str) => {
-      if (!str) return '';
-      return str
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&apos;');
-    };
-
-    const formatDate = (date) => {
-      return new Date(date).toISOString();
-    };
-
-    let xml = '<?xml version="1.0" encoding="UTF-8"?>\n';
-    xml += '<collection-export>\n';
-    xml += `  <export-date>${formatDate(new Date())}</export-date>\n`;
-    xml += `  <main-collection>\n`;
-    xml += `    <id>${data.collection.id}</id>\n`;
-    xml += `    <name>${escapeXml(data.collection.name)}</name>\n`;
-    xml += `    <description>${escapeXml(data.collection.description || '')}</description>\n`;
-    xml += `    <created-at>${formatDate(data.collection.created_at)}</created-at>\n`;
-    xml += `    <updated-at>${formatDate(data.collection.updated_at)}</updated-at>\n`;
-    
-    if (data.collection.tags && data.collection.tags.length > 0) {
-      xml += `    <tags>\n`;
-      data.collection.tags.forEach(tag => {
-        xml += `      <tag>${escapeXml(tag)}</tag>\n`;
-      });
-      xml += `    </tags>\n`;
-    }
-    
-    xml += `  </main-collection>\n`;
-
-    if (data.collections && data.collections.length > 1) {
-      xml += `  <sub-collections>\n`;
-      data.collections.forEach(collection => {
-        if (collection.id !== data.collection.id) {
-          xml += `    <collection>\n`;
-          xml += `      <id>${collection.id}</id>\n`;
-          xml += `      <name>${escapeXml(collection.name)}</name>\n`;
-          xml += `      <description>${escapeXml(collection.description || '')}</description>\n`;
-          xml += `      <parent-id>${collection.parent_id || ''}</parent-id>\n`;
-          xml += `      <created-at>${formatDate(collection.created_at)}</created-at>\n`;
-          xml += `      <updated-at>${formatDate(collection.updated_at)}</updated-at>\n`;
-          
-          if (collection.tags && collection.tags.length > 0) {
-            xml += `      <tags>\n`;
-            collection.tags.forEach(tag => {
-              xml += `        <tag>${escapeXml(tag)}</tag>\n`;
-            });
-            xml += `      </tags>\n`;
-          }
-          
-          xml += `    </collection>\n`;
-        }
-      });
-      xml += `  </sub-collections>\n`;
-    }
-
-    if (data.notes && data.notes.length > 0) {
-      xml += `  <notes>\n`;
-      data.notes.forEach(note => {
-        xml += `    <note>\n`;
-        xml += `      <id>${note.id}</id>\n`;
-        xml += `      <collection-id>${note.collection_id}</collection-id>\n`;
-        xml += `      <title>${escapeXml(note.title)}</title>\n`;
-        xml += `      <content>${escapeXml(note.content)}</content>\n`;
-        xml += `      <source-url>${escapeXml(note.source_url || '')}</source-url>\n`;
-        xml += `      <created-at>${formatDate(note.created_at)}</created-at>\n`;
-        xml += `      <updated-at>${formatDate(note.updated_at)}</updated-at>\n`;
-        
-        if (note.tags && note.tags.length > 0) {
-          xml += `      <tags>\n`;
-          note.tags.forEach(tag => {
-            xml += `        <tag>${escapeXml(tag)}</tag>\n`;
-          });
-          xml += `      </tags>\n`;
-        }
-        
-        xml += `    </note>\n`;
-      });
-      xml += `  </notes>\n`;
-    }
-
-    xml += '</collection-export>\n';
-    return xml;
-  }
-
-  generatePDF(data) {
-    // Generate a simple text-based PDF content using basic formatting
-    // This will be plain text that looks structured when viewed
-    const formatDate = (date) => {
-      return new Date(date).toLocaleDateString() + ' ' + new Date(date).toLocaleTimeString();
-    };
-
-    let content = `COLLECTION EXPORT\n`;
-    content += `==================\n\n`;
-    content += `Export Date: ${formatDate(new Date())}\n\n`;
-    
-    content += `MAIN COLLECTION\n`;
-    content += `---------------\n`;
-    content += `Name: ${data.collection.name}\n`;
-    content += `Description: ${data.collection.description || 'No description'}\n`;
-    content += `Created: ${formatDate(data.collection.created_at)}\n`;
-    content += `Updated: ${formatDate(data.collection.updated_at)}\n`;
-    
-    if (data.collection.tags && data.collection.tags.length > 0) {
-      content += `Tags: ${data.collection.tags.join(', ')}\n`;
-    }
-    
-    content += `\n`;
-
-    if (data.collections && data.collections.length > 1) {
-      content += `SUB-COLLECTIONS\n`;
-      content += `---------------\n`;
-      data.collections.forEach(collection => {
-        if (collection.id !== data.collection.id) {
-          content += `\n• ${collection.name}\n`;
-          content += `  Description: ${collection.description || 'No description'}\n`;
-          content += `  Created: ${formatDate(collection.created_at)}\n`;
-          if (collection.tags && collection.tags.length > 0) {
-            content += `  Tags: ${collection.tags.join(', ')}\n`;
-          }
-        }
-      });
-      content += `\n`;
-    }
-
-    if (data.notes && data.notes.length > 0) {
-      content += `NOTES\n`;
-      content += `-----\n\n`;
-      data.notes.forEach((note, index) => {
-        content += `${index + 1}. ${note.title}\n`;
-        content += `   Collection: ${data.collections.find(c => c.id === note.collection_id)?.name || 'Unknown'}\n`;
-        content += `   Created: ${formatDate(note.created_at)}\n`;
-        if (note.source_url) {
-          content += `   Source: ${note.source_url}\n`;
-        }
-        if (note.tags && note.tags.length > 0) {
-          content += `   Tags: ${note.tags.join(', ')}\n`;
-        }
-        content += `\n   Content:\n   ${note.content.replace(/\n/g, '\n   ')}\n\n`;
-        content += `   ${'='.repeat(50)}\n\n`;
-      });
-    }
-
-    return content;
-  }
-
-  async exportCollection(collectionId, format = 'json', recursive = false) {
-    try {
-      // Load file processing dependencies dynamically
-      if (!createFile) {
-        ({ createFile } = require('../../../../models/File'));
-        ({ getStrategyFunctions } = require('../../../../server/services/Files/strategies'));
-        ({ FileSources, FileContext } = require('librechat-data-provider'));
-      }
-
-      const data = await this.getCollectionData(collectionId, recursive);
-      
-      let content;
-      let filename;
-      let mimeType;
-
-      switch (format) {
-        case 'json':
-          content = this.generateJSON(data);
-          filename = `collection-${data.collection.name.replace(/[^a-zA-Z0-9]/g, '_')}-${Date.now()}.json`;
-          mimeType = 'application/json';
-          break;
-        case 'xml':
-          content = this.generateXML(data);
-          filename = `collection-${data.collection.name.replace(/[^a-zA-Z0-9]/g, '_')}-${Date.now()}.xml`;
-          mimeType = 'application/xml';
-          break;
-        case 'pdf':
-          content = this.generatePDF(data);
-          filename = `collection-${data.collection.name.replace(/[^a-zA-Z0-9]/g, '_')}-${Date.now()}.txt`;
-          mimeType = 'text/plain';
-          break;
-        default:
-          throw new Error('Invalid export format. Supported formats: json, xml, pdf');
-      }
-
-      // Use LibreChat's file handling system to save the file
-      const source = FileSources.local; // Use local storage for exports
-      const { saveBuffer } = getStrategyFunctions(source);
-      const file_id = v4();
-      const buffer = Buffer.from(content, 'utf8');
-
-      const filepath = await saveBuffer({
-        userId: this.userId,
-        fileName: filename,
-        buffer: buffer,
-      });
-
-      // Create file record in database
-      const fileRecord = await createFile(
-        {
-          user: this.userId,
-          file_id,
-          bytes: buffer.length,
-          filepath,
-          filename,
-          context: FileContext.message_attachment,
-          source,
-          type: mimeType,
-        },
-        true,
-      );
-
-      return {
-        success: true,
-        file_id: fileRecord.file_id,
-        filename: fileRecord.filename,
-        download_url: fileRecord.filepath,
-        format,
-        size_bytes: fileRecord.bytes,
-        collection_name: data.collection.name,
-        total_notes: data.notes.length,
-        total_collections: data.collections.length,
-      };
-    } catch (error) {
-      logger.error('Export collection error:', error);
-      throw error;
     }
   }
 
@@ -1483,22 +1195,6 @@ class Collections extends Tool {
             success: true,
             message: 'Note deleted successfully',
             deleted_note_id: note_id,
-          });
-        }
-
-        case 'export_collection': {
-          const { collection_id, export_format = 'json', recursive = false } = args;
-
-          if (!collection_id) {
-            return JSON.stringify({ error: 'collection_id is required' });
-          }
-
-          const result = await this.exportCollection(collection_id, export_format, recursive);
-
-          return JSON.stringify({
-            success: true,
-            message: `Collection exported successfully as ${export_format.toUpperCase()}`,
-            export_result: result,
           });
         }
 

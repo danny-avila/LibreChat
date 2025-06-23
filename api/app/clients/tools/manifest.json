@@ -258,5 +258,12 @@
     "description": "Store and retrieve organized knowledge in collections with hierarchical structure. Supports keyword, semantic, and hybrid search across all notes.",
     "icon": "/assets/usermemory.png",
     "authConfig": []
+  },
+  {
+    "name": "Collection Export",
+    "pluginKey": "collection_export",
+    "description": "Export LibreChat collections in various formats (JSON, XML, PDF). Can export single collections or recursively include child collections.",
+    "icon": "/assets/export.png",
+    "authConfig": []
   }
 ]
