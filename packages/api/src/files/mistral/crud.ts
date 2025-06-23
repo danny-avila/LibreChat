@@ -368,7 +368,7 @@ export const uploadMistralOCR = async (context: OCRContext): Promise<MistralOCRU
       images,
     };
   } catch (error) {
-    throw createOCRError(error, 'Error uploading document to Mistral OCR API');
+    throw createOCRError(error, 'Error uploading document to Mistral OCR API:');
   }
 };
 
@@ -421,6 +421,6 @@ export const uploadAzureMistralOCR = async (
       images,
     };
   } catch (error) {
-    throw createOCRError(error, 'Error uploading document to Azure Mistral OCR API');
+    throw createOCRError(error, 'Error uploading document to Azure Mistral OCR API:');
   }
 };
