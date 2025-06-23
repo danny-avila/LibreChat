@@ -7,7 +7,7 @@ import { useAgentCategories } from '~/hooks/Agents';
 import useLocalize from '~/hooks/useLocalize';
 import { Button } from '~/components/ui';
 import { Spinner } from '~/components/svg';
-import { SmartLoader, useHasData } from './SmartLoader';
+import { useHasData } from './SmartLoader';
 import ErrorDisplay from './ErrorDisplay';
 import AgentCard from './AgentCard';
 import { cn } from '~/utils';

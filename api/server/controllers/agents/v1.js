@@ -15,7 +15,6 @@ const {
   deleteAgent,
   getListAgentsByAccess,
   countPromotedAgents,
-  updateAgentProjects,
   revertAgentVersion,
 } = require('~/models/Agent');
 const {
@@ -30,7 +29,6 @@ const { refreshS3Url } = require('~/server/services/Files/S3/crud');
 const { filterFile } = require('~/server/services/Files/process');
 const { updateAction, getActions } = require('~/models/Action');
 const { getCachedTools } = require('~/server/services/Config');
-const { revertAgentVersion } = require('~/models/Agent');
 const { deleteFileByFilter } = require('~/models/File');
 const { getCategoriesWithCounts } = require('~/models');
 

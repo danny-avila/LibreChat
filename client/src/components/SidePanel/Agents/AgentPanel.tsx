@@ -285,7 +285,7 @@ export default function AgentPanel({
     }
 
     return canEdit;
-  }, [agentQuery.data?.id, user?.id, user?.role, canEdit]);
+  }, [agentQuery.data?.id, user?.role, canEdit]);
 
   return (
     <FormProvider {...methods}>

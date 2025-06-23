@@ -17,7 +17,7 @@ import { useToast } from '~/hooks';
 import { Dialog, DialogContent, Button } from '~/components/ui';
 import { DotsIcon } from '~/components/svg';
 import { renderAgentAvatar } from '~/utils/agents';
-import { Query, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 
 interface AgentDetailProps {
   agent: AgentWithSupport; // The agent data to display

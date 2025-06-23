@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import CategoryTabs from '../CategoryTabs';
 import AgentGrid from '../AgentGrid';
@@ -46,12 +46,7 @@ jest.mock(
       return translations[key] || key;
     }),
 );
-
-jest.mock('~/hooks/Agents', () => ({
-  useDynamicAgentQuery: jest.fn(),
-}));
-
-const { useDynamicAgentQuery } = require('~/hooks/Agents');
+const useDynamicAgentQuery = jest.fn();
 
 // Create wrapper with QueryClient
 const createWrapper = () => {
@@ -418,5 +413,3 @@ describe('Accessibility Improvements', () => {
     });
   });
 });
-
-export default {};
