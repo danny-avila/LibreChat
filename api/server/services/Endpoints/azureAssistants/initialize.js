@@ -1,12 +1,7 @@
 const OpenAI = require('openai');
 const { HttpsProxyAgent } = require('https-proxy-agent');
-const { constructAzureURL, isUserProvided } = require('@librechat/api');
-const {
-  ErrorTypes,
-  EModelEndpoint,
-  resolveHeaders,
-  mapModelToAzureConfig,
-} = require('librechat-data-provider');
+const { constructAzureURL, isUserProvided, resolveHeaders } = require('@librechat/api');
+const { ErrorTypes, EModelEndpoint, mapModelToAzureConfig } = require('librechat-data-provider');
 const {
   getUserKeyValues,
   getUserKeyExpiry,
@@ -114,11 +109,14 @@ const initializeClient = async ({ req, res, version, endpointOption, initAppClie
 
     apiKey = azureOptions.azureOpenAIApiKey;
     opts.defaultQuery = { 'api-version': azureOptions.azureOpenAIApiVersion };
-    opts.defaultHeaders = resolveHeaders({
-      ...headers,
-      'api-key': apiKey,
-      'OpenAI-Beta': `assistants=${version}`,
-    });
+    opts.defaultHeaders = resolveHeaders(
+      {
+        ...headers,
+        'api-key': apiKey,
+        'OpenAI-Beta': `assistants=${version}`,
+      },
+      req.user,
+    );
     opts.model = azureOptions.azureOpenAIApiDeploymentName;
 
     if (initAppClient) {

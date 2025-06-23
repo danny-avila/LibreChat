@@ -531,44 +531,6 @@ describe('OpenAIClient', () => {
     });
   });
 
-  describe('sendMessage/getCompletion/chatCompletion', () => {
-    afterEach(() => {
-      delete process.env.AZURE_OPENAI_DEFAULT_MODEL;
-      delete process.env.AZURE_USE_MODEL_AS_DEPLOYMENT_NAME;
-    });
-
-    it('should call getCompletion and fetchEventSource when using a text/instruct model', async () => {
-      const model = 'text-davinci-003';
-      const onProgress = jest.fn().mockImplementation(() => ({}));
-
-      const testClient = new OpenAIClient('test-api-key', {
-        ...defaultOptions,
-        modelOptions: { model },
-      });
-
-      const getCompletion = jest.spyOn(testClient, 'getCompletion');
-      await testClient.sendMessage('Hi mom!', { onProgress });
-
-      expect(getCompletion).toHaveBeenCalled();
-      expect(getCompletion.mock.calls.length).toBe(1);
-
-      expect(getCompletion.mock.calls[0][0]).toBe('||>User:\nHi mom!\n||>Assistant:\n');
-
-      expect(fetchEventSource).toHaveBeenCalled();
-      expect(fetchEventSource.mock.calls.length).toBe(1);
-
-      // Check if the first argument (url) is correct
-      const firstCallArgs = fetchEventSource.mock.calls[0];
-
-      const expectedURL = 'https://api.openai.com/v1/completions';
-      expect(firstCallArgs[0]).toBe(expectedURL);
-
-      const requestBody = JSON.parse(firstCallArgs[1].body);
-      expect(requestBody).toHaveProperty('model');
-      expect(requestBody.model).toBe(model);
-    });
-  });
-
   describe('checkVisionRequest functionality', () => {
     let client;
     const attachments = [{ type: 'image/png' }];

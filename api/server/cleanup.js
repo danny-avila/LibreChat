@@ -169,9 +169,6 @@ function disposeClient(client) {
       client.isGenerativeModel = null;
     }
     // Properties specific to OpenAIClient
-    if (client.ChatGPTClient) {
-      client.ChatGPTClient = null;
-    }
     if (client.completionsUrl) {
       client.completionsUrl = null;
     }

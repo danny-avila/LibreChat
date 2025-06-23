@@ -55,7 +55,6 @@
     "@waylaidwanderer/fetch-event-source": "^3.0.1",
     "axios": "^1.8.2",
     "bcryptjs": "^2.4.3",
-    "cohere-ai": "^7.9.1",
     "compression": "^1.7.4",
     "connect-redis": "^7.1.0",
     "cookie": "^0.7.2",
