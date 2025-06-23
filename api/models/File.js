@@ -42,14 +42,16 @@ const getToolFilesByIds = async (fileIds, toolResourceSet) => {
     };
 
     if (toolResourceSet.size) {
-      filter.$or = [];
-    }
+      filter.$or = [{ text: { $exists: true, $ne: null } }];
 
-    if (toolResourceSet.has(EToolResources.file_search)) {
-      filter.$or.push({ embedded: true });
-    }
-    if (toolResourceSet.has(EToolResources.execute_code)) {
-      filter.$or.push({ 'metadata.fileIdentifier': { $exists: true } });
+      if (toolResourceSet.has(EToolResources.file_search)) {
+        filter.$or.push({ embedded: true });
+      }
+      if (toolResourceSet.has(EToolResources.execute_code)) {
+        filter.$or.push({ 'metadata.fileIdentifier': { $exists: true } });
+      }
+    } else {
+      filter.text = { $exists: true, $ne: null };
     }
 
     const selectFields = { text: 0 };
