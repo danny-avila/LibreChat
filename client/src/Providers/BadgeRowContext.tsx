@@ -1,6 +1,7 @@
 import React, { createContext, useContext } from 'react';
 import { Tools, LocalStorageKeys } from 'librechat-data-provider';
 import { useMCPSelect, useToolToggle, useCodeApiKeyForm, useSearchApiKeyForm } from '~/hooks';
+import { useGetStartupConfig } from '~/data-provider';
 
 interface BadgeRowContextType {
   conversationId?: string | null;
@@ -10,6 +11,7 @@ interface BadgeRowContextType {
   fileSearch: ReturnType<typeof useToolToggle>;
   codeApiKeyForm: ReturnType<typeof useCodeApiKeyForm>;
   searchApiKeyForm: ReturnType<typeof useSearchApiKeyForm>;
+  startupConfig: ReturnType<typeof useGetStartupConfig>['data'];
 }
 
 const BadgeRowContext = createContext<BadgeRowContextType | undefined>(undefined);
@@ -28,6 +30,9 @@ interface BadgeRowProviderProps {
 }
 
 export default function BadgeRowProvider({ children, conversationId }: BadgeRowProviderProps) {
+  /** Startup config */
+  const { data: startupConfig } = useGetStartupConfig();
+
   /** MCPSelect hook */
   const mcpSelect = useMCPSelect({ conversationId });
 
@@ -73,6 +78,7 @@ export default function BadgeRowProvider({ children, conversationId }: BadgeRowP
     mcpSelect,
     webSearch,
     fileSearch,
+    startupConfig,
     conversationId,
     codeApiKeyForm,
     codeInterpreter,

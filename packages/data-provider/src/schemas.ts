@@ -400,7 +400,7 @@ export type TPluginAuthConfig = z.infer<typeof tPluginAuthConfigSchema>;
 export const tPluginSchema = z.object({
   name: z.string(),
   pluginKey: z.string(),
-  description: z.string(),
+  description: z.string().optional(),
   icon: z.string().optional(),
   authConfig: z.array(tPluginAuthConfigSchema).optional(),
   authenticated: z.boolean().optional(),
