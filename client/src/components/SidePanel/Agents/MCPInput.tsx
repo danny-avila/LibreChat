@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useFormContext, Controller } from 'react-hook-form';
-import { MCP } from 'librechat-data-provider/dist/types/types/assistants';
+import type { MCP } from 'librechat-data-provider';
 import MCPAuth from '~/components/SidePanel/Builder/MCPAuth';
 import MCPIcon from '~/components/SidePanel/Agents/MCPIcon';
 import { Label, Checkbox } from '~/components/ui';

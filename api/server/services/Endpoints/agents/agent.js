@@ -1,5 +1,9 @@
 const { Providers } = require('@librechat/agents');
-const { primeResources, optionalChainWithEmptyCheck } = require('@librechat/api');
+const {
+  primeResources,
+  extractLibreChatParams,
+  optionalChainWithEmptyCheck,
+} = require('@librechat/api');
 const {
   ErrorTypes,
   EModelEndpoint,
@@ -15,10 +19,9 @@ const initGoogle = require('~/server/services/Endpoints/google/initialize');
 const generateArtifactsPrompt = require('~/app/clients/prompts/artifacts');
 const { getCustomEndpointConfig } = require('~/server/services/Config');
 const { processFiles } = require('~/server/services/Files/process');
+const { getFiles, getToolFilesByIds } = require('~/models/File');
 const { getConvoFiles } = require('~/models/Conversation');
-const { getToolFilesByIds } = require('~/models/File');
 const { getModelMaxTokens } = require('~/utils');
-const { getFiles } = require('~/models/File');
 
 const providerConfigMap = {
   [Providers.XAI]: initCustom,
@@ -71,7 +74,7 @@ const initializeAgent = async ({
     ),
   );
 
-  const { resendFiles = true, ...modelOptions } = _modelOptions;
+  const { resendFiles, maxContextTokens, modelOptions } = extractLibreChatParams(_modelOptions);
 
   if (isInitialAgent && conversationId != null && resendFiles) {
     const fileIds = (await getConvoFiles(conversationId)) ?? [];
@@ -145,9 +148,8 @@ const initializeAgent = async ({
     modelOptions.maxTokens,
     0,
   );
-  const maxContextTokens = optionalChainWithEmptyCheck(
-    modelOptions.maxContextTokens,
-    modelOptions.max_context_tokens,
+  const agentMaxContextTokens = optionalChainWithEmptyCheck(
+    maxContextTokens,
     getModelMaxTokens(tokensModel, providerEndpointMap[provider]),
     4096,
   );
@@ -189,7 +191,7 @@ const initializeAgent = async ({
     attachments,
     resendFiles,
     toolContextMap,
-    maxContextTokens: (maxContextTokens - maxTokens) * 0.9,
+    maxContextTokens: (agentMaxContextTokens - maxTokens) * 0.9,
   };
 };
 

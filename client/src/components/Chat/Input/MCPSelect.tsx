@@ -1,74 +1,28 @@
-import React, { memo, useRef, useMemo, useEffect, useCallback, useState } from 'react';
-import { useRecoilState } from 'recoil';
-import { Settings2 } from 'lucide-react';
+import React, { memo, useCallback, useState } from 'react';
+import { SettingsIcon } from 'lucide-react';
+import { Constants } from 'librechat-data-provider';
 import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
-import { Constants, EModelEndpoint, LocalStorageKeys } from 'librechat-data-provider';
-import type { TPlugin, TPluginAuthConfig, TUpdateUserPlugins } from 'librechat-data-provider';
+import type { TUpdateUserPlugins } from 'librechat-data-provider';
+import type { McpServerInfo } from '~/hooks/Plugins/useMCPSelect';
 import MCPConfigDialog, { type ConfigFieldDetail } from '~/components/ui/MCPConfigDialog';
-import { useAvailableToolsQuery } from '~/data-provider';
-import useLocalStorage from '~/hooks/useLocalStorageAlt';
+import { useToastContext, useBadgeRowContext } from '~/Providers';
 import MultiSelect from '~/components/ui/MultiSelect';
-import { ephemeralAgentByConvoId } from '~/store';
-import { useToastContext } from '~/Providers';
-import MCPIcon from '~/components/ui/MCPIcon';
+import { MCPIcon } from '~/components/svg';
 import { useLocalize } from '~/hooks';
 
-interface McpServerInfo {
-  name: string;
-  pluginKey: string;
-  authConfig?: TPluginAuthConfig[];
-  authenticated?: boolean;
-}
-
-// Helper function to extract mcp_serverName from a full pluginKey like action_mcp_serverName
 const getBaseMCPPluginKey = (fullPluginKey: string): string => {
   const parts = fullPluginKey.split(Constants.mcp_delimiter);
   return Constants.mcp_prefix + parts[parts.length - 1];
 };
 
-const storageCondition = (value: unknown, rawCurrentValue?: string | null) => {
-  if (rawCurrentValue) {
-    try {
-      const currentValue = rawCurrentValue?.trim() ?? '';
-      if (currentValue.length > 2) {
-        return true;
-      }
-    } catch (e) {
-      console.error(e);
-    }
-  }
-  return Array.isArray(value) && value.length > 0;
-};
-
-function MCPSelect({ conversationId }: { conversationId?: string | null }) {
+function MCPSelect() {
   const localize = useLocalize();
   const { showToast } = useToastContext();
-  const key = conversationId ?? Constants.NEW_CONVO;
-  const hasSetFetched = useRef<string | null>(null);
+  const { mcpSelect } = useBadgeRowContext();
+  const { mcpValues, setMCPValues, mcpServerNames, mcpToolDetails, isPinned } = mcpSelect;
+
   const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
   const [selectedToolForConfig, setSelectedToolForConfig] = useState<McpServerInfo | null>(null);
-
-  const { data: mcpToolDetails, isFetched } = useAvailableToolsQuery(EModelEndpoint.agents, {
-    select: (data: TPlugin[]) => {
-      const mcpToolsMap = new Map<string, McpServerInfo>();
-      data.forEach((tool) => {
-        const isMCP = tool.pluginKey.includes(Constants.mcp_delimiter);
-        if (isMCP && tool.chatMenu !== false) {
-          const parts = tool.pluginKey.split(Constants.mcp_delimiter);
-          const serverName = parts[parts.length - 1];
-          if (!mcpToolsMap.has(serverName)) {
-            mcpToolsMap.set(serverName, {
-              name: serverName,
-              pluginKey: tool.pluginKey,
-              authConfig: tool.authConfig,
-              authenticated: tool.authenticated,
-            });
-          }
-        }
-      });
-      return Array.from(mcpToolsMap.values());
-    },
-  });
 
   const updateUserPluginsMutation = useUpdateUserPluginsMutation({
     onSuccess: () => {
@@ -84,48 +38,6 @@ function MCPSelect({ conversationId }: { conversationId?: string | null }) {
     },
   });
 
-  const [ephemeralAgent, setEphemeralAgent] = useRecoilState(ephemeralAgentByConvoId(key));
-  const mcpState = useMemo(() => {
-    return ephemeralAgent?.mcp ?? [];
-  }, [ephemeralAgent?.mcp]);
-
-  const setSelectedValues = useCallback(
-    (values: string[] | null | undefined) => {
-      if (!values) {
-        return;
-      }
-      if (!Array.isArray(values)) {
-        return;
-      }
-      setEphemeralAgent((prev) => ({
-        ...prev,
-        mcp: values,
-      }));
-    },
-    [setEphemeralAgent],
-  );
-  const [mcpValues, setMCPValues] = useLocalStorage<string[]>(
-    `${LocalStorageKeys.LAST_MCP_}${key}`,
-    mcpState,
-    setSelectedValues,
-    storageCondition,
-  );
-
-  useEffect(() => {
-    if (hasSetFetched.current === key) {
-      return;
-    }
-    if (!isFetched) {
-      return;
-    }
-    hasSetFetched.current = key;
-    if ((mcpToolDetails?.length ?? 0) > 0) {
-      setMCPValues(mcpValues.filter((mcp) => mcpToolDetails?.some((tool) => tool.name === mcp)));
-      return;
-    }
-    setMCPValues([]);
-  }, [isFetched, setMCPValues, mcpToolDetails, key, mcpValues]);
-
   const renderSelectedValues = useCallback(
     (values: string[], placeholder?: string) => {
       if (values.length === 0) {
@@ -138,10 +50,6 @@ function MCPSelect({ conversationId }: { conversationId?: string | null }) {
     },
     [localize],
   );
-
-  const mcpServerNames = useMemo(() => {
-    return (mcpToolDetails ?? []).map((tool) => tool.name);
-  }, [mcpToolDetails]);
 
   const handleConfigSave = useCallback(
     (targetName: string, authData: Record<string, string>) => {
@@ -198,10 +106,10 @@ function MCPSelect({ conversationId }: { conversationId?: string | null }) {
                 setSelectedToolForConfig(tool);
                 setIsConfigModalOpen(true);
               }}
-              className="ml-2 flex h-6 w-6 items-center justify-center rounded p-1 hover:bg-black/10 dark:hover:bg-white/10"
+              className="ml-2 flex h-6 w-6 items-center justify-center rounded p-1 hover:bg-surface-secondary"
               aria-label={`Configure ${serverName}`}
             >
-              <Settings2 className={`h-4 w-4 ${tool.authenticated ? 'text-green-500' : ''}`} />
+              <SettingsIcon className={`h-4 w-4 ${tool.authenticated ? 'text-green-500' : ''}`} />
             </button>
           </div>
         );
@@ -211,6 +119,11 @@ function MCPSelect({ conversationId }: { conversationId?: string | null }) {
     },
     [mcpToolDetails, setSelectedToolForConfig, setIsConfigModalOpen],
   );
+
+  // Don't render if no servers are selected and not pinned
+  if ((!mcpValues || mcpValues.length === 0) && !isPinned) {
+    return null;
+  }
 
   if (!mcpToolDetails || mcpToolDetails.length === 0) {
     return null;

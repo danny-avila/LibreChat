@@ -940,18 +940,10 @@ export const initialModelsConfig: TModelsConfig = {
   [EModelEndpoint.bedrock]: defaultModels[EModelEndpoint.bedrock],
 };
 
-export const EndpointURLs: { [key in EModelEndpoint]: string } = {
-  [EModelEndpoint.openAI]: `/api/ask/${EModelEndpoint.openAI}`,
-  [EModelEndpoint.google]: `/api/ask/${EModelEndpoint.google}`,
-  [EModelEndpoint.custom]: `/api/ask/${EModelEndpoint.custom}`,
-  [EModelEndpoint.anthropic]: `/api/ask/${EModelEndpoint.anthropic}`,
-  [EModelEndpoint.gptPlugins]: `/api/ask/${EModelEndpoint.gptPlugins}`,
-  [EModelEndpoint.azureOpenAI]: `/api/ask/${EModelEndpoint.azureOpenAI}`,
-  [EModelEndpoint.chatGPTBrowser]: `/api/ask/${EModelEndpoint.chatGPTBrowser}`,
-  [EModelEndpoint.azureAssistants]: '/api/assistants/v1/chat',
+export const EndpointURLs: Record<string, string> = {
   [EModelEndpoint.assistants]: '/api/assistants/v2/chat',
+  [EModelEndpoint.azureAssistants]: '/api/assistants/v1/chat',
   [EModelEndpoint.agents]: `/api/${EModelEndpoint.agents}/chat`,
-  [EModelEndpoint.bedrock]: `/api/${EModelEndpoint.bedrock}/chat`,
 };
 
 export const modularEndpoints = new Set<EModelEndpoint | string>([
@@ -1451,10 +1443,18 @@ export enum LocalStorageKeys {
   LAST_CODE_TOGGLE_ = 'LAST_CODE_TOGGLE_',
   /** Last checked toggle for Web Search per conversation ID */
   LAST_WEB_SEARCH_TOGGLE_ = 'LAST_WEB_SEARCH_TOGGLE_',
+  /** Last checked toggle for File Search per conversation ID */
+  LAST_FILE_SEARCH_TOGGLE_ = 'LAST_FILE_SEARCH_TOGGLE_',
   /** Key for the last selected agent provider */
   LAST_AGENT_PROVIDER = 'lastAgentProvider',
   /** Key for the last selected agent model */
   LAST_AGENT_MODEL = 'lastAgentModel',
+  /** Pin state for MCP tools per conversation ID */
+  PIN_MCP_ = 'PIN_MCP_',
+  /** Pin state for Web Search per conversation ID */
+  PIN_WEB_SEARCH_ = 'PIN_WEB_SEARCH_',
+  /** Pin state for Code Interpreter per conversation ID */
+  PIN_CODE_INTERPRETER_ = 'PIN_CODE_INTERPRETER_',
 }
 
 export enum ForkOptions {

@@ -1,31 +1,21 @@
 import { memo, useMemo } from 'react';
-import { useRecoilValue } from 'recoil';
 import {
   Constants,
   supportsFiles,
   mergeFileConfig,
   isAgentsEndpoint,
-  isEphemeralAgent,
   EndpointFileConfig,
   fileConfig as defaultFileConfig,
 } from 'librechat-data-provider';
-import { useChatContext } from '~/Providers';
 import { useGetFileConfig } from '~/data-provider';
-import { ephemeralAgentByConvoId } from '~/store';
 import AttachFileMenu from './AttachFileMenu';
-import AttachFile from './AttachFile';
+import { useChatContext } from '~/Providers';
 
 function AttachFileChat({ disableInputs }: { disableInputs: boolean }) {
   const { conversation } = useChatContext();
-
+  const conversationId = conversation?.conversationId ?? Constants.NEW_CONVO;
   const { endpoint: _endpoint, endpointType } = conversation ?? { endpoint: null };
-
-  const key = conversation?.conversationId ?? Constants.NEW_CONVO;
-  const ephemeralAgent = useRecoilValue(ephemeralAgentByConvoId(key));
-  const isAgents = useMemo(
-    () => isAgentsEndpoint(_endpoint) || isEphemeralAgent(_endpoint, ephemeralAgent),
-    [_endpoint, ephemeralAgent],
-  );
+  const isAgents = useMemo(() => isAgentsEndpoint(_endpoint), [_endpoint]);
 
   const { data: fileConfig = defaultFileConfig } = useGetFileConfig({
     select: (data) => mergeFileConfig(data),
@@ -38,11 +28,8 @@ function AttachFileChat({ disableInputs }: { disableInputs: boolean }) {
   const endpointSupportsFiles: boolean = supportsFiles[endpointType ?? _endpoint ?? ''] ?? false;
   const isUploadDisabled = (disableInputs || endpointFileConfig?.disabled) ?? false;
 
-  if (isAgents) {
-    return <AttachFileMenu disabled={disableInputs} />;
-  }
-  if (endpointSupportsFiles && !isUploadDisabled) {
-    return <AttachFile disabled={disableInputs} />;
+  if (isAgents || (endpointSupportsFiles && !isUploadDisabled)) {
+    return <AttachFileMenu disabled={disableInputs} conversationId={conversationId} />;
   }
 
   return null;

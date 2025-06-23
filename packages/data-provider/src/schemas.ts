@@ -3,7 +3,6 @@ import { Tools } from './types/assistants';
 import type { TMessageContentParts, FunctionTool, FunctionToolCall } from './types/assistants';
 import { TFeedback, feedbackSchema } from './feedback';
 import type { SearchResultData } from './types/web';
-import type { TEphemeralAgent } from './types';
 import type { TFile } from './types/files';
 
 export const isUUID = z.string().uuid();
@@ -89,22 +88,6 @@ export const isAgentsEndpoint = (_endpoint?: EModelEndpoint.agents | null | stri
     return false;
   }
   return endpoint === EModelEndpoint.agents;
-};
-
-export const isEphemeralAgent = (
-  endpoint?: EModelEndpoint.agents | null | string,
-  ephemeralAgent?: TEphemeralAgent | null,
-) => {
-  if (!ephemeralAgent) {
-    return false;
-  }
-  if (isAgentsEndpoint(endpoint)) {
-    return false;
-  }
-  const hasMCPSelected = (ephemeralAgent?.mcp?.length ?? 0) > 0;
-  const hasCodeSelected = (ephemeralAgent?.execute_code ?? false) === true;
-  const hasSearchSelected = (ephemeralAgent?.web_search ?? false) === true;
-  return hasMCPSelected || hasCodeSelected || hasSearchSelected;
 };
 
 export const isParamEndpoint = (
