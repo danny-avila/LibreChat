@@ -73,6 +73,9 @@ class QuickLCMemory extends Tool {
         'get_memories',
         'get_memory',
         'delete_memory',
+        'search_memories',
+        'get_memories_by_key',
+        'get_recent_memories',
         'help'
       ]).describe('The action to perform'),
       
@@ -81,6 +84,12 @@ class QuickLCMemory extends Tool {
       content: z.string().min(1).max(10000).optional().describe('Memory content for create/update operations'),
 
       key: z.string().min(1).max(100).optional().describe('Key to associate with the memory (lowercase letters and underscores only)'),
+      
+      search_query: z.string().optional().describe('Search keywords or phrases for search_memories action'),
+      
+      key_pattern: z.string().optional().describe('Key pattern for get_memories_by_key action (supports partial matching)'),
+      
+      days: z.number().int().positive().optional().describe('Number of days for get_recent_memories action'),
     });
   }
 
@@ -285,6 +294,97 @@ class QuickLCMemory extends Tool {
     }
   }
 
+  // Search memories by content keywords
+  async searchMemories(userId, searchQuery) {
+    await this.ensureConnection();
+
+    try {
+      const userObjectId = new Types.ObjectId(userId);
+      
+      // Create a case-insensitive regex for the search query
+      const searchRegex = new RegExp(searchQuery.split(' ').map(term => 
+        term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      ).join('|'), 'i');
+
+      const memories = await this.models.MemoryEntry.find({
+        userId: userObjectId,
+        $or: [
+          { value: { $regex: searchRegex } },
+          { key: { $regex: searchRegex } }
+        ]
+      })
+        .sort({ updated_at: -1 })
+        .lean();
+
+      return memories.map(memory => this.formatMemoryForResponse(memory));
+    } catch (error) {
+      if (error.name === 'CastError') {
+        logger.warn('Invalid user ID format in searchMemories:', userId);
+        return [];
+      }
+      logger.error('Error searching memories:', error);
+      return [];
+    }
+  }
+
+  // Get memories by key pattern
+  async getMemoriesByKey(userId, keyPattern) {
+    await this.ensureConnection();
+
+    try {
+      const userObjectId = new Types.ObjectId(userId);
+      
+      // Create a case-insensitive regex for partial key matching
+      const keyRegex = new RegExp(keyPattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+
+      const memories = await this.models.MemoryEntry.find({
+        userId: userObjectId,
+        key: { $regex: keyRegex }
+      })
+        .sort({ updated_at: -1 })
+        .lean();
+
+      return memories.map(memory => this.formatMemoryForResponse(memory));
+    } catch (error) {
+      if (error.name === 'CastError') {
+        logger.warn('Invalid user ID format in getMemoriesByKey:', userId);
+        return [];
+      }
+      logger.error('Error getting memories by key:', error);
+      return [];
+    }
+  }
+
+  // Get recent memories from last N days
+  async getRecentMemories(userId, days) {
+    await this.ensureConnection();
+
+    try {
+      const userObjectId = new Types.ObjectId(userId);
+      const cutoffDate = new Date();
+      cutoffDate.setDate(cutoffDate.getDate() - days);
+
+      const memories = await this.models.MemoryEntry.find({
+        userId: userObjectId,
+        $or: [
+          { updated_at: { $gte: cutoffDate } },
+          { created_at: { $gte: cutoffDate } }
+        ]
+      })
+        .sort({ updated_at: -1 })
+        .lean();
+
+      return memories.map(memory => this.formatMemoryForResponse(memory));
+    } catch (error) {
+      if (error.name === 'CastError') {
+        logger.warn('Invalid user ID format in getRecentMemories:', userId);
+        return [];
+      }
+      logger.error('Error getting recent memories:', error);
+      return [];
+    }
+  }
+
   // Helper methods
 
   estimateTokenCount(text) {
@@ -343,7 +443,22 @@ ACTIONS:
    - Deletes a specific memory
    - Required: "memory_id"
 
-6) help:
+6) search_memories:
+   - Search memory content by keywords or phrases
+   - Required: "search_query"
+   - Searches both content and keys
+
+7) get_memories_by_key:
+   - Retrieve all memories with a specific key pattern
+   - Required: "key_pattern"
+   - Supports partial matching
+
+8) get_recent_memories:
+   - Get memories from last N days/conversations
+   - Required: "days"
+   - Returns memories created or updated within the specified timeframe
+
+9) help:
    - Shows this help information
 
 EXAMPLES:
@@ -387,6 +502,24 @@ EXAMPLES:
      "action": "help"
    }
 
+7) Search for memories containing specific keywords:
+   {
+     "action": "search_memories",
+     "search_query": "chocolate"
+   }
+
+8) Get all memories with keys containing "project":
+   {
+     "action": "get_memories_by_key",
+     "key_pattern": "project"
+   }
+
+9) Get memories from the last 7 days:
+   {
+     "action": "get_recent_memories",
+     "days": 7
+   }
+
 IMPORTANT NOTES:
 --------------
 - Keys must be simple lowercase text with underscores (e.g., "preferences", "family_details", "work_info").
@@ -417,6 +550,9 @@ IMPORTANT NOTES:
         memory_id,
         content,
         key,
+        search_query,
+        key_pattern,
+        days,
       } = validationResult.data;
 
       if (!this.userId) {
@@ -480,6 +616,42 @@ IMPORTANT NOTES:
           return JSON.stringify({
             success: true,
             message: 'Memory deleted successfully'
+          });
+
+        case 'search_memories':
+          if (!search_query) {
+            return JSON.stringify({ error: 'search_query is required for search_memories' });
+          }
+          const searchResults = await this.searchMemories(this.userId, search_query);
+          return JSON.stringify({
+            success: true,
+            memories: searchResults,
+            count: searchResults.length,
+            message: `Found ${searchResults.length} memories matching "${search_query}"`
+          });
+
+        case 'get_memories_by_key':
+          if (!key_pattern) {
+            return JSON.stringify({ error: 'key_pattern is required for get_memories_by_key' });
+          }
+          const keyResults = await this.getMemoriesByKey(this.userId, key_pattern);
+          return JSON.stringify({
+            success: true,
+            memories: keyResults,
+            count: keyResults.length,
+            message: `Found ${keyResults.length} memories with keys matching "${key_pattern}"`
+          });
+
+        case 'get_recent_memories':
+          if (!days) {
+            return JSON.stringify({ error: 'days is required for get_recent_memories' });
+          }
+          const recentResults = await this.getRecentMemories(this.userId, days);
+          return JSON.stringify({
+            success: true,
+            memories: recentResults,
+            count: recentResults.length,
+            message: `Found ${recentResults.length} memories from the last ${days} days`
           });
 
         default:
