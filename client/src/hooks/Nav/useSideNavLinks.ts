@@ -1,13 +1,13 @@
 import { useMemo } from 'react';
 import { Blocks, MCPIcon, AttachmentIcon } from '@librechat/client';
-import { MessageSquareQuote, ArrowRightToLine, Settings2, Database, Bookmark } from 'lucide-react';
+import { Database, Bookmark, Settings2, ArrowRightToLine, MessageSquareQuote } from 'lucide-react';
 import {
-  isAssistantsEndpoint,
-  isAgentsEndpoint,
+  Permissions,
+  EModelEndpoint,
   PermissionTypes,
   isParamEndpoint,
-  EModelEndpoint,
-  Permissions,
+  isAgentsEndpoint,
+  isAssistantsEndpoint,
 } from 'librechat-data-provider';
 import type { TInterfaceConfig, TEndpointsConfig } from 'librechat-data-provider';
 import type { NavLink } from '~/common';

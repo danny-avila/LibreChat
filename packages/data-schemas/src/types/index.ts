@@ -17,3 +17,7 @@ export * from './share';
 export * from './pluginAuth';
 /* Memories */
 export * from './memory';
+/* Access Control */
+export * from './accessRole';
+export * from './aclEntry';
+export * from './group';
