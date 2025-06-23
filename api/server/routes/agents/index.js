@@ -10,6 +10,7 @@ const {
 const { isEnabled } = require('~/server/utils');
 const { v1 } = require('./v1');
 const chat = require('./chat');
+const marketplace = require('./marketplace');
 
 const { LIMIT_CONCURRENT_MESSAGES, LIMIT_MESSAGE_IP, LIMIT_MESSAGE_USER } = process.env ?? {};
 
@@ -36,5 +37,8 @@ if (isEnabled(LIMIT_MESSAGE_USER)) {
 
 chatRouter.use('/', chat);
 router.use('/chat', chatRouter);
+
+// Add marketplace routes
+router.use('/marketplace', marketplace);
 
 module.exports = router;

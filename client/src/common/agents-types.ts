@@ -7,6 +7,7 @@ export type TAgentOption = OptionWithIcon &
     knowledge_files?: Array<[string, ExtendedFile]>;
     context_files?: Array<[string, ExtendedFile]>;
     code_files?: Array<[string, ExtendedFile]>;
+    _id?: string;
   };
 
 export type TAgentCapabilities = {
@@ -15,6 +16,11 @@ export type TAgentCapabilities = {
   [AgentCapabilities.execute_code]: boolean;
   [AgentCapabilities.end_after_tools]?: boolean;
   [AgentCapabilities.hide_sequential_outputs]?: boolean;
+};
+
+export type SupportContact = {
+  name?: string;
+  email?: string;
 };
 
 export type AgentForm = {
@@ -30,4 +36,5 @@ export type AgentForm = {
   agent_ids?: string[];
   [AgentCapabilities.artifacts]?: ArtifactModes | string;
   recursion_limit?: number;
+  support_contact?: SupportContact;
 } & TAgentCapabilities;
