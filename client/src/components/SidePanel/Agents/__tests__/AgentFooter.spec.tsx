@@ -1,30 +1,40 @@
 import React from 'react';
+import { SystemRoles } from 'librechat-data-provider';
 import { render, screen } from '@testing-library/react';
+import type { UseMutationResult } from '@tanstack/react-query';
 import '@testing-library/jest-dom/extend-expect';
+import type { Agent, AgentCreateParams, TUser } from 'librechat-data-provider';
 import AgentFooter from '../AgentFooter';
 import { Panel } from '~/common';
-import type { Agent, AgentCreateParams, TUser } from 'librechat-data-provider';
-import { SystemRoles } from 'librechat-data-provider';
-import * as reactHookForm from 'react-hook-form';
-import * as hooks from '~/hooks';
-import type { UseMutationResult } from '@tanstack/react-query';
+
+const mockUseWatch = jest.fn();
+const mockUseAuthContext = jest.fn();
+const mockUseHasAccess = jest.fn();
+const mockUseResourcePermissions = jest.fn();
 
 jest.mock('react-hook-form', () => ({
   useFormContext: () => ({
     control: {},
   }),
-  useWatch: () => {
-    return {
-      agent: {
-        name: 'Test Agent',
-        author: 'user-123',
-        projectIds: ['project-1'],
-        isCollaborative: false,
-      },
-      id: 'agent-123',
-    };
-  },
+  useWatch: (params) => mockUseWatch(params),
 }));
+
+// Default mock implementations
+mockUseWatch.mockImplementation(({ name }) => {
+  if (name === 'agent') {
+    return {
+      _id: 'agent-db-123',
+      name: 'Test Agent',
+      author: 'user-123',
+      projectIds: ['project-1'],
+      isCollaborative: false,
+    };
+  }
+  if (name === 'id') {
+    return 'agent-123';
+  }
+  return undefined;
+});
 
 const mockUser = {
   id: 'user-123',
@@ -39,6 +49,26 @@ const mockUser = {
   updatedAt: '2023-01-01T00:00:00.000Z',
 } as TUser;
 
+// Default auth context
+mockUseAuthContext.mockReturnValue({
+  user: mockUser,
+  token: 'mock-token',
+  isAuthenticated: true,
+  error: undefined,
+  login: jest.fn(),
+  logout: jest.fn(),
+  setError: jest.fn(),
+  roles: {},
+});
+
+// Default access and permissions
+mockUseHasAccess.mockReturnValue(true);
+mockUseResourcePermissions.mockReturnValue({
+  hasPermission: () => true,
+  isLoading: false,
+  permissionBits: 0,
+});
+
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key) => {
     const translations = {
@@ -47,17 +77,9 @@ jest.mock('~/hooks', () => ({
     };
     return translations[key] || key;
   },
-  useAuthContext: () => ({
-    user: mockUser,
-    token: 'mock-token',
-    isAuthenticated: true,
-    error: undefined,
-    login: jest.fn(),
-    logout: jest.fn(),
-    setError: jest.fn(),
-    roles: {},
-  }),
-  useHasAccess: () => true,
+  useAuthContext: () => mockUseAuthContext(),
+  useHasAccess: () => mockUseHasAccess(),
+  useResourcePermissions: () => mockUseResourcePermissions(),
 }));
 
 const createBaseMutation = <T = Agent, P = any>(
@@ -126,9 +148,9 @@ jest.mock('../DeleteButton', () => ({
   default: jest.fn(() => <div data-testid="delete-button" />),
 }));
 
-jest.mock('../ShareAgent', () => ({
+jest.mock('../Sharing/GrantAccessDialog', () => ({
   __esModule: true,
-  default: jest.fn(() => <div data-testid="share-agent" />),
+  default: jest.fn(() => <div data-testid="grant-access-dialog" />),
 }));
 
 jest.mock('../DuplicateAgent', () => ({
@@ -186,6 +208,40 @@ describe('AgentFooter', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    // Reset to default mock implementations
+    mockUseWatch.mockImplementation(({ name }) => {
+      if (name === 'agent') {
+        return {
+          _id: 'agent-db-123',
+          name: 'Test Agent',
+          author: 'user-123',
+          projectIds: ['project-1'],
+          isCollaborative: false,
+        };
+      }
+      if (name === 'id') {
+        return 'agent-123';
+      }
+      return undefined;
+    });
+    // Reset auth context to default user
+    mockUseAuthContext.mockReturnValue({
+      user: mockUser,
+      token: 'mock-token',
+      isAuthenticated: true,
+      error: undefined,
+      login: jest.fn(),
+      logout: jest.fn(),
+      setError: jest.fn(),
+      roles: {},
+    });
+    // Reset access and permissions to defaults
+    mockUseHasAccess.mockReturnValue(true);
+    mockUseResourcePermissions.mockReturnValue({
+      hasPermission: () => true,
+      isLoading: false,
+      permissionBits: 0,
+    });
   });
 
   describe('Main Functionality', () => {
@@ -196,8 +252,8 @@ describe('AgentFooter', () => {
       expect(screen.getByTestId('version-button')).toBeInTheDocument();
       expect(screen.getByTestId('delete-button')).toBeInTheDocument();
       expect(screen.queryByTestId('admin-settings')).not.toBeInTheDocument();
-      expect(screen.queryByTestId('share-agent')).not.toBeInTheDocument();
-      expect(screen.queryByTestId('duplicate-agent')).not.toBeInTheDocument();
+      expect(screen.getByTestId('grant-access-dialog')).toBeInTheDocument();
+      expect(screen.getByTestId('duplicate-agent')).toBeInTheDocument();
       expect(document.querySelector('.spinner')).not.toBeInTheDocument();
     });
 
@@ -227,42 +283,125 @@ describe('AgentFooter', () => {
     });
 
     test('adjusts UI based on agent ID existence', () => {
-      jest.spyOn(reactHookForm, 'useWatch').mockImplementation(() => ({
-        agent: { name: 'Test Agent', author: 'user-123' },
-        id: undefined,
-      }));
+      mockUseWatch.mockImplementation(({ name }) => {
+        if (name === 'agent') {
+          return null; // No agent means no delete/share/duplicate buttons
+        }
+        if (name === 'id') {
+          return undefined; // No ID means create mode
+        }
+        return undefined;
+      });
+
+      // When there's no agent, permissions should also return false
+      mockUseResourcePermissions.mockReturnValue({
+        hasPermission: () => false,
+        isLoading: false,
+        permissionBits: 0,
+      });
 
       render(<AgentFooter {...defaultProps} />);
-      expect(screen.getByText('Save')).toBeInTheDocument();
-      expect(screen.getByTestId('version-button')).toBeInTheDocument();
-    });
-
-    test('adjusts UI based on user role', () => {
-      jest.spyOn(hooks, 'useAuthContext').mockReturnValue(createAuthContext(mockUsers.admin));
-      render(<AgentFooter {...defaultProps} />);
-      expect(screen.queryByTestId('admin-settings')).not.toBeInTheDocument();
-      expect(screen.queryByTestId('share-agent')).not.toBeInTheDocument();
-
-      jest.clearAllMocks();
-      jest.spyOn(hooks, 'useAuthContext').mockReturnValue(createAuthContext(mockUsers.different));
-      render(<AgentFooter {...defaultProps} />);
-      expect(screen.queryByTestId('share-agent')).not.toBeInTheDocument();
+      expect(screen.getByText('Create')).toBeInTheDocument();
+      expect(screen.queryByTestId('version-button')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('delete-button')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('grant-access-dialog')).not.toBeInTheDocument();
       expect(screen.queryByTestId('duplicate-agent')).not.toBeInTheDocument();
     });
 
-    test('adjusts UI based on permissions', () => {
-      jest.spyOn(hooks, 'useHasAccess').mockReturnValue(false);
+    test('adjusts UI based on user role', () => {
+      mockUseAuthContext.mockReturnValue(createAuthContext(mockUsers.admin));
+      const { unmount } = render(<AgentFooter {...defaultProps} />);
+      expect(screen.getByTestId('admin-settings')).toBeInTheDocument();
+      expect(screen.getByTestId('grant-access-dialog')).toBeInTheDocument();
+
+      // Clean up the first render
+      unmount();
+
+      jest.clearAllMocks();
+      mockUseAuthContext.mockReturnValue(createAuthContext(mockUsers.different));
+      mockUseWatch.mockImplementation(({ name }) => {
+        if (name === 'agent') {
+          return { name: 'Test Agent', author: 'different-author', _id: 'agent-123' };
+        }
+        if (name === 'id') {
+          return 'agent-123';
+        }
+        return undefined;
+      });
       render(<AgentFooter {...defaultProps} />);
-      expect(screen.queryByTestId('share-agent')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('grant-access-dialog')).toBeInTheDocument(); // Still shows because hasAccess is true
+      expect(screen.queryByTestId('duplicate-agent')).not.toBeInTheDocument(); // Should not show for different author
+    });
+
+    test('adjusts UI based on permissions', () => {
+      mockUseHasAccess.mockReturnValue(false);
+      // Also need to ensure the agent is not owned by the user and user is not admin
+      mockUseWatch.mockImplementation(({ name }) => {
+        if (name === 'agent') {
+          return {
+            _id: 'agent-db-123',
+            name: 'Test Agent',
+            author: 'different-user', // Different author
+            projectIds: ['project-1'],
+            isCollaborative: false,
+          };
+        }
+        if (name === 'id') {
+          return 'agent-123';
+        }
+        return undefined;
+      });
+      // Mock permissions to not allow sharing
+      mockUseResourcePermissions.mockReturnValue({
+        hasPermission: () => false, // No permissions
+        isLoading: false,
+        permissionBits: 0,
+      });
+      render(<AgentFooter {...defaultProps} />);
+      expect(screen.queryByTestId('grant-access-dialog')).not.toBeInTheDocument();
+    });
+
+    test('hides action buttons when permissions are loading', () => {
+      // Ensure we have an agent that would normally show buttons
+      mockUseWatch.mockImplementation(({ name }) => {
+        if (name === 'agent') {
+          return {
+            _id: 'agent-db-123',
+            name: 'Test Agent',
+            author: 'user-123', // Same as current user
+            projectIds: ['project-1'],
+            isCollaborative: false,
+          };
+        }
+        if (name === 'id') {
+          return 'agent-123';
+        }
+        return undefined;
+      });
+      mockUseResourcePermissions.mockReturnValue({
+        hasPermission: () => true,
+        isLoading: true, // This should hide the buttons
+        permissionBits: 0,
+      });
+      render(<AgentFooter {...defaultProps} />);
+      expect(screen.queryByTestId('delete-button')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('grant-access-dialog')).not.toBeInTheDocument();
+      // Duplicate button should still show as it doesn't depend on permissions loading
+      expect(screen.getByTestId('duplicate-agent')).toBeInTheDocument();
     });
   });
 
   describe('Edge Cases', () => {
     test('handles null agent data', () => {
-      jest.spyOn(reactHookForm, 'useWatch').mockImplementation(() => ({
-        agent: null,
-        id: 'agent-123',
-      }));
+      mockUseWatch.mockImplementation(({ name }) => {
+        if (name === 'agent') {
+          return null;
+        }
+        if (name === 'id') {
+          return 'agent-123';
+        }
+        return undefined;
+      });
 
       render(<AgentFooter {...defaultProps} />);
       expect(screen.getByText('Save')).toBeInTheDocument();
