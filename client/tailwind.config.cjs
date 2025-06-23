@@ -19,7 +19,7 @@ module.exports = {
         authPageWidth: '370px',
       },
       backgroundImage: {
-        'auth-background': "url('/assets/nna_login.png')",
+        'auth-background': "url('/assets/bg_login.jpg')",
       },
       keyframes: {
         'accordion-down': {
