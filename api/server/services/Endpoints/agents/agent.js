@@ -11,29 +11,12 @@ const {
   replaceSpecialVars,
   providerEndpointMap,
 } = require('librechat-data-provider');
-const initAnthropic = require('~/server/services/Endpoints/anthropic/initialize');
-const getBedrockOptions = require('~/server/services/Endpoints/bedrock/options');
-const initOpenAI = require('~/server/services/Endpoints/openAI/initialize');
-const initCustom = require('~/server/services/Endpoints/custom/initialize');
-const initGoogle = require('~/server/services/Endpoints/google/initialize');
+const { getProviderConfig } = require('~/server/services/Endpoints');
 const generateArtifactsPrompt = require('~/app/clients/prompts/artifacts');
-const { getCustomEndpointConfig } = require('~/server/services/Config');
 const { processFiles } = require('~/server/services/Files/process');
 const { getFiles, getToolFilesByIds } = require('~/models/File');
 const { getConvoFiles } = require('~/models/Conversation');
 const { getModelMaxTokens } = require('~/utils');
-
-const providerConfigMap = {
-  [Providers.XAI]: initCustom,
-  [Providers.OLLAMA]: initCustom,
-  [Providers.DEEPSEEK]: initCustom,
-  [Providers.OPENROUTER]: initCustom,
-  [EModelEndpoint.openAI]: initOpenAI,
-  [EModelEndpoint.google]: initGoogle,
-  [EModelEndpoint.azureOpenAI]: initOpenAI,
-  [EModelEndpoint.anthropic]: initAnthropic,
-  [EModelEndpoint.bedrock]: getBedrockOptions,
-};
 
 /**
  * @param {object} params
@@ -114,17 +97,9 @@ const initializeAgent = async ({
     })) ?? {};
 
   agent.endpoint = provider;
-  let getOptions = providerConfigMap[provider];
-  if (!getOptions && providerConfigMap[provider.toLowerCase()] != null) {
-    agent.provider = provider.toLowerCase();
-    getOptions = providerConfigMap[agent.provider];
-  } else if (!getOptions) {
-    const customEndpointConfig = await getCustomEndpointConfig(provider);
-    if (!customEndpointConfig) {
-      throw new Error(`Provider ${provider} not supported`);
-    }
-    getOptions = initCustom;
-    agent.provider = Providers.OPENAI;
+  const { getOptions, overrideProvider } = await getProviderConfig(provider);
+  if (overrideProvider) {
+    agent.provider = overrideProvider;
   }
 
   const _endpointOption =
