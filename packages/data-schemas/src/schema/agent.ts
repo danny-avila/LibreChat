@@ -102,7 +102,6 @@ const agentSchema = new Schema<IAgent>(
       type: {
         name: {
           type: String,
-          minlength: [3, 'Support contact name must be at least 3 characters.'],
           trim: true,
         },
         email: {
