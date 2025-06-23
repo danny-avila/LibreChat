@@ -2,17 +2,17 @@ import React, { useState, useEffect } from 'react';
 import { Outlet } from 'react-router-dom';
 import type { ContextType } from '~/common';
 import {
-  useAuthContext,
+  useSearchEnabled,
   useAssistantsMap,
+  useAuthContext,
   useAgentsMap,
   useFileMap,
-  useSearchEnabled,
 } from '~/hooks';
 import {
-  AgentsMapContext,
   AssistantsMapContext,
-  FileMapContext,
+  AgentsMapContext,
   SetConvoProvider,
+  FileMapContext,
 } from '~/Providers';
 import { useUserTermsQuery, useGetStartupConfig } from '~/data-provider';
 import { TermsAndConditionsModal } from '~/components/ui';

@@ -63,8 +63,7 @@ export const processAgentOption = ({
   fileMap?: Record<string, TFile | undefined>;
   instanceProjectId?: string;
 }): TAgentOption => {
-  const isGlobal =
-    (instanceProjectId != null && _agent?.projectIds?.includes(instanceProjectId)) ?? false;
+  const isGlobal = _agent?.isPublic ?? false;
   const agent: TAgentOption = {
     ...(_agent ?? ({} as Agent)),
     label: _agent?.name ?? '',

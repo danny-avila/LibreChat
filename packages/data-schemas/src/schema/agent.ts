@@ -98,4 +98,6 @@ const agentSchema = new Schema<IAgent>(
   },
 );
 
+agentSchema.index({ updatedAt: -1, _id: 1 });
+
 export default agentSchema;

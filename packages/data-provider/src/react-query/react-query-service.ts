@@ -9,9 +9,13 @@ import { defaultOrderQuery } from '../types/assistants';
 import { MCPServerConnectionStatusResponse } from '../types/queries';
 import * as dataService from '../data-service';
 import * as m from '../types/mutations';
+import * as q from '../types/queries';
 import { QueryKeys } from '../keys';
 import * as s from '../schemas';
 import * as t from '../types';
+import * as permissions from '../accessPermissions';
+
+export { hasPermissions } from '../accessPermissions';
 
 export const useGetSharedMessages = (
   shareId: string,
@@ -380,6 +384,106 @@ export const useUpdateFeedbackMutation = (
       },
     },
   );
+};
+
+export const useSearchPrincipalsQuery = (
+  params: q.PrincipalSearchParams,
+  config?: UseQueryOptions<q.PrincipalSearchResponse>,
+): QueryObserverResult<q.PrincipalSearchResponse> => {
+  return useQuery<q.PrincipalSearchResponse>(
+    [QueryKeys.principalSearch, params],
+    () => dataService.searchPrincipals(params),
+    {
+      enabled: !!params.q && params.q.length >= 2,
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      staleTime: 30000,
+      ...config,
+    },
+  );
+};
+
+export const useGetAccessRolesQuery = (
+  resourceType: string,
+  config?: UseQueryOptions<q.AccessRolesResponse>,
+): QueryObserverResult<q.AccessRolesResponse> => {
+  return useQuery<q.AccessRolesResponse>(
+    [QueryKeys.accessRoles, resourceType],
+    () => dataService.getAccessRoles(resourceType),
+    {
+      enabled: !!resourceType,
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+      ...config,
+    },
+  );
+};
+
+export const useGetResourcePermissionsQuery = (
+  resourceType: string,
+  resourceId: string,
+  config?: UseQueryOptions<permissions.TGetResourcePermissionsResponse>,
+): QueryObserverResult<permissions.TGetResourcePermissionsResponse> => {
+  return useQuery<permissions.TGetResourcePermissionsResponse>(
+    [QueryKeys.resourcePermissions, resourceType, resourceId],
+    () => dataService.getResourcePermissions(resourceType, resourceId),
+    {
+      enabled: !!resourceType && !!resourceId,
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      staleTime: 2 * 60 * 1000, // Cache for 2 minutes
+      ...config,
+    },
+  );
+};
+
+export const useUpdateResourcePermissionsMutation = (): UseMutationResult<
+  permissions.TUpdateResourcePermissionsResponse,
+  Error,
+  {
+    resourceType: string;
+    resourceId: string;
+    data: permissions.TUpdateResourcePermissionsRequest;
+  }
+> => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ resourceType, resourceId, data }) =>
+      dataService.updateResourcePermissions(resourceType, resourceId, data),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: [QueryKeys.accessRoles, variables.resourceType],
+      });
+
+      queryClient.invalidateQueries({
+        queryKey: [QueryKeys.resourcePermissions, variables.resourceType, variables.resourceId],
+      });
+
+      queryClient.invalidateQueries({
+        queryKey: [QueryKeys.effectivePermissions, variables.resourceType, variables.resourceId],
+      });
+    },
+  });
+};
+
+export const useGetEffectivePermissionsQuery = (
+  resourceType: string,
+  resourceId: string,
+  config?: UseQueryOptions<permissions.TEffectivePermissionsResponse>,
+): QueryObserverResult<permissions.TEffectivePermissionsResponse> => {
+  return useQuery<permissions.TEffectivePermissionsResponse>({
+    queryKey: [QueryKeys.effectivePermissions, resourceType, resourceId],
+    queryFn: () => dataService.getEffectivePermissions(resourceType, resourceId),
+    enabled: !!resourceType && !!resourceId,
+    refetchOnWindowFocus: false,
+    staleTime: 30000,
+    ...config,
+  });
 };
 
 export const useMCPServerConnectionStatusQuery = (
