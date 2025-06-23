@@ -2,7 +2,7 @@ import React, { useRef, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import type t from 'librechat-data-provider';
-
+import { AgentListResponse, PERMISSION_BITS, QueryKeys } from 'librechat-data-provider';
 interface SupportContact {
   name?: string;
   email?: string;
@@ -14,17 +14,10 @@ interface AgentWithSupport extends t.Agent {
 
 import useLocalize from '~/hooks/useLocalize';
 import { useToast } from '~/hooks';
-import {
-  Dialog,
-  DialogContent,
-  Button,
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '~/components/ui';
+import { Dialog, DialogContent, Button } from '~/components/ui';
 import { DotsIcon } from '~/components/svg';
 import { renderAgentAvatar } from '~/utils/agents';
+import { Query, useQueryClient } from '@tanstack/react-query';
 
 interface AgentDetailProps {
   agent: AgentWithSupport; // The agent data to display
@@ -42,7 +35,7 @@ const AgentDetail: React.FC<AgentDetailProps> = ({ agent, isOpen, onClose }) => 
   const dialogRef = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const [dropdownOpen, setDropdownOpen] = useState(false);
-
+  const queryClient = useQueryClient();
   // Close dropdown when clicking outside the dropdown menu
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -66,6 +59,14 @@ const AgentDetail: React.FC<AgentDetailProps> = ({ agent, isOpen, onClose }) => 
    */
   const handleStartChat = () => {
     if (agent) {
+      const keys = [QueryKeys.agents, { requiredPermission: PERMISSION_BITS.EDIT }];
+      const listResp = queryClient.getQueryData<AgentListResponse>(keys);
+      if (listResp != null) {
+        if (!listResp.data.some((a) => a.id === agent.id)) {
+          const currentAgents = [agent, ...JSON.parse(JSON.stringify(listResp.data))];
+          queryClient.setQueryData<AgentListResponse>(keys, { ...listResp, data: currentAgents });
+        }
+      }
       navigate(`/c/new?agent_id=${agent.id}`);
     }
   };
