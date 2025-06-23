@@ -433,7 +433,7 @@ const getListAgentsHandler = async (req, res) => {
     });
     const publiclyAccessibleIds = await findPubliclyAccessibleResources({
       resourceType: 'agent',
-      requiredPermissions: requiredPermission,
+      requiredPermissions: PermissionBits.VIEW,
     });
     // Use the new ACL-aware function
     const data = await getListAgentsByAccess({
