@@ -2,6 +2,7 @@ import type { AxiosResponse } from 'axios';
 import type * as t from './types';
 import * as endpoints from './api-endpoints';
 import * as a from './types/assistants';
+import * as ag from './types/agents';
 import * as m from './types/mutations';
 import * as q from './types/queries';
 import * as f from './types/files';
@@ -150,7 +151,11 @@ export const updateUserPlugins = (payload: t.TUpdateUserPlugins) => {
 
 /* Config */
 
-export const getStartupConfig = (): Promise<config.TStartupConfig> => {
+export const getStartupConfig = (): Promise<
+  config.TStartupConfig & {
+    mcpCustomUserVars?: Record<string, { title: string; description: string }>;
+  }
+> => {
   return request.get(endpoints.config());
 };
 
@@ -351,7 +356,7 @@ export const updateAction = (data: m.UpdateActionVariables): Promise<m.UpdateAct
   );
 };
 
-export function getActions(): Promise<a.Action[]> {
+export function getActions(): Promise<ag.Action[]> {
   return request.get(
     endpoints.agents({
       path: 'actions',
@@ -407,7 +412,7 @@ export const updateAgent = ({
 
 export const duplicateAgent = ({
   agent_id,
-}: m.DuplicateAgentBody): Promise<{ agent: a.Agent; actions: a.Action[] }> => {
+}: m.DuplicateAgentBody): Promise<{ agent: a.Agent; actions: ag.Action[] }> => {
   return request.post(
     endpoints.agents({
       path: `${agent_id}/duplicate`,
@@ -733,6 +738,12 @@ export function updateAgentPermissions(
   return request.put(endpoints.updateAgentPermissions(variables.roleName), variables.updates);
 }
 
+export function updateMemoryPermissions(
+  variables: m.UpdateMemoryPermVars,
+): Promise<m.UpdatePermResponse> {
+  return request.put(endpoints.updateMemoryPermissions(variables.roleName), variables.updates);
+}
+
 /* Tags */
 export function getConversationTags(): Promise<t.TConversationTagsResponse> {
   return request.get(endpoints.conversationTags());
@@ -814,3 +825,33 @@ export function verifyTwoFactorTemp(
 ): Promise<t.TVerify2FATempResponse> {
   return request.post(endpoints.verifyTwoFactorTemp(), payload);
 }
+
+/* Memories */
+export const getMemories = (): Promise<q.MemoriesResponse> => {
+  return request.get(endpoints.memories());
+};
+
+export const deleteMemory = (key: string): Promise<void> => {
+  return request.delete(endpoints.memory(key));
+};
+
+export const updateMemory = (
+  key: string,
+  value: string,
+  originalKey?: string,
+): Promise<q.TUserMemory> => {
+  return request.patch(endpoints.memory(originalKey || key), { key, value });
+};
+
+export const updateMemoryPreferences = (preferences: {
+  memories: boolean;
+}): Promise<{ updated: boolean; preferences: { memories: boolean } }> => {
+  return request.patch(endpoints.memoryPreferences(), preferences);
+};
+
+export const createMemory = (data: {
+  key: string;
+  value: string;
+}): Promise<{ created: boolean; memory: q.TUserMemory }> => {
+  return request.post(endpoints.memories(), data);
+};

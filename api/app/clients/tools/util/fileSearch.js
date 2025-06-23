@@ -135,7 +135,7 @@ const createFileSearchTool = async ({ req, files, entity_id }) => {
         query: z
           .string()
           .describe(
-            'A natural language query to search for relevant information in the files. Be specific and use keywords related to the information you\'re looking for. The query will be used for semantic similarity matching against the file contents.',
+            "A natural language query to search for relevant information in the files. Be specific and use keywords related to the information you're looking for. The query will be used for semantic similarity matching against the file contents.",
           ),
       }),
     },

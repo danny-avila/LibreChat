@@ -1,5 +1,7 @@
 const bcrypt = require('bcryptjs');
 const { webcrypto } = require('node:crypto');
+const { isEnabled } = require('@librechat/api');
+const { logger } = require('@librechat/data-schemas');
 const { SystemRoles, errorsToString } = require('librechat-data-provider');
 const {
   findUser,
@@ -17,11 +19,10 @@ const {
   deleteUserById,
   generateRefreshToken,
 } = require('~/models');
-const { isEnabled, checkEmailConfig, sendEmail } = require('~/server/utils');
 const { isEmailDomainAllowed } = require('~/server/services/domains');
+const { checkEmailConfig, sendEmail } = require('~/server/utils');
 const { getBalanceConfig } = require('~/server/services/Config');
 const { registerSchema } = require('~/strategies/validators');
-const { logger } = require('~/config');
 
 const domains = {
   client: process.env.DOMAIN_CLIENT,
@@ -409,7 +410,9 @@ const setOpenIDAuthTokens = (tokenset, res) => {
       return;
     }
     const { REFRESH_TOKEN_EXPIRY } = process.env ?? {};
-    const expiryInMilliseconds = eval(REFRESH_TOKEN_EXPIRY) ?? 1000 * 60 * 60 * 24 * 7; // 7 days default
+    const expiryInMilliseconds = REFRESH_TOKEN_EXPIRY
+      ? eval(REFRESH_TOKEN_EXPIRY)
+      : 1000 * 60 * 60 * 24 * 7; // 7 days default
     const expirationDate = new Date(Date.now() + expiryInMilliseconds);
     if (tokenset == null) {
       logger.error('[setOpenIDAuthTokens] No tokenset found in request');

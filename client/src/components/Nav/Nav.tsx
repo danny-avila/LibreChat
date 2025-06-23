@@ -30,7 +30,7 @@ const NavMask = memo(
       id="mobile-nav-mask-toggle"
       role="button"
       tabIndex={0}
-      className={`nav-mask transition-opacity duration-500 ease-in-out ${navVisible ? 'active opacity-100' : 'opacity-0'}`}
+      className={`nav-mask transition-opacity duration-200 ease-in-out ${navVisible ? 'active opacity-100' : 'opacity-0'}`}
       onClick={toggleNavVisible}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
@@ -186,7 +186,7 @@ const Nav = memo(
         <div
           data-testid="nav"
           className={cn(
-            'nav active max-w-[320px] flex-shrink-0 transform overflow-x-hidden bg-surface-primary-alt transition-all duration-500 ease-in-out',
+            'nav active max-w-[320px] flex-shrink-0 transform overflow-x-hidden bg-surface-primary-alt transition-all duration-200 ease-in-out',
             'md:max-w-[260px]',
           )}
           style={{
@@ -197,7 +197,7 @@ const Nav = memo(
           <div className="h-full w-[320px] md:w-[260px]">
             <div className="flex h-full flex-col">
               <div
-                className={`flex h-full flex-col transition-opacity duration-500 ease-in-out ${navVisible ? 'opacity-100' : 'opacity-0'}`}
+                className={`flex h-full flex-col transition-opacity duration-200 ease-in-out ${navVisible ? 'opacity-100' : 'opacity-0'}`}
               >
                 <div className="flex h-full flex-col">
                   <nav

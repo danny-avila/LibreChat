@@ -35,6 +35,9 @@ export interface IUser extends Document {
     promptGroupId: Types.ObjectId;
     order: number;
   }>;
+  personalization?: {
+    memories?: boolean;
+  };
   createdAt?: Date;
   updatedAt?: Date;
 }

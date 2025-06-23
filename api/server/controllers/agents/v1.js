@@ -1,9 +1,9 @@
 const fs = require('fs').promises;
 const { nanoid } = require('nanoid');
+const { logger } = require('@librechat/data-schemas');
 const {
   Tools,
   Constants,
-  FileContext,
   FileSources,
   SystemRoles,
   EToolResources,
@@ -16,16 +16,16 @@ const {
   deleteAgent,
   getListAgents,
 } = require('~/models/Agent');
-const { uploadImageBuffer, filterFile } = require('~/server/services/Files/process');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { resizeAvatar } = require('~/server/services/Files/images/avatar');
 const { refreshS3Url } = require('~/server/services/Files/S3/crud');
+const { filterFile } = require('~/server/services/Files/process');
 const { updateAction, getActions } = require('~/models/Action');
+const { getCachedTools } = require('~/server/services/Config');
 const { updateAgentProjects } = require('~/models/Agent');
 const { getProjectByName } = require('~/models/Project');
-const { deleteFileByFilter } = require('~/models/File');
 const { revertAgentVersion } = require('~/models/Agent');
-const { logger } = require('~/config');
+const { deleteFileByFilter } = require('~/models/File');
 
 const systemTools = {
   [Tools.execute_code]: true,
@@ -47,8 +47,9 @@ const createAgentHandler = async (req, res) => {
 
     agentData.tools = [];
 
+    const availableTools = await getCachedTools({ includeGlobal: true });
     for (const tool of tools) {
-      if (req.app.locals.availableTools[tool]) {
+      if (availableTools[tool]) {
         agentData.tools.push(tool);
       }
 
@@ -169,12 +170,18 @@ const updateAgentHandler = async (req, res) => {
       });
     }
 
+    /** @type {boolean} */
+    const isProjectUpdate = (projectIds?.length ?? 0) > 0 || (removeProjectIds?.length ?? 0) > 0;
+
     let updatedAgent =
       Object.keys(updateData).length > 0
-        ? await updateAgent({ id }, updateData, { updatingUserId: req.user.id })
+        ? await updateAgent({ id }, updateData, {
+            updatingUserId: req.user.id,
+            skipVersioning: isProjectUpdate,
+          })
         : existingAgent;
 
-    if (projectIds || removeProjectIds) {
+    if (isProjectUpdate) {
       updatedAgent = await updateAgentProjects({
         user: req.user,
         agentId: id,
@@ -387,6 +394,7 @@ const uploadAgentAvatarHandler = async (req, res) => {
       buffer: resizedBuffer,
       userId: req.user.id,
       manual: 'false',
+      agentId: agent_id,
     });
 
     const image = {
@@ -438,7 +446,7 @@ const uploadAgentAvatarHandler = async (req, res) => {
     try {
       await fs.unlink(req.file.path);
       logger.debug('[/:agent_id/avatar] Temp. image upload file deleted');
-    } catch (error) {
+    } catch {
       logger.debug('[/:agent_id/avatar] Temp. image upload file already deleted');
     }
   }

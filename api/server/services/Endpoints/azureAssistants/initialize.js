@@ -1,5 +1,6 @@
 const OpenAI = require('openai');
 const { HttpsProxyAgent } = require('https-proxy-agent');
+const { constructAzureURL, isUserProvided } = require('@librechat/api');
 const {
   ErrorTypes,
   EModelEndpoint,
@@ -12,8 +13,6 @@ const {
   checkUserKeyExpiry,
 } = require('~/server/services/UserService');
 const OpenAIClient = require('~/app/clients/OpenAIClient');
-const { isUserProvided } = require('~/server/utils');
-const { constructAzureURL } = require('~/utils');
 
 class Files {
   constructor(client) {

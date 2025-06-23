@@ -43,7 +43,7 @@ function PanelNavigation({
           {localize('com_ui_next')}
         </Button>
       </div>
-    </div>
+    </>
   );
 }
 

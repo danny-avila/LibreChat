@@ -55,13 +55,18 @@ jest.mock('~/hooks', () => ({
   useToast: jest.fn(() => ({ showToast: jest.fn() })),
 }));
 
+// Mock the AgentPanelContext
+jest.mock('~/Providers/AgentPanelContext', () => ({
+  ...jest.requireActual('~/Providers/AgentPanelContext'),
+  useAgentPanelContext: jest.fn(),
+}));
+
 describe('VersionPanel', () => {
   const mockSetActivePanel = jest.fn();
-  const defaultProps = {
-    agentsConfig: null,
-    setActivePanel: mockSetActivePanel,
-    selectedAgentId: 'agent-123',
-  };
+  const mockUseAgentPanelContext = jest.requireMock(
+    '~/Providers/AgentPanelContext',
+  ).useAgentPanelContext;
+
   const mockUseGetAgentByIdQuery = jest.requireMock('~/data-provider').useGetAgentByIdQuery;
 
   beforeEach(() => {
@@ -72,10 +77,17 @@ describe('VersionPanel', () => {
       error: null,
       refetch: jest.fn(),
     });
+
+    // Set up the default context mock
+    mockUseAgentPanelContext.mockReturnValue({
+      setActivePanel: mockSetActivePanel,
+      agent_id: 'agent-123',
+      activePanel: Panel.version,
+    });
   });
 
   test('renders panel UI and handles navigation', () => {
-    render(<VersionPanel {...defaultProps} />);
+    render(<VersionPanel />);
     expect(screen.getByText('com_ui_agent_version_history')).toBeInTheDocument();
     expect(screen.getByTestId('version-content')).toBeInTheDocument();
 
@@ -84,7 +96,7 @@ describe('VersionPanel', () => {
   });
 
   test('VersionContent receives correct props', () => {
-    render(<VersionPanel {...defaultProps} />);
+    render(<VersionPanel />);
     expect(VersionContent).toHaveBeenCalledWith(
       expect.objectContaining({
         selectedAgentId: 'agent-123',
@@ -101,19 +113,31 @@ describe('VersionPanel', () => {
   });
 
   test('handles data state variations', () => {
-    render(<VersionPanel {...defaultProps} selectedAgentId="" />);
+    // Test with empty agent_id
+    mockUseAgentPanelContext.mockReturnValueOnce({
+      setActivePanel: mockSetActivePanel,
+      agent_id: '',
+      activePanel: Panel.version,
+    });
+    render(<VersionPanel />);
     expect(VersionContent).toHaveBeenCalledWith(
       expect.objectContaining({ selectedAgentId: '' }),
       expect.anything(),
     );
 
+    // Test with null data
     mockUseGetAgentByIdQuery.mockReturnValueOnce({
       data: null,
       isLoading: false,
       error: null,
       refetch: jest.fn(),
     });
-    render(<VersionPanel {...defaultProps} />);
+    mockUseAgentPanelContext.mockReturnValueOnce({
+      setActivePanel: mockSetActivePanel,
+      agent_id: 'agent-123',
+      activePanel: Panel.version,
+    });
+    render(<VersionPanel />);
     expect(VersionContent).toHaveBeenCalledWith(
       expect.objectContaining({
         versionContext: expect.objectContaining({
@@ -125,13 +149,14 @@ describe('VersionPanel', () => {
       expect.anything(),
     );
 
+    // 3. versions is undefined
     mockUseGetAgentByIdQuery.mockReturnValueOnce({
       data: { ...mockAgentData, versions: undefined },
       isLoading: false,
       error: null,
       refetch: jest.fn(),
     });
-    render(<VersionPanel {...defaultProps} />);
+    render(<VersionPanel />);
     expect(VersionContent).toHaveBeenCalledWith(
       expect.objectContaining({
         versionContext: expect.objectContaining({ versions: [] }),
@@ -139,18 +164,20 @@ describe('VersionPanel', () => {
       expect.anything(),
     );
 
+    // 4. loading state
     mockUseGetAgentByIdQuery.mockReturnValueOnce({
       data: null,
       isLoading: true,
       error: null,
       refetch: jest.fn(),
     });
-    render(<VersionPanel {...defaultProps} />);
+    render(<VersionPanel />);
     expect(VersionContent).toHaveBeenCalledWith(
       expect.objectContaining({ isLoading: true }),
       expect.anything(),
     );
 
+    // 5. error state
     const testError = new Error('Test error');
     mockUseGetAgentByIdQuery.mockReturnValueOnce({
       data: null,
@@ -158,7 +185,7 @@ describe('VersionPanel', () => {
       error: testError,
       refetch: jest.fn(),
     });
-    render(<VersionPanel {...defaultProps} />);
+    render(<VersionPanel />);
     expect(VersionContent).toHaveBeenCalledWith(
       expect.objectContaining({ error: testError }),
       expect.anything(),
@@ -173,7 +200,7 @@ describe('VersionPanel', () => {
       refetch: jest.fn(),
     });
 
-    render(<VersionPanel {...defaultProps} />);
+    render(<VersionPanel />);
     expect(VersionContent).toHaveBeenCalledWith(
       expect.objectContaining({
         versionContext: expect.objectContaining({

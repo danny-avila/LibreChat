@@ -1,15 +1,17 @@
-const fs = require('fs');
-const path = require('path');
-const fetch = require('node-fetch');
-const { Strategy: SamlStrategy } = require('@node-saml/passport-saml');
-const { findUser, createUser, updateUser } = require('~/models');
-const { setupSaml, getCertificateContent } = require('./samlStrategy');
-
 // --- Mocks ---
+jest.mock('tiktoken');
 jest.mock('fs');
 jest.mock('path');
 jest.mock('node-fetch');
 jest.mock('@node-saml/passport-saml');
+jest.mock('@librechat/data-schemas', () => ({
+  logger: {
+    info: jest.fn(),
+    debug: jest.fn(),
+    error: jest.fn(),
+  },
+  hashToken: jest.fn().mockResolvedValue('hashed-token'),
+}));
 jest.mock('~/models', () => ({
   findUser: jest.fn(),
   createUser: jest.fn(),
@@ -29,25 +31,25 @@ jest.mock('~/server/services/Config', () => ({
 jest.mock('~/server/services/Config/EndpointService', () => ({
   config: {},
 }));
-jest.mock('~/server/utils', () => ({
-  isEnabled: jest.fn(() => false),
-  isUserProvided: jest.fn(() => false),
-}));
 jest.mock('~/server/services/Files/strategies', () => ({
   getStrategyFunctions: jest.fn(() => ({
     saveBuffer: jest.fn().mockResolvedValue('/fake/path/to/avatar.png'),
   })),
 }));
-jest.mock('~/server/utils/crypto', () => ({
-  hashToken: jest.fn().mockResolvedValue('hashed-token'),
+jest.mock('~/config/paths', () => ({
+  root: '/fake/root/path',
 }));
-jest.mock('~/config', () => ({
-  logger: {
-    info: jest.fn(),
-    debug: jest.fn(),
-    error: jest.fn(),
-  },
-}));
+
+const fs = require('fs');
+const path = require('path');
+const fetch = require('node-fetch');
+const { Strategy: SamlStrategy } = require('@node-saml/passport-saml');
+const { setupSaml, getCertificateContent } = require('./samlStrategy');
+
+// Configure fs mock
+jest.mocked(fs).existsSync = jest.fn();
+jest.mocked(fs).statSync = jest.fn();
+jest.mocked(fs).readFileSync = jest.fn();
 
 // To capture the verify callback from the strategy, we grab it from the mock constructor
 let verifyCallback;

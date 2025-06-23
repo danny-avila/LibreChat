@@ -244,21 +244,26 @@ export const defaultAgentCapabilities = [
   AgentCapabilities.ocr,
 ];
 
-export const agentsEndpointSChema = baseEndpointSchema.merge(
-  z.object({
-    /* agents specific */
-    recursionLimit: z.number().optional(),
-    disableBuilder: z.boolean().optional(),
-    maxRecursionLimit: z.number().optional(),
-    allowedProviders: z.array(z.union([z.string(), eModelEndpointSchema])).optional(),
-    capabilities: z
-      .array(z.nativeEnum(AgentCapabilities))
-      .optional()
-      .default(defaultAgentCapabilities),
-  }),
-);
+export const agentsEndpointSchema = baseEndpointSchema
+  .merge(
+    z.object({
+      /* agents specific */
+      recursionLimit: z.number().optional(),
+      disableBuilder: z.boolean().optional().default(false),
+      maxRecursionLimit: z.number().optional(),
+      allowedProviders: z.array(z.union([z.string(), eModelEndpointSchema])).optional(),
+      capabilities: z
+        .array(z.nativeEnum(AgentCapabilities))
+        .optional()
+        .default(defaultAgentCapabilities),
+    }),
+  )
+  .default({
+    disableBuilder: false,
+    capabilities: defaultAgentCapabilities,
+  });
 
-export type TAgentsEndpoint = z.infer<typeof agentsEndpointSChema>;
+export type TAgentsEndpoint = z.infer<typeof agentsEndpointSchema>;
 
 export const endpointSchema = baseEndpointSchema.merge(
   z.object({
@@ -493,6 +498,7 @@ export const intefaceSchema = z
     sidePanel: z.boolean().optional(),
     multiConvo: z.boolean().optional(),
     bookmarks: z.boolean().optional(),
+    memories: z.boolean().optional(),
     presets: z.boolean().optional(),
     prompts: z.boolean().optional(),
     agents: z.boolean().optional(),
@@ -508,6 +514,7 @@ export const intefaceSchema = z
     presets: true,
     multiConvo: true,
     bookmarks: true,
+    memories: true,
     prompts: true,
     agents: true,
     temporaryChat: true,
@@ -581,11 +588,24 @@ export type TStartupConfig = {
     scraperType?: ScraperTypes;
     rerankerType?: RerankerTypes;
   };
+  mcpServers?: Record<
+    string,
+    {
+      customUserVars: Record<
+        string,
+        {
+          title: string;
+          description: string;
+        }
+      >;
+    }
+  >;
 };
 
 export enum OCRStrategy {
   MISTRAL_OCR = 'mistral_ocr',
   CUSTOM_OCR = 'custom_ocr',
+  AZURE_MISTRAL_OCR = 'azure_mistral_ocr',
 }
 
 export enum SearchCategories {
@@ -649,11 +669,35 @@ export const balanceSchema = z.object({
   refillAmount: z.number().optional().default(10000),
 });
 
+export const memorySchema = z.object({
+  disabled: z.boolean().optional(),
+  validKeys: z.array(z.string()).optional(),
+  tokenLimit: z.number().optional(),
+  personalize: z.boolean().default(true),
+  messageWindowSize: z.number().optional().default(5),
+  agent: z
+    .union([
+      z.object({
+        id: z.string(),
+      }),
+      z.object({
+        provider: z.string(),
+        model: z.string(),
+        instructions: z.string().optional(),
+        model_parameters: z.record(z.any()).optional(),
+      }),
+    ])
+    .optional(),
+});
+
+export type TMemoryConfig = z.infer<typeof memorySchema>;
+
 export const configSchema = z.object({
   version: z.string(),
   cache: z.boolean().default(true),
   ocr: ocrSchema.optional(),
   webSearch: webSearchSchema.optional(),
+  memory: memorySchema.optional(),
   secureImageLinks: z.boolean().optional(),
   imageOutputType: z.nativeEnum(EImageOutputType).default(EImageOutputType.PNG),
   includedTools: z.array(z.string()).optional(),
@@ -694,7 +738,7 @@ export const configSchema = z.object({
       [EModelEndpoint.azureOpenAI]: azureEndpointSchema.optional(),
       [EModelEndpoint.azureAssistants]: assistantEndpointSchema.optional(),
       [EModelEndpoint.assistants]: assistantEndpointSchema.optional(),
-      [EModelEndpoint.agents]: agentsEndpointSChema.optional(),
+      [EModelEndpoint.agents]: agentsEndpointSchema.optional(),
       [EModelEndpoint.custom]: z.array(endpointSchema.partial()).optional(),
       [EModelEndpoint.bedrock]: baseEndpointSchema.optional(),
     })
@@ -853,7 +897,6 @@ export const defaultModels = {
   [EModelEndpoint.assistants]: [...sharedOpenAIModels, 'chatgpt-4o-latest'],
   [EModelEndpoint.agents]: sharedOpenAIModels, // TODO: Add agent models (agentsModels)
   [EModelEndpoint.google]: [
-    // Shared Google Models between Vertex AI & Gen AI
     // Gemini 2.0 Models
     'gemini-2.0-flash-001',
     'gemini-2.0-flash-exp',
@@ -1105,6 +1148,10 @@ export enum CacheKeys {
    */
   FLOWS = 'flows',
   /**
+   * Key for individual MCP Tool Manifests.
+   */
+  MCP_TOOLS = 'mcp_tools',
+  /**
    * Key for pending chat requests (concurrency check)
    */
   PENDING_REQ = 'pending_req',
@@ -1291,6 +1338,10 @@ export enum SettingsTabValues {
    * Chat input commands
    */
   COMMANDS = 'commands',
+  /**
+   * Tab for Personalization Settings
+   */
+  PERSONALIZATION = 'personalization',
 }
 
 export enum STTProviders {
@@ -1328,7 +1379,7 @@ export enum Constants {
   /** Key for the app's version. */
   VERSION = 'v0.7.8',
   /** Key for the Custom Config's version (librechat.yaml). */
-  CONFIG_VERSION = '1.2.6',
+  CONFIG_VERSION = '1.2.8',
   /** Standard value for the first message's `parentMessageId` value, to indicate no parent exists. */
   NO_PARENT = '00000000-0000-0000-0000-000000000000',
   /** Standard value for the initial conversationId before a request is sent */
@@ -1355,6 +1406,8 @@ export enum Constants {
   GLOBAL_PROJECT_NAME = 'instance',
   /** Delimiter for MCP tools */
   mcp_delimiter = '_mcp_',
+  /** Prefix for MCP plugins */
+  mcp_prefix = 'mcp_',
   /** Placeholder Agent ID for Ephemeral Agents */
   EPHEMERAL_AGENT_ID = 'ephemeral',
 }
@@ -1398,6 +1451,10 @@ export enum LocalStorageKeys {
   LAST_CODE_TOGGLE_ = 'LAST_CODE_TOGGLE_',
   /** Last checked toggle for Web Search per conversation ID */
   LAST_WEB_SEARCH_TOGGLE_ = 'LAST_WEB_SEARCH_TOGGLE_',
+  /** Key for the last selected agent provider */
+  LAST_AGENT_PROVIDER = 'lastAgentProvider',
+  /** Key for the last selected agent model */
+  LAST_AGENT_MODEL = 'lastAgentModel',
 }
 
 export enum ForkOptions {

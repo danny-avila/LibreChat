@@ -55,7 +55,7 @@ const PromptDetails = ({ group }: { group?: TPromptGroup }) => {
                   /** @ts-ignore */
                   supersub,
                   remarkGfm,
-                  [remarkMath, { singleDollarTextMath: true }],
+                  [remarkMath, { singleDollarTextMath: false }],
                 ]}
                 rehypePlugins={[
                   /** @ts-ignore */

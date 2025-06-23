@@ -12,6 +12,10 @@ const comparePassword = async (user, candidatePassword) => {
     throw new Error('No user provided');
   }
 
+  if (!user.password) {
+    throw new Error('No password, likely an email first registered via Social/OIDC login');
+  }
+
   return new Promise((resolve, reject) => {
     bcrypt.compare(candidatePassword, user.password, (err, isMatch) => {
       if (err) {

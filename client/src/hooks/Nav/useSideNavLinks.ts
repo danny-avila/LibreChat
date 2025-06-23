@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { MessageSquareQuote, ArrowRightToLine, Settings2, Bookmark } from 'lucide-react';
+import { MessageSquareQuote, ArrowRightToLine, Settings2, Database, Bookmark } from 'lucide-react';
 import {
   isAssistantsEndpoint,
   isAgentsEndpoint,
@@ -12,11 +12,15 @@ import type { TInterfaceConfig, TEndpointsConfig } from 'librechat-data-provider
 import type { NavLink } from '~/common';
 import AgentPanelSwitch from '~/components/SidePanel/Agents/AgentPanelSwitch';
 import BookmarkPanel from '~/components/SidePanel/Bookmarks/BookmarkPanel';
+import MemoryViewer from '~/components/SidePanel/Memories/MemoryViewer';
 import PanelSwitch from '~/components/SidePanel/Builder/PanelSwitch';
 import PromptsAccordion from '~/components/Prompts/PromptsAccordion';
 import Parameters from '~/components/SidePanel/Parameters/Panel';
 import FilesPanel from '~/components/SidePanel/Files/Panel';
+import MCPPanel from '~/components/SidePanel/MCP/MCPPanel';
 import { Blocks, AttachmentIcon } from '~/components/svg';
+import { useGetStartupConfig } from '~/data-provider';
+import MCPIcon from '~/components/ui/MCPIcon';
 import { useHasAccess } from '~/hooks';
 
 export default function useSideNavLinks({
@@ -42,6 +46,14 @@ export default function useSideNavLinks({
     permissionType: PermissionTypes.BOOKMARKS,
     permission: Permissions.USE,
   });
+  const hasAccessToMemories = useHasAccess({
+    permissionType: PermissionTypes.MEMORIES,
+    permission: Permissions.USE,
+  });
+  const hasAccessToReadMemories = useHasAccess({
+    permissionType: PermissionTypes.MEMORIES,
+    permission: Permissions.READ,
+  });
   const hasAccessToAgents = useHasAccess({
     permissionType: PermissionTypes.AGENTS,
     permission: Permissions.USE,
@@ -50,6 +62,7 @@ export default function useSideNavLinks({
     permissionType: PermissionTypes.AGENTS,
     permission: Permissions.CREATE,
   });
+  const { data: startupConfig } = useGetStartupConfig();
 
   const Links = useMemo(() => {
     const links: NavLink[] = [];
@@ -97,6 +110,16 @@ export default function useSideNavLinks({
       });
     }
 
+    if (hasAccessToMemories && hasAccessToReadMemories) {
+      links.push({
+        title: 'com_ui_memories',
+        label: '',
+        icon: Database,
+        id: 'memories',
+        Component: MemoryViewer,
+      });
+    }
+
     if (
       interfaceConfig.parameters === true &&
       isParamEndpoint(endpoint ?? '', endpointType ?? '') === true &&
@@ -130,6 +153,21 @@ export default function useSideNavLinks({
       });
     }
 
+    if (
+      startupConfig?.mcpServers &&
+      Object.values(startupConfig.mcpServers).some(
+        (server) => server.customUserVars && Object.keys(server.customUserVars).length > 0,
+      )
+    ) {
+      links.push({
+        title: 'com_nav_setting_mcp',
+        label: '',
+        icon: MCPIcon,
+        id: 'mcp-settings',
+        Component: MCPPanel,
+      });
+    }
+
     links.push({
       title: 'com_sidepanel_hide_panel',
       label: '',
@@ -147,9 +185,12 @@ export default function useSideNavLinks({
     endpoint,
     hasAccessToAgents,
     hasAccessToPrompts,
+    hasAccessToMemories,
+    hasAccessToReadMemories,
     hasAccessToBookmarks,
     hasAccessToCreateAgents,
     hidePanel,
+    startupConfig,
   ]);
 
   return Links;

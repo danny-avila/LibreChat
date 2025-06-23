@@ -94,7 +94,7 @@ function getLLMConfig(credentials, options = {}) {
   // Extract from credentials
   const serviceKeyRaw = creds[AuthKeys.GOOGLE_SERVICE_KEY] ?? {};
   const serviceKey =
-    typeof serviceKeyRaw === 'string' ? JSON.parse(serviceKeyRaw) : serviceKeyRaw ?? {};
+    typeof serviceKeyRaw === 'string' ? JSON.parse(serviceKeyRaw) : (serviceKeyRaw ?? {});
 
   const project_id = serviceKey?.project_id ?? null;
   const apiKey = creds[AuthKeys.GOOGLE_API_KEY] ?? null;
@@ -156,10 +156,6 @@ function getLLMConfig(credentials, options = {}) {
   }
 
   if (authHeader) {
-    /**
-     * NOTE: NOT SUPPORTED BY LANGCHAIN GENAI CLIENT,
-     * REQUIRES PR IN https://github.com/langchain-ai/langchainjs
-     */
     llmConfig.customHeaders = {
       Authorization: `Bearer ${apiKey}`,
     };

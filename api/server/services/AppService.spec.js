@@ -2,8 +2,10 @@ const {
   FileSources,
   EModelEndpoint,
   EImageOutputType,
+  AgentCapabilities,
   defaultSocialLogins,
   validateAzureGroups,
+  defaultAgentCapabilities,
   deprecatedAzureVariables,
   conflictingAzureVariables,
 } = require('librechat-data-provider');
@@ -29,6 +31,25 @@ jest.mock('~/models', () => ({
 }));
 jest.mock('~/models/Role', () => ({
   updateAccessPermissions: jest.fn(),
+}));
+jest.mock('./Config', () => ({
+  setCachedTools: jest.fn(),
+  getCachedTools: jest.fn().mockResolvedValue({
+    ExampleTool: {
+      type: 'function',
+      function: {
+        description: 'Example tool function',
+        name: 'exampleFunction',
+        parameters: {
+          type: 'object',
+          properties: {
+            param1: { type: 'string', description: 'An example parameter' },
+          },
+          required: ['param1'],
+        },
+      },
+    },
+  }),
 }));
 jest.mock('./ToolService', () => ({
   loadAndFormatTools: jest.fn().mockReturnValue({
@@ -119,22 +140,9 @@ describe('AppService', () => {
         sidePanel: true,
         presets: true,
       }),
+      mcpConfig: null,
       turnstileConfig: mockedTurnstileConfig,
       modelSpecs: undefined,
-      availableTools: {
-        ExampleTool: {
-          type: 'function',
-          function: expect.objectContaining({
-            description: 'Example tool function',
-            name: 'exampleFunction',
-            parameters: expect.objectContaining({
-              type: 'object',
-              properties: expect.any(Object),
-              required: expect.arrayContaining(['param1']),
-            }),
-          }),
-        },
-      },
       paths: expect.anything(),
       ocr: expect.anything(),
       imageOutputType: expect.any(String),
@@ -150,6 +158,11 @@ describe('AppService', () => {
         jinaApiKey: '${JINA_API_KEY}',
         safeSearch: 1,
         serperApiKey: '${SERPER_API_KEY}',
+      },
+      memory: undefined,
+      agents: {
+        disableBuilder: false,
+        capabilities: expect.arrayContaining([...defaultAgentCapabilities]),
       },
     });
   });
@@ -216,14 +229,41 @@ describe('AppService', () => {
 
   it('should load and format tools accurately with defined structure', async () => {
     const { loadAndFormatTools } = require('./ToolService');
+    const { setCachedTools, getCachedTools } = require('./Config');
+
     await AppService(app);
 
     expect(loadAndFormatTools).toHaveBeenCalledWith({
+      adminFilter: undefined,
+      adminIncluded: undefined,
       directory: expect.anything(),
     });
 
-    expect(app.locals.availableTools.ExampleTool).toBeDefined();
-    expect(app.locals.availableTools.ExampleTool).toEqual({
+    // Verify setCachedTools was called with the tools
+    expect(setCachedTools).toHaveBeenCalledWith(
+      {
+        ExampleTool: {
+          type: 'function',
+          function: {
+            description: 'Example tool function',
+            name: 'exampleFunction',
+            parameters: {
+              type: 'object',
+              properties: {
+                param1: { type: 'string', description: 'An example parameter' },
+              },
+              required: ['param1'],
+            },
+          },
+        },
+      },
+      { isGlobal: true },
+    );
+
+    // Verify we can retrieve the tools from cache
+    const cachedTools = await getCachedTools({ includeGlobal: true });
+    expect(cachedTools.ExampleTool).toBeDefined();
+    expect(cachedTools.ExampleTool).toEqual({
       type: 'function',
       function: {
         description: 'Example tool function',
@@ -264,6 +304,71 @@ describe('AppService', () => {
         timeoutMs: 30000,
         supportedIds: expect.arrayContaining(['id1', 'id2']),
         privateAssistants: false,
+      }),
+    );
+  });
+
+  it('should correctly configure Agents endpoint based on custom config', async () => {
+    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
+      Promise.resolve({
+        endpoints: {
+          [EModelEndpoint.agents]: {
+            disableBuilder: true,
+            recursionLimit: 10,
+            maxRecursionLimit: 20,
+            allowedProviders: ['openai', 'anthropic'],
+            capabilities: [AgentCapabilities.tools, AgentCapabilities.actions],
+          },
+        },
+      }),
+    );
+
+    await AppService(app);
+
+    expect(app.locals).toHaveProperty(EModelEndpoint.agents);
+    expect(app.locals[EModelEndpoint.agents]).toEqual(
+      expect.objectContaining({
+        disableBuilder: true,
+        recursionLimit: 10,
+        maxRecursionLimit: 20,
+        allowedProviders: expect.arrayContaining(['openai', 'anthropic']),
+        capabilities: expect.arrayContaining([AgentCapabilities.tools, AgentCapabilities.actions]),
+      }),
+    );
+  });
+
+  it('should configure Agents endpoint with defaults when no config is provided', async () => {
+    require('./Config/loadCustomConfig').mockImplementationOnce(() => Promise.resolve({}));
+
+    await AppService(app);
+
+    expect(app.locals).toHaveProperty(EModelEndpoint.agents);
+    expect(app.locals[EModelEndpoint.agents]).toEqual(
+      expect.objectContaining({
+        disableBuilder: false,
+        capabilities: expect.arrayContaining([...defaultAgentCapabilities]),
+      }),
+    );
+  });
+
+  it('should configure Agents endpoint with defaults when endpoints exist but agents is not defined', async () => {
+    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
+      Promise.resolve({
+        endpoints: {
+          [EModelEndpoint.openAI]: {
+            titleConvo: true,
+          },
+        },
+      }),
+    );
+
+    await AppService(app);
+
+    expect(app.locals).toHaveProperty(EModelEndpoint.agents);
+    expect(app.locals[EModelEndpoint.agents]).toEqual(
+      expect.objectContaining({
+        disableBuilder: false,
+        capabilities: expect.arrayContaining([...defaultAgentCapabilities]),
       }),
     );
   });
@@ -463,7 +568,6 @@ describe('AppService updating app.locals and issuing warnings', () => {
 
     expect(app.locals).toBeDefined();
     expect(app.locals.paths).toBeDefined();
-    expect(app.locals.availableTools).toBeDefined();
     expect(app.locals.fileStrategy).toEqual(FileSources.local);
     expect(app.locals.socialLogins).toEqual(defaultSocialLogins);
     expect(app.locals.balance).toEqual(
@@ -496,7 +600,6 @@ describe('AppService updating app.locals and issuing warnings', () => {
 
     expect(app.locals).toBeDefined();
     expect(app.locals.paths).toBeDefined();
-    expect(app.locals.availableTools).toBeDefined();
     expect(app.locals.fileStrategy).toEqual(customConfig.fileStrategy);
     expect(app.locals.socialLogins).toEqual(customConfig.registration.socialLogins);
     expect(app.locals.balance).toEqual(customConfig.balance);
