@@ -486,7 +486,7 @@ const getListAgentsByAccess = async ({
       const cursorCondition = {
         $or: [
           { updatedAt: { $lt: new Date(updatedAt) } },
-          { updatedAt: new Date(updatedAt), _id: { $gt: mongoose.Types.ObjectId(_id) } },
+          { updatedAt: new Date(updatedAt), _id: { $gt: new mongoose.Types.ObjectId(_id) } },
         ],
       };
 
@@ -514,6 +514,9 @@ const getListAgentsByAccess = async ({
     projectIds: 1,
     description: 1,
     updatedAt: 1,
+    category: 1,
+    support_contact: 1,
+    is_promoted: 1,
   }).sort({ updatedAt: -1, _id: 1 });
 
   // Only apply limit if pagination is requested

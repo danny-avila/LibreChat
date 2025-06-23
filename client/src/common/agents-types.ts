@@ -1,5 +1,10 @@
 import { AgentCapabilities, ArtifactModes } from 'librechat-data-provider';
-import type { Agent, AgentProvider, AgentModelParameters } from 'librechat-data-provider';
+import type {
+  Agent,
+  AgentProvider,
+  AgentModelParameters,
+  SupportContact,
+} from 'librechat-data-provider';
 import type { OptionWithIcon, ExtendedFile } from './types';
 
 export type TAgentOption = OptionWithIcon &
@@ -18,11 +23,6 @@ export type TAgentCapabilities = {
   [AgentCapabilities.hide_sequential_outputs]?: boolean;
 };
 
-export type SupportContact = {
-  name?: string;
-  email?: string;
-};
-
 export type AgentForm = {
   agent?: TAgentOption;
   id: string;
@@ -37,4 +37,5 @@ export type AgentForm = {
   [AgentCapabilities.artifacts]?: ArtifactModes | string;
   recursion_limit?: number;
   support_contact?: SupportContact;
+  category: string;
 } & TAgentCapabilities;
