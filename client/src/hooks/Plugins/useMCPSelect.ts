@@ -1,7 +1,7 @@
 import { useRef, useEffect, useCallback, useMemo } from 'react';
 import { useRecoilState } from 'recoil';
 import { Constants, LocalStorageKeys, EModelEndpoint } from 'librechat-data-provider';
-import type { TPlugin, TPluginAuthConfig } from 'librechat-data-provider';
+import type { TPlugin } from 'librechat-data-provider';
 import { useAvailableToolsQuery } from '~/data-provider';
 import useLocalStorage from '~/hooks/useLocalStorageAlt';
 import { ephemeralAgentByConvoId } from '~/store';
@@ -24,20 +24,13 @@ interface UseMCPSelectOptions {
   conversationId?: string | null;
 }
 
-export interface McpServerInfo {
-  name: string;
-  pluginKey: string;
-  authConfig?: TPluginAuthConfig[];
-  authenticated?: boolean;
-}
-
 export function useMCPSelect({ conversationId }: UseMCPSelectOptions) {
   const key = conversationId ?? Constants.NEW_CONVO;
   const hasSetFetched = useRef<string | null>(null);
   const [ephemeralAgent, setEphemeralAgent] = useRecoilState(ephemeralAgentByConvoId(key));
   const { data: mcpToolDetails, isFetched } = useAvailableToolsQuery(EModelEndpoint.agents, {
     select: (data: TPlugin[]) => {
-      const mcpToolsMap = new Map<string, McpServerInfo>();
+      const mcpToolsMap = new Map<string, TPlugin>();
       data.forEach((tool) => {
         const isMCP = tool.pluginKey.includes(Constants.mcp_delimiter);
         if (isMCP && tool.chatMenu !== false) {
@@ -109,13 +102,13 @@ export function useMCPSelect({ conversationId }: UseMCPSelectOptions) {
   }, [mcpToolDetails]);
 
   return {
+    isPinned,
     mcpValues,
+    setIsPinned,
     setMCPValues,
     mcpServerNames,
     ephemeralAgent,
     mcpToolDetails,
     setEphemeralAgent,
-    isPinned,
-    setIsPinned,
   };
 }

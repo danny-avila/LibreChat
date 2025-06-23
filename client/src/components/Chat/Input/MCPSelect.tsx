@@ -2,10 +2,10 @@ import React, { memo, useCallback, useState } from 'react';
 import { SettingsIcon } from 'lucide-react';
 import { Constants } from 'librechat-data-provider';
 import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
-import type { TUpdateUserPlugins } from 'librechat-data-provider';
-import type { McpServerInfo } from '~/hooks/Plugins/useMCPSelect';
+import type { TUpdateUserPlugins, TPlugin } from 'librechat-data-provider';
 import MCPConfigDialog, { type ConfigFieldDetail } from '~/components/ui/MCPConfigDialog';
-import { useToastContext, useBadgeRowContext, useGetStartupConfig } from '~/Providers';
+import { useToastContext, useBadgeRowContext } from '~/Providers';
+import { useGetStartupConfig } from '~/data-provider';
 import MultiSelect from '~/components/ui/MultiSelect';
 import { MCPIcon } from '~/components/svg';
 import { useLocalize } from '~/hooks';
@@ -23,7 +23,7 @@ function MCPSelect() {
 
   const { data: startupConfig } = useGetStartupConfig();
   const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
-  const [selectedToolForConfig, setSelectedToolForConfig] = useState<McpServerInfo | null>(null);
+  const [selectedToolForConfig, setSelectedToolForConfig] = useState<TPlugin | null>(null);
 
   const updateUserPluginsMutation = useUpdateUserPluginsMutation({
     onSuccess: () => {
