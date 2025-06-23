@@ -37,7 +37,6 @@ const { addSpaceIfNeeded, sleep } = require('~/server/utils');
 const { spendTokens } = require('~/models/spendTokens');
 const { handleOpenAIErrors } = require('./tools/util');
 const { createLLM, RunManager } = require('./llm');
-const ChatGPTClient = require('./ChatGPTClient');
 const { summaryBuffer } = require('./memory');
 const { runTitleChain } = require('./chains');
 const { tokenSplit } = require('./document');
@@ -47,12 +46,6 @@ const { logger } = require('~/config');
 class OpenAIClient extends BaseClient {
   constructor(apiKey, options = {}) {
     super(apiKey, options);
-    this.ChatGPTClient = new ChatGPTClient();
-    this.buildPrompt = this.ChatGPTClient.buildPrompt.bind(this);
-    /** @type {getCompletion} */
-    this.getCompletion = this.ChatGPTClient.getCompletion.bind(this);
-    /** @type {cohereChatCompletion} */
-    this.cohereChatCompletion = this.ChatGPTClient.cohereChatCompletion.bind(this);
     this.contextStrategy = options.contextStrategy
       ? options.contextStrategy.toLowerCase()
       : 'discard';
