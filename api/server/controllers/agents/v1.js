@@ -1,13 +1,12 @@
 const { z } = require('zod');
 const fs = require('fs').promises;
 const { nanoid } = require('nanoid');
-const { logger } = require('@librechat/data-schemas');
+const { logger, PermissionBits } = require('@librechat/data-schemas');
 const { agentCreateSchema, agentUpdateSchema } = require('@librechat/api');
 const {
   Tools,
-  Constants,
-  FileSources,
   SystemRoles,
+  FileSources,
   EToolResources,
   actionDelimiter,
   removeNullishValues,
@@ -17,16 +16,20 @@ const {
   createAgent,
   updateAgent,
   deleteAgent,
-  getListAgents,
+  getListAgentsByAccess,
 } = require('~/models/Agent');
+const {
+  grantPermission,
+  findAccessibleResources,
+  findPubliclyAccessibleResources,
+  hasPublicPermission,
+} = require('~/server/services/PermissionService');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { resizeAvatar } = require('~/server/services/Files/images/avatar');
 const { refreshS3Url } = require('~/server/services/Files/S3/crud');
 const { filterFile } = require('~/server/services/Files/process');
 const { updateAction, getActions } = require('~/models/Action');
 const { getCachedTools } = require('~/server/services/Config');
-const { updateAgentProjects } = require('~/models/Agent');
-const { getProjectByName } = require('~/models/Project');
 const { revertAgentVersion } = require('~/models/Agent');
 const { deleteFileByFilter } = require('~/models/File');
 
@@ -67,6 +70,27 @@ const createAgentHandler = async (req, res) => {
     }
 
     const agent = await createAgent(agentData);
+
+    // Automatically grant owner permissions to the creator
+    try {
+      await grantPermission({
+        principalType: 'user',
+        principalId: userId,
+        resourceType: 'agent',
+        resourceId: agent._id,
+        accessRoleId: 'agent_owner',
+        grantedBy: userId,
+      });
+      logger.debug(
+        `[createAgent] Granted owner permissions to user ${userId} for agent ${agent.id}`,
+      );
+    } catch (permissionError) {
+      logger.error(
+        `[createAgent] Failed to grant owner permissions for agent ${agent.id}:`,
+        permissionError,
+      );
+    }
+
     res.status(201).json(agent);
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -89,21 +113,14 @@ const createAgentHandler = async (req, res) => {
  * @returns {Promise<Agent>} 200 - success response - application/json
  * @returns {Error} 404 - Agent not found
  */
-const getAgentHandler = async (req, res) => {
+const getAgentHandler = async (req, res, expandProperties = false) => {
   try {
     const id = req.params.id;
     const author = req.user.id;
 
-    let query = { id, author };
-
-    const globalProject = await getProjectByName(Constants.GLOBAL_PROJECT_NAME, ['agentIds']);
-    if (globalProject && (globalProject.agentIds?.length ?? 0) > 0) {
-      query = {
-        $or: [{ id, $in: globalProject.agentIds }, query],
-      };
-    }
-
-    const agent = await getAgent(query);
+    // Permissions are validated by middleware before calling this function
+    // Simply load the agent by ID
+    const agent = await getAgent({ id });
 
     if (!agent) {
       return res.status(404).json({ error: 'Agent not found' });
@@ -120,23 +137,45 @@ const getAgentHandler = async (req, res) => {
     }
 
     agent.author = agent.author.toString();
+
+    // @deprecated - isCollaborative replaced by ACL permissions
     agent.isCollaborative = !!agent.isCollaborative;
+
+    // Check if agent is public
+    const isPublic = await hasPublicPermission({
+      resourceType: 'agent',
+      resourceId: agent._id,
+      requiredPermissions: PermissionBits.VIEW,
+    });
+    agent.isPublic = isPublic;
 
     if (agent.author !== author) {
       delete agent.author;
     }
 
-    if (!agent.isCollaborative && agent.author !== author && req.user.role !== SystemRoles.ADMIN) {
+    if (!expandProperties) {
+      // VIEW permission: Basic agent info only
       return res.status(200).json({
+        _id: agent._id,
         id: agent.id,
         name: agent.name,
+        description: agent.description,
         avatar: agent.avatar,
         author: agent.author,
+        provider: agent.provider,
+        model: agent.model,
         projectIds: agent.projectIds,
+        // @deprecated - isCollaborative replaced by ACL permissions
         isCollaborative: agent.isCollaborative,
+        isPublic: agent.isPublic,
         version: agent.version,
+        // Safe metadata
+        createdAt: agent.createdAt,
+        updatedAt: agent.updatedAt,
       });
     }
+
+    // EDIT permission: Full agent details including sensitive configuration
     return res.status(200).json(agent);
   } catch (error) {
     logger.error('[/Agents/:id] Error retrieving agent', error);
@@ -157,42 +196,19 @@ const updateAgentHandler = async (req, res) => {
   try {
     const id = req.params.id;
     const validatedData = agentUpdateSchema.parse(req.body);
-    const { projectIds, removeProjectIds, ...updateData } = removeNullishValues(validatedData);
-    const isAdmin = req.user.role === SystemRoles.ADMIN;
+    const { _id, ...updateData } = removeNullishValues(validatedData);
     const existingAgent = await getAgent({ id });
 
     if (!existingAgent) {
       return res.status(404).json({ error: 'Agent not found' });
     }
 
-    const isAuthor = existingAgent.author.toString() === req.user.id;
-    const hasEditPermission = existingAgent.isCollaborative || isAdmin || isAuthor;
-
-    if (!hasEditPermission) {
-      return res.status(403).json({
-        error: 'You do not have permission to modify this non-collaborative agent',
-      });
-    }
-
-    /** @type {boolean} */
-    const isProjectUpdate = (projectIds?.length ?? 0) > 0 || (removeProjectIds?.length ?? 0) > 0;
-
     let updatedAgent =
       Object.keys(updateData).length > 0
         ? await updateAgent({ id }, updateData, {
             updatingUserId: req.user.id,
-            skipVersioning: isProjectUpdate,
           })
         : existingAgent;
-
-    if (isProjectUpdate) {
-      updatedAgent = await updateAgentProjects({
-        user: req.user,
-        agentId: id,
-        projectIds,
-        removeProjectIds,
-      });
-    }
 
     if (updatedAgent.author) {
       updatedAgent.author = updatedAgent.author.toString();
@@ -318,6 +334,26 @@ const duplicateAgentHandler = async (req, res) => {
     newAgentData.actions = agentActions;
     const newAgent = await createAgent(newAgentData);
 
+    // Automatically grant owner permissions to the duplicator
+    try {
+      await grantPermission({
+        principalType: 'user',
+        principalId: userId,
+        resourceType: 'agent',
+        resourceId: newAgent._id,
+        accessRoleId: 'agent_owner',
+        grantedBy: userId,
+      });
+      logger.debug(
+        `[duplicateAgent] Granted owner permissions to user ${userId} for duplicated agent ${newAgent.id}`,
+      );
+    } catch (permissionError) {
+      logger.error(
+        `[duplicateAgent] Failed to grant owner permissions for duplicated agent ${newAgent.id}:`,
+        permissionError,
+      );
+    }
+
     return res.status(201).json({
       agent: newAgent,
       actions: newActionsList,
@@ -344,7 +380,7 @@ const deleteAgentHandler = async (req, res) => {
     if (!agent) {
       return res.status(404).json({ error: 'Agent not found' });
     }
-    await deleteAgent({ id, author: req.user.id });
+    await deleteAgent({ id });
     return res.json({ message: 'Agent deleted' });
   } catch (error) {
     logger.error('[/Agents/:id] Error deleting Agent', error);
@@ -353,7 +389,7 @@ const deleteAgentHandler = async (req, res) => {
 };
 
 /**
- *
+ * Lists agents using ACL-aware permissions (ownership + explicit shares).
  * @route GET /Agents
  * @param {object} req - Express Request
  * @param {object} req.query - Request query
@@ -362,9 +398,31 @@ const deleteAgentHandler = async (req, res) => {
  */
 const getListAgentsHandler = async (req, res) => {
   try {
-    const data = await getListAgents({
-      author: req.user.id,
+    const userId = req.user.id;
+
+    // Get agent IDs the user has VIEW access to via ACL
+    const accessibleIds = await findAccessibleResources({
+      userId,
+      resourceType: 'agent',
+      requiredPermissions: PermissionBits.VIEW,
     });
+    const publiclyAccessibleIds = await findPubliclyAccessibleResources({
+      resourceType: 'agent',
+      requiredPermissions: PermissionBits.VIEW,
+    });
+    // Use the new ACL-aware function
+    const data = await getListAgentsByAccess({
+      accessibleIds,
+      otherParams: {}, // Can add query params here if needed
+    });
+    if (data?.data?.length) {
+      data.data = data.data.map((agent) => {
+        if (publiclyAccessibleIds.some((id) => id.equals(agent._id))) {
+          agent.isPublic = true;
+        }
+        return agent;
+      });
+    }
     return res.json(data);
   } catch (error) {
     logger.error('[/Agents] Error listing Agents', error);

@@ -16,6 +16,7 @@ const {
 const { azureAssistantsDefaults, assistantsConfigSetup } = require('./start/assistants');
 const { initializeAzureBlobService } = require('./Files/Azure/initialize');
 const { initializeFirebase } = require('./Files/Firebase/initialize');
+const { seedDefaultRoles, initializeRoles } = require('~/models');
 const loadCustomConfig = require('./Config/loadCustomConfig');
 const handleRateLimits = require('./Config/handleRateLimits');
 const { loadDefaultInterface } = require('./start/interface');
@@ -25,7 +26,6 @@ const { processModelSpecs } = require('./start/modelSpecs');
 const { initializeS3 } = require('./Files/S3/initialize');
 const { loadAndFormatTools } = require('./ToolService');
 const { isEnabled } = require('~/server/utils');
-const { initializeRoles } = require('~/models');
 const { setCachedTools } = require('./Config');
 const paths = require('~/config/paths');
 
@@ -36,6 +36,7 @@ const paths = require('~/config/paths');
  */
 const AppService = async (app) => {
   await initializeRoles();
+  await seedDefaultRoles();
   /** @type {TCustomConfig} */
   const config = (await loadCustomConfig()) ?? {};
   const configDefaults = getConfigDefaults();

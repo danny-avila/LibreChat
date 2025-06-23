@@ -365,6 +365,7 @@ async function setupOpenId() {
               email: userinfo.email || '',
               emailVerified: userinfo.email_verified || false,
               name: fullName,
+              idOnTheSource: userinfo.oid,
             };
 
             const balanceConfig = await getBalanceConfig();
@@ -375,6 +376,7 @@ async function setupOpenId() {
             user.openidId = userinfo.sub;
             user.username = username;
             user.name = fullName;
+            user.idOnTheSource = userinfo.oid;
           }
 
           if (!!userinfo && userinfo.picture && !user.avatar?.includes('manual=true')) {

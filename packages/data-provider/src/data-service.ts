@@ -10,6 +10,7 @@ import * as config from './config';
 import request from './request';
 import * as s from './schemas';
 import * as r from './roles';
+import * as permissions from './accessPermissions';
 
 export function revokeUserKey(name: string): Promise<unknown> {
   return request.delete(endpoints.revokeUserKey(name));
@@ -413,6 +414,14 @@ export const getAgentById = ({ agent_id }: { agent_id: string }): Promise<a.Agen
   );
 };
 
+export const getExpandedAgentById = ({ agent_id }: { agent_id: string }): Promise<a.Agent> => {
+  return request.get(
+    endpoints.agents({
+      path: `${agent_id}/expanded`,
+    }),
+  );
+};
+
 export const updateAgent = ({
   agent_id,
   data,
@@ -461,6 +470,80 @@ export const revertAgentVersion = ({
   agent_id: string;
   version_index: number;
 }): Promise<a.Agent> => request.post(endpoints.revertAgentVersion(agent_id), { version_index });
+
+/* Marketplace */
+
+/**
+ * Get agent categories with counts for marketplace tabs
+ */
+export const getAgentCategories = (): Promise<t.TMarketplaceCategory[]> => {
+  return request.get(endpoints.agents({ path: 'marketplace/categories' }));
+};
+
+/**
+ * Get promoted/top picks agents with pagination
+ */
+export const getPromotedAgents = (params: {
+  page?: number;
+  limit?: number;
+  showAll?: string; // Add showAll parameter to get all shared agents instead of just promoted
+}): Promise<a.AgentListResponse> => {
+  return request.get(
+    endpoints.agents({
+      path: 'marketplace/promoted',
+      options: params,
+    }),
+  );
+};
+
+/**
+ * Get all agents with pagination (for "all" category)
+ */
+export const getAllAgents = (params: {
+  page?: number;
+  limit?: number;
+}): Promise<a.AgentListResponse> => {
+  return request.get(
+    endpoints.agents({
+      path: 'marketplace/all',
+      options: params,
+    }),
+  );
+};
+
+/**
+ * Get agents by category with pagination
+ */
+export const getAgentsByCategory = (params: {
+  category: string;
+  page?: number;
+  limit?: number;
+}): Promise<a.AgentListResponse> => {
+  const { category, ...options } = params;
+  return request.get(
+    endpoints.agents({
+      path: `marketplace/category/${category}`,
+      options,
+    }),
+  );
+};
+
+/**
+ * Search agents in marketplace
+ */
+export const searchAgents = (params: {
+  q: string;
+  category?: string;
+  page?: number;
+  limit?: number;
+}): Promise<a.AgentListResponse> => {
+  return request.get(
+    endpoints.agents({
+      path: 'marketplace/search',
+      options: params,
+    }),
+  );
+};
 
 /* Tools */
 
@@ -858,6 +941,38 @@ export const createMemory = (data: {
 }): Promise<{ created: boolean; memory: q.TUserMemory }> => {
   return request.post(endpoints.memories(), data);
 };
+
+export function searchPrincipals(
+  params: q.PrincipalSearchParams,
+): Promise<q.PrincipalSearchResponse> {
+  return request.get(endpoints.searchPrincipals(params));
+}
+
+export function getAccessRoles(resourceType: string): Promise<q.AccessRolesResponse> {
+  return request.get(endpoints.getAccessRoles(resourceType));
+}
+
+export function getResourcePermissions(
+  resourceType: string,
+  resourceId: string,
+): Promise<permissions.TGetResourcePermissionsResponse> {
+  return request.get(endpoints.getResourcePermissions(resourceType, resourceId));
+}
+
+export function updateResourcePermissions(
+  resourceType: string,
+  resourceId: string,
+  data: permissions.TUpdateResourcePermissionsRequest,
+): Promise<permissions.TUpdateResourcePermissionsResponse> {
+  return request.put(endpoints.updateResourcePermissions(resourceType, resourceId), data);
+}
+
+export function getEffectivePermissions(
+  resourceType: string,
+  resourceId: string,
+): Promise<permissions.TEffectivePermissionsResponse> {
+  return request.get(endpoints.getEffectivePermissions(resourceType, resourceId));
+}
 
 // SharePoint Graph API Token
 export function getGraphApiToken(params: q.GraphTokenParams): Promise<q.GraphTokenResponse> {
