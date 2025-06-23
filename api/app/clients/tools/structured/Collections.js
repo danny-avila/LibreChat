@@ -614,10 +614,10 @@ class Collections extends Tool {
       // Generate and store embedding
       const embedding = await this.generateEmbedding(`${title}\n\n${content}`);
       if (embedding) {
-        // Use proper vector parameter binding
+        // Use proper vector parameter binding with array format
         await client.query('INSERT INTO note_vectors (note_id, embedding) VALUES ($1, $2)', [
           note.id,
-          embedding,
+          `[${embedding.join(',')}]`,
         ]);
         logger.debug(`Embedding stored for note ${note.id}`);
       } else {
@@ -740,10 +740,10 @@ class Collections extends Tool {
           // Delete existing embedding if it exists
           await client.query('DELETE FROM note_vectors WHERE note_id = $1', [noteId]);
 
-          // Insert new embedding using proper parameter binding
+          // Insert new embedding using proper parameter binding with array format
           await client.query('INSERT INTO note_vectors (note_id, embedding) VALUES ($1, $2)', [
             noteId,
-            embedding,
+            `[${embedding.join(',')}]`,
           ]);
         }
       }
@@ -1266,14 +1266,9 @@ class Collections extends Tool {
 
           return JSON.stringify({
             success: true,
-            collection: {
-              id: collection.id,
-              name: collection.name,
-              description: collection.description,
-              parent_id: collection.parent_id,
-              tags: collection.tags,
-              created_at: collection.created_at,
-            },
+            message: 'Collection created successfully',
+            id: collection.id,
+            created_at: collection.created_at,
           });
         }
 
@@ -1304,14 +1299,9 @@ class Collections extends Tool {
 
           return JSON.stringify({
             success: true,
-            collection: {
-              id: collection.id,
-              name: collection.name,
-              description: collection.description,
-              parent_id: collection.parent_id,
-              tags: collection.tags,
-              updated_at: collection.updated_at,
-            },
+            message: 'Collection updated successfully',
+            id: collection.id,
+            updated_at: collection.updated_at,
           });
         }
 
@@ -1403,15 +1393,9 @@ class Collections extends Tool {
 
           return JSON.stringify({
             success: true,
-            note: {
-              id: note.id,
-              collection_id: note.collection_id,
-              title: note.title,
-              content: note.content,
-              source_url: note.source_url,
-              tags: note.tags,
-              created_at: note.created_at,
-            },
+            message: 'Note added successfully',
+            id: note.id,
+            created_at: note.created_at,
           });
         }
 
@@ -1434,15 +1418,9 @@ class Collections extends Tool {
 
           return JSON.stringify({
             success: true,
-            note: {
-              id: note.id,
-              collection_id: note.collection_id,
-              title: note.title,
-              content: note.content,
-              source_url: note.source_url,
-              tags: note.tags,
-              updated_at: note.updated_at,
-            },
+            message: 'Note updated successfully',
+            id: note.id,
+            updated_at: note.updated_at,
           });
         }
 
