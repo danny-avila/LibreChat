@@ -50,7 +50,7 @@ jobs:
               uses: BeewiseTechnologiesLTD/remote-workflow-trigger@v1
               with:
                 target_repo: 'paychex/rag_api'
-                workflow_id: '.github/workflows/n2-build-and-push.yml'
+                workflow_id: '.github/workflows/n2a_container_app_definition.yml'
                 github_token: ${{ secrets.CROSS_REPO_PAT }}
                 ref: 'main'
 
