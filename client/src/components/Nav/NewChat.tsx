@@ -1,10 +1,11 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useContext } from 'react';
+import { LayoutGrid } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import type { TMessage } from 'librechat-data-provider';
-import { QueryKeys, Constants } from 'librechat-data-provider';
+import { QueryKeys, Constants, Permissions, PermissionTypes } from 'librechat-data-provider';
 import { NewChatIcon, MobileSidebar, Sidebar, TooltipAnchor, Button } from '@librechat/client';
-import { useLocalize, useNewConvo } from '~/hooks';
+import type { TMessage } from 'librechat-data-provider';
+import { useLocalize, useNewConvo, useHasAccess, AuthContext } from '~/hooks';
 import store from '~/store';
 
 export default function NewChat({
@@ -26,6 +27,11 @@ export default function NewChat({
   const navigate = useNavigate();
   const localize = useLocalize();
   const { conversation } = store.useCreateConversationAtom(index);
+  const authContext = useContext(AuthContext);
+  const hasAccessToAgents = useHasAccess({
+    permissionType: PermissionTypes.AGENTS,
+    permission: Permissions.USE,
+  });
 
   const clickHandler: React.MouseEventHandler<HTMLButtonElement> = useCallback(
     (e) => {
@@ -46,6 +52,22 @@ export default function NewChat({
     },
     [queryClient, conversation, newConvo, navigate, toggleNav, isSmallScreen],
   );
+
+  const handleAgentMarketplace = useCallback(() => {
+    navigate('/agents');
+    if (isSmallScreen) {
+      toggleNav();
+    }
+  }, [navigate, isSmallScreen, toggleNav]);
+
+  // Check if auth is ready (avoid race conditions)
+  const authReady =
+    authContext?.isAuthenticated !== undefined &&
+    (authContext?.isAuthenticated === false || authContext?.user !== undefined);
+
+  // Show agent marketplace when auth is ready and user has access
+  // Note: endpointsConfig[agents] is null, but we can still show the marketplace
+  const showAgentMarketplace = authReady && hasAccessToAgents;
 
   return (
     <>
@@ -85,6 +107,29 @@ export default function NewChat({
           />
         </div>
       </div>
+
+      {/* Agent Marketplace button - separate row like ChatGPT */}
+      {showAgentMarketplace && (
+        <div className="flex px-2 pb-4 pt-2 md:px-3">
+          <TooltipAnchor
+            description={localize('com_nav_agents_marketplace')}
+            render={
+              <Button
+                variant="outline"
+                data-testid="nav-agents-marketplace-button"
+                aria-label={localize('com_nav_agents_marketplace')}
+                className="flex w-full items-center justify-start gap-3 rounded-xl border-none bg-transparent p-3 text-left hover:bg-surface-hover"
+                onClick={handleAgentMarketplace}
+              >
+                <LayoutGrid className="h-5 w-5 flex-shrink-0" />
+                <span className="truncate text-base font-medium">
+                  {localize('com_nav_agents_marketplace')}
+                </span>
+              </Button>
+            }
+          />
+        </div>
+      )}
       {subHeaders != null ? subHeaders : null}
     </>
   );
