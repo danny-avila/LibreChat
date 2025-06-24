@@ -19,6 +19,7 @@ import { useChatContext } from '~/Providers/ChatContext';
 import { useToastContext } from '~/Providers/ToastContext';
 import { logger, validateFiles } from '~/utils';
 import useClientSideResize from './useClientSideResize';
+import { processFileForUpload } from '~/utils/heicConverter';
 import { useDelayedUploadToast } from './useDelayedUploadToast';
 import useUpdateFiles from './useUpdateFiles';
 
@@ -264,13 +265,61 @@ const useFileHandling = (params?: UseFileHandling) => {
     for (const originalFile of fileList) {
       const file_id = v4();
       try {
-        let processedFile = originalFile;
+        // Create initial preview with original file
+        const initialPreview = URL.createObjectURL(originalFile);
+
+        // Create initial ExtendedFile to show immediately
+        const initialExtendedFile: ExtendedFile = {
+          file_id,
+          file: originalFile,
+          type: originalFile.type,
+          preview: initialPreview,
+          progress: 0.1, // Show as processing
+          size: originalFile.size,
+        };
+
+        if (_toolResource != null && _toolResource !== '') {
+          initialExtendedFile.tool_resource = _toolResource;
+        }
+
+        // Add file immediately to show in UI
+        addFile(initialExtendedFile);
+
+        // Check if HEIC conversion is needed and show toast
+        const isHEIC =
+          originalFile.type === 'image/heic' ||
+          originalFile.type === 'image/heif' ||
+          originalFile.name.toLowerCase().match(/\.(heic|heif)$/);
+
+        if (isHEIC) {
+          showToast({
+            message: localize('com_info_heic_converting'),
+            status: 'info',
+            duration: 3000,
+          });
+        }
+
+        // Process file for HEIC conversion if needed
+        const heicProcessedFile = await processFileForUpload(
+          originalFile,
+          0.9,
+          (conversionProgress) => {
+            // Update progress during HEIC conversion (0.1 to 0.5 range for conversion)
+            const adjustedProgress = 0.1 + conversionProgress * 0.4;
+            replaceFile({
+              ...initialExtendedFile,
+              progress: adjustedProgress,
+            });
+          },
+        );
+
+        let finalProcessedFile = heicProcessedFile;
 
         // Apply client-side resizing if available and appropriate
-        if (originalFile.type.startsWith('image/')) {
+        if (heicProcessedFile.type.startsWith('image/')) {
           try {
-            const resizeResult = await resizeImageIfNeeded(originalFile);
-            processedFile = resizeResult.file;
+            const resizeResult = await resizeImageIfNeeded(heicProcessedFile);
+            finalProcessedFile = resizeResult.file;
 
             // Show toast notification if image was resized
             if (resizeResult.resized && resizeResult.result) {
@@ -287,45 +336,66 @@ const useFileHandling = (params?: UseFileHandling) => {
             }
           } catch (resizeError) {
             console.warn('Image resize failed, using original:', resizeError);
-            // Continue with original file if resizing fails
+            // Continue with HEIC processed file if resizing fails
           }
         }
 
-        const preview = URL.createObjectURL(processedFile);
-        const extendedFile: ExtendedFile = {
-          file_id,
-          file: processedFile,
-          type: processedFile.type,
-          preview,
-          progress: 0.2,
-          size: processedFile.size,
-        };
+        // If file was processed (HEIC converted or resized), update with new file and preview
+        if (finalProcessedFile !== originalFile) {
+          URL.revokeObjectURL(initialPreview); // Clean up original preview
+          const newPreview = URL.createObjectURL(finalProcessedFile);
 
-        if (_toolResource != null && _toolResource !== '') {
-          extendedFile.tool_resource = _toolResource;
+          const updatedExtendedFile: ExtendedFile = {
+            ...initialExtendedFile,
+            file: finalProcessedFile,
+            type: finalProcessedFile.type,
+            preview: newPreview,
+            progress: 0.5, // Processing complete, ready for upload
+            size: finalProcessedFile.size,
+          };
+
+          replaceFile(updatedExtendedFile);
+
+          const isImage = finalProcessedFile.type.split('/')[0] === 'image';
+          if (isImage) {
+            loadImage(updatedExtendedFile, newPreview);
+            continue;
+          }
+
+          await startUpload(updatedExtendedFile);
+        } else {
+          // File wasn't processed, proceed with original
+          const isImage = originalFile.type.split('/')[0] === 'image';
+          const tool_resource =
+            initialExtendedFile.tool_resource ?? params?.additionalMetadata?.tool_resource;
+          if (isAgentsEndpoint(endpoint) && !isImage && tool_resource == null) {
+            /** Note: this needs to be removed when we can support files to providers */
+            setError('com_error_files_unsupported_capability');
+            continue;
+          }
+
+          // Update progress to show ready for upload
+          const readyExtendedFile = {
+            ...initialExtendedFile,
+            progress: 0.2,
+          };
+          replaceFile(readyExtendedFile);
+
+          if (isImage) {
+            loadImage(readyExtendedFile, initialPreview);
+            continue;
+          }
+
+          await startUpload(readyExtendedFile);
         }
-
-        const isImage = processedFile.type.split('/')[0] === 'image';
-        const tool_resource =
-          extendedFile.tool_resource ?? params?.additionalMetadata?.tool_resource;
-        if (isAgentsEndpoint(endpoint) && !isImage && tool_resource == null) {
-          /** Note: this needs to be removed when we can support files to providers */
-          setError('com_error_files_unsupported_capability');
-          continue;
-        }
-
-        addFile(extendedFile);
-
-        if (isImage) {
-          loadImage(extendedFile, preview);
-          continue;
-        }
-
-        await startUpload(extendedFile);
       } catch (error) {
         deleteFileById(file_id);
         console.log('file handling error', error);
-        setError('com_error_files_process');
+        if (error instanceof Error && error.message.includes('HEIC')) {
+          setError('com_error_heic_conversion');
+        } else {
+          setError('com_error_files_process');
+        }
       }
     }
   };

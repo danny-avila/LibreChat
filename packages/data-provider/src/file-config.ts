@@ -49,6 +49,8 @@ export const fullMimeTypesList = [
   'text/javascript',
   'image/gif',
   'image/png',
+  'image/heic',
+  'image/heif',
   'application/x-tar',
   'application/typescript',
   'application/xml',
@@ -80,6 +82,8 @@ export const codeInterpreterMimeTypesList = [
   'text/javascript',
   'image/gif',
   'image/png',
+  'image/heic',
+  'image/heif',
   'application/x-tar',
   'application/typescript',
   'application/xml',
@@ -105,7 +109,7 @@ export const retrievalMimeTypesList = [
   'text/plain',
 ];
 
-export const imageExtRegex = /\.(jpg|jpeg|png|gif|webp)$/i;
+export const imageExtRegex = /\.(jpg|jpeg|png|gif|webp|heic|heif)$/i;
 
 export const excelMimeTypes =
   /^application\/(vnd\.ms-excel|msexcel|x-msexcel|x-ms-excel|x-excel|x-dos_ms_excel|xls|x-xls|vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet)$/;
@@ -116,7 +120,7 @@ export const textMimeTypes =
 export const applicationMimeTypes =
   /^(application\/(epub\+zip|csv|json|pdf|x-tar|typescript|vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|presentationml\.presentation|spreadsheetml\.sheet)|xml|zip))$/;
 
-export const imageMimeTypes = /^image\/(jpeg|gif|png|webp)$/;
+export const imageMimeTypes = /^image\/(jpeg|gif|png|webp|heic|heif)$/;
 
 export const supportedMimeTypes = [
   textMimeTypes,
@@ -187,7 +191,7 @@ export const fileConfig = {
   },
   serverFileSizeLimit: defaultSizeLimit,
   avatarSizeLimit: mbToBytes(2),
-  clientSideImageResize: {
+  clientImageResize: {
     enabled: false,
     maxWidth: 1900,
     maxHeight: 1900,
@@ -233,7 +237,7 @@ export const fileConfigSchema = z.object({
       px: z.number().min(0).optional(),
     })
     .optional(),
-  clientSideImageResize: z
+  clientImageResize: z
     .object({
       enabled: z.boolean().optional(),
       maxWidth: z.number().min(0).optional(),
@@ -269,11 +273,11 @@ export function mergeFileConfig(dynamic: z.infer<typeof fileConfigSchema> | unde
     mergedConfig.avatarSizeLimit = mbToBytes(dynamic.avatarSizeLimit);
   }
 
-  // Merge clientSideImageResize configuration
-  if (dynamic.clientSideImageResize !== undefined) {
-    mergedConfig.clientSideImageResize = {
-      ...mergedConfig.clientSideImageResize,
-      ...dynamic.clientSideImageResize,
+  // Merge clientImageResize configuration
+  if (dynamic.clientImageResize !== undefined) {
+    mergedConfig.clientImageResize = {
+      ...mergedConfig.clientImageResize,
+      ...dynamic.clientImageResize,
     };
   }
 

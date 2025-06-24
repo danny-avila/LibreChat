@@ -48,7 +48,7 @@ export type FileConfig = {
   };
   serverFileSizeLimit?: number;
   avatarSizeLimit?: number;
-  clientSideImageResize?: {
+  clientImageResize?: {
     enabled?: boolean;
     maxWidth?: number;
     maxHeight?: number;

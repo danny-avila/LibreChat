@@ -29,6 +29,10 @@ const roles = isRedisEnabled
   ? new Keyv({ store: keyvRedis })
   : new Keyv({ namespace: CacheKeys.ROLES });
 
+const mcpTools = isRedisEnabled
+  ? new Keyv({ store: keyvRedis })
+  : new Keyv({ namespace: CacheKeys.MCP_TOOLS });
+
 const audioRuns = isRedisEnabled
   ? new Keyv({ store: keyvRedis, ttl: Time.TEN_MINUTES })
   : new Keyv({ namespace: CacheKeys.AUDIO_RUNS, ttl: Time.TEN_MINUTES });
@@ -67,6 +71,7 @@ const openIdExchangedTokensCache = isRedisEnabled
 
 const namespaces = {
   [CacheKeys.ROLES]: roles,
+  [CacheKeys.MCP_TOOLS]: mcpTools,
   [CacheKeys.CONFIG_STORE]: config,
   [CacheKeys.PENDING_REQ]: pending_req,
   [ViolationTypes.BAN]: new Keyv({ store: keyvMongo, namespace: CacheKeys.BANS, ttl: duration }),

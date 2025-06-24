@@ -31,11 +31,15 @@ const {
 } = require('librechat-data-provider');
 const { DynamicStructuredTool } = require('@langchain/core/tools');
 const { getBufferString, HumanMessage } = require('@langchain/core/messages');
-const { getCustomEndpointConfig, checkCapability } = require('~/server/services/Config');
+const {
+  getCustomEndpointConfig,
+  createGetMCPAuthMap,
+  checkCapability,
+} = require('~/server/services/Config');
 const { addCacheControl, createContextHandlers } = require('~/app/clients/prompts');
 const { initializeAgent } = require('~/server/services/Endpoints/agents/agent');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
-const { setMemory, deleteMemory, getFormattedMemories } = require('~/models');
+const { getFormattedMemories, deleteMemory, setMemory } = require('~/models');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const initOpenAI = require('~/server/services/Endpoints/openAI/initialize');
 const { checkAccess } = require('~/server/middleware/roles/access');
@@ -679,6 +683,8 @@ class AgentClient extends BaseClient {
         version: 'v2',
       };
 
+      const getUserMCPAuthMap = await createGetMCPAuthMap();
+
       const toolSet = new Set((this.options.agent.tools ?? []).map((tool) => tool && tool.name));
       let { messages: initialMessages, indexTokenCountMap } = formatAgentMessages(
         payload,
@@ -796,6 +802,20 @@ class AgentClient extends BaseClient {
           sendEvent(this.options.res, streamData);
           contentData.push(agentUpdate);
           run.Graph.contentData = contentData;
+        }
+
+        try {
+          if (getUserMCPAuthMap) {
+            config.configurable.userMCPAuthMap = await getUserMCPAuthMap({
+              tools: agent.tools,
+              userId: this.options.req.user.id,
+            });
+          }
+        } catch (err) {
+          logger.error(
+            `[api/server/controllers/agents/client.js #chatCompletion] Error getting custom user vars for agent ${agent.id}`,
+            err,
+          );
         }
 
         await run.processStream({ messages }, config, {

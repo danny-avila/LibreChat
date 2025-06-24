@@ -1,4 +1,5 @@
 import { v4 } from 'uuid';
+import { cloneDeep } from 'lodash';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   Constants,
@@ -51,10 +52,10 @@ export default function useChatFunctions({
   getMessages,
   setMessages,
   isSubmitting,
-  conversation,
   latestMessage,
   setSubmission,
   setLatestMessage,
+  conversation: immutableConversation,
 }: {
   index?: number;
   isSubmitting: boolean;
@@ -77,8 +78,8 @@ export default function useChatFunctions({
   const isTemporary = useRecoilValue(store.isTemporary);
   const codeArtifacts = useRecoilValue(store.codeArtifacts);
   const includeShadcnui = useRecoilValue(store.includeShadcnui);
-  const { getExpiry } = useUserKey(conversation?.endpoint ?? '');
   const customPromptMode = useRecoilValue(store.customPromptMode);
+  const { getExpiry } = useUserKey(immutableConversation?.endpoint ?? '');
   const setShowStopButton = useSetRecoilState(store.showStopButtonByIndex(index));
   const resetLatestMultiMessage = useResetRecoilState(store.latestMessageFamily(index + 1));
 
@@ -107,6 +108,8 @@ export default function useChatFunctions({
     if (!!isSubmitting || text === '') {
       return;
     }
+
+    const conversation = cloneDeep(immutableConversation);
 
     const endpoint = conversation?.endpoint;
     if (endpoint === null) {

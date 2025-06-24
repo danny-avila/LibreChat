@@ -2,7 +2,7 @@ import path from 'path';
 import winston from 'winston';
 import 'winston-daily-rotate-file';
 
-const logDir = path.join(__dirname, '..', 'logs');
+const logDir = path.join(__dirname, '..', '..', '..', 'api', 'logs');
 
 const { NODE_ENV, DEBUG_LOGGING = 'false' } = process.env;
 

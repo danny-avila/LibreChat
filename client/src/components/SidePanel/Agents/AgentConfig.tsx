@@ -1,11 +1,9 @@
-import { useQueryClient } from '@tanstack/react-query';
 import React, { useState, useMemo, useCallback } from 'react';
 import { Controller, useWatch, useFormContext } from 'react-hook-form';
-import { QueryKeys, EModelEndpoint, AgentCapabilities } from 'librechat-data-provider';
-import type { TPlugin } from 'librechat-data-provider';
+import { EModelEndpoint, AgentCapabilities } from 'librechat-data-provider';
+import type { AgentForm, AgentPanelProps, IconComponentTypes } from '~/common';
 import { cn, defaultTextProps, removeFocusOutlines, getEndpointField, getIconKey } from '~/utils';
 import { useToastContext, useFileMapContext, useAgentPanelContext } from '~/Providers';
-import type { AgentForm, AgentPanelProps, IconComponentTypes } from '~/common';
 import Action from '~/components/SidePanel/Builder/Action';
 import { ToolSelectDialog } from '~/components/Tools';
 import { icons } from '~/hooks/Endpoint/Icons';
@@ -15,7 +13,6 @@ import AgentAvatar from './AgentAvatar';
 import FileContext from './FileContext';
 import SearchForm from './Search/Form';
 import { useLocalize } from '~/hooks';
-import MCPSection from './MCPSection';
 import FileSearch from './FileSearch';
 import Artifacts from './Artifacts';
 import AgentTool from './AgentTool';
@@ -36,13 +33,10 @@ export default function AgentConfig({
 }: Pick<AgentPanelProps, 'agentsConfig' | 'createMutation' | 'endpointsConfig'>) {
   const localize = useLocalize();
   const fileMap = useFileMapContext();
-  const queryClient = useQueryClient();
   const { showToast } = useToastContext();
   const methods = useFormContext<AgentForm>();
   const [showToolDialog, setShowToolDialog] = useState(false);
-  const { actions, setAction, setActivePanel } = useAgentPanelContext();
-
-  const allTools = queryClient.getQueryData<TPlugin[]>([QueryKeys.tools]) ?? [];
+  const { actions, setAction, groupedTools: allTools, setActivePanel } = useAgentPanelContext();
 
   const { control } = methods;
   const provider = useWatch({ control, name: 'provider' });
@@ -169,6 +163,20 @@ export default function AgentConfig({
     Icon = icons[iconKey];
   }
 
+  // Determine what to show
+  const selectedToolIds = tools ?? [];
+  const visibleToolIds = new Set(selectedToolIds);
+
+  // Check what group parent tools should be shown if any subtool is present
+  Object.entries(allTools).forEach(([toolId, toolObj]) => {
+    if (toolObj.tools?.length) {
+      // if any subtool of this group is selected, ensure group parent tool rendered
+      if (toolObj.tools.some((st) => selectedToolIds.includes(st.tool_id))) {
+        visibleToolIds.add(toolId);
+      }
+    }
+  });
+
   return (
     <>
       <div className="h-auto bg-white px-4 pt-3 dark:bg-transparent">
@@ -287,28 +295,37 @@ export default function AgentConfig({
               ${toolsEnabled === true && actionsEnabled === true ? ' + ' : ''}
               ${actionsEnabled === true ? localize('com_assistants_actions') : ''}`}
           </label>
-          <div className="space-y-2">
-            {tools?.map((func, i) => (
-              <AgentTool
-                key={`${func}-${i}-${agent_id}`}
-                tool={func}
-                allTools={allTools}
-                agent_id={agent_id}
-              />
-            ))}
-            {(actions ?? [])
-              .filter((action) => action.agent_id === agent_id)
-              .map((action, i) => (
-                <Action
-                  key={i}
-                  action={action}
-                  onClick={() => {
-                    setAction(action);
-                    setActivePanel(Panel.actions);
-                  }}
-                />
-              ))}
-            <div className="flex space-x-2">
+          <div>
+            <div className="mb-1">
+              {/* // Render all visible IDs (including groups with subtools selected) */}
+              {[...visibleToolIds].map((toolId, i) => {
+                const tool = allTools[toolId];
+                if (!tool) return null;
+                return (
+                  <AgentTool
+                    key={`${toolId}-${i}-${agent_id}`}
+                    tool={toolId}
+                    allTools={allTools}
+                    agent_id={agent_id}
+                  />
+                );
+              })}
+            </div>
+            <div className="flex flex-col gap-1">
+              {(actions ?? [])
+                .filter((action) => action.agent_id === agent_id)
+                .map((action, i) => (
+                  <Action
+                    key={i}
+                    action={action}
+                    onClick={() => {
+                      setAction(action);
+                      setActivePanel(Panel.actions);
+                    }}
+                  />
+                ))}
+            </div>
+            <div className="mt-2 flex space-x-2">
               {(toolsEnabled ?? false) && (
                 <button
                   type="button"
@@ -343,7 +360,6 @@ export default function AgentConfig({
       <ToolSelectDialog
         isOpen={showToolDialog}
         setIsOpen={setShowToolDialog}
-        toolsFormKey="tools"
         endpoint={EModelEndpoint.agents}
       />
     </>

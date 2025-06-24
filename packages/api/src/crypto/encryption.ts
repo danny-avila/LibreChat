@@ -1,15 +1,15 @@
-require('dotenv').config();
-const crypto = require('node:crypto');
+import 'dotenv/config';
+import crypto from 'node:crypto';
 const { webcrypto } = crypto;
 
 // Use hex decoding for both key and IV for legacy methods.
-const key = Buffer.from(process.env.CREDS_KEY, 'hex');
-const iv = Buffer.from(process.env.CREDS_IV, 'hex');
+const key = Buffer.from(process.env.CREDS_KEY ?? '', 'hex');
+const iv = Buffer.from(process.env.CREDS_IV ?? '', 'hex');
 const algorithm = 'AES-CBC';
 
 // --- Legacy v1/v2 Setup: AES-CBC with fixed key and IV ---
 
-async function encrypt(value) {
+export async function encrypt(value: string) {
   const cryptoKey = await webcrypto.subtle.importKey('raw', key, { name: algorithm }, false, [
     'encrypt',
   ]);
@@ -23,7 +23,7 @@ async function encrypt(value) {
   return Buffer.from(encryptedBuffer).toString('hex');
 }
 
-async function decrypt(encryptedValue) {
+export async function decrypt(encryptedValue: string) {
   const cryptoKey = await webcrypto.subtle.importKey('raw', key, { name: algorithm }, false, [
     'decrypt',
   ]);
@@ -39,7 +39,7 @@ async function decrypt(encryptedValue) {
 
 // --- v2: AES-CBC with a random IV per encryption ---
 
-async function encryptV2(value) {
+export async function encryptV2(value: string) {
   const gen_iv = webcrypto.getRandomValues(new Uint8Array(16));
   const cryptoKey = await webcrypto.subtle.importKey('raw', key, { name: algorithm }, false, [
     'encrypt',
@@ -54,12 +54,12 @@ async function encryptV2(value) {
   return Buffer.from(gen_iv).toString('hex') + ':' + Buffer.from(encryptedBuffer).toString('hex');
 }
 
-async function decryptV2(encryptedValue) {
+export async function decryptV2(encryptedValue: string) {
   const parts = encryptedValue.split(':');
   if (parts.length === 1) {
     return parts[0];
   }
-  const gen_iv = Buffer.from(parts.shift(), 'hex');
+  const gen_iv = Buffer.from(parts.shift() ?? '', 'hex');
   const encrypted = parts.join(':');
   const cryptoKey = await webcrypto.subtle.importKey('raw', key, { name: algorithm }, false, [
     'decrypt',
@@ -81,10 +81,10 @@ const algorithm_v3 = 'aes-256-ctr';
  * Encrypts a value using AES-256-CTR.
  * Note: AES-256 requires a 32-byte key. Ensure that process.env.CREDS_KEY is a 64-character hex string.
  *
- * @param {string} value - The plaintext to encrypt.
- * @returns {string} The encrypted string with a "v3:" prefix.
+ * @param value - The plaintext to encrypt.
+ * @returns The encrypted string with a "v3:" prefix.
  */
-function encryptV3(value) {
+export function encryptV3(value: string) {
   if (key.length !== 32) {
     throw new Error(`Invalid key length: expected 32 bytes, got ${key.length} bytes`);
   }
@@ -94,7 +94,7 @@ function encryptV3(value) {
   return `v3:${iv_v3.toString('hex')}:${encrypted.toString('hex')}`;
 }
 
-function decryptV3(encryptedValue) {
+export function decryptV3(encryptedValue: string) {
   const parts = encryptedValue.split(':');
   if (parts[0] !== 'v3') {
     throw new Error('Not a v3 encrypted value');
@@ -106,7 +106,7 @@ function decryptV3(encryptedValue) {
   return decrypted.toString('utf8');
 }
 
-async function getRandomValues(length) {
+export async function getRandomValues(length: number) {
   if (!Number.isInteger(length) || length <= 0) {
     throw new Error('Length must be a positive integer');
   }
@@ -117,24 +117,13 @@ async function getRandomValues(length) {
 
 /**
  * Computes SHA-256 hash for the given input.
- * @param {string} input
- * @returns {Promise<string>}
+ * @param input - The input to hash.
+ * @returns The SHA-256 hash of the input.
  */
-async function hashBackupCode(input) {
+export async function hashBackupCode(input: string) {
   const encoder = new TextEncoder();
   const data = encoder.encode(input);
   const hashBuffer = await webcrypto.subtle.digest('SHA-256', data);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
   return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
 }
-
-module.exports = {
-  encrypt,
-  decrypt,
-  encryptV2,
-  decryptV2,
-  encryptV3,
-  decryptV3,
-  hashBackupCode,
-  getRandomValues,
-};

@@ -1,3 +1,6 @@
+import { Constants } from 'librechat-data-provider';
+
+export const mcpToolPattern = new RegExp(`^.+${Constants.mcp_delimiter}.+$`);
 /**
  * Normalizes a server name to match the pattern ^[a-zA-Z0-9_.-]+$
  * This is required for Azure OpenAI models with Tool Calling
