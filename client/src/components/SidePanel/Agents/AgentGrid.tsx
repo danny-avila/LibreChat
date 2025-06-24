@@ -278,9 +278,7 @@ const AgentGrid: React.FC<AgentGridProps> = ({ category, searchQuery, onSelectAg
       )}
     </div>
   );
-  console.log('isLoading', isLoading);
-  console.log('isFetching', isFetching);
-  console.log('isFetchingNextPage', isFetchingNextPage);
+
   if (isLoading || (isFetching && !isFetchingNextPage)) {
     return loadingSkeleton;
   }
