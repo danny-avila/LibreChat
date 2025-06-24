@@ -456,7 +456,7 @@ describe('Accessibility Improvements', () => {
       expect(alert).toHaveAttribute('aria-atomic', 'true');
 
       // Check heading structure
-      const heading = screen.getByRole('heading', { level: 2 });
+      const heading = screen.getByRole('heading', { level: 3 });
       expect(heading).toHaveAttribute('id', 'error-title');
     });
 

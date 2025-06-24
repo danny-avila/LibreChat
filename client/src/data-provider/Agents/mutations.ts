@@ -193,8 +193,6 @@ export const useUploadAgentAvatarMutation = (
   t.AgentAvatarVariables, // request
   unknown // context
 > => {
-  const queryClient = useQueryClient();
-
   return useMutation([MutationKeys.agentAvatarUpload], {
     mutationFn: ({ postCreation, ...variables }: t.AgentAvatarVariables) =>
       dataService.uploadAgentAvatar(variables),

@@ -301,5 +301,3 @@ describe('ErrorDisplay', () => {
     });
   });
 });
-
-export default {};
