@@ -525,5 +525,188 @@ describe('Environment Variable Extraction (MCP)', () => {
       const result3 = processMCPEnv(obj3, userWithBoth);
       expect('headers' in result3 && result3.headers?.['User-Id']).toBe('user-789');
     });
+
+    it('should process customUserVars in env field', () => {
+      const user = createTestUser();
+      const customUserVars = {
+        CUSTOM_VAR_1: 'custom-value-1',
+        CUSTOM_VAR_2: 'custom-value-2',
+      };
+      const obj: MCPOptions = {
+        command: 'node',
+        args: ['server.js'],
+        env: {
+          VAR_A: '{{CUSTOM_VAR_1}}',
+          VAR_B: 'Value with {{CUSTOM_VAR_2}}',
+          VAR_C: '${TEST_API_KEY}',
+          VAR_D: '{{LIBRECHAT_USER_EMAIL}}',
+        },
+      };
+
+      const result = processMCPEnv(obj, user, customUserVars);
+
+      expect('env' in result && result.env).toEqual({
+        VAR_A: 'custom-value-1',
+        VAR_B: 'Value with custom-value-2',
+        VAR_C: 'test-api-key-value',
+        VAR_D: 'test@example.com',
+      });
+    });
+
+    it('should process customUserVars in headers field', () => {
+      const user = createTestUser();
+      const customUserVars = {
+        USER_TOKEN: 'user-specific-token',
+        REGION: 'us-west-1',
+      };
+      const obj: MCPOptions = {
+        type: 'sse',
+        url: 'https://example.com/api',
+        headers: {
+          Authorization: 'Bearer {{USER_TOKEN}}',
+          'X-Region': '{{REGION}}',
+          'X-System-Key': '${TEST_API_KEY}',
+          'X-User-Id': '{{LIBRECHAT_USER_ID}}',
+        },
+      };
+
+      const result = processMCPEnv(obj, user, customUserVars);
+
+      expect('headers' in result && result.headers).toEqual({
+        Authorization: 'Bearer user-specific-token',
+        'X-Region': 'us-west-1',
+        'X-System-Key': 'test-api-key-value',
+        'X-User-Id': 'test-user-id',
+      });
+    });
+
+    it('should process customUserVars in URL field', () => {
+      const user = createTestUser();
+      const customUserVars = {
+        API_VERSION: 'v2',
+        TENANT_ID: 'tenant123',
+      };
+      const obj: MCPOptions = {
+        type: 'websocket',
+        url: 'wss://example.com/{{TENANT_ID}}/api/{{API_VERSION}}?user={{LIBRECHAT_USER_ID}}&key=${TEST_API_KEY}',
+      };
+
+      const result = processMCPEnv(obj, user, customUserVars);
+
+      expect('url' in result && result.url).toBe(
+        'wss://example.com/tenant123/api/v2?user=test-user-id&key=test-api-key-value',
+      );
+    });
+
+    it('should prioritize customUserVars over user fields and system env vars if placeholders are the same (though not recommended)', () => {
+      // This tests the order of operations: customUserVars -> userFields -> systemEnv
+      // BUt it's generally not recommended to have overlapping placeholder names.
+      process.env.LIBRECHAT_USER_EMAIL = 'system-email-should-be-overridden';
+      const user = createTestUser({ email: 'user-email-should-be-overridden' });
+      const customUserVars = {
+        LIBRECHAT_USER_EMAIL: 'custom-email-wins',
+      };
+      const obj: MCPOptions = {
+        type: 'sse',
+        url: 'https://example.com/api',
+        headers: {
+          'Test-Email': '{{LIBRECHAT_USER_EMAIL}}', // Placeholder that could match custom, user, or system
+        },
+      };
+
+      const result = processMCPEnv(obj, user, customUserVars);
+      expect('headers' in result && result.headers?.['Test-Email']).toBe('custom-email-wins');
+
+      // Clean up env var
+      delete process.env.LIBRECHAT_USER_EMAIL;
+    });
+
+    it('should handle customUserVars with no matching placeholders', () => {
+      const user = createTestUser();
+      const customUserVars = {
+        UNUSED_VAR: 'unused-value',
+      };
+      const obj: MCPOptions = {
+        command: 'node',
+        args: ['server.js'],
+        env: {
+          API_KEY: '${TEST_API_KEY}',
+        },
+      };
+
+      const result = processMCPEnv(obj, user, customUserVars);
+      expect('env' in result && result.env).toEqual({
+        API_KEY: 'test-api-key-value',
+      });
+    });
+
+    it('should handle placeholders with no matching customUserVars (falling back to user/system vars)', () => {
+      const user = createTestUser({ email: 'user-provided-email@example.com' });
+      // No customUserVars provided or customUserVars is empty
+      const customUserVars = {};
+      const obj: MCPOptions = {
+        type: 'sse',
+        url: 'https://example.com/api',
+        headers: {
+          'User-Email-Header': '{{LIBRECHAT_USER_EMAIL}}', // Should use user.email
+          'System-Key-Header': '${TEST_API_KEY}', // Should use process.env.TEST_API_KEY
+          'Non-Existent-Custom': '{{NON_EXISTENT_CUSTOM_VAR}}', // Should remain as placeholder
+        },
+      };
+
+      const result = processMCPEnv(obj, user, customUserVars);
+      expect('headers' in result && result.headers).toEqual({
+        'User-Email-Header': 'user-provided-email@example.com',
+        'System-Key-Header': 'test-api-key-value',
+        'Non-Existent-Custom': '{{NON_EXISTENT_CUSTOM_VAR}}',
+      });
+    });
+
+    it('should correctly process a mix of all variable types', () => {
+      const user = createTestUser({ id: 'userXYZ', username: 'john.doe' });
+      const customUserVars = {
+        CUSTOM_ENDPOINT_ID: 'ep123',
+        ANOTHER_CUSTOM: 'another_val',
+      };
+
+      const obj = {
+        type: 'streamable-http' as const,
+        url: 'https://{{CUSTOM_ENDPOINT_ID}}.example.com/users/{{LIBRECHAT_USER_USERNAME}}',
+        headers: {
+          'X-Auth-Token': '{{CUSTOM_TOKEN_FROM_USER_SETTINGS}}', // Assuming this would be a custom var
+          'X-User-ID': '{{LIBRECHAT_USER_ID}}',
+          'X-System-Test-Key': '${TEST_API_KEY}', // Using existing env var from beforeEach
+        },
+        env: {
+          PROCESS_MODE: '{{PROCESS_MODE_CUSTOM}}', // Another custom var
+          USER_HOME_DIR: '/home/{{LIBRECHAT_USER_USERNAME}}',
+          SYSTEM_PATH: '${PATH}', // Example of a system env var
+        },
+      };
+
+      // Simulate customUserVars that would be passed, including those for headers and env
+      const allCustomVarsForCall = {
+        ...customUserVars,
+        CUSTOM_TOKEN_FROM_USER_SETTINGS: 'secretToken123!',
+        PROCESS_MODE_CUSTOM: 'production',
+      };
+
+      // Cast obj to MCPOptions when calling processMCPEnv.
+      // This acknowledges the object might not strictly conform to one schema in the union,
+      // but we are testing the function's ability to handle these properties if present.
+      const result = processMCPEnv(obj as MCPOptions, user, allCustomVarsForCall);
+
+      expect('url' in result && result.url).toBe('https://ep123.example.com/users/john.doe');
+      expect('headers' in result && result.headers).toEqual({
+        'X-Auth-Token': 'secretToken123!',
+        'X-User-ID': 'userXYZ',
+        'X-System-Test-Key': 'test-api-key-value', // Expecting value of TEST_API_KEY
+      });
+      expect('env' in result && result.env).toEqual({
+        PROCESS_MODE: 'production',
+        USER_HOME_DIR: '/home/john.doe',
+        SYSTEM_PATH: process.env.PATH, // Actual value of PATH from the test environment
+      });
+    });
   });
 });
