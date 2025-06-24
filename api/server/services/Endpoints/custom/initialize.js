@@ -4,10 +4,9 @@ const {
   envVarRegex,
   FetchTokenConfig,
   extractEnvVariable,
-  resolveHeaders,
 } = require('librechat-data-provider');
 const { Providers } = require('@librechat/agents');
-const { getOpenAIConfig, createHandleLLMNewToken } = require('@librechat/api');
+const { getOpenAIConfig, createHandleLLMNewToken, resolveHeaders } = require('@librechat/api');
 const { getUserKeyValues, checkUserKeyExpiry } = require('~/server/services/UserService');
 const { getCustomEndpointConfig } = require('~/server/services/Config');
 const { fetchModels } = require('~/server/services/ModelService');
