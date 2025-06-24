@@ -18,6 +18,7 @@ import useLocalize, { TranslationKeys } from '~/hooks/useLocalize';
 import { useChatContext } from '~/Providers/ChatContext';
 import { useToastContext } from '~/Providers/ToastContext';
 import { logger, validateFiles } from '~/utils';
+import useClientResize from './useClientResize';
 import { processFileForUpload } from '~/utils/heicConverter';
 import { useDelayedUploadToast } from './useDelayedUploadToast';
 import useUpdateFiles from './useUpdateFiles';
@@ -41,6 +42,7 @@ const useFileHandling = (params?: UseFileHandling) => {
   const { addFile, replaceFile, updateFileById, deleteFileById } = useUpdateFiles(
     params?.fileSetter ?? setFiles,
   );
+  const { resizeImageIfNeeded } = useClientResize();
 
   const agent_id = params?.additionalMetadata?.agent_id ?? '';
   const assistant_id = params?.additionalMetadata?.assistant_id ?? '';
@@ -298,7 +300,7 @@ const useFileHandling = (params?: UseFileHandling) => {
         }
 
         // Process file for HEIC conversion if needed
-        const processedFile = await processFileForUpload(
+        const heicProcessedFile = await processFileForUpload(
           originalFile,
           0.9,
           (conversionProgress) => {
@@ -311,23 +313,50 @@ const useFileHandling = (params?: UseFileHandling) => {
           },
         );
 
-        // If file was converted, update with new file and preview
-        if (processedFile !== originalFile) {
+        let finalProcessedFile = heicProcessedFile;
+
+        // Apply client-side resizing if available and appropriate
+        if (heicProcessedFile.type.startsWith('image/')) {
+          try {
+            const resizeResult = await resizeImageIfNeeded(heicProcessedFile);
+            finalProcessedFile = resizeResult.file;
+
+            // Show toast notification if image was resized
+            if (resizeResult.resized && resizeResult.result) {
+              const { originalSize, newSize, compressionRatio } = resizeResult.result;
+              const originalSizeMB = (originalSize / (1024 * 1024)).toFixed(1);
+              const newSizeMB = (newSize / (1024 * 1024)).toFixed(1);
+              const savedPercent = Math.round((1 - compressionRatio) * 100);
+
+              showToast({
+                message: `Image resized: ${originalSizeMB}MB → ${newSizeMB}MB (${savedPercent}% smaller)`,
+                status: 'success',
+                duration: 3000,
+              });
+            }
+          } catch (resizeError) {
+            console.warn('Image resize failed, using original:', resizeError);
+            // Continue with HEIC processed file if resizing fails
+          }
+        }
+
+        // If file was processed (HEIC converted or resized), update with new file and preview
+        if (finalProcessedFile !== originalFile) {
           URL.revokeObjectURL(initialPreview); // Clean up original preview
-          const newPreview = URL.createObjectURL(processedFile);
+          const newPreview = URL.createObjectURL(finalProcessedFile);
 
           const updatedExtendedFile: ExtendedFile = {
             ...initialExtendedFile,
-            file: processedFile,
-            type: processedFile.type,
+            file: finalProcessedFile,
+            type: finalProcessedFile.type,
             preview: newPreview,
-            progress: 0.5, // Conversion complete, ready for upload
-            size: processedFile.size,
+            progress: 0.5, // Processing complete, ready for upload
+            size: finalProcessedFile.size,
           };
 
           replaceFile(updatedExtendedFile);
 
-          const isImage = processedFile.type.split('/')[0] === 'image';
+          const isImage = finalProcessedFile.type.split('/')[0] === 'image';
           if (isImage) {
             loadImage(updatedExtendedFile, newPreview);
             continue;
@@ -335,7 +364,7 @@ const useFileHandling = (params?: UseFileHandling) => {
 
           await startUpload(updatedExtendedFile);
         } else {
-          // File wasn't converted, proceed with original
+          // File wasn't processed, proceed with original
           const isImage = originalFile.type.split('/')[0] === 'image';
           const tool_resource =
             initialExtendedFile.tool_resource ?? params?.additionalMetadata?.tool_resource;

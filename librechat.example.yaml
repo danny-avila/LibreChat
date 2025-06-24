@@ -300,6 +300,12 @@ endpoints:
 #   imageGeneration: # Image Gen settings, either percentage or px
 #     percentage: 100
 #     px: 1024
+#   # Client-side image resizing to prevent upload errors
+#   clientImageResize:
+#     enabled: false  # Enable/disable client-side image resizing (default: false)
+#     maxWidth: 1900  # Maximum width for resized images (default: 1900)
+#     maxHeight: 1900  # Maximum height for resized images (default: 1900)
+#     quality: 0.92  # JPEG quality for compression (0.0-1.0, default: 0.92)
 # # See the Custom Configuration Guide for more information on Assistants Config:
 # # https://www.librechat.ai/docs/configuration/librechat_yaml/object_structure/assistants_endpoint
 
