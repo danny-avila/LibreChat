@@ -13,18 +13,12 @@ const { URL } = require('url');
 
 class Collections extends Tool {
   constructor(fields = {}) {
-    super();
-
-    this.name = 'collections';
-    this.description_for_model =
-      'Allows the assistant to manage organized collections of notes, facts, sources, and information across sessions. You can create and organize collections in a hierarchical structure with parent-child relationships. Actions: create_collection, list_collections, search_collections, add_note, search_notes, delete_note, update_note, update_collection, delete_collection. Use add_note to store new information, search_notes to retrieve relevant information, organize collections hierarchically.';
-    this.description =
-      'Store and retrieve organized knowledge in collections with hierarchical structure. ' +
+    const description = 'Store and retrieve organized knowledge in collections with hierarchical structure. ' +
       'Actions: create_collection, list_collections, search_collections, add_note, search_notes, delete_note, update_note, update_collection, delete_collection. ' +
       'Supports keyword, semantic, and hybrid search across all notes. ' +
       'Perfect for maintaining organized information across multiple chat sessions.';
 
-    this.schema = z.object({
+    const schema = z.object({
       action: z.enum([
         'create_collection',
         'list_collections',
@@ -50,7 +44,16 @@ class Collections extends Tool {
       search_mode: z.enum(['keyword', 'semantic', 'hybrid']).optional(),
       limit: z.number().min(1).max(100).optional(),
       tag_filter: z.array(z.string().max(50)).max(20).optional(),
+      recursive: z.boolean().optional(),
     });
+
+    super({ name: 'collections', description, schema });
+
+    this.name = 'collections';
+    this.description_for_model =
+      'Allows the assistant to manage organized collections of notes, facts, sources, and information across sessions. You can create and organize collections in a hierarchical structure with parent-child relationships. Actions: create_collection, list_collections, search_collections, add_note, search_notes, delete_note, update_note, update_collection, delete_collection. Use add_note to store new information, search_notes to retrieve relevant information, organize collections hierarchically.';
+    this.description = description;
+    this.schema = schema;
 
     // Initialize properties from fields parameter
     this.userId = fields.userId || null;
@@ -72,29 +75,55 @@ class Collections extends Tool {
     if (!url || typeof url !== 'string') return url;
 
     const sanitized = this.sanitizeText(url);
+    if (!sanitized) return sanitized;
 
-    // Basic URL validation using built-in URL constructor
-    if (sanitized) {
-      try {
-        // Try to parse as URL - if it has a protocol
-        if (sanitized.includes('://')) {
-          new URL(sanitized);
-        }
-        // If no protocol, just validate it's not obviously malicious
-        else if (!/^[a-zA-Z0-9][a-zA-Z0-9.-]*[a-zA-Z0-9]/.test(sanitized)) {
-          logger.warn('Potentially invalid URL provided:', sanitized);
-        }
-      } catch (_e) {
-        logger.warn('Invalid URL provided:', sanitized);
+    // Allowed protocols
+    const allowedProtocols = ['http:', 'https:', 'ftp:', 'mailto:'];
+
+    try {
+      let parsedUrl;
+      
+      // If URL has no protocol, try adding https://
+      if (!sanitized.includes('://')) {
+        parsedUrl = new URL('https://' + sanitized);
+      } else {
+        parsedUrl = new URL(sanitized);
       }
-    }
 
-    return sanitized;
+      // Check if protocol is allowed
+      if (!allowedProtocols.includes(parsedUrl.protocol)) {
+        logger.warn(`Blocked URL with disallowed protocol: ${parsedUrl.protocol}`, sanitized);
+        return null;
+      }
+
+      // Additional checks for suspicious patterns
+      if (parsedUrl.protocol === 'javascript:' || 
+          sanitized.toLowerCase().includes('javascript:') ||
+          sanitized.toLowerCase().includes('data:') ||
+          sanitized.toLowerCase().includes('vbscript:')) {
+        logger.warn('Blocked potentially malicious URL:', sanitized);
+        return null;
+      }
+
+      return sanitized;
+    } catch (error) {
+      logger.warn('Invalid URL provided:', sanitized, error.message);
+      return null;
+    }
   }
 
   sanitizeArray(arr) {
     if (!Array.isArray(arr)) return arr;
-    return arr.map((item) => this.sanitizeText(item)).filter((item) => item && item.length > 0);
+    
+    const originalLength = arr.length;
+    const sanitized = arr.map((item) => this.sanitizeText(item)).filter((item) => item && item.length > 0);
+    
+    if (sanitized.length < originalLength) {
+      const droppedCount = originalLength - sanitized.length;
+      logger.warn(`sanitizeArray: ${droppedCount} item(s) were dropped due to being empty or invalid`);
+    }
+    
+    return sanitized;
   }
 
   sanitizeSearchQuery(query) {
@@ -111,7 +140,7 @@ class Collections extends Tool {
     try {
       this.pool = new Pool({
         host: process.env.POSTGRES_HOST || 'vectordb',
-        port: process.env.POSTGRES_PORT || 5432,
+        port: Number(process.env.POSTGRES_PORT) || 5432,
         database: process.env.POSTGRES_DB || 'mydatabase',
         user: process.env.POSTGRES_USER || 'myuser',
         password: process.env.POSTGRES_PASSWORD || 'mypassword',
@@ -121,6 +150,14 @@ class Collections extends Tool {
       await this.ensureTables();
     } catch (error) {
       logger.error('Failed to initialize Collections database:', error);
+    }
+  }
+
+  async close() {
+    if (this.pool) {
+      await this.pool.end();
+      this.pool = null;
+      logger.debug('Collections database connection pool closed');
     }
   }
 
@@ -139,7 +176,7 @@ class Collections extends Tool {
           user_id TEXT NOT NULL,
           name TEXT NOT NULL,
           description TEXT,
-          parent_id UUID REFERENCES collections(id) ON DELETE CASCADE NULL,
+          parent_id UUID REFERENCES collections(id) ON DELETE CASCADE,
           tags TEXT[] DEFAULT '{}',
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
           updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -188,6 +225,9 @@ class Collections extends Tool {
       await client.query(
         'CREATE INDEX IF NOT EXISTS idx_note_vectors_embedding ON note_vectors USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100)',
       );
+      
+      // Analyze the note_vectors table to make the ivfflat index usable
+      await client.query('ANALYZE note_vectors;');
     } finally {
       client.release();
     }
@@ -195,12 +235,22 @@ class Collections extends Tool {
 
   async generateEmbedding(text) {
     try {
+      // Truncate text to handle OpenAI token limits
+      // text-embedding-3-small has a limit of 8192 tokens
+      // Rough approximation: 1 token ≈ 4 characters, so limit to ~30000 chars to be safe
+      const maxChars = 30000;
+      let processedText = text;
+      if (text && text.length > maxChars) {
+        processedText = text.substring(0, maxChars);
+        logger.warn(`Text truncated from ${text.length} to ${maxChars} characters for embedding generation`);
+      }
+
       // Use OpenAI embeddings directly - no external service dependencies
       if (process.env.OPENAI_API_KEY) {
         const response = await axios.post(
           'https://api.openai.com/v1/embeddings',
           {
-            input: text,
+            input: processedText,
             model: 'text-embedding-3-small',
           },
           {
@@ -363,38 +413,31 @@ class Collections extends Tool {
       return true;
     }
 
-    // Start with the proposed parent
-    let currentId = parentId;
-    const visited = new Set();
+    // Use a recursive CTE to check for circular references in one query
+    const query = `
+      WITH RECURSIVE parent_chain AS (
+        -- Base case: start with the proposed parent
+        SELECT id, parent_id, 0 as depth
+        FROM collections
+        WHERE id = $1
+        
+        UNION ALL
+        
+        -- Recursive case: follow the parent chain upward
+        SELECT c.id, c.parent_id, pc.depth + 1
+        FROM collections c
+        JOIN parent_chain pc ON c.id = pc.parent_id
+        WHERE pc.depth < 100  -- Prevent infinite recursion in case of existing cycles
+      )
+      SELECT COUNT(*) as cycle_count
+      FROM parent_chain
+      WHERE id = $2;
+    `;
 
-    // Traverse up the parent chain
-    while (currentId) {
-      // If we've seen this ID before, there's a cycle
-      if (visited.has(currentId)) {
-        return true;
-      }
-      visited.add(currentId);
-
-      // Get the parent of the current node
-      const result = await client.query('SELECT parent_id FROM collections WHERE id = $1', [
-        currentId,
-      ]);
-
-      // If no results or no parent, we've reached the top
-      if (result.rows.length === 0 || !result.rows[0].parent_id) {
-        return false;
-      }
-
-      // If the parent is our original collection, this would create a cycle
-      if (result.rows[0].parent_id === collectionId) {
-        return true;
-      }
-
-      // Move up to the parent
-      currentId = result.rows[0].parent_id;
-    }
-
-    return false;
+    const result = await client.query(query, [parentId, collectionId]);
+    
+    // If collectionId appears in the parent chain, it would create a cycle
+    return parseInt(result.rows[0].cycle_count) > 0;
   }
 
   async deleteCollection(collectionId) {
@@ -505,9 +548,15 @@ class Collections extends Tool {
     let params = [parentId, this.userId];
     let paramIndex = 3;
 
+    // Build WHERE clause for tag filtering
+    const whereConditions = [];
     if (sanitizedTagFilter && sanitizedTagFilter.length > 0) {
-      query += ` WHERE tags && $${paramIndex++}`;
+      whereConditions.push(`tags && $${paramIndex++}`);
       params.push(sanitizedTagFilter);
+    }
+    
+    if (whereConditions.length > 0) {
+      query += ` WHERE ${whereConditions.join(' AND ')}`;
     }
 
     query += ' ORDER BY depth, updated_at DESC';
@@ -607,9 +656,10 @@ class Collections extends Tool {
       // Generate and store embedding
       const embedding = await this.generateEmbedding(`${title}\n\n${content}`);
       if (embedding) {
-        // Use direct SQL insert for vector - pgvector has issues with prepared statements
+        // Use parameterized query for embedding insertion
         await client.query(
-          `INSERT INTO note_vectors (note_id, embedding) VALUES ('${note.id}', '[${embedding.join(',')}]')`
+          'INSERT INTO note_vectors (note_id, embedding) VALUES ($1, $2)',
+          [note.id, `[${embedding.join(',')}]`]
         );
         logger.debug(`Embedding stored for note ${note.id}`);
       } else {
@@ -732,9 +782,10 @@ class Collections extends Tool {
           // Delete existing embedding if it exists
           await client.query('DELETE FROM note_vectors WHERE note_id = $1', [noteId]);
 
-          // Insert new embedding using direct SQL - pgvector has issues with prepared statements
+          // Insert new embedding using parameterized query
           await client.query(
-            `INSERT INTO note_vectors (note_id, embedding) VALUES ('${noteId}', '[${embedding.join(',')}]')`
+            'INSERT INTO note_vectors (note_id, embedding) VALUES ($1, $2)',
+            [noteId, `[${embedding.join(',')}]`]
           );
         }
       }
@@ -849,13 +900,15 @@ class Collections extends Tool {
 
         // Build WHERE clause for CTEs based on existing conditions
         let cteWhereClause = 'WHERE c.user_id = $1';
+        let cteParamCount = 1;
+        
         if (actualCollectionIds && actualCollectionIds.length > 0) {
-          const collectionParam = queryParams.findIndex((p) => p === actualCollectionIds) + 1;
-          cteWhereClause += ` AND n.collection_id = ANY($${collectionParam})`;
+          cteParamCount++;
+          cteWhereClause += ` AND n.collection_id = ANY($${cteParamCount})`;
         }
         if (sanitizedTagFilter && sanitizedTagFilter.length > 0) {
-          const tagParam = queryParams.findIndex((p) => p === sanitizedTagFilter) + 1;
-          cteWhereClause += ` AND n.tags && $${tagParam}`;
+          cteParamCount++;
+          cteWhereClause += ` AND n.tags && $${cteParamCount}`;
         }
 
         paramCount++;
@@ -947,6 +1000,9 @@ class Collections extends Tool {
 
   async _call(args) {
     try {
+      // Validate input arguments against schema
+      const validatedArgs = this.schema.parse(args);
+      
       if (!this.userId) {
         return JSON.stringify({ error: 'User context not available' });
       }
@@ -954,7 +1010,7 @@ class Collections extends Tool {
       // Ensure database initialization complete
       await this.ready;
 
-      const { action } = args;
+      const { action } = validatedArgs;
 
       switch (action) {
         case 'create_collection': {
@@ -963,7 +1019,7 @@ class Collections extends Tool {
             collection_description = '',
             collection_tags = [],
             parent_collection_id = null,
-          } = args;
+          } = validatedArgs;
 
           if (!collection_name) {
             return JSON.stringify({ error: 'collection_name is required' });
@@ -991,7 +1047,7 @@ class Collections extends Tool {
             collection_description,
             collection_tags,
             parent_collection_id,
-          } = args;
+          } = validatedArgs;
 
           if (!collection_id) {
             return JSON.stringify({ error: 'collection_id is required' });
@@ -1018,7 +1074,7 @@ class Collections extends Tool {
         }
 
         case 'delete_collection': {
-          const { collection_id } = args;
+          const { collection_id } = validatedArgs;
 
           if (!collection_id) {
             return JSON.stringify({ error: 'collection_id is required' });
@@ -1144,7 +1200,7 @@ class Collections extends Tool {
             tag_filter,
             limit = 20,
             recursive = false,
-          } = args;
+          } = validatedArgs;
 
           if (!search_query) {
             return JSON.stringify({ error: 'search_query is required' });
