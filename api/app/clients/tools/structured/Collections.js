@@ -55,6 +55,7 @@ class Collections extends Tool {
       note_id: z.string().uuid().optional(),
       search_query: z.string().max(500).optional(),
       search_mode: z.enum(['keyword', 'semantic', 'hybrid']).optional(),
+      return_mode: z.enum(['lite', 'full']).optional(),
       limit: z.number().min(1).max(100).optional(),
       tag_filter: z.array(z.string().max(50)).max(20).optional(),
       recursive: z.boolean().optional(),
@@ -64,7 +65,7 @@ class Collections extends Tool {
 
     this.name = 'collections';
     this.description_for_model =
-      'Allows the assistant to manage organized collections of notes, facts, sources, and information across sessions. You can create and organize collections in a hierarchical structure with parent-child relationships. Actions: create_collection, list_collections, search_collections, add_note, bulk_add_notes, search_notes, delete_note, update_note, update_collection, delete_collection. Use add_note to store single notes, bulk_add_notes to create multiple notes at once, search_notes to retrieve relevant information, organize collections hierarchically.';
+      'Allows the assistant to manage organized collections of notes, facts, sources, and information across sessions. You can create and organize collections in a hierarchical structure with parent-child relationships. Actions: create_collection, list_collections, search_collections, add_note, bulk_add_notes, search_notes, delete_note, update_note, update_collection, delete_collection. Use add_note to store single notes, bulk_add_notes to create multiple notes at once, search_notes to retrieve relevant information with return_mode "lite" (default, excludes content/tags) or "full" (includes all fields), organize collections hierarchically.';
     this.description = description;
     this.schema = schema;
 
@@ -927,6 +928,7 @@ class Collections extends Tool {
     const {
       searchQuery,
       searchMode = 'hybrid',
+      returnMode = 'lite',
       collectionIds = null,
       recursive = false,
       tagFilter = null,
@@ -972,8 +974,21 @@ class Collections extends Tool {
 
       if (searchMode === 'keyword') {
         paramCount++;
+        const selectFields =
+          returnMode === 'lite'
+            ? 'n.id, n.collection_id, n.title, n.source_url, n.created_at, c.name as collection_name'
+            : 'n.*, c.name as collection_name';
+        const scoreField =
+          returnMode === 'lite'
+            ? "ts_rank(to_tsvector('english', n.content), plainto_tsquery('english', $" +
+              paramCount +
+              ')) as score'
+            : "ts_rank(to_tsvector('english', n.content), plainto_tsquery('english', $" +
+              paramCount +
+              ')) as score';
+
         const query = `
-          SELECT n.*, c.name as collection_name, ts_rank(to_tsvector('english', n.content), plainto_tsquery('english', $${paramCount})) as score
+          SELECT ${selectFields}, ${scoreField}
           FROM notes n
           ${joinCollections}
           ${whereConditions}
@@ -993,8 +1008,13 @@ class Collections extends Tool {
         }
 
         paramCount++;
+        const selectFields =
+          returnMode === 'lite'
+            ? 'n.id, n.collection_id, n.title, n.source_url, n.created_at, c.name as collection_name'
+            : 'n.*, c.name as collection_name';
+
         const query = `
-          SELECT n.*, c.name as collection_name, 
+          SELECT ${selectFields}, 
                  CASE 
                    WHEN v.embedding IS NOT NULL THEN (1 - (v.embedding <=> '[${queryEmbedding.join(',')}]'))
                    ELSE 0
@@ -1034,6 +1054,11 @@ class Collections extends Tool {
         paramCount++;
         const limitParam = paramCount;
 
+        const selectFields =
+          returnMode === 'lite'
+            ? 'n.id, n.collection_id, n.title, n.source_url, n.created_at, c.name as collection_name'
+            : 'n.*, c.name as collection_name';
+
         const query = `
           WITH keyword_scores AS (
             SELECT n.id, ts_rank(to_tsvector('english', n.content), plainto_tsquery('english', $${textParam})) as keyword_score
@@ -1050,7 +1075,7 @@ class Collections extends Tool {
             ${cteWhereClause}
             AND v.embedding IS NOT NULL
           )
-          SELECT n.*, c.name as collection_name,
+          SELECT ${selectFields},
                  COALESCE(k.keyword_score * 0.3, 0) + COALESCE(s.semantic_score * 0.7, 0) as score
           FROM notes n
           ${joinCollections}
@@ -1340,6 +1365,7 @@ class Collections extends Tool {
           const {
             search_query,
             search_mode = 'hybrid',
+            return_mode = 'lite',
             collection_id,
             tag_filter,
             limit = 20,
@@ -1354,26 +1380,42 @@ class Collections extends Tool {
           const notes = await this.searchNotes({
             searchQuery: search_query,
             searchMode: search_mode,
+            returnMode: return_mode,
             collectionIds,
             recursive,
             tagFilter: tag_filter,
             limit,
           });
 
+          // Map results based on return mode
+          const mappedNotes =
+            return_mode === 'lite'
+              ? notes.map((n) => ({
+                  id: n.id,
+                  collection_id: n.collection_id,
+                  collection_name: n.collection_name,
+                  title: n.title,
+                  source_url: n.source_url,
+                  score: n.score,
+                  created_at: n.created_at,
+                }))
+              : notes.map((n) => ({
+                  id: n.id,
+                  collection_id: n.collection_id,
+                  collection_name: n.collection_name,
+                  title: n.title,
+                  content: n.content,
+                  source_url: n.source_url,
+                  tags: n.tags,
+                  score: n.score,
+                  created_at: n.created_at,
+                }));
+
           return JSON.stringify({
             success: true,
-            notes: notes.map((n) => ({
-              id: n.id,
-              collection_id: n.collection_id,
-              collection_name: n.collection_name,
-              title: n.title,
-              content: n.content,
-              source_url: n.source_url,
-              tags: n.tags,
-              score: n.score,
-              created_at: n.created_at,
-            })),
+            notes: mappedNotes,
             search_mode: search_mode,
+            return_mode: return_mode,
             query: search_query,
           });
         }
