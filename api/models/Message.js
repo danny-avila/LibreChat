@@ -1,7 +1,7 @@
 const { z } = require('zod');
 const { logger } = require('@librechat/data-schemas');
 const { Message } = require('~/db/models');
-const { createTempChatExpirationDate } = require('~/server/utils/tempChatRetention');
+const { createTempChatExpirationDate } = require('@librechat/api');
 
 const idSchema = z.string().uuid();
 

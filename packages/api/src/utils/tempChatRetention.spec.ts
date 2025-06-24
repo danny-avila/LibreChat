@@ -1,10 +1,11 @@
-const {
+import {
   DEFAULT_RETENTION_HOURS,
   MIN_RETENTION_HOURS,
   MAX_RETENTION_HOURS,
   getTempChatRetentionHours,
   createTempChatExpirationDate,
-} = require('../tempChatRetention');
+} from './tempChatRetention';
+import type { TCustomConfig } from 'librechat-data-provider';
 
 describe('tempChatRetention', () => {
   const originalEnv = process.env;
@@ -32,7 +33,7 @@ describe('tempChatRetention', () => {
     });
 
     it('should use config value when set', () => {
-      const config = {
+      const config: TCustomConfig = {
         interface: {
           temporaryChatRetention: 12,
         },
@@ -43,7 +44,7 @@ describe('tempChatRetention', () => {
 
     it('should prioritize config over environment variable', () => {
       process.env.TEMP_CHAT_RETENTION_HOURS = '48';
-      const config = {
+      const config: TCustomConfig = {
         interface: {
           temporaryChatRetention: 12,
         },
@@ -53,7 +54,7 @@ describe('tempChatRetention', () => {
     });
 
     it('should enforce minimum retention period', () => {
-      const config = {
+      const config: TCustomConfig = {
         interface: {
           temporaryChatRetention: 0,
         },
@@ -63,7 +64,7 @@ describe('tempChatRetention', () => {
     });
 
     it('should enforce maximum retention period', () => {
-      const config = {
+      const config: TCustomConfig = {
         interface: {
           temporaryChatRetention: 10000,
         },
@@ -79,9 +80,9 @@ describe('tempChatRetention', () => {
     });
 
     it('should handle invalid config value', () => {
-      const config = {
+      const config: TCustomConfig = {
         interface: {
-          temporaryChatRetention: 'invalid',
+          temporaryChatRetention: 'invalid' as any,
         },
       };
       const result = getTempChatRetentionHours(config);
@@ -102,7 +103,7 @@ describe('tempChatRetention', () => {
     });
 
     it('should create expiration date with custom retention period', () => {
-      const config = {
+      const config: TCustomConfig = {
         interface: {
           temporaryChatRetention: 12,
         },
