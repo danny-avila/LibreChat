@@ -1,0 +1,63 @@
+name: JM - Docker Build and Push to GHCR (Beta)
+
+on:
+  # Allow manual triggering with custom parameters
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to build from'
+        required: false
+        default: 'beta'
+        type: string
+      tag:
+        description: 'Docker image tag (default: beta)'
+        required: false
+        default: 'beta'
+        type: string
+      dockerfile:
+        description: 'Dockerfile to use'
+        required: false
+        default: 'Dockerfile.multi'
+        type: string
+  
+  # Automatic build on push to beta
+  push:
+    branches:
+      - beta
+
+jobs:
+  deploy-gh-runner-aci:
+    timeout-minutes: 15
+    runs-on: ubuntu-latest
+    steps:
+      - name: 'Checkout GitHub Action'
+        uses: actions/checkout@v4
+        with:
+          # Use the specified branch from manual input or beta for auto runs
+          ref: ${{ github.event.inputs.branch || 'beta' }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Log in to GitHub Docker Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          # Use specified Dockerfile or default
+          file: ${{ github.event.inputs.dockerfile || 'Dockerfile.multi' }}
+          push: true
+          # Use specified tag or default to beta
+          tags: ghcr.io/jmaddington/librechat:${{ github.event.inputs.tag || 'beta' }}
+          # Add build cache for faster builds
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Log out from GitHub Docker Registry
+        run: docker logout ghcr.io
