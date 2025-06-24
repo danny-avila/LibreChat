@@ -482,6 +482,12 @@ const termsOfServiceSchema = z.object({
 
 export type TTermsOfService = z.infer<typeof termsOfServiceSchema>;
 
+const mcpServersSchema = z.object({
+  placeholder: z.string().optional(),
+});
+
+export type TMcpServersConfig = z.infer<typeof mcpServersSchema>;
+
 export const intefaceSchema = z
   .object({
     privacyPolicy: z
@@ -492,6 +498,7 @@ export const intefaceSchema = z
       .optional(),
     termsOfService: termsOfServiceSchema.optional(),
     customWelcome: z.string().optional(),
+    mcpServers: mcpServersSchema.optional(),
     endpointsMenu: z.boolean().optional(),
     modelSelect: z.boolean().optional(),
     parameters: z.boolean().optional(),
@@ -600,6 +607,7 @@ export type TStartupConfig = {
       >;
     }
   >;
+  mcpPlaceholder?: string;
 };
 
 export enum OCRStrategy {

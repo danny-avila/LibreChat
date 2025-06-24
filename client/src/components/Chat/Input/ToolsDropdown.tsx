@@ -18,8 +18,15 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
   const localize = useLocalize();
   const isDisabled = disabled ?? false;
   const [isPopoverActive, setIsPopoverActive] = useState(false);
-  const { webSearch, codeInterpreter, fileSearch, mcpSelect, searchApiKeyForm, codeApiKeyForm } =
-    useBadgeRowContext();
+  const {
+    webSearch,
+    mcpSelect,
+    fileSearch,
+    startupConfig,
+    codeApiKeyForm,
+    codeInterpreter,
+    searchApiKeyForm,
+  } = useBadgeRowContext();
   const { setIsDialogOpen: setIsCodeDialogOpen, menuTriggerRef: codeMenuTriggerRef } =
     codeApiKeyForm;
   const { setIsDialogOpen: setIsSearchDialogOpen, menuTriggerRef: searchMenuTriggerRef } =
@@ -89,18 +96,10 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
     [mcpSelect],
   );
 
-  const dropdownItems = useMemo(() => {
-    const items: MenuItemProps[] = [
-      {
-        render: () => (
-          <div className="px-3 py-2 text-xs font-semibold text-text-secondary">
-            {localize('com_ui_tools')}
-          </div>
-        ),
-        hideOnClick: false,
-      },
-    ];
+  const mcpPlaceholder = startupConfig?.interface?.mcpServers?.placeholder;
 
+  const dropdownItems = useMemo(() => {
+    const items: MenuItemProps[] = [];
     items.push({
       onClick: handleFileSearchToggle,
       hideOnClick: false,
@@ -246,8 +245,9 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
           <MCPSubMenu
             {...props}
             mcpValues={mcpValues}
-            mcpServerNames={mcpServerNames}
             isMCPPinned={isMCPPinned}
+            placeholder={mcpPlaceholder}
+            mcpServerNames={mcpServerNames}
             setIsMCPPinned={setIsMCPPinned}
             handleMCPToggle={handleMCPToggle}
           />
@@ -262,6 +262,7 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
     canRunCode,
     isMCPPinned,
     isCodePinned,
+    mcpPlaceholder,
     mcpServerNames,
     isSearchPinned,
     setIsMCPPinned,

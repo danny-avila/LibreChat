@@ -2,8 +2,7 @@ import React, { memo, useCallback, useState } from 'react';
 import { SettingsIcon } from 'lucide-react';
 import { Constants } from 'librechat-data-provider';
 import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
-import type { TUpdateUserPlugins } from 'librechat-data-provider';
-import type { McpServerInfo } from '~/hooks/Plugins/useMCPSelect';
+import type { TUpdateUserPlugins, TPlugin } from 'librechat-data-provider';
 import MCPConfigDialog, { type ConfigFieldDetail } from '~/components/ui/MCPConfigDialog';
 import { useToastContext, useBadgeRowContext } from '~/Providers';
 import MultiSelect from '~/components/ui/MultiSelect';
@@ -18,11 +17,11 @@ const getBaseMCPPluginKey = (fullPluginKey: string): string => {
 function MCPSelect() {
   const localize = useLocalize();
   const { showToast } = useToastContext();
-  const { mcpSelect } = useBadgeRowContext();
+  const { mcpSelect, startupConfig } = useBadgeRowContext();
   const { mcpValues, setMCPValues, mcpServerNames, mcpToolDetails, isPinned } = mcpSelect;
 
   const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
-  const [selectedToolForConfig, setSelectedToolForConfig] = useState<McpServerInfo | null>(null);
+  const [selectedToolForConfig, setSelectedToolForConfig] = useState<TPlugin | null>(null);
 
   const updateUserPluginsMutation = useUpdateUserPluginsMutation({
     onSuccess: () => {
@@ -129,6 +128,8 @@ function MCPSelect() {
     return null;
   }
 
+  const placeholderText =
+    startupConfig?.interface?.mcpServers?.placeholder || localize('com_ui_mcp_servers');
   return (
     <>
       <MultiSelect
@@ -138,7 +139,7 @@ function MCPSelect() {
         defaultSelectedValues={mcpValues ?? []}
         renderSelectedValues={renderSelectedValues}
         renderItemContent={renderItemContent}
-        placeholder={localize('com_ui_mcp_servers')}
+        placeholder={placeholderText}
         popoverClassName="min-w-fit"
         className="badge-icon min-w-fit"
         selectIcon={<MCPIcon className="icon-md text-text-primary" />}

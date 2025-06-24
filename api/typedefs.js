@@ -1503,7 +1503,6 @@
  * @property {boolean|{userProvide: boolean}} [anthropic] - Flag to indicate if Anthropic endpoint is user provided, or its configuration.
  * @property {boolean|{userProvide: boolean}} [google] - Flag to indicate if Google endpoint is user provided, or its configuration.
  * @property {boolean|{userProvide: boolean, userProvideURL: boolean, name: string}} [custom] - Custom Endpoint configuration.
- * @property {boolean|GptPlugins} [gptPlugins] - Configuration for GPT plugins.
  * @memberof typedefs
  */
 

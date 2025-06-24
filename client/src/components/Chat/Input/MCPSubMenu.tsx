@@ -11,6 +11,7 @@ interface MCPSubMenuProps {
   mcpValues?: string[];
   mcpServerNames: string[];
   handleMCPToggle: (serverName: string) => void;
+  placeholder?: string;
 }
 
 const MCPSubMenu = ({
@@ -19,11 +20,13 @@ const MCPSubMenu = ({
   mcpServerNames,
   setIsMCPPinned,
   handleMCPToggle,
+  placeholder,
   ...props
 }: MCPSubMenuProps) => {
   const localize = useLocalize();
 
   const menuStore = Ariakit.useMenuStore({
+    focusLoop: true,
     showTimeout: 100,
     placement: 'right',
   });
@@ -33,12 +36,18 @@ const MCPSubMenu = ({
       <Ariakit.MenuItem
         {...props}
         render={
-          <Ariakit.MenuButton className="flex w-full cursor-pointer items-center justify-between rounded-lg p-2 hover:bg-surface-hover" />
+          <Ariakit.MenuButton
+            onClick={(e: React.MouseEvent<HTMLButtonElement>) => {
+              e.stopPropagation();
+              menuStore.toggle();
+            }}
+            className="flex w-full cursor-pointer items-center justify-between rounded-lg p-2 hover:bg-surface-hover"
+          />
         }
       >
         <div className="flex items-center gap-2">
           <MCPIcon className="icon-md" />
-          <span>{localize('com_ui_mcp_servers')}</span>
+          <span>{placeholder || localize('com_ui_mcp_servers')}</span>
           <ChevronRight className="ml-auto h-3 w-3" />
         </div>
         <button
@@ -60,10 +69,8 @@ const MCPSubMenu = ({
         </button>
       </Ariakit.MenuItem>
       <Ariakit.Menu
-        gutter={-4}
-        shift={-8}
-        unmountOnHide
         portal={true}
+        unmountOnHide={true}
         className={cn(
           'animate-popover-left z-50 ml-3 flex min-w-[200px] flex-col rounded-xl',
           'border border-border-light bg-surface-secondary p-1 shadow-lg',
