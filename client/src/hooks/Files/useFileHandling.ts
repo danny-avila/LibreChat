@@ -18,7 +18,7 @@ import useLocalize, { TranslationKeys } from '~/hooks/useLocalize';
 import { useChatContext } from '~/Providers/ChatContext';
 import { useToastContext } from '~/Providers/ToastContext';
 import { logger, validateFiles } from '~/utils';
-import useClientSideResize from './useClientSideResize';
+import useClientResize from './useClientResize';
 import { processFileForUpload } from '~/utils/heicConverter';
 import { useDelayedUploadToast } from './useDelayedUploadToast';
 import useUpdateFiles from './useUpdateFiles';
@@ -42,7 +42,7 @@ const useFileHandling = (params?: UseFileHandling) => {
   const { addFile, replaceFile, updateFileById, deleteFileById } = useUpdateFiles(
     params?.fileSetter ?? setFiles,
   );
-  const { resizeImageIfNeeded } = useClientSideResize();
+  const { resizeImageIfNeeded } = useClientResize();
 
   const agent_id = params?.additionalMetadata?.agent_id ?? '';
   const assistant_id = params?.additionalMetadata?.assistant_id ?? '';

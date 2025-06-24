@@ -298,7 +298,7 @@ endpoints:
 #     percentage: 100
 #     px: 1024
 #   # Client-side image resizing to prevent upload errors
-#   clientSideImageResize:
+#   clientImageResize:
 #     enabled: false  # Enable/disable client-side image resizing (default: false)
 #     maxWidth: 1900  # Maximum width for resized images (default: 1900)
 #     maxHeight: 1900  # Maximum height for resized images (default: 1900)

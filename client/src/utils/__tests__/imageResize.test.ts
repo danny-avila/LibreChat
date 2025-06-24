@@ -2,7 +2,7 @@
  * Tests for client-side image resizing utility
  */
 
-import { shouldResizeImage, supportsClientSideResize } from '../imageResize';
+import { shouldResizeImage, supportsClientResize } from '../imageResize';
 
 // Mock browser APIs for testing
 Object.defineProperty(global, 'HTMLCanvasElement', {
@@ -34,9 +34,9 @@ Object.defineProperty(global, 'Image', {
 });
 
 describe('imageResize utility', () => {
-  describe('supportsClientSideResize', () => {
+  describe('supportsClientResize', () => {
     it('should return true when all required APIs are available', () => {
-      const result = supportsClientSideResize();
+      const result = supportsClientResize();
       expect(result).toBe(true);
     });
 
@@ -45,7 +45,7 @@ describe('imageResize utility', () => {
       // @ts-ignore
       delete global.HTMLCanvasElement;
 
-      const result = supportsClientSideResize();
+      const result = supportsClientResize();
       expect(result).toBe(false);
 
       global.HTMLCanvasElement = originalCanvas;

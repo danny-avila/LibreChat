@@ -4,7 +4,7 @@ import { useGetFileConfig } from '~/data-provider';
 import {
   resizeImage,
   shouldResizeImage,
-  supportsClientSideResize,
+  supportsClientResize,
   type ResizeOptions,
   type ResizeResult,
 } from '~/utils/imageResize';
@@ -13,14 +13,14 @@ import {
  * Hook for client-side image resizing functionality
  * Integrates with LibreChat's file configuration system
  */
-export const useClientSideResize = () => {
+export const useClientResize = () => {
   const { data: fileConfig = null } = useGetFileConfig({
     select: (data) => mergeFileConfig(data),
   });
 
-  // Safe access to clientSideImageResize config with fallbacks
+  // Safe access to clientImageResize config with fallbacks
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const config = (fileConfig as any)?.clientSideImageResize ?? {
+  const config = (fileConfig as any)?.clientImageResize ?? {
     enabled: false,
     maxWidth: 1900,
     maxHeight: 1900,
@@ -45,7 +45,7 @@ export const useClientSideResize = () => {
       }
 
       // Return original file if browser doesn't support resizing
-      if (!supportsClientSideResize()) {
+      if (!supportsClientResize()) {
         console.warn('Client-side image resizing not supported in this browser');
         return { file, resized: false };
       }
@@ -75,10 +75,10 @@ export const useClientSideResize = () => {
 
   return {
     isEnabled,
-    isSupported: supportsClientSideResize(),
+    isSupported: supportsClientResize(),
     config,
     resizeImageIfNeeded,
   };
 };
 
-export default useClientSideResize;
+export default useClientResize;

@@ -34,7 +34,7 @@ const DEFAULT_RESIZE_OPTIONS: ResizeOptions = {
 /**
  * Checks if the browser supports canvas-based image resizing
  */
-export function supportsClientSideResize(): boolean {
+export function supportsClientResize(): boolean {
   try {
     // Check for required APIs
     if (typeof HTMLCanvasElement === 'undefined') return false;
@@ -87,7 +87,7 @@ export function resizeImage(
 ): Promise<ResizeResult> {
   return new Promise((resolve, reject) => {
     // Check browser support
-    if (!supportsClientSideResize()) {
+    if (!supportsClientResize()) {
       reject(new Error('Browser does not support client-side image resizing'));
       return;
     }
