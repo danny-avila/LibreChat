@@ -4,7 +4,6 @@ import type {
   QueryObserverResult,
   UseQueryOptions,
   UseInfiniteQueryOptions,
-  InfiniteData,
 } from '@tanstack/react-query';
 import type t from 'librechat-data-provider';
 
