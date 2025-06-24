@@ -13,8 +13,9 @@ const { URL } = require('url');
 
 class Collections extends Tool {
   constructor(fields = {}) {
-    const description = 'Store and retrieve organized knowledge in collections with hierarchical structure. ' +
-      'Actions: create_collection, list_collections, search_collections, add_note, search_notes, delete_note, update_note, update_collection, delete_collection. ' +
+    const description =
+      'Store and retrieve organized knowledge in collections with hierarchical structure. ' +
+      'Actions: create_collection, list_collections, search_collections, add_note, bulk_add_notes, search_notes, delete_note, update_note, update_collection, delete_collection. ' +
       'Supports keyword, semantic, and hybrid search across all notes. ' +
       'Perfect for maintaining organized information across multiple chat sessions.';
 
@@ -24,6 +25,7 @@ class Collections extends Tool {
         'list_collections',
         'search_collections',
         'add_note',
+        'bulk_add_notes',
         'search_notes',
         'delete_note',
         'update_note',
@@ -39,6 +41,17 @@ class Collections extends Tool {
       note_content: z.string().max(50000).optional(),
       note_source_url: z.string().url().max(1000).optional(),
       note_tags: z.array(z.string().max(50)).max(20).optional(),
+      notes: z
+        .array(
+          z.object({
+            title: z.string().max(500),
+            content: z.string().max(50000),
+            source_url: z.string().url().max(1000).optional(),
+            tags: z.array(z.string().max(50)).max(20).optional(),
+          }),
+        )
+        .max(100)
+        .optional(),
       note_id: z.string().uuid().optional(),
       search_query: z.string().max(500).optional(),
       search_mode: z.enum(['keyword', 'semantic', 'hybrid']).optional(),
@@ -51,7 +64,7 @@ class Collections extends Tool {
 
     this.name = 'collections';
     this.description_for_model =
-      'Allows the assistant to manage organized collections of notes, facts, sources, and information across sessions. You can create and organize collections in a hierarchical structure with parent-child relationships. Actions: create_collection, list_collections, search_collections, add_note, search_notes, delete_note, update_note, update_collection, delete_collection. Use add_note to store new information, search_notes to retrieve relevant information, organize collections hierarchically.';
+      'Allows the assistant to manage organized collections of notes, facts, sources, and information across sessions. You can create and organize collections in a hierarchical structure with parent-child relationships. Actions: create_collection, list_collections, search_collections, add_note, bulk_add_notes, search_notes, delete_note, update_note, update_collection, delete_collection. Use add_note to store single notes, bulk_add_notes to create multiple notes at once, search_notes to retrieve relevant information, organize collections hierarchically.';
     this.description = description;
     this.schema = schema;
 
@@ -82,7 +95,7 @@ class Collections extends Tool {
 
     try {
       let parsedUrl;
-      
+
       // If URL has no protocol, try adding https://
       if (!sanitized.includes('://')) {
         parsedUrl = new URL('https://' + sanitized);
@@ -97,10 +110,12 @@ class Collections extends Tool {
       }
 
       // Additional checks for suspicious patterns
-      if (parsedUrl.protocol === 'javascript:' || 
-          sanitized.toLowerCase().includes('javascript:') ||
-          sanitized.toLowerCase().includes('data:') ||
-          sanitized.toLowerCase().includes('vbscript:')) {
+      if (
+        parsedUrl.protocol === 'javascript:' ||
+        sanitized.toLowerCase().includes('javascript:') ||
+        sanitized.toLowerCase().includes('data:') ||
+        sanitized.toLowerCase().includes('vbscript:')
+      ) {
         logger.warn('Blocked potentially malicious URL:', sanitized);
         return null;
       }
@@ -114,15 +129,19 @@ class Collections extends Tool {
 
   sanitizeArray(arr) {
     if (!Array.isArray(arr)) return arr;
-    
+
     const originalLength = arr.length;
-    const sanitized = arr.map((item) => this.sanitizeText(item)).filter((item) => item && item.length > 0);
-    
+    const sanitized = arr
+      .map((item) => this.sanitizeText(item))
+      .filter((item) => item && item.length > 0);
+
     if (sanitized.length < originalLength) {
       const droppedCount = originalLength - sanitized.length;
-      logger.warn(`sanitizeArray: ${droppedCount} item(s) were dropped due to being empty or invalid`);
+      logger.warn(
+        `sanitizeArray: ${droppedCount} item(s) were dropped due to being empty or invalid`,
+      );
     }
-    
+
     return sanitized;
   }
 
@@ -225,7 +244,7 @@ class Collections extends Tool {
       await client.query(
         'CREATE INDEX IF NOT EXISTS idx_note_vectors_embedding ON note_vectors USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100)',
       );
-      
+
       // Analyze the note_vectors table to make the ivfflat index usable
       await client.query('ANALYZE note_vectors;');
     } finally {
@@ -242,7 +261,9 @@ class Collections extends Tool {
       let processedText = text;
       if (text && text.length > maxChars) {
         processedText = text.substring(0, maxChars);
-        logger.warn(`Text truncated from ${text.length} to ${maxChars} characters for embedding generation`);
+        logger.warn(
+          `Text truncated from ${text.length} to ${maxChars} characters for embedding generation`,
+        );
       }
 
       // Use OpenAI embeddings directly - no external service dependencies
@@ -270,7 +291,7 @@ class Collections extends Tool {
         ) {
           // Ensure embedding values are numbers, not strings
           const embedding = response.data.data[0].embedding;
-          return embedding.map(val => typeof val === 'string' ? parseFloat(val) : val);
+          return embedding.map((val) => (typeof val === 'string' ? parseFloat(val) : val));
         } else {
           logger.error('OpenAI API returned invalid embedding response');
         }
@@ -435,7 +456,7 @@ class Collections extends Tool {
     `;
 
     const result = await client.query(query, [parentId, collectionId]);
-    
+
     // If collectionId appears in the parent chain, it would create a cycle
     return parseInt(result.rows[0].cycle_count) > 0;
   }
@@ -554,7 +575,7 @@ class Collections extends Tool {
       whereConditions.push(`tags && $${paramIndex++}`);
       params.push(sanitizedTagFilter);
     }
-    
+
     if (whereConditions.length > 0) {
       query += ` WHERE ${whereConditions.join(' AND ')}`;
     }
@@ -657,10 +678,10 @@ class Collections extends Tool {
       const embedding = await this.generateEmbedding(`${title}\n\n${content}`);
       if (embedding) {
         // Use parameterized query for embedding insertion
-        await client.query(
-          'INSERT INTO note_vectors (note_id, embedding) VALUES ($1, $2)',
-          [note.id, `[${embedding.join(',')}]`]
-        );
+        await client.query('INSERT INTO note_vectors (note_id, embedding) VALUES ($1, $2)', [
+          note.id,
+          `[${embedding.join(',')}]`,
+        ]);
         logger.debug(`Embedding stored for note ${note.id}`);
       } else {
         logger.warn(
@@ -675,6 +696,103 @@ class Collections extends Tool {
 
       await client.query('COMMIT');
       return note;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async bulkAddNotes(collectionId, notes) {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      // Verify collection belongs to user
+      const collectionCheck = await client.query(
+        'SELECT id FROM collections WHERE id = $1 AND user_id = $2',
+        [collectionId, this.userId],
+      );
+
+      if (collectionCheck.rows.length === 0) {
+        throw new Error('Collection not found or access denied');
+      }
+
+      const createdNotes = [];
+      const failedNotes = [];
+
+      for (let i = 0; i < notes.length; i++) {
+        const noteData = notes[i];
+
+        try {
+          // Sanitize inputs for each note
+          const sanitizedTitle = this.sanitizeText(noteData.title);
+          const sanitizedContent = this.sanitizeText(noteData.content);
+          const sanitizedSourceUrl = noteData.source_url
+            ? this.sanitizeUrl(noteData.source_url)
+            : null;
+          const sanitizedTags = this.sanitizeArray(noteData.tags || []);
+
+          if (!sanitizedTitle) {
+            throw new Error('Note title is required and cannot be empty');
+          }
+
+          if (!sanitizedContent) {
+            throw new Error('Note content is required and cannot be empty');
+          }
+
+          // Insert note
+          const noteResult = await client.query(
+            'INSERT INTO notes (collection_id, title, content, source_url, tags) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+            [collectionId, sanitizedTitle, sanitizedContent, sanitizedSourceUrl, sanitizedTags],
+          );
+
+          const note = noteResult.rows[0];
+
+          // Generate and store embedding
+          const embedding = await this.generateEmbedding(
+            `${noteData.title}\n\n${noteData.content}`,
+          );
+          if (embedding) {
+            await client.query('INSERT INTO note_vectors (note_id, embedding) VALUES ($1, $2)', [
+              note.id,
+              `[${embedding.join(',')}]`,
+            ]);
+            logger.debug(`Embedding stored for note ${note.id}`);
+          } else {
+            logger.warn(
+              `Failed to generate embedding for note ${note.id} - semantic search will not include this note`,
+            );
+          }
+
+          createdNotes.push(note);
+        } catch (noteError) {
+          logger.error(`Failed to create note ${i + 1}:`, noteError);
+          failedNotes.push({
+            index: i + 1,
+            title: noteData.title,
+            error: noteError.message,
+          });
+        }
+      }
+
+      // Update collection timestamp if any notes were created
+      if (createdNotes.length > 0) {
+        await client.query('UPDATE collections SET updated_at = CURRENT_TIMESTAMP WHERE id = $1', [
+          collectionId,
+        ]);
+      }
+
+      await client.query('COMMIT');
+
+      return {
+        createdNotes,
+        failedNotes,
+        totalRequested: notes.length,
+        totalCreated: createdNotes.length,
+        totalFailed: failedNotes.length,
+      };
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;
@@ -783,10 +901,10 @@ class Collections extends Tool {
           await client.query('DELETE FROM note_vectors WHERE note_id = $1', [noteId]);
 
           // Insert new embedding using parameterized query
-          await client.query(
-            'INSERT INTO note_vectors (note_id, embedding) VALUES ($1, $2)',
-            [noteId, `[${embedding.join(',')}]`]
-          );
+          await client.query('INSERT INTO note_vectors (note_id, embedding) VALUES ($1, $2)', [
+            noteId,
+            `[${embedding.join(',')}]`,
+          ]);
         }
       }
 
@@ -901,7 +1019,7 @@ class Collections extends Tool {
         // Build WHERE clause for CTEs based on existing conditions
         let cteWhereClause = 'WHERE c.user_id = $1';
         let cteParamCount = 1;
-        
+
         if (actualCollectionIds && actualCollectionIds.length > 0) {
           cteParamCount++;
           cteWhereClause += ` AND n.collection_id = ANY($${cteParamCount})`;
@@ -1002,7 +1120,7 @@ class Collections extends Tool {
     try {
       // Validate input arguments against schema
       const validatedArgs = this.schema.parse(args);
-      
+
       if (!this.userId) {
         return JSON.stringify({ error: 'User context not available' });
       }
@@ -1164,6 +1282,32 @@ class Collections extends Tool {
             message: 'Note added successfully',
             id: note.id,
             created_at: note.created_at,
+          });
+        }
+
+        case 'bulk_add_notes': {
+          const { collection_id, notes } = args;
+
+          if (!collection_id || !notes || !Array.isArray(notes) || notes.length === 0) {
+            return JSON.stringify({
+              error: 'collection_id and notes array are required, and notes must not be empty',
+            });
+          }
+
+          const result = await this.bulkAddNotes(collection_id, notes);
+
+          return JSON.stringify({
+            success: true,
+            message: `Bulk note creation completed: ${result.totalCreated} created, ${result.totalFailed} failed`,
+            total_requested: result.totalRequested,
+            total_created: result.totalCreated,
+            total_failed: result.totalFailed,
+            created_notes: result.createdNotes.map((note) => ({
+              id: note.id,
+              title: note.title,
+              created_at: note.created_at,
+            })),
+            failed_notes: result.failedNotes,
           });
         }
 
