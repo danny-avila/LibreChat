@@ -45,6 +45,18 @@ class CollectionExport extends Tool {
     this.ready = this.initializeDatabase();
   }
 
+  /**
+   * Cleanup database connections
+   */
+  async close() {
+    try {
+      await this.pool.end();
+      logger.info('Collection Export tool database pool closed');
+    } catch (error) {
+      logger.error('Error closing Collection Export tool database pool:', error);
+    }
+  }
+
   async initializeDatabase() {
     try {
       const client = await this.pool.connect();
@@ -60,7 +72,7 @@ class CollectionExport extends Tool {
    * Get all child collection IDs recursively
    */
   async getAllChildCollectionIds(client, parentIds) {
-    const allIds = [...parentIds];
+    const allIds = new Set(parentIds);
     let currentParentIds = [...parentIds];
 
     while (currentParentIds.length > 0) {
@@ -72,11 +84,15 @@ class CollectionExport extends Tool {
       const childIds = result.rows.map((row) => row.id);
       if (childIds.length === 0) break;
 
-      allIds.push(...childIds);
-      currentParentIds = childIds;
+      // Filter out already visited IDs to prevent loops
+      const newChildIds = childIds.filter((id) => !allIds.has(id));
+      if (newChildIds.length === 0) break;
+
+      newChildIds.forEach((id) => allIds.add(id));
+      currentParentIds = newChildIds;
     }
 
-    return allIds;
+    return Array.from(allIds);
   }
 
   /**
@@ -228,129 +244,153 @@ class CollectionExport extends Tool {
   /**
    * Generate PDF format export
    */
-  generatePDF(data) {
+  async generatePDF(data) {
     const formatDate = (date) => {
       return new Date(date).toLocaleDateString() + ' ' + new Date(date).toLocaleTimeString();
     };
 
-    const doc = new PDFDocument({ margin: 50 });
-    const chunks = [];
+    return new Promise((resolve, reject) => {
+      const doc = new PDFDocument({ margin: 50 });
+      const chunks = [];
 
-    // Collect PDF data in chunks
-    doc.on('data', (chunk) => chunks.push(chunk));
+      // Handle stream events
+      doc.on('data', (chunk) => chunks.push(chunk));
+      doc.on('end', () => resolve(Buffer.concat(chunks)));
+      doc.on('error', reject);
 
-    // Title with background
-    doc.fillColor('#2c3e50').fontSize(24).text('COLLECTION EXPORT', { align: 'center' });
-    doc.fillColor('#7f8c8d').fontSize(12).text(`Export Date: ${formatDate(new Date())}`, { align: 'center' });
-    doc.moveDown(1.5);
+      try {
+        // Title with background
+        doc.fillColor('#2c3e50').fontSize(24).text('COLLECTION EXPORT', { align: 'center' });
+        doc.fillColor('#7f8c8d').fontSize(12).text(`Export Date: ${formatDate(new Date())}`, { align: 'center' });
+        doc.moveDown(1.5);
 
-    // Main Collection with styled header
-    doc.fillColor('#34495e').fontSize(18).text('MAIN COLLECTION', { underline: true });
-    doc.fillColor('#2c3e50').rect(50, doc.y + 2, doc.page.width - 100, 2).fill();
-    doc.moveDown(0.8);
-    
-    doc.fillColor('#2c3e50').fontSize(14).font('Helvetica-Bold')
-      .text(data.collection.name, { continued: false });
-    doc.fillColor('#34495e').fontSize(11).font('Helvetica')
-      .text(`Description: ${data.collection.description || 'No description'}`)
-      .fillColor('#7f8c8d').fontSize(10)
-      .text(`Created: ${formatDate(data.collection.created_at)}`)
-      .text(`Updated: ${formatDate(data.collection.updated_at)}`);
-
-    if (data.collection.tags && data.collection.tags.length > 0) {
-      doc.fillColor('#8e44ad').fontSize(10)
-        .text(`Tags: ${data.collection.tags.join(', ')}`);
-    }
-
-    doc.moveDown(1.5);
-
-    // Sub-collections with distinct styling
-    if (data.collections && data.collections.length > 1) {
-      doc.fillColor('#16a085').fontSize(16).text('SUB-COLLECTIONS', { underline: true });
-      doc.fillColor('#16a085').rect(50, doc.y + 2, doc.page.width - 100, 1).fill();
-      doc.moveDown(0.8);
-      
-      data.collections.forEach((collection) => {
-        if (collection.id !== data.collection.id) {
-          // Sub-collection box background
-          const boxY = doc.y;
-          doc.fillColor('#ecf0f1').rect(60, boxY - 5, doc.page.width - 120, 60).fill();
-          
-          doc.fillColor('#2c3e50').fontSize(12).font('Helvetica-Bold')
-            .text(`> ${collection.name}`, 70, boxY, { continued: false });
-          doc.fillColor('#34495e').fontSize(10).font('Helvetica')
-            .text(`${collection.description || 'No description'}`, 70)
-            .fillColor('#7f8c8d').fontSize(9)
-            .text(`Created: ${formatDate(collection.created_at)}`, 70);
-          
-          if (collection.tags && collection.tags.length > 0) {
-            doc.fillColor('#8e44ad').fontSize(9)
-              .text(`Tags: ${collection.tags.join(', ')}`, 70);
-          }
-          doc.moveDown(0.8);
-        }
-      });
-      doc.moveDown(1);
-    }
-
-    // Notes with enhanced styling
-    if (data.notes && data.notes.length > 0) {
-      doc.fillColor('#e74c3c').fontSize(16).text('NOTES', { underline: true });
-      doc.fillColor('#e74c3c').rect(50, doc.y + 2, doc.page.width - 100, 1).fill();
-      doc.moveDown(0.8);
-
-      data.notes.forEach((note, index) => {
-        // Add page break if needed
-        if (doc.y > 650) {
-          doc.addPage();
-        }
-
-        // Note header with background
-        const noteHeaderY = doc.y;
-        doc.fillColor('#f8f9fa').rect(50, noteHeaderY - 5, doc.page.width - 100, 35).fill();
-        doc.fillColor('#2c3e50').fontSize(13).font('Helvetica-Bold')
-          .text(`${index + 1}. ${note.title}`, 60, noteHeaderY);
-        
-        doc.fillColor('#6c757d').fontSize(9).font('Helvetica')
-          .text(`Collection: ${data.collections.find((c) => c.id === note.collection_id)?.name || 'Unknown'}`, 60)
-          .text(`Created: ${formatDate(note.created_at)}`, 60);
-
-        if (note.source_url) {
-          doc.fillColor('#007bff').fontSize(9)
-            .text(`Source: ${note.source_url}`, 60);
-        }
-
-        if (note.tags && note.tags.length > 0) {
-          doc.fillColor('#8e44ad').fontSize(9)
-            .text(`Tags: ${note.tags.join(', ')}`, 60);
-        }
-
-        doc.moveDown(0.5);
-        
-        // Content section
-        doc.fillColor('#495057').fontSize(10).font('Helvetica-Bold')
-          .text('Content:', 60);
-        doc.fillColor('#212529').fontSize(11).font('Helvetica')
-          .text(note.content, 60, doc.y + 5, { 
-            width: doc.page.width - 120,
-            align: 'left'
-          });
-        
+        // Main Collection with styled header
+        doc.fillColor('#34495e').fontSize(18).text('MAIN COLLECTION', { underline: true });
+        doc.fillColor('#2c3e50').rect(50, doc.y + 2, doc.page.width - 100, 2).fill();
         doc.moveDown(0.8);
         
-        // Decorative separator
-        doc.fillColor('#dee2e6').rect(50, doc.y, doc.page.width - 100, 3).fill();
-        doc.moveDown(1);
-      });
-    }
+        doc.fillColor('#2c3e50').fontSize(14).font('Helvetica-Bold')
+          .text(data.collection.name, { continued: false });
+        doc.fillColor('#34495e').fontSize(11).font('Helvetica')
+          .text(`Description: ${data.collection.description || 'No description'}`)
+          .fillColor('#7f8c8d').fontSize(10)
+          .text(`Created: ${formatDate(data.collection.created_at)}`)
+          .text(`Updated: ${formatDate(data.collection.updated_at)}`);
 
-    doc.end();
+        if (data.collection.tags && data.collection.tags.length > 0) {
+          doc.fillColor('#8e44ad').fontSize(10)
+            .text(`Tags: ${data.collection.tags.join(', ')}`);
+        }
 
-    return new Promise((resolve) => {
-      doc.on('end', () => {
-        resolve(Buffer.concat(chunks));
-      });
+        doc.moveDown(1.5);
+
+        // Sub-collections with distinct styling
+        if (data.collections && data.collections.length > 1) {
+          doc.fillColor('#16a085').fontSize(16).text('SUB-COLLECTIONS', { underline: true });
+          doc.fillColor('#16a085').rect(50, doc.y + 2, doc.page.width - 100, 1).fill();
+          doc.moveDown(0.8);
+          
+          data.collections.forEach((collection) => {
+            if (collection.id !== data.collection.id) {
+              // Sub-collection box background
+              const boxY = doc.y;
+              doc.fillColor('#ecf0f1').rect(60, boxY - 5, doc.page.width - 120, 60).fill();
+              
+              doc.fillColor('#2c3e50').fontSize(12).font('Helvetica-Bold')
+                .text(`> ${collection.name}`, 70, boxY, { continued: false });
+              doc.fillColor('#34495e').fontSize(10).font('Helvetica')
+                .text(`${collection.description || 'No description'}`, 70)
+                .fillColor('#7f8c8d').fontSize(9)
+                .text(`Created: ${formatDate(collection.created_at)}`, 70);
+              
+              if (collection.tags && collection.tags.length > 0) {
+                doc.fillColor('#8e44ad').fontSize(9)
+                  .text(`Tags: ${collection.tags.join(', ')}`, 70);
+              }
+              doc.moveDown(0.8);
+            }
+          });
+          doc.moveDown(1);
+        }
+
+        // Notes with enhanced styling
+        if (data.notes && data.notes.length > 0) {
+          doc.fillColor('#e74c3c').fontSize(16).text('NOTES', { underline: true });
+          doc.fillColor('#e74c3c').rect(50, doc.y + 2, doc.page.width - 100, 1).fill();
+          doc.moveDown(0.8);
+
+          data.notes.forEach((note, index) => {
+            // Add page break if needed
+            if (doc.y > 650) {
+              doc.addPage();
+            }
+
+            // Note header with background
+            const noteHeaderY = doc.y;
+            doc.fillColor('#f8f9fa').rect(50, noteHeaderY - 5, doc.page.width - 100, 35).fill();
+            doc.fillColor('#2c3e50').fontSize(13).font('Helvetica-Bold')
+              .text(`${index + 1}. ${note.title}`, 60, noteHeaderY);
+            
+            doc.fillColor('#6c757d').fontSize(9).font('Helvetica')
+              .text(`Collection: ${data.collections.find((c) => c.id === note.collection_id)?.name || 'Unknown'}`, 60)
+              .text(`Created: ${formatDate(note.created_at)}`, 60);
+
+            if (note.source_url) {
+              doc.fillColor('#007bff').fontSize(9)
+                .text(`Source: ${note.source_url}`, 60);
+            }
+
+            if (note.tags && note.tags.length > 0) {
+              doc.fillColor('#8e44ad').fontSize(9)
+                .text(`Tags: ${note.tags.join(', ')}`, 60);
+            }
+
+            doc.moveDown(0.5);
+            
+            // Content section
+            doc.fillColor('#495057').fontSize(10).font('Helvetica-Bold')
+              .text('Content:', 60);
+            doc.fillColor('#212529').fontSize(11).font('Helvetica')
+              .text(note.content, 60, doc.y + 5, { 
+                width: doc.page.width - 120,
+                align: 'left'
+              });
+            
+            doc.moveDown(0.8);
+            
+            // Decorative separator
+            doc.fillColor('#dee2e6').rect(50, doc.y, doc.page.width - 100, 3).fill();
+            doc.moveDown(1);
+          });
+        }
+
+        doc.end();
+      } catch (error) {
+        reject(error);
+      }
     });
+  }
+
+  /**
+   * Sanitize filename to be safe for file systems
+   */
+  sanitizeFilename(name, maxLength = 50) {
+    if (!name) return 'untitled';
+    
+    // Replace problematic characters but preserve Unicode letters/numbers
+    let sanitized = name
+      .replace(/[<>:"/\\|?*\x00-\x1f]/g, '_')  // Replace filesystem-unsafe chars
+      .replace(/\s+/g, '_')                      // Replace whitespace with underscores
+      .replace(/_{2,}/g, '_')                    // Collapse multiple underscores
+      .replace(/^_+|_+$/g, '');                  // Remove leading/trailing underscores
+    
+    // Truncate if too long, but try to preserve word boundaries
+    if (sanitized.length > maxLength) {
+      sanitized = sanitized.substring(0, maxLength).replace(/_[^_]*$/, '');
+      if (sanitized.length === 0) sanitized = name.substring(0, maxLength);
+    }
+    
+    return sanitized || 'untitled';
   }
 
   /**
@@ -371,21 +411,24 @@ class CollectionExport extends Tool {
       let content;
       let filename;
       let mimeType;
+      
+      const sanitizedName = this.sanitizeFilename(data.collection.name);
+      const timestamp = Date.now();
 
       switch (format) {
         case 'json':
           content = this.generateJSON(data);
-          filename = `collection-${data.collection.name.replace(/[^a-zA-Z0-9]/g, '_')}-${Date.now()}.json`;
+          filename = `collection-${sanitizedName}-${timestamp}.json`;
           mimeType = 'application/json';
           break;
         case 'xml':
           content = this.generateXML(data);
-          filename = `collection-${data.collection.name.replace(/[^a-zA-Z0-9]/g, '_')}-${Date.now()}.xml`;
+          filename = `collection-${sanitizedName}-${timestamp}.xml`;
           mimeType = 'application/xml';
           break;
         case 'pdf':
           content = await this.generatePDF(data);
-          filename = `collection-${data.collection.name.replace(/[^a-zA-Z0-9]/g, '_')}-${Date.now()}.pdf`;
+          filename = `collection-${sanitizedName}-${timestamp}.pdf`;
           mimeType = 'application/pdf';
           break;
         default:
@@ -442,10 +485,12 @@ class CollectionExport extends Tool {
         return JSON.stringify({ error: 'User context not available' });
       }
 
+      // Validate input arguments
+      const parsed = this.schema.parse(args);
+      const { action, collection_id, format, recursive } = parsed;
+
       // Ensure database initialization complete
       await this.ready;
-
-      const { action, collection_id, format, recursive } = args;
 
       switch (action) {
         case 'export_collection': {
