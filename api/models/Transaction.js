@@ -2,6 +2,7 @@ const { logger } = require('@librechat/data-schemas');
 const { getBalanceConfig } = require('~/server/services/Config');
 const { getMultiplier, getCacheMultiplier } = require('./tx');
 const { Transaction, Balance } = require('~/db/models');
+const { TokenConverter } = require('~/services/billing');
 
 const cancelRate = 1.15;
 
@@ -204,8 +205,25 @@ async function createTransaction(txData) {
   if (!balance?.enabled) {
     return;
   }
+  const pricingRow = TokenConverter.getPricingRow(transaction.model);
 
-  let incrementValue = transaction.tokenValue;
+  const credits = TokenConverter.toCredits({
+    provider: pricingRow.provider, // Функция ниже
+    model: transaction.model,
+    inputTokens: transaction.inputTokens,
+    outputTokens: transaction.outputTokens,
+  });
+
+  logger.debug('[Billing] Calculated credits:', {
+    model: transaction.model,
+    provider: pricingRow.provider,
+    inputTokens: transaction.inputTokens,
+    outputTokens: transaction.outputTokens,
+    credits,
+  });
+
+  const incrementValue = -credits; // т.к. это списание
+
   const balanceResponse = await updateBalance({
     user: transaction.user,
     incrementValue,
@@ -238,8 +256,24 @@ async function createStructuredTransaction(txData) {
     return;
   }
 
-  let incrementValue = transaction.tokenValue;
+  const pricingRow = TokenConverter.getPricingRow(transaction.model);
 
+  const credits = TokenConverter.toCredits({
+    provider: pricingRow.provider,
+    model: transaction.model,
+    inputTokens: Math.abs(transaction.inputTokens ?? 0),
+    outputTokens: Math.abs(transaction.writeTokens ?? 0),
+  });
+
+  const incrementValue = -credits;
+
+  logger.debug('[Billing] Calculated credits:', {
+    model: transaction.model,
+    provider: pricingRow.provider,
+    inputTokens: transaction.inputTokens,
+    outputTokens: transaction.outputTokens,
+    credits,
+  });
   const balanceResponse = await updateBalance({
     user: transaction.user,
     incrementValue,

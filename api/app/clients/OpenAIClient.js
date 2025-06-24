@@ -1,5 +1,7 @@
 const { OllamaClient } = require('./OllamaClient');
 const { HttpsProxyAgent } = require('https-proxy-agent');
+const { TokenConverter } = require('~/services/billing');
+const { balanceService } = require('~/services/billing/balanceService');
 const { SplitStreamHandler, CustomOpenAIClient: OpenAI } = require('@librechat/agents');
 const {
   isEnabled,

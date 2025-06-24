@@ -1,0 +1,25 @@
+[
+  {
+    "provider": "openai",
+    "model":   "gpt-4o",
+    "input_per_million": 0.0000025,
+    "output_per_million": 0.00001
+  },
+  {
+    "provider": "openai",
+    "model":   "gpt-3.5-turbo",
+    "input_per_million": 0.0000005,
+    "output_per_million": 0.0000015
+  },
+  {
+    "provider": "anthropic",
+    "model":   "claude-3-sonnet",
+    "input_per_million": 0.000003,
+    "output_per_million": 0.000015
+  },
+  {
+    "provider": "image",
+    "model":   "gpt-image-1-1024",
+    "each": 0.011
+  }
+]
