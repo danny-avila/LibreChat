@@ -1,7 +1,7 @@
 const { google } = require('googleapis');
-const { Tokenizer } = require('@librechat/api');
 const { concat } = require('@langchain/core/utils/stream');
 const { ChatVertexAI } = require('@langchain/google-vertexai');
+const { Tokenizer, getSafetySettings } = require('@librechat/api');
 const { ChatGoogleGenerativeAI } = require('@langchain/google-genai');
 const { GoogleGenerativeAI: GenAI } = require('@google/generative-ai');
 const { HumanMessage, SystemMessage } = require('@langchain/core/messages');
@@ -19,7 +19,6 @@ const {
   Constants,
   AuthKeys,
 } = require('librechat-data-provider');
-const { getSafetySettings } = require('~/server/services/Endpoints/google/llm');
 const { encodeAndFormat } = require('~/server/services/Files/images');
 const { spendTokens } = require('~/models/spendTokens');
 const { getModelMaxTokens } = require('~/utils');
