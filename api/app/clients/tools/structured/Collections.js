@@ -498,6 +498,102 @@ class Collections extends Tool {
     }
   }
 
+  // Helper method to get parent collection name
+  async getParentCollectionName(client, parentId) {
+    if (!parentId) return null;
+    
+    const result = await client.query(
+      'SELECT name FROM collections WHERE id = $1 AND user_id = $2',
+      [parentId, this.userId]
+    );
+    
+    return result.rows.length > 0 ? result.rows[0].name : null;
+  }
+
+  // Helper method to build full path for a collection
+  async buildCollectionPath(client, collectionId) {
+    if (!collectionId) return '';
+    
+    const path = [];
+    let currentId = collectionId;
+    
+    while (currentId) {
+      const result = await client.query(
+        'SELECT name, parent_id FROM collections WHERE id = $1 AND user_id = $2',
+        [currentId, this.userId]
+      );
+      
+      if (result.rows.length === 0) break;
+      
+      const collection = result.rows[0];
+      path.unshift(collection.name);
+      currentId = collection.parent_id;
+    }
+    
+    return path.join(' / ');
+  }
+
+  // Helper method to build full path for multiple collections efficiently
+  async buildCollectionPaths(client, collections) {
+    const paths = {};
+    const parentNames = {};
+    
+    // Get all unique parent IDs
+    const parentIds = [...new Set(collections.map(c => c.parent_id).filter(id => id))];
+    
+    // Batch fetch parent names
+    if (parentIds.length > 0) {
+      const placeholders = parentIds.map((_, i) => `$${i + 2}`).join(',');
+      const result = await client.query(
+        `SELECT id, name FROM collections WHERE id IN (${placeholders}) AND user_id = $1`,
+        [this.userId, ...parentIds]
+      );
+      
+      result.rows.forEach(row => {
+        parentNames[row.id] = row.name;
+      });
+    }
+    
+    // Build paths for each collection
+    for (const collection of collections) {
+      if (collection.parent_id) {
+        parentNames[collection.id] = parentNames[collection.parent_id] || null;
+        
+        // Build path by traversing up the hierarchy
+        const path = [];
+        let currentId = collection.id;
+        
+        while (currentId) {
+          const currentCollection = collections.find(c => c.id === currentId) || 
+                                  (currentId === collection.id ? collection : null);
+          
+          if (!currentCollection) {
+            // Fetch from database if not in current result set
+            const dbResult = await client.query(
+              'SELECT name, parent_id FROM collections WHERE id = $1 AND user_id = $2',
+              [currentId, this.userId]
+            );
+            
+            if (dbResult.rows.length === 0) break;
+            
+            path.unshift(dbResult.rows[0].name);
+            currentId = dbResult.rows[0].parent_id;
+          } else {
+            path.unshift(currentCollection.name);
+            currentId = currentCollection.parent_id;
+          }
+        }
+        
+        paths[collection.id] = path.join(' / ');
+      } else {
+        paths[collection.id] = collection.name;
+        parentNames[collection.id] = null;
+      }
+    }
+    
+    return { paths, parentNames };
+  }
+
   async listCollections(params = {}) {
     const { parentId = null, tagFilter = null, limit = 50, recursive = false } = params;
 
@@ -512,25 +608,31 @@ class Collections extends Tool {
       }
 
       // Basic query for direct children or top-level collections
-      let query = 'SELECT * FROM collections WHERE user_id = $1';
+      let query = `
+        SELECT c.*, 
+               p.name as parent_name
+        FROM collections c
+        LEFT JOIN collections p ON c.parent_id = p.id
+        WHERE c.user_id = $1
+      `;
       let queryParams = [this.userId];
       let paramIndex = 2;
 
       if (parentId === null) {
         // Get only top-level collections (no parent)
-        query += ' AND parent_id IS NULL';
+        query += ' AND c.parent_id IS NULL';
       } else {
         // Get children of a specific collection
-        query += ` AND parent_id = $${paramIndex++}`;
+        query += ` AND c.parent_id = $${paramIndex++}`;
         queryParams.push(parentId);
       }
 
       if (sanitizedTagFilter && sanitizedTagFilter.length > 0) {
-        query += ` AND tags && $${paramIndex++}`;
+        query += ` AND c.tags && $${paramIndex++}`;
         queryParams.push(sanitizedTagFilter);
       }
 
-      query += ' ORDER BY updated_at DESC';
+      query += ' ORDER BY c.updated_at DESC';
 
       if (limit) {
         query += ` LIMIT $${paramIndex++}`;
@@ -538,7 +640,16 @@ class Collections extends Tool {
       }
 
       const result = await client.query(query, queryParams);
-      return result.rows;
+      const collections = result.rows;
+      
+      // Build full paths for all collections
+      const { paths } = await this.buildCollectionPaths(client, collections);
+      
+      // Add full_path to each collection
+      return collections.map(collection => ({
+        ...collection,
+        full_path: paths[collection.id] || collection.name
+      }));
     } finally {
       client.release();
     }
@@ -552,19 +663,21 @@ class Collections extends Tool {
     let query = `
       WITH RECURSIVE collection_tree AS (
         -- Base case: the parent collection
-        SELECT c.*, 0 AS depth
+        SELECT c.*, 0 AS depth, c.name as path_names
         FROM collections c
         WHERE c.id = $1 AND c.user_id = $2
         
         UNION ALL
         
         -- Recursive case: child collections
-        SELECT c.*, ct.depth + 1
+        SELECT c.*, ct.depth + 1, ct.path_names || ' / ' || c.name
         FROM collections c
         JOIN collection_tree ct ON c.parent_id = ct.id
         WHERE c.user_id = $2
       )
-      SELECT * FROM collection_tree
+      SELECT ct.*, p.name as parent_name
+      FROM collection_tree ct
+      LEFT JOIN collections p ON ct.parent_id = p.id
     `;
 
     let params = [parentId, this.userId];
@@ -573,7 +686,7 @@ class Collections extends Tool {
     // Build WHERE clause for tag filtering
     const whereConditions = [];
     if (sanitizedTagFilter && sanitizedTagFilter.length > 0) {
-      whereConditions.push(`tags && $${paramIndex++}`);
+      whereConditions.push(`ct.tags && $${paramIndex++}`);
       params.push(sanitizedTagFilter);
     }
 
@@ -581,7 +694,7 @@ class Collections extends Tool {
       query += ` WHERE ${whereConditions.join(' AND ')}`;
     }
 
-    query += ' ORDER BY depth, updated_at DESC';
+    query += ' ORDER BY ct.depth, ct.updated_at DESC';
 
     if (limit) {
       query += ` LIMIT $${paramIndex++}`;
@@ -589,7 +702,13 @@ class Collections extends Tool {
     }
 
     const result = await client.query(query, params);
-    return result.rows;
+    const collections = result.rows;
+    
+    // Add full_path field (using the path_names from CTE)
+    return collections.map(collection => ({
+      ...collection,
+      full_path: collection.path_names || collection.name
+    }));
   }
 
   async searchCollections(searchQuery, tagFilter = null, limit = 20) {
@@ -605,14 +724,16 @@ class Collections extends Tool {
 
       // Search collections by name, description, and tags
       let query = `
-        SELECT *, 
-               ts_rank(to_tsvector('english', name || ' ' || description), plainto_tsquery('english', $1)) as score
-        FROM collections
-        WHERE user_id = $2
+        SELECT c.*, 
+               p.name as parent_name,
+               ts_rank(to_tsvector('english', c.name || ' ' || c.description), plainto_tsquery('english', $1)) as score
+        FROM collections c
+        LEFT JOIN collections p ON c.parent_id = p.id
+        WHERE c.user_id = $2
         AND (
-          to_tsvector('english', name || ' ' || description) @@ plainto_tsquery('english', $1)
-          OR name ILIKE $3
-          OR description ILIKE $3
+          to_tsvector('english', c.name || ' ' || c.description) @@ plainto_tsquery('english', $1)
+          OR c.name ILIKE $3
+          OR c.description ILIKE $3
         )
       `;
 
@@ -620,7 +741,7 @@ class Collections extends Tool {
       let paramIndex = 4;
 
       if (sanitizedTagFilter && sanitizedTagFilter.length > 0) {
-        query += ` AND tags && $${paramIndex++}`;
+        query += ` AND c.tags && $${paramIndex++}`;
         params.push(sanitizedTagFilter);
       }
 
@@ -632,10 +753,50 @@ class Collections extends Tool {
       }
 
       const result = await client.query(query, params);
-      return result.rows;
+      const collections = result.rows;
+      
+      // Build full paths for all collections
+      const { paths } = await this.buildCollectionPaths(client, collections);
+      
+      // Add full_path to each collection
+      return collections.map(collection => ({
+        ...collection,
+        full_path: paths[collection.id] || collection.name
+      }));
     } finally {
       client.release();
     }
+  }
+
+  // Helper method to add collection path to a single note
+  async addCollectionPathToNote(client, note) {
+    if (!note || !note.collection_id) return note;
+    
+    const collectionPath = await this.buildCollectionPath(client, note.collection_id);
+    return {
+      ...note,
+      collection_path: collectionPath
+    };
+  }
+
+  // Helper method to add collection paths to multiple notes efficiently
+  async addCollectionPathsToNotes(client, notes) {
+    if (!notes || notes.length === 0) return notes;
+    
+    // Get all unique collection IDs
+    const collectionIds = [...new Set(notes.map(note => note.collection_id).filter(id => id))];
+    
+    // Build paths for all collections at once
+    const paths = {};
+    for (const collectionId of collectionIds) {
+      paths[collectionId] = await this.buildCollectionPath(client, collectionId);
+    }
+    
+    // Add paths to each note
+    return notes.map(note => ({
+      ...note,
+      collection_path: note.collection_id ? (paths[note.collection_id] || '') : ''
+    }));
   }
 
   async addNote(collectionId, title, content, sourceUrl = null, tags = []) {
@@ -696,7 +857,9 @@ class Collections extends Tool {
       ]);
 
       await client.query('COMMIT');
-      return note;
+      
+      // Add collection path to the returned note
+      return await this.addCollectionPathToNote(client, note);
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;
@@ -787,8 +950,11 @@ class Collections extends Tool {
 
       await client.query('COMMIT');
 
+      // Add collection paths to created notes
+      const notesWithPaths = await this.addCollectionPathsToNotes(client, createdNotes);
+
       return {
-        createdNotes,
+        createdNotes: notesWithPaths,
         failedNotes,
         totalRequested: notes.length,
         totalCreated: createdNotes.length,
@@ -878,7 +1044,7 @@ class Collections extends Tool {
       if (updateFields.length === 0) {
         // Nothing to update
         await client.query('ROLLBACK');
-        return note;
+        return await this.addCollectionPathToNote(client, note);
       }
 
       const query = `
@@ -915,7 +1081,9 @@ class Collections extends Tool {
       ]);
 
       await client.query('COMMIT');
-      return updatedNote;
+      
+      // Add collection path to the returned note
+      return await this.addCollectionPathToNote(client, updatedNote);
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;
@@ -998,7 +1166,10 @@ class Collections extends Tool {
         `;
         queryParams.push(sanitizedSearchQuery, limit);
         const result = await client.query(query, queryParams);
-        return result.rows;
+        const notes = result.rows;
+        
+        // Add collection paths to notes
+        return await this.addCollectionPathsToNotes(client, notes);
       } else if (searchMode === 'semantic') {
         const queryEmbedding = await this.generateEmbedding(sanitizedSearchQuery);
         if (!queryEmbedding) {
@@ -1028,7 +1199,10 @@ class Collections extends Tool {
         `;
         queryParams.push(limit);
         const result = await client.query(query, queryParams);
-        return result.rows;
+        const notes = result.rows;
+        
+        // Add collection paths to notes
+        return await this.addCollectionPathsToNotes(client, notes);
       } else if (searchMode === 'hybrid') {
         const queryEmbedding = await this.generateEmbedding(sanitizedSearchQuery);
         if (!queryEmbedding) {
@@ -1088,7 +1262,10 @@ class Collections extends Tool {
         `;
         queryParams.push(sanitizedSearchQuery, limit);
         const result = await client.query(query, queryParams);
-        return result.rows;
+        const notes = result.rows;
+        
+        // Add collection paths to notes
+        return await this.addCollectionPathsToNotes(client, notes);
       }
     } finally {
       client.release();
