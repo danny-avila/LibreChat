@@ -259,7 +259,7 @@ export const googleSettings = {
     default: true as const,
   },
   thinkingBudget: {
-    min: 0 as const,
+    min: -1 as const,
     max: 32768 as const,
     step: 1 as const,
     default: undefined,
