@@ -44,6 +44,17 @@ const BaseClient = require('~/app/clients/BaseClient');
 const { loadAgent } = require('~/models/Agent');
 const { getMCPManager } = require('~/config');
 
+const omitTitleOptions = new Set([
+  'stream',
+  'thinking',
+  'streaming',
+  'clientOptions',
+  'thinkingConfig',
+  'thinkingBudget',
+  'includeThoughts',
+  'maxOutputTokens',
+]);
+
 /**
  * @param {ServerRequest} req
  * @param {Agent} agent
@@ -1036,6 +1047,16 @@ class AgentClient extends BaseClient {
       clientOptions.maxTokens = 75;
     } else if (/\b(o\d)\b/i.test(clientOptions.model) && clientOptions.maxTokens != null) {
       delete clientOptions.maxTokens;
+    }
+
+    clientOptions = Object.assign(
+      Object.fromEntries(
+        Object.entries(clientOptions).filter(([key]) => !omitTitleOptions.has(key)),
+      ),
+    );
+
+    if (provider === Providers.GOOGLE) {
+      clientOptions.json = true;
     }
 
     try {

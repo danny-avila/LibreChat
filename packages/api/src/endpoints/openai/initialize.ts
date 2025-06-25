@@ -1,9 +1,9 @@
 import { ErrorTypes, EModelEndpoint, mapModelToAzureConfig } from 'librechat-data-provider';
 import type {
-  LLMConfigOptions,
   UserKeyValues,
-  InitializeOpenAIOptionsParams,
   OpenAIOptionsResult,
+  OpenAIConfigOptions,
+  InitializeOpenAIOptionsParams,
 } from '~/types';
 import { createHandleLLMNewToken } from '~/utils/generators';
 import { getAzureCredentials } from '~/utils/azure';
@@ -64,7 +64,7 @@ export const initializeOpenAI = async ({
     ? userValues?.baseURL
     : baseURLOptions[endpoint as keyof typeof baseURLOptions];
 
-  const clientOptions: LLMConfigOptions = {
+  const clientOptions: OpenAIConfigOptions = {
     proxy: PROXY ?? undefined,
     reverseProxyUrl: baseURL || undefined,
     streaming: true,
@@ -135,7 +135,7 @@ export const initializeOpenAI = async ({
     user: req.user.id,
   };
 
-  const finalClientOptions: LLMConfigOptions = {
+  const finalClientOptions: OpenAIConfigOptions = {
     ...clientOptions,
     modelOptions,
   };
