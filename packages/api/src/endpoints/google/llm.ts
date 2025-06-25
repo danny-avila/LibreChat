@@ -1,5 +1,5 @@
 import { Providers } from '@librechat/agents';
-import { AuthKeys } from 'librechat-data-provider';
+import { googleSettings, AuthKeys } from 'librechat-data-provider';
 import type { GoogleClientOptions, VertexAIClientOptions } from '@librechat/agents';
 import type * as t from '~/types';
 import { isEnabled } from '~/utils';
@@ -104,9 +104,15 @@ export function getLLMConfig(
   const reverseProxyUrl = options.reverseProxyUrl;
   const authHeader = options.authHeader;
 
+  const {
+    thinking = googleSettings.thinking.default,
+    thinkingBudget = googleSettings.thinkingBudget.default,
+    ...modelOptions
+  } = options.modelOptions || {};
+
   const llmConfig: GoogleClientOptions | VertexAIClientOptions = {
-    ...(options.modelOptions || {}),
-    model: options.modelOptions?.model ?? '',
+    ...(modelOptions || {}),
+    model: modelOptions?.model ?? '',
     maxRetries: 2,
   };
 
@@ -130,6 +136,22 @@ export function getLLMConfig(
     (llmConfig as VertexAIClientOptions).location = process.env.GOOGLE_LOC || 'us-central1';
   } else if (apiKey && provider === Providers.GOOGLE) {
     llmConfig.apiKey = apiKey;
+  }
+
+  const shouldEnableThinking =
+    thinking && thinkingBudget != null && (thinkingBudget > 0 || thinkingBudget === -1);
+
+  if (shouldEnableThinking && provider === Providers.GOOGLE) {
+    (llmConfig as GoogleClientOptions).thinkingConfig = {
+      thinkingBudget: thinking ? thinkingBudget : googleSettings.thinkingBudget.default,
+      includeThoughts: Boolean(thinking),
+    };
+  } else if (shouldEnableThinking && provider === Providers.VERTEXAI) {
+    (llmConfig as VertexAIClientOptions).thinkingBudget = thinking
+      ? thinkingBudget
+      : googleSettings.thinkingBudget.default;
+    (llmConfig as VertexAIClientOptions & { includeThoughts?: boolean }).includeThoughts =
+      Boolean(thinking);
   }
 
   /*

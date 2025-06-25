@@ -262,7 +262,10 @@ export const googleSettings = {
     min: -1 as const,
     max: 32768 as const,
     step: 1 as const,
-    default: undefined,
+    /** `-1` = Dynamic Thinking, meaning the model will adjust
+     * the budget based on the complexity of the request.
+     */
+    default: -1 as const,
   },
 };
 
