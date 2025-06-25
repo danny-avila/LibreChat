@@ -314,4 +314,116 @@ describe('resolveHeaders', () => {
       'Dot-Header': 'dot-value',
     });
   });
+
+  // Additional comprehensive tests for all user field placeholders
+  it('should replace all allowed user field placeholders', () => {
+    const user = {
+      id: 'abc',
+      name: 'Test User',
+      username: 'testuser',
+      email: 'me@example.com',
+      provider: 'google',
+      role: 'admin',
+      googleId: 'gid',
+      facebookId: 'fbid',
+      openidId: 'oid',
+      samlId: 'sid',
+      ldapId: 'lid',
+      githubId: 'ghid',
+      discordId: 'dcid',
+      appleId: 'aid',
+      emailVerified: true,
+      twoFactorEnabled: false,
+      termsAccepted: true,
+    };
+
+    const headers = {
+      'X-User-ID': '{{LIBRECHAT_USER_ID}}',
+      'X-User-Name': '{{LIBRECHAT_USER_NAME}}',
+      'X-User-Username': '{{LIBRECHAT_USER_USERNAME}}',
+      'X-User-Email': '{{LIBRECHAT_USER_EMAIL}}',
+      'X-User-Provider': '{{LIBRECHAT_USER_PROVIDER}}',
+      'X-User-Role': '{{LIBRECHAT_USER_ROLE}}',
+      'X-User-GoogleId': '{{LIBRECHAT_USER_GOOGLEID}}',
+      'X-User-FacebookId': '{{LIBRECHAT_USER_FACEBOOKID}}',
+      'X-User-OpenIdId': '{{LIBRECHAT_USER_OPENIDID}}',
+      'X-User-SamlId': '{{LIBRECHAT_USER_SAMLID}}',
+      'X-User-LdapId': '{{LIBRECHAT_USER_LDAPID}}',
+      'X-User-GithubId': '{{LIBRECHAT_USER_GITHUBID}}',
+      'X-User-DiscordId': '{{LIBRECHAT_USER_DISCORDID}}',
+      'X-User-AppleId': '{{LIBRECHAT_USER_APPLEID}}',
+      'X-User-EmailVerified': '{{LIBRECHAT_USER_EMAILVERIFIED}}',
+      'X-User-TwoFactorEnabled': '{{LIBRECHAT_USER_TWOFACTORENABLED}}',
+      'X-User-TermsAccepted': '{{LIBRECHAT_USER_TERMSACCEPTED}}',
+    };
+
+    const result = resolveHeaders(headers, user);
+
+    expect(result['X-User-ID']).toBe('abc');
+    expect(result['X-User-Name']).toBe('Test User');
+    expect(result['X-User-Username']).toBe('testuser');
+    expect(result['X-User-Email']).toBe('me@example.com');
+    expect(result['X-User-Provider']).toBe('google');
+    expect(result['X-User-Role']).toBe('admin');
+    expect(result['X-User-GoogleId']).toBe('gid');
+    expect(result['X-User-FacebookId']).toBe('fbid');
+    expect(result['X-User-OpenIdId']).toBe('oid');
+    expect(result['X-User-SamlId']).toBe('sid');
+    expect(result['X-User-LdapId']).toBe('lid');
+    expect(result['X-User-GithubId']).toBe('ghid');
+    expect(result['X-User-DiscordId']).toBe('dcid');
+    expect(result['X-User-AppleId']).toBe('aid');
+    expect(result['X-User-EmailVerified']).toBe('true');
+    expect(result['X-User-TwoFactorEnabled']).toBe('false');
+    expect(result['X-User-TermsAccepted']).toBe('true');
+  });
+
+  it('should handle multiple placeholders in one value', () => {
+    const user = { id: 'abc', email: 'me@example.com' };
+    const headers = {
+      'X-Multi': 'User: {{LIBRECHAT_USER_ID}}, Env: ${TEST_API_KEY}, Custom: {{MY_CUSTOM}}',
+    };
+    const customVars = { MY_CUSTOM: 'custom-value' };
+    const result = resolveHeaders(headers, user, customVars);
+    expect(result['X-Multi']).toBe('User: abc, Env: test-api-key-value, Custom: custom-value');
+  });
+
+  it('should leave unknown placeholders unchanged', () => {
+    const user = { id: 'abc' };
+    const headers = {
+      'X-Unknown': '{{SOMETHING_NOT_RECOGNIZED}}',
+      'X-Known': '{{LIBRECHAT_USER_ID}}',
+    };
+    const result = resolveHeaders(headers, user);
+    expect(result['X-Unknown']).toBe('{{SOMETHING_NOT_RECOGNIZED}}');
+    expect(result['X-Known']).toBe('abc');
+  });
+
+  it('should handle a mix of all types', () => {
+    const user = {
+      id: 'abc',
+      email: 'me@example.com',
+      emailVerified: true,
+      twoFactorEnabled: false,
+    };
+    const headers = {
+      'X-User': '{{LIBRECHAT_USER_ID}}',
+      'X-Env': '${TEST_API_KEY}',
+      'X-Custom': '{{MY_CUSTOM}}',
+      'X-Multi': 'ID: {{LIBRECHAT_USER_ID}}, ENV: ${TEST_API_KEY}, CUSTOM: {{MY_CUSTOM}}',
+      'X-Unknown': '{{NOT_A_REAL_PLACEHOLDER}}',
+      'X-Empty': '',
+      'X-Boolean': '{{LIBRECHAT_USER_EMAILVERIFIED}}',
+    };
+    const customVars = { MY_CUSTOM: 'custom-value' };
+    const result = resolveHeaders(headers, user, customVars);
+
+    expect(result['X-User']).toBe('abc');
+    expect(result['X-Env']).toBe('test-api-key-value');
+    expect(result['X-Custom']).toBe('custom-value');
+    expect(result['X-Multi']).toBe('ID: abc, ENV: test-api-key-value, CUSTOM: custom-value');
+    expect(result['X-Unknown']).toBe('{{NOT_A_REAL_PLACEHOLDER}}');
+    expect(result['X-Empty']).toBe('');
+    expect(result['X-Boolean']).toBe('true');
+  });
 });
