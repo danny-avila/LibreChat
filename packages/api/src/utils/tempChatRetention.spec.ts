@@ -1,7 +1,7 @@
 import {
-  DEFAULT_RETENTION_HOURS,
   MIN_RETENTION_HOURS,
   MAX_RETENTION_HOURS,
+  DEFAULT_RETENTION_HOURS,
   getTempChatRetentionHours,
   createTempChatExpirationDate,
 } from './tempChatRetention';
@@ -33,7 +33,7 @@ describe('tempChatRetention', () => {
     });
 
     it('should use config value when set', () => {
-      const config: TCustomConfig = {
+      const config: Partial<TCustomConfig> = {
         interface: {
           temporaryChatRetention: 12,
         },
@@ -44,7 +44,7 @@ describe('tempChatRetention', () => {
 
     it('should prioritize config over environment variable', () => {
       process.env.TEMP_CHAT_RETENTION_HOURS = '48';
-      const config: TCustomConfig = {
+      const config: Partial<TCustomConfig> = {
         interface: {
           temporaryChatRetention: 12,
         },
@@ -54,7 +54,7 @@ describe('tempChatRetention', () => {
     });
 
     it('should enforce minimum retention period', () => {
-      const config: TCustomConfig = {
+      const config: Partial<TCustomConfig> = {
         interface: {
           temporaryChatRetention: 0,
         },
@@ -64,7 +64,7 @@ describe('tempChatRetention', () => {
     });
 
     it('should enforce maximum retention period', () => {
-      const config: TCustomConfig = {
+      const config: Partial<TCustomConfig> = {
         interface: {
           temporaryChatRetention: 10000,
         },
@@ -80,9 +80,9 @@ describe('tempChatRetention', () => {
     });
 
     it('should handle invalid config value', () => {
-      const config: TCustomConfig = {
+      const config: Partial<TCustomConfig> = {
         interface: {
-          temporaryChatRetention: 'invalid' as any,
+          temporaryChatRetention: 'invalid' as unknown as number,
         },
       };
       const result = getTempChatRetentionHours(config);
@@ -103,7 +103,7 @@ describe('tempChatRetention', () => {
     });
 
     it('should create expiration date with custom retention period', () => {
-      const config: TCustomConfig = {
+      const config: Partial<TCustomConfig> = {
         interface: {
           temporaryChatRetention: 12,
         },

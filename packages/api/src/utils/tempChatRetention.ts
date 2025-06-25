@@ -21,7 +21,7 @@ export const MAX_RETENTION_HOURS = 8760;
  * @param config - The custom configuration object
  * @returns The retention period in hours
  */
-export function getTempChatRetentionHours(config?: TCustomConfig): number {
+export function getTempChatRetentionHours(config?: Partial<TCustomConfig> | null): number {
   let retentionHours = DEFAULT_RETENTION_HOURS;
 
   // Check environment variable first
@@ -69,7 +69,7 @@ export function getTempChatRetentionHours(config?: TCustomConfig): number {
  * @param config - The custom configuration object
  * @returns The expiration date
  */
-export function createTempChatExpirationDate(config?: TCustomConfig): Date {
+export function createTempChatExpirationDate(config?: Partial<TCustomConfig>): Date {
   const retentionHours = getTempChatRetentionHours(config);
   const expiredAt = new Date();
   expiredAt.setHours(expiredAt.getHours() + retentionHours);

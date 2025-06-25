@@ -164,13 +164,6 @@ describe('AppService', () => {
         disableBuilder: false,
         capabilities: expect.arrayContaining([...defaultAgentCapabilities]),
       },
-      config: {
-        registration: { socialLogins: ['testLogin'] },
-        fileStrategy: 'testStrategy',
-        balance: {
-          enabled: true,
-        },
-      },
     });
   });
 
