@@ -78,7 +78,7 @@ const tokenValues = Object.assign(
     'gpt-3.5-turbo-1106': { prompt: 1, completion: 2 },
     'o4-mini': { prompt: 1.1, completion: 4.4 },
     'o3-mini': { prompt: 1.1, completion: 4.4 },
-    o3: { prompt: 10, completion: 40 },
+    o3: { prompt: 2, completion: 8 },
     'o1-mini': { prompt: 1.1, completion: 4.4 },
     'o1-preview': { prompt: 15, completion: 60 },
     o1: { prompt: 15, completion: 60 },

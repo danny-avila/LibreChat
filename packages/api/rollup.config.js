@@ -1,5 +1,6 @@
 // rollup.config.js
 import { readFileSync } from 'fs';
+import json from '@rollup/plugin-json';
 import terser from '@rollup/plugin-terser';
 import replace from '@rollup/plugin-replace';
 import commonjs from '@rollup/plugin-commonjs';
@@ -29,15 +30,17 @@ const plugins = [
     inlineSourceMap: true,
   }),
   terser(),
+  json(),
 ];
 
 const cjsBuild = {
   input: 'src/index.ts',
   output: {
-    file: pkg.main,
+    dir: 'dist',
     format: 'cjs',
     sourcemap: true,
     exports: 'named',
+    entryFileNames: '[name].js',
   },
   external: [...Object.keys(pkg.dependencies || {}), ...Object.keys(pkg.devDependencies || {})],
   preserveSymlinks: true,

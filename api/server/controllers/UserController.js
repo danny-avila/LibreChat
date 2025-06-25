@@ -1,5 +1,6 @@
 const {
   Tools,
+  Constants,
   FileSources,
   webSearchKeys,
   extractWebSearchEnvVars,
@@ -21,8 +22,9 @@ const { verifyEmail, resendVerificationEmail } = require('~/server/services/Auth
 const { needsRefresh, getNewS3URL } = require('~/server/services/Files/S3/crud');
 const { processDeleteRequest } = require('~/server/services/Files/process');
 const { Transaction, Balance, User } = require('~/db/models');
-const { deleteAllSharedLinks } = require('~/models/Share');
 const { deleteToolCalls } = require('~/models/ToolCall');
+const { deleteAllSharedLinks } = require('~/models');
+const { getMCPManager } = require('~/config');
 
 const getUserController = async (req, res) => {
   /** @type {MongoUser} */
@@ -102,10 +104,22 @@ const updateUserPluginsController = async (req, res) => {
     }
 
     let keys = Object.keys(auth);
-    if (keys.length === 0 && pluginKey !== Tools.web_search) {
+    const values = Object.values(auth); // Used in 'install' block
+
+    const isMCPTool = pluginKey.startsWith('mcp_') || pluginKey.includes(Constants.mcp_delimiter);
+
+    // Early exit condition:
+    // If keys are empty (meaning auth: {} was likely sent for uninstall, or auth was empty for install)
+    // AND it's not web_search (which has special key handling to populate `keys` for uninstall)
+    // AND it's NOT (an uninstall action FOR an MCP tool - we need to proceed for this case to clear all its auth)
+    // THEN return.
+    if (
+      keys.length === 0 &&
+      pluginKey !== Tools.web_search &&
+      !(action === 'uninstall' && isMCPTool)
+    ) {
       return res.status(200).send();
     }
-    const values = Object.values(auth);
 
     /** @type {number} */
     let status = 200;
@@ -132,16 +146,53 @@ const updateUserPluginsController = async (req, res) => {
         }
       }
     } else if (action === 'uninstall') {
-      for (let i = 0; i < keys.length; i++) {
-        authService = await deleteUserPluginAuth(user.id, keys[i]);
+      // const isMCPTool was defined earlier
+      if (isMCPTool && keys.length === 0) {
+        // This handles the case where auth: {} is sent for an MCP tool uninstall.
+        // It means "delete all credentials associated with this MCP pluginKey".
+        authService = await deleteUserPluginAuth(user.id, null, true, pluginKey);
         if (authService instanceof Error) {
-          logger.error('[authService]', authService);
+          logger.error(
+            `[authService] Error deleting all auth for MCP tool ${pluginKey}:`,
+            authService,
+          );
           ({ status, message } = authService);
+        }
+      } else {
+        // This handles:
+        // 1. Web_search uninstall (keys will be populated with all webSearchKeys if auth was {}).
+        // 2. Other tools uninstall (if keys were provided).
+        // 3. MCP tool uninstall if specific keys were provided in `auth` (not current frontend behavior).
+        // If keys is empty for non-MCP tools (and not web_search), this loop won't run, and nothing is deleted.
+        for (let i = 0; i < keys.length; i++) {
+          authService = await deleteUserPluginAuth(user.id, keys[i]); // Deletes by authField name
+          if (authService instanceof Error) {
+            logger.error('[authService] Error deleting specific auth key:', authService);
+            ({ status, message } = authService);
+          }
         }
       }
     }
 
     if (status === 200) {
+      // If auth was updated successfully, disconnect MCP sessions as they might use these credentials
+      if (pluginKey.startsWith(Constants.mcp_prefix)) {
+        try {
+          const mcpManager = getMCPManager(user.id);
+          if (mcpManager) {
+            logger.info(
+              `[updateUserPluginsController] Disconnecting MCP connections for user ${user.id} after plugin auth update for ${pluginKey}.`,
+            );
+            await mcpManager.disconnectUserConnections(user.id);
+          }
+        } catch (disconnectError) {
+          logger.error(
+            `[updateUserPluginsController] Error disconnecting MCP connections for user ${user.id} after plugin auth update:`,
+            disconnectError,
+          );
+          // Do not fail the request for this, but log it.
+        }
+      }
       return res.status(status).send();
     }
 

@@ -1,7 +1,6 @@
-const axios = require('axios');
-const { createAxiosInstance } = require('./index');
+import axios from 'axios';
+import { createAxiosInstance } from './axios';
 
-// Mock axios
 jest.mock('axios', () => ({
   interceptors: {
     request: { use: jest.fn(), eject: jest.fn() },
@@ -20,7 +19,13 @@ jest.mock('axios', () => ({
   post: jest.fn().mockResolvedValue({ data: {} }),
   put: jest.fn().mockResolvedValue({ data: {} }),
   delete: jest.fn().mockResolvedValue({ data: {} }),
-  reset: jest.fn().mockImplementation(function () {
+  reset: jest.fn().mockImplementation(function (this: {
+    get: jest.Mock;
+    post: jest.Mock;
+    put: jest.Mock;
+    delete: jest.Mock;
+    create: jest.Mock;
+  }) {
     this.get.mockClear();
     this.post.mockClear();
     this.put.mockClear();

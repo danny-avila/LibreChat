@@ -21,19 +21,18 @@ jest.mock('~/models', () => ({
   createUser: jest.fn(),
   updateUser: jest.fn(),
 }));
-jest.mock('~/server/utils/crypto', () => ({
-  hashToken: jest.fn().mockResolvedValue('hashed-token'),
-}));
-jest.mock('~/server/utils', () => ({
+jest.mock('@librechat/api', () => ({
+  ...jest.requireActual('@librechat/api'),
   isEnabled: jest.fn(() => false),
 }));
-jest.mock('~/config', () => ({
+jest.mock('@librechat/data-schemas', () => ({
+  ...jest.requireActual('@librechat/api'),
   logger: {
     info: jest.fn(),
     debug: jest.fn(),
     error: jest.fn(),
-    warn: jest.fn(),
   },
+  hashToken: jest.fn().mockResolvedValue('hashed-token'),
 }));
 jest.mock('~/cache/getLogStores', () =>
   jest.fn(() => ({

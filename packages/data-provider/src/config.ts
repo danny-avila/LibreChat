@@ -588,11 +588,24 @@ export type TStartupConfig = {
     scraperType?: ScraperTypes;
     rerankerType?: RerankerTypes;
   };
+  mcpServers?: Record<
+    string,
+    {
+      customUserVars: Record<
+        string,
+        {
+          title: string;
+          description: string;
+        }
+      >;
+    }
+  >;
 };
 
 export enum OCRStrategy {
   MISTRAL_OCR = 'mistral_ocr',
   CUSTOM_OCR = 'custom_ocr',
+  AZURE_MISTRAL_OCR = 'azure_mistral_ocr',
 }
 
 export enum SearchCategories {
@@ -884,7 +897,6 @@ export const defaultModels = {
   [EModelEndpoint.assistants]: [...sharedOpenAIModels, 'chatgpt-4o-latest'],
   [EModelEndpoint.agents]: sharedOpenAIModels, // TODO: Add agent models (agentsModels)
   [EModelEndpoint.google]: [
-    // Shared Google Models between Vertex AI & Gen AI
     // Gemini 2.0 Models
     'gemini-2.0-flash-001',
     'gemini-2.0-flash-exp',
@@ -1136,6 +1148,10 @@ export enum CacheKeys {
    */
   FLOWS = 'flows',
   /**
+   * Key for individual MCP Tool Manifests.
+   */
+  MCP_TOOLS = 'mcp_tools',
+  /**
    * Key for pending chat requests (concurrency check)
    */
   PENDING_REQ = 'pending_req',
@@ -1363,7 +1379,7 @@ export enum Constants {
   /** Key for the app's version. */
   VERSION = 'v0.7.8',
   /** Key for the Custom Config's version (librechat.yaml). */
-  CONFIG_VERSION = '1.2.6',
+  CONFIG_VERSION = '1.2.8',
   /** Standard value for the first message's `parentMessageId` value, to indicate no parent exists. */
   NO_PARENT = '00000000-0000-0000-0000-000000000000',
   /** Standard value for the initial conversationId before a request is sent */
@@ -1390,6 +1406,8 @@ export enum Constants {
   GLOBAL_PROJECT_NAME = 'instance',
   /** Delimiter for MCP tools */
   mcp_delimiter = '_mcp_',
+  /** Prefix for MCP plugins */
+  mcp_prefix = 'mcp_',
   /** Placeholder Agent ID for Ephemeral Agents */
   EPHEMERAL_AGENT_ID = 'ephemeral',
 }
@@ -1433,6 +1451,10 @@ export enum LocalStorageKeys {
   LAST_CODE_TOGGLE_ = 'LAST_CODE_TOGGLE_',
   /** Last checked toggle for Web Search per conversation ID */
   LAST_WEB_SEARCH_TOGGLE_ = 'LAST_WEB_SEARCH_TOGGLE_',
+  /** Key for the last selected agent provider */
+  LAST_AGENT_PROVIDER = 'lastAgentProvider',
+  /** Key for the last selected agent model */
+  LAST_AGENT_MODEL = 'lastAgentModel',
 }
 
 export enum ForkOptions {

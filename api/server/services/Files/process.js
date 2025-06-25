@@ -522,7 +522,7 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
       throw new Error('OCR capability is not enabled for Agents');
     }
 
-    const { handleFileUpload: uploadMistralOCR } = getStrategyFunctions(
+    const { handleFileUpload: uploadOCR } = getStrategyFunctions(
       req.app.locals?.ocr?.strategy ?? FileSources.mistral_ocr,
     );
     const { file_id, temp_file_id } = metadata;
@@ -534,7 +534,7 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
       images,
       filename,
       filepath: ocrFileURL,
-    } = await uploadMistralOCR({ req, file, file_id, entity_id: agent_id, basePath });
+    } = await uploadOCR({ req, file, loadAuthValues });
 
     const fileInfo = removeNullishValues({
       text,

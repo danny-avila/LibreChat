@@ -1,13 +1,5 @@
-import { Schema, Document } from 'mongoose';
-
-export interface IPluginAuth extends Document {
-  authField: string;
-  value: string;
-  userId: string;
-  pluginKey?: string;
-  createdAt?: Date;
-  updatedAt?: Date;
-}
+import { Schema } from 'mongoose';
+import type { IPluginAuth } from '~/types';
 
 const pluginAuthSchema: Schema<IPluginAuth> = new Schema(
   {

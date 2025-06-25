@@ -34,7 +34,8 @@ const BaseClient = require('./BaseClient');
 
 const loc = process.env.GOOGLE_LOC || 'us-central1';
 const publisher = 'google';
-const endpointPrefix = `${loc}-aiplatform.googleapis.com`;
+const endpointPrefix =
+  loc === 'global' ? 'aiplatform.googleapis.com' : `${loc}-aiplatform.googleapis.com`;
 
 const settings = endpointSettings[EModelEndpoint.google];
 const EXCLUDED_GENAI_MODELS = /gemini-(?:1\.0|1-0|pro)/;

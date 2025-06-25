@@ -1,9 +1,15 @@
 const jwt = require('jsonwebtoken');
 const { nanoid } = require('nanoid');
-const { sendEvent } = require('@librechat/api');
 const { tool } = require('@langchain/core/tools');
 const { logger } = require('@librechat/data-schemas');
 const { GraphEvents, sleep } = require('@librechat/agents');
+const {
+  sendEvent,
+  encryptV2,
+  decryptV2,
+  logAxiosError,
+  refreshAccessToken,
+} = require('@librechat/api');
 const {
   Time,
   CacheKeys,
@@ -14,14 +20,11 @@ const {
   isImageVisionTool,
   actionDomainSeparator,
 } = require('librechat-data-provider');
-const { refreshAccessToken } = require('~/server/services/TokenService');
-const { encryptV2, decryptV2 } = require('~/server/utils/crypto');
+const { findToken, updateToken, createToken } = require('~/models');
 const { getActions, deleteActions } = require('~/models/Action');
 const { deleteAssistant } = require('~/models/Assistant');
 const { getFlowStateManager } = require('~/config');
-const { logAxiosError } = require('~/utils');
 const { getLogStores } = require('~/cache');
-const { findToken } = require('~/models');
 
 const JWT_SECRET = process.env.JWT_SECRET;
 const toolNameRegex = /^[a-zA-Z0-9_-]+$/;
@@ -259,15 +262,22 @@ async function createActionTool({
               try {
                 const refresh_token = await decryptV2(refreshTokenData.token);
                 const refreshTokens = async () =>
-                  await refreshAccessToken({
-                    userId,
-                    identifier,
-                    refresh_token,
-                    client_url: metadata.auth.client_url,
-                    encrypted_oauth_client_id: encrypted.oauth_client_id,
-                    token_exchange_method: metadata.auth.token_exchange_method,
-                    encrypted_oauth_client_secret: encrypted.oauth_client_secret,
-                  });
+                  await refreshAccessToken(
+                    {
+                      userId,
+                      identifier,
+                      refresh_token,
+                      client_url: metadata.auth.client_url,
+                      encrypted_oauth_client_id: encrypted.oauth_client_id,
+                      token_exchange_method: metadata.auth.token_exchange_method,
+                      encrypted_oauth_client_secret: encrypted.oauth_client_secret,
+                    },
+                    {
+                      findToken,
+                      updateToken,
+                      createToken,
+                    },
+                  );
                 const flowsCache = getLogStores(CacheKeys.FLOWS);
                 const flowManager = getFlowStateManager(flowsCache);
                 const refreshData = await flowManager.createFlowWithHandler(
