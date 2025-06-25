@@ -33,6 +33,17 @@ jest.mock('librechat-data-provider', () => {
   };
 });
 
+jest.mock('@librechat/data-schemas', () => {
+  return {
+    logger: {
+      info: jest.fn(),
+      warn: jest.fn(),
+      debug: jest.fn(),
+      error: jest.fn(),
+    },
+  };
+});
+
 const axios = require('axios');
 const { loadYaml } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
