@@ -173,6 +173,165 @@ describe('AnthropicClient', () => {
       expect(prompt).toContain("Human's name: John");
       expect(prompt).toContain('You are Claude-2');
     });
+
+    it('should flatten multi-element content arrays correctly', async () => {
+      // Set up the client for Messages API (Claude 3+)
+      client.useMessages = true;
+      client.options.modelOptions.model = 'claude-3-opus-20240229';
+
+      const messagesWithMultiContent = [
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'image',
+              source: { type: 'base64', media_type: 'image/png', data: 'fake-data' },
+            },
+            { type: 'text', text: 'describe this image' },
+          ],
+          messageId: '1',
+        },
+        {
+          role: 'user',
+          content: 'follow up question',
+          messageId: '2',
+          parentMessageId: '1',
+        },
+      ];
+
+      const result = await client.buildMessages(messagesWithMultiContent, '2');
+
+      // Should have one grouped message with flattened content
+      expect(result.context).toHaveLength(1);
+      const groupedMessage = result.context[0];
+
+      // Content should be flattened array with all elements
+      expect(Array.isArray(groupedMessage.content)).toBe(true);
+      expect(groupedMessage.content).toHaveLength(3);
+
+      // Check that all elements are properly formatted objects
+      expect(groupedMessage.content[0]).toEqual({
+        type: 'image',
+        source: { type: 'base64', media_type: 'image/png', data: 'fake-data' },
+      });
+      expect(groupedMessage.content[1]).toEqual({
+        type: 'text',
+        text: 'describe this image',
+      });
+      expect(groupedMessage.content[2]).toEqual({
+        type: 'text',
+        text: 'follow up question',
+      });
+    });
+
+    it('should convert raw strings to proper text objects during flattening', async () => {
+      client.useMessages = true;
+      client.options.modelOptions.model = 'claude-3-opus-20240229';
+
+      const messagesWithStringContent = [
+        {
+          role: 'user',
+          content: [{ type: 'text', text: 'first message' }],
+          messageId: '1',
+        },
+        {
+          role: 'user',
+          content: 'raw string message', // This should become an object in the content array
+          messageId: '2',
+          parentMessageId: '1',
+        },
+      ];
+
+      const result = await client.buildMessages(messagesWithStringContent, '2');
+
+      expect(result.context).toHaveLength(1);
+      const groupedMessage = result.context[0];
+
+      // Both content elements should be properly formatted objects
+      expect(groupedMessage.content).toHaveLength(2);
+      expect(groupedMessage.content[0]).toEqual({
+        type: 'text',
+        text: 'first message',
+      });
+      expect(groupedMessage.content[1]).toEqual({
+        type: 'text',
+        text: 'raw string message',
+      });
+    });
+
+    it('should trim trailing whitespace from final assistant messages with flattened content', async () => {
+      client.useMessages = true;
+      client.options.modelOptions.model = 'claude-3-opus-20240229';
+
+      const messagesWithTrailingWhitespace = [
+        {
+          role: 'user',
+          content: 'hello',
+          messageId: '1',
+        },
+        {
+          role: 'assistant',
+          content: [{ type: 'text', text: 'first response' }],
+          messageId: '2',
+          parentMessageId: '1',
+        },
+        {
+          role: 'assistant',
+          content: 'second response with whitespace   \n  ', // Raw string with trailing whitespace
+          messageId: '3',
+          parentMessageId: '2',
+        },
+      ];
+
+      const result = await client.buildMessages(messagesWithTrailingWhitespace, '3');
+
+      // Should have 2 messages: user and grouped assistant
+      expect(result.context).toHaveLength(2);
+
+      const finalAssistantMessage = result.context[1];
+      expect(finalAssistantMessage.role).toBe('assistant');
+
+      // Should have flattened content with a trimmed final text element
+      expect(Array.isArray(finalAssistantMessage.content)).toBe(true);
+      expect(finalAssistantMessage.content).toHaveLength(2);
+
+      expect(finalAssistantMessage.content[0]).toEqual({
+        type: 'text',
+        text: 'first response',
+      });
+      expect(finalAssistantMessage.content[1]).toEqual({
+        type: 'text',
+        text: 'second response with whitespace', // Trimmed
+      });
+    });
+
+    it('should trim single string content from final assistant messages', async () => {
+      client.useMessages = true;
+      client.options.modelOptions.model = 'claude-3-opus-20240229';
+
+      const messagesWithStringAssistant = [
+        {
+          role: 'user',
+          content: 'hello',
+          messageId: '1',
+        },
+        {
+          role: 'assistant',
+          content: 'response with trailing whitespace   \n  ',
+          messageId: '2',
+          parentMessageId: '1',
+        },
+      ];
+
+      const result = await client.buildMessages(messagesWithStringAssistant, '2');
+
+      expect(result.context).toHaveLength(2);
+      const assistantMessage = result.context[1];
+
+      // Should be trimmed string, not array
+      expect(typeof assistantMessage.content).toBe('string');
+      expect(assistantMessage.content).toBe('response with trailing whitespace');
+    });
   });
 
   describe('getClient', () => {
@@ -921,6 +1080,7 @@ describe('AnthropicClient', () => {
   describe('configureReasoning', () => {
     it('should enable thinking for claude-opus-4 and claude-sonnet-4 models', async () => {
       const client = new AnthropicClient('test-api-key');
+
       // Create a mock async generator function
       async function* mockAsyncGenerator() {
         yield { type: 'message_start', message: { usage: {} } };

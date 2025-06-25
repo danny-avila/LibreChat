@@ -487,23 +487,51 @@ class AnthropicClient extends BaseClient {
 
     groupedMessages = groupedMessages.map((msg, i) => {
       const isLast = i === groupedMessages.length - 1;
-      if (msg.content.length === 1) {
-        const content = msg.content[0];
-        return {
-          ...msg,
-          // reason: final assistant content cannot end with trailing whitespace
-          content:
-            isLast && this.useMessages && msg.role === 'assistant' && typeof content === 'string'
-              ? content?.trim()
-              : content,
-        };
+
+      // Always flatten the content array, regardless of length
+      let content = msg.content.length === 1 ? msg.content[0] : msg.content.flat();
+
+      // Ensure all content elements are properly formatted objects
+      if (Array.isArray(content)) {
+        content = content.map((item) => {
+          if (typeof item === 'string') {
+            return { type: 'text', text: item };
+          }
+          return item;
+        });
       }
+
+      // Helper function to trim trailing whitespace from final assistant messages
+      const trimFinalAssistantContent = (content) => {
+        if (!isLast || !this.useMessages || msg.role !== 'assistant') {
+          return content;
+        }
+
+        if (typeof content === 'string') {
+          return content.trim();
+        }
+
+        if (Array.isArray(content)) {
+          // Find and trim the last text element
+          for (let j = content.length - 1; j >= 0; j--) {
+            if (content[j]?.type === 'text' && typeof content[j].text === 'string') {
+              content[j] = { ...content[j], text: content[j].text.trim() };
+              break;
+            }
+          }
+        }
+
+        return content;
+      };
 
       if (!this.useMessages && msg.tokenCount) {
         delete msg.tokenCount;
       }
 
-      return msg;
+      return {
+        ...msg,
+        content: trimFinalAssistantContent(content),
+      };
     });
 
     let identityPrefix = '';
@@ -941,7 +969,7 @@ class AnthropicClient extends BaseClient {
       const content = `<conversation_context>
   ${convo}
   </conversation_context>
-  
+
   Please generate a title for this conversation.`;
 
       const titleMessage = { role: 'user', content };
