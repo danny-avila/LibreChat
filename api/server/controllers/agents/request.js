@@ -1,3 +1,5 @@
+const { sendEvent } = require('@librechat/api');
+const { logger } = require('@librechat/data-schemas');
 const { Constants } = require('librechat-data-provider');
 const {
   handleAbortError,
@@ -5,9 +7,7 @@ const {
   cleanupAbortController,
 } = require('~/server/middleware');
 const { disposeClient, clientRegistry, requestDataMap } = require('~/server/cleanup');
-const { sendMessage } = require('~/server/utils');
 const { saveMessage } = require('~/models');
-const { logger } = require('~/config');
 
 const AgentController = async (req, res, next, initializeClient, addTitle) => {
   let {
@@ -206,7 +206,7 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
       // Create a new response object with minimal copies
       const finalResponse = { ...response };
 
-      sendMessage(res, {
+      sendEvent(res, {
         final: true,
         conversation,
         title: conversation.title,

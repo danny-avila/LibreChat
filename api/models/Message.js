@@ -1,6 +1,7 @@
 const { z } = require('zod');
-const { createTempChatExpirationDate } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
+const { createTempChatExpirationDate } = require('@librechat/api');
+const getCustomConfig = require('~/server/services/Config/loadCustomConfig');
 const { Message } = require('~/db/models');
 
 const idSchema = z.string().uuid();
@@ -55,7 +56,14 @@ async function saveMessage(req, params, metadata) {
     };
 
     if (req?.body?.isTemporary) {
-      update.expiredAt = createTempChatExpirationDate(req.app.locals?.config);
+      try {
+        const customConfig = await getCustomConfig();
+        update.expiredAt = createTempChatExpirationDate(customConfig);
+      } catch (err) {
+        logger.error('Error creating temporary chat expiration date:', err);
+        logger.info(`---\`saveMessage\` context: ${metadata?.context}`);
+        update.expiredAt = null;
+      }
     } else {
       update.expiredAt = null;
     }
