@@ -98,6 +98,22 @@ module.exports = {
         update.conversationId = newConversationId;
       }
 
+      // Auto-assign pinnedOrder when pinning a conversation
+      if (update.isPinned === true && update.pinnedOrder === undefined) {
+        const maxOrder = await Conversation.findOne(
+          { user: req.user.id, isPinned: true },
+          'pinnedOrder',
+        )
+          .sort({ pinnedOrder: -1 })
+          .lean();
+        update.pinnedOrder = (maxOrder?.pinnedOrder ?? -1) + 1;
+      }
+
+      // Clear pinnedOrder when unpinning
+      if (update.isPinned === false) {
+        update.pinnedOrder = undefined;
+      }
+
       if (req.body.isTemporary) {
         const expiredAt = new Date();
         expiredAt.setDate(expiredAt.getDate() + 30);
@@ -191,7 +207,7 @@ module.exports = {
     try {
       const convos = await Conversation.find(query)
         .select(
-          'conversationId endpoint title createdAt updatedAt user model agent_id assistant_id spec iconURL',
+          'conversationId endpoint title createdAt updatedAt user model agent_id assistant_id spec iconURL tags isPinned pinnedOrder',
         )
         .sort({ updatedAt: order === 'asc' ? 1 : -1 })
         .limit(limit + 1)
