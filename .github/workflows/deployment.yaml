@@ -1,0 +1,85 @@
+name: Deployment
+
+on:
+  push:
+    branches:
+      - 'release'
+
+env:
+  AZURE_ACR_URL: "nodeenergy.azurecr.io"
+  CLUSTER_NAME: "nodeenergy_internal"
+  NAMESPACE: "librechat"
+  RESOURCE_GROUP_NAME: "nodeenergy_internal"
+
+jobs:
+  deploy_librechat:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup
+        id: setup
+        uses: ./.github/actions/setup
+        with:
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_PASSWORD: ${{ secrets.AZURE_CLIENT_PASSWORD }}
+          AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
+          AZURE_ACR_URL: ${{ env.AZURE_ACR_URL }}
+          CLUSTER_NAME: ${{ env.CLUSTER_NAME }}
+          RESOURCE_GROUP_NAME: ${{ env.RESOURCE_GROUP_NAME }}
+
+      - name: helm build librechat
+        run: helm dependency build helm/librechat
+
+      - name: Helm upgrade librechat
+        run: >-
+          helm upgrade librechat helm/librechat
+          -f ./helm/librechat/values_custom.yaml
+          --install
+          --debug
+          --timeout 240s
+          --namespace ${{ env.NAMESPACE }}
+          --create-namespace
+          --history-max 5
+          --wait
+
+      - name: Rollback if deployment fails
+        if: failure()
+        run: helm rollback librechat 0 --namespace=${{ env.NAMESPACE }}
+
+  deploy_rag_api:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup
+        id: setup
+        uses: ./.github/actions/setup
+        with:
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_PASSWORD: ${{ secrets.AZURE_CLIENT_PASSWORD }}
+          AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
+          AZURE_ACR_URL: ${{ env.AZURE_ACR_URL }}
+          CLUSTER_NAME: ${{ env.CLUSTER_NAME }}
+          RESOURCE_GROUP_NAME: ${{ env.RESOURCE_GROUP_NAME }}
+
+      - name: helm build rag-api
+        run: helm dependency build helm/librechat-rag-api
+
+      - name: Helm upgrade rag-api
+        run: >-
+          helm upgrade librechat-rag-api helm/librechat-rag-api
+          -f ./helm/librechat-rag-api/values_custom.yaml
+          --install
+          --debug
+          --timeout 240s
+          --namespace ${{ env.NAMESPACE }}
+          --create-namespace
+          --history-max 5
+          --wait
+
+      - name: Rollback if deployment fails
+        if: failure()
+        run: helm rollback librechat-rag-api 0 --namespace=${{ env.NAMESPACE }}

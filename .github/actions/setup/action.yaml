@@ -1,0 +1,51 @@
+name: Setup
+description: "Setup Cluster Access and Helm"
+inputs:
+  AZURE_ACR_URL:
+    description: "Name of Azure Container Registry"
+  AZURE_CLIENT_ID:
+    description: "Client ID of the Service Principle."
+  AZURE_CLIENT_PASSWORD:
+    description: "Client Password for Login."
+  AZURE_CREDENTIALS:
+    description: "Credentials-json of the service principal."
+  RESOURCE_GROUP_NAME:
+    description: "Name of the Resource Group."
+  CLUSTER_NAME:
+    description: "Name of the Cluster"
+  HELM_VERSION:
+    description: "Version of Helm"
+
+runs:
+  using: 'composite'
+
+  steps:
+    - name: Login to Azure Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ inputs.AZURE_ACR_URL }}
+        username: ${{ inputs.AZURE_CLIENT_ID }}
+        password: ${{ inputs.AZURE_CLIENT_PASSWORD }}
+
+    - name: Log in with Azure
+      uses: azure/login@v2
+      with:
+        creds: ${{ inputs.AZURE_CREDENTIALS }}
+
+    - name: Set up kubelogin for non-interactive login
+      uses: azure/use-kubelogin@v1
+      with:
+        kubelogin-version: 'v0.0.25'
+
+    - name: Get K8s context
+      uses: azure/aks-set-context@v4
+      with:
+        resource-group: ${{ inputs.RESOURCE_GROUP_NAME }}
+        cluster-name: ${{ inputs.CLUSTER_NAME }}
+        admin: 'false'
+        use-kubelogin: 'true'
+
+    - name: Set up Helm
+      uses: azure/setup-helm@v4.2.0
+      with:
+        version: 'v3.17.3'
