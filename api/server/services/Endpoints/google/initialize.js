@@ -1,4 +1,4 @@
-const { getLLMConfig, isEnabled } = require('@librechat/api');
+const { getGoogleConfig, isEnabled } = require('@librechat/api');
 const { EModelEndpoint, AuthKeys } = require('librechat-data-provider');
 const { getUserKey, checkUserKeyExpiry } = require('~/server/services/UserService');
 const { GoogleClient } = require('~/app');
@@ -64,7 +64,7 @@ const initializeClient = async ({ req, res, endpointOption, overrideModel, optio
     if (overrideModel) {
       clientOptions.modelOptions.model = overrideModel;
     }
-    return getLLMConfig(credentials, clientOptions);
+    return getGoogleConfig(credentials, clientOptions);
   }
 
   const client = new GoogleClient(credentials, clientOptions);

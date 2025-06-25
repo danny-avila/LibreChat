@@ -77,7 +77,7 @@ export function getSafetySettings(
  * @param options - The same shape as the "GoogleClient" constructor options
  */
 
-export function getLLMConfig(
+export function getGoogleConfig(
   credentials: string | t.GoogleCredentials | undefined,
   options: t.GoogleConfigOptions = {},
 ) {
@@ -150,8 +150,7 @@ export function getLLMConfig(
     (llmConfig as VertexAIClientOptions).thinkingBudget = thinking
       ? thinkingBudget
       : googleSettings.thinkingBudget.default;
-    (llmConfig as VertexAIClientOptions & { includeThoughts?: boolean }).includeThoughts =
-      Boolean(thinking);
+    (llmConfig as VertexAIClientOptions).includeThoughts = Boolean(thinking);
   }
 
   /*
