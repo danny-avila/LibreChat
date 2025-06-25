@@ -1,4 +1,5 @@
 const { logger } = require('@librechat/data-schemas');
+const { createTempChatExpirationDate } = require('@librechat/api');
 const { getMessages, deleteMessages } = require('./Message');
 const { Conversation } = require('~/db/models');
 
@@ -99,9 +100,7 @@ module.exports = {
       }
 
       if (req.body.isTemporary) {
-        const expiredAt = new Date();
-        expiredAt.setDate(expiredAt.getDate() + 30);
-        update.expiredAt = expiredAt;
+        update.expiredAt = createTempChatExpirationDate(req.app.locals?.config);
       } else {
         update.expiredAt = null;
       }

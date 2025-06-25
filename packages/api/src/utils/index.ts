@@ -7,4 +7,5 @@ export * from './files';
 export * from './generators';
 export * from './llm';
 export * from './openid';
+export * from './tempChatRetention';
 export { default as Tokenizer } from './tokenizer';

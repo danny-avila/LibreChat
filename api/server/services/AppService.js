@@ -98,6 +98,7 @@ const AppService = async (app) => {
     interfaceConfig,
     turnstileConfig,
     balance,
+    config,
     mcpConfig,
   };
 
