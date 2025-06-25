@@ -16,7 +16,10 @@ class Collections extends Tool {
     const description =
       'Store and retrieve organized knowledge in collections with hierarchical structure. ' +
       'Actions: create_collection, list_collections, search_collections, add_note, bulk_add_notes, search_notes, delete_note, update_note, update_collection, delete_collection. ' +
+      'Both search_collections and search_notes require search_query parameter. ' +
       'Supports keyword, semantic, and hybrid search across all notes. ' +
+      'Use include_notes parameter with search_collections to return collection notes. ' +
+      'Examples: search_collections with search_query="AI models", search_notes with search_query="machine learning" and return_mode="full". ' +
       'Perfect for maintaining organized information across multiple chat sessions.';
 
     const schema = z.object({
@@ -59,13 +62,20 @@ class Collections extends Tool {
       limit: z.number().min(1).max(100).optional(),
       tag_filter: z.array(z.string().max(50)).max(20).optional(),
       recursive: z.boolean().optional(),
+      include_notes: z.boolean().optional(),
     });
 
     super({ name: 'collections', description, schema });
 
     this.name = 'collections';
     this.description_for_model =
-      'Allows the assistant to manage organized collections of notes, facts, sources, and information across sessions. You can create and organize collections in a hierarchical structure with parent-child relationships. Actions: create_collection, list_collections, search_collections, add_note, bulk_add_notes, search_notes, delete_note, update_note, update_collection, delete_collection. Use add_note to store single notes, bulk_add_notes to create multiple notes at once, search_notes to retrieve relevant information with return_mode "lite" (default, excludes content/tags) or "full" (includes all fields), organize collections hierarchically.';
+      'Allows the assistant to manage organized collections of notes, facts, sources, and information across sessions. You can create and organize collections in a hierarchical structure with parent-child relationships. ' +
+      'Actions: create_collection, list_collections, search_collections, add_note, bulk_add_notes, search_notes, delete_note, update_note, update_collection, delete_collection. ' +
+      'Search actions: search_collections and search_notes both REQUIRE search_query parameter. ' +
+      'search_collections: finds collections by name/description, use include_notes=true to also return notes within found collections. ' +
+      'search_notes: finds individual notes, use return_mode "lite" (default, excludes content/tags) or "full" (includes all fields). ' +
+      'search_mode options: "keyword" (text search), "semantic" (meaning-based), "hybrid" (combines both, default). ' +
+      'Examples: search_collections with search_query="machine learning" and include_notes=true returns matching collections with their notes; search_notes with search_query="neural networks" and return_mode="full" returns complete note details.';
     this.description = description;
     this.schema = schema;
 
@@ -1318,6 +1328,54 @@ class Collections extends Tool {
     }
   }
 
+  async addNotesToCollections(collections) {
+    if (!collections || collections.length === 0) {
+      return collections;
+    }
+
+    const client = await this.pool.connect();
+    try {
+      const collectionIds = collections.map(c => c.id);
+      
+      // Fetch notes for all collections in one query
+      const notesQuery = `
+        SELECT n.id, n.collection_id, n.title, n.content, n.source_url, n.tags, n.created_at, n.updated_at
+        FROM notes n
+        JOIN collections c ON n.collection_id = c.id
+        WHERE n.collection_id = ANY($1) AND c.user_id = $2
+        ORDER BY n.created_at DESC
+      `;
+      
+      const notesResult = await client.query(notesQuery, [collectionIds, this.userId]);
+      const notes = notesResult.rows;
+      
+      // Group notes by collection_id
+      const notesByCollection = {};
+      notes.forEach(note => {
+        if (!notesByCollection[note.collection_id]) {
+          notesByCollection[note.collection_id] = [];
+        }
+        notesByCollection[note.collection_id].push({
+          id: note.id,
+          title: note.title,
+          content: note.content,
+          source_url: note.source_url,
+          tags: note.tags,
+          created_at: note.created_at,
+          updated_at: note.updated_at,
+        });
+      });
+      
+      // Add notes to each collection
+      return collections.map(collection => ({
+        ...collection,
+        notes: notesByCollection[collection.id] || [],
+      }));
+    } finally {
+      client.release();
+    }
+  }
+
   async _call(args) {
     try {
       // Validate input arguments against schema
@@ -1439,7 +1497,7 @@ class Collections extends Tool {
         }
 
         case 'search_collections': {
-          const { search_query, tag_filter, limit = 20 } = args;
+          const { search_query, tag_filter, limit = 20, include_notes = false } = args;
 
           if (!search_query) {
             return JSON.stringify({ error: 'search_query is required' });
@@ -1447,9 +1505,15 @@ class Collections extends Tool {
 
           const collections = await this.searchCollections(search_query, tag_filter, limit);
 
+          // If include_notes is true, fetch notes for each collection
+          let collectionsWithNotes = collections;
+          if (include_notes) {
+            collectionsWithNotes = await this.addNotesToCollections(collections);
+          }
+
           return JSON.stringify({
             success: true,
-            collections: collections.map((c) => ({
+            collections: collectionsWithNotes.map((c) => ({
               id: c.id,
               name: c.name,
               description: c.description,
@@ -1458,7 +1522,9 @@ class Collections extends Tool {
               score: c.score,
               created_at: c.created_at,
               updated_at: c.updated_at,
+              notes: c.notes || undefined, // Only include if include_notes was true
             })),
+            include_notes: include_notes,
           });
         }
 
