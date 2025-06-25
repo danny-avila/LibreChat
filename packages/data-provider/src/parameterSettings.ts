@@ -469,7 +469,7 @@ const google: Record<string, SettingDefinition> = {
     labelCode: true,
     description: 'com_endpoint_google_thinking_budget',
     descriptionCode: true,
-    placeholder: 'com_nav_theme_system',
+    placeholder: 'com_ui_auto',
     placeholderCode: true,
     type: 'number',
     component: 'input',
