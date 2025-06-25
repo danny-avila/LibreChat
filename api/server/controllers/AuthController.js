@@ -1,17 +1,17 @@
 const cookies = require('cookie');
 const jwt = require('jsonwebtoken');
 const openIdClient = require('openid-client');
+const { isEnabled } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 const {
-  registerUser,
-  resetPassword,
-  setAuthTokens,
   requestPasswordReset,
   setOpenIDAuthTokens,
+  resetPassword,
+  setAuthTokens,
+  registerUser,
 } = require('~/server/services/AuthService');
 const { findUser, getUserById, deleteAllUserSessions, findSession } = require('~/models');
 const { getOpenIdConfig } = require('~/strategies');
-const { isEnabled } = require('~/server/utils');
 
 const registrationController = async (req, res) => {
   try {

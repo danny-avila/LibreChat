@@ -1,31 +1,9 @@
 const crypto = require('crypto');
+const { logger } = require('@librechat/data-schemas');
 const { parseConvo } = require('librechat-data-provider');
+const { sendEvent, handleError } = require('@librechat/api');
 const { saveMessage, getMessages } = require('~/models/Message');
 const { getConvo } = require('~/models/Conversation');
-const { logger } = require('~/config');
-
-/**
- * Sends error data in Server Sent Events format and ends the response.
- * @param {object} res - The server response.
- * @param {string} message - The error message.
- */
-const handleError = (res, message) => {
-  res.write(`event: error\ndata: ${JSON.stringify(message)}\n\n`);
-  res.end();
-};
-
-/**
- * Sends message data in Server Sent Events format.
- * @param {Express.Response} res - - The server response.
- * @param {string | Object} message - The message to be sent.
- * @param {'message' | 'error' | 'cancel'} event - [Optional] The type of event. Default is 'message'.
- */
-const sendMessage = (res, message, event = 'message') => {
-  if (typeof message === 'string' && message.length === 0) {
-    return;
-  }
-  res.write(`event: ${event}\ndata: ${JSON.stringify(message)}\n\n`);
-};
 
 /**
  * Processes an error with provided options, saves the error message and sends a corresponding SSE response
@@ -91,7 +69,7 @@ const sendError = async (req, res, options, callback) => {
       convo = parseConvo(errorMessage);
     }
 
-    return sendMessage(res, {
+    return sendEvent(res, {
       final: true,
       requestMessage: query?.[0] ? query[0] : requestMessage,
       responseMessage: errorMessage,
@@ -120,12 +98,10 @@ const sendResponse = (req, res, data, errorMessage) => {
   if (errorMessage) {
     return sendError(req, res, { ...data, text: errorMessage });
   }
-  return sendMessage(res, data);
+  return sendEvent(res, data);
 };
 
 module.exports = {
-  sendResponse,
-  handleError,
-  sendMessage,
   sendError,
+  sendResponse,
 };
