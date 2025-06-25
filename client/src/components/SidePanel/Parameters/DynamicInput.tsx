@@ -46,6 +46,10 @@ function DynamicInput({
     setInputValue(e, !isNaN(Number(e.target.value)));
   };
 
+  const placeholderText = placeholderCode
+    ? localize(placeholder as TranslationKeys) || placeholder
+    : placeholder;
+
   return (
     <div
       className={`flex flex-col items-center justify-start gap-6 ${
@@ -76,11 +80,7 @@ function DynamicInput({
             disabled={readonly}
             value={inputValue ?? defaultValue ?? ''}
             onChange={handleInputChange}
-            placeholder={
-              placeholderCode
-                ? localize(placeholder as TranslationKeys) || placeholder
-                : placeholder
-            }
+            placeholder={placeholderText}
             className={cn(
               'flex h-10 max-h-10 w-full resize-none border-none bg-surface-secondary px-3 py-2',
             )}
