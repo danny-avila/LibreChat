@@ -12,6 +12,7 @@ import Instructions from './Instructions';
 import AgentAvatar from './AgentAvatar';
 import FileContext from './FileContext';
 import SearchForm from './Search/Form';
+import MCPSection from './MCPSection';
 import { useLocalize } from '~/hooks';
 import FileSearch from './FileSearch';
 import Artifacts from './Artifacts';
@@ -355,7 +356,7 @@ export default function AgentConfig({
           </div>
         </div>
         {/* MCP Section */}
-        {/* <MCPSection /> */}
+        <MCPSection />
       </div>
       <ToolSelectDialog
         isOpen={showToolDialog}
