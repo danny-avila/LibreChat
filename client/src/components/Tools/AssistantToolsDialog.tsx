@@ -1,24 +1,22 @@
 import { useEffect } from 'react';
 import { Search, X } from 'lucide-react';
-import { useFormContext } from 'react-hook-form';
-import { Constants, isAgentsEndpoint } from 'librechat-data-provider';
 import { Dialog, DialogPanel, DialogTitle, Description } from '@headlessui/react';
+import { useFormContext } from 'react-hook-form';
+import { isAgentsEndpoint } from 'librechat-data-provider';
 import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
 import type {
   AssistantsEndpoint,
   EModelEndpoint,
   TPluginAction,
-  AgentToolType,
   TError,
 } from 'librechat-data-provider';
-import type { AgentForm, TPluginStoreDialogProps } from '~/common';
+import type { TPluginStoreDialogProps } from '~/common/types';
 import { PluginPagination, PluginAuthForm } from '~/components/Plugins/Store';
-import { useAgentPanelContext } from '~/Providers/AgentPanelContext';
 import { useLocalize, usePluginDialogHelpers } from '~/hooks';
 import { useAvailableToolsQuery } from '~/data-provider';
 import ToolItem from './ToolItem';
 
-function ToolSelectDialog({
+function AssistantToolsDialog({
   isOpen,
   endpoint,
   setIsOpen,
@@ -26,9 +24,8 @@ function ToolSelectDialog({
   endpoint: AssistantsEndpoint | EModelEndpoint.agents;
 }) {
   const localize = useLocalize();
-  const { getValues, setValue } = useFormContext<AgentForm>();
+  const { getValues, setValue } = useFormContext();
   const { data: tools } = useAvailableToolsQuery(endpoint);
-  const { groupedTools } = useAgentPanelContext();
   const isAgentTools = isAgentsEndpoint(endpoint);
 
   const {
@@ -69,20 +66,9 @@ function ToolSelectDialog({
 
   const handleInstall = (pluginAction: TPluginAction) => {
     const addFunction = () => {
-      const installedToolIds: string[] = getValues('tools') || [];
-      // Add the parent
-      installedToolIds.push(pluginAction.pluginKey);
-
-      // If this tool is a group, add subtools too
-      const groupObj = groupedTools?.[pluginAction.pluginKey];
-      if (groupObj?.tools && groupObj.tools.length > 0) {
-        for (const sub of groupObj.tools) {
-          if (!installedToolIds.includes(sub.tool_id)) {
-            installedToolIds.push(sub.tool_id);
-          }
-        }
-      }
-      setValue('tools', Array.from(new Set(installedToolIds))); // no duplicates just in case
+      const fns = getValues('functions').slice();
+      fns.push(pluginAction.pluginKey);
+      setValue('functions', fns);
     };
 
     if (!pluginAction.auth) {
@@ -99,21 +85,17 @@ function ToolSelectDialog({
     setShowPluginAuthForm(false);
   };
 
-  const onRemoveTool = (toolId: string) => {
-    const groupObj = groupedTools?.[toolId];
-    const toolIdsToRemove = [toolId];
-    if (groupObj?.tools && groupObj.tools.length > 0) {
-      toolIdsToRemove.push(...groupObj.tools.map((sub) => sub.tool_id));
-    }
-    // Remove these from the formTools
+  const onRemoveTool = (tool: string) => {
+    setShowPluginAuthForm(false);
     updateUserPlugins.mutate(
-      { pluginKey: toolId, action: 'uninstall', auth: {}, isEntityTool: true },
+      { pluginKey: tool, action: 'uninstall', auth: null, isEntityTool: true },
       {
-        onError: (error: unknown) => handleInstallError(error as TError),
+        onError: (error: unknown) => {
+          handleInstallError(error as TError);
+        },
         onSuccess: () => {
-          const remainingToolIds =
-            getValues('tools')?.filter((toolId) => !toolIdsToRemove.includes(toolId)) || [];
-          setValue('tools', remainingToolIds);
+          const fns = getValues('functions').filter((fn: string) => fn !== tool);
+          setValue('functions', fns);
         },
       },
     );
@@ -124,45 +106,22 @@ function ToolSelectDialog({
     const getAvailablePluginFromKey = tools?.find((p) => p.pluginKey === pluginKey);
     setSelectedPlugin(getAvailablePluginFromKey);
 
-    const isMCPTool = pluginKey.includes(Constants.mcp_delimiter);
+    const { authConfig, authenticated = false } = getAvailablePluginFromKey ?? {};
 
-    if (isMCPTool) {
-      // MCP tools have their variables configured elsewhere (e.g., MCPPanel or MCPSelect),
-      // so we directly proceed to install without showing the auth form.
-      handleInstall({ pluginKey, action: 'install', auth: {} });
+    if (authConfig && authConfig.length > 0 && !authenticated) {
+      setShowPluginAuthForm(true);
     } else {
-      const { authConfig, authenticated = false } = getAvailablePluginFromKey ?? {};
-      if (authConfig && authConfig.length > 0 && !authenticated) {
-        setShowPluginAuthForm(true);
-      } else {
-        handleInstall({
-          pluginKey,
-          action: 'install',
-          auth: {},
-        });
-      }
+      handleInstall({ pluginKey, action: 'install', auth: null });
     }
   };
 
-  const filteredTools = Object.values(groupedTools || {}).filter(
-    (tool: AgentToolType & { tools?: AgentToolType[] }) => {
-      // Check if the parent tool matches
-      if (tool.metadata?.name?.toLowerCase().includes(searchValue.toLowerCase())) {
-        return true;
-      }
-      // Check if any child tools match
-      if (tool.tools) {
-        return tool.tools.some((childTool) =>
-          childTool.metadata?.name?.toLowerCase().includes(searchValue.toLowerCase()),
-        );
-      }
-      return false;
-    },
+  const filteredTools = tools?.filter((tool) =>
+    tool.name.toLowerCase().includes(searchValue.toLowerCase()),
   );
 
   useEffect(() => {
     if (filteredTools) {
-      setMaxPage(Math.ceil(Object.keys(filteredTools || {}).length / itemsPerPage));
+      setMaxPage(Math.ceil(filteredTools.length / itemsPerPage));
       if (searchChanged) {
         setCurrentPage(1);
         setSearchChanged(false);
@@ -194,7 +153,7 @@ function ToolSelectDialog({
       {/* Full-screen container to center the panel */}
       <div className="fixed inset-0 flex items-center justify-center p-4">
         <DialogPanel
-          className="relative max-h-[90vh] w-full transform overflow-hidden overflow-y-auto rounded-lg bg-surface-secondary text-left shadow-xl transition-all max-sm:h-full sm:mx-7 sm:my-8 sm:max-w-2xl lg:max-w-5xl xl:max-w-7xl"
+          className="relative w-full transform overflow-hidden overflow-y-auto rounded-lg bg-surface-secondary text-left shadow-xl transition-all max-sm:h-full sm:mx-7 sm:my-8 sm:max-w-2xl lg:max-w-5xl xl:max-w-7xl"
           style={{ minHeight: '610px' }}
         >
           <div className="flex items-center justify-between border-b-[1px] border-border-medium px-4 pb-4 pt-5 sm:p-6">
@@ -267,9 +226,9 @@ function ToolSelectDialog({
                       <ToolItem
                         key={index}
                         tool={tool}
-                        isInstalled={getValues('tools')?.includes(tool.tool_id) || false}
-                        onAddTool={() => onAddTool(tool.tool_id)}
-                        onRemoveTool={() => onRemoveTool(tool.tool_id)}
+                        isInstalled={getValues('functions').includes(tool.pluginKey)}
+                        onAddTool={() => onAddTool(tool.pluginKey)}
+                        onRemoveTool={() => onRemoveTool(tool.pluginKey)}
                       />
                     ))}
               </div>
@@ -292,4 +251,4 @@ function ToolSelectDialog({
   );
 }
 
-export default ToolSelectDialog;
+export default AssistantToolsDialog;
