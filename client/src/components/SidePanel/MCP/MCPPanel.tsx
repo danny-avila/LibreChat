@@ -9,6 +9,8 @@ import { useGetStartupConfig } from '~/data-provider';
 import MCPPanelSkeleton from './MCPPanelSkeleton';
 import { useToastContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
+import MCPFormPanel from './MCPFormPanel';
+import type { MCP } from '~/common';
 
 interface ServerConfigWithVars {
   serverName: string;
@@ -24,6 +26,7 @@ export default function MCPPanel() {
   const [selectedServerNameForEditing, setSelectedServerNameForEditing] = useState<string | null>(
     null,
   );
+  const [showMCPForm, setShowMCPForm] = useState(false);
 
   const mcpServerDefinitions = useMemo(() => {
     if (!startupConfig?.mcpServers) {
@@ -89,14 +92,54 @@ export default function MCPPanel() {
     setSelectedServerNameForEditing(null);
   };
 
+  const handleAddMCP = () => {
+    setShowMCPForm(true);
+  };
+
+  const handleBackFromForm = () => {
+    setShowMCPForm(false);
+  };
+
+  const handleSaveMCP = (mcp: MCP) => {
+    // TODO: Implement MCP save logic for conversation context
+    console.log('Saving MCP:', mcp);
+    showToast({
+      message: localize('com_ui_update_mcp_success'),
+      status: 'success',
+    });
+    setShowMCPForm(false);
+  };
+
+  if (showMCPForm) {
+    return (
+      <MCPFormPanel
+        onBack={handleBackFromForm}
+        onSave={handleSaveMCP}
+        showDeleteButton={false}
+        title={localize('com_ui_add_mcp_server')}
+        subtitle={localize('com_agents_mcp_info_chat')}
+      />
+    );
+  }
+
   if (startupConfigLoading) {
     return <MCPPanelSkeleton />;
   }
 
   if (mcpServerDefinitions.length === 0) {
     return (
-      <div className="p-4 text-center text-sm text-gray-500">
-        {localize('com_sidepanel_mcp_no_servers_with_vars')}
+      <div className="h-auto max-w-full overflow-x-hidden p-3">
+        <div className="p-4 text-center text-sm text-gray-500">
+          {localize('com_sidepanel_mcp_no_servers_with_vars')}
+        </div>
+        <div className="mt-4">
+          <Button
+            onClick={handleAddMCP}
+            className="w-full bg-green-500 text-white hover:bg-green-600"
+          >
+            {localize('com_ui_add_mcp')}
+          </Button>
+        </div>
       </div>
     );
   }
@@ -153,6 +196,12 @@ export default function MCPPanel() {
               {server.serverName}
             </Button>
           ))}
+          <Button
+            onClick={handleAddMCP}
+            className="w-full bg-green-500 text-white hover:bg-green-600"
+          >
+            {localize('com_ui_add_mcp')}
+          </Button>
         </div>
       </div>
     );

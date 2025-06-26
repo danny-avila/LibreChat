@@ -20,6 +20,7 @@
   "com_agents_mcp_description_placeholder": "Explain what it does in a few words",
   "com_agents_mcp_icon_size": "Minimum size 128 x 128 px",
   "com_agents_mcp_info": "Add MCP servers to your agent to enable it to perform tasks and interact with external services",
+  "com_agents_mcp_info_chat": "Add MCP servers to enable chat to perform tasks and interact with external services",
   "com_agents_mcp_name_placeholder": "Custom Tool",
   "com_agents_mcp_trust_subtext": "Custom connectors are not verified by LibreChat",
   "com_agents_mcps_disabled": "You need to create an agent before adding MCPs.",

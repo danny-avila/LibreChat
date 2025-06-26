@@ -5,54 +5,24 @@ import MCPAuth from '~/components/SidePanel/Builder/MCPAuth';
 import MCPIcon from '~/components/SidePanel/Agents/MCPIcon';
 import { Label, Checkbox } from '~/components/ui';
 import useLocalize from '~/hooks/useLocalize';
-import { useToastContext } from '~/Providers';
 import { Spinner } from '~/components/svg';
 import { MCPForm } from '~/common/types';
-
-function useUpdateAgentMCP({
-  onSuccess,
-  onError,
-}: {
-  onSuccess: (data: [string, MCP]) => void;
-  onError: (error: Error) => void;
-}) {
-  return {
-    mutate: async ({
-      mcp_id,
-      metadata,
-      agent_id,
-    }: {
-      mcp_id?: string;
-      metadata: MCP['metadata'];
-      agent_id: string;
-    }) => {
-      try {
-        // TODO: Implement MCP endpoint
-        onSuccess(['success', { mcp_id, metadata, agent_id } as MCP]);
-      } catch (error) {
-        onError(error as Error);
-      }
-    },
-    isLoading: false,
-  };
-}
 
 interface MCPInputProps {
   mcp?: MCP;
   agent_id?: string;
-  setMCP: React.Dispatch<React.SetStateAction<MCP | undefined>>;
+  onSave: (mcp: MCP) => void;
+  isLoading?: boolean;
 }
 
-export default function MCPInput({ mcp, agent_id, setMCP }: MCPInputProps) {
+export default function MCPInput({ mcp, a, onSave, isLoading = false }: MCPInputProps) {
   const localize = useLocalize();
-  const { showToast } = useToastContext();
   const {
     handleSubmit,
     register,
     formState: { errors },
     control,
   } = useFormContext<MCPForm>();
-  const [isLoading, setIsLoading] = useState(false);
   const [showTools, setShowTools] = useState(false);
   const [selectedTools, setSelectedTools] = useState<string[]>([]);
 
@@ -64,50 +34,16 @@ export default function MCPInput({ mcp, agent_id, setMCP }: MCPInputProps) {
     }
   }, [mcp]);
 
-  const updateAgentMCP = useUpdateAgentMCP({
-    onSuccess(data) {
-      showToast({
-        message: localize('com_ui_update_mcp_success'),
-        status: 'success',
-      });
-      setMCP(data[1]);
-      setShowTools(true);
-      setSelectedTools(data[1].metadata.tools ?? []);
-      setIsLoading(false);
-    },
-    onError(error) {
-      showToast({
-        message: (error as Error).message || localize('com_ui_update_mcp_error'),
-        status: 'error',
-      });
-      setIsLoading(false);
-    },
-  });
-
   const saveMCP = handleSubmit(async (data: MCPForm) => {
-    setIsLoading(true);
-    try {
-      const response = await updateAgentMCP.mutate({
-        agent_id: agent_id ?? '',
-        mcp_id: mcp?.mcp_id,
-        metadata: {
-          ...data,
-          tools: selectedTools,
-        },
-      });
-      setMCP(response[1]);
-      showToast({
-        message: localize('com_ui_update_mcp_success'),
-        status: 'success',
-      });
-    } catch {
-      showToast({
-        message: localize('com_ui_update_mcp_error'),
-        status: 'error',
-      });
-    } finally {
-      setIsLoading(false);
-    }
+    const updatedMCP: MCP = {
+      mcp_id: mcp?.mcp_id ?? '',
+      agent_id: a ?? '', // This will be agent_id, conversation_id, etc.
+      metadata: {
+        ...data,
+        tools: selectedTools,
+      },
+    };
+    onSave(updatedMCP);
   });
 
   const handleSelectAll = () => {
@@ -140,14 +76,15 @@ export default function MCPInput({ mcp, agent_id, setMCP }: MCPInputProps) {
       const reader = new FileReader();
       reader.onloadend = () => {
         const base64String = reader.result as string;
-        setMCP({
+        const updatedMCP: MCP = {
           mcp_id: mcp?.mcp_id ?? '',
-          agent_id: agent_id ?? '',
+          agent_id: a ?? '',
           metadata: {
             ...mcp?.metadata,
             icon: base64String,
           },
-        });
+        };
+        onSave(updatedMCP);
       };
       reader.readAsDataURL(file);
     }
