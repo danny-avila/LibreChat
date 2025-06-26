@@ -4,6 +4,7 @@ const {
   sendEvent,
   createRun,
   Tokenizer,
+  checkAccess,
   memoryInstructions,
   createMemoryProcessor,
 } = require('@librechat/api');
@@ -39,8 +40,8 @@ const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
 const { getFormattedMemories, deleteMemory, setMemory } = require('~/models');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const { getProviderConfig } = require('~/server/services/Endpoints');
-const { checkAccess } = require('~/server/middleware/roles/access');
 const BaseClient = require('~/app/clients/BaseClient');
+const { getRoleByName } = require('~/models/Role');
 const { loadAgent } = require('~/models/Agent');
 const { getMCPManager } = require('~/config');
 
@@ -401,7 +402,12 @@ class AgentClient extends BaseClient {
     if (user.personalization?.memories === false) {
       return;
     }
-    const hasAccess = await checkAccess(user, PermissionTypes.MEMORIES, [Permissions.USE]);
+    const hasAccess = await checkAccess({
+      user,
+      permissionType: PermissionTypes.MEMORIES,
+      permissions: [Permissions.USE],
+      getRoleByName,
+    });
 
     if (!hasAccess) {
       logger.debug(

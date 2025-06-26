@@ -1,37 +1,43 @@
 const express = require('express');
-const { Tokenizer } = require('@librechat/api');
+const { Tokenizer, generateCheckAccess } = require('@librechat/api');
 const { PermissionTypes, Permissions } = require('librechat-data-provider');
 const {
   getAllUserMemories,
   toggleUserMemories,
   createMemory,
-  setMemory,
   deleteMemory,
+  setMemory,
 } = require('~/models');
-const { requireJwtAuth, generateCheckAccess } = require('~/server/middleware');
+const { requireJwtAuth } = require('~/server/middleware');
+const { getRoleByName } = require('~/models/Role');
 
 const router = express.Router();
 
-const checkMemoryRead = generateCheckAccess(PermissionTypes.MEMORIES, [
-  Permissions.USE,
-  Permissions.READ,
-]);
-const checkMemoryCreate = generateCheckAccess(PermissionTypes.MEMORIES, [
-  Permissions.USE,
-  Permissions.CREATE,
-]);
-const checkMemoryUpdate = generateCheckAccess(PermissionTypes.MEMORIES, [
-  Permissions.USE,
-  Permissions.UPDATE,
-]);
-const checkMemoryDelete = generateCheckAccess(PermissionTypes.MEMORIES, [
-  Permissions.USE,
-  Permissions.UPDATE,
-]);
-const checkMemoryOptOut = generateCheckAccess(PermissionTypes.MEMORIES, [
-  Permissions.USE,
-  Permissions.OPT_OUT,
-]);
+const checkMemoryRead = generateCheckAccess({
+  permissionType: PermissionTypes.MEMORIES,
+  permissions: [Permissions.USE, Permissions.READ],
+  getRoleByName,
+});
+const checkMemoryCreate = generateCheckAccess({
+  permissionType: PermissionTypes.MEMORIES,
+  permissions: [Permissions.USE, Permissions.CREATE],
+  getRoleByName,
+});
+const checkMemoryUpdate = generateCheckAccess({
+  permissionType: PermissionTypes.MEMORIES,
+  permissions: [Permissions.USE, Permissions.UPDATE],
+  getRoleByName,
+});
+const checkMemoryDelete = generateCheckAccess({
+  permissionType: PermissionTypes.MEMORIES,
+  permissions: [Permissions.USE, Permissions.UPDATE],
+  getRoleByName,
+});
+const checkMemoryOptOut = generateCheckAccess({
+  permissionType: PermissionTypes.MEMORIES,
+  permissions: [Permissions.USE, Permissions.OPT_OUT],
+  getRoleByName,
+});
 
 router.use(requireJwtAuth);
 
