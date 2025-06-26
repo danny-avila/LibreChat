@@ -1,5 +1,5 @@
 const express = require('express');
-const { generateCheckAccess } = require('@librechat/api');
+const { generateCheckAccess, skipAgentCheck } = require('@librechat/api');
 const { PermissionTypes, Permissions } = require('librechat-data-provider');
 const {
   setHeaders,
@@ -20,6 +20,7 @@ router.use(moderateText);
 const checkAgentAccess = generateCheckAccess({
   permissionType: PermissionTypes.AGENTS,
   permissions: [Permissions.USE],
+  skipCheck: skipAgentCheck,
   getRoleByName,
 });
 

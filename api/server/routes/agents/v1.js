@@ -31,13 +31,12 @@ const checkGlobalAgentShare = generateCheckAccess({
 });
 
 router.use(requireJwtAuth);
-router.use(checkAgentAccess);
 
 /**
  * Agent actions route.
  * @route GET|POST /agents/actions
  */
-router.use('/actions', actions);
+router.use('/actions', checkAgentAccess, actions);
 
 /**
  * Get a list of available tools for agents.
