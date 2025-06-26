@@ -110,15 +110,15 @@ export default function useSideNavLinks({
       });
     }
 
-    if (hasAccessToMemories && hasAccessToReadMemories) {
-      links.push({
-        title: 'com_ui_memories',
-        label: '',
-        icon: Database,
-        id: 'memories',
-        Component: MemoryViewer,
-      });
-    }
+    // if (hasAccessToMemories && hasAccessToReadMemories) {
+    //   links.push({
+    //     title: 'com_ui_memories',
+    //     label: '',
+    //     icon: Database,
+    //     id: 'memories',
+    //     Component: MemoryViewer,
+    //   });
+    // }
 
     if (
       interfaceConfig.parameters === true &&
@@ -143,15 +143,15 @@ export default function useSideNavLinks({
       Component: FilesPanel,
     });
 
-    if (hasAccessToBookmarks) {
-      links.push({
-        title: 'com_sidepanel_conversation_tags',
-        label: '',
-        icon: Bookmark,
-        id: 'bookmarks',
-        Component: BookmarkPanel,
-      });
-    }
+    // if (hasAccessToBookmarks) {
+    //   links.push({
+    //     title: 'com_sidepanel_conversation_tags',
+    //     label: '',
+    //     icon: Bookmark,
+    //     id: 'bookmarks',
+    //     Component: BookmarkPanel,
+    //   });
+    // }
 
     if (
       startupConfig?.mcpServers &&

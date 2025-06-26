@@ -12,7 +12,7 @@ const AttachFile = ({ disabled }: { disabled?: boolean | null }) => {
 
   return (
     <FileUpload ref={inputRef} handleFileChange={handleFileChange}>
-      {/* <TooltipAnchor
+      <TooltipAnchor
         description={localize('com_sidepanel_attach_files')}
         id="attach-file"
         disabled={isUploadDisabled}
@@ -46,7 +46,7 @@ const AttachFile = ({ disabled }: { disabled?: boolean | null }) => {
             </div>
           </button>
         }
-      /> */}
+      />
     </FileUpload>
   );
 };

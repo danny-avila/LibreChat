@@ -96,7 +96,7 @@ function CodeInterpreter({ conversationId }: { conversationId?: string | null })
 
   return (
     <>
-      <CheckboxButton
+      {/* <CheckboxButton
         ref={triggerRef}
         className="max-w-fit"
         defaultChecked={runCode}
@@ -104,7 +104,7 @@ function CodeInterpreter({ conversationId }: { conversationId?: string | null })
         label={localize('com_assistants_code_interpreter')}
         isCheckedClassName="border-purple-600/40 bg-purple-500/10 hover:bg-purple-700/10"
         icon={<TerminalSquareIcon className="icon-md" />}
-      />
+      /> */}
       <ApiKeyDialog
         onSubmit={onSubmit}
         isOpen={isDialogOpen}

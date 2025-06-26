@@ -14,14 +14,14 @@ function Account() {
       <div className="pb-3">
         <DisplayUsernameMessages />
       </div>
-      <div className="pb-3">
+      {/* <div className="pb-3">
         <Avatar />
-      </div>
+      </div> */}
       {user?.user?.provider === 'local' && (
         <>
-          <div className="pb-3">
+          {/* <div className="pb-3">
             <EnableTwoFactorItem />
-          </div>
+          </div> */}
           {user?.user?.twoFactorEnabled && (
             <div className="pb-3">
               <BackupCodesItem />
