@@ -152,20 +152,20 @@ export default function useSideNavLinks({
       });
     }
 
-    if (
-      startupConfig?.mcpServers &&
-      Object.values(startupConfig.mcpServers).some(
-        (server) => server.customUserVars && Object.keys(server.customUserVars).length > 0,
-      )
-    ) {
-      links.push({
-        title: 'com_nav_setting_mcp',
-        label: '',
-        icon: MCPIcon,
-        id: 'mcp-settings',
-        Component: MCPPanel,
-      });
-    }
+    // if (
+    //   startupConfig?.mcpServers &&
+    //   Object.values(startupConfig.mcpServers).some(
+    //     (server) => server.customUserVars && Object.keys(server.customUserVars).length > 0,
+    //   )
+    // ) {
+    links.push({
+      title: 'com_nav_setting_mcp',
+      label: '',
+      icon: MCPIcon,
+      id: 'mcp-settings',
+      Component: MCPPanel,
+    });
+    // }
 
     links.push({
       title: 'com_sidepanel_hide_panel',

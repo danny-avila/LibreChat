@@ -312,6 +312,30 @@ export const getToolCalls = (params: q.GetToolCallParams): Promise<q.ToolCallRes
   );
 };
 
+export const createTool = (toolData: {
+  name: string;
+  description: string;
+  type: 'function' | 'code_interpreter' | 'file_search';
+  metadata?: Record<string, unknown>;
+}): Promise<{
+  id: string;
+  type: string;
+  function: {
+    name: string;
+    description: string;
+  };
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}> => {
+  return request.post(
+    endpoints.agents({
+      path: 'tools/add',
+    }),
+    toolData,
+  );
+};
+
 /* Files */
 
 export const getFiles = (): Promise<f.TFile[]> => {

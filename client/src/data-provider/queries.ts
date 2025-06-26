@@ -194,7 +194,7 @@ export const useConversationTagsQuery = (
 /**
  * Hook for getting all available tools for Assistants
  */
-export const useAvailableToolsQuery = <TData = t.TPlugin[]>(
+export const useAvailableToolsQuery = <TData = t.TPlugin[]>( // <-- this one
   endpoint: t.AssistantsEndpoint | EModelEndpoint.agents,
   config?: UseQueryOptions<t.TPlugin[], unknown, TData>,
 ): QueryObserverResult<TData> => {

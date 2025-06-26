@@ -1,4 +1,5 @@
 const express = require('express');
+const { addTool } = require('@librechat/api');
 const { callTool, verifyToolAuth, getToolCalls } = require('~/server/controllers/tools');
 const { getAvailableTools } = require('~/server/controllers/PluginController');
 const { toolCallLimiter } = require('~/server/middleware/limiters');
@@ -35,5 +36,13 @@ router.get('/:toolId/auth', verifyToolAuth);
  * @returns {object} Result of code execution
  */
 router.post('/:toolId/call', toolCallLimiter, callTool);
+
+/**
+ * Add a new tool to the system
+ * @route POST /agents/tools/add
+ * @param {object} req.body - Request body containing tool data
+ * @returns {object} Created tool object
+ */
+router.post('/add', addTool);
 
 module.exports = router;

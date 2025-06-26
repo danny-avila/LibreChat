@@ -40,3 +40,44 @@ export const useToolCallMutation = <T extends t.ToolId>(
     },
   );
 };
+
+/**
+ * Interface for creating a new tool
+ */
+interface CreateToolData {
+  name: string;
+  description: string;
+  type: 'function' | 'code_interpreter' | 'file_search';
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * Mutation hook for adding a new tool to the system
+ * Note: Requires corresponding backend implementation of dataService.createTool
+ */
+export const useAddToolMutation = (
+  //   options?:
+  //   {
+  //     onMutate?: (variables: CreateToolData) => void | Promise<unknown>;
+  //     onError?: (error: Error, variables: CreateToolData, context: unknown) => void;
+  //     onSuccess?: (data: t.Tool, variables: CreateToolData, context: unknown) => void;
+  // }
+  options?: t.MutationOptions<Record<string, unknown>, CreateToolData>,
+): UseMutationResult<Record<string, unknown>, Error, CreateToolData> => {
+  const queryClient = useQueryClient();
+
+  return useMutation(
+    (toolData: CreateToolData) => {
+      return dataService.createTool(toolData);
+    },
+    {
+      onMutate: (variables) => options?.onMutate?.(variables),
+      onError: (error, variables, context) => options?.onError?.(error, variables, context),
+      onSuccess: (data, variables, context) => {
+        // Invalidate tools list to trigger refetch
+        queryClient.invalidateQueries([QueryKeys.tools]);
+        return options?.onSuccess?.(data, variables, context);
+      },
+    },
+  );
+};
