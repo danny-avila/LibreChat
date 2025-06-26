@@ -342,12 +342,16 @@ export type MCPMetadata = Omit<ActionMetadata, 'auth'> & {
   description?: string;
   url?: string;
   tools?: string[];
-  auth?: MCPAuth;
   icon?: string;
   trust?: boolean;
+  customHeaders?: Array<{
+    id: string;
+    name: string;
+    value: string;
+  }>;
+  requestTimeout?: number;
+  connectionTimeout?: number;
 };
-
-export type MCPAuth = ActionAuth;
 
 export type AgentToolType = {
   tool_id: string;

@@ -832,3 +832,55 @@ export const createMemory = (data: {
 }): Promise<{ created: boolean; memory: q.TUserMemory }> => {
   return request.post(endpoints.memories(), data);
 };
+
+export const createTool = (toolData: {
+  name: string;
+  description: string;
+  metadata?: Record<string, unknown>;
+  // MCP-specific fields
+  url?: string;
+  icon?: string;
+  tools?: string[];
+  trust?: boolean;
+  customHeaders?: Array<{
+    id: string;
+    name: string;
+    value: string;
+  }>;
+  requestTimeout?: number;
+  connectionTimeout?: number;
+}): Promise<{
+  id?: string;
+  mcp_id?: string;
+  type?: string;
+  function?: {
+    name: string;
+    description: string;
+  };
+  metadata:
+    | Record<string, unknown>
+    | {
+        name: string;
+        description: string;
+        url?: string;
+        icon?: string;
+        tools?: string[];
+        trust?: boolean;
+        customHeaders?: Array<{
+          id: string;
+          name: string;
+          value: string;
+        }>;
+        requestTimeout?: number;
+        connectionTimeout?: number;
+      };
+  created_at: string;
+  updated_at: string;
+}> => {
+  return request.post(
+    endpoints.agents({
+      path: 'tools/add',
+    }),
+    toolData,
+  );
+};

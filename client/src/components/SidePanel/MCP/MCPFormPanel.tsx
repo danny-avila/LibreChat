@@ -9,11 +9,6 @@ import { defaultMCPFormValues } from '~/common/mcp';
 import useLocalize from '~/hooks/useLocalize';
 import { TrashIcon } from '~/components/svg';
 import MCPInput from './MCPInput';
-import {
-  AuthTypeEnum,
-  AuthorizationTypeEnum,
-  TokenExchangeMethodEnum,
-} from 'librechat-data-provider';
 
 interface MCPFormPanelProps {
   // Data
@@ -66,23 +61,10 @@ export default function MCPFormPanel({
         url: mcp.metadata.url ?? '',
         tools: mcp.metadata.tools ?? [],
         trust: mcp.metadata.trust ?? false,
+        customHeaders: mcp.metadata.customHeaders ?? [],
+        requestTimeout: mcp.metadata.requestTimeout,
+        connectionTimeout: mcp.metadata.connectionTimeout,
       };
-
-      if (mcp.metadata.auth) {
-        Object.assign(formData, {
-          type: mcp.metadata.auth.type || AuthTypeEnum.None,
-          saved_auth_fields: false,
-          api_key: mcp.metadata.api_key ?? '',
-          authorization_type: mcp.metadata.auth.authorization_type || AuthorizationTypeEnum.Basic,
-          oauth_client_id: mcp.metadata.oauth_client_id ?? '',
-          oauth_client_secret: mcp.metadata.oauth_client_secret ?? '',
-          authorization_url: mcp.metadata.auth.authorization_url ?? '',
-          client_url: mcp.metadata.auth.client_url ?? '',
-          scope: mcp.metadata.auth.scope ?? '',
-          token_exchange_method:
-            mcp.metadata.auth.token_exchange_method ?? TokenExchangeMethodEnum.DefaultPost,
-        });
-      }
 
       reset(formData);
     }

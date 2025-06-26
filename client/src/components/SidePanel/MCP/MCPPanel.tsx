@@ -7,6 +7,7 @@ import type { TUpdateUserPlugins } from 'librechat-data-provider';
 import type { MCP } from 'librechat-data-provider';
 import { Button, Input, Label } from '~/components/ui';
 import { useGetStartupConfig } from '~/data-provider';
+import { useAddToolMutation } from '~/data-provider/Tools/mutations';
 import MCPPanelSkeleton from './MCPPanelSkeleton';
 import { useToastContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
@@ -60,6 +61,23 @@ export default function MCPPanel() {
     },
   });
 
+  const createMCPMutation = useAddToolMutation({
+    onSuccess: () => {
+      showToast({
+        message: localize('com_ui_update_mcp_success'),
+        status: 'success',
+      });
+      setShowMCPForm(false);
+    },
+    onError: (error) => {
+      console.error('Error creating MCP:', error);
+      showToast({
+        message: localize('com_ui_update_mcp_error'),
+        status: 'error',
+      });
+    },
+  });
+
   const handleSaveServerVars = useCallback(
     (serverName: string, updatedValues: Record<string, string>) => {
       const payload: TUpdateUserPlugins = {
@@ -101,13 +119,20 @@ export default function MCPPanel() {
   };
 
   const handleSaveMCP = (mcp: MCP) => {
-    // TODO: Implement MCP save logic for conversation context
-    console.log('Saving MCP:', mcp);
-    showToast({
-      message: localize('com_ui_update_mcp_success'),
-      status: 'success',
-    });
-    setShowMCPForm(false);
+    // Transform MCP data to match the expected format
+    const mcpData = {
+      name: mcp.metadata.name || '',
+      description: mcp.metadata.description || '',
+      url: mcp.metadata.url || '',
+      icon: mcp.metadata.icon || '',
+      tools: mcp.metadata.tools || [],
+      trust: mcp.metadata.trust ?? false,
+      customHeaders: mcp.metadata.customHeaders || [],
+      requestTimeout: mcp.metadata.requestTimeout,
+      connectionTimeout: mcp.metadata.connectionTimeout,
+    };
+
+    createMCPMutation.mutate(mcpData);
   };
 
   if (showMCPForm) {
