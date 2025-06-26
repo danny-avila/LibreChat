@@ -133,12 +133,16 @@ export default function MCPPanel() {
           {localize('com_sidepanel_mcp_no_servers_with_vars')}
         </div>
         <div className="mt-4">
-          <Button
+          <button
+            type="button"
             onClick={handleAddMCP}
-            className="w-full bg-green-500 text-white hover:bg-green-600"
+            className="btn btn-neutral border-token-border-light relative h-9 w-full rounded-lg font-medium"
+            aria-haspopup="dialog"
           >
-            {localize('com_ui_add_mcp')}
-          </Button>
+            <div className="flex w-full items-center justify-center gap-2">
+              {localize('com_ui_add_mcp')}
+            </div>
+          </button>
         </div>
       </div>
     );
@@ -196,12 +200,16 @@ export default function MCPPanel() {
               {server.serverName}
             </Button>
           ))}
-          <Button
+          <button
+            type="button"
             onClick={handleAddMCP}
-            className="w-full bg-green-500 text-white hover:bg-green-600"
+            className="btn btn-neutral border-token-border-light relative h-9 w-full rounded-lg font-medium"
+            aria-haspopup="dialog"
           >
-            {localize('com_ui_add_mcp')}
-          </Button>
+            <div className="flex w-full items-center justify-center gap-2">
+              {localize('com_ui_add_mcp')}
+            </div>
+          </button>
         </div>
       </div>
     );
