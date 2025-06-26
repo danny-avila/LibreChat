@@ -517,6 +517,7 @@ export type TAttachmentMetadata = {
   messageId: string;
   toolCallId: string;
   [Tools.web_search]?: SearchResultData;
+  [Tools.file_search]?: SearchResultData;
   [Tools.memory]?: MemoryArtifact;
 };
 
