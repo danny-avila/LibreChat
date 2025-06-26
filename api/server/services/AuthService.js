@@ -519,8 +519,8 @@ module.exports = {
   registerUser,
   setAuthTokens,
   resetPassword,
+  setOpenIDAuthTokens,
   requestPasswordReset,
   resendVerificationEmail,
-  setOpenIDAuthTokens,
   generateShortLivedToken,
 };

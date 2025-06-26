@@ -1,11 +1,11 @@
 const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
+const { logger } = require('@librechat/data-schemas');
 const { EModelEndpoint } = require('librechat-data-provider');
+const { generateShortLivedToken } = require('~/server/services/AuthService');
 const { getBufferMetadata } = require('~/server/utils');
 const paths = require('~/config/paths');
-const { logger } = require('~/config');
-const { generateShortLivedToken } = require('~/server/services/AuthService');
 
 /**
  * Saves a file to a specified output path with a new filename.
