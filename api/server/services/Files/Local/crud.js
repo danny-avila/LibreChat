@@ -5,6 +5,7 @@ const { EModelEndpoint } = require('librechat-data-provider');
 const { getBufferMetadata } = require('~/server/utils');
 const paths = require('~/config/paths');
 const { logger } = require('~/config');
+const { generateShortLivedToken } = require('~/server/services/AuthService');
 
 /**
  * Saves a file to a specified output path with a new filename.
@@ -206,7 +207,7 @@ const deleteLocalFile = async (req, file) => {
   const cleanFilepath = file.filepath.split('?')[0];
 
   if (file.embedded && process.env.RAG_API_URL) {
-    const jwtToken = req.headers.authorization.split(' ')[1];
+    const jwtToken = generateShortLivedToken(req.user.id);
     axios.delete(`${process.env.RAG_API_URL}/documents`, {
       headers: {
         Authorization: `Bearer ${jwtToken}`,
