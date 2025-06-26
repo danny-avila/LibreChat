@@ -1,13 +1,27 @@
 const express = require('express');
 const { nanoid } = require('nanoid');
-const { actionDelimiter, SystemRoles, removeNullishValues } = require('librechat-data-provider');
+const { logger } = require('@librechat/data-schemas');
+const { generateCheckAccess } = require('@librechat/api');
+const {
+  SystemRoles,
+  Permissions,
+  PermissionTypes,
+  actionDelimiter,
+  removeNullishValues,
+} = require('librechat-data-provider');
 const { encryptMetadata, domainParser } = require('~/server/services/ActionService');
 const { updateAction, getActions, deleteAction } = require('~/models/Action');
 const { isActionDomainAllowed } = require('~/server/services/domains');
 const { getAgent, updateAgent } = require('~/models/Agent');
-const { logger } = require('~/config');
+const { getRoleByName } = require('~/models/Role');
 
 const router = express.Router();
+
+const checkAgentCreate = generateCheckAccess({
+  permissionType: PermissionTypes.AGENTS,
+  permissions: [Permissions.USE, Permissions.CREATE],
+  getRoleByName,
+});
 
 // If the user has ADMIN role
 // then action edition is possible even if not owner of the assistant
@@ -41,7 +55,7 @@ router.get('/', async (req, res) => {
  * @param {ActionMetadata} req.body.metadata - Metadata for the action.
  * @returns {Object} 200 - success response - application/json
  */
-router.post('/:agent_id', async (req, res) => {
+router.post('/:agent_id', checkAgentCreate, async (req, res) => {
   try {
     const { agent_id } = req.params;
 
@@ -149,7 +163,7 @@ router.post('/:agent_id', async (req, res) => {
  * @param {string} req.params.action_id - The ID of the action to delete.
  * @returns {Object} 200 - success response - application/json
  */
-router.delete('/:agent_id/:action_id', async (req, res) => {
+router.delete('/:agent_id/:action_id', checkAgentCreate, async (req, res) => {
   try {
     const { agent_id, action_id } = req.params;
     const admin = isAdmin(req);

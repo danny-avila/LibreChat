@@ -36,7 +36,7 @@ router.use(requireJwtAuth);
  * Agent actions route.
  * @route GET|POST /agents/actions
  */
-router.use('/actions', checkAgentAccess, actions);
+router.use('/actions', actions);
 
 /**
  * Get a list of available tools for agents.
