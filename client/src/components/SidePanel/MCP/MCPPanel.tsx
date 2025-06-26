@@ -4,13 +4,13 @@ import { Constants } from 'librechat-data-provider';
 import { useForm, Controller } from 'react-hook-form';
 import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
 import type { TUpdateUserPlugins } from 'librechat-data-provider';
+import type { MCP } from 'librechat-data-provider';
 import { Button, Input, Label } from '~/components/ui';
 import { useGetStartupConfig } from '~/data-provider';
 import MCPPanelSkeleton from './MCPPanelSkeleton';
 import { useToastContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
 import MCPFormPanel from './MCPFormPanel';
-import type { MCP } from '~/common';
 
 interface ServerConfigWithVars {
   serverName: string;

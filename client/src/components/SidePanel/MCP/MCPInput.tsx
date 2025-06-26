@@ -15,7 +15,7 @@ interface MCPInputProps {
   isLoading?: boolean;
 }
 
-export default function MCPInput({ mcp, a, onSave, isLoading = false }: MCPInputProps) {
+export default function MCPInput({ mcp, agent_id, onSave, isLoading = false }: MCPInputProps) {
   const localize = useLocalize();
   const {
     handleSubmit,
@@ -37,7 +37,7 @@ export default function MCPInput({ mcp, a, onSave, isLoading = false }: MCPInput
   const saveMCP = handleSubmit(async (data: MCPForm) => {
     const updatedMCP: MCP = {
       mcp_id: mcp?.mcp_id ?? '',
-      agent_id: a ?? '', // This will be agent_id, conversation_id, etc.
+      agent_id: agent_id ?? '',
       metadata: {
         ...data,
         tools: selectedTools,
@@ -78,7 +78,7 @@ export default function MCPInput({ mcp, a, onSave, isLoading = false }: MCPInput
         const base64String = reader.result as string;
         const updatedMCP: MCP = {
           mcp_id: mcp?.mcp_id ?? '',
-          agent_id: a ?? '',
+          agent_id: agent_id ?? '',
           metadata: {
             ...mcp?.metadata,
             icon: base64String,

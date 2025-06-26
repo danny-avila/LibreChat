@@ -1,8 +1,8 @@
+import type { MCP } from 'librechat-data-provider';
 import { useAgentPanelContext } from '~/Providers/AgentPanelContext';
 import { useToastContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
 import { Panel } from '~/common';
-import type { MCP } from '~/common';
 import MCPFormPanel from '../MCP/MCPFormPanel';
 
 // TODO: Add MCP delete (for now mocked for ui)
@@ -101,7 +101,7 @@ export default function AgentMCPFormPanel() {
   return (
     <MCPFormPanel
       mcp={mcp}
-      contextId={agent_id}
+      agent_id={agent_id}
       onBack={handleBack}
       onDelete={handleDelete}
       onSave={handleSave}

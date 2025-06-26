@@ -1,12 +1,13 @@
 import { useEffect } from 'react';
 import { ChevronLeft } from 'lucide-react';
 import { useForm, FormProvider } from 'react-hook-form';
+import type { MCP } from 'librechat-data-provider';
+import type { MCPForm } from '~/common';
 import { OGDialog, OGDialogTrigger, Label } from '~/components/ui';
 import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
 import { defaultMCPFormValues } from '~/common/mcp';
 import useLocalize from '~/hooks/useLocalize';
 import { TrashIcon } from '~/components/svg';
-import type { MCPForm, MCP } from '~/common';
 import MCPInput from './MCPInput';
 import {
   AuthTypeEnum,
@@ -17,7 +18,7 @@ import {
 interface MCPFormPanelProps {
   // Data
   mcp?: MCP;
-  agent_id?: string; // agent_id, conversation_id, etc.
+  agent_id?: string;
 
   // Actions
   onBack: () => void;
