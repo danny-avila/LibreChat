@@ -10,7 +10,6 @@ import {
 } from '~/components/ui/Accordion';
 import { DropdownPopup } from '~/components/ui';
 import { useLocalize } from '~/hooks';
-import { cn } from '~/utils';
 
 interface UserInfoPlaceholder {
   label: string;
@@ -31,14 +30,12 @@ const userInfoPlaceholders: UserInfoPlaceholder[] = [
   { label: 'role', value: '{{LIBRECHAT_USER_ROLE}}', description: 'User role' },
 ];
 
-export default function MCPAuth() {
+export function MCPAuth() {
   const localize = useLocalize();
   const { register, watch, setValue } = useFormContext();
   const [isHeadersMenuOpen, setIsHeadersMenuOpen] = useState(false);
 
   const customHeaders = watch('customHeaders') || [];
-  const requestTimeout = watch('requestTimeout') || '';
-  const connectionTimeout = watch('connectionTimeout') || '';
 
   const addCustomHeader = () => {
     const newHeader = {

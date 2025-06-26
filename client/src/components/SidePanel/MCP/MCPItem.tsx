@@ -9,7 +9,7 @@ type MCPProps = {
   onClick: () => void;
 };
 
-export default function MCP({ mcp, onClick }: MCPProps) {
+export function MCPItem({ mcp, onClick }: MCPProps) {
   const [isHovering, setIsHovering] = useState(false);
 
   return (
