@@ -418,8 +418,8 @@ const setOpenIDAuthTokens = (tokenset, res) => {
       logger.error('[setOpenIDAuthTokens] No tokenset found in request');
       return;
     }
-    if (!tokenset.access_token || !tokenset.refresh_token) {
-      logger.error('[setOpenIDAuthTokens] No access or refresh token found in tokenset');
+    if (!tokenset.id_token || !tokenset.refresh_token) {
+      logger.error('[setOpenIDAuthTokens] No ID or refresh token found in tokenset');
       return;
     }
     res.cookie('refreshToken', tokenset.refresh_token, {
@@ -434,7 +434,7 @@ const setOpenIDAuthTokens = (tokenset, res) => {
       secure: isProduction,
       sameSite: 'strict',
     });
-    return tokenset.access_token;
+    return tokenset.id_token;
   } catch (error) {
     logger.error('[setOpenIDAuthTokens] Error in setting authentication tokens:', error);
     throw error;
