@@ -431,6 +431,7 @@
   "com_nav_log_out": "Log out",
   "com_nav_long_audio_warning": "Longer texts will take longer to process.",
   "com_nav_maximize_chat_space": "Maximize chat space",
+  "com_nav_mcp_panel": "MCP Servers",
   "com_nav_mcp_vars_update_error": "Error updating MCP custom user variables: {{0}}",
   "com_nav_mcp_vars_updated": "MCP custom user variables updated successfully.",
   "com_nav_modular_chat": "Enable switching Endpoints mid-conversation",
