@@ -949,11 +949,11 @@ export const initialModelsConfig: TModelsConfig = {
   [EModelEndpoint.bedrock]: defaultModels[EModelEndpoint.bedrock],
 };
 
-export const EndpointURLs: Record<string, string> = {
+export const EndpointURLs = {
   [EModelEndpoint.assistants]: '/api/assistants/v2/chat',
   [EModelEndpoint.azureAssistants]: '/api/assistants/v1/chat',
   [EModelEndpoint.agents]: `/api/${EModelEndpoint.agents}/chat`,
-};
+} as const;
 
 export const modularEndpoints = new Set<EModelEndpoint | string>([
   EModelEndpoint.gptPlugins,
