@@ -55,7 +55,9 @@ const processFiles = async (files, fileIds) => {
   }
 
   if (!fileIds) {
-    return await Promise.all(promises);
+    const results = await Promise.all(promises);
+    // Filter out null results from failed updateFileUsage calls
+    return results.filter((result) => result != null);
   }
 
   for (let file_id of fileIds) {
@@ -67,7 +69,9 @@ const processFiles = async (files, fileIds) => {
   }
 
   // TODO: calculate token cost when image is first uploaded
-  return await Promise.all(promises);
+  const results = await Promise.all(promises);
+  // Filter out null results from failed updateFileUsage calls
+  return results.filter((result) => result != null);
 };
 
 /**
