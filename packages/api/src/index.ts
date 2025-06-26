@@ -12,6 +12,8 @@ export * from './oauth';
 export * from './crypto';
 /* Flow */
 export * from './flow/manager';
+/* Middleware */
+export * from './middleware';
 /* Agents */
 export * from './agents';
 /* Endpoints */
