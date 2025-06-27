@@ -30,6 +30,8 @@ export function useMCPSelect({ conversationId }: UseMCPSelectOptions) {
   const [ephemeralAgent, setEphemeralAgent] = useRecoilState(ephemeralAgentByConvoId(key));
   const { data: mcpToolDetails, isFetched } = useAvailableToolsQuery(EModelEndpoint.agents, {
     select: (data: TPlugin[]) => {
+      console.log('🔍 Raw tools data received:', JSON.stringify(data, null, 2));
+
       const mcpToolsMap = new Map<string, TPlugin>();
       data.forEach((tool) => {
         const isMCP = tool.pluginKey.includes(Constants.mcp_delimiter);
@@ -46,7 +48,10 @@ export function useMCPSelect({ conversationId }: UseMCPSelectOptions) {
           }
         }
       });
-      return Array.from(mcpToolsMap.values());
+
+      const result = Array.from(mcpToolsMap.values());
+      console.log('🔧 Processed MCP tools:', JSON.stringify(result, null, 2));
+      return result;
     },
   });
 

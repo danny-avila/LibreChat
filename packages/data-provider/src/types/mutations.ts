@@ -321,6 +321,13 @@ export type UpdatePluginAuthOptions = MutationOptions<types.TUser, types.TUpdate
 
 export type CreateMCPMutationOptions = MutationOptions<Record<string, unknown>, MCP>;
 
+export type UpdateMCPMutationOptions = MutationOptions<
+  Record<string, unknown>,
+  { mcp_id: string; data: MCP }
+>;
+
+export type DeleteMCPMutationOptions = MutationOptions<Record<string, unknown>, { mcp_id: string }>;
+
 export type ToolParamsMap = {
   [Tools.execute_code]: {
     lang: string;

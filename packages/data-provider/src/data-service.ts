@@ -841,3 +841,26 @@ export const createMCP = (mcp: ag.MCP): Promise<Record<string, unknown>> => {
     mcp,
   );
 };
+
+export const updateMCP = ({
+  mcp_id,
+  data,
+}: {
+  mcp_id: string;
+  data: ag.MCP;
+}): Promise<Record<string, unknown>> => {
+  return request.put(
+    endpoints.agents({
+      path: `tools/${mcp_id}`,
+    }),
+    data,
+  );
+};
+
+export const deleteMCP = ({ mcp_id }: { mcp_id: string }): Promise<Record<string, unknown>> => {
+  return request.delete(
+    endpoints.agents({
+      path: `tools/${mcp_id}`,
+    }),
+  );
+};
