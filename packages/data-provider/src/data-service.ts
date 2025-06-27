@@ -11,14 +11,6 @@ import request from './request';
 import * as s from './schemas';
 import * as r from './roles';
 
-export function abortRequestWithMessage(
-  endpoint: string,
-  abortKey: string,
-  message: string,
-): Promise<void> {
-  return request.post(endpoints.abortRequest(endpoint), { arg: { abortKey, message } });
-}
-
 export function revokeUserKey(name: string): Promise<unknown> {
   return request.delete(endpoints.revokeUserKey(name));
 }

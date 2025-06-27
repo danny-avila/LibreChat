@@ -19,7 +19,7 @@ export default function AgentTool({
   allTools,
 }: {
   tool: string;
-  allTools: Record<string, AgentToolType & { tools?: AgentToolType[] }>;
+  allTools?: Record<string, AgentToolType & { tools?: AgentToolType[] }>;
   agent_id?: string;
 }) {
   const [isHovering, setIsHovering] = useState(false);
@@ -30,8 +30,10 @@ export default function AgentTool({
   const { showToast } = useToastContext();
   const updateUserPlugins = useUpdateUserPluginsMutation();
   const { getValues, setValue } = useFormContext<AgentForm>();
+  if (!allTools) {
+    return null;
+  }
   const currentTool = allTools[tool];
-
   const getSelectedTools = () => {
     if (!currentTool?.tools) return [];
     const formTools = getValues('tools') || [];

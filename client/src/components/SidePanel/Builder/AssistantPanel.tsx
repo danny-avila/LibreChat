@@ -17,9 +17,9 @@ import {
 } from '~/data-provider';
 import { cn, cardStyle, defaultTextProps, removeFocusOutlines } from '~/utils';
 import AssistantConversationStarters from './AssistantConversationStarters';
+import AssistantToolsDialog from '~/components/Tools/AssistantToolsDialog';
 import { useAssistantsMapContext, useToastContext } from '~/Providers';
 import { useSelectAssistant, useLocalize } from '~/hooks';
-import { ToolSelectDialog } from '~/components/Tools';
 import AppendDateCheckbox from './AppendDateCheckbox';
 import CapabilitiesForm from './CapabilitiesForm';
 import { SelectDropDown } from '~/components/ui';
@@ -468,11 +468,10 @@ export default function AssistantPanel({
             </button>
           </div>
         </div>
-        <ToolSelectDialog
+        <AssistantToolsDialog
+          endpoint={endpoint}
           isOpen={showToolDialog}
           setIsOpen={setShowToolDialog}
-          toolsFormKey="functions"
-          endpoint={endpoint}
         />
       </form>
     </FormProvider>

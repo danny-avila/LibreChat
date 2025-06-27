@@ -5,14 +5,14 @@
  * If the input is not a string or contains invalid characters, an error is thrown.
  * If the evaluated result is not a number, an error is thrown.
  *
- * @param {string|number} str - The mathematical expression to evaluate, or a number.
- * @param {number} [fallbackValue] - The default value to return if the input is not a string or number, or if the evaluated result is not a number.
+ * @param str - The mathematical expression to evaluate, or a number.
+ * @param fallbackValue - The default value to return if the input is not a string or number, or if the evaluated result is not a number.
  *
- * @returns {number} The result of the evaluated expression or the input number.
+ * @returns The result of the evaluated expression or the input number.
  *
- * @throws {Error} Throws an error if the input is not a string or number, contains invalid characters, or does not evaluate to a number.
+ * @throws Throws an error if the input is not a string or number, contains invalid characters, or does not evaluate to a number.
  */
-function math(str, fallbackValue) {
+export function math(str: string | number, fallbackValue?: number): number {
   const fallback = typeof fallbackValue !== 'undefined' && typeof fallbackValue === 'number';
   if (typeof str !== 'string' && typeof str === 'number') {
     return str;
@@ -43,5 +43,3 @@ function math(str, fallbackValue) {
 
   return value;
 }
-
-module.exports = math;

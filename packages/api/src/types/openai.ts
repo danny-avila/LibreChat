@@ -9,7 +9,7 @@ export type OpenAIParameters = z.infer<typeof openAISchema>;
 /**
  * Configuration options for the getLLMConfig function
  */
-export interface LLMConfigOptions {
+export interface OpenAIConfigOptions {
   modelOptions?: Partial<OpenAIParameters>;
   reverseProxyUrl?: string;
   defaultQuery?: Record<string, string | undefined>;

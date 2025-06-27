@@ -68,6 +68,7 @@ export default function ExportAndShareMenu({
   return (
     <>
       <DropdownPopup
+        portal={true}
         menuId={menuId}
         focusLoop={true}
         unmountOnHide={true}

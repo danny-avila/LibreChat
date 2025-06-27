@@ -67,15 +67,14 @@ function ToolSelectDialog({
     }, 5000);
   };
 
-  const toolsFormKey = 'tools';
   const handleInstall = (pluginAction: TPluginAction) => {
     const addFunction = () => {
-      const installedToolIds: string[] = getValues(toolsFormKey) || [];
+      const installedToolIds: string[] = getValues('tools') || [];
       // Add the parent
       installedToolIds.push(pluginAction.pluginKey);
 
       // If this tool is a group, add subtools too
-      const groupObj = groupedTools[pluginAction.pluginKey];
+      const groupObj = groupedTools?.[pluginAction.pluginKey];
       if (groupObj?.tools && groupObj.tools.length > 0) {
         for (const sub of groupObj.tools) {
           if (!installedToolIds.includes(sub.tool_id)) {
@@ -83,7 +82,7 @@ function ToolSelectDialog({
           }
         }
       }
-      setValue(toolsFormKey, Array.from(new Set(installedToolIds))); // no duplicates just in case
+      setValue('tools', Array.from(new Set(installedToolIds))); // no duplicates just in case
     };
 
     if (!pluginAction.auth) {
@@ -101,7 +100,7 @@ function ToolSelectDialog({
   };
 
   const onRemoveTool = (toolId: string) => {
-    const groupObj = groupedTools[toolId];
+    const groupObj = groupedTools?.[toolId];
     const toolIdsToRemove = [toolId];
     if (groupObj?.tools && groupObj.tools.length > 0) {
       toolIdsToRemove.push(...groupObj.tools.map((sub) => sub.tool_id));
@@ -113,8 +112,8 @@ function ToolSelectDialog({
         onError: (error: unknown) => handleInstallError(error as TError),
         onSuccess: () => {
           const remainingToolIds =
-            getValues(toolsFormKey)?.filter((toolId) => !toolIdsToRemove.includes(toolId)) || [];
-          setValue(toolsFormKey, remainingToolIds);
+            getValues('tools')?.filter((toolId) => !toolIdsToRemove.includes(toolId)) || [];
+          setValue('tools', remainingToolIds);
         },
       },
     );
@@ -268,7 +267,7 @@ function ToolSelectDialog({
                       <ToolItem
                         key={index}
                         tool={tool}
-                        isInstalled={getValues(toolsFormKey)?.includes(tool.tool_id) || false}
+                        isInstalled={getValues('tools')?.includes(tool.tool_id) || false}
                         onAddTool={() => onAddTool(tool.tool_id)}
                         onRemoveTool={() => onRemoveTool(tool.tool_id)}
                       />

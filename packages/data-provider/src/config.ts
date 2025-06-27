@@ -482,6 +482,12 @@ const termsOfServiceSchema = z.object({
 
 export type TTermsOfService = z.infer<typeof termsOfServiceSchema>;
 
+const mcpServersSchema = z.object({
+  placeholder: z.string().optional(),
+});
+
+export type TMcpServersConfig = z.infer<typeof mcpServersSchema>;
+
 export const intefaceSchema = z
   .object({
     privacyPolicy: z
@@ -492,6 +498,7 @@ export const intefaceSchema = z
       .optional(),
     termsOfService: termsOfServiceSchema.optional(),
     customWelcome: z.string().optional(),
+    mcpServers: mcpServersSchema.optional(),
     endpointsMenu: z.boolean().optional(),
     modelSelect: z.boolean().optional(),
     parameters: z.boolean().optional(),
@@ -503,6 +510,7 @@ export const intefaceSchema = z
     prompts: z.boolean().optional(),
     agents: z.boolean().optional(),
     temporaryChat: z.boolean().optional(),
+    temporaryChatRetention: z.number().min(1).max(8760).optional(),
     runCode: z.boolean().optional(),
     webSearch: z.boolean().optional(),
   })
@@ -600,6 +608,7 @@ export type TStartupConfig = {
       >;
     }
   >;
+  mcpPlaceholder?: string;
 };
 
 export enum OCRStrategy {
@@ -940,19 +949,11 @@ export const initialModelsConfig: TModelsConfig = {
   [EModelEndpoint.bedrock]: defaultModels[EModelEndpoint.bedrock],
 };
 
-export const EndpointURLs: { [key in EModelEndpoint]: string } = {
-  [EModelEndpoint.openAI]: `/api/ask/${EModelEndpoint.openAI}`,
-  [EModelEndpoint.google]: `/api/ask/${EModelEndpoint.google}`,
-  [EModelEndpoint.custom]: `/api/ask/${EModelEndpoint.custom}`,
-  [EModelEndpoint.anthropic]: `/api/ask/${EModelEndpoint.anthropic}`,
-  [EModelEndpoint.gptPlugins]: `/api/ask/${EModelEndpoint.gptPlugins}`,
-  [EModelEndpoint.azureOpenAI]: `/api/ask/${EModelEndpoint.azureOpenAI}`,
-  [EModelEndpoint.chatGPTBrowser]: `/api/ask/${EModelEndpoint.chatGPTBrowser}`,
-  [EModelEndpoint.azureAssistants]: '/api/assistants/v1/chat',
+export const EndpointURLs = {
   [EModelEndpoint.assistants]: '/api/assistants/v2/chat',
+  [EModelEndpoint.azureAssistants]: '/api/assistants/v1/chat',
   [EModelEndpoint.agents]: `/api/${EModelEndpoint.agents}/chat`,
-  [EModelEndpoint.bedrock]: `/api/${EModelEndpoint.bedrock}/chat`,
-};
+} as const;
 
 export const modularEndpoints = new Set<EModelEndpoint | string>([
   EModelEndpoint.gptPlugins,
@@ -1451,10 +1452,18 @@ export enum LocalStorageKeys {
   LAST_CODE_TOGGLE_ = 'LAST_CODE_TOGGLE_',
   /** Last checked toggle for Web Search per conversation ID */
   LAST_WEB_SEARCH_TOGGLE_ = 'LAST_WEB_SEARCH_TOGGLE_',
+  /** Last checked toggle for File Search per conversation ID */
+  LAST_FILE_SEARCH_TOGGLE_ = 'LAST_FILE_SEARCH_TOGGLE_',
   /** Key for the last selected agent provider */
   LAST_AGENT_PROVIDER = 'lastAgentProvider',
   /** Key for the last selected agent model */
   LAST_AGENT_MODEL = 'lastAgentModel',
+  /** Pin state for MCP tools per conversation ID */
+  PIN_MCP_ = 'PIN_MCP_',
+  /** Pin state for Web Search per conversation ID */
+  PIN_WEB_SEARCH_ = 'PIN_WEB_SEARCH_',
+  /** Pin state for Code Interpreter per conversation ID */
+  PIN_CODE_INTERPRETER_ = 'PIN_CODE_INTERPRETER_',
 }
 
 export enum ForkOptions {

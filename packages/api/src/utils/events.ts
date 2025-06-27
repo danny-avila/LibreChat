@@ -14,3 +14,13 @@ export function sendEvent(res: ServerResponse, event: ServerSentEvent): void {
   }
   res.write(`event: message\ndata: ${JSON.stringify(event)}\n\n`);
 }
+
+/**
+ * Sends error data in Server Sent Events format and ends the response.
+ * @param res - The server response.
+ * @param message - The error message.
+ */
+export function handleError(res: ServerResponse, message: string): void {
+  res.write(`event: error\ndata: ${JSON.stringify(message)}\n\n`);
+  res.end();
+}

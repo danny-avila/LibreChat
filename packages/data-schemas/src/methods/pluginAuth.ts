@@ -1,16 +1,14 @@
 import type { DeleteResult, Model } from 'mongoose';
-import type { IPluginAuth } from '~/schema/pluginAuth';
 import type {
   FindPluginAuthsByKeysParams,
   UpdatePluginAuthParams,
   DeletePluginAuthParams,
   FindPluginAuthParams,
+  IPluginAuth,
 } from '~/types';
 
 // Factory function that takes mongoose instance and returns the methods
 export function createPluginAuthMethods(mongoose: typeof import('mongoose')) {
-  const PluginAuth: Model<IPluginAuth> = mongoose.models.PluginAuth;
-
   /**
    * Finds a single plugin auth entry by userId and authField
    */
@@ -19,6 +17,7 @@ export function createPluginAuthMethods(mongoose: typeof import('mongoose')) {
     authField,
   }: FindPluginAuthParams): Promise<IPluginAuth | null> {
     try {
+      const PluginAuth: Model<IPluginAuth> = mongoose.models.PluginAuth;
       return await PluginAuth.findOne({ userId, authField }).lean();
     } catch (error) {
       throw new Error(
@@ -39,6 +38,7 @@ export function createPluginAuthMethods(mongoose: typeof import('mongoose')) {
         return [];
       }
 
+      const PluginAuth: Model<IPluginAuth> = mongoose.models.PluginAuth;
       return await PluginAuth.find({
         userId,
         pluginKey: { $in: pluginKeys },
@@ -60,6 +60,7 @@ export function createPluginAuthMethods(mongoose: typeof import('mongoose')) {
     value,
   }: UpdatePluginAuthParams): Promise<IPluginAuth> {
     try {
+      const PluginAuth: Model<IPluginAuth> = mongoose.models.PluginAuth;
       const existingAuth = await PluginAuth.findOne({ userId, pluginKey, authField }).lean();
 
       if (existingAuth) {
@@ -95,6 +96,7 @@ export function createPluginAuthMethods(mongoose: typeof import('mongoose')) {
     all = false,
   }: DeletePluginAuthParams): Promise<DeleteResult> {
     try {
+      const PluginAuth: Model<IPluginAuth> = mongoose.models.PluginAuth;
       if (all) {
         const filter: DeletePluginAuthParams = { userId };
         if (pluginKey) {
@@ -120,6 +122,7 @@ export function createPluginAuthMethods(mongoose: typeof import('mongoose')) {
    */
   async function deleteAllUserPluginAuths(userId: string): Promise<DeleteResult> {
     try {
+      const PluginAuth: Model<IPluginAuth> = mongoose.models.PluginAuth;
       return await PluginAuth.deleteMany({ userId });
     } catch (error) {
       throw new Error(

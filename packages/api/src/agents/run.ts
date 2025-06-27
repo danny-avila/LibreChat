@@ -46,7 +46,10 @@ export async function createRun({
   customHandlers?: Record<GraphEvents, EventHandler>;
 }): Promise<Run<IState>> {
   const provider =
-    providerEndpointMap[agent.provider as keyof typeof providerEndpointMap] ?? agent.provider;
+    (providerEndpointMap[
+      agent.provider as keyof typeof providerEndpointMap
+    ] as unknown as Providers) ?? agent.provider;
+
   const llmConfig: t.RunLLMConfig = Object.assign(
     {
       provider,
@@ -66,7 +69,9 @@ export async function createRun({
   }
 
   let reasoningKey: 'reasoning_content' | 'reasoning' | undefined;
-  if (
+  if (provider === Providers.GOOGLE) {
+    reasoningKey = 'reasoning';
+  } else if (
     llmConfig.configuration?.baseURL?.includes(KnownEndpoints.openrouter) ||
     (agent.endpoint && agent.endpoint.toLowerCase().includes(KnownEndpoints.openrouter))
   ) {

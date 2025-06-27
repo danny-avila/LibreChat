@@ -1,18 +1,14 @@
-import {
-  ErrorTypes,
-  EModelEndpoint,
-  resolveHeaders,
-  mapModelToAzureConfig,
-} from 'librechat-data-provider';
+import { ErrorTypes, EModelEndpoint, mapModelToAzureConfig } from 'librechat-data-provider';
 import type {
-  LLMConfigOptions,
   UserKeyValues,
-  InitializeOpenAIOptionsParams,
   OpenAIOptionsResult,
+  OpenAIConfigOptions,
+  InitializeOpenAIOptionsParams,
 } from '~/types';
 import { createHandleLLMNewToken } from '~/utils/generators';
 import { getAzureCredentials } from '~/utils/azure';
 import { isUserProvided } from '~/utils/common';
+import { resolveHeaders } from '~/utils/env';
 import { getOpenAIConfig } from './llm';
 
 /**
@@ -68,7 +64,7 @@ export const initializeOpenAI = async ({
     ? userValues?.baseURL
     : baseURLOptions[endpoint as keyof typeof baseURLOptions];
 
-  const clientOptions: LLMConfigOptions = {
+  const clientOptions: OpenAIConfigOptions = {
     proxy: PROXY ?? undefined,
     reverseProxyUrl: baseURL || undefined,
     streaming: true,
@@ -91,7 +87,10 @@ export const initializeOpenAI = async ({
     });
 
     clientOptions.reverseProxyUrl = configBaseURL ?? clientOptions.reverseProxyUrl;
-    clientOptions.headers = resolveHeaders({ ...headers, ...(clientOptions.headers ?? {}) });
+    clientOptions.headers = resolveHeaders(
+      { ...headers, ...(clientOptions.headers ?? {}) },
+      req.user,
+    );
 
     const groupName = modelGroupMap[modelName || '']?.group;
     if (groupName && groupMap[groupName]) {
@@ -136,7 +135,7 @@ export const initializeOpenAI = async ({
     user: req.user.id,
   };
 
-  const finalClientOptions: LLMConfigOptions = {
+  const finalClientOptions: OpenAIConfigOptions = {
     ...clientOptions,
     modelOptions,
   };

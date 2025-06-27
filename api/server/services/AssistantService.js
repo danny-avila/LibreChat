@@ -1,4 +1,7 @@
 const { klona } = require('klona');
+const { sleep } = require('@librechat/agents');
+const { sendEvent } = require('@librechat/api');
+const { logger } = require('@librechat/data-schemas');
 const {
   StepTypes,
   RunStatus,
@@ -11,11 +14,10 @@ const {
 } = require('librechat-data-provider');
 const { retrieveAndProcessFile } = require('~/server/services/Files/process');
 const { processRequiredActions } = require('~/server/services/ToolService');
-const { createOnProgress, sendMessage, sleep } = require('~/server/utils');
 const { RunManager, waitForRun } = require('~/server/services/Runs');
 const { processMessages } = require('~/server/services/Threads');
+const { createOnProgress } = require('~/server/utils');
 const { TextStream } = require('~/app/clients');
-const { logger } = require('~/config');
 
 /**
  * Sorts, processes, and flattens messages to a single string.
@@ -64,7 +66,7 @@ async function createOnTextProgress({
     };
 
     logger.debug('Content data:', contentData);
-    sendMessage(openai.res, contentData);
+    sendEvent(openai.res, contentData);
   };
 }
 
