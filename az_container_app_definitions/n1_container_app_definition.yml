@@ -191,7 +191,7 @@ properties:
           ephemeralStorage: 4Gi
         probes: []
         volumeMounts:
-          - volumeName: fspaichateastusn1001
+          - volumeName: stpyxain1001
             mountPath: /app/uploads
     initContainers: null
     scale:
@@ -201,9 +201,9 @@ properties:
       pollingInterval: 30
       rules: null
     volumes:
-      - name: fspaichateastusn1001
+      - name: stpyxain1001
         storageType: AzureFile
-        storageName: fspaichateastusn1001
+        storageName: stpyxain1001
     serviceBinds: null
   eventStreamEndpoint: https://eastus.azurecontainerapps.dev/subscriptions/819386da-14b6-4ae4-a16d-7475c98e6a9b/resourceGroups/rg-playai-eastus-n1-001/containerApps/conpaichateastusn1001/eventstream
   delegatedIdentities: []
