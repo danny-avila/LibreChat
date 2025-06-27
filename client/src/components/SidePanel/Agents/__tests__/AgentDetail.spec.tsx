@@ -159,7 +159,7 @@ describe('AgentDetail', () => {
     it('should render 3-dot menu button', () => {
       renderWithProviders(<AgentDetail {...defaultProps} />);
 
-      const menuButton = screen.getByRole('button', { name: 'More options' });
+      const menuButton = screen.getByRole('button', { name: 'com_agents_more_options' });
       expect(menuButton).toBeInTheDocument();
       expect(menuButton).toHaveAttribute('aria-haspopup', 'menu');
     });
@@ -199,7 +199,7 @@ describe('AgentDetail', () => {
       const user = userEvent.setup();
       renderWithProviders(<AgentDetail {...defaultProps} />);
 
-      const menuButton = screen.getByRole('button', { name: 'More options' });
+      const menuButton = screen.getByRole('button', { name: 'com_agents_more_options' });
       await user.click(menuButton);
 
       expect(screen.getByRole('button', { name: 'com_agents_copy_link' })).toBeInTheDocument();
@@ -210,7 +210,7 @@ describe('AgentDetail', () => {
       renderWithProviders(<AgentDetail {...defaultProps} />);
 
       // Open dropdown
-      const menuButton = screen.getByRole('button', { name: 'More options' });
+      const menuButton = screen.getByRole('button', { name: 'com_agents_more_options' });
       await user.click(menuButton);
 
       expect(screen.getByRole('button', { name: 'com_agents_copy_link' })).toBeInTheDocument();
@@ -231,7 +231,7 @@ describe('AgentDetail', () => {
       renderWithProviders(<AgentDetail {...defaultProps} />);
 
       // Open dropdown
-      const menuButton = screen.getByRole('button', { name: 'More options' });
+      const menuButton = screen.getByRole('button', { name: 'com_agents_more_options' });
       await user.click(menuButton);
 
       // Click copy link
@@ -247,7 +247,7 @@ describe('AgentDetail', () => {
 
       await waitFor(() => {
         expect(mockShowToast).toHaveBeenCalledWith({
-          message: 'Link copied',
+          message: 'com_agents_link_copied',
         });
       });
 
@@ -266,7 +266,7 @@ describe('AgentDetail', () => {
       renderWithProviders(<AgentDetail {...defaultProps} />);
 
       // Open dropdown and click copy link
-      const menuButton = screen.getByRole('button', { name: 'More options' });
+      const menuButton = screen.getByRole('button', { name: 'com_agents_more_options' });
       await user.click(menuButton);
 
       const copyLinkButton = screen.getByRole('button', { name: 'com_agents_copy_link' });
@@ -299,16 +299,16 @@ describe('AgentDetail', () => {
     it('should have proper ARIA attributes', () => {
       renderWithProviders(<AgentDetail {...defaultProps} />);
 
-      const menuButton = screen.getByRole('button', { name: 'More options' });
+      const menuButton = screen.getByRole('button', { name: 'com_agents_more_options' });
       expect(menuButton).toHaveAttribute('aria-haspopup', 'menu');
-      expect(menuButton).toHaveAttribute('aria-label', 'More options');
+      expect(menuButton).toHaveAttribute('aria-label', 'com_agents_more_options');
     });
 
     it('should support keyboard navigation for dropdown', async () => {
       const user = userEvent.setup();
       renderWithProviders(<AgentDetail {...defaultProps} />);
 
-      const menuButton = screen.getByRole('button', { name: 'More options' });
+      const menuButton = screen.getByRole('button', { name: 'com_agents_more_options' });
 
       // Focus and open with Enter key
       menuButton.focus();
@@ -321,7 +321,7 @@ describe('AgentDetail', () => {
       const user = userEvent.setup();
       renderWithProviders(<AgentDetail {...defaultProps} />);
 
-      const menuButton = screen.getByRole('button', { name: 'More options' });
+      const menuButton = screen.getByRole('button', { name: 'com_agents_more_options' });
       await user.click(menuButton);
 
       const copyLinkButton = screen.getByRole('button', { name: 'com_agents_copy_link' });
