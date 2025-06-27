@@ -450,6 +450,37 @@ const google: Record<string, SettingDefinition> = {
     optionType: 'model',
     columnSpan: 2,
   },
+  thinking: {
+    key: 'thinking',
+    label: 'com_endpoint_thinking',
+    labelCode: true,
+    description: 'com_endpoint_google_thinking',
+    descriptionCode: true,
+    type: 'boolean',
+    default: googleSettings.thinking.default,
+    component: 'switch',
+    optionType: 'conversation',
+    showDefault: false,
+    columnSpan: 2,
+  },
+  thinkingBudget: {
+    key: 'thinkingBudget',
+    label: 'com_endpoint_thinking_budget',
+    labelCode: true,
+    description: 'com_endpoint_google_thinking_budget',
+    descriptionCode: true,
+    placeholder: 'com_ui_auto',
+    placeholderCode: true,
+    type: 'number',
+    component: 'input',
+    range: {
+      min: googleSettings.thinkingBudget.min,
+      max: googleSettings.thinkingBudget.max,
+      step: googleSettings.thinkingBudget.step,
+    },
+    optionType: 'conversation',
+    columnSpan: 2,
+  },
 };
 
 const googleConfig: SettingsConfiguration = [
@@ -461,6 +492,8 @@ const googleConfig: SettingsConfiguration = [
   google.topP,
   google.topK,
   librechat.resendFiles,
+  google.thinking,
+  google.thinkingBudget,
 ];
 
 const googleCol1: SettingsConfiguration = [
@@ -476,6 +509,8 @@ const googleCol2: SettingsConfiguration = [
   google.topP,
   google.topK,
   librechat.resendFiles,
+  google.thinking,
+  google.thinkingBudget,
 ];
 
 const openAI: SettingsConfiguration = [

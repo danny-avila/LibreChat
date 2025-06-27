@@ -1,6 +1,6 @@
 {
   "name": "@librechat/api",
-  "version": "1.2.4",
+  "version": "1.2.5",
   "type": "commonjs",
   "description": "MCP services for LibreChat",
   "main": "dist/index.js",
@@ -69,13 +69,14 @@
     "registry": "https://registry.npmjs.org/"
   },
   "peerDependencies": {
-    "@librechat/agents": "^2.4.41",
+    "@librechat/agents": "^2.4.46",
     "@librechat/data-schemas": "*",
     "@modelcontextprotocol/sdk": "^1.12.3",
     "axios": "^1.8.2",
     "diff": "^7.0.0",
     "eventsource": "^3.0.2",
     "express": "^4.21.2",
+    "js-yaml": "^4.1.0",
     "keyv": "^5.3.2",
     "librechat-data-provider": "*",
     "node-fetch": "2.7.0",

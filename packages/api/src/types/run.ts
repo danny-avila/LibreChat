@@ -1,8 +1,9 @@
-import type { AgentModelParameters, EModelEndpoint } from 'librechat-data-provider';
+import type { Providers } from '@librechat/agents';
+import type { AgentModelParameters } from 'librechat-data-provider';
 import type { OpenAIConfiguration } from './openai';
 
 export type RunLLMConfig = {
-  provider: EModelEndpoint;
+  provider: Providers;
   streaming: boolean;
   streamUsage: boolean;
   usage?: boolean;

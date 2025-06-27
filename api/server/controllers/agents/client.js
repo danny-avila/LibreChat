@@ -4,6 +4,7 @@ const {
   sendEvent,
   createRun,
   Tokenizer,
+  checkAccess,
   memoryInstructions,
   createMemoryProcessor,
 } = require('@librechat/api');
@@ -39,11 +40,22 @@ const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
 const { getFormattedMemories, deleteMemory, setMemory } = require('~/models');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const { getProviderConfig } = require('~/server/services/Endpoints');
-const { checkAccess } = require('~/server/middleware/roles/access');
 const BaseClient = require('~/app/clients/BaseClient');
+const { getRoleByName } = require('~/models/Role');
 const { loadAgent } = require('~/models/Agent');
 const { getMCPManager } = require('~/config');
 const { processAgentResponse } = require('~/app/clients/agents/processAgentResponse');
+
+const omitTitleOptions = new Set([
+  'stream',
+  'thinking',
+  'streaming',
+  'clientOptions',
+  'thinkingConfig',
+  'thinkingBudget',
+  'includeThoughts',
+  'maxOutputTokens',
+]);
 
 /**
  * @param {ServerRequest} req
@@ -391,7 +403,12 @@ class AgentClient extends BaseClient {
     if (user.personalization?.memories === false) {
       return;
     }
-    const hasAccess = await checkAccess(user, PermissionTypes.MEMORIES, [Permissions.USE]);
+    const hasAccess = await checkAccess({
+      user,
+      permissionType: PermissionTypes.MEMORIES,
+      permissions: [Permissions.USE],
+      getRoleByName,
+    });
 
     if (!hasAccess) {
       logger.debug(
@@ -1058,6 +1075,16 @@ class AgentClient extends BaseClient {
       clientOptions.maxTokens = 75;
     } else if (/\b(o\d)\b/i.test(clientOptions.model) && clientOptions.maxTokens != null) {
       delete clientOptions.maxTokens;
+    }
+
+    clientOptions = Object.assign(
+      Object.fromEntries(
+        Object.entries(clientOptions).filter(([key]) => !omitTitleOptions.has(key)),
+      ),
+    );
+
+    if (provider === Providers.GOOGLE) {
+      clientOptions.json = true;
     }
 
     try {

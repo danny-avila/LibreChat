@@ -79,7 +79,7 @@ export default function useSideNavLinks({
         title: 'com_sidepanel_assistant_builder',
         label: '',
         icon: Blocks,
-        id: 'assistants',
+        id: EModelEndpoint.assistants,
         Component: PanelSwitch,
       });
     }
@@ -94,7 +94,7 @@ export default function useSideNavLinks({
         title: 'com_sidepanel_agent_builder',
         label: '',
         icon: Blocks,
-        id: 'agents',
+        id: EModelEndpoint.agents,
         Component: AgentPanelSwitch,
       });
     }

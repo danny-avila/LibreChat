@@ -13,7 +13,7 @@ import { isEnabled } from '~/utils/common';
  */
 export function getOpenAIConfig(
   apiKey: string,
-  options: t.LLMConfigOptions = {},
+  options: t.OpenAIConfigOptions = {},
   endpoint?: string | null,
 ): t.LLMConfigResult {
   const {

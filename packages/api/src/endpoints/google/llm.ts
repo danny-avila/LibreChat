@@ -1,13 +1,15 @@
-const { Providers } = require('@librechat/agents');
-const { AuthKeys } = require('librechat-data-provider');
-const { isEnabled } = require('~/server/utils');
+import { Providers } from '@librechat/agents';
+import { googleSettings, AuthKeys } from 'librechat-data-provider';
+import type { GoogleClientOptions, VertexAIClientOptions } from '@librechat/agents';
+import type * as t from '~/types';
+import { isEnabled } from '~/utils';
 
-function getThresholdMapping(model) {
+function getThresholdMapping(model: string) {
   const gemini1Pattern = /gemini-(1\.0|1\.5|pro$|1\.0-pro|1\.5-pro|1\.5-flash-001)/;
   const restrictedPattern = /(gemini-(1\.5-flash-8b|2\.0|exp)|learnlm)/;
 
   if (gemini1Pattern.test(model)) {
-    return (value) => {
+    return (value: string) => {
       if (value === 'OFF') {
         return 'BLOCK_NONE';
       }
@@ -16,7 +18,7 @@ function getThresholdMapping(model) {
   }
 
   if (restrictedPattern.test(model)) {
-    return (value) => {
+    return (value: string) => {
       if (value === 'OFF' || value === 'HARM_BLOCK_THRESHOLD_UNSPECIFIED') {
         return 'BLOCK_NONE';
       }
@@ -24,19 +26,16 @@ function getThresholdMapping(model) {
     };
   }
 
-  return (value) => value;
+  return (value: string) => value;
 }
 
-/**
- *
- * @param {string} model
- * @returns {Array<{category: string, threshold: string}> | undefined}
- */
-function getSafetySettings(model) {
+export function getSafetySettings(
+  model?: string,
+): Array<{ category: string; threshold: string }> | undefined {
   if (isEnabled(process.env.GOOGLE_EXCLUDE_SAFETY_SETTINGS)) {
     return undefined;
   }
-  const mapThreshold = getThresholdMapping(model);
+  const mapThreshold = getThresholdMapping(model ?? '');
 
   return [
     {
@@ -74,24 +73,27 @@ function getSafetySettings(model) {
  * Replicates core logic from GoogleClient's constructor and setOptions, plus client determination.
  * Returns an object with the provider label and the final options that would be passed to createLLM.
  *
- * @param {string | object} credentials - Either a JSON string or an object containing Google keys
- * @param {object} [options={}]         - The same shape as the "GoogleClient" constructor options
+ * @param credentials - Either a JSON string or an object containing Google keys
+ * @param options - The same shape as the "GoogleClient" constructor options
  */
 
-function getLLMConfig(credentials, options = {}) {
-  // 1. Parse credentials
-  let creds = {};
+export function getGoogleConfig(
+  credentials: string | t.GoogleCredentials | undefined,
+  options: t.GoogleConfigOptions = {},
+) {
+  let creds: t.GoogleCredentials = {};
   if (typeof credentials === 'string') {
     try {
       creds = JSON.parse(credentials);
-    } catch (err) {
-      throw new Error(`Error parsing string credentials: ${err.message}`);
+    } catch (err: unknown) {
+      throw new Error(
+        `Error parsing string credentials: ${err instanceof Error ? err.message : 'Unknown error'}`,
+      );
     }
   } else if (credentials && typeof credentials === 'object') {
     creds = credentials;
   }
 
-  // Extract from credentials
   const serviceKeyRaw = creds[AuthKeys.GOOGLE_SERVICE_KEY] ?? {};
   const serviceKey =
     typeof serviceKeyRaw === 'string' ? JSON.parse(serviceKeyRaw) : (serviceKeyRaw ?? {});
@@ -102,9 +104,15 @@ function getLLMConfig(credentials, options = {}) {
   const reverseProxyUrl = options.reverseProxyUrl;
   const authHeader = options.authHeader;
 
-  /** @type {GoogleClientOptions | VertexAIClientOptions} */
-  let llmConfig = {
-    ...(options.modelOptions || {}),
+  const {
+    thinking = googleSettings.thinking.default,
+    thinkingBudget = googleSettings.thinkingBudget.default,
+    ...modelOptions
+  } = options.modelOptions || {};
+
+  const llmConfig: GoogleClientOptions | VertexAIClientOptions = {
+    ...(modelOptions || {}),
+    model: modelOptions?.model ?? '',
     maxRetries: 2,
   };
 
@@ -121,14 +129,28 @@ function getLLMConfig(credentials, options = {}) {
 
   // If we have a GCP project => Vertex AI
   if (project_id && provider === Providers.VERTEXAI) {
-    /** @type {VertexAIClientOptions['authOptions']} */
-    llmConfig.authOptions = {
+    (llmConfig as VertexAIClientOptions).authOptions = {
       credentials: { ...serviceKey },
       projectId: project_id,
     };
-    llmConfig.location = process.env.GOOGLE_LOC || 'us-central1';
+    (llmConfig as VertexAIClientOptions).location = process.env.GOOGLE_LOC || 'us-central1';
   } else if (apiKey && provider === Providers.GOOGLE) {
     llmConfig.apiKey = apiKey;
+  }
+
+  const shouldEnableThinking =
+    thinking && thinkingBudget != null && (thinkingBudget > 0 || thinkingBudget === -1);
+
+  if (shouldEnableThinking && provider === Providers.GOOGLE) {
+    (llmConfig as GoogleClientOptions).thinkingConfig = {
+      thinkingBudget: thinking ? thinkingBudget : googleSettings.thinkingBudget.default,
+      includeThoughts: Boolean(thinking),
+    };
+  } else if (shouldEnableThinking && provider === Providers.VERTEXAI) {
+    (llmConfig as VertexAIClientOptions).thinkingBudget = thinking
+      ? thinkingBudget
+      : googleSettings.thinkingBudget.default;
+    (llmConfig as VertexAIClientOptions).includeThoughts = Boolean(thinking);
   }
 
   /*
@@ -152,11 +174,11 @@ function getLLMConfig(credentials, options = {}) {
   */
 
   if (reverseProxyUrl) {
-    llmConfig.baseUrl = reverseProxyUrl;
+    (llmConfig as GoogleClientOptions).baseUrl = reverseProxyUrl;
   }
 
   if (authHeader) {
-    llmConfig.customHeaders = {
+    (llmConfig as GoogleClientOptions).customHeaders = {
       Authorization: `Bearer ${apiKey}`,
     };
   }
@@ -169,8 +191,3 @@ function getLLMConfig(credentials, options = {}) {
     llmConfig,
   };
 }
-
-module.exports = {
-  getLLMConfig,
-  getSafetySettings,
-};

@@ -1,9 +1,9 @@
 import { XCircle, PlusCircleIcon, Wrench } from 'lucide-react';
-import { AgentToolType } from 'librechat-data-provider';
+import type { TPlugin, AgentToolType } from 'librechat-data-provider';
 import { useLocalize } from '~/hooks';
 
 type ToolItemProps = {
-  tool: AgentToolType;
+  tool: TPlugin | AgentToolType;
   onAddTool: () => void;
   onRemoveTool: () => void;
   isInstalled?: boolean;
@@ -19,9 +19,13 @@ function ToolItem({ tool, onAddTool, onRemoveTool, isInstalled = false }: ToolIt
     }
   };
 
-  const name = tool.metadata?.name || tool.tool_id;
-  const description = tool.metadata?.description || '';
-  const icon = tool.metadata?.icon;
+  const name =
+    (tool as AgentToolType).metadata?.name ||
+    (tool as AgentToolType).tool_id ||
+    (tool as TPlugin).name;
+  const description =
+    (tool as AgentToolType).metadata?.description || (tool as TPlugin).description || '';
+  const icon = (tool as AgentToolType).metadata?.icon || (tool as TPlugin).icon;
 
   return (
     <div className="flex flex-col gap-4 rounded border border-border-medium bg-transparent p-6">

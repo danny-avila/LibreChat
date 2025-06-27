@@ -2,6 +2,7 @@ import { useSetRecoilState } from 'recoil';
 import * as Ariakit from '@ariakit/react';
 import React, { useRef, useState, useMemo } from 'react';
 import { FileSearch, ImageUpIcon, TerminalSquareIcon, FileType2Icon } from 'lucide-react';
+import type { EndpointFileConfig } from 'librechat-data-provider';
 import { FileUpload, TooltipAnchor, DropdownPopup, AttachmentIcon } from '~/components';
 import { EToolResources, EModelEndpoint } from 'librechat-data-provider';
 import { useGetEndpointsQuery } from '~/data-provider';
@@ -12,9 +13,10 @@ import { cn } from '~/utils';
 interface AttachFileMenuProps {
   conversationId: string;
   disabled?: boolean | null;
+  endpointFileConfig?: EndpointFileConfig;
 }
 
-const AttachFileMenu = ({ disabled, conversationId }: AttachFileMenuProps) => {
+const AttachFileMenu = ({ disabled, conversationId, endpointFileConfig }: AttachFileMenuProps) => {
   const localize = useLocalize();
   const isUploadDisabled = disabled ?? false;
   const inputRef = useRef<HTMLInputElement>(null);
@@ -24,6 +26,7 @@ const AttachFileMenu = ({ disabled, conversationId }: AttachFileMenuProps) => {
   const { data: endpointsConfig } = useGetEndpointsQuery();
   const { handleFileChange } = useFileHandling({
     overrideEndpoint: EModelEndpoint.agents,
+    overrideEndpointFileConfig: endpointFileConfig,
   });
 
   /** TODO: Ephemeral Agent Capabilities

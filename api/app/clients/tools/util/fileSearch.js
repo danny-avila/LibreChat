@@ -1,9 +1,10 @@
 const { z } = require('zod');
 const axios = require('axios');
 const { tool } = require('@langchain/core/tools');
+const { logger } = require('@librechat/data-schemas');
 const { Tools, EToolResources } = require('librechat-data-provider');
+const { generateShortLivedToken } = require('~/server/services/AuthService');
 const { getFiles } = require('~/models/File');
-const { logger } = require('~/config');
 
 /**
  *
@@ -59,7 +60,7 @@ const createFileSearchTool = async ({ req, files, entity_id }) => {
       if (files.length === 0) {
         return 'No files to search. Instruct the user to add files for the search.';
       }
-      const jwtToken = req.headers.authorization.split(' ')[1];
+      const jwtToken = generateShortLivedToken(req.user.id);
       if (!jwtToken) {
         return 'There was an error authenticating the file search request.';
       }
