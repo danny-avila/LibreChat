@@ -37,9 +37,7 @@ export default function Footer({ className }: { className?: string }) {
   const mainContentParts = (
     typeof config?.customFooter === 'string'
       ? config.customFooter
-      : '[LibreChat ' +
-        Constants.VERSION +
-        '](https://librechat.ai) - ' +
+      : 'Constellation Brands - ' +
         localize('com_ui_latest_footer')
   ).split('|');
 
