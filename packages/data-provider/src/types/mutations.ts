@@ -12,7 +12,7 @@ import {
   AgentCreateParams,
   AgentUpdateParams,
 } from './assistants';
-import { Action, ActionMetadata } from './agents';
+import { Action, ActionMetadata, MCP } from './agents';
 
 export type MutationOptions<
   Response,
@@ -318,6 +318,8 @@ export type AcceptTermsMutationOptions = MutationOptions<
 
 /* Tools */
 export type UpdatePluginAuthOptions = MutationOptions<types.TUser, types.TUpdateUserPlugins>;
+
+export type CreateMCPMutationOptions = MutationOptions<Record<string, unknown>, MCP>;
 
 export type ToolParamsMap = {
   [Tools.execute_code]: {

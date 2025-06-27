@@ -41,32 +41,14 @@ export const useToolCallMutation = <T extends t.ToolId>(
   );
 };
 
-interface CreateToolData {
-  name: string;
-  description: string;
-  metadata?: Record<string, unknown>;
-  // MCP-specific fields
-  url?: string;
-  icon?: string;
-  tools?: string[];
-  trust?: boolean;
-  customHeaders?: Array<{
-    id: string;
-    name: string;
-    value: string;
-  }>;
-  requestTimeout?: number;
-  connectionTimeout?: number;
-}
-
-export const useAddToolMutation = (
-  options?: t.MutationOptions<Record<string, unknown>, CreateToolData>,
-): UseMutationResult<Record<string, unknown>, Error, CreateToolData> => {
+export const useCreateMCPMutation = (
+  options?: t.CreateMCPMutationOptions,
+): UseMutationResult<Record<string, unknown>, Error, t.MCP> => {
   const queryClient = useQueryClient();
 
   return useMutation(
-    (toolData: CreateToolData) => {
-      return dataService.createTool(toolData);
+    (mcp: t.MCP) => {
+      return dataService.createMCP(mcp);
     },
     {
       onMutate: (variables) => options?.onMutate?.(variables),
@@ -74,7 +56,7 @@ export const useAddToolMutation = (
       onSuccess: (data, variables, context) => {
         // Invalidate tools list to trigger refetch
         queryClient.invalidateQueries([QueryKeys.tools]);
-        queryClient.invalidateQueries([QueryKeys.mcpTools]);
+        // queryClient.invalidateQueries([QueryKeys.mcpTools]);
         return options?.onSuccess?.(data, variables, context);
       },
     },

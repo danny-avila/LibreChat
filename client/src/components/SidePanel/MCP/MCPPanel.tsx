@@ -1,17 +1,17 @@
-import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { ChevronLeft } from 'lucide-react';
 import { Constants } from 'librechat-data-provider';
 import { useForm, Controller } from 'react-hook-form';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
 import type { TUpdateUserPlugins } from 'librechat-data-provider';
 import type { MCP } from 'librechat-data-provider';
+import { useCreateMCPMutation } from '~/data-provider';
 import { Button, Input, Label } from '~/components/ui';
 import { useGetStartupConfig } from '~/data-provider';
-import { useAddToolMutation } from '~/data-provider/Tools/mutations';
 import MCPPanelSkeleton from './MCPPanelSkeleton';
 import { useToastContext } from '~/Providers';
-import { useLocalize } from '~/hooks';
 import MCPFormPanel from './MCPFormPanel';
+import { useLocalize } from '~/hooks';
 
 interface ServerConfigWithVars {
   serverName: string;
@@ -61,7 +61,7 @@ export default function MCPPanel() {
     },
   });
 
-  const createMCPMutation = useAddToolMutation({
+  const create = useCreateMCPMutation({
     onSuccess: () => {
       showToast({
         message: localize('com_ui_update_mcp_success'),
@@ -119,20 +119,7 @@ export default function MCPPanel() {
   };
 
   const handleSaveMCP = (mcp: MCP) => {
-    // Transform MCP data to match the expected format
-    const mcpData = {
-      name: mcp.metadata.name || '',
-      description: mcp.metadata.description || '',
-      url: mcp.metadata.url || '',
-      icon: mcp.metadata.icon || '',
-      tools: mcp.metadata.tools || [],
-      trust: mcp.metadata.trust ?? false,
-      customHeaders: mcp.metadata.customHeaders || [],
-      requestTimeout: mcp.metadata.requestTimeout,
-      connectionTimeout: mcp.metadata.connectionTimeout,
-    };
-
-    createMCPMutation.mutate(mcpData);
+    create.mutate(mcp);
   };
 
   if (showMCPForm) {
