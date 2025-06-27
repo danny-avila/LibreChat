@@ -12,12 +12,12 @@ interface AgentWithSupport extends t.Agent {
   support_contact?: SupportContact;
 }
 
-import useLocalize from '~/hooks/useLocalize';
-import { useToast } from '~/hooks';
-import { Dialog, DialogContent, Button } from '~/components/ui';
-import { DotsIcon } from '~/components/svg';
-import { renderAgentAvatar } from '~/utils/agents';
 import { useQueryClient } from '@tanstack/react-query';
+import { Dialog, DialogContent, Button } from '~/components/ui';
+import { renderAgentAvatar } from '~/utils/agents';
+import useLocalize from '~/hooks/useLocalize';
+import { DotsIcon } from '~/components/svg';
+import { useToast } from '~/hooks';
 
 interface AgentDetailProps {
   agent: AgentWithSupport; // The agent data to display
@@ -81,7 +81,7 @@ const AgentDetail: React.FC<AgentDetailProps> = ({ agent, isOpen, onClose }) => 
       .writeText(chatUrl)
       .then(() => {
         showToast({
-          message: 'Link copied',
+          message: localize('com_agents_link_copied'),
         });
       })
       .catch(() => {
@@ -131,7 +131,7 @@ const AgentDetail: React.FC<AgentDetailProps> = ({ agent, isOpen, onClose }) => 
             variant="ghost"
             size="icon"
             className="h-8 w-8 rounded-lg text-text-secondary hover:bg-surface-hover hover:text-text-primary dark:hover:bg-surface-hover"
-            aria-label="More options"
+            aria-label={localize('com_agents_more_options')}
             aria-expanded={dropdownOpen}
             aria-haspopup="menu"
             onClick={(e) => {
