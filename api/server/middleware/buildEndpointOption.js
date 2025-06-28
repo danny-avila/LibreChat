@@ -14,6 +14,7 @@ const openAI = require('~/server/services/Endpoints/openAI');
 const agents = require('~/server/services/Endpoints/agents');
 const custom = require('~/server/services/Endpoints/custom');
 const google = require('~/server/services/Endpoints/google');
+const { getFiles } = require('~/models/File');
 const { handleError } = require('~/server/utils');
 
 const buildFunction = {
@@ -84,8 +85,43 @@ async function buildEndpointOption(req, res, next) {
     // TODO: use object params
     req.body.endpointOption = await builder(endpoint, parsedBody, endpointType);
 
-    if (req.body.files && !isAgents) {
-      req.body.endpointOption.attachments = processFiles(req.body.files);
+    // Process files for all endpoints
+    if (req.body.files) {
+      if (isAgents) {
+        // For agents endpoints, retrieve full file objects from database if files are just file_ids
+        try {
+          const files = req.body.files;
+          // Check if files are just file_ids (strings) or already full file objects
+          const needsRetrieval = files.some(file =>
+            typeof file === 'string' || (typeof file === 'object' && file.file_id && !file.filename)
+          );
+
+          if (needsRetrieval) {
+            console.log('[buildEndpointOption] Retrieving full file objects for agents endpoint:', {
+              fileCount: files.length,
+              files: files.map(f => typeof f === 'string' ? f : f.file_id)
+            });
+
+            const file_ids = files.map(file => typeof file === 'string' ? file : file.file_id);
+            const fullFiles = await getFiles({ file_id: { $in: file_ids }, user: req.user.id });
+
+            console.log('[buildEndpointOption] Retrieved files:', {
+              requestedCount: file_ids.length,
+              retrievedCount: fullFiles.length,
+              retrievedFiles: fullFiles.map(f => ({ file_id: f.file_id, filename: f.filename }))
+            });
+
+            // Replace req.body.files with full file objects
+            req.body.files = fullFiles;
+          }
+        } catch (error) {
+          logger.error('[buildEndpointOption] Error retrieving files for agents endpoint:', error);
+          // Continue with original files if retrieval fails
+        }
+      } else {
+        // For non-agents endpoints, use the existing processFiles function
+        req.body.endpointOption.attachments = processFiles(req.body.files);
+      }
     }
 
     next();

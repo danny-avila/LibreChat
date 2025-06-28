@@ -8,9 +8,15 @@ const files = require('./files');
 const images = require('./images');
 const avatar = require('./avatar');
 const speech = require('./speech');
+const downloads = require('./downloads');
 
 const initialize = async () => {
   const router = express.Router();
+
+  // Add download routes first (no auth required for token-based downloads)
+  router.use('/', downloads);
+
+  // Apply authentication middleware for other routes
   router.use(requireJwtAuth);
   router.use(checkBan);
   router.use(uaParser);
@@ -34,6 +40,7 @@ const initialize = async () => {
   router.use('/images/avatar', avatar);
   router.use('/images/agents', agentAvatarRouter);
   router.use('/images/assistants', asstAvatarRouter);
+
   return router;
 };
 

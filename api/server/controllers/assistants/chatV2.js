@@ -23,6 +23,7 @@ const {
 const { runAssistant, createOnTextProgress } = require('~/server/services/AssistantService');
 const { createErrorHandler } = require('~/server/controllers/assistants/errors');
 const validateAuthor = require('~/server/middleware/assistants/validateAuthor');
+const activeFileContextService = require('~/server/services/Files/ActiveFileContextService');
 const { createRun, StreamRunManager } = require('~/server/services/Runs');
 const { addTitle } = require('~/server/services/Endpoints/assistants');
 const { createRunBody } = require('~/server/services/createRunBody');
@@ -44,6 +45,7 @@ const { getOpenAIClient } = require('./helpers');
  */
 const chatV2 = async (req, res) => {
   logger.debug('[/assistants/chat/] req.body', req.body);
+  console.log('[ChatV2] Controller hit - assistants/chatV2');
 
   /** @type {{files: MongoFile[]}} */
   const {
@@ -61,6 +63,36 @@ const chatV2 = async (req, res) => {
     parentMessageId: _parentId = Constants.NO_PARENT,
     clientTimestamp,
   } = req.body;
+
+  // Capture files for real-time MCP access
+  console.log('[ChatV2] File capture check:', {
+    filesLength: files.length,
+    convoId,
+    userId: req.user.id,
+    files: files.map(f => ({ file_id: f.file_id, filename: f.filename }))
+  });
+
+  if (files.length > 0 && convoId) {
+    console.log('[ChatV2] Capturing files for MCP access:', {
+      convoId,
+      userId: req.user.id,
+      fileCount: files.length
+    });
+
+    activeFileContextService.captureFiles(convoId, req.user.id, files, {
+      endpoint,
+      messageId: _messageId,
+      parentMessageId: _parentId,
+      model
+    });
+  } else {
+    console.log('[ChatV2] No files to capture:', {
+      hasFiles: files.length > 0,
+      hasConvoId: !!convoId,
+      filesLength: files.length,
+      convoId
+    });
+  }
 
   /** @type {OpenAIClient} */
   let openai;
