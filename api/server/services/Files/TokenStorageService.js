@@ -28,23 +28,68 @@ class TokenStorageService {
    * @returns {Promise<Object>} Stored token document
    */
   static async storeToken(tokenData) {
+    const detailedLogging = process.env.TEMP_DOWNLOAD_DETAILED_LOGGING === 'true';
+
     try {
+      if (detailedLogging) {
+        console.log('[TokenStorageService] Attempting to store download token', {
+          fileId: tokenData.fileId,
+          userId: tokenData.userId,
+          tokenDataKeys: Object.keys(tokenData),
+          hasDownloadTokenModel: !!DownloadToken,
+          mongooseConnectionState: require('mongoose').connection.readyState,
+          tokenData: JSON.stringify(tokenData, null, 2)
+        });
+      }
+
       const downloadToken = new DownloadToken(tokenData);
+
+      if (detailedLogging) {
+        console.log('[TokenStorageService] DownloadToken instance created, attempting save', {
+          fileId: tokenData.fileId,
+          userId: tokenData.userId,
+          validationErrors: downloadToken.validateSync()
+        });
+      }
+
       await downloadToken.save();
-      
-      logger.debug('Download token stored', {
-        fileId: tokenData.fileId,
-        userId: tokenData.userId,
-        expiresAt: tokenData.expiresAt,
-        singleUse: tokenData.singleUse
-      });
-      
+
+      if (detailedLogging) {
+        console.log('[TokenStorageService] Download token stored successfully', {
+          fileId: tokenData.fileId,
+          userId: tokenData.userId,
+          expiresAt: tokenData.expiresAt,
+          singleUse: tokenData.singleUse
+        });
+      } else {
+        logger.debug('Download token stored', {
+          fileId: tokenData.fileId,
+          userId: tokenData.userId,
+          expiresAt: tokenData.expiresAt,
+          singleUse: tokenData.singleUse
+        });
+      }
+
       return downloadToken;
     } catch (error) {
+      if (detailedLogging) {
+        console.error('[TokenStorageService] Failed to store download token', {
+          fileId: tokenData.fileId,
+          userId: tokenData.userId,
+          error: error.message,
+          stack: error.stack,
+          errorName: error.name,
+          errorCode: error.code,
+          mongooseConnectionState: require('mongoose').connection.readyState,
+          tokenData: JSON.stringify(tokenData, null, 2)
+        });
+      }
+
       logger.error('Failed to store download token', {
         fileId: tokenData.fileId,
         userId: tokenData.userId,
-        error: error.message
+        error: error.message,
+        stack: error.stack
       });
       throw error;
     }

@@ -9,6 +9,7 @@ const images = require('./images');
 const avatar = require('./avatar');
 const speech = require('./speech');
 const downloads = require('./downloads');
+const cleanup = require('./cleanup');
 
 const initialize = async () => {
   const router = express.Router();
@@ -40,6 +41,7 @@ const initialize = async () => {
   router.use('/images/avatar', avatar);
   router.use('/images/agents', agentAvatarRouter);
   router.use('/images/assistants', asstAvatarRouter);
+  router.use('/cleanup', cleanup);
 
   return router;
 };
