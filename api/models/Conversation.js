@@ -1,6 +1,8 @@
-const Conversation = require('./schema/convoSchema');
+const { logger } = require('@librechat/data-schemas');
+const { createTempChatExpirationDate } = require('@librechat/api');
+const getCustomConfig = require('~/server/services/Config/loadCustomConfig');
 const { getMessages, deleteMessages } = require('./Message');
-const logger = require('~/config/winston');
+const { Conversation } = require('~/db/models');
 
 /**
  * Searches for a conversation by conversationId and returns a lean document with only conversationId and user.
@@ -75,7 +77,6 @@ const getConvoFiles = async (conversationId) => {
 };
 
 module.exports = {
-  Conversation,
   getConvoFiles,
   searchConversation,
   deleteNullOrEmptyConversations,
@@ -99,10 +100,15 @@ module.exports = {
         update.conversationId = newConversationId;
       }
 
-      if (req.body.isTemporary) {
-        const expiredAt = new Date();
-        expiredAt.setDate(expiredAt.getDate() + 30);
-        update.expiredAt = expiredAt;
+      if (req?.body?.isTemporary) {
+        try {
+          const customConfig = await getCustomConfig();
+          update.expiredAt = createTempChatExpirationDate(customConfig);
+        } catch (err) {
+          logger.error('Error creating temporary chat expiration date:', err);
+          logger.info(`---\`saveConvo\` context: ${metadata?.context}`);
+          update.expiredAt = null;
+        }
       } else {
         update.expiredAt = null;
       }
@@ -155,7 +161,6 @@ module.exports = {
     { cursor, limit = 25, isArchived = false, tags, search, order = 'desc' } = {},
   ) => {
     const filters = [{ user }];
-
     if (isArchived) {
       filters.push({ isArchived: true });
     } else {
@@ -288,7 +293,6 @@ module.exports = {
   deleteConvos: async (user, filter) => {
     try {
       const userFilter = { ...filter, user };
-
       const conversations = await Conversation.find(userFilter).select('conversationId');
       const conversationIds = conversations.map((c) => c.conversationId);
 

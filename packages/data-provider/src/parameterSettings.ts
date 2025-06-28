@@ -83,7 +83,7 @@ const createDefinition = (
   return { ...base, ...overrides } as SettingDefinition;
 };
 
-const librechat: Record<string, SettingDefinition> = {
+export const librechat = {
   modelLabel: {
     key: 'modelLabel',
     label: 'com_endpoint_custom_name',
@@ -94,7 +94,7 @@ const librechat: Record<string, SettingDefinition> = {
     placeholder: 'com_endpoint_openai_custom_name_placeholder',
     placeholderCode: true,
     optionType: 'conversation',
-  },
+  } as const,
   maxContextTokens: {
     key: 'maxContextTokens',
     label: 'com_endpoint_context_tokens',
@@ -107,7 +107,7 @@ const librechat: Record<string, SettingDefinition> = {
     descriptionCode: true,
     optionType: 'model',
     columnSpan: 2,
-  },
+  } as const,
   resendFiles: {
     key: 'resendFiles',
     label: 'com_endpoint_plug_resend_files',
@@ -120,7 +120,7 @@ const librechat: Record<string, SettingDefinition> = {
     optionType: 'conversation',
     showDefault: false,
     columnSpan: 2,
-  },
+  } as const,
   promptPrefix: {
     key: 'promptPrefix',
     label: 'com_endpoint_prompt_prefix',
@@ -131,7 +131,7 @@ const librechat: Record<string, SettingDefinition> = {
     placeholder: 'com_endpoint_openai_prompt_prefix_placeholder',
     placeholderCode: true,
     optionType: 'model',
-  },
+  } as const,
 };
 
 const openAIParams: Record<string, SettingDefinition> = {
@@ -450,6 +450,37 @@ const google: Record<string, SettingDefinition> = {
     optionType: 'model',
     columnSpan: 2,
   },
+  thinking: {
+    key: 'thinking',
+    label: 'com_endpoint_thinking',
+    labelCode: true,
+    description: 'com_endpoint_google_thinking',
+    descriptionCode: true,
+    type: 'boolean',
+    default: googleSettings.thinking.default,
+    component: 'switch',
+    optionType: 'conversation',
+    showDefault: false,
+    columnSpan: 2,
+  },
+  thinkingBudget: {
+    key: 'thinkingBudget',
+    label: 'com_endpoint_thinking_budget',
+    labelCode: true,
+    description: 'com_endpoint_google_thinking_budget',
+    descriptionCode: true,
+    placeholder: 'com_ui_auto',
+    placeholderCode: true,
+    type: 'number',
+    component: 'input',
+    range: {
+      min: googleSettings.thinkingBudget.min,
+      max: googleSettings.thinkingBudget.max,
+      step: googleSettings.thinkingBudget.step,
+    },
+    optionType: 'conversation',
+    columnSpan: 2,
+  },
 };
 
 const googleConfig: SettingsConfiguration = [
@@ -461,6 +492,8 @@ const googleConfig: SettingsConfiguration = [
   google.topP,
   google.topK,
   librechat.resendFiles,
+  google.thinking,
+  google.thinkingBudget,
 ];
 
 const googleCol1: SettingsConfiguration = [
@@ -476,6 +509,8 @@ const googleCol2: SettingsConfiguration = [
   google.topP,
   google.topK,
   librechat.resendFiles,
+  google.thinking,
+  google.thinkingBudget,
 ];
 
 const openAI: SettingsConfiguration = [

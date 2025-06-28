@@ -1,12 +1,11 @@
-import connectDb from '@librechat/backend/lib/db/connectDb';
+import { connectDb } from '@librechat/backend/db/connect';
 import {
-  deleteMessages,
+  findUser,
   deleteConvos,
-  User,
+  deleteMessages,
   deleteAllUserSessions,
-  Balance,
 } from '@librechat/backend/models';
-import { Transaction } from '@librechat/backend/models/Transaction';
+
 type TUser = { email: string; password: string };
 
 export default async function cleanupUser(user: TUser) {
@@ -16,28 +15,38 @@ export default async function cleanupUser(user: TUser) {
     const db = await connectDb();
     console.log('🤖:  ✅  Connected to Database');
 
-    const { _id: user } = await User.findOne({ email }).lean();
+    const foundUser = await findUser({ email });
+    if (!foundUser) {
+      console.log('🤖:  ⚠️  User not found in Database');
+      return;
+    }
+
+    const userId = foundUser._id;
     console.log('🤖:  ✅  Found user in Database');
 
     // Delete all conversations & associated messages
-    const { deletedCount, messages } = await deleteConvos(user, {});
+    const { deletedCount, messages } = await deleteConvos(userId, {});
 
     if (messages.deletedCount > 0 || deletedCount > 0) {
       console.log(`🤖:  ✅  Deleted ${deletedCount} convos & ${messages.deletedCount} messages`);
     }
 
     // Ensure all user messages are deleted
-    const { deletedCount: deletedMessages } = await deleteMessages({ user });
+    const { deletedCount: deletedMessages } = await deleteMessages({ user: userId });
     if (deletedMessages > 0) {
       console.log(`🤖:  ✅  Deleted ${deletedMessages} remaining message(s)`);
     }
 
-    // TODO: fix this to delete all user sessions with the user's email
-    await deleteAllUserSessions(user);
+    // Delete all user sessions
+    await deleteAllUserSessions(userId.toString());
 
-    await User.deleteMany({ _id: user });
-    await Balance.deleteMany({ user });
-    await Transaction.deleteMany({ user });
+    // Get models from the registered models
+    const { User, Balance, Transaction } = getModels();
+
+    // Delete user, balance, and transactions using the registered models
+    await User.deleteMany({ _id: userId });
+    await Balance.deleteMany({ user: userId });
+    await Transaction.deleteMany({ user: userId });
 
     console.log('🤖:  ✅  Deleted user from Database');
 

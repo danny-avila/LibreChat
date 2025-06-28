@@ -590,7 +590,6 @@
   "com_ui_enter": "Entrer",
   "com_ui_enter_api_key": "Saisir la clé API",
   "com_ui_enter_openapi_schema": "Saisissez votre schéma OpenAPI ici",
-  "com_ui_enter_var": "Saisir {{0}}",
   "com_ui_error": "Erreur",
   "com_ui_error_connection": "Erreur de connexion au serveur, essayez de rafraîchir la page.",
   "com_ui_error_save_admin_settings": "Une erreur est survenue lors de la sauvegarde de vos paramètres administratifs.",

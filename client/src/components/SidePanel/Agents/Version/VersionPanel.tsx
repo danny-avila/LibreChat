@@ -1,12 +1,12 @@
-import type { Agent, TAgentsEndpoint } from 'librechat-data-provider';
 import { ChevronLeft } from 'lucide-react';
 import { useCallback, useMemo } from 'react';
-import type { AgentPanelProps } from '~/common';
-import { Panel } from '~/common';
 import { useGetAgentByIdQuery, useRevertAgentVersionMutation } from '~/data-provider';
+import type { Agent } from 'librechat-data-provider';
+import { isActiveVersion } from './isActiveVersion';
+import { useAgentPanelContext } from '~/Providers';
 import { useLocalize, useToast } from '~/hooks';
 import VersionContent from './VersionContent';
-import { isActiveVersion } from './isActiveVersion';
+import { Panel } from '~/common';
 
 export type VersionRecord = Record<string, any>;
 
@@ -39,15 +39,13 @@ export interface AgentWithVersions extends Agent {
   versions?: Array<VersionRecord>;
 }
 
-export type VersionPanelProps = {
-  agentsConfig: TAgentsEndpoint | null;
-  setActivePanel: AgentPanelProps['setActivePanel'];
-  selectedAgentId?: string;
-};
-
-export default function VersionPanel({ setActivePanel, selectedAgentId = '' }: VersionPanelProps) {
+export default function VersionPanel() {
   const localize = useLocalize();
   const { showToast } = useToast();
+  const { agent_id, setActivePanel } = useAgentPanelContext();
+
+  const selectedAgentId = agent_id ?? '';
+
   const {
     data: agent,
     isLoading,

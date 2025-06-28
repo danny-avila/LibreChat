@@ -47,7 +47,9 @@ const oauthHandler = async (req, res) => {
 
 router.get('/error', (req, res) => {
   // A single error message is pushed by passport when authentication fails.
-  logger.error('Error in OAuth authentication:', { message: req.session.messages.pop() });
+  logger.error('Error in OAuth authentication:', {
+    message: req.session?.messages?.pop() || 'Unknown error',
+  });
 
   // Redirect to login page with auth_failed parameter to prevent infinite redirect loops
   res.redirect(`${domains.client}/login?redirect=false`);
@@ -186,6 +188,26 @@ router.post(
     session: false,
   }),
   setBalanceConfig,
+  oauthHandler,
+);
+
+/**
+ * SAML Routes
+ */
+router.get(
+  '/saml',
+  passport.authenticate('saml', {
+    session: false,
+  }),
+);
+
+router.post(
+  '/saml/callback',
+  passport.authenticate('saml', {
+    failureRedirect: `${domains.client}/oauth/error`,
+    failureMessage: true,
+    session: false,
+  }),
   oauthHandler,
 );
 

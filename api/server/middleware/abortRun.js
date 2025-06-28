@@ -1,11 +1,11 @@
+const { sendEvent } = require('@librechat/api');
+const { logger } = require('@librechat/data-schemas');
 const { CacheKeys, RunStatus, isUUID } = require('librechat-data-provider');
 const { initializeClient } = require('~/server/services/Endpoints/assistants');
 const { checkMessageGaps, recordUsage } = require('~/server/services/Threads');
 const { deleteMessages } = require('~/models/Message');
 const { getConvo } = require('~/models/Conversation');
 const getLogStores = require('~/cache/getLogStores');
-const { sendMessage } = require('~/server/utils');
-const { logger } = require('~/config');
 
 const three_minutes = 1000 * 60 * 3;
 
@@ -34,7 +34,7 @@ async function abortRun(req, res) {
   const [thread_id, run_id] = runValues.split(':');
 
   if (!run_id) {
-    logger.warn('[abortRun] Couldn\'t find run for cancel request', { thread_id });
+    logger.warn("[abortRun] Couldn't find run for cancel request", { thread_id });
     return res.status(204).send({ message: 'Run not found' });
   } else if (run_id === 'cancelled') {
     logger.warn('[abortRun] Run already cancelled', { thread_id });
@@ -93,7 +93,7 @@ async function abortRun(req, res) {
   };
 
   if (res.headersSent && finalEvent) {
-    return sendMessage(res, finalEvent);
+    return sendEvent(res, finalEvent);
   }
 
   res.json(finalEvent);

@@ -1,5 +1,7 @@
 const { nanoid } = require('nanoid');
 const { EnvVar } = require('@librechat/agents');
+const { checkAccess } = require('@librechat/api');
+const { logger } = require('@librechat/data-schemas');
 const {
   Tools,
   AuthType,
@@ -13,9 +15,8 @@ const { processCodeOutput } = require('~/server/services/Files/Code/process');
 const { createToolCall, getToolCallsByConvo } = require('~/models/ToolCall');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { loadTools } = require('~/app/clients/tools/util');
-const { checkAccess } = require('~/server/middleware');
+const { getRoleByName } = require('~/models/Role');
 const { getMessage } = require('~/models/Message');
-const { logger } = require('~/config');
 
 const fieldsMap = {
   [Tools.execute_code]: [EnvVar.CODE_API_KEY],
@@ -79,6 +80,7 @@ const verifyToolAuth = async (req, res) => {
         throwError: false,
       });
     } catch (error) {
+      logger.error('Error loading auth values', error);
       res.status(200).json({ authenticated: false, message: AuthType.USER_PROVIDED });
       return;
     }
@@ -132,7 +134,12 @@ const callTool = async (req, res) => {
     logger.debug(`[${toolId}/call] User: ${req.user.id}`);
     let hasAccess = true;
     if (toolAccessPermType[toolId]) {
-      hasAccess = await checkAccess(req.user, toolAccessPermType[toolId], [Permissions.USE]);
+      hasAccess = await checkAccess({
+        user: req.user,
+        permissionType: toolAccessPermType[toolId],
+        permissions: [Permissions.USE],
+        getRoleByName,
+      });
     }
     if (!hasAccess) {
       logger.warn(

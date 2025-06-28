@@ -21,6 +21,7 @@ export default function ApiKeyDialog({
   register,
   handleSubmit,
   triggerRef,
+  triggerRefs,
 }: {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
@@ -30,7 +31,8 @@ export default function ApiKeyDialog({
   isToolAuthenticated: boolean;
   register: UseFormRegister<SearchApiKeyFormData>;
   handleSubmit: UseFormHandleSubmit<SearchApiKeyFormData>;
-  triggerRef?: React.RefObject<HTMLInputElement>;
+  triggerRef?: React.RefObject<HTMLInputElement | HTMLButtonElement>;
+  triggerRefs?: React.RefObject<HTMLInputElement | HTMLButtonElement>[];
 }) {
   const localize = useLocalize();
   const { data: config } = useGetStartupConfig();
@@ -181,7 +183,12 @@ export default function ApiKeyDialog({
   }
 
   return (
-    <OGDialog open={isOpen} onOpenChange={onOpenChange} triggerRef={triggerRef}>
+    <OGDialog
+      open={isOpen}
+      onOpenChange={onOpenChange}
+      triggerRef={triggerRef}
+      triggerRefs={triggerRefs}
+    >
       <OGDialogTemplate
         className="w-11/12 sm:w-[500px]"
         title=""

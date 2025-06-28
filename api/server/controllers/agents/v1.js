@@ -1,9 +1,9 @@
 const fs = require('fs').promises;
 const { nanoid } = require('nanoid');
+const { logger } = require('@librechat/data-schemas');
 const {
   Tools,
   Constants,
-  FileContext,
   FileSources,
   SystemRoles,
   EToolResources,
@@ -16,15 +16,16 @@ const {
   deleteAgent,
   getListAgents,
 } = require('~/models/Agent');
-const { uploadImageBuffer, filterFile } = require('~/server/services/Files/process');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
+const { resizeAvatar } = require('~/server/services/Files/images/avatar');
 const { refreshS3Url } = require('~/server/services/Files/S3/crud');
+const { filterFile } = require('~/server/services/Files/process');
 const { updateAction, getActions } = require('~/models/Action');
+const { getCachedTools } = require('~/server/services/Config');
 const { updateAgentProjects } = require('~/models/Agent');
 const { getProjectByName } = require('~/models/Project');
-const { deleteFileByFilter } = require('~/models/File');
 const { revertAgentVersion } = require('~/models/Agent');
-const { logger } = require('~/config');
+const { deleteFileByFilter } = require('~/models/File');
 
 const systemTools = {
   [Tools.execute_code]: true,
@@ -46,8 +47,9 @@ const createAgentHandler = async (req, res) => {
 
     agentData.tools = [];
 
+    const availableTools = await getCachedTools({ includeGlobal: true });
     for (const tool of tools) {
-      if (req.app.locals.availableTools[tool]) {
+      if (availableTools[tool]) {
         agentData.tools.push(tool);
       }
 
@@ -111,7 +113,7 @@ const getAgentHandler = async (req, res) => {
       const originalUrl = agent.avatar.filepath;
       agent.avatar.filepath = await refreshS3Url(agent.avatar);
       if (originalUrl !== agent.avatar.filepath) {
-        await updateAgent({ id }, { avatar: agent.avatar }, req.user.id);
+        await updateAgent({ id }, { avatar: agent.avatar }, { updatingUserId: req.user.id });
       }
     }
 
@@ -168,12 +170,18 @@ const updateAgentHandler = async (req, res) => {
       });
     }
 
+    /** @type {boolean} */
+    const isProjectUpdate = (projectIds?.length ?? 0) > 0 || (removeProjectIds?.length ?? 0) > 0;
+
     let updatedAgent =
       Object.keys(updateData).length > 0
-        ? await updateAgent({ id }, updateData, req.user.id)
+        ? await updateAgent({ id }, updateData, {
+            updatingUserId: req.user.id,
+            skipVersioning: isProjectUpdate,
+          })
         : existingAgent;
 
-    if (projectIds || removeProjectIds) {
+    if (isProjectUpdate) {
       updatedAgent = await updateAgentProjects({
         user: req.user,
         agentId: id,
@@ -373,11 +381,26 @@ const uploadAgentAvatarHandler = async (req, res) => {
     }
 
     const buffer = await fs.readFile(req.file.path);
-    const image = await uploadImageBuffer({
-      req,
-      context: FileContext.avatar,
-      metadata: { buffer },
+
+    const fileStrategy = req.app.locals.fileStrategy;
+
+    const resizedBuffer = await resizeAvatar({
+      userId: req.user.id,
+      input: buffer,
     });
+
+    const { processAvatar } = getStrategyFunctions(fileStrategy);
+    const avatarUrl = await processAvatar({
+      buffer: resizedBuffer,
+      userId: req.user.id,
+      manual: 'false',
+      agentId: agent_id,
+    });
+
+    const image = {
+      filepath: avatarUrl,
+      source: fileStrategy,
+    };
 
     let _avatar;
     try {
@@ -403,11 +426,15 @@ const uploadAgentAvatarHandler = async (req, res) => {
     const data = {
       avatar: {
         filepath: image.filepath,
-        source: req.app.locals.fileStrategy,
+        source: image.source,
       },
     };
 
-    promises.push(await updateAgent({ id: agent_id, author: req.user.id }, data, req.user.id));
+    promises.push(
+      await updateAgent({ id: agent_id, author: req.user.id }, data, {
+        updatingUserId: req.user.id,
+      }),
+    );
 
     const resolved = await Promise.all(promises);
     res.status(201).json(resolved[0]);
@@ -419,7 +446,7 @@ const uploadAgentAvatarHandler = async (req, res) => {
     try {
       await fs.unlink(req.file.path);
       logger.debug('[/:agent_id/avatar] Temp. image upload file deleted');
-    } catch (error) {
+    } catch {
       logger.debug('[/:agent_id/avatar] Temp. image upload file already deleted');
     }
   }
