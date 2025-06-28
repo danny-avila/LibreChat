@@ -1633,7 +1633,7 @@ describe('models/Agent', () => {
       expect(result.version).toBe(1);
     });
 
-    test('should return null when user is not author and agent has no projectIds', async () => {
+    test('should return agent even when user is not author (permissions checked at route level)', async () => {
       const authorId = new mongoose.Types.ObjectId();
       const userId = new mongoose.Types.ObjectId();
       const agentId = `agent_${uuidv4()}`;
@@ -1654,7 +1654,11 @@ describe('models/Agent', () => {
         model_parameters: { model: 'gpt-4' },
       });
 
-      expect(result).toBeFalsy();
+      // With the new permission system, loadAgent returns the agent regardless of permissions
+      // Permission checks are handled at the route level via middleware
+      expect(result).toBeTruthy();
+      expect(result.id).toBe(agentId);
+      expect(result.name).toBe('Test Agent');
     });
 
     test('should handle ephemeral agent with no MCP servers', async () => {
@@ -1762,7 +1766,7 @@ describe('models/Agent', () => {
         }
       });
 
-      test('should handle loadAgent with agent from different project', async () => {
+      test('should return agent from different project (permissions checked at route level)', async () => {
         const authorId = new mongoose.Types.ObjectId();
         const userId = new mongoose.Types.ObjectId();
         const agentId = `agent_${uuidv4()}`;
@@ -1785,7 +1789,11 @@ describe('models/Agent', () => {
           model_parameters: { model: 'gpt-4' },
         });
 
-        expect(result).toBeFalsy();
+        // With the new permission system, loadAgent returns the agent regardless of permissions
+        // Permission checks are handled at the route level via middleware
+        expect(result).toBeTruthy();
+        expect(result.id).toBe(agentId);
+        expect(result.name).toBe('Project Agent');
       });
     });
   });
