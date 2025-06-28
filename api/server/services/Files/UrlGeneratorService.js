@@ -70,6 +70,18 @@ class UrlGeneratorService {
       const tokenHash = this._hashToken(token);
       const expiresAt = new Date(Date.now() + ttlSeconds * 1000);
 
+      if (process.env.TEMP_DOWNLOAD_DETAILED_LOGGING === 'true') {
+        console.log('[UrlGeneratorService] Preparing to store token', {
+          fileId,
+          userId,
+          clientIP,
+          ttlSeconds,
+          expiresAt,
+          hasTokenStorageService: !!TokenStorageService,
+          tokenHashLength: tokenHash.length
+        });
+      }
+
       await TokenStorageService.storeToken({
         fileId,
         tokenHash,
@@ -106,10 +118,23 @@ class UrlGeneratorService {
       };
 
     } catch (error) {
+      if (process.env.TEMP_DOWNLOAD_DETAILED_LOGGING === 'true') {
+        console.error('[UrlGeneratorService] Failed to generate download URL', {
+          fileId,
+          userId: options.userId,
+          error: error.message,
+          stack: error.stack,
+          errorName: error.name,
+          errorCode: error.code,
+          options: JSON.stringify(options, null, 2)
+        });
+      }
+
       logger.error('Failed to generate download URL', {
         fileId,
         userId: options.userId,
-        error: error.message
+        error: error.message,
+        stack: error.stack
       });
       throw error;
     }

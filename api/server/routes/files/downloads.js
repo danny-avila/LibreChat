@@ -4,6 +4,9 @@ const {
   checkBan,
   requireJwtAuth,
 } = require('~/server/middleware');
+const rateLimitService = require('~/server/services/Files/RateLimitService');
+const securityService = require('~/server/services/Files/SecurityService');
+const metricsService = require('~/server/services/Files/MetricsService');
 const {
   generateDownloadUrl,
   downloadFile,
@@ -18,12 +21,22 @@ const router = express.Router();
 // Middleware for parsing user agent
 router.use(uaParser);
 
-// Public download endpoint (no auth required, token-based)
-router.get('/download/:fileId', downloadFile);
+// Create middleware
+const downloadRateLimit = rateLimitService.createMiddleware();
+const securityValidation = securityService.createValidationMiddleware();
+const metricsCollection = metricsService.createMetricsMiddleware();
+
+// Public download endpoint (no auth required, token-based) with security, rate limiting, and metrics
+router.get('/download/:fileId', metricsCollection, securityValidation, downloadRateLimit, downloadFile);
 
 // Protected endpoints (require authentication)
 router.use(requireJwtAuth);
 router.use(checkBan);
+
+// Apply metrics, security validation and rate limiting to protected endpoints as well
+router.use(metricsCollection);
+router.use(securityValidation);
+router.use(downloadRateLimit);
 
 // Generate download URL
 router.post('/generate-download-url', generateDownloadUrl);

@@ -3,6 +3,10 @@ const { File } = require('~/db/models');
 const UrlGeneratorService = require('~/server/services/Files/UrlGeneratorService');
 const TokenStorageService = require('~/server/services/Files/TokenStorageService');
 const DownloadService = require('~/server/services/Files/DownloadService');
+const rateLimitService = require('~/server/services/Files/RateLimitService');
+const securityService = require('~/server/services/Files/SecurityService');
+const metricsService = require('~/server/services/Files/MetricsService');
+const auditService = require('~/server/services/Files/AuditService');
 
 /**
  * Generate a temporary download URL for a file
@@ -36,10 +40,38 @@ const generateDownloadUrl = async (req, res) => {
         userId,
         clientIP
       });
-      
+
       return res.status(404).json({
         error: 'File not found',
         code: 'FILE_NOT_FOUND'
+      });
+    }
+
+    // Validate security constraints
+    const securityValidation = securityService.validateDownloadRequest({
+      clientIP,
+      filename: file.filename,
+      fileSize: file.bytes,
+      mimeType: file.type,
+      userId,
+      requestId
+    });
+
+    if (!securityValidation.allowed) {
+      securityService.logSecurityEvent({
+        type: 'download_blocked',
+        clientIP,
+        userId,
+        fileId,
+        filename: file.filename,
+        violations: securityValidation.violations,
+        requestId
+      });
+
+      return res.status(403).json({
+        error: 'Download not allowed due to security restrictions',
+        code: 'SECURITY_VIOLATION',
+        violations: securityValidation.violations
       });
     }
 
@@ -71,6 +103,30 @@ const generateDownloadUrl = async (req, res) => {
       requestId
     });
 
+    // Record metrics and audit logs
+    metricsService.recordTokenGeneration();
+
+    await auditService.logTokenGeneration({
+      userId,
+      fileId,
+      clientIP,
+      userAgent,
+      requestId,
+      tokenId: urlData.tokenId,
+      expiresAt: urlData.expiresAt,
+      singleUse: urlData.singleUse
+    });
+
+    // Log successful download URL generation
+    securityService.logDownloadAttempt({
+      success: true,
+      clientIP,
+      userId,
+      fileId,
+      filename: file.filename,
+      requestId
+    });
+
     res.json({
       success: true,
       data: {
@@ -92,6 +148,30 @@ const generateDownloadUrl = async (req, res) => {
       fileId: req.body?.fileId,
       error: error.message,
       stack: error.stack
+    });
+
+    // Log failed download attempt
+    const clientIP = req.ip || req.connection.remoteAddress;
+    const requestId = req.headers['x-request-id'] || `req-${Date.now()}`;
+
+    await auditService.logDownloadAttempt({
+      success: false,
+      clientIP,
+      userId: req.user?.id,
+      fileId: req.body?.fileId,
+      statusCode: 500,
+      error,
+      requestId,
+      userAgent: req.get('User-Agent')
+    });
+
+    securityService.logDownloadAttempt({
+      success: false,
+      clientIP,
+      userId: req.user?.id,
+      fileId: req.body?.fileId,
+      error,
+      requestId
     });
 
     res.status(500).json({
@@ -269,14 +349,32 @@ const getUserTokens = async (req, res) => {
 const getDownloadStats = async (req, res) => {
   try {
     // This would typically require admin permissions
-    // For now, just return basic stats
-    
-    const tokenStats = await TokenStorageService.getTokenStatistics();
-    
+    const { timeframe = 24 } = req.query; // hours
+
+    // Get token statistics
+    const tokenStats = await TokenStorageService.getTokenStatistics({ timeframe });
+
+    // Get rate limiting statistics
+    const rateLimitStats = await rateLimitService.getStatistics();
+
+    // Get security statistics
+    const securityStats = securityService.getSecurityStats();
+
+    // Get metrics and audit statistics
+    const [metrics, auditStats] = await Promise.all([
+      metricsService.getMetrics(`${timeframe}h`),
+      auditService.getAuditStatistics(`${timeframe}h`)
+    ]);
+
     res.json({
       success: true,
       data: {
+        timeframe: `${timeframe} hours`,
         tokens: tokenStats,
+        rateLimiting: rateLimitStats,
+        security: securityStats,
+        metrics,
+        audit: auditStats,
         timestamp: new Date().toISOString()
       }
     });

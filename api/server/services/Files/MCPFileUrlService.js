@@ -9,9 +9,23 @@ const activeFileContextService = require('./ActiveFileContextService');
  */
 class MCPFileUrlService {
   constructor() {
-    this.defaultTtl = parseInt(process.env.MCP_FILE_URL_TTL) || 900; // 15 minutes default
-    this.maxTtl = parseInt(process.env.MCP_FILE_URL_MAX_TTL) || 3600; // 1 hour max
-    this.minTtl = parseInt(process.env.MCP_FILE_URL_MIN_TTL) || 60; // 1 minute min
+    // Use TEMP_DOWNLOAD_MCP_ variables first, fallback to MCP_FILE_URL_ for backward compatibility
+    this.defaultTtl = parseInt(process.env.TEMP_DOWNLOAD_MCP_DEFAULT_TTL) ||
+                      parseInt(process.env.MCP_FILE_URL_TTL) || 900; // 15 minutes default
+    this.maxTtl = parseInt(process.env.TEMP_DOWNLOAD_MCP_MAX_TTL) ||
+                  parseInt(process.env.MCP_FILE_URL_MAX_TTL) || 3600; // 1 hour max
+    this.minTtl = parseInt(process.env.TEMP_DOWNLOAD_MIN_TTL) ||
+                  parseInt(process.env.MCP_FILE_URL_MIN_TTL) || 60; // 1 minute min
+
+    // MCP specific configuration
+    this.mcpEnabled = process.env.TEMP_DOWNLOAD_MCP_ENABLED !== 'false';
+
+    logger.info('[MCPFileUrlService] Initialized with config:', {
+      defaultTtl: this.defaultTtl,
+      maxTtl: this.maxTtl,
+      minTtl: this.minTtl,
+      mcpEnabled: this.mcpEnabled
+    });
   }
 
   /**
@@ -30,6 +44,16 @@ class MCPFileUrlService {
    * @returns {Promise<string>} JSON string containing file URLs
    */
   async generateCurrentMessageFileUrls(options) {
+    // Check if MCP file access is enabled
+    if (!this.mcpEnabled) {
+      logger.warn('[MCPFileUrlService] MCP file access is disabled');
+      return JSON.stringify({
+        files: [],
+        message: 'MCP file access is disabled',
+        timestamp: new Date().toISOString()
+      });
+    }
+
     const {
       conversationId,
       messageFiles,
@@ -37,9 +61,9 @@ class MCPFileUrlService {
       mcpClientId,
       ttlSeconds = this.defaultTtl,
       singleUse = true,
-      clientIP,
-      userAgent,
-      requestId
+      clientIP = '127.0.0.1', // Default fallback for MCP requests
+      userAgent = 'MCP-Client',
+      requestId = `mcp-${Date.now()}`
     } = options;
 
     console.log('[MCPFileUrlService - STEP α] generateCurrentMessageFileUrls called:', {
@@ -311,9 +335,9 @@ class MCPFileUrlService {
       mcpClientId,
       ttlSeconds = this.defaultTtl,
       singleUse = true,
-      clientIP,
-      userAgent,
-      requestId
+      clientIP = '127.0.0.1',
+      userAgent = 'MCP-Client',
+      requestId = `mcp-${Date.now()}`
     } = options;
 
     try {
@@ -453,9 +477,9 @@ class MCPFileUrlService {
       mcpClientId,
       ttlSeconds,
       singleUse,
-      clientIP,
-      userAgent,
-      requestId
+      clientIP = '127.0.0.1',
+      userAgent = 'MCP-Client',
+      requestId = `mcp-${Date.now()}`
     } = options;
 
     try {
@@ -561,12 +585,25 @@ class MCPFileUrlService {
               source: source
             };
           } catch (error) {
+            if (process.env.TEMP_DOWNLOAD_DETAILED_LOGGING === 'true') {
+              console.error('[MCPFileUrlService] Failed to generate URL for specific file', {
+                fileId: file.file_id,
+                conversationId,
+                userId,
+                mcpClientId,
+                error: error.message,
+                stack: error.stack,
+                filename: file.filename
+              });
+            }
+
             logger.error('Failed to generate URL for specific file', {
               fileId: file.file_id,
               conversationId,
               userId,
               mcpClientId,
-              error: error.message
+              error: error.message,
+              filename: file.filename
             });
             return null;
           }
@@ -644,9 +681,9 @@ class MCPFileUrlService {
       mcpClientId,
       ttlSeconds,
       singleUse,
-      clientIP,
-      userAgent,
-      requestId
+      clientIP = '127.0.0.1',
+      userAgent = 'MCP-Client',
+      requestId = `mcp-${Date.now()}`
     } = options;
 
     try {
@@ -931,9 +968,9 @@ class MCPFileUrlService {
       mcpClientId,
       ttlSeconds = this.defaultTtl,
       singleUse = true,
-      clientIP,
-      userAgent,
-      requestId
+      clientIP = '127.0.0.1',
+      userAgent = 'MCP-Client',
+      requestId = `mcp-${Date.now()}`
     } = options;
 
     try {
