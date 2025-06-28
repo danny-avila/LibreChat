@@ -8,8 +8,17 @@ const {
 } = require('~/server/middleware');
 const { disposeClient, clientRegistry, requestDataMap } = require('~/server/cleanup');
 const { saveMessage } = require('~/models');
+const activeFileContextService = require('~/server/services/Files/ActiveFileContextService');
 
 const AgentController = async (req, res, next, initializeClient, addTitle) => {
+  console.log('[AgentController] Controller hit - agents/request');
+  console.log('[AgentController] Request body keys:', Object.keys(req.body));
+  console.log('[AgentController] Files in request:', {
+    hasFiles: !!req.body.files,
+    filesLength: req.body.files?.length || 0,
+    files: req.body.files?.map(f => ({ file_id: f.file_id, filename: f.filename })) || []
+  });
+
   let {
     text,
     endpointOption,
@@ -33,6 +42,26 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
   const newConvo = !conversationId;
   const userId = req.user.id;
 
+  // Capture files immediately if conversationId is already available (existing conversation)
+  if (req.body.files && req.body.files.length > 0 && conversationId) {
+    console.log('[AgentController] ConversationId already available, capturing files immediately:', {
+      conversationId,
+      userId: req.user.id,
+      fileCount: req.body.files.length,
+      files: req.body.files.map(f => ({ file_id: f.file_id, filename: f.filename }))
+    });
+
+    activeFileContextService.captureFiles(conversationId, req.user.id, req.body.files, {
+      endpoint: endpointOption?.endpoint,
+      messageId: req.body.messageId,
+      parentMessageId,
+      model: endpointOption?.model
+    });
+  }
+
+  // Track if files have been captured
+  let filesCaptured = false;
+
   // Create handler to avoid capturing the entire parent scope
   let getReqData = (data = {}) => {
     for (let key in data) {
@@ -51,6 +80,25 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
         abortKey = data[key];
       } else if (!conversationId && key === 'conversationId') {
         conversationId = data[key];
+
+        // Capture files as soon as conversationId becomes available
+        if (!filesCaptured && req.body.files && req.body.files.length > 0 && conversationId) {
+          console.log('[AgentController] ConversationId available, capturing files:', {
+            conversationId,
+            userId: req.user.id,
+            fileCount: req.body.files.length,
+            files: req.body.files.map(f => ({ file_id: f.file_id, filename: f.filename }))
+          });
+
+          activeFileContextService.captureFiles(conversationId, req.user.id, req.body.files, {
+            endpoint: endpointOption?.endpoint,
+            messageId: userMessageId,
+            parentMessageId,
+            model: endpointOption?.model
+          });
+
+          filesCaptured = true;
+        }
       }
     }
   };
@@ -159,6 +207,8 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
       }
     });
 
+
+
     const messageOptions = {
       user: userId,
       onStart,
@@ -188,6 +238,8 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
     const conversation = { ...convoData };
     conversation.title =
       conversation && !conversation.title ? null : conversation?.title || 'New Chat';
+
+
 
     // Process files if needed
     if (req.body.files && client.options?.attachments) {

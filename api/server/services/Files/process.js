@@ -317,6 +317,7 @@ const processImageFile = async ({ req, res, metadata, returnFile = false }) => {
       filepath,
       filename: file.originalname,
       context: FileContext.message_attachment,
+
       source,
       type: `image/${req.app.locals.imageOutputType}`,
       width,
@@ -451,6 +452,7 @@ const processFileUpload = async ({ req, res, metadata }) => {
       filepath,
       filename: filename ?? file.originalname,
       context: isAssistantUpload ? FileContext.assistants : FileContext.message_attachment,
+
       model: isAssistantUpload ? req.body.model : undefined,
       type: file.mimetype,
       embedded,
@@ -550,6 +552,7 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
       filepath: ocrFileURL,
       source: FileSources.text,
       filename: filename ?? file.originalname,
+
       model: messageAttachment ? undefined : req.body.model,
       context: messageAttachment ? FileContext.message_attachment : FileContext.agents,
     });
@@ -876,6 +879,7 @@ async function saveBase64Image(
       filepath,
       filename,
       user: req.user.id,
+
       bytes: image.bytes,
       width: image.width,
       height: image.height,
