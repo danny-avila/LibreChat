@@ -242,6 +242,8 @@ const duplicateAgentHandler = async (req, res) => {
       createdAt: _createdAt,
       updatedAt: _updatedAt,
       tool_resources: _tool_resources = {},
+      versions: _versions,
+      __v: _v,
       ...cloneData
     } = agent;
     cloneData.name = `${agent.name} (${new Date().toLocaleString('en-US', {
