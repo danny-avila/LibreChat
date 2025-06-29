@@ -94,15 +94,17 @@ async function processUserPlaceholdersWithContext(
   // Handle special LIBRECHAT_CHAT_URL_FILE placeholder
   if (value.includes('{{LIBRECHAT_CHAT_URL_FILE}}')) {
     try {
-      console.log('[MCP File Placeholder] Processing placeholder with context:', {
-        conversationId: conversationContext?.conversationId,
-        userId: user?.id,
-        mcpClientId: conversationContext?.mcpClientId,
-        hasConversationContext: !!conversationContext,
-        messageFilesCount: conversationContext?.messageFiles?.length || 0,
-        messageFiles: conversationContext?.messageFiles,
-        originalValue: value
-      });
+      if (process.env.TEMP_DOWNLOAD_DETAILED_LOGGING === 'true') {
+        console.log('[MCP File Placeholder] Processing placeholder with context:', {
+          conversationId: conversationContext?.conversationId,
+          userId: user?.id,
+          mcpClientId: conversationContext?.mcpClientId,
+          hasConversationContext: !!conversationContext,
+          messageFilesCount: conversationContext?.messageFiles?.length || 0,
+          messageFiles: conversationContext?.messageFiles,
+          originalValue: value
+        });
+      }
 
       // Dynamic import to avoid circular dependencies
       const MCPFileUrlService = require('~/server/services/Files/MCPFileUrlService');
@@ -120,28 +122,34 @@ async function processUserPlaceholdersWithContext(
         singleUse: true
       });
 
-      console.log('[MCP File Placeholder] File URL generation completed:', {
-        conversationId: conversationContext?.conversationId,
-        messageFilesCount: conversationContext?.messageFiles?.length || 0,
-        fileUrlsLength: fileUrls?.length || 0,
-        hasFileUrls: !!fileUrls
-      });
+      if (process.env.TEMP_DOWNLOAD_DEBUG === 'true') {
+        console.log('[MCP File Placeholder] File URL generation completed:', {
+          conversationId: conversationContext?.conversationId,
+          messageFilesCount: conversationContext?.messageFiles?.length || 0,
+          fileUrlsLength: fileUrls?.length || 0,
+          hasFileUrls: !!fileUrls
+        });
+      }
 
-      console.log('[MCP File Placeholder] Generated file URLs:', fileUrls);
+      if (process.env.TEMP_DOWNLOAD_DETAILED_LOGGING === 'true') {
+        console.log('[MCP File Placeholder] Generated file URLs:', fileUrls);
+      }
       value = value.replace(/\{\{LIBRECHAT_CHAT_URL_FILE\}\}/g, fileUrls);
     } catch (error) {
       // Log error but don't fail the entire process
-      console.error('[MCP File Placeholder] Failed to generate file URLs:', {
-        error: error.message,
-        stack: error.stack,
-        conversationId: conversationContext?.conversationId,
-        userId: user?.id,
-        mcpClientId: conversationContext?.mcpClientId
-      });
+      if (process.env.TEMP_DOWNLOAD_DEBUG === 'true') {
+        console.error('[MCP File Placeholder] Failed to generate file URLs:', {
+          error: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined,
+          conversationId: conversationContext?.conversationId,
+          userId: user?.id,
+          mcpClientId: conversationContext?.mcpClientId
+        });
+      }
       // Replace with empty JSON object on error
       value = value.replace(/\{\{LIBRECHAT_CHAT_URL_FILE\}\}/g, JSON.stringify({
         files: [],
-        error: `Failed to generate file URLs: ${error.message}`
+        error: `Failed to generate file URLs: ${error instanceof Error ? error.message : String(error)}`
       }));
     }
   }
@@ -285,16 +293,18 @@ export async function processMCPEnvWithContext(
   customUserVars?: Record<string, string>,
   conversationContext?: MCPConversationContext,
 ): Promise<MCPOptions> {
-  console.log('[processMCPEnvWithContext - STEP I] Starting processing:', {
-    hasObj: !!obj,
-    hasUser: !!user,
-    userId: user?.id,
-    hasConversationContext: !!conversationContext,
-    conversationId: conversationContext?.conversationId,
-    messageFilesCount: conversationContext?.messageFiles?.length || 0,
-    messageFiles: conversationContext?.messageFiles,
-    objType: 'type' in obj ? obj.type : 'command' in obj ? 'command' : 'unknown'
-  });
+  if (process.env.TEMP_DOWNLOAD_DEBUG === 'true') {
+    console.log('[processMCPEnvWithContext - STEP I] Starting processing:', {
+      hasObj: !!obj,
+      hasUser: !!user,
+      userId: user?.id,
+      hasConversationContext: !!conversationContext,
+      conversationId: conversationContext?.conversationId,
+      messageFilesCount: conversationContext?.messageFiles?.length || 0,
+      messageFiles: conversationContext?.messageFiles,
+      objType: 'type' in obj ? obj.type : 'command' in obj ? 'command' : 'unknown'
+    });
+  }
 
   if (obj === null || obj === undefined) {
     return obj;
@@ -318,23 +328,27 @@ export async function processMCPEnvWithContext(
   // Process headers if they exist (for WebSocket, SSE, StreamableHTTP types)
   // Note: `env` and `headers` are on different branches of the MCPOptions union type.
   if ('headers' in newObj && newObj.headers) {
-    console.log('[processMCPEnvWithContext - STEP II] Processing headers:', {
-      headerCount: Object.keys(newObj.headers).length,
-      headerKeys: Object.keys(newObj.headers),
-      headers: newObj.headers,
-      conversationId: conversationContext?.conversationId,
-      messageFilesCount: conversationContext?.messageFiles?.length || 0
-    });
+    if (process.env.TEMP_DOWNLOAD_DETAILED_LOGGING === 'true') {
+      console.log('[processMCPEnvWithContext - STEP II] Processing headers:', {
+        headerCount: Object.keys(newObj.headers).length,
+        headerKeys: Object.keys(newObj.headers),
+        headers: newObj.headers,
+        conversationId: conversationContext?.conversationId,
+        messageFilesCount: conversationContext?.messageFiles?.length || 0
+      });
+    }
 
     const processedHeaders: Record<string, string> = {};
     for (const [key, originalValue] of Object.entries(newObj.headers)) {
-      console.log('[processMCPEnvWithContext - STEP III] Processing header:', {
-        key,
-        originalValue,
-        hasPlaceholder: originalValue.includes('{{LIBRECHAT_CHAT_URL_FILE}}'),
-        conversationId: conversationContext?.conversationId,
-        messageFiles: conversationContext?.messageFiles
-      });
+      if (process.env.TEMP_DOWNLOAD_DETAILED_LOGGING === 'true') {
+        console.log('[processMCPEnvWithContext - STEP III] Processing header:', {
+          key,
+          originalValue,
+          hasPlaceholder: originalValue.includes('{{LIBRECHAT_CHAT_URL_FILE}}'),
+          conversationId: conversationContext?.conversationId,
+          messageFiles: conversationContext?.messageFiles
+        });
+      }
 
       processedHeaders[key] = await processSingleValueWithContext({
         originalValue,
@@ -343,19 +357,23 @@ export async function processMCPEnvWithContext(
         conversationContext
       });
 
-      console.log('[processMCPEnvWithContext - STEP IV] Header processed:', {
-        key,
-        originalValue,
-        processedValue: processedHeaders[key],
-        valueChanged: originalValue !== processedHeaders[key]
-      });
+      if (process.env.TEMP_DOWNLOAD_DEBUG === 'true') {
+        console.log('[processMCPEnvWithContext - STEP IV] Header processed:', {
+          key,
+          originalValue,
+          processedValue: processedHeaders[key],
+          valueChanged: originalValue !== processedHeaders[key]
+        });
+      }
     }
     newObj.headers = processedHeaders;
 
-    console.log('[processMCPEnvWithContext - STEP V] All headers processed:', {
-      originalHeaders: 'headers' in obj ? obj.headers : {},
-      processedHeaders: newObj.headers
-    });
+    if (process.env.TEMP_DOWNLOAD_DEBUG === 'true') {
+      console.log('[processMCPEnvWithContext - STEP V] All headers processed:', {
+        originalHeaders: 'headers' in obj ? obj.headers : {},
+        processedHeaders: newObj.headers
+      });
+    }
   }
 
   // Process URL if it exists (for WebSocket, SSE, StreamableHTTP types)
@@ -368,13 +386,15 @@ export async function processMCPEnvWithContext(
     });
   }
 
-  console.log('[processMCPEnvWithContext - STEP VI] Processing completed:', {
-    conversationId: conversationContext?.conversationId,
-    messageFilesCount: conversationContext?.messageFiles?.length || 0,
-    hasHeaders: 'headers' in newObj && !!newObj.headers,
-    hasEnv: 'env' in newObj && !!newObj.env,
-    finalHeaders: 'headers' in newObj ? newObj.headers : undefined
-  });
+  if (process.env.TEMP_DOWNLOAD_DEBUG === 'true') {
+    console.log('[processMCPEnvWithContext - STEP VI] Processing completed:', {
+      conversationId: conversationContext?.conversationId,
+      messageFilesCount: conversationContext?.messageFiles?.length || 0,
+      hasHeaders: 'headers' in newObj && !!newObj.headers,
+      hasEnv: 'env' in newObj && !!newObj.env,
+      finalHeaders: 'headers' in newObj ? newObj.headers : undefined
+    });
+  }
 
   return newObj;
 }

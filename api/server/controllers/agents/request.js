@@ -11,13 +11,15 @@ const { saveMessage } = require('~/models');
 const activeFileContextService = require('~/server/services/Files/ActiveFileContextService');
 
 const AgentController = async (req, res, next, initializeClient, addTitle) => {
-  console.log('[AgentController] Controller hit - agents/request');
-  console.log('[AgentController] Request body keys:', Object.keys(req.body));
-  console.log('[AgentController] Files in request:', {
-    hasFiles: !!req.body.files,
-    filesLength: req.body.files?.length || 0,
-    files: req.body.files?.map(f => ({ file_id: f.file_id, filename: f.filename })) || []
-  });
+  if (process.env.TEMP_DOWNLOAD_DEBUG === 'true') {
+    console.log('[AgentController] Controller hit - agents/request');
+    console.log('[AgentController] Request body keys:', Object.keys(req.body));
+    console.log('[AgentController] Files in request:', {
+      hasFiles: !!req.body.files,
+      filesLength: req.body.files?.length || 0,
+      files: req.body.files?.map(f => ({ file_id: f.file_id, filename: f.filename })) || []
+    });
+  }
 
   let {
     text,
@@ -86,12 +88,14 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
 
         // Capture files as soon as conversationId becomes available
         if (!filesCaptured && req.body.files && req.body.files.length > 0 && conversationId) {
-          console.log('[AgentController] ConversationId available, capturing files:', {
-            conversationId,
-            userId: req.user.id,
-            fileCount: req.body.files.length,
-            files: req.body.files.map(f => ({ file_id: f.file_id, filename: f.filename }))
-          });
+          if (process.env.TEMP_DOWNLOAD_DEBUG === 'true') {
+            console.log('[AgentController] ConversationId available, capturing files:', {
+              conversationId,
+              userId: req.user.id,
+              fileCount: req.body.files.length,
+              files: req.body.files.map(f => ({ file_id: f.file_id, filename: f.filename }))
+            });
+          }
 
           activeFileContextService.captureFiles(conversationId, req.user.id, req.body.files, {
             endpoint: endpointOption?.endpoint,

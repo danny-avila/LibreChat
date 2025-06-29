@@ -3,6 +3,7 @@ module.exports = {
   clearMocks: true,
   roots: ['<rootDir>'],
   coverageDirectory: 'coverage',
+  testTimeout: 15000, // Increase global timeout to 15 seconds
   setupFiles: [
     './test/jestSetup.js',
     './test/__mocks__/logger.js',

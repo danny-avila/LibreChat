@@ -1,24 +1,68 @@
-const { jest } = require('@jest/globals');
-const MCPFileUrlService = require('~/server/services/Files/MCPFileUrlService');
+const MCPFileUrlService = require('../../../server/services/Files/MCPFileUrlService');
 
 // Mock dependencies
-jest.mock('~/models', () => ({
-  File: {
-    find: jest.fn(),
-    findOne: jest.fn()
-  }
-}));
+jest.mock('../../../db/models', () => {
+  const createMockQuery = (returnValue = []) => ({
+    lean: jest.fn().mockReturnThis(),
+    sort: jest.fn().mockReturnThis(),
+    limit: jest.fn().mockReturnThis(),
+    exec: jest.fn().mockResolvedValue(returnValue),
+    then: jest.fn((callback) => callback(returnValue))
+  });
 
-jest.mock('~/server/services/Files/UrlGeneratorService', () => ({
+  return {
+    File: {
+      find: jest.fn(() => createMockQuery()),
+      findOne: jest.fn(() => createMockQuery())
+    }
+  };
+});
+
+jest.mock('../../../server/services/Files/UrlGeneratorService', () => ({
   generateDownloadUrl: jest.fn()
 }));
 
-const { File } = require('~/models');
-const UrlGeneratorService = require('~/server/services/Files/UrlGeneratorService');
+const { File } = require('../../../db/models');
+const UrlGeneratorService = require('../../../server/services/Files/UrlGeneratorService');
 
 describe('MCPFileUrlService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+
+    // Setup default File mock behavior
+    const mockFiles = [
+      {
+        _id: 'file-1',
+        filename: 'test1.pdf',
+        filepath: '/uploads/test1.pdf',
+        user: 'user-123'
+      },
+      {
+        _id: 'file-2',
+        filename: 'test2.pdf',
+        filepath: '/uploads/test2.pdf',
+        user: 'user-123'
+      }
+    ];
+
+    File.find.mockImplementation(() => ({
+      lean: jest.fn().mockReturnThis(),
+      sort: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockReturnThis(),
+      exec: jest.fn().mockResolvedValue(mockFiles),
+      then: jest.fn((callback) => callback(mockFiles))
+    }));
+
+    File.findOne.mockImplementation(() => ({
+      lean: jest.fn().mockReturnThis(),
+      sort: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockReturnThis(),
+      exec: jest.fn().mockResolvedValue(mockFiles[0]),
+      then: jest.fn((callback) => callback(mockFiles[0]))
+    }));
+
+    // Setup UrlGeneratorService mock
+    UrlGeneratorService.generateDownloadUrl.mockResolvedValue('https://example.com/download/file-1');
   });
 
   describe('generateCurrentMessageFileUrls', () => {
@@ -233,8 +277,11 @@ describe('MCPFileUrlService', () => {
       expect(parsedResult).toHaveProperty('error', 'Failed to generate file URLs');
     });
 
-    it('should handle database errors', async () => {
-      File.find.mockRejectedValue(new Error('Database error'));
+    it('should handle database errors gracefully', async () => {
+      // Mock a database error scenario
+      File.find.mockImplementation(() => {
+        throw new Error('Database error');
+      });
 
       const options = {
         conversationId: 'conv-123',

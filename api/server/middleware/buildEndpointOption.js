@@ -97,19 +97,23 @@ async function buildEndpointOption(req, res, next) {
           );
 
           if (needsRetrieval) {
-            console.log('[buildEndpointOption] Retrieving full file objects for agents endpoint:', {
-              fileCount: files.length,
-              files: files.map(f => typeof f === 'string' ? f : f.file_id)
-            });
+            if (process.env.TEMP_DOWNLOAD_DEBUG === 'true') {
+              console.log('[buildEndpointOption] Retrieving full file objects for agents endpoint:', {
+                fileCount: files.length,
+                files: files.map(f => typeof f === 'string' ? f : f.file_id)
+              });
+            }
 
             const file_ids = files.map(file => typeof file === 'string' ? file : file.file_id);
             const fullFiles = await getFiles({ file_id: { $in: file_ids }, user: req.user.id });
 
-            console.log('[buildEndpointOption] Retrieved files:', {
-              requestedCount: file_ids.length,
-              retrievedCount: fullFiles.length,
-              retrievedFiles: fullFiles.map(f => ({ file_id: f.file_id, filename: f.filename }))
-            });
+            if (process.env.TEMP_DOWNLOAD_DETAILED_LOGGING === 'true') {
+              console.log('[buildEndpointOption] Retrieved files:', {
+                requestedCount: file_ids.length,
+                retrievedCount: fullFiles.length,
+                retrievedFiles: fullFiles.map(f => ({ file_id: f.file_id, filename: f.filename }))
+              });
+            }
 
             // Replace req.body.files with full file objects
             req.body.files = fullFiles;
