@@ -34,7 +34,7 @@
     "delete-user": "node config/delete-user.js",
     "update-banner": "node config/update-banner.js",
     "delete-banner": "node config/delete-banner.js",
-    "backend": "cross-env NODE_ENV=production node api/server/index.js",
+    "backend": "NODE_ENV=production node api/server/index.js",
     "backend:dev": "cross-env NODE_ENV=development npx nodemon api/server/index.js",
     "backend:stop": "node config/stop-backend.js",
     "build:data-provider": "cd packages/data-provider && npm run build",
