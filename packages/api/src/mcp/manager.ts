@@ -418,56 +418,72 @@ export class MCPManager {
 
         // Check if we need to update configuration for dynamic placeholders
         if (conversationContext?.conversationId) {
-          console.log('[MCP Manager - REUSE] Connection exists but processing config for dynamic placeholders:', {
-            serverName,
-            conversationId: conversationContext.conversationId,
-            messageFilesCount: conversationContext.messageFiles?.length || 0
-          });
+          if (process.env.TEMP_DOWNLOAD_DETAILED_LOGGING === 'true') {
+            console.log('[MCP Manager - REUSE] Connection exists but processing config for dynamic placeholders:', {
+              serverName,
+              conversationId: conversationContext.conversationId,
+              messageFilesCount: conversationContext.messageFiles?.length || 0
+            });
+          }
 
           // Process configuration for dynamic placeholders even with existing connection
           let config = this.mcpConfigs[serverName];
           if (config) {
-            console.log('[MCP Manager - STEP 0] Retrieved server configuration for reuse:', {
-              serverName,
-              hasConfig: !!config,
-              configKeys: Object.keys(config || {}),
-              configType: 'type' in config ? config.type : 'command' in config ? 'command' : 'unknown',
-              hasHeaders: 'headers' in config && !!config.headers,
-              headers: 'headers' in config ? config.headers : undefined
-            });
+            if (process.env.TEMP_DOWNLOAD_DEBUG === 'true') {
+              console.log('[MCP Manager - STEP 0] Retrieved server configuration for reuse:', {
+                serverName,
+                hasConfig: !!config,
+                configKeys: Object.keys(config || {}),
+                configType: 'type' in config ? config.type : 'command' in config ? 'command' : 'unknown',
+                hasHeaders: 'headers' in config && !!config.headers,
+                headers: 'headers' in config ? config.headers : undefined
+              });
+            }
 
-            console.log('[MCP Manager - STEP A] Starting configuration processing for reuse:', {
-              serverName,
-              hasConversationContext: !!conversationContext?.conversationId,
-              conversationId: conversationContext?.conversationId,
-              messageFilesCount: conversationContext?.messageFiles?.length || 0,
-              messageFiles: conversationContext?.messageFiles
-            });
+            if (process.env.TEMP_DOWNLOAD_DETAILED_LOGGING === 'true') {
+              console.log('[MCP Manager - STEP A] Starting configuration processing for reuse:', {
+                serverName,
+                hasConversationContext: !!conversationContext?.conversationId,
+                conversationId: conversationContext?.conversationId,
+                messageFilesCount: conversationContext?.messageFiles?.length || 0,
+                messageFiles: conversationContext?.messageFiles
+              });
+            }
 
-            console.log('[MCP Manager - STEP B] Calling processMCPEnvWithContext for reuse...');
+            if (process.env.TEMP_DOWNLOAD_DEBUG === 'true') {
+              console.log('[MCP Manager - STEP B] Calling processMCPEnvWithContext for reuse...');
+            }
             const processedConfig = { ...(await processMCPEnvWithContext(config, user, customUserVars, conversationContext) ?? {}) };
-            console.log('[MCP Manager - STEP C] processMCPEnvWithContext completed for reuse');
+            if (process.env.TEMP_DOWNLOAD_DEBUG === 'true') {
+              console.log('[MCP Manager - STEP C] processMCPEnvWithContext completed for reuse');
+            }
 
-            console.log('[MCP Manager - STEP D] Configuration processing completed for reuse:', {
-              serverName,
-              userId,
-              hasProcessedConfig: !!processedConfig,
-              processedConfigType: 'type' in processedConfig ? processedConfig.type : 'command' in processedConfig ? 'command' : 'unknown',
-              processedHeaders: 'headers' in processedConfig ? processedConfig.headers : undefined
-            });
+            if (process.env.TEMP_DOWNLOAD_DEBUG === 'true') {
+              console.log('[MCP Manager - STEP D] Configuration processing completed for reuse:', {
+                serverName,
+                userId,
+                hasProcessedConfig: !!processedConfig,
+                processedConfigType: 'type' in processedConfig ? processedConfig.type : 'command' in processedConfig ? 'command' : 'unknown',
+                processedHeaders: 'headers' in processedConfig ? processedConfig.headers : undefined
+              });
+            }
 
             // Update the connection's headers if they exist and have changed
             if ('headers' in processedConfig && processedConfig.headers && 'headers' in config && config.headers) {
               const headersChanged = JSON.stringify(config.headers) !== JSON.stringify(processedConfig.headers);
-              console.log('[MCP Manager - UPDATE] Checking if headers need update:', {
-                serverName,
-                headersChanged,
-                originalHeaders: config.headers,
-                processedHeaders: processedConfig.headers
-              });
+              if (process.env.TEMP_DOWNLOAD_DETAILED_LOGGING === 'true') {
+                console.log('[MCP Manager - UPDATE] Checking if headers need update:', {
+                  serverName,
+                  headersChanged,
+                  originalHeaders: config.headers,
+                  processedHeaders: processedConfig.headers
+                });
+              }
 
               if (headersChanged && connection.client && 'updateHeaders' in connection.client) {
-                console.log('[MCP Manager - UPDATE] Updating connection headers with processed values');
+                if (process.env.TEMP_DOWNLOAD_DEBUG === 'true') {
+                  console.log('[MCP Manager - UPDATE] Updating connection headers with processed values');
+                }
                 // Note: This assumes the connection client supports header updates
                 // If not, we may need to recreate the connection
               }
@@ -499,43 +515,57 @@ export class MCPManager {
       );
     }
 
-    console.log('[MCP Manager - STEP 0] Retrieved server configuration:', {
-      serverName,
-      hasConfig: !!config,
-      configKeys: Object.keys(config || {}),
-      configType: 'type' in config ? config.type : 'command' in config ? 'command' : 'unknown',
-      hasHeaders: 'headers' in config && !!config.headers,
-      headers: 'headers' in config ? config.headers : undefined,
-      hasEnv: 'env' in config && !!config.env,
-      env: 'env' in config ? config.env : undefined
-    });
+    if (process.env.TEMP_DOWNLOAD_DEBUG === 'true') {
+      console.log('[MCP Manager - STEP 0] Retrieved server configuration:', {
+        serverName,
+        hasConfig: !!config,
+        configKeys: Object.keys(config || {}),
+        configType: 'type' in config ? config.type : 'command' in config ? 'command' : 'unknown',
+        hasHeaders: 'headers' in config && !!config.headers,
+        headers: 'headers' in config ? config.headers : undefined,
+        hasEnv: 'env' in config && !!config.env,
+        env: 'env' in config ? config.env : undefined
+      });
+    }
 
-    console.log('[MCP Manager - STEP A] Starting configuration processing:', {
-      serverName,
-      hasConversationContext: !!conversationContext?.conversationId,
-      conversationId: conversationContext?.conversationId,
-      messageFilesCount: conversationContext?.messageFiles?.length || 0,
-      messageFiles: conversationContext?.messageFiles,
-      configType: conversationContext?.conversationId ? 'processMCPEnvWithContext' : 'processMCPEnv'
-    });
+    if (process.env.TEMP_DOWNLOAD_DETAILED_LOGGING === 'true') {
+      console.log('[MCP Manager - STEP A] Starting configuration processing:', {
+        serverName,
+        hasConversationContext: !!conversationContext?.conversationId,
+        conversationId: conversationContext?.conversationId,
+        messageFilesCount: conversationContext?.messageFiles?.length || 0,
+        messageFiles: conversationContext?.messageFiles,
+        configType: conversationContext?.conversationId ? 'processMCPEnvWithContext' : 'processMCPEnv'
+      });
+    }
 
     // Use context-aware processing if conversation context is available, otherwise use standard processing
     if (conversationContext?.conversationId) {
-      console.log('[MCP Manager - STEP B] Calling processMCPEnvWithContext...');
+      if (process.env.TEMP_DOWNLOAD_DEBUG === 'true') {
+        console.log('[MCP Manager - STEP B] Calling processMCPEnvWithContext...');
+      }
       config = { ...(await processMCPEnvWithContext(config, user, customUserVars, conversationContext) ?? {}) };
-      console.log('[MCP Manager - STEP C] processMCPEnvWithContext completed');
+      if (process.env.TEMP_DOWNLOAD_DEBUG === 'true') {
+        console.log('[MCP Manager - STEP C] processMCPEnvWithContext completed');
+      }
     } else {
-      console.log('[MCP Manager - STEP B] Calling processMCPEnv (no conversation context)...');
+      if (process.env.TEMP_DOWNLOAD_DEBUG === 'true') {
+        console.log('[MCP Manager - STEP B] Calling processMCPEnv (no conversation context)...');
+      }
       config = { ...(processMCPEnv(config, user, customUserVars) ?? {}) };
-      console.log('[MCP Manager - STEP C] processMCPEnv completed');
+      if (process.env.TEMP_DOWNLOAD_DEBUG === 'true') {
+        console.log('[MCP Manager - STEP C] processMCPEnv completed');
+      }
     }
-    console.log('[MCP Manager - STEP D] Configuration processing completed, getting connection:', {
-      serverName,
-      userId,
-      hasProcessedConfig: !!config,
-      processedConfigType: 'type' in config ? config.type : 'command' in config ? 'command' : 'unknown',
-      processedHeaders: 'headers' in config ? config.headers : undefined
-    });
+    if (process.env.TEMP_DOWNLOAD_DEBUG === 'true') {
+      console.log('[MCP Manager - STEP D] Configuration processing completed, getting connection:', {
+        serverName,
+        userId,
+        hasProcessedConfig: !!config,
+        processedConfigType: 'type' in config ? config.type : 'command' in config ? 'command' : 'unknown',
+        processedHeaders: 'headers' in config ? config.headers : undefined
+      });
+    }
 
     /** If no in-memory tokens, tokens from persistent storage */
     let tokens: MCPOAuthTokens | null = null;
@@ -939,18 +969,24 @@ export class MCPManager {
     oauthEnd?: () => Promise<void>;
     conversationContext?: MCPConversationContext;
   }): Promise<t.FormattedToolResponse> {
-    console.error('=== MCP MANAGER CALLTOOL ENTRY ===');
-    console.error('TESTING CONSOLE ERROR LOG');
-    console.log('=== MCP MANAGER CALLTOOL ENTRY ===');
-    console.log('[MCP Manager - ENTRY] callTool method called:', {
-      serverName,
-      toolName,
-      userId: user?.id,
-      hasConversationContext: !!conversationContext,
-      conversationId: conversationContext?.conversationId,
-      messageFilesCount: conversationContext?.messageFiles?.length || 0,
-      messageFiles: conversationContext?.messageFiles
-    });
+
+
+    if (process.env.TEMP_DOWNLOAD_DEBUG === 'true') {
+      console.error('=== MCP MANAGER CALLTOOL ENTRY ===');
+      console.error('TESTING CONSOLE ERROR LOG');
+      console.log('=== MCP MANAGER CALLTOOL ENTRY ===');
+    }
+    if (process.env.TEMP_DOWNLOAD_DETAILED_LOGGING === 'true') {
+      console.log('[MCP Manager - ENTRY] callTool method called:', {
+        serverName,
+        toolName,
+        userId: user?.id,
+        hasConversationContext: !!conversationContext,
+        conversationId: conversationContext?.conversationId,
+        messageFilesCount: conversationContext?.messageFiles?.length || 0,
+        messageFiles: conversationContext?.messageFiles
+      });
+    }
 
     /** User-specific connection */
     let connection: MCPConnection | undefined;

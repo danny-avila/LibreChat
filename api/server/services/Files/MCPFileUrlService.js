@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const { logger } = require('~/config');
 const { File } = require('~/db/models');
 const UrlGeneratorService = require('~/server/services/Files/UrlGeneratorService');
@@ -66,26 +67,30 @@ class MCPFileUrlService {
       requestId = `mcp-${Date.now()}`
     } = options;
 
-    console.log('[MCPFileUrlService - STEP α] generateCurrentMessageFileUrls called:', {
-      conversationId,
-      messageFiles,
-      messageFilesCount: messageFiles?.length || 0,
-      userId,
-      mcpClientId,
-      hasMessageFiles: !!(messageFiles && messageFiles.length > 0),
-      timestamp: new Date().toISOString()
-    });
+    if (process.env.TEMP_DOWNLOAD_DEBUG === 'true') {
+      console.log('[MCPFileUrlService - STEP α] generateCurrentMessageFileUrls called:', {
+        conversationId,
+        messageFiles,
+        messageFilesCount: messageFiles?.length || 0,
+        userId,
+        mcpClientId,
+        hasMessageFiles: !!(messageFiles && messageFiles.length > 0),
+        timestamp: new Date().toISOString()
+      });
+    }
 
     try {
       // If we have specific message files, prioritize those
       if (messageFiles && messageFiles.length > 0) {
-        console.log('[MCPFileUrlService - STEP β] Processing specific message files:', {
-          conversationId,
-          userId,
-          mcpClientId,
-          messageFiles,
-          messageFileCount: messageFiles.length
-        });
+        if (process.env.TEMP_DOWNLOAD_DETAILED_LOGGING === 'true') {
+          console.log('[MCPFileUrlService - STEP β] Processing specific message files:', {
+            conversationId,
+            userId,
+            mcpClientId,
+            messageFiles,
+            messageFileCount: messageFiles.length
+          });
+        }
 
         const result = await this._generateSpecificFileUrls({
           fileIds: messageFiles,
@@ -99,12 +104,14 @@ class MCPFileUrlService {
           requestId
         });
 
-        console.log('[MCPFileUrlService - STEP γ] Specific file URLs generated:', {
-          conversationId,
-          messageFileCount: messageFiles.length,
-          resultLength: result?.length || 0,
-          hasResult: !!result
-        });
+        if (process.env.TEMP_DOWNLOAD_DEBUG === 'true') {
+          console.log('[MCPFileUrlService - STEP γ] Specific file URLs generated:', {
+            conversationId,
+            messageFileCount: messageFiles.length,
+            resultLength: result?.length || 0,
+            hasResult: !!result
+          });
+        }
 
         return result;
       }
@@ -139,19 +146,21 @@ class MCPFileUrlService {
 
       return JSON.stringify({
         files: [],
-        message: 'No conversation context available',
+        message: 'No files available in current context',
         generatedAt: new Date().toISOString()
       });
 
     } catch (error) {
-      console.error('[MCPFileUrlService] Error in generateCurrentMessageFileUrls:', {
-        conversationId,
-        messageFiles,
-        userId,
-        mcpClientId,
-        error: error.message,
-        stack: error.stack
-      });
+      if (process.env.TEMP_DOWNLOAD_DEBUG === 'true') {
+        console.error('[MCPFileUrlService] Error in generateCurrentMessageFileUrls:', {
+          conversationId,
+          messageFiles,
+          userId,
+          mcpClientId,
+          error: error.message,
+          stack: error.stack
+        });
+      }
 
       logger.error('Failed to generate current message file URLs', {
         conversationId,
@@ -163,6 +172,7 @@ class MCPFileUrlService {
       });
 
       return JSON.stringify({
+        conversationId,
         files: [],
         error: `Failed to generate file URLs: ${error.message}`,
         generatedAt: new Date().toISOString()
@@ -353,7 +363,10 @@ class MCPFileUrlService {
           userId,
           mcpClientId
         });
-        return JSON.stringify({ files: [] });
+        return JSON.stringify({
+          conversationId,
+          files: []
+        });
       }
 
       // Generate URLs for each file
@@ -430,8 +443,9 @@ class MCPFileUrlService {
       });
       
       // Return empty result on error to prevent MCP server failures
-      return JSON.stringify({ 
-        files: [], 
+      return JSON.stringify({
+        conversationId,
+        files: [],
         error: 'Failed to generate file URLs',
         generatedAt: new Date().toISOString()
       });
@@ -483,14 +497,16 @@ class MCPFileUrlService {
     } = options;
 
     try {
-      console.log('[MCPFileUrlService - STEP δ] Generating URLs for specific files:', {
-        fileIds,
-        fileIdsCount: fileIds?.length || 0,
-        conversationId,
-        userId,
-        mcpClientId,
-        timestamp: new Date().toISOString()
-      });
+      if (process.env.TEMP_DOWNLOAD_DEBUG === 'true') {
+        console.log('[MCPFileUrlService - STEP δ] Generating URLs for specific files:', {
+          fileIds,
+          fileIdsCount: fileIds?.length || 0,
+          conversationId,
+          userId,
+          mcpClientId,
+          timestamp: new Date().toISOString()
+        });
+      }
 
       // Try to get files from active context first
       const activeContext = activeFileContextService.getActiveFiles(conversationId, userId);
@@ -502,12 +518,14 @@ class MCPFileUrlService {
         files = activeContext.files.filter(file => fileIds.includes(file.file_id));
         source = 'active_context';
 
-        console.log('[MCPFileUrlService] Filtered files from active context:', {
-          requestedFileIds: fileIds,
-          availableFiles: activeContext.files.map(f => ({ file_id: f.file_id, filename: f.filename })),
-          filteredFiles: files.map(f => ({ file_id: f.file_id, filename: f.filename })),
-          filteredCount: files.length
-        });
+        if (process.env.TEMP_DOWNLOAD_DETAILED_LOGGING === 'true') {
+          console.log('[MCPFileUrlService] Filtered files from active context:', {
+            requestedFileIds: fileIds,
+            availableFiles: activeContext.files.map(f => ({ file_id: f.file_id, filename: f.filename })),
+            filteredFiles: files.map(f => ({ file_id: f.file_id, filename: f.filename })),
+            filteredCount: files.length
+          });
+        }
       }
 
       // If we didn't find all files in active context, query database for missing ones
@@ -515,37 +533,53 @@ class MCPFileUrlService {
         const foundFileIds = files.map(f => f.file_id);
         const missingFileIds = fileIds.filter(id => !foundFileIds.includes(id));
 
-        console.log('[MCPFileUrlService] Querying database for missing files:', {
-          missingFileIds,
-          foundInActiveContext: foundFileIds.length
-        });
+        if (process.env.TEMP_DOWNLOAD_DEBUG === 'true') {
+          console.log('[MCPFileUrlService] Querying database for missing files:', {
+            missingFileIds,
+            foundInActiveContext: foundFileIds.length
+          });
+        }
 
-        const dbFiles = await File.find({
-          file_id: { $in: missingFileIds },
-          user: userId,
-          downloadEnabled: { $ne: false }
-        }).lean();
+        let dbFiles;
+        try {
+          dbFiles = await File.find({
+            file_id: { $in: missingFileIds },
+            user: userId,
+            downloadEnabled: { $ne: false }
+          }).lean();
+        } catch (error) {
+          if (error.name === 'CastError') {
+            dbFiles = []; // No files found due to invalid user ID format
+          } else {
+            throw error;
+          }
+        }
 
         if (dbFiles.length > 0) {
           files = files.concat(dbFiles);
           source = files.length === fileIds.length ? 'mixed_sources' : 'partial_sources';
 
-          console.log('[MCPFileUrlService] Added files from database:', {
-            dbFileCount: dbFiles.length,
-            totalFileCount: files.length,
-            requestedCount: fileIds.length
-          });
+          if (process.env.TEMP_DOWNLOAD_DEBUG === 'true') {
+            console.log('[MCPFileUrlService] Added files from database:', {
+              dbFileCount: dbFiles.length,
+              totalFileCount: files.length,
+              requestedCount: fileIds.length
+            });
+          }
         }
       }
 
       if (files.length === 0) {
-        console.log('[MCPFileUrlService] No files found for specific file IDs:', {
-          fileIds,
-          conversationId,
-          userId
-        });
+        if (process.env.TEMP_DOWNLOAD_DEBUG === 'true') {
+          console.log('[MCPFileUrlService] No files found for specific file IDs:', {
+            fileIds,
+            conversationId,
+            userId
+          });
+        }
 
         return JSON.stringify({
+          conversationId,
           files: [],
           message: 'No accessible files found for the specified file IDs',
           generatedAt: new Date().toISOString(),
@@ -622,14 +656,16 @@ class MCPFileUrlService {
         singleUse
       };
 
-      console.log('[MCPFileUrlService] Generated specific file URLs:', {
-        conversationId,
-        userId,
-        mcpClientId,
-        requestedFileCount: fileIds.length,
-        generatedUrlCount: validFileUrls.length,
-        source: source
-      });
+      if (process.env.TEMP_DOWNLOAD_DEBUG === 'true') {
+        console.log('[MCPFileUrlService] Generated specific file URLs:', {
+          conversationId,
+          userId,
+          mcpClientId,
+          requestedFileCount: fileIds.length,
+          generatedUrlCount: validFileUrls.length,
+          source: source
+        });
+      }
 
       logger.info('Generated specific file URLs for MCP access', {
         conversationId,
@@ -643,14 +679,16 @@ class MCPFileUrlService {
       return JSON.stringify(result);
 
     } catch (error) {
-      console.error('[MCPFileUrlService] Error in _generateSpecificFileUrls:', {
-        fileIds,
-        conversationId,
-        userId,
-        mcpClientId,
-        error: error.message,
-        stack: error.stack
-      });
+      if (process.env.TEMP_DOWNLOAD_DEBUG === 'true') {
+        console.error('[MCPFileUrlService] Error in _generateSpecificFileUrls:', {
+          fileIds,
+          conversationId,
+          userId,
+          mcpClientId,
+          error: error.message,
+          stack: error.stack
+        });
+      }
 
       logger.error('Failed to generate specific file URLs', {
         fileIds,
@@ -687,12 +725,14 @@ class MCPFileUrlService {
     } = options;
 
     try {
-      console.log('[MCPFileUrlService] Querying for conversation files:', {
-        conversationId,
-        userId,
-        mcpClientId,
-        timestamp: new Date().toISOString()
-      });
+      if (process.env.TEMP_DOWNLOAD_DEBUG === 'true') {
+        console.log('[MCPFileUrlService] Querying for conversation files:', {
+          conversationId,
+          userId,
+          mcpClientId,
+          timestamp: new Date().toISOString()
+        });
+      }
 
       // Try to get files from active context first (real-time approach)
       const activeContext = activeFileContextService.getActiveFiles(conversationId, userId);
@@ -700,18 +740,22 @@ class MCPFileUrlService {
       // Also get service stats for debugging
       const serviceStats = activeFileContextService.getStats();
 
-      console.log('[MCPFileUrlService] Active file context:', {
-        conversationId,
-        userId,
-        hasActiveContext: !!activeContext,
-        activeFileCount: activeContext?.files?.length || 0,
-        capturedAt: activeContext?.capturedAt
-      });
+      if (process.env.TEMP_DOWNLOAD_DETAILED_LOGGING === 'true') {
+        console.log('[MCPFileUrlService] Active file context:', {
+          conversationId,
+          userId,
+          hasActiveContext: !!activeContext,
+          activeFileCount: activeContext?.files?.length || 0,
+          capturedAt: activeContext?.capturedAt
+        });
+      }
 
-      console.log('[MCPFileUrlService] Service stats:', {
-        totalActiveContexts: serviceStats.activeContexts,
-        allContexts: serviceStats.contexts
-      });
+      if (process.env.TEMP_DOWNLOAD_DETAILED_LOGGING === 'true') {
+        console.log('[MCPFileUrlService] Service stats:', {
+          totalActiveContexts: serviceStats.activeContexts,
+          allContexts: serviceStats.contexts
+        });
+      }
 
       let files = [];
       let source = 'no_files';
@@ -721,15 +765,19 @@ class MCPFileUrlService {
         files = activeContext.files;
         source = 'active_context';
 
-        console.log('[MCPFileUrlService] Using files from active context:', {
-          conversationId,
-          userId,
-          fileCount: files.length,
-          files: files.map(f => ({ file_id: f.file_id, filename: f.filename }))
-        });
+        if (process.env.TEMP_DOWNLOAD_DEBUG === 'true') {
+          console.log('[MCPFileUrlService] Using files from active context:', {
+            conversationId,
+            userId,
+            fileCount: files.length,
+            files: files.map(f => ({ file_id: f.file_id, filename: f.filename }))
+          });
+        }
       } else {
         // Try to get most recent active files for this user (conversation ID mismatch fallback)
-        console.log('[MCPFileUrlService] No active context for conversation, trying most recent active files...');
+        if (process.env.TEMP_DOWNLOAD_DEBUG === 'true') {
+          console.log('[MCPFileUrlService] No active context for conversation, trying most recent active files...');
+        }
 
         const recentActiveContext = activeFileContextService.getMostRecentActiveFiles(userId);
 
@@ -737,52 +785,70 @@ class MCPFileUrlService {
           files = recentActiveContext.files;
           source = 'recent_active_context';
 
-          console.log('[MCPFileUrlService] Using files from recent active context:', {
-            requestedConversationId: conversationId,
-            actualConversationId: recentActiveContext.conversationId,
-            userId,
-            fileCount: files.length,
-            files: files.map(f => ({ file_id: f.file_id, filename: f.filename }))
-          });
+          if (process.env.TEMP_DOWNLOAD_DEBUG === 'true') {
+            console.log('[MCPFileUrlService] Using files from recent active context:', {
+              requestedConversationId: conversationId,
+              actualConversationId: recentActiveContext.conversationId,
+              userId,
+              fileCount: files.length,
+              files: files.map(f => ({ file_id: f.file_id, filename: f.filename }))
+            });
+          }
         } else {
           // Final fallback to recent user files from database
-          console.log('[MCPFileUrlService] No recent active context, falling back to database files...');
+          if (process.env.TEMP_DOWNLOAD_DEBUG === 'true') {
+            console.log('[MCPFileUrlService] No recent active context, falling back to database files...');
+          }
 
-          files = await File.find({
-            user: userId,
-            $or: [
-              { downloadEnabled: { $ne: false } },
-              { downloadEnabled: { $exists: false } }
-            ]
-          })
-          .sort({ createdAt: -1 })
-          .limit(5)
-          .select('file_id filename type bytes filepath source createdAt updatedAt');
+          try {
+            files = await File.find({
+              user: userId,
+              $or: [
+                { downloadEnabled: { $ne: false } },
+                { downloadEnabled: { $exists: false } }
+              ]
+            })
+            .sort({ createdAt: -1 })
+            .limit(5)
+            .select('file_id filename type bytes filepath source createdAt updatedAt');
+          } catch (error) {
+            if (error.name === 'CastError') {
+              files = []; // No files found due to invalid user ID format
+            } else {
+              throw error;
+            }
+          }
 
           source = 'recent_user_files';
 
-          console.log('[MCPFileUrlService] Database fallback found files:', {
-            userId,
-            fileCount: files?.length || 0,
-            files: files?.map(f => ({ file_id: f.file_id, filename: f.filename, createdAt: f.createdAt })) || []
-          });
+          if (process.env.TEMP_DOWNLOAD_DEBUG === 'true') {
+            console.log('[MCPFileUrlService] Database fallback found files:', {
+              userId,
+              fileCount: files?.length || 0,
+              files: files?.map(f => ({ file_id: f.file_id, filename: f.filename, createdAt: f.createdAt })) || []
+            });
+          }
         }
       }
 
 
 
-      console.log('[MCPFileUrlService] Found files with query criteria:', {
-        conversationId,
-        userId,
-        fileCount: files?.length || 0,
-        files: files?.map(f => ({ file_id: f.file_id, filename: f.filename })) || []
-      });
+      if (process.env.TEMP_DOWNLOAD_DEBUG === 'true') {
+        console.log('[MCPFileUrlService] Found files with query criteria:', {
+          conversationId,
+          userId,
+          fileCount: files?.length || 0,
+          files: files?.map(f => ({ file_id: f.file_id, filename: f.filename })) || []
+        });
+      }
 
       if (!files || files.length === 0) {
         return JSON.stringify({
+          conversationId,
           files: [],
           message: 'No recent files found for user',
-          generatedAt: new Date().toISOString()
+          generatedAt: new Date().toISOString(),
+          source: 'recent_conversation'
         });
       }
 
@@ -856,13 +922,15 @@ class MCPFileUrlService {
       return JSON.stringify(result);
 
     } catch (error) {
-      console.error('[MCPFileUrlService] Error in _generateRecentConversationFileUrls:', {
-        conversationId,
-        userId,
-        mcpClientId,
-        error: error.message,
-        stack: error.stack
-      });
+      if (process.env.TEMP_DOWNLOAD_DEBUG === 'true') {
+        console.error('[MCPFileUrlService] Error in _generateRecentConversationFileUrls:', {
+          conversationId,
+          userId,
+          mcpClientId,
+          error: error.message,
+          stack: error.stack
+        });
+      }
 
       logger.error('Failed to generate recent conversation file URLs', {
         conversationId,
@@ -893,6 +961,14 @@ class MCPFileUrlService {
 
       return files;
     } catch (error) {
+      if (error.name === 'CastError') {
+        logger.warn('Invalid user ID format for conversation files', {
+          conversationId,
+          userId,
+          error: error.message
+        });
+        return []; // Return empty array for invalid user ID format
+      }
       logger.error('Failed to fetch conversation files', {
         conversationId,
         userId,
@@ -916,6 +992,8 @@ class MCPFileUrlService {
       throw new Error('Valid user ID is required');
     }
 
+
+
     if (!mcpClientId || typeof mcpClientId !== 'string') {
       throw new Error('Valid MCP client ID is required');
     }
@@ -938,6 +1016,8 @@ class MCPFileUrlService {
     if (!userId || typeof userId !== 'string') {
       throw new Error('Valid user ID is required');
     }
+
+
 
     if (!mcpClientId || typeof mcpClientId !== 'string') {
       throw new Error('Valid MCP client ID is required');

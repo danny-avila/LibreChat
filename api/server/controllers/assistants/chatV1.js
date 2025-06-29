@@ -76,11 +76,13 @@ const chatV1 = async (req, res) => {
   });
 
   if (files.length > 0 && convoId) {
-    console.log('[ChatV1] Capturing files for MCP access:', {
-      convoId,
-      userId: req.user.id,
-      fileCount: files.length
-    });
+    if (process.env.TEMP_DOWNLOAD_DEBUG === 'true') {
+      console.log('[ChatV1] Capturing files for MCP access:', {
+        convoId,
+        userId: req.user.id,
+        fileCount: files.length
+      });
+    }
 
     activeFileContextService.captureFiles(convoId, req.user.id, files, {
       endpoint,

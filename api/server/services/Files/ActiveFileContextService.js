@@ -80,15 +80,17 @@ class ActiveFileContextService {
 
     this.activeContexts.set(conversationId, context);
 
-    console.log('[ActiveFileContextService] Captured files for conversation:', {
-      conversationId,
-      userId,
-      totalFileCount: allFiles.length,
-      newFileCount: files.length,
-      existingFileCount: existingFiles.length,
-      allFiles: allFiles.map(f => ({ file_id: f.file_id, filename: f.filename })),
-      newFiles: files.map(f => ({ file_id: f.file_id, filename: f.filename }))
-    });
+    if (process.env.TEMP_DOWNLOAD_DEBUG === 'true') {
+      console.log('[ActiveFileContextService] Captured files for conversation:', {
+        conversationId,
+        userId,
+        totalFileCount: allFiles.length,
+        newFileCount: files.length,
+        existingFileCount: existingFiles.length,
+        allFiles: allFiles.map(f => ({ file_id: f.file_id, filename: f.filename })),
+        newFiles: files.map(f => ({ file_id: f.file_id, filename: f.filename }))
+      });
+    }
 
     logger.info('[ActiveFileContextService] Captured files for conversation:', {
       conversationId,

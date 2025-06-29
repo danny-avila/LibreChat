@@ -174,13 +174,15 @@ async function createMCPTool({ req, res, toolKey, provider: _provider }) {
       // Extract conversation context for file URL generation
       const conversationId = config?.metadata?.thread_id || config?.metadata?.conversationId;
 
-      console.log('[MCP Service - STEP 1] Starting conversation context extraction:', {
-        conversationId,
-        userId: config?.configurable?.user?.id,
-        serverName,
-        toolName,
-        hasConversationId: !!conversationId
-      });
+      if (process.env.TEMP_DOWNLOAD_DEBUG === 'true') {
+        console.log('[MCP Service - STEP 1] Starting conversation context extraction:', {
+          conversationId,
+          userId: config?.configurable?.user?.id,
+          serverName,
+          toolName,
+          hasConversationId: !!conversationId
+        });
+      }
 
       // Get current message files from the request (not all conversation files)
       // This ensures we only include files from the current message
@@ -190,46 +192,60 @@ async function createMCPTool({ req, res, toolKey, provider: _provider }) {
       const requestFiles = req?.body?.files || [];
       if (requestFiles.length > 0) {
         messageFiles = requestFiles.map(file => file.file_id).filter(Boolean);
-        console.log('[MCP Service - STEP 2] Using files from current request:', {
-          conversationId,
-          userId: config?.configurable?.user?.id,
-          fileCount: messageFiles.length,
-          messageFiles,
-          requestFiles: requestFiles.map(f => ({ file_id: f.file_id, filename: f.filename })),
-          extractedFrom: 'currentRequest'
-        });
-      } else if (conversationId) {
-        // Fallback: Get files from active context if no request files
-        console.log('[MCP Service - STEP 2] No files in current request, checking active context...');
-        const activeFileContextService = require('./Files/ActiveFileContextService');
-
-        console.log('[MCP Service - STEP 3] Calling getActiveFiles...');
-        const activeContext = activeFileContextService.getActiveFiles(conversationId, config?.configurable?.user?.id);
-
-        console.log('[MCP Service - STEP 4] ActiveFileContextService response:', {
-          hasActiveContext: !!activeContext,
-          fileCount: activeContext?.files?.length || 0,
-          files: activeContext?.files?.map(f => ({ file_id: f.file_id, filename: f.filename })) || []
-        });
-
-        if (activeContext && activeContext.files) {
-          messageFiles = activeContext.files.map(file => file.file_id).filter(Boolean);
-          console.log('[MCP Service - STEP 5] Extracted messageFiles from active context (fallback):', {
+        if (process.env.TEMP_DOWNLOAD_DETAILED_LOGGING === 'true') {
+          console.log('[MCP Service - STEP 2] Using files from current request:', {
             conversationId,
             userId: config?.configurable?.user?.id,
             fileCount: messageFiles.length,
             messageFiles,
-            extractedFrom: 'activeContextFallback'
-          });
-        } else {
-          console.log('[MCP Service - STEP 5] No files found in active context:', {
-            conversationId,
-            userId: config?.configurable?.user?.id,
-            activeContext: !!activeContext
+            requestFiles: requestFiles.map(f => ({ file_id: f.file_id, filename: f.filename })),
+            extractedFrom: 'currentRequest'
           });
         }
+      } else if (conversationId) {
+        // Fallback: Get files from active context if no request files
+        if (process.env.TEMP_DOWNLOAD_DEBUG === 'true') {
+          console.log('[MCP Service - STEP 2] No files in current request, checking active context...');
+        }
+        const activeFileContextService = require('./Files/ActiveFileContextService');
+
+        if (process.env.TEMP_DOWNLOAD_DEBUG === 'true') {
+          console.log('[MCP Service - STEP 3] Calling getActiveFiles...');
+        }
+        const activeContext = activeFileContextService.getActiveFiles(conversationId, config?.configurable?.user?.id);
+
+        if (process.env.TEMP_DOWNLOAD_DETAILED_LOGGING === 'true') {
+          console.log('[MCP Service - STEP 4] ActiveFileContextService response:', {
+            hasActiveContext: !!activeContext,
+            fileCount: activeContext?.files?.length || 0,
+            files: activeContext?.files?.map(f => ({ file_id: f.file_id, filename: f.filename })) || []
+          });
+        }
+
+        if (activeContext && activeContext.files) {
+          messageFiles = activeContext.files.map(file => file.file_id).filter(Boolean);
+          if (process.env.TEMP_DOWNLOAD_DEBUG === 'true') {
+            console.log('[MCP Service - STEP 5] Extracted messageFiles from active context (fallback):', {
+              conversationId,
+              userId: config?.configurable?.user?.id,
+              fileCount: messageFiles.length,
+              messageFiles,
+              extractedFrom: 'activeContextFallback'
+            });
+          }
+        } else {
+          if (process.env.TEMP_DOWNLOAD_DEBUG === 'true') {
+            console.log('[MCP Service - STEP 5] No files found in active context:', {
+              conversationId,
+              userId: config?.configurable?.user?.id,
+              activeContext: !!activeContext
+            });
+          }
+        }
       } else {
-        console.log('[MCP Service - STEP 2] No conversationId available and no request files, skipping file extraction');
+        if (process.env.TEMP_DOWNLOAD_DEBUG === 'true') {
+          console.log('[MCP Service - STEP 2] No conversationId available and no request files, skipping file extraction');
+        }
       }
 
       const conversationContext = {
@@ -241,40 +257,46 @@ async function createMCPTool({ req, res, toolKey, provider: _provider }) {
         requestId: req.headers?.['x-request-id'] || `mcp-${Date.now()}`
       };
 
-      console.log('[MCP Service - STEP 6] Created conversation context:', {
-        conversationId,
-        messageFiles,
-        messageFilesCount: messageFiles.length,
-        mcpClientId: serverName,
-        hasClientIP: !!conversationContext.clientIP,
-        hasUserAgent: !!conversationContext.userAgent,
-        requestId: conversationContext.requestId
-      });
+      if (process.env.TEMP_DOWNLOAD_DEBUG === 'true') {
+        console.log('[MCP Service - STEP 6] Created conversation context:', {
+          conversationId,
+          messageFiles,
+          messageFilesCount: messageFiles.length,
+          mcpClientId: serverName,
+          hasClientIP: !!conversationContext.clientIP,
+          hasUserAgent: !!conversationContext.userAgent,
+          requestId: conversationContext.requestId
+        });
+      }
 
-      console.log('[MCP Service - STEP 7] Full context for tool execution:', {
-        conversationId,
-        serverName,
-        toolName,
-        userId: config?.configurable?.user?.id,
-        hasConversationContext: !!conversationId,
-        messageFilesCount: messageFiles.length,
-        messageFiles,
-        configMetadata: config?.metadata,
-        extractedFrom: {
-          thread_id: config?.metadata?.thread_id,
-          conversationId: config?.metadata?.conversationId,
-          metadata_keys: Object.keys(config?.metadata || {})
-        }
-      });
+      if (process.env.TEMP_DOWNLOAD_DETAILED_LOGGING === 'true') {
+        console.log('[MCP Service - STEP 7] Full context for tool execution:', {
+          conversationId,
+          serverName,
+          toolName,
+          userId: config?.configurable?.user?.id,
+          hasConversationContext: !!conversationId,
+          messageFilesCount: messageFiles.length,
+          messageFiles,
+          configMetadata: config?.metadata,
+          extractedFrom: {
+            thread_id: config?.metadata?.thread_id,
+            conversationId: config?.metadata?.conversationId,
+            metadata_keys: Object.keys(config?.metadata || {})
+          }
+        });
+      }
 
-      console.log('[MCP Service - STEP 8] Calling mcpManager.callTool with context:', {
-        serverName,
-        toolName,
-        hasConversationContext: !!conversationContext,
-        conversationContextKeys: Object.keys(conversationContext),
-        messageFilesInContext: conversationContext.messageFiles,
-        messageFilesCount: conversationContext.messageFiles?.length || 0
-      });
+      if (process.env.TEMP_DOWNLOAD_DEBUG === 'true') {
+        console.log('[MCP Service - STEP 8] Calling mcpManager.callTool with context:', {
+          serverName,
+          toolName,
+          hasConversationContext: !!conversationContext,
+          conversationContextKeys: Object.keys(conversationContext),
+          messageFilesInContext: conversationContext.messageFiles,
+          messageFilesCount: conversationContext.messageFiles?.length || 0
+        });
+      }
 
       const result = await mcpManager.callTool({
         serverName,
@@ -297,12 +319,14 @@ async function createMCPTool({ req, res, toolKey, provider: _provider }) {
         oauthEnd,
       });
 
-      console.log('[MCP Service - STEP 9] mcpManager.callTool completed:', {
-        serverName,
-        toolName,
-        hasResult: !!result,
-        resultType: typeof result
-      });
+      if (process.env.TEMP_DOWNLOAD_DEBUG === 'true') {
+        console.log('[MCP Service - STEP 9] mcpManager.callTool completed:', {
+          serverName,
+          toolName,
+          hasResult: !!result,
+          resultType: typeof result
+        });
+      }
 
       if (isAssistantsEndpoint(provider) && Array.isArray(result)) {
         return result[0];
