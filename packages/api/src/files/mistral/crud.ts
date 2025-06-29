@@ -439,15 +439,20 @@ async function loadGoogleAuthConfig(): Promise<{
   serviceAccount: GoogleServiceAccount;
   accessToken: string;
 }> {
-  /** Path from current file to project root auth.json */
-  const authJsonPath = path.join(__dirname, '..', '..', '..', 'api', 'data', 'auth.json');
+  /** Path from environment variable or default location */
+  const serviceKeyPath =
+    process.env.GOOGLE_SERVICE_KEY_FILE_PATH ||
+    path.join(__dirname, '..', '..', '..', 'api', 'data', 'auth.json');
+  const absolutePath = path.isAbsolute(serviceKeyPath)
+    ? serviceKeyPath
+    : path.resolve(serviceKeyPath);
 
   let serviceKey: GoogleServiceAccount;
   try {
-    const authJsonContent = fs.readFileSync(authJsonPath, 'utf8');
+    const authJsonContent = fs.readFileSync(absolutePath, 'utf8');
     serviceKey = JSON.parse(authJsonContent) as GoogleServiceAccount;
   } catch {
-    throw new Error(`Google service account not found at ${authJsonPath}`);
+    throw new Error(`Google service account not found at ${absolutePath}`);
   }
 
   if (!serviceKey.client_email || !serviceKey.private_key || !serviceKey.project_id) {
