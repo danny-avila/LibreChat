@@ -47,7 +47,7 @@ export default defineConfig(({ command }) => ({
           'manifest.webmanifest',
         ],
         globIgnores: ['images/**/*', '**/*.map', 'index.html'],
-        maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
+        maximumFileSizeToCacheInBytes: 8 * 1024 * 1024,
         navigateFallbackDenylist: [/^\/oauth/, /^\/api/],
       },
       includeAssets: [],
@@ -171,6 +171,9 @@ export default defineConfig(({ command }) => ({
             }
             if (id.includes('heic-to')) {
               return 'heic-converter';
+            }
+            if (id.includes('mermaid')) {
+              return 'mermaid';
             }
 
             // Existing chunks
