@@ -6,6 +6,11 @@ services:
     #   target: api-build
     image: ghcr.io/edo-andres/librechat-avi-api:latest
     #container_name: LibreChat-API
+    expose:
+      - 3080
+    depends_on:
+      - mongodb
+      - rag_api
     restart: always
     networks:
       - dokploy-network
@@ -28,30 +33,20 @@ services:
       - ./images:/app/client/public/images
       - ./uploads:/app/uploads
       - ./logs:/app/api/logs
-    depends_on:
-      - mongodb
-      - rag_api
 
   client:
     image: nginx:1.27.0-alpine
     #container_name: LibreChat-NGINX
+    expose:
+      - 80
+      - 443
+    depends_on:
+      - api
     restart: always
-    ports:
-      - 80  # Solo puerto interno - Traefik maneja el externo
     networks:
       - dokploy-network
     volumes:
       - ./client/nginx.conf:/etc/nginx/conf.d/default.conf
-    depends_on:
-      - api
-    labels:
-      # Labels de Traefik para HTTPS automático con Let's Encrypt
-      - "traefik.enable=true"
-      - "traefik.http.routers.librechat-avi.rule=Host(`avi.granade.io`)"
-      - "traefik.http.routers.librechat-avi.entrypoints=websecure"
-      - "traefik.http.routers.librechat-avi.tls.certResolver=letsencrypt"
-      - "traefik.http.services.librechat-avi.loadbalancer.server.port=80"
-
   mongodb:
     #container_name: chat-mongodb
     # ports:  # Uncomment this to access mongodb from outside docker, not safe in deployment
@@ -63,7 +58,6 @@ services:
     volumes:
       - ./data-node:/data/db
     command: mongod --noauth
-
   meilisearch:
     #container_name: chat-meilisearch
     image: getmeili/meilisearch:v1.12.3
@@ -79,7 +73,6 @@ services:
       - MEILI_NO_ANALYTICS=true
     volumes:
       - ./meili_data_v1.12:/meili_data
-
   vectordb:
     image: ankane/pgvector:latest
     environment:
@@ -91,7 +84,6 @@ services:
       - dokploy-network
     volumes:
       - pgdata2:/var/lib/postgresql/data
-
   rag_api:
     image: ghcr.io/danny-avila/librechat-rag-api-dev-lite:latest
     environment:
