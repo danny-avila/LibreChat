@@ -11,13 +11,12 @@ const {
   EModelEndpoint,
   EToolResources,
   mergeFileConfig,
-  hostImageIdSuffix,
   AgentCapabilities,
   checkOpenAIStorage,
   removeNullishValues,
-  hostImageNamePrefix,
   isAssistantsEndpoint,
 } = require('librechat-data-provider');
+const { sanitizeFilename } = require('@librechat/api');
 const { EnvVar } = require('@librechat/agents');
 const {
   convertImage,
@@ -34,6 +33,29 @@ const { LB_QueueAsyncCall } = require('~/server/utils/queue');
 const { getStrategyFunctions } = require('./strategies');
 const { determineFileType } = require('~/server/utils');
 const { logger } = require('~/config');
+
+/**
+ * Creates a modular file upload wrapper that ensures filename sanitization
+ * across all storage strategies. This prevents storage-specific implementations
+ * from having to handle sanitization individually.
+ *
+ * @param {Function} uploadFunction - The storage strategy's upload function
+ * @returns {Function} - Wrapped upload function with sanitization
+ */
+const createSanitizedUploadWrapper = (uploadFunction) => {
+  return async (params) => {
+    const { req, file, file_id, ...restParams } = params;
+
+    // Create a modified file object with sanitized original name
+    // This ensures consistent filename handling across all storage strategies
+    const sanitizedFile = {
+      ...file,
+      originalname: sanitizeFilename(file.originalname),
+    };
+
+    return uploadFunction({ req, file: sanitizedFile, file_id, ...restParams });
+  };
+};
 
 /**
  *
@@ -391,9 +413,10 @@ const processFileUpload = async ({ req, res, metadata }) => {
   const isAssistantUpload = isAssistantsEndpoint(metadata.endpoint);
   const assistantSource =
     metadata.endpoint === EModelEndpoint.azureAssistants ? FileSources.azure : FileSources.openai;
-  const source = isAssistantUpload ? assistantSource : FileSources.vectordb;
+  // Use the configured file strategy for regular file uploads (not vectordb)
+  const source = isAssistantUpload ? assistantSource : req.app.locals.fileStrategy;
   const { handleFileUpload } = getStrategyFunctions(source);
-  const { file_id, temp_file_id } = metadata;
+  const { file_id, temp_file_id = null } = metadata;
 
   /** @type {OpenAI | undefined} */
   let openai;
@@ -402,6 +425,7 @@ const processFileUpload = async ({ req, res, metadata }) => {
   }
 
   const { file } = req;
+  const sanitizedUploadFn = createSanitizedUploadWrapper(handleFileUpload);
   const {
     id,
     bytes,
@@ -410,7 +434,7 @@ const processFileUpload = async ({ req, res, metadata }) => {
     embedded,
     height,
     width,
-  } = await handleFileUpload({
+  } = await sanitizedUploadFn({
     req,
     file,
     file_id,
@@ -449,7 +473,7 @@ const processFileUpload = async ({ req, res, metadata }) => {
       temp_file_id,
       bytes,
       filepath,
-      filename: filename ?? file.originalname,
+      filename: filename ?? sanitizeFilename(file.originalname),
       context: isAssistantUpload ? FileContext.assistants : FileContext.message_attachment,
       model: isAssistantUpload ? req.body.model : undefined,
       type: file.mimetype,
@@ -476,7 +500,7 @@ const processFileUpload = async ({ req, res, metadata }) => {
  */
 const processAgentFileUpload = async ({ req, res, metadata }) => {
   const { file } = req;
-  const { agent_id, tool_resource } = metadata;
+  const { agent_id, tool_resource, file_id, temp_file_id = null } = metadata;
   if (agent_id && !tool_resource) {
     throw new Error('No tool resource provided for agent file upload');
   }
@@ -520,6 +544,7 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
     if (!isFileSearchEnabled) {
       throw new Error('File search is not enabled for Agents');
     }
+    // Note: File search processing continues to dual storage logic below
   } else if (tool_resource === EToolResources.ocr) {
     const isOCREnabled = await checkCapability(req, AgentCapabilities.ocr);
     if (!isOCREnabled) {
@@ -529,7 +554,7 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
     const { handleFileUpload: uploadOCR } = getStrategyFunctions(
       req.app.locals?.ocr?.strategy ?? FileSources.mistral_ocr,
     );
-    const { file_id, temp_file_id } = metadata;
+    const { file_id, temp_file_id = null } = metadata;
 
     const {
       text,
@@ -568,28 +593,53 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
       .json({ message: 'Agent file uploaded and processed successfully', ...result });
   }
 
-  const source =
+  // Dual storage pattern for RAG files: Storage + Vector DB
+  let storageResult, embeddingResult;
+  const source = req.app.locals.fileStrategy;
+
+  if (tool_resource === EToolResources.file_search) {
+    // FIRST: Upload to Storage for permanent backup (S3/local/etc.)
+    const { handleFileUpload } = getStrategyFunctions(source);
+    const sanitizedUploadFn = createSanitizedUploadWrapper(handleFileUpload);
+    storageResult = await sanitizedUploadFn({
+      req,
+      file,
+      file_id,
+      entity_id,
+      basePath,
+    });
+
+    // SECOND: Upload to Vector DB
+    const { uploadVectors } = require('./VectorDB/crud');
+
+    embeddingResult = await uploadVectors({
+      req,
+      file,
+      file_id,
+      entity_id,
+    });
+
+    // Vector status will be stored at root level, no need for metadata
+    fileInfoMetadata = {};
+  } else {
+    // Standard single storage for non-RAG files
+    const { handleFileUpload } = getStrategyFunctions(source);
+    const sanitizedUploadFn = createSanitizedUploadWrapper(handleFileUpload);
+    storageResult = await sanitizedUploadFn({
+      req,
+      file,
+      file_id,
+      entity_id,
+      basePath,
+    });
+  }
+
+  const { bytes, filename, filepath: _filepath, height, width } = storageResult;
+  // For RAG files, use embedding result; for others, use storage result
+  const embedded =
     tool_resource === EToolResources.file_search
-      ? FileSources.vectordb
-      : req.app.locals.fileStrategy;
-
-  const { handleFileUpload } = getStrategyFunctions(source);
-  const { file_id, temp_file_id } = metadata;
-
-  const {
-    bytes,
-    filename,
-    filepath: _filepath,
-    embedded,
-    height,
-    width,
-  } = await handleFileUpload({
-    req,
-    file,
-    file_id,
-    entity_id,
-    basePath,
-  });
+      ? embeddingResult?.embedded
+      : storageResult.embedded;
 
   let filepath = _filepath;
 
@@ -618,7 +668,7 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
     temp_file_id,
     bytes,
     filepath,
-    filename: filename ?? file.originalname,
+    filename: filename ?? sanitizeFilename(file.originalname),
     context: messageAttachment ? FileContext.message_attachment : FileContext.agents,
     model: messageAttachment ? undefined : req.body.model,
     metadata: fileInfoMetadata,
@@ -630,6 +680,7 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
   });
 
   const result = await createFile(fileInfo, true);
+
   res.status(200).json({ message: 'Agent file uploaded and processed successfully', ...result });
 };
 
@@ -700,31 +751,24 @@ const processOpenAIImageOutput = async ({ req, buffer, file_id, filename, fileEx
   const currentDate = new Date();
   const formattedDate = currentDate.toISOString();
   const _file = await convertImage(req, buffer, undefined, `${file_id}${fileExt}`);
+  // Determine the correct source for the assistant
+  const source =
+    req.body.endpoint === EModelEndpoint.azureAssistants ? FileSources.azure : FileSources.openai;
+
+  // Create only one file record with the correct information
   const file = {
     ..._file,
     usage: 1,
     user: req.user.id,
-    type: `image/${req.app.locals.imageOutputType}`,
+    type: mime.getType(fileExt),
     createdAt: formattedDate,
     updatedAt: formattedDate,
-    source: req.app.locals.fileStrategy,
+    source,
     context: FileContext.assistants_output,
-    file_id: `${file_id}${hostImageIdSuffix}`,
-    filename: `${hostImageNamePrefix}${filename}`,
+    file_id,
+    filename,
   };
   createFile(file, true);
-  const source =
-    req.body.endpoint === EModelEndpoint.azureAssistants ? FileSources.azure : FileSources.openai;
-  createFile(
-    {
-      ...file,
-      file_id,
-      filename,
-      source,
-      type: mime.getType(fileExt),
-    },
-    true,
-  );
   return file;
 };
 

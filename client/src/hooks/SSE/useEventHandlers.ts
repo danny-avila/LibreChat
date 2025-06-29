@@ -438,6 +438,21 @@ export default function useEventHandlers({
         isTemporary = false,
       } = submission;
 
+      if (responseMessage?.attachments && responseMessage.attachments.length > 0) {
+        // Process each attachment through the attachmentHandler
+        responseMessage.attachments.forEach((attachment) => {
+          const attachmentData = {
+            ...attachment,
+            messageId: responseMessage.messageId,
+          };
+
+          attachmentHandler({
+            data: attachmentData,
+            submission: submission as EventSubmission,
+          });
+        });
+      }
+
       setShowStopButton(false);
       setCompleted((prev) => new Set(prev.add(submission.initialResponse.messageId)));
 
@@ -533,6 +548,7 @@ export default function useEventHandlers({
       queryClient,
       location.pathname,
       navigate,
+      attachmentHandler,
     ],
   );
 
