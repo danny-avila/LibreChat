@@ -1000,12 +1000,6 @@ class AgentClient extends BaseClient {
     const { req, res, agent } = this.options;
     const endpoint = agent.endpoint;
 
-    /** @type {import('@librechat/agents').ClientOptions} */
-    let clientOptions = {
-      maxTokens: 75,
-      model: agent.model_parameters.model,
-    };
-
     const { getOptions, overrideProvider, customEndpointConfig } =
       await getProviderConfig(endpoint);
 
@@ -1016,6 +1010,12 @@ class AgentClient extends BaseClient {
         '[api/server/controllers/agents/client.js #titleConvo] Error getting endpoint config',
       );
     }
+
+    /** @type {import('@librechat/agents').ClientOptions} */
+    let clientOptions = {
+      maxTokens: endpointConfig.titleMaxTokens ?? 75,
+      model: agent.model_parameters.model,
+    };
 
     if (
       endpointConfig &&
