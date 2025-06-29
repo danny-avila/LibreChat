@@ -16,7 +16,7 @@ import { IconProps } from '~/common';
 import { cn } from '~/utils';
 
 const MinimalIcon: React.FC<IconProps> = (props) => {
-  const { size = 30, iconURL = '', iconClassName, error } = props;
+  const { size = 30, iconURL = '', iconClassName, error, agentAvatar, agentName } = props;
 
   let endpoint = 'default'; // Default value for endpoint
 
@@ -47,8 +47,16 @@ const MinimalIcon: React.FC<IconProps> = (props) => {
     [EModelEndpoint.assistants]: { icon: <Sparkles className="icon-sm" />, name: 'Assistant' },
     [EModelEndpoint.azureAssistants]: { icon: <Sparkles className="icon-sm" />, name: 'Assistant' },
     [EModelEndpoint.agents]: {
-      icon: <Feather className="icon-sm" />,
-      name: props.modelLabel ?? alternateName[EModelEndpoint.agents],
+      icon: agentAvatar ? (
+        <img
+          src={agentAvatar}
+          alt={agentName || 'Agent'}
+          className="h-full w-full rounded-full object-cover"
+        />
+      ) : (
+        <Feather className="icon-sm" />
+      ),
+      name: agentName || props.modelLabel || alternateName[EModelEndpoint.agents],
     },
     [EModelEndpoint.bedrock]: {
       icon: <BedrockIcon className="icon-xl text-text-primary" />,
@@ -73,6 +81,8 @@ const MinimalIcon: React.FC<IconProps> = (props) => {
       style={{
         width: size,
         height: size,
+        borderRadius: endpoint === EModelEndpoint.agents && agentAvatar ? '50%' : undefined,
+        overflow: endpoint === EModelEndpoint.agents && agentAvatar ? 'hidden' : undefined,
       }}
       className={cn(
         'relative flex items-center justify-center rounded-sm text-text-secondary',
