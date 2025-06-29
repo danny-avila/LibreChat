@@ -1,13 +1,17 @@
 import React, { useState, useMemo, memo } from 'react';
 import { useRecoilState } from 'recoil';
 import type { TConversation, TMessage, TFeedback } from 'librechat-data-provider';
+import { getConfigDefaults } from 'librechat-data-provider';
 import { EditIcon, Clipboard, CheckMark, ContinueIcon, RegenerateIcon } from '~/components';
 import { useGenerationsByLatest, useLocalize } from '~/hooks';
 import { Fork } from '~/components/Conversations';
+import { useGetStartupConfig } from '~/data-provider';
 import MessageAudio from './MessageAudio';
 import Feedback from './Feedback';
 import { cn } from '~/utils';
 import store from '~/store';
+
+const defaultInterface = getConfigDefaults().interface;
 
 type THoverButtons = {
   isEditing: boolean;
@@ -123,6 +127,12 @@ const HoverButtons = ({
   const localize = useLocalize();
   const [isCopied, setIsCopied] = useState(false);
   const [TextToSpeech] = useRecoilState<boolean>(store.textToSpeech);
+  const { data: startupConfig } = useGetStartupConfig();
+
+  const interfaceConfig = useMemo(
+    () => startupConfig?.interface ?? defaultInterface,
+    [startupConfig],
+  );
 
   const endpoint = useMemo(() => {
     if (!conversation) {
@@ -238,7 +248,7 @@ const HoverButtons = ({
       />
 
       {/* Feedback Buttons */}
-      {!isCreatedByUser && (
+      {!isCreatedByUser && interfaceConfig?.messageFeedback !== false && (
         <Feedback handleFeedback={handleFeedback} feedback={message.feedback} isLast={isLast} />
       )}
 

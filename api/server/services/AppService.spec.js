@@ -139,6 +139,7 @@ describe('AppService', () => {
         parameters: true,
         sidePanel: true,
         presets: true,
+        messageFeedback: true,
       }),
       mcpConfig: null,
       turnstileConfig: mockedTurnstileConfig,
