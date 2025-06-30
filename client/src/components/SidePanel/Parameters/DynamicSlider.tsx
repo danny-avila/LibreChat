@@ -91,7 +91,12 @@ function DynamicSlider({
         const stringValue = String(value);
         // Check if the value exists in enumMappings
         if (stringValue in enumMappings) {
-          return String(enumMappings[stringValue]);
+          const mappedValue = String(enumMappings[stringValue]);
+          // Check if the mapped value is a localization key
+          if (mappedValue.startsWith('com_')) {
+            return localize(mappedValue as TranslationKeys) ?? mappedValue;
+          }
+          return mappedValue;
         }
       }
       // Always return a string for Input component compatibility
@@ -100,18 +105,23 @@ function DynamicSlider({
       }
       return String(defaultValue ?? '');
     },
-    [isEnum, enumMappings, defaultValue],
+    [isEnum, enumMappings, defaultValue, localize],
   );
 
   const getDefaultDisplayValue = useCallback((): string => {
     if (defaultValue != null && enumMappings) {
       const stringDefault = String(defaultValue);
       if (stringDefault in enumMappings) {
-        return String(enumMappings[stringDefault]);
+        const mappedValue = String(enumMappings[stringDefault]);
+        // Check if the mapped value is a localization key
+        if (mappedValue.startsWith('com_')) {
+          return localize(mappedValue as TranslationKeys) ?? mappedValue;
+        }
+        return mappedValue;
       }
     }
     return String(defaultValue ?? '');
-  }, [defaultValue, enumMappings]);
+  }, [defaultValue, enumMappings, localize]);
 
   const handleValueChange = useCallback(
     (value: number) => {
