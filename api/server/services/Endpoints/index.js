@@ -7,6 +7,16 @@ const initCustom = require('~/server/services/Endpoints/custom/initialize');
 const initGoogle = require('~/server/services/Endpoints/google/initialize');
 const { getCustomEndpointConfig } = require('~/server/services/Config');
 
+/** Check if the provider is a known custom provider
+ * @param {string | undefined} [provider] - The provider string
+ * @returns {boolean} - True if the provider is a known custom provider, false otherwise
+ */
+function isKnownCustomProvider(provider) {
+  return [Providers.XAI, Providers.OLLAMA, Providers.DEEPSEEK, Providers.OPENROUTER].includes(
+    provider || '',
+  );
+}
+
 const providerConfigMap = {
   [Providers.XAI]: initCustom,
   [Providers.OLLAMA]: initCustom,
@@ -44,6 +54,13 @@ async function getProviderConfig(provider) {
     }
     getOptions = initCustom;
     overrideProvider = Providers.OPENAI;
+  }
+
+  if (isKnownCustomProvider(overrideProvider)) {
+    customEndpointConfig = await getCustomEndpointConfig(provider);
+    if (!customEndpointConfig) {
+      throw new Error(`Provider ${provider} not supported`);
+    }
   }
 
   return {
