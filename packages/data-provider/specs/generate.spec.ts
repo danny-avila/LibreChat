@@ -96,6 +96,37 @@ describe('generateDynamicSchema', () => {
     expect(result['data']).toEqual({ testEnum: 'option2' });
   });
 
+  it('should generate a schema for enum settings with empty string option', () => {
+    const settings: SettingsConfiguration = [
+      {
+        key: 'testEnumWithEmpty',
+        description: 'A test enum setting with empty string',
+        type: 'enum',
+        default: '',
+        options: ['', 'option1', 'option2'],
+        enumMappings: {
+          '': 'None',
+          option1: 'First Option',
+          option2: 'Second Option',
+        },
+        component: 'slider',
+        columnSpan: 2,
+        label: 'Test Enum with Empty String',
+      },
+    ];
+
+    const schema = generateDynamicSchema(settings);
+    const result = schema.safeParse({ testEnumWithEmpty: '' });
+
+    expect(result.success).toBeTruthy();
+    expect(result['data']).toEqual({ testEnumWithEmpty: '' });
+
+    // Test with non-empty option
+    const result2 = schema.safeParse({ testEnumWithEmpty: 'option1' });
+    expect(result2.success).toBeTruthy();
+    expect(result2['data']).toEqual({ testEnumWithEmpty: 'option1' });
+  });
+
   it('should fail for incorrect enum value', () => {
     const settings: SettingsConfiguration = [
       {
@@ -479,6 +510,47 @@ describe('validateSettingDefinitions', () => {
     ];
 
     expect(() => validateSettingDefinitions(settingsExceedingMaxTags)).toThrow(ZodError);
+  });
+
+  // Test for incomplete enumMappings
+  test('should throw error for incomplete enumMappings', () => {
+    const settingsWithIncompleteEnumMappings: SettingsConfiguration = [
+      {
+        key: 'displayMode',
+        type: 'enum',
+        component: 'dropdown',
+        options: ['light', 'dark', 'auto'],
+        enumMappings: {
+          light: 'Light Mode',
+          dark: 'Dark Mode',
+          // Missing mapping for 'auto'
+        },
+        optionType: OptionTypes.Custom,
+      },
+    ];
+
+    expect(() => validateSettingDefinitions(settingsWithIncompleteEnumMappings)).toThrow(ZodError);
+  });
+
+  // Test for complete enumMappings including empty string
+  test('should not throw error for complete enumMappings including empty string', () => {
+    const settingsWithCompleteEnumMappings: SettingsConfiguration = [
+      {
+        key: 'selectionMode',
+        type: 'enum',
+        component: 'slider',
+        options: ['', 'single', 'multiple'],
+        enumMappings: {
+          '': 'None',
+          single: 'Single Selection',
+          multiple: 'Multiple Selection',
+        },
+        default: '',
+        optionType: OptionTypes.Custom,
+      },
+    ];
+
+    expect(() => validateSettingDefinitions(settingsWithCompleteEnumMappings)).not.toThrow();
   });
 });
 

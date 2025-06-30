@@ -18,6 +18,7 @@ function DynamicSlider({
   setOption,
   optionType,
   options,
+  enumMappings,
   readonly = false,
   showDefault = false,
   includeInput = true,
@@ -84,6 +85,34 @@ function DynamicSlider({
     return {};
   }, [isEnum, options]);
 
+  const getDisplayValue = useCallback(
+    (value: string | number | undefined | null): string => {
+      if (isEnum && enumMappings && value != null) {
+        const stringValue = String(value);
+        // Check if the value exists in enumMappings
+        if (stringValue in enumMappings) {
+          return String(enumMappings[stringValue]);
+        }
+      }
+      // Always return a string for Input component compatibility
+      if (value != null) {
+        return String(value);
+      }
+      return String(defaultValue ?? '');
+    },
+    [isEnum, enumMappings, defaultValue],
+  );
+
+  const getDefaultDisplayValue = useCallback((): string => {
+    if (defaultValue != null && enumMappings) {
+      const stringDefault = String(defaultValue);
+      if (stringDefault in enumMappings) {
+        return String(enumMappings[stringDefault]);
+      }
+    }
+    return String(defaultValue ?? '');
+  }, [defaultValue, enumMappings]);
+
   const handleValueChange = useCallback(
     (value: number) => {
       if (isEnum) {
@@ -126,7 +155,7 @@ function DynamicSlider({
               {labelCode ? (localize(label as TranslationKeys) ?? label) : label || settingKey}{' '}
               {showDefault && (
                 <small className="opacity-40">
-                  ({localize('com_endpoint_default')}: {defaultValue})
+                  ({localize('com_endpoint_default')}: {getDefaultDisplayValue()})
                 </small>
               )}
             </Label>
@@ -152,7 +181,7 @@ function DynamicSlider({
               <Input
                 id={`${settingKey}-dynamic-setting-input`}
                 disabled={readonly}
-                value={selectedValue ?? defaultValue}
+                value={getDisplayValue(selectedValue)}
                 onChange={() => ({})}
                 className={cn(
                   defaultTextProps,

@@ -529,6 +529,19 @@ export function validateSettingDefinitions(settings: SettingsConfiguration): voi
         path: ['default'],
       });
     }
+
+    // Validate enumMappings
+    if (setting.enumMappings && setting.type === SettingTypes.Enum && setting.options) {
+      for (const option of setting.options) {
+        if (!(option in setting.enumMappings)) {
+          errors.push({
+            code: ZodIssueCode.custom,
+            message: `Missing enumMapping for option "${option}" in setting ${setting.key}.`,
+            path: ['enumMappings'],
+          });
+        }
+      }
+    }
   }
 
   if (errors.length > 0) {
