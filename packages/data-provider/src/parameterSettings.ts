@@ -72,6 +72,11 @@ const baseDefinitions: Record<string, SettingDefinition> = {
     default: ImageDetail.auto,
     component: 'slider',
     options: [ImageDetail.low, ImageDetail.auto, ImageDetail.high],
+    enumMappings: {
+      [ImageDetail.low]: 'com_ui_low',
+      [ImageDetail.auto]: 'com_ui_auto',
+      [ImageDetail.high]: 'com_ui_high',
+    },
     optionType: 'conversation',
     columnSpan: 2,
   },
