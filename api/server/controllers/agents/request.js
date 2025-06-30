@@ -12,10 +12,12 @@ const { saveMessage } = require('~/models');
 const AgentController = async (req, res, next, initializeClient, addTitle) => {
   let {
     text,
+    generation,
     endpointOption,
     conversationId,
     parentMessageId = null,
     overrideParentMessageId = null,
+    isContinued = false,
   } = req.body;
 
   let sender;
@@ -167,6 +169,9 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
       parentMessageId,
       abortController,
       overrideParentMessageId,
+      generation,
+      isContinued,
+      isEdited: !!generation,
       progressOptions: {
         res,
       },
