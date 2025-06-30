@@ -143,10 +143,6 @@ const initializeClient = async ({
     clientOptions = Object.assign({ modelOptions }, clientOptions);
     clientOptions.modelOptions.user = req.user.id;
     const options = getOpenAIConfig(apiKey, clientOptions);
-    /** Check if useResponsesApi is enabled in model parameters */
-    if (modelOptions.useResponsesApi === true) {
-      options.llmConfig.useResponsesApi = true;
-    }
     const streamRate = clientOptions.streamRate;
     if (!streamRate) {
       return options;
