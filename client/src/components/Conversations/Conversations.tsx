@@ -10,6 +10,7 @@ import Convo from './Convo';
 
 interface ConversationsProps {
   conversations: Array<TConversation | null>;
+  pinnedConversations?: Array<TConversation | null>;
   moveToTop: () => void;
   toggleNav: () => void;
   containerRef: React.RefObject<HTMLDivElement | List>;
@@ -71,13 +72,15 @@ const MemoizedConvo = memo(
       prevProps.conversation.conversationId === nextProps.conversation.conversationId &&
       prevProps.conversation.title === nextProps.conversation.title &&
       prevProps.isLatestConvo === nextProps.isLatestConvo &&
-      prevProps.conversation.endpoint === nextProps.conversation.endpoint
+      prevProps.conversation.endpoint === nextProps.conversation.endpoint &&
+      prevProps.conversation.isPinned === nextProps.conversation.isPinned
     );
   },
 );
 
 const Conversations: FC<ConversationsProps> = ({
   conversations: rawConversations,
+  pinnedConversations: rawPinnedConversations = [],
   moveToTop,
   toggleNav,
   containerRef,
@@ -91,6 +94,11 @@ const Conversations: FC<ConversationsProps> = ({
   const filteredConversations = useMemo(
     () => rawConversations.filter(Boolean) as TConversation[],
     [rawConversations],
+  );
+
+  const filteredPinnedConversations = useMemo(
+    () => rawPinnedConversations.filter(Boolean) as TConversation[],
+    [rawPinnedConversations],
   );
 
   const groupedConversations = useMemo(
@@ -107,6 +115,14 @@ const Conversations: FC<ConversationsProps> = ({
 
   const flattenedItems = useMemo(() => {
     const items: FlattenedItem[] = [];
+    
+    // Add pinned conversations first
+    if (filteredPinnedConversations.length > 0) {
+      items.push({ type: 'header', groupName: 'com_nav_pinned_chats' });
+      items.push(...filteredPinnedConversations.map((convo) => ({ type: 'convo' as const, convo })));
+    }
+    
+    // Add regular conversations grouped by date
     groupedConversations.forEach(([groupName, convos]) => {
       items.push({ type: 'header', groupName });
       items.push(...convos.map((convo) => ({ type: 'convo' as const, convo })));
@@ -116,7 +132,7 @@ const Conversations: FC<ConversationsProps> = ({
       items.push({ type: 'loading' } as any);
     }
     return items;
-  }, [groupedConversations, isLoading]);
+  }, [filteredPinnedConversations, groupedConversations, isLoading]);
 
   const cache = useMemo(
     () =>

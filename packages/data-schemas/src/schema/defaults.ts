@@ -110,6 +110,10 @@ export const conversationPreset = {
     type: Boolean,
     default: false,
   },
+  isPinned: {
+    type: Boolean,
+    default: false,
+  },
   /* UI Components */
   iconURL: {
     type: String,

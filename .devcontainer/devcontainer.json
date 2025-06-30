@@ -19,7 +19,8 @@
         "DavidAnson.vscode-markdownlint",
         "christian-kohler.npm-intellisense",
         "mechatroner.rainbow-csv",
-        "redhat.vscode-yaml"
+        "redhat.vscode-yaml",
+        "ms-azuretools.vscode-docker"
       ],
       "settings": {
         "terminal.integrated.profiles.linux": {

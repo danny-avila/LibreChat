@@ -7,7 +7,9 @@ import {
   useDuplicateConversationMutation,
   useGetStartupConfig,
   useArchiveConvoMutation,
+  usePinConversationMutation,
 } from '~/data-provider';
+import { PinIcon } from '~/components/svg';
 import { useLocalize, useNavigateToConvo, useNewConvo } from '~/hooks';
 import { useToastContext, useChatContext } from '~/Providers';
 import { DropdownPopup, Spinner } from '~/components';
@@ -24,6 +26,7 @@ function ConvoOptions({
   isPopoverActive,
   setIsPopoverActive,
   isActiveConvo,
+  isPinned = false,
 }: {
   conversationId: string | null;
   title: string | null;
@@ -32,6 +35,7 @@ function ConvoOptions({
   isPopoverActive: boolean;
   setIsPopoverActive: React.Dispatch<React.SetStateAction<boolean>>;
   isActiveConvo: boolean;
+  isPinned?: boolean;
 }) {
   const localize = useLocalize();
   const { index } = useChatContext();
@@ -75,6 +79,9 @@ function ConvoOptions({
 
   const isDuplicateLoading = duplicateConversation.isLoading;
   const isArchiveLoading = archiveConvoMutation.isLoading;
+
+  const pinConversationMutation = usePinConversationMutation();
+  const isPinLoading = pinConversationMutation.isLoading;
 
   const handleShareClick = useCallback(() => {
     setShowShareDialog(true);
@@ -128,6 +135,34 @@ function ConvoOptions({
     });
   }, [conversationId, duplicateConversation]);
 
+  const handlePinClick = useCallback(() => {
+    if (!conversationId) {
+      return;
+    }
+    
+    pinConversationMutation.mutate(
+      { conversationId, isPinned: !isPinned },
+      {
+        onSuccess: () => {
+          showToast({
+            message: localize(isPinned ? 'com_nav_unpinned' : 'com_nav_pinned'),
+            severity: NotificationSeverity.SUCCESS,
+            showIcon: true,
+          });
+          retainView();
+          setIsPopoverActive(false);
+        },
+        onError: () => {
+          showToast({
+            message: localize('com_ui_error_server_fail'),
+            severity: NotificationSeverity.ERROR,
+            showIcon: true,
+          });
+        },
+      },
+    );
+  }, [conversationId, isPinned, pinConversationMutation, showToast, localize, retainView, setIsPopoverActive]);
+
   const dropdownItems = useMemo(
     () => [
       {
@@ -143,6 +178,21 @@ function ConvoOptions({
         label: localize('com_ui_rename'),
         onClick: renameHandler,
         icon: <Pen className="icon-sm mr-2 text-text-primary" />,
+      },
+      {
+        label: localize(isPinned ? 'com_nav_unpin' : 'com_nav_pin'),
+        onClick: handlePinClick,
+        hideOnClick: false,
+        icon: isPinLoading ? (
+          <Spinner className="size-4" />
+        ) : (
+          <PinIcon 
+            className={cn(
+              "icon-sm mr-2 text-text-primary",
+              isPinned ? "fill-current" : ""
+            )} 
+          />
+        ),
       },
       {
         label: localize('com_ui_duplicate'),
@@ -178,6 +228,9 @@ function ConvoOptions({
       handleShareClick,
       startupConfig,
       renameHandler,
+      isPinned,
+      handlePinClick,
+      isPinLoading,
       handleDuplicateClick,
       isDuplicateLoading,
       handleArchiveClick,
@@ -251,6 +304,7 @@ export default memo(ConvoOptions, (prevProps, nextProps) => {
     prevProps.conversationId === nextProps.conversationId &&
     prevProps.title === nextProps.title &&
     prevProps.isPopoverActive === nextProps.isPopoverActive &&
-    prevProps.isActiveConvo === nextProps.isActiveConvo
+    prevProps.isActiveConvo === nextProps.isActiveConvo &&
+    prevProps.isPinned === nextProps.isPinned
   );
 });

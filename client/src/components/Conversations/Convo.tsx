@@ -132,6 +132,7 @@ export default function Conversation({
     conversationId,
     isPopoverActive,
     setIsPopoverActive,
+    isPinned: conversation.isPinned,
   };
 
   return (
@@ -176,6 +177,7 @@ export default function Conversation({
           onRename={handleRename}
           isSmallScreen={isSmallScreen}
           localize={localize}
+          isPinned={conversation.isPinned}
         >
           <EndpointIcon
             conversation={conversation}

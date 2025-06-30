@@ -73,6 +73,21 @@ const Nav = memo(
         {
           tags: tags.length === 0 ? undefined : tags,
           search: search.debouncedQuery || undefined,
+          isPinned: false,
+        },
+        {
+          enabled: isAuthenticated,
+          staleTime: 30000,
+          cacheTime: 300000,
+        },
+      );
+
+    const { data: pinnedData, refetch: refetchPinned } =
+      useConversationsInfiniteQuery(
+        {
+          tags: tags.length === 0 ? undefined : tags,
+          search: search.debouncedQuery || undefined,
+          isPinned: true,
         },
         {
           enabled: isAuthenticated,
@@ -105,9 +120,17 @@ const Nav = memo(
       isFetchingNext: isFetchingNextPage,
     });
 
-    const conversations = useMemo(() => {
+    const regularConversations = useMemo(() => {
       return data ? data.pages.flatMap((page) => page.conversations) : [];
     }, [data]);
+
+    const pinnedConversations = useMemo(() => {
+      return pinnedData ? pinnedData.pages.flatMap((page) => page.conversations) : [];
+    }, [pinnedData]);
+
+    const conversations = useMemo(() => {
+      return regularConversations;
+    }, [regularConversations]);
 
     const toggleNavVisible = useCallback(() => {
       setNavVisible((prev: boolean) => {
@@ -214,6 +237,7 @@ const Nav = memo(
                       />
                       <Conversations
                         conversations={conversations}
+                        pinnedConversations={pinnedConversations}
                         moveToTop={moveToTop}
                         toggleNav={itemToggleNav}
                         containerRef={listRef}

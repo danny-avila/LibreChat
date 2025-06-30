@@ -38,6 +38,7 @@ export interface IPreset extends Document {
   instructions?: string;
   stop?: string[];
   isArchived?: boolean;
+  isPinned?: boolean;
   iconURL?: string;
   greeting?: string;
   spec?: string;

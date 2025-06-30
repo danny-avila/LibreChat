@@ -597,6 +597,12 @@ export function updateConversation(
   return request.post(endpoints.updateConversation(), { arg: payload });
 }
 
+export function pinConversation(
+  payload: { conversationId: string; isPinned: boolean },
+): Promise<s.TConversation> {
+  return request.post(endpoints.pinConversation(), payload);
+}
+
 export function archiveConversation(
   payload: t.TArchiveConversationRequest,
 ): Promise<t.TArchiveConversationResponse> {
