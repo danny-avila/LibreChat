@@ -112,9 +112,17 @@ export enum ImageDetail {
 }
 
 export enum ReasoningEffort {
+  none = '',
   low = 'low',
   medium = 'medium',
   high = 'high',
+}
+
+export enum ReasoningSummary {
+  none = '',
+  auto = 'auto',
+  concise = 'concise',
+  detailed = 'detailed',
 }
 
 export const imageDetailNumeric = {
@@ -131,6 +139,7 @@ export const imageDetailValue = {
 
 export const eImageDetailSchema = z.nativeEnum(ImageDetail);
 export const eReasoningEffortSchema = z.nativeEnum(ReasoningEffort);
+export const eReasoningSummarySchema = z.nativeEnum(ReasoningSummary);
 
 export const defaultAssistantFormValues = {
   assistant: '',
@@ -619,9 +628,10 @@ export const tConversationSchema = z.object({
   file_ids: z.array(z.string()).optional(),
   /* vision */
   imageDetail: eImageDetailSchema.optional(),
-  /* OpenAI: o1 only */
-  reasoning_effort: eReasoningEffortSchema.optional(),
-  /* OpenAI: o1-pro/o3-pro */
+  /* OpenAI: Reasoning models only */
+  reasoning_effort: eReasoningEffortSchema.optional().nullable(),
+  reasoning_summary: eReasoningSummarySchema.optional().nullable(),
+  /* OpenAI: use Responses API */
   useResponsesApi: z.boolean().optional(),
   /* assistant */
   assistant_id: z.string().optional(),
@@ -721,6 +731,8 @@ export const tQueryParamsSchema = tConversationSchema
     max_tokens: true,
     /** @endpoints openAI, custom, azureOpenAI */
     reasoning_effort: true,
+    /** @endpoints openAI, custom, azureOpenAI */
+    reasoning_summary: true,
     /** @endpoints openAI, custom, azureOpenAI */
     useResponsesApi: true,
     /** @endpoints google, anthropic, bedrock */
@@ -1050,11 +1062,12 @@ export const openAIBaseSchema = tConversationSchema.pick({
   maxContextTokens: true,
   max_tokens: true,
   reasoning_effort: true,
+  reasoning_summary: true,
   useResponsesApi: true,
 });
 
 export const openAISchema = openAIBaseSchema
-  .transform((obj: Partial<TConversation>) => removeNullishValues(obj))
+  .transform((obj: Partial<TConversation>) => removeNullishValues(obj, true))
   .catch(() => ({}));
 
 export const compactGoogleSchema = googleBaseSchema

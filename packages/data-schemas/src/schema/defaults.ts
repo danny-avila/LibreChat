@@ -131,11 +131,14 @@ export const conversationPreset = {
   max_tokens: {
     type: Number,
   },
-  /** omni models only */
+  useResponsesApi: {
+    type: Boolean,
+  },
+  /** Reasoning models only */
   reasoning_effort: {
     type: String,
   },
-  useResponsesApi: {
-    type: Boolean,
+  reasoning_summary: {
+    type: String,
   },
 };
