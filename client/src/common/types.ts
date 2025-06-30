@@ -1,5 +1,5 @@
 import { RefObject } from 'react';
-import { FileSources, EModelEndpoint } from 'librechat-data-provider';
+import { FileSources, EModelEndpoint, TPlugin } from 'librechat-data-provider';
 import type { UseMutationResult } from '@tanstack/react-query';
 import type * as InputNumberPrimitive from 'rc-input-number';
 import type { SetterOrUpdater, RecoilState } from 'recoil';
@@ -167,13 +167,27 @@ export type ActionAuthForm = {
   token_exchange_method: t.TokenExchangeMethodEnum;
 };
 
-export type MCPForm = ActionAuthForm & {
-  name?: string;
+export type MCPForm = MCPMetadata;
+
+export type MCP = {
+  mcp_id: string;
+  metadata: MCPMetadata;
+} & ({ assistant_id: string; agent_id?: never } | { assistant_id?: never; agent_id: string });
+
+export type MCPMetadata = {
+  name: string;
   description?: string;
-  url?: string;
-  tools?: string[];
+  url: string;
+  tools?: TPlugin[];
   icon?: string;
   trust?: boolean;
+  customHeaders?: Array<{
+    id: string;
+    name: string;
+    value: string;
+  }>;
+  requestTimeout?: number;
+  connectionTimeout?: number;
 };
 
 export type ActionWithNullableMetadata = Omit<t.Action, 'metadata'> & {

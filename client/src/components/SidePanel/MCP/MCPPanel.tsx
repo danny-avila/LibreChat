@@ -1,7 +1,7 @@
-import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { ChevronLeft } from 'lucide-react';
-import { Constants } from 'librechat-data-provider';
 import { useForm, Controller } from 'react-hook-form';
+import { Constants } from 'librechat-data-provider';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
 import type { TUpdateUserPlugins } from 'librechat-data-provider';
 import { Button, Input, Label } from '~/components/ui';
@@ -9,6 +9,7 @@ import { useGetStartupConfig } from '~/data-provider';
 import MCPPanelSkeleton from './MCPPanelSkeleton';
 import { useToastContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
+import MCPFormPanel from './MCPFormPanel';
 
 interface ServerConfigWithVars {
   serverName: string;
@@ -24,6 +25,7 @@ export default function MCPPanel() {
   const [selectedServerNameForEditing, setSelectedServerNameForEditing] = useState<string | null>(
     null,
   );
+  const [showMCPForm, setShowMCPForm] = useState(false);
 
   const mcpServerDefinitions = useMemo(() => {
     if (!startupConfig?.mcpServers) {
@@ -89,14 +91,47 @@ export default function MCPPanel() {
     setSelectedServerNameForEditing(null);
   };
 
+  const handleAddMCP = () => {
+    setShowMCPForm(true);
+  };
+
+  const handleBackFromForm = () => {
+    setShowMCPForm(false);
+  };
+
+  if (showMCPForm) {
+    return (
+      <MCPFormPanel
+        onBack={handleBackFromForm}
+        title={localize('com_ui_add_mcp_server')}
+        subtitle={localize('com_agents_mcp_info_chat')}
+      />
+    );
+  }
+
   if (startupConfigLoading) {
     return <MCPPanelSkeleton />;
   }
 
   if (mcpServerDefinitions.length === 0) {
     return (
-      <div className="p-4 text-center text-sm text-gray-500">
-        {localize('com_sidepanel_mcp_no_servers_with_vars')}
+      <div className="h-auto max-w-full overflow-x-hidden p-3">
+        <div className="p-4 text-center text-sm text-gray-500">
+          {localize('com_sidepanel_mcp_no_servers_with_vars')}
+        </div>
+
+        <div className="mt-4">
+          <button
+            type="button"
+            onClick={handleAddMCP}
+            className="btn btn-neutral border-token-border-light relative h-9 w-full rounded-lg font-medium"
+            aria-haspopup="dialog"
+          >
+            <div className="flex w-full items-center justify-center gap-2">
+              {localize('com_ui_add_mcp')}
+            </div>
+          </button>
+        </div>
       </div>
     );
   }
@@ -144,15 +179,28 @@ export default function MCPPanel() {
       <div className="h-auto max-w-full overflow-x-hidden p-3">
         <div className="space-y-2">
           {mcpServerDefinitions.map((server) => (
-            <Button
+            <button
               key={server.serverName}
-              variant="outline"
-              className="w-full justify-start dark:hover:bg-gray-700"
+              type="button"
               onClick={() => handleServerClickToEdit(server.serverName)}
+              className="btn btn-neutral border-token-border-light relative h-9 w-full rounded-lg font-medium"
+              aria-label={`Configure MCP server ${server.serverName}`}
             >
-              {server.serverName}
-            </Button>
+              <div className="flex w-full items-center justify-start gap-2">
+                {server.serverName}
+              </div>
+            </button>
           ))}
+          <button
+            type="button"
+            onClick={handleAddMCP}
+            className="btn btn-neutral border-token-border-light relative h-9 w-full rounded-lg font-medium"
+            aria-haspopup="dialog"
+          >
+            <div className="flex w-full items-center justify-center gap-2">
+              {localize('com_ui_add_mcp')}
+            </div>
+          </button>
         </div>
       </div>
     );
@@ -181,7 +229,7 @@ function MCPVariableEditor({ server, onSave, onRevoke, isSubmitting }: MCPVariab
 
   useEffect(() => {
     // Always initialize with empty strings based on the schema
-    const initialFormValues = Object.keys(server.config.customUserVars).reduce(
+    const initialFormValues = Object.keys(server.config.customUserVars || {}).reduce(
       (acc, key) => {
         acc[key] = '';
         return acc;
@@ -230,7 +278,7 @@ function MCPVariableEditor({ server, onSave, onRevoke, isSubmitting }: MCPVariab
         </div>
       ))}
       <div className="flex justify-end gap-2 pt-2">
-        {Object.keys(server.config.customUserVars).length > 0 && (
+        {Object.keys(server.config.customUserVars || {}).length > 0 && (
           <Button
             type="button"
             onClick={handleRevokeClick}
