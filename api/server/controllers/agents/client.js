@@ -967,6 +967,7 @@ class AgentClient extends BaseClient {
           this.user ?? this.options.req.user?.id,
           this.conversationId,
           this.contentParts,
+          this.options.req.user,
         );
 
         // Update artifact promises with any new attachments from agent response

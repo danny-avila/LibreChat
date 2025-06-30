@@ -1,18 +1,58 @@
 const { Files } = require('~/models');
 const { getCustomConfig } = require('~/server/services/Config/getCustomConfig');
 const { nanoid } = require('nanoid');
-const { Tools } = require('librechat-data-provider');
+const { Tools, PermissionTypes, Permissions } = require('librechat-data-provider');
 const { logger } = require('~/config');
+const { checkAccess } = require('@librechat/api');
+const { getRoleByName } = require('~/models/Role');
 
 /**
  * Processes agent response to extract and capture file references from tool calls
  */
-const processAgentResponse = async (response, userId, conversationId, contentParts = []) => {
+const processAgentResponse = async (
+  response,
+  userId,
+  conversationId,
+  contentParts = [],
+  user = null,
+) => {
   try {
     if (!response.messageId) {
       logger.warn('[processAgentResponse] No messageId in response');
       return response;
     }
+
+    // Check file citations permission following PROMPTS pattern
+    if (user) {
+      try {
+        // Clear role cache to ensure fresh data (following PROMPTS pattern)
+        const hasFileCitationsAccess = await checkAccess({
+          user,
+          permissionType: PermissionTypes.FILE_CITATIONS,
+          permissions: [Permissions.USE],
+          getRoleByName,
+        });
+
+        if (!hasFileCitationsAccess) {
+          logger.debug(
+            `[processAgentResponse] User ${userId} does not have FILE_CITATIONS permission`,
+          );
+          return response; // Return response without file citations
+        }
+
+        logger.debug(
+          `[processAgentResponse] FILE_CITATIONS permission verified for user ${userId}`,
+        );
+      } catch (error) {
+        logger.error(
+          `[processAgentResponse] Permission check failed for FILE_CITATIONS: ${error.message}`,
+        );
+        // Fail open for permission errors to avoid breaking existing functionality
+        logger.debug(`[processAgentResponse] Proceeding with citations due to permission error`);
+      }
+    }
+
+    logger.debug(`[processAgentResponse] Processing citations for user ${userId}`);
 
     const customConfig = await getCustomConfig();
     const maxCitations = customConfig?.endpoints?.agents?.maxCitations ?? 30;
