@@ -48,6 +48,7 @@ export enum QueryKeys {
   banner = 'banner',
   /* Memories */
   memories = 'memories',
+  mcpServers = 'mcpServers',
 }
 
 export enum MutationKeys {

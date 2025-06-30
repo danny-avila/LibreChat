@@ -1,58 +1,31 @@
 import { useState, useEffect } from 'react';
+import { Constants } from 'librechat-data-provider';
 import { useFormContext, Controller } from 'react-hook-form';
-import type { MCP } from 'librechat-data-provider';
-import MCPAuth from '~/components/SidePanel/Builder/MCPAuth';
+import type { MCP, MCPMetadata } from 'librechat-data-provider';
+import { MCPConfig } from '~/components/SidePanel/MCP/MCPConfig';
 import MCPIcon from '~/components/SidePanel/Agents/MCPIcon';
 import { Label, Checkbox } from '~/components/ui';
 import useLocalize from '~/hooks/useLocalize';
-import { useToastContext } from '~/Providers';
 import { Spinner } from '~/components/svg';
 import { MCPForm } from '~/common/types';
-
-function useUpdateAgentMCP({
-  onSuccess,
-  onError,
-}: {
-  onSuccess: (data: [string, MCP]) => void;
-  onError: (error: Error) => void;
-}) {
-  return {
-    mutate: async ({
-      mcp_id,
-      metadata,
-      agent_id,
-    }: {
-      mcp_id?: string;
-      metadata: MCP['metadata'];
-      agent_id: string;
-    }) => {
-      try {
-        // TODO: Implement MCP endpoint
-        onSuccess(['success', { mcp_id, metadata, agent_id } as MCP]);
-      } catch (error) {
-        onError(error as Error);
-      }
-    },
-    isLoading: false,
-  };
-}
 
 interface MCPInputProps {
   mcp?: MCP;
   agent_id?: string;
-  setMCP: React.Dispatch<React.SetStateAction<MCP | undefined>>;
+  onSave: (mcp: MCP) => void;
+  isLoading?: boolean;
 }
 
-export default function MCPInput({ mcp, agent_id, setMCP }: MCPInputProps) {
+export default function MCPInput({ mcp, agent_id = '', onSave, isLoading = false }: MCPInputProps) {
   const localize = useLocalize();
-  const { showToast } = useToastContext();
   const {
     handleSubmit,
     register,
     formState: { errors },
     control,
+    setValue,
+    getValues,
   } = useFormContext<MCPForm>();
-  const [isLoading, setIsLoading] = useState(false);
   const [showTools, setShowTools] = useState(false);
   const [selectedTools, setSelectedTools] = useState<string[]>([]);
 
@@ -64,50 +37,20 @@ export default function MCPInput({ mcp, agent_id, setMCP }: MCPInputProps) {
     }
   }, [mcp]);
 
-  const updateAgentMCP = useUpdateAgentMCP({
-    onSuccess(data) {
-      showToast({
-        message: localize('com_ui_update_mcp_success'),
-        status: 'success',
-      });
-      setMCP(data[1]);
-      setShowTools(true);
-      setSelectedTools(data[1].metadata.tools ?? []);
-      setIsLoading(false);
-    },
-    onError(error) {
-      showToast({
-        message: (error as Error).message || localize('com_ui_update_mcp_error'),
-        status: 'error',
-      });
-      setIsLoading(false);
-    },
-  });
-
   const saveMCP = handleSubmit(async (data: MCPForm) => {
-    setIsLoading(true);
-    try {
-      const response = await updateAgentMCP.mutate({
-        agent_id: agent_id ?? '',
-        mcp_id: mcp?.mcp_id,
-        metadata: {
-          ...data,
-          tools: selectedTools,
-        },
-      });
-      setMCP(response[1]);
-      showToast({
-        message: localize('com_ui_update_mcp_success'),
-        status: 'success',
-      });
-    } catch {
-      showToast({
-        message: localize('com_ui_update_mcp_error'),
-        status: 'error',
-      });
-    } finally {
-      setIsLoading(false);
-    }
+    // Generate MCP ID using server name and delimiter for new MCPs
+    const mcpId =
+      mcp?.mcp_id || `${data.name.replace(/\s+/g, '_').toLowerCase()}${Constants.mcp_delimiter}`;
+
+    const updatedMCP: MCP = {
+      mcp_id: mcpId,
+      agent_id: agent_id ?? '',
+      metadata: {
+        ...data,
+        tools: selectedTools,
+      } as MCPMetadata, // Type assertion since form validation ensures required fields
+    };
+    onSave(updatedMCP);
   });
 
   const handleSelectAll = () => {
@@ -140,14 +83,15 @@ export default function MCPInput({ mcp, agent_id, setMCP }: MCPInputProps) {
       const reader = new FileReader();
       reader.onloadend = () => {
         const base64String = reader.result as string;
-        setMCP({
+        const updatedMCP: MCP = {
           mcp_id: mcp?.mcp_id ?? '',
           agent_id: agent_id ?? '',
           metadata: {
             ...mcp?.metadata,
             icon: base64String,
           },
-        });
+        };
+        onSave(updatedMCP);
       };
       reader.readAsDataURL(file);
     }
@@ -205,25 +149,48 @@ export default function MCPInput({ mcp, agent_id, setMCP }: MCPInputProps) {
             </span>
           )}
         </div>
-        <MCPAuth />
-        <div className="my-2 flex items-center gap-2">
+        <MCPConfig />
+        <div className="my-2 flex items-center">
           <Controller
             name="trust"
             control={control}
             rules={{ required: true }}
             render={({ field }) => (
-              <Checkbox id="trust" checked={field.value} onCheckedChange={field.onChange} />
+              <Checkbox
+                {...field}
+                checked={field.value ?? false}
+                onCheckedChange={field.onChange}
+                className="relative float-left mr-2 inline-flex h-4 w-4 cursor-pointer"
+                value={(field.value ?? false).toString()}
+              />
             )}
           />
-          <Label htmlFor="trust" className="flex flex-col">
-            {localize('com_ui_trust_app')}
-            <span className="text-xs text-text-secondary">
-              {localize('com_agents_mcp_trust_subtext')}
-            </span>
-          </Label>
+          <button
+            type="button"
+            className="flex items-center space-x-2"
+            onClick={() =>
+              setValue('trust', !getValues('trust'), {
+                shouldDirty: true,
+              })
+            }
+          >
+            <label
+              className="form-check-label text-token-text-primary w-full cursor-pointer"
+              htmlFor="trust"
+            >
+              {localize('com_ui_trust_app')}
+            </label>
+          </button>
+        </div>
+        <div className="-mt-5 ml-6">
+          <span className="text-xs text-text-secondary">
+            {localize('com_agents_mcp_trust_subtext')}
+          </span>
         </div>
         {errors.trust && (
-          <span className="text-xs text-red-500">{localize('com_ui_field_required')}</span>
+          <div className="ml-6">
+            <span className="text-xs text-red-500">{localize('com_ui_field_required')}</span>
+          </div>
         )}
       </div>
 
@@ -231,7 +198,7 @@ export default function MCPInput({ mcp, agent_id, setMCP }: MCPInputProps) {
         <button
           onClick={saveMCP}
           disabled={isLoading}
-          className="focus:shadow-outline mt-1 flex min-w-[100px] items-center justify-center rounded bg-green-500 px-4 py-2 font-semibold text-white hover:bg-green-400 focus:border-green-500 focus:outline-none focus:ring-0 disabled:bg-green-400"
+          className="focus:shadow-outline mt-1 flex min-w-[100px] items-center justify-center rounded bg-green-500 px-4 py-2 font-semibold text-white transition-colors duration-200 hover:bg-green-400 focus:border-green-500 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:bg-green-400"
           type="button"
         >
           {(() => {

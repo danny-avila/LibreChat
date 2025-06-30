@@ -2,7 +2,7 @@ import { useCallback } from 'react';
 import { useLocalize } from '~/hooks';
 import { useToastContext } from '~/Providers';
 import { useAgentPanelContext } from '~/Providers/AgentPanelContext';
-import MCP from '~/components/SidePanel/Builder/MCP';
+import { MCPItem } from '~/components/SidePanel/MCP/MCPItem';
 import { Panel } from '~/common';
 
 export default function MCPSection() {
@@ -30,7 +30,7 @@ export default function MCPSection() {
         {mcps
           .filter((mcp) => mcp.agent_id === agent_id)
           .map((mcp, i) => (
-            <MCP
+            <MCPItem
               key={i}
               mcp={mcp}
               onClick={() => {

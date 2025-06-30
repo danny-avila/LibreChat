@@ -185,6 +185,21 @@ export const agents = ({ path = '', options }: { path?: string; options?: object
   return url;
 };
 
+export const mcps = ({ path = '', options }: { path?: string; options?: object }) => {
+  let url = '/api/mcp';
+
+  if (path && path !== '') {
+    url += `/${path}`;
+  }
+
+  if (options && Object.keys(options).length > 0) {
+    const queryParams = new URLSearchParams(options as Record<string, string>).toString();
+    url += `?${queryParams}`;
+  }
+
+  return url;
+};
+
 export const revertAgentVersion = (agent_id: string) => `${agents({ path: `${agent_id}/revert` })}`;
 
 export const files = () => '/api/files';

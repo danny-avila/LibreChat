@@ -5,6 +5,13 @@ const { CacheKeys } = require('librechat-data-provider');
 const { requireJwtAuth } = require('~/server/middleware');
 const { getFlowStateManager } = require('~/config');
 const { getLogStores } = require('~/cache');
+const {
+  getMCPServers,
+  getMCPServer,
+  createMCPServer,
+  updateMCPServer,
+  deleteMCPServer,
+} = require('@librechat/api');
 
 const router = Router();
 
@@ -201,5 +208,45 @@ router.get('/oauth/status/:flowId', async (req, res) => {
     res.status(500).json({ error: 'Failed to get flow status' });
   }
 });
+
+/**
+ * Get all MCP servers for the authenticated user
+ * @route GET /api/mcp
+ * @returns {Array} Array of MCP servers
+ */
+router.get('/', requireJwtAuth, getMCPServers);
+
+/**
+ * Get a single MCP server by ID
+ * @route GET /api/mcp/:mcp_id
+ * @param {string} mcp_id - The ID of the MCP server to fetch
+ * @returns {object} MCP server data
+ */
+router.get('/:mcp_id', requireJwtAuth, getMCPServer);
+
+/**
+ * Create a new MCP server
+ * @route POST /api/mcp/add
+ * @param {object} req.body - MCP server data
+ * @returns {object} Created MCP server with populated tools
+ */
+router.post('/add', requireJwtAuth, createMCPServer);
+
+/**
+ * Update an existing MCP server
+ * @route PUT /api/mcp/:mcp_id
+ * @param {string} mcp_id - The ID of the MCP server to update
+ * @param {object} req.body - Updated MCP server data
+ * @returns {object} Updated MCP server with populated tools
+ */
+router.put('/:mcp_id', requireJwtAuth, updateMCPServer);
+
+/**
+ * Delete an MCP server
+ * @route DELETE /api/mcp/:mcp_id
+ * @param {string} mcp_id - The ID of the MCP server to delete
+ * @returns {object} Deletion confirmation
+ */
+router.delete('/:mcp_id', requireJwtAuth, deleteMCPServer);
 
 module.exports = router;
