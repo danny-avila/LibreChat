@@ -234,6 +234,19 @@ const openAIParams: Record<string, SettingDefinition> = {
     optionType: 'model',
     columnSpan: 4,
   },
+  useResponsesApi: {
+    key: 'useResponsesApi',
+    label: 'com_endpoint_use_responses_api',
+    labelCode: true,
+    description: 'com_endpoint_openai_use_responses_api',
+    descriptionCode: true,
+    type: 'boolean',
+    default: false,
+    component: 'switch',
+    optionType: 'model',
+    showDefault: false,
+    columnSpan: 2,
+  },
   reasoning_summary: {
     key: 'reasoning_summary',
     label: 'com_endpoint_reasoning_summary',
@@ -257,19 +270,6 @@ const openAIParams: Record<string, SettingDefinition> = {
     },
     optionType: 'model',
     columnSpan: 4,
-  },
-  useResponsesApi: {
-    key: 'useResponsesApi',
-    label: 'com_endpoint_use_responses_api',
-    labelCode: true,
-    description: 'com_endpoint_openai_use_responses_api',
-    descriptionCode: true,
-    type: 'boolean',
-    default: false,
-    component: 'switch',
-    optionType: 'model',
-    showDefault: false,
-    columnSpan: 2,
   },
 };
 
@@ -580,8 +580,8 @@ const openAI: SettingsConfiguration = [
   librechat.resendFiles,
   baseDefinitions.imageDetail,
   openAIParams.reasoning_effort,
-  openAIParams.reasoning_summary,
   openAIParams.useResponsesApi,
+  openAIParams.reasoning_summary,
 ];
 
 const openAICol1: SettingsConfiguration = [
@@ -598,11 +598,11 @@ const openAICol2: SettingsConfiguration = [
   openAIParams.frequency_penalty,
   openAIParams.presence_penalty,
   baseDefinitions.stop,
-  openAIParams.reasoning_effort,
-  openAIParams.reasoning_summary,
-  openAIParams.useResponsesApi,
   librechat.resendFiles,
   baseDefinitions.imageDetail,
+  openAIParams.reasoning_effort,
+  openAIParams.useResponsesApi,
+  openAIParams.reasoning_summary,
 ];
 
 const anthropicConfig: SettingsConfiguration = [
