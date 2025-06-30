@@ -48,6 +48,7 @@ export enum QueryKeys {
   banner = 'banner',
   /* Memories */
   memories = 'memories',
+  graphToken = 'graphToken',
 }
 
 export enum MutationKeys {

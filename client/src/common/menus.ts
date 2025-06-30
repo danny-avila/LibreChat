@@ -21,4 +21,5 @@ export interface MenuItemProps {
     | RenderProp<React.HTMLAttributes<any> & { ref?: React.Ref<any> | undefined }>
     | React.ReactElement<any, string | React.JSXElementConstructor<any>>
     | undefined;
+  subItems?: MenuItemProps[];
 }
