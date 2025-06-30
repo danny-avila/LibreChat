@@ -18,6 +18,7 @@ function DynamicSlider({
   setOption,
   optionType,
   options,
+  enumMappings,
   readonly = false,
   showDefault = false,
   includeInput = true,
@@ -60,23 +61,67 @@ function DynamicSlider({
 
   const enumToNumeric = useMemo(() => {
     if (isEnum && options) {
-      return options.reduce((acc, mapping, index) => {
-        acc[mapping] = index;
-        return acc;
-      }, {} as Record<string, number>);
+      return options.reduce(
+        (acc, mapping, index) => {
+          acc[mapping] = index;
+          return acc;
+        },
+        {} as Record<string, number>,
+      );
     }
     return {};
   }, [isEnum, options]);
 
   const valueToEnumOption = useMemo(() => {
     if (isEnum && options) {
-      return options.reduce((acc, option, index) => {
-        acc[index] = option;
-        return acc;
-      }, {} as Record<number, string>);
+      return options.reduce(
+        (acc, option, index) => {
+          acc[index] = option;
+          return acc;
+        },
+        {} as Record<number, string>,
+      );
     }
     return {};
   }, [isEnum, options]);
+
+  const getDisplayValue = useCallback(
+    (value: string | number | undefined | null): string => {
+      if (isEnum && enumMappings && value != null) {
+        const stringValue = String(value);
+        // Check if the value exists in enumMappings
+        if (stringValue in enumMappings) {
+          const mappedValue = String(enumMappings[stringValue]);
+          // Check if the mapped value is a localization key
+          if (mappedValue.startsWith('com_')) {
+            return localize(mappedValue as TranslationKeys) ?? mappedValue;
+          }
+          return mappedValue;
+        }
+      }
+      // Always return a string for Input component compatibility
+      if (value != null) {
+        return String(value);
+      }
+      return String(defaultValue ?? '');
+    },
+    [isEnum, enumMappings, defaultValue, localize],
+  );
+
+  const getDefaultDisplayValue = useCallback((): string => {
+    if (defaultValue != null && enumMappings) {
+      const stringDefault = String(defaultValue);
+      if (stringDefault in enumMappings) {
+        const mappedValue = String(enumMappings[stringDefault]);
+        // Check if the mapped value is a localization key
+        if (mappedValue.startsWith('com_')) {
+          return localize(mappedValue as TranslationKeys) ?? mappedValue;
+        }
+        return mappedValue;
+      }
+    }
+    return String(defaultValue ?? '');
+  }, [defaultValue, enumMappings, localize]);
 
   const handleValueChange = useCallback(
     (value: number) => {
@@ -115,12 +160,12 @@ function DynamicSlider({
           <div className="flex w-full items-center justify-between">
             <Label
               htmlFor={`${settingKey}-dynamic-setting`}
-              className="text-left text-sm font-medium"
+              className="break-words text-left text-sm font-medium"
             >
-              {labelCode ? localize(label as TranslationKeys) ?? label : label || settingKey}{' '}
+              {labelCode ? (localize(label as TranslationKeys) ?? label) : label || settingKey}{' '}
               {showDefault && (
                 <small className="opacity-40">
-                  ({localize('com_endpoint_default')}: {defaultValue})
+                  ({localize('com_endpoint_default')}: {getDefaultDisplayValue()})
                 </small>
               )}
             </Label>
@@ -132,13 +177,13 @@ function DynamicSlider({
                 onChange={(value) => setInputValue(Number(value))}
                 max={range ? range.max : (options?.length ?? 0) - 1}
                 min={range ? range.min : 0}
-                step={range ? range.step ?? 1 : 1}
+                step={range ? (range.step ?? 1) : 1}
                 controls={false}
                 className={cn(
                   defaultTextProps,
                   cn(
                     optionText,
-                    'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-gray-200',
+                    'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 py-1 text-xs group-hover/temp:border-gray-200',
                   ),
                 )}
               />
@@ -146,13 +191,13 @@ function DynamicSlider({
               <Input
                 id={`${settingKey}-dynamic-setting-input`}
                 disabled={readonly}
-                value={selectedValue ?? defaultValue}
+                value={getDisplayValue(selectedValue)}
                 onChange={() => ({})}
                 className={cn(
                   defaultTextProps,
                   cn(
                     optionText,
-                    'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-gray-200',
+                    'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 py-1 text-xs group-hover/temp:border-gray-200',
                   ),
                 )}
               />
@@ -164,19 +209,23 @@ function DynamicSlider({
             value={[
               isEnum
                 ? enumToNumeric[(selectedValue as number) ?? '']
-                : (inputValue as number) ?? (defaultValue as number),
+                : ((inputValue as number) ?? (defaultValue as number)),
             ]}
             onValueChange={(value) => handleValueChange(value[0])}
             onDoubleClick={() => setInputValue(defaultValue as string | number)}
             max={max}
             min={range ? range.min : 0}
-            step={range ? range.step ?? 1 : 1}
+            step={range ? (range.step ?? 1) : 1}
             className="flex h-4 w-full"
           />
         </HoverCardTrigger>
         {description && (
           <OptionHover
-            description={descriptionCode ? localize(description as TranslationKeys) ?? description : description}
+            description={
+              descriptionCode
+                ? (localize(description as TranslationKeys) ?? description)
+                : description
+            }
             side={ESide.Left}
           />
         )}
