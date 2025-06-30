@@ -1,4 +1,3 @@
-/* eslint-disable jest/no-conditional-expect */
 import { ZodError, z } from 'zod';
 import { generateDynamicSchema, validateSettingDefinitions, OptionTypes } from '../src/generate';
 import type { SettingsConfiguration } from '../src/generate';
@@ -515,7 +514,7 @@ const settingsConfiguration: SettingsConfiguration = [
   {
     key: 'presence_penalty',
     description:
-      'Number between -2.0 and 2.0. Positive values penalize new tokens based on whether they appear in the text so far, increasing the model\'s likelihood to talk about new topics.',
+      "Number between -2.0 and 2.0. Positive values penalize new tokens based on whether they appear in the text so far, increasing the model's likelihood to talk about new topics.",
     type: 'number',
     default: 0,
     range: {
@@ -529,7 +528,7 @@ const settingsConfiguration: SettingsConfiguration = [
   {
     key: 'frequency_penalty',
     description:
-      'Number between -2.0 and 2.0. Positive values penalize new tokens based on their existing frequency in the text so far, decreasing the model\'s likelihood to repeat the same line verbatim.',
+      "Number between -2.0 and 2.0. Positive values penalize new tokens based on their existing frequency in the text so far, decreasing the model's likelihood to repeat the same line verbatim.",
     type: 'number',
     default: 0,
     range: {
