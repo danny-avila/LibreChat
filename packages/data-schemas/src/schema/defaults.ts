@@ -135,4 +135,7 @@ export const conversationPreset = {
   reasoning_effort: {
     type: String,
   },
+  useResponsesApi: {
+    type: Boolean,
+  },
 };

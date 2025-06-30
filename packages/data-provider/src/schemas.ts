@@ -621,6 +621,8 @@ export const tConversationSchema = z.object({
   imageDetail: eImageDetailSchema.optional(),
   /* OpenAI: o1 only */
   reasoning_effort: eReasoningEffortSchema.optional(),
+  /* OpenAI: o1-pro/o3-pro */
+  useResponsesApi: z.boolean().optional(),
   /* assistant */
   assistant_id: z.string().optional(),
   /* agents */
@@ -717,6 +719,10 @@ export const tQueryParamsSchema = tConversationSchema
     top_p: true,
     /** @endpoints openAI, custom, azureOpenAI */
     max_tokens: true,
+    /** @endpoints openAI, custom, azureOpenAI */
+    reasoning_effort: true,
+    /** @endpoints openAI, custom, azureOpenAI */
+    useResponsesApi: true,
     /** @endpoints google, anthropic, bedrock */
     topP: true,
     /** @endpoints google, anthropic */
@@ -1044,6 +1050,7 @@ export const openAIBaseSchema = tConversationSchema.pick({
   maxContextTokens: true,
   max_tokens: true,
   reasoning_effort: true,
+  useResponsesApi: true,
 });
 
 export const openAISchema = openAIBaseSchema

@@ -217,6 +217,19 @@ const openAIParams: Record<string, SettingDefinition> = {
     optionType: 'model',
     columnSpan: 4,
   },
+  useResponsesApi: {
+    key: 'useResponsesApi',
+    label: 'com_endpoint_use_responses_api',
+    labelCode: true,
+    description: 'com_endpoint_openai_use_responses_api',
+    descriptionCode: true,
+    type: 'boolean',
+    default: false,
+    component: 'switch',
+    optionType: 'model',
+    showDefault: false,
+    columnSpan: 2,
+  },
 };
 
 const anthropic: Record<string, SettingDefinition> = {
@@ -526,6 +539,7 @@ const openAI: SettingsConfiguration = [
   librechat.resendFiles,
   baseDefinitions.imageDetail,
   openAIParams.reasoning_effort,
+  openAIParams.useResponsesApi,
 ];
 
 const openAICol1: SettingsConfiguration = [
@@ -543,6 +557,7 @@ const openAICol2: SettingsConfiguration = [
   openAIParams.presence_penalty,
   baseDefinitions.stop,
   openAIParams.reasoning_effort,
+  openAIParams.useResponsesApi,
   librechat.resendFiles,
   baseDefinitions.imageDetail,
 ];

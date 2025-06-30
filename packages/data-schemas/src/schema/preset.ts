@@ -46,6 +46,7 @@ export interface IPreset extends Document {
   maxContextTokens?: number;
   max_tokens?: number;
   reasoning_effort?: string;
+  useResponsesApi?: boolean;
   // end of additional fields
   agentOptions?: unknown;
 }
