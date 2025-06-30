@@ -98,8 +98,8 @@ export function getGoogleConfig(
   const serviceKey =
     typeof serviceKeyRaw === 'string' ? JSON.parse(serviceKeyRaw) : (serviceKeyRaw ?? {});
 
-  const project_id = serviceKey?.project_id ?? null;
   const apiKey = creds[AuthKeys.GOOGLE_API_KEY] ?? null;
+  const project_id = !apiKey ? (serviceKey?.project_id ?? null) : null;
 
   const reverseProxyUrl = options.reverseProxyUrl;
   const authHeader = options.authHeader;
@@ -128,7 +128,7 @@ export function getGoogleConfig(
   }
 
   // If we have a GCP project => Vertex AI
-  if (project_id && provider === Providers.VERTEXAI) {
+  if (provider === Providers.VERTEXAI) {
     (llmConfig as VertexAIClientOptions).authOptions = {
       credentials: { ...serviceKey },
       projectId: project_id,
@@ -136,6 +136,10 @@ export function getGoogleConfig(
     (llmConfig as VertexAIClientOptions).location = process.env.GOOGLE_LOC || 'us-central1';
   } else if (apiKey && provider === Providers.GOOGLE) {
     llmConfig.apiKey = apiKey;
+  } else {
+    throw new Error(
+      `Invalid credentials provided. Please provide either a valid API key or service account credentials for Google Cloud.`,
+    );
   }
 
   const shouldEnableThinking =
