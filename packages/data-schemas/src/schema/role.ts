@@ -39,6 +39,10 @@ const rolePermissionsSchema = new Schema(
     [PermissionTypes.WEB_SEARCH]: {
       [Permissions.USE]: { type: Boolean, default: true },
     },
+    [PermissionTypes.PEOPLE_PICKER]: {
+      [Permissions.VIEW_USERS]: { type: Boolean, default: false },
+      [Permissions.VIEW_GROUPS]: { type: Boolean, default: false },
+    },
     [PermissionTypes.FILE_SEARCH]: {
       [Permissions.USE]: { type: Boolean, default: true },
     },
@@ -72,6 +76,10 @@ const roleSchema: Schema<IRole> = new Schema({
       [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: true },
       [PermissionTypes.RUN_CODE]: { [Permissions.USE]: true },
       [PermissionTypes.WEB_SEARCH]: { [Permissions.USE]: true },
+      [PermissionTypes.PEOPLE_PICKER]: {
+        [Permissions.VIEW_USERS]: false,
+        [Permissions.VIEW_GROUPS]: false,
+      },
       [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: true },
     }),
   },

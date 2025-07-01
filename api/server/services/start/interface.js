@@ -52,6 +52,16 @@ async function loadDefaultInterface(config, configDefaults, roleName = SystemRol
     webSearch: interfaceConfig?.webSearch ?? defaults.webSearch,
     fileSearch: interfaceConfig?.fileSearch ?? defaults.fileSearch,
     customWelcome: interfaceConfig?.customWelcome ?? defaults.customWelcome,
+    peoplePicker: {
+      admin: {
+        users: interfaceConfig?.peoplePicker?.admin?.users ?? defaults.peoplePicker.admin.users,
+        groups: interfaceConfig?.peoplePicker?.admin?.groups ?? defaults.peoplePicker.admin.groups,
+      },
+      user: {
+        users: interfaceConfig?.peoplePicker?.user?.users ?? defaults.peoplePicker.user.users,
+        groups: interfaceConfig?.peoplePicker?.user?.groups ?? defaults.peoplePicker.user.groups,
+      },
+    },
   });
 
   await updateAccessPermissions(roleName, {
@@ -66,6 +76,10 @@ async function loadDefaultInterface(config, configDefaults, roleName = SystemRol
     [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: loadedInterface.temporaryChat },
     [PermissionTypes.RUN_CODE]: { [Permissions.USE]: loadedInterface.runCode },
     [PermissionTypes.WEB_SEARCH]: { [Permissions.USE]: loadedInterface.webSearch },
+    [PermissionTypes.PEOPLE_PICKER]: {
+      [Permissions.VIEW_USERS]: loadedInterface.peoplePicker.user?.users,
+      [Permissions.VIEW_GROUPS]: loadedInterface.peoplePicker.user?.groups,
+    },
     [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: loadedInterface.fileSearch },
   });
   await updateAccessPermissions(SystemRoles.ADMIN, {
@@ -80,6 +94,10 @@ async function loadDefaultInterface(config, configDefaults, roleName = SystemRol
     [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: loadedInterface.temporaryChat },
     [PermissionTypes.RUN_CODE]: { [Permissions.USE]: loadedInterface.runCode },
     [PermissionTypes.WEB_SEARCH]: { [Permissions.USE]: loadedInterface.webSearch },
+    [PermissionTypes.PEOPLE_PICKER]: {
+      [Permissions.VIEW_USERS]: loadedInterface.peoplePicker.admin?.users,
+      [Permissions.VIEW_GROUPS]: loadedInterface.peoplePicker.admin?.groups,
+    },
     [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: loadedInterface.fileSearch },
   });
 
