@@ -162,10 +162,10 @@ const initializeAgent = async ({
 
   return {
     ...agent,
-    tools,
     attachments,
     resendFiles,
     toolContextMap,
+    tools: tools.concat(options?.tools ?? []),
     maxContextTokens: (agentMaxContextTokens - maxTokens) * 0.9,
   };
 };
