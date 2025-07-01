@@ -688,19 +688,22 @@ class BaseClient {
         isParamEndpoint(this.options.endpoint, this.options.endpointType))
     ) {
       responseMessage.text = '';
-      // If editedContent is provided, start with the existing content and update the edited part
-      if (opts.editedContent && this.currentMessages.length > 0) {
-        const latestMessage = this.currentMessages[this.currentMessages.length - 1];
-        if (latestMessage?.content) {
-          responseMessage.content = [...latestMessage.content];
-          // The edited part has already been updated in the currentMessages
-          // Now append the new completion
-          responseMessage.content = responseMessage.content.concat(completion);
-        } else {
-          responseMessage.content = completion;
-        }
-      } else {
+
+      if (!opts.editedContent || this.currentMessages.length === 0) {
         responseMessage.content = completion;
+      } else {
+        const latestMessage = this.currentMessages[this.currentMessages.length - 1];
+        if (!latestMessage?.content) {
+          responseMessage.content = completion;
+        } else {
+          const existingContent = [...latestMessage.content];
+          const { type: editedType } = opts.editedContent;
+          responseMessage.content = this.mergeEditedContent(
+            existingContent,
+            completion,
+            editedType,
+          );
+        }
       }
     } else if (Array.isArray(completion)) {
       responseMessage.text = completion.join('');
@@ -1115,6 +1118,50 @@ class BaseClient {
       }
     }
     return numTokens;
+  }
+
+  /**
+   * Merges completion content with existing content when editing TEXT or THINK types
+   * @param {Array} existingContent - The existing content array
+   * @param {Array} newCompletion - The new completion content
+   * @param {string} editedType - The type of content being edited
+   * @returns {Array} The merged content array
+   */
+  mergeEditedContent(existingContent, newCompletion, editedType) {
+    if (!newCompletion.length) {
+      return existingContent.concat(newCompletion);
+    }
+
+    if (editedType !== ContentTypes.TEXT && editedType !== ContentTypes.THINK) {
+      return existingContent.concat(newCompletion);
+    }
+
+    const lastIndex = existingContent.length - 1;
+    const lastExisting = existingContent[lastIndex];
+    const firstNew = newCompletion[0];
+
+    if (lastExisting?.type !== firstNew?.type || firstNew?.type !== editedType) {
+      return existingContent.concat(newCompletion);
+    }
+
+    const mergedContent = [...existingContent];
+    if (editedType === ContentTypes.TEXT) {
+      mergedContent[lastIndex] = {
+        ...mergedContent[lastIndex],
+        [ContentTypes.TEXT]:
+          (mergedContent[lastIndex][ContentTypes.TEXT] || '') + (firstNew[ContentTypes.TEXT] || ''),
+      };
+    } else {
+      mergedContent[lastIndex] = {
+        ...mergedContent[lastIndex],
+        [ContentTypes.THINK]:
+          (mergedContent[lastIndex][ContentTypes.THINK] || '') +
+          (firstNew[ContentTypes.THINK] || ''),
+      };
+    }
+
+    // Add remaining completion items
+    return mergedContent.concat(newCompletion.slice(1));
   }
 
   async sendPayload(payload, opts = {}) {
