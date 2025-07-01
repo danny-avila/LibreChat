@@ -41,6 +41,9 @@ const rolePermissionsSchema = new Schema(
       [Permissions.VIEW_USERS]: { type: Boolean, default: false },
       [Permissions.VIEW_GROUPS]: { type: Boolean, default: false },
     },
+    [PermissionTypes.MARKETPLACE]: {
+      [Permissions.USE]: { type: Boolean, default: false },
+    },
   },
   { _id: false },
 );
@@ -75,6 +78,7 @@ const roleSchema: Schema<IRole> = new Schema({
         [Permissions.VIEW_USERS]: false,
         [Permissions.VIEW_GROUPS]: false,
       },
+      [PermissionTypes.MARKETPLACE]: { [Permissions.USE]: false },
     }),
   },
 });
