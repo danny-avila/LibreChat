@@ -503,6 +503,7 @@ export const tMessageSchema = z.object({
   title: z.string().nullable().or(z.literal('New Chat')).default('New Chat'),
   sender: z.string().optional(),
   text: z.string(),
+  /** @deprecated */
   generation: z.string().nullable().optional(),
   isCreatedByUser: z.boolean(),
   error: z.boolean().optional(),

@@ -11,6 +11,7 @@ export default function createPayload(submission: t.TSubmission) {
     isContinued,
     isTemporary,
     ephemeralAgent,
+    editedContent,
   } = submission;
   const { conversationId } = s.tConvoUpdateSchema.parse(conversation);
   const { endpoint: _e, endpointType } = endpointOption as {
@@ -34,6 +35,7 @@ export default function createPayload(submission: t.TSubmission) {
     isContinued: !!(isEdited && isContinued),
     conversationId,
     isTemporary,
+    editedContent,
   };
 
   return { server, payload };

@@ -6,6 +6,7 @@ import {
   QueryKeys,
   ContentTypes,
   EModelEndpoint,
+  isAgentsEndpoint,
   parseCompactConvo,
   replaceSpecialVars,
   isAssistantsEndpoint,
@@ -34,15 +35,6 @@ const logChatRequest = (request: Record<string, unknown>) => {
   logger.log('=====================================\nAsk function called with:');
   logger.dir(request);
   logger.log('=====================================');
-};
-
-const usesContentStream = (endpoint: EModelEndpoint | undefined, endpointType?: string) => {
-  if (endpointType === EModelEndpoint.custom) {
-    return true;
-  }
-  if (endpoint === EModelEndpoint.openAI || endpoint === EModelEndpoint.azureOpenAI) {
-    return true;
-  }
 };
 
 export default function useChatFunctions({
@@ -93,7 +85,7 @@ export default function useChatFunctions({
       messageId = null,
     },
     {
-      editedText = null,
+      editedContent = null,
       editedMessageId = null,
       isResubmission = false,
       isRegenerate = false,
@@ -245,14 +237,11 @@ export default function useChatFunctions({
       setFilesToDelete({});
     }
 
-    const generation = editedText ?? latestMessage?.text ?? '';
-    const responseText = isEditOrContinue ? generation : '';
-
     const responseMessageId =
       editedMessageId ?? (latestMessage?.messageId ? latestMessage?.messageId + '_' : null) ?? null;
     const initialResponse: TMessage = {
       sender: responseSender,
-      text: responseText,
+      text: '',
       endpoint: endpoint ?? '',
       parentMessageId: isRegenerate ? messageId : intermediateId,
       messageId: responseMessageId ?? `${isRegenerate ? messageId : intermediateId}_`,
@@ -272,34 +261,37 @@ export default function useChatFunctions({
         {
           type: ContentTypes.TEXT,
           [ContentTypes.TEXT]: {
-            value: responseText,
+            value: '',
           },
         },
       ];
-    } else if (endpoint === EModelEndpoint.agents) {
-      initialResponse.model = conversation?.agent_id ?? '';
+    } else if (endpoint != null) {
+      initialResponse.model = isAgentsEndpoint(endpoint)
+        ? (conversation?.agent_id ?? '')
+        : (conversation?.model ?? '');
       initialResponse.text = '';
-      initialResponse.content = [
-        {
-          type: ContentTypes.TEXT,
-          [ContentTypes.TEXT]: {
-            value: responseText,
+
+      if (editedContent && latestMessage?.content) {
+        initialResponse.content = cloneDeep(latestMessage.content);
+        const { index, text, type } = editedContent;
+        if (initialResponse.content && index >= 0 && index < initialResponse.content.length) {
+          const contentPart = initialResponse.content[index];
+          if (type === ContentTypes.THINK && contentPart.type === ContentTypes.THINK) {
+            contentPart[ContentTypes.THINK] = text;
+          } else if (type === ContentTypes.TEXT && contentPart.type === ContentTypes.TEXT) {
+            contentPart[ContentTypes.TEXT] = text;
+          }
+        }
+      } else {
+        initialResponse.content = [
+          {
+            type: ContentTypes.TEXT,
+            [ContentTypes.TEXT]: {
+              value: '',
+            },
           },
-        },
-      ];
-      setShowStopButton(true);
-    } else if (usesContentStream(endpoint, endpointType)) {
-      initialResponse.text = '';
-      initialResponse.content = [
-        {
-          type: ContentTypes.TEXT,
-          [ContentTypes.TEXT]: {
-            value: responseText,
-          },
-        },
-      ];
-      setShowStopButton(true);
-    } else {
+        ];
+      }
       setShowStopButton(true);
     }
 
@@ -316,7 +308,6 @@ export default function useChatFunctions({
       endpointOption,
       userMessage: {
         ...currentMsg,
-        generation,
         responseMessageId,
         overrideParentMessageId: isRegenerate ? messageId : null,
       },
@@ -328,6 +319,7 @@ export default function useChatFunctions({
       initialResponse,
       isTemporary,
       ephemeralAgent,
+      editedContent,
     };
 
     if (isRegenerate) {
