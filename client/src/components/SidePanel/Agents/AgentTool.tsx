@@ -226,7 +226,7 @@ export default function AgentTool({
                             }}
                             className={cn(
                               'h-4 w-4 rounded border border-gray-300 transition-all duration-200 hover:border-gray-400 dark:border-gray-600 dark:hover:border-gray-500',
-                              isExpanded ? 'opacity-100' : 'opacity-0',
+                              isExpanded ? 'visible' : 'pointer-events-none invisible',
                             )}
                             onClick={(e) => e.stopPropagation()}
                             onKeyDown={(e) => {
