@@ -140,6 +140,14 @@ const initializeAgent = async ({
     agent.provider = options.provider;
   }
 
+  if (
+    (agent.provider === Providers.GOOGLE || agent.provider === Providers.VERTEXAI) &&
+    options?.tools?.length &&
+    tools?.length
+  ) {
+    throw new Error(`{ "type": "${ErrorTypes.GOOGLE_TOOL_CONFLICT}"}`);
+  }
+
   /** @type {import('@librechat/agents').ClientOptions} */
   agent.model_parameters = { ...options.llmConfig };
   if (options.configOptions) {
@@ -165,7 +173,7 @@ const initializeAgent = async ({
     attachments,
     resendFiles,
     toolContextMap,
-    tools: (tools ?? []).concat(options?.tools ?? []),
+    tools: options.tools ?? tools,
     maxContextTokens: (agentMaxContextTokens - maxTokens) * 0.9,
   };
 };
