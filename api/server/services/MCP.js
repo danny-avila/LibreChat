@@ -146,7 +146,11 @@ async function createMCPTool({ req, res, toolKey, provider: _provider }) {
       derivedSignal = config?.signal ? AbortSignal.any([config.signal]) : undefined;
       const mcpManager = getMCPManager(userId);
       const provider = (config?.metadata?.provider || _provider)?.toLowerCase();
-
+      toolArguments = {
+        ...toolArguments,
+        token: req.headers.authorization,
+      };
+      logger.info(toolArguments);
       const { args: _args, stepId, ...toolCall } = config.toolCall ?? {};
       const loginFlowId = `${serverName}:oauth_login:${config.metadata.thread_id}:${config.metadata.run_id}`;
       const oauthStart = createOAuthStart({

@@ -3,13 +3,17 @@
 
 services:
   api:
+    build:
+      context: .
+      dockerfile: Dockerfile.multi
+      target: api-build
     container_name: LibreChat
     ports:
       - "${PORT}:${PORT}"
     depends_on:
       - mongodb
       - rag_api
-    image: ghcr.io/danny-avila/librechat-dev:latest
+    # image: ghcr.io/danny-avila/librechat-dev:latest
     restart: always
     user: "${UID}:${GID}"
     extra_hosts:
@@ -20,6 +24,8 @@ services:
       - MEILI_HOST=http://meilisearch:7700
       - RAG_PORT=${RAG_PORT:-8000}
       - RAG_API_URL=http://rag_api:${RAG_PORT:-8000}
+    env_file:
+      - .env
     volumes:
       - type: bind
         source: ./.env
