@@ -40,6 +40,10 @@ export enum PermissionTypes {
    * Type for People Picker Permissions
    */
   PEOPLE_PICKER = 'PEOPLE_PICKER',
+  /**
+   * Type for Marketplace Permissions
+   */
+  MARKETPLACE = 'MARKETPLACE',
 }
 
 /**
@@ -115,6 +119,11 @@ export const peoplePickerPermissionsSchema = z.object({
 });
 export type TPeoplePickerPermissions = z.infer<typeof peoplePickerPermissionsSchema>;
 
+export const marketplacePermissionsSchema = z.object({
+  [Permissions.USE]: z.boolean().default(false),
+});
+export type TMarketplacePermissions = z.infer<typeof marketplacePermissionsSchema>;
+
 // Define a single permissions schema that holds all permission types.
 export const permissionsSchema = z.object({
   [PermissionTypes.PROMPTS]: promptPermissionsSchema,
@@ -126,4 +135,5 @@ export const permissionsSchema = z.object({
   [PermissionTypes.RUN_CODE]: runCodePermissionsSchema,
   [PermissionTypes.WEB_SEARCH]: webSearchPermissionsSchema,
   [PermissionTypes.PEOPLE_PICKER]: peoplePickerPermissionsSchema,
+  [PermissionTypes.MARKETPLACE]: marketplacePermissionsSchema,
 });

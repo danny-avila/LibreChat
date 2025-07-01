@@ -79,6 +79,9 @@ const defaultRolesSchema = z.object({
         [Permissions.VIEW_USERS]: z.boolean().default(true),
         [Permissions.VIEW_GROUPS]: z.boolean().default(true),
       }),
+      [PermissionTypes.MARKETPLACE]: z.object({
+        [Permissions.USE]: z.boolean().default(false),
+      }),
     }),
   }),
   [SystemRoles.USER]: roleSchema.extend({
@@ -127,6 +130,9 @@ export const roleDefaults = defaultRolesSchema.parse({
         [Permissions.VIEW_USERS]: true,
         [Permissions.VIEW_GROUPS]: true,
       },
+      [PermissionTypes.MARKETPLACE]: {
+        [Permissions.USE]: true,
+      },
     },
   },
   [SystemRoles.USER]: {
@@ -143,6 +149,9 @@ export const roleDefaults = defaultRolesSchema.parse({
       [PermissionTypes.PEOPLE_PICKER]: {
         [Permissions.VIEW_USERS]: false,
         [Permissions.VIEW_GROUPS]: false,
+      },
+      [PermissionTypes.MARKETPLACE]: {
+        [Permissions.USE]: false,
       },
     },
   },

@@ -7,7 +7,7 @@ import type t from 'librechat-data-provider';
 import type { ContextType } from '~/common';
 
 import { useGetEndpointsQuery, useGetAgentCategoriesQuery } from '~/data-provider';
-import { useDocumentTitle } from '~/hooks';
+import { useDocumentTitle, useHasAccess } from '~/hooks';
 import useLocalize from '~/hooks/useLocalize';
 import { TooltipAnchor, Button } from '~/components/ui';
 import { NewChatIcon } from '~/components/svg';
@@ -19,6 +19,7 @@ import AgentDetail from './AgentDetail';
 import SearchBar from './SearchBar';
 import AgentGrid from './AgentGrid';
 import store from '~/store';
+import { PermissionTypes, Permissions } from 'librechat-data-provider';
 
 interface AgentMarketplaceProps {
   className?: string;
@@ -168,6 +169,14 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
 
   const fullCollapse = useMemo(() => localStorage.getItem('fullPanelCollapse') === 'true', []);
 
+  const hasAccessToMarketplace = useHasAccess({
+    permissionType: PermissionTypes.MARKETPLACE,
+    permission: Permissions.USE,
+  });
+  if (!hasAccessToMarketplace) {
+    navigate('/not-found', { replace: true });
+    return null;
+  }
   return (
     <div className={`relative flex w-full grow overflow-hidden bg-presentation ${className}`}>
       <MarketplaceProvider>
