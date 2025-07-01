@@ -15,9 +15,11 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
     generation,
     endpointOption,
     conversationId,
+    isContinued = false,
+    editedContent = null,
     parentMessageId = null,
     overrideParentMessageId = null,
-    isContinued = false,
+    responseMessageId: editedResponseMessageId = null,
   } = req.body;
 
   let sender;
@@ -165,13 +167,15 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
       user: userId,
       onStart,
       getReqData,
+      generation,
+      isContinued,
+      editedContent,
       conversationId,
       parentMessageId,
       abortController,
       overrideParentMessageId,
-      generation,
-      isContinued,
-      isEdited: !!generation,
+      isEdited: !!generation || !!editedContent,
+      responseMessageId: editedResponseMessageId,
       progressOptions: {
         res,
       },

@@ -572,7 +572,7 @@ class BaseClient {
       });
     }
 
-    const { generation = '' } = opts;
+    const { generation = '', editedContent } = opts;
 
     // It's not necessary to push to currentMessages
     // depending on subclass implementation of handling messages
@@ -591,7 +591,21 @@ class BaseClient {
         };
         this.currentMessages.push(userMessage, latestMessage);
       } else {
-        latestMessage.text = generation;
+        // Handle editedContent for content parts
+        if (editedContent && latestMessage.content && Array.isArray(latestMessage.content)) {
+          const { index, text, type } = editedContent;
+          if (index >= 0 && index < latestMessage.content.length) {
+            const contentPart = latestMessage.content[index];
+            if (type === ContentTypes.THINK && contentPart.type === ContentTypes.THINK) {
+              contentPart[ContentTypes.THINK] = text;
+            } else if (type === ContentTypes.TEXT && contentPart.type === ContentTypes.TEXT) {
+              contentPart[ContentTypes.TEXT] = text;
+            }
+          }
+        } else if (!editedContent) {
+          // Only update text if not editing content
+          latestMessage.text = generation;
+        }
       }
       this.continued = true;
     } else {
@@ -679,7 +693,20 @@ class BaseClient {
         isParamEndpoint(this.options.endpoint, this.options.endpointType))
     ) {
       responseMessage.text = '';
-      responseMessage.content = completion;
+      // If editedContent is provided, start with the existing content and update the edited part
+      if (opts.editedContent && this.currentMessages.length > 0) {
+        const latestMessage = this.currentMessages[this.currentMessages.length - 1];
+        if (latestMessage?.content) {
+          responseMessage.content = [...latestMessage.content];
+          // The edited part has already been updated in the currentMessages
+          // Now append the new completion
+          responseMessage.content = responseMessage.content.concat(completion);
+        } else {
+          responseMessage.content = completion;
+        }
+      } else {
+        responseMessage.content = completion;
+      }
     } else if (Array.isArray(completion)) {
       responseMessage.text = addSpaceIfNeeded(generation) + completion.join('');
     }

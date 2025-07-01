@@ -336,6 +336,11 @@ export type TAskProps = {
 export type TOptions = {
   editedMessageId?: string | null;
   editedText?: string | null;
+  editedContent?: {
+    index: number;
+    text: string;
+    type: 'text' | 'think';
+  };
   isRegenerate?: boolean;
   isContinued?: boolean;
   isEdited?: boolean;

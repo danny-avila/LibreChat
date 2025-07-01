@@ -1,29 +1,31 @@
+import { useRef, useEffect, useCallback, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { ContentTypes } from 'librechat-data-provider';
 import { useRecoilState, useRecoilValue } from 'recoil';
-import { useRef, useEffect, useCallback, useMemo } from 'react';
 import { useUpdateMessageContentMutation } from 'librechat-data-provider/react-query';
+import type { Agents } from 'librechat-data-provider';
 import type { TEditProps } from '~/common';
 import Container from '~/components/Chat/Messages/Content/Container';
 import { useChatContext, useAddedChatContext } from '~/Providers';
 import { TextareaAutosize } from '~/components/ui';
 import { cn, removeFocusRings } from '~/utils';
-import { useLocalize, useChatFunctions } from '~/hooks';
+import { useLocalize } from '~/hooks';
 import store from '~/store';
 
 const EditTextPart = ({
-  text,
+  part,
   index,
   messageId,
   isSubmitting,
   enterEdit,
-}: Omit<TEditProps, 'message' | 'ask'> & {
+}: Omit<TEditProps, 'message' | 'ask' | 'text'> & {
   index: number;
   messageId: string;
+  part: Agents.MessageContentText | Agents.ReasoningDeltaUpdate;
 }) => {
   const localize = useLocalize();
   const { addedIndex } = useAddedChatContext();
-  const { getMessages, setMessages, conversation } = useChatContext();
+  const { ask, getMessages, setMessages, conversation } = useChatContext();
   const [latestMultiMessage, setLatestMultiMessage] = useRecoilState(
     store.latestMessageFamily(addedIndex),
   );
@@ -35,16 +37,6 @@ const EditTextPart = ({
   );
 
   const chatDirection = useRecoilValue(store.chatDirection);
-  const [submission, setSubmission] = useRecoilState(store.submission);
-
-  const { ask } = useChatFunctions({
-    getMessages,
-    setMessages,
-    isSubmitting,
-    latestMessage: message ?? null,
-    setSubmission,
-    conversation,
-  });
 
   const textAreaRef = useRef<HTMLTextAreaElement | null>(null);
   const updateMessageContentMutation = useUpdateMessageContentMutation(conversationId ?? '');
@@ -53,7 +45,7 @@ const EditTextPart = ({
 
   const { register, handleSubmit, setValue } = useForm({
     defaultValues: {
-      text: text ?? '',
+      text: (ContentTypes.THINK in part ? part.think : part.text) || '',
     },
   });
 
@@ -76,7 +68,11 @@ const EditTextPart = ({
     ask(
       { ...parentMessage },
       {
-        editedText: data.text,
+        editedContent: {
+          index,
+          text: data.text,
+          type: part.type,
+        },
         editedMessageId: messageId,
         isRegenerate: true,
         isEdited: true,
