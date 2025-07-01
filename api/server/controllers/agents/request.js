@@ -12,7 +12,6 @@ const { saveMessage } = require('~/models');
 const AgentController = async (req, res, next, initializeClient, addTitle) => {
   let {
     text,
-    generation,
     endpointOption,
     conversationId,
     isContinued = false,
@@ -71,7 +70,7 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
             handler();
           }
         } catch (e) {
-          // Ignore cleanup errors
+          logger.error('[AgentController] Error in cleanup handler', e);
         }
       }
     }
@@ -159,7 +158,7 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
       try {
         res.removeListener('close', closeHandler);
       } catch (e) {
-        // Ignore
+        logger.error('[AgentController] Error removing close listener', e);
       }
     });
 
@@ -167,14 +166,13 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
       user: userId,
       onStart,
       getReqData,
-      generation,
       isContinued,
       editedContent,
       conversationId,
       parentMessageId,
       abortController,
       overrideParentMessageId,
-      isEdited: !!generation || !!editedContent,
+      isEdited: !!editedContent,
       responseMessageId: editedResponseMessageId,
       progressOptions: {
         res,

@@ -85,7 +85,6 @@ export default function useChatFunctions({
       messageId = null,
     },
     {
-      editedText = null,
       editedContent = null,
       editedMessageId = null,
       isResubmission = false,
@@ -238,14 +237,11 @@ export default function useChatFunctions({
       setFilesToDelete({});
     }
 
-    const generation = editedText ?? latestMessage?.text ?? '';
-    const responseText = isEditOrContinue ? generation : '';
-
     const responseMessageId =
       editedMessageId ?? (latestMessage?.messageId ? latestMessage?.messageId + '_' : null) ?? null;
     const initialResponse: TMessage = {
       sender: responseSender,
-      text: responseText,
+      text: '',
       endpoint: endpoint ?? '',
       parentMessageId: isRegenerate ? messageId : intermediateId,
       messageId: responseMessageId ?? `${isRegenerate ? messageId : intermediateId}_`,
@@ -265,7 +261,7 @@ export default function useChatFunctions({
         {
           type: ContentTypes.TEXT,
           [ContentTypes.TEXT]: {
-            value: responseText,
+            value: '',
           },
         },
       ];
@@ -291,7 +287,7 @@ export default function useChatFunctions({
           {
             type: ContentTypes.TEXT,
             [ContentTypes.TEXT]: {
-              value: responseText,
+              value: '',
             },
           },
         ];
@@ -312,7 +308,6 @@ export default function useChatFunctions({
       endpointOption,
       userMessage: {
         ...currentMsg,
-        generation,
         responseMessageId,
         overrideParentMessageId: isRegenerate ? messageId : null,
       },

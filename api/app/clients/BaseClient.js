@@ -13,7 +13,6 @@ const {
 const { getMessages, saveMessage, updateMessage, saveConvo, getConvo } = require('~/models');
 const { checkBalance } = require('~/models/balanceMethods');
 const { truncateToolCallOutputs } = require('./prompts');
-const { addSpaceIfNeeded } = require('~/server/utils');
 const { getFiles } = require('~/models/File');
 const TextStream = require('./TextStream');
 const { logger } = require('~/config');
@@ -572,7 +571,7 @@ class BaseClient {
       });
     }
 
-    const { generation = '', editedContent } = opts;
+    const { editedContent } = opts;
 
     // It's not necessary to push to currentMessages
     // depending on subclass implementation of handling messages
@@ -587,10 +586,9 @@ class BaseClient {
           isCreatedByUser: false,
           model: this.modelOptions?.model ?? this.model,
           sender: this.sender,
-          text: generation,
         };
         this.currentMessages.push(userMessage, latestMessage);
-      } else {
+      } else if (editedContent != null) {
         // Handle editedContent for content parts
         if (editedContent && latestMessage.content && Array.isArray(latestMessage.content)) {
           const { index, text, type } = editedContent;
@@ -602,9 +600,6 @@ class BaseClient {
               contentPart[ContentTypes.TEXT] = text;
             }
           }
-        } else if (!editedContent) {
-          // Only update text if not editing content
-          latestMessage.text = generation;
         }
       }
       this.continued = true;
@@ -686,7 +681,7 @@ class BaseClient {
     };
 
     if (typeof completion === 'string') {
-      responseMessage.text = addSpaceIfNeeded(generation) + completion;
+      responseMessage.text = completion;
     } else if (
       Array.isArray(completion) &&
       (this.clientName === EModelEndpoint.agents ||
@@ -708,7 +703,7 @@ class BaseClient {
         responseMessage.content = completion;
       }
     } else if (Array.isArray(completion)) {
-      responseMessage.text = addSpaceIfNeeded(generation) + completion.join('');
+      responseMessage.text = completion.join('');
     }
 
     if (
