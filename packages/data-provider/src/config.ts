@@ -488,7 +488,7 @@ const mcpServersSchema = z.object({
 
 export type TMcpServersConfig = z.infer<typeof mcpServersSchema>;
 
-export const intefaceSchema = z
+export const interfaceSchema = z
   .object({
     privacyPolicy: z
       .object({
@@ -513,6 +513,22 @@ export const intefaceSchema = z
     temporaryChatRetention: z.number().min(1).max(8760).optional(),
     runCode: z.boolean().optional(),
     webSearch: z.boolean().optional(),
+    peoplePicker: z
+      .object({
+        admin: z
+          .object({
+            users: z.boolean().optional(),
+            groups: z.boolean().optional(),
+          })
+          .optional(),
+        user: z
+          .object({
+            users: z.boolean().optional(),
+            groups: z.boolean().optional(),
+          })
+          .optional(),
+      })
+      .optional(),
   })
   .default({
     endpointsMenu: true,
@@ -528,9 +544,19 @@ export const intefaceSchema = z
     temporaryChat: true,
     runCode: true,
     webSearch: true,
+    peoplePicker: {
+      admin: {
+        users: true,
+        groups: true,
+      },
+      user: {
+        users: false,
+        groups: false,
+      },
+    },
   });
 
-export type TInterfaceConfig = z.infer<typeof intefaceSchema>;
+export type TInterfaceConfig = z.infer<typeof interfaceSchema>;
 export type TBalanceConfig = z.infer<typeof balanceSchema>;
 
 export const turnstileOptionsSchema = z
@@ -715,7 +741,7 @@ export const configSchema = z.object({
   includedTools: z.array(z.string()).optional(),
   filteredTools: z.array(z.string()).optional(),
   mcpServers: MCPServersSchema.optional(),
-  interface: intefaceSchema,
+  interface: interfaceSchema,
   turnstile: turnstileSchema.optional(),
   fileStrategy: fileSourceSchema.default(FileSources.local),
   actions: z
