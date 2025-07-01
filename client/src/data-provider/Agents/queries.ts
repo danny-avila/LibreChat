@@ -1,11 +1,34 @@
-import { QueryKeys, dataService, EModelEndpoint, PERMISSION_BITS } from 'librechat-data-provider';
+import {
+  QueryKeys,
+  dataService,
+  EModelEndpoint,
+  PERMISSION_BITS,
+  PermissionTypes,
+  Permissions,
+} from 'librechat-data-provider';
 import { useQuery, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
+import { useMemo } from 'react';
 import type {
   QueryObserverResult,
   UseQueryOptions,
   UseInfiniteQueryOptions,
 } from '@tanstack/react-query';
 import type t from 'librechat-data-provider';
+import { useHasAccess } from '~/hooks';
+
+/**
+ * Hook to determine the appropriate permission level for agent queries based on marketplace configuration
+ */
+export const useAgentListingDefaultPermissionLevel = () => {
+  const hasMarketplaceAccess = useHasAccess({
+    permissionType: PermissionTypes.MARKETPLACE,
+    permission: Permissions.USE,
+  });
+
+  // When marketplace is active: EDIT permissions (builder mode)
+  // When marketplace is not active: VIEW permissions (browse mode)
+  return hasMarketplaceAccess ? PERMISSION_BITS.EDIT : PERMISSION_BITS.VIEW;
+};
 
 /**
  * AGENTS
