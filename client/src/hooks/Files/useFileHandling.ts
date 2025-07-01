@@ -1,33 +1,34 @@
-import { useQueryClient } from '@tanstack/react-query';
-import type { TEndpointsConfig, TError } from 'librechat-data-provider';
-import {
-  defaultAssistantsVersion,
-  fileConfig as defaultFileConfig,
-  EModelEndpoint,
-  isAgentsEndpoint,
-  isAssistantsEndpoint,
-  mergeFileConfig,
-  QueryKeys,
-} from 'librechat-data-provider';
-import debounce from 'lodash/debounce';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { v4 } from 'uuid';
+import { useQueryClient } from '@tanstack/react-query';
+import {
+  QueryKeys,
+  EModelEndpoint,
+  mergeFileConfig,
+  isAgentsEndpoint,
+  isAssistantsEndpoint,
+  defaultAssistantsVersion,
+  fileConfig as defaultFileConfig,
+} from 'librechat-data-provider';
+import debounce from 'lodash/debounce';
+import type { EndpointFileConfig, TEndpointsConfig, TError } from 'librechat-data-provider';
 import type { ExtendedFile, FileSetter } from '~/common';
 import { useGetFileConfig, useUploadFileMutation } from '~/data-provider';
 import useLocalize, { TranslationKeys } from '~/hooks/useLocalize';
-import { useChatContext } from '~/Providers/ChatContext';
+import { useDelayedUploadToast } from './useDelayedUploadToast';
+import { processFileForUpload } from '~/utils/heicConverter';
 import { useToastContext } from '~/Providers/ToastContext';
+import { useChatContext } from '~/Providers/ChatContext';
 import { logger, validateFiles } from '~/utils';
 import useClientResize from './useClientResize';
-import { processFileForUpload } from '~/utils/heicConverter';
-import { useDelayedUploadToast } from './useDelayedUploadToast';
 import useUpdateFiles from './useUpdateFiles';
 
 type UseFileHandling = {
-  overrideEndpoint?: EModelEndpoint;
   fileSetter?: FileSetter;
   fileFilter?: (file: File) => boolean;
   additionalMetadata?: Record<string, string | undefined>;
+  overrideEndpoint?: EModelEndpoint;
+  overrideEndpointFileConfig?: EndpointFileConfig;
 };
 
 const useFileHandling = (params?: UseFileHandling) => {
@@ -246,8 +247,9 @@ const useFileHandling = (params?: UseFileHandling) => {
         fileList,
         setError,
         endpointFileConfig:
-          fileConfig?.endpoints[endpoint] ??
-          fileConfig?.endpoints.default ??
+          params?.overrideEndpointFileConfig ??
+          fileConfig?.endpoints?.[endpoint] ??
+          fileConfig?.endpoints?.default ??
           defaultFileConfig.endpoints[endpoint] ??
           defaultFileConfig.endpoints.default,
       });

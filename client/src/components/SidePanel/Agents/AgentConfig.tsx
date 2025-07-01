@@ -168,7 +168,7 @@ export default function AgentConfig({
   const visibleToolIds = new Set(selectedToolIds);
 
   // Check what group parent tools should be shown if any subtool is present
-  Object.entries(allTools).forEach(([toolId, toolObj]) => {
+  Object.entries(allTools ?? {}).forEach(([toolId, toolObj]) => {
     if (toolObj.tools?.length) {
       // if any subtool of this group is selected, ensure group parent tool rendered
       if (toolObj.tools.some((st) => selectedToolIds.includes(st.tool_id))) {
@@ -299,6 +299,7 @@ export default function AgentConfig({
             <div className="mb-1">
               {/* // Render all visible IDs (including groups with subtools selected) */}
               {[...visibleToolIds].map((toolId, i) => {
+                if (!allTools) return null;
                 const tool = allTools[toolId];
                 if (!tool) return null;
                 return (
