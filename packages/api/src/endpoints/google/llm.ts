@@ -1,6 +1,7 @@
 import { Providers } from '@librechat/agents';
 import { googleSettings, AuthKeys } from 'librechat-data-provider';
 import type { GoogleClientOptions, VertexAIClientOptions } from '@librechat/agents';
+import type { GoogleAIToolType } from '@langchain/google-common';
 import type * as t from '~/types';
 import { isEnabled } from '~/utils';
 
@@ -105,6 +106,7 @@ export function getGoogleConfig(
   const authHeader = options.authHeader;
 
   const {
+    grounding,
     thinking = googleSettings.thinking.default,
     thinkingBudget = googleSettings.thinkingBudget.default,
     ...modelOptions
@@ -187,8 +189,16 @@ export function getGoogleConfig(
     };
   }
 
+  const tools: GoogleAIToolType[] = [];
+
+  if (grounding) {
+    tools.push({ googleSearch: {} });
+  }
+
   // Return the final shape
   return {
+    /** @type {GoogleAIToolType[]} */
+    tools,
     /** @type {Providers.GOOGLE | Providers.VERTEXAI} */
     provider,
     /** @type {GoogleClientOptions | VertexAIClientOptions} */
