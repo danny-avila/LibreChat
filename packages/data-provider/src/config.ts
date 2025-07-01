@@ -533,6 +533,20 @@ export const interfaceSchema = z
           .optional(),
       })
       .optional(),
+    marketplace: z
+      .object({
+        admin: z
+          .object({
+            use: z.boolean().optional(),
+          })
+          .optional(),
+        user: z
+          .object({
+            use: z.boolean().optional(),
+          })
+          .optional(),
+      })
+      .optional(),
     fileSearch: z.boolean().optional(),
   })
   .default({
@@ -557,6 +571,14 @@ export const interfaceSchema = z
       user: {
         users: false,
         groups: false,
+      },
+    },
+    marketplace: {
+      admin: {
+        use: false,
+      },
+      user: {
+        use: false,
       },
     },
     fileSearch: true,

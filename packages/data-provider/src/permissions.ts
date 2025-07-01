@@ -41,6 +41,10 @@ export enum PermissionTypes {
    */
   PEOPLE_PICKER = 'PEOPLE_PICKER',
   /**
+   * Type for Marketplace Permissions
+   */
+  MARKETPLACE = 'MARKETPLACE',
+  /**
    * Type for using the "File Search" feature
    */
   FILE_SEARCH = 'FILE_SEARCH',
@@ -119,6 +123,11 @@ export const peoplePickerPermissionsSchema = z.object({
 });
 export type TPeoplePickerPermissions = z.infer<typeof peoplePickerPermissionsSchema>;
 
+export const marketplacePermissionsSchema = z.object({
+  [Permissions.USE]: z.boolean().default(false),
+});
+export type TMarketplacePermissions = z.infer<typeof marketplacePermissionsSchema>;
+
 export const fileSearchPermissionsSchema = z.object({
   [Permissions.USE]: z.boolean().default(true),
 });
@@ -135,5 +144,6 @@ export const permissionsSchema = z.object({
   [PermissionTypes.RUN_CODE]: runCodePermissionsSchema,
   [PermissionTypes.WEB_SEARCH]: webSearchPermissionsSchema,
   [PermissionTypes.PEOPLE_PICKER]: peoplePickerPermissionsSchema,
+  [PermissionTypes.MARKETPLACE]: marketplacePermissionsSchema,
   [PermissionTypes.FILE_SEARCH]: fileSearchPermissionsSchema,
 });

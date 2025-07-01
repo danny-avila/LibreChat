@@ -80,6 +80,9 @@ const defaultRolesSchema = z.object({
         [Permissions.VIEW_USERS]: z.boolean().default(true),
         [Permissions.VIEW_GROUPS]: z.boolean().default(true),
       }),
+      [PermissionTypes.MARKETPLACE]: z.object({
+        [Permissions.USE]: z.boolean().default(false),
+      }),
       [PermissionTypes.FILE_SEARCH]: fileSearchPermissionsSchema.extend({
         [Permissions.USE]: z.boolean().default(true),
       }),
@@ -131,6 +134,9 @@ export const roleDefaults = defaultRolesSchema.parse({
         [Permissions.VIEW_USERS]: true,
         [Permissions.VIEW_GROUPS]: true,
       },
+      [PermissionTypes.MARKETPLACE]: {
+        [Permissions.USE]: true,
+      },
       [PermissionTypes.FILE_SEARCH]: {
         [Permissions.USE]: true,
       },
@@ -150,6 +156,9 @@ export const roleDefaults = defaultRolesSchema.parse({
       [PermissionTypes.PEOPLE_PICKER]: {
         [Permissions.VIEW_USERS]: false,
         [Permissions.VIEW_GROUPS]: false,
+      },
+      [PermissionTypes.MARKETPLACE]: {
+        [Permissions.USE]: false,
       },
       [PermissionTypes.FILE_SEARCH]: {},
     },
