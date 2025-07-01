@@ -60,6 +60,7 @@ properties:
       - name: maas-api-key
         keyVaultUrl: https://kv-playai-n2a-001.vault.azure.net/secrets/N2A-LIBRECHAT-MAAS-API-KEY
         identity: system
+    activeRevisionsMode: Single
     ingress:
       external: true
       targetPort: 3080
