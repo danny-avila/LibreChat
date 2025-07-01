@@ -49,7 +49,7 @@ async function customFetch(url, options) {
       logger.info(`[openidStrategy] proxy agent configured: ${process.env.PROXY}`);
       fetchOptions = {
         ...options,
-        dispatcher: new HttpsProxyAgent(process.env.PROXY),
+        dispatcher: new undici.ProxyAgent(process.env.PROXY),
       };
     }
 
