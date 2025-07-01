@@ -1,0 +1,9 @@
+{{- if .Values.librechat.configYamlContent }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: librechat-config
+data:
+  librechat.yaml: |-
+{{ .Values.librechat.configYamlContent | indent 4 }}
+{{- end }}

@@ -1,0 +1,213 @@
+monolith:
+  env: prod
+  name: librechat
+  orgRepository: librechat
+
+  # Main LibreChat application image
+  image:
+    repository: librechat-dev
+    tag: "latest"
+    pullPolicy: IfNotPresent
+
+  # Service configuration
+  service:
+    port: 3080
+    targetPort: http
+    type: ClusterIP
+
+  # Resources
+  resources:
+    limits:
+      memory: 1280Mi
+    requests:
+      cpu: 320m
+      memory: 800Mi
+
+  # Health checks
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: http
+    failureThreshold: 3
+    initialDelaySeconds: 30
+    periodSeconds: 5
+    timeoutSeconds: 10
+
+  readinessProbe:
+    httpGet:
+      path: /health
+      port: http
+    failureThreshold: 1
+    initialDelaySeconds: 5
+    periodSeconds: 1
+    timeoutSeconds: 3
+
+#  # Pod Security Context
+#  podSecurityContext:
+#    fsGroup: 2000
+#
+#  securityContext:
+#    capabilities:
+#      drop:
+#        - ALL
+#    runAsNonRoot: true
+#    runAsUser: 1000
+
+  # Environment Configuration via ConfigMap
+  config:
+    APP_TITLE: "parcelLab chat"
+    RAG_API_URL: "http://librechat-rag.default.svc.cluster.local:8000"
+    DOMAIN_SERVER: "https://chat.parcellab.com"
+    DOMAIN_CLIENT: "https://chat.parcellab.com"
+    ALLOW_SOCIAL_LOGIN: "true"
+    OPENID_BUTTON_LABEL: "Log in with Azure"
+    OPENID_SCOPE: "openid profile email"
+    OPENID_CALLBACK_URL: "/oauth/openid/callback"
+    OPENID_REQUIRED_ROLE_TOKEN_KIND: "id"
+    MEILI_HOST: "http://librechat-meilisearch.librechat.svc.cluster.local:7700"
+    ALLOW_EMAIL_LOGIN: "false"
+    ALLOW_REGISTRATION: "false"
+    ANTHROPIC_MODELS: "claude-opus-4-20250514,claude-sonnet-4-20250514,claude-3-7-sonnet-20250219,claude-3-5-sonnet-20241022,claude-3-5-haiku-20241022,claude-3-opus-20240229,claude-3-sonnet-20240229,claude-3-haiku-20240307"
+    DEBUG_PLUGINS: "true"
+    EMBEDDINGS_MODEL: "text-embedding-3-small"
+    EMBEDDINGS_PROVIDER: "openai"
+    OPENAI_MODELS: "gpt-4,gpt-4o,gpt-3.5-turbo,gpt-4o-mini"
+    PLUGIN_MODELS: "gpt-4,gpt-4-turbo-preview,gpt-4-0125-preview,gpt-4-1106-preview,gpt-4-0613,gpt-3.5-turbo,gpt-3.5-turbo-0125,gpt-3.5-turbo-1106,gpt-3.5-turbo-0613"
+    USE_REDIS: "false"
+
+  # External Secret for sensitive data
+  externalSecret:
+    dataFrom:
+      - extract:
+          key: infra/prod/librechat/env
+    data:
+      - secretKey: MONGO_URI
+        remoteRef:
+          key: infra/prod/mongodbatlas/default/LibreChat
+          property: CONNECTION_STRING
+
+  # Ingress Configuration
+  ingress:
+    enabled: true
+    className: "nginx"
+    annotations:
+      cert-manager.io/cluster-issuer: letsencrypt
+      kubernetes.io/ingress.class: nginx
+      nginx.ingress.kubernetes.io/auth-response-headers: x-auth-request-email
+      nginx.ingress.kubernetes.io/auth-signin: https://oauth-azure.parcellab.com/oauth2/start?rd=https://$host$request_uri
+      nginx.ingress.kubernetes.io/auth-url: http://oauth2-proxy-azure.oauth2-proxy-azure.svc.cluster.local/oauth2/auth
+      nginx.ingress.kubernetes.io/proxy-buffer-size: 16k
+    hosts:
+      - host: chat.parcellab.com
+        paths:
+          - path: /
+            pathType: Prefix
+
+  # Node affinity
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: parcellab.dev/node-group
+                operator: In
+                values:
+                  - dependable
+
+  # Volumes for librechat.yaml config file
+  volumes:
+    - name: config-yaml
+      mountPath: "/app/librechat.yaml"
+      readOnly: false
+      volumeTemplate:
+        configMap:
+          name: librechat-config
+    - name: librechat-images
+      mountPath: "/app/client/public/images"
+      readOnly: false
+      volumeTemplate:
+        persistentVolumeClaim:
+          claimName: librechat-images-pvc
+
+#  volumeMounts:
+#    - name: config-yaml
+#      mountPath: "/app/librechat.yaml"
+#      subPath: "librechat.yaml"
+#      readOnly: true
+
+  # Extra services for RAG API
+  extraServices:
+    - name: rag
+      image:
+        repository: ghcr.io/danny-avila/librechat-rag-api-dev-lite
+        tag: latest
+      portNumber: 8000
+      livenessProbe:
+        httpGet:
+          path: /health
+          port: http
+      readinessProbe:
+        httpGet:
+          path: /health
+          port: http
+      resources:
+        limits:
+          memory: 512Mi
+        requests:
+          cpu: 100m
+          memory: 256Mi
+      containerEnv:
+        - name: EMBEDDINGS_PROVIDER
+          value: "openai"
+      externalSecret:
+        data:
+          - secretKey: DB_HOST
+            remoteRef:
+              key: infra/prod/librechat/dbinstance
+              property: librechat_DB_HOST
+          - secretKey: POSTGRES_DB
+            remoteRef:
+              key: infra/prod/librechat/dbinstance
+              property: librechat_DB_DBNAME
+          - secretKey: POSTGRES_USER
+            remoteRef:
+              key: infra/prod/librechat/dbinstance
+              property: librechat_DB_USER
+          - secretKey: POSTGRES_PASSWORD
+            remoteRef:
+              key: infra/prod/librechat/dbinstance
+              property: librechat_DB_PASS
+          - secretKey: OPENAI_API_KEY
+            remoteRef:
+              key: infra/prod/librechat/env
+              property: OPENAI_API_KEY
+librechat:
+  # LibreChat YAML Configuration
+  configYamlContent: |
+    version: 1.2.8
+    cache: false
+    mcpServers:
+      parcellab:
+        name: "ParcelLab MCP"
+        url: "https://mcp-internal-preview-3953.staging.parcellab.dev/sse"
+        auth:
+          type: "oauth"
+  imageVolume:
+    enabled: true
+    size: 40Gi
+    accessModes: ReadWriteOnce
+
+# Meilisearch configuration
+meilisearch:
+  enabled: true
+  persistence:
+    enabled: true
+    storageClass: ""
+    size: 10Gi
+  image:
+    tag: "v1.7.3"
+  auth:
+    existingMasterKeySecret: "librechat"
+  environment:
+    MEILI_ENV: "development"
+    MEILI_NO_ANALYTICS: "true"

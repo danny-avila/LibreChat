@@ -1,0 +1,21 @@
+{{- if .Values.librechat.imageVolume.enabled }}
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  labels:
+    argocd.argoproj.io/instance: librechat
+  name: librechat-images-volume
+spec:
+  accessModes:
+    - ReadWriteMany
+  capacity:
+    storage: {{ .Values.librechat.imageVolume.size }}
+  csi:
+    driver: s3.csi.aws.com
+    volumeAttributes:
+      bucketName: librechat-files-{{ .Values.env }}
+    volumeHandle: s3-csi-driver-volume
+  mountOptions:
+    - region eu-central-1
+    - prefix /images/
+{{- end }}

@@ -1,0 +1,12 @@
+apiVersion: v2
+name: librechat
+description: LibreChat
+version: 0.0.0
+dependencies:
+  - name: monolith
+    version: "0.1.2"
+    repository: https://charts.parcellab.dev
+  - name: meilisearch
+    version: "0.11.0"
+    condition: meilisearch.enabled
+    repository: "https://meilisearch.github.io/meilisearch-kubernetes"
