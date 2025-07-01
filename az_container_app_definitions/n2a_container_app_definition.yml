@@ -204,5 +204,5 @@ properties:
   delegatedIdentities: []
 identity:
   type: SystemAssigned
-  principalId: 452fd52a-93f2-4ae1-8c5c-9531eeae95aa
-  tenantId: bcc529c5-dfce-4f97-b44f-debd50891d83
+  # principalId: a7ee9e78-f601-49c9-8a86-7344c5941bfa
+  # tenantId: bcc529c5-dfce-4f97-b44f-debd50891d83
