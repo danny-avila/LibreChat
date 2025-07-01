@@ -1258,6 +1258,10 @@ export enum ErrorTypes {
    */
   GOOGLE_ERROR = 'google_error',
   /**
+   * Google provider does not allow custom tools with built-in tools
+   */
+  GOOGLE_TOOL_CONFLICT = 'google_tool_conflict',
+  /**
    * Invalid Agent Provider (excluded by Admin)
    */
   INVALID_AGENT_PROVIDER = 'invalid_agent_provider',
