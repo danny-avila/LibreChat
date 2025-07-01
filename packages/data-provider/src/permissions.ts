@@ -36,6 +36,10 @@ export enum PermissionTypes {
    * Type for using the "Web Search" feature
    */
   WEB_SEARCH = 'WEB_SEARCH',
+  /**
+   * Type for People Picker Permissions
+   */
+  PEOPLE_PICKER = 'PEOPLE_PICKER',
 }
 
 /**
@@ -51,6 +55,8 @@ export enum Permissions {
   SHARE = 'SHARE',
   /** Can disable if desired */
   OPT_OUT = 'OPT_OUT',
+  VIEW_USERS = 'VIEW_USERS',
+  VIEW_GROUPS = 'VIEW_GROUPS',
 }
 
 export const promptPermissionsSchema = z.object({
@@ -103,6 +109,12 @@ export const webSearchPermissionsSchema = z.object({
 });
 export type TWebSearchPermissions = z.infer<typeof webSearchPermissionsSchema>;
 
+export const peoplePickerPermissionsSchema = z.object({
+  [Permissions.VIEW_USERS]: z.boolean().default(true),
+  [Permissions.VIEW_GROUPS]: z.boolean().default(true),
+});
+export type TPeoplePickerPermissions = z.infer<typeof peoplePickerPermissionsSchema>;
+
 // Define a single permissions schema that holds all permission types.
 export const permissionsSchema = z.object({
   [PermissionTypes.PROMPTS]: promptPermissionsSchema,
@@ -113,4 +125,5 @@ export const permissionsSchema = z.object({
   [PermissionTypes.TEMPORARY_CHAT]: temporaryChatPermissionsSchema,
   [PermissionTypes.RUN_CODE]: runCodePermissionsSchema,
   [PermissionTypes.WEB_SEARCH]: webSearchPermissionsSchema,
+  [PermissionTypes.PEOPLE_PICKER]: peoplePickerPermissionsSchema,
 });
