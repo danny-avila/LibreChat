@@ -15,17 +15,16 @@ const { isEnabled } = require('~/server/utils');
  * The JWT is then verified using the signing key, and the user is retrieved from the database.
  */
 const openIdJwtLogin = (openIdConfig) => {
-
   let jwksRsaOptions = {
     cache: isEnabled(process.env.OPENID_JWKS_URL_CACHE_ENABLED) || true,
     cacheMaxAge: process.env.OPENID_JWKS_URL_CACHE_TIME
-        ? eval(process.env.OPENID_JWKS_URL_CACHE_TIME)
-        : 60000,
+      ? eval(process.env.OPENID_JWKS_URL_CACHE_TIME)
+      : 60000,
     jwksUri: openIdConfig.serverMetadata().jwks_uri,
   };
 
   if (process.env.PROXY) {
-    jwksRsaOptions.requestAgent = new HttpsProxyAgent(process.env.PROXY)
+    jwksRsaOptions.requestAgent = new HttpsProxyAgent(process.env.PROXY);
   }
 
   return new JwtStrategy(
@@ -56,6 +55,6 @@ const openIdJwtLogin = (openIdConfig) => {
       }
     },
   );
-}
+};
 
 module.exports = openIdJwtLogin;
