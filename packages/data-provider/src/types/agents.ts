@@ -337,17 +337,21 @@ export type MCP = {
   metadata: MCPMetadata;
 } & ({ assistant_id: string; agent_id?: never } | { assistant_id?: never; agent_id: string });
 
-export type MCPMetadata = Omit<ActionMetadata, 'auth'> & {
-  name?: string;
+export type MCPMetadata = {
+  name: string;
   description?: string;
-  url?: string;
-  tools?: string[];
-  auth?: MCPAuth;
+  url: string;
+  tools?: TPlugin[];
   icon?: string;
   trust?: boolean;
+  customHeaders?: Array<{
+    id: string;
+    name: string;
+    value: string;
+  }>;
+  requestTimeout?: number;
+  connectionTimeout?: number;
 };
-
-export type MCPAuth = ActionAuth;
 
 export type AgentToolType = {
   tool_id: string;

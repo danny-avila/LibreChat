@@ -832,3 +832,41 @@ export const createMemory = (data: {
 }): Promise<{ created: boolean; memory: q.TUserMemory }> => {
   return request.post(endpoints.memories(), data);
 };
+
+export const createMCP = (mcp: ag.MCP): Promise<ag.MCP> => {
+  return request.post(
+    endpoints.mcps({
+      path: 'add',
+    }),
+    mcp,
+  );
+};
+
+export const getMCPServers = (): Promise<ag.MCP[]> => {
+  return request.get(endpoints.mcps({}));
+};
+
+export const getMCP = (mcp_id: string): Promise<ag.MCP> => {
+  return request.get(
+    endpoints.mcps({
+      path: mcp_id,
+    }),
+  );
+};
+
+export const updateMCP = ({ mcp_id, data }: { mcp_id: string; data: ag.MCP }): Promise<ag.MCP> => {
+  return request.put(
+    endpoints.mcps({
+      path: mcp_id,
+    }),
+    data,
+  );
+};
+
+export const deleteMCP = ({ mcp_id }: { mcp_id: string }): Promise<Record<string, unknown>> => {
+  return request.delete(
+    endpoints.mcps({
+      path: mcp_id,
+    }),
+  );
+};

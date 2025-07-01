@@ -7,6 +7,7 @@ export * from './Memories';
 export * from './Messages';
 export * from './Misc';
 export * from './Tools';
+export * from './MCPs';
 export * from './connection';
 export * from './mutations';
 export * from './prompts';
