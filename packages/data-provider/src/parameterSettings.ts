@@ -568,7 +568,6 @@ const googleCol1: SettingsConfiguration = [
   baseDefinitions.model as SettingDefinition,
   librechat.modelLabel,
   librechat.promptPrefix,
-  google.grounding,
 ];
 
 const googleCol2: SettingsConfiguration = [
@@ -580,6 +579,7 @@ const googleCol2: SettingsConfiguration = [
   librechat.resendFiles,
   google.thinking,
   google.thinkingBudget,
+  google.grounding,
 ];
 
 const openAI: SettingsConfiguration = [
