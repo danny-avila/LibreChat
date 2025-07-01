@@ -172,6 +172,9 @@ export default defineConfig(({ command }) => ({
             if (id.includes('heic-to')) {
               return 'heic-converter';
             }
+            if (id.includes('mermaid')) {
+              return 'mermaid';
+            }
 
             // Existing chunks
             if (id.includes('@radix-ui')) {
