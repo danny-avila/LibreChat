@@ -1,5 +1,6 @@
 import { ProxyAgent } from 'undici';
 import { KnownEndpoints, removeNullishValues } from 'librechat-data-provider';
+import type { AzureOpenAIInput } from '@langchain/openai';
 import type { OpenAI } from 'openai';
 import type * as t from '~/types';
 import { sanitizeModelName, constructAzureURL } from '~/utils/azure';
@@ -42,7 +43,9 @@ export function getOpenAIConfig(
     dropParams,
   } = options;
   const { reasoning_effort, reasoning_summary, ...modelOptions } = _modelOptions;
-  const llmConfig: Partial<t.ClientOptions> & Partial<t.OpenAIParameters> = Object.assign(
+  const llmConfig: Partial<t.ClientOptions> &
+    Partial<t.OpenAIParameters> &
+    Partial<AzureOpenAIInput> = Object.assign(
     {
       streaming,
       model: modelOptions.model ?? '',
@@ -100,7 +103,10 @@ export function getOpenAIConfig(
       llmConfig.model = process.env.AZURE_OPENAI_DEFAULT_MODEL;
     }
 
-    if (configOptions.baseURL) {
+    const constructBaseURL = () => {
+      if (!configOptions.baseURL) {
+        return;
+      }
       const azureURL = constructAzureURL({
         baseURL: configOptions.baseURL,
         azureOptions: updatedAzure,
@@ -108,9 +114,38 @@ export function getOpenAIConfig(
       updatedAzure.azureOpenAIBasePath = azureURL.split(
         `/${updatedAzure.azureOpenAIApiDeploymentName}`,
       )[0];
-    }
+    };
 
+    const constructAzureResponsesApi = () => {
+      if (!llmConfig.useResponsesApi) {
+        return;
+      }
+
+      if (!configOptions.baseURL) {
+        configOptions.baseURL = constructAzureURL({
+          baseURL: 'https://${INSTANCE_NAME}.openai.azure.com/openai/v1',
+          azureOptions: azure,
+        });
+      }
+      delete llmConfig.azureOpenAIApiDeploymentName;
+      delete llmConfig.azureOpenAIApiInstanceName;
+      delete llmConfig.azureOpenAIApiVersion;
+      delete llmConfig.azureOpenAIApiKey;
+
+      configOptions.defaultHeaders = {
+        ...configOptions.defaultHeaders,
+        'api-key': apiKey,
+      };
+      configOptions.defaultQuery = {
+        ...configOptions.defaultQuery,
+        'api-version': 'preview',
+      };
+    };
+
+    constructBaseURL();
     Object.assign(llmConfig, updatedAzure);
+    constructAzureResponsesApi();
+
     llmConfig.model = updatedAzure.azureOpenAIApiDeploymentName;
   } else {
     llmConfig.apiKey = apiKey;
