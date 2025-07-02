@@ -143,5 +143,8 @@
       "admin/",
       "packages/"
     ]
+  },
+  "dependencies": {
+    "echarts": "^5.6.0"
   }
 }
