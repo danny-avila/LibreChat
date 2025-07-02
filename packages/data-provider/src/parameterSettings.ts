@@ -247,6 +247,19 @@ const openAIParams: Record<string, SettingDefinition> = {
     showDefault: false,
     columnSpan: 2,
   },
+  web_search: {
+    key: 'web_search',
+    label: 'com_ui_web_search',
+    labelCode: true,
+    description: 'com_endpoint_openai_use_web_search',
+    descriptionCode: true,
+    type: 'boolean',
+    default: false,
+    component: 'switch',
+    optionType: 'model',
+    showDefault: false,
+    columnSpan: 2,
+  },
   reasoning_summary: {
     key: 'reasoning_summary',
     label: 'com_endpoint_reasoning_summary',
@@ -596,6 +609,7 @@ const openAI: SettingsConfiguration = [
   baseDefinitions.stop,
   librechat.resendFiles,
   baseDefinitions.imageDetail,
+  openAIParams.web_search,
   openAIParams.reasoning_effort,
   openAIParams.useResponsesApi,
   openAIParams.reasoning_summary,
@@ -618,8 +632,9 @@ const openAICol2: SettingsConfiguration = [
   librechat.resendFiles,
   baseDefinitions.imageDetail,
   openAIParams.reasoning_effort,
-  openAIParams.useResponsesApi,
   openAIParams.reasoning_summary,
+  openAIParams.useResponsesApi,
+  openAIParams.web_search,
 ];
 
 const anthropicConfig: SettingsConfiguration = [

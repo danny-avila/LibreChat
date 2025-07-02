@@ -634,6 +634,8 @@ export const tConversationSchema = z.object({
   reasoning_summary: eReasoningSummarySchema.optional().nullable(),
   /* OpenAI: use Responses API */
   useResponsesApi: z.boolean().optional(),
+  /* OpenAI: use Responses API with Web Search */
+  web_search: z.boolean().optional(),
   /* Google: use Search Grounding */
   grounding: z.boolean().optional(),
   /* assistant */
@@ -1071,6 +1073,7 @@ export const openAIBaseSchema = tConversationSchema.pick({
   reasoning_effort: true,
   reasoning_summary: true,
   useResponsesApi: true,
+  web_search: true,
 });
 
 export const openAISchema = openAIBaseSchema
