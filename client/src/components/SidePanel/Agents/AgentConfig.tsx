@@ -225,15 +225,14 @@ export default function AgentConfig({
             name="description"
             control={control}
             render={({ field }) => (
-              <input
+              <textarea
                 {...field}
                 value={field.value ?? ''}
-                maxLength={512}
-                className={inputClass}
+                className={`${inputClass} resize-y min-h-[100px]`}
                 id="description"
-                type="text"
                 placeholder={localize('com_agents_description_placeholder')}
                 aria-label="Agent description"
+                rows={4}
               />
             )}
           />
