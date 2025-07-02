@@ -63,6 +63,41 @@ export const useUpdateConversationMutation = (
   );
 };
 
+export const usePinConversationMutation = (): UseMutationResult<
+  t.TConversation,
+  unknown,
+  { conversationId: string; isPinned: boolean },
+  unknown
+> => {
+  const queryClient = useQueryClient();
+  return useMutation(
+    (payload: { conversationId: string; isPinned: boolean }) => dataService.pinConversation(payload),
+    {
+      onSuccess: (updatedConvo, { conversationId }) => {
+        queryClient.setQueryData([QueryKeys.conversation, conversationId], updatedConvo);
+        updateConvoInAllQueries(queryClient, conversationId, (c) => ({
+          ...c,
+          isPinned: updatedConvo.isPinned,
+        }));
+        
+        // Immediately refetch both pinned and unpinned conversation queries for instant UI updates
+        queryClient.refetchQueries({ 
+          queryKey: [QueryKeys.allConversations], 
+          exact: false 
+        });
+        queryClient.refetchQueries({ 
+          queryKey: [QueryKeys.conversations], 
+          exact: false 
+        });
+        queryClient.refetchQueries({ 
+          queryKey: [QueryKeys.searchConversations], 
+          exact: false 
+        });
+      },
+    },
+  );
+};
+
 export const useTagConversationMutation = (
   conversationId: string,
   options?: t.updateTagsInConvoOptions,

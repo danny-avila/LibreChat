@@ -21,8 +21,8 @@ import store from '~/store';
 const BookmarkNav = lazy(() => import('./Bookmarks/BookmarkNav'));
 const AccountSettings = lazy(() => import('./AccountSettings'));
 
-const NAV_WIDTH_DESKTOP = '260px';
-const NAV_WIDTH_MOBILE = '320px';
+const NAV_WIDTH_DESKTOP = 260;
+const NAV_WIDTH_MOBILE = 320;
 
 const NavMask = memo(
   ({ navVisible, toggleNavVisible }: { navVisible: boolean; toggleNavVisible: () => void }) => (
@@ -73,6 +73,7 @@ const Nav = memo(
         {
           tags: tags.length === 0 ? undefined : tags,
           search: search.debouncedQuery || undefined,
+          isPinned: false,
         },
         {
           enabled: isAuthenticated,
@@ -80,6 +81,19 @@ const Nav = memo(
           cacheTime: 300000,
         },
       );
+
+    const { data: pinnedData } = useConversationsInfiniteQuery(
+      {
+        tags: tags.length === 0 ? undefined : tags,
+        search: search.debouncedQuery || undefined,
+        isPinned: true,
+      },
+      {
+        enabled: isAuthenticated,
+        staleTime: 30000,
+        cacheTime: 300000,
+      },
+    );
 
     const computedHasNextPage = useMemo(() => {
       if (data?.pages && data.pages.length > 0) {
@@ -105,9 +119,17 @@ const Nav = memo(
       isFetchingNext: isFetchingNextPage,
     });
 
-    const conversations = useMemo(() => {
+    const regularConversations = useMemo(() => {
       return data ? data.pages.flatMap((page) => page.conversations) : [];
     }, [data]);
+
+    const pinnedConversations = useMemo(() => {
+      return pinnedData ? pinnedData.pages.flatMap((page) => page.conversations) : [];
+    }, [pinnedData]);
+
+    const conversations = useMemo(() => {
+      return regularConversations;
+    }, [regularConversations]);
 
     const toggleNavVisible = useCallback(() => {
       setNavVisible((prev: boolean) => {
@@ -186,15 +208,19 @@ const Nav = memo(
         <div
           data-testid="nav"
           className={cn(
-            'nav active max-w-[320px] flex-shrink-0 transform overflow-x-hidden bg-surface-primary-alt transition-all duration-200 ease-in-out',
-            'md:max-w-[260px]',
+            'nav active flex-shrink-0 overflow-x-hidden bg-surface-primary-alt transition-all duration-200 ease-in-out',
+            isSmallScreen ? 'max-w-[320px] transform' : 'h-full w-full',
           )}
-          style={{
-            width: navVisible ? navWidth : '0px',
-            transform: navVisible ? 'translateX(0)' : 'translateX(-100%)',
-          }}
+          style={
+            isSmallScreen
+              ? {
+                  width: navVisible ? navWidth : '0px',
+                  transform: navVisible ? 'translateX(0)' : 'translateX(-100%)',
+                }
+              : {}
+          }
         >
-          <div className="h-full w-[320px] md:w-[260px]">
+          <div className={cn('h-full flex-shrink-0', isSmallScreen ? 'w-[320px]' : 'w-full')}>
             <div className="flex h-full flex-col">
               <div
                 className={`flex h-full flex-col transition-opacity duration-200 ease-in-out ${navVisible ? 'opacity-100' : 'opacity-0'}`}
@@ -214,6 +240,7 @@ const Nav = memo(
                       />
                       <Conversations
                         conversations={conversations}
+                        pinnedConversations={pinnedConversations}
                         moveToTop={moveToTop}
                         toggleNav={itemToggleNav}
                         containerRef={listRef}

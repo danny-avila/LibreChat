@@ -1,4 +1,5 @@
 import React from 'react';
+import { PinIcon } from '~/components/svg';
 import { cn } from '~/utils';
 
 interface ConvoLinkProps {
@@ -8,6 +9,7 @@ interface ConvoLinkProps {
   isSmallScreen: boolean;
   localize: (key: any, options?: any) => string;
   children: React.ReactNode;
+  isPinned?: boolean;
 }
 
 const ConvoLink: React.FC<ConvoLinkProps> = ({
@@ -17,6 +19,7 @@ const ConvoLink: React.FC<ConvoLinkProps> = ({
   isSmallScreen,
   localize,
   children,
+  isPinned = false,
 }) => {
   return (
     <div
@@ -43,7 +46,14 @@ const ConvoLink: React.FC<ConvoLinkProps> = ({
         role="button"
         aria-label={isSmallScreen ? undefined : title || localize('com_ui_untitled')}
       >
-        {title || localize('com_ui_untitled')}
+        <div className="flex items-center gap-1">
+          {title || localize('com_ui_untitled')}
+          {isPinned && (
+            <div className="flex-shrink-0">
+              <PinIcon className="icon-xs text-text-secondary fill-current" />
+            </div>
+          )}
+        </div>
       </div>
       <div
         className={cn(

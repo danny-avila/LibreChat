@@ -82,6 +82,8 @@ export const genTitle = () => `${conversationsRoot}/gen_title`;
 
 export const updateConversation = () => `${conversationsRoot}/update`;
 
+export const pinConversation = () => `${conversationsRoot}/pin`;
+
 export const deleteConversation = () => `${conversationsRoot}`;
 
 export const deleteAllConversation = () => `${conversationsRoot}/all`;

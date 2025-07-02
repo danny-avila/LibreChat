@@ -24,6 +24,7 @@ router.get('/', async (req, res) => {
   const limit = parseInt(req.query.limit, 10) || 25;
   const cursor = req.query.cursor;
   const isArchived = isEnabled(req.query.isArchived);
+  const isPinned = req.query.isPinned !== undefined ? isEnabled(req.query.isPinned) : undefined;
   const search = req.query.search ? decodeURIComponent(req.query.search) : undefined;
   const order = req.query.order || 'desc';
 
@@ -37,6 +38,7 @@ router.get('/', async (req, res) => {
       cursor,
       limit,
       isArchived,
+      isPinned,
       tags,
       search,
       order,
@@ -152,6 +154,29 @@ router.post('/update', async (req, res) => {
   } catch (error) {
     logger.error('Error updating conversation', error);
     res.status(500).send('Error updating conversation');
+  }
+});
+
+router.post('/pin', async (req, res) => {
+  const { conversationId, isPinned } = req.body;
+
+  if (!conversationId) {
+    return res.status(400).json({ error: 'conversationId is required' });
+  }
+
+  if (typeof isPinned !== 'boolean') {
+    return res.status(400).json({ error: 'isPinned must be a boolean' });
+  }
+
+  try {
+    const update = { conversationId, isPinned };
+    const dbResponse = await saveConvo(req, update, {
+      context: `POST /api/convos/pin ${conversationId} isPinned: ${isPinned}`,
+    });
+    res.status(200).json(dbResponse);
+  } catch (error) {
+    logger.error('Error updating conversation pin status', error);
+    res.status(500).send('Error updating conversation pin status');
   }
 });
 
