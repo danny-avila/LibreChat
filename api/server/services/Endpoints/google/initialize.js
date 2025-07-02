@@ -1,7 +1,6 @@
-const fs = require('fs');
 const path = require('path');
-const { getGoogleConfig, isEnabled } = require('@librechat/api');
 const { EModelEndpoint, AuthKeys } = require('librechat-data-provider');
+const { getGoogleConfig, isEnabled, loadServiceKey } = require('@librechat/api');
 const { getUserKey, checkUserKeyExpiry } = require('~/server/services/UserService');
 const { GoogleClient } = require('~/app');
 
@@ -19,17 +18,12 @@ const initializeClient = async ({ req, res, endpointOption, overrideModel, optio
   let serviceKey = {};
 
   try {
-    if (process.env.GOOGLE_SERVICE_KEY_FILE_PATH) {
-      const serviceKeyPath =
-        process.env.GOOGLE_SERVICE_KEY_FILE_PATH ||
-        path.join(__dirname, '../../../../..', 'data', 'auth.json');
-      const absolutePath = path.isAbsolute(serviceKeyPath)
-        ? serviceKeyPath
-        : path.resolve(serviceKeyPath);
-      const fileContent = fs.readFileSync(absolutePath, 'utf8');
-      serviceKey = JSON.parse(fileContent);
-    } else {
-      serviceKey = require('~/data/auth.json');
+    const serviceKeyPath =
+      process.env.GOOGLE_SERVICE_KEY_FILE_PATH ||
+      path.join(__dirname, '../../../..', 'data', 'auth.json');
+    serviceKey = await loadServiceKey(serviceKeyPath);
+    if (!serviceKey) {
+      serviceKey = {};
     }
   } catch (_e) {
     // Do nothing

@@ -21,6 +21,7 @@ import type {
   OCRImage,
 } from '~/types';
 import { logAxiosError, createAxiosInstance } from '~/utils/axios';
+import { loadServiceKey } from '~/utils/key';
 
 const axios = createAxiosInstance();
 const DEFAULT_MISTRAL_BASE_URL = 'https://api.mistral.ai/v1';
@@ -443,27 +444,24 @@ async function loadGoogleAuthConfig(): Promise<{
   const serviceKeyPath =
     process.env.GOOGLE_SERVICE_KEY_FILE_PATH ||
     path.join(__dirname, '..', '..', '..', 'api', 'data', 'auth.json');
-  const absolutePath = path.isAbsolute(serviceKeyPath)
-    ? serviceKeyPath
-    : path.resolve(serviceKeyPath);
 
-  let serviceKey: GoogleServiceAccount;
-  try {
-    const authJsonContent = fs.readFileSync(absolutePath, 'utf8');
-    serviceKey = JSON.parse(authJsonContent) as GoogleServiceAccount;
-  } catch {
-    throw new Error(`Google service account not found at ${absolutePath}`);
+  const serviceKey = await loadServiceKey(serviceKeyPath);
+
+  if (!serviceKey) {
+    throw new Error(
+      `Google service account not found or could not be loaded from ${serviceKeyPath}`,
+    );
   }
 
   if (!serviceKey.client_email || !serviceKey.private_key || !serviceKey.project_id) {
     throw new Error('Invalid Google service account configuration');
   }
 
-  const jwt = await createJWT(serviceKey);
+  const jwt = await createJWT(serviceKey as GoogleServiceAccount);
   const accessToken = await exchangeJWTForAccessToken(jwt);
 
   return {
-    serviceAccount: serviceKey,
+    serviceAccount: serviceKey as GoogleServiceAccount,
     accessToken,
   };
 }

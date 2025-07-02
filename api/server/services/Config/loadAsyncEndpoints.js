@@ -1,5 +1,5 @@
-const fs = require('fs');
 const path = require('path');
+const { loadServiceKey } = require('@librechat/api');
 const { EModelEndpoint } = require('librechat-data-provider');
 const { isUserProvided } = require('~/server/utils');
 const { config } = require('./EndpointService');
@@ -18,15 +18,7 @@ async function loadAsyncEndpoints(req) {
     path.join(__dirname, '../../..', 'data', 'auth.json');
 
   try {
-    if (process.env.GOOGLE_SERVICE_KEY_FILE_PATH) {
-      const absolutePath = path.isAbsolute(serviceKeyPath)
-        ? serviceKeyPath
-        : path.resolve(serviceKeyPath);
-      const fileContent = fs.readFileSync(absolutePath, 'utf8');
-      serviceKey = JSON.parse(fileContent);
-    } else {
-      serviceKey = require('~/data/auth.json');
-    }
+    serviceKey = await loadServiceKey(serviceKeyPath);
   } catch {
     if (i === 0) {
       i++;
