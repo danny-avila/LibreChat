@@ -34,31 +34,31 @@ properties:
   configuration:
     secrets:
       - name: openid-session-secret
-        keyVaultUrl: https://kv-playai-n2a-001.vault.azure.net/secrets/N2A-OPENID-SESSION-SECRET
+        keyVaultUrl: https://kv-pyxplayai-n2a-001.vault.azure.net/secrets/N2A-OPENID-SESSION-SECRET
         identity: system
       - name: creds-iv
-        keyVaultUrl: https://kv-playai-n2a-001.vault.azure.net/secrets/N2A-LIBRECHAT-CREDS-IV
+        keyVaultUrl: https://kv-pyxplayai-n2a-001.vault.azure.net/secrets/N2A-LIBRECHAT-CREDS-IV
         identity: system
       - name: jwt-refresh-secret
-        keyVaultUrl: https://kv-playai-n2a-001.vault.azure.net/secrets/N2A-LIBRECHAT-JWT-REFRESH-SECRET
+        keyVaultUrl: https://kv-pyxplayai-n2a-001.vault.azure.net/secrets/N2A-LIBRECHAT-JWT-REFRESH-SECRET
         identity: system
       - name: jwt-secret
-        keyVaultUrl: https://kv-playai-n2a-001.vault.azure.net/secrets/N2A-JWT-SECRET
+        keyVaultUrl: https://kv-pyxplayai-n2a-001.vault.azure.net/secrets/N2A-JWT-SECRET
         identity: system
       - name: mongo-connection-string
-        keyVaultUrl: https://kv-playai-n2a-001.vault.azure.net/secrets/N2A-LIBRECHAT-MONGO-URI
+        keyVaultUrl: https://kv-pyxplayai-n2a-001.vault.azure.net/secrets/N2A-LIBRECHAT-MONGO-URI
         identity: system
       - name: rag-mongo-connection-string
-        keyVaultUrl: https://kv-playai-n2a-001.vault.azure.net/secrets/N2A-RAG-API-MONGO-CONNECTION-STRING
+        keyVaultUrl: https://kv-pyxplayai-n2a-001.vault.azure.net/secrets/N2A-RAG-API-MONGO-CONNECTION-STRING
         identity: system
       - name: client-secret
-        keyVaultUrl: https://kv-playai-n2a-001.vault.azure.net/secrets/N2A-LIBRECHAT-CLIENT-SECRET
+        keyVaultUrl: https://kv-pyxplayai-n2a-001.vault.azure.net/secrets/N2A-LIBRECHAT-CLIENT-SECRET
         identity: system
       - name: creds-key
-        keyVaultUrl: https://kv-playai-n2a-001.vault.azure.net/secrets/N2A-LIBRECHAT-CREDS-KEY
+        keyVaultUrl: https://kv-pyxplayai-n2a-001.vault.azure.net/secrets/N2A-LIBRECHAT-CREDS-KEY
         identity: system
       - name: maas-api-key
-        keyVaultUrl: https://kv-playai-n2a-001.vault.azure.net/secrets/N2A-LIBRECHAT-MAAS-API-KEY
+        keyVaultUrl: https://kv-pyxplayai-n2a-001.vault.azure.net/secrets/N2A-LIBRECHAT-MAAS-API-KEY
         identity: system
     activeRevisionsMode: Single
     ingress:
