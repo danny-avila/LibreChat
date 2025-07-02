@@ -138,6 +138,19 @@ export const librechat = {
     placeholderCode: true,
     optionType: 'model',
   } as const,
+  disableStreaming: {
+    key: 'disableStreaming',
+    label: 'com_endpoint_disable_streaming_label',
+    labelCode: true,
+    description: 'com_endpoint_disable_streaming',
+    descriptionCode: true,
+    type: 'boolean',
+    default: false,
+    component: 'switch',
+    optionType: 'model',
+    showDefault: false,
+    columnSpan: 2,
+  } as const,
 };
 
 const openAIParams: Record<string, SettingDefinition> = {
@@ -564,6 +577,7 @@ const googleConfig: SettingsConfiguration = [
   google.thinking,
   google.thinkingBudget,
   google.grounding,
+  librechat.disableStreaming,
 ];
 
 const googleCol1: SettingsConfiguration = [
@@ -582,6 +596,7 @@ const googleCol2: SettingsConfiguration = [
   google.thinking,
   google.thinkingBudget,
   google.grounding,
+  librechat.disableStreaming,
 ];
 
 const openAI: SettingsConfiguration = [
@@ -597,8 +612,9 @@ const openAI: SettingsConfiguration = [
   librechat.resendFiles,
   baseDefinitions.imageDetail,
   openAIParams.reasoning_effort,
-  openAIParams.useResponsesApi,
   openAIParams.reasoning_summary,
+  openAIParams.useResponsesApi,
+  librechat.disableStreaming,
 ];
 
 const openAICol1: SettingsConfiguration = [
@@ -618,8 +634,9 @@ const openAICol2: SettingsConfiguration = [
   librechat.resendFiles,
   baseDefinitions.imageDetail,
   openAIParams.reasoning_effort,
-  openAIParams.useResponsesApi,
   openAIParams.reasoning_summary,
+  openAIParams.useResponsesApi,
+  librechat.disableStreaming,
 ];
 
 const anthropicConfig: SettingsConfiguration = [
@@ -634,6 +651,7 @@ const anthropicConfig: SettingsConfiguration = [
   anthropic.promptCache,
   anthropic.thinking,
   anthropic.thinkingBudget,
+  librechat.disableStreaming,
 ];
 
 const anthropicCol1: SettingsConfiguration = [
@@ -652,6 +670,7 @@ const anthropicCol2: SettingsConfiguration = [
   anthropic.promptCache,
   anthropic.thinking,
   anthropic.thinkingBudget,
+  librechat.disableStreaming,
 ];
 
 const bedrockAnthropic: SettingsConfiguration = [
@@ -667,6 +686,7 @@ const bedrockAnthropic: SettingsConfiguration = [
   bedrock.region,
   anthropic.thinking,
   anthropic.thinkingBudget,
+  librechat.disableStreaming,
 ];
 
 const bedrockMistral: SettingsConfiguration = [
@@ -678,6 +698,7 @@ const bedrockMistral: SettingsConfiguration = [
   mistral.topP,
   librechat.resendFiles,
   bedrock.region,
+  librechat.disableStreaming,
 ];
 
 const bedrockCohere: SettingsConfiguration = [
@@ -689,6 +710,7 @@ const bedrockCohere: SettingsConfiguration = [
   cohere.topP,
   librechat.resendFiles,
   bedrock.region,
+  librechat.disableStreaming,
 ];
 
 const bedrockGeneral: SettingsConfiguration = [
@@ -699,6 +721,7 @@ const bedrockGeneral: SettingsConfiguration = [
   meta.topP,
   librechat.resendFiles,
   bedrock.region,
+  librechat.disableStreaming,
 ];
 
 const bedrockAnthropicCol1: SettingsConfiguration = [
@@ -718,6 +741,7 @@ const bedrockAnthropicCol2: SettingsConfiguration = [
   bedrock.region,
   anthropic.thinking,
   anthropic.thinkingBudget,
+  librechat.disableStreaming,
 ];
 
 const bedrockMistralCol1: SettingsConfiguration = [
@@ -733,6 +757,7 @@ const bedrockMistralCol2: SettingsConfiguration = [
   mistral.topP,
   librechat.resendFiles,
   bedrock.region,
+  librechat.disableStreaming,
 ];
 
 const bedrockCohereCol1: SettingsConfiguration = [
@@ -748,6 +773,7 @@ const bedrockCohereCol2: SettingsConfiguration = [
   cohere.topP,
   librechat.resendFiles,
   bedrock.region,
+  librechat.disableStreaming,
 ];
 
 const bedrockGeneralCol1: SettingsConfiguration = [
@@ -762,6 +788,7 @@ const bedrockGeneralCol2: SettingsConfiguration = [
   meta.topP,
   librechat.resendFiles,
   bedrock.region,
+  librechat.disableStreaming,
 ];
 
 export const paramSettings: Record<string, SettingsConfiguration | undefined> = {

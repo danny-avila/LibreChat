@@ -636,6 +636,8 @@ export const tConversationSchema = z.object({
   useResponsesApi: z.boolean().optional(),
   /* Google: use Search Grounding */
   grounding: z.boolean().optional(),
+  /* disable streaming */
+  disableStreaming: z.boolean().optional(),
   /* assistant */
   assistant_id: z.string().optional(),
   /* agents */
@@ -722,6 +724,8 @@ export const tQueryParamsSchema = tConversationSchema
     model: true,
     /** @endpoints openAI, custom, azureOpenAI, google, anthropic, bedrock */
     temperature: true,
+    /** @endpoints openAI, custom, azureOpenAI, google, anthropic, bedrock */
+    disableStreaming: true,
     /** @endpoints openAI, custom, azureOpenAI */
     presence_penalty: true,
     /** @endpoints openAI, custom, azureOpenAI */
@@ -823,6 +827,7 @@ export const googleBaseSchema = tConversationSchema.pick({
   thinking: true,
   thinkingBudget: true,
   grounding: true,
+  disableStreaming: true,
   iconURL: true,
   greeting: true,
   spec: true,
@@ -855,6 +860,7 @@ export const googleGenConfigSchema = z
       })
       .optional(),
     grounding: z.boolean().optional(),
+    disableStreaming: z.boolean().optional(),
   })
   .strip()
   .optional();
@@ -1012,6 +1018,7 @@ export const agentsBaseSchema = tConversationSchema.pick({
   iconURL: true,
   greeting: true,
   maxContextTokens: true,
+  disableStreaming: true,
 });
 
 export const agentsSchema = agentsBaseSchema
@@ -1032,6 +1039,7 @@ export const agentsSchema = agentsBaseSchema
     iconURL: obj.iconURL ?? undefined,
     greeting: obj.greeting ?? undefined,
     maxContextTokens: obj.maxContextTokens ?? undefined,
+    disableStreaming: obj.disableStreaming ?? false,
   }))
   .catch(() => ({
     model: agentsSettings.model.default,
@@ -1048,6 +1056,7 @@ export const agentsSchema = agentsBaseSchema
     iconURL: undefined,
     greeting: undefined,
     maxContextTokens: undefined,
+    disableStreaming: false,
   }));
 
 export const openAIBaseSchema = tConversationSchema.pick({
@@ -1071,6 +1080,7 @@ export const openAIBaseSchema = tConversationSchema.pick({
   reasoning_effort: true,
   reasoning_summary: true,
   useResponsesApi: true,
+  disableStreaming: true,
 });
 
 export const openAISchema = openAIBaseSchema
@@ -1114,6 +1124,7 @@ export const anthropicBaseSchema = tConversationSchema.pick({
   greeting: true,
   spec: true,
   maxContextTokens: true,
+  disableStreaming: true,
 });
 
 export const anthropicSchema = anthropicBaseSchema

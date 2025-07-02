@@ -48,6 +48,7 @@ export interface IConversation extends Document {
   reasoning_summary?: string;
   useResponsesApi?: boolean;
   grounding?: boolean;
+  disableStreaming?: boolean;
   // Additional fields
   files?: string[];
   expiredAt?: Date;
