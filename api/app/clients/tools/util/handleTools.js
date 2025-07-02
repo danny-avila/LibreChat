@@ -30,6 +30,8 @@ const {
   WebNavigator,
   Quickchart,
   WordPress,
+  Collections,
+  CollectionExport,
 } = require('../');
 const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
 const { createFileSearchTool, primeFiles: primeSearchFiles } = require('./fileSearch');
@@ -168,9 +170,19 @@ const loadTools = async ({
     time_api: TimeAPI,
     quickchart: Quickchart,
     wordpress: WordPress,
+    collections: Collections,
+    collection_export: CollectionExport,
   };
 
   const customConstructors = {
+    collections: async (_toolContextMap) => {
+      const authFields = getAuthFields('collections');
+      const authValues = await loadAuthValues({ userId: user, authFields });
+      return new Collections({ ...authValues, userId: user });
+    },
+    collection_export: async (_toolContextMap) => {
+      return new CollectionExport({ userId: user });
+    },
     serpapi: async (_toolContextMap) => {
       const authFields = getAuthFields('serpapi');
       let envVar = authFields[0] ?? '';

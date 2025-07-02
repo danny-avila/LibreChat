@@ -7,6 +7,7 @@ services:
     links:
       - mongodb
       - meilisearch
+      - rag_api
     container_name: chat-app-lcdev
     ports:
       - 80:80               # Change it to 9000:3080 to use nginx
@@ -26,6 +27,11 @@ services:
       # - OPENAI_REVERSE_PROXY=http://host.docker.internal:8070/v1/chat/completions # if you are hosting your own chatgpt reverse proxy with docker
       - MEILI_HOST=http://meilisearch:7700
       - CLAUDE_CONFIG_DIR=/workspaces/.claude
+      - RAG_PORT=${RAG_PORT:-8000}
+      - RAG_API_URL=http://rag_api:${RAG_PORT:-8000}
+
+    env_file:
+      - ../.env
 
     # Runs app on the same network as the service container, allows "forwardPorts" in devcontainer.json function.
     # network_mode: service:another-service
@@ -41,26 +47,46 @@ services:
 
   mongodb:
     container_name: chat-mongodb-lcdev
-    expose:
-      - 27017
-    # ports:
-    #   - 27018:27017
     image: mongo
     # restart: always
     volumes:
-      - ./data-node:/data/db
+      - ./data/mongodb:/data/db
     command: mongod --noauth
+
+    env_file:
+      - ../.env
+
   meilisearch:
     container_name: chat-meilisearch-lcdev
     image: getmeili/meilisearch:v1.5
     # restart: always
-    expose:
-      - 7700
-    # Uncomment this to access meilisearch from outside docker
-    # ports: 
-    #   - 7700:7700 # if exposing these ports, make sure your master key is not the default value
+
     environment:
       - MEILI_NO_ANALYTICS=true
       - MEILI_MASTER_KEY=5c71cf56d672d009e36070b5bc5e47b743535ae55c818ae3b735bb6ebfb4ba63
     volumes:
-      - ./meili_data_v1.5:/meili_data
+      - ./data/meili_data_v1.5:/meili_data
+  
+  vectordb:
+    container_name: vectordb-lcdev
+    image: ankane/pgvector:latest
+    env_file:
+      - ../.env
+    # restart: always
+    volumes:
+      - ./datae/pg:/var/lib/postgresql/data
+  
+  rag_api:
+    container_name: rag_api-lcdev
+    image: ghcr.io/danny-avila/librechat-rag-api-dev-lite:latest
+    environment:
+      - DB_HOST=vectordb
+      - RAG_PORT=${RAG_PORT:-8000}
+    # restart: always
+    depends_on:
+      - vectordb
+    env_file:
+      - ../.env
+
+volumes:
+  pgdata-lcdev:

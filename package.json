@@ -147,6 +147,8 @@
     "@e2b/code-interpreter": "^1.5.1",
     "better-sqlite3": "^11.10.0",
     "cheerio": "^1.1.0",
-    "mongodb": "^6.17.0"
+    "mongodb": "^6.17.0",
+    "pdfkit": "^0.17.1",
+    "pg": "^8.16.2"
   }
 }
