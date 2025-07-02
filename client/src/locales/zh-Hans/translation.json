@@ -852,6 +852,5 @@
   "com_ui_x_selected": "{{0}} 已选择",
   "com_ui_yes": "是的",
   "com_ui_zoom": "缩放",
-  "com_user_message": "您",
-  "com_warning_resubmit_unsupported": "此终端不支持重新提交AI消息"
+  "com_user_message": "您"
 }

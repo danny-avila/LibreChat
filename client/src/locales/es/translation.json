@@ -752,6 +752,5 @@
   "com_ui_x_selected": "{{0}} seleccionado",
   "com_ui_yes": "Sí",
   "com_ui_zoom": "Zoom",
-  "com_user_message": "Usted",
-  "com_warning_resubmit_unsupported": "No se admite el reenvío del mensaje de IA para este punto de conexión."
+  "com_user_message": "Usted"
 }

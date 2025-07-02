@@ -868,6 +868,5 @@
   "com_ui_x_selected": "{{0}}が選択された",
   "com_ui_yes": "はい",
   "com_ui_zoom": "ズーム",
-  "com_user_message": "あなた",
-  "com_warning_resubmit_unsupported": "このエンドポイントではAIメッセージの再送信はサポートされていません"
+  "com_user_message": "あなた"
 }

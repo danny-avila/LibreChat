@@ -865,6 +865,5 @@
   "com_ui_x_selected": "{{0}} valitud",
   "com_ui_yes": "Jah",
   "com_ui_zoom": "Suumi",
-  "com_user_message": "Sina",
-  "com_warning_resubmit_unsupported": "AI sõnumi uuesti esitamine pole selle otspunkti jaoks toetatud."
+  "com_user_message": "Sina"
 }

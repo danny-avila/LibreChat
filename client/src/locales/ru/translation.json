@@ -865,6 +865,5 @@
   "com_ui_x_selected": "{{0}} выбрано",
   "com_ui_yes": "Да",
   "com_ui_zoom": "Масштаб",
-  "com_user_message": "Вы",
-  "com_warning_resubmit_unsupported": "Повторная отправка сообщения ИИ не поддерживается для данной конечной точки"
+  "com_user_message": "Вы"
 }

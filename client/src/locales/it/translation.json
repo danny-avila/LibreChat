@@ -829,6 +829,5 @@
   "com_ui_write": "Scrittura",
   "com_ui_yes": "Sì",
   "com_ui_zoom": "Zoom",
-  "com_user_message": "Mostra nome utente nei messaggi",
-  "com_warning_resubmit_unsupported": "Il reinvio del messaggio AI non è supportato per questo endpoint."
+  "com_user_message": "Mostra nome utente nei messaggi"
 }

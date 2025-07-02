@@ -817,6 +817,5 @@
   "com_ui_write": "Escrevendo",
   "com_ui_yes": "Sim",
   "com_ui_zoom": "Zoom",
-  "com_user_message": "Você",
-  "com_warning_resubmit_unsupported": "O reenvio da mensagem de IA não é suportado para este endpoint."
+  "com_user_message": "Você"
 }

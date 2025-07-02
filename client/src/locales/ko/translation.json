@@ -921,6 +921,5 @@
   "com_ui_x_selected": "{{0}}개 선택됨",
   "com_ui_yes": "네",
   "com_ui_zoom": "확대/축소",
-  "com_user_message": "당신",
-  "com_warning_resubmit_unsupported": "이 엔드포인트에서는 AI 메시지 재전송이 지원되지 않습니다"
+  "com_user_message": "당신"
 }
