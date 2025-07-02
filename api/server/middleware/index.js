@@ -47,6 +47,7 @@ module.exports = {
   configMiddleware,
   concurrentLimiter,
   checkDomainAllowed,
+  verifyGoogleGroupMembership: require('./checkGoogleGroup'),
   validateMessageReq,
   buildEndpointOption,
   validateRegistration,

@@ -1,6 +1,6 @@
 const appleLogin = require('./appleStrategy');
 const passportLogin = require('./localStrategy');
-const googleLogin = require('./googleStrategy');
+const { strategy: googleLogin } = require('./googleStrategy');
 const githubLogin = require('./githubStrategy');
 const discordLogin = require('./discordStrategy');
 const facebookLogin = require('./facebookStrategy');
