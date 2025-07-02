@@ -19,6 +19,7 @@ const Quickchart = require('./structured/Quickchart');
 const WordPress = require('./structured/WordPress');
 const Collections = require('./structured/Collections');
 const CollectionExport = require('./structured/CollectionExport');
+const QuickLCMemory = require('./structured/QuickLCMemory');
 
 /** @type {Record<string, TPlugin | undefined>} */
 const manifestToolMap = {};
@@ -56,4 +57,5 @@ module.exports = {
   WordPress,
   Collections,
   CollectionExport,
+  QuickLCMemory,
 };

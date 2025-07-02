@@ -259,5 +259,12 @@
     "description": "Export LibreChat collections in various formats (JSON, XML, PDF). Can export single collections or recursively include child collections.",
     "icon": "/assets/collection-trees-export.png",
     "authConfig": []
+  },
+  {
+    "name": "QuickLC Memory",
+    "pluginKey": "quick_lc_memory",
+    "description": "Quick access to LibreChat user memories for persistent storage across conversations",
+    "icon": "/assets/quicklcmemory.png",
+    "authConfig": []
   }
 ]

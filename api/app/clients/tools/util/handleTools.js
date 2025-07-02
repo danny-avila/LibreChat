@@ -32,6 +32,7 @@ const {
   WordPress,
   Collections,
   CollectionExport,
+  QuickLCMemory,
 } = require('../');
 const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
 const { createFileSearchTool, primeFiles: primeSearchFiles } = require('./fileSearch');
@@ -172,6 +173,7 @@ const loadTools = async ({
     wordpress: WordPress,
     collections: Collections,
     collection_export: CollectionExport,
+    quick_lc_memory: QuickLCMemory,
   };
 
   const customConstructors = {
