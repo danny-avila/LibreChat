@@ -174,6 +174,7 @@ export default function AgentPanel({
       const {
         name,
         artifacts,
+        charts,
         description,
         instructions,
         model: _model,
@@ -195,6 +196,7 @@ export default function AgentPanel({
           data: {
             name,
             artifacts,
+            charts,
             description,
             instructions,
             model,
@@ -220,6 +222,7 @@ export default function AgentPanel({
       create.mutate({
         name,
         artifacts,
+        charts,
         description,
         instructions,
         model,

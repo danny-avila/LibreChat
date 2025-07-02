@@ -63,6 +63,8 @@ export type TEndpointOption = Pick<
   | 'spec'
   // Artifacts
   | 'artifacts'
+  //charts
+  | 'charts'
   // Files
   | 'file_ids'
   // System field

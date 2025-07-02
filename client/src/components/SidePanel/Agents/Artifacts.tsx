@@ -1,5 +1,5 @@
 import { useFormContext } from 'react-hook-form';
-import { ArtifactModes, AgentCapabilities } from 'librechat-data-provider';
+import { ArtifactModes, AgentCapabilities, ChartModes } from 'librechat-data-provider';
 import type { AgentForm } from '~/common';
 import {
   Switch,
@@ -18,11 +18,13 @@ export default function Artifacts() {
   const { setValue, watch } = methods;
 
   const artifactsMode = watch(AgentCapabilities.artifacts);
+  const chartsMode = watch(AgentCapabilities.charts);
 
   const handleArtifactsChange = (value: boolean) => {
     setValue(AgentCapabilities.artifacts, value ? ArtifactModes.DEFAULT : '', {
       shouldDirty: true,
     });
+    console.log('artifactsMode', artifactsMode);
   };
 
   const handleShadcnuiChange = (value: boolean) => {
@@ -37,9 +39,17 @@ export default function Artifacts() {
     });
   };
 
+  const handleChartsChange = (value: boolean) => {
+    setValue(AgentCapabilities.charts, value ? ChartModes.DEFAULT : '', {
+      shouldDirty: true,
+    });
+    console.log('chartsMode', chartsMode);
+  };
+
   const isEnabled = artifactsMode !== undefined && artifactsMode !== '';
   const isCustomEnabled = artifactsMode === ArtifactModes.CUSTOM;
   const isShadcnEnabled = artifactsMode === ArtifactModes.SHADCNUI;
+  const isChartsEnabled = chartsMode === ChartModes.DEFAULT;
 
   return (
     <div className="w-full">
@@ -57,6 +67,15 @@ export default function Artifacts() {
           checked={isEnabled}
           onCheckedChange={handleArtifactsChange}
           hoverCardText={localize('com_nav_info_code_artifacts_agent')}
+          disabled={isChartsEnabled}
+        />
+        <SwitchItem
+          id="charts"
+          label="Enable Charts"
+          checked={isChartsEnabled}
+          onCheckedChange={handleChartsChange}
+          hoverCardText="Enabling this will allow the agent to use charts to visualize data."
+          disabled={isEnabled}
         />
         <SwitchItem
           id="includeShadcnui"
