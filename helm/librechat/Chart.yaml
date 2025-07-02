@@ -36,6 +36,6 @@ dependencies:
     condition: meilisearch.enabled
     repository: "https://meilisearch.github.io/meilisearch-kubernetes"
   - name: librechat-rag-api
-    version: "0.5.2"
+    version: "0.6.0"
     condition: librechat-rag-api.enabled
     repository: file://../librechat-rag-api
