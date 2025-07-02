@@ -203,7 +203,7 @@
   {
     "name": "WebNavigator",
     "pluginKey": "WebNavigator",
-    "description": "WebNavigator",
+    "description": "Navigate the web with advanced browsing capabilities and optional Firecrawl integration",
     "icon": "/assets/webnavigator.png",
     "isAuthRequired": "false",
     "authConfig": []

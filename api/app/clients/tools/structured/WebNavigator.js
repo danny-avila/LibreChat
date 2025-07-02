@@ -12,7 +12,7 @@ const crypto = require('crypto');
 let Database;
 try {
   Database = require('better-sqlite3');
-} catch (error) {
+} catch (_error) {
   console.warn('better-sqlite3 is not available, WebNavigator will run without caching.');
   Database = null;
 }
@@ -21,14 +21,31 @@ class WebNavigator extends Tool {
   constructor(_fields = {}) {
     super();
 
+    this.firecrawlApiKey = _fields.FIRECRAWL_API_KEY || process.env.FIRECRAWL_API_KEY;
+    this.firecrawlApiUrl =
+      _fields.FIRECRAWL_API_URL || process.env.FIRECRAWL_API_URL || 'https://api.firecrawl.dev';
+    this.firecrawlAvailable = !!this.firecrawlApiKey;
+    this.useFirecrawl =
+      this.firecrawlAvailable && process.env.WEB_NAVIGATOR_USE_FIRECRAWL !== 'false';
+
     this.name = 'WebNavigator';
     this.description =
       'Simulates a curl action. Useful for making HTTP requests with various methods and parameters. Accepts an array of commands similar to curl.';
-    this.description_for_model =
-      `Simulates a curl action by making HTTP requests with various methods and parameters. Accepts input similar to curl commands.
+
+    // Build firecrawl availability message
+    const firecrawlStatusMessage = this.firecrawlAvailable
+      ? 'Firecrawl integration is available and can be used for enhanced web scraping capabilities.'
+      : 'Note: Firecrawl integration is not available due to missing FIRECRAWL_API_KEY environment variable. Only direct HTTP requests are supported.';
+
+    this.description_for_model = `Simulates a curl action by making HTTP requests with various methods and parameters. Accepts input similar to curl commands.
       
-      The tool now uses a local cache to store responses for 15 minutes to improve performance and reduce network traffic.
+      ${firecrawlStatusMessage}
+      
+      The tool now uses a local cache to store successful responses (2xx status codes) for 15 minutes to improve performance and reduce network traffic.
+      Failed requests (non-2xx status codes) are not cached to ensure fresh attempts on retry.
       To bypass the cache and force a fresh request, use the "bypassCache: true" parameter.
+      
+      The tool automatically falls back to Firecrawl when encountering 403 or 404 errors (if Firecrawl is available).
 
       Guidelines:
       - **Default Behavior:** By default, the response will:
@@ -45,7 +62,37 @@ class WebNavigator extends Tool {
         - \`returnTextOnly\`: Set to \`true\` to get only text without HTML markup
         - \`includeHeaders\`: Set to \`true\` to include all response headers in the result
         - \`fetchRelated\`: Set to \`true\` to fetch related non-binary resources (use cautiously)
-        - \`imageDownloadLink\`: Set to image URL to save an image locally and return its path
+        - \`imageDownloadLink\`: Set to image URL to save an image locally and return its path${
+          this.firecrawlAvailable
+            ? `
+        - \`useFirecrawl\`: Set to \`false\` to disable Firecrawl if it's enabled by default
+        - \`firecrawlProxy\`: Set to \`"basic"\`, \`"stealth"\`, or \`"auto"\` to control proxy behavior with Firecrawl`
+            : ''
+        }${
+          this.firecrawlAvailable
+            ? `
+      - **Firecrawl Integration:**
+        - When a Firecrawl API key is configured, the tool can use Firecrawl's service to handle complex websites
+        - Firecrawl proxy modes: "basic" (fast, simple sites), "stealth" (bypasses protections), "auto" (intelligent selection)
+        - By default, stealth mode "auto" is used when Firecrawl is enabled
+        - If \`useFirecrawl: true\` is explicitly set but no API key is configured, an error will be thrown
+
+      **firecrawlScrapeOptions (advanced)**
+      Pass an object to the \`firecrawlScrapeOptions\` field to forward any options supported by the Firecrawl \`/v1/scrape\` API.  The most commonly-used keys are:
+      - \`formats\` (array): output formats, e.g. \`["markdown", "html", "links", "screenshot"]\` – defaults to \`["markdown"]\`
+      - \`onlyMainContent\` (bool): scrape only the main readable content
+      - \`includeTags\` / \`excludeTags\` (array): allow- or block-list CSS selectors
+      - \`waitFor\` (ms) & \`timeout\` (ms): page wait & max scrape time
+      - \`headers\` (object): additional HTTP headers
+      - \`jsonOptions\` (object): \`{ schema, systemPrompt, prompt }\` for structured extraction
+      - \`actions\` (array): browser actions (\`wait\`, \`click\`, \`write\`, \`press\`, \`scroll\`, \`screenshot\`, \`scrape\`)
+      - \`location\` (object): \`{ country: "US", languages: ["en-US"] }\`
+      - \`proxy\` ("basic"|"stealth"|"auto"), \`mobile\` (bool), \`parsePDF\` (bool), \`removeBase64Images\` (bool), \`blockAds\` (bool)
+      - Caching / freshness: \`maxAge\`, \`storeInCache\`, \`skipTlsVerification\`
+      See complete list at https://docs.firecrawl.dev/features/scrape`
+            : ''
+        }
+
       - **Best Practices:**
         - Use \`returnOnlyTags: ["article"]\` to extract the main content of many websites
         - Use \`returnOnlyTags: ["header"]\` to get navigation and site information
@@ -57,15 +104,17 @@ class WebNavigator extends Tool {
     // Initialize the cache database if SQLite is available
     this.initCache();
 
-    this.schema = z.object({
+    // Build schema conditionally based on Firecrawl availability
+    this.schema = this.buildSchema();
+  }
+
+  buildSchema() {
+    const baseSchema = {
       method: z
         .enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE'])
         .optional()
         .describe('HTTP method to use for the request. Defaults to GET.'),
-      url: z
-        .string()
-        .url()
-        .describe('The URL to which the request is sent.'),
+      url: z.string().url().describe('The URL to which the request is sent.'),
       bypassCache: z
         .boolean()
         .optional()
@@ -73,7 +122,9 @@ class WebNavigator extends Tool {
       headers: z
         .record(z.string())
         .optional()
-        .describe('Headers to include in the request as key-value pairs. If provided, these headers will be used exclusively, overriding any default browser headers.'),
+        .describe(
+          'Headers to include in the request as key-value pairs. If provided, these headers will be used exclusively, overriding any default browser headers.',
+        ),
       params: z
         .record(z.string())
         .optional()
@@ -81,9 +132,7 @@ class WebNavigator extends Tool {
       data: z
         .any()
         .optional()
-        .describe(
-          'Body data to include in the request. Can be a string or object.',
-        ),
+        .describe('Body data to include in the request. Can be a string or object.'),
       cookies: z
         .string()
         .optional()
@@ -103,40 +152,62 @@ class WebNavigator extends Tool {
       returnTextOnly: z
         .boolean()
         .optional()
-        .describe(
-          'If true, returns only the text content without any HTML tags.'
-        ),
+        .describe('If true, returns only the text content without any HTML tags.'),
       fetchRelated: z
         .boolean()
         .optional()
         .describe(
-          'If true, fetches related non-binary links (HTML, CSS, JavaScript) and includes them in the response.'
+          'If true, fetches related non-binary links (HTML, CSS, JavaScript) and includes them in the response.',
         ),
       includeHeaders: z
         .boolean()
         .optional()
         .describe(
-          'If true, includes all response headers in the response. By default, only cookies are included.'
+          'If true, includes all response headers in the response. By default, only cookies are included.',
         ),
       includeAttributes: z
         .array(z.string())
         .optional()
         .describe(
-          'Array of HTML tag attributes to include in the response. Defaults to ["href", "alt"].'
+          'Array of HTML tag attributes to include in the response. Defaults to ["href", "alt"].',
         ),
       browserImpersonation: z
         .enum(['plain', 'firefox', 'safari', 'chrome'])
         .optional()
         .describe(
-          'Choose which browser to impersonate for the request. Defaults to "plain" (no impersonation).'
+          'Choose which browser to impersonate for the request. Defaults to "plain" (no impersonation).',
         ),
       imageDownloadLink: z
         .string()
         .optional()
         .describe(
-          'URL of an image to download and save locally. Returns the file path of the saved image.'
+          'URL of an image to download and save locally. Returns the file path of the saved image.',
         ),
-    });
+    };
+
+    // Add Firecrawl-specific options only if Firecrawl is available
+    if (this.firecrawlAvailable) {
+      baseSchema.useFirecrawl = z
+        .boolean()
+        .optional()
+        .describe(
+          'If true, uses Firecrawl API for fetching content instead of direct HTTP requests. Only applies if Firecrawl API key is configured.',
+        );
+      baseSchema.firecrawlProxy = z
+        .enum(['basic', 'stealth', 'auto'])
+        .optional()
+        .describe(
+          'Type of proxy to use with Firecrawl. "basic" for simple proxying, "stealth" for bypassing protection, "auto" to automatically determine the best option. Default is "auto".',
+        );
+      baseSchema.firecrawlScrapeOptions = z
+        .record(z.any())
+        .optional()
+        .describe(
+          'Additional options passed directly to the Firecrawl /v1/scrape API (e.g. ​formats, onlyMainContent, waitFor, jsonOptions, actions, location, etc.). Refer to https://docs.firecrawl.dev/features/scrape for the full list.',
+        );
+    }
+
+    return z.object(baseSchema);
   }
 
   // Initialize SQLite cache
@@ -169,8 +240,12 @@ class WebNavigator extends Tool {
       `);
 
       // Prepare statements
-      this.getStmt = this.db.prepare('SELECT response, timestamp FROM requests_cache WHERE key = ? AND (auth_headers IS NULL OR auth_headers = ?)');
-      this.setStmt = this.db.prepare('INSERT OR REPLACE INTO requests_cache (key, response, auth_headers, timestamp) VALUES (?, ?, ?, ?)');
+      this.getStmt = this.db.prepare(
+        'SELECT response, timestamp FROM requests_cache WHERE key = ? AND (auth_headers IS NULL OR auth_headers = ?)',
+      );
+      this.setStmt = this.db.prepare(
+        'INSERT OR REPLACE INTO requests_cache (key, response, auth_headers, timestamp) VALUES (?, ?, ?, ?)',
+      );
 
       console.log('WebNavigator cache initialized successfully');
     } catch (error) {
@@ -186,7 +261,7 @@ class WebNavigator extends Tool {
       method.toUpperCase(),
       url,
       params ? JSON.stringify(params) : '',
-      data ? JSON.stringify(data) : ''
+      data ? JSON.stringify(data) : '',
     ];
 
     return crypto.createHash('md5').update(components.join('|')).digest('hex');
@@ -239,24 +314,25 @@ class WebNavigator extends Tool {
 
     try {
       const authHeadersStr = this.extractAuthHeaders(headers);
-      this.setStmt.run(
-        cacheKey,
-        JSON.stringify(result),
-        authHeadersStr,
-        Date.now()
-      );
+      this.setStmt.run(cacheKey, JSON.stringify(result), authHeadersStr, Date.now());
     } catch (error) {
       console.error('Error storing in cache:', error);
     }
   }
 
   showHelp() {
+    const firecrawlStatusMessage = this.firecrawlAvailable
+      ? '✓ Firecrawl integration is available for enhanced web scraping'
+      : '⚠ Firecrawl integration is not available (missing FIRECRAWL_API_KEY)';
+
     return `
 === WebNavigator Tool Help ===
 
 OVERVIEW:
 ---------
 WebNavigator is a versatile tool for making HTTP requests and parsing web content. It provides various options for customizing requests and controlling how responses are processed.
+
+${firecrawlStatusMessage}
 
 BASIC USAGE:
 -----------
@@ -291,7 +367,22 @@ ADVANCED OPTIONS:
    - imageDownloadLink: URL of an image to download and save locally
 
 6) Caching:
-   - bypassCache: Set to true to bypass cache and fetch directly
+   - bypassCache: Set to true to bypass cache and fetch directly${
+     this.firecrawlAvailable
+       ? `
+
+7) Firecrawl Integration:
+   - useFirecrawl: Boolean to enable/disable Firecrawl (if configured)
+   - firecrawlProxy: "basic", "stealth", or "auto" proxy mode for Firecrawl
+   - Note: Setting useFirecrawl to true without a configured API key will throw an error
+
+8) firecrawlScrapeOptions (advanced):
+   Object forwarded to Firecrawl \`/v1/scrape\`. Common keys include:
+   * formats, onlyMainContent, includeTags, excludeTags, waitFor, timeout
+   * headers, jsonOptions, actions, location, proxy, mobile, parsePDF, removeBase64Images, blockAds
+   Refer to Firecrawl docs for the full schema.`
+       : ''
+   }
 
 EXAMPLES:
 --------
@@ -336,6 +427,22 @@ EXAMPLES:
    {
      "url": "https://example.com/api/data",
      "bypassCache": true
+   }${
+     this.firecrawlAvailable
+       ? `
+
+7) Use Firecrawl with stealth mode:
+   {
+     "url": "https://complex-site.com/protected-content",
+     "firecrawlProxy": "stealth"
+   }
+
+8) Disable Firecrawl for a specific request:
+   {
+     "url": "https://example.com",
+     "useFirecrawl": false
+   }`
+       : ''
    }
 
 TIPS:
@@ -344,7 +451,13 @@ TIPS:
 - For cleaner results, use "returnTextOnly": true
 - When scraping multiple pages from the same site, reuse cookies
 - For API requests, set appropriate Content-Type headers
-- For JavaScript-heavy sites, try different browserImpersonation values
+- For JavaScript-heavy sites, try different browserImpersonation values${
+      this.firecrawlAvailable
+        ? `
+- For sites with anti-bot protection, use Firecrawl with "stealth" or "auto" mode
+- The tool automatically falls back to Firecrawl when encountering 403 or 404 errors`
+        : ''
+    }
 `.trim();
   }
 
@@ -397,6 +510,100 @@ TIPS:
     }
   }
 
+  // Helper function to process request with Firecrawl
+  async processFirecrawlRequest(url, options) {
+    const {
+      method: _method = 'GET',
+      headers = {},
+      data,
+      firecrawlProxy = 'auto',
+      returnOnlyTags,
+      excludeTags,
+      includeAttributes: _includeAttributes = ['href', 'alt'],
+      returnTextOnly,
+      firecrawlScrapeOptions = {},
+    } = options;
+
+    // Construct the Firecrawl API request
+    const firecrawlRequestUrl = `${this.firecrawlApiUrl}/v1/scrape`;
+
+    // Default excludeTags if not provided
+    const defaultExcludeTags = [
+      'style',
+      'script',
+      'link[rel="stylesheet"]',
+      'link[rel="javascript"]',
+      'svg',
+      'path',
+    ];
+    const excludeTagsArray = Array.isArray(excludeTags) ? excludeTags : defaultExcludeTags;
+
+    // Build the Firecrawl request payload – default to markdown unless overridden
+    const requestBody = {
+      url,
+      formats: firecrawlScrapeOptions.formats || ['markdown'],
+      proxy: firecrawlProxy,
+      includeTags: Array.isArray(returnOnlyTags) ? returnOnlyTags : undefined,
+      excludeTags: excludeTagsArray,
+      headers,
+      ...(data && { body: typeof data === 'string' ? data : JSON.stringify(data) }),
+      ...firecrawlScrapeOptions,
+    };
+
+    try {
+      const response = await fetch(firecrawlRequestUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.firecrawlApiKey}`,
+        },
+        body: JSON.stringify(requestBody),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(
+          `Firecrawl request failed: ${response.status} ${response.statusText}. ${errorText}`,
+        );
+      }
+
+      const firecrawlResponse = await response.json();
+
+      if (!firecrawlResponse.success) {
+        throw new Error(`Firecrawl API error: ${firecrawlResponse.error || 'Unknown error'}`);
+      }
+
+      // Process the response
+      let content = returnTextOnly ? firecrawlResponse.data.markdown : firecrawlResponse.data.html;
+      let links = firecrawlResponse.data.links || [];
+
+      // Format links similar to the direct fetch approach
+      const formattedLinks = links.map((link) => ({
+        href: link,
+        text: link, // Firecrawl doesn't provide link text
+      }));
+
+      return {
+        requestUrl: url,
+        requestHeaders: headers,
+        ...(data && { requestBody: typeof data === 'string' ? data : JSON.stringify(data) }),
+        responseStatus: 200, // Firecrawl handles the actual status codes
+        responseStatusText: 'OK',
+        text: returnTextOnly ? content : undefined,
+        links: formattedLinks.length > 0 ? formattedLinks : undefined,
+        responseBody: returnTextOnly ? undefined : content,
+        firecrawl: {
+          used: true,
+          proxy: firecrawlProxy,
+          metadata: firecrawlResponse.data.metadata || {},
+        },
+      };
+    } catch (error) {
+      console.error('Firecrawl request failed:', error);
+      throw error;
+    }
+  }
+
   async _call(input) {
     // Handle image download if requested
     if (input.imageDownloadLink) {
@@ -405,7 +612,7 @@ TIPS:
         return JSON.stringify(result);
       } catch (error) {
         return JSON.stringify({
-          error: `Failed to download and save image: ${error.message}`
+          error: `Failed to download and save image: ${error.message}`,
         });
       }
     }
@@ -430,6 +637,9 @@ TIPS:
       includeAttributes = ['href', 'alt'], // Default attributes
       browserImpersonation = 'plain',
       bypassCache = false,
+      useFirecrawl = this.useFirecrawl, // Use the class property as default
+      firecrawlProxy = 'auto',
+      firecrawlScrapeOptions = {},
     } = input;
 
     // Validate URL
@@ -451,16 +661,14 @@ TIPS:
       firefox: {
         'User-Agent':
           'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:115.0) Gecko/20100101 Firefox/115.0',
-        Accept:
-          'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
         'Accept-Language': 'en-US,en;q=0.9',
         'Accept-Encoding': 'gzip, deflate, br',
       },
       safari: {
         'User-Agent':
           'Mozilla/5.0 (Macintosh; Intel Mac OS X 13_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.4 Safari/605.1.15',
-        Accept:
-          'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
         'Accept-Language': 'en-US,en;q=0.9',
         'Accept-Encoding': 'gzip, deflate, br',
       },
@@ -473,6 +681,75 @@ TIPS:
     const urlObject = new URL(url);
     if (params && Object.keys(params).length > 0) {
       urlObject.search = new URLSearchParams(params).toString();
+    }
+    const fullUrl = urlObject.toString();
+
+    // Check if client explicitly requested Firecrawl but it's not configured
+    if (input.useFirecrawl === true && !this.firecrawlApiKey) {
+      throw new Error(
+        'Firecrawl was requested but no FIRECRAWL_API_KEY is configured. Either provide the API key or set useFirecrawl to false.',
+      );
+    }
+
+    // Check cache if not bypassing
+    const cacheKey =
+      !bypassCache && this.db ? this.generateCacheKey(method, url, params, data) : null;
+    let cachedResult = null;
+
+    if (cacheKey && !bypassCache) {
+      cachedResult = this.getCachedResponse(cacheKey, headers);
+      if (cachedResult) {
+        // Add indication that this was a cached response
+        cachedResult.cached = true;
+        return JSON.stringify(cachedResult);
+      }
+    }
+
+    // Check if we should use Firecrawl
+    const shouldUseFirecrawl = useFirecrawl && this.firecrawlApiKey;
+
+    // Process with Firecrawl if enabled
+    if (shouldUseFirecrawl) {
+      try {
+        // Add cookies to headers if provided
+        const mergedHeaders = { ...headers };
+        if (cookies) {
+          mergedHeaders['Cookie'] = cookies;
+        }
+
+        // Process with Firecrawl
+        const mainResult = await this.processFirecrawlRequest(fullUrl, {
+          method,
+          headers: mergedHeaders,
+          data,
+          firecrawlProxy,
+          returnOnlyTags,
+          excludeTags,
+          includeAttributes,
+          returnTextOnly,
+          firecrawlScrapeOptions,
+        });
+
+        // Cache the result if caching is enabled and response was successful
+        if (
+          cacheKey &&
+          !bypassCache &&
+          mainResult.responseStatus >= 200 &&
+          mainResult.responseStatus < 300
+        ) {
+          this.cacheResponse(cacheKey, mainResult, headers);
+        }
+
+        // For Firecrawl, we don't handle fetchRelated currently
+        if (fetchRelated) {
+          console.warn('fetchRelated is not supported with Firecrawl and will be ignored');
+        }
+
+        return JSON.stringify(mainResult);
+      } catch (error) {
+        console.warn(`Firecrawl request failed, falling back to direct fetch: ${error.message}`);
+        // Continue with direct fetch as fallback
+      }
     }
 
     // Prepare fetch options
@@ -489,8 +766,7 @@ TIPS:
 
     // Include body data if applicable
     if (['POST', 'PUT', 'PATCH'].includes(fetchOptions.method) && data) {
-      fetchOptions.body =
-        typeof data === 'string' ? data : JSON.stringify(data);
+      fetchOptions.body = typeof data === 'string' ? data : JSON.stringify(data);
       // Only set Content-Type if user didn't explicitly set it
       if (!fetchOptions.headers['Content-Type']) {
         fetchOptions.headers['Content-Type'] = 'application/json';
@@ -506,9 +782,7 @@ TIPS:
       'svg',
       'path',
     ];
-    const excludeTagsArray = Array.isArray(excludeTags)
-      ? excludeTags
-      : defaultExcludeTags;
+    const excludeTagsArray = Array.isArray(excludeTags) ? excludeTags : defaultExcludeTags;
 
     // Helper function to process a request and return result object
     const processRequest = async (requestUrl) => {
@@ -541,9 +815,7 @@ TIPS:
       }
 
       // Ensure returnOnlyTags is an array
-      const returnOnlyTagsArray = Array.isArray(returnOnlyTags)
-        ? returnOnlyTags
-        : [];
+      const returnOnlyTagsArray = Array.isArray(returnOnlyTags) ? returnOnlyTags : [];
 
       // Include only specified tags
       if (returnOnlyTagsArray.length > 0) {
@@ -588,10 +860,11 @@ TIPS:
         text: returnTextOnly ? textContent : undefined,
         links: links.length > 0 ? links : undefined,
         responseBody: returnTextOnly ? undefined : responseBody,
+        firecrawl: false,
       };
 
       // Remove undefined properties
-      Object.keys(result).forEach(key => {
+      Object.keys(result).forEach((key) => {
         if (result[key] === undefined) {
           delete result[key];
         }
@@ -600,24 +873,92 @@ TIPS:
       return result;
     };
 
-    // Check cache if not bypassing
-    const cacheKey = !bypassCache && this.db ? this.generateCacheKey(method, url, params, data) : null;
-    let cachedResult = null;
+    // Process the main request
+    let mainResult;
+    try {
+      mainResult = await processRequest(fullUrl);
 
-    if (cacheKey && !bypassCache) {
-      cachedResult = this.getCachedResponse(cacheKey, headers);
-      if (cachedResult) {
-        // Add indication that this was a cached response
-        cachedResult.cached = true;
-        return JSON.stringify(cachedResult);
+      // Check if we got a 403 or 404 error and should try Firecrawl fallback
+      if (
+        (mainResult.responseStatus === 403 || mainResult.responseStatus === 404) &&
+        this.firecrawlAvailable &&
+        !useFirecrawl
+      ) {
+        console.log(
+          `Received ${mainResult.responseStatus} error, attempting Firecrawl fallback...`,
+        );
+
+        try {
+          // Add cookies to headers if provided
+          const mergedHeaders = { ...headers };
+          if (cookies) {
+            mergedHeaders['Cookie'] = cookies;
+          }
+
+          // Try with Firecrawl using stealth mode for blocked content
+          const firecrawlResult = await this.processFirecrawlRequest(fullUrl, {
+            method,
+            headers: mergedHeaders,
+            data,
+            firecrawlProxy: 'stealth', // Use stealth mode for fallback
+            returnOnlyTags,
+            excludeTags,
+            includeAttributes,
+            returnTextOnly,
+            firecrawlScrapeOptions,
+          });
+
+          console.log('Firecrawl fallback successful');
+          mainResult = firecrawlResult;
+        } catch (firecrawlError) {
+          console.warn(`Firecrawl fallback failed: ${firecrawlError.message}`);
+          // Keep the original result if Firecrawl fails
+        }
+      }
+    } catch (error) {
+      // If the request completely fails and we haven't tried Firecrawl yet
+      if (this.firecrawlAvailable && !useFirecrawl) {
+        console.log(`Direct request failed (${error.message}), attempting Firecrawl fallback...`);
+
+        try {
+          // Add cookies to headers if provided
+          const mergedHeaders = { ...headers };
+          if (cookies) {
+            mergedHeaders['Cookie'] = cookies;
+          }
+
+          // Try with Firecrawl
+          mainResult = await this.processFirecrawlRequest(fullUrl, {
+            method,
+            headers: mergedHeaders,
+            data,
+            firecrawlProxy: 'auto', // Use auto mode for general fallback
+            returnOnlyTags,
+            excludeTags,
+            includeAttributes,
+            returnTextOnly,
+            firecrawlScrapeOptions,
+          });
+
+          console.log('Firecrawl fallback successful after request failure');
+        } catch (firecrawlError) {
+          console.warn(`Firecrawl fallback failed: ${firecrawlError.message}`);
+          // Re-throw the original error if Firecrawl also fails
+          throw error;
+        }
+      } else {
+        // Re-throw the error if no fallback is available
+        throw error;
       }
     }
 
-    // Process the main request
-    const mainResult = await processRequest(urlObject.toString());
-
-    // Cache the result if caching is enabled
-    if (cacheKey && !bypassCache) {
+    // Cache the result if caching is enabled and response was successful
+    if (
+      cacheKey &&
+      !bypassCache &&
+      mainResult.responseStatus >= 200 &&
+      mainResult.responseStatus < 300
+    ) {
       this.cacheResponse(cacheKey, mainResult, headers);
     }
 
@@ -635,7 +976,7 @@ TIPS:
             href &&
             !href.startsWith('mailto:') &&
             !href.startsWith('tel:') &&
-            !/\.(png|jpg|jpeg|gif|bmp|tiff|ico|svg|pdf)$/i.test(href)
+            !/\.(png|jpg|jpeg|gif|bmp|tiff|ico|svg|pdf)$/i.test(href),
         );
 
       for (const link of resourceLinks) {
@@ -643,7 +984,7 @@ TIPS:
           const absoluteUrl = new URL(link, urlObject).toString();
           const resourceResult = await processRequest(absoluteUrl);
           relatedResources.push(resourceResult);
-        } catch (error) {
+        } catch (_error) {
           // Ignore errors for individual resources
         }
       }
