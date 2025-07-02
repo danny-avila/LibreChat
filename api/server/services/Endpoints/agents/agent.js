@@ -141,7 +141,7 @@ const initializeAgent = async ({
   }
 
   /** @type {import('@librechat/agents').GenericTool[]} */
-  let tools = options.tools ?? structuredTools;
+  let tools = options.tools?.length ? options.tools : structuredTools;
   if (
     (agent.provider === Providers.GOOGLE || agent.provider === Providers.VERTEXAI) &&
     options.tools?.length &&
