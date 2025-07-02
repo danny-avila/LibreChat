@@ -177,13 +177,10 @@ export function getOpenAIConfig(
     delete llmConfig.max_tokens;
   }
 
-  // Handle web search functionality
   const tools: BindToolsInput[] = [];
 
   if (modelOptions.web_search) {
-    // Enable Responses API for web search
     llmConfig.useResponsesApi = true;
-    // Add web search tool
     tools.push({ type: 'web_search_preview' });
   }
 
