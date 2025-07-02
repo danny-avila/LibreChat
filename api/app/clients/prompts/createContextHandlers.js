@@ -1,6 +1,7 @@
 const axios = require('axios');
-const { isEnabled } = require('~/server/utils');
-const { logger } = require('~/config');
+const { isEnabled } = require('@librechat/api');
+const { logger } = require('@librechat/data-schemas');
+const { generateShortLivedToken } = require('~/server/services/AuthService');
 
 const footer = `Use the context as your learned knowledge to better answer the user.
 
@@ -18,7 +19,7 @@ function createContextHandlers(req, userMessageContent) {
   const queryPromises = [];
   const processedFiles = [];
   const processedIds = new Set();
-  const jwtToken = req.headers.authorization.split(' ')[1];
+  const jwtToken = generateShortLivedToken(req.user.id);
   const useFullContext = isEnabled(process.env.RAG_USE_FULL_CONTEXT);
 
   const query = async (file) => {
@@ -96,35 +97,35 @@ function createContextHandlers(req, userMessageContent) {
         resolvedQueries.length === 0
           ? '\n\tThe semantic search did not return any results.'
           : resolvedQueries
-            .map((queryResult, index) => {
-              const file = processedFiles[index];
-              let contextItems = queryResult.data;
+              .map((queryResult, index) => {
+                const file = processedFiles[index];
+                let contextItems = queryResult.data;
 
-              const generateContext = (currentContext) =>
-                `
+                const generateContext = (currentContext) =>
+                  `
           <file>
             <filename>${file.filename}</filename>
             <context>${currentContext}
             </context>
           </file>`;
 
-              if (useFullContext) {
-                return generateContext(`\n${contextItems}`);
-              }
+                if (useFullContext) {
+                  return generateContext(`\n${contextItems}`);
+                }
 
-              contextItems = queryResult.data
-                .map((item) => {
-                  const pageContent = item[0].page_content;
-                  return `
+                contextItems = queryResult.data
+                  .map((item) => {
+                    const pageContent = item[0].page_content;
+                    return `
             <contextItem>
               <![CDATA[${pageContent?.trim()}]]>
             </contextItem>`;
-                })
-                .join('');
+                  })
+                  .join('');
 
-              return generateContext(contextItems);
-            })
-            .join('');
+                return generateContext(contextItems);
+              })
+              .join('');
 
       if (useFullContext) {
         const prompt = `${header}

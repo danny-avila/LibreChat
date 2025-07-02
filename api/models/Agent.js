@@ -70,6 +70,9 @@ const loadEphemeralAgent = async ({ req, agent_id, endpoint, model_parameters: _
   if (ephemeralAgent?.execute_code === true) {
     tools.push(Tools.execute_code);
   }
+  if (ephemeralAgent?.file_search === true) {
+    tools.push(Tools.file_search);
+  }
   if (ephemeralAgent?.web_search === true) {
     tools.push(Tools.web_search);
   }

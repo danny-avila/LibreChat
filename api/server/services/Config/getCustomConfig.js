@@ -40,6 +40,7 @@ async function getBalanceConfig() {
 /**
  *
  * @param {string | EModelEndpoint} endpoint
+ * @returns {Promise<TEndpoint | undefined>}
  */
 const getCustomEndpointConfig = async (endpoint) => {
   const customConfig = await getCustomConfig();

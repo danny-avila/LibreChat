@@ -4,6 +4,7 @@ import {
   openAISettings,
   googleSettings,
   ReasoningEffort,
+  ReasoningSummary,
   BedrockProviders,
   anthropicSettings,
 } from './types';
@@ -71,6 +72,11 @@ const baseDefinitions: Record<string, SettingDefinition> = {
     default: ImageDetail.auto,
     component: 'slider',
     options: [ImageDetail.low, ImageDetail.auto, ImageDetail.high],
+    enumMappings: {
+      [ImageDetail.low]: 'com_ui_low',
+      [ImageDetail.auto]: 'com_ui_auto',
+      [ImageDetail.high]: 'com_ui_high',
+    },
     optionType: 'conversation',
     columnSpan: 2,
   },
@@ -83,7 +89,7 @@ const createDefinition = (
   return { ...base, ...overrides } as SettingDefinition;
 };
 
-const librechat: Record<string, SettingDefinition> = {
+export const librechat = {
   modelLabel: {
     key: 'modelLabel',
     label: 'com_endpoint_custom_name',
@@ -94,7 +100,7 @@ const librechat: Record<string, SettingDefinition> = {
     placeholder: 'com_endpoint_openai_custom_name_placeholder',
     placeholderCode: true,
     optionType: 'conversation',
-  },
+  } as const,
   maxContextTokens: {
     key: 'maxContextTokens',
     label: 'com_endpoint_context_tokens',
@@ -107,7 +113,7 @@ const librechat: Record<string, SettingDefinition> = {
     descriptionCode: true,
     optionType: 'model',
     columnSpan: 2,
-  },
+  } as const,
   resendFiles: {
     key: 'resendFiles',
     label: 'com_endpoint_plug_resend_files',
@@ -120,7 +126,7 @@ const librechat: Record<string, SettingDefinition> = {
     optionType: 'conversation',
     showDefault: false,
     columnSpan: 2,
-  },
+  } as const,
   promptPrefix: {
     key: 'promptPrefix',
     label: 'com_endpoint_prompt_prefix',
@@ -131,7 +137,7 @@ const librechat: Record<string, SettingDefinition> = {
     placeholder: 'com_endpoint_openai_prompt_prefix_placeholder',
     placeholderCode: true,
     optionType: 'model',
-  },
+  } as const,
 };
 
 const openAIParams: Record<string, SettingDefinition> = {
@@ -211,9 +217,57 @@ const openAIParams: Record<string, SettingDefinition> = {
     description: 'com_endpoint_openai_reasoning_effort',
     descriptionCode: true,
     type: 'enum',
-    default: ReasoningEffort.medium,
+    default: ReasoningEffort.none,
     component: 'slider',
-    options: [ReasoningEffort.low, ReasoningEffort.medium, ReasoningEffort.high],
+    options: [
+      ReasoningEffort.none,
+      ReasoningEffort.low,
+      ReasoningEffort.medium,
+      ReasoningEffort.high,
+    ],
+    enumMappings: {
+      [ReasoningEffort.none]: 'com_ui_none',
+      [ReasoningEffort.low]: 'com_ui_low',
+      [ReasoningEffort.medium]: 'com_ui_medium',
+      [ReasoningEffort.high]: 'com_ui_high',
+    },
+    optionType: 'model',
+    columnSpan: 4,
+  },
+  useResponsesApi: {
+    key: 'useResponsesApi',
+    label: 'com_endpoint_use_responses_api',
+    labelCode: true,
+    description: 'com_endpoint_openai_use_responses_api',
+    descriptionCode: true,
+    type: 'boolean',
+    default: false,
+    component: 'switch',
+    optionType: 'model',
+    showDefault: false,
+    columnSpan: 2,
+  },
+  reasoning_summary: {
+    key: 'reasoning_summary',
+    label: 'com_endpoint_reasoning_summary',
+    labelCode: true,
+    description: 'com_endpoint_openai_reasoning_summary',
+    descriptionCode: true,
+    type: 'enum',
+    default: ReasoningSummary.none,
+    component: 'slider',
+    options: [
+      ReasoningSummary.none,
+      ReasoningSummary.auto,
+      ReasoningSummary.concise,
+      ReasoningSummary.detailed,
+    ],
+    enumMappings: {
+      [ReasoningSummary.none]: 'com_ui_none',
+      [ReasoningSummary.auto]: 'com_ui_auto',
+      [ReasoningSummary.concise]: 'com_ui_concise',
+      [ReasoningSummary.detailed]: 'com_ui_detailed',
+    },
     optionType: 'model',
     columnSpan: 4,
   },
@@ -347,7 +401,9 @@ const bedrock: Record<string, SettingDefinition> = {
     labelCode: true,
     type: 'number',
     component: 'input',
-    placeholder: 'com_endpoint_anthropic_maxoutputtokens',
+    description: 'com_endpoint_anthropic_maxoutputtokens',
+    descriptionCode: true,
+    placeholder: 'com_nav_theme_system',
     placeholderCode: true,
     optionType: 'model',
     columnSpan: 2,
@@ -450,6 +506,50 @@ const google: Record<string, SettingDefinition> = {
     optionType: 'model',
     columnSpan: 2,
   },
+  thinking: {
+    key: 'thinking',
+    label: 'com_endpoint_thinking',
+    labelCode: true,
+    description: 'com_endpoint_google_thinking',
+    descriptionCode: true,
+    type: 'boolean',
+    default: googleSettings.thinking.default,
+    component: 'switch',
+    optionType: 'conversation',
+    showDefault: false,
+    columnSpan: 2,
+  },
+  thinkingBudget: {
+    key: 'thinkingBudget',
+    label: 'com_endpoint_thinking_budget',
+    labelCode: true,
+    description: 'com_endpoint_google_thinking_budget',
+    descriptionCode: true,
+    placeholder: 'com_ui_auto',
+    placeholderCode: true,
+    type: 'number',
+    component: 'input',
+    range: {
+      min: googleSettings.thinkingBudget.min,
+      max: googleSettings.thinkingBudget.max,
+      step: googleSettings.thinkingBudget.step,
+    },
+    optionType: 'conversation',
+    columnSpan: 2,
+  },
+  grounding: {
+    key: 'grounding',
+    label: 'com_endpoint_use_search_grounding',
+    labelCode: true,
+    description: 'com_endpoint_google_use_search_grounding',
+    descriptionCode: true,
+    type: 'boolean',
+    default: false,
+    component: 'switch',
+    optionType: 'model',
+    showDefault: false,
+    columnSpan: 2,
+  },
 };
 
 const googleConfig: SettingsConfiguration = [
@@ -461,6 +561,9 @@ const googleConfig: SettingsConfiguration = [
   google.topP,
   google.topK,
   librechat.resendFiles,
+  google.thinking,
+  google.thinkingBudget,
+  google.grounding,
 ];
 
 const googleCol1: SettingsConfiguration = [
@@ -476,6 +579,9 @@ const googleCol2: SettingsConfiguration = [
   google.topP,
   google.topK,
   librechat.resendFiles,
+  google.thinking,
+  google.thinkingBudget,
+  google.grounding,
 ];
 
 const openAI: SettingsConfiguration = [
@@ -491,6 +597,8 @@ const openAI: SettingsConfiguration = [
   librechat.resendFiles,
   baseDefinitions.imageDetail,
   openAIParams.reasoning_effort,
+  openAIParams.useResponsesApi,
+  openAIParams.reasoning_summary,
 ];
 
 const openAICol1: SettingsConfiguration = [
@@ -507,9 +615,11 @@ const openAICol2: SettingsConfiguration = [
   openAIParams.frequency_penalty,
   openAIParams.presence_penalty,
   baseDefinitions.stop,
-  openAIParams.reasoning_effort,
   librechat.resendFiles,
   baseDefinitions.imageDetail,
+  openAIParams.reasoning_effort,
+  openAIParams.useResponsesApi,
+  openAIParams.reasoning_summary,
 ];
 
 const anthropicConfig: SettingsConfiguration = [

@@ -3,7 +3,6 @@ import { Tools } from './types/assistants';
 import type { TMessageContentParts, FunctionTool, FunctionToolCall } from './types/assistants';
 import { TFeedback, feedbackSchema } from './feedback';
 import type { SearchResultData } from './types/web';
-import type { TEphemeralAgent } from './types';
 import type { TFile } from './types/files';
 
 export const isUUID = z.string().uuid();
@@ -91,22 +90,6 @@ export const isAgentsEndpoint = (_endpoint?: EModelEndpoint.agents | null | stri
   return endpoint === EModelEndpoint.agents;
 };
 
-export const isEphemeralAgent = (
-  endpoint?: EModelEndpoint.agents | null | string,
-  ephemeralAgent?: TEphemeralAgent | null,
-) => {
-  if (!ephemeralAgent) {
-    return false;
-  }
-  if (isAgentsEndpoint(endpoint)) {
-    return false;
-  }
-  const hasMCPSelected = (ephemeralAgent?.mcp?.length ?? 0) > 0;
-  const hasCodeSelected = (ephemeralAgent?.execute_code ?? false) === true;
-  const hasSearchSelected = (ephemeralAgent?.web_search ?? false) === true;
-  return hasMCPSelected || hasCodeSelected || hasSearchSelected;
-};
-
 export const isParamEndpoint = (
   endpoint: EModelEndpoint | string,
   endpointType?: EModelEndpoint | string,
@@ -129,9 +112,17 @@ export enum ImageDetail {
 }
 
 export enum ReasoningEffort {
+  none = '',
   low = 'low',
   medium = 'medium',
   high = 'high',
+}
+
+export enum ReasoningSummary {
+  none = '',
+  auto = 'auto',
+  concise = 'concise',
+  detailed = 'detailed',
 }
 
 export const imageDetailNumeric = {
@@ -148,6 +139,7 @@ export const imageDetailValue = {
 
 export const eImageDetailSchema = z.nativeEnum(ImageDetail);
 export const eReasoningEffortSchema = z.nativeEnum(ReasoningEffort);
+export const eReasoningSummarySchema = z.nativeEnum(ReasoningSummary);
 
 export const defaultAssistantFormValues = {
   assistant: '',
@@ -271,6 +263,18 @@ export const googleSettings = {
     max: 40 as const,
     step: 1 as const,
     default: 40 as const,
+  },
+  thinking: {
+    default: true as const,
+  },
+  thinkingBudget: {
+    min: -1 as const,
+    max: 32768 as const,
+    step: 1 as const,
+    /** `-1` = Dynamic Thinking, meaning the model will adjust
+     * the budget based on the complexity of the request.
+     */
+    default: -1 as const,
   },
 };
 
@@ -417,7 +421,7 @@ export type TPluginAuthConfig = z.infer<typeof tPluginAuthConfigSchema>;
 export const tPluginSchema = z.object({
   name: z.string(),
   pluginKey: z.string(),
-  description: z.string(),
+  description: z.string().optional(),
   icon: z.string().optional(),
   authConfig: z.array(tPluginAuthConfigSchema).optional(),
   authenticated: z.boolean().optional(),
@@ -499,6 +503,7 @@ export const tMessageSchema = z.object({
   title: z.string().nullable().or(z.literal('New Chat')).default('New Chat'),
   sender: z.string().optional(),
   text: z.string(),
+  /** @deprecated */
   generation: z.string().nullable().optional(),
   isCreatedByUser: z.boolean(),
   error: z.boolean().optional(),
@@ -624,8 +629,13 @@ export const tConversationSchema = z.object({
   file_ids: z.array(z.string()).optional(),
   /* vision */
   imageDetail: eImageDetailSchema.optional(),
-  /* OpenAI: o1 only */
-  reasoning_effort: eReasoningEffortSchema.optional(),
+  /* OpenAI: Reasoning models only */
+  reasoning_effort: eReasoningEffortSchema.optional().nullable(),
+  reasoning_summary: eReasoningSummarySchema.optional().nullable(),
+  /* OpenAI: use Responses API */
+  useResponsesApi: z.boolean().optional(),
+  /* Google: use Search Grounding */
+  grounding: z.boolean().optional(),
   /* assistant */
   assistant_id: z.string().optional(),
   /* agents */
@@ -722,6 +732,14 @@ export const tQueryParamsSchema = tConversationSchema
     top_p: true,
     /** @endpoints openAI, custom, azureOpenAI */
     max_tokens: true,
+    /** @endpoints openAI, custom, azureOpenAI */
+    reasoning_effort: true,
+    /** @endpoints openAI, custom, azureOpenAI */
+    reasoning_summary: true,
+    /** @endpoints openAI, custom, azureOpenAI */
+    useResponsesApi: true,
+    /** @endpoints google */
+    grounding: true,
     /** @endpoints google, anthropic, bedrock */
     topP: true,
     /** @endpoints google, anthropic */
@@ -802,6 +820,9 @@ export const googleBaseSchema = tConversationSchema.pick({
   artifacts: true,
   topP: true,
   topK: true,
+  thinking: true,
+  thinkingBudget: true,
+  grounding: true,
   iconURL: true,
   greeting: true,
   spec: true,
@@ -827,6 +848,13 @@ export const googleGenConfigSchema = z
     presencePenalty: coerceNumber.optional(),
     frequencyPenalty: coerceNumber.optional(),
     stopSequences: z.array(z.string()).optional(),
+    thinkingConfig: z
+      .object({
+        includeThoughts: z.boolean().optional(),
+        thinkingBudget: coerceNumber.optional(),
+      })
+      .optional(),
+    grounding: z.boolean().optional(),
   })
   .strip()
   .optional();
@@ -1041,10 +1069,12 @@ export const openAIBaseSchema = tConversationSchema.pick({
   maxContextTokens: true,
   max_tokens: true,
   reasoning_effort: true,
+  reasoning_summary: true,
+  useResponsesApi: true,
 });
 
 export const openAISchema = openAIBaseSchema
-  .transform((obj: Partial<TConversation>) => removeNullishValues(obj))
+  .transform((obj: Partial<TConversation>) => removeNullishValues(obj, true))
   .catch(() => ({}));
 
 export const compactGoogleSchema = googleBaseSchema
