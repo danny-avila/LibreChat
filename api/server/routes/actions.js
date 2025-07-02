@@ -1,8 +1,10 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
+const { getAccessToken } = require('@librechat/api');
+const { logger } = require('@librechat/data-schemas');
 const { CacheKeys } = require('librechat-data-provider');
-const { getAccessToken } = require('~/server/services/TokenService');
-const { logger, getFlowStateManager } = require('~/config');
+const { findToken, updateToken, createToken } = require('~/models');
+const { getFlowStateManager } = require('~/config');
 const { getLogStores } = require('~/cache');
 
 const router = express.Router();
@@ -28,18 +30,19 @@ router.get('/:action_id/oauth/callback', async (req, res) => {
     try {
       decodedState = jwt.verify(state, JWT_SECRET);
     } catch (err) {
+      logger.error('Error verifying state parameter:', err);
       await flowManager.failFlow(identifier, 'oauth', 'Invalid or expired state parameter');
-      return res.status(400).send('Invalid or expired state parameter');
+      return res.redirect('/oauth/error?error=invalid_state');
     }
 
     if (decodedState.action_id !== action_id) {
       await flowManager.failFlow(identifier, 'oauth', 'Mismatched action ID in state parameter');
-      return res.status(400).send('Mismatched action ID in state parameter');
+      return res.redirect('/oauth/error?error=invalid_state');
     }
 
     if (!decodedState.user) {
       await flowManager.failFlow(identifier, 'oauth', 'Invalid user ID in state parameter');
-      return res.status(400).send('Invalid user ID in state parameter');
+      return res.redirect('/oauth/error?error=invalid_state');
     }
     identifier = `${decodedState.user}:${action_id}`;
     const flowState = await flowManager.getFlowState(identifier, 'oauth');
@@ -47,91 +50,34 @@ router.get('/:action_id/oauth/callback', async (req, res) => {
       throw new Error('OAuth flow not found');
     }
 
-    const tokenData = await getAccessToken({
-      code,
-      userId: decodedState.user,
-      identifier,
-      client_url: flowState.metadata.client_url,
-      redirect_uri: flowState.metadata.redirect_uri,
-      token_exchange_method: flowState.metadata.token_exchange_method,
-      /** Encrypted values */
-      encrypted_oauth_client_id: flowState.metadata.encrypted_oauth_client_id,
-      encrypted_oauth_client_secret: flowState.metadata.encrypted_oauth_client_secret,
-    });
+    const tokenData = await getAccessToken(
+      {
+        code,
+        userId: decodedState.user,
+        identifier,
+        client_url: flowState.metadata.client_url,
+        redirect_uri: flowState.metadata.redirect_uri,
+        token_exchange_method: flowState.metadata.token_exchange_method,
+        /** Encrypted values */
+        encrypted_oauth_client_id: flowState.metadata.encrypted_oauth_client_id,
+        encrypted_oauth_client_secret: flowState.metadata.encrypted_oauth_client_secret,
+      },
+      {
+        findToken,
+        updateToken,
+        createToken,
+      },
+    );
     await flowManager.completeFlow(identifier, 'oauth', tokenData);
-    res.send(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>Authentication Successful</title>
-          <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
-          <style>
-            body {
-              font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont;
-              background-color: rgb(249, 250, 251);
-              margin: 0;
-              padding: 2rem;
-              display: flex;
-              justify-content: center;
-              align-items: center;
-              min-height: 100vh;
-            }
-            .card {
-              background-color: white;
-              border-radius: 0.5rem;
-              padding: 2rem;
-              max-width: 28rem;
-              width: 100%;
-              box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
-              text-align: center;
-            }
-            .heading {
-              color: rgb(17, 24, 39);
-              font-size: 1.875rem;
-              font-weight: 700;
-              margin: 0 0 1rem;
-            }
-            .description {
-              color: rgb(75, 85, 99);
-              font-size: 0.875rem;
-              margin: 0.5rem 0;
-            }
-            .countdown {
-              color: rgb(99, 102, 241);
-              font-weight: 500;
-            }
-          </style>
-        </head>
-        <body>
-          <div class="card">
-            <h1 class="heading">Authentication Successful</h1>
-            <p class="description">
-              Your authentication was successful. This window will close in 
-              <span class="countdown" id="countdown">3</span> seconds.
-            </p>
-          </div>
-          <script>
-            let secondsLeft = 3;
-            const countdownElement = document.getElementById('countdown');
-            
-            const countdown = setInterval(() => {
-              secondsLeft--;
-              countdownElement.textContent = secondsLeft;
-              
-              if (secondsLeft <= 0) {
-                clearInterval(countdown);
-                window.close();
-              }
-            }, 1000);
-          </script>
-        </body>
-      </html>
-    `);
+
+    /** Redirect to React success page */
+    const serverName = flowState.metadata?.action_name || `Action ${action_id}`;
+    const redirectUrl = `/oauth/success?serverName=${encodeURIComponent(serverName)}`;
+    res.redirect(redirectUrl);
   } catch (error) {
     logger.error('Error in OAuth callback:', error);
     await flowManager.failFlow(identifier, 'oauth', error);
-    res.status(500).send('Authentication failed. Please try again.');
+    res.redirect('/oauth/error?error=callback_failed');
   }
 });
 

@@ -1,29 +1,36 @@
 const express = require('express');
+const { generateCheckAccess } = require('@librechat/api');
 const { PermissionTypes, Permissions } = require('librechat-data-provider');
-const { requireJwtAuth, generateCheckAccess } = require('~/server/middleware');
+const { requireJwtAuth } = require('~/server/middleware');
 const v1 = require('~/server/controllers/agents/v1');
+const { getRoleByName } = require('~/models/Role');
 const actions = require('./actions');
 const tools = require('./tools');
 
 const router = express.Router();
 const avatar = express.Router();
 
-const checkAgentAccess = generateCheckAccess(PermissionTypes.AGENTS, [Permissions.USE]);
-const checkAgentCreate = generateCheckAccess(PermissionTypes.AGENTS, [
-  Permissions.USE,
-  Permissions.CREATE,
-]);
+const checkAgentAccess = generateCheckAccess({
+  permissionType: PermissionTypes.AGENTS,
+  permissions: [Permissions.USE],
+  getRoleByName,
+});
+const checkAgentCreate = generateCheckAccess({
+  permissionType: PermissionTypes.AGENTS,
+  permissions: [Permissions.USE, Permissions.CREATE],
+  getRoleByName,
+});
 
-const checkGlobalAgentShare = generateCheckAccess(
-  PermissionTypes.AGENTS,
-  [Permissions.USE, Permissions.CREATE],
-  {
+const checkGlobalAgentShare = generateCheckAccess({
+  permissionType: PermissionTypes.AGENTS,
+  permissions: [Permissions.USE, Permissions.CREATE],
+  bodyProps: {
     [Permissions.SHARED_GLOBAL]: ['projectIds', 'removeProjectIds'],
   },
-);
+  getRoleByName,
+});
 
 router.use(requireJwtAuth);
-router.use(checkAgentAccess);
 
 /**
  * Agent actions route.

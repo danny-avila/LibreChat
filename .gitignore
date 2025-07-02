@@ -55,6 +55,7 @@ bower_components/
 # AI
 .clineignore
 .cursor
+.aider*
 
 # Floobits
 .floo

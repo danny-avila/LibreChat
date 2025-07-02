@@ -1,6 +1,6 @@
 {
   "name": "@librechat/api",
-  "version": "1.2.2",
+  "version": "1.2.5",
   "type": "commonjs",
   "description": "MCP services for LibreChat",
   "main": "dist/index.js",
@@ -51,6 +51,7 @@
     "@types/diff": "^6.0.0",
     "@types/express": "^5.0.0",
     "@types/jest": "^29.5.2",
+    "@types/multer": "^1.4.13",
     "@types/node": "^20.3.0",
     "@types/react": "^18.2.18",
     "@types/winston": "^2.4.4",
@@ -68,16 +69,19 @@
     "registry": "https://registry.npmjs.org/"
   },
   "peerDependencies": {
-    "@librechat/agents": "^2.4.37",
+    "@librechat/agents": "^2.4.50",
     "@librechat/data-schemas": "*",
-    "librechat-data-provider": "*",
-    "@modelcontextprotocol/sdk": "^1.11.2",
+    "@modelcontextprotocol/sdk": "^1.12.3",
+    "axios": "^1.8.2",
     "diff": "^7.0.0",
     "eventsource": "^3.0.2",
     "express": "^4.21.2",
-    "node-fetch": "2.7.0",
+    "js-yaml": "^4.1.0",
     "keyv": "^5.3.2",
-    "zod": "^3.22.4",
-    "tiktoken": "^1.0.15"
+    "librechat-data-provider": "*",
+    "node-fetch": "2.7.0",
+    "tiktoken": "^1.0.15",
+    "undici": "^7.10.0",
+    "zod": "^3.22.4"
   }
 }

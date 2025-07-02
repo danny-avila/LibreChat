@@ -143,6 +143,7 @@ export enum Panel {
   actions = 'actions',
   model = 'model',
   version = 'version',
+  mcp = 'mcp',
 }
 
 export type FileSetter =
@@ -164,6 +165,15 @@ export type ActionAuthForm = {
   client_url: string;
   scope: string;
   token_exchange_method: t.TokenExchangeMethodEnum;
+};
+
+export type MCPForm = ActionAuthForm & {
+  name?: string;
+  description?: string;
+  url?: string;
+  tools?: string[];
+  icon?: string;
+  trust?: boolean;
 };
 
 export type ActionWithNullableMetadata = Omit<t.Action, 'metadata'> & {
@@ -188,14 +198,33 @@ export type AgentPanelProps = {
   index?: number;
   agent_id?: string;
   activePanel?: string;
+  mcp?: t.MCP;
+  mcps?: t.MCP[];
   action?: t.Action;
   actions?: t.Action[];
   createMutation: UseMutationResult<t.Agent, Error, t.AgentCreateParams>;
   setActivePanel: React.Dispatch<React.SetStateAction<Panel>>;
+  setMcp: React.Dispatch<React.SetStateAction<t.MCP | undefined>>;
   setAction: React.Dispatch<React.SetStateAction<t.Action | undefined>>;
   endpointsConfig?: t.TEndpointsConfig;
   setCurrentAgentId: React.Dispatch<React.SetStateAction<string | undefined>>;
   agentsConfig?: t.TAgentsEndpoint | null;
+};
+
+export type AgentPanelContextType = {
+  action?: t.Action;
+  actions?: t.Action[];
+  setAction: React.Dispatch<React.SetStateAction<t.Action | undefined>>;
+  mcp?: t.MCP;
+  mcps?: t.MCP[];
+  setMcp: React.Dispatch<React.SetStateAction<t.MCP | undefined>>;
+  setMcps: React.Dispatch<React.SetStateAction<t.MCP[] | undefined>>;
+  tools: t.AgentToolType[];
+  activePanel?: string;
+  setActivePanel: React.Dispatch<React.SetStateAction<Panel>>;
+  setCurrentAgentId: React.Dispatch<React.SetStateAction<string | undefined>>;
+  groupedTools?: Record<string, t.AgentToolType & { tools?: t.AgentToolType[] }>;
+  agent_id?: string;
 };
 
 export type AgentModelPanelProps = {
@@ -307,6 +336,11 @@ export type TAskProps = {
 export type TOptions = {
   editedMessageId?: string | null;
   editedText?: string | null;
+  editedContent?: {
+    index: number;
+    text: string;
+    type: 'text' | 'think';
+  };
   isRegenerate?: boolean;
   isContinued?: boolean;
   isEdited?: boolean;

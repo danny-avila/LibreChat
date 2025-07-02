@@ -1,6 +1,13 @@
 import { Run, Providers } from '@librechat/agents';
 import { providerEndpointMap, KnownEndpoints } from 'librechat-data-provider';
-import type { StandardGraphConfig, EventHandler, GraphEvents, IState } from '@librechat/agents';
+import type {
+  OpenAIClientOptions,
+  StandardGraphConfig,
+  EventHandler,
+  GenericTool,
+  GraphEvents,
+  IState,
+} from '@librechat/agents';
 import type { Agent } from 'librechat-data-provider';
 import type * as t from '~/types';
 
@@ -32,7 +39,7 @@ export async function createRun({
   streaming = true,
   streamUsage = true,
 }: {
-  agent: Agent;
+  agent: Omit<Agent, 'tools'> & { tools?: GenericTool[] };
   signal: AbortSignal;
   runId?: string;
   streaming?: boolean;
@@ -40,7 +47,10 @@ export async function createRun({
   customHandlers?: Record<GraphEvents, EventHandler>;
 }): Promise<Run<IState>> {
   const provider =
-    providerEndpointMap[agent.provider as keyof typeof providerEndpointMap] ?? agent.provider;
+    (providerEndpointMap[
+      agent.provider as keyof typeof providerEndpointMap
+    ] as unknown as Providers) ?? agent.provider;
+
   const llmConfig: t.RunLLMConfig = Object.assign(
     {
       provider,
@@ -60,9 +70,16 @@ export async function createRun({
   }
 
   let reasoningKey: 'reasoning_content' | 'reasoning' | undefined;
-  if (
+  if (provider === Providers.GOOGLE) {
+    reasoningKey = 'reasoning';
+  } else if (
     llmConfig.configuration?.baseURL?.includes(KnownEndpoints.openrouter) ||
     (agent.endpoint && agent.endpoint.toLowerCase().includes(KnownEndpoints.openrouter))
+  ) {
+    reasoningKey = 'reasoning';
+  } else if (
+    (llmConfig as OpenAIClientOptions).useResponsesApi === true &&
+    (provider === Providers.OPENAI || provider === Providers.AZURE)
   ) {
     reasoningKey = 'reasoning';
   }

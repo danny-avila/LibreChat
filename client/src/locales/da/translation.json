@@ -823,6 +823,5 @@
   "com_ui_x_selected": "{{0}} udvalgt",
   "com_ui_yes": "Ja",
   "com_ui_zoom": "Zoom",
-  "com_user_message": "Du",
-  "com_warning_resubmit_unsupported": "Genindsendelse af AI-beskeden understøttes ikke for dette slutpunkt."
+  "com_user_message": "Du"
 }

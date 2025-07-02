@@ -863,6 +863,5 @@
   "com_ui_x_selected": "{{0}} נבחר",
   "com_ui_yes": "כן",
   "com_ui_zoom": "זום",
-  "com_user_message": "אתה",
-  "com_warning_resubmit_unsupported": "שליחת הודעה מחדש אינה נתמכת עבור נקודת קצה זו."
+  "com_user_message": "אתה"
 }

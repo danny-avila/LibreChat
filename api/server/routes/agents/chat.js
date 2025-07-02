@@ -1,22 +1,28 @@
 const express = require('express');
+const { generateCheckAccess, skipAgentCheck } = require('@librechat/api');
 const { PermissionTypes, Permissions } = require('librechat-data-provider');
 const {
   setHeaders,
   moderateText,
   // validateModel,
-  generateCheckAccess,
   validateConvoAccess,
   buildEndpointOption,
 } = require('~/server/middleware');
 const { initializeClient } = require('~/server/services/Endpoints/agents');
 const AgentController = require('~/server/controllers/agents/request');
 const addTitle = require('~/server/services/Endpoints/agents/title');
+const { getRoleByName } = require('~/models/Role');
 
 const router = express.Router();
 
 router.use(moderateText);
 
-const checkAgentAccess = generateCheckAccess(PermissionTypes.AGENTS, [Permissions.USE]);
+const checkAgentAccess = generateCheckAccess({
+  permissionType: PermissionTypes.AGENTS,
+  permissions: [Permissions.USE],
+  skipCheck: skipAgentCheck,
+  getRoleByName,
+});
 
 router.use(checkAgentAccess);
 router.use(validateConvoAccess);

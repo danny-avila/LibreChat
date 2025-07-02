@@ -7,7 +7,7 @@ import useLocalize from '~/hooks/useLocalize';
 import { OGDialog } from '~/components/ui';
 
 interface DragDropModalProps {
-  onOptionSelect: (option: string | undefined) => void;
+  onOptionSelect: (option: EToolResources | undefined) => void;
   files: File[];
   isVisible: boolean;
   setShowModal: (showModal: boolean) => void;

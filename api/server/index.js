@@ -1,22 +1,22 @@
 require('dotenv').config();
+const fs = require('fs');
 const path = require('path');
 require('module-alias')({ base: path.resolve(__dirname, '..') });
 const cors = require('cors');
 const axios = require('axios');
 const express = require('express');
-const compression = require('compression');
 const passport = require('passport');
-const mongoSanitize = require('express-mongo-sanitize');
-const fs = require('fs');
+const compression = require('compression');
 const cookieParser = require('cookie-parser');
+const { isEnabled } = require('@librechat/api');
+const { logger } = require('@librechat/data-schemas');
+const mongoSanitize = require('express-mongo-sanitize');
 const { connectDb, indexSync } = require('~/db');
 
-const { jwtLogin, passportLogin } = require('~/strategies');
-const { isEnabled } = require('~/server/utils');
-const { ldapLogin } = require('~/strategies');
-const { logger } = require('~/config');
 const validateImageRequest = require('./middleware/validateImageRequest');
+const { jwtLogin, ldapLogin, passportLogin } = require('~/strategies');
 const errorController = require('./controllers/ErrorController');
+const initializeMCP = require('./services/initializeMCP');
 const configureSocialLogins = require('./socialLogins');
 const AppService = require('./services/AppService');
 const staticCache = require('./utils/staticCache');
@@ -39,7 +39,9 @@ const startServer = async () => {
   await connectDb();
 
   logger.info('Connected to MongoDB');
-  await indexSync();
+  indexSync().catch((err) => {
+    logger.error('[indexSync] Background sync failed:', err);
+  });
 
   app.disable('x-powered-by');
   app.set('trust proxy', trusted_proxy);
@@ -95,7 +97,6 @@ const startServer = async () => {
   app.use('/api/actions', routes.actions);
   app.use('/api/keys', routes.keys);
   app.use('/api/user', routes.user);
-  app.use('/api/ask', routes.ask);
   app.use('/api/search', routes.search);
   app.use('/api/edit', routes.edit);
   app.use('/api/messages', routes.messages);
@@ -116,9 +117,9 @@ const startServer = async () => {
   app.use('/api/roles', routes.roles);
   app.use('/api/agents', routes.agents);
   app.use('/api/banner', routes.banner);
-  app.use('/api/bedrock', routes.bedrock);
   app.use('/api/memories', routes.memories);
   app.use('/api/tags', routes.tags);
+  app.use('/api/mcp', routes.mcp);
 
   app.use((req, res) => {
     res.set({
@@ -142,6 +143,8 @@ const startServer = async () => {
     } else {
       logger.info(`Server listening at http://${host == '0.0.0.0' ? 'localhost' : host}:${port}`);
     }
+
+    initializeMCP(app);
   });
 };
 
@@ -184,5 +187,5 @@ process.on('uncaughtException', (err) => {
   process.exit(1);
 });
 
-// export app for easier testing purposes
+/** Export app for easier testing purposes */
 module.exports = app;

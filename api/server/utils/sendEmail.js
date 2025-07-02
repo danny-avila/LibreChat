@@ -4,9 +4,9 @@ const axios = require('axios');
 const FormData = require('form-data');
 const nodemailer = require('nodemailer');
 const handlebars = require('handlebars');
+const { logAxiosError } = require('@librechat/api');
+const { logger } = require('@librechat/data-schemas');
 const { isEnabled } = require('~/server/utils/handleText');
-const { logAxiosError } = require('~/utils');
-const logger = require('~/config/winston');
 
 /**
  * Sends an email using Mailgun API.

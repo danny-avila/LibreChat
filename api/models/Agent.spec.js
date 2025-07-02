@@ -6,6 +6,10 @@ const originalEnv = {
 process.env.CREDS_KEY = '0123456789abcdef0123456789abcdef';
 process.env.CREDS_IV = '0123456789abcdef';
 
+jest.mock('~/server/services/Config', () => ({
+  getCachedTools: jest.fn(),
+}));
+
 const mongoose = require('mongoose');
 const { v4: uuidv4 } = require('uuid');
 const { agentSchema } = require('@librechat/data-schemas');
@@ -23,6 +27,7 @@ const {
   generateActionMetadataHash,
   revertAgentVersion,
 } = require('./Agent');
+const { getCachedTools } = require('~/server/services/Config');
 
 /**
  * @type {import('mongoose').Model<import('@librechat/data-schemas').IAgent>}
@@ -38,7 +43,7 @@ describe('models/Agent', () => {
       const mongoUri = mongoServer.getUri();
       Agent = mongoose.models.Agent || mongoose.model('Agent', agentSchema);
       await mongoose.connect(mongoUri);
-    });
+    }, 20000);
 
     afterAll(async () => {
       await mongoose.disconnect();
@@ -406,8 +411,9 @@ describe('models/Agent', () => {
     beforeAll(async () => {
       mongoServer = await MongoMemoryServer.create();
       const mongoUri = mongoServer.getUri();
+      Agent = mongoose.models.Agent || mongoose.model('Agent', agentSchema);
       await mongoose.connect(mongoUri);
-    });
+    }, 20000);
 
     afterAll(async () => {
       await mongoose.disconnect();
@@ -664,7 +670,7 @@ describe('models/Agent', () => {
       const mongoUri = mongoServer.getUri();
       Agent = mongoose.models.Agent || mongoose.model('Agent', agentSchema);
       await mongoose.connect(mongoUri);
-    });
+    }, 20000);
 
     afterAll(async () => {
       await mongoose.disconnect();
@@ -1326,7 +1332,7 @@ describe('models/Agent', () => {
       const mongoUri = mongoServer.getUri();
       Agent = mongoose.models.Agent || mongoose.model('Agent', agentSchema);
       await mongoose.connect(mongoUri);
-    });
+    }, 20000);
 
     afterAll(async () => {
       await mongoose.disconnect();
@@ -1508,7 +1514,7 @@ describe('models/Agent', () => {
       const mongoUri = mongoServer.getUri();
       Agent = mongoose.models.Agent || mongoose.model('Agent', agentSchema);
       await mongoose.connect(mongoUri);
-    });
+    }, 20000);
 
     afterAll(async () => {
       await mongoose.disconnect();
@@ -1546,6 +1552,12 @@ describe('models/Agent', () => {
     test('should test ephemeral agent loading logic', async () => {
       const { EPHEMERAL_AGENT_ID } = require('librechat-data-provider').Constants;
 
+      getCachedTools.mockResolvedValue({
+        tool1_mcp_server1: {},
+        tool2_mcp_server2: {},
+        another_tool: {},
+      });
+
       const mockReq = {
         user: { id: 'user123' },
         body: {
@@ -1554,15 +1566,6 @@ describe('models/Agent', () => {
             execute_code: true,
             web_search: true,
             mcp: ['server1', 'server2'],
-          },
-        },
-        app: {
-          locals: {
-            availableTools: {
-              tool1_mcp_server1: {},
-              tool2_mcp_server2: {},
-              another_tool: {},
-            },
           },
         },
       };
@@ -1657,6 +1660,8 @@ describe('models/Agent', () => {
     test('should handle ephemeral agent with no MCP servers', async () => {
       const { EPHEMERAL_AGENT_ID } = require('librechat-data-provider').Constants;
 
+      getCachedTools.mockResolvedValue({});
+
       const mockReq = {
         user: { id: 'user123' },
         body: {
@@ -1665,11 +1670,6 @@ describe('models/Agent', () => {
             execute_code: false,
             web_search: false,
             mcp: [],
-          },
-        },
-        app: {
-          locals: {
-            availableTools: {},
           },
         },
       };
@@ -1692,15 +1692,12 @@ describe('models/Agent', () => {
     test('should handle ephemeral agent with undefined ephemeralAgent in body', async () => {
       const { EPHEMERAL_AGENT_ID } = require('librechat-data-provider').Constants;
 
+      getCachedTools.mockResolvedValue({});
+
       const mockReq = {
         user: { id: 'user123' },
         body: {
           promptPrefix: 'Basic instructions',
-        },
-        app: {
-          locals: {
-            availableTools: {},
-          },
         },
       };
 
@@ -1734,6 +1731,13 @@ describe('models/Agent', () => {
         const { EPHEMERAL_AGENT_ID } = require('librechat-data-provider').Constants;
 
         const largeToolList = Array.from({ length: 100 }, (_, i) => `tool_${i}_mcp_server1`);
+        const availableTools = largeToolList.reduce((acc, tool) => {
+          acc[tool] = {};
+          return acc;
+        }, {});
+
+        getCachedTools.mockResolvedValue(availableTools);
+
         const mockReq = {
           user: { id: 'user123' },
           body: {
@@ -1742,14 +1746,6 @@ describe('models/Agent', () => {
               execute_code: true,
               web_search: true,
               mcp: ['server1'],
-            },
-          },
-          app: {
-            locals: {
-              availableTools: largeToolList.reduce((acc, tool) => {
-                acc[tool] = {};
-                return acc;
-              }, {}),
             },
           },
         };
@@ -1802,7 +1798,7 @@ describe('models/Agent', () => {
       const mongoUri = mongoServer.getUri();
       Agent = mongoose.models.Agent || mongoose.model('Agent', agentSchema);
       await mongoose.connect(mongoUri);
-    });
+    }, 20000);
 
     afterAll(async () => {
       await mongoose.disconnect();
@@ -2272,6 +2268,13 @@ describe('models/Agent', () => {
     test('should handle loadEphemeralAgent with malformed MCP tool names', async () => {
       const { EPHEMERAL_AGENT_ID } = require('librechat-data-provider').Constants;
 
+      getCachedTools.mockResolvedValue({
+        malformed_tool_name: {}, // No mcp delimiter
+        tool__server1: {}, // Wrong delimiter
+        tool_mcp_server1: {}, // Correct format
+        tool_mcp_server2: {}, // Different server
+      });
+
       const mockReq = {
         user: { id: 'user123' },
         body: {
@@ -2280,16 +2283,6 @@ describe('models/Agent', () => {
             execute_code: false,
             web_search: false,
             mcp: ['server1'],
-          },
-        },
-        app: {
-          locals: {
-            availableTools: {
-              malformed_tool_name: {}, // No mcp delimiter
-              tool__server1: {}, // Wrong delimiter
-              tool_mcp_server1: {}, // Correct format
-              tool_mcp_server2: {}, // Different server
-            },
           },
         },
       };
@@ -2357,7 +2350,7 @@ describe('models/Agent', () => {
       const mongoUri = mongoServer.getUri();
       Agent = mongoose.models.Agent || mongoose.model('Agent', agentSchema);
       await mongoose.connect(mongoUri);
-    });
+    }, 20000);
 
     afterAll(async () => {
       await mongoose.disconnect();

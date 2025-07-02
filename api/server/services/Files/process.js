@@ -55,7 +55,9 @@ const processFiles = async (files, fileIds) => {
   }
 
   if (!fileIds) {
-    return await Promise.all(promises);
+    const results = await Promise.all(promises);
+    // Filter out null results from failed updateFileUsage calls
+    return results.filter((result) => result != null);
   }
 
   for (let file_id of fileIds) {
@@ -67,7 +69,9 @@ const processFiles = async (files, fileIds) => {
   }
 
   // TODO: calculate token cost when image is first uploaded
-  return await Promise.all(promises);
+  const results = await Promise.all(promises);
+  // Filter out null results from failed updateFileUsage calls
+  return results.filter((result) => result != null);
 };
 
 /**
@@ -522,7 +526,7 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
       throw new Error('OCR capability is not enabled for Agents');
     }
 
-    const { handleFileUpload: uploadMistralOCR } = getStrategyFunctions(
+    const { handleFileUpload: uploadOCR } = getStrategyFunctions(
       req.app.locals?.ocr?.strategy ?? FileSources.mistral_ocr,
     );
     const { file_id, temp_file_id } = metadata;
@@ -534,7 +538,7 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
       images,
       filename,
       filepath: ocrFileURL,
-    } = await uploadMistralOCR({ req, file, file_id, entity_id: agent_id, basePath });
+    } = await uploadOCR({ req, file, loadAuthValues });
 
     const fileInfo = removeNullishValues({
       text,
