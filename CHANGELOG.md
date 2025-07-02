@@ -7,7 +7,9 @@ All notable changes to this project will be documented in this file.
 
 
 
-## [Unreleased]
+## [v0.7.9-rc1] - 
+
+Changes from v0.7.8 to v0.7.9-rc1.
 
 ### ✨ New Features
 
@@ -35,6 +37,7 @@ All notable changes to this project will be documented in this file.
 - 🌘 fix: artifact of preview text is illegible in dark mode by **@nhtruong** in [#7405](https://github.com/danny-avila/LibreChat/pull/7405)
 - 🛡️ fix: Temporarily Remove CSP until Configurable by **@danny-avila** in [#7419](https://github.com/danny-avila/LibreChat/pull/7419)
 - 💽 fix: Exclude index page `/` from static cache settings by **@sbruel** in [#7382](https://github.com/danny-avila/LibreChat/pull/7382)
+-   📂 fix: Prevent Null Reference Errors in File Process by **@sbruel** in [#8084](https://github.com/danny-avila/LibreChat/pull/8084)
 
 ### ⚙️ Other Changes
 
@@ -48,6 +51,10 @@ All notable changes to this project will be documented in this file.
 - 🪖 chore: bump helm app version to v0.7.8 by **@austin-barrington** in [#7524](https://github.com/danny-avila/LibreChat/pull/7524)
 
 
+
+[See full release details][release-v0.7.9-rc1]
+
+[release-v0.7.9-rc1]: https://github.com/danny-avila/LibreChat/releases/tag/v0.7.9-rc1
 
 ---
 ## [v0.7.8] - 
@@ -90,6 +97,7 @@ Changes from v0.7.8-rc1 to v0.7.8.
 [release-v0.7.8]: https://github.com/danny-avila/LibreChat/releases/tag/v0.7.8
 
 ---
+## [v0.7.8-rc1] - 
 ## [v0.7.8-rc1] - 
 
 Changes from v0.7.7 to v0.7.8-rc1.
