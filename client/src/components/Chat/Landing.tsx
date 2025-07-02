@@ -211,7 +211,7 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
             }}
           />
         )}
-     </div>
+      </div>
     </div>
   );
 }
