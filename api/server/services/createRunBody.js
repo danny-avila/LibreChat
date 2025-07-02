@@ -64,6 +64,10 @@ const createRunBody = ({
     systemInstructions += `\n${endpointOption.artifactsPrompt}`;
   }
 
+  if (typeof endpointOption?.chartsPrompt === 'string' && endpointOption.chartsPrompt) {
+    systemInstructions += `\n${endpointOption.chartsPromptPrompt}`;
+  }
+
   if (systemInstructions.trim()) {
     body.additional_instructions = systemInstructions.trim();
   }

@@ -115,6 +115,7 @@ Here are some examples of correct usage of artifacts:
     </assistant_response>
   </example>
 </examples>`;
+
 const artifactsPrompt = dedent`The assistant can create and reference artifacts during conversations.
   
 Artifacts are for substantial, self-contained content that users might modify or reuse, displayed in a separate UI window for clarity.

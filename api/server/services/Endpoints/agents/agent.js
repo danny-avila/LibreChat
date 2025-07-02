@@ -13,6 +13,7 @@ const {
 } = require('librechat-data-provider');
 const { getProviderConfig } = require('~/server/services/Endpoints');
 const generateArtifactsPrompt = require('~/app/clients/prompts/artifacts');
+const generateChartsPrompt = require('~/app/clients/prompts/charts');
 const { processFiles } = require('~/server/services/Files/process');
 const { getFiles, getToolFilesByIds } = require('~/models/File');
 const { getConvoFiles } = require('~/models/Conversation');
@@ -165,6 +166,13 @@ const initializeAgent = async ({
     agent.additional_instructions = generateArtifactsPrompt({
       endpoint: agent.provider,
       artifacts: agent.artifacts,
+    });
+  }
+
+  if (typeof agent.charts === 'string' && agent.charts !== '') {
+    agent.additional_instructions = generateChartsPrompt({
+      endpoint: agent.provider,
+      charts: agent.charts,
     });
   }
 

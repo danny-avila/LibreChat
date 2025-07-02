@@ -333,6 +333,7 @@ class OpenAIClient extends BaseClient {
   getSaveOptions() {
     return {
       artifacts: this.options.artifacts,
+      charts: this.options.charts,
       maxContextTokens: this.options.maxContextTokens,
       chatGptLabel: this.options.chatGptLabel,
       promptPrefix: this.options.promptPrefix,
@@ -389,9 +390,13 @@ class OpenAIClient extends BaseClient {
       promptPrefix = `${promptPrefix ?? ''}\n${this.options.artifactsPrompt}`.trim();
     }
 
+    promptPrefix = (promptPrefix || this.options.promptPrefix || '').trim();
+    if (typeof this.options.chartsPrompt === 'string' && this.options.chartsPrompt) {
+      promptPrefix = `${promptPrefix ?? ''}\n${this.options.chartsPrompt}`.trim();
+    }
+
     if (this.options.attachments) {
       const attachments = await this.options.attachments;
-
       if (this.message_file_map) {
         this.message_file_map[orderedMessages[orderedMessages.length - 1].messageId] = attachments;
       } else {
