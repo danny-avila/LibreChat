@@ -1,5 +1,6 @@
 import { ProxyAgent } from 'undici';
 import { KnownEndpoints, removeNullishValues } from 'librechat-data-provider';
+import type { BindToolsInput } from '@langchain/core/language_models/chat_models';
 import type { AzureOpenAIInput } from '@langchain/openai';
 import type { OpenAI } from 'openai';
 import type * as t from '~/types';
@@ -176,6 +177,16 @@ export function getOpenAIConfig(
     delete llmConfig.max_tokens;
   }
 
+  // Handle web search functionality
+  const tools: BindToolsInput[] = [];
+
+  if (modelOptions.web_search) {
+    // Enable Responses API for web search
+    llmConfig.useResponsesApi = true;
+    // Add web search tool
+    tools.push({ type: 'web_search_preview' });
+  }
+
   /**
    * Note: OpenAI Web Search models do not support any known parameters besides `max_tokens`
    */
@@ -216,5 +227,6 @@ export function getOpenAIConfig(
   return {
     llmConfig,
     configOptions,
+    tools,
   };
 }
