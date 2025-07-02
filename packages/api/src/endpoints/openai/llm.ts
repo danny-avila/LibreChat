@@ -116,20 +116,23 @@ export function getOpenAIConfig(
       )[0];
     };
 
+    constructBaseURL();
+    Object.assign(llmConfig, updatedAzure);
+
     const constructAzureResponsesApi = () => {
       if (!llmConfig.useResponsesApi) {
         return;
       }
 
-      if (!configOptions.baseURL) {
-        configOptions.baseURL = constructAzureURL({
-          baseURL: 'https://${INSTANCE_NAME}.openai.azure.com/openai/v1',
-          azureOptions: azure,
-        });
-      }
+      configOptions.baseURL = constructAzureURL({
+        baseURL: configOptions.baseURL || 'https://${INSTANCE_NAME}.openai.azure.com/openai/v1',
+        azureOptions: llmConfig,
+      });
+
       delete llmConfig.azureOpenAIApiDeploymentName;
       delete llmConfig.azureOpenAIApiInstanceName;
       delete llmConfig.azureOpenAIApiVersion;
+      delete llmConfig.azureOpenAIBasePath;
       delete llmConfig.azureOpenAIApiKey;
 
       configOptions.defaultHeaders = {
@@ -142,8 +145,6 @@ export function getOpenAIConfig(
       };
     };
 
-    constructBaseURL();
-    Object.assign(llmConfig, updatedAzure);
     constructAzureResponsesApi();
 
     llmConfig.model = updatedAzure.azureOpenAIApiDeploymentName;
