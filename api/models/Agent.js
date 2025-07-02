@@ -4,7 +4,8 @@ const { logger } = require('@librechat/data-schemas');
 const { SystemRoles, Tools, actionDelimiter } = require('librechat-data-provider');
 const { GLOBAL_PROJECT_NAME, EPHEMERAL_AGENT_ID, mcp_delimiter } =
   require('librechat-data-provider').Constants;
-const { CONFIG_STORE, STARTUP_CONFIG } = require('librechat-data-provider').CacheKeys;
+const { CONFIG_STORE, STARTUP_CONFIG, CUSTOM_CONFIG } = require('librechat-data-provider').CacheKeys;
+const CacheKeys = require('librechat-data-provider').CacheKeys;
 const {
   getProjectByName,
   addAgentIdsToProject,
@@ -15,6 +16,49 @@ const { getCachedTools } = require('~/server/services/Config');
 const getLogStores = require('~/cache/getLogStores');
 const { getActions } = require('./Action');
 const { Agent } = require('~/db/models');
+
+/**
+ * Get YAML agent definitions from the cached configuration.
+ * @returns {Promise<Array>} Array of YAML agent definitions or empty array.
+ */
+const getYamlAgents = async () => {
+  try {
+    const cache = getLogStores(CONFIG_STORE);
+    const customConfig = await cache.get(CacheKeys.CUSTOM_CONFIG);
+    return customConfig?.agents?.definitions || [];
+  } catch (error) {
+    logger.debug('Error loading YAML agents:', error);
+    return [];
+  }
+};
+
+/**
+ * Load a YAML agent by ID.
+ * @param {string} id - The agent ID to load.
+ * @returns {Promise<Object|null>} The YAML agent object or null if not found.
+ */
+const getYamlAgent = async (id) => {
+  const yamlAgents = await getYamlAgents();
+  const yamlAgent = yamlAgents.find(agent => agent.id === id);
+  
+  if (!yamlAgent) {
+    return null;
+  }
+
+  // Transform YAML agent to match database agent structure
+  return {
+    ...yamlAgent,
+    _id: `yaml_${id}`, // Prefix to distinguish from database agents
+    author: null, // YAML agents don't have authors
+    authorName: 'System',
+    isYamlAgent: true, // Flag to identify YAML agents
+    projectIds: [], // YAML agents are available to all projects
+    versions: [yamlAgent], // Single version for YAML agents
+    version: 1,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  };
+};
 
 /**
  * Create an agent with the provided data.
@@ -46,7 +90,18 @@ const createAgent = async (agentData) => {
  * @param {string} searchParameter.author - The user ID of the agent's author.
  * @returns {Promise<Agent|null>} The agent document as a plain object, or null if not found.
  */
-const getAgent = async (searchParameter) => await Agent.findOne(searchParameter).lean();
+const getAgent = async (searchParameter) => {
+  // First, try to get YAML agent if only searching by ID
+  if (searchParameter.id && !searchParameter.author) {
+    const yamlAgent = await getYamlAgent(searchParameter.id);
+    if (yamlAgent) {
+      return yamlAgent;
+    }
+  }
+  
+  // Fallback to database agent
+  return await Agent.findOne(searchParameter).lean();
+};
 
 /**
  * Load an agent based on the provided ID
@@ -473,6 +528,19 @@ const deleteAgent = async (searchParameter) => {
 const getListAgents = async (searchParameter) => {
   const { author, ...otherParams } = searchParameter;
 
+  // Get YAML agents first
+  const yamlAgents = await getYamlAgents();
+  const formattedYamlAgents = yamlAgents.map(agent => ({
+    id: agent.id,
+    name: agent.name || agent.id,
+    avatar: agent.avatar,
+    author: null, // YAML agents don't have authors
+    projectIds: [], // YAML agents are global
+    description: agent.description,
+    isCollaborative: false,
+    isYamlAgent: true, // Flag to identify YAML agents
+  }));
+
   let query = Object.assign({ author }, otherParams);
 
   const globalProject = await getProjectByName(GLOBAL_PROJECT_NAME, ['agentIds']);
@@ -481,7 +549,7 @@ const getListAgents = async (searchParameter) => {
     delete globalQuery.author;
     query = { $or: [globalQuery, query] };
   }
-  const agents = (
+  const dbAgents = (
     await Agent.find(query, {
       id: 1,
       _id: 0,
@@ -501,6 +569,9 @@ const getListAgents = async (searchParameter) => {
     }
     return agent;
   });
+
+  // Combine YAML and database agents (YAML agents first)
+  const agents = [...formattedYamlAgents, ...dbAgents];
 
   const hasMore = agents.length > 0;
   const firstId = agents.length > 0 ? agents[0].id : null;
@@ -675,4 +746,6 @@ module.exports = {
   addAgentResourceFile,
   removeAgentResourceFiles,
   generateActionMetadataHash,
+  getYamlAgents,
+  getYamlAgent,
 };

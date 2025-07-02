@@ -185,6 +185,38 @@ endpoints:
   #   disableBuilder: false
   #   # (optional) Agent Capabilities available to all users. Omit the ones you wish to exclude. Defaults to list below.
   #   capabilities: ["execute_code", "file_search", "actions", "tools"]
+
+# YAML Agent Definitions (optional)
+# agents:
+#   definitions:
+#     - id: "research-assistant"
+#       name: "Research Assistant"
+#       description: "A specialized agent for research and information gathering"
+#       instructions: "You are a research assistant that helps users find and analyze information. Always provide sources and verify facts."
+#       provider: "openAI"
+#       model: "gpt-4o"
+#       tools: ["web_search", "file_search"]
+#       conversation_starters:
+#         - "Help me research a topic"
+#         - "Find information about..."
+#         - "Analyze this document"
+#       model_parameters:
+#         temperature: 0.3
+#         max_tokens: 2000
+#     - id: "code-reviewer"
+#       name: "Code Reviewer"
+#       description: "An agent specialized in code review and analysis"
+#       instructions: "You are a code reviewer that provides constructive feedback on code quality, security, and best practices."
+#       provider: "openAI"
+#       model: "gpt-4o"
+#       tools: ["execute_code"]
+#       conversation_starters:
+#         - "Review my code"
+#         - "Check for security issues"
+#         - "Suggest improvements"
+#       model_parameters:
+#         temperature: 0.2
+#         max_tokens: 3000
   custom:
     # Groq Example
     - name: 'groq'
