@@ -125,8 +125,7 @@ export const useEndpoints = ({
       if (ep === EModelEndpoint.agents && agents.length > 0) {
         result.models = agents.map((agent) => ({
           name: agent.id,
-          isGlobal:
-            (instanceProjectId != null && agent.projectIds?.includes(instanceProjectId)) ?? false,
+          isGlobal: agent.isPublic ?? false,
         }));
         result.agentNames = agents.reduce((acc, agent) => {
           acc[agent.id] = agent.name || '';
