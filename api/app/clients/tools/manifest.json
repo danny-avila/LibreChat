@@ -214,7 +214,13 @@
     "description": "Run code in an E2B sandbox",
     "icon": "/assets/e2b_symbol.png",
     "isAuthRequired": "true",
-    "authConfig": []
+    "authConfig": [
+      {
+        "authField": "E2B_API_KEY",
+        "label": "E2B.dev API key",
+        "description": "API Key from the e2b.dev dashboard"
+      }
+    ]
   },
   {
     "name": "QuickChart",
