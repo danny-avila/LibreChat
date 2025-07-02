@@ -135,6 +135,7 @@ export function getOpenAIConfig(
       delete llmConfig.azureOpenAIApiVersion;
       delete llmConfig.azureOpenAIBasePath;
       delete llmConfig.azureOpenAIApiKey;
+      llmConfig.apiKey = apiKey;
 
       configOptions.defaultHeaders = {
         ...configOptions.defaultHeaders,
