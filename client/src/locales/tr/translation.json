@@ -725,6 +725,5 @@
   "com_ui_view_source": "Kaynak sohbeti görüntüle",
   "com_ui_yes": "Evet",
   "com_ui_zoom": "Yakınlaştır",
-  "com_user_message": "Sen",
-  "com_warning_resubmit_unsupported": "Bu uç nokta için yapay zeka mesajını yeniden gönderme desteklenmiyor."
+  "com_user_message": "Sen"
 }

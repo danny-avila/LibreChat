@@ -752,6 +752,5 @@
   "com_ui_versions": "Versions",
   "com_ui_yes": "Oui",
   "com_ui_zoom": "Zoom",
-  "com_user_message": "Vous",
-  "com_warning_resubmit_unsupported": "La resoumission du message IA n'est pas prise en charge pour ce point de terminaison."
+  "com_user_message": "Vous"
 }

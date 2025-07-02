@@ -868,6 +868,5 @@
   "com_ui_x_selected": "{{0}} seleccionats",
   "com_ui_yes": "Sí",
   "com_ui_zoom": "Zoom",
-  "com_user_message": "Tu",
-  "com_warning_resubmit_unsupported": "Tornar a enviar el missatge de la IA no està suportat per aquest endpoint."
+  "com_user_message": "Tu"
 }
