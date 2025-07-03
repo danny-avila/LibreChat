@@ -19,7 +19,7 @@ librechat:
     DEBUG_PLUGINS: "true"
     DEBUG_LOGGING: "true"
     DEBUG_CONSOLE: "true"
-    LOG_LEVEL: "debug"
+    LOG_LEVEL: "info"
 
     ALLOW_REGISTRATION: "false"
     ALLOW_SOCIAL_LOGIN: "true"
