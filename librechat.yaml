@@ -16,52 +16,30 @@ rateLimits:
 
 # Endpoints configuration
 endpoints:
-  custom: []
-  assistants:
-    pollIntervalMs: 7500
-    timeoutMs: 300000
-    supportedIds:
-      - "gpt-4-0125-preview"
-      - "gpt-4-1106-preview"
-      - "gpt-3.5-turbo-0125"
-      - "gpt-3.5-turbo-1106"
-  openAI:
-    models:
-      "gpt-3.5-turbo":
-        maxContextTokens: 16385
-      "gpt-4":
-        maxContextTokens: 8192
-      "gpt-4-turbo":
-        maxContextTokens: 128000
-      "gpt-4o":
-        maxContextTokens: 128000
-    title: "OpenAI"
-    addParams: {}
-    dropParams: []
-  google:
-    models:
-      "gemini-pro":
-        maxOutputTokens: 8192
-      "gemini-pro-vision":
-        maxOutputTokens: 4096
-    title: "Google"
-    addParams: {}
-    dropParams: []
-  anthropic:
-    models:
-      "claude-3-opus-20240229":
-        maxContextTokens: 200000
-      "claude-3-sonnet-20240229":
-        maxContextTokens: 200000
-      "claude-3-haiku-20240307":
-        maxContextTokens: 200000
-    title: "Anthropic"
-    addParams: {}
-    dropParams: []
-  gptPlugins:
-    title: "Plugins"
-    addParams: {}
-    dropParams: []
+  custom:
+    - name: "litellm"
+      apiKey: "user_provided"
+      baseURL: "http://localhost:4000"
+      models:
+        default: [
+          "gpt-4o",
+          "gpt-4-turbo",
+          "gpt-4",
+          "gpt-3.5-turbo",
+          "claude-3-opus-20240229",
+          "claude-3-sonnet-20240229",
+          "claude-3-haiku-20240307",
+          "gemini-pro",
+          "gemini-pro-vision"
+        ]
+      titleConvo: true
+      titleModel: "gpt-3.5-turbo"
+      summarize: false
+      summaryModel: "gpt-3.5-turbo"
+      forcePrompt: false
+      modelDisplayLabel: "LiteLLM"
+      addParams: {}
+      dropParams: []
 
 # File handling strategy
 fileStrategy: "local"
