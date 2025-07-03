@@ -212,7 +212,7 @@ jobs:
           
           # RAG API Configuration
           RAG_PORT=8000
-          RAG_API_URL=http://rag_api:8000
+          RAG_API_URL=http://rag-api:8000
           
           # Security
           JWT_SECRET=${{ secrets.JWT_SECRET }}
@@ -267,14 +267,139 @@ jobs:
           cache-from: type=registry,ref=registry.digitalocean.com/${{ secrets.DIGITALOCEAN_REGISTRY }}/librechat:buildcache
           cache-to: type=registry,ref=registry.digitalocean.com/${{ secrets.DIGITALOCEAN_REGISTRY }}/librechat:buildcache,mode=max
 
-      - name: Deploy to DigitalOcean App Platform
+      - name: Create App Spec with Multiple Components
+        run: |
+          # Create a single app spec with both main app and RAG API
+          cat << EOF > librechat-complete-spec.yaml
+          name: librechat-complete
+          services:
+            # Main LibreChat API
+            - name: api
+              image:
+                registry_type: DOCKER_HUB
+                registry: registry.digitalocean.com
+                repository: ${{ secrets.DIGITALOCEAN_REGISTRY }}/librechat
+                tag: latest
+              instance_count: 1
+              instance_size_slug: basic-xxs
+              http_port: 3080
+              envs:
+                - key: NODE_ENV
+                  value: production
+                - key: PORT
+                  value: "3080"
+                - key: HOST
+                  value: "0.0.0.0"
+                - key: MONGO_URI
+                  value: ${{ secrets.MONGO_URI }}
+                - key: JWT_SECRET
+                  value: ${{ secrets.JWT_SECRET }}
+                - key: CREDS_KEY
+                  value: ${{ secrets.CREDS_KEY }}
+                - key: CREDS_IV
+                  value: ${{ secrets.CREDS_IV }}
+                - key: MEILI_HOST
+                  value: http://meilisearch:7700
+                - key: MEILI_MASTER_KEY
+                  value: ${{ secrets.MEILI_MASTER_KEY }}
+                - key: RAG_API_URL
+                  value: http://rag-api:8000
+                - key: RAG_PORT
+                  value: "8000"
+                - key: OPENAI_API_KEY
+                  value: ${{ secrets.OPENAI_API_KEY }}
+                - key: ANTHROPIC_API_KEY
+                  value: ${{ secrets.ANTHROPIC_API_KEY }}
+                - key: GOOGLE_API_KEY
+                  value: ${{ secrets.GOOGLE_API_KEY }}
+                - key: AZURE_API_KEY
+                  value: ${{ secrets.AZURE_API_KEY }}
+                - key: AZURE_API_ENDPOINT
+                  value: ${{ secrets.AZURE_API_ENDPOINT }}
+                - key: AZURE_DEPLOYMENT_NAME
+                  value: ${{ secrets.AZURE_DEPLOYMENT_NAME }}
+                - key: BINGAI_TOKEN
+                  value: ${{ secrets.BINGAI_TOKEN }}
+                - key: CHATGPT_TOKEN
+                  value: ${{ secrets.CHATGPT_TOKEN }}
+                - key: HUGGINGFACE_API_KEY
+                  value: ${{ secrets.HUGGINGFACE_API_KEY }}
+                - key: REPLICATE_API_KEY
+                  value: ${{ secrets.REPLICATE_API_KEY }}
+                - key: BAN_VIOLATIONS
+                  value: ${{ secrets.BAN_VIOLATIONS }}
+                - key: BAN_DURATION
+                  value: ${{ secrets.BAN_DURATION }}
+                - key: BAN_INTERVAL
+                  value: ${{ secrets.BAN_INTERVAL }}
+                - key: CUSTOM_CONFIG
+                  value: ${{ secrets.CUSTOM_CONFIG }}
+
+            # RAG API Component
+            - name: rag-api
+              image:
+                registry_type: DOCKER_HUB
+                registry: ghcr.io
+                repository: danny-avila/librechat-rag-api-dev-lite
+                tag: latest
+              instance_count: 1
+              instance_size_slug: basic-xxs
+              http_port: 8000
+              envs:
+                - key: DB_HOST
+                  value: ${{ secrets.POSTGRES_HOST }}
+                - key: DB_PORT
+                  value: ${{ secrets.POSTGRES_PORT }}
+                - key: POSTGRES_DB
+                  value: ${{ secrets.POSTGRES_DB }}
+                - key: POSTGRES_USER
+                  value: ${{ secrets.POSTGRES_USER }}
+                - key: POSTGRES_PASSWORD
+                  value: ${{ secrets.POSTGRES_PASSWORD }}
+                - key: RAG_PORT
+                  value: "8000"
+                - key: OPENAI_API_KEY
+                  value: ${{ secrets.OPENAI_API_KEY }}
+
+            # Meilisearch Component
+            - name: meilisearch
+              image:
+                registry_type: DOCKER_HUB
+                registry: docker.io
+                repository: getmeili/meilisearch
+                tag: v1.12.3
+              instance_count: 1
+              instance_size_slug: basic-xxs
+              http_port: 7700
+              envs:
+                - key: MEILI_HOST
+                  value: http://meilisearch:7700
+                - key: MEILI_MASTER_KEY
+                  value: ${{ secrets.MEILI_MASTER_KEY }}
+                - key: MEILI_NO_ANALYTICS
+                  value: "true"
+          EOF
+
+      - name: Deploy Complete App with All Components
         run: |
           # Wait for the image to be available in the registry
           sleep 30
           
-          # Deploy the app
-          echo "Starting deployment..."
-          doctl apps create-deployment ${{ secrets.DIGITALOCEAN_APP_ID }} --wait
+          # Check if app already exists
+          APP_ID=$(doctl apps list --format ID,Name --no-header | grep librechat-complete | awk '{print $1}' || echo "")
+          
+          if [[ -z "$APP_ID" ]]; then
+            echo "Creating new complete LibreChat app..."
+            doctl apps create --spec librechat-complete-spec.yaml --wait
+            APP_ID=$(doctl apps list --format ID,Name --no-header | grep librechat-complete | awk '{print $1}')
+          else
+            echo "Updating existing LibreChat app..."
+            doctl apps update $APP_ID --spec librechat-complete-spec.yaml --wait
+          fi
+          
+          # Get app URL
+          APP_URL=$(doctl apps get $APP_ID --format URL --no-header)
+          echo "LibreChat app URL: $APP_URL"
           
           # Check deployment status
           if [ $? -eq 0 ]; then
