@@ -1,7 +1,7 @@
 # For more information, visit the documentation:
 # https://www.librechat.ai/docs/configuration/librechat_yaml
 
-version: 1.2.0
+version: 1.2.5
 
 # Simple cache configuration
 cache: true
