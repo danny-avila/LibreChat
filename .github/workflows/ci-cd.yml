@@ -345,8 +345,6 @@ jobs:
               instance_count: 1
               instance_size_slug: basic-xxs
               http_port: 8000
-              internal_ports:
-                - 8000
               envs:
                 - key: DB_HOST
                   value: "${{ secrets.POSTGRES_HOST }}"
@@ -373,8 +371,6 @@ jobs:
               instance_count: 1
               instance_size_slug: basic-xxs
               http_port: 7700
-              internal_ports:
-                - 7700
               envs:
                 - key: MEILI_HOST
                   value: "http://meilisearch:7700"
