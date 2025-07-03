@@ -167,3 +167,31 @@ export const useDeleteFilesMutation = (
     },
   });
 };
+
+export const useSecureUploadMutation = (
+  _options?: t.UploadMutationOptions,
+  signal?: AbortSignal | null,
+): UseMutationResult<
+  t.TFileUpload & { downloadUrl: string; expiresAt: string; singleUse: boolean; ttlSeconds: number }, // response data
+  unknown, // error
+  FormData, // request
+  unknown // context
+> => {
+  const queryClient = useQueryClient();
+  const { onSuccess, ...options } = _options || {};
+  return useMutation([MutationKeys.secureUpload], {
+    mutationFn: (body: FormData) => {
+      return dataService.secureUpload(body, signal);
+    },
+    ...options,
+    onSuccess: (data, formData, context) => {
+      // Update files cache
+      queryClient.setQueryData<t.TFile[] | undefined>([QueryKeys.files], (_files) => [
+        data,
+        ...(_files ?? []),
+      ]);
+
+      onSuccess?.(data, formData, context);
+    },
+  });
+};

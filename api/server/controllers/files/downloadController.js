@@ -147,36 +147,53 @@ const generateDownloadUrl = async (req, res) => {
       userId: req.user?.id,
       fileId: req.body?.fileId,
       error: error.message,
-      stack: error.stack
+      stack: error.stack,
+      errorType: error.constructor.name,
+      errorCode: error.code
     });
 
     // Log failed download attempt
     const clientIP = req.ip || req.connection.remoteAddress;
     const requestId = req.headers['x-request-id'] || `req-${Date.now()}`;
 
-    await auditService.logDownloadAttempt({
-      success: false,
-      clientIP,
-      userId: req.user?.id,
-      fileId: req.body?.fileId,
-      statusCode: 500,
-      error,
-      requestId,
-      userAgent: req.get('User-Agent')
-    });
+    try {
+      await auditService.logDownloadAttempt({
+        success: false,
+        clientIP,
+        userId: req.user?.id,
+        fileId: req.body?.fileId,
+        statusCode: 500,
+        error,
+        requestId,
+        userAgent: req.get('User-Agent')
+      });
+    } catch (auditError) {
+      logger.error('Failed to log audit attempt', {
+        auditError: auditError.message,
+        originalError: error.message
+      });
+    }
 
-    securityService.logDownloadAttempt({
-      success: false,
-      clientIP,
-      userId: req.user?.id,
-      fileId: req.body?.fileId,
-      error,
-      requestId
-    });
+    try {
+      securityService.logDownloadAttempt({
+        success: false,
+        clientIP,
+        userId: req.user?.id,
+        fileId: req.body?.fileId,
+        error,
+        requestId
+      });
+    } catch (securityError) {
+      logger.error('Failed to log security attempt', {
+        securityError: securityError.message,
+        originalError: error.message
+      });
+    }
 
     res.status(500).json({
       error: 'Failed to generate download URL',
-      code: 'GENERATION_FAILED'
+      code: 'GENERATION_FAILED',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };
@@ -186,8 +203,25 @@ const generateDownloadUrl = async (req, res) => {
  * GET /api/files/download/:fileId
  */
 const downloadFile = async (req, res) => {
-  // Delegate to DownloadService which handles all the complexity
-  await DownloadService.handleDownloadRequest(req, res);
+  try {
+    // Delegate to DownloadService which handles all the complexity
+    await DownloadService.handleDownloadRequest(req, res);
+  } catch (error) {
+    logger.error('Uncaught error in downloadFile', {
+      fileId: req.params?.fileId,
+      error: error.message,
+      stack: error.stack,
+      errorType: error.constructor.name
+    });
+
+    if (!res.headersSent) {
+      res.status(500).json({
+        error: 'Download failed',
+        code: 'DOWNLOAD_FAILED',
+        details: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
+    }
+  }
 };
 
 /**

@@ -8,6 +8,11 @@ const { getOpenAIClient } = require('~/server/services/Endpoints/openAI');
 
 /**
  * Download Service for handling temporary file downloads with token validation
+ *
+ * Note: This service supports both browser and command-line tool access.
+ * The uaParser middleware has been removed from the public download endpoint
+ * to allow tools like wget, curl, etc. to access temporary download URLs.
+ * Security is maintained through token-based authentication.
  */
 class DownloadService {
   /**
@@ -21,6 +26,16 @@ class DownloadService {
     const clientIP = req.ip || req.connection?.remoteAddress;
     const userAgent = req.get('User-Agent');
     const requestId = req.headers['x-request-id'] || `download-${Date.now()}`;
+
+    // Log download attempt with User-Agent for debugging command-line tool access
+    logger.info('File download request received', {
+      fileId,
+      clientIP,
+      userAgent,
+      requestId,
+      hasToken: !!token,
+      isCommandLineTool: !userAgent || !userAgent.includes('Mozilla')
+    });
 
     try {
       // Validate required parameters
@@ -268,13 +283,26 @@ class DownloadService {
         userAgent,
         error: error.message,
         stack: error.stack,
+        requestId,
+        errorType: error.constructor.name,
+        errorCode: error.code
+      });
+
+      // Log additional context for debugging
+      logger.error('Download error context', {
+        fileId,
+        hasToken: !!token,
+        tokenLength: token ? token.length : 0,
+        requestMethod: req.method,
+        requestUrl: req.url,
         requestId
       });
 
       if (!res.headersSent) {
         res.status(500).json({
           error: 'Download failed',
-          code: 'DOWNLOAD_FAILED'
+          code: 'DOWNLOAD_FAILED',
+          details: process.env.NODE_ENV === 'development' ? error.message : undefined
         });
       }
     }

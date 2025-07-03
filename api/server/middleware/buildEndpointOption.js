@@ -1,4 +1,5 @@
 const { logger } = require('@librechat/data-schemas');
+const { handleError } = require('@librechat/api');
 const {
   EndpointURLs,
   EModelEndpoint,
@@ -15,7 +16,6 @@ const agents = require('~/server/services/Endpoints/agents');
 const custom = require('~/server/services/Endpoints/custom');
 const google = require('~/server/services/Endpoints/google');
 const { getFiles } = require('~/models/File');
-const { handleError } = require('~/server/utils');
 
 const buildFunction = {
   [EModelEndpoint.openAI]: openAI.buildOptions,
