@@ -267,13 +267,12 @@ jobs:
           cache-from: type=registry,ref=registry.digitalocean.com/${{ secrets.DIGITALOCEAN_REGISTRY }}/librechat:buildcache
           cache-to: type=registry,ref=registry.digitalocean.com/${{ secrets.DIGITALOCEAN_REGISTRY }}/librechat:buildcache,mode=max
 
-      - name: Create App Spec with Multiple Components
+      - name: Create App Specs for Separate Apps
         run: |
-          # Create a single app spec with both main app and RAG API
-          cat << EOF > librechat-complete-spec.yaml
-          name: librechat-complete
+          # Create app spec for main LibreChat API
+          cat << EOF > librechat-api-spec.yaml
+          name: librechat-api
           services:
-            # Main LibreChat API - Public Service
             - name: api
               image:
                 registry_type: DOCKER_HUB
@@ -283,11 +282,6 @@ jobs:
               instance_count: 1
               instance_size_slug: basic-xxs
               http_port: 3080
-              ingress:
-                rules:
-                  - match:
-                      path:
-                        prefix: /
               health_check:
                 http_path: /api/health
               envs:
@@ -310,7 +304,7 @@ jobs:
                 - key: MEILI_MASTER_KEY
                   value: "${{ secrets.MEILI_MASTER_KEY }}"
                 - key: RAG_API_URL
-                  value: "http://rag-api:8000"
+                  value: "https://librechat-rag-api.ondigitalocean.app"
                 - key: RAG_PORT
                   value: "8000"
                 - key: POSTGRES_HOST
@@ -352,7 +346,28 @@ jobs:
                 - key: CUSTOM_CONFIG
                   value: "${{ secrets.CUSTOM_CONFIG }}"
 
-            # RAG API - Internal Only
+            - name: meilisearch
+              image:
+                registry_type: DOCKER_HUB
+                registry: docker.io
+                repository: getmeili/meilisearch
+                tag: v1.12.3
+              instance_count: 1
+              instance_size_slug: basic-xxs
+              http_port: 7700
+              health_check:
+                http_path: /health
+              envs:
+                - key: MEILI_MASTER_KEY
+                  value: "${{ secrets.MEILI_MASTER_KEY }}"
+                - key: MEILI_NO_ANALYTICS
+                  value: "true"
+          EOF
+
+          # Create app spec for RAG API
+          cat << EOF > librechat-rag-api-spec.yaml
+          name: librechat-rag-api
+          services:
             - name: rag-api
               image:
                 registry_type: DOCKER_HUB
@@ -362,8 +377,6 @@ jobs:
               instance_count: 1
               instance_size_slug: basic-xxs
               http_port: 8000
-              ingress:
-                disable: true
               health_check:
                 http_path: /health
               envs:
@@ -385,74 +398,96 @@ jobs:
                   value: "${{ secrets.ANTHROPIC_API_KEY }}"
                 - key: GOOGLE_API_KEY
                   value: "${{ secrets.GOOGLE_API_KEY }}"
-
-            # Meilisearch - Internal Only
-            - name: meilisearch
-              image:
-                registry_type: DOCKER_HUB
-                registry: docker.io
-                repository: getmeili/meilisearch
-                tag: v1.12.3
-              instance_count: 1
-              instance_size_slug: basic-xxs
-              http_port: 7700
-              ingress:
-                disable: true
-              health_check:
-                http_path: /health
-              envs:
-                - key: MEILI_MASTER_KEY
-                  value: "${{ secrets.MEILI_MASTER_KEY }}"
-                - key: MEILI_NO_ANALYTICS
-                  value: "true"
-
           EOF
 
-      - name: Deploy Complete App with All Components
+      - name: Deploy RAG API App First
         run: |
           # Wait for the image to be available in the registry
           sleep 30
           
-          # Check if app already exists
-          APP_ID=$(doctl apps list --format ID,Name --no-header | grep librechat-complete | awk '{print $1}' || echo "")
+          # Check if RAG API app already exists
+          RAG_APP_ID=$(doctl apps list --format ID,Name --no-header | grep librechat-rag-api | awk '{print $1}' || echo "")
           
-          if [[ -z "$APP_ID" ]]; then
-            echo "Creating new complete LibreChat app..."
-            doctl apps create --spec librechat-complete-spec.yaml --wait
+          if [[ -z "$RAG_APP_ID" ]]; then
+            echo "Creating new RAG API app..."
+            doctl apps create --spec librechat-rag-api-spec.yaml --wait
             if [ $? -ne 0 ]; then
-              echo "Failed to create app"
+              echo "Failed to create RAG API app"
               exit 1
             fi
-            APP_ID=$(doctl apps list --format ID,Name --no-header | grep librechat-complete | awk '{print $1}')
-            echo "Created app with ID: $APP_ID"
+            RAG_APP_ID=$(doctl apps list --format ID,Name --no-header | grep librechat-rag-api | awk '{print $1}')
+            echo "Created RAG API app with ID: $RAG_APP_ID"
           else
-            echo "Updating existing LibreChat app with ID: $APP_ID"
-            doctl apps update $APP_ID --spec librechat-complete-spec.yaml --wait
+            echo "Updating existing RAG API app with ID: $RAG_APP_ID"
+            doctl apps update $RAG_APP_ID --spec librechat-rag-api-spec.yaml --wait
             if [ $? -ne 0 ]; then
-              echo "Failed to update app"
+              echo "Failed to update RAG API app"
               exit 1
             fi
           fi
           
-          # Get app URL
-          APP_URL=$(doctl apps get $APP_ID --format URL --no-header)
-          echo "LibreChat app URL: $APP_URL"
+          # Get RAG API app URL
+          RAG_APP_URL=$(doctl apps get $RAG_APP_ID --format URL --no-header)
+          echo "RAG API app URL: $RAG_APP_URL"
           
-          # Store the app ID for later use
-          echo "APP_ID=$APP_ID" >> $GITHUB_ENV
+          # Store the RAG app ID for later use
+          echo "RAG_APP_ID=$RAG_APP_ID" >> $GITHUB_ENV
+          echo "RAG_APP_URL=$RAG_APP_URL" >> $GITHUB_ENV
 
-      - name: Check deployment status, logs, and environment variables
+      - name: Deploy Main API App
         run: |
-          echo "=== Deployment Status ==="
-          doctl apps list-deployments $APP_ID --format ID,Phase,Created
+          # Wait a bit for the RAG API to be fully deployed
+          sleep 60
+          
+          # Check if main API app already exists
+          MAIN_APP_ID=$(doctl apps list --format ID,Name --no-header | grep librechat-api | awk '{print $1}' || echo "")
+          
+          if [[ -z "$MAIN_APP_ID" ]]; then
+            echo "Creating new main API app..."
+            doctl apps create --spec librechat-api-spec.yaml --wait
+            if [ $? -ne 0 ]; then
+              echo "Failed to create main API app"
+              exit 1
+            fi
+            MAIN_APP_ID=$(doctl apps list --format ID,Name --no-header | grep librechat-api | awk '{print $1}')
+            echo "Created main API app with ID: $MAIN_APP_ID"
+          else
+            echo "Updating existing main API app with ID: $MAIN_APP_ID"
+            doctl apps update $MAIN_APP_ID --spec librechat-api-spec.yaml --wait
+            if [ $? -ne 0 ]; then
+              echo "Failed to update main API app"
+              exit 1
+            fi
+          fi
+          
+          # Get main API app URL
+          MAIN_APP_URL=$(doctl apps get $MAIN_APP_ID --format URL --no-header)
+          echo "Main API app URL: $MAIN_APP_URL"
+          
+          # Store the main app ID for later use
+          echo "MAIN_APP_ID=$MAIN_APP_ID" >> $GITHUB_ENV
+          echo "MAIN_APP_URL=$MAIN_APP_URL" >> $GITHUB_ENV
 
-          echo "=== Latest Deployment Logs ==="
-          LATEST_DEPLOYMENT=$(doctl apps list-deployments $APP_ID --format ID --no-header | head -n 1)
-          doctl apps logs $APP_ID --deployment $LATEST_DEPLOYMENT
+      - name: Check deployment status and logs
+        run: |
+          echo "=== RAG API Deployment Status ==="
+          doctl apps list-deployments $RAG_APP_ID --format ID,Phase,Created
 
-          echo "=== App Status ==="
-          doctl apps get $APP_ID
+          echo "=== Main API Deployment Status ==="
+          doctl apps list-deployments $MAIN_APP_ID --format ID,Phase,Created
 
-          echo "=== Environment Variables (all services) ==="
+          echo "=== RAG API Latest Logs ==="
+          RAG_LATEST_DEPLOYMENT=$(doctl apps list-deployments $RAG_APP_ID --format ID --no-header | head -n 1)
+          doctl apps logs $RAG_APP_ID --deployment $RAG_LATEST_DEPLOYMENT
+
+          echo "=== Main API Latest Logs ==="
+          MAIN_LATEST_DEPLOYMENT=$(doctl apps list-deployments $MAIN_APP_ID --format ID --no-header | head -n 1)
+          doctl apps logs $MAIN_APP_ID --deployment $MAIN_LATEST_DEPLOYMENT
+
+          echo "=== App URLs ==="
+          echo "Main LibreChat API: $MAIN_APP_URL"
+          echo "RAG API: $RAG_APP_URL"
+
+          echo "=== Environment Variables (Main API) ==="
           sudo apt-get update && sudo apt-get install -y jq
-          doctl apps get $APP_ID -o json | jq '.[0].spec.services[] | {name: .name, envs: .envs}'
+          doctl apps get $MAIN_APP_ID -o json | jq '.[0].spec.services[] | {name: .name, envs: .envs}'
