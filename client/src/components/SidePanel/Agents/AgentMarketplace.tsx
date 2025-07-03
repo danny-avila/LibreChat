@@ -173,8 +173,19 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
     permissionType: PermissionTypes.MARKETPLACE,
     permission: Permissions.USE,
   });
+  useEffect(() => {
+    let timeoutId: ReturnType<typeof setTimeout>;
+    if (!hasAccessToMarketplace) {
+      timeoutId = setTimeout(() => {
+        navigate('/c/new');
+      }, 1000);
+    }
+    return () => {
+      clearTimeout(timeoutId);
+    };
+  }, [hasAccessToMarketplace, navigate]);
+
   if (!hasAccessToMarketplace) {
-    navigate('/not-found', { replace: true });
     return null;
   }
   return (
