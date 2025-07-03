@@ -207,7 +207,7 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
         {description && (
           <div
             className="animate-fadeIn mt-4 max-w-md text-center text-sm font-normal text-text-primary"
-            dangerouslySetInnerHTML={{__html: DOMPurify.sanitize(description || '') }}
+            dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(description || '') }}
           />
         )}
       </div>
