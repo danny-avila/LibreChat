@@ -519,6 +519,9 @@ class AnthropicClient extends BaseClient {
     if (typeof this.options.artifactsPrompt === 'string' && this.options.artifactsPrompt) {
       promptPrefix = `${promptPrefix ?? ''}\n${this.options.artifactsPrompt}`.trim();
     }
+    if (typeof this.options.chartsPrompt === 'string' && this.options.chartsPrompt) {
+      promptPrefix = `${promptPrefix ?? ''}\n${this.options.chartsPrompt}`.trim();
+    }
     if (promptPrefix) {
       // If the prompt prefix doesn't end with the end token, add it.
       if (!promptPrefix.endsWith(`${this.endToken}`)) {
@@ -878,6 +881,7 @@ class AnthropicClient extends BaseClient {
     return {
       maxContextTokens: this.options.maxContextTokens,
       artifacts: this.options.artifacts,
+      charts: this.options.charts,
       promptPrefix: this.options.promptPrefix,
       modelLabel: this.options.modelLabel,
       promptCache: this.options.promptCache,

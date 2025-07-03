@@ -197,6 +197,9 @@ class GoogleClient extends BaseClient {
     if (typeof this.options.artifactsPrompt === 'string' && this.options.artifactsPrompt) {
       promptPrefix = `${promptPrefix ?? ''}\n${this.options.artifactsPrompt}`.trim();
     }
+    if (typeof this.options.chartsPrompt === 'string' && this.options.chartsPrompt) {
+      promptPrefix = `${promptPrefix ?? ''}\n${this.options.chartsPrompt}`.trim();
+    }
     this.systemMessage = promptPrefix;
     this.initializeClient();
     return this;
@@ -938,6 +941,7 @@ class GoogleClient extends BaseClient {
     return {
       endpointType: null,
       artifacts: this.options.artifacts,
+      charts: this.options.charts,
       promptPrefix: this.options.promptPrefix,
       maxContextTokens: this.options.maxContextTokens,
       modelLabel: this.options.modelLabel,

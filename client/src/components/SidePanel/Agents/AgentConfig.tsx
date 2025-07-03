@@ -273,6 +273,7 @@ export default function AgentConfig({
         </div>
         {(codeEnabled ||
           fileSearchEnabled ||
+          chartsEnabled ||
           artifactsEnabled ||
           ocrEnabled ||
           webSearchEnabled) && (
