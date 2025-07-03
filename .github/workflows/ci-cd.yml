@@ -350,7 +350,7 @@ jobs:
             # RAG API Component (Internal only)
             - name: rag-api
               image:
-                registry_type: GITHUB_CONTAINER_REGISTRY
+                registry_type: DOCKER_HUB
                 registry: ghcr.io
                 repository: danny-avila/librechat-rag-api-dev-lite
                 tag: latest
