@@ -273,7 +273,7 @@ jobs:
           cat << EOF > librechat-complete-spec.yaml
           name: librechat-complete
           services:
-            # Main LibreChat API
+            # Main LibreChat API - Public Service
             - name: api
               image:
                 registry_type: DOCKER_HUB
@@ -283,6 +283,11 @@ jobs:
               instance_count: 1
               instance_size_slug: basic-xxs
               http_port: 3080
+              ingress:
+                rules:
+                  - match:
+                      path:
+                        prefix: /
               health_check:
                 http_path: /api/health
               envs:
@@ -347,16 +352,18 @@ jobs:
                 - key: CUSTOM_CONFIG
                   value: "${{ secrets.CUSTOM_CONFIG }}"
 
-            # RAG API Component (Internal only)
+            # RAG API - Internal Only
             - name: rag-api
               image:
-                registry_type: GITHUB_CONTAINER_REGISTRY
+                registry_type: DOCKER_HUB
                 registry: ghcr.io
                 repository: danny-avila/librechat-rag-api-dev-lite
                 tag: latest
               instance_count: 1
               instance_size_slug: basic-xxs
               http_port: 8000
+              ingress:
+                disable: true
               health_check:
                 http_path: /health
               envs:
@@ -379,7 +386,7 @@ jobs:
                 - key: GOOGLE_API_KEY
                   value: "${{ secrets.GOOGLE_API_KEY }}"
 
-            # Meilisearch Component (Internal only)
+            # Meilisearch - Internal Only
             - name: meilisearch
               image:
                 registry_type: DOCKER_HUB
@@ -389,6 +396,8 @@ jobs:
               instance_count: 1
               instance_size_slug: basic-xxs
               http_port: 7700
+              ingress:
+                disable: true
               health_check:
                 http_path: /health
               envs:
@@ -446,4 +455,4 @@ jobs:
 
           echo "=== Environment Variables (all services) ==="
           sudo apt-get update && sudo apt-get install -y jq
-          doctl apps get $APP_ID -o json | jq '.[0].spec.services[] | {name: .name, envs: .envs}' 
+          doctl apps get $APP_ID -o json | jq '.[0].spec.services[] | {name: .name, envs: .envs}'
