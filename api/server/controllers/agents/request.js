@@ -10,7 +10,6 @@ const { disposeClient, clientRegistry, requestDataMap } = require('~/server/clea
 const { saveMessage } = require('~/models');
 
 const AgentController = async (req, res, next, initializeClient, addTitle) => {
-  console.log('request:', req.body);
   let {
     text,
     endpointOption,
@@ -21,8 +20,6 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
     overrideParentMessageId = null,
     responseMessageId: editedResponseMessageId = null,
   } = req.body;
-
-  console.log('enpointoption:', endpointOption);
 
   let sender;
   let abortKey;
@@ -61,7 +58,6 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
     }
   };
 
-  console.log('cleanup tk aa gye ji');
   // Create a function to handle final cleanup
   const performCleanup = () => {
     logger.debug('[AgentController] Performing cleanup');
@@ -79,7 +75,6 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
       }
     }
 
-    console.log('abort tk aa gye bhaisab');
     // Clean up abort controller
     if (abortKey) {
       logger.debug('[AgentController] Cleaning up abort controller');
@@ -112,7 +107,6 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
     /** @type {{ client: TAgentClient }} */
     const result = await initializeClient({ req, res, endpointOption });
     client = result.client;
-    console.log('client:.......................', client);
 
     // Register client with finalization registry if available
     if (clientRegistry) {

@@ -24,7 +24,6 @@ export default function Artifacts() {
     setValue(AgentCapabilities.artifacts, value ? ArtifactModes.DEFAULT : '', {
       shouldDirty: true,
     });
-    console.log('artifactsMode', artifactsMode);
   };
 
   const handleShadcnuiChange = (value: boolean) => {
@@ -43,7 +42,6 @@ export default function Artifacts() {
     setValue(AgentCapabilities.charts, value ? ChartModes.DEFAULT : '', {
       shouldDirty: true,
     });
-    console.log('chartsMode', chartsMode);
   };
 
   const isEnabled = artifactsMode !== undefined && artifactsMode !== '';

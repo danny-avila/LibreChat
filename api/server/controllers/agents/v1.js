@@ -43,8 +43,6 @@ const systemTools = {
 const createAgentHandler = async (req, res) => {
   try {
     const { tools = [], provider, name, description, instructions, model, ...agentData } = req.body;
-    console.log('req.body', req.body);
-    console.log(agentData);
     const { id: userId } = req.user;
 
     agentData.tools = [];
@@ -71,7 +69,6 @@ const createAgentHandler = async (req, res) => {
 
     agentData.id = `agent_${nanoid()}`;
     const agent = await createAgent(agentData);
-    console.log(agent);
     res.status(201).json(agent);
   } catch (error) {
     logger.error('[/Agents] Error creating agent', error);
@@ -200,7 +197,6 @@ const updateAgentHandler = async (req, res) => {
     if (updatedAgent.author !== req.user.id) {
       delete updatedAgent.author;
     }
-    console.log(updatedAgent);
     return res.json(updatedAgent);
   } catch (error) {
     logger.error('[/Agents/:id] Error updating Agent', error);
