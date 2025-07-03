@@ -327,11 +327,11 @@ jobs:
                 - key: REPLICATE_API_KEY
                   value: ${{ secrets.REPLICATE_API_KEY }}
                 - key: BAN_VIOLATIONS
-                  value: ${{ secrets.BAN_VIOLATIONS }}
+                  value: "${{ secrets.BAN_VIOLATIONS }}"
                 - key: BAN_DURATION
-                  value: ${{ secrets.BAN_DURATION }}
+                  value: "${{ secrets.BAN_DURATION }}"
                 - key: BAN_INTERVAL
-                  value: ${{ secrets.BAN_INTERVAL }}
+                  value: "${{ secrets.BAN_INTERVAL }}"
                 - key: CUSTOM_CONFIG
                   value: ${{ secrets.CUSTOM_CONFIG }}
 
@@ -349,7 +349,7 @@ jobs:
                 - key: DB_HOST
                   value: ${{ secrets.POSTGRES_HOST }}
                 - key: DB_PORT
-                  value: ${{ secrets.POSTGRES_PORT }}
+                  value: "${{ secrets.POSTGRES_PORT }}"
                 - key: POSTGRES_DB
                   value: ${{ secrets.POSTGRES_DB }}
                 - key: POSTGRES_USER
