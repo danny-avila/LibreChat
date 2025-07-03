@@ -335,7 +335,7 @@ jobs:
                 - key: CUSTOM_CONFIG
                   value: ${{ secrets.CUSTOM_CONFIG }}
 
-            # RAG API Component
+            # RAG API Component (Internal only)
             - name: rag-api
               image:
                 registry_type: DOCKER_HUB
@@ -345,6 +345,8 @@ jobs:
               instance_count: 1
               instance_size_slug: basic-xxs
               http_port: 8000
+              internal_ports:
+                - 8000
               envs:
                 - key: DB_HOST
                   value: ${{ secrets.POSTGRES_HOST }}
@@ -361,7 +363,7 @@ jobs:
                 - key: OPENAI_API_KEY
                   value: ${{ secrets.OPENAI_API_KEY }}
 
-            # Meilisearch Component
+            # Meilisearch Component (Internal only)
             - name: meilisearch
               image:
                 registry_type: DOCKER_HUB
@@ -371,6 +373,8 @@ jobs:
               instance_count: 1
               instance_size_slug: basic-xxs
               http_port: 7700
+              internal_ports:
+                - 7700
               envs:
                 - key: MEILI_HOST
                   value: http://meilisearch:7700
@@ -378,6 +382,14 @@ jobs:
                   value: ${{ secrets.MEILI_MASTER_KEY }}
                 - key: MEILI_NO_ANALYTICS
                   value: "true"
+
+          # Ingress rules - only expose the main API
+          ingress:
+            rules:
+              - component: api
+                match:
+                  path:
+                    prefix: "/"
           EOF
 
       - name: Deploy Complete App with All Components
