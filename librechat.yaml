@@ -1,392 +1,83 @@
 # For more information, visit the documentation:
 # https://www.librechat.ai/docs/configuration/librechat_yaml
 
-# version: 1.2.0 # (required) The version of the configuration file.
 version: 1.2.0
 
-# cache: (optional) Cache settings for the application.
-# To learn more, read the cache documentation: https://www.librechat.ai/docs/features/caching
-cache:
-  # type: (optional) The type of cache to use. Can be 'redis', 'ioredis', or 'memory'.
-  # Defaults to 'memory' if not provided.
-  type: ioredis
-  # options: (optional) Options for the cache.
-  options:
-    # host: (optional) The host of the cache server.
-    host: redis
-    # port: (optional) The port of the cache server.
-    port: 6379
-    # password: (optional) The password for the cache server.
-    password: ""
-    # db: (optional) The database number to use.
-    db: 0
-    # tls: (optional) TLS options for the cache server.
-    # To learn more, read the ioredis TLS documentation: https://github.com/redis/ioredis#tls-options
-    tls: {}
+# Simple cache configuration
+cache: true
 
-# rateLimits: (optional) Rate limit settings for the application.
-# To learn more, read the rate limiting documentation: https://www.librechat.ai/docs/security/rate_limiting
+# Rate limits for file uploads
 rateLimits:
-  # fileUploads: (optional) Rate limits for file uploads.
   fileUploads:
-    # ipMax: (optional) The maximum number of file uploads per IP address.
     ipMax: 100
-    # ipWindowInMinutes: (optional) The window in minutes for the IP rate limit.
     ipWindowInMinutes: 60
-    # userMax: (optional) The maximum number of file uploads per user.
     userMax: 50
-    # userWindowInMinutes: (optional) The window in minutes for the user rate limit.
     userWindowInMinutes: 60
 
-# endpoints: (required) Endpoints for the application.
-# To learn more, read the endpoints documentation: https://www.librechat.ai/docs/configuration/endpoints
+# Endpoints configuration
 endpoints:
-  # custom: (optional) An array of custom endpoints.
-  # To learn more, read the custom endpoints documentation: https://www.librechat.ai/docs/configuration/custom_endpoints
   custom: []
-  # assistants: (optional) Settings for the assistants endpoint.
-  # To learn more, read the assistants documentation: https://www.librechat.ai/docs/features/assistants/overview
   assistants:
-    # pollIntervalMs: (optional) The interval in milliseconds to poll for assistant runs.
     pollIntervalMs: 7500
-    # timeoutMs: (optional) The timeout in milliseconds for assistant runs.
     timeoutMs: 300000
-    # supportedIds: (optional) An array of supported model IDs for assistants.
     supportedIds:
       - "gpt-4-0125-preview"
       - "gpt-4-1106-preview"
       - "gpt-3.5-turbo-0125"
       - "gpt-3.5-turbo-1106"
-  # openAI: (optional) Settings for the OpenAI endpoint.
   openAI:
-    # To learn more, read the OpenAI endpoint documentation: https://www.librechat.ai/docs/configuration/endpoints#openai
-    # models: (optional) Model settings for the OpenAI endpoint.
     models:
-      # gpt-3.5-turbo: (optional) Settings for the gpt-3.5-turbo model.
       "gpt-3.5-turbo":
-        # maxContextTokens: (optional) The maximum number of context tokens for the model.
         maxContextTokens: 16385
-      # gpt-3.5-turbo-1106: (optional) Settings for the gpt-3.5-turbo-1106 model.
-      "gpt-3.5-turbo-1106":
-        # maxContextTokens: (optional) The maximum number of context tokens for the model.
-        maxContextTokens: 16385
-      # gpt-3.5-turbo-0125: (optional) Settings for the gpt-3.5-turbo-0125 model.
-      "gpt-3.5-turbo-0125":
-        # maxContextTokens: (optional) The maximum number of context tokens for the model.
-        maxContextTokens: 16385
-      # gpt-4: (optional) Settings for the gpt-4 model.
       "gpt-4":
-        # maxContextTokens: (optional) The maximum number of context tokens for the model.
         maxContextTokens: 8192
-      # gpt-4-0613: (optional) Settings for the gpt-4-0613 model.
-      "gpt-4-0613":
-        # maxContextTokens: (optional) The maximum number of context tokens for the model.
-        maxContextTokens: 8192
-      # gpt-4-vision-preview: (optional) Settings for the gpt-4-vision-preview model.
-      "gpt-4-vision-preview":
-        # maxContextTokens: (optional) The maximum number of context tokens for the model.
-        maxContextTokens: 128000
-      # gpt-4-1106-preview: (optional) Settings for the gpt-4-1106-preview model.
-      "gpt-4-1106-preview":
-        # maxContextTokens: (optional) The maximum number of context tokens for the model.
-        maxContextTokens: 128000
-      # gpt-4-0125-preview: (optional) Settings for the gpt-4-0125-preview model.
-      "gpt-4-0125-preview":
-        # maxContextTokens: (optional) The maximum number of context tokens for the model.
-        maxContextTokens: 128000
-      # gpt-4-turbo: (optional) Settings for the gpt-4-turbo model.
       "gpt-4-turbo":
-        # maxContextTokens: (optional) The maximum number of context tokens for the model.
         maxContextTokens: 128000
-      # gpt-4-turbo-2024-04-09: (optional) Settings for the gpt-4-turbo-2024-04-09 model.
-      "gpt-4-turbo-2024-04-09":
-        # maxContextTokens: (optional) The maximum number of context tokens for the model.
-        maxContextTokens: 128000
-      # gpt-4o: (optional) Settings for the gpt-4o model.
       "gpt-4o":
-        # maxContextTokens: (optional) The maximum number of context tokens for the model.
         maxContextTokens: 128000
-      # gpt-4o-2024-05-13: (optional) Settings for the gpt-4o-2024-05-13 model.
-      "gpt-4o-2024-05-13":
-        # maxContextTokens: (optional) The maximum number of context tokens for the model.
-        maxContextTokens: 128000
-      # gpt-3.5-turbo-instruct: (optional) Settings for the gpt-3.5-turbo-instruct model.
-      "gpt-3.5-turbo-instruct":
-        # maxContextTokens: (optional) The maximum number of context tokens for the model.
-        maxContextTokens: 4096
-    # title: (optional) The title of the OpenAI endpoint.
     title: "OpenAI"
-    # addParams: (optional) Additional parameters to add to the request.
     addParams: {}
-    # dropParams: (optional) Parameters to drop from the request.
     dropParams: []
-    # customOrder: (optional) An array of model names to customize the order in the UI.
-    customOrder: []
-  # google: (optional) Settings for the Google endpoint.
   google:
-    # To learn more, read the Google endpoint documentation: https://www.librechat.ai/docs/configuration/endpoints#google
-    # models: (optional) Model settings for the Google endpoint.
     models:
-      # gemini-1.5-pro-latest: (optional) Settings for the gemini-1.5-pro-latest model.
-      "gemini-1.5-pro-latest":
-        # maxOutputTokens: (optional) The maximum number of output tokens for the model.
-        maxOutputTokens: 8192
-      # gemini-pro: (optional) Settings for the gemini-pro model.
       "gemini-pro":
-        # maxOutputTokens: (optional) The maximum number of output tokens for the model.
         maxOutputTokens: 8192
-      # gemini-pro-vision: (optional) Settings for the gemini-pro-vision model.
       "gemini-pro-vision":
-        # maxOutputTokens: (optional) The maximum number of output tokens for the model.
         maxOutputTokens: 4096
-    # title: (optional) The title of the Google endpoint.
     title: "Google"
-    # addParams: (optional) Additional parameters to add to the request.
     addParams: {}
-    # dropParams: (optional) Parameters to drop from the request.
     dropParams: []
-    # customOrder: (optional) An array of model names to customize the order in the UI.
-    customOrder: []
-  # bedrock: (optional) Settings for the Bedrock endpoint.
-  bedrock:
-    # To learn more, read the Bedrock endpoint documentation: https://www.librechat.ai/docs/configuration/endpoints#bedrock
-    # models: (optional) Model settings for the Bedrock endpoint.
-    models:
-      # anthropic.claude-3-sonnet-20240229-v1:0: (optional) Settings for the Claude 3 Sonnet model.
-      "anthropic.claude-3-sonnet-20240229-v1:0":
-        # maxContextTokens: (optional) The maximum number of context tokens for the model.
-        maxContextTokens: 200000
-      # anthropic.claude-3-haiku-20240307-v1:0: (optional) Settings for the Claude 3 Haiku model.
-      "anthropic.claude-3-haiku-20240307-v1:0":
-        # maxContextTokens: (optional) The maximum number of context tokens for the model.
-        maxContextTokens: 200000
-      # anthropic.claude-3-opus-20240229-v1:0: (optional) Settings for the Claude 3 Opus model.
-      "anthropic.claude-3-opus-20240229-v1:0":
-        # maxContextTokens: (optional) The maximum number of context tokens for the model.
-        maxContextTokens: 200000
-    # title: (optional) The title of the Bedrock endpoint.
-    title: "Bedrock"
-    # addParams: (optional) Additional parameters to add to the request.
-    addParams: {}
-    # dropParams: (optional) Parameters to drop from the request.
-    dropParams: []
-    # customOrder: (optional) An array of model names to customize the order in the UI.
-    customOrder: []
-  # anthropic: (optional) Settings for the Anthropic endpoint.
   anthropic:
-    # To learn more, read the Anthropic endpoint documentation: https://www.librechat.ai/docs/configuration/endpoints#anthropic
-    # models: (optional) Model settings for the Anthropic endpoint.
     models:
-      # claude-3-opus-20240229: (optional) Settings for the Claude 3 Opus model.
       "claude-3-opus-20240229":
-        # maxContextTokens: (optional) The maximum number of context tokens for the model.
         maxContextTokens: 200000
-      # claude-3-sonnet-20240229: (optional) Settings for the Claude 3 Sonnet model.
       "claude-3-sonnet-20240229":
-        # maxContextTokens: (optional) The maximum number of context tokens for the model.
         maxContextTokens: 200000
-      # claude-3-haiku-20240307: (optional) Settings for the Claude 3 Haiku model.
       "claude-3-haiku-20240307":
-        # maxContextTokens: (optional) The maximum number of context tokens for the model.
         maxContextTokens: 200000
-      # claude-2.1: (optional) Settings for the Claude 2.1 model.
-      "claude-2.1":
-        # maxContextTokens: (optional) The maximum number of context tokens for the model.
-        maxContextTokens: 200000
-      # claude-2.0: (optional) Settings for the Claude 2.0 model.
-      "claude-2.0":
-        # maxContextTokens: (optional) The maximum number of context tokens for the model.
-        maxContextTokens: 100000
-      # claude-instant-1.2: (optional) Settings for the Claude Instant 1.2 model.
-      "claude-instant-1.2":
-        # maxContextTokens: (optional) The maximum number of context tokens for the model.
-        maxContextTokens: 100000
-    # title: (optional) The title of the Anthropic endpoint.
     title: "Anthropic"
-    # addParams: (optional) Additional parameters to add to the request.
     addParams: {}
-    # dropParams: (optional) Parameters to drop from the request.
     dropParams: []
-    # customOrder: (optional) An array of model names to customize the order in the UI.
-    customOrder: []
-  # gptPlugins: (optional) Settings for the GPT Plugins endpoint.
   gptPlugins:
-    # To learn more, read the GPT Plugins documentation: https://www.librechat.ai/docs/features/plugins/overview
-    # title: (optional) The title of the GPT Plugins endpoint.
     title: "Plugins"
-    # addParams: (optional) Additional parameters to add to the request.
     addParams: {}
-    # dropParams: (optional) Parameters to drop from the request.
     dropParams: []
-    # customOrder: (optional) An array of model names to customize the order in the UI.
-    customOrder: []
-  # azureOpenAI: (optional) Settings for the Azure OpenAI endpoint.
-  azureOpenAI:
-    # To learn more, read the Azure OpenAI endpoint documentation: https://www.librechat.ai/docs/configuration/endpoints#azure-openai
-    # title: (optional) The title of the Azure OpenAI endpoint.
-    title: "Azure OpenAI"
-    # addParams: (optional) Additional parameters to add to the request.
-    addParams: {}
-    # dropParams: (optional) Parameters to drop from the request.
-    dropParams: []
-    # customOrder: (optional) An array of model names to customize the order in the UI.
-    customOrder: []
-    # groups: (optional) An array of Azure OpenAI deployment groups.
-    groups: []
-  # bingAI: (optional) Settings for the BingAI endpoint.
-  bingAI:
-    # To learn more, read the BingAI endpoint documentation: https://www.librechat.ai/docs/configuration/endpoints#bingai
-    # title: (optional) The title of the BingAI endpoint.
-    title: "Bing"
-    # userIp: (optional) The user IP address to use for the BingAI endpoint.
-    userIp: ""
-    # addParams: (optional) Additional parameters to add to the request.
-    addParams: {}
-    # dropParams: (optional) Parameters to drop from the request.
-    dropParams: []
-    # customOrder: (optional) An array of model names to customize the order in the UI.
-    customOrder: []
-  # chatGPTBrowser: (optional) Settings for the ChatGPT Browser endpoint.
-  chatGPTBrowser:
-    # To learn more, read the ChatGPT Browser endpoint documentation: https://www.librechat.ai/docs/configuration/endpoints#chatgpt
-    # title: (optional) The title of the ChatGPT Browser endpoint.
-    title: "ChatGPT"
-    # model: (optional) The model to use for the ChatGPT Browser endpoint.
-    model: ""
-    # addParams: (optional) Additional parameters to add to the request.
-    addParams: {}
-    # dropParams: (optional) Parameters to drop from the request.
-    dropParams: []
-    # customOrder: (optional) An array of model names to customize the order in the UI.
-    customOrder: []
 
-# fileStrategy: (optional) The file strategy to use. Can be 'local', 'firebase', 's3', 'azure'.
-# To learn more, read the file handling documentation: https://www.librechat.ai/docs/features/file_handling/overview
+# File handling strategy
 fileStrategy: "local"
 
-# textToSpeech: (optional) Text-to-speech settings for the application.
-# To learn more, read the text-to-speech documentation: https://www.librechat.ai/docs/features/text_to_speech
-textToSpeech:
-  # ElevenLabs: (optional) Settings for the ElevenLabs text-to-speech service.
-  ElevenLabs:
-    # model: (optional) The model to use for ElevenLabs text-to-speech.
-    model: "eleven_multilingual_v2"
-    # voiceId: (optional) The voice ID to use for ElevenLabs text-to-speech.
-    voiceId: "21m00Tcm4TlvDq8ikWAM"
-    # voice_id: (optional) The voice ID to use for ElevenLabs text-to-speech.
-    voice_id: "21m00Tcm4TlvDq8ikWAM"
-    # stability: (optional) The stability of the voice.
-    stability: 0.5
-    # similarity_boost: (optional) The similarity boost for the voice.
-    similarity_boost: 0.75
-    # style: (optional) The style of the voice.
-    style: 0.0
-    # use_speaker_boost: (optional) Whether to use speaker boost.
-    use_speaker_boost: true
-    # model_id: (optional) The model ID to use for ElevenLabs text-to-speech.
-    model_id: "eleven_multilingual_v2"
-  # OpenAI: (optional) Settings for the OpenAI text-to-speech service.
-  OpenAI:
-    # model: (optional) The model to use for OpenAI text-to-speech.
-    model: "tts-1"
-    # voice: (optional) The voice to use for OpenAI text-to-speech.
-    voice: "alloy"
-
-# speechToText: (optional) Speech-to-text settings for the application.
-# To learn more, read the speech-to-text documentation: https://www.librechat.ai/docs/features/speech_to_text
-speechToText:
-  # openAI: (optional) Settings for the OpenAI speech-to-text service.
-  openAI:
-    # model: (optional) The model to use for OpenAI speech-to-text.
-    model: "whisper-1"
-
-# agents: (optional) Agent settings for the application.
-# To learn more, read the agents documentation: https://www.librechat.ai/docs/features/agents/overview
-agents:
-  # type: (optional) The type of agent to use. Can be 'classic' or 'functions'.
-  type: "functions"
-  # max_output: (optional) The maximum output tokens for the agent.
-  max_output: 1500
-  # skip_completion: (optional) Whether to skip the completion step.
-  skip_completion: true
-  # temperature: (optional) The temperature for the agent.
-  temperature: 0.0
-  # model: (optional) The model to use for the agent.
-  model: "gpt-3.5-turbo-0125"
-  # retrieval: (optional) Retrieval settings for the agent.
-  retrieval:
-    # top_k: (optional) The number of documents to retrieve.
-    top_k: 6
-    # chunk_size: (optional) The size of the chunks to split documents into.
-    chunk_size: 1200
-    # chunk_overlap: (optional) The overlap between chunks.
-    chunk_overlap: 200
-    # threads: (optional) The number of threads to use for retrieval.
-    threads: 4
-  # tools: (optional) An array of tools to use with the agent.
-  tools:
-    - "Calculator"
-    - "Google"
-    - "Web-search"
-    - "wikipedia"
-    - "dall-e"
-    - "stable-diffusion"
-    - "OpenAPI"
-    - "Wolfram"
-    - "Zapier"
-
-# toolService: (optional) Settings for the tool service.
-# To learn more, read the tool service documentation: https://www.librechat.ai/docs/features/tools/overview
-toolService:
-  # langserve: (optional) An array of LangServe tools.
-  langserve: []
-  # anyscale: (optional) An array of Anyscale tools.
-  anyscale: []
-
-# registration: (optional) Registration settings for the application.
-# To learn more, read the registration documentation: https://www.librechat.ai/docs/security/user_system#registration
+# Registration settings
 registration:
-  # social: (optional) An array of social login providers to display on the registration page.
   social:
     - "google"
     - "github"
     - "discord"
-    - "openid"
-    - "saml"
-    - "apple"
 
-# login: (optional) Login settings for the application.
-# To learn more, read the login documentation: https://www.librechat.ai/docs/security/user_system#login
-login:
-  # social: (optional) An array of social login providers to display on the login page.
-  social:
-    - "google"
-    - "github"
-    - "discord"
-    - "openid"
-    - "saml"
-    - "apple"
-
-# interface: (optional) Interface settings for the application.
-# To learn more, read the interface documentation: https://www.librechat.ai/docs/configuration/interface
+# Interface settings
 interface:
-  # privacyPolicy: (optional) Privacy policy settings.
   privacyPolicy:
-    # externalUrl: (optional) The URL of the external privacy policy.
     externalUrl: ""
-    # openInNewTab: (optional) Whether to open the privacy policy in a new tab.
     openInNewTab: false
-  # termsOfService: (optional) Terms of service settings.
   termsOfService:
-    # externalUrl: (optional) The URL of the external terms of service.
     externalUrl: ""
-    # openInNewTab: (optional) Whether to open the terms of service in a new tab.
     openInNewTab: false
-
-# checkBalance: (optional) Whether to check the user's balance.
-checkBalance: false
-
-# paths: (optional) Path settings for the application.
-paths:
-  # public: (optional) The path to the public directory.
-  public: "/app/client/public/"
