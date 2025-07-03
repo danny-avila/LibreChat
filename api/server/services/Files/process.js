@@ -34,6 +34,7 @@ const { LB_QueueAsyncCall } = require('~/server/utils/queue');
 const { getStrategyFunctions } = require('./strategies');
 const { determineFileType } = require('~/server/utils');
 const { logger } = require('~/config');
+const UrlGeneratorService = require('./UrlGeneratorService');
 
 /**
  *
@@ -958,8 +959,138 @@ function filterFile({ req, image, isAvatar }) {
   }
 }
 
+/**
+ * Filters a file for secure upload with relaxed type restrictions
+ * @param {Object} params - The parameters for the function
+ * @param {ServerRequest} params.req - The request object from Express
+ * @returns {void}
+ * @throws {Error} If file validation fails
+ */
+function filterSecureFile({ req }) {
+  const { file } = req;
+
+  if (!file) {
+    throw new Error('No file provided');
+  }
+
+  // Check file size (use a reasonable limit for secure uploads)
+  const maxFileSize = 100 * 1024 * 1024; // 100MB limit for secure uploads
+  if (file.size > maxFileSize) {
+    throw new Error(`File size limit of ${maxFileSize / (1024 * 1024)} MB exceeded for secure upload`);
+  }
+
+  // Basic security checks - reject potentially dangerous files
+  const dangerousExtensions = ['.exe', '.bat', '.cmd', '.com', '.scr', '.pif', '.vbs', '.js', '.jar'];
+  const fileExtension = path.extname(file.originalname).toLowerCase();
+
+  if (dangerousExtensions.includes(fileExtension)) {
+    throw new Error(`File type ${fileExtension} is not allowed for security reasons`);
+  }
+
+  // Check for null bytes in filename (security measure)
+  if (file.originalname.includes('\0')) {
+    throw new Error('Invalid filename: contains null bytes');
+  }
+
+  // Validate filename length
+  if (file.originalname.length > 255) {
+    throw new Error('Filename too long (max 255 characters)');
+  }
+}
+
+/**
+ * Process file upload and generate secure download link
+ * @param {Object} params - The parameters object
+ * @param {ServerRequest} params.req - The Express request object
+ * @param {Express.Response} params.res - The Express response object
+ * @param {FileMetadata} params.metadata - Additional metadata for the file
+ * @returns {Promise<Object>} File data with download link
+ */
+const processSecureFileUpload = async ({ req, res, metadata }) => {
+  const { file } = req;
+  const { file_id, temp_file_id, ttlSeconds, singleUse } = metadata;
+
+  // Use local file storage for secure uploads
+  const source = FileSources.local;
+  const { handleFileUpload } = getStrategyFunctions(source);
+
+  try {
+    // Upload and store the file
+    const {
+      bytes,
+      filename,
+      filepath,
+      embedded,
+      height,
+      width,
+    } = await handleFileUpload({
+      req,
+      file,
+      file_id,
+    });
+
+    // Create file record in database
+    const fileRecord = await createFile(
+      {
+        user: req.user.id,
+        file_id,
+        temp_file_id,
+        bytes,
+        filepath,
+        filename: filename ?? file.originalname,
+        context: FileContext.message_attachment,
+        source,
+        type: file.mimetype,
+        embedded,
+        height,
+        width,
+        downloadEnabled: true, // Enable downloads for secure upload files
+      },
+      true,
+    );
+
+    // Generate secure download link
+    const urlData = await UrlGeneratorService.generateDownloadUrl(file_id, {
+      ttlSeconds: ttlSeconds || 900, // Default 15 minutes
+      singleUse: singleUse !== false, // Default true
+      userId: req.user.id,
+      clientIP: req.ip || req.connection.remoteAddress,
+      userAgent: req.get('User-Agent'),
+      requestId: req.headers['x-request-id'] || `secure-upload-${Date.now()}`,
+      metadata: {
+        filename: fileRecord.filename,
+        fileType: fileRecord.type,
+        fileSize: fileRecord.bytes,
+        uploadType: 'secure'
+      }
+    });
+
+    logger.info('Secure file upload completed with download link', {
+      fileId: file_id,
+      userId: req.user.id,
+      filename: fileRecord.filename,
+      downloadUrl: urlData.downloadUrl.substring(0, 50) + '...',
+      ttlSeconds: urlData.ttlSeconds,
+      singleUse: urlData.singleUse
+    });
+
+    return {
+      ...fileRecord,
+      downloadUrl: urlData.downloadUrl,
+      expiresAt: urlData.expiresAt,
+      singleUse: urlData.singleUse,
+      ttlSeconds: urlData.ttlSeconds
+    };
+
+  } catch (error) {
+    logger.error('Error in processSecureFileUpload:', error);
+    throw error;
+  }
+};
+
 module.exports = {
   filterFile,
+  filterSecureFile,
   processFiles,
   processFileURL,
   saveBase64Image,
@@ -969,4 +1100,5 @@ module.exports = {
   processDeleteRequest,
   processAgentFileUpload,
   retrieveAndProcessFile,
+  processSecureFileUpload,
 };

@@ -18,20 +18,21 @@ const {
 
 const router = express.Router();
 
-// Middleware for parsing user agent
-router.use(uaParser);
-
 // Create middleware
 const downloadRateLimit = rateLimitService.createMiddleware();
 const securityValidation = securityService.createValidationMiddleware();
 const metricsCollection = metricsService.createMetricsMiddleware();
 
 // Public download endpoint (no auth required, token-based) with security, rate limiting, and metrics
+// NOTE: uaParser middleware is intentionally excluded here to allow command-line tools like wget
+// to access temporary download URLs. Security is maintained through token-based authentication.
 router.get('/download/:fileId', metricsCollection, securityValidation, downloadRateLimit, downloadFile);
 
 // Protected endpoints (require authentication)
+// Apply uaParser middleware only to protected endpoints to ensure browser-only access for authenticated operations
 router.use(requireJwtAuth);
 router.use(checkBan);
+router.use(uaParser);
 
 // Apply metrics, security validation and rate limiting to protected endpoints as well
 router.use(metricsCollection);

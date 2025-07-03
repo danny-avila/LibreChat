@@ -38,6 +38,12 @@ class UrlGeneratorService {
    */
   async generateDownloadUrl(fileId, options = {}) {
     try {
+      logger.debug('[UrlGeneratorService] Starting generateDownloadUrl', {
+        fileId,
+        optionsKeys: Object.keys(options),
+        secretKeyLength: this.secretKey.length
+      });
+
       const {
         ttlSeconds = this.defaultTtl,
         singleUse = true,
