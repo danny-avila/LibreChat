@@ -121,7 +121,7 @@ const AttachFileMenu = ({ disabled, conversationId, endpointFileConfig }: Attach
     const localItems = createMenuItems(handleUploadClick);
 
     if (sharePointEnabled) {
-      const sharePointItems = createMenuItems((isImage?: boolean) => {
+      const sharePointItems = createMenuItems(() => {
         setIsSharePointDialogOpen(true);
         // Note: toolResource will be set by the specific item clicked
       });

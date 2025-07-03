@@ -58,6 +58,8 @@ export default function SharePointPickerDialog({
         cleanup();
       }
     };
+    // we need to run this effect only when the containerNode or isOpen changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [containerNode, isOpen]);
   return (
     <OGDialog open={isOpen} onOpenChange={handleOpenChange}>
