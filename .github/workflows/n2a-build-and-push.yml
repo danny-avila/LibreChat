@@ -58,7 +58,7 @@ jobs:
               run: |
                 az login --identity
                 az account set --subscription "${{ secrets.AZURE_NONPROD_SUBSCRIPTION_ID }}"
-                az containerapp update \
+                az containerapp create \
                   --name conpaichateastusn2a001 \
                   --resource-group rg-playai-eastus-n2a-001 \
                   --yaml $GITHUB_WORKSPACE/az_container_app_definitions/n2a_container_app_definition.yml
