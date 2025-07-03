@@ -25,8 +25,7 @@ jobs:
                 cat librechat.n2a.yaml >> librechat.yaml |
                 rm -rf .dockerignore |
                 touch .dockerignore && chmod 755 .dockerignore |
-                cat .paychex.dockerignore >> .dockerignore |
-                cat .dockerignore
+                cat .paychex.dockerignore >> .dockerignore
 
             - name: Prepare Azure CLI config dir
               run: mkdir -p "$AZURE_CONFIG_DIR"
