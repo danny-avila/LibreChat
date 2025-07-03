@@ -207,7 +207,7 @@ affinity: {}
 
 # Strategy for LibreChat deployment updates
 updateStrategy:
-  type: RollingUpdate
+  type: Recreate
 
 # MongoDB Parameters
 mongodb:
