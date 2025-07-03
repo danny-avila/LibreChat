@@ -74,7 +74,6 @@ jobs:
         env:
           DIGITALOCEAN_ACCESS_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
           DIGITALOCEAN_REGISTRY: ${{ secrets.DIGITALOCEAN_REGISTRY }}
-          DIGITALOCEAN_APP_ID: ${{ secrets.DIGITALOCEAN_APP_ID }}
           MONGO_URI: ${{ secrets.MONGO_URI }}
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
           CREDS_KEY: ${{ secrets.CREDS_KEY }}
@@ -111,7 +110,6 @@ jobs:
           required_secrets=(
             "DIGITALOCEAN_ACCESS_TOKEN"
             "DIGITALOCEAN_REGISTRY"
-            "DIGITALOCEAN_APP_ID"
             "MONGO_URI"
             "JWT_SECRET"
             "CREDS_KEY"
@@ -263,6 +261,8 @@ jobs:
             POSTGRES_DB=${{ secrets.POSTGRES_DB }}
             POSTGRES_USER=${{ secrets.POSTGRES_USER }}
             POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
+            CREDS_KEY=${{ secrets.CREDS_KEY }}
+            CREDS_IV=${{ secrets.CREDS_IV }}
           platforms: linux/amd64,linux/arm64
           cache-from: type=registry,ref=registry.digitalocean.com/${{ secrets.DIGITALOCEAN_REGISTRY }}/librechat:buildcache
           cache-to: type=registry,ref=registry.digitalocean.com/${{ secrets.DIGITALOCEAN_REGISTRY }}/librechat:buildcache,mode=max
@@ -283,6 +283,8 @@ jobs:
               instance_count: 1
               instance_size_slug: basic-xxs
               http_port: 3080
+              health_check:
+                http_path: /api/health
               envs:
                 - key: NODE_ENV
                   value: "production"
@@ -306,6 +308,16 @@ jobs:
                   value: "http://rag-api:8000"
                 - key: RAG_PORT
                   value: "8000"
+                - key: POSTGRES_HOST
+                  value: "${{ secrets.POSTGRES_HOST }}"
+                - key: POSTGRES_PORT
+                  value: "${{ secrets.POSTGRES_PORT }}"
+                - key: POSTGRES_DB
+                  value: "${{ secrets.POSTGRES_DB }}"
+                - key: POSTGRES_USER
+                  value: "${{ secrets.POSTGRES_USER }}"
+                - key: POSTGRES_PASSWORD
+                  value: "${{ secrets.POSTGRES_PASSWORD }}"
                 - key: OPENAI_API_KEY
                   value: "${{ secrets.OPENAI_API_KEY }}"
                 - key: ANTHROPIC_API_KEY
@@ -338,13 +350,15 @@ jobs:
             # RAG API Component (Internal only)
             - name: rag-api
               image:
-                registry_type: DOCKER_HUB
+                registry_type: GITHUB_CONTAINER_REGISTRY
                 registry: ghcr.io
                 repository: danny-avila/librechat-rag-api-dev-lite
                 tag: latest
               instance_count: 1
               instance_size_slug: basic-xxs
               http_port: 8000
+              health_check:
+                http_path: /health
               envs:
                 - key: DB_HOST
                   value: "${{ secrets.POSTGRES_HOST }}"
@@ -360,6 +374,10 @@ jobs:
                   value: "8000"
                 - key: OPENAI_API_KEY
                   value: "${{ secrets.OPENAI_API_KEY }}"
+                - key: ANTHROPIC_API_KEY
+                  value: "${{ secrets.ANTHROPIC_API_KEY }}"
+                - key: GOOGLE_API_KEY
+                  value: "${{ secrets.GOOGLE_API_KEY }}"
 
             # Meilisearch Component (Internal only)
             - name: meilisearch
@@ -371,22 +389,14 @@ jobs:
               instance_count: 1
               instance_size_slug: basic-xxs
               http_port: 7700
+              health_check:
+                http_path: /health
               envs:
-                - key: MEILI_HOST
-                  value: "http://meilisearch:7700"
                 - key: MEILI_MASTER_KEY
                   value: "${{ secrets.MEILI_MASTER_KEY }}"
                 - key: MEILI_NO_ANALYTICS
                   value: "true"
 
-          # Ingress rules - only expose the main API
-          ingress:
-            rules:
-              - component:
-                  name: api
-                match:
-                  path:
-                    prefix: "/"
           EOF
 
       - name: Deploy Complete App with All Components
@@ -400,36 +410,40 @@ jobs:
           if [[ -z "$APP_ID" ]]; then
             echo "Creating new complete LibreChat app..."
             doctl apps create --spec librechat-complete-spec.yaml --wait
+            if [ $? -ne 0 ]; then
+              echo "Failed to create app"
+              exit 1
+            fi
             APP_ID=$(doctl apps list --format ID,Name --no-header | grep librechat-complete | awk '{print $1}')
+            echo "Created app with ID: $APP_ID"
           else
-            echo "Updating existing LibreChat app..."
+            echo "Updating existing LibreChat app with ID: $APP_ID"
             doctl apps update $APP_ID --spec librechat-complete-spec.yaml --wait
+            if [ $? -ne 0 ]; then
+              echo "Failed to update app"
+              exit 1
+            fi
           fi
           
           # Get app URL
           APP_URL=$(doctl apps get $APP_ID --format URL --no-header)
           echo "LibreChat app URL: $APP_URL"
           
-          # Check deployment status
-          if [ $? -eq 0 ]; then
-            echo "Deployment successful!"
-          else
-            echo "Deployment failed!"
-            exit 1
-          fi
+          # Store the app ID for later use
+          echo "APP_ID=$APP_ID" >> $GITHUB_ENV
 
       - name: Check deployment status, logs, and environment variables
         run: |
           echo "=== Deployment Status ==="
-          doctl apps list-deployments ${{ secrets.DIGITALOCEAN_APP_ID }} --format ID,Phase,Created
+          doctl apps list-deployments $APP_ID --format ID,Phase,Created
 
           echo "=== Latest Deployment Logs ==="
-          LATEST_DEPLOYMENT=$(doctl apps list-deployments ${{ secrets.DIGITALOCEAN_APP_ID }} --format ID --no-header | head -n 1)
-          doctl apps logs ${{ secrets.DIGITALOCEAN_APP_ID }} --deployment $LATEST_DEPLOYMENT
+          LATEST_DEPLOYMENT=$(doctl apps list-deployments $APP_ID --format ID --no-header | head -n 1)
+          doctl apps logs $APP_ID --deployment $LATEST_DEPLOYMENT
 
           echo "=== App Status ==="
-          doctl apps get ${{ secrets.DIGITALOCEAN_APP_ID }}
+          doctl apps get $APP_ID
 
           echo "=== Environment Variables (all services) ==="
           sudo apt-get update && sudo apt-get install -y jq
-          doctl apps get ${{ secrets.DIGITALOCEAN_APP_ID }} -o json | jq '.[0].spec.services[] | {name: .name, envs: .envs}' 
+          doctl apps get $APP_ID -o json | jq '.[0].spec.services[] | {name: .name, envs: .envs}' 
