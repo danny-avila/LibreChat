@@ -18,3 +18,12 @@ endpoints:
         gpt-4o:
           deploymentName: gpt-4o
           version: "2024-10-21"
+        gpt-4o-mini:
+          deploymentName: gpt-4o-mini
+          version: "2024-10-21"
+        gpt-41:
+          deploymentName: gpt-41
+          version: "2024-10-21"
+        gpt-41-mini:
+          deploymentName: gpt-41-mini
+          version: "2024-10-21"
