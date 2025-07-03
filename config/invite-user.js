@@ -10,18 +10,18 @@ const connect = require('./connect');
   await connect();
 
   console.purple('--------------------------');
-  console.purple('Invite a new user account!');
+  console.purple('¡Invitar a un nuevo usuario!');
   console.purple('--------------------------');
 
   if (process.argv.length < 5) {
-    console.orange('Usage: npm run invite-user <email>');
-    console.orange('Note: if you do not pass in the arguments, you will be prompted for them.');
+    console.orange('Uso: npm run invite-user <email>');
+    console.orange('Nota: si no pasas los argumentos, se te solicitarán.');
     console.purple('--------------------------');
   }
 
   // Check if email service is enabled
   if (!checkEmailConfig()) {
-    console.red('Error: Email service is not enabled!');
+    console.red('Error: ¡El servicio de correo electrónico no está habilitado!');
     silentExit(1);
   }
 
@@ -31,18 +31,18 @@ const connect = require('./connect');
     email = process.argv[2];
   }
   if (!email) {
-    email = await askQuestion('Email:');
+    email = await askQuestion('Correo electrónico:');
   }
   // Validate the email
   if (!email.includes('@')) {
-    console.red('Error: Invalid email address!');
+    console.red('Error: ¡Dirección de correo electrónico inválida!');
     silentExit(1);
   }
 
   // Check if the user already exists
   const userExists = await User.findOne({ email });
   if (userExists) {
-    console.red('Error: A user with that email already exists!');
+    console.red('Error: ¡Ya existe un usuario con ese correo electrónico!');
     silentExit(1);
   }
 
@@ -52,14 +52,14 @@ const connect = require('./connect');
   const appName = process.env.APP_TITLE || 'LibreChat';
 
   if (!checkEmailConfig()) {
-    console.green('Send this link to the user:', inviteLink);
+    console.green('Envía este enlace al usuario:', inviteLink);
     silentExit(0);
   }
 
   try {
     await sendEmail({
       email: email,
-      subject: `Invite to join ${appName}!`,
+      subject: `Invitación para unirte a ${appName}!`,
       payload: {
         appName: appName,
         inviteLink: inviteLink,
@@ -73,7 +73,7 @@ const connect = require('./connect');
   }
 
   // Done!
-  console.green('Invitation sent successfully!');
+  console.green('¡Invitación enviada exitosamente!');
   silentExit(0);
 })();
 

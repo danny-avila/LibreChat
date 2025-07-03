@@ -366,21 +366,92 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
         }, 100);
       };
 
-      // Configurar botón "End" (mantener solo esta funcionalidad)
+      // Función para bloquear temporalmente el botón "New call"
+      const blockNewCallTemporarily = () => {
+        try {
+          const shadowRoot = elevenLabsWidget.shadowRoot;
+          if (!shadowRoot) return;
+
+          // Buscar todos los spans que contengan "New call"
+          const spans = shadowRoot.querySelectorAll('span');
+          spans.forEach(span => {
+            if (span.textContent?.includes('New call')) {
+              const button = span.closest('button') as HTMLButtonElement;
+              if (button) {
+                // Deshabilitar el botón temporalmente
+                button.disabled = true;
+                button.style.opacity = '0.5';
+                button.style.cursor = 'not-allowed';
+                button.style.pointerEvents = 'none';
+                
+                console.log('Botón "New call" bloqueado temporalmente por 1,2 segundos');
+                
+                // Restaurar después de 3 segundos
+                setTimeout(() => {
+                  button.disabled = false;
+                  button.style.opacity = '';
+                  button.style.cursor = '';
+                  button.style.pointerEvents = '';
+                  console.log('Botón "New call" desbloqueado');
+                }, 1200);
+              }
+            }
+          });
+
+          // También buscar el span específico con las clases mencionadas
+          const specificSpan = shadowRoot.querySelector('span.block.whitespace-nowrap.max-w-64.truncate.px-1\\.5');
+          if (specificSpan && specificSpan.textContent?.includes('New call')) {
+            const button = specificSpan.closest('button') as HTMLButtonElement;
+            if (button) {
+              button.disabled = true;
+              button.style.opacity = '0.5';
+              button.style.cursor = 'not-allowed';
+              button.style.pointerEvents = 'none';
+              
+              setTimeout(() => {
+                button.disabled = false;
+                button.style.opacity = '';
+                button.style.cursor = '';
+                button.style.pointerEvents = '';
+              }, 3000);
+            }
+          }
+        } catch (error) {
+          console.error('Error al bloquear botón New call:', error);
+        }
+      };
+
+      // Configurar botón "End" (mantener funcionalidad original + bloqueo temporal)
       const setupEndButton = (endButton: HTMLButtonElement) => {
         if (endConfigured) return true;
         
         try {
-          // Solo agregar event listener para ocultar widget después del click original
+          // Agregar event listener que bloquea el botón "New call" cuando se hace clic en "End"
           endButton.addEventListener('click', () => {
+            console.log('Botón End clickeado - bloqueando New call temporalmente');
+            
+            // Bloquear inmediatamente el botón "New call"
+            blockNewCallTemporarily();
+            
+            // También intentar bloquearlo después de pequeños delays por si aparece más tarde
+            setTimeout(() => {
+              blockNewCallTemporarily();
+            }, 100);
+            
+            setTimeout(() => {
+              blockNewCallTemporarily();
+            }, 500);
+            
+            // Mantener la funcionalidad original de cerrar el widget
             setTimeout(() => {
               hideWidget();
               console.log('Widget ocultado por botón End');
             }, 200);
+            
           }, { once: true });
           
           endConfigured = true;
-          console.log('Botón "End" configurado correctamente');
+          console.log('Botón "End" configurado con bloqueo temporal de New call');
           return true;
         } catch (error) {
           console.error('Error al configurar botón End:', error);
@@ -406,7 +477,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
 
       console.log('Configuración inicial del widget (sin botón Collapse)...');
 
-      // Solo usar MutationObserver para el botón "End"
+      // MutationObserver para configurar botón "End"
       const observer = new MutationObserver((mutations) => {
         // Verificar si ya configuramos el botón End
         if (endConfigured) {

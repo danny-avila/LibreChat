@@ -18,6 +18,9 @@ module.exports = {
       width: {
         authPageWidth: '370px',
       },
+      backgroundImage: {
+        'auth-background': "url('/assets/bg_login.jpg')",
+      },
       keyframes: {
         'accordion-down': {
           from: { height: 0 },
