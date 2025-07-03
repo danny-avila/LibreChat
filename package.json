@@ -142,5 +142,8 @@
       "admin/",
       "packages/"
     ]
+  },
+  "dependencies": {
+    "dompurify": "^3.2.6"
   }
 }

@@ -228,7 +228,7 @@ export default function AgentConfig({
               <textarea
                 {...field}
                 value={field.value ?? ''}
-                className={`${inputClass} resize-y min-h-[100px]`}
+                className={`${inputClass} min-h-[100px] resize-y`}
                 id="description"
                 placeholder={localize('com_agents_description_placeholder')}
                 aria-label="Agent description"
