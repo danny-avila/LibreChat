@@ -285,47 +285,47 @@ jobs:
               http_port: 3080
               envs:
                 - key: NODE_ENV
-                  value: production
+                  value: "production"
                 - key: PORT
                   value: "3080"
                 - key: HOST
                   value: "0.0.0.0"
                 - key: MONGO_URI
-                  value: ${{ secrets.MONGO_URI }}
+                  value: "${{ secrets.MONGO_URI }}"
                 - key: JWT_SECRET
-                  value: ${{ secrets.JWT_SECRET }}
+                  value: "${{ secrets.JWT_SECRET }}"
                 - key: CREDS_KEY
-                  value: ${{ secrets.CREDS_KEY }}
+                  value: "${{ secrets.CREDS_KEY }}"
                 - key: CREDS_IV
-                  value: ${{ secrets.CREDS_IV }}
+                  value: "${{ secrets.CREDS_IV }}"
                 - key: MEILI_HOST
-                  value: http://meilisearch:7700
+                  value: "http://meilisearch:7700"
                 - key: MEILI_MASTER_KEY
-                  value: ${{ secrets.MEILI_MASTER_KEY }}
+                  value: "${{ secrets.MEILI_MASTER_KEY }}"
                 - key: RAG_API_URL
-                  value: http://rag-api:8000
+                  value: "http://rag-api:8000"
                 - key: RAG_PORT
                   value: "8000"
                 - key: OPENAI_API_KEY
-                  value: ${{ secrets.OPENAI_API_KEY }}
+                  value: "${{ secrets.OPENAI_API_KEY }}"
                 - key: ANTHROPIC_API_KEY
-                  value: ${{ secrets.ANTHROPIC_API_KEY }}
+                  value: "${{ secrets.ANTHROPIC_API_KEY }}"
                 - key: GOOGLE_API_KEY
-                  value: ${{ secrets.GOOGLE_API_KEY }}
+                  value: "${{ secrets.GOOGLE_API_KEY }}"
                 - key: AZURE_API_KEY
-                  value: ${{ secrets.AZURE_API_KEY }}
+                  value: "${{ secrets.AZURE_API_KEY }}"
                 - key: AZURE_API_ENDPOINT
-                  value: ${{ secrets.AZURE_API_ENDPOINT }}
+                  value: "${{ secrets.AZURE_API_ENDPOINT }}"
                 - key: AZURE_DEPLOYMENT_NAME
-                  value: ${{ secrets.AZURE_DEPLOYMENT_NAME }}
+                  value: "${{ secrets.AZURE_DEPLOYMENT_NAME }}"
                 - key: BINGAI_TOKEN
-                  value: ${{ secrets.BINGAI_TOKEN }}
+                  value: "${{ secrets.BINGAI_TOKEN }}"
                 - key: CHATGPT_TOKEN
-                  value: ${{ secrets.CHATGPT_TOKEN }}
+                  value: "${{ secrets.CHATGPT_TOKEN }}"
                 - key: HUGGINGFACE_API_KEY
-                  value: ${{ secrets.HUGGINGFACE_API_KEY }}
+                  value: "${{ secrets.HUGGINGFACE_API_KEY }}"
                 - key: REPLICATE_API_KEY
-                  value: ${{ secrets.REPLICATE_API_KEY }}
+                  value: "${{ secrets.REPLICATE_API_KEY }}"
                 - key: BAN_VIOLATIONS
                   value: "${{ secrets.BAN_VIOLATIONS }}"
                 - key: BAN_DURATION
@@ -333,7 +333,7 @@ jobs:
                 - key: BAN_INTERVAL
                   value: "${{ secrets.BAN_INTERVAL }}"
                 - key: CUSTOM_CONFIG
-                  value: ${{ secrets.CUSTOM_CONFIG }}
+                  value: "${{ secrets.CUSTOM_CONFIG }}"
 
             # RAG API Component (Internal only)
             - name: rag-api
@@ -349,19 +349,19 @@ jobs:
                 - 8000
               envs:
                 - key: DB_HOST
-                  value: ${{ secrets.POSTGRES_HOST }}
+                  value: "${{ secrets.POSTGRES_HOST }}"
                 - key: DB_PORT
                   value: "${{ secrets.POSTGRES_PORT }}"
                 - key: POSTGRES_DB
-                  value: ${{ secrets.POSTGRES_DB }}
+                  value: "${{ secrets.POSTGRES_DB }}"
                 - key: POSTGRES_USER
-                  value: ${{ secrets.POSTGRES_USER }}
+                  value: "${{ secrets.POSTGRES_USER }}"
                 - key: POSTGRES_PASSWORD
-                  value: ${{ secrets.POSTGRES_PASSWORD }}
+                  value: "${{ secrets.POSTGRES_PASSWORD }}"
                 - key: RAG_PORT
                   value: "8000"
                 - key: OPENAI_API_KEY
-                  value: ${{ secrets.OPENAI_API_KEY }}
+                  value: "${{ secrets.OPENAI_API_KEY }}"
 
             # Meilisearch Component (Internal only)
             - name: meilisearch
@@ -377,16 +377,17 @@ jobs:
                 - 7700
               envs:
                 - key: MEILI_HOST
-                  value: http://meilisearch:7700
+                  value: "http://meilisearch:7700"
                 - key: MEILI_MASTER_KEY
-                  value: ${{ secrets.MEILI_MASTER_KEY }}
+                  value: "${{ secrets.MEILI_MASTER_KEY }}"
                 - key: MEILI_NO_ANALYTICS
                   value: "true"
 
           # Ingress rules - only expose the main API
           ingress:
             rules:
-              - component: api
+              - component:
+                  name: api
                 match:
                   path:
                     prefix: "/"
