@@ -46,6 +46,7 @@ __blobstorage__/**/*
 # see https://npmjs.org/doc/faq.html#Should-I-check-my-node_modules-folder-into-git
 node_modules/
 meili_data/
+postgres/
 api/node_modules/
 client/node_modules/
 bower_components/
@@ -97,7 +98,7 @@ junit.xml
 
 # docker override file
 #docker-compose.override.yaml
-#docker-compose.override.yml
+docker-compose.override.yml
 
 # meilisearch
 meilisearch
