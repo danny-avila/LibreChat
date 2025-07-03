@@ -67,10 +67,13 @@ COPY --from=mcp-build /app/packages/mcp/dist ./packages/mcp/dist
 COPY --from=data-schemas-build /app/packages/data-schemas/dist ./packages/data-schemas/dist
 COPY --from=client-build /app/client/dist ./client/dist
 
+COPY ./emails.txt ./emails.txt
+
 COPY ./enviar-invitaciones.sh ./enviar-invitaciones.sh
 RUN chmod +x ./enviar-invitaciones.sh
 
-COPY ./emails.txt ./emails.txt
+COPY ./send-invitaciones.sh ./send-invitaciones.sh
+RUN sed -i 's/\r$//' ./send-invitaciones.sh && chmod +x ./send-invitaciones.sh
 
 WORKDIR /app/api
 EXPOSE 3080
