@@ -66,7 +66,7 @@ webSearch:
 endpoints:
   custom:
     - name: "LiteLLM"
-      apiKey: "user_provided"  # User must provide their own key
+      apiKey: "${LITELLM_DEFAULT_APIKEY}"  # User must provide their own key
       baseURL: "${LITELLM_URL}"  # Update to your LiteLLM proxy URL if different
       models:
         default: ["${LITELLM_DEFAULT_MODEL}"]  # Or any model available via your LiteLLM proxy
