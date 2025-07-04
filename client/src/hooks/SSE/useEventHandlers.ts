@@ -1,6 +1,6 @@
 import { v4 } from 'uuid';
 import { useCallback, useRef } from 'react';
-import { useSetRecoilState, useRecoilCallback } from 'recoil';
+import { useSetRecoilState } from 'recoil';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import {
@@ -30,7 +30,7 @@ import {
 } from '~/utils';
 import useAttachmentHandler from '~/hooks/SSE/useAttachmentHandler';
 import useContentHandler from '~/hooks/SSE/useContentHandler';
-import store, { useApplyNewAgentTemplate, ephemeralAgentByConvoId } from '~/store';
+import store, { useApplyNewAgentTemplate } from '~/store';
 import useStepHandler from '~/hooks/SSE/useStepHandler';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { MESSAGE_UPDATE_INTERVAL } from '~/common';
@@ -179,14 +179,6 @@ export default function useEventHandlers({
   const lastAnnouncementTimeRef = useRef(Date.now());
   const { conversationId: paramId } = useParams();
   const { token } = useAuthContext();
-
-  const setEphemeralAgentForConvo = useRecoilCallback(
-    ({ set }) =>
-      (conversationId: string, ephemeralAgent: any) => {
-        set(ephemeralAgentByConvoId(conversationId), ephemeralAgent);
-      },
-    [],
-  );
 
   const contentHandler = useContentHandler({ setMessages, getMessages });
   const stepHandler = useStepHandler({
@@ -382,9 +374,6 @@ export default function useEventHandlers({
       });
 
       let update = {} as TConversation;
-      if (conversationId) {
-        applyAgentTemplate(conversationId, submission.conversation.conversationId);
-      }
       if (setConversation && !isAddedRequest) {
         setConversation((prevState) => {
           const parentId = isRegenerate ? userMessage.overrideParentMessageId : parentMessageId;
@@ -417,6 +406,14 @@ export default function useEventHandlers({
           }) as TConversation;
           return update;
         });
+      }
+
+      if (conversationId) {
+        applyAgentTemplate(
+          conversationId,
+          submission.conversation.conversationId,
+          submission.ephemeralAgent,
+        );
       }
 
       if (resetLatestMessage) {
@@ -523,7 +520,11 @@ export default function useEventHandlers({
         });
 
         if (conversation.conversationId && submission.ephemeralAgent) {
-          setEphemeralAgentForConvo(conversation.conversationId, submission.ephemeralAgent);
+          applyAgentTemplate(
+            conversation.conversationId,
+            submissionConvo.conversationId,
+            submission.ephemeralAgent,
+          );
         }
 
         if (location.pathname === '/c/new') {
@@ -534,19 +535,19 @@ export default function useEventHandlers({
       setIsSubmitting(false);
     },
     [
-      setShowStopButton,
-      setCompleted,
-      getMessages,
-      announcePolite,
+      navigate,
       genTitle,
-      setConversation,
-      isAddedRequest,
-      setIsSubmitting,
+      getMessages,
       setMessages,
       queryClient,
+      setCompleted,
+      isAddedRequest,
+      announcePolite,
+      setConversation,
+      setIsSubmitting,
+      setShowStopButton,
       location.pathname,
-      navigate,
-      setEphemeralAgentForConvo,
+      applyAgentTemplate,
     ],
   );
 

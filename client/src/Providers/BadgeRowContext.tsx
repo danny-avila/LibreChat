@@ -29,10 +29,15 @@ export function useBadgeRowContext() {
 
 interface BadgeRowProviderProps {
   children: React.ReactNode;
+  isSubmitting?: boolean;
   conversationId?: string | null;
 }
 
-export default function BadgeRowProvider({ children, conversationId }: BadgeRowProviderProps) {
+export default function BadgeRowProvider({
+  children,
+  isSubmitting,
+  conversationId,
+}: BadgeRowProviderProps) {
   const hasInitializedRef = useRef(false);
   const lastKeyRef = useRef<string>('');
   const key = conversationId ?? Constants.NEW_CONVO;
@@ -40,6 +45,9 @@ export default function BadgeRowProvider({ children, conversationId }: BadgeRowP
 
   /** Initialize ephemeralAgent from localStorage on mount and when conversation changes */
   useEffect(() => {
+    if (isSubmitting) {
+      return;
+    }
     // Check if this is a new conversation or the first load
     if (!hasInitializedRef.current || lastKeyRef.current !== key) {
       hasInitializedRef.current = true;
@@ -100,7 +108,7 @@ export default function BadgeRowProvider({ children, conversationId }: BadgeRowP
         [AgentCapabilities.artifacts]: initialValues[AgentCapabilities.artifacts] ?? false,
       }));
     }
-  }, [key, setEphemeralAgent]);
+  }, [key, isSubmitting, setEphemeralAgent]);
 
   /** Startup config */
   const { data: startupConfig } = useGetStartupConfig();
