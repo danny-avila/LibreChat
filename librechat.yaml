@@ -1,13 +1,9 @@
 # LibreChat configuration file
 # See: https://www.librechat.ai/docs/configuration/librechat_yaml
-# LibreChat configuration file
-# See: https://www.librechat.ai/docs/configuration/librechat_yaml
 
-version: 1.2.8
 version: 1.2.8
 cache: true
 
-# UI Interface settings
 # UI Interface settings
 interface:
   endpointsMenu: true
