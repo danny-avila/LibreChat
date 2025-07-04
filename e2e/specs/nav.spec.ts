@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 
 test.describe('Navigation suite', () => {
   test('Navigation bar', async ({ page }) => {
-    await page.goto('http://localhost:3080/', { timeout: 5000 });
+    await page.goto('/', { timeout: 5000 });
 
     await page.getByTestId('nav-user').click();
     const navSettings = await page.getByTestId('nav-user').isVisible();
@@ -10,7 +10,7 @@ test.describe('Navigation suite', () => {
   });
 
   test('Settings modal', async ({ page }) => {
-    await page.goto('http://localhost:3080/', { timeout: 5000 });
+    await page.goto('/', { timeout: 5000 });
     await page.getByTestId('nav-user').click();
     await page.getByText('Settings').click();
 
