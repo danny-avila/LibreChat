@@ -1,8 +1,16 @@
-import React, { createContext, useContext, useState } from 'react';
+import React, { createContext, useContext, useState, useMemo } from 'react';
 import { Constants, EModelEndpoint } from 'librechat-data-provider';
-import type { TPlugin, AgentToolType, Action, MCP } from 'librechat-data-provider';
+import type {
+  MCP,
+  Action,
+  TPlugin,
+  AgentToolType,
+  AgentCapabilities,
+} from 'librechat-data-provider';
 import type { AgentPanelContextType } from '~/common';
+import type { TConfig, TEndpointsConfig, TAgentsEndpoint } from 'librechat-data-provider';
 import { useAvailableToolsQuery, useGetActionsQuery } from '~/data-provider';
+import { useGetEndpointsQuery } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 import { Panel } from '~/common';
 
@@ -75,21 +83,37 @@ export function AgentPanelProvider({ children }: { children: React.ReactNode }) 
     {} as Record<string, AgentToolType & { tools?: AgentToolType[] }>,
   );
 
+  const { data: endpointsConfig = {} as TEndpointsConfig } = useGetEndpointsQuery();
+
+  const agentsConfig = useMemo<TAgentsEndpoint | null>(() => {
+    const config = endpointsConfig?.[EModelEndpoint.agents] ?? null;
+    if (!config) return null;
+
+    return {
+      ...(config as TConfig),
+      capabilities: Array.isArray(config.capabilities)
+        ? config.capabilities.map((cap) => cap as unknown as AgentCapabilities)
+        : ([] as AgentCapabilities[]),
+    } as TAgentsEndpoint;
+  }, [endpointsConfig]);
+
   const value = {
-    action,
-    setAction,
     mcp,
-    setMcp,
     mcps,
-    setMcps,
-    activePanel,
-    setActivePanel,
-    setCurrentAgentId,
-    agent_id,
-    groupedTools,
     /** Query data for actions and tools */
-    actions,
     tools,
+    action,
+    setMcp,
+    actions,
+    setMcps,
+    agent_id,
+    setAction,
+    activePanel,
+    groupedTools,
+    agentsConfig,
+    setActivePanel,
+    endpointsConfig,
+    setCurrentAgentId,
   };
 
   return <AgentPanelContext.Provider value={value}>{children}</AgentPanelContext.Provider>;
