@@ -67,13 +67,13 @@ export default function ApiKeyDialog({
       key: SearchProviders.SEARXNG,
       label: localize('com_ui_web_search_provider_searxng'),
       inputs: {
-        searxngInstanceUrl: {
-          placeholder: 'SearXNG Instance URL',
-          type: 'text' as const,
-        },
         searxngApiKey: {
-          placeholder: 'SearXNG API Key (optional)',
+          placeholder: localize('com_ui_web_search_searxng_api_key'),
           type: 'password' as const,
+        },
+        searxngInstanceUrl: {
+          placeholder: localize('com_ui_web_search_searxng_instance_url'),
+          type: 'text' as const,
         },
       },
     },

@@ -90,11 +90,7 @@ export default function InputSection({
           <div key={name}>
             <div className="relative">
               <Input
-                type={
-                  config.type === 'password' && passwordVisibility[name]
-                    ? 'text'
-                    : config.type || 'password'
-                }
+                type={'text'} // so password autofill doesn't show
                 placeholder={config.placeholder}
                 autoComplete={config.type === 'password' ? 'one-time-code' : 'off'}
                 readOnly={config.type === 'password'}

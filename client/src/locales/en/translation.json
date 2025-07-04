@@ -1057,6 +1057,8 @@
   "com_ui_web_search_provider": "Search Provider",
   "com_ui_web_search_provider_serper": "Serper API",
   "com_ui_web_search_provider_searxng": "SearXNG",
+  "com_ui_web_search_searxng_api_key": "Enter SearXNG API Key (optional)",
+  "com_ui_web_search_searxng_instance_url": "SearXNG Instance URL",
   "com_ui_web_search_provider_serper_key": "Get your Serper API key",
   "com_ui_web_search_reading": "Reading results",
   "com_ui_web_search_reranker": "Reranker",
