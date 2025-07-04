@@ -2,7 +2,7 @@ name: Simple API Docker Build & Push
 
 on:
   push:
-    branches: [ note ]
+    branches: [ master_dev]
   workflow_dispatch:
 
 jobs:
