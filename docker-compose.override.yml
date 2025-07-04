@@ -1,75 +1,32 @@
-# LibreChat configuration file
-# See: https://www.librechat.ai/docs/configuration/librechat_yaml
+services:
+  api:
+    volumes:
+      - type: bind
+        source: ./librechat.yaml
+        target: /app/librechat.yaml
+    environment:
+      - MONGO_URI=${MONGO_URI}
+      - EMAIL_SERVICE=${EMAIL_SERVICE}
+      - EMAIL_USER=${EMAIL_USER}
+      - EMAIL_PASSWORD=${EMAIL_PASSWORD}
+      - EMAIL_FROM=${EMAIL_FROM}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - JINA_API_KEY=${JINA_API_KEY}
+      # Add any other required env vars here
 
-version: 1.2.8
-cache: true
+  # No local MongoDB service
 
-# UI Interface settings
-interface:
-  endpointsMenu: true
-  modelSelect: true
-  parameters: true
-  sidePanel: true
-  presets: true
-  prompts: true
-  bookmarks: true
-  multiConvo: true
-  agents: true
+  postgres:
+    image: postgres:15
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
 
-# File upload and output configuration
-fileConfig:
-  endpoints:
-    default:
-      totalSizeLimit: 20  # Max total upload per request (MB)
-    LiteLLM:
-      fileLimit: 5        # Max 5 files per request
-      fileSizeLimit: 10   # Max 10MB per file
-      supportedMimeTypes:
-        - "image/.*"
-        - "application/pdf"
-  serverFileSizeLimit: 100  # Max file size server will accept (MB)
-  avatarSizeLimit: 2        # Max avatar image size (MB)
-  imageGeneration:
-    percentage: 100
-    px: 1024
-  clientImageResize:
-    enabled: false
-    maxWidth: 1900
-    maxHeight: 1900
-    quality: 0.92
-
-# Memory (persistent user context) configuration
-memory:
-  disabled: false
-  validKeys: ["preferences", "work_info", "personal_info", "skills", "interests", "context"]
-  tokenLimit: 10000
-  personalize: true
-
-# Web search configuration
-webSearch:
-  enabled: true
-  searchProvider: searxng
-  searxng:
-    url: "http://localhost:5147"
-  reranker:
-    provider: jina
-    apiKey: "<YOUR_JINA_API_KEY>"  # Replace with your actual Jina API key
-  scraper:
-    provider: firecrawl
-    url: "http://localhost:3002"
-
-# Custom endpoints configuration
-endpoints:
-  custom:
-    - name: "LiteLLM"
-      apiKey: "user_provided"  # User will supply their own key
-      baseURL: "https://litellm.amendllc.com"
-      models:
-        default: ["gpt-3.5-turbo"]  # Adjust as needed
-        fetch: true
-      titleConvo: true
-      titleModel: "current_model"
-      summarize: false
-      summaryModel: "current_model"
-      forcePrompt: false
-      modelDisplayLabel: "LiteLLM" 
+volumes:
+  pgdata: 
