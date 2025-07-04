@@ -48,15 +48,15 @@ memory:
 # Web search configuration
 webSearch:
   enabled: true
-  searchProvider: searxng
+  searchProvider: ${SEARCH_PROVIDER}
   searxng:
-    url: "http://localhost:5147"
+    url: ${SEARXNG_URL}
   reranker:
-    provider: jina
-    apiKey: "<YOUR_JINA_API_KEY>"  # Replace with your actual Jina API key
+    provider: ${RERANKER_PROVIDER}
+    apiKey: ${JINA_API_KEY}
   scraper:
-    provider: firecrawl
-    url: "http://localhost:3002"
+    provider: ${SCRAPER_PROVIDER}
+    url: ${SCRAPER_URL}
 
 # Custom endpoints configuration
   endpointsMenu: true
