@@ -68,7 +68,7 @@ const createErrorMessage = ({
   errorMetadata?: Partial<TMessage>;
   submission: EventSubmission;
   error?: Error | unknown;
-}) => {
+}): TMessage => {
   const currentMessages = getMessages();
   const latestMessage = currentMessages?.[currentMessages.length - 1];
   let errorMessage: TMessage;
@@ -123,7 +123,7 @@ const createErrorMessage = ({
       error: true,
     };
   }
-  return tMessageSchema.parse(errorMessage);
+  return tMessageSchema.parse(errorMessage) as TMessage;
 };
 
 export const getConvoTitle = ({
@@ -550,7 +550,7 @@ export default function useEventHandlers({
         queryClient.setQueryData<TMessage[]>([QueryKeys.messages, convoId], finalMessages);
       };
 
-      const parseErrorResponse = (data: TResData | Partial<TMessage>) => {
+      const parseErrorResponse = (data: TResData | Partial<TMessage>): TMessage => {
         const metadata = data['responseMessage'] ?? data;
         const errorMessage: Partial<TMessage> = {
           ...initialResponse,
@@ -563,7 +563,7 @@ export default function useEventHandlers({
           errorMessage.messageId = v4();
         }
 
-        return tMessageSchema.parse(errorMessage);
+        return tMessageSchema.parse(errorMessage) as TMessage;
       };
 
       if (!data) {
@@ -613,7 +613,7 @@ export default function useEventHandlers({
         ...data,
         error: true,
         parentMessageId: userMessage.messageId,
-      });
+      }) as TMessage;
 
       setErrorMessages(receivedConvoId, errorResponse);
       if (receivedConvoId && paramId === Constants.NEW_CONVO && newConversation) {
