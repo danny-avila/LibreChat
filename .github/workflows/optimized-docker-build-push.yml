@@ -2,7 +2,7 @@ name: Simple Optimized API Docker Build & Push
 
 on:
   push:
-    branches: [ master_dev ]
+    branches: [ master, master_dev ]
   workflow_dispatch:
 
 env:
