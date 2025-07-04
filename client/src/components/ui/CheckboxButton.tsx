@@ -12,7 +12,10 @@ const CheckboxButton = React.forwardRef<
     checked?: boolean;
     defaultChecked?: boolean;
     isCheckedClassName?: string;
-    setValue?: (values: { e?: React.ChangeEvent<HTMLInputElement>; isChecked: boolean }) => void;
+    setValue?: (values: {
+      e?: React.ChangeEvent<HTMLInputElement>;
+      value: boolean | string;
+    }) => void;
   }
 >(({ icon, label, setValue, className, checked, defaultChecked, isCheckedClassName }, ref) => {
   const checkbox = useCheckboxStore();
@@ -22,7 +25,7 @@ const CheckboxButton = React.forwardRef<
     if (typeof isChecked !== 'boolean') {
       return;
     }
-    setValue?.({ e, isChecked: !isChecked });
+    setValue?.({ e, value: !isChecked });
   };
 
   // Sync with controlled checked prop

@@ -2,8 +2,9 @@ import React, { useState, useMemo, useCallback } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { Globe, Settings, Settings2, TerminalSquareIcon } from 'lucide-react';
 import type { MenuItemProps } from '~/common';
-import { Permissions, PermissionTypes, AuthType } from 'librechat-data-provider';
+import { Permissions, PermissionTypes, AuthType, ArtifactModes } from 'librechat-data-provider';
 import { TooltipAnchor, DropdownPopup } from '~/components';
+import ArtifactsSubMenu from '~/components/Chat/Input/ArtifactsSubMenu';
 import MCPSubMenu from '~/components/Chat/Input/MCPSubMenu';
 import { PinIcon, VectorIcon } from '~/components/svg';
 import { useLocalize, useHasAccess } from '~/hooks';
@@ -21,6 +22,7 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
   const {
     webSearch,
     mcpSelect,
+    artifacts,
     fileSearch,
     startupConfig,
     codeApiKeyForm,
@@ -42,6 +44,7 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
     authData: codeAuthData,
   } = codeInterpreter;
   const { isPinned: isFileSearchPinned, setIsPinned: setIsFileSearchPinned } = fileSearch;
+  const { isPinned: isArtifactsPinned, setIsPinned: setIsArtifactsPinned } = artifacts;
   const {
     mcpValues,
     mcpServerNames,
@@ -72,18 +75,45 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
 
   const handleWebSearchToggle = useCallback(() => {
     const newValue = !webSearch.toggleState;
-    webSearch.debouncedChange({ isChecked: newValue });
+    webSearch.debouncedChange({ value: newValue });
   }, [webSearch]);
 
   const handleCodeInterpreterToggle = useCallback(() => {
     const newValue = !codeInterpreter.toggleState;
-    codeInterpreter.debouncedChange({ isChecked: newValue });
+    codeInterpreter.debouncedChange({ value: newValue });
   }, [codeInterpreter]);
 
   const handleFileSearchToggle = useCallback(() => {
     const newValue = !fileSearch.toggleState;
-    fileSearch.debouncedChange({ isChecked: newValue });
+    fileSearch.debouncedChange({ value: newValue });
   }, [fileSearch]);
+
+  const handleArtifactsToggle = useCallback(() => {
+    const currentState = artifacts.toggleState;
+    if (!currentState || currentState === '') {
+      artifacts.debouncedChange({ value: ArtifactModes.DEFAULT });
+    } else {
+      artifacts.debouncedChange({ value: '' });
+    }
+  }, [artifacts]);
+
+  const handleShadcnToggle = useCallback(() => {
+    const currentState = artifacts.toggleState;
+    if (currentState === ArtifactModes.SHADCNUI) {
+      artifacts.debouncedChange({ value: ArtifactModes.DEFAULT });
+    } else {
+      artifacts.debouncedChange({ value: ArtifactModes.SHADCNUI });
+    }
+  }, [artifacts]);
+
+  const handleCustomToggle = useCallback(() => {
+    const currentState = artifacts.toggleState;
+    if (currentState === ArtifactModes.CUSTOM) {
+      artifacts.debouncedChange({ value: ArtifactModes.DEFAULT });
+    } else {
+      artifacts.debouncedChange({ value: ArtifactModes.CUSTOM });
+    }
+  }, [artifacts]);
 
   const handleMCPToggle = useCallback(
     (serverName: string) => {
@@ -238,6 +268,22 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
       });
     }
 
+    // Add Artifacts option
+    items.push({
+      hideOnClick: false,
+      render: (props) => (
+        <ArtifactsSubMenu
+          {...props}
+          isArtifactsPinned={isArtifactsPinned}
+          setIsArtifactsPinned={setIsArtifactsPinned}
+          artifactsMode={artifacts.toggleState as string}
+          handleArtifactsToggle={handleArtifactsToggle}
+          handleShadcnToggle={handleShadcnToggle}
+          handleCustomToggle={handleCustomToggle}
+        />
+      ),
+    });
+
     if (mcpServerNames && mcpServerNames.length > 0) {
       items.push({
         hideOnClick: false,
@@ -271,15 +317,21 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
     handleMCPToggle,
     showCodeSettings,
     setIsSearchPinned,
+    handleShadcnToggle,
+    handleCustomToggle,
     isFileSearchPinned,
+    isArtifactsPinned,
     codeMenuTriggerRef,
     setIsCodeDialogOpen,
     searchMenuTriggerRef,
     showWebSearchSettings,
     setIsFileSearchPinned,
+    artifacts.toggleState,
+    setIsArtifactsPinned,
     handleWebSearchToggle,
     setIsSearchDialogOpen,
     handleFileSearchToggle,
+    handleArtifactsToggle,
     handleCodeInterpreterToggle,
   ]);
 
