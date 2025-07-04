@@ -71,7 +71,7 @@
   "peerDependencies": {
     "@librechat/agents": "^2.4.51",
     "@librechat/data-schemas": "*",
-    "@modelcontextprotocol/sdk": "^1.12.3",
+    "@modelcontextprotocol/sdk": "^1.13.3",
     "axios": "^1.8.2",
     "diff": "^7.0.0",
     "eventsource": "^3.0.2",
