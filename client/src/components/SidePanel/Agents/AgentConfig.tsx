@@ -227,16 +227,19 @@ export default function AgentConfig({
             render={({ field }) => (
               <textarea
                 {...field}
-                value={field.value ?? ''}
                 className={`${inputClass} min-h-[100px] resize-y`}
                 id="description"
                 placeholder={localize('com_agents_description_placeholder')}
                 aria-label="Agent description"
                 rows={4}
-              />
+                onChange={field.onChange}
+              >
+                {field.value ?? ''}
+              </textarea>
             )}
           />
         </div>
+
         {/* Instructions */}
         <Instructions />
         {/* Model and Provider */}
