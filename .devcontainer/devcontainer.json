@@ -2,6 +2,9 @@
   "dockerComposeFile": "docker-compose.yml",
   "service": "app",
   "workspaceFolder": "/workspaces",
+  "remoteEnv": {
+    "IS_DEV_CONTAINER": "true"
+  },
   "customizations": {
     "vscode": {
       "extensions": [],
@@ -14,5 +17,5 @@
   },
   "postCreateCommand": "",
   "features": { "ghcr.io/devcontainers/features/git:1": {} },
-  "remoteUser": "vscode"
+  "remoteUser": "node"
 }
