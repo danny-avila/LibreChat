@@ -50,11 +50,23 @@ services:
     container_name: rag_api
     image: ghcr.io/danny-avila/librechat-rag-api-dev-lite:latest
     environment:
-      - DB_HOST=${SUPABASE_HOST}
-      - DB_USER=${SUPABASE_USER}
-      - DB_PASSWORD=${SUPABASE_PASSWORD}
-      - DB_NAME=${SUPABASE_DB}
+      - DB_HOST=postgres
+      - DB_USER=${POSTGRES_USER}
+      - DB_PASSWORD=${POSTGRES_PASSWORD}
+      - DB_NAME=${POSTGRES_DB}
       - RAG_PORT=${RAG_PORT:-8000}
     restart: always
     env_file:
       - .env
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: chat-postgres
+    restart: always
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - ./pg_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
