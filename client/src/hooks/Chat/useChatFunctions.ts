@@ -25,7 +25,6 @@ import type { TAskFunction, ExtendedFile } from '~/common';
 import useSetFilesToDelete from '~/hooks/Files/useSetFilesToDelete';
 import useGetSender from '~/hooks/Conversations/useGetSender';
 import store, { useGetEphemeralAgent } from '~/store';
-import { getArtifactsMode } from '~/utils/artifacts';
 import { getEndpointField, logger } from '~/utils';
 import useUserKey from '~/hooks/Input/useUserKey';
 import { useNavigate } from 'react-router-dom';
@@ -68,9 +67,6 @@ export default function useChatFunctions({
   const setFilesToDelete = useSetFilesToDelete();
   const getEphemeralAgent = useGetEphemeralAgent();
   const isTemporary = useRecoilValue(store.isTemporary);
-  const codeArtifacts = useRecoilValue(store.codeArtifacts);
-  const includeShadcnui = useRecoilValue(store.includeShadcnui);
-  const customPromptMode = useRecoilValue(store.customPromptMode);
   const { getExpiry } = useUserKey(immutableConversation?.endpoint ?? '');
   const setShowStopButton = useSetRecoilState(store.showStopButtonByIndex(index));
   const resetLatestMultiMessage = useResetRecoilState(store.latestMessageFamily(index + 1));
@@ -187,10 +183,6 @@ export default function useChatFunctions({
         endpointType,
         overrideConvoId,
         overrideUserMessageId,
-        artifacts:
-          endpoint !== EModelEndpoint.agents
-            ? getArtifactsMode({ codeArtifacts, includeShadcnui, customPromptMode })
-            : undefined,
       },
       convo,
     ) as TEndpointOption;
