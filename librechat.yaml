@@ -76,7 +76,7 @@ endpoints:
       summarize: false
       summaryModel: "${LITELLM_SUMMARY_MODEL}"
       forcePrompt: false
-      modelDisplayLabel: "AMEND LITELLM"
+      modelDisplayLabel: "LITELLM"
 
 # Database configuration
 mongo:
