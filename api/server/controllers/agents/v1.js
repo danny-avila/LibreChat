@@ -58,14 +58,43 @@ const createAgentHandler = async (req, res) => {
       }
     }
 
-    Object.assign(agentData, {
+    // Safe property assignment - whitelist approach
+const allowedProperties = ['name', 'description', 'instructions', 'model', 'tools', 'tool_resources'];
+const safeData = {};
+allowedProperties.forEach(prop => {
+  if ({
       author: userId,
       name,
       description,
       instructions,
       provider,
       model,
-    });
+    } && {
+      author: userId,
+      name,
+      description,
+      instructions,
+      provider,
+      model,
+    }.hasOwnProperty(prop) && {
+      author: userId,
+      name,
+      description,
+      instructions,
+      provider,
+      model,
+    }[prop] !== undefined) {
+    safeData[prop] = {
+      author: userId,
+      name,
+      description,
+      instructions,
+      provider,
+      model,
+    }[prop];
+  }
+});
+Object.assign(agentData, safeData);
 
     agentData.id = `agent_${nanoid()}`;
     const agent = await createAgent(agentData);
@@ -259,10 +288,27 @@ const duplicateAgentHandler = async (req, res) => {
     }
 
     const newAgentId = `agent_${nanoid()}`;
-    const newAgentData = Object.assign(cloneData, {
+    const newAgentData = // Safe property assignment - whitelist approach
+const allowedProperties = ['name', 'description', 'instructions', 'model', 'tools', 'tool_resources'];
+const safeData = {};
+allowedProperties.forEach(prop => {
+  if ({
       id: newAgentId,
       author: userId,
-    });
+    } && {
+      id: newAgentId,
+      author: userId,
+    }.hasOwnProperty(prop) && {
+      id: newAgentId,
+      author: userId,
+    }[prop] !== undefined) {
+    safeData[prop] = {
+      id: newAgentId,
+      author: userId,
+    }[prop];
+  }
+});
+Object.assign(cloneData, safeData);
 
     const newActionsList = [];
     const originalActions = (await getActions({ agent_id: id }, true)) ?? [];
