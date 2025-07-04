@@ -47,6 +47,7 @@ __blobstorage__/**/*
 node_modules/
 meili_data/
 postgres/
+pg_data/
 api/node_modules/
 client/node_modules/
 bower_components/
