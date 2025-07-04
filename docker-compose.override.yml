@@ -10,8 +10,21 @@ services:
     env_file:
       - stack.env
 
+    #RAG API
   rag_api:
-    image: ghcr.io/danny-avila/librechat-rag-api-dev-lite:latest
+    container_name: RAG-API
+    image: ghcr.io/danny-avila/librechat-rag-api-dev:latest
+    restart: always
+    environment:
+      - DB_HOST=vectordb
+      - DB_PORT=${DB_PORT}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    ports:
+      - "8008:8000"
+    depends_on:
+      - vectordb
     env_file:
       - stack.env
 
