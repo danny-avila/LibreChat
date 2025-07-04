@@ -77,9 +77,3 @@ endpoints:
       summaryModel: "${LITELLM_SUMMARY_MODEL}"
       forcePrompt: false
       modelDisplayLabel: "LITELLM"
-
-# Database configuration
-mongo:
-  uri: ${MONGO_URI}  # Set in your .env file for MongoDB Atlas
-postgres:
-  uri: ${POSTGRES_URI}  # Set in your .env file for Supabase Postgres
