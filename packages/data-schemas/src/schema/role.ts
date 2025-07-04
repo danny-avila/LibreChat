@@ -37,6 +37,9 @@ const rolePermissionsSchema = new Schema(
     [PermissionTypes.WEB_SEARCH]: {
       [Permissions.USE]: { type: Boolean, default: true },
     },
+    [PermissionTypes.FILE_CITATIONS]: {
+      [Permissions.USE]: { type: Boolean, default: true },
+    },
   },
   { _id: false },
 );
@@ -67,6 +70,7 @@ const roleSchema: Schema<IRole> = new Schema({
       [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: true },
       [PermissionTypes.RUN_CODE]: { [Permissions.USE]: true },
       [PermissionTypes.WEB_SEARCH]: { [Permissions.USE]: true },
+      [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: true },
     }),
   },
 });

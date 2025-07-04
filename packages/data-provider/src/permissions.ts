@@ -36,6 +36,10 @@ export enum PermissionTypes {
    * Type for using the "Web Search" feature
    */
   WEB_SEARCH = 'WEB_SEARCH',
+  /**
+   * Type for using the "File Citations" feature in agents
+   */
+  FILE_CITATIONS = 'FILE_CITATIONS',
 }
 
 /**
@@ -103,6 +107,11 @@ export const webSearchPermissionsSchema = z.object({
 });
 export type TWebSearchPermissions = z.infer<typeof webSearchPermissionsSchema>;
 
+export const fileCitationsPermissionsSchema = z.object({
+  [Permissions.USE]: z.boolean().default(true),
+});
+export type TFileCitationsPermissions = z.infer<typeof fileCitationsPermissionsSchema>;
+
 // Define a single permissions schema that holds all permission types.
 export const permissionsSchema = z.object({
   [PermissionTypes.PROMPTS]: promptPermissionsSchema,
@@ -113,4 +122,5 @@ export const permissionsSchema = z.object({
   [PermissionTypes.TEMPORARY_CHAT]: temporaryChatPermissionsSchema,
   [PermissionTypes.RUN_CODE]: runCodePermissionsSchema,
   [PermissionTypes.WEB_SEARCH]: webSearchPermissionsSchema,
+  [PermissionTypes.FILE_CITATIONS]: fileCitationsPermissionsSchema,
 });
