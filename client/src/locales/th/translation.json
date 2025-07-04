@@ -644,7 +644,6 @@
   "com_ui_import_conversation_info": "นำเข้าการสนทนาจากไฟล์ JSON",
   "com_ui_import_conversation_success": "นำเข้าการสนทนาสำเร็จแล้ว",
   "com_ui_include_shadcnui": "รวมคำแนะนำองค์ประกอบ shadcn/ui",
-  "com_ui_include_shadcnui_agent": "รวมคำแนะนำ shadcn/ui",
   "com_ui_input": "อินพุต",
   "com_ui_instructions": "คำแนะนำ",
   "com_ui_latest_footer": "AI ทุกตัวสำหรับทุกคน",

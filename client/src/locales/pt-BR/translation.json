@@ -667,7 +667,6 @@
   "com_ui_import_conversation_info": "Importar conversas de um arquivo JSON",
   "com_ui_import_conversation_success": "Conversas importadas com sucesso",
   "com_ui_include_shadcnui": "Incluir instruções de componentes shadcn/ui",
-  "com_ui_include_shadcnui_agent": "Incluir instruções shadcn/ui",
   "com_ui_input": "Entrada",
   "com_ui_instructions": "Instruções",
   "com_ui_latest_footer": "Toda IA para Todos.",
