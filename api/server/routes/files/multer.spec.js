@@ -473,34 +473,10 @@ describe('Multer Configuration', () => {
 
       // Replace the mkdirSync function
       require('fs').mkdirSync = mockMkdirSync;
-      // Mock fs.mkdirSync to throw an error
-      const originalMkdirSync = require('fs').mkdirSync;
-      const mockMkdirSync = jest.fn(() => {
-        const error = new Error('Permission denied');
-        error.code = 'EACCES';
-        throw error;
-      });
-
-      // Replace the mkdirSync function
-      require('fs').mkdirSync = mockMkdirSync;
 
       try {
         // Call getDestination which should handle the mkdirSync error
-        // Call getDestination which should handle the mkdirSync error
         storage.getDestination(mockReq, mockFile, (err, destination) => {
-          // Restore original function
-          require('fs').mkdirSync = originalMkdirSync;
-
-          if (err) {
-            // Error was properly handled and passed to callback
-            expect(err.code).toBe('EACCES');
-            done();
-          } else {
-            // If no error, the implementation might be catching and ignoring errors
-            // This is actually valid behavior for multer - it might create the directory anyway
-            done();
-          }
-        });
           // Restore original function
           require('fs').mkdirSync = originalMkdirSync;
 
