@@ -1,9 +1,9 @@
 services:
   api:
-    volumes:
-      - type: bind
-        source: ./librechat.yaml
-        target: /app/librechat.yaml
+    #volumes:
+    #  - type: bind
+    #    source: ./librechat.yaml
+    #    target: /app/librechat.yaml
     environment:
       - MONGO_URI=${MONGO_URI}
       - EMAIL_SERVICE=${EMAIL_SERVICE}
