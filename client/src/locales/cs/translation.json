@@ -512,7 +512,6 @@
   "com_ui_enter": "Enter",
   "com_ui_enter_api_key": "Zadejte API klíč",
   "com_ui_enter_openapi_schema": "Zadejte svůj OpenAPI schéma zde",
-  "com_ui_enter_var": "Zadejte {{0}}",
   "com_ui_error": "Chyba",
   "com_ui_error_connection": "Chyba při připojení k serveru, zkuste obnovit stránku.",
   "com_ui_error_save_admin_settings": "Při ukládání nastavení správce došlo k chybě.",
@@ -721,6 +720,5 @@
   "com_ui_write": "Psát",
   "com_ui_yes": "Ano",
   "com_ui_zoom": "Přiblížit",
-  "com_user_message": "Vy",
-  "com_warning_resubmit_unsupported": "Opětovné odeslání AI zprávy není pro tento koncový bod podporováno."
+  "com_user_message": "Vy"
 }

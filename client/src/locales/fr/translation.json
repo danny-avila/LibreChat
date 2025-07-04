@@ -590,7 +590,6 @@
   "com_ui_enter": "Entrer",
   "com_ui_enter_api_key": "Saisir la clé API",
   "com_ui_enter_openapi_schema": "Saisissez votre schéma OpenAPI ici",
-  "com_ui_enter_var": "Saisir {{0}}",
   "com_ui_error": "Erreur",
   "com_ui_error_connection": "Erreur de connexion au serveur, essayez de rafraîchir la page.",
   "com_ui_error_save_admin_settings": "Une erreur est survenue lors de la sauvegarde de vos paramètres administratifs.",
@@ -753,6 +752,5 @@
   "com_ui_versions": "Versions",
   "com_ui_yes": "Oui",
   "com_ui_zoom": "Zoom",
-  "com_user_message": "Vous",
-  "com_warning_resubmit_unsupported": "La resoumission du message IA n'est pas prise en charge pour ce point de terminaison."
+  "com_user_message": "Vous"
 }

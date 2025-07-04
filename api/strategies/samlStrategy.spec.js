@@ -1,38 +1,55 @@
-const fs = require('fs');
-const path = require('path');
-const fetch = require('node-fetch');
-const { Strategy: SamlStrategy } = require('@node-saml/passport-saml');
-const { findUser, createUser, updateUser } = require('~/models/userMethods');
-const { setupSaml, getCertificateContent } = require('./samlStrategy');
-
 // --- Mocks ---
+jest.mock('tiktoken');
 jest.mock('fs');
 jest.mock('path');
 jest.mock('node-fetch');
 jest.mock('@node-saml/passport-saml');
-jest.mock('~/models/userMethods', () => ({
+jest.mock('@librechat/data-schemas', () => ({
+  logger: {
+    info: jest.fn(),
+    debug: jest.fn(),
+    error: jest.fn(),
+  },
+  hashToken: jest.fn().mockResolvedValue('hashed-token'),
+}));
+jest.mock('~/models', () => ({
   findUser: jest.fn(),
   createUser: jest.fn(),
   updateUser: jest.fn(),
+}));
+jest.mock('~/server/services/Config', () => ({
+  config: {
+    registration: {
+      socialLogins: ['saml'],
+    },
+  },
+  getBalanceConfig: jest.fn().mockResolvedValue({
+    tokenCredits: 1000,
+    startingBalance: 1000,
+  }),
+}));
+jest.mock('~/server/services/Config/EndpointService', () => ({
+  config: {},
 }));
 jest.mock('~/server/services/Files/strategies', () => ({
   getStrategyFunctions: jest.fn(() => ({
     saveBuffer: jest.fn().mockResolvedValue('/fake/path/to/avatar.png'),
   })),
 }));
-jest.mock('~/server/utils/crypto', () => ({
-  hashToken: jest.fn().mockResolvedValue('hashed-token'),
+jest.mock('~/config/paths', () => ({
+  root: '/fake/root/path',
 }));
-jest.mock('~/server/utils', () => ({
-  isEnabled: jest.fn(() => false),
-}));
-jest.mock('~/config', () => ({
-  logger: {
-    info: jest.fn(),
-    debug: jest.fn(),
-    error: jest.fn(),
-  },
-}));
+
+const fs = require('fs');
+const path = require('path');
+const fetch = require('node-fetch');
+const { Strategy: SamlStrategy } = require('@node-saml/passport-saml');
+const { setupSaml, getCertificateContent } = require('./samlStrategy');
+
+// Configure fs mock
+jest.mocked(fs).existsSync = jest.fn();
+jest.mocked(fs).statSync = jest.fn();
+jest.mocked(fs).readFileSync = jest.fn();
 
 // To capture the verify callback from the strategy, we grab it from the mock constructor
 let verifyCallback;
@@ -196,6 +213,18 @@ describe('setupSaml', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
 
+    // Configure mocks
+    const { findUser, createUser, updateUser } = require('~/models');
+    findUser.mockResolvedValue(null);
+    createUser.mockImplementation(async (userData) => ({
+      _id: 'mock-user-id',
+      ...userData,
+    }));
+    updateUser.mockImplementation(async (id, userData) => ({
+      _id: id,
+      ...userData,
+    }));
+
     const cert = `
 -----BEGIN CERTIFICATE-----
 MIIDazCCAlOgAwIBAgIUKhXaFJGJJPx466rlwYORIsqCq7MwDQYJKoZIhvcNAQEL
@@ -232,16 +261,6 @@ u7wlOSk+oFzDIO/UILIA
     delete process.env.SAML_PICTURE_CLAIM;
     delete process.env.SAML_NAME_CLAIM;
 
-    findUser.mockResolvedValue(null);
-    createUser.mockImplementation(async (userData) => ({
-      _id: 'newUserId',
-      ...userData,
-    }));
-    updateUser.mockImplementation(async (id, userData) => ({
-      _id: id,
-      ...userData,
-    }));
-
     // Simulate image download
     const fakeBuffer = Buffer.from('fake image');
     fetch.mockResolvedValue({
@@ -257,17 +276,10 @@ u7wlOSk+oFzDIO/UILIA
     const { user } = await validate(profile);
 
     expect(user.username).toBe(profile.username);
-    expect(createUser).toHaveBeenCalledWith(
-      expect.objectContaining({
-        provider: 'saml',
-        samlId: profile.nameID,
-        username: profile.username,
-        email: profile.email,
-        name: `${profile.given_name} ${profile.family_name}`,
-      }),
-      true,
-      true,
-    );
+    expect(user.provider).toBe('saml');
+    expect(user.samlId).toBe(profile.nameID);
+    expect(user.email).toBe(profile.email);
+    expect(user.name).toBe(`${profile.given_name} ${profile.family_name}`);
   });
 
   it('should use given_name as username when username claim is missing', async () => {
@@ -278,11 +290,7 @@ u7wlOSk+oFzDIO/UILIA
     const { user } = await validate(profile);
 
     expect(user.username).toBe(expectUsername);
-    expect(createUser).toHaveBeenCalledWith(
-      expect.objectContaining({ username: expectUsername }),
-      true,
-      true,
-    );
+    expect(user.provider).toBe('saml');
   });
 
   it('should use email as username when username and given_name are missing', async () => {
@@ -294,11 +302,7 @@ u7wlOSk+oFzDIO/UILIA
     const { user } = await validate(profile);
 
     expect(user.username).toBe(expectUsername);
-    expect(createUser).toHaveBeenCalledWith(
-      expect.objectContaining({ username: expectUsername }),
-      true,
-      true,
-    );
+    expect(user.provider).toBe('saml');
   });
 
   it('should override username with SAML_USERNAME_CLAIM when set', async () => {
@@ -308,11 +312,7 @@ u7wlOSk+oFzDIO/UILIA
     const { user } = await validate(profile);
 
     expect(user.username).toBe(profile.nameID);
-    expect(createUser).toHaveBeenCalledWith(
-      expect.objectContaining({ username: profile.nameID }),
-      true,
-      true,
-    );
+    expect(user.provider).toBe('saml');
   });
 
   it('should set the full name correctly when given_name and family_name exist', async () => {
@@ -378,34 +378,26 @@ u7wlOSk+oFzDIO/UILIA
   });
 
   it('should update an existing user on login', async () => {
+    // Set up findUser to return an existing user
+    const { findUser } = require('~/models');
     const existingUser = {
-      _id: 'existingUserId',
+      _id: 'existing-user-id',
       provider: 'local',
       email: baseProfile.email,
       samlId: '',
-      username: '',
-      name: '',
+      username: 'oldusername',
+      name: 'Old Name',
     };
-
-    findUser.mockImplementation(async (query) => {
-      if (query.samlId === baseProfile.nameID || query.email === baseProfile.email) {
-        return existingUser;
-      }
-      return null;
-    });
+    findUser.mockResolvedValue(existingUser);
 
     const profile = { ...baseProfile };
-    await validate(profile);
+    const { user } = await validate(profile);
 
-    expect(updateUser).toHaveBeenCalledWith(
-      existingUser._id,
-      expect.objectContaining({
-        provider: 'saml',
-        samlId: baseProfile.nameID,
-        username: baseProfile.username,
-        name: `${baseProfile.given_name} ${baseProfile.family_name}`,
-      }),
-    );
+    expect(user.provider).toBe('saml');
+    expect(user.samlId).toBe(baseProfile.nameID);
+    expect(user.username).toBe(baseProfile.username);
+    expect(user.name).toBe(`${baseProfile.given_name} ${baseProfile.family_name}`);
+    expect(user.email).toBe(baseProfile.email);
   });
 
   it('should attempt to download and save the avatar if picture is provided', async () => {

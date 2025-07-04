@@ -1,3 +1,5 @@
+const path = require('path');
+const { loadServiceKey } = require('@librechat/api');
 const { EModelEndpoint } = require('librechat-data-provider');
 const { isUserProvided } = require('~/server/utils');
 const { config } = require('./EndpointService');
@@ -11,9 +13,13 @@ const { openAIApiKey, azureOpenAIApiKey, useAzurePlugins, userProvidedOpenAI, go
 async function loadAsyncEndpoints(req) {
   let i = 0;
   let serviceKey, googleUserProvides;
+  const serviceKeyPath =
+    process.env.GOOGLE_SERVICE_KEY_FILE_PATH ||
+    path.join(__dirname, '../../..', 'data', 'auth.json');
+
   try {
-    serviceKey = require('~/data/auth.json');
-  } catch (e) {
+    serviceKey = await loadServiceKey(serviceKeyPath);
+  } catch {
     if (i === 0) {
       i++;
     }
@@ -32,14 +38,14 @@ async function loadAsyncEndpoints(req) {
   const gptPlugins =
     useAzure || openAIApiKey || azureOpenAIApiKey
       ? {
-        availableAgents: ['classic', 'functions'],
-        userProvide: useAzure ? false : userProvidedOpenAI,
-        userProvideURL: useAzure
-          ? false
-          : config[EModelEndpoint.openAI]?.userProvideURL ||
+          availableAgents: ['classic', 'functions'],
+          userProvide: useAzure ? false : userProvidedOpenAI,
+          userProvideURL: useAzure
+            ? false
+            : config[EModelEndpoint.openAI]?.userProvideURL ||
               config[EModelEndpoint.azureOpenAI]?.userProvideURL,
-        azure: useAzurePlugins || useAzure,
-      }
+          azure: useAzurePlugins || useAzure,
+        }
       : false;
 
   return { google, gptPlugins };

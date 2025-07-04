@@ -1,6 +1,8 @@
 const { z } = require('zod');
-const Message = require('./schema/messageSchema');
-const { logger } = require('~/config');
+const { logger } = require('@librechat/data-schemas');
+const { createTempChatExpirationDate } = require('@librechat/api');
+const getCustomConfig = require('~/server/services/Config/loadCustomConfig');
+const { Message } = require('~/db/models');
 
 const idSchema = z.string().uuid();
 
@@ -54,9 +56,14 @@ async function saveMessage(req, params, metadata) {
     };
 
     if (req?.body?.isTemporary) {
-      const expiredAt = new Date();
-      expiredAt.setDate(expiredAt.getDate() + 30);
-      update.expiredAt = expiredAt;
+      try {
+        const customConfig = await getCustomConfig();
+        update.expiredAt = createTempChatExpirationDate(customConfig);
+      } catch (err) {
+        logger.error('Error creating temporary chat expiration date:', err);
+        logger.info(`---\`saveMessage\` context: ${metadata?.context}`);
+        update.expiredAt = null;
+      }
     } else {
       update.expiredAt = null;
     }
@@ -68,7 +75,6 @@ async function saveMessage(req, params, metadata) {
       logger.info(`---\`saveMessage\` context: ${metadata?.context}`);
       update.tokenCount = 0;
     }
-
     const message = await Message.findOneAndUpdate(
       { messageId: params.messageId, user: req.user.id },
       update,
@@ -140,7 +146,6 @@ async function bulkSaveMessages(messages, overrideTimestamp = false) {
         upsert: true,
       },
     }));
-
     const result = await Message.bulkWrite(bulkOps);
     return result;
   } catch (err) {
@@ -255,6 +260,7 @@ async function updateMessage(req, message, metadata) {
       text: updatedMessage.text,
       isCreatedByUser: updatedMessage.isCreatedByUser,
       tokenCount: updatedMessage.tokenCount,
+      feedback: updatedMessage.feedback,
     };
   } catch (err) {
     logger.error('Error updating message:', err);
@@ -355,7 +361,6 @@ async function deleteMessages(filter) {
 }
 
 module.exports = {
-  Message,
   saveMessage,
   bulkSaveMessages,
   recordMessage,

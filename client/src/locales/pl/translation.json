@@ -543,7 +543,6 @@
   "com_ui_enter": "Wprowadź",
   "com_ui_enter_api_key": "Wprowadź klucz API",
   "com_ui_enter_openapi_schema": "Wprowadź swoją schemę OpenAPI tutaj",
-  "com_ui_enter_var": "Wprowadź {{0}}",
   "com_ui_error": "Błąd",
   "com_ui_error_connection": "Błąd połączenia z serwerem, spróbuj odświeżyć stronę.",
   "com_ui_error_save_admin_settings": "Wystąpił błąd podczas zapisywania ustawień administratora.",
@@ -715,6 +714,5 @@
   "com_ui_view_source": "Zobacz źródłowy czat",
   "com_ui_yes": "Tak",
   "com_ui_zoom": "Powiększ",
-  "com_user_message": "Ty",
-  "com_warning_resubmit_unsupported": "Ponowne przesyłanie wiadomości AI nie jest obsługiwane dla tego punktu końcowego."
+  "com_user_message": "Ty"
 }

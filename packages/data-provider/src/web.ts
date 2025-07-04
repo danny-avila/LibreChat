@@ -5,8 +5,8 @@ import type {
   SearchProviders,
   TWebSearchConfig,
 } from './config';
-import { extractVariableName } from './utils';
 import { SearchCategories, SafeSearchTypes } from './config';
+import { extractVariableName } from './utils';
 import { AuthType } from './schemas';
 
 export function loadWebSearchConfig(
@@ -64,22 +64,28 @@ export const webSearchAuth = {
 /**
  * Extracts all API keys from the webSearchAuth configuration object
  */
-export const webSearchKeys: TWebSearchKeys[] = [];
+export function getWebSearchKeys(): TWebSearchKeys[] {
+  const keys: TWebSearchKeys[] = [];
 
-// Iterate through each category (providers, scrapers, rerankers)
-for (const category of Object.keys(webSearchAuth)) {
-  const categoryObj = webSearchAuth[category as TWebSearchCategories];
+  // Iterate through each category (providers, scrapers, rerankers)
+  for (const category of Object.keys(webSearchAuth)) {
+    const categoryObj = webSearchAuth[category as TWebSearchCategories];
 
-  // Iterate through each service within the category
-  for (const service of Object.keys(categoryObj)) {
-    const serviceObj = categoryObj[service as keyof typeof categoryObj];
+    // Iterate through each service within the category
+    for (const service of Object.keys(categoryObj)) {
+      const serviceObj = categoryObj[service as keyof typeof categoryObj];
 
-    // Extract the API keys from the service
-    for (const key of Object.keys(serviceObj)) {
-      webSearchKeys.push(key as TWebSearchKeys);
+      // Extract the API keys from the service
+      for (const key of Object.keys(serviceObj)) {
+        keys.push(key as TWebSearchKeys);
+      }
     }
   }
+
+  return keys;
 }
+
+export const webSearchKeys: TWebSearchKeys[] = getWebSearchKeys();
 
 export function extractWebSearchEnvVars({
   keys,

@@ -52,6 +52,7 @@ const ContentRender = memo(
       copyToClipboard,
       setLatestMessage,
       regenerateMessage,
+      handleFeedback,
     } = useMessageActions({
       message: msg,
       searchResults,
@@ -59,7 +60,6 @@ const ContentRender = memo(
       isMultiMessage,
       setCurrentEditId,
     });
-
     const maximizeChatSpace = useRecoilValue(store.maximizeChatSpace);
     const fontSize = useRecoilValue(store.fontSize);
 
@@ -199,6 +199,7 @@ const ContentRender = memo(
                   copyToClipboard={copyToClipboard}
                   handleContinue={handleContinue}
                   latestMessage={latestMessage}
+                  handleFeedback={handleFeedback}
                   isLast={isLast}
                 />
               </SubRow>

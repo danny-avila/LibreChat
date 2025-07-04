@@ -1,10 +1,11 @@
 const { z } = require('zod');
 const axios = require('axios');
 const { Ollama } = require('ollama');
+const { sleep } = require('@librechat/agents');
+const { logAxiosError } = require('@librechat/api');
+const { logger } = require('@librechat/data-schemas');
 const { Constants } = require('librechat-data-provider');
-const { deriveBaseURL, logAxiosError } = require('~/utils');
-const { sleep } = require('~/server/utils');
-const { logger } = require('~/config');
+const { deriveBaseURL } = require('~/utils');
 
 const ollamaPayloadSchema = z.object({
   mirostat: z.number().optional(),
@@ -67,7 +68,7 @@ class OllamaClient {
       return models;
     } catch (error) {
       const logMessage =
-        'Failed to fetch models from Ollama API. If you are not using Ollama directly, and instead, through some aggregator or reverse proxy that handles fetching via OpenAI spec, ensure the name of the endpoint doesn\'t start with `ollama` (case-insensitive).';
+        "Failed to fetch models from Ollama API. If you are not using Ollama directly, and instead, through some aggregator or reverse proxy that handles fetching via OpenAI spec, ensure the name of the endpoint doesn't start with `ollama` (case-insensitive).";
       logAxiosError({ message: logMessage, error });
       return [];
     }

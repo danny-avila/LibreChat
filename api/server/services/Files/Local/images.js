@@ -2,8 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');
 const { resizeImageBuffer } = require('../images/resize');
-const { updateUser } = require('~/models/userMethods');
-const { updateFile } = require('~/models/File');
+const { updateUser, updateFile } = require('~/models');
 
 /**
  * Converts an image file to the target format. The function first resizes the image based on the specified
@@ -113,10 +112,11 @@ async function prepareImagesLocal(req, file) {
  * @param {Buffer} params.buffer - The Buffer containing the avatar image.
  * @param {string} params.userId - The user ID.
  * @param {string} params.manual - A string flag indicating whether the update is manual ('true' or 'false').
+ * @param {string} [params.agentId] - Optional agent ID if this is an agent avatar.
  * @returns {Promise<string>} - A promise that resolves with the URL of the uploaded avatar.
  * @throws {Error} - Throws an error if Firebase is not initialized or if there is an error in uploading.
  */
-async function processLocalAvatar({ buffer, userId, manual }) {
+async function processLocalAvatar({ buffer, userId, manual, agentId }) {
   const userDir = path.resolve(
     __dirname,
     '..',
@@ -130,7 +130,14 @@ async function processLocalAvatar({ buffer, userId, manual }) {
     userId,
   );
 
-  const fileName = `avatar-${new Date().getTime()}.png`;
+  const metadata = await sharp(buffer).metadata();
+  const extension = metadata.format === 'gif' ? 'gif' : 'png';
+
+  const timestamp = new Date().getTime();
+  /** Unique filename with timestamp and optional agent ID */
+  const fileName = agentId
+    ? `agent-${agentId}-avatar-${timestamp}.${extension}`
+    : `avatar-${timestamp}.${extension}`;
   const urlRoute = `/images/${userId}/${fileName}`;
   const avatarPath = path.join(userDir, fileName);
 
@@ -140,7 +147,8 @@ async function processLocalAvatar({ buffer, userId, manual }) {
   const isManual = manual === 'true';
   let url = `${urlRoute}?manual=${isManual}`;
 
-  if (isManual) {
+  // Only update user record if this is a user avatar (manual === 'true')
+  if (isManual && !agentId) {
     await updateUser(userId, { avatar: url });
   }
 

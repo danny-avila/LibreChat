@@ -569,7 +569,6 @@
   "com_ui_enter": "Intro",
   "com_ui_enter_api_key": "Ingrese la clave API",
   "com_ui_enter_openapi_schema": "Ingrese su esquema OpenAPI aquí",
-  "com_ui_enter_var": "Ingrese {{0}}",
   "com_ui_error": "Error",
   "com_ui_error_connection": "Error al conectarse al servidor. Intente actualizar la página.",
   "com_ui_error_save_admin_settings": "Se produjo un error al guardar su configuración de administrador.",
@@ -753,6 +752,5 @@
   "com_ui_x_selected": "{{0}} seleccionado",
   "com_ui_yes": "Sí",
   "com_ui_zoom": "Zoom",
-  "com_user_message": "Usted",
-  "com_warning_resubmit_unsupported": "No se admite el reenvío del mensaje de IA para este punto de conexión."
+  "com_user_message": "Usted"
 }

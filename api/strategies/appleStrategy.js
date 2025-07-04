@@ -18,17 +18,13 @@ const getProfileDetails = ({ idToken, profile }) => {
 
   const decoded = jwt.decode(idToken);
 
-  logger.debug(
-    `Decoded Apple JWT: ${JSON.stringify(decoded, null, 2)}`,
-  );
+  logger.debug(`Decoded Apple JWT: ${JSON.stringify(decoded, null, 2)}`);
 
   return {
     email: decoded.email,
     id: decoded.sub,
     avatarUrl: null, // Apple does not provide an avatar URL
-    username: decoded.email
-      ? decoded.email.split('@')[0].toLowerCase()
-      : `user_${decoded.sub}`,
+    username: decoded.email ? decoded.email.split('@')[0].toLowerCase() : `user_${decoded.sub}`,
     name: decoded.name
       ? `${decoded.name.firstName} ${decoded.name.lastName}`
       : profile.displayName || null,

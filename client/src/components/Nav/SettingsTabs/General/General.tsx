@@ -1,10 +1,7 @@
-import { useRecoilState } from 'recoil';
-import Cookies from 'js-cookie';
 import React, { useContext, useCallback } from 'react';
-import UserMsgMarkdownSwitch from './UserMsgMarkdownSwitch';
-import HideSidePanelSwitch from './HideSidePanelSwitch';
+import Cookies from 'js-cookie';
+import { useRecoilState } from 'recoil';
 import { ThemeContext, useLocalize } from '~/hooks';
-import AutoScrollSwitch from './AutoScrollSwitch';
 import ArchivedChats from './ArchivedChats';
 import ToggleSwitch from '../ToggleSwitch';
 import { Dropdown } from '~/components';
@@ -89,6 +86,7 @@ export const LangSelector = ({
     { value: 'fr-FR', label: localize('com_nav_lang_french') },
     { value: 'he-HE', label: localize('com_nav_lang_hebrew') },
     { value: 'hu-HU', label: localize('com_nav_lang_hungarian') },
+    { value: 'hy-AM', label: localize('com_nav_lang_armenian') },
     { value: 'it-IT', label: localize('com_nav_lang_italian') },
     { value: 'pl-PL', label: localize('com_nav_lang_polish') },
     { value: 'pt-BR', label: localize('com_nav_lang_brazilian_portuguese') },
@@ -99,9 +97,11 @@ export const LangSelector = ({
     { value: 'cs-CZ', label: localize('com_nav_lang_czech') },
     { value: 'sv-SE', label: localize('com_nav_lang_swedish') },
     { value: 'ko-KR', label: localize('com_nav_lang_korean') },
+    { value: 'lv-LV', label: localize('com_nav_lang_latvian') },
     { value: 'vi-VN', label: localize('com_nav_lang_vietnamese') },
     { value: 'th-TH', label: localize('com_nav_lang_thai') },
     { value: 'tr-TR', label: localize('com_nav_lang_turkish') },
+    { value: 'ug', label: localize('com_nav_lang_uyghur') },
     { value: 'nl-NL', label: localize('com_nav_lang_dutch') },
     { value: 'id-ID', label: localize('com_nav_lang_indonesia') },
     { value: 'fi-FI', label: localize('com_nav_lang_finnish') },

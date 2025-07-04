@@ -2,11 +2,11 @@ const fs = require('fs');
 const path = require('path');
 const fetch = require('node-fetch');
 const passport = require('passport');
+const { hashToken, logger } = require('@librechat/data-schemas');
 const { Strategy: SamlStrategy } = require('@node-saml/passport-saml');
-const { findUser, createUser, updateUser } = require('~/models/userMethods');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
-const { hashToken } = require('~/server/utils/crypto');
-const { logger } = require('~/config');
+const { findUser, createUser, updateUser } = require('~/models');
+const { getBalanceConfig } = require('~/server/services/Config');
 const paths = require('~/config/paths');
 
 let crypto;
@@ -218,7 +218,8 @@ async function setupSaml() {
               emailVerified: true,
               name: fullName,
             };
-            user = await createUser(user, true, true);
+            const balanceConfig = await getBalanceConfig();
+            user = await createUser(user, balanceConfig, true, true);
           } else {
             user.provider = 'saml';
             user.samlId = profile.nameID;

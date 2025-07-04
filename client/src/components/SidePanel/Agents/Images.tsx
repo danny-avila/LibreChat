@@ -50,6 +50,7 @@ export const AgentAvatarRender = ({
           width="80"
           height="80"
           style={{ opacity: progress < 1 ? 0.4 : 1 }}
+          key={url || 'default-key'}
         />
         {progress < 1 && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/5 text-white">

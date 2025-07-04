@@ -1,17 +1,17 @@
-const openIdClient = require('openid-client');
 const cookies = require('cookie');
 const jwt = require('jsonwebtoken');
+const openIdClient = require('openid-client');
+const { isEnabled } = require('@librechat/api');
+const { logger } = require('@librechat/data-schemas');
 const {
-  registerUser,
-  resetPassword,
-  setAuthTokens,
   requestPasswordReset,
   setOpenIDAuthTokens,
+  resetPassword,
+  setAuthTokens,
+  registerUser,
 } = require('~/server/services/AuthService');
-const { findSession, getUserById, deleteAllUserSessions, findUser } = require('~/models');
+const { findUser, getUserById, deleteAllUserSessions, findSession } = require('~/models');
 const { getOpenIdConfig } = require('~/strategies');
-const { logger } = require('~/config');
-const { isEnabled } = require('~/server/utils');
 
 const registrationController = async (req, res) => {
   try {
@@ -96,7 +96,10 @@ const refreshController = async (req, res) => {
     }
 
     // Find the session with the hashed refresh token
-    const session = await findSession({ userId: userId, refreshToken: refreshToken });
+    const session = await findSession({
+      userId: userId,
+      refreshToken: refreshToken,
+    });
 
     if (session && session.expiration > new Date()) {
       const token = await setAuthTokens(userId, res, session._id);
