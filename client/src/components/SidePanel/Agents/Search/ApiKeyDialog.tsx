@@ -67,13 +67,13 @@ export default function ApiKeyDialog({
       key: SearchProviders.SEARXNG,
       label: localize('com_ui_web_search_provider_searxng'),
       inputs: {
-        searxngApiKey: {
-          placeholder: localize('com_ui_web_search_searxng_api_key'),
-          type: 'password' as const,
-        },
         searxngInstanceUrl: {
           placeholder: localize('com_ui_web_search_searxng_instance_url'),
           type: 'text' as const,
+        },
+        searxngApiKey: {
+          placeholder: localize('com_ui_web_search_searxng_api_key'),
+          type: 'password' as const,
         },
       },
     },
@@ -115,13 +115,13 @@ export default function ApiKeyDialog({
       key: ScraperTypes.FIRECRAWL,
       label: localize('com_ui_web_search_scraper_firecrawl'),
       inputs: {
-        firecrawlApiKey: {
-          placeholder: localize('com_ui_enter_api_key'),
-          type: 'password' as const,
-        },
         firecrawlApiUrl: {
           placeholder: localize('com_ui_web_search_firecrawl_url'),
           type: 'text' as const,
+        },
+        firecrawlApiKey: {
+          placeholder: localize('com_ui_enter_api_key'),
+          type: 'password' as const,
           link: {
             url: 'https://docs.firecrawl.dev/introduction#api-key',
             text: localize('com_ui_web_search_scraper_firecrawl_key'),
