@@ -1,17 +1,25 @@
 import React, { createContext, useContext, useEffect, useRef } from 'react';
-import { Tools, LocalStorageKeys, AgentCapabilities, Constants } from 'librechat-data-provider';
-import { useMCPSelect, useToolToggle, useCodeApiKeyForm, useSearchApiKeyForm } from '~/hooks';
-import { useGetStartupConfig } from '~/data-provider';
 import { useSetRecoilState } from 'recoil';
+import { Tools, Constants, LocalStorageKeys, AgentCapabilities } from 'librechat-data-provider';
+import type { TAgentsEndpoint } from 'librechat-data-provider';
+import {
+  useSearchApiKeyForm,
+  useGetAgentsConfig,
+  useCodeApiKeyForm,
+  useToolToggle,
+  useMCPSelect,
+} from '~/hooks';
+import { useGetStartupConfig } from '~/data-provider';
 import { ephemeralAgentByConvoId } from '~/store';
 
 interface BadgeRowContextType {
   conversationId?: string | null;
+  agentsConfig?: TAgentsEndpoint | null;
   mcpSelect: ReturnType<typeof useMCPSelect>;
   webSearch: ReturnType<typeof useToolToggle>;
-  codeInterpreter: ReturnType<typeof useToolToggle>;
-  fileSearch: ReturnType<typeof useToolToggle>;
   artifacts: ReturnType<typeof useToolToggle>;
+  fileSearch: ReturnType<typeof useToolToggle>;
+  codeInterpreter: ReturnType<typeof useToolToggle>;
   codeApiKeyForm: ReturnType<typeof useCodeApiKeyForm>;
   searchApiKeyForm: ReturnType<typeof useSearchApiKeyForm>;
   startupConfig: ReturnType<typeof useGetStartupConfig>['data'];
@@ -40,6 +48,7 @@ export default function BadgeRowProvider({
 }: BadgeRowProviderProps) {
   const hasInitializedRef = useRef(false);
   const lastKeyRef = useRef<string>('');
+  const { agentsConfig } = useGetAgentsConfig();
   const key = conversationId ?? Constants.NEW_CONVO;
   const setEphemeralAgent = useSetRecoilState(ephemeralAgentByConvoId(key));
 
@@ -165,8 +174,9 @@ export default function BadgeRowProvider({
   const value: BadgeRowContextType = {
     mcpSelect,
     webSearch,
-    fileSearch,
     artifacts,
+    fileSearch,
+    agentsConfig,
     startupConfig,
     conversationId,
     codeApiKeyForm,

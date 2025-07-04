@@ -224,7 +224,7 @@ export type AgentPanelContextType = {
   groupedTools?: Record<string, t.AgentToolType & { tools?: t.AgentToolType[] }>;
   agent_id?: string;
   agentsConfig?: t.TAgentsEndpoint | null;
-  endpointsConfig?: t.TEndpointsConfig;
+  endpointsConfig?: t.TEndpointsConfig | null;
 };
 
 export type AgentModelPanelProps = {
