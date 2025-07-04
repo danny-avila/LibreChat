@@ -68,3 +68,9 @@ webSearch:
   bookmarks: true
   multiConvo: true
   agents: true
+
+# Database configuration
+mongo:
+  uri: ${MONGO_URI}  # Set in your .env file for MongoDB Atlas
+postgres:
+  uri: ${POSTGRES_URI}  # Set in your .env file for Supabase Postgres

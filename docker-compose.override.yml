@@ -1,32 +1,19 @@
 services:
   api:
-    #volumes:
-    #  - type: bind
-    #    source: ./librechat.yaml
-    #    target: /app/librechat.yaml
+    volumes:
+      - type: bind
+        source: ./librechat.yaml
+        target: /app/librechat.yaml
     environment:
       - MONGO_URI=${MONGO_URI}
       - EMAIL_SERVICE=${EMAIL_SERVICE}
       - EMAIL_USER=${EMAIL_USER}
       - EMAIL_PASSWORD=${EMAIL_PASSWORD}
       - EMAIL_FROM=${EMAIL_FROM}
-      - POSTGRES_USER=${POSTGRES_USER}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_URI=${POSTGRES_URI}
       - JINA_API_KEY=${JINA_API_KEY}
       # Add any other required env vars here
 
-  # No local MongoDB service
+  # No local MongoDB or Postgres service
 
-  postgres:
-    image: postgres:15
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-
-volumes:
-  pgdata: 
+# Removed local postgres service and pgdata volume 
