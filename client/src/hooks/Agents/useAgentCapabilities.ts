@@ -50,12 +50,12 @@ export default function useAgentCapabilities(
   );
 
   return {
+    ocrEnabled,
+    codeEnabled,
     toolsEnabled,
     actionsEnabled,
     artifactsEnabled,
-    ocrEnabled,
-    fileSearchEnabled,
     webSearchEnabled,
-    codeEnabled,
+    fileSearchEnabled,
   };
 }
