@@ -22,8 +22,8 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
   const {
     webSearch,
     mcpSelect,
-    fileSearch,
     artifacts,
+    fileSearch,
     startupConfig,
     codeApiKeyForm,
     codeInterpreter,
@@ -160,22 +160,6 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
       ),
     });
 
-    // Add Artifacts option
-    items.push({
-      hideOnClick: false,
-      render: (props) => (
-        <ArtifactsSubMenu
-          {...props}
-          isArtifactsPinned={isArtifactsPinned}
-          setIsArtifactsPinned={setIsArtifactsPinned}
-          artifactsMode={artifacts.toggleState as string}
-          handleArtifactsToggle={handleArtifactsToggle}
-          handleShadcnToggle={handleShadcnToggle}
-          handleCustomToggle={handleCustomToggle}
-        />
-      ),
-    });
-
     if (canUseWebSearch) {
       items.push({
         onClick: handleWebSearchToggle,
@@ -283,6 +267,22 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
         ),
       });
     }
+
+    // Add Artifacts option
+    items.push({
+      hideOnClick: false,
+      render: (props) => (
+        <ArtifactsSubMenu
+          {...props}
+          isArtifactsPinned={isArtifactsPinned}
+          setIsArtifactsPinned={setIsArtifactsPinned}
+          artifactsMode={artifacts.toggleState as string}
+          handleArtifactsToggle={handleArtifactsToggle}
+          handleShadcnToggle={handleShadcnToggle}
+          handleCustomToggle={handleCustomToggle}
+        />
+      ),
+    });
 
     if (mcpServerNames && mcpServerNames.length > 0) {
       items.push({
