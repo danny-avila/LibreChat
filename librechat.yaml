@@ -1,9 +1,5 @@
 # LibreChat configuration file
-# See: https://www.librechat.ai/docs/configuration/librechat_yaml
-#
-# IMPORTANT: To ensure only the LiteLLM endpoint appears in the UI, set the following environment variable:
-#   ENDPOINTS=custom
-# This disables all default endpoints (like OpenAI) except your custom ones.
+# See: https://docs.librechat.ai/install/configuration/custom_config.html
 
 version: 1.2.8
 cache: true
@@ -20,6 +16,33 @@ interface:
   multiConvo: true
   agents: true
 
+# Memory (persistent user context) configuration
+memory:
+  disabled: false
+  validKeys: ["preferences", "work_info", "personal_info", "skills", "interests", "context"]
+  tokenLimit: 10000
+  personalize: true
+
+# Web Search configuration
+webSearch:
+  # Search Provider Configuration
+  serperApiKey: "${SERPER_API_KEY}"
+  searchProvider: "serper" # Options: "serper", "searxng"
+
+  # Scraper Configuration
+  firecrawlApiKey: "${FIRECRAWL_API_KEY}"
+  firecrawlApiUrl: "${FIRECRAWL_API_URL}"
+  scraperType: "firecrawl" # Options: "firecrawl", "serper"
+
+  # Reranker Configuration
+  jinaApiKey: "${JINA_API_KEY}"
+  cohereApiKey: "${COHERE_API_KEY}"
+  rerankerType: "jina" # Options: "jina", "cohere"
+
+  # General Settings
+  scraperTimeout: 7500 # Timeout in milliseconds for scraper requests (default: 7500)
+  safeSearch: 1 # Options: 0 (OFF), 1 (MODERATE - default), 2 (STRICT)
+
 # File upload and output configuration
 fileConfig:
   endpoints:
@@ -31,7 +54,7 @@ fileConfig:
       supportedMimeTypes:
         - "image/.*"
         - "application/pdf"
-  serverFileSizeLimit: 100  # Max file size server will accept (MB)
+  serverFileSizeLimit: 100  # Max file size (MB) for uploads to server
   avatarSizeLimit: 2        # Max avatar image size (MB)
   imageGeneration:
     percentage: 100
@@ -42,38 +65,24 @@ fileConfig:
     maxHeight: 1900
     quality: 0.92
 
-# Memory (persistent user context) configuration
-memory:
-  disabled: false
-  validKeys: ["preferences", "work_info", "personal_info", "skills", "interests", "context"]
-  tokenLimit: 10000
-  personalize: true
-
-# Web search configuration
-webSearch:
-  enabled: true
-  searchProvider: ${SEARCH_PROVIDER}
-  searxng:
-    url: ${SEARXNG_URL}
-  reranker:
-    provider: ${RERANKER_PROVIDER}
-    apiKey: ${JINA_API_KEY}
-  scraper:
-    provider: ${SCRAPER_PROVIDER}
-    url: ${SCRAPER_URL}
-
-# Custom endpoints configuration
+# Endpoints configuration
 endpoints:
   custom:
-    - name: "LiteLLM"
-      apiKey: "${LITELLM_DEFAULT_APIKEY}"  # User must provide their own key
-      baseURL: "${LITELLM_URL}"  # Update to your LiteLLM proxy URL if different
+    - name: "LiteLLM-Global"
+      apiKey: "${LITELLM_DEFAULT_APIKEY}"
+      baseURL: "${LITELLM_URL}"
       models:
-        default: ["${LITELLM_DEFAULT_MODEL}"]  # Or any model available via your LiteLLM proxy
-        fetch: true
+        default: ["azure/gpt-4.1-mini"]
+        fetch: false
       titleConvo: true
-      titleModel: "${LITELLM_TITLE_MODEL}"
-      summarize: false
-      summaryModel: "${LITELLM_SUMMARY_MODEL}"
-      forcePrompt: false
-      modelDisplayLabel: "LITELLM"
+      titleModel: "azure/gpt-4.1-mini"
+      modelDisplayLabel: "LiteLLM-Global"
+    - name: "LiteLLM-Individual"
+      apiKey: "user_provided"
+      baseURL: "${LITELLM_URL}"
+      models:
+        default: ["azure/gpt-4.1-mini"]
+        fetch: false
+      titleConvo: true
+      titleModel: "azure/gpt-4.1-mini"
+      modelDisplayLabel: "LiteLLM-Individual"
