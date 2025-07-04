@@ -708,5 +708,178 @@ describe('Environment Variable Extraction (MCP)', () => {
         SYSTEM_PATH: process.env.PATH, // Actual value of PATH from the test environment
       });
     });
+
+    describe('LIBRECHAT_CHAT_URL_FILE placeholder', () => {
+      it('should process LIBRECHAT_CHAT_URL_FILE placeholder with conversation context', async () => {
+        const user = createTestUser({ id: 'test-user-123' });
+        const conversationContext = {
+          conversationId: 'conv-123',
+          messageFiles: ['file-123', 'file-456'],
+          mcpClientId: 'test-mcp-client',
+          clientIP: '127.0.0.1',
+          userAgent: 'Test Agent',
+          requestId: 'req-123'
+        };
+
+        // Mock the MCPFileUrlService
+        const mockFileUrls = JSON.stringify({
+          conversationId: 'conv-123',
+          files: [
+            {
+              fileId: 'file-123',
+              filename: 'test.pdf',
+              type: 'application/pdf',
+              size: 1024,
+              downloadUrl: 'https://example.com/download/file-123?token=abc123',
+              expiresAt: '2024-01-15T10:30:00Z',
+              singleUse: true
+            }
+          ],
+          generatedAt: '2024-01-15T10:00:00Z',
+          ttlSeconds: 900,
+          singleUse: true
+        });
+
+        // Mock the require call for MCPFileUrlService
+        const originalRequire = require;
+        const mockGenerateCurrentMessageFileUrls = jest.fn().mockResolvedValue(mockFileUrls);
+        jest.doMock('~/server/services/Files/MCPFileUrlService', () => ({
+          generateCurrentMessageFileUrls: mockGenerateCurrentMessageFileUrls
+        }));
+
+        const obj: MCPOptions = {
+          type: 'sse',
+          url: 'https://example.com',
+          headers: {
+            'X-File-URLs': '{{LIBRECHAT_CHAT_URL_FILE}}',
+            'X-User-ID': '{{LIBRECHAT_USER_ID}}'
+          }
+        };
+
+        // Import the new function
+        const { processMCPEnvWithContext } = await import('~/utils/env');
+        const result = await processMCPEnvWithContext(obj, user, undefined, conversationContext);
+
+        expect('headers' in result && result.headers).toEqual({
+          'X-File-URLs': mockFileUrls,
+          'X-User-ID': 'test-user-123'
+        });
+
+        // Verify that messageFiles were passed correctly to the service
+        expect(mockGenerateCurrentMessageFileUrls).toHaveBeenCalledWith({
+          conversationId: 'conv-123',
+          messageFiles: ['file-123', 'file-456'],
+          userId: 'test-user-123',
+          mcpClientId: 'test-mcp-client',
+          clientIP: '127.0.0.1',
+          userAgent: 'Test Agent',
+          requestId: 'req-123',
+          ttlSeconds: 900,
+          singleUse: true
+        });
+
+        // Restore original require
+        jest.dontMock('~/server/services/Files/MCPFileUrlService');
+      });
+
+      it('should handle LIBRECHAT_CHAT_URL_FILE placeholder without conversation context', async () => {
+        const user = createTestUser({ id: 'test-user-123' });
+
+        const obj: MCPOptions = {
+          command: 'node',
+          args: ['server.js'],
+          env: {
+            FILE_URLS: '{{LIBRECHAT_CHAT_URL_FILE}}',
+            USER_ID: '{{LIBRECHAT_USER_ID}}'
+          }
+        };
+
+        const result = await processMCPEnv(obj, user);
+
+        // Should not process the placeholder without conversation context
+        expect('env' in result && result.env).toEqual({
+          FILE_URLS: '{{LIBRECHAT_CHAT_URL_FILE}}',
+          USER_ID: 'test-user-123'
+        });
+      });
+
+      it('should handle LIBRECHAT_CHAT_URL_FILE placeholder with service error', async () => {
+        const user = createTestUser({ id: 'test-user-123' });
+        const conversationContext = {
+          conversationId: 'conv-123',
+          mcpClientId: 'test-mcp-client'
+        };
+
+        // Mock the MCPFileUrlService to throw an error
+        jest.doMock('~/server/services/Files/MCPFileUrlService', () => ({
+          generateCurrentMessageFileUrls: jest.fn().mockRejectedValue(new Error('Service error'))
+        }));
+
+        const obj: MCPOptions = {
+          type: 'sse',
+          url: 'https://example.com',
+          headers: {
+            'X-File-URLs': '{{LIBRECHAT_CHAT_URL_FILE}}'
+          }
+        };
+
+        // Import the new function
+        const { processMCPEnvWithContext } = await import('~/utils/env');
+        const result = await processMCPEnvWithContext(obj, user, undefined, conversationContext);
+
+        // Should return empty files array on error
+        expect('headers' in result && result.headers).toEqual({
+          'X-File-URLs': JSON.stringify({ files: [] })
+        });
+
+        // Restore
+        jest.dontMock('~/server/services/Files/MCPFileUrlService');
+      });
+
+      it('should process multiple placeholders including LIBRECHAT_CHAT_URL_FILE', async () => {
+        const user = createTestUser({
+          id: 'test-user-123',
+          email: 'test@example.com'
+        });
+        const conversationContext = {
+          conversationId: 'conv-123',
+          mcpClientId: 'test-mcp-client'
+        };
+        const customUserVars = {
+          CUSTOM_VAR: 'custom-value'
+        };
+
+        const mockFileUrls = JSON.stringify({ files: [] });
+        jest.doMock('~/server/services/Files/MCPFileUrlService', () => ({
+          generateCurrentMessageFileUrls: jest.fn().mockResolvedValue(mockFileUrls)
+        }));
+
+        const obj: MCPOptions = {
+          command: 'node',
+          args: ['server.js'],
+          env: {
+            FILE_URLS: '{{LIBRECHAT_CHAT_URL_FILE}}',
+            USER_EMAIL: '{{LIBRECHAT_USER_EMAIL}}',
+            CUSTOM_VALUE: '{{CUSTOM_VAR}}',
+            API_KEY: '${TEST_API_KEY}'
+          }
+        };
+
+        // Import the new function
+        const { processMCPEnvWithContext } = await import('~/utils/env');
+        const result = await processMCPEnvWithContext(obj, user, customUserVars, conversationContext);
+
+        expect('env' in result && result.env).toEqual({
+          FILE_URLS: mockFileUrls,
+          USER_EMAIL: 'test@example.com',
+          CUSTOM_VALUE: 'custom-value',
+          API_KEY: 'test-api-key-value'
+        });
+
+        jest.dontMock('~/server/services/Files/MCPFileUrlService');
+      });
+    });
   });
+
+
 });
