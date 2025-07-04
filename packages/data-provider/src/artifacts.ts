@@ -3,7 +3,9 @@ export enum ArtifactModes {
   SHADCNUI = 'shadcnui',
   CUSTOM = 'custom',
 }
-
+export enum ChartModes {
+  DEFAULT = 'default',
+}
 export const utils = `
 import { type ClassValue, clsx } from "clsx"
 import { twMerge } from "tailwind-merge"

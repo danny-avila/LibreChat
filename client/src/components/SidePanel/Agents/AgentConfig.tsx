@@ -57,6 +57,10 @@ export default function AgentConfig({
     () => agentsConfig?.capabilities?.includes(AgentCapabilities.artifacts) ?? false,
     [agentsConfig],
   );
+  const chartsEnabled = useMemo(
+    () => agentsConfig?.capabilities?.includes(AgentCapabilities.charts) ?? false,
+    [agentsConfig],
+  );
   const ocrEnabled = useMemo(
     () => agentsConfig?.capabilities?.includes(AgentCapabilities.ocr) ?? false,
     [agentsConfig],
@@ -269,6 +273,7 @@ export default function AgentConfig({
         </div>
         {(codeEnabled ||
           fileSearchEnabled ||
+          chartsEnabled ||
           artifactsEnabled ||
           ocrEnabled ||
           webSearchEnabled) && (

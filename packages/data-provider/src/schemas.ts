@@ -168,6 +168,7 @@ export const defaultAgentFormValues = {
   provider: {},
   projectIds: [],
   artifacts: '',
+  charts: '',
   isCollaborative: false,
   recursion_limit: undefined,
   [Tools.execute_code]: false,
@@ -617,6 +618,8 @@ export const tConversationSchema = z.object({
   thinkingBudget: coerceNumber.optional(),
   /* artifacts */
   artifacts: z.string().optional(),
+  /* charts */
+  charts: z.string().optional(),
   /* google */
   context: z.string().nullable().optional(),
   examples: z.array(tExampleSchema).optional(),
