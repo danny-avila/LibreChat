@@ -50,7 +50,10 @@ services:
     container_name: rag_api
     image: ghcr.io/danny-avila/librechat-rag-api-dev-lite:latest
     environment:
-      - POSTGRES_URI=${POSTGRES_URI}
+      - DB_HOST=${SUPABASE_HOST}
+      - DB_USER=${SUPABASE_USER}
+      - DB_PASSWORD=${SUPABASE_PASSWORD}
+      - DB_NAME=${SUPABASE_DB}
       - RAG_PORT=${RAG_PORT:-8000}
     restart: always
     env_file:
