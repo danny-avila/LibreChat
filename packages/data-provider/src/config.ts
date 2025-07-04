@@ -265,6 +265,41 @@ export const agentsEndpointSchema = baseEndpointSchema
 
 export type TAgentsEndpoint = z.infer<typeof agentsEndpointSchema>;
 
+// YAML Agent Definition Schema
+export const yamlAgentDefinitionSchema = z.object({
+  id: z.string().min(1, 'Agent ID is required'),
+  name: z.string().optional(),
+  description: z.string().optional(),
+  instructions: z.string().optional(),
+  avatar: z.object({
+    filepath: z.string(),
+    source: z.string(),
+  }).optional(),
+  provider: z.string().min(1, 'Provider is required'),
+  model: z.string().min(1, 'Model is required'),
+  model_parameters: z.record(z.unknown()).optional(),
+  artifacts: z.string().optional(),
+  access_level: z.number().optional(),
+  recursion_limit: z.number().optional(),
+  tools: z.array(z.string()).optional(),
+  tool_kwargs: z.array(z.unknown()).optional(),
+  actions: z.array(z.string()).optional(),
+  hide_sequential_outputs: z.boolean().optional(),
+  end_after_tools: z.boolean().optional(),
+  agent_ids: z.array(z.string()).optional(),
+  conversation_starters: z.array(z.string()).optional(),
+  tool_resources: z.unknown().optional(),
+});
+
+export type TYamlAgentDefinition = z.infer<typeof yamlAgentDefinitionSchema>;
+
+// YAML Agents Configuration Schema
+export const yamlAgentsConfigSchema = z.object({
+  definitions: z.array(yamlAgentDefinitionSchema).optional(),
+}).optional();
+
+export type TYamlAgentsConfig = z.infer<typeof yamlAgentsConfigSchema>;
+
 export const endpointSchema = baseEndpointSchema.merge(
   z.object({
     name: z.string().refine((value) => !eModelEndpointSchema.safeParse(value).success, {
@@ -757,6 +792,7 @@ export const configSchema = z.object({
       message: 'At least one `endpoints` field must be provided.',
     })
     .optional(),
+  agents: yamlAgentsConfigSchema,
 });
 
 export const getConfigDefaults = () => getSchemaDefaults(configSchema);
