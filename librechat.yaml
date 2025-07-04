@@ -1,11 +1,68 @@
 # LibreChat configuration file
 # See: https://www.librechat.ai/docs/configuration/librechat_yaml
+# LibreChat configuration file
+# See: https://www.librechat.ai/docs/configuration/librechat_yaml
 
+version: 1.2.8
 version: 1.2.8
 cache: true
 
 # UI Interface settings
+# UI Interface settings
 interface:
+  endpointsMenu: true
+  modelSelect: true
+  parameters: true
+  sidePanel: true
+  presets: true
+  prompts: true
+  bookmarks: true
+  multiConvo: true
+  agents: true
+
+# File upload and output configuration
+fileConfig:
+  endpoints:
+    default:
+      totalSizeLimit: 20  # Max total upload per request (MB)
+    LiteLLM:
+      fileLimit: 5        # Max 5 files per request
+      fileSizeLimit: 10   # Max 10MB per file
+      supportedMimeTypes:
+        - "image/.*"
+        - "application/pdf"
+  serverFileSizeLimit: 100  # Max file size server will accept (MB)
+  avatarSizeLimit: 2        # Max avatar image size (MB)
+  imageGeneration:
+    percentage: 100
+    px: 1024
+  clientImageResize:
+    enabled: false
+    maxWidth: 1900
+    maxHeight: 1900
+    quality: 0.92
+
+# Memory (persistent user context) configuration
+memory:
+  disabled: false
+  validKeys: ["preferences", "work_info", "personal_info", "skills", "interests", "context"]
+  tokenLimit: 10000
+  personalize: true
+
+# Web search configuration
+webSearch:
+  enabled: true
+  searchProvider: searxng
+  searxng:
+    url: "http://localhost:5147"
+  reranker:
+    provider: jina
+    apiKey: "<YOUR_JINA_API_KEY>"  # Replace with your actual Jina API key
+  scraper:
+    provider: firecrawl
+    url: "http://localhost:3002"
+
+# Custom endpoints configuration
   endpointsMenu: true
   modelSelect: true
   parameters: true

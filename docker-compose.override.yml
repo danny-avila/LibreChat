@@ -10,9 +10,26 @@ services:
       - EMAIL_USER=${EMAIL_USER}
       - EMAIL_PASSWORD=${EMAIL_PASSWORD}
       - EMAIL_FROM=${EMAIL_FROM}
+      - MONGO_URI=${MONGO_URI}
+      - EMAIL_SERVICE=${EMAIL_SERVICE}
+      - EMAIL_USER=${EMAIL_USER}
+      - EMAIL_PASSWORD=${EMAIL_PASSWORD}
+      - EMAIL_FROM=${EMAIL_FROM}
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB}
+      - JINA_API_KEY=${JINA_API_KEY}
+      # Add any other required env vars here
+
+  # No local MongoDB service
+
+  postgres:
+    image: postgres:15
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
       - JINA_API_KEY=${JINA_API_KEY}
       # Add any other required env vars here
 
