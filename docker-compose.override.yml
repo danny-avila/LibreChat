@@ -8,19 +8,19 @@ services:
         target: /app/librechat.yaml
     image: ghcr.io/danny-avila/librechat-dev:latest
     env_file:
-      - .env
+      - stack.env
 
   rag_api:
     image: ghcr.io/danny-avila/librechat-rag-api-dev-lite:latest
     env_file:
-      - .env
+      - stack.env
 
   db:
     image: postgres
     restart: always
     environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=PostgresChangeMe
-      - POSTGRES_DB=postgres
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
     volumes:
       - ./postgres:/var/lib/postgresql/data
