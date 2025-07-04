@@ -143,5 +143,9 @@
       "admin/",
       "packages/"
     ]
+  },
+  "dependencies": {
+    "cookie-parser": "^1.4.7",
+    "csrf": "^3.1.0"
   }
 }

@@ -30,6 +30,42 @@ const port = isNaN(Number(PORT)) ? 3080 : Number(PORT);
 const host = HOST || 'localhost';
 const trusted_proxy = Number(TRUST_PROXY) || 1; /* trust first proxy by default */
 
+
+// CSRF Protection Configuration
+const {
+  invalidCsrfTokenError,
+  generateToken,
+  validateRequest,
+} = doubleCsrf({
+  getSecret: () => process.env.CSRF_SECRET || 'your-csrf-secret-key-change-in-production',
+  cookieName: '__Host-psifi.x-csrf-token',
+  cookieOptions: {
+    httpOnly: true,
+    sameSite: 'strict',
+    secure: process.env.NODE_ENV === 'production',
+    maxAge: 3600000, // 1 hour
+  },
+  size: 64,
+  ignoredMethods: ['GET', 'HEAD', 'OPTIONS'],
+});
+
+// CSRF Middleware
+const csrfProtection = (req, res, next) => {
+  if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+    return next();
+  }
+  
+  try {
+    validateRequest(req);
+    next();
+  } catch (error) {
+    if (error === invalidCsrfTokenError) {
+      return res.status(403).json({ error: 'Invalid CSRF token' });
+    }
+    next(error);
+  }
+};
+
 const app = express();
 
 const startServer = async () => {
@@ -60,6 +96,15 @@ const startServer = async () => {
   app.use(express.urlencoded({ extended: true, limit: '3mb' }));
   app.use(mongoSanitize());
   app.use(cors());
+app.use(cookieParser());
+app.use(csrfProtection);
+
+// CSRF token endpoint
+app.get('/api/csrf-token', (req, res) => {
+  const token = generateToken(req, res);
+  res.json({ csrfToken: token });
+});
+
   app.use(cookieParser());
 
   if (!isEnabled(DISABLE_COMPRESSION)) {
