@@ -1,5 +1,9 @@
 # LibreChat configuration file
 # See: https://www.librechat.ai/docs/configuration/librechat_yaml
+#
+# IMPORTANT: To ensure only the LiteLLM endpoint appears in the UI, set the following environment variable:
+#   ENDPOINTS=custom
+# This disables all default endpoints (like OpenAI) except your custom ones.
 
 version: 1.2.8
 cache: true
