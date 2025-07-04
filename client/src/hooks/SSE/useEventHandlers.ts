@@ -1,6 +1,6 @@
 import { v4 } from 'uuid';
 import { useCallback, useRef } from 'react';
-import { useSetRecoilState } from 'recoil';
+import { useSetRecoilState, useRecoilCallback } from 'recoil';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import {
@@ -30,7 +30,7 @@ import {
 } from '~/utils';
 import useAttachmentHandler from '~/hooks/SSE/useAttachmentHandler';
 import useContentHandler from '~/hooks/SSE/useContentHandler';
-import store, { useApplyNewAgentTemplate } from '~/store';
+import store, { useApplyNewAgentTemplate, ephemeralAgentByConvoId } from '~/store';
 import useStepHandler from '~/hooks/SSE/useStepHandler';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { MESSAGE_UPDATE_INTERVAL } from '~/common';
@@ -179,6 +179,14 @@ export default function useEventHandlers({
   const lastAnnouncementTimeRef = useRef(Date.now());
   const { conversationId: paramId } = useParams();
   const { token } = useAuthContext();
+
+  const setEphemeralAgentForConvo = useRecoilCallback(
+    ({ set }) =>
+      (conversationId: string, ephemeralAgent: any) => {
+        set(ephemeralAgentByConvoId(conversationId), ephemeralAgent);
+      },
+    [],
+  );
 
   const contentHandler = useContentHandler({ setMessages, getMessages });
   const stepHandler = useStepHandler({
@@ -513,6 +521,11 @@ export default function useEventHandlers({
           }
           return update;
         });
+
+        if (conversation.conversationId && submission.ephemeralAgent) {
+          setEphemeralAgentForConvo(conversation.conversationId, submission.ephemeralAgent);
+        }
+
         if (location.pathname === '/c/new') {
           navigate(`/c/${conversation.conversationId}`, { replace: true });
         }
@@ -533,6 +546,7 @@ export default function useEventHandlers({
       queryClient,
       location.pathname,
       navigate,
+      setEphemeralAgentForConvo,
     ],
   );
 
