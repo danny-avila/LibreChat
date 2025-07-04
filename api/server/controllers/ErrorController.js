@@ -24,17 +24,23 @@ const handleValidationError = (err, res) => {
   }
 };
 
-// eslint-disable-next-line no-unused-vars
-module.exports = (err, req, res, next) => {
+module.exports = (err, _req, res, _next) => {
   try {
     if (err.name === 'ValidationError') {
-      return (err = handleValidationError(err, res));
+      return handleValidationError(err, res);
     }
     if (err.code && err.code == 11000) {
-      return (err = handleDuplicateKeyError(err, res));
+      return handleDuplicateKeyError(err, res);
     }
-  } catch (err) {
+    // Special handling for errors like SyntaxError
+    if (err.statusCode && err.body) {
+      return res.status(err.statusCode).send(err.body);
+    }
+
     logger.error('ErrorController => error', err);
-    res.status(500).send('An unknown error occurred.');
+    return res.status(500).send('An unknown error occurred.');
+  } catch (err) {
+    logger.error('ErrorController => processing error', err);
+    return res.status(500).send('Processing error in ErrorController.');
   }
 };
