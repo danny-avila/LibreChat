@@ -59,15 +59,20 @@ webSearch:
     url: ${SCRAPER_URL}
 
 # Custom endpoints configuration
-  endpointsMenu: true
-  modelSelect: true
-  parameters: true
-  sidePanel: true
-  presets: true
-  prompts: true
-  bookmarks: true
-  multiConvo: true
-  agents: true
+endpoints:
+  custom:
+    - name: "LiteLLM"
+      apiKey: "user_provided"  # User must provide their own key
+      baseURL: "${LITELLM_URL}"  # Update to your LiteLLM proxy URL if different
+      models:
+        default: ["${LITELLM_DEFAULT_MODEL}"]  # Or any model available via your LiteLLM proxy
+        fetch: true
+      titleConvo: true
+      titleModel: "${LITELLM_TITLE_MODEL}"
+      summarize: false
+      summaryModel: "${LITELLM_SUMMARY_MODEL}"
+      forcePrompt: false
+      modelDisplayLabel: "AMEND LITELLM"
 
 # Database configuration
 mongo:
