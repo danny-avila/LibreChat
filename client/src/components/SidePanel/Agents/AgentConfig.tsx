@@ -240,7 +240,6 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
             render={({ field }) => (
               <textarea
                 {...field}
-                value={field.value ?? ''}
                 className={`${inputClass} min-h-[100px] resize-y`}
                 id="description"
                 placeholder={localize('com_agents_description_placeholder')}
