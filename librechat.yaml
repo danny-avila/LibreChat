@@ -74,7 +74,7 @@ fileConfig:
 endpoints:
   custom:
     - name: "AMEND_AI"
-      apiKey: "${LITELLM_DEFAULT_APIKEY}"
+      apiKey: "user_provided"
       baseURL: "${LITELLM_URL}"
       models:
         default: ["azure/gpt-4.1-mini"]
