@@ -97,3 +97,37 @@ endpoints:
       summaryModel: "azure/gpt-4.1-mini"
       forcePrompt: true
       modelDisplayLabel: "AMEND AI-Individual"
+
+ocr:
+  mistralModel: "mistral-ocr-amend" # should match deployment name on Azure
+  apiKey: "${AZURE_MISTRAL_OCR_API_KEY}" # arbitrary .env var reference
+  baseURL: "${AZURE_MISTRAL_OCR_BASE_URL}" # hardcoded, can also be .env var reference
+  strategy: "azure_mistral_ocr"
+
+mcpServers:
+  
+ #Firecrawl MCP Server
+  firecrawl:
+    command: npx
+    args: ["-y", "firecrawl-mcp"]
+    env:
+      FIRECRAWL_API_KEY: "${FIRECRAWL_API_KEY}"
+      FIRECRAWL_API_URL: "${FIRECRAWL_API_URL}"
+    chatMenu: true  # Only available in agent builder
+
+  #Searxng MCP Server
+  searxngmcp:
+    command: npx
+    args: ["-y", "mcp-searxng"]
+    env:
+      SEARXNG_URL: "${SEARXNG_URL}"
+    chatMenu: true  # Only available in agent builder
+
+  #Jina MCP Server
+  jina-mcp-tools:
+    command: npx
+    args: ["jina-mcp-tools"]
+    env:
+      JINA_API_KEY: "${JINA_API_KEY}"
+    chatMenu: true  # Only available in agent builder
+
