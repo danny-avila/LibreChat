@@ -716,7 +716,7 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
     } catch (error) {
       if (meiliEnabled) {
         logger.error(
-          '[MeiliMongooseModel.deleteMany] There was an issue deleting conversation indexes upon deletion. Next startup may be slow due to syncing.',
+          '[MeiliMongooseModel.deleteMany] There was an issue deleting conversation indexes upon deletion. Next startup may trigger syncing.',
           error,
         );
       }
