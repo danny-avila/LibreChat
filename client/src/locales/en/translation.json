@@ -773,6 +773,7 @@
   "com_ui_fork_change_default": "Default fork option",
   "com_ui_fork_default": "Use default fork option",
   "com_ui_fork_error": "There was an error forking the conversation",
+  "com_ui_fork_error_rate_limit": "Too many fork requests. Please try again later",
   "com_ui_fork_from_message": "Select a fork option",
   "com_ui_fork_info_1": "Use this setting to fork messages with the desired behavior.",
   "com_ui_fork_info_2": "\"Forking\" refers to creating a new conversation that start/end from specific messages in the current conversation, creating a copy according to the options selected.",
