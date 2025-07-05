@@ -3,7 +3,7 @@ import { SettingsIcon } from 'lucide-react';
 import { Constants } from 'librechat-data-provider';
 import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
 import type { TUpdateUserPlugins, TPlugin } from 'librechat-data-provider';
-import MCPConfigDialog, { type ConfigFieldDetail } from '~/components/ui/MCPConfigDialog';
+import MCPConfigDialog, { type ConfigFieldDetail } from './MCPConfigDialog';
 import { useToastContext, useBadgeRowContext } from '~/Providers';
 import MultiSelect from '~/components/ui/MultiSelect';
 import { MCPIcon } from '~/components/svg';
