@@ -68,21 +68,15 @@ fileConfig:
 # Endpoints configuration
 endpoints:
   custom:
-    - name: "LiteLLM-Global"
-      apiKey: "${LITELLM_DEFAULT_APIKEY}"
+    - name: "AMEND_AI"
+      apiKey: "user_provide"
       baseURL: "${LITELLM_URL}"
       models:
         default: ["azure/gpt-4.1-mini"]
         fetch: true
       titleConvo: true
       titleModel: "azure/gpt-4.1-mini"
-      modelDisplayLabel: "LiteLLM-Global"
-    - name: "LiteLLM-Individual"
-      apiKey: "user_provided"
-      baseURL: "${LITELLM_URL}"
-      models:
-        default: ["azure/gpt-4.1-mini"]
-        fetch: true
-      titleConvo: true
-      titleModel: "azure/gpt-4.1-mini"
-      modelDisplayLabel: "LiteLLM-Individual"
+      summarize: true
+      summaryModel: "azure/gpt-4.1-mini"
+      forcePrompt: false
+      modelDisplayLabel: "AMEND AI"
