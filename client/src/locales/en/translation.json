@@ -820,7 +820,7 @@
   "com_ui_import_conversation_file_type_error": "Unsupported import type",
   "com_ui_import_conversation_info": "Import conversations from a JSON file",
   "com_ui_import_conversation_success": "Conversations imported successfully",
-  "com_ui_include_shadcnui": "Include shadcn/ui components instructions",
+  "com_ui_include_shadcnui": "Include shadcn/ui",
   "com_ui_input": "Input",
   "com_ui_instructions": "Instructions",
   "com_ui_key": "Key",
