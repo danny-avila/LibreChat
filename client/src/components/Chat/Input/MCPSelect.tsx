@@ -1,9 +1,8 @@
 import React, { memo, useCallback } from 'react';
-import MCPConfigDialog from '~/components/ui/MCP/MCPConfigDialog';
+import { MultiSelect, MCPIcon } from '@librechat/client';
 import MCPServerStatusIcon from '~/components/ui/MCP/MCPServerStatusIcon';
-import MultiSelect from '~/components/ui/MultiSelect';
-import { MCPIcon } from '~/components/svg';
 import { useMCPServerManager } from '~/hooks/MCP/useMCPServerManager';
+import MCPConfigDialog from '~/components/ui/MCP/MCPConfigDialog';
 
 function MCPSelect() {
   const {
