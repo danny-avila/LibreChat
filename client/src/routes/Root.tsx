@@ -14,11 +14,14 @@ import {
   FileMapContext,
   SetConvoProvider,
 } from '~/Providers';
-import TermsAndConditionsModal from '~/components/ui/TermsAndConditionsModal';
+import TermsAndConditionsModal from '~/components/Chat/TermsAndConditionsModal';
 import { useUserTermsQuery, useGetStartupConfig } from '~/data-provider';
 import { Nav, MobileNav } from '~/components/Nav';
 import { useHealthCheck } from '~/data-provider';
 import { Banner } from '~/components/Banners';
+import { getTermsMarkdown } from '~/utils';
+import { useRecoilValue } from 'recoil';
+import store from '~/store';
 
 export default function Root() {
   const [showTerms, setShowTerms] = useState(false);
@@ -36,6 +39,9 @@ export default function Root() {
   const assistantsMap = useAssistantsMap({ isAuthenticated });
   const agentsMap = useAgentsMap({ isAuthenticated });
   const fileMap = useFileMap({ isAuthenticated });
+
+  const lang = useRecoilValue(store.lang);
+  const modalContent = getTermsMarkdown(lang);
 
   const { data: config } = useGetStartupConfig();
   const { data: termsData } = useUserTermsQuery({
@@ -86,7 +92,7 @@ export default function Root() {
               onAccept={handleAcceptTerms}
               onDecline={handleDeclineTerms}
               title={config.interface.termsOfService.modalTitle}
-              modalContent={config.interface.termsOfService.modalContent}
+              modalContent={modalContent}
             />
           )}
         </AssistantsMapContext.Provider>
