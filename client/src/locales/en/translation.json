@@ -1050,13 +1050,15 @@
   "com_ui_view_memory": "View Memory",
   "com_ui_view_source": "View source chat",
   "com_ui_web_search": "Web Search",
-  "com_ui_web_search_api_subtitle": "Search the web for up-to-date information",
   "com_ui_web_search_cohere_key": "Enter Cohere API Key",
   "com_ui_web_search_firecrawl_url": "Firecrawl API URL (optional)",
   "com_ui_web_search_jina_key": "Enter Jina API Key",
   "com_ui_web_search_processing": "Processing results",
   "com_ui_web_search_provider": "Search Provider",
   "com_ui_web_search_provider_serper": "Serper API",
+  "com_ui_web_search_provider_searxng": "SearXNG",
+  "com_ui_web_search_searxng_api_key": "Enter SearXNG API Key (optional)",
+  "com_ui_web_search_searxng_instance_url": "SearXNG Instance URL",
   "com_ui_web_search_provider_serper_key": "Get your Serper API key",
   "com_ui_web_search_reading": "Reading results",
   "com_ui_web_search_reranker": "Reranker",
@@ -1074,5 +1076,7 @@
   "com_ui_x_selected": "{{0}} selected",
   "com_ui_yes": "Yes",
   "com_ui_zoom": "Zoom",
-  "com_user_message": "You"
+  "com_user_message": "You",
+  "com_ui_show_password": "Show password",
+  "com_ui_hide_password": "Hide password"
 }
