@@ -16,6 +16,11 @@ interface:
   multiConvo: true
   agents: true
 
+registration:
+  socialLogins: ["openid"]
+  allowedDomains:
+  - "amendllc.com"
+
 # Memory (persistent user context) configuration
 memory:
   disabled: false
@@ -69,7 +74,7 @@ fileConfig:
 endpoints:
   custom:
     - name: "AMEND_AI"
-      apiKey: "user_provided"
+      apiKey: "${LITELLM_DEFAULT_APIKEY}"
       baseURL: "${LITELLM_URL}"
       models:
         default: ["azure/gpt-4.1-mini"]
