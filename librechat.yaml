@@ -73,7 +73,7 @@ endpoints:
       baseURL: "${LITELLM_URL}"
       models:
         default: ["azure/gpt-4.1-mini"]
-        fetch: false
+        fetch: true
       titleConvo: true
       titleModel: "azure/gpt-4.1-mini"
       modelDisplayLabel: "LiteLLM-Global"
