@@ -6,10 +6,10 @@ const { logger } = require('@librechat/data-schemas');
 const { CacheKeys, EModelEndpoint } = require('librechat-data-provider');
 const { getConvosByCursor, deleteConvos, getConvo, saveConvo } = require('~/models/Conversation');
 const { forkConversation, duplicateConversation } = require('~/server/utils/import/fork');
+const { createImportLimiters, createForkLimiters } = require('~/server/middleware');
 const { storage, importFileFilter } = require('~/server/routes/files/multer');
 const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
 const { importConversations } = require('~/server/utils/import');
-const { createImportLimiters } = require('~/server/middleware');
 const { deleteToolCalls } = require('~/models/ToolCall');
 const getLogStores = require('~/cache/getLogStores');
 
@@ -158,6 +158,7 @@ router.post('/update', async (req, res) => {
 });
 
 const { importIpLimiter, importUserLimiter } = createImportLimiters();
+const { forkIpLimiter, forkUserLimiter } = createForkLimiters();
 const upload = multer({ storage: storage, fileFilter: importFileFilter });
 
 /**
@@ -191,7 +192,7 @@ router.post(
  * @param {express.Response<TForkConvoResponse>} res - Express response object.
  * @returns {Promise<void>} - The response after forking the conversation.
  */
-router.post('/fork', async (req, res) => {
+router.post('/fork', forkIpLimiter, forkUserLimiter, async (req, res) => {
   try {
     /** @type {TForkConvoRequest} */
     const { conversationId, messageId, option, splitAtTarget, latestMessageId } = req.body;
