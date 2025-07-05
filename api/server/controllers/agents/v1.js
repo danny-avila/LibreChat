@@ -159,11 +159,12 @@ const updateAgentHandler = async (req, res) => {
     const { projectIds, removeProjectIds, ...updateData } = removeNullishValues(validatedData);
     const isAdmin = req.user.role === SystemRoles.ADMIN;
     const existingAgent = await getAgent({ id });
-    const isAuthor = existingAgent.author.toString() === req.user.id;
 
     if (!existingAgent) {
       return res.status(404).json({ error: 'Agent not found' });
     }
+
+    const isAuthor = existingAgent.author.toString() === req.user.id;
     const hasEditPermission = existingAgent.isCollaborative || isAdmin || isAuthor;
 
     if (!hasEditPermission) {
