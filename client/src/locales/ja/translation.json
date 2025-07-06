@@ -21,6 +21,7 @@
   "com_agents_name_placeholder": "オプション: エージェントの名前",
   "com_agents_no_access": "このエージェントを編集する権限がありません。",
   "com_agents_not_available": "エージェントは利用できません",
+  "com_agents_search_info": "有効にすると、エージェントが最新の情報を取得するためにWEB検索を行うようになります。有効なAPIキーが必要です。",
   "com_agents_search_name": "名前でエージェントを検索",
   "com_agents_update_error": "エージェントの更新中にエラーが発生しました。",
   "com_assistants_action_attempt": "アシスタントは{{0}}と話したいです",

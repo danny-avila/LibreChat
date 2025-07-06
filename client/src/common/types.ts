@@ -206,9 +206,7 @@ export type AgentPanelProps = {
   setActivePanel: React.Dispatch<React.SetStateAction<Panel>>;
   setMcp: React.Dispatch<React.SetStateAction<t.MCP | undefined>>;
   setAction: React.Dispatch<React.SetStateAction<t.Action | undefined>>;
-  endpointsConfig?: t.TEndpointsConfig;
   setCurrentAgentId: React.Dispatch<React.SetStateAction<string | undefined>>;
-  agentsConfig?: t.TAgentsEndpoint | null;
 };
 
 export type AgentPanelContextType = {
@@ -225,6 +223,8 @@ export type AgentPanelContextType = {
   setCurrentAgentId: React.Dispatch<React.SetStateAction<string | undefined>>;
   groupedTools?: Record<string, t.AgentToolType & { tools?: t.AgentToolType[] }>;
   agent_id?: string;
+  agentsConfig?: t.TAgentsEndpoint | null;
+  endpointsConfig?: t.TEndpointsConfig | null;
 };
 
 export type AgentModelPanelProps = {
