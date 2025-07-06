@@ -109,6 +109,9 @@
     "tailwindcss-radix": "^2.8.0",
     "zod": "^3.22.4"
   },
+  "peerDependencies": {
+    "jotai": "^2.12.5"
+  },
   "devDependencies": {
     "@babel/plugin-transform-runtime": "^7.22.15",
     "@babel/preset-env": "^7.22.15",
