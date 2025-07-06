@@ -131,4 +131,3 @@ mcpServers:
     env:
       JINA_API_KEY: "${JINA_API_KEY}"
     chatMenu: true  # Only available in agent builder
-
