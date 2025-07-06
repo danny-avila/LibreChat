@@ -149,7 +149,9 @@ const initializeAgent = async ({
   ) {
     throw new Error(`{ "type": "${ErrorTypes.GOOGLE_TOOL_CONFLICT}"}`);
   } else if (
-    (agent.provider === Providers.OPENAI || agent.provider === Providers.AZURE) &&
+    (agent.provider === Providers.OPENAI ||
+      agent.provider === Providers.AZURE ||
+      agent.provider === Providers.ANTHROPIC) &&
     options.tools?.length &&
     structuredTools?.length
   ) {
