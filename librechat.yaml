@@ -84,6 +84,7 @@ endpoints:
       summarize: true
       summaryModel: "azure/gpt-4.1-mini"
       forcePrompt: true
+      userIdQuery: true
       modelDisplayLabel: "AMEND AI-Global"
     - name: "AMEND_AI-Individual"
       apiKey: "user_provided"
