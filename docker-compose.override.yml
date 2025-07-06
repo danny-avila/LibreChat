@@ -13,7 +13,14 @@ services:
       - POSTGRES_URI=${POSTGRES_URI}
       - JINA_API_KEY=${JINA_API_KEY}
       # Add any other required env vars here
+    depends_on:
+      - rag_api
+      - meilisearch
 
-  # No local MongoDB or Postgres service
+  # Disable local MongoDB service since Atlas is used
+  mongodb:
+    entrypoint: ["echo", "MongoDB service disabled because Atlas is used"]
+    command: []
 
+# No local Postgres service
 # Removed local postgres service and pgdata volume 
