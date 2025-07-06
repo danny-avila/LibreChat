@@ -7,8 +7,6 @@ import {
   Constants,
   SystemRoles,
   EModelEndpoint,
-  TAgentsEndpoint,
-  TEndpointsConfig,
   isAssistantsEndpoint,
 } from 'librechat-data-provider';
 import type { AgentForm, StringOption } from '~/common';
@@ -30,19 +28,15 @@ import { Button } from '~/components';
 import ModelPanel from './ModelPanel';
 import { Panel } from '~/common';
 
-export default function AgentPanel({
-  agentsConfig,
-  endpointsConfig,
-}: {
-  agentsConfig: TAgentsEndpoint | null;
-  endpointsConfig: TEndpointsConfig;
-}) {
+export default function AgentPanel() {
   const localize = useLocalize();
   const { user } = useAuthContext();
   const { showToast } = useToastContext();
   const {
     activePanel,
+    agentsConfig,
     setActivePanel,
+    endpointsConfig,
     setCurrentAgentId,
     agent_id: current_agent_id,
   } = useAgentPanelContext();
@@ -323,14 +317,10 @@ export default function AgentPanel({
           <ModelPanel models={models} providers={providers} setActivePanel={setActivePanel} />
         )}
         {canEditAgent && !agentQuery.isInitialLoading && activePanel === Panel.builder && (
-          <AgentConfig
-            createMutation={create}
-            agentsConfig={agentsConfig}
-            endpointsConfig={endpointsConfig}
-          />
+          <AgentConfig createMutation={create} />
         )}
         {canEditAgent && !agentQuery.isInitialLoading && activePanel === Panel.advanced && (
-          <AdvancedPanel setActivePanel={setActivePanel} agentsConfig={agentsConfig} />
+          <AdvancedPanel />
         )}
         {canEditAgent && !agentQuery.isInitialLoading && (
           <AgentFooter
