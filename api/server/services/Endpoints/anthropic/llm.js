@@ -78,13 +78,14 @@ function getLLMConfig(apiKey, options = {}) {
     requestOptions.anthropicApiUrl = options.reverseProxyUrl;
   }
 
-  const tools = [
-    {
+  const tools = [];
+
+  if (options.modelOptions.webSearch) {
+    tools.push({
       type: 'web_search_20250305',
       name: 'web_search',
-      max_uses: 5,
-    },
-  ];
+    });
+  }
 
   return {
     tools,
