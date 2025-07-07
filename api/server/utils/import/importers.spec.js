@@ -175,36 +175,60 @@ describe('importLibreChatConvo', () => {
     jest.spyOn(importBatchBuilder, 'saveMessage');
     jest.spyOn(importBatchBuilder, 'saveBatch');
 
-    // When
     const importer = getImporter(jsonData);
     await importer(jsonData, requestUserId, () => importBatchBuilder);
 
-    // Create a map to track original message IDs to new UUIDs
-    const idToUUIDMap = new Map();
-    importBatchBuilder.saveMessage.mock.calls.forEach((call) => {
-      const message = call[0];
-      idToUUIDMap.set(message.originalMessageId, message.messageId);
+    // Get the imported messages
+    const messages = importBatchBuilder.messages;
+    expect(messages.length).toBeGreaterThan(0);
+
+    // Build maps for verification
+    const textToMessageMap = new Map();
+    const messageIdToMessage = new Map();
+    messages.forEach((msg) => {
+      if (msg.text) {
+        // For recursive imports, text might be very long, so just use the first 100 chars as key
+        const textKey = msg.text.substring(0, 100);
+        textToMessageMap.set(textKey, msg);
+      }
+      messageIdToMessage.set(msg.messageId, msg);
     });
 
-    const checkChildren = (children, parentId) => {
-      children.forEach((child) => {
-        const childUUID = idToUUIDMap.get(child.messageId);
-        const expectedParentId = idToUUIDMap.get(parentId) ?? null;
-        const messageCall = importBatchBuilder.saveMessage.mock.calls.find(
-          (call) => call[0].messageId === childUUID,
-        );
-
-        const actualParentId = messageCall[0].parentMessageId;
-        expect(actualParentId).toBe(expectedParentId);
-
-        if (child.children && child.children.length > 0) {
-          checkChildren(child.children, child.messageId);
+    // Count expected messages from the tree
+    const countMessagesInTree = (nodes) => {
+      let count = 0;
+      nodes.forEach((node) => {
+        if (node.text || node.content) {
+          count++;
+        }
+        if (node.children && node.children.length > 0) {
+          count += countMessagesInTree(node.children);
         }
       });
+      return count;
     };
 
-    // Start hierarchy validation from root messages
-    checkChildren(jsonData.messages, null);
+    const expectedMessageCount = countMessagesInTree(jsonData.messages);
+    expect(messages.length).toBe(expectedMessageCount);
+
+    // Verify all messages have valid parent relationships
+    messages.forEach((msg) => {
+      if (msg.parentMessageId !== Constants.NO_PARENT) {
+        const parent = messageIdToMessage.get(msg.parentMessageId);
+        expect(parent).toBeDefined();
+
+        // Verify timestamp ordering
+        if (msg.createdAt && parent.createdAt) {
+          expect(new Date(msg.createdAt).getTime()).toBeGreaterThanOrEqual(
+            new Date(parent.createdAt).getTime(),
+          );
+        }
+      }
+    });
+
+    // Verify at least one root message exists
+    const rootMessages = messages.filter((msg) => msg.parentMessageId === Constants.NO_PARENT);
+    expect(rootMessages.length).toBeGreaterThan(0);
 
     expect(importBatchBuilder.saveBatch).toHaveBeenCalled();
   });

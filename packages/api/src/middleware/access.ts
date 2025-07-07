@@ -64,7 +64,7 @@ export const checkAccess = async ({
 
   const role = await getRoleByName(user.role);
   if (role && role.permissions && role.permissions[permissionType]) {
-    const hasAnyPermission = permissions.some((permission) => {
+    const hasAnyPermission = permissions.every((permission) => {
       if (
         role.permissions?.[permissionType as keyof typeof role.permissions]?.[
           permission as keyof (typeof role.permissions)[typeof permissionType]
@@ -74,7 +74,7 @@ export const checkAccess = async ({
       }
 
       if (bodyProps[permission] && checkObject) {
-        return bodyProps[permission].some((prop) =>
+        return bodyProps[permission].every((prop) =>
           Object.prototype.hasOwnProperty.call(checkObject, prop),
         );
       }
