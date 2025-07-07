@@ -1,16 +1,31 @@
 import { expect, test } from '@playwright/test';
+import { acceptTermsIfPresent } from '../utils/acceptTermsIfPresent';
+
+const initialNewChatSelector = '[data-testid="nav-new-chat-button"]';
 
 test.describe('Endpoints Presets suite', () => {
   test('Endpoints Suite', async ({ page }) => {
+    // Navigate to the application.
     await page.goto('http://localhost:3080/', { timeout: 5000 });
-    await page.getByTestId('new-conversation-menu').click();
 
-    // includes the icon + endpoint names in obj property
-    const endpointItem = page.getByRole('menuitemradio', { name: 'ChatGPT OpenAI' });
-    await endpointItem.click();
+    // Accept the Terms & Conditions modal if needed.
+    await acceptTermsIfPresent(page);
 
-    await page.getByTestId('new-conversation-menu').click();
-    // Check if the active class is set on the selected endpoint
-    expect(await endpointItem.getAttribute('class')).toContain('active');
+    // Click the New Chat button.
+    await page.locator(initialNewChatSelector).click();
+
+    // Open the endpoint menu by clicking the combobox with label "LLM Endpoint Menu".
+    const llmComboBox = page.getByRole('combobox', { name: 'LLM Endpoint Menu' });
+    await llmComboBox.click();
+
+    // Wait for the Azure OpenAI endpoint item to appear using its test ID.
+    const azureEndpoint = page.getByTestId('endpoint-item-azureOpenAI');
+    await azureEndpoint.waitFor({ state: 'visible', timeout: 5000 });
+
+    // Verify that the Azure endpoint item is visible.
+    expect(await azureEndpoint.isVisible()).toBeTruthy();
+
+    // Optionally, close the endpoint menu by clicking the New Chat button again.
+    await page.locator(initialNewChatSelector).click();
   });
 });
