@@ -353,7 +353,7 @@ export const anthropicSettings = {
     },
   },
   webSearch: {
-    default: true as const,
+    default: false as const,
   },
 };
 
