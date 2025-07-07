@@ -59,9 +59,6 @@ export class MCPConnection extends EventEmitter {
   private transport: Transport | null = null; // Make this nullable
   private connectionState: t.ConnectionState = 'disconnected';
   private connectPromise: Promise<void> | null = null;
-  private lastError: Error | null = null;
-  private lastConfigUpdate = 0;
-  private readonly CONFIG_TTL = 5 * 60 * 1000; // 5 minutes
   private readonly MAX_RECONNECT_ATTEMPTS = 3;
   public readonly serverName: string;
   private shouldStopReconnecting = false;
@@ -135,7 +132,6 @@ export class MCPConnection extends EventEmitter {
   private emitError(error: unknown, errorContext: string): void {
     const errorMessage = error instanceof Error ? error.message : String(error);
     logger.error(`${this.getLogPrefix()} ${errorContext}: ${errorMessage}`);
-    this.emit('error', new Error(`${errorContext}: ${errorMessage}`));
   }
 
   private constructTransport(options: t.MCPOptions): Transport {
@@ -359,14 +355,8 @@ export class MCPConnection extends EventEmitter {
 
   private subscribeToResources(): void {
     this.client.setNotificationHandler(ResourceListChangedNotificationSchema, async () => {
-      this.invalidateCache();
       this.emit('resourcesChanged');
     });
-  }
-
-  private invalidateCache(): void {
-    // this.cachedConfig = null;
-    this.lastConfigUpdate = 0;
   }
 
   async connectClient(): Promise<void> {
@@ -527,7 +517,7 @@ export class MCPConnection extends EventEmitter {
     try {
       await this.disconnect();
       await this.connectClient();
-      if (!this.isConnected()) {
+      if (!(await this.isConnected())) {
         throw new Error('Connection not established');
       }
     } catch (error) {
@@ -564,11 +554,7 @@ export class MCPConnection extends EventEmitter {
       }
       this.connectionState = 'disconnected';
       this.emit('connectionChange', 'disconnected');
-    } catch (error) {
-      this.emit('error', error);
-      throw error;
     } finally {
-      this.invalidateCache();
       this.connectPromise = null;
     }
   }
@@ -602,79 +588,6 @@ export class MCPConnection extends EventEmitter {
       return [];
     }
   }
-
-  // public async modifyConfig(config: ContinueConfig): Promise<ContinueConfig> {
-  //   try {
-  //     // Check cache
-  //     if (this.cachedConfig && Date.now() - this.lastConfigUpdate < this.CONFIG_TTL) {
-  //       return this.cachedConfig;
-  //     }
-
-  //     await this.connectClient();
-
-  //     // Fetch and process resources
-  //     const resources = await this.fetchResources();
-  //     const submenuItems = resources.map(resource => ({
-  //       title: resource.name,
-  //       description: resource.description,
-  //       id: resource.uri,
-  //     }));
-
-  //     if (!config.contextProviders) {
-  //       config.contextProviders = [];
-  //     }
-
-  //     config.contextProviders.push(
-  //       new MCPContextProvider({
-  //         submenuItems,
-  //         client: this.client,
-  //       }),
-  //     );
-
-  //     // Fetch and process tools
-  //     const tools = await this.fetchTools();
-  //     const continueTools: Tool[] = tools.map(tool => ({
-  //       displayTitle: tool.name,
-  //       function: {
-  //         description: tool.description,
-  //         name: tool.name,
-  //         parameters: tool.inputSchema,
-  //       },
-  //       readonly: false,
-  //       type: 'function',
-  //       wouldLikeTo: `use the ${tool.name} tool`,
-  //       uri: `mcp://${tool.name}`,
-  //     }));
-
-  //     config.tools = [...(config.tools || []), ...continueTools];
-
-  //     // Fetch and process prompts
-  //     const prompts = await this.fetchPrompts();
-  //     if (!config.slashCommands) {
-  //       config.slashCommands = [];
-  //     }
-
-  //     const slashCommands: SlashCommand[] = prompts.map(prompt =>
-  //       constructMcpSlashCommand(
-  //         this.client,
-  //         prompt.name,
-  //         prompt.description,
-  //         prompt.arguments?.map(a => a.name),
-  //       ),
-  //     );
-  //     config.slashCommands.push(...slashCommands);
-
-  //     // Update cache
-  //     this.cachedConfig = config;
-  //     this.lastConfigUpdate = Date.now();
-
-  //     return config;
-  //   } catch (error) {
-  //     this.emit('error', error);
-  //     // Return original config if modification fails
-  //     return config;
-  //   }
-  // }
 
   public async isConnected(): Promise<boolean> {
     try {
