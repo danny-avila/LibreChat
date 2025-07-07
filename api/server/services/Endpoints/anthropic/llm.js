@@ -80,7 +80,7 @@ function getLLMConfig(apiKey, options = {}) {
 
   const tools = [];
 
-  if (options.modelOptions.webSearch) {
+  if (mergedOptions.web_search) {
     tools.push({
       type: 'web_search_20250305',
       name: 'web_search',

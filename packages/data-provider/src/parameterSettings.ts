@@ -381,14 +381,14 @@ const anthropic: Record<string, SettingDefinition> = {
     optionType: 'conversation',
     columnSpan: 2,
   },
-  webSearch: {
-    key: 'webSearch',
+  web_search: {
+    key: 'web_search',
     label: 'com_ui_web_search',
     labelCode: true,
     description: 'com_endpoint_anthropic_use_web_search',
     descriptionCode: true,
     type: 'boolean',
-    default: anthropicSettings.webSearch.default,
+    default: anthropicSettings.web_search.default,
     component: 'switch',
     optionType: 'conversation',
     showDefault: false,
@@ -662,7 +662,7 @@ const anthropicConfig: SettingsConfiguration = [
   anthropic.promptCache,
   anthropic.thinking,
   anthropic.thinkingBudget,
-  anthropic.webSearch,
+  anthropic.web_search,
 ];
 
 const anthropicCol1: SettingsConfiguration = [
@@ -681,7 +681,7 @@ const anthropicCol2: SettingsConfiguration = [
   anthropic.promptCache,
   anthropic.thinking,
   anthropic.thinkingBudget,
-  anthropic.webSearch,
+  anthropic.web_search,
 ];
 
 const bedrockAnthropic: SettingsConfiguration = [

@@ -54,5 +54,4 @@ export interface IConversation extends Document {
   expiredAt?: Date;
   createdAt?: Date;
   updatedAt?: Date;
-  webSearch?: boolean;
 }

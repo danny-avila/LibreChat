@@ -352,7 +352,7 @@ export const anthropicSettings = {
       default: LEGACY_ANTHROPIC_MAX_OUTPUT,
     },
   },
-  webSearch: {
+  web_search: {
     default: false as const,
   },
 };
@@ -618,7 +618,6 @@ export const tConversationSchema = z.object({
   system: z.string().optional(),
   thinking: z.boolean().optional(),
   thinkingBudget: coerceNumber.optional(),
-  webSearch: z.boolean().optional(),
   /* artifacts */
   artifacts: z.string().optional(),
   /* google */
@@ -638,7 +637,7 @@ export const tConversationSchema = z.object({
   reasoning_summary: eReasoningSummarySchema.optional().nullable(),
   /* OpenAI: use Responses API */
   useResponsesApi: z.boolean().optional(),
-  /* OpenAI: use Responses API with Web Search */
+  /* OpenAI Responses API / Anthropic API */
   web_search: z.boolean().optional(),
   /* Google: use Search Grounding */
   grounding: z.boolean().optional(),
@@ -746,8 +745,8 @@ export const tQueryParamsSchema = tConversationSchema
     useResponsesApi: true,
     /** @endpoints google */
     grounding: true,
-    /** @endpoints anthropic */
-    webSearch: true,
+    /** @endpoints openAI, anthropic */
+    web_search: true,
     /** @endpoints google, anthropic, bedrock */
     topP: true,
     /** @endpoints google, anthropic */
@@ -1123,7 +1122,7 @@ export const anthropicBaseSchema = tConversationSchema.pick({
   greeting: true,
   spec: true,
   maxContextTokens: true,
-  webSearch: true,
+  web_search: true,
 });
 
 export const anthropicSchema = anthropicBaseSchema
