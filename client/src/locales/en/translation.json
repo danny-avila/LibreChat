@@ -856,6 +856,7 @@
   "com_ui_memory_deleted": "Memory deleted",
   "com_ui_memory_deleted_items": "Deleted Memories",
   "com_ui_memory_key_exists": "A memory with this key already exists. Please use a different key.",
+  "com_ui_memory_key_validation": "Memory key must only contain lowercase letters and underscores.",
   "com_ui_memory_updated": "Updated saved memory",
   "com_ui_memory_updated_items": "Updated Memories",
   "com_ui_mention": "Mention an endpoint, assistant, or preset to quickly switch to it",
