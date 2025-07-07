@@ -352,6 +352,9 @@ export const anthropicSettings = {
       default: LEGACY_ANTHROPIC_MAX_OUTPUT,
     },
   },
+  web_search: {
+    default: false as const,
+  },
 };
 
 export const agentsSettings = {
@@ -634,7 +637,7 @@ export const tConversationSchema = z.object({
   reasoning_summary: eReasoningSummarySchema.optional().nullable(),
   /* OpenAI: use Responses API */
   useResponsesApi: z.boolean().optional(),
-  /* OpenAI, Google: use Web Search */
+  /* OpenAI Responses API / Anthropic API / Google API */
   web_search: z.boolean().optional(),
   /* assistant */
   assistant_id: z.string().optional(),
@@ -738,7 +741,7 @@ export const tQueryParamsSchema = tConversationSchema
     reasoning_summary: true,
     /** @endpoints openAI, custom, azureOpenAI */
     useResponsesApi: true,
-    /** @endpoints google */
+    /** @endpoints openAI, anthropic, google */
     web_search: true,
     /** @endpoints google, anthropic, bedrock */
     topP: true,
@@ -1115,6 +1118,7 @@ export const anthropicBaseSchema = tConversationSchema.pick({
   greeting: true,
   spec: true,
   maxContextTokens: true,
+  web_search: true,
 });
 
 export const anthropicSchema = anthropicBaseSchema

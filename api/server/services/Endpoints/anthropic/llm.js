@@ -78,7 +78,17 @@ function getLLMConfig(apiKey, options = {}) {
     requestOptions.anthropicApiUrl = options.reverseProxyUrl;
   }
 
+  const tools = [];
+
+  if (mergedOptions.web_search) {
+    tools.push({
+      type: 'web_search_20250305',
+      name: 'web_search',
+    });
+  }
+
   return {
+    tools,
     /** @type {AnthropicClientOptions} */
     llmConfig: removeNullishValues(requestOptions),
   };
