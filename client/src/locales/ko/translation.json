@@ -971,7 +971,6 @@
   "com_ui_view_memory": "메모리 보기",
   "com_ui_view_source": "원본 채팅 보기",
   "com_ui_web_search": "웹 검색",
-  "com_ui_web_search_api_subtitle": "최신 정보를 검색하기 위해 웹 검색",
   "com_ui_web_search_cohere_key": "Cohere API 키 입력",
   "com_ui_web_search_firecrawl_url": "Firecrawl API URL (선택 사항)",
   "com_ui_web_search_jina_key": "Jina API 키 입력",

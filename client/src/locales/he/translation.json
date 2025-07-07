@@ -1029,7 +1029,6 @@
   "com_ui_view_memory": "הצג זיכרון",
   "com_ui_view_source": "הצג צ'אט מקורי",
   "com_ui_web_search": "חיפוש ברשת",
-  "com_ui_web_search_api_subtitle": "חפש מידע עדכני ברשת",
   "com_ui_web_search_cohere_key": "הכנס מפתח API של Cohere",
   "com_ui_web_search_firecrawl_url": "כתובת URL של ממשק ה-API של Firecrawl (אופציונלי)",
   "com_ui_web_search_jina_key": "הזן את מפתח ה-API של Jina",

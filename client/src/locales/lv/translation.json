@@ -1049,7 +1049,6 @@
   "com_ui_view_memory": "Skatīt atmiņu",
   "com_ui_view_source": "Skatīt avota sarunu",
   "com_ui_web_search": "Tīmekļa meklēšana",
-  "com_ui_web_search_api_subtitle": "Meklējiet tīmeklī aktuālo informāciju",
   "com_ui_web_search_cohere_key": "Ievadiet Cohere API atslēgu",
   "com_ui_web_search_firecrawl_url": "Firecrawl API URL (pēc izvēles)",
   "com_ui_web_search_jina_key": "Ievadiet Jina API atslēgu",

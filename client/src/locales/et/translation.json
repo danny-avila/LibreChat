@@ -940,7 +940,6 @@
   "com_ui_versions": "Versioonid",
   "com_ui_view_source": "Vaata algset vestlust",
   "com_ui_web_search": "Veebiotsing",
-  "com_ui_web_search_api_subtitle": "Otsi veebist ajakohast teavet",
   "com_ui_web_search_cohere_key": "Sisesta Cohere API võti",
   "com_ui_web_search_firecrawl_url": "Firecrawl API URL (valikuline)",
   "com_ui_web_search_jina_key": "Sisesta Jina API võti",
