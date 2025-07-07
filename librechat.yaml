@@ -102,6 +102,7 @@ fileConfig:
 # Endpoints configuration
 endpoints:
   custom:
+    #AMEND_AI-Global: Available to all users
     - name: "AMEND_AI-Global"
       apiKey: "${LITELLM_DEFAULT_APIKEY}"
       baseURL: "${LITELLM_URL}"
@@ -115,6 +116,8 @@ endpoints:
       forcePrompt: true
       userIdQuery: true
       modelDisplayLabel: "AMEND AI-Global"
+    
+    #AMEND_AI-Individual: Available to all users - unlocked with individual keys
     - name: "AMEND_AI-Individual"
       apiKey: "user_provided"
       baseURL: "${LITELLM_URL}"
