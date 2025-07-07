@@ -1046,7 +1046,6 @@
   "com_ui_view_memory": "Voir le Souvenir",
   "com_ui_view_source": "Voir le message d'origine",
   "com_ui_web_search": "Recherche web",
-  "com_ui_web_search_api_subtitle": "Rechercher des informations actualisées sur le web",
   "com_ui_web_search_cohere_key": "Entrez la clé API de Cohere",
   "com_ui_web_search_firecrawl_url": "Adresse URL de Firecrawl (optionnel)",
   "com_ui_web_search_jina_key": "Entrez la clé API de Jina",

@@ -1038,7 +1038,6 @@
   "com_ui_view_memory": "Erinnerung anzeigen",
   "com_ui_view_source": "Quell-Chat anzeigen",
   "com_ui_web_search": "Web-Suche\n",
-  "com_ui_web_search_api_subtitle": "Suche im Internet nach aktuellen Informationen",
   "com_ui_web_search_cohere_key": "Cohere API-Key eingeben",
   "com_ui_web_search_firecrawl_url": "Firecrawl API URL (optional)\n",
   "com_ui_web_search_jina_key": "Den Jina API Schlüssel eingeben",

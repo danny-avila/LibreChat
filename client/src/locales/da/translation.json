@@ -918,7 +918,6 @@
   "com_ui_versions": "Versioner",
   "com_ui_view_source": "Se kilde-chat",
   "com_ui_web_search": "Websøgning",
-  "com_ui_web_search_api_subtitle": "Søg på nettet efter opdateret information",
   "com_ui_web_search_cohere_key": "Indtast Cohere API-nøgle",
   "com_ui_web_search_firecrawl_url": "Firecrawl API URL (valgfri)",
   "com_ui_web_search_jina_key": "Indtast Jina API-nøgle",
