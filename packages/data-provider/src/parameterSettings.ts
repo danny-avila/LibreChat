@@ -563,8 +563,8 @@ const google: Record<string, SettingDefinition> = {
     optionType: 'conversation',
     columnSpan: 2,
   },
-  grounding: {
-    key: 'grounding',
+  web_search: {
+    key: 'web_search',
     label: 'com_endpoint_use_search_grounding',
     labelCode: true,
     description: 'com_endpoint_google_use_search_grounding',
@@ -589,7 +589,7 @@ const googleConfig: SettingsConfiguration = [
   librechat.resendFiles,
   google.thinking,
   google.thinkingBudget,
-  google.grounding,
+  google.web_search,
 ];
 
 const googleCol1: SettingsConfiguration = [
@@ -607,7 +607,7 @@ const googleCol2: SettingsConfiguration = [
   librechat.resendFiles,
   google.thinking,
   google.thinkingBudget,
-  google.grounding,
+  google.web_search,
 ];
 
 const openAI: SettingsConfiguration = [
