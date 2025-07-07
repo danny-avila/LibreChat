@@ -11,6 +11,7 @@ const getEnvironmentVariables = () => {
   const STT_IP_WINDOW = parseInt(process.env.STT_IP_WINDOW) || 1;
   const STT_USER_MAX = parseInt(process.env.STT_USER_MAX) || 50;
   const STT_USER_WINDOW = parseInt(process.env.STT_USER_WINDOW) || 1;
+  const STT_VIOLATION_SCORE = process.env.STT_VIOLATION_SCORE;
 
   const sttIpWindowMs = STT_IP_WINDOW * 60 * 1000;
   const sttIpMax = STT_IP_MAX;
@@ -27,11 +28,12 @@ const getEnvironmentVariables = () => {
     sttUserWindowMs,
     sttUserMax,
     sttUserWindowInMinutes,
+    sttViolationScore: STT_VIOLATION_SCORE,
   };
 };
 
 const createSTTHandler = (ip = true) => {
-  const { sttIpMax, sttIpWindowInMinutes, sttUserMax, sttUserWindowInMinutes } =
+  const { sttIpMax, sttIpWindowInMinutes, sttUserMax, sttUserWindowInMinutes, sttViolationScore } =
     getEnvironmentVariables();
 
   return async (req, res) => {
@@ -43,7 +45,7 @@ const createSTTHandler = (ip = true) => {
       windowInMinutes: ip ? sttIpWindowInMinutes : sttUserWindowInMinutes,
     };
 
-    await logViolation(req, res, type, errorMessage);
+    await logViolation(req, res, type, errorMessage, sttViolationScore);
     res.status(429).json({ message: 'Too many STT requests. Try again later' });
   };
 };

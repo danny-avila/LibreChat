@@ -11,6 +11,7 @@ const getEnvironmentVariables = () => {
   const FORK_IP_WINDOW = parseInt(process.env.FORK_IP_WINDOW) || 1;
   const FORK_USER_MAX = parseInt(process.env.FORK_USER_MAX) || 7;
   const FORK_USER_WINDOW = parseInt(process.env.FORK_USER_WINDOW) || 1;
+  const FORK_VIOLATION_SCORE = process.env.FORK_VIOLATION_SCORE;
 
   const forkIpWindowMs = FORK_IP_WINDOW * 60 * 1000;
   const forkIpMax = FORK_IP_MAX;
@@ -27,12 +28,18 @@ const getEnvironmentVariables = () => {
     forkUserWindowMs,
     forkUserMax,
     forkUserWindowInMinutes,
+    forkViolationScore: FORK_VIOLATION_SCORE,
   };
 };
 
 const createForkHandler = (ip = true) => {
-  const { forkIpMax, forkIpWindowInMinutes, forkUserMax, forkUserWindowInMinutes } =
-    getEnvironmentVariables();
+  const {
+    forkIpMax,
+    forkUserMax,
+    forkViolationScore,
+    forkIpWindowInMinutes,
+    forkUserWindowInMinutes,
+  } = getEnvironmentVariables();
 
   return async (req, res) => {
     const type = ViolationTypes.FILE_UPLOAD_LIMIT;
@@ -43,7 +50,7 @@ const createForkHandler = (ip = true) => {
       windowInMinutes: ip ? forkIpWindowInMinutes : forkUserWindowInMinutes,
     };
 
-    await logViolation(req, res, type, errorMessage);
+    await logViolation(req, res, type, errorMessage, forkViolationScore);
     res.status(429).json({ message: 'Too many conversation fork requests. Try again later' });
   };
 };
