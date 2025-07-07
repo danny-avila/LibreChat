@@ -116,7 +116,6 @@ endpoints:
       forcePrompt: true
       userIdQuery: true
       modelDisplayLabel: "AMEND AI-Global"
-    
     #AMEND_AI-Individual: Available to all users - unlocked with individual keys
     - name: "AMEND_AI-Individual"
       apiKey: "user_provided"
@@ -138,10 +137,10 @@ endpoints:
       modelDisplayLabel: "AMEND AI-Individual"
 
 ocr:
-  mistralModel: "mistral-ocr-amend" # should match deployment name on Azure
-  apiKey: "${AZURE_MISTRAL_OCR_API_KEY}" # arbitrary .env var reference
-  baseURL: "${AZURE_MISTRAL_OCR_BASE_URL}" # hardcoded, can also be .env var reference
-  strategy: "azure_mistral_ocr"
+  mistralModel: "${MISTRAL_MODEL}" # should match deployment name on Azure
+  apiKey: "${OCR_API_KEY}" # arbitrary .env var reference
+  baseURL: "${OCR_BASEURL}" # hardcoded, can also be .env var reference
+  strategy: "mistral_ocr"
 
 mcpServers:
   
