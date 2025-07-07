@@ -634,10 +634,8 @@ export const tConversationSchema = z.object({
   reasoning_summary: eReasoningSummarySchema.optional().nullable(),
   /* OpenAI: use Responses API */
   useResponsesApi: z.boolean().optional(),
-  /* OpenAI: use Responses API with Web Search */
+  /* OpenAI, Google: use Web Search */
   web_search: z.boolean().optional(),
-  /* Google: use Search Grounding */
-  grounding: z.boolean().optional(),
   /* assistant */
   assistant_id: z.string().optional(),
   /* agents */
@@ -741,7 +739,7 @@ export const tQueryParamsSchema = tConversationSchema
     /** @endpoints openAI, custom, azureOpenAI */
     useResponsesApi: true,
     /** @endpoints google */
-    grounding: true,
+    web_search: true,
     /** @endpoints google, anthropic, bedrock */
     topP: true,
     /** @endpoints google, anthropic */
@@ -824,7 +822,7 @@ export const googleBaseSchema = tConversationSchema.pick({
   topK: true,
   thinking: true,
   thinkingBudget: true,
-  grounding: true,
+  web_search: true,
   iconURL: true,
   greeting: true,
   spec: true,
@@ -856,7 +854,7 @@ export const googleGenConfigSchema = z
         thinkingBudget: coerceNumber.optional(),
       })
       .optional(),
-    grounding: z.boolean().optional(),
+    web_search: z.boolean().optional(),
   })
   .strip()
   .optional();
