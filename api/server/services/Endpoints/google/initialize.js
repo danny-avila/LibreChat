@@ -17,16 +17,24 @@ const initializeClient = async ({ req, res, endpointOption, overrideModel, optio
 
   let serviceKey = {};
 
-  try {
-    const serviceKeyPath =
-      process.env.GOOGLE_SERVICE_KEY_FILE_PATH ||
-      path.join(__dirname, '../../../..', 'data', 'auth.json');
-    serviceKey = await loadServiceKey(serviceKeyPath);
-    if (!serviceKey) {
+  /** Check if GOOGLE_KEY is provided at all (including 'user_provided') */
+  const isGoogleKeyProvided =
+    (GOOGLE_KEY && GOOGLE_KEY.trim() !== '') || (isUserProvided && userKey != null);
+
+  if (!isGoogleKeyProvided) {
+    /** Only attempt to load service key if GOOGLE_KEY is not provided */
+    try {
+      const serviceKeyPath =
+        process.env.GOOGLE_SERVICE_KEY_FILE_PATH ||
+        path.join(__dirname, '../../../..', 'data', 'auth.json');
+      serviceKey = await loadServiceKey(serviceKeyPath);
+      if (!serviceKey) {
+        serviceKey = {};
+      }
+    } catch (_e) {
+      // Service key loading failed, but that's okay if not required
       serviceKey = {};
     }
-  } catch (_e) {
-    // Do nothing
   }
 
   const credentials = isUserProvided
