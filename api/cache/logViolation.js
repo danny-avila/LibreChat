@@ -9,7 +9,7 @@ const banViolation = require('./banViolation');
  * @param {Object} res - Express response object.
  * @param {string} type - The type of violation.
  * @param {Object} errorMessage - The error message to log.
- * @param {number} [score=1] - The severity of the violation. Defaults to 1
+ * @param {number | string} [score=1] - The severity of the violation. Defaults to 1
  */
 const logViolation = async (req, res, type, errorMessage, score = 1) => {
   const userId = req.user?.id ?? req.user?._id;

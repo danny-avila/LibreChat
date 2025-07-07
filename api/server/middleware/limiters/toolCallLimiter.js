@@ -6,6 +6,8 @@ const logViolation = require('~/cache/logViolation');
 const { isEnabled } = require('~/server/utils');
 const { logger } = require('~/config');
 
+const { TOOL_CALL_VIOLATION_SCORE: score } = process.env;
+
 const handler = async (req, res) => {
   const type = ViolationTypes.TOOL_CALL_LIMIT;
   const errorMessage = {
@@ -15,7 +17,7 @@ const handler = async (req, res) => {
     windowInMinutes: 1,
   };
 
-  await logViolation(req, res, type, errorMessage, 0);
+  await logViolation(req, res, type, errorMessage, score);
   res.status(429).json({ message: 'Too many tool call requests. Try again later' });
 };
 

@@ -11,6 +11,7 @@ const getEnvironmentVariables = () => {
   const FILE_UPLOAD_IP_WINDOW = parseInt(process.env.FILE_UPLOAD_IP_WINDOW) || 15;
   const FILE_UPLOAD_USER_MAX = parseInt(process.env.FILE_UPLOAD_USER_MAX) || 50;
   const FILE_UPLOAD_USER_WINDOW = parseInt(process.env.FILE_UPLOAD_USER_WINDOW) || 15;
+  const FILE_UPLOAD_VIOLATION_SCORE = process.env.FILE_UPLOAD_VIOLATION_SCORE;
 
   const fileUploadIpWindowMs = FILE_UPLOAD_IP_WINDOW * 60 * 1000;
   const fileUploadIpMax = FILE_UPLOAD_IP_MAX;
@@ -27,6 +28,7 @@ const getEnvironmentVariables = () => {
     fileUploadUserWindowMs,
     fileUploadUserMax,
     fileUploadUserWindowInMinutes,
+    fileUploadViolationScore: FILE_UPLOAD_VIOLATION_SCORE,
   };
 };
 
@@ -36,6 +38,7 @@ const createFileUploadHandler = (ip = true) => {
     fileUploadIpWindowInMinutes,
     fileUploadUserMax,
     fileUploadUserWindowInMinutes,
+    fileUploadViolationScore,
   } = getEnvironmentVariables();
 
   return async (req, res) => {
@@ -47,7 +50,7 @@ const createFileUploadHandler = (ip = true) => {
       windowInMinutes: ip ? fileUploadIpWindowInMinutes : fileUploadUserWindowInMinutes,
     };
 
-    await logViolation(req, res, type, errorMessage);
+    await logViolation(req, res, type, errorMessage, fileUploadViolationScore);
     res.status(429).json({ message: 'Too many file upload requests. Try again later' });
   };
 };
