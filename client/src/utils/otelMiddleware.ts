@@ -1,7 +1,6 @@
 import { metrics, propagation } from '@opentelemetry/api';
 import { SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base';
 import { WebTracerProvider } from '@opentelemetry/sdk-trace-web';
-import { ZoneContextManager } from '@opentelemetry/context-zone';
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
 import { OTLPMetricExporter } from '@opentelemetry/exporter-metrics-otlp-http';
 import {
@@ -132,7 +131,6 @@ export async function initializeFrontendOtel() {
 
   (window as any).otelLogger = logger;
   provider.register({
-    contextManager: new ZoneContextManager(),
     propagator: compositePropagator,
   });
   registerInstrumentations({
