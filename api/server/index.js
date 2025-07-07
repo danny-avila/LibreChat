@@ -189,5 +189,23 @@ process.on('uncaughtException', (err) => {
   process.exit(1);
 });
 
+// Graceful shutdown handling for cleanup scheduler
+const gracefulShutdown = (signal) => {
+  logger.info(`[Server] Received ${signal}, starting graceful shutdown...`);
+
+  try {
+    const cleanupScheduler = require('./services/CleanupSchedulerService');
+    cleanupScheduler.stop();
+    logger.info('[Server] Cleanup scheduler stopped');
+  } catch (error) {
+    logger.error('[Server] Error stopping cleanup scheduler:', error);
+  }
+
+  process.exit(0);
+};
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
 /** Export app for easier testing purposes */
 module.exports = app;

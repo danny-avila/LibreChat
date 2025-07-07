@@ -1,6 +1,6 @@
 const { ViolationTypes } = require('librechat-data-provider');
 const { getModelsConfig } = require('~/server/controllers/ModelController');
-const { handleError } = require('~/server/utils');
+const { handleError } = require('@librechat/api');
 const { logViolation } = require('~/cache');
 /**
  * Validates the model of the request.

@@ -1,24 +1,27 @@
 import { useSetRecoilState } from 'recoil';
 import * as Ariakit from '@ariakit/react';
 import React, { useRef, useState, useMemo } from 'react';
-import { FileSearch, ImageUpIcon, TerminalSquareIcon, FileType2Icon } from 'lucide-react';
+import { FileSearch, ImageUpIcon, TerminalSquareIcon, FileType2Icon, ShieldIcon } from 'lucide-react';
 import { EToolResources, EModelEndpoint, defaultAgentCapabilities } from 'librechat-data-provider';
 import type { EndpointFileConfig } from 'librechat-data-provider';
 import { useLocalize, useGetAgentsConfig, useFileHandling, useAgentCapabilities } from '~/hooks';
 import { FileUpload, TooltipAnchor, DropdownPopup, AttachmentIcon } from '~/components';
 import { ephemeralAgentByConvoId } from '~/store';
 import { cn } from '~/utils';
+import SecureFileUpload, { SecureFileUploadRef } from './SecureFileUpload';
 
 interface AttachFileMenuProps {
   conversationId: string;
   disabled?: boolean | null;
   endpointFileConfig?: EndpointFileConfig;
+  textAreaRef?: React.RefObject<HTMLTextAreaElement>;
 }
 
-const AttachFileMenu = ({ disabled, conversationId, endpointFileConfig }: AttachFileMenuProps) => {
+const AttachFileMenu = ({ disabled, conversationId, endpointFileConfig, textAreaRef }: AttachFileMenuProps) => {
   const localize = useLocalize();
   const isUploadDisabled = disabled ?? false;
   const inputRef = useRef<HTMLInputElement>(null);
+  const secureInputRef = useRef<SecureFileUploadRef>(null);
   const [isPopoverActive, setIsPopoverActive] = useState(false);
   const setEphemeralAgent = useSetRecoilState(ephemeralAgentByConvoId(conversationId));
   const [toolResource, setToolResource] = useState<EToolResources | undefined>();
@@ -56,7 +59,21 @@ const AttachFileMenu = ({ disabled, conversationId, endpointFileConfig }: Attach
       },
     ];
 
-    if (capabilities.ocrEnabled) {
+    // Add secure upload option if textAreaRef is available
+    if (textAreaRef) {
+      items.push({
+        label: localize('com_files_secure_upload'),
+        onClick: () => {
+          // Trigger the secure file upload
+          if (secureInputRef.current) {
+            secureInputRef.current.click();
+          }
+        },
+        icon: <ShieldIcon className="icon-md" />,
+      });
+    }
+
+    if (capabilities.includes(EToolResources.ocr)) {
       items.push({
         label: localize('com_ui_upload_ocr_text'),
         onClick: () => {
@@ -95,7 +112,7 @@ const AttachFileMenu = ({ disabled, conversationId, endpointFileConfig }: Attach
     }
 
     return items;
-  }, [capabilities, localize, setToolResource, setEphemeralAgent]);
+  }, [capabilities, localize, setToolResource, setEphemeralAgent, textAreaRef]);
 
   const menuTrigger = (
     <TooltipAnchor
@@ -120,23 +137,34 @@ const AttachFileMenu = ({ disabled, conversationId, endpointFileConfig }: Attach
   );
 
   return (
-    <FileUpload
-      ref={inputRef}
-      handleFileChange={(e) => {
-        handleFileChange(e, toolResource);
-      }}
-    >
-      <DropdownPopup
-        menuId="attach-file-menu"
-        isOpen={isPopoverActive}
-        setIsOpen={setIsPopoverActive}
-        modal={true}
-        unmountOnHide={true}
-        trigger={menuTrigger}
-        items={dropdownItems}
-        iconClassName="mr-0"
-      />
-    </FileUpload>
+    <>
+      <FileUpload
+        ref={inputRef}
+        handleFileChange={(e) => {
+          handleFileChange(e, toolResource);
+        }}
+      >
+        <DropdownPopup
+          menuId="attach-file-menu"
+          isOpen={isPopoverActive}
+          setIsOpen={setIsPopoverActive}
+          modal={true}
+          unmountOnHide={true}
+          trigger={menuTrigger}
+          items={dropdownItems}
+          iconClassName="mr-0"
+        />
+      </FileUpload>
+
+      {/* Hidden SecureFileUpload component */}
+      {textAreaRef && (
+        <SecureFileUpload
+          textAreaRef={textAreaRef}
+          className="hidden"
+          ref={secureInputRef}
+        />
+      )}
+    </>
   );
 };
 
