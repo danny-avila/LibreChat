@@ -21,6 +21,7 @@
   "com_agents_name_placeholder": "オプション: エージェントの名前",
   "com_agents_no_access": "このエージェントを編集する権限がありません。",
   "com_agents_not_available": "エージェントは利用できません",
+  "com_agents_search_info": "有効にすると、エージェントが最新の情報を取得するためにWEB検索を行うようになります。有効なAPIキーが必要です。",
   "com_agents_search_name": "名前でエージェントを検索",
   "com_agents_update_error": "エージェントの更新中にエラーが発生しました。",
   "com_assistants_action_attempt": "アシスタントは{{0}}と話したいです",
@@ -322,7 +323,6 @@
   "com_nav_delete_cache_storage": "TTSキャッシュストレージを削除",
   "com_nav_delete_data_info": "すべてのデータが削除されます。",
   "com_nav_delete_warning": "警告: この操作により、アカウントが完全に削除されます。",
-  "com_nav_edit_chat_badges": "チャットバッジの編集",
   "com_nav_enable_cache_tts": "キャッシュTTSを有効化",
   "com_nav_enable_cloud_browser_voice": "クラウドベースの音声を使用",
   "com_nav_enabled": "有効化",
@@ -688,7 +688,6 @@
   "com_ui_import_conversation_info": "JSONファイルから会話をインポートする",
   "com_ui_import_conversation_success": "会話のインポートに成功しました",
   "com_ui_include_shadcnui": "shadcn/uiコンポーネントの指示を含める",
-  "com_ui_include_shadcnui_agent": "shadcn/uiの指示を含む",
   "com_ui_input": "入力",
   "com_ui_instructions": "指示文",
   "com_ui_late_night": "遅い夜を楽しんで",
@@ -868,6 +867,5 @@
   "com_ui_x_selected": "{{0}}が選択された",
   "com_ui_yes": "はい",
   "com_ui_zoom": "ズーム",
-  "com_user_message": "あなた",
-  "com_warning_resubmit_unsupported": "このエンドポイントではAIメッセージの再送信はサポートされていません"
+  "com_user_message": "あなた"
 }

@@ -9,7 +9,6 @@ const presets = require('./presets');
 const prompts = require('./prompts');
 const balance = require('./balance');
 const plugins = require('./plugins');
-const bedrock = require('./bedrock');
 const actions = require('./actions');
 const banner = require('./banner');
 const search = require('./search');
@@ -26,11 +25,9 @@ const auth = require('./auth');
 const edit = require('./edit');
 const keys = require('./keys');
 const user = require('./user');
-const ask = require('./ask');
 const mcp = require('./mcp');
 
 module.exports = {
-  ask,
   edit,
   auth,
   keys,
@@ -46,7 +43,6 @@ module.exports = {
   search,
   config,
   models,
-  bedrock,
   prompts,
   plugins,
   actions,

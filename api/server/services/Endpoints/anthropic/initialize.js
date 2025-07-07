@@ -41,7 +41,7 @@ const initializeClient = async ({ req, res, endpointOption, overrideModel, optio
       {
         reverseProxyUrl: ANTHROPIC_REVERSE_PROXY ?? null,
         proxy: PROXY ?? null,
-        modelOptions: endpointOption.model_parameters,
+        modelOptions: endpointOption?.model_parameters ?? {},
       },
       clientOptions,
     );

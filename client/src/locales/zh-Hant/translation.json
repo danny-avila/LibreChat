@@ -695,6 +695,5 @@
   "com_ui_versions": "版本",
   "com_ui_yes": "是",
   "com_ui_zoom": "縮放",
-  "com_user_message": "您",
-  "com_warning_resubmit_unsupported": "此端點不支援重新送出 AI 訊息。"
+  "com_user_message": "您"
 }

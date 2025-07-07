@@ -43,9 +43,6 @@ const localStorageAtoms = {
   // Beta features settings
   modularChat: atomWithLocalStorage('modularChat', true),
   LaTeXParsing: atomWithLocalStorage('LaTeXParsing', true),
-  codeArtifacts: atomWithLocalStorage('codeArtifacts', false),
-  includeShadcnui: atomWithLocalStorage('includeShadcnui', false),
-  customPromptMode: atomWithLocalStorage('customPromptMode', false),
   centerFormOnLanding: atomWithLocalStorage('centerFormOnLanding', true),
   showFooter: atomWithLocalStorage('showFooter', true),
 

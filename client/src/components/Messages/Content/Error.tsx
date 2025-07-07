@@ -62,6 +62,7 @@ const errorMessages = {
     const { info } = json;
     return info;
   },
+  [ErrorTypes.GOOGLE_TOOL_CONFLICT]: 'com_error_google_tool_conflict',
   [ViolationTypes.BAN]:
     'Your account has been temporarily banned due to violations of our service.',
   invalid_api_key:

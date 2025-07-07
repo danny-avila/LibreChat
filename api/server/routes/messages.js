@@ -235,12 +235,13 @@ router.put('/:conversationId/:messageId', validateMessageReq, async (req, res) =
       return res.status(400).json({ error: 'Content part not found' });
     }
 
-    if (updatedContent[index].type !== ContentTypes.TEXT) {
+    const currentPartType = updatedContent[index].type;
+    if (currentPartType !== ContentTypes.TEXT && currentPartType !== ContentTypes.THINK) {
       return res.status(400).json({ error: 'Cannot update non-text content' });
     }
 
-    const oldText = updatedContent[index].text;
-    updatedContent[index] = { type: ContentTypes.TEXT, text };
+    const oldText = updatedContent[index][currentPartType];
+    updatedContent[index] = { type: currentPartType, [currentPartType]: text };
 
     let tokenCount = message.tokenCount;
     if (tokenCount !== undefined) {

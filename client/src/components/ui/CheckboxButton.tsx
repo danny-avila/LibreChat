@@ -9,11 +9,15 @@ const CheckboxButton = React.forwardRef<
     icon?: React.ReactNode;
     label: string;
     className?: string;
+    checked?: boolean;
     defaultChecked?: boolean;
     isCheckedClassName?: string;
-    setValue?: (e: React.ChangeEvent<HTMLInputElement>, isChecked: boolean) => void;
+    setValue?: (values: {
+      e?: React.ChangeEvent<HTMLInputElement>;
+      value: boolean | string;
+    }) => void;
   }
->(({ icon, label, setValue, className, defaultChecked, isCheckedClassName }, ref) => {
+>(({ icon, label, setValue, className, checked, defaultChecked, isCheckedClassName }, ref) => {
   const checkbox = useCheckboxStore();
   const isChecked = useStoreState(checkbox, (state) => state?.value);
   const onChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -21,20 +25,28 @@ const CheckboxButton = React.forwardRef<
     if (typeof isChecked !== 'boolean') {
       return;
     }
-    setValue?.(e, !isChecked);
+    setValue?.({ e, value: !isChecked });
   };
+
+  // Sync with controlled checked prop
   useEffect(() => {
-    if (defaultChecked) {
+    if (checked !== undefined) {
+      checkbox.setValue(checked);
+    }
+  }, [checked, checkbox]);
+
+  // Set initial value from defaultChecked
+  useEffect(() => {
+    if (defaultChecked !== undefined && checked === undefined) {
       checkbox.setValue(defaultChecked);
     }
-  }, [defaultChecked, checkbox]);
+  }, [defaultChecked, checked, checkbox]);
 
   return (
     <Checkbox
       ref={ref}
       store={checkbox}
       onChange={onChange}
-      defaultChecked={defaultChecked}
       className={cn(
         // Base styling from MultiSelect's selectClassName
         'group relative inline-flex items-center justify-center gap-1.5',

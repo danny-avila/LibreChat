@@ -11,32 +11,31 @@ export default function createPayload(submission: t.TSubmission) {
     isContinued,
     isTemporary,
     ephemeralAgent,
+    editedContent,
   } = submission;
   const { conversationId } = s.tConvoUpdateSchema.parse(conversation);
   const { endpoint: _e, endpointType } = endpointOption as {
     endpoint: s.EModelEndpoint;
     endpointType?: s.EModelEndpoint;
   };
-  const endpoint = _e as s.EModelEndpoint;
-  let server = EndpointURLs[endpointType ?? endpoint];
-  const isEphemeral = s.isEphemeralAgent(endpoint, ephemeralAgent);
 
-  if (isEdited && s.isAssistantsEndpoint(endpoint)) {
-    server += '/modify';
-  } else if (isEdited) {
-    server = server.replace('/ask/', '/edit/');
-  } else if (isEphemeral) {
-    server = `${EndpointURLs[s.EModelEndpoint.agents]}/${endpoint}`;
+  const endpoint = _e as s.EModelEndpoint;
+  let server = `${EndpointURLs[s.EModelEndpoint.agents]}/${endpoint}`;
+  if (s.isAssistantsEndpoint(endpoint)) {
+    server =
+      EndpointURLs[(endpointType ?? endpoint) as 'assistants' | 'azureAssistants'] +
+      (isEdited ? '/modify' : '');
   }
 
   const payload: t.TPayload = {
     ...userMessage,
     ...endpointOption,
     endpoint,
-    ephemeralAgent: isEphemeral ? ephemeralAgent : undefined,
+    ephemeralAgent: s.isAssistantsEndpoint(endpoint) ? undefined : ephemeralAgent,
     isContinued: !!(isEdited && isContinued),
     conversationId,
     isTemporary,
+    editedContent,
   };
 
   return { server, payload };

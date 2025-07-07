@@ -1,3 +1,5 @@
+const { sendEvent } = require('@librechat/api');
+const { logger } = require('@librechat/data-schemas');
 const { Constants } = require('librechat-data-provider');
 const {
   handleAbortError,
@@ -5,17 +7,18 @@ const {
   cleanupAbortController,
 } = require('~/server/middleware');
 const { disposeClient, clientRegistry, requestDataMap } = require('~/server/cleanup');
-const { sendMessage } = require('~/server/utils');
 const { saveMessage } = require('~/models');
-const { logger } = require('~/config');
 
 const AgentController = async (req, res, next, initializeClient, addTitle) => {
   let {
     text,
     endpointOption,
     conversationId,
+    isContinued = false,
+    editedContent = null,
     parentMessageId = null,
     overrideParentMessageId = null,
+    responseMessageId: editedResponseMessageId = null,
   } = req.body;
 
   let sender;
@@ -67,7 +70,7 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
             handler();
           }
         } catch (e) {
-          // Ignore cleanup errors
+          logger.error('[AgentController] Error in cleanup handler', e);
         }
       }
     }
@@ -155,7 +158,7 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
       try {
         res.removeListener('close', closeHandler);
       } catch (e) {
-        // Ignore
+        logger.error('[AgentController] Error removing close listener', e);
       }
     });
 
@@ -163,10 +166,14 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
       user: userId,
       onStart,
       getReqData,
+      isContinued,
+      editedContent,
       conversationId,
       parentMessageId,
       abortController,
       overrideParentMessageId,
+      isEdited: !!editedContent,
+      responseMessageId: editedResponseMessageId,
       progressOptions: {
         res,
       },
@@ -206,7 +213,7 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
       // Create a new response object with minimal copies
       const finalResponse = { ...response };
 
-      sendMessage(res, {
+      sendEvent(res, {
         final: true,
         conversation,
         title: conversation.title,
