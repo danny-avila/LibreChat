@@ -119,7 +119,7 @@ endpoints:
       apiKey: "user_provided"
       baseURL: "${LITELLM_URL}"
       models:
-        default:
+        default: 
         - "azure/gpt-4.1-mini"
         - "azure/DeepSeek-R1"
         - "azure/gpt-image-1"
