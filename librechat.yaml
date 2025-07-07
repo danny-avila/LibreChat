@@ -22,11 +22,40 @@ registration:
   - "amendllc.com"
 
 # Memory (persistent user context) configuration
+# memory:
+#   disabled: false
+#   validKeys: ["preferences", "work_info", "personal_info", "skills", "interests", "context"]
+#   tokenLimit: 10000
+#   personalize: true
+ 
 memory:
   disabled: false
-  validKeys: ["preferences", "work_info", "personal_info", "skills", "interests", "context"]
-  tokenLimit: 10000
+  validKeys:
+    - "user_preferences"
+    - "conversation_context" 
+    - "learned_facts"
+    - "personal_information"
+    - "skills"
+    - "interests"
+    - "context"
+  tokenLimit: 3000
   personalize: true
+  messageWindowSize: 8
+  agent:
+    provider: "AMEND_AI-Global"
+    model: "azure/gpt-4.1-mini"
+    instructions: |
+      Store memory using only the specified validKeys. For user_preferences: save 
+      explicitly stated preferences about communication style, topics of interest, 
+      or workflow preferences. For conversation_context: save important facts or 
+      ongoing projects mentioned. For learned_facts: save objective information 
+      about the user. For personal_information: save only what the user explicitly 
+      shares about themselves. Delete outdated or incorrect information promptly.
+    model_parameters:
+      temperature: 0.2
+      max_tokens: 2000
+      top_p: 0.8
+      frequency_penalty: 0.1
 
 # Web Search configuration
 webSearch:
@@ -90,8 +119,14 @@ endpoints:
       apiKey: "user_provided"
       baseURL: "${LITELLM_URL}"
       models:
-        default: ["azure/gpt-4.1-mini"]
-        fetch: true
+        default:
+        - "azure/gpt-4.1-mini"
+        - "azure/DeepSeek-R1"
+        - "azure/gpt-image-1"
+        - "azure/o3-mini"
+        - "azure/o4-mini"
+        - "azure/gpt-4-1"
+        fetch: false
       titleConvo: true
       titleModel: "azure/gpt-4.1-mini"
       summarize: true
