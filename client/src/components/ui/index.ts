@@ -46,3 +46,4 @@ export { default as InputWithDropdown } from './InputWithDropDown';
 export { default as SelectDropDownPop } from './SelectDropDownPop';
 export { default as AnimatedSearchInput } from './AnimatedSearchInput';
 export { default as MultiSelectDropDown } from './MultiSelectDropDown';
+export { SegmentedControl } from './SegmentedControl';

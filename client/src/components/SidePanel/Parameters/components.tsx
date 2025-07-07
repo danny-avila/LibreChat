@@ -9,6 +9,7 @@ import {
   DynamicSwitch,
   DynamicInput,
   DynamicTags,
+  DynamicSegment,
 } from './';
 
 export const componentMapping: Record<
@@ -23,4 +24,5 @@ export const componentMapping: Record<
   [ComponentTypes.Checkbox]: DynamicCheckbox,
   [ComponentTypes.Tags]: DynamicTags,
   [ComponentTypes.Combobox]: DynamicCombobox,
+  [ComponentTypes.Segment]: DynamicSegment,
 };

@@ -14,7 +14,8 @@ export type ComponentType =
   | 'switch'
   | 'dropdown'
   | 'combobox'
-  | 'tags';
+  | 'tags'
+  | 'segment';
 
 export type OptionType = 'conversation' | 'model' | 'custom';
 
@@ -34,6 +35,7 @@ export enum ComponentTypes {
   Dropdown = 'dropdown',
   Combobox = 'combobox',
   Tags = 'tags',
+  Segment = 'segment',
 }
 
 export enum SettingTypes {
@@ -206,6 +208,7 @@ const maxColumns = 4;
 const minSliderOptions = 2;
 const minDropdownOptions = 2;
 const minComboboxOptions = 2;
+const minSegmentOptions = 2;
 
 /**
  * Validates the provided setting using the constraints unique to each component type.
@@ -359,6 +362,20 @@ export function validateSettingDefinitions(settings: SettingsConfiguration): voi
       }
       setting.includeInput =
         setting.type === SettingTypes.Number ? (setting.includeInput ?? true) : false; // Default to true if type is number
+    }
+
+    if (setting.component === ComponentTypes.Segment) {
+      if (
+        setting.type === SettingTypes.Enum &&
+        (!setting.options || setting.options.length < minSegmentOptions)
+      ) {
+        errors.push({
+          code: ZodIssueCode.custom,
+          message: `Segment component for setting ${setting.key} requires at least ${minSegmentOptions} options for enum type.`,
+          path: ['options'],
+        });
+        // continue;
+      }
     }
 
     if (setting.component === ComponentTypes.Slider && setting.type === SettingTypes.Number) {

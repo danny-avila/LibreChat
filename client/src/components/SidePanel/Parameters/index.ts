@@ -6,4 +6,5 @@ export { default as DynamicSlider } from './DynamicSlider';
 export { default as DynamicSwitch } from './DynamicSwitch';
 export { default as DynamicInput } from './DynamicInput';
 export { default as DynamicTags } from './DynamicTags';
+export { default as DynamicSegment } from './DynamicSegment';
 export { default as OptionHoverAlt } from './OptionHover';

@@ -70,7 +70,7 @@ const baseDefinitions: Record<string, SettingDefinition> = {
     descriptionCode: true,
     type: 'enum',
     default: ImageDetail.auto,
-    component: 'slider',
+    component: 'segment',
     options: [ImageDetail.low, ImageDetail.auto, ImageDetail.high],
     enumMappings: {
       [ImageDetail.low]: 'com_ui_low',
@@ -218,7 +218,7 @@ const openAIParams: Record<string, SettingDefinition> = {
     descriptionCode: true,
     type: 'enum',
     default: ReasoningEffort.none,
-    component: 'slider',
+    component: 'segment',
     options: [
       ReasoningEffort.none,
       ReasoningEffort.low,
@@ -268,7 +268,7 @@ const openAIParams: Record<string, SettingDefinition> = {
     descriptionCode: true,
     type: 'enum',
     default: ReasoningSummary.none,
-    component: 'slider',
+    component: 'segment',
     options: [
       ReasoningSummary.none,
       ReasoningSummary.auto,
@@ -276,7 +276,7 @@ const openAIParams: Record<string, SettingDefinition> = {
       ReasoningSummary.detailed,
     ],
     enumMappings: {
-      [ReasoningSummary.none]: 'com_ui_none',
+      [ReasoningSummary.none]: 'com_ui_none_',
       [ReasoningSummary.auto]: 'com_ui_auto',
       [ReasoningSummary.concise]: 'com_ui_concise',
       [ReasoningSummary.detailed]: 'com_ui_detailed',
