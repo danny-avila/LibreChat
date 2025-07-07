@@ -69,7 +69,7 @@ export async function createRun({
     llmConfig.usage = true;
   }
 
-  let reasoningKey: 'reasoning_content' | 'reasoning' | undefined;
+  let reasoningKey: 'reasoning_content' | 'reasoning' = 'reasoning_content';
   if (provider === Providers.GOOGLE) {
     reasoningKey = 'reasoning';
   } else if (
