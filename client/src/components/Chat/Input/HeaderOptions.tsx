@@ -79,19 +79,19 @@ export default function HeaderOptions({
               {!noSettings[endpoint] &&
                 interfaceConfig?.parameters === true &&
                 paramEndpoint === false && (
-                <TooltipAnchor
-                  id="parameters-button"
-                  aria-label={localize('com_ui_model_parameters')}
-                  description={localize('com_ui_model_parameters')}
-                  tabIndex={0}
-                  role="button"
-                  onClick={triggerAdvancedMode}
-                  data-testid="parameters-button"
-                  className="inline-flex size-10 items-center justify-center rounded-lg border border-border-light bg-transparent text-text-primary transition-all ease-in-out hover:bg-surface-tertiary disabled:pointer-events-none disabled:opacity-50 radix-state-open:bg-surface-tertiary"
-                >
-                  <Settings2 size={16} aria-label="Settings/Parameters Icon" />
-                </TooltipAnchor>
-              )}
+                  <TooltipAnchor
+                    id="parameters-button"
+                    aria-label={localize('com_ui_model_parameters')}
+                    description={localize('com_ui_model_parameters')}
+                    tabIndex={0}
+                    role="button"
+                    onClick={triggerAdvancedMode}
+                    data-testid="parameters-button"
+                    className="inline-flex size-10 items-center justify-center rounded-lg border border-border-light bg-transparent text-text-primary transition-all ease-in-out hover:bg-surface-tertiary disabled:pointer-events-none disabled:opacity-50 radix-state-open:bg-surface-tertiary"
+                  >
+                    <Settings2 size={16} aria-label="Settings/Parameters Icon" />
+                  </TooltipAnchor>
+                )}
             </div>
             {interfaceConfig?.parameters === true && paramEndpoint === false && (
               <OptionsPopover

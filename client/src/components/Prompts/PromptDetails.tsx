@@ -55,11 +55,11 @@ const PromptDetails = ({ group }: { group?: TPromptGroup }) => {
                   /** @ts-ignore */
                   supersub,
                   remarkGfm,
-                  [remarkMath, { singleDollarTextMath: true }],
+                  [remarkMath, { singleDollarTextMath: false }],
                 ]}
                 rehypePlugins={[
                   /** @ts-ignore */
-                  [rehypeKatex, { output: 'mathml' }],
+                  [rehypeKatex],
                   /** @ts-ignore */
                   [rehypeHighlight, { ignoreMissing: true }],
                 ]}

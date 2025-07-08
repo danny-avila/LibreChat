@@ -1,13 +1,16 @@
+const { z } = require('zod');
 const fs = require('fs').promises;
 const { nanoid } = require('nanoid');
+const { logger } = require('@librechat/data-schemas');
+const { agentCreateSchema, agentUpdateSchema } = require('@librechat/api');
 const {
   Tools,
   Constants,
-  FileContext,
   FileSources,
   SystemRoles,
   EToolResources,
   actionDelimiter,
+  removeNullishValues,
 } = require('librechat-data-provider');
 const {
   getAgent,
@@ -16,18 +19,21 @@ const {
   deleteAgent,
   getListAgents,
 } = require('~/models/Agent');
-const { uploadImageBuffer, filterFile } = require('~/server/services/Files/process');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
+const { resizeAvatar } = require('~/server/services/Files/images/avatar');
 const { refreshS3Url } = require('~/server/services/Files/S3/crud');
+const { filterFile } = require('~/server/services/Files/process');
 const { updateAction, getActions } = require('~/models/Action');
+const { getCachedTools } = require('~/server/services/Config');
 const { updateAgentProjects } = require('~/models/Agent');
 const { getProjectByName } = require('~/models/Project');
+const { revertAgentVersion } = require('~/models/Agent');
 const { deleteFileByFilter } = require('~/models/File');
-const { logger } = require('~/config');
 
 const systemTools = {
   [Tools.execute_code]: true,
   [Tools.file_search]: true,
+  [Tools.web_search]: true,
 };
 
 /**
@@ -40,13 +46,18 @@ const systemTools = {
  */
 const createAgentHandler = async (req, res) => {
   try {
-    const { tools = [], provider, name, description, instructions, model, ...agentData } = req.body;
+    const validatedData = agentCreateSchema.parse(req.body);
+    const { tools = [], ...agentData } = removeNullishValues(validatedData);
+
     const { id: userId } = req.user;
 
+    agentData.id = `agent_${nanoid()}`;
+    agentData.author = userId;
     agentData.tools = [];
 
+    const availableTools = await getCachedTools({ includeGlobal: true });
     for (const tool of tools) {
-      if (req.app.locals.availableTools[tool]) {
+      if (availableTools[tool]) {
         agentData.tools.push(tool);
       }
 
@@ -55,19 +66,13 @@ const createAgentHandler = async (req, res) => {
       }
     }
 
-    Object.assign(agentData, {
-      author: userId,
-      name,
-      description,
-      instructions,
-      provider,
-      model,
-    });
-
-    agentData.id = `agent_${nanoid()}`;
     const agent = await createAgent(agentData);
     res.status(201).json(agent);
   } catch (error) {
+    if (error instanceof z.ZodError) {
+      logger.error('[/Agents] Validation error', error.errors);
+      return res.status(400).json({ error: 'Invalid request data', details: error.errors });
+    }
     logger.error('[/Agents] Error creating agent', error);
     res.status(500).json({ error: error.message });
   }
@@ -104,11 +109,13 @@ const getAgentHandler = async (req, res) => {
       return res.status(404).json({ error: 'Agent not found' });
     }
 
+    agent.version = agent.versions ? agent.versions.length : 0;
+
     if (agent.avatar && agent.avatar?.source === FileSources.s3) {
       const originalUrl = agent.avatar.filepath;
       agent.avatar.filepath = await refreshS3Url(agent.avatar);
       if (originalUrl !== agent.avatar.filepath) {
-        await updateAgent({ id }, { avatar: agent.avatar });
+        await updateAgent({ id }, { avatar: agent.avatar }, { updatingUserId: req.user.id });
       }
     }
 
@@ -127,6 +134,7 @@ const getAgentHandler = async (req, res) => {
         author: agent.author,
         projectIds: agent.projectIds,
         isCollaborative: agent.isCollaborative,
+        version: agent.version,
       });
     }
     return res.status(200).json(agent);
@@ -148,14 +156,16 @@ const getAgentHandler = async (req, res) => {
 const updateAgentHandler = async (req, res) => {
   try {
     const id = req.params.id;
-    const { projectIds, removeProjectIds, ...updateData } = req.body;
+    const validatedData = agentUpdateSchema.parse(req.body);
+    const { projectIds, removeProjectIds, ...updateData } = removeNullishValues(validatedData);
     const isAdmin = req.user.role === SystemRoles.ADMIN;
     const existingAgent = await getAgent({ id });
-    const isAuthor = existingAgent.author.toString() === req.user.id;
 
     if (!existingAgent) {
       return res.status(404).json({ error: 'Agent not found' });
     }
+
+    const isAuthor = existingAgent.author.toString() === req.user.id;
     const hasEditPermission = existingAgent.isCollaborative || isAdmin || isAuthor;
 
     if (!hasEditPermission) {
@@ -164,10 +174,18 @@ const updateAgentHandler = async (req, res) => {
       });
     }
 
-    let updatedAgent =
-      Object.keys(updateData).length > 0 ? await updateAgent({ id }, updateData) : existingAgent;
+    /** @type {boolean} */
+    const isProjectUpdate = (projectIds?.length ?? 0) > 0 || (removeProjectIds?.length ?? 0) > 0;
 
-    if (projectIds || removeProjectIds) {
+    let updatedAgent =
+      Object.keys(updateData).length > 0
+        ? await updateAgent({ id }, updateData, {
+            updatingUserId: req.user.id,
+            skipVersioning: isProjectUpdate,
+          })
+        : existingAgent;
+
+    if (isProjectUpdate) {
       updatedAgent = await updateAgentProjects({
         user: req.user,
         agentId: id,
@@ -186,7 +204,20 @@ const updateAgentHandler = async (req, res) => {
 
     return res.json(updatedAgent);
   } catch (error) {
+    if (error instanceof z.ZodError) {
+      logger.error('[/Agents/:id] Validation error', error.errors);
+      return res.status(400).json({ error: 'Invalid request data', details: error.errors });
+    }
+
     logger.error('[/Agents/:id] Error updating Agent', error);
+
+    if (error.statusCode === 409) {
+      return res.status(409).json({
+        error: error.message,
+        details: error.details,
+      });
+    }
+
     res.status(500).json({ error: error.message });
   }
 };
@@ -220,6 +251,8 @@ const duplicateAgentHandler = async (req, res) => {
       createdAt: _createdAt,
       updatedAt: _updatedAt,
       tool_resources: _tool_resources = {},
+      versions: _versions,
+      __v: _v,
       ...cloneData
     } = agent;
     cloneData.name = `${agent.name} (${new Date().toLocaleString('en-US', {
@@ -359,11 +392,26 @@ const uploadAgentAvatarHandler = async (req, res) => {
     }
 
     const buffer = await fs.readFile(req.file.path);
-    const image = await uploadImageBuffer({
-      req,
-      context: FileContext.avatar,
-      metadata: { buffer },
+
+    const fileStrategy = req.app.locals.fileStrategy;
+
+    const resizedBuffer = await resizeAvatar({
+      userId: req.user.id,
+      input: buffer,
     });
+
+    const { processAvatar } = getStrategyFunctions(fileStrategy);
+    const avatarUrl = await processAvatar({
+      buffer: resizedBuffer,
+      userId: req.user.id,
+      manual: 'false',
+      agentId: agent_id,
+    });
+
+    const image = {
+      filepath: avatarUrl,
+      source: fileStrategy,
+    };
 
     let _avatar;
     try {
@@ -389,11 +437,15 @@ const uploadAgentAvatarHandler = async (req, res) => {
     const data = {
       avatar: {
         filepath: image.filepath,
-        source: req.app.locals.fileStrategy,
+        source: image.source,
       },
     };
 
-    promises.push(await updateAgent({ id: agent_id, author: req.user.id }, data));
+    promises.push(
+      await updateAgent({ id: agent_id, author: req.user.id }, data, {
+        updatingUserId: req.user.id,
+      }),
+    );
 
     const resolved = await Promise.all(promises);
     res.status(201).json(resolved[0]);
@@ -405,9 +457,69 @@ const uploadAgentAvatarHandler = async (req, res) => {
     try {
       await fs.unlink(req.file.path);
       logger.debug('[/:agent_id/avatar] Temp. image upload file deleted');
-    } catch (error) {
+    } catch {
       logger.debug('[/:agent_id/avatar] Temp. image upload file already deleted');
     }
+  }
+};
+
+/**
+ * Reverts an agent to a previous version from its version history.
+ * @route PATCH /agents/:id/revert
+ * @param {object} req - Express Request object
+ * @param {object} req.params - Request parameters
+ * @param {string} req.params.id - The ID of the agent to revert
+ * @param {object} req.body - Request body
+ * @param {number} req.body.version_index - The index of the version to revert to
+ * @param {object} req.user - Authenticated user information
+ * @param {string} req.user.id - User ID
+ * @param {string} req.user.role - User role
+ * @param {ServerResponse} res - Express Response object
+ * @returns {Promise<Agent>} 200 - The updated agent after reverting to the specified version
+ * @throws {Error} 400 - If version_index is missing
+ * @throws {Error} 403 - If user doesn't have permission to modify the agent
+ * @throws {Error} 404 - If agent not found
+ * @throws {Error} 500 - If there's an internal server error during the reversion process
+ */
+const revertAgentVersionHandler = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { version_index } = req.body;
+
+    if (version_index === undefined) {
+      return res.status(400).json({ error: 'version_index is required' });
+    }
+
+    const isAdmin = req.user.role === SystemRoles.ADMIN;
+    const existingAgent = await getAgent({ id });
+
+    if (!existingAgent) {
+      return res.status(404).json({ error: 'Agent not found' });
+    }
+
+    const isAuthor = existingAgent.author.toString() === req.user.id;
+    const hasEditPermission = existingAgent.isCollaborative || isAdmin || isAuthor;
+
+    if (!hasEditPermission) {
+      return res.status(403).json({
+        error: 'You do not have permission to modify this non-collaborative agent',
+      });
+    }
+
+    const updatedAgent = await revertAgentVersion({ id }, version_index);
+
+    if (updatedAgent.author) {
+      updatedAgent.author = updatedAgent.author.toString();
+    }
+
+    if (updatedAgent.author !== req.user.id) {
+      delete updatedAgent.author;
+    }
+
+    return res.json(updatedAgent);
+  } catch (error) {
+    logger.error('[/agents/:id/revert] Error reverting Agent version', error);
+    res.status(500).json({ error: error.message });
   }
 };
 
@@ -419,4 +531,5 @@ module.exports = {
   deleteAgent: deleteAgentHandler,
   getListAgents: getListAgentsHandler,
   uploadAgentAvatar: uploadAgentAvatarHandler,
+  revertAgentVersion: revertAgentVersionHandler,
 };

@@ -108,6 +108,10 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
   );
 
   const handleContainerClick = useCallback(() => {
+    /** Check if the device is a touchscreen */
+    if (window.matchMedia?.('(pointer: coarse)').matches) {
+      return;
+    }
     textAreaRef.current?.focus();
   }, []);
 
@@ -126,6 +130,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
   });
 
   const { submitMessage, submitPrompt } = useSubmitMessage();
+
   const handleKeyUp = useHandleKeyUp({
     index,
     textAreaRef,
@@ -201,8 +206,8 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
     <form
       onSubmit={methods.handleSubmit(submitMessage)}
       className={cn(
-        'mx-auto flex flex-row gap-3 sm:px-2',
-        maximizeChatSpace ? 'w-full max-w-full' : 'md:max-w-3xl xl:max-w-4xl',
+        'mx-auto flex w-full flex-row gap-3 transition-[max-width] duration-300 sm:px-2',
+        maximizeChatSpace ? 'max-w-full' : 'md:max-w-3xl xl:max-w-4xl',
         centerFormOnLanding &&
           (conversationId == null || conversationId === Constants.NEW_CONVO) &&
           !isSubmitting &&
@@ -300,6 +305,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
               </div>
               <BadgeRow
                 showEphemeralBadges={!isAgentsEndpoint(endpoint) && !isAssistantsEndpoint(endpoint)}
+                isSubmitting={isSubmitting || isSubmittingAdded}
                 conversationId={conversationId}
                 onChange={setBadges}
                 isInChat={

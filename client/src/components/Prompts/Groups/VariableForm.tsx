@@ -143,10 +143,10 @@ export default function VariableForm({
         <div className="mb-6 max-h-screen max-w-[90vw] overflow-auto rounded-md bg-surface-tertiary p-4 text-text-secondary dark:bg-surface-primary sm:max-w-full md:max-h-96">
           <ReactMarkdown
             /** @ts-ignore */
-            remarkPlugins={[supersub, remarkGfm, [remarkMath, { singleDollarTextMath: true }]]}
+            remarkPlugins={[supersub, remarkGfm, [remarkMath, { singleDollarTextMath: false }]]}
             rehypePlugins={[
               /** @ts-ignore */
-              [rehypeKatex, { output: 'mathml' }],
+              [rehypeKatex],
               /** @ts-ignore */
               [rehypeHighlight, { ignoreMissing: true }],
             ]}
@@ -168,7 +168,7 @@ export default function VariableForm({
                     return (
                       <InputCombobox
                         options={field.config.options || []}
-                        placeholder={localize('com_ui_enter_var', { 0: field.config.variable })}
+                        placeholder={field.config.variable}
                         className={cn(
                           defaultTextProps,
                           'rounded px-3 py-2 focus:bg-surface-tertiary',
@@ -191,7 +191,7 @@ export default function VariableForm({
                         defaultTextProps,
                         'rounded px-3 py-2 focus:bg-surface-tertiary',
                       )}
-                      placeholder={localize('com_ui_enter_var', { 0: field.config.variable })}
+                      placeholder={field.config.variable}
                       maxRows={8}
                     />
                   );

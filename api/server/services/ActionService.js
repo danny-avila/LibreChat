@@ -1,7 +1,15 @@
 const jwt = require('jsonwebtoken');
 const { nanoid } = require('nanoid');
 const { tool } = require('@langchain/core/tools');
+const { logger } = require('@librechat/data-schemas');
 const { GraphEvents, sleep } = require('@librechat/agents');
+const {
+  sendEvent,
+  encryptV2,
+  decryptV2,
+  logAxiosError,
+  refreshAccessToken,
+} = require('@librechat/api');
 const {
   Time,
   CacheKeys,
@@ -12,13 +20,10 @@ const {
   isImageVisionTool,
   actionDomainSeparator,
 } = require('librechat-data-provider');
-const { refreshAccessToken } = require('~/server/services/TokenService');
-const { logger, getFlowStateManager, sendEvent } = require('~/config');
-const { encryptV2, decryptV2 } = require('~/server/utils/crypto');
+const { findToken, updateToken, createToken } = require('~/models');
 const { getActions, deleteActions } = require('~/models/Action');
 const { deleteAssistant } = require('~/models/Assistant');
-const { findToken } = require('~/models/Token');
-const { logAxiosError } = require('~/utils');
+const { getFlowStateManager } = require('~/config');
 const { getLogStores } = require('~/cache');
 
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -207,7 +212,8 @@ async function createActionTool({
                     state: stateToken,
                     userId: userId,
                     client_url: metadata.auth.client_url,
-                    redirect_uri: `${process.env.DOMAIN_CLIENT}/api/actions/${action_id}/oauth/callback`,
+                    redirect_uri: `${process.env.DOMAIN_SERVER}/api/actions/${action_id}/oauth/callback`,
+                    token_exchange_method: metadata.auth.token_exchange_method,
                     /** Encrypted values */
                     encrypted_oauth_client_id: encrypted.oauth_client_id,
                     encrypted_oauth_client_secret: encrypted.oauth_client_secret,
@@ -256,14 +262,22 @@ async function createActionTool({
               try {
                 const refresh_token = await decryptV2(refreshTokenData.token);
                 const refreshTokens = async () =>
-                  await refreshAccessToken({
-                    userId,
-                    identifier,
-                    refresh_token,
-                    client_url: metadata.auth.client_url,
-                    encrypted_oauth_client_id: encrypted.oauth_client_id,
-                    encrypted_oauth_client_secret: encrypted.oauth_client_secret,
-                  });
+                  await refreshAccessToken(
+                    {
+                      userId,
+                      identifier,
+                      refresh_token,
+                      client_url: metadata.auth.client_url,
+                      encrypted_oauth_client_id: encrypted.oauth_client_id,
+                      token_exchange_method: metadata.auth.token_exchange_method,
+                      encrypted_oauth_client_secret: encrypted.oauth_client_secret,
+                    },
+                    {
+                      findToken,
+                      updateToken,
+                      createToken,
+                    },
+                  );
                 const flowsCache = getLogStores(CacheKeys.FLOWS);
                 const flowManager = getFlowStateManager(flowsCache);
                 const refreshData = await flowManager.createFlowWithHandler(

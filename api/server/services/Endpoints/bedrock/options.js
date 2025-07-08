@@ -1,4 +1,5 @@
 const { HttpsProxyAgent } = require('https-proxy-agent');
+const { createHandleLLMNewToken } = require('@librechat/api');
 const {
   AuthType,
   Constants,
@@ -8,7 +9,6 @@ const {
   removeNullishValues,
 } = require('librechat-data-provider');
 const { getUserKey, checkUserKeyExpiry } = require('~/server/services/UserService');
-const { createHandleLLMNewToken } = require('~/app/clients/generators');
 
 const getOptions = async ({ req, overrideModel, endpointOption }) => {
   const {
@@ -25,10 +25,10 @@ const getOptions = async ({ req, overrideModel, endpointOption }) => {
   let credentials = isUserProvided
     ? await getUserKey({ userId: req.user.id, name: EModelEndpoint.bedrock })
     : {
-      accessKeyId: BEDROCK_AWS_ACCESS_KEY_ID,
-      secretAccessKey: BEDROCK_AWS_SECRET_ACCESS_KEY,
-      ...(BEDROCK_AWS_SESSION_TOKEN && { sessionToken: BEDROCK_AWS_SESSION_TOKEN }),
-    };
+        accessKeyId: BEDROCK_AWS_ACCESS_KEY_ID,
+        secretAccessKey: BEDROCK_AWS_SECRET_ACCESS_KEY,
+        ...(BEDROCK_AWS_SESSION_TOKEN && { sessionToken: BEDROCK_AWS_SESSION_TOKEN }),
+      };
 
   if (!credentials) {
     throw new Error('Bedrock credentials not provided. Please provide them again.');
@@ -64,7 +64,7 @@ const getOptions = async ({ req, overrideModel, endpointOption }) => {
 
   /** @type {BedrockClientOptions} */
   const requestOptions = {
-    model: overrideModel ?? endpointOption.model,
+    model: overrideModel ?? endpointOption?.model,
     region: BEDROCK_AWS_DEFAULT_REGION,
   };
 
@@ -76,7 +76,7 @@ const getOptions = async ({ req, overrideModel, endpointOption }) => {
 
   const llmConfig = bedrockOutputParser(
     bedrockInputParser.parse(
-      removeNullishValues(Object.assign(requestOptions, endpointOption.model_parameters)),
+      removeNullishValues(Object.assign(requestOptions, endpointOption?.model_parameters ?? {})),
     ),
   );
 

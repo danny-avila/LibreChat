@@ -5,8 +5,8 @@ import { AgentCapabilities, defaultAgentFormValues } from 'librechat-data-provid
 import type { UseMutationResult, QueryObserverResult } from '@tanstack/react-query';
 import type { Agent, AgentCreateParams } from 'librechat-data-provider';
 import type { TAgentCapabilities, AgentForm } from '~/common';
+import { cn, createProviderOption, processAgentOption, getDefaultAgentFormValues } from '~/utils';
 import { useListAgentsQuery, useGetStartupConfig } from '~/data-provider';
-import { cn, createProviderOption, processAgentOption } from '~/utils';
 import ControlCombobox from '~/components/ui/ControlCombobox';
 import { useLocalize } from '~/hooks';
 
@@ -32,7 +32,10 @@ export default function AgentSelect({
     select: (res) =>
       res.data.map((agent) =>
         processAgentOption({
-          agent,
+          agent: {
+            ...agent,
+            name: agent.name || agent.id,
+          },
           instanceProjectId: startupConfig?.instanceProjectId,
         }),
       ),
@@ -52,6 +55,7 @@ export default function AgentSelect({
       };
 
       const capabilities: TAgentCapabilities = {
+        [AgentCapabilities.web_search]: false,
         [AgentCapabilities.file_search]: false,
         [AgentCapabilities.execute_code]: false,
         [AgentCapabilities.end_after_tools]: false,
@@ -123,9 +127,7 @@ export default function AgentSelect({
       createMutation.reset();
       if (!agentExists) {
         setCurrentAgentId(undefined);
-        return reset({
-          ...defaultAgentFormValues,
-        });
+        return reset(getDefaultAgentFormValues());
       }
 
       setCurrentAgentId(selectedId);
@@ -178,7 +180,7 @@ export default function AgentSelect({
           containerClassName="px-0"
           selectedValue={(field?.value?.value ?? '') + ''}
           displayValue={field?.value?.label ?? ''}
-          selectPlaceholder={createAgent}
+          selectPlaceholder={field?.value?.value ?? createAgent}
           iconSide="right"
           searchPlaceholder={localize('com_agents_search_name')}
           SelectIcon={field?.value?.icon}

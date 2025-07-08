@@ -13,6 +13,9 @@ cache: true
 # Custom interface configuration
 interface:
   customWelcome: "Welcome to LibreChat! Enjoy your experience."
+  # MCP Servers UI configuration
+  mcpServers:
+    placeholder: 'MCP Servers'
   # Privacy policy settings
   privacyPolicy:
     externalUrl: 'https://librechat.ai/privacy-policy'
@@ -70,10 +73,19 @@ interface:
   bookmarks: true
   multiConvo: true
   agents: true
+  # Temporary chat retention period in hours (default: 720, min: 1, max: 8760)
+  # temporaryChatRetention: 1
+
+# Example Cloudflare turnstile (optional)
+#turnstile:
+#  siteKey: "your-site-key-here"
+#  options:
+#    language: "auto"    # "auto" or an ISO 639-1 language code (e.g. en)
+#    size: "normal"      # Options: "normal", "compact", "flexible", or "invisible"
 
 # Example Registration Object Structure (optional)
 registration:
-  socialLogins: ['github', 'google', 'discord', 'openid', 'facebook', 'apple']
+  socialLogins: ['github', 'google', 'discord', 'openid', 'facebook', 'apple', 'saml']
   # allowedDomains:
   # - "gmail.com"
 
@@ -287,5 +299,36 @@ endpoints:
 #       fileSizeLimit: 5
 #   serverFileSizeLimit: 100  # Global server file size limit in MB
 #   avatarSizeLimit: 2  # Limit for user avatar image size in MB
+#   imageGeneration: # Image Gen settings, either percentage or px
+#     percentage: 100
+#     px: 1024
+#   # Client-side image resizing to prevent upload errors
+#   clientImageResize:
+#     enabled: false  # Enable/disable client-side image resizing (default: false)
+#     maxWidth: 1900  # Maximum width for resized images (default: 1900)
+#     maxHeight: 1900  # Maximum height for resized images (default: 1900)
+#     quality: 0.92  # JPEG quality for compression (0.0-1.0, default: 0.92)
 # # See the Custom Configuration Guide for more information on Assistants Config:
 # # https://www.librechat.ai/docs/configuration/librechat_yaml/object_structure/assistants_endpoint
+
+# Memory configuration for user memories
+# memory:
+#   # (optional) Disable memory functionality
+#   disabled: false
+#   # (optional) Restrict memory keys to specific values to limit memory storage and improve consistency
+#   validKeys: ["preferences", "work_info", "personal_info", "skills", "interests", "context"]
+#   # (optional) Maximum token limit for memory storage (not yet implemented for token counting)
+#   tokenLimit: 10000
+#   # (optional) Enable personalization features (defaults to true if memory is configured)
+#   # When false, users will not see the Personalization tab in settings
+#   personalize: true
+#   # Memory agent configuration - either use an existing agent by ID or define inline
+#   agent:
+#     # Option 1: Use existing agent by ID
+#     id: "your-memory-agent-id"
+#     # Option 2: Define agent inline
+#     # provider: "openai"
+#     # model: "gpt-4o-mini"
+#     # instructions: "You are a memory management assistant. Store and manage user information accurately."
+#     # model_parameters:
+#     #   temperature: 0.1

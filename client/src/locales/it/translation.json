@@ -314,7 +314,6 @@
   "com_nav_delete_cache_storage": "Elimina cache TTS",
   "com_nav_delete_data_info": "Tutti i tuoi dati verranno eliminati.",
   "com_nav_delete_warning": "ATTENZIONE: Questa azione eliminerà definitivamente il tuo account.",
-  "com_nav_edit_chat_badges": "Modifica i badge della chat",
   "com_nav_enable_cache_tts": "Abilita cache TTS",
   "com_nav_enable_cloud_browser_voice": "Usa voci basate su cloud",
   "com_nav_enabled": "Abilitato",
@@ -613,7 +612,6 @@
   "com_ui_enter": "Invio",
   "com_ui_enter_api_key": "Inserisci API Key",
   "com_ui_enter_openapi_schema": "Inserisci qui il tuo schema OpenAPI",
-  "com_ui_enter_var": "Inserisci {{0}}",
   "com_ui_error": "Errore",
   "com_ui_error_connection": "Errore di connessione al server, prova ad aggiornare la pagina.",
   "com_ui_error_save_admin_settings": "Si è verificato un errore durante il salvataggio delle impostazioni amministrative.",
@@ -665,7 +663,6 @@
   "com_ui_import_conversation_info": "Importa conversazioni da un file JSON",
   "com_ui_import_conversation_success": "Conversazioni importate con successo",
   "com_ui_include_shadcnui": "Includi istruzioni per i componenti shadcn/ui",
-  "com_ui_include_shadcnui_agent": "Includere istruzioni shadcn/ui",
   "com_ui_input": "Input",
   "com_ui_instructions": "Istruzioni",
   "com_ui_late_night": "Buona tarda serata",
@@ -830,6 +827,5 @@
   "com_ui_write": "Scrittura",
   "com_ui_yes": "Sì",
   "com_ui_zoom": "Zoom",
-  "com_user_message": "Mostra nome utente nei messaggi",
-  "com_warning_resubmit_unsupported": "Il reinvio del messaggio AI non è supportato per questo endpoint."
+  "com_user_message": "Mostra nome utente nei messaggi"
 }

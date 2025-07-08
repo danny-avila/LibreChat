@@ -1,7 +1,6 @@
-/* eslint-disable max-len */
 import { z } from 'zod';
 import { EModelEndpoint } from './schemas';
-import type { FileConfig, EndpointFileConfig } from './types/files';
+import type { EndpointFileConfig, FileConfig } from './types/files';
 
 export const supportsFiles = {
   [EModelEndpoint.openAI]: true,
@@ -50,6 +49,8 @@ export const fullMimeTypesList = [
   'text/javascript',
   'image/gif',
   'image/png',
+  'image/heic',
+  'image/heif',
   'application/x-tar',
   'application/typescript',
   'application/xml',
@@ -81,6 +82,8 @@ export const codeInterpreterMimeTypesList = [
   'text/javascript',
   'image/gif',
   'image/png',
+  'image/heic',
+  'image/heif',
   'application/x-tar',
   'application/typescript',
   'application/xml',
@@ -106,18 +109,18 @@ export const retrievalMimeTypesList = [
   'text/plain',
 ];
 
-export const imageExtRegex = /\.(jpg|jpeg|png|gif|webp)$/i;
+export const imageExtRegex = /\.(jpg|jpeg|png|gif|webp|heic|heif)$/i;
 
 export const excelMimeTypes =
   /^application\/(vnd\.ms-excel|msexcel|x-msexcel|x-ms-excel|x-excel|x-dos_ms_excel|xls|x-xls|vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet)$/;
 
 export const textMimeTypes =
-  /^(text\/(x-c|x-csharp|tab-separated-values|x-c\+\+|x-java|html|markdown|x-php|x-python|x-script\.python|x-ruby|x-tex|plain|css|vtt|javascript|csv))$/;
+  /^(text\/(x-c|x-csharp|tab-separated-values|x-c\+\+|x-h|x-java|html|markdown|x-php|x-python|x-script\.python|x-ruby|x-tex|plain|css|vtt|javascript|csv))$/;
 
 export const applicationMimeTypes =
   /^(application\/(epub\+zip|csv|json|pdf|x-tar|typescript|vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|presentationml\.presentation|spreadsheetml\.sheet)|xml|zip))$/;
 
-export const imageMimeTypes = /^image\/(jpeg|gif|png|webp)$/;
+export const imageMimeTypes = /^image\/(jpeg|gif|png|webp|heic|heif)$/;
 
 export const supportedMimeTypes = [
   textMimeTypes,
@@ -139,6 +142,7 @@ export const codeTypeMapping: { [key: string]: string } = {
   c: 'text/x-c',
   cs: 'text/x-csharp',
   cpp: 'text/x-c++',
+  h: 'text/x-h',
   md: 'text/markdown',
   php: 'text/x-php',
   py: 'text/x-python',
@@ -156,7 +160,7 @@ export const codeTypeMapping: { [key: string]: string } = {
 };
 
 export const retrievalMimeTypes = [
-  /^(text\/(x-c|x-c\+\+|html|x-java|markdown|x-php|x-python|x-script\.python|x-ruby|x-tex|plain|vtt|xml))$/,
+  /^(text\/(x-c|x-c\+\+|x-h|html|x-java|markdown|x-php|x-python|x-script\.python|x-ruby|x-tex|plain|vtt|xml))$/,
   /^(application\/(json|pdf|vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|presentationml\.presentation)))$/,
 ];
 
@@ -188,6 +192,12 @@ export const fileConfig = {
   },
   serverFileSizeLimit: defaultSizeLimit,
   avatarSizeLimit: mbToBytes(2),
+  clientImageResize: {
+    enabled: false,
+    maxWidth: 1900,
+    maxHeight: 1900,
+    quality: 0.92,
+  },
   checkType: function (fileType: string, supportedTypes: RegExp[] = supportedMimeTypes) {
     return supportedTypes.some((regex) => regex.test(fileType));
   },
@@ -222,6 +232,20 @@ export const fileConfigSchema = z.object({
   endpoints: z.record(endpointFileConfigSchema).optional(),
   serverFileSizeLimit: z.number().min(0).optional(),
   avatarSizeLimit: z.number().min(0).optional(),
+  imageGeneration: z
+    .object({
+      percentage: z.number().min(0).max(100).optional(),
+      px: z.number().min(0).optional(),
+    })
+    .optional(),
+  clientImageResize: z
+    .object({
+      enabled: z.boolean().optional(),
+      maxWidth: z.number().min(0).optional(),
+      maxHeight: z.number().min(0).optional(),
+      quality: z.number().min(0).max(1).optional(),
+    })
+    .optional(),
 });
 
 /** Helper function to safely convert string patterns to RegExp objects */
@@ -248,6 +272,14 @@ export function mergeFileConfig(dynamic: z.infer<typeof fileConfigSchema> | unde
 
   if (dynamic.avatarSizeLimit !== undefined) {
     mergedConfig.avatarSizeLimit = mbToBytes(dynamic.avatarSizeLimit);
+  }
+
+  // Merge clientImageResize configuration
+  if (dynamic.clientImageResize !== undefined) {
+    mergedConfig.clientImageResize = {
+      ...mergedConfig.clientImageResize,
+      ...dynamic.clientImageResize,
+    };
   }
 
   if (!dynamic.endpoints) {

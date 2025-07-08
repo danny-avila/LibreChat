@@ -597,7 +597,6 @@
   "com_ui_enter": "Enter",
   "com_ui_enter_api_key": "ป้อนคีย์ API",
   "com_ui_enter_openapi_schema": "ป้อนสคีมา OpenAPI ของคุณที่นี่",
-  "com_ui_enter_var": "ป้อน {{0}}",
   "com_ui_error": "ข้อผิดพลาด",
   "com_ui_error_connection": "เกิดข้อผิดพลาดในการเชื่อมต่อกับเซิร์ฟเวอร์ ลองรีเฟรชหน้า",
   "com_ui_error_save_admin_settings": "เกิดข้อผิดพลาดในการบันทึกการตั้งค่าผู้ดูแลระบบของคุณ",
@@ -645,7 +644,6 @@
   "com_ui_import_conversation_info": "นำเข้าการสนทนาจากไฟล์ JSON",
   "com_ui_import_conversation_success": "นำเข้าการสนทนาสำเร็จแล้ว",
   "com_ui_include_shadcnui": "รวมคำแนะนำองค์ประกอบ shadcn/ui",
-  "com_ui_include_shadcnui_agent": "รวมคำแนะนำ shadcn/ui",
   "com_ui_input": "อินพุต",
   "com_ui_instructions": "คำแนะนำ",
   "com_ui_latest_footer": "AI ทุกตัวสำหรับทุกคน",
@@ -803,6 +801,5 @@
   "com_ui_write": "การเขียน",
   "com_ui_yes": "ใช่",
   "com_ui_zoom": "ขยาย",
-  "com_user_message": "คุณ",
-  "com_warning_resubmit_unsupported": "การส่งข้อความ AI ซ้ำไม่รองรับสำหรับจุดสิ้นสุดนี้"
+  "com_user_message": "คุณ"
 }

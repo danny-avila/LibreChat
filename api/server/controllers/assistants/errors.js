@@ -1,10 +1,10 @@
 // errorHandler.js
-const { sendResponse } = require('~/server/utils');
-const { logger } = require('~/config');
-const getLogStores = require('~/cache/getLogStores');
+const { logger } = require('@librechat/data-schemas');
 const { CacheKeys, ViolationTypes, ContentTypes } = require('librechat-data-provider');
-const { getConvo } = require('~/models/Conversation');
 const { recordUsage, checkMessageGaps } = require('~/server/services/Threads');
+const { sendResponse } = require('~/server/middleware/error');
+const { getConvo } = require('~/models/Conversation');
+const getLogStores = require('~/cache/getLogStores');
 
 /**
  * @typedef {Object} ErrorHandlerContext
@@ -78,7 +78,7 @@ const createErrorHandler = ({ req, res, getContext, originPath = '/assistants/ch
     } else if (/Files.*are invalid/.test(error.message)) {
       const errorMessage = `Files are invalid, or may not have uploaded yet.${
         endpoint === 'azureAssistants'
-          ? ' If using Azure OpenAI, files are only available in the region of the assistant\'s model at the time of upload.'
+          ? " If using Azure OpenAI, files are only available in the region of the assistant's model at the time of upload."
           : ''
       }`;
       return sendResponse(req, res, messageData, errorMessage);

@@ -1,9 +1,11 @@
 import { useForm } from 'react-hook-form';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useContext } from 'react';
+import { Turnstile } from '@marsidev/react-turnstile';
 import type { TLoginUser, TStartupConfig } from 'librechat-data-provider';
 import type { TAuthContext } from '~/common';
 import { useResendVerificationEmail, useGetStartupConfig } from '~/data-provider';
-import { useLocalize } from '~/hooks';
+import { ThemeContext, useLocalize } from '~/hooks';
+import { Spinner, Button } from '~/components';
 
 type TLoginFormProps = {
   onSubmit: (data: TLoginUser) => void;
@@ -14,16 +16,20 @@ type TLoginFormProps = {
 
 const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, setError }) => {
   const localize = useLocalize();
+  const { theme } = useContext(ThemeContext);
   const {
     register,
     getValues,
     handleSubmit,
-    formState: { errors },
+    formState: { errors, isSubmitting },
   } = useForm<TLoginUser>();
   const [showResendLink, setShowResendLink] = useState<boolean>(false);
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
 
   const { data: config } = useGetStartupConfig();
   const useUsernameLogin = config?.ldap?.username;
+  const validTheme = theme === 'dark' ? 'dark' : 'light';
+  const requireCaptcha = Boolean(startupConfig.turnstile?.siteKey);
 
   useEffect(() => {
     if (error && error.includes('422') && !showResendLink) {
@@ -96,20 +102,12 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, 
                 },
               })}
               aria-invalid={!!errors.email}
-              className="
-                webkit-dark-styles transition-color peer w-full rounded-2xl border border-border-light
-                bg-surface-primary px-3.5 pb-2.5 pt-3 text-text-primary duration-200 focus:border-green-500 focus:outline-none
-              "
+              className="webkit-dark-styles transition-color peer w-full rounded-2xl border border-border-light bg-surface-primary px-3.5 pb-2.5 pt-3 text-text-primary duration-200 focus:border-green-500 focus:outline-none"
               placeholder=" "
             />
             <label
               htmlFor="email"
-              className="
-                absolute start-3 top-1.5 z-10 origin-[0] -translate-y-4 scale-75 transform bg-surface-primary px-2 text-sm text-text-secondary-alt duration-200
-                peer-placeholder-shown:top-1/2 peer-placeholder-shown:-translate-y-1/2 peer-placeholder-shown:scale-100
-                peer-focus:top-1.5 peer-focus:-translate-y-4 peer-focus:scale-75 peer-focus:px-2 peer-focus:text-green-600 dark:peer-focus:text-green-500
-                rtl:peer-focus:left-auto rtl:peer-focus:translate-x-1/4
-                "
+              className="absolute start-3 top-1.5 z-10 origin-[0] -translate-y-4 scale-75 transform bg-surface-primary px-2 text-sm text-text-secondary-alt duration-200 peer-placeholder-shown:top-1/2 peer-placeholder-shown:-translate-y-1/2 peer-placeholder-shown:scale-100 peer-focus:top-1.5 peer-focus:-translate-y-4 peer-focus:scale-75 peer-focus:px-2 peer-focus:text-green-600 dark:peer-focus:text-green-500 rtl:peer-focus:left-auto rtl:peer-focus:translate-x-1/4"
             >
               {useUsernameLogin
                 ? localize('com_auth_username').replace(/ \(.*$/, '')
@@ -131,20 +129,12 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, 
                 maxLength: { value: 128, message: localize('com_auth_password_max_length') },
               })}
               aria-invalid={!!errors.password}
-              className="
-                webkit-dark-styles transition-color peer w-full rounded-2xl border border-border-light
-                bg-surface-primary px-3.5 pb-2.5 pt-3 text-text-primary duration-200 focus:border-green-500 focus:outline-none
-                "
+              className="webkit-dark-styles transition-color peer w-full rounded-2xl border border-border-light bg-surface-primary px-3.5 pb-2.5 pt-3 text-text-primary duration-200 focus:border-green-500 focus:outline-none"
               placeholder=" "
             />
             <label
               htmlFor="password"
-              className="
-                absolute start-3 top-1.5 z-10 origin-[0] -translate-y-4 scale-75 transform bg-surface-primary px-2 text-sm text-text-secondary-alt duration-200
-                peer-placeholder-shown:top-1/2 peer-placeholder-shown:-translate-y-1/2 peer-placeholder-shown:scale-100
-                peer-focus:top-1.5 peer-focus:-translate-y-4 peer-focus:scale-75 peer-focus:px-2 peer-focus:text-green-600 dark:peer-focus:text-green-500
-                rtl:peer-focus:left-auto rtl:peer-focus:translate-x-1/4
-                "
+              className="absolute start-3 top-1.5 z-10 origin-[0] -translate-y-4 scale-75 transform bg-surface-primary px-2 text-sm text-text-secondary-alt duration-200 peer-placeholder-shown:top-1/2 peer-placeholder-shown:-translate-y-1/2 peer-placeholder-shown:scale-100 peer-focus:top-1.5 peer-focus:-translate-y-4 peer-focus:scale-75 peer-focus:px-2 peer-focus:text-green-600 dark:peer-focus:text-green-500 rtl:peer-focus:left-auto rtl:peer-focus:translate-x-1/4"
             >
               {localize('com_auth_password')}
             </label>
@@ -159,18 +149,33 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, 
             {localize('com_auth_password_forgot')}
           </a>
         )}
+
+        {requireCaptcha && (
+          <div className="my-4 flex justify-center">
+            <Turnstile
+              siteKey={startupConfig.turnstile!.siteKey}
+              options={{
+                ...startupConfig.turnstile!.options,
+                theme: validTheme,
+              }}
+              onSuccess={setTurnstileToken}
+              onError={() => setTurnstileToken(null)}
+              onExpire={() => setTurnstileToken(null)}
+            />
+          </div>
+        )}
+
         <div className="mt-6">
-          <button
+          <Button
             aria-label={localize('com_auth_continue')}
             data-testid="login-button"
             type="submit"
-            className="
-            w-full rounded-2xl bg-green-600 px-4 py-3 text-sm font-medium text-white
-            transition-colors hover:bg-green-700 dark:bg-green-600 dark:hover:bg-green-700
-          "
+            disabled={(requireCaptcha && !turnstileToken) || isSubmitting}
+            variant="submit"
+            className="h-12 w-full rounded-2xl"
           >
-            {localize('com_auth_continue')}
-          </button>
+            {isSubmitting ? <Spinner /> : localize('com_auth_continue')}
+          </Button>
         </div>
       </form>
     </>

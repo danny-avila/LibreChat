@@ -1,13 +1,27 @@
 const express = require('express');
 const { nanoid } = require('nanoid');
-const { actionDelimiter, SystemRoles, removeNullishValues } = require('librechat-data-provider');
+const { logger } = require('@librechat/data-schemas');
+const { generateCheckAccess } = require('@librechat/api');
+const {
+  SystemRoles,
+  Permissions,
+  PermissionTypes,
+  actionDelimiter,
+  removeNullishValues,
+} = require('librechat-data-provider');
 const { encryptMetadata, domainParser } = require('~/server/services/ActionService');
 const { updateAction, getActions, deleteAction } = require('~/models/Action');
 const { isActionDomainAllowed } = require('~/server/services/domains');
 const { getAgent, updateAgent } = require('~/models/Agent');
-const { logger } = require('~/config');
+const { getRoleByName } = require('~/models/Role');
 
 const router = express.Router();
+
+const checkAgentCreate = generateCheckAccess({
+  permissionType: PermissionTypes.AGENTS,
+  permissions: [Permissions.USE, Permissions.CREATE],
+  getRoleByName,
+});
 
 // If the user has ADMIN role
 // then action edition is possible even if not owner of the assistant
@@ -41,7 +55,7 @@ router.get('/', async (req, res) => {
  * @param {ActionMetadata} req.body.metadata - Metadata for the action.
  * @returns {Object} 200 - success response - application/json
  */
-router.post('/:agent_id', async (req, res) => {
+router.post('/:agent_id', checkAgentCreate, async (req, res) => {
   try {
     const { agent_id } = req.params;
 
@@ -107,7 +121,15 @@ router.post('/:agent_id', async (req, res) => {
       .filter((tool) => !(tool && (tool.includes(domain) || tool.includes(action_id))))
       .concat(functions.map((tool) => `${tool.function.name}${actionDelimiter}${domain}`));
 
-    const updatedAgent = await updateAgent(agentQuery, { tools, actions });
+    // Force version update since actions are changing
+    const updatedAgent = await updateAgent(
+      agentQuery,
+      { tools, actions },
+      {
+        updatingUserId: req.user.id,
+        forceVersion: true,
+      },
+    );
 
     // Only update user field for new actions
     const actionUpdateData = { metadata, agent_id };
@@ -141,7 +163,7 @@ router.post('/:agent_id', async (req, res) => {
  * @param {string} req.params.action_id - The ID of the action to delete.
  * @returns {Object} 200 - success response - application/json
  */
-router.delete('/:agent_id/:action_id', async (req, res) => {
+router.delete('/:agent_id/:action_id', checkAgentCreate, async (req, res) => {
   try {
     const { agent_id, action_id } = req.params;
     const admin = isAdmin(req);
@@ -172,7 +194,12 @@ router.delete('/:agent_id/:action_id', async (req, res) => {
 
     const updatedTools = tools.filter((tool) => !(tool && tool.includes(domain)));
 
-    await updateAgent(agentQuery, { tools: updatedTools, actions: updatedActions });
+    // Force version update since actions are being removed
+    await updateAgent(
+      agentQuery,
+      { tools: updatedTools, actions: updatedActions },
+      { updatingUserId: req.user.id, forceVersion: true },
+    );
     // If admin, can delete any action, otherwise only user's actions
     const actionQuery = admin ? { action_id } : { action_id, user: req.user.id };
     await deleteAction(actionQuery);

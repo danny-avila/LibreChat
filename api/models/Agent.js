@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
-const { agentSchema } = require('@librechat/data-schemas');
-const { SystemRoles, Tools } = require('librechat-data-provider');
+const crypto = require('node:crypto');
+const { logger } = require('@librechat/data-schemas');
+const { SystemRoles, Tools, actionDelimiter } = require('librechat-data-provider');
 const { GLOBAL_PROJECT_NAME, EPHEMERAL_AGENT_ID, mcp_delimiter } =
   require('librechat-data-provider').Constants;
 const { CONFIG_STORE, STARTUP_CONFIG } = require('librechat-data-provider').CacheKeys;
@@ -10,9 +11,10 @@ const {
   removeAgentIdsFromProject,
   removeAgentFromAllProjects,
 } = require('./Project');
+const { getCachedTools } = require('~/server/services/Config');
 const getLogStores = require('~/cache/getLogStores');
-
-const Agent = mongoose.model('agent', agentSchema);
+const { getActions } = require('./Action');
+const { Agent } = require('~/db/models');
 
 /**
  * Create an agent with the provided data.
@@ -21,7 +23,19 @@ const Agent = mongoose.model('agent', agentSchema);
  * @throws {Error} If the agent creation fails.
  */
 const createAgent = async (agentData) => {
-  return (await Agent.create(agentData)).toObject();
+  const { author, ...versionData } = agentData;
+  const timestamp = new Date();
+  const initialAgentData = {
+    ...agentData,
+    versions: [
+      {
+        ...versionData,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      },
+    ],
+  };
+  return (await Agent.create(initialAgentData)).toObject();
 };
 
 /**
@@ -42,17 +56,25 @@ const getAgent = async (searchParameter) => await Agent.findOne(searchParameter)
  * @param {string} params.agent_id
  * @param {string} params.endpoint
  * @param {import('@librechat/agents').ClientOptions} [params.model_parameters]
- * @returns {Agent|null} The agent document as a plain object, or null if not found.
+ * @returns {Promise<Agent|null>} The agent document as a plain object, or null if not found.
  */
-const loadEphemeralAgent = ({ req, agent_id, endpoint, model_parameters: _m }) => {
+const loadEphemeralAgent = async ({ req, agent_id, endpoint, model_parameters: _m }) => {
   const { model, ...model_parameters } = _m;
   /** @type {Record<string, FunctionTool>} */
-  const availableTools = req.app.locals.availableTools;
-  const mcpServers = new Set(req.body.ephemeralAgent?.mcp);
+  const availableTools = await getCachedTools({ includeGlobal: true });
+  /** @type {TEphemeralAgent | null} */
+  const ephemeralAgent = req.body.ephemeralAgent;
+  const mcpServers = new Set(ephemeralAgent?.mcp);
   /** @type {string[]} */
   const tools = [];
-  if (req.body.ephemeralAgent?.execute_code === true) {
+  if (ephemeralAgent?.execute_code === true) {
     tools.push(Tools.execute_code);
+  }
+  if (ephemeralAgent?.file_search === true) {
+    tools.push(Tools.file_search);
+  }
+  if (ephemeralAgent?.web_search === true) {
+    tools.push(Tools.web_search);
   }
 
   if (mcpServers.size > 0) {
@@ -68,7 +90,7 @@ const loadEphemeralAgent = ({ req, agent_id, endpoint, model_parameters: _m }) =
   }
 
   const instructions = req.body.promptPrefix;
-  return {
+  const result = {
     id: agent_id,
     instructions,
     provider: endpoint,
@@ -76,6 +98,11 @@ const loadEphemeralAgent = ({ req, agent_id, endpoint, model_parameters: _m }) =
     model,
     tools,
   };
+
+  if (ephemeralAgent?.artifacts != null && ephemeralAgent.artifacts) {
+    result.artifacts = ephemeralAgent.artifacts;
+  }
+  return result;
 };
 
 /**
@@ -93,7 +120,7 @@ const loadAgent = async ({ req, agent_id, endpoint, model_parameters }) => {
     return null;
   }
   if (agent_id === EPHEMERAL_AGENT_ID) {
-    return loadEphemeralAgent({ req, agent_id, endpoint, model_parameters });
+    return await loadEphemeralAgent({ req, agent_id, endpoint, model_parameters });
   }
   const agent = await getAgent({
     id: agent_id,
@@ -102,6 +129,8 @@ const loadAgent = async ({ req, agent_id, endpoint, model_parameters }) => {
   if (!agent) {
     return null;
   }
+
+  agent.version = agent.versions ? agent.versions.length : 0;
 
   if (agent.author.toString() === req.user.id) {
     return agent;
@@ -128,18 +157,204 @@ const loadAgent = async ({ req, agent_id, endpoint, model_parameters }) => {
 };
 
 /**
+ * Check if a version already exists in the versions array, excluding timestamp and author fields
+ * @param {Object} updateData - The update data to compare
+ * @param {Object} currentData - The current agent data
+ * @param {Array} versions - The existing versions array
+ * @param {string} [actionsHash] - Hash of current action metadata
+ * @returns {Object|null} - The matching version if found, null otherwise
+ */
+const isDuplicateVersion = (updateData, currentData, versions, actionsHash = null) => {
+  if (!versions || versions.length === 0) {
+    return null;
+  }
+
+  const excludeFields = [
+    '_id',
+    'id',
+    'createdAt',
+    'updatedAt',
+    'author',
+    'updatedBy',
+    'created_at',
+    'updated_at',
+    '__v',
+    'versions',
+    'actionsHash', // Exclude actionsHash from direct comparison
+  ];
+
+  const { $push, $pull, $addToSet, ...directUpdates } = updateData;
+
+  if (Object.keys(directUpdates).length === 0 && !actionsHash) {
+    return null;
+  }
+
+  const wouldBeVersion = { ...currentData, ...directUpdates };
+  const lastVersion = versions[versions.length - 1];
+
+  if (actionsHash && lastVersion.actionsHash !== actionsHash) {
+    return null;
+  }
+
+  const allFields = new Set([...Object.keys(wouldBeVersion), ...Object.keys(lastVersion)]);
+
+  const importantFields = Array.from(allFields).filter((field) => !excludeFields.includes(field));
+
+  let isMatch = true;
+  for (const field of importantFields) {
+    if (!wouldBeVersion[field] && !lastVersion[field]) {
+      continue;
+    }
+
+    if (Array.isArray(wouldBeVersion[field]) && Array.isArray(lastVersion[field])) {
+      if (wouldBeVersion[field].length !== lastVersion[field].length) {
+        isMatch = false;
+        break;
+      }
+
+      // Special handling for projectIds (MongoDB ObjectIds)
+      if (field === 'projectIds') {
+        const wouldBeIds = wouldBeVersion[field].map((id) => id.toString()).sort();
+        const versionIds = lastVersion[field].map((id) => id.toString()).sort();
+
+        if (!wouldBeIds.every((id, i) => id === versionIds[i])) {
+          isMatch = false;
+          break;
+        }
+      }
+      // Handle arrays of objects like tool_kwargs
+      else if (typeof wouldBeVersion[field][0] === 'object' && wouldBeVersion[field][0] !== null) {
+        const sortedWouldBe = [...wouldBeVersion[field]].map((item) => JSON.stringify(item)).sort();
+        const sortedVersion = [...lastVersion[field]].map((item) => JSON.stringify(item)).sort();
+
+        if (!sortedWouldBe.every((item, i) => item === sortedVersion[i])) {
+          isMatch = false;
+          break;
+        }
+      } else {
+        const sortedWouldBe = [...wouldBeVersion[field]].sort();
+        const sortedVersion = [...lastVersion[field]].sort();
+
+        if (!sortedWouldBe.every((item, i) => item === sortedVersion[i])) {
+          isMatch = false;
+          break;
+        }
+      }
+    } else if (field === 'model_parameters') {
+      const wouldBeParams = wouldBeVersion[field] || {};
+      const lastVersionParams = lastVersion[field] || {};
+      if (JSON.stringify(wouldBeParams) !== JSON.stringify(lastVersionParams)) {
+        isMatch = false;
+        break;
+      }
+    } else if (wouldBeVersion[field] !== lastVersion[field]) {
+      isMatch = false;
+      break;
+    }
+  }
+
+  return isMatch ? lastVersion : null;
+};
+
+/**
  * Update an agent with new data without overwriting existing
  *  properties, or create a new agent if it doesn't exist.
+ * When an agent is updated, a copy of the current state will be saved to the versions array.
  *
  * @param {Object} searchParameter - The search parameters to find the agent to update.
  * @param {string} searchParameter.id - The ID of the agent to update.
  * @param {string} [searchParameter.author] - The user ID of the agent's author.
  * @param {Object} updateData - An object containing the properties to update.
+ * @param {Object} [options] - Optional configuration object.
+ * @param {string} [options.updatingUserId] - The ID of the user performing the update (used for tracking non-author updates).
+ * @param {boolean} [options.forceVersion] - Force creation of a new version even if no fields changed.
+ * @param {boolean} [options.skipVersioning] - Skip version creation entirely (useful for isolated operations like sharing).
  * @returns {Promise<Agent>} The updated or newly created agent document as a plain object.
+ * @throws {Error} If the update would create a duplicate version
  */
-const updateAgent = async (searchParameter, updateData) => {
-  const options = { new: true, upsert: false };
-  return Agent.findOneAndUpdate(searchParameter, updateData, options).lean();
+const updateAgent = async (searchParameter, updateData, options = {}) => {
+  const { updatingUserId = null, forceVersion = false, skipVersioning = false } = options;
+  const mongoOptions = { new: true, upsert: false };
+
+  const currentAgent = await Agent.findOne(searchParameter);
+  if (currentAgent) {
+    const { __v, _id, id, versions, author, ...versionData } = currentAgent.toObject();
+    const { $push, $pull, $addToSet, ...directUpdates } = updateData;
+
+    let actionsHash = null;
+
+    // Generate actions hash if agent has actions
+    if (currentAgent.actions && currentAgent.actions.length > 0) {
+      // Extract action IDs from the format "domain_action_id"
+      const actionIds = currentAgent.actions
+        .map((action) => {
+          const parts = action.split(actionDelimiter);
+          return parts[1]; // Get just the action ID part
+        })
+        .filter(Boolean);
+
+      if (actionIds.length > 0) {
+        try {
+          const actions = await getActions(
+            {
+              action_id: { $in: actionIds },
+            },
+            true,
+          ); // Include sensitive data for hash
+
+          actionsHash = await generateActionMetadataHash(currentAgent.actions, actions);
+        } catch (error) {
+          logger.error('Error fetching actions for hash generation:', error);
+        }
+      }
+    }
+
+    const shouldCreateVersion =
+      !skipVersioning &&
+      (forceVersion || Object.keys(directUpdates).length > 0 || $push || $pull || $addToSet);
+
+    if (shouldCreateVersion) {
+      const duplicateVersion = isDuplicateVersion(updateData, versionData, versions, actionsHash);
+      if (duplicateVersion && !forceVersion) {
+        const error = new Error(
+          'Duplicate version: This would create a version identical to an existing one',
+        );
+        error.statusCode = 409;
+        error.details = {
+          duplicateVersion,
+          versionIndex: versions.findIndex(
+            (v) => JSON.stringify(duplicateVersion) === JSON.stringify(v),
+          ),
+        };
+        throw error;
+      }
+    }
+
+    const versionEntry = {
+      ...versionData,
+      ...directUpdates,
+      updatedAt: new Date(),
+    };
+
+    // Include actions hash in version if available
+    if (actionsHash) {
+      versionEntry.actionsHash = actionsHash;
+    }
+
+    // Always store updatedBy field to track who made the change
+    if (updatingUserId) {
+      versionEntry.updatedBy = new mongoose.Types.ObjectId(updatingUserId);
+    }
+
+    if (shouldCreateVersion) {
+      updateData.$push = {
+        ...($push || {}),
+        versions: versionEntry,
+      };
+    }
+  }
+
+  return Agent.findOneAndUpdate(searchParameter, updateData, mongoOptions).lean();
 };
 
 /**
@@ -151,7 +366,7 @@ const updateAgent = async (searchParameter, updateData) => {
  * @param {string} params.file_id
  * @returns {Promise<Agent>} The updated agent.
  */
-const addAgentResourceFile = async ({ agent_id, tool_resource, file_id }) => {
+const addAgentResourceFile = async ({ req, agent_id, tool_resource, file_id }) => {
   const searchParameter = { id: agent_id };
   let agent = await getAgent(searchParameter);
   if (!agent) {
@@ -177,7 +392,9 @@ const addAgentResourceFile = async ({ agent_id, tool_resource, file_id }) => {
     },
   };
 
-  const updatedAgent = await updateAgent(searchParameter, updateData);
+  const updatedAgent = await updateAgent(searchParameter, updateData, {
+    updatingUserId: req?.user?.id,
+  });
   if (updatedAgent) {
     return updatedAgent;
   } else {
@@ -269,7 +486,6 @@ const getListAgents = async (searchParameter) => {
     delete globalQuery.author;
     query = { $or: [globalQuery, query] };
   }
-
   const agents = (
     await Agent.find(query, {
       id: 1,
@@ -341,7 +557,10 @@ const updateAgentProjects = async ({ user, agentId, projectIds, removeProjectIds
     delete updateQuery.author;
   }
 
-  const updatedAgent = await updateAgent(updateQuery, updateOps);
+  const updatedAgent = await updateAgent(updateQuery, updateOps, {
+    updatingUserId: user.id,
+    skipVersioning: true,
+  });
   if (updatedAgent) {
     return updatedAgent;
   }
@@ -358,15 +577,107 @@ const updateAgentProjects = async ({ user, agentId, projectIds, removeProjectIds
   return await getAgent({ id: agentId });
 };
 
+/**
+ * Reverts an agent to a specific version in its version history.
+ * @param {Object} searchParameter - The search parameters to find the agent to revert.
+ * @param {string} searchParameter.id - The ID of the agent to revert.
+ * @param {string} [searchParameter.author] - The user ID of the agent's author.
+ * @param {number} versionIndex - The index of the version to revert to in the versions array.
+ * @returns {Promise<MongoAgent>} The updated agent document after reverting.
+ * @throws {Error} If the agent is not found or the specified version does not exist.
+ */
+const revertAgentVersion = async (searchParameter, versionIndex) => {
+  const agent = await Agent.findOne(searchParameter);
+  if (!agent) {
+    throw new Error('Agent not found');
+  }
+
+  if (!agent.versions || !agent.versions[versionIndex]) {
+    throw new Error(`Version ${versionIndex} not found`);
+  }
+
+  const revertToVersion = agent.versions[versionIndex];
+
+  const updateData = {
+    ...revertToVersion,
+  };
+
+  delete updateData._id;
+  delete updateData.id;
+  delete updateData.versions;
+  delete updateData.author;
+  delete updateData.updatedBy;
+
+  return Agent.findOneAndUpdate(searchParameter, updateData, { new: true }).lean();
+};
+
+/**
+ * Generates a hash of action metadata for version comparison
+ * @param {string[]} actionIds - Array of action IDs in format "domain_action_id"
+ * @param {Action[]} actions - Array of action documents
+ * @returns {Promise<string>} - SHA256 hash of the action metadata
+ */
+const generateActionMetadataHash = async (actionIds, actions) => {
+  if (!actionIds || actionIds.length === 0) {
+    return '';
+  }
+
+  // Create a map of action_id to metadata for quick lookup
+  const actionMap = new Map();
+  actions.forEach((action) => {
+    actionMap.set(action.action_id, action.metadata);
+  });
+
+  // Sort action IDs for consistent hashing
+  const sortedActionIds = [...actionIds].sort();
+
+  // Build a deterministic string representation of all action metadata
+  const metadataString = sortedActionIds
+    .map((actionFullId) => {
+      // Extract just the action_id part (after the delimiter)
+      const parts = actionFullId.split(actionDelimiter);
+      const actionId = parts[1];
+
+      const metadata = actionMap.get(actionId);
+      if (!metadata) {
+        return `${actionId}:null`;
+      }
+
+      // Sort metadata keys for deterministic output
+      const sortedKeys = Object.keys(metadata).sort();
+      const metadataStr = sortedKeys
+        .map((key) => `${key}:${JSON.stringify(metadata[key])}`)
+        .join(',');
+      return `${actionId}:{${metadataStr}}`;
+    })
+    .join(';');
+
+  // Use Web Crypto API to generate hash
+  const encoder = new TextEncoder();
+  const data = encoder.encode(metadataString);
+  const hashBuffer = await crypto.webcrypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  const hashHex = hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+
+  return hashHex;
+};
+
+/**
+ * Load a default agent based on the endpoint
+ * @param {string} endpoint
+ * @returns {Agent | null}
+ */
+
 module.exports = {
-  Agent,
   getAgent,
   loadAgent,
   createAgent,
   updateAgent,
   deleteAgent,
   getListAgents,
+  revertAgentVersion,
   updateAgentProjects,
   addAgentResourceFile,
   removeAgentResourceFiles,
+  generateActionMetadataHash,
 };

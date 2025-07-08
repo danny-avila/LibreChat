@@ -2,15 +2,16 @@ import {
   QueryKeys,
   dataService,
   EModelEndpoint,
+  isAgentsEndpoint,
   defaultOrderQuery,
   defaultAssistantsVersion,
 } from 'librechat-data-provider';
 import { useQuery, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import type {
-  InfiniteData,
   UseInfiniteQueryOptions,
   QueryObserverResult,
   UseQueryOptions,
+  InfiniteData,
 } from '@tanstack/react-query';
 import type t from 'librechat-data-provider';
 import type {
@@ -30,6 +31,7 @@ import type {
   SharedLinksResponse,
 } from 'librechat-data-provider';
 import type { ConversationCursorData } from '~/utils/convos';
+import { findConversationInInfinite } from '~/utils';
 
 export const useGetPresetsQuery = (
   config?: UseQueryOptions<TPreset[]>,
@@ -68,14 +70,13 @@ export const useGetConvoIdQuery = (
     [QueryKeys.conversation, id],
     () => {
       // Try to find in all fetched infinite pages
-      const convosQuery = queryClient.getQueryData<InfiniteData<ConversationCursorData>>([
-        QueryKeys.allConversations,
-      ]);
-      const found = convosQuery?.pages
-        .flatMap((page) => page.conversations)
-        .find((c) => c.conversationId === id);
+      const convosQuery = queryClient.getQueryData<InfiniteData<ConversationCursorData>>(
+        [QueryKeys.allConversations],
+        { exact: false },
+      );
+      const found = findConversationInInfinite(convosQuery, id);
 
-      if (found) {
+      if (found && found.messages != null) {
         return found;
       }
       // Otherwise, fetch from API
@@ -203,7 +204,7 @@ export const useAvailableToolsQuery = <TData = t.TPlugin[]>(
   const keyExpiry = queryClient.getQueryData<TCheckUserKeyResponse>([QueryKeys.name, endpoint]);
   const userProvidesKey = !!endpointsConfig?.[endpoint]?.userProvide;
   const keyProvided = userProvidesKey ? !!keyExpiry?.expiresAt : true;
-  const enabled = !!endpointsConfig?.[endpoint] && keyProvided;
+  const enabled = isAgentsEndpoint(endpoint) ? true : !!endpointsConfig?.[endpoint] && keyProvided;
   const version: string | number | undefined =
     endpointsConfig?.[endpoint]?.version ?? defaultAssistantsVersion[endpoint];
   return useQuery<t.TPlugin[], unknown, TData>(

@@ -2,6 +2,7 @@ import React, { useEffect, useCallback, useRef, useState } from 'react';
 import throttle from 'lodash/throttle';
 import { visit } from 'unist-util-visit';
 import { useSetRecoilState } from 'recoil';
+import { useLocation } from 'react-router-dom';
 import type { Pluggable } from 'unified';
 import type { Artifact } from '~/common';
 import { useMessageContext, useArtifactContext } from '~/Providers';
@@ -39,12 +40,13 @@ const defaultType = 'unknown';
 const defaultIdentifier = 'lc-no-identifier';
 
 export function Artifact({
-  node,
+  node: _node,
   ...props
 }: Artifact & {
   children: React.ReactNode | { props: { children: React.ReactNode } };
   node: unknown;
 }) {
+  const location = useLocation();
   const { messageId } = useMessageContext();
   const { getNextIndex, resetCounter } = useArtifactContext();
   const artifactIndex = useRef(getNextIndex(false)).current;
@@ -86,10 +88,14 @@ export function Artifact({
         lastUpdateTime: now,
       };
 
+      if (!location.pathname.includes('/c/')) {
+        return setArtifact(currentArtifact);
+      }
+
       setArtifacts((prevArtifacts) => {
         if (
           prevArtifacts?.[artifactKey] != null &&
-          prevArtifacts[artifactKey].content === content
+          prevArtifacts[artifactKey]?.content === content
         ) {
           return prevArtifacts;
         }
@@ -110,6 +116,7 @@ export function Artifact({
     props.identifier,
     messageId,
     artifactIndex,
+    location.pathname,
   ]);
 
   useEffect(() => {

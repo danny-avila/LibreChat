@@ -4,16 +4,26 @@ import { X } from 'lucide-react';
 import { cn } from '~/utils';
 
 interface OGDialogProps extends DialogPrimitive.DialogProps {
-  triggerRef?: React.RefObject<HTMLButtonElement>;
+  triggerRef?: React.RefObject<HTMLButtonElement | HTMLInputElement | null>;
+  triggerRefs?: React.RefObject<HTMLButtonElement | HTMLInputElement | null>[];
 }
 
 const Dialog = React.forwardRef<HTMLDivElement, OGDialogProps>(
-  ({ children, triggerRef, onOpenChange, ...props }, _ref) => {
+  ({ children, triggerRef, triggerRefs, onOpenChange, ...props }, _ref) => {
     const handleOpenChange = (open: boolean) => {
       if (!open && triggerRef?.current) {
         setTimeout(() => {
           triggerRef.current?.focus();
         }, 0);
+      }
+      if (triggerRefs?.length) {
+        triggerRefs.forEach((ref) => {
+          if (ref?.current) {
+            setTimeout(() => {
+              ref.current?.focus();
+            }, 0);
+          }
+        });
       }
       onOpenChange?.(open);
     };
@@ -32,7 +42,7 @@ const DialogPortal = DialogPrimitive.Portal;
 
 const DialogClose = DialogPrimitive.Close;
 
-const DialogOverlay = React.forwardRef<
+export const DialogOverlay = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Overlay>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Overlay>
 >(({ className, ...props }, ref) => (

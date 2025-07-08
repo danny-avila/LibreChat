@@ -46,6 +46,8 @@ export enum QueryKeys {
   health = 'health',
   userTerms = 'userTerms',
   banner = 'banner',
+  /* Memories */
+  memories = 'memories',
 }
 
 export enum MutationKeys {
@@ -65,8 +67,10 @@ export enum MutationKeys {
   updateAgentAction = 'updateAgentAction',
   deleteAction = 'deleteAction',
   deleteAgentAction = 'deleteAgentAction',
+  revertAgentVersion = 'revertAgentVersion',
   deleteUser = 'deleteUser',
   updateRole = 'updateRole',
   enableTwoFactor = 'enableTwoFactor',
   verifyTwoFactor = 'verifyTwoFactor',
+  updateMemoryPreferences = 'updateMemoryPreferences',
 }

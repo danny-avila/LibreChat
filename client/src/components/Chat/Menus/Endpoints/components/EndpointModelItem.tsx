@@ -45,10 +45,10 @@ export function EndpointModelItem({ modelId, endpoint, isSelected }: EndpointMod
           </div>
         ) : (isAgentsEndpoint(endpoint.value) || isAssistantsEndpoint(endpoint.value)) &&
           endpoint.icon ? (
-            <div className="flex h-5 w-5 items-center justify-center overflow-hidden rounded-full">
-              {endpoint.icon}
-            </div>
-          ) : null}
+          <div className="flex h-5 w-5 items-center justify-center overflow-hidden rounded-full">
+            {endpoint.icon}
+          </div>
+        ) : null}
         <span>{modelName}</span>
       </div>
       {isGlobal && <EarthIcon className="ml-auto size-4 text-green-400" />}

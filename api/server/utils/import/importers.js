@@ -1,6 +1,7 @@
 const { v4: uuidv4 } = require('uuid');
 const { EModelEndpoint, Constants, openAISettings, CacheKeys } = require('librechat-data-provider');
 const { createImportBatchBuilder } = require('./importBatchBuilder');
+const { cloneMessagesWithTimestamps } = require('./fork');
 const getLogStores = require('~/cache/getLogStores');
 const logger = require('~/config/winston');
 
@@ -107,67 +108,47 @@ async function importLibreChatConvo(
 
     if (jsonData.recursive) {
       /**
-       * Recursively traverse the messages tree and save each message to the database.
+       * Flatten the recursive message tree into a flat array
        * @param {TMessage[]} messages
        * @param {string} parentMessageId
+       * @param {TMessage[]} flatMessages
        */
-      const traverseMessages = async (messages, parentMessageId = null) => {
+      const flattenMessages = (
+        messages,
+        parentMessageId = Constants.NO_PARENT,
+        flatMessages = [],
+      ) => {
         for (const message of messages) {
           if (!message.text && !message.content) {
             continue;
           }
 
-          let savedMessage;
-          if (message.sender?.toLowerCase() === 'user' || message.isCreatedByUser) {
-            savedMessage = await importBatchBuilder.saveMessage({
-              text: message.text,
-              content: message.content,
-              sender: 'user',
-              isCreatedByUser: true,
-              parentMessageId: parentMessageId,
-            });
-          } else {
-            savedMessage = await importBatchBuilder.saveMessage({
-              text: message.text,
-              content: message.content,
-              sender: message.sender,
-              isCreatedByUser: false,
-              model: options.model,
-              parentMessageId: parentMessageId,
-            });
-          }
+          const flatMessage = {
+            ...message,
+            parentMessageId: parentMessageId,
+            children: undefined, // Remove children from flat structure
+          };
+          flatMessages.push(flatMessage);
 
           if (!firstMessageDate && message.createdAt) {
             firstMessageDate = new Date(message.createdAt);
           }
 
           if (message.children && message.children.length > 0) {
-            await traverseMessages(message.children, savedMessage.messageId);
+            flattenMessages(message.children, message.messageId, flatMessages);
           }
         }
+        return flatMessages;
       };
 
-      await traverseMessages(messagesToImport);
+      const flatMessages = flattenMessages(messagesToImport);
+      cloneMessagesWithTimestamps(flatMessages, importBatchBuilder);
     } else if (messagesToImport) {
-      const idMapping = new Map();
-
+      cloneMessagesWithTimestamps(messagesToImport, importBatchBuilder);
       for (const message of messagesToImport) {
         if (!firstMessageDate && message.createdAt) {
           firstMessageDate = new Date(message.createdAt);
         }
-        const newMessageId = uuidv4();
-        idMapping.set(message.messageId, newMessageId);
-
-        const clonedMessage = {
-          ...message,
-          messageId: newMessageId,
-          parentMessageId:
-            message.parentMessageId && message.parentMessageId !== Constants.NO_PARENT
-              ? idMapping.get(message.parentMessageId) || Constants.NO_PARENT
-              : Constants.NO_PARENT,
-        };
-
-        importBatchBuilder.saveMessage(clonedMessage);
       }
     } else {
       throw new Error('Invalid LibreChat file format');

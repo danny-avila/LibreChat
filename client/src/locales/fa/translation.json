@@ -322,7 +322,6 @@
   "com_nav_delete_cache_storage": "حافظه کش TTS را حذف کنید",
   "com_nav_delete_data_info": "تمام اطلاعات شما حذف خواهد شد.",
   "com_nav_delete_warning": "هشدار: با این کار حساب شما برای همیشه حذف می شود.",
-  "com_nav_edit_chat_badges": "مدالهای چت را ویرایش کنید",
   "com_nav_enable_cache_tts": "کش TTS را فعال کنید",
   "com_nav_enable_cloud_browser_voice": "از صداهای مبتنی بر ابر استفاده کنید",
   "com_nav_enabled": "فعال شد",
@@ -627,7 +626,6 @@
   "com_ui_enter": "وارد کنید",
   "com_ui_enter_api_key": "کلید API را وارد کنید",
   "com_ui_enter_openapi_schema": "طرح OpenAPI خود را در اینجا وارد کنید",
-  "com_ui_enter_var": "وارد کنید {{0}}",
   "com_ui_error": "خطا",
   "com_ui_error_connection": "خطا در اتصال به سرور، سعی کنید صفحه را بازخوانی کنید.",
   "com_ui_error_save_admin_settings": "هنگام ذخیره تنظیمات سرپرست شما خطایی روی داد.",
@@ -680,7 +678,6 @@
   "com_ui_import_conversation_info": "مکالمات را از یک فایل JSON وارد کنید",
   "com_ui_import_conversation_success": "مکالمات با موفقیت وارد شد",
   "com_ui_include_shadcnui": "شامل دستورالعمل های اجزای shadcn/ui",
-  "com_ui_include_shadcnui_agent": "دستورالعمل shadcn/ui را درج کنید",
   "com_ui_input": "ورودی",
   "com_ui_instructions": "دستورالعمل ها",
   "com_ui_late_night": "آخر شب مبارک",
@@ -848,6 +845,5 @@
   "com_ui_write": "نوشتن",
   "com_ui_yes": "بله",
   "com_ui_zoom": "بزرگنمایی ضربه بزنید؛",
-  "com_user_message": "شما",
-  "com_warning_resubmit_unsupported": "ارسال مجدد پیام هوش مصنوعی برای این نقطه پایانی پشتیبانی نمی شود."
+  "com_user_message": "شما"
 }
