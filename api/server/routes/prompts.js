@@ -1,5 +1,7 @@
 const express = require('express');
-const { PermissionTypes, Permissions, SystemRoles } = require('librechat-data-provider');
+const { logger } = require('@librechat/data-schemas');
+const { generateCheckAccess } = require('@librechat/api');
+const { Permissions, SystemRoles, PermissionTypes } = require('librechat-data-provider');
 const {
   getPrompt,
   getPrompts,
@@ -14,24 +16,30 @@ const {
   // updatePromptLabels,
   makePromptProduction,
 } = require('~/models/Prompt');
-const { requireJwtAuth, generateCheckAccess } = require('~/server/middleware');
-const { logger } = require('~/config');
+const { requireJwtAuth } = require('~/server/middleware');
+const { getRoleByName } = require('~/models/Role');
 
 const router = express.Router();
 
-const checkPromptAccess = generateCheckAccess(PermissionTypes.PROMPTS, [Permissions.USE]);
-const checkPromptCreate = generateCheckAccess(PermissionTypes.PROMPTS, [
-  Permissions.USE,
-  Permissions.CREATE,
-]);
+const checkPromptAccess = generateCheckAccess({
+  permissionType: PermissionTypes.PROMPTS,
+  permissions: [Permissions.USE],
+  getRoleByName,
+});
+const checkPromptCreate = generateCheckAccess({
+  permissionType: PermissionTypes.PROMPTS,
+  permissions: [Permissions.USE, Permissions.CREATE],
+  getRoleByName,
+});
 
-const checkGlobalPromptShare = generateCheckAccess(
-  PermissionTypes.PROMPTS,
-  [Permissions.USE, Permissions.CREATE],
-  {
+const checkGlobalPromptShare = generateCheckAccess({
+  permissionType: PermissionTypes.PROMPTS,
+  permissions: [Permissions.USE, Permissions.CREATE],
+  bodyProps: {
     [Permissions.SHARED_GLOBAL]: ['projectIds', 'removeProjectIds'],
   },
-);
+  getRoleByName,
+});
 
 router.use(requireJwtAuth);
 router.use(checkPromptAccess);

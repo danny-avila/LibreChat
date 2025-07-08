@@ -1,7 +1,7 @@
 const { Keyv } = require('keyv');
+const { isEnabled, math } = require('@librechat/api');
 const { CacheKeys, ViolationTypes, Time } = require('librechat-data-provider');
 const { logFile, violationFile } = require('./keyvFiles');
-const { math, isEnabled } = require('~/server/utils');
 const keyvRedis = require('./keyvRedis');
 const keyvMongo = require('./keyvMongo');
 
@@ -28,6 +28,10 @@ const config = isRedisEnabled
 const roles = isRedisEnabled
   ? new Keyv({ store: keyvRedis })
   : new Keyv({ namespace: CacheKeys.ROLES });
+
+const mcpTools = isRedisEnabled
+  ? new Keyv({ store: keyvRedis })
+  : new Keyv({ namespace: CacheKeys.MCP_TOOLS });
 
 const audioRuns = isRedisEnabled
   ? new Keyv({ store: keyvRedis, ttl: Time.TEN_MINUTES })
@@ -61,8 +65,13 @@ const abortKeys = isRedisEnabled
   ? new Keyv({ store: keyvRedis })
   : new Keyv({ namespace: CacheKeys.ABORT_KEYS, ttl: Time.TEN_MINUTES });
 
+const openIdExchangedTokensCache = isRedisEnabled
+  ? new Keyv({ store: keyvRedis, ttl: Time.TEN_MINUTES })
+  : new Keyv({ namespace: CacheKeys.OPENID_EXCHANGED_TOKENS, ttl: Time.TEN_MINUTES });
+
 const namespaces = {
   [CacheKeys.ROLES]: roles,
+  [CacheKeys.MCP_TOOLS]: mcpTools,
   [CacheKeys.CONFIG_STORE]: config,
   [CacheKeys.PENDING_REQ]: pending_req,
   [ViolationTypes.BAN]: new Keyv({ store: keyvMongo, namespace: CacheKeys.BANS, ttl: duration }),
@@ -98,6 +107,7 @@ const namespaces = {
   [CacheKeys.AUDIO_RUNS]: audioRuns,
   [CacheKeys.MESSAGES]: messages,
   [CacheKeys.FLOWS]: flows,
+  [CacheKeys.OPENID_EXCHANGED_TOKENS]: openIdExchangedTokensCache,
 };
 
 /**

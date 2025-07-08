@@ -6,10 +6,9 @@ const {
   extractEnvVariable,
 } = require('librechat-data-provider');
 const { Providers } = require('@librechat/agents');
+const { getOpenAIConfig, createHandleLLMNewToken, resolveHeaders } = require('@librechat/api');
 const { getUserKeyValues, checkUserKeyExpiry } = require('~/server/services/UserService');
-const { getLLMConfig } = require('~/server/services/Endpoints/openAI/llm');
 const { getCustomEndpointConfig } = require('~/server/services/Config');
-const { createHandleLLMNewToken } = require('~/app/clients/generators');
 const { fetchModels } = require('~/server/services/ModelService');
 const OpenAIClient = require('~/app/clients/OpenAIClient');
 const { isUserProvided } = require('~/server/utils');
@@ -29,12 +28,7 @@ const initializeClient = async ({ req, res, endpointOption, optionsOnly, overrid
   const CUSTOM_API_KEY = extractEnvVariable(endpointConfig.apiKey);
   const CUSTOM_BASE_URL = extractEnvVariable(endpointConfig.baseURL);
 
-  let resolvedHeaders = {};
-  if (endpointConfig.headers && typeof endpointConfig.headers === 'object') {
-    Object.keys(endpointConfig.headers).forEach((key) => {
-      resolvedHeaders[key] = extractEnvVariable(endpointConfig.headers[key]);
-    });
-  }
+  let resolvedHeaders = resolveHeaders(endpointConfig.headers, req.user);
 
   if (CUSTOM_API_KEY.match(envVarRegex)) {
     throw new Error(`Missing API Key for ${endpoint}.`);
@@ -105,6 +99,7 @@ const initializeClient = async ({ req, res, endpointOption, optionsOnly, overrid
     headers: resolvedHeaders,
     addParams: endpointConfig.addParams,
     dropParams: endpointConfig.dropParams,
+    customParams: endpointConfig.customParams,
     titleConvo: endpointConfig.titleConvo,
     titleModel: endpointConfig.titleModel,
     forcePrompt: endpointConfig.forcePrompt,
@@ -134,7 +129,7 @@ const initializeClient = async ({ req, res, endpointOption, optionsOnly, overrid
   };
 
   if (optionsOnly) {
-    const modelOptions = endpointOption.model_parameters;
+    const modelOptions = endpointOption?.model_parameters ?? {};
     if (endpoint !== Providers.OLLAMA) {
       clientOptions = Object.assign(
         {
@@ -143,7 +138,7 @@ const initializeClient = async ({ req, res, endpointOption, optionsOnly, overrid
         clientOptions,
       );
       clientOptions.modelOptions.user = req.user.id;
-      const options = getLLMConfig(apiKey, clientOptions, endpoint);
+      const options = getOpenAIConfig(apiKey, clientOptions, endpoint);
       if (!customOptions.streamRate) {
         return options;
       }

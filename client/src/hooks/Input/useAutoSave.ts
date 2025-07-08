@@ -75,9 +75,9 @@ export const useAutoSave = ({
         const { fileToRecover, fileIdToRecover } = fileData
           ? { fileToRecover: fileData, fileIdToRecover: fileId }
           : {
-            fileToRecover: tempFileData,
-            fileIdToRecover: (tempFileData?.temp_file_id ?? '') || fileId,
-          };
+              fileToRecover: tempFileData,
+              fileIdToRecover: (tempFileData?.temp_file_id ?? '') || fileId,
+            };
 
         if (fileToRecover) {
           setFiles((currentFiles) => {
@@ -188,7 +188,7 @@ export const useAutoSave = ({
           `${LocalStorageKeys.TEXT_DRAFT}${Constants.PENDING_CONVO}`,
         );
 
-        // Clear the pending draft, if it exists, and save the current draft to the new conversationId;
+        // Clear the pending text draft, if it exists, and save the current draft to the new conversationId;
         // otherwise, save the current text area value to the new conversationId
         localStorage.removeItem(`${LocalStorageKeys.TEXT_DRAFT}${Constants.PENDING_CONVO}`);
         if (pendingDraft) {
@@ -198,6 +198,21 @@ export const useAutoSave = ({
             `${LocalStorageKeys.TEXT_DRAFT}${conversationId}`,
             encodeBase64(textAreaRef.current.value),
           );
+        }
+        const pendingFileDraft = localStorage.getItem(
+          `${LocalStorageKeys.FILES_DRAFT}${Constants.PENDING_CONVO}`,
+        );
+
+        if (pendingFileDraft) {
+          localStorage.setItem(
+            `${LocalStorageKeys.FILES_DRAFT}${conversationId}`,
+            pendingFileDraft,
+          );
+          localStorage.removeItem(`${LocalStorageKeys.FILES_DRAFT}${Constants.PENDING_CONVO}`);
+          const filesDraft = JSON.parse(pendingFileDraft || '[]') as string[];
+          if (filesDraft.length > 0) {
+            restoreFiles(conversationId);
+          }
         }
       } else if (currentConversationId != null && currentConversationId) {
         saveText(currentConversationId);

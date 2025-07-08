@@ -43,7 +43,7 @@ const PromptEditor: React.FC<Props> = ({ name, isEditing, setIsEditing }) => {
   }, [isEditing, prompt]);
 
   const rehypePlugins: PluggableList = [
-    [rehypeKatex, { output: 'mathml' }],
+    [rehypeKatex],
     [
       rehypeHighlight,
       {
@@ -130,7 +130,7 @@ const PromptEditor: React.FC<Props> = ({ name, isEditing, setIsEditing }) => {
                     /** @ts-ignore */
                     supersub,
                     remarkGfm,
-                    [remarkMath, { singleDollarTextMath: true }],
+                    [remarkMath, { singleDollarTextMath: false }],
                   ]}
                   /** @ts-ignore */
                   rehypePlugins={rehypePlugins}

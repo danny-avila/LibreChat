@@ -2,6 +2,7 @@ import type { AxiosResponse } from 'axios';
 import type * as t from './types';
 import * as endpoints from './api-endpoints';
 import * as a from './types/assistants';
+import * as ag from './types/agents';
 import * as m from './types/mutations';
 import * as q from './types/queries';
 import * as f from './types/files';
@@ -9,14 +10,6 @@ import * as config from './config';
 import request from './request';
 import * as s from './schemas';
 import * as r from './roles';
-
-export function abortRequestWithMessage(
-  endpoint: string,
-  abortKey: string,
-  message: string,
-): Promise<void> {
-  return request.post(endpoints.abortRequest(endpoint), { arg: { abortKey, message } });
-}
 
 export function revokeUserKey(name: string): Promise<unknown> {
   return request.delete(endpoints.revokeUserKey(name));
@@ -93,7 +86,7 @@ export function getUser(): Promise<t.TUser> {
   return request.get(endpoints.user());
 }
 
-export function getUserBalance(): Promise<string> {
+export function getUserBalance(): Promise<t.TBalanceResponse> {
   return request.get(endpoints.balance());
 }
 
@@ -150,7 +143,11 @@ export const updateUserPlugins = (payload: t.TUpdateUserPlugins) => {
 
 /* Config */
 
-export const getStartupConfig = (): Promise<config.TStartupConfig> => {
+export const getStartupConfig = (): Promise<
+  config.TStartupConfig & {
+    mcpCustomUserVars?: Record<string, { title: string; description: string }>;
+  }
+> => {
   return request.get(endpoints.config());
 };
 
@@ -351,7 +348,7 @@ export const updateAction = (data: m.UpdateActionVariables): Promise<m.UpdateAct
   );
 };
 
-export function getActions(): Promise<a.Action[]> {
+export function getActions(): Promise<ag.Action[]> {
   return request.get(
     endpoints.agents({
       path: 'actions',
@@ -407,7 +404,7 @@ export const updateAgent = ({
 
 export const duplicateAgent = ({
   agent_id,
-}: m.DuplicateAgentBody): Promise<{ agent: a.Agent; actions: a.Action[] }> => {
+}: m.DuplicateAgentBody): Promise<{ agent: a.Agent; actions: ag.Action[] }> => {
   return request.post(
     endpoints.agents({
       path: `${agent_id}/duplicate`,
@@ -430,6 +427,14 @@ export const listAgents = (params: a.AgentListParams): Promise<a.AgentListRespon
     }),
   );
 };
+
+export const revertAgentVersion = ({
+  agent_id,
+  version_index,
+}: {
+  agent_id: string;
+  version_index: number;
+}): Promise<a.Agent> => request.post(endpoints.revertAgentVersion(agent_id), { version_index });
 
 /* Tools */
 
@@ -710,6 +715,12 @@ export function updateAgentPermissions(
   return request.put(endpoints.updateAgentPermissions(variables.roleName), variables.updates);
 }
 
+export function updateMemoryPermissions(
+  variables: m.UpdateMemoryPermVars,
+): Promise<m.UpdatePermResponse> {
+  return request.put(endpoints.updateMemoryPermissions(variables.roleName), variables.updates);
+}
+
 /* Tags */
 export function getConversationTags(): Promise<t.TConversationTagsResponse> {
   return request.get(endpoints.conversationTags());
@@ -757,6 +768,15 @@ export function getBanner(): Promise<t.TBannerResponse> {
   return request.get(endpoints.banner());
 }
 
+export function updateFeedback(
+  conversationId: string,
+  messageId: string,
+  payload: t.TUpdateFeedbackRequest,
+): Promise<t.TUpdateFeedbackResponse> {
+  return request.put(endpoints.feedback(conversationId, messageId), payload);
+}
+
+// 2FA
 export function enableTwoFactor(): Promise<t.TEnable2FAResponse> {
   return request.get(endpoints.enableTwoFactor());
 }
@@ -782,3 +802,33 @@ export function verifyTwoFactorTemp(
 ): Promise<t.TVerify2FATempResponse> {
   return request.post(endpoints.verifyTwoFactorTemp(), payload);
 }
+
+/* Memories */
+export const getMemories = (): Promise<q.MemoriesResponse> => {
+  return request.get(endpoints.memories());
+};
+
+export const deleteMemory = (key: string): Promise<void> => {
+  return request.delete(endpoints.memory(key));
+};
+
+export const updateMemory = (
+  key: string,
+  value: string,
+  originalKey?: string,
+): Promise<q.TUserMemory> => {
+  return request.patch(endpoints.memory(originalKey || key), { key, value });
+};
+
+export const updateMemoryPreferences = (preferences: {
+  memories: boolean;
+}): Promise<{ updated: boolean; preferences: { memories: boolean } }> => {
+  return request.patch(endpoints.memoryPreferences(), preferences);
+};
+
+export const createMemory = (data: {
+  key: string;
+  value: string;
+}): Promise<{ created: boolean; memory: q.TUserMemory }> => {
+  return request.post(endpoints.memories(), data);
+};

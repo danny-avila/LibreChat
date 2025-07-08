@@ -1,10 +1,13 @@
 const fs = require('fs');
 const path = require('path');
+const { sleep } = require('@librechat/agents');
+const { logger } = require('@librechat/data-schemas');
 const { zodToJsonSchema } = require('zod-to-json-schema');
-const { tool: toolFn, Tool, DynamicStructuredTool } = require('@langchain/core/tools');
 const { Calculator } = require('@langchain/community/tools/calculator');
+const { tool: toolFn, Tool, DynamicStructuredTool } = require('@langchain/core/tools');
 const {
   Tools,
+  Constants,
   ErrorTypes,
   ContentTypes,
   imageGenTools,
@@ -14,6 +17,7 @@ const {
   ImageVisionTool,
   openapiToFunction,
   AgentCapabilities,
+  defaultAgentCapabilities,
   validateAndParseOpenAPISpec,
 } = require('librechat-data-provider');
 const {
@@ -29,13 +33,12 @@ const {
   toolkits,
 } = require('~/app/clients/tools');
 const { processFileURL, uploadImageBuffer } = require('~/server/services/Files/process');
+const { getEndpointsConfig, getCachedTools } = require('~/server/services/Config');
+const { createOnSearchResults } = require('~/server/services/Tools/search');
 const { isActionDomainAllowed } = require('~/server/services/domains');
-const { getEndpointsConfig } = require('~/server/services/Config');
 const { recordUsage } = require('~/server/services/Threads');
 const { loadTools } = require('~/app/clients/tools/util');
 const { redactMessage } = require('~/config/parsers');
-const { sleep } = require('~/server/utils');
-const { logger } = require('~/config');
 
 /**
  * @param {string} toolName
@@ -223,7 +226,7 @@ async function processRequiredActions(client, requiredActions) {
     `[required actions] user: ${client.req.user.id} | thread_id: ${requiredActions[0].thread_id} | run_id: ${requiredActions[0].run_id}`,
     requiredActions,
   );
-  const toolDefinitions = client.req.app.locals.availableTools;
+  const toolDefinitions = await getCachedTools({ includeGlobal: true });
   const seenToolkits = new Set();
   const tools = requiredActions
     .map((action) => {
@@ -497,18 +500,38 @@ async function processRequiredActions(client, requiredActions) {
 async function loadAgentTools({ req, res, agent, tool_resources, openAIApiKey }) {
   if (!agent.tools || agent.tools.length === 0) {
     return {};
+  } else if (agent.tools && agent.tools.length === 1 && agent.tools[0] === AgentCapabilities.ocr) {
+    return {};
   }
 
   const endpointsConfig = await getEndpointsConfig(req);
-  const enabledCapabilities = new Set(endpointsConfig?.[EModelEndpoint.agents]?.capabilities ?? []);
-  const checkCapability = (capability) => enabledCapabilities.has(capability);
+  let enabledCapabilities = new Set(endpointsConfig?.[EModelEndpoint.agents]?.capabilities ?? []);
+  /** Edge case: use defined/fallback capabilities when the "agents" endpoint is not enabled */
+  if (enabledCapabilities.size === 0 && agent.id === Constants.EPHEMERAL_AGENT_ID) {
+    enabledCapabilities = new Set(
+      req.app?.locals?.[EModelEndpoint.agents]?.capabilities ?? defaultAgentCapabilities,
+    );
+  }
+  const checkCapability = (capability) => {
+    const enabled = enabledCapabilities.has(capability);
+    if (!enabled) {
+      logger.warn(
+        `Capability "${capability}" disabled${capability === AgentCapabilities.tools ? '.' : ' despite configured tool.'} User: ${req.user.id} | Agent: ${agent.id}`,
+      );
+    }
+    return enabled;
+  };
   const areToolsEnabled = checkCapability(AgentCapabilities.tools);
 
+  let includesWebSearch = false;
   const _agentTools = agent.tools?.filter((tool) => {
     if (tool === Tools.file_search) {
       return checkCapability(AgentCapabilities.file_search);
     } else if (tool === Tools.execute_code) {
       return checkCapability(AgentCapabilities.execute_code);
+    } else if (tool === Tools.web_search) {
+      includesWebSearch = checkCapability(AgentCapabilities.web_search);
+      return includesWebSearch;
     } else if (!areToolsEnabled && !tool.includes(actionDelimiter)) {
       return false;
     }
@@ -518,7 +541,11 @@ async function loadAgentTools({ req, res, agent, tool_resources, openAIApiKey })
   if (!_agentTools || _agentTools.length === 0) {
     return {};
   }
-
+  /** @type {ReturnType<createOnSearchResults>} */
+  let webSearchCallbacks;
+  if (includesWebSearch) {
+    webSearchCallbacks = createOnSearchResults(res);
+  }
   const { loadedTools, toolContextMap } = await loadTools({
     agent,
     functions: true,
@@ -526,12 +553,14 @@ async function loadAgentTools({ req, res, agent, tool_resources, openAIApiKey })
     tools: _agentTools,
     options: {
       req,
+      res,
       openAIApiKey,
       tool_resources,
       processFileURL,
       uploadImageBuffer,
       returnMetadata: true,
       fileStrategy: req.app.locals.fileStrategy,
+      [Tools.web_search]: webSearchCallbacks,
     },
   });
 

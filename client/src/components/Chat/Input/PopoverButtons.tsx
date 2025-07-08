@@ -26,7 +26,7 @@ export default function PopoverButtons({
   buttonClass?: string;
   iconClass?: string;
   endpoint?: EModelEndpoint | string;
-  endpointType?: EModelEndpoint | string;
+  endpointType?: EModelEndpoint | string | null;
   model?: string | null;
 }) {
   const {
@@ -44,7 +44,7 @@ export default function PopoverButtons({
   const endpoint = overrideEndpoint ?? endpointType ?? _endpoint ?? '';
   const model = overrideModel ?? _model;
 
-  const isGenerativeModel = model?.toLowerCase().includes('gemini') ?? false;
+  const isGenerativeModel = /gemini|learnlm|gemma/.test(model ?? '') ?? false;
   const isChatModel = (!isGenerativeModel && model?.toLowerCase().includes('chat')) ?? false;
   const isTextModel = !isGenerativeModel && !isChatModel && /code|text/.test(model ?? '');
 
@@ -133,7 +133,6 @@ export default function PopoverButtons({
           </Button>
         ))}
       </div>
-      {/* eslint-disable-next-line @typescript-eslint/no-unnecessary-condition */}
       {disabled ? null : (
         <div className="flex w-[150px] items-center justify-end">
           {additionalButtons[settingsView].map((button, index) => (

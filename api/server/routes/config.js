@@ -1,10 +1,11 @@
 const express = require('express');
+const { logger } = require('@librechat/data-schemas');
 const { CacheKeys, defaultSocialLogins, Constants } = require('librechat-data-provider');
+const { getCustomConfig } = require('~/server/services/Config/getCustomConfig');
 const { getLdapConfig } = require('~/server/services/Config/ldap');
 const { getProjectByName } = require('~/models/Project');
 const { isEnabled } = require('~/server/utils');
 const { getLogStores } = require('~/cache');
-const { logger } = require('~/config');
 
 const router = express.Router();
 const emailLoginEnabled =
@@ -21,6 +22,7 @@ const publicSharedLinksEnabled =
 
 router.get('/', async function (req, res) {
   const cache = getLogStores(CacheKeys.CONFIG_STORE);
+
   const cachedStartupConfig = await cache.get(CacheKeys.STARTUP_CONFIG);
   if (cachedStartupConfig) {
     res.send(cachedStartupConfig);
@@ -37,6 +39,18 @@ router.get('/', async function (req, res) {
   const ldap = getLdapConfig();
 
   try {
+    const isOpenIdEnabled =
+      !!process.env.OPENID_CLIENT_ID &&
+      !!process.env.OPENID_CLIENT_SECRET &&
+      !!process.env.OPENID_ISSUER &&
+      !!process.env.OPENID_SESSION_SECRET;
+
+    const isSamlEnabled =
+      !!process.env.SAML_ENTRY_POINT &&
+      !!process.env.SAML_ISSUER &&
+      !!process.env.SAML_CERT &&
+      !!process.env.SAML_SESSION_SECRET;
+
     /** @type {TStartupConfig} */
     const payload = {
       appTitle: process.env.APP_TITLE || 'LibreChat',
@@ -51,14 +65,13 @@ router.get('/', async function (req, res) {
         !!process.env.APPLE_TEAM_ID &&
         !!process.env.APPLE_KEY_ID &&
         !!process.env.APPLE_PRIVATE_KEY_PATH,
-      openidLoginEnabled:
-        !!process.env.OPENID_CLIENT_ID &&
-        !!process.env.OPENID_CLIENT_SECRET &&
-        !!process.env.OPENID_ISSUER &&
-        !!process.env.OPENID_SESSION_SECRET,
+      openidLoginEnabled: isOpenIdEnabled,
       openidLabel: process.env.OPENID_BUTTON_LABEL || 'Continue with OpenID',
       openidImageUrl: process.env.OPENID_IMAGE_URL,
       openidAutoRedirect: isEnabled(process.env.OPENID_AUTO_REDIRECT),
+      samlLoginEnabled: !isOpenIdEnabled && isSamlEnabled,
+      samlLabel: process.env.SAML_BUTTON_LABEL,
+      samlImageUrl: process.env.SAML_IMAGE_URL,
       serverDomain: process.env.DOMAIN_SERVER || 'http://localhost:3080',
       emailLoginEnabled,
       registrationEnabled: !ldap?.enabled && isEnabled(process.env.ALLOW_REGISTRATION),
@@ -75,6 +88,7 @@ router.get('/', async function (req, res) {
         process.env.SHOW_BIRTHDAY_ICON === '',
       helpAndFaqURL: process.env.HELP_AND_FAQ_URL || 'https://librechat.ai',
       interface: req.app.locals.interfaceConfig,
+      turnstile: req.app.locals.turnstileConfig,
       modelSpecs: req.app.locals.modelSpecs,
       balance: req.app.locals.balance,
       sharedLinksEnabled,
@@ -84,6 +98,38 @@ router.get('/', async function (req, res) {
       bundlerURL: process.env.SANDPACK_BUNDLER_URL,
       staticBundlerURL: process.env.SANDPACK_STATIC_BUNDLER_URL,
     };
+
+    payload.mcpServers = {};
+    const config = await getCustomConfig();
+    if (config?.mcpServers != null) {
+      for (const serverName in config.mcpServers) {
+        const serverConfig = config.mcpServers[serverName];
+        payload.mcpServers[serverName] = {
+          customUserVars: serverConfig?.customUserVars || {},
+        };
+      }
+    }
+
+    /** @type {TCustomConfig['webSearch']} */
+    const webSearchConfig = req.app.locals.webSearch;
+    if (
+      webSearchConfig != null &&
+      (webSearchConfig.searchProvider ||
+        webSearchConfig.scraperType ||
+        webSearchConfig.rerankerType)
+    ) {
+      payload.webSearch = {};
+    }
+
+    if (webSearchConfig?.searchProvider) {
+      payload.webSearch.searchProvider = webSearchConfig.searchProvider;
+    }
+    if (webSearchConfig?.scraperType) {
+      payload.webSearch.scraperType = webSearchConfig.scraperType;
+    }
+    if (webSearchConfig?.rerankerType) {
+      payload.webSearch.rerankerType = webSearchConfig.rerankerType;
+    }
 
     if (ldap) {
       payload.ldap = ldap;

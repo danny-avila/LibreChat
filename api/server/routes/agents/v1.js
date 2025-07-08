@@ -1,29 +1,36 @@
 const express = require('express');
+const { generateCheckAccess } = require('@librechat/api');
 const { PermissionTypes, Permissions } = require('librechat-data-provider');
-const { requireJwtAuth, generateCheckAccess } = require('~/server/middleware');
+const { requireJwtAuth } = require('~/server/middleware');
 const v1 = require('~/server/controllers/agents/v1');
+const { getRoleByName } = require('~/models/Role');
 const actions = require('./actions');
 const tools = require('./tools');
 
 const router = express.Router();
 const avatar = express.Router();
 
-const checkAgentAccess = generateCheckAccess(PermissionTypes.AGENTS, [Permissions.USE]);
-const checkAgentCreate = generateCheckAccess(PermissionTypes.AGENTS, [
-  Permissions.USE,
-  Permissions.CREATE,
-]);
+const checkAgentAccess = generateCheckAccess({
+  permissionType: PermissionTypes.AGENTS,
+  permissions: [Permissions.USE],
+  getRoleByName,
+});
+const checkAgentCreate = generateCheckAccess({
+  permissionType: PermissionTypes.AGENTS,
+  permissions: [Permissions.USE, Permissions.CREATE],
+  getRoleByName,
+});
 
-const checkGlobalAgentShare = generateCheckAccess(
-  PermissionTypes.AGENTS,
-  [Permissions.USE, Permissions.CREATE],
-  {
+const checkGlobalAgentShare = generateCheckAccess({
+  permissionType: PermissionTypes.AGENTS,
+  permissions: [Permissions.USE, Permissions.CREATE],
+  bodyProps: {
     [Permissions.SHARED_GLOBAL]: ['projectIds', 'removeProjectIds'],
   },
-);
+  getRoleByName,
+});
 
 router.use(requireJwtAuth);
-router.use(checkAgentAccess);
 
 /**
  * Agent actions route.
@@ -77,6 +84,15 @@ router.post('/:id/duplicate', checkAgentCreate, v1.duplicateAgent);
  * @returns {Agent} 200 - success response - application/json
  */
 router.delete('/:id', checkAgentCreate, v1.deleteAgent);
+
+/**
+ * Reverts an agent to a previous version.
+ * @route POST /agents/:id/revert
+ * @param {string} req.params.id - Agent identifier.
+ * @param {number} req.body.version_index - Index of the version to revert to.
+ * @returns {Agent} 200 - success response - application/json
+ */
+router.post('/:id/revert', checkGlobalAgentShare, v1.revertAgentVersion);
 
 /**
  * Returns a list of agents.

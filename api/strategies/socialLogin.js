@@ -1,13 +1,14 @@
+const { logger } = require('@librechat/data-schemas');
 const { createSocialUser, handleExistingUser } = require('./process');
 const { isEnabled } = require('~/server/utils');
 const { findUser } = require('~/models');
-const { logger } = require('~/config');
 
 const socialLogin =
   (provider, getProfileDetails) => async (accessToken, refreshToken, idToken, profile, cb) => {
     try {
       const { email, id, avatarUrl, username, name, emailVerified } = getProfileDetails({
-        idToken, profile,
+        idToken,
+        profile,
       });
 
       const oldUser = await findUser({ email: email.trim() });

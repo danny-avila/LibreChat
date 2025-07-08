@@ -15,6 +15,17 @@ interface SplitTextProps {
   onLineCountChange?: (lineCount: number) => void;
 }
 
+const splitGraphemes = (text: string): string[] => {
+  if (typeof Intl !== 'undefined' && Intl.Segmenter) {
+    const segmenter = new Intl.Segmenter('en', { granularity: 'grapheme' });
+    const segments = segmenter.segment(text);
+    return Array.from(segments).map((s) => s.segment);
+  } else {
+    // Fallback for browsers without Intl.Segmenter
+    return [...text];
+  }
+};
+
 const SplitText: React.FC<SplitTextProps> = ({
   text = '',
   className = '',
@@ -28,7 +39,7 @@ const SplitText: React.FC<SplitTextProps> = ({
   onLetterAnimationComplete,
   onLineCountChange,
 }) => {
-  const words = text.split(' ').map((word) => word.split(''));
+  const words = text.split(' ').map(splitGraphemes);
   const letters = words.flat();
   const [inView, setInView] = useState(false);
   const ref = useRef<HTMLParagraphElement>(null);
@@ -40,12 +51,12 @@ const SplitText: React.FC<SplitTextProps> = ({
       from: animationFrom,
       to: inView
         ? async (next: (props: any) => Promise<void>) => {
-          await next(animationTo);
-          animatedCount.current += 1;
-          if (animatedCount.current === letters.length && onLetterAnimationComplete) {
-            onLetterAnimationComplete();
+            await next(animationTo);
+            animatedCount.current += 1;
+            if (animatedCount.current === letters.length && onLetterAnimationComplete) {
+              onLetterAnimationComplete();
+            }
           }
-        }
         : animationFrom,
       delay: i * delay,
       config: { easing },
@@ -90,33 +101,37 @@ const SplitText: React.FC<SplitTextProps> = ({
   }, [inView, text, onLineCountChange]);
 
   return (
-    <p
-      ref={ref}
-      className={`split-parent inline overflow-hidden ${className}`}
-      style={{ textAlign, whiteSpace: 'normal', wordWrap: 'break-word' }}
-    >
-      {words.map((word, wordIndex) => (
-        <span key={wordIndex} style={{ display: 'inline-block', whiteSpace: 'nowrap' }}>
-          {word.map((letter, letterIndex) => {
-            const index =
-              words.slice(0, wordIndex).reduce((acc, w) => acc + w.length, 0) + letterIndex;
+    <>
+      <span className="sr-only">{text}</span>
+      <p
+        ref={ref}
+        className={`split-parent inline overflow-hidden ${className}`}
+        style={{ textAlign, whiteSpace: 'normal', wordWrap: 'break-word' }}
+        aria-hidden="true"
+      >
+        {words.map((word, wordIndex) => (
+          <span key={wordIndex} style={{ display: 'inline-block', whiteSpace: 'nowrap' }}>
+            {word.map((letter, letterIndex) => {
+              const index =
+                words.slice(0, wordIndex).reduce((acc, w) => acc + w.length, 0) + letterIndex;
 
-            return (
-              <animated.span
-                key={index}
-                style={springs[index] as unknown as React.CSSProperties}
-                className="inline-block transform transition-opacity will-change-transform"
-              >
-                {letter}
-              </animated.span>
-            );
-          })}
-          {wordIndex < words.length - 1 && (
-            <span style={{ display: 'inline-block', width: '0.3em' }}>&nbsp;</span>
-          )}
-        </span>
-      ))}
-    </p>
+              return (
+                <animated.span
+                  key={index}
+                  style={springs[index] as unknown as React.CSSProperties}
+                  className="inline-block transform transition-opacity will-change-transform"
+                >
+                  {letter}
+                </animated.span>
+              );
+            })}
+            {wordIndex < words.length - 1 && (
+              <span style={{ display: 'inline-block', width: '0.3em' }}>&nbsp;</span>
+            )}
+          </span>
+        ))}
+      </p>
+    </>
   );
 };
 

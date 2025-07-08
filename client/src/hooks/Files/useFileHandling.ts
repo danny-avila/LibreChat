@@ -1,7 +1,6 @@
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { v4 } from 'uuid';
-import debounce from 'lodash/debounce';
 import { useQueryClient } from '@tanstack/react-query';
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   QueryKeys,
   EModelEndpoint,
@@ -11,20 +10,24 @@ import {
   defaultAssistantsVersion,
   fileConfig as defaultFileConfig,
 } from 'librechat-data-provider';
-import type { TEndpointsConfig, TError } from 'librechat-data-provider';
+import debounce from 'lodash/debounce';
+import type { EndpointFileConfig, TEndpointsConfig, TError } from 'librechat-data-provider';
 import type { ExtendedFile, FileSetter } from '~/common';
-import { useUploadFileMutation, useGetFileConfig } from '~/data-provider';
+import { useGetFileConfig, useUploadFileMutation } from '~/data-provider';
 import useLocalize, { TranslationKeys } from '~/hooks/useLocalize';
 import { useDelayedUploadToast } from './useDelayedUploadToast';
+import { processFileForUpload } from '~/utils/heicConverter';
 import { useToastContext } from '~/Providers/ToastContext';
 import { useChatContext } from '~/Providers/ChatContext';
 import { logger, validateFiles } from '~/utils';
+import useClientResize from './useClientResize';
 import useUpdateFiles from './useUpdateFiles';
 
 type UseFileHandling = {
-  overrideEndpoint?: EModelEndpoint;
   fileSetter?: FileSetter;
+  overrideEndpoint?: EModelEndpoint;
   fileFilter?: (file: File) => boolean;
+  overrideEndpointFileConfig?: EndpointFileConfig;
   additionalMetadata?: Record<string, string | undefined>;
 };
 
@@ -40,6 +43,7 @@ const useFileHandling = (params?: UseFileHandling) => {
   const { addFile, replaceFile, updateFileById, deleteFileById } = useUpdateFiles(
     params?.fileSetter ?? setFiles,
   );
+  const { resizeImageIfNeeded } = useClientResize();
 
   const agent_id = params?.additionalMetadata?.agent_id ?? '';
   const assistant_id = params?.additionalMetadata?.assistant_id ?? '';
@@ -147,6 +151,10 @@ const useFileHandling = (params?: UseFileHandling) => {
 
     const formData = new FormData();
     formData.append('endpoint', endpoint);
+    formData.append(
+      'original_endpoint',
+      conversation?.endpointType || conversation?.endpoint || '',
+    );
     formData.append('file', extendedFile.file as File, encodeURIComponent(filename));
     formData.append('file_id', extendedFile.file_id);
 
@@ -243,8 +251,9 @@ const useFileHandling = (params?: UseFileHandling) => {
         fileList,
         setError,
         endpointFileConfig:
-          fileConfig?.endpoints[endpoint] ??
-          fileConfig?.endpoints.default ??
+          params?.overrideEndpointFileConfig ??
+          fileConfig?.endpoints?.[endpoint] ??
+          fileConfig?.endpoints?.default ??
           defaultFileConfig.endpoints[endpoint] ??
           defaultFileConfig.endpoints.default,
       });
@@ -262,41 +271,137 @@ const useFileHandling = (params?: UseFileHandling) => {
     for (const originalFile of fileList) {
       const file_id = v4();
       try {
-        const preview = URL.createObjectURL(originalFile);
-        const extendedFile: ExtendedFile = {
+        // Create initial preview with original file
+        const initialPreview = URL.createObjectURL(originalFile);
+
+        // Create initial ExtendedFile to show immediately
+        const initialExtendedFile: ExtendedFile = {
           file_id,
           file: originalFile,
           type: originalFile.type,
-          preview,
-          progress: 0.2,
+          preview: initialPreview,
+          progress: 0.1, // Show as processing
           size: originalFile.size,
         };
 
         if (_toolResource != null && _toolResource !== '') {
-          extendedFile.tool_resource = _toolResource;
+          initialExtendedFile.tool_resource = _toolResource;
         }
 
-        const isImage = originalFile.type.split('/')[0] === 'image';
-        const tool_resource =
-          extendedFile.tool_resource ?? params?.additionalMetadata?.tool_resource;
-        if (isAgentsEndpoint(endpoint) && !isImage && tool_resource == null) {
-          /** Note: this needs to be removed when we can support files to providers */
-          setError('com_error_files_unsupported_capability');
-          continue;
+        // Add file immediately to show in UI
+        addFile(initialExtendedFile);
+
+        // Check if HEIC conversion is needed and show toast
+        const isHEIC =
+          originalFile.type === 'image/heic' ||
+          originalFile.type === 'image/heif' ||
+          originalFile.name.toLowerCase().match(/\.(heic|heif)$/);
+
+        if (isHEIC) {
+          showToast({
+            message: localize('com_info_heic_converting'),
+            status: 'info',
+            duration: 3000,
+          });
         }
 
-        addFile(extendedFile);
+        // Process file for HEIC conversion if needed
+        const heicProcessedFile = await processFileForUpload(
+          originalFile,
+          0.9,
+          (conversionProgress) => {
+            // Update progress during HEIC conversion (0.1 to 0.5 range for conversion)
+            const adjustedProgress = 0.1 + conversionProgress * 0.4;
+            replaceFile({
+              ...initialExtendedFile,
+              progress: adjustedProgress,
+            });
+          },
+        );
 
-        if (isImage) {
-          loadImage(extendedFile, preview);
-          continue;
+        let finalProcessedFile = heicProcessedFile;
+
+        // Apply client-side resizing if available and appropriate
+        if (heicProcessedFile.type.startsWith('image/')) {
+          try {
+            const resizeResult = await resizeImageIfNeeded(heicProcessedFile);
+            finalProcessedFile = resizeResult.file;
+
+            // Show toast notification if image was resized
+            if (resizeResult.resized && resizeResult.result) {
+              const { originalSize, newSize, compressionRatio } = resizeResult.result;
+              const originalSizeMB = (originalSize / (1024 * 1024)).toFixed(1);
+              const newSizeMB = (newSize / (1024 * 1024)).toFixed(1);
+              const savedPercent = Math.round((1 - compressionRatio) * 100);
+
+              showToast({
+                message: `Image resized: ${originalSizeMB}MB → ${newSizeMB}MB (${savedPercent}% smaller)`,
+                status: 'success',
+                duration: 3000,
+              });
+            }
+          } catch (resizeError) {
+            console.warn('Image resize failed, using original:', resizeError);
+            // Continue with HEIC processed file if resizing fails
+          }
         }
 
-        await startUpload(extendedFile);
+        // If file was processed (HEIC converted or resized), update with new file and preview
+        if (finalProcessedFile !== originalFile) {
+          URL.revokeObjectURL(initialPreview); // Clean up original preview
+          const newPreview = URL.createObjectURL(finalProcessedFile);
+
+          const updatedExtendedFile: ExtendedFile = {
+            ...initialExtendedFile,
+            file: finalProcessedFile,
+            type: finalProcessedFile.type,
+            preview: newPreview,
+            progress: 0.5, // Processing complete, ready for upload
+            size: finalProcessedFile.size,
+          };
+
+          replaceFile(updatedExtendedFile);
+
+          const isImage = finalProcessedFile.type.split('/')[0] === 'image';
+          if (isImage) {
+            loadImage(updatedExtendedFile, newPreview);
+            continue;
+          }
+
+          await startUpload(updatedExtendedFile);
+        } else {
+          // File wasn't processed, proceed with original
+          const isImage = originalFile.type.split('/')[0] === 'image';
+          const tool_resource =
+            initialExtendedFile.tool_resource ?? params?.additionalMetadata?.tool_resource;
+          if (isAgentsEndpoint(endpoint) && !isImage && tool_resource == null) {
+            /** Note: this needs to be removed when we can support files to providers */
+            setError('com_error_files_unsupported_capability');
+            continue;
+          }
+
+          // Update progress to show ready for upload
+          const readyExtendedFile = {
+            ...initialExtendedFile,
+            progress: 0.2,
+          };
+          replaceFile(readyExtendedFile);
+
+          if (isImage) {
+            loadImage(readyExtendedFile, initialPreview);
+            continue;
+          }
+
+          await startUpload(readyExtendedFile);
+        }
       } catch (error) {
         deleteFileById(file_id);
         console.log('file handling error', error);
-        setError('com_error_files_process');
+        if (error instanceof Error && error.message.includes('HEIC')) {
+          setError('com_error_heic_conversion');
+        } else {
+          setError('com_error_files_process');
+        }
       }
     }
   };

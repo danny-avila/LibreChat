@@ -1,10 +1,10 @@
+const { logger } = require('@librechat/data-schemas');
 const { SystemRoles } = require('librechat-data-provider');
 const { Strategy: JwtStrategy, ExtractJwt } = require('passport-jwt');
 const { getUserById, updateUser } = require('~/models');
-const { logger } = require('~/config');
 
 // JWT strategy
-const jwtLogin = async () =>
+const jwtLogin = () =>
   new JwtStrategy(
     {
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),

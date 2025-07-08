@@ -8,19 +8,19 @@ import {
   SystemRoles,
   EModelEndpoint,
   isAssistantsEndpoint,
-  defaultAgentFormValues,
 } from 'librechat-data-provider';
-import type { AgentForm, AgentPanelProps, StringOption } from '~/common';
+import type { AgentForm, StringOption } from '~/common';
 import {
   useCreateAgentMutation,
   useUpdateAgentMutation,
   useGetAgentByIdQuery,
 } from '~/data-provider';
+import { createProviderOption, getDefaultAgentFormValues } from '~/utils';
 import { useSelectAgent, useLocalize, useAuthContext } from '~/hooks';
+import { useAgentPanelContext } from '~/Providers/AgentPanelContext';
 import AgentPanelSkeleton from './AgentPanelSkeleton';
-import { createProviderOption } from '~/utils';
-import { useToastContext } from '~/Providers';
 import AdvancedPanel from './Advanced/AdvancedPanel';
+import { useToastContext } from '~/Providers';
 import AgentConfig from './AgentConfig';
 import AgentSelect from './AgentSelect';
 import AgentFooter from './AgentFooter';
@@ -28,19 +28,18 @@ import { Button } from '~/components';
 import ModelPanel from './ModelPanel';
 import { Panel } from '~/common';
 
-export default function AgentPanel({
-  setAction,
-  activePanel,
-  actions = [],
-  setActivePanel,
-  agent_id: current_agent_id,
-  setCurrentAgentId,
-  agentsConfig,
-  endpointsConfig,
-}: AgentPanelProps) {
+export default function AgentPanel() {
   const localize = useLocalize();
   const { user } = useAuthContext();
   const { showToast } = useToastContext();
+  const {
+    activePanel,
+    agentsConfig,
+    setActivePanel,
+    endpointsConfig,
+    setCurrentAgentId,
+    agent_id: current_agent_id,
+  } = useAgentPanelContext();
 
   const { onSelect: onSelectAgent } = useSelectAgent();
 
@@ -51,7 +50,7 @@ export default function AgentPanel({
 
   const models = useMemo(() => modelsQuery.data ?? {}, [modelsQuery.data]);
   const methods = useForm<AgentForm>({
-    defaultValues: defaultAgentFormValues,
+    defaultValues: getDefaultAgentFormValues(),
   });
 
   const { control, handleSubmit, reset } = methods;
@@ -87,7 +86,42 @@ export default function AgentPanel({
       });
     },
     onError: (err) => {
-      const error = err as Error;
+      const error = err as Error & {
+        statusCode?: number;
+        details?: { duplicateVersion?: any; versionIndex?: number };
+        response?: { status?: number; data?: any };
+      };
+
+      const isDuplicateVersionError =
+        (error.statusCode === 409 && error.details?.duplicateVersion) ||
+        (error.response?.status === 409 && error.response?.data?.details?.duplicateVersion);
+
+      if (isDuplicateVersionError) {
+        let versionIndex: number | undefined = undefined;
+
+        if (error.details?.versionIndex !== undefined) {
+          versionIndex = error.details.versionIndex;
+        } else if (error.response?.data?.details?.versionIndex !== undefined) {
+          versionIndex = error.response.data.details.versionIndex;
+        }
+
+        if (versionIndex === undefined || versionIndex < 0) {
+          showToast({
+            message: localize('com_agents_update_error'),
+            status: 'error',
+            duration: 5000,
+          });
+        } else {
+          showToast({
+            message: localize('com_ui_agent_version_duplicate', { versionIndex: versionIndex + 1 }),
+            status: 'error',
+            duration: 10000,
+          });
+        }
+
+        return;
+      }
+
       showToast({
         message: `${localize('com_agents_update_error')}${
           error.message ? ` ${localize('com_ui_error')}: ${error.message}` : ''
@@ -126,6 +160,9 @@ export default function AgentPanel({
       }
       if (data.file_search === true) {
         tools.push(Tools.file_search);
+      }
+      if (data.web_search === true) {
+        tools.push(Tools.web_search);
       }
 
       const {
@@ -220,7 +257,7 @@ export default function AgentPanel({
         className="scrollbar-gutter-stable h-auto w-full flex-shrink-0 overflow-x-hidden"
         aria-label="Agent configuration form"
       >
-        <div className="mx-1 mt-2 flex w-full flex-wrap gap-2">
+        <div className="mt-2 flex w-full flex-wrap gap-2">
           <div className="w-full">
             <AgentSelect
               createMutation={create}
@@ -239,7 +276,7 @@ export default function AgentPanel({
                 variant="outline"
                 className="w-full justify-center"
                 onClick={() => {
-                  reset(defaultAgentFormValues);
+                  reset(getDefaultAgentFormValues());
                   setCurrentAgentId(undefined);
                 }}
                 disabled={agentQuery.isInitialLoading}
@@ -277,26 +314,13 @@ export default function AgentPanel({
           </div>
         )}
         {canEditAgent && !agentQuery.isInitialLoading && activePanel === Panel.model && (
-          <ModelPanel
-            setActivePanel={setActivePanel}
-            agent_id={agent_id}
-            providers={providers}
-            models={models}
-          />
+          <ModelPanel models={models} providers={providers} setActivePanel={setActivePanel} />
         )}
         {canEditAgent && !agentQuery.isInitialLoading && activePanel === Panel.builder && (
-          <AgentConfig
-            actions={actions}
-            setAction={setAction}
-            createMutation={create}
-            agentsConfig={agentsConfig}
-            setActivePanel={setActivePanel}
-            endpointsConfig={endpointsConfig}
-            setCurrentAgentId={setCurrentAgentId}
-          />
+          <AgentConfig createMutation={create} />
         )}
         {canEditAgent && !agentQuery.isInitialLoading && activePanel === Panel.advanced && (
-          <AdvancedPanel setActivePanel={setActivePanel} agentsConfig={agentsConfig} />
+          <AdvancedPanel />
         )}
         {canEditAgent && !agentQuery.isInitialLoading && (
           <AgentFooter

@@ -80,13 +80,13 @@ const BookmarkTable = () => {
             <TableHeader>
               <TableRow className="border-b border-border-light">
                 <TableHead className="w-[70%] bg-surface-secondary py-3 text-left text-sm font-medium text-text-secondary">
-                  <div className="px-4">{localize('com_ui_bookmarks_title')}</div>
+                  <div>{localize('com_ui_bookmarks_title')}</div>
                 </TableHead>
                 <TableHead className="w-[30%] bg-surface-secondary py-3 text-left text-sm font-medium text-text-secondary">
-                  <div className="px-4">{localize('com_ui_bookmarks_count')}</div>
+                  <div>{localize('com_ui_bookmarks_count')}</div>
                 </TableHead>
                 <TableHead className="w-[40%] bg-surface-secondary py-3 text-left text-sm font-medium text-text-secondary">
-                  <div className="px-4">{localize('com_assistants_actions')}</div>
+                  <div>{localize('com_assistants_actions')}</div>
                 </TableHead>
               </TableRow>
             </TableHeader>

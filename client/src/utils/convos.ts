@@ -280,11 +280,11 @@ export function updateConvoFieldsInfinite(
       pages: data.pages.map((page, pi) =>
         pi === pageIdx
           ? {
-            ...page,
-            conversations: page.conversations.map((c, ci) =>
-              ci === convoIdx ? { ...c, ...updatedConversation } : c,
-            ),
-          }
+              ...page,
+              conversations: page.conversations.map((c, ci) =>
+                ci === convoIdx ? { ...c, ...updatedConversation } : c,
+              ),
+            }
           : page,
       ),
     };

@@ -4,13 +4,12 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate } from 'react-router-dom';
 import type { TMessage } from 'librechat-data-provider';
 import {
-  Label,
-  OGDialog,
-  OGDialogTitle,
-  OGDialogContent,
-  OGDialogHeader,
   Button,
   Spinner,
+  OGDialog,
+  OGDialogTitle,
+  OGDialogHeader,
+  OGDialogContent,
 } from '~/components';
 import { useDeleteConversationMutation } from '~/data-provider';
 import { useLocalize, useNewConvo } from '~/hooks';
@@ -24,14 +23,17 @@ type DeleteButtonProps = {
   showDeleteDialog?: boolean;
   setShowDeleteDialog?: (value: boolean) => void;
   triggerRef?: React.RefObject<HTMLButtonElement>;
+  setMenuOpen?: React.Dispatch<React.SetStateAction<boolean>>;
 };
 
 export function DeleteConversationDialog({
   setShowDeleteDialog,
   conversationId,
+  setMenuOpen,
   retainView,
   title,
 }: {
+  setMenuOpen?: React.Dispatch<React.SetStateAction<boolean>>;
   setShowDeleteDialog: (value: boolean) => void;
   conversationId: string;
   retainView: () => void;
@@ -51,6 +53,7 @@ export function DeleteConversationDialog({
         newConversation();
         navigate('/c/new', { replace: true });
       }
+      setMenuOpen?.(false);
       retainView();
     },
     onError: () => {
@@ -98,6 +101,7 @@ export default function DeleteButton({
   conversationId,
   retainView,
   title,
+  setMenuOpen,
   showDeleteDialog,
   setShowDeleteDialog,
   triggerRef,
@@ -115,6 +119,7 @@ export default function DeleteButton({
       <DeleteConversationDialog
         setShowDeleteDialog={setShowDeleteDialog}
         conversationId={conversationId}
+        setMenuOpen={setMenuOpen}
         retainView={retainView}
         title={title}
       />

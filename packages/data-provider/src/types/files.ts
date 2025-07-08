@@ -10,6 +10,8 @@ export enum FileSources {
   vectordb = 'vectordb',
   execute_code = 'execute_code',
   mistral_ocr = 'mistral_ocr',
+  azure_mistral_ocr = 'azure_mistral_ocr',
+  vertexai_mistral_ocr = 'vertexai_mistral_ocr',
   text = 'text',
 }
 
@@ -47,6 +49,12 @@ export type FileConfig = {
   };
   serverFileSizeLimit?: number;
   avatarSizeLimit?: number;
+  clientImageResize?: {
+    enabled?: boolean;
+    maxWidth?: number;
+    maxHeight?: number;
+    quality?: number;
+  };
   checkType?: (fileType: string, supportedTypes: RegExp[]) => boolean;
 };
 
@@ -131,6 +139,7 @@ export type BatchFile = {
   filepath: string;
   embedded: boolean;
   source: FileSources;
+  temp_file_id?: string;
 };
 
 export type DeleteFilesBody = {

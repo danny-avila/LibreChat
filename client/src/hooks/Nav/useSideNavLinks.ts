@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { MessageSquareQuote, ArrowRightToLine, Settings2, Bookmark } from 'lucide-react';
+import { MessageSquareQuote, ArrowRightToLine, Settings2, Database, Bookmark } from 'lucide-react';
 import {
   isAssistantsEndpoint,
   isAgentsEndpoint,
@@ -12,11 +12,14 @@ import type { TInterfaceConfig, TEndpointsConfig } from 'librechat-data-provider
 import type { NavLink } from '~/common';
 import AgentPanelSwitch from '~/components/SidePanel/Agents/AgentPanelSwitch';
 import BookmarkPanel from '~/components/SidePanel/Bookmarks/BookmarkPanel';
+import MemoryViewer from '~/components/SidePanel/Memories/MemoryViewer';
 import PanelSwitch from '~/components/SidePanel/Builder/PanelSwitch';
 import PromptsAccordion from '~/components/Prompts/PromptsAccordion';
+import { Blocks, MCPIcon, AttachmentIcon } from '~/components/svg';
 import Parameters from '~/components/SidePanel/Parameters/Panel';
 import FilesPanel from '~/components/SidePanel/Files/Panel';
-import { Blocks, AttachmentIcon } from '~/components/svg';
+import MCPPanel from '~/components/SidePanel/MCP/MCPPanel';
+import { useGetStartupConfig } from '~/data-provider';
 import { useHasAccess } from '~/hooks';
 
 export default function useSideNavLinks({
@@ -42,6 +45,14 @@ export default function useSideNavLinks({
     permissionType: PermissionTypes.BOOKMARKS,
     permission: Permissions.USE,
   });
+  const hasAccessToMemories = useHasAccess({
+    permissionType: PermissionTypes.MEMORIES,
+    permission: Permissions.USE,
+  });
+  const hasAccessToReadMemories = useHasAccess({
+    permissionType: PermissionTypes.MEMORIES,
+    permission: Permissions.READ,
+  });
   const hasAccessToAgents = useHasAccess({
     permissionType: PermissionTypes.AGENTS,
     permission: Permissions.USE,
@@ -50,20 +61,25 @@ export default function useSideNavLinks({
     permissionType: PermissionTypes.AGENTS,
     permission: Permissions.CREATE,
   });
+  const { data: startupConfig } = useGetStartupConfig();
 
   const Links = useMemo(() => {
     const links: NavLink[] = [];
     if (
       isAssistantsEndpoint(endpoint) &&
-      endpointsConfig?.[EModelEndpoint.assistants] &&
-      endpointsConfig[EModelEndpoint.assistants].disableBuilder !== true &&
+      ((endpoint === EModelEndpoint.assistants &&
+        endpointsConfig?.[EModelEndpoint.assistants] &&
+        endpointsConfig[EModelEndpoint.assistants].disableBuilder !== true) ||
+        (endpoint === EModelEndpoint.azureAssistants &&
+          endpointsConfig?.[EModelEndpoint.azureAssistants] &&
+          endpointsConfig[EModelEndpoint.azureAssistants].disableBuilder !== true)) &&
       keyProvided
     ) {
       links.push({
         title: 'com_sidepanel_assistant_builder',
         label: '',
         icon: Blocks,
-        id: 'assistants',
+        id: EModelEndpoint.assistants,
         Component: PanelSwitch,
       });
     }
@@ -78,7 +94,7 @@ export default function useSideNavLinks({
         title: 'com_sidepanel_agent_builder',
         label: '',
         icon: Blocks,
-        id: 'agents',
+        id: EModelEndpoint.agents,
         Component: AgentPanelSwitch,
       });
     }
@@ -90,6 +106,16 @@ export default function useSideNavLinks({
         icon: MessageSquareQuote,
         id: 'prompts',
         Component: PromptsAccordion,
+      });
+    }
+
+    if (hasAccessToMemories && hasAccessToReadMemories) {
+      links.push({
+        title: 'com_ui_memories',
+        label: '',
+        icon: Database,
+        id: 'memories',
+        Component: MemoryViewer,
       });
     }
 
@@ -126,6 +152,21 @@ export default function useSideNavLinks({
       });
     }
 
+    if (
+      startupConfig?.mcpServers &&
+      Object.values(startupConfig.mcpServers).some(
+        (server) => server.customUserVars && Object.keys(server.customUserVars).length > 0,
+      )
+    ) {
+      links.push({
+        title: 'com_nav_setting_mcp',
+        label: '',
+        icon: MCPIcon,
+        id: 'mcp-settings',
+        Component: MCPPanel,
+      });
+    }
+
     links.push({
       title: 'com_sidepanel_hide_panel',
       label: '',
@@ -143,9 +184,12 @@ export default function useSideNavLinks({
     endpoint,
     hasAccessToAgents,
     hasAccessToPrompts,
+    hasAccessToMemories,
+    hasAccessToReadMemories,
     hasAccessToBookmarks,
     hasAccessToCreateAgents,
     hidePanel,
+    startupConfig,
   ]);
 
   return Links;

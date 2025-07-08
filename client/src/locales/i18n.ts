@@ -5,6 +5,9 @@ import LanguageDetector from 'i18next-browser-languagedetector';
 // Import your JSON translations
 import translationEn from './en/translation.json';
 import translationAr from './ar/translation.json';
+import translationCa from './ca/translation.json';
+import translationCs from './cs/translation.json';
+import translationDa from './da/translation.json';
 import translationDe from './de/translation.json';
 import translationEs from './es/translation.json';
 import translationEt from './et/translation.json';
@@ -19,13 +22,16 @@ import translationJa from './ja/translation.json';
 import translationKa from './ka/translation.json';
 import translationSv from './sv/translation.json';
 import translationKo from './ko/translation.json';
+import translationLv from './lv/translation.json';
 import translationTh from './th/translation.json';
 import translationTr from './tr/translation.json';
+import translationUg from './ug/translation.json';
 import translationVi from './vi/translation.json';
 import translationNl from './nl/translation.json';
 import translationId from './id/translation.json';
 import translationHe from './he/translation.json';
 import translationHu from './hu/translation.json';
+import translationHy from './hy/translation.json';
 import translationFi from './fi/translation.json';
 import translationZh_Hans from './zh-Hans/translation.json';
 import translationZh_Hant from './zh-Hant/translation.json';
@@ -35,8 +41,11 @@ export const defaultNS = 'translation';
 export const resources = {
   en: { translation: translationEn },
   ar: { translation: translationAr },
+  ca: { translation: translationCa },
+  cs: { translation: translationCs },
   'zh-Hans': { translation: translationZh_Hans },
   'zh-Hant': { translation: translationZh_Hant },
+  da: { translation: translationDa },
   de: { translation: translationDe },
   es: { translation: translationEs },
   et: { translation: translationEt },
@@ -51,13 +60,16 @@ export const resources = {
   ka: { translation: translationKa },
   sv: { translation: translationSv },
   ko: { translation: translationKo },
+  lv: { translation: translationLv },
   th: { translation: translationTh },
   tr: { translation: translationTr },
+  ug: { translation: translationUg },
   vi: { translation: translationVi },
   nl: { translation: translationNl },
   id: { translation: translationId },
   he: { translation: translationHe },
   hu: { translation: translationHu },
+  hy: { translation: translationHy },
   fi: { translation: translationFi },
 } as const;
 

@@ -66,7 +66,7 @@ const AdminSettings = () => {
   const [confirmAdminUseChange, setConfirmAdminUseChange] = useState<{
     newValue: boolean;
     callback: (value: boolean) => void;
-      } | null>(null);
+  } | null>(null);
   const { mutate, isLoading } = useUpdatePromptPermissionsMutation({
     onSuccess: () => {
       showToast({ status: 'success', message: localize('com_ui_saved') });
@@ -81,7 +81,7 @@ const AdminSettings = () => {
 
   const defaultValues = useMemo(() => {
     if (roles?.[selectedRole]?.permissions) {
-      return roles[selectedRole].permissions[PermissionTypes.PROMPTS];
+      return roles[selectedRole]?.permissions[PermissionTypes.PROMPTS];
     }
     return roleDefaults[selectedRole].permissions[PermissionTypes.PROMPTS];
   }, [roles, selectedRole]);
@@ -99,11 +99,7 @@ const AdminSettings = () => {
   });
 
   useEffect(() => {
-    if (roles?.[selectedRole]?.permissions?.[PermissionTypes.PROMPTS]) {
-      reset(roles[selectedRole].permissions[PermissionTypes.PROMPTS]);
-    } else {
-      reset(roleDefaults[selectedRole].permissions[PermissionTypes.PROMPTS]);
-    }
+    reset(roles?.[selectedRole]?.permissions?.[PermissionTypes.PROMPTS]);
   }, [roles, selectedRole, reset]);
 
   if (user?.role !== SystemRoles.ADMIN) {
@@ -166,6 +162,7 @@ const AdminSettings = () => {
             <div className="flex items-center gap-2">
               <span className="font-medium">{localize('com_ui_role_select')}:</span>
               <DropdownPopup
+                unmountOnHide={true}
                 menuId="prompt-role-dropdown"
                 isOpen={isRoleMenuOpen}
                 setIsOpen={setIsRoleMenuOpen}
@@ -191,11 +188,11 @@ const AdminSettings = () => {
                       setValue={setValue}
                       {...(selectedRole === SystemRoles.ADMIN && promptPerm === Permissions.USE
                         ? {
-                          confirmChange: (
-                            newValue: boolean,
-                            onChange: (value: boolean) => void,
-                          ) => setConfirmAdminUseChange({ newValue, callback: onChange }),
-                        }
+                            confirmChange: (
+                              newValue: boolean,
+                              onChange: (value: boolean) => void,
+                            ) => setConfirmAdminUseChange({ newValue, callback: onChange }),
+                          }
                         : {})}
                     />
                     {selectedRole === SystemRoles.ADMIN && promptPerm === Permissions.USE && (

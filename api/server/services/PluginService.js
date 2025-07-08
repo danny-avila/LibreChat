@@ -1,6 +1,6 @@
-const PluginAuth = require('~/models/schema/pluginAuthSchema');
-const { encrypt, decrypt } = require('~/server/utils/');
-const { logger } = require('~/config');
+const { logger } = require('@librechat/data-schemas');
+const { encrypt, decrypt } = require('@librechat/api');
+const { findOnePluginAuth, updatePluginAuth, deletePluginAuth } = require('~/models');
 
 /**
  * Asynchronously retrieves and decrypts the authentication value for a user's plugin, based on a specified authentication field.
@@ -25,7 +25,7 @@ const { logger } = require('~/config');
  */
 const getUserPluginAuthValue = async (userId, authField, throwError = true) => {
   try {
-    const pluginAuth = await PluginAuth.findOne({ userId, authField }).lean();
+    const pluginAuth = await findOnePluginAuth({ userId, authField });
     if (!pluginAuth) {
       throw new Error(`No plugin auth ${authField} found for user ${userId}`);
     }
@@ -66,47 +66,53 @@ const getUserPluginAuthValue = async (userId, authField, throwError = true) => {
 //   }
 // };
 
+/**
+ *
+ * @async
+ * @param {string} userId
+ * @param {string} authField
+ * @param {string} pluginKey
+ * @param {string} value
+ * @returns {Promise<IPluginAuth>}
+ * @throws {Error}
+ */
 const updateUserPluginAuth = async (userId, authField, pluginKey, value) => {
   try {
     const encryptedValue = await encrypt(value);
-    const pluginAuth = await PluginAuth.findOne({ userId, authField }).lean();
-    if (pluginAuth) {
-      const pluginAuth = await PluginAuth.updateOne(
-        { userId, authField },
-        { $set: { value: encryptedValue } },
-      );
-      return pluginAuth;
-    } else {
-      const newPluginAuth = await new PluginAuth({
-        userId,
-        authField,
-        value: encryptedValue,
-        pluginKey,
-      });
-      await newPluginAuth.save();
-      return newPluginAuth;
-    }
+    return await updatePluginAuth({
+      userId,
+      authField,
+      pluginKey,
+      value: encryptedValue,
+    });
   } catch (err) {
     logger.error('[updateUserPluginAuth]', err);
     return err;
   }
 };
 
-const deleteUserPluginAuth = async (userId, authField, all = false) => {
-  if (all) {
-    try {
-      const response = await PluginAuth.deleteMany({ userId });
-      return response;
-    } catch (err) {
-      logger.error('[deleteUserPluginAuth]', err);
-      return err;
-    }
-  }
-
+/**
+ * @async
+ * @param {string} userId
+ * @param {string | null} authField - The specific authField to delete, or null if `all` is true.
+ * @param {boolean} [all=false] - Whether to delete all auths for the user (or for a specific pluginKey if provided).
+ * @param {string} [pluginKey] - Optional. If `all` is true and `pluginKey` is provided, delete all auths for this user and pluginKey.
+ * @returns {Promise<import('mongoose').DeleteResult>}
+ * @throws {Error}
+ */
+const deleteUserPluginAuth = async (userId, authField, all = false, pluginKey) => {
   try {
-    return await PluginAuth.deleteOne({ userId, authField });
+    return await deletePluginAuth({
+      userId,
+      authField,
+      pluginKey,
+      all,
+    });
   } catch (err) {
-    logger.error('[deleteUserPluginAuth]', err);
+    logger.error(
+      `[deleteUserPluginAuth] Error deleting ${all ? 'all' : 'single'} auth(s) for userId: ${userId}${pluginKey ? ` and pluginKey: ${pluginKey}` : ''}`,
+      err,
+    );
     return err;
   }
 };

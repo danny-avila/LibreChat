@@ -1,16 +1,18 @@
 import { useForm } from 'react-hook-form';
-import React, { useState } from 'react';
+import React, { useContext, useState } from 'react';
+import { Turnstile } from '@marsidev/react-turnstile';
 import { useNavigate, useOutletContext, useLocation } from 'react-router-dom';
 import { useRegisterUserMutation } from 'librechat-data-provider/react-query';
 import type { TRegisterUser, TError } from 'librechat-data-provider';
+import { useLocalize, TranslationKeys, ThemeContext } from '~/hooks';
 import type { TLoginLayoutContext } from '~/common';
+import { Spinner, Button } from '~/components';
 import { ErrorMessage } from './ErrorMessage';
-import { Spinner } from '~/components/svg';
-import { useLocalize, TranslationKeys } from '~/hooks';
 
 const Registration: React.FC = () => {
   const navigate = useNavigate();
   const localize = useLocalize();
+  const { theme } = useContext(ThemeContext);
   const { startupConfig, startupConfigError, isFetching } = useOutletContext<TLoginLayoutContext>();
 
   const {
@@ -24,10 +26,15 @@ const Registration: React.FC = () => {
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [countdown, setCountdown] = useState<number>(3);
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
 
   const location = useLocation();
   const queryParams = new URLSearchParams(location.search);
   const token = queryParams.get('token');
+  const validTheme = theme === 'dark' ? 'dark' : 'light';
+
+  // only require captcha if we have a siteKey
+  const requireCaptcha = Boolean(startupConfig?.turnstile?.siteKey);
 
   const registerUser = useRegisterUserMutation({
     onMutate: () => {
@@ -69,21 +76,13 @@ const Registration: React.FC = () => {
             validation,
           )}
           aria-invalid={!!errors[id]}
-          className="
-            webkit-dark-styles transition-color peer w-full rounded-2xl border border-border-light
-            bg-surface-primary px-3.5 pb-2.5 pt-3 text-text-primary duration-200 focus:border-green-500 focus:outline-none
-          "
+          className="webkit-dark-styles transition-color peer w-full rounded-2xl border border-border-light bg-surface-primary px-3.5 pb-2.5 pt-3 text-text-primary duration-200 focus:border-green-500 focus:outline-none"
           placeholder=" "
           data-testid={id}
         />
         <label
           htmlFor={id}
-          className="
-            absolute start-3 top-1.5 z-10 origin-[0] -translate-y-4 scale-75 transform bg-surface-primary px-2 text-sm text-text-secondary-alt duration-200
-            peer-placeholder-shown:top-1/2 peer-placeholder-shown:-translate-y-1/2 peer-placeholder-shown:scale-100
-            peer-focus:top-1.5 peer-focus:-translate-y-4 peer-focus:scale-75 peer-focus:px-2 peer-focus:text-green-500
-            rtl:peer-focus:left-auto rtl:peer-focus:translate-x-1/4
-          "
+          className="absolute start-3 top-1.5 z-10 origin-[0] -translate-y-4 scale-75 transform bg-surface-primary px-2 text-sm text-text-secondary-alt duration-200 peer-placeholder-shown:top-1/2 peer-placeholder-shown:-translate-y-1/2 peer-placeholder-shown:scale-100 peer-focus:top-1.5 peer-focus:-translate-y-4 peer-focus:scale-75 peer-focus:px-2 peer-focus:text-green-500 rtl:peer-focus:left-auto rtl:peer-focus:translate-x-1/4"
         >
           {localize(label)}
         </label>
@@ -178,20 +177,36 @@ const Registration: React.FC = () => {
               validate: (value: string) =>
                 value === password || localize('com_auth_password_not_match'),
             })}
+
+            {startupConfig?.turnstile?.siteKey && (
+              <div className="my-4 flex justify-center">
+                <Turnstile
+                  siteKey={startupConfig.turnstile.siteKey}
+                  options={{
+                    ...startupConfig.turnstile.options,
+                    theme: validTheme,
+                  }}
+                  onSuccess={(token) => setTurnstileToken(token)}
+                  onError={() => setTurnstileToken(null)}
+                  onExpire={() => setTurnstileToken(null)}
+                />
+              </div>
+            )}
+
             <div className="mt-6">
-              <button
-                disabled={Object.keys(errors).length > 0}
+              <Button
+                disabled={
+                  Object.keys(errors).length > 0 ||
+                  isSubmitting ||
+                  (requireCaptcha && !turnstileToken)
+                }
                 type="submit"
                 aria-label="Submit registration"
-                className="
-            w-full rounded-2xl bg-green-600 px-4 py-3 text-sm font-medium text-white
-            transition-colors hover:bg-green-700 focus:outline-none focus:ring-2
-            focus:ring-green-500 focus:ring-offset-2 disabled:opacity-50
-            disabled:hover:bg-green-600 dark:bg-green-600 dark:hover:bg-green-700
-          "
+                variant="submit"
+                className="h-12 w-full rounded-2xl"
               >
                 {isSubmitting ? <Spinner /> : localize('com_auth_continue')}
-              </button>
+              </Button>
             </div>
           </form>
 

@@ -1,20 +1,22 @@
 const { nanoid } = require('nanoid');
 const { EnvVar } = require('@librechat/agents');
+const { checkAccess } = require('@librechat/api');
+const { logger } = require('@librechat/data-schemas');
 const {
   Tools,
   AuthType,
   Permissions,
   ToolCallTypes,
   PermissionTypes,
+  loadWebSearchAuth,
 } = require('librechat-data-provider');
 const { processFileURL, uploadImageBuffer } = require('~/server/services/Files/process');
 const { processCodeOutput } = require('~/server/services/Files/Code/process');
 const { createToolCall, getToolCallsByConvo } = require('~/models/ToolCall');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { loadTools } = require('~/app/clients/tools/util');
-const { checkAccess } = require('~/server/middleware');
+const { getRoleByName } = require('~/models/Role');
 const { getMessage } = require('~/models/Message');
-const { logger } = require('~/config');
 
 const fieldsMap = {
   [Tools.execute_code]: [EnvVar.CODE_API_KEY],
@@ -25,6 +27,36 @@ const toolAccessPermType = {
 };
 
 /**
+ * Verifies web search authentication, ensuring each category has at least
+ * one fully authenticated service.
+ *
+ * @param {ServerRequest} req - The request object
+ * @param {ServerResponse} res - The response object
+ * @returns {Promise<void>} A promise that resolves when the function has completed
+ */
+const verifyWebSearchAuth = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    /** @type {TCustomConfig['webSearch']} */
+    const webSearchConfig = req.app.locals?.webSearch || {};
+    const result = await loadWebSearchAuth({
+      userId,
+      loadAuthValues,
+      webSearchConfig,
+      throwError: false,
+    });
+
+    return res.status(200).json({
+      authenticated: result.authenticated,
+      authTypes: result.authTypes,
+    });
+  } catch (error) {
+    console.error('Error in verifyWebSearchAuth:', error);
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+/**
  * @param {ServerRequest} req - The request object, containing information about the HTTP request.
  * @param {ServerResponse} res - The response object, used to send back the desired HTTP response.
  * @returns {Promise<void>} A promise that resolves when the function has completed.
@@ -32,6 +64,9 @@ const toolAccessPermType = {
 const verifyToolAuth = async (req, res) => {
   try {
     const { toolId } = req.params;
+    if (toolId === Tools.web_search) {
+      return await verifyWebSearchAuth(req, res);
+    }
     const authFields = fieldsMap[toolId];
     if (!authFields) {
       res.status(404).json({ message: 'Tool not found' });
@@ -45,6 +80,7 @@ const verifyToolAuth = async (req, res) => {
         throwError: false,
       });
     } catch (error) {
+      logger.error('Error loading auth values', error);
       res.status(200).json({ authenticated: false, message: AuthType.USER_PROVIDED });
       return;
     }
@@ -98,7 +134,12 @@ const callTool = async (req, res) => {
     logger.debug(`[${toolId}/call] User: ${req.user.id}`);
     let hasAccess = true;
     if (toolAccessPermType[toolId]) {
-      hasAccess = await checkAccess(req.user, toolAccessPermType[toolId], [Permissions.USE]);
+      hasAccess = await checkAccess({
+        user: req.user,
+        permissionType: toolAccessPermType[toolId],
+        permissions: [Permissions.USE],
+        getRoleByName,
+      });
     }
     if (!hasAccess) {
       logger.warn(
