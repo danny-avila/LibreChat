@@ -22,8 +22,7 @@ async function loadAsyncEndpoints(req) {
   } else {
     /** Only attempt to load service key if GOOGLE_KEY is not provided */
     const serviceKeyPath =
-      process.env.GOOGLE_SERVICE_KEY_FILE_PATH ||
-      path.join(__dirname, '../../..', 'data', 'auth.json');
+      process.env.GOOGLE_SERVICE_KEY_FILE || path.join(__dirname, '../../..', 'data', 'auth.json');
 
     try {
       serviceKey = await loadServiceKey(serviceKeyPath);
