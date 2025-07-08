@@ -20,13 +20,6 @@ registration:
   socialLogins: ["openid"]
   allowedDomains:
   - "amendllc.com"
-
-# Memory (persistent user context) configuration
-# memory:
-#   disabled: false
-#   validKeys: ["preferences", "work_info", "personal_info", "skills", "interests", "context"]
-#   tokenLimit: 10000
-#   personalize: true
  
 memory:
   disabled: false
@@ -168,3 +161,18 @@ mcpServers:
     env:
       JINA_API_KEY: "${JINA_API_KEY}"
     chatMenu: true  # Only available in agent builder
+
+  # docling:
+  #   command: npx
+  #   args:
+  #     - mcp-remote
+  #     - https://n8n.amendllc.com/mcp-test/docling
+
+# Balance settings
+balance:
+  enabled: true                # Enable token credit balances for users
+  startBalance: 5000000          # Initial tokens credited upon registration
+  autoRefillEnabled: true     # Enable automatic token refills
+  refillIntervalValue: 30      # Numerical value for refill interval
+  refillIntervalUnit: "days"   # Time unit for refill interval (days, hours, etc.)
+  refillAmount: 1000000          # Tokens added during each refill

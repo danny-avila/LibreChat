@@ -10,7 +10,7 @@ services:
       - EMAIL_USER=${EMAIL_USER}
       - EMAIL_PASSWORD=${EMAIL_PASSWORD}
       - EMAIL_FROM=${EMAIL_FROM}
-      - POSTGRES_URI=${POSTGRES_URI}
+      #- POSTGRES_URI=${POSTGRES_URI}
       - JINA_API_KEY=${JINA_API_KEY}
       # Add any other required env vars here
     depends_on:
