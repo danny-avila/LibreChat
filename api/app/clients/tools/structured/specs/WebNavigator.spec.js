@@ -3,7 +3,6 @@ const fetch = require('node-fetch');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const cheerio = require('cheerio');
 const { v4: uuidv4 } = require('uuid');
 
 // Mock external dependencies
@@ -67,7 +66,7 @@ describe('WebNavigator', () => {
     });
 
     // Mock database - if require('better-sqlite3') has been called
-    if (require.hasOwnProperty('cache') && require.cache['better-sqlite3']) {
+    if (Object.prototype.hasOwnProperty.call(require, 'cache') && require.cache['better-sqlite3']) {
       mockDb = require('better-sqlite3')();
     }
 
@@ -438,7 +437,7 @@ describe('WebNavigator', () => {
     });
 
     it('should make POST requests with data', async () => {
-      const result = await webNavigator._call({
+      await webNavigator._call({
         url: 'https://example.com/api',
         method: 'POST',
         data: { key: 'value' },
