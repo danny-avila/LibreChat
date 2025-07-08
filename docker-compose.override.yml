@@ -16,11 +16,8 @@ services:
     depends_on:
       - rag_api
       - meilisearch
-
-  # Disable local MongoDB service since Atlas is used
-  mongodb:
-    entrypoint: ["echo", "MongoDB service disabled because Atlas is used"]
-    command: []
-
-# No local Postgres service
-# Removed local postgres service and pgdata volume 
+  rag_api:
+    image: ghcr.io/danny-avila/librechat-rag-api-dev:latest
+    # If running on Linux
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
