@@ -68,6 +68,7 @@ function DynamicDropdown({
       className={cn(
         'flex flex-col items-center justify-start gap-6',
         columnSpan != null ? `col-span-${columnSpan}` : 'col-span-full',
+        readonly && 'cursor-not-allowed opacity-60',
       )}
     >
       <HoverCard openDelay={300}>
@@ -78,7 +79,7 @@ function DynamicDropdown({
                 htmlFor={`${settingKey}-dynamic-dropdown`}
                 className="text-left text-sm font-medium"
               >
-                {labelCode ? localize(label as TranslationKeys) ?? label : label || settingKey}
+                {labelCode ? (localize(label as TranslationKeys) ?? label) : label || settingKey}
                 {showDefault && (
                   <small className="opacity-40">
                     ({localize('com_endpoint_default')}: {defaultValue})
@@ -96,12 +97,20 @@ function DynamicDropdown({
             availableValues={options}
             containerClassName="w-full"
             id={`${settingKey}-dynamic-dropdown`}
-            placeholder={placeholderCode ? localize(placeholder as TranslationKeys) ?? placeholder : placeholder}
+            placeholder={
+              placeholderCode
+                ? (localize(placeholder as TranslationKeys) ?? placeholder)
+                : placeholder
+            }
           />
         </HoverCardTrigger>
         {description && (
           <OptionHover
-            description={descriptionCode ? localize(description as TranslationKeys) ?? description : description}
+            description={
+              descriptionCode
+                ? (localize(description as TranslationKeys) ?? description)
+                : description
+            }
             side={ESide.Left}
           />
         )}

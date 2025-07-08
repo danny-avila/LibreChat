@@ -18,9 +18,11 @@ import { useChatContext } from '~/Providers';
 export default function FileSearch({
   agent_id,
   files: _files,
+  readonly = false,
 }: {
   agent_id: string;
   files?: [string, ExtendedFile][];
+  readonly?: boolean;
 }) {
   const localize = useLocalize();
   const { setFilesLoading } = useChatContext();
@@ -74,7 +76,7 @@ export default function FileSearch({
           </label>
         </span>
       </div>
-      <FileSearchCheckbox />
+      <FileSearchCheckbox readonly={readonly} />
       <div className="flex flex-col gap-3">
         {/* File Search (RAG API) Files */}
         <FileRow
@@ -83,30 +85,33 @@ export default function FileSearch({
           setFilesLoading={setFilesLoading}
           agent_id={agent_id}
           tool_resource={EToolResources.file_search}
+          readonly={readonly}
           Wrapper={({ children }) => <div className="flex flex-wrap gap-2">{children}</div>}
         />
-        <div>
-          <button
-            type="button"
-            disabled={!agent_id || fileSearchChecked === false}
-            className="btn btn-neutral border-token-border-light relative h-9 w-full rounded-lg font-medium"
-            onClick={handleButtonClick}
-          >
-            <div className="flex w-full items-center justify-center gap-1">
-              <AttachmentIcon className="text-token-text-primary h-4 w-4" />
-              <input
-                multiple={true}
-                type="file"
-                style={{ display: 'none' }}
-                tabIndex={-1}
-                ref={fileInputRef}
-                disabled={!agent_id || fileSearchChecked === false}
-                onChange={handleFileChange}
-              />
-              {localize('com_ui_upload_file_search')}
-            </div>
-          </button>
-        </div>
+        {!readonly && (
+          <div>
+            <button
+              type="button"
+              disabled={!agent_id || fileSearchChecked === false}
+              className="btn btn-neutral border-token-border-light relative h-9 w-full rounded-lg font-medium"
+              onClick={handleButtonClick}
+            >
+              <div className="flex w-full items-center justify-center gap-1">
+                <AttachmentIcon className="text-token-text-primary h-4 w-4" />
+                <input
+                  multiple={true}
+                  type="file"
+                  style={{ display: 'none' }}
+                  tabIndex={-1}
+                  ref={fileInputRef}
+                  disabled={!agent_id || fileSearchChecked === false}
+                  onChange={handleFileChange}
+                />
+                {localize('com_ui_upload_file_search')}
+              </div>
+            </button>
+          </div>
+        )}
         {/* Disabled Message */}
         {agent_id ? null : (
           <div className="text-xs text-text-secondary">

@@ -17,9 +17,11 @@ import { ESide } from '~/common';
 export default function FileContext({
   agent_id,
   files: _files,
+  readonly = false,
 }: {
   agent_id: string;
   files?: [string, ExtendedFile][];
+  readonly?: boolean;
 }) {
   const localize = useLocalize();
   const { setFilesLoading } = useChatContext();
@@ -92,30 +94,33 @@ export default function FileContext({
           setFilesLoading={setFilesLoading}
           agent_id={agent_id}
           tool_resource={EToolResources.ocr}
+          readonly={readonly}
           Wrapper={({ children }) => <div className="flex flex-wrap gap-2">{children}</div>}
         />
-        <div>
-          <button
-            type="button"
-            disabled={!agent_id}
-            className="btn btn-neutral border-token-border-light relative h-9 w-full rounded-lg font-medium"
-            onClick={handleButtonClick}
-          >
-            <div className="flex w-full items-center justify-center gap-1">
-              <AttachmentIcon className="text-token-text-primary h-4 w-4" />
-              <input
-                multiple={true}
-                type="file"
-                style={{ display: 'none' }}
-                tabIndex={-1}
-                ref={fileInputRef}
-                disabled={!agent_id}
-                onChange={handleFileChange}
-              />
-              {localize('com_ui_upload_file_context')}
-            </div>
-          </button>
-        </div>
+        {!readonly && (
+          <div>
+            <button
+              type="button"
+              disabled={!agent_id}
+              className="btn btn-neutral border-token-border-light relative h-9 w-full rounded-lg font-medium"
+              onClick={handleButtonClick}
+            >
+              <div className="flex w-full items-center justify-center gap-1">
+                <AttachmentIcon className="text-token-text-primary h-4 w-4" />
+                <input
+                  multiple={true}
+                  type="file"
+                  style={{ display: 'none' }}
+                  tabIndex={-1}
+                  ref={fileInputRef}
+                  disabled={!agent_id}
+                  onChange={handleFileChange}
+                />
+                {localize('com_ui_upload_file_context')}
+              </div>
+            </button>
+          </div>
+        )}
         {/* Disabled Message */}
         {agent_id ? null : (
           <div className="text-xs text-text-secondary">

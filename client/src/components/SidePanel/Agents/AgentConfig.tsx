@@ -27,7 +27,12 @@ const inputClass = cn(
   removeFocusOutlines,
 );
 
-export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'createMutation'>) {
+export default function AgentConfig({
+  createMutation,
+  readonly,
+}: Pick<AgentPanelProps, 'createMutation'> & {
+  readonly?: boolean;
+}) {
   const localize = useLocalize();
   const fileMap = useFileMapContext();
   const { showToast } = useToastContext();
@@ -171,6 +176,7 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
             agent_id={agent_id}
             createMutation={createMutation}
             avatar={agent?.['avatar'] ?? null}
+            readonly={readonly}
           />
           <label className={labelClass} htmlFor="name">
             {localize('com_ui_name')}
@@ -183,11 +189,12 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
                 {...field}
                 value={field.value ?? ''}
                 maxLength={256}
-                className={inputClass}
+                className={cn(inputClass, readonly && 'cursor-not-allowed opacity-60')}
                 id="name"
                 type="text"
                 placeholder={localize('com_agents_name_placeholder')}
                 aria-label="Agent name"
+                disabled={readonly}
               />
             )}
           />
@@ -214,17 +221,18 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
                 {...field}
                 value={field.value ?? ''}
                 maxLength={512}
-                className={inputClass}
+                className={cn(inputClass, readonly && 'cursor-not-allowed opacity-60')}
                 id="description"
                 type="text"
                 placeholder={localize('com_agents_description_placeholder')}
                 aria-label="Agent description"
+                disabled={readonly}
               />
             )}
           />
         </div>
         {/* Instructions */}
-        <Instructions />
+        <Instructions readonly={readonly} />
         {/* Model and Provider */}
         <div className="mb-4">
           <label className={labelClass} htmlFor="provider">
@@ -262,15 +270,19 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
               {localize('com_assistants_capabilities')}
             </label>
             {/* Code Execution */}
-            {codeEnabled && <CodeForm agent_id={agent_id} files={code_files} />}
+            {codeEnabled && <CodeForm agent_id={agent_id} files={code_files} readonly={readonly} />}
             {/* Web Search */}
-            {webSearchEnabled && <SearchForm />}
+            {webSearchEnabled && <SearchForm readonly={readonly} />}
             {/* File Context (OCR) */}
-            {ocrEnabled && <FileContext agent_id={agent_id} files={context_files} />}
+            {ocrEnabled && (
+              <FileContext agent_id={agent_id} files={context_files} readonly={readonly} />
+            )}
             {/* Artifacts */}
-            {artifactsEnabled && <Artifacts />}
+            {artifactsEnabled && <Artifacts readonly={readonly} />}
             {/* File Search */}
-            {fileSearchEnabled && <FileSearch agent_id={agent_id} files={knowledge_files} />}
+            {fileSearchEnabled && (
+              <FileSearch agent_id={agent_id} files={knowledge_files} readonly={readonly} />
+            )}
           </div>
         )}
         {/* Agent Tools & Actions */}
@@ -293,6 +305,7 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
                     tool={toolId}
                     allTools={allTools}
                     agent_id={agent_id}
+                    readonly={readonly}
                   />
                 );
               })}
@@ -304,40 +317,47 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
                   <Action
                     key={i}
                     action={action}
-                    onClick={() => {
-                      setAction(action);
-                      setActivePanel(Panel.actions);
-                    }}
+                    onClick={
+                      readonly
+                        ? () => {}
+                        : () => {
+                            setAction(action);
+                            setActivePanel(Panel.actions);
+                          }
+                    }
+                    readonly={readonly}
                   />
                 ))}
             </div>
-            <div className="mt-2 flex space-x-2">
-              {(toolsEnabled ?? false) && (
-                <button
-                  type="button"
-                  onClick={() => setShowToolDialog(true)}
-                  className="btn btn-neutral border-token-border-light relative h-9 w-full rounded-lg font-medium"
-                  aria-haspopup="dialog"
-                >
-                  <div className="flex w-full items-center justify-center gap-2">
-                    {localize('com_assistants_add_tools')}
-                  </div>
-                </button>
-              )}
-              {(actionsEnabled ?? false) && (
-                <button
-                  type="button"
-                  disabled={!agent_id}
-                  onClick={handleAddActions}
-                  className="btn btn-neutral border-token-border-light relative h-9 w-full rounded-lg font-medium"
-                  aria-haspopup="dialog"
-                >
-                  <div className="flex w-full items-center justify-center gap-2">
-                    {localize('com_assistants_add_actions')}
-                  </div>
-                </button>
-              )}
-            </div>
+            {!readonly && (
+              <div className="mt-2 flex space-x-2">
+                {(toolsEnabled ?? false) && (
+                  <button
+                    type="button"
+                    onClick={() => setShowToolDialog(true)}
+                    className="btn btn-neutral border-token-border-light relative h-9 w-full rounded-lg font-medium"
+                    aria-haspopup="dialog"
+                  >
+                    <div className="flex w-full items-center justify-center gap-2">
+                      {localize('com_assistants_add_tools')}
+                    </div>
+                  </button>
+                )}
+                {(actionsEnabled ?? false) && (
+                  <button
+                    type="button"
+                    disabled={!agent_id}
+                    onClick={handleAddActions}
+                    className="btn btn-neutral border-token-border-light relative h-9 w-full rounded-lg font-medium"
+                    aria-haspopup="dialog"
+                  >
+                    <div className="flex w-full items-center justify-center gap-2">
+                      {localize('com_assistants_add_actions')}
+                    </div>
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         </div>
         {/* MCP Section */}

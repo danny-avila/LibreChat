@@ -10,17 +10,19 @@ import MessageIcon from '~/components/Share/MessageIcon';
 import { CircleHelpIcon } from '~/components/svg';
 import { useAgentsMapContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
+import { cn } from '~/utils';
 import { ESide } from '~/common';
 
 interface AgentChainProps {
   field: ControllerRenderProps<AgentForm, 'agent_ids'>;
   currentAgentId: string;
+  readonly?: boolean;
 }
 
 /** TODO: make configurable */
 const MAX_AGENTS = 10;
 
-const AgentChain: React.FC<AgentChainProps> = ({ field, currentAgentId }) => {
+const AgentChain: React.FC<AgentChainProps> = ({ field, currentAgentId, readonly = false }) => {
   const localize = useLocalize();
   const [newAgentId, setNewAgentId] = useState('');
   const agentsMap = useAgentsMapContext() || {};
@@ -56,20 +58,24 @@ const AgentChain: React.FC<AgentChainProps> = ({ field, currentAgentId }) => {
   const getAgentDetails = useCallback((id: string) => agentsMap[id], [agentsMap]);
 
   useEffect(() => {
-    if (newAgentId && agentIds.length < MAX_AGENTS) {
+    if (newAgentId && agentIds.length < MAX_AGENTS && !readonly) {
       field.onChange([...agentIds, newAgentId]);
       setNewAgentId('');
     }
-  }, [newAgentId, agentIds, field]);
+  }, [newAgentId, agentIds, field, readonly]);
 
   const removeAgentAt = (index: number) => {
-    field.onChange(agentIds.filter((_, i) => i !== index));
+    if (!readonly) {
+      field.onChange(agentIds.filter((_, i) => i !== index));
+    }
   };
 
   const updateAgentAt = (index: number, id: string) => {
-    const updated = [...agentIds];
-    updated[index] = id;
-    field.onChange(updated);
+    if (!readonly) {
+      const updated = [...agentIds];
+      updated[index] = id;
+      field.onChange(updated);
+    }
   };
 
   return (
@@ -110,7 +116,12 @@ const AgentChain: React.FC<AgentChainProps> = ({ field, currentAgentId }) => {
         {<Link2 className="mx-auto text-text-secondary" size={14} />}
         {agentIds.map((agentId, idx) => (
           <React.Fragment key={agentId}>
-            <div className="flex h-10 items-center gap-2 rounded-md border border-border-medium bg-surface-tertiary pr-2">
+            <div
+              className={cn(
+                'flex h-10 items-center gap-2 rounded-md border border-border-medium bg-surface-tertiary pr-2',
+                readonly && 'opacity-60',
+              )}
+            >
               <ControlCombobox
                 isCollapsed={false}
                 ariaLabel={localize('com_ui_agent_var', { 0: localize('com_ui_select') })}
@@ -133,14 +144,19 @@ const AgentChain: React.FC<AgentChainProps> = ({ field, currentAgentId }) => {
                 }
                 className="flex-1 border-border-heavy"
                 containerClassName="px-0"
+                disabled={readonly}
               />
               {/* Future Settings button? */}
               {/* <button className="hover:bg-surface-hover p-1 rounded transition">
                 <Settings size={16} className="text-text-secondary" />
               </button> */}
               <button
-                className="rounded-xl p-1 transition hover:bg-surface-hover"
+                className={cn(
+                  'rounded-xl p-1 transition hover:bg-surface-hover',
+                  readonly && 'cursor-not-allowed opacity-60',
+                )}
                 onClick={() => removeAgentAt(idx)}
+                disabled={readonly}
               >
                 <X size={18} className="text-text-secondary" />
               </button>
@@ -162,9 +178,13 @@ const AgentChain: React.FC<AgentChainProps> = ({ field, currentAgentId }) => {
               selectPlaceholder={localize('com_ui_agent_var', { 0: localize('com_ui_add') })}
               searchPlaceholder={localize('com_ui_agent_var', { 0: localize('com_ui_search') })}
               items={selectableAgents}
-              className="h-10 w-full border-dashed border-border-heavy text-center text-text-secondary hover:text-text-primary"
+              className={cn(
+                'h-10 w-full border-dashed border-border-heavy text-center text-text-secondary hover:text-text-primary',
+                readonly && 'cursor-not-allowed opacity-60',
+              )}
               containerClassName="px-0"
               SelectIcon={<PlusCircle size={16} className="text-text-secondary" />}
+              disabled={readonly}
             />
           </>
         )}

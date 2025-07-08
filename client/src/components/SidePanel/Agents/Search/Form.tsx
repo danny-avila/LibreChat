@@ -3,7 +3,7 @@ import { useVerifyAgentToolAuth } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 import Action from './Action';
 
-export default function SearchForm() {
+export default function SearchForm({ readonly = false }: { readonly?: boolean }) {
   const localize = useLocalize();
   const { data } = useVerifyAgentToolAuth(
     { toolId: Tools.web_search },
@@ -24,7 +24,11 @@ export default function SearchForm() {
         </div>
       </div>
       <div className="flex flex-col items-start gap-2">
-        <Action authTypes={data?.authTypes} isToolAuthenticated={data?.authenticated} />
+        <Action
+          authTypes={data?.authTypes}
+          isToolAuthenticated={data?.authenticated}
+          readonly={readonly}
+        />
       </div>
     </div>
   );

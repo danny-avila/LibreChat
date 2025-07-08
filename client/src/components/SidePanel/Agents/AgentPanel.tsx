@@ -250,6 +250,13 @@ export default function AgentPanel() {
     user?.role,
   ]);
 
+  const isYamlDefined = agentQuery.data?.isYamlDefined;
+
+  const showForm =
+    agentQuery.data?.id && !canEditAgent && !isYamlDefined
+      ? false // Hide only if we know user can't access this specific agent
+      : true; // Show form by default (including while loading)
+
   return (
     <FormProvider {...methods}>
       <form
@@ -303,7 +310,7 @@ export default function AgentPanel() {
           )}
         </div>
         {agentQuery.isInitialLoading && <AgentPanelSkeleton />}
-        {!canEditAgent && !agentQuery.isInitialLoading && (
+        {!showForm && !agentQuery.isInitialLoading && (
           <div className="flex h-[30vh] w-full items-center justify-center">
             <div className="text-center">
               <h2 className="text-token-text-primary m-2 text-xl font-semibold">
@@ -313,22 +320,49 @@ export default function AgentPanel() {
             </div>
           </div>
         )}
+        {/* Readonly banner for YAML-defined agents */}
+        {showForm && isYamlDefined && (
+          <div className="mx-2 mt-2 rounded-lg border border-blue-200 bg-blue-50 p-3 dark:border-blue-800 dark:bg-blue-900/20">
+            <div className="flex items-center">
+              <div className="flex-shrink-0">
+                <svg className="h-5 w-5 text-blue-400" fill="currentColor" viewBox="0 0 20 20">
+                  <path
+                    fillRule="evenodd"
+                    d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z"
+                    clipRule="evenodd"
+                  />
+                </svg>
+              </div>
+              <div className="ml-3">
+                <p className="text-sm text-blue-800 dark:text-blue-200">
+                  {localize('com_agents_yaml_readonly_message')}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
         {canEditAgent && !agentQuery.isInitialLoading && activePanel === Panel.model && (
-          <ModelPanel models={models} providers={providers} setActivePanel={setActivePanel} />
+          <ModelPanel
+            models={models}
+            providers={providers}
+            setActivePanel={setActivePanel}
+            readonly={isYamlDefined}
+          />
         )}
         {canEditAgent && !agentQuery.isInitialLoading && activePanel === Panel.builder && (
-          <AgentConfig createMutation={create} />
+          <AgentConfig createMutation={create} readonly={isYamlDefined} />
         )}
         {canEditAgent && !agentQuery.isInitialLoading && activePanel === Panel.advanced && (
-          <AdvancedPanel />
+          <AdvancedPanel readonly={isYamlDefined} />
         )}
-        {canEditAgent && !agentQuery.isInitialLoading && (
+        {showForm && (canEditAgent || isYamlDefined) && (
           <AgentFooter
             createMutation={create}
             updateMutation={update}
             activePanel={activePanel}
             setActivePanel={setActivePanel}
             setCurrentAgentId={setCurrentAgentId}
+            readonly={isYamlDefined}
           />
         )}
       </form>

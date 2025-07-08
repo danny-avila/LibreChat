@@ -11,7 +11,7 @@ import { CircleHelpIcon } from '~/components/svg';
 import { useLocalize } from '~/hooks';
 import { ESide } from '~/common';
 
-export default function AdvancedPanel() {
+export default function MaxAgentSteps({ readonly = false }: { readonly?: boolean }) {
   const localize = useLocalize();
   const methods = useFormContext<AgentForm>();
   const { control } = methods;
@@ -30,6 +30,7 @@ export default function AdvancedPanel() {
             placeholder={localize('com_nav_theme_system')}
             type="number"
             labelClass="w-fit"
+            readonly={readonly}
             labelAdjacent={
               <HoverCardTrigger>
                 <CircleHelpIcon className="h-4 w-4 text-text-tertiary" />

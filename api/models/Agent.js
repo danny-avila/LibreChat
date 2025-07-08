@@ -1,8 +1,19 @@
 const mongoose = require('mongoose');
 const crypto = require('node:crypto');
+const fs = require('fs').promises;
+const path = require('path');
+const mime = require('mime');
+const { v4: uuidv4 } = require('uuid');
 const { logger } = require('@librechat/data-schemas');
-const { SystemRoles, Tools, actionDelimiter } = require('librechat-data-provider');
-const { GLOBAL_PROJECT_NAME, EPHEMERAL_AGENT_ID, mcp_delimiter } =
+const {
+  SystemRoles,
+  Tools,
+  actionDelimiter,
+  EToolResources,
+  FileSources,
+  FileContext,
+} = require('librechat-data-provider');
+const { GLOBAL_PROJECT_NAME, EPHEMERAL_AGENT_ID, mcp_delimiter, SYSTEM_USER_ID } =
   require('librechat-data-provider').Constants;
 const { CONFIG_STORE, STARTUP_CONFIG } = require('librechat-data-provider').CacheKeys;
 const {
@@ -15,6 +26,7 @@ const { getCachedTools } = require('~/server/services/Config');
 const getLogStores = require('~/cache/getLogStores');
 const { getActions } = require('./Action');
 const { Agent } = require('~/db/models');
+const { createFile, getFiles, deleteFiles } = require('./File');
 
 /**
  * Create an agent with the provided data.
@@ -39,14 +51,462 @@ const createAgent = async (agentData) => {
 };
 
 /**
- * Get an agent document based on the provided ID.
- *
- * @param {Object} searchParameter - The search parameters to find the agent to update.
- * @param {string} searchParameter.id - The ID of the agent to update.
- * @param {string} searchParameter.author - The user ID of the agent's author.
- * @returns {Promise<Agent|null>} The agent document as a plain object, or null if not found.
+ * Process files for a tool resource from YAML configuration
+ * @param {Object} toolResourceFiles - Files configuration from YAML
+ * @param {string} toolResourceType - Type of tool resource (file_search, execute_code, ocr)
+ * @param {string} agentId - Agent ID for logging purposes
+ * @returns {Promise<Object>} Object with file_ids array and files array
  */
-const getAgent = async (searchParameter) => await Agent.findOne(searchParameter).lean();
+const processToolResourceFiles = async (
+  toolResourceFiles,
+  toolResourceType,
+  agentId,
+  systemAuthorId,
+) => {
+  const fileIds = [];
+  const files = [];
+
+  if (!toolResourceFiles || !Array.isArray(toolResourceFiles)) {
+    return { file_ids: fileIds, files };
+  }
+
+  for (const fileConfig of toolResourceFiles) {
+    try {
+      const { filepath, filename, description } = fileConfig;
+
+      // Check if file exists
+      const absolutePath = path.isAbsolute(filepath)
+        ? filepath
+        : path.resolve(process.cwd(), filepath);
+
+      try {
+        await fs.access(absolutePath);
+      } catch (error) {
+        logger.warn(`File not found for agent ${agentId}: ${absolutePath}`, error);
+        continue;
+      }
+
+      // Get current file stats
+      const stats = await fs.stat(absolutePath);
+      const currentSize = stats.size;
+      const currentMtime = stats.mtime.getTime();
+
+      // Determine filename early for file lookup
+      const actualFilename = filename || path.basename(filepath);
+
+      // Check if file already exists in database by filepath AND context
+      const existingFiles = await getFiles({
+        filepath: absolutePath,
+        context: FileContext.agents,
+      });
+
+      // Also check for files that have been embedded (source: vectordb) with same filename
+      const embeddedFiles = await getFiles({
+        filename: actualFilename,
+        context: FileContext.agents,
+        source: FileSources.vectordb,
+      });
+
+      let existingFile = null;
+      if (existingFiles.length > 0) {
+        existingFile = existingFiles[0];
+      } else if (embeddedFiles.length > 0) {
+        existingFile = embeddedFiles[0];
+      }
+
+      if (existingFile) {
+        // Check if file has been modified (only for local files, not embedded ones)
+        const shouldCheckModification = existingFile.source !== FileSources.vectordb;
+        let fileChanged = false;
+
+        if (shouldCheckModification) {
+          const dbSize = existingFile.bytes;
+          const dbMtime = existingFile.updatedAt ? new Date(existingFile.updatedAt).getTime() : 0;
+          fileChanged = currentSize !== dbSize || currentMtime > dbMtime;
+        }
+
+        if (!fileChanged) {
+          // File unchanged or already embedded, reuse existing
+          fileIds.push(existingFile.file_id);
+          files.push(existingFile);
+          const status = existingFile.source === FileSources.vectordb ? 'embedded' : 'unchanged';
+          logger.info(
+            `Reusing ${status} file for agent ${agentId} (${toolResourceType}): ${existingFile.filename}`,
+          );
+          continue;
+        } else {
+          // File changed, need to update
+          logger.info(
+            `File changed for agent ${agentId} (${toolResourceType}): ${existingFile.filename} - re-processing`,
+          );
+
+          // Delete old file record and create new one
+          await deleteFiles([existingFile.file_id]);
+        }
+      }
+
+      // Create new file record (either first time or file changed)
+      const fileId = uuidv4();
+
+      // Determine file type
+      const mimeType = mime.getType(actualFilename) || 'application/octet-stream';
+
+      // Create file record in database
+      const fileInfo = {
+        user: systemAuthorId, // YAML-defined files are system files with proper ObjectId
+        file_id: fileId,
+        bytes: currentSize,
+        filepath: absolutePath,
+        filename: actualFilename,
+        context: FileContext.agents,
+        type: mimeType,
+        embedded: toolResourceType === EToolResources.file_search, // Auto-embed for file_search
+        source: FileSources.local,
+        description: description || null,
+      };
+
+      const dbFile = await createFile(fileInfo, true);
+
+      // Note: YAML agent files are stored but not automatically embedded
+      // They will be embedded when first accessed by a user with proper authentication
+      if (toolResourceType === EToolResources.file_search) {
+        logger.info(`File stored for future embedding: ${actualFilename} (agent: ${agentId})`);
+      }
+
+      fileIds.push(fileId);
+      files.push(dbFile);
+
+      logger.info(`Processed file for agent ${agentId} (${toolResourceType}): ${actualFilename}`);
+    } catch (error) {
+      logger.error(`Error processing file for agent ${agentId}:`, error);
+    }
+  }
+
+  return { file_ids: fileIds, files };
+};
+
+/**
+ * Sync YAML agents with database, creating/updating/deleting as needed
+ * @returns {Promise<void>}
+ */
+const syncYamlAgents = async () => {
+  try {
+    const cache = getLogStores(CONFIG_STORE);
+    const customConfig = await cache.get('customConfig');
+
+    if (!customConfig?.endpoints?.agents?.definitions) {
+      // No YAML agents defined, remove any existing ones
+      await Agent.deleteMany({ isYamlDefined: true });
+      logger.info('No YAML agents defined, removed any existing YAML agents from database');
+      return;
+    }
+
+    const configTimestamp = customConfig._timestamp || Date.now();
+
+    // Helper function to resolve project names to ObjectIds
+    const resolveProjectIds = async (projectNames) => {
+      const projectIds = [];
+      for (const projectName of projectNames) {
+        try {
+          const project = await getProjectByName(projectName, '_id');
+          projectIds.push(project._id);
+        } catch (error) {
+          if (projectName === GLOBAL_PROJECT_NAME) {
+            // Global project is required, create placeholder if not found
+            logger.warn(
+              'Could not find global project for YAML agents, creating placeholder ObjectId',
+              error,
+            );
+            projectIds.push(new mongoose.Types.ObjectId());
+          } else {
+            logger.warn(`Project "${projectName}" not found for YAML agent, skipping`, error);
+          }
+        }
+      }
+      return projectIds;
+    };
+
+    // Create a consistent system author ObjectId for all YAML agents
+    const systemAuthorId = new mongoose.Types.ObjectId(SYSTEM_USER_ID);
+
+    const yamlAgentIds = [];
+
+    for (const agentDef of customConfig.endpoints.agents.definitions) {
+      try {
+        yamlAgentIds.push(agentDef.id);
+
+        // Process tool resources and files
+        const tool_resources = {};
+
+        if (agentDef.tool_resources) {
+          // Process file_search files
+          if (agentDef.tool_resources.file_search?.files) {
+            const result = await processToolResourceFiles(
+              agentDef.tool_resources.file_search.files,
+              EToolResources.file_search,
+              agentDef.id,
+              systemAuthorId,
+            );
+            if (result.file_ids.length > 0) {
+              tool_resources[EToolResources.file_search] = result;
+            }
+          }
+
+          // Process execute_code files
+          if (agentDef.tool_resources.execute_code?.files) {
+            const result = await processToolResourceFiles(
+              agentDef.tool_resources.execute_code.files,
+              EToolResources.execute_code,
+              agentDef.id,
+              systemAuthorId,
+            );
+            if (result.file_ids.length > 0) {
+              tool_resources[EToolResources.execute_code] = result;
+            }
+          }
+
+          // Process OCR files
+          if (agentDef.tool_resources.ocr?.files) {
+            const result = await processToolResourceFiles(
+              agentDef.tool_resources.ocr.files,
+              EToolResources.ocr,
+              agentDef.id,
+              systemAuthorId,
+            );
+            if (result.file_ids.length > 0) {
+              tool_resources[EToolResources.ocr] = result;
+            }
+          }
+        }
+
+        // Automatically add tools based on tool_resources
+        const tools = [...(agentDef.tools || [])];
+        if (
+          tool_resources[EToolResources.file_search] &&
+          !tools.includes(EToolResources.file_search)
+        ) {
+          tools.push(EToolResources.file_search);
+        }
+        if (
+          tool_resources[EToolResources.execute_code] &&
+          !tools.includes(EToolResources.execute_code)
+        ) {
+          tools.push(EToolResources.execute_code);
+        }
+
+        // Determine which projects this agent should belong to
+        let projectNames = [];
+        if (agentDef.projects) {
+          if (Array.isArray(agentDef.projects)) {
+            // Multiple projects specified
+            projectNames = agentDef.projects;
+          } else if (typeof agentDef.projects === 'string') {
+            // Single project specified
+            projectNames = [agentDef.projects];
+          }
+        } else {
+          // Default to global project
+          projectNames = [GLOBAL_PROJECT_NAME];
+        }
+
+        // Resolve project names to ObjectIds
+        const projectIds = await resolveProjectIds(projectNames);
+
+        if (projectIds.length === 0) {
+          logger.warn(`No valid projects found for YAML agent ${agentDef.id}, skipping`);
+          continue;
+        }
+
+        // Transform YAML agent definition to match the Agent model structure
+        const agentData = {
+          id: agentDef.id,
+          name: agentDef.name || agentDef.id,
+          description: agentDef.description || null,
+          instructions: agentDef.instructions || null,
+          avatar: agentDef.avatar || null,
+          provider: agentDef.provider,
+          model: agentDef.model,
+          model_parameters: agentDef.model_parameters || {},
+          tools,
+          tool_resources,
+          actions: agentDef.actions || [],
+          agent_ids: agentDef.agent_ids || [],
+          artifacts: agentDef.artifacts || null,
+          recursion_limit: agentDef.recursion_limit || null,
+          end_after_tools: agentDef.end_after_tools || false,
+          hide_sequential_outputs: agentDef.hide_sequential_outputs || false,
+          conversation_starters: agentDef.conversation_starters || [],
+          isCollaborative: agentDef.isCollaborative || false,
+          // Mark as YAML-defined for identification
+          isYamlDefined: true,
+          // Set as system agent with proper ObjectIds
+          author: systemAuthorId,
+          authorName: 'System',
+          created_at: Date.now(),
+          projectIds: projectIds,
+          versions: [],
+          yamlConfigTimestamp: configTimestamp,
+        };
+
+        // Upsert agent to database
+        await Agent.findOneAndUpdate({ id: agentDef.id, isYamlDefined: true }, agentData, {
+          upsert: true,
+        });
+
+        logger.debug(`Synced YAML agent to database: ${agentDef.id}`);
+      } catch (error) {
+        logger.error(`Error syncing YAML agent ${agentDef.id}:`, error);
+      }
+    }
+
+    // Remove YAML agents that no longer exist in config
+    const deleteResult = await Agent.deleteMany({
+      isYamlDefined: true,
+      id: { $nin: yamlAgentIds },
+    });
+
+    if (deleteResult.deletedCount > 0) {
+      logger.info(`Removed ${deleteResult.deletedCount} YAML agents no longer in config`);
+    }
+
+    // Sync YAML agents with their configured projects
+    try {
+      // Get all current YAML agents (just their IDs)
+      const currentYamlAgents = await Agent.find(
+        {
+          isYamlDefined: true,
+        },
+        { id: 1 },
+      ).lean();
+
+      // Get current project assignments from Project.agentIds (source of truth)
+      const { Project } = require('~/db/models');
+      const allProjects = await Project.find({}, { _id: 1, agentIds: 1 }).lean();
+
+      // Create a map of current agent -> project assignments based on Project.agentIds
+      const currentAssignments = new Map();
+
+      // Initialize all YAML agents with empty arrays
+      currentYamlAgents.forEach((agent) => {
+        currentAssignments.set(agent.id, []);
+      });
+
+      // Populate assignments based on Project.agentIds
+      allProjects.forEach((project) => {
+        const projectId = project._id.toString();
+        if (project.agentIds && Array.isArray(project.agentIds)) {
+          project.agentIds.forEach((agentId) => {
+            if (currentAssignments.has(agentId)) {
+              currentAssignments.get(agentId).push(projectId);
+            }
+          });
+        }
+      });
+
+      // Track desired assignments for new agents
+      const desiredAssignments = new Map();
+
+      // Process each agent definition to determine desired project assignments
+      for (const agentDef of customConfig.endpoints.agents.definitions) {
+        let projectNames = [];
+        if (agentDef.projects) {
+          if (Array.isArray(agentDef.projects)) {
+            projectNames = agentDef.projects;
+          } else if (typeof agentDef.projects === 'string') {
+            projectNames = [agentDef.projects];
+          }
+        } else {
+          projectNames = [GLOBAL_PROJECT_NAME];
+        }
+
+        const projectIds = await resolveProjectIds(projectNames);
+        desiredAssignments.set(
+          agentDef.id,
+          projectIds.map((id) => id.toString()),
+        );
+      }
+
+      // Sync each agent's project assignments
+      for (const [agentId, desiredProjects] of desiredAssignments) {
+        const currentProjects = currentAssignments.get(agentId) || [];
+
+        // Find projects to add and remove
+        const projectsToAdd = desiredProjects.filter((p) => !currentProjects.includes(p));
+        const projectsToRemove = currentProjects.filter((p) => !desiredProjects.includes(p));
+
+        logger.info(
+          `YAML Agent ${agentId} projects: current=${JSON.stringify(currentProjects)}, desired=${JSON.stringify(desiredProjects)}`,
+        );
+        if (projectsToAdd.length > 0) {
+          logger.info(`  → Adding ${agentId} to projects: ${JSON.stringify(projectsToAdd)}`);
+        }
+        if (projectsToRemove.length > 0) {
+          logger.info(`  → Removing ${agentId} from projects: ${JSON.stringify(projectsToRemove)}`);
+        }
+
+        // Update project assignments
+        for (const projectId of projectsToRemove) {
+          try {
+            await removeAgentIdsFromProject(projectId, [agentId]);
+          } catch (error) {
+            logger.warn(`Failed to remove agent ${agentId} from project ${projectId}:`, error);
+          }
+        }
+
+        for (const projectId of projectsToAdd) {
+          try {
+            await addAgentIdsToProject(projectId, [agentId]);
+          } catch (error) {
+            logger.warn(`Failed to add agent ${agentId} to project ${projectId}:`, error);
+          }
+        }
+
+        if (projectsToAdd.length > 0 || projectsToRemove.length > 0) {
+          logger.info(
+            `Updated project assignments for YAML agent ${agentId}: +${projectsToAdd.length} -${projectsToRemove.length}`,
+          );
+        }
+      }
+
+      // Remove orphaned YAML agents from all projects
+      const removedAgentIds = currentYamlAgents
+        .map((agent) => agent.id)
+        .filter((id) => !yamlAgentIds.includes(id));
+
+      for (const agentId of removedAgentIds) {
+        const projectIds = currentAssignments.get(agentId) || [];
+        for (const projectId of projectIds) {
+          try {
+            await removeAgentIdsFromProject(projectId, [agentId]);
+          } catch (error) {
+            logger.warn(
+              `Failed to remove deleted agent ${agentId} from project ${projectId}:`,
+              error,
+            );
+          }
+        }
+        if (projectIds.length > 0) {
+          logger.info(`Removed deleted YAML agent ${agentId} from ${projectIds.length} projects`);
+        }
+      }
+    } catch (error) {
+      logger.error('Error syncing YAML agents with projects:', error);
+    }
+
+    logger.info(`Synced ${yamlAgentIds.length} YAML agents to database`);
+  } catch (error) {
+    logger.error('Error syncing YAML agents:', error);
+  }
+};
+
+/**
+ * Get an agent by ID from database
+ * @param {Object} searchParameter - The search parameters to find the agent
+ * @returns {Promise<Agent|null>} The agent document as a plain object, or null if not found
+ */
+const getAgent = async (searchParameter) => {
+  return Agent.findOne(searchParameter).lean();
+};
 
 /**
  * Load an agent based on the provided ID
@@ -127,6 +587,7 @@ const loadAgent = async ({ req, agent_id, endpoint, model_parameters }) => {
   });
 
   if (!agent) {
+    logger.info(`Agent ${agent_id} not found`);
     return null;
   }
 
@@ -137,6 +598,7 @@ const loadAgent = async ({ req, agent_id, endpoint, model_parameters }) => {
   }
 
   if (!agent.projectIds) {
+    logger.info(`Agent ${agent.id} has no projectIds`);
     return null;
   }
 
@@ -496,9 +958,10 @@ const getListAgents = async (searchParameter) => {
       projectIds: 1,
       description: 1,
       isCollaborative: 1,
+      isYamlDefined: 1,
     }).lean()
   ).map((agent) => {
-    if (agent.author?.toString() !== author) {
+    if (agent.author?.toString() !== author && agent.author?.toString() !== SYSTEM_USER_ID) {
       delete agent.author;
     }
     if (agent.author) {
@@ -662,22 +1125,17 @@ const generateActionMetadataHash = async (actionIds, actions) => {
   return hashHex;
 };
 
-/**
- * Load a default agent based on the endpoint
- * @param {string} endpoint
- * @returns {Agent | null}
- */
-
 module.exports = {
+  createAgent,
   getAgent,
   loadAgent,
-  createAgent,
   updateAgent,
   deleteAgent,
   getListAgents,
-  revertAgentVersion,
   updateAgentProjects,
   addAgentResourceFile,
   removeAgentResourceFiles,
   generateActionMetadataHash,
+  revertAgentVersion,
+  syncYamlAgents,
 };

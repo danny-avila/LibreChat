@@ -225,6 +225,7 @@ export type Agent = {
   artifacts?: ArtifactModes;
   recursion_limit?: number;
   version?: number;
+  isYamlDefined?: boolean;
 };
 
 export type TAgentsMap = Record<string, Agent | undefined>;

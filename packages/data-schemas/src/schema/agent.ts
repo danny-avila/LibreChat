@@ -92,6 +92,13 @@ const agentSchema = new Schema<IAgent>(
       type: [Schema.Types.Mixed],
       default: [],
     },
+    isYamlDefined: {
+      type: Boolean,
+      default: false,
+    },
+    yamlConfigTimestamp: {
+      type: Number,
+    },
   },
   {
     timestamps: true,

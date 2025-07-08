@@ -13,7 +13,7 @@ import { CircleHelpIcon } from '~/components/svg';
 import { useLocalize } from '~/hooks';
 import { ESide } from '~/common';
 
-function FileSearchCheckbox() {
+function FileSearchCheckbox({ readonly = false }: { readonly?: boolean }) {
   const localize = useLocalize();
   const methods = useFormContext<AgentForm>();
   const { control, setValue, getValues } = methods;
@@ -29,23 +29,27 @@ function FileSearchCheckbox() {
               <Checkbox
                 {...field}
                 checked={field.value}
-                onCheckedChange={field.onChange}
+                onCheckedChange={readonly ? undefined : field.onChange}
                 className="relative float-left mr-2 inline-flex h-4 w-4 cursor-pointer"
                 value={field.value.toString()}
+                disabled={readonly}
               />
             )}
           />
           <button
             type="button"
             className="flex items-center space-x-2"
-            onClick={() =>
-              setValue(AgentCapabilities.file_search, !getValues(AgentCapabilities.file_search), {
-                shouldDirty: true,
-              })
-            }
+            onClick={() => {
+              if (!readonly) {
+                setValue(AgentCapabilities.file_search, !getValues(AgentCapabilities.file_search), {
+                  shouldDirty: true,
+                });
+              }
+            }}
+            disabled={readonly}
           >
             <label
-              className="form-check-label text-token-text-primary w-full cursor-pointer"
+              className={`form-check-label text-token-text-primary w-full ${readonly ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}
               htmlFor={AgentCapabilities.file_search}
             >
               {localize('com_agents_enable_file_search')}

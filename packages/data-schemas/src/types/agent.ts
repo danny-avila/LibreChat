@@ -28,4 +28,6 @@ export interface IAgent extends Omit<Document, 'model'> {
   tool_resources?: unknown;
   projectIds?: Types.ObjectId[];
   versions?: Omit<IAgent, 'versions'>[];
+  isYamlDefined?: boolean;
+  yamlConfigTimestamp?: number;
 }

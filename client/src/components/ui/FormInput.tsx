@@ -11,6 +11,7 @@ export default function FormInput({
   labelAdjacent,
   placeholder = '',
   type = 'string',
+  readonly = false,
 }: {
   field: any;
   label: string;
@@ -20,6 +21,7 @@ export default function FormInput({
   containerClass?: string;
   type?: 'string' | 'number';
   labelAdjacent?: React.ReactNode;
+  readonly?: boolean;
 }) {
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
@@ -52,8 +54,10 @@ export default function FormInput({
         value={field.value ?? ''}
         onChange={handleChange}
         placeholder={placeholder}
+        readOnly={readonly}
         className={cn(
           'flex h-10 max-h-10 w-full resize-none border-none bg-surface-secondary px-3 py-2',
+          readonly && 'cursor-not-allowed opacity-60',
           inputClass,
         )}
       />

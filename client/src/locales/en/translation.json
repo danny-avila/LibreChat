@@ -31,6 +31,7 @@
   "com_agents_search_info": "When enabled, allows your agent to search the web for up-to-date information. Requires a valid API key.",
   "com_agents_search_name": "Search agents by name",
   "com_agents_update_error": "There was an error updating your agent.",
+  "com_agents_yaml_readonly_message": "You can use this agent in conversations, view its settings and duplicate it to customize your own version.",
   "com_assistants_action_attempt": "Assistant wants to talk to {{0}}",
   "com_assistants_actions": "Actions",
   "com_assistants_actions_disabled": "You need to create an assistant before adding actions.",

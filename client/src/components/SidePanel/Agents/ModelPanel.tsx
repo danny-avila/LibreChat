@@ -22,7 +22,10 @@ export default function ModelPanel({
   providers,
   setActivePanel,
   models: modelsData,
-}: Pick<AgentModelPanelProps, 'models' | 'providers' | 'setActivePanel'>) {
+  readonly = false,
+}: Pick<AgentModelPanelProps, 'models' | 'providers' | 'setActivePanel'> & {
+  readonly?: boolean;
+}) {
   const localize = useLocalize();
 
   const { control, setValue } = useFormContext<AgentForm>();
@@ -147,10 +150,11 @@ export default function ModelPanel({
                       label: typeof provider === 'string' ? provider : provider.label,
                       value: typeof provider === 'string' ? provider : provider.value,
                     }))}
-                    className={cn(error ? 'border-2 border-red-500' : '')}
+                    className={cn(error ? 'border-2 border-red-500' : '', readonly && 'opacity-60')}
                     ariaLabel={localize('com_ui_provider')}
                     isCollapsed={false}
                     showCarat={true}
+                    disabled={readonly}
                   />
                   {error && (
                     <span className="model-panel-error text-sm text-red-500 transition duration-300 ease-in-out">
@@ -194,8 +198,12 @@ export default function ModelPanel({
                       label: model,
                       value: model,
                     }))}
-                    disabled={!provider}
-                    className={cn('disabled:opacity-50', error ? 'border-2 border-red-500' : '')}
+                    disabled={!provider || readonly}
+                    className={cn(
+                      'disabled:opacity-50',
+                      error ? 'border-2 border-red-500' : '',
+                      readonly && 'opacity-60',
+                    )}
                     ariaLabel={localize('com_ui_model')}
                     isCollapsed={false}
                     showCarat={true}
@@ -236,6 +244,7 @@ export default function ModelPanel({
                   {...rest}
                   setOption={setOption as t.TSetOption}
                   conversation={modelParameters as Partial<t.TConversation>}
+                  readonly={readonly}
                 />
               );
             })}
@@ -246,7 +255,11 @@ export default function ModelPanel({
       <button
         type="button"
         onClick={handleResetParameters}
-        className="btn btn-neutral my-1 flex w-full items-center justify-center gap-2 px-4 py-2 text-sm"
+        className={cn(
+          'btn btn-neutral my-1 flex w-full items-center justify-center gap-2 px-4 py-2 text-sm',
+          readonly && 'cursor-not-allowed opacity-60',
+        )}
+        disabled={readonly}
       >
         <RotateCcw className="h-4 w-4" aria-hidden="true" />
         {localize('com_ui_reset_var', { 0: localize('com_ui_model_parameters') })}

@@ -96,6 +96,14 @@ router.post('/:agent_id', checkAgentCreate, async (req, res) => {
       return res.status(404).json({ message: 'Agent not found for adding action' });
     }
 
+    // Check if agent is YAML-defined and prevent action modifications
+    if (agent.isYamlDefined) {
+      return res.status(403).json({
+        message:
+          'Cannot modify actions for YAML-defined agents. This agent is defined in configuration and is read-only.',
+      });
+    }
+
     if (actions_result && actions_result.length) {
       const action = actions_result[0];
       metadata = { ...action.metadata, ...metadata };
@@ -173,6 +181,14 @@ router.delete('/:agent_id/:action_id', checkAgentCreate, async (req, res) => {
     const agent = await getAgent(agentQuery);
     if (!agent) {
       return res.status(404).json({ message: 'Agent not found for deleting action' });
+    }
+
+    // Check if agent is YAML-defined and prevent action deletion
+    if (agent.isYamlDefined) {
+      return res.status(403).json({
+        message:
+          'Cannot delete actions from YAML-defined agents. This agent is defined in configuration and is read-only.',
+      });
     }
 
     const { tools = [], actions = [] } = agent;

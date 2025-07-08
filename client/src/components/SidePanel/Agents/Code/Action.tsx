@@ -14,7 +14,7 @@ import { CircleHelpIcon } from '~/components/svg';
 import ApiKeyDialog from './ApiKeyDialog';
 import { ESide } from '~/common';
 
-export default function Action({ authType = '', isToolAuthenticated = false }) {
+export default function Action({ authType = '', isToolAuthenticated = false, readonly = false }) {
   const localize = useLocalize();
   const methods = useFormContext<AgentForm>();
   const { control, setValue, getValues } = methods;
@@ -57,10 +57,10 @@ export default function Action({ authType = '', isToolAuthenticated = false }) {
               <Checkbox
                 {...field}
                 checked={runCodeIsEnabled ? runCodeIsEnabled : isToolAuthenticated && field.value}
-                onCheckedChange={handleCheckboxChange}
+                onCheckedChange={readonly ? undefined : handleCheckboxChange}
                 className="relative float-left mr-2 inline-flex h-4 w-4 cursor-pointer"
                 value={field.value.toString()}
-                disabled={runCodeIsEnabled ? false : !isToolAuthenticated}
+                disabled={readonly || (runCodeIsEnabled ? false : !isToolAuthenticated)}
               />
             )}
           />
@@ -68,12 +68,15 @@ export default function Action({ authType = '', isToolAuthenticated = false }) {
             type="button"
             className="flex items-center space-x-2"
             onClick={() => {
-              const value = !getValues(AgentCapabilities.execute_code);
-              handleCheckboxChange(value);
+              if (!readonly) {
+                const value = !getValues(AgentCapabilities.execute_code);
+                handleCheckboxChange(value);
+              }
             }}
+            disabled={readonly}
           >
             <label
-              className="form-check-label text-token-text-primary w-full cursor-pointer"
+              className={`form-check-label text-token-text-primary w-full ${readonly ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}
               htmlFor={AgentCapabilities.execute_code}
             >
               {localize('com_ui_run_code')}
@@ -81,7 +84,12 @@ export default function Action({ authType = '', isToolAuthenticated = false }) {
           </button>
           <div className="ml-2 flex gap-2">
             {isUserProvided && (isToolAuthenticated || runCodeIsEnabled) && (
-              <button type="button" onClick={() => setIsDialogOpen(true)}>
+              <button
+                type="button"
+                onClick={() => !readonly && setIsDialogOpen(true)}
+                disabled={readonly}
+                className={readonly ? 'cursor-not-allowed opacity-60' : ''}
+              >
                 <KeyRoundIcon className="h-5 w-5 text-text-primary" />
               </button>
             )}

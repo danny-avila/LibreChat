@@ -244,6 +244,74 @@ export const defaultAgentCapabilities = [
   AgentCapabilities.ocr,
 ];
 
+// Schema for agent definitions in YAML configuration
+export const agentDefinitionSchema = z.object({
+  id: z.string(),
+  name: z.string().optional(),
+  description: z.string().optional(),
+  instructions: z.string().optional(),
+  avatar: z
+    .object({
+      filepath: z.string(),
+      source: z.string(),
+    })
+    .optional(),
+  provider: z.string(),
+  model: z.string(),
+  model_parameters: z.record(z.any()).optional(),
+  tools: z.array(z.string()).optional(),
+  actions: z.array(z.string()).optional(),
+  agent_ids: z.array(z.string()).optional(),
+  artifacts: z.string().optional(),
+  recursion_limit: z.number().optional(),
+  end_after_tools: z.boolean().optional(),
+  hide_sequential_outputs: z.boolean().optional(),
+  conversation_starters: z.array(z.string()).optional(),
+  isCollaborative: z.boolean().optional(),
+  // Project configuration - determines which projects the agent belongs to
+  projects: z.string().or(z.array(z.string())).optional(), // Single project name or array of project names (defaults to "global")
+  // Tool resources for predefined files and other resources
+  tool_resources: z
+    .object({
+      file_search: z
+        .object({
+          files: z.array(
+            z.object({
+              filepath: z.string(),
+              filename: z.string().optional(),
+              description: z.string().optional(),
+            }),
+          ),
+        })
+        .optional(),
+      execute_code: z
+        .object({
+          files: z.array(
+            z.object({
+              filepath: z.string(),
+              filename: z.string().optional(),
+              description: z.string().optional(),
+            }),
+          ),
+        })
+        .optional(),
+      ocr: z
+        .object({
+          files: z.array(
+            z.object({
+              filepath: z.string(),
+              filename: z.string().optional(),
+              description: z.string().optional(),
+            }),
+          ),
+        })
+        .optional(),
+    })
+    .optional(),
+});
+
+export type TAgentDefinition = z.infer<typeof agentDefinitionSchema>;
+
 export const agentsEndpointSchema = baseEndpointSchema
   .merge(
     z.object({
@@ -256,6 +324,8 @@ export const agentsEndpointSchema = baseEndpointSchema
         .array(z.nativeEnum(AgentCapabilities))
         .optional()
         .default(defaultAgentCapabilities),
+      /* agent definitions for YAML configuration */
+      definitions: z.array(agentDefinitionSchema).optional(),
     }),
   )
   .default({
@@ -1418,6 +1488,8 @@ export enum Constants {
   mcp_prefix = 'mcp_',
   /** Placeholder Agent ID for Ephemeral Agents */
   EPHEMERAL_AGENT_ID = 'ephemeral',
+  /** System user ID for system-level operations (all zeros ObjectId) */
+  SYSTEM_USER_ID = '000000000000000000000000',
 }
 
 export enum LocalStorageKeys {

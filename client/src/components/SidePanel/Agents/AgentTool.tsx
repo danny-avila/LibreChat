@@ -17,10 +17,12 @@ import { cn } from '~/utils';
 export default function AgentTool({
   tool,
   allTools,
+  readonly = false,
 }: {
   tool: string;
   allTools?: Record<string, AgentToolType & { tools?: AgentToolType[] }>;
   agent_id?: string;
+  readonly?: boolean;
 }) {
   const [isHovering, setIsHovering] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
@@ -85,13 +87,16 @@ export default function AgentTool({
     return (
       <OGDialog>
         <div
-          className="group relative flex w-full items-center gap-1 rounded-lg p-1 text-sm hover:bg-gray-50 dark:hover:bg-gray-800/50"
-          onMouseEnter={() => setIsHovering(true)}
-          onMouseLeave={() => setIsHovering(false)}
-          onFocus={() => setIsFocused(true)}
+          className={cn(
+            'group relative flex w-full items-center gap-1 rounded-lg p-1 text-sm',
+            readonly ? '' : 'hover:bg-gray-50 dark:hover:bg-gray-800/50',
+          )}
+          onMouseEnter={() => !readonly && setIsHovering(true)}
+          onMouseLeave={() => !readonly && setIsHovering(false)}
+          onFocus={() => !readonly && setIsFocused(true)}
           onBlur={(e) => {
             // Check if focus is moving to a child element
-            if (!e.currentTarget.contains(e.relatedTarget)) {
+            if (!readonly && !e.currentTarget.contains(e.relatedTarget)) {
               setIsFocused(false);
             }
           }}
@@ -116,41 +121,45 @@ export default function AgentTool({
             </div>
           </div>
 
-          <OGDialogTrigger asChild>
-            <button
-              type="button"
-              className={cn(
-                'flex h-7 w-7 items-center justify-center rounded transition-all duration-200',
-                'hover:bg-gray-200 dark:hover:bg-gray-700',
-                'focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1',
-                'focus:opacity-100',
-                isHovering || isFocused ? 'opacity-100' : 'pointer-events-none opacity-0',
-              )}
-              aria-label={`Delete ${currentTool.metadata.name}`}
-              tabIndex={0}
-              onFocus={() => setIsFocused(true)}
-            >
-              <TrashIcon className="h-4 w-4" />
-            </button>
-          </OGDialogTrigger>
+          {!readonly && (
+            <OGDialogTrigger asChild>
+              <button
+                type="button"
+                className={cn(
+                  'flex h-7 w-7 items-center justify-center rounded transition-all duration-200',
+                  'hover:bg-gray-200 dark:hover:bg-gray-700',
+                  'focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1',
+                  'focus:opacity-100',
+                  isHovering || isFocused ? 'opacity-100' : 'pointer-events-none opacity-0',
+                )}
+                aria-label={`Delete ${currentTool.metadata.name}`}
+                tabIndex={0}
+                onFocus={() => setIsFocused(true)}
+              >
+                <TrashIcon className="h-4 w-4" />
+              </button>
+            </OGDialogTrigger>
+          )}
         </div>
-        <OGDialogTemplate
-          showCloseButton={false}
-          title={localize('com_ui_delete_tool')}
-          mainClassName="px-0"
-          className="max-w-[450px]"
-          main={
-            <Label className="text-left text-sm font-medium">
-              {localize('com_ui_delete_tool_confirm')}
-            </Label>
-          }
-          selection={{
-            selectHandler: () => removeTool(currentTool.tool_id),
-            selectClasses:
-              'bg-red-700 dark:bg-red-600 hover:bg-red-800 dark:hover:bg-red-800 transition-color duration-200 text-white',
-            selectText: localize('com_ui_delete'),
-          }}
-        />
+        {!readonly && (
+          <OGDialogTemplate
+            showCloseButton={false}
+            title={localize('com_ui_delete_tool')}
+            mainClassName="px-0"
+            className="max-w-[450px]"
+            main={
+              <Label className="text-left text-sm font-medium">
+                {localize('com_ui_delete_tool_confirm')}
+              </Label>
+            }
+            selection={{
+              selectHandler: () => removeTool(currentTool.tool_id),
+              selectClasses:
+                'bg-red-700 dark:bg-red-600 hover:bg-red-800 dark:hover:bg-red-800 transition-color duration-200 text-white',
+              selectText: localize('com_ui_delete'),
+            }}
+          />
+        )}
       </OGDialog>
     );
   }
@@ -161,13 +170,16 @@ export default function AgentTool({
       <Accordion type="single" value={accordionValue} onValueChange={setAccordionValue} collapsible>
         <AccordionItem value={currentTool.tool_id} className="group relative w-full border-none">
           <div
-            className="relative flex w-full items-center gap-1 rounded-lg p-1 hover:bg-gray-50 dark:hover:bg-gray-800/50"
-            onMouseEnter={() => setIsHovering(true)}
-            onMouseLeave={() => setIsHovering(false)}
-            onFocus={() => setIsFocused(true)}
+            className={cn(
+              'relative flex w-full items-center gap-1 rounded-lg p-1',
+              readonly ? '' : 'hover:bg-gray-50 dark:hover:bg-gray-800/50',
+            )}
+            onMouseEnter={() => !readonly && setIsHovering(true)}
+            onMouseLeave={() => !readonly && setIsHovering(false)}
+            onFocus={() => !readonly && setIsFocused(true)}
             onBlur={(e) => {
               // Check if focus is moving to a child element
-              if (!e.currentTarget.contains(e.relatedTarget)) {
+              if (!readonly && !e.currentTarget.contains(e.relatedTarget)) {
                 setIsFocused(false);
               }
             }}
@@ -217,16 +229,19 @@ export default function AgentTool({
                             id={`select-all-${currentTool.tool_id}`}
                             checked={selectedTools.length === currentTool.tools?.length}
                             onCheckedChange={(checked) => {
-                              if (currentTool.tools) {
+                              if (!readonly && currentTool.tools) {
                                 const newSelectedTools = checked
                                   ? currentTool.tools.map((t) => t.tool_id)
                                   : [];
                                 updateFormTools(newSelectedTools);
                               }
                             }}
+                            disabled={readonly}
                             className={cn(
                               'h-4 w-4 rounded border border-gray-300 transition-all duration-200 hover:border-gray-400 dark:border-gray-600 dark:hover:border-gray-500',
                               isExpanded ? 'visible' : 'pointer-events-none invisible',
+                              readonly &&
+                                'cursor-not-allowed opacity-50 hover:border-gray-300 dark:hover:border-gray-600',
                             )}
                             onClick={(e) => e.stopPropagation()}
                             onKeyDown={(e) => {
@@ -261,23 +276,25 @@ export default function AgentTool({
                             : 'translate-x-8 opacity-0',
                         )}
                       >
-                        <OGDialogTrigger asChild>
-                          <button
-                            type="button"
-                            className={cn(
-                              'flex h-7 w-7 items-center justify-center rounded transition-colors duration-200',
-                              'hover:bg-gray-200 dark:hover:bg-gray-700',
-                              'focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1',
-                              'focus:translate-x-0 focus:opacity-100',
-                            )}
-                            onClick={(e) => e.stopPropagation()}
-                            aria-label={`Delete ${currentTool.metadata.name}`}
-                            tabIndex={0}
-                            onFocus={() => setIsFocused(true)}
-                          >
-                            <TrashIcon className="h-4 w-4" />
-                          </button>
-                        </OGDialogTrigger>
+                        {!readonly && (
+                          <OGDialogTrigger asChild>
+                            <button
+                              type="button"
+                              className={cn(
+                                'flex h-7 w-7 items-center justify-center rounded transition-colors duration-200',
+                                'hover:bg-gray-200 dark:hover:bg-gray-700',
+                                'focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1',
+                                'focus:translate-x-0 focus:opacity-100',
+                              )}
+                              onClick={(e) => e.stopPropagation()}
+                              aria-label={`Delete ${currentTool.metadata.name}`}
+                              tabIndex={0}
+                              onFocus={() => setIsFocused(true)}
+                            >
+                              <TrashIcon className="h-4 w-4" />
+                            </button>
+                          </OGDialogTrigger>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -293,35 +310,43 @@ export default function AgentTool({
                   key={subTool.tool_id}
                   htmlFor={subTool.tool_id}
                   className={cn(
-                    'border-token-border-light hover:bg-token-surface-secondary flex cursor-pointer items-center rounded-lg border p-2',
+                    'border-token-border-light flex items-center rounded-lg border p-2',
                     'ml-2 mr-1 focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-background',
+                    readonly ? 'cursor-default' : 'hover:bg-token-surface-secondary cursor-pointer',
                   )}
                   onClick={(e) => e.stopPropagation()}
                   onKeyDown={(e) => {
                     e.stopPropagation();
                   }}
-                  onMouseEnter={() => setHoveredToolId(subTool.tool_id)}
-                  onMouseLeave={() => setHoveredToolId(null)}
+                  onMouseEnter={() => !readonly && setHoveredToolId(subTool.tool_id)}
+                  onMouseLeave={() => !readonly && setHoveredToolId(null)}
                 >
                   <Checkbox
                     id={subTool.tool_id}
                     checked={selectedTools.includes(subTool.tool_id)}
                     onCheckedChange={(_checked) => {
-                      const newSelectedTools = selectedTools.includes(subTool.tool_id)
-                        ? selectedTools.filter((t) => t !== subTool.tool_id)
-                        : [...selectedTools, subTool.tool_id];
-                      updateFormTools(newSelectedTools);
+                      if (!readonly) {
+                        const newSelectedTools = selectedTools.includes(subTool.tool_id)
+                          ? selectedTools.filter((t) => t !== subTool.tool_id)
+                          : [...selectedTools, subTool.tool_id];
+                        updateFormTools(newSelectedTools);
+                      }
                     }}
                     onKeyDown={(e) => {
                       e.stopPropagation();
-                      if (e.key === 'Enter' || e.key === ' ') {
+                      if (!readonly && (e.key === 'Enter' || e.key === ' ')) {
                         e.preventDefault();
                         const checkbox = e.currentTarget as HTMLButtonElement;
                         checkbox.click();
                       }
                     }}
+                    disabled={readonly}
                     onClick={(e) => e.stopPropagation()}
-                    className="relative float-left mr-2 inline-flex h-4 w-4 cursor-pointer rounded border border-gray-300 transition-[border-color] duration-200 hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background dark:border-gray-600 dark:hover:border-gray-500"
+                    className={cn(
+                      'relative float-left mr-2 inline-flex h-4 w-4 cursor-pointer rounded border border-gray-300 transition-[border-color] duration-200 hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background dark:border-gray-600 dark:hover:border-gray-500',
+                      readonly &&
+                        'cursor-not-allowed opacity-50 hover:border-gray-300 dark:hover:border-gray-600',
+                    )}
                   />
                   <span className="text-token-text-primary">{subTool.metadata.name}</span>
                   {subTool.metadata.description && (
@@ -380,23 +405,25 @@ export default function AgentTool({
           </AccordionContent>
         </AccordionItem>
       </Accordion>
-      <OGDialogTemplate
-        showCloseButton={false}
-        title={localize('com_ui_delete_tool')}
-        mainClassName="px-0"
-        className="max-w-[450px]"
-        main={
-          <Label className="text-left text-sm font-medium">
-            {localize('com_ui_delete_tool_confirm')}
-          </Label>
-        }
-        selection={{
-          selectHandler: () => removeTool(currentTool.tool_id),
-          selectClasses:
-            'bg-red-700 dark:bg-red-600 hover:bg-red-800 dark:hover:bg-red-800 transition-color duration-200 text-white',
-          selectText: localize('com_ui_delete'),
-        }}
-      />
+      {!readonly && (
+        <OGDialogTemplate
+          showCloseButton={false}
+          title={localize('com_ui_delete_tool')}
+          mainClassName="px-0"
+          className="max-w-[450px]"
+          main={
+            <Label className="text-left text-sm font-medium">
+              {localize('com_ui_delete_tool_confirm')}
+            </Label>
+          }
+          selection={{
+            selectHandler: () => removeTool(currentTool.tool_id),
+            selectClasses:
+              'bg-red-700 dark:bg-red-600 hover:bg-red-800 dark:hover:bg-red-800 transition-color duration-200 text-white',
+            selectText: localize('com_ui_delete'),
+          }}
+        />
+      )}
     </OGDialog>
   );
 }
