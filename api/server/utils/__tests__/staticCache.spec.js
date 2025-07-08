@@ -263,7 +263,10 @@ describe('staticCache', () => {
     it('should return 404 for gzip-only files when client does not accept gzip', async () => {
       app.use(staticCache(testDir, { skipGzipScan: false }));
 
-      await request(app).get('/only-gzipped.js').set('Accept-Encoding', 'identity').expect(404);
+      const response = await request(app)
+        .get('/only-gzipped.js')
+        .set('Accept-Encoding', 'identity');
+      expect(response.status).toBe(404);
     });
 
     it('should handle cache headers correctly for gzipped content', async () => {
@@ -350,7 +353,8 @@ describe('staticCache', () => {
     it('should return 404 for non-existent files', async () => {
       app.use(staticCache(testDir));
 
-      await request(app).get('/nonexistent.js').expect(404);
+      const response = await request(app).get('/nonexistent.js');
+      expect(response.status).toBe(404);
     });
 
     it('should serve HTML files', async () => {

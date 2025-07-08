@@ -77,7 +77,8 @@ describe('Static Route Integration', () => {
     it('should return 404 for non-existent files', async () => {
       setupStaticRoute();
 
-      await request(app).get('/images/nonexistent.jpg').expect(404);
+      const response = await request(app).get('/images/nonexistent.jpg');
+      expect(response.status).toBe(404);
     });
   });
 
