@@ -204,9 +204,41 @@ mcpServers:
 
 # Balance settings
 balance:
-  enabled: true                # Enable token credit balances for users
+  enabled: false                # Enable token credit balances for users
   startBalance: 5000000          # Initial tokens credited upon registration
   autoRefillEnabled: true     # Enable automatic token refills
   refillIntervalValue: 30      # Numerical value for refill interval
   refillIntervalUnit: "days"   # Time unit for refill interval (days, hours, etc.)
   refillAmount: 1000000          # Tokens added during each refill
+
+speech:
+  speechTab:
+    conversationMode: true
+    advancedMode: false
+    speechToText:
+      engineSTT: "external"
+      languageSTT: "English (US)"
+      autoTranscribeAudio: true
+      decibelValue: -45
+      autoSendText: 0
+    textToSpeech:
+      engineTTS: "Browser"
+      voice: "Samantha"
+      languageTTS: "en"
+      automaticPlayback: true
+      playbackRate: 1.0
+      cacheTTS: true
+  stt:
+    azureOpenAI:
+      instanceName: "${AZURE_WHISPER_INSTANCE}"
+      apiKey: "${AZURE_WHISPER_KEY}"
+      deploymentName: "${AZURE_WHISPER_MODEL}"
+      apiVersion: "${AZURE_WHISPER_API_VERSION}"
+  # tts:
+  #   azureOpenAI:
+  #     instanceName: "${AZURE_WHISPER_INSTANCE}"
+  #     apiKey: "${AZURE_WHISPER_KEY}"
+  #     deploymentName: "${AZURE_WHISPER_MODEL}"
+  #     apiVersion: "${AZURE_WHISPER_API_VERSION}"
+  #     model: 'tts-1'
+  #     voices: ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer']
