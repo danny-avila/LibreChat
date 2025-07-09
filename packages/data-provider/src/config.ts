@@ -1064,10 +1064,12 @@ export enum InfiniteCollections {
  * Enum for time intervals
  */
 export enum Time {
+  ONE_DAY = 86400000,
   ONE_HOUR = 3600000,
   THIRTY_MINUTES = 1800000,
   TEN_MINUTES = 600000,
   FIVE_MINUTES = 300000,
+  THREE_MINUTES = 180000,
   TWO_MINUTES = 120000,
   ONE_MINUTE = 60000,
   THIRTY_SECONDS = 30000,
@@ -1167,6 +1169,14 @@ export enum CacheKeys {
    * key for open id exchanged tokens
    */
   OPENID_EXCHANGED_TOKENS = 'OPENID_EXCHANGED_TOKENS',
+  /**
+   * Key for OpenID session.
+   */
+  OPENID_SESSION = 'openid_session',
+  /**
+   * Key for SAML session.
+   */
+  SAML_SESSION = 'saml_session',
 }
 
 /**
@@ -1213,6 +1223,30 @@ export enum ViolationTypes {
    * Tool Call Limit Violation.
    */
   TOOL_CALL_LIMIT = 'tool_call_limit',
+  /**
+   * General violation (catch-all).
+   */
+  GENERAL = 'general',
+  /**
+   * Login attempt violations.
+   */
+  LOGINS = 'logins',
+  /**
+   * Concurrent request violations.
+   */
+  CONCURRENT = 'concurrent',
+  /**
+   * Non-browser access violations.
+   */
+  NON_BROWSER = 'non_browser',
+  /**
+   * Message limit violations.
+   */
+  MESSAGE_LIMIT = 'message_limit',
+  /**
+   * Registration violations.
+   */
+  REGISTRATIONS = 'registrations',
 }
 
 /**

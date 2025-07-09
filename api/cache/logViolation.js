@@ -1,4 +1,5 @@
 const { isEnabled } = require('~/server/utils');
+const { ViolationTypes } = require('librechat-data-provider');
 const getLogStores = require('./getLogStores');
 const banViolation = require('./banViolation');
 
@@ -16,7 +17,7 @@ const logViolation = async (req, res, type, errorMessage, score = 1) => {
   if (!userId) {
     return;
   }
-  const logs = getLogStores('general');
+  const logs = getLogStores(ViolationTypes.GENERAL);
   const violationLogs = getLogStores(type);
   const key = isEnabled(process.env.USE_REDIS) ? `${type}:${userId}` : userId;
 
