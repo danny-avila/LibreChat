@@ -238,7 +238,7 @@ speech:
   #   azureOpenAI:
   #     instanceName: "${AZURE_WHISPER_INSTANCE}"
   #     apiKey: "${AZURE_WHISPER_KEY}"
-  #     deploymentName: "${AZURE_WHISPER_MODEL}"
+  #     deploymentName: "${AZURE_TTS_MODEL}"
   #     apiVersion: "${AZURE_WHISPER_API_VERSION}"
-  #     model: 'tts-1'
-  #     voices: ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer']
+  #     model: "${AZURE_TTS_MODEL}"
+  #     voices: ['alloy', 'ballad','echo', 'fable', 'onyx', 'nova', 'shimmer','coral','sage','verse']
