@@ -233,9 +233,17 @@ export default function Fork({
         status: 'info',
       });
     },
-    onError: () => {
+    onError: (error) => {
+      /** Rate limit error (429 status code) */
+      const isRateLimitError =
+        (error as any)?.response?.status === 429 ||
+        (error as any)?.status === 429 ||
+        (error as any)?.statusCode === 429;
+
       showToast({
-        message: localize('com_ui_fork_error'),
+        message: isRateLimitError
+          ? localize('com_ui_fork_error_rate_limit')
+          : localize('com_ui_fork_error'),
         status: 'error',
       });
     },

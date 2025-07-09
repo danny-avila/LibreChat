@@ -25,10 +25,10 @@ import useUpdateFiles from './useUpdateFiles';
 
 type UseFileHandling = {
   fileSetter?: FileSetter;
-  fileFilter?: (file: File) => boolean;
-  additionalMetadata?: Record<string, string | undefined>;
   overrideEndpoint?: EModelEndpoint;
+  fileFilter?: (file: File) => boolean;
   overrideEndpointFileConfig?: EndpointFileConfig;
+  additionalMetadata?: Record<string, string | undefined>;
 };
 
 const useFileHandling = (params?: UseFileHandling) => {
@@ -151,6 +151,10 @@ const useFileHandling = (params?: UseFileHandling) => {
 
     const formData = new FormData();
     formData.append('endpoint', endpoint);
+    formData.append(
+      'original_endpoint',
+      conversation?.endpointType || conversation?.endpoint || '',
+    );
     formData.append('file', extendedFile.file as File, encodeURIComponent(filename));
     formData.append('file_id', extendedFile.file_id);
 

@@ -1,8 +1,24 @@
 import { ProxyAgent } from 'undici';
-import { KnownEndpoints } from 'librechat-data-provider';
+import { KnownEndpoints, removeNullishValues } from 'librechat-data-provider';
+import type { BindToolsInput } from '@langchain/core/language_models/chat_models';
+import type { AzureOpenAIInput } from '@langchain/openai';
+import type { OpenAI } from 'openai';
 import type * as t from '~/types';
 import { sanitizeModelName, constructAzureURL } from '~/utils/azure';
 import { isEnabled } from '~/utils/common';
+
+function hasReasoningParams({
+  reasoning_effort,
+  reasoning_summary,
+}: {
+  reasoning_effort?: string | null;
+  reasoning_summary?: string | null;
+}): boolean {
+  return (
+    (reasoning_effort != null && reasoning_effort !== '') ||
+    (reasoning_summary != null && reasoning_summary !== '')
+  );
+}
 
 /**
  * Generates configuration options for creating a language model (LLM) instance.
@@ -17,7 +33,7 @@ export function getOpenAIConfig(
   endpoint?: string | null,
 ): t.LLMConfigResult {
   const {
-    modelOptions = {},
+    modelOptions: _modelOptions = {},
     reverseProxyUrl,
     defaultQuery,
     headers,
@@ -27,8 +43,10 @@ export function getOpenAIConfig(
     addParams,
     dropParams,
   } = options;
-
-  const llmConfig: Partial<t.ClientOptions> & Partial<t.OpenAIParameters> = Object.assign(
+  const { reasoning_effort, reasoning_summary, ...modelOptions } = _modelOptions;
+  const llmConfig: Partial<t.ClientOptions> &
+    Partial<t.OpenAIParameters> &
+    Partial<AzureOpenAIInput> = Object.assign(
     {
       streaming,
       model: modelOptions.model ?? '',
@@ -38,39 +56,6 @@ export function getOpenAIConfig(
 
   if (addParams && typeof addParams === 'object') {
     Object.assign(llmConfig, addParams);
-  }
-
-  // Note: OpenAI Web Search models do not support any known parameters besides `max_tokens`
-  if (modelOptions.model && /gpt-4o.*search/.test(modelOptions.model)) {
-    const searchExcludeParams = [
-      'frequency_penalty',
-      'presence_penalty',
-      'temperature',
-      'top_p',
-      'top_k',
-      'stop',
-      'logit_bias',
-      'seed',
-      'response_format',
-      'n',
-      'logprobs',
-      'user',
-    ];
-
-    const updatedDropParams = dropParams || [];
-    const combinedDropParams = [...new Set([...updatedDropParams, ...searchExcludeParams])];
-
-    combinedDropParams.forEach((param) => {
-      if (param in llmConfig) {
-        delete llmConfig[param as keyof t.ClientOptions];
-      }
-    });
-  } else if (dropParams && Array.isArray(dropParams)) {
-    dropParams.forEach((param) => {
-      if (param in llmConfig) {
-        delete llmConfig[param as keyof t.ClientOptions];
-      }
-    });
   }
 
   let useOpenRouter = false;
@@ -119,7 +104,10 @@ export function getOpenAIConfig(
       llmConfig.model = process.env.AZURE_OPENAI_DEFAULT_MODEL;
     }
 
-    if (configOptions.baseURL) {
+    const constructBaseURL = () => {
+      if (!configOptions.baseURL) {
+        return;
+      }
       const azureURL = constructAzureURL({
         baseURL: configOptions.baseURL,
         azureOptions: updatedAzure,
@@ -127,9 +115,40 @@ export function getOpenAIConfig(
       updatedAzure.azureOpenAIBasePath = azureURL.split(
         `/${updatedAzure.azureOpenAIApiDeploymentName}`,
       )[0];
-    }
+    };
 
+    constructBaseURL();
     Object.assign(llmConfig, updatedAzure);
+
+    const constructAzureResponsesApi = () => {
+      if (!llmConfig.useResponsesApi) {
+        return;
+      }
+
+      configOptions.baseURL = constructAzureURL({
+        baseURL: configOptions.baseURL || 'https://${INSTANCE_NAME}.openai.azure.com/openai/v1',
+        azureOptions: llmConfig,
+      });
+
+      delete llmConfig.azureOpenAIApiDeploymentName;
+      delete llmConfig.azureOpenAIApiInstanceName;
+      delete llmConfig.azureOpenAIApiVersion;
+      delete llmConfig.azureOpenAIBasePath;
+      delete llmConfig.azureOpenAIApiKey;
+      llmConfig.apiKey = apiKey;
+
+      configOptions.defaultHeaders = {
+        ...configOptions.defaultHeaders,
+        'api-key': apiKey,
+      };
+      configOptions.defaultQuery = {
+        ...configOptions.defaultQuery,
+        'api-version': 'preview',
+      };
+    };
+
+    constructAzureResponsesApi();
+
     llmConfig.model = updatedAzure.azureOpenAIApiDeploymentName;
   } else {
     llmConfig.apiKey = apiKey;
@@ -139,11 +158,19 @@ export function getOpenAIConfig(
     configOptions.organization = process.env.OPENAI_ORGANIZATION;
   }
 
-  if (useOpenRouter && llmConfig.reasoning_effort != null) {
-    llmConfig.reasoning = {
-      effort: llmConfig.reasoning_effort,
-    };
-    delete llmConfig.reasoning_effort;
+  if (
+    hasReasoningParams({ reasoning_effort, reasoning_summary }) &&
+    (llmConfig.useResponsesApi === true || useOpenRouter)
+  ) {
+    llmConfig.reasoning = removeNullishValues(
+      {
+        effort: reasoning_effort,
+        summary: reasoning_summary,
+      },
+      true,
+    ) as OpenAI.Reasoning;
+  } else if (hasReasoningParams({ reasoning_effort })) {
+    llmConfig.reasoning_effort = reasoning_effort;
   }
 
   if (llmConfig.max_tokens != null) {
@@ -151,8 +178,53 @@ export function getOpenAIConfig(
     delete llmConfig.max_tokens;
   }
 
+  const tools: BindToolsInput[] = [];
+
+  if (modelOptions.web_search) {
+    llmConfig.useResponsesApi = true;
+    tools.push({ type: 'web_search_preview' });
+  }
+
+  /**
+   * Note: OpenAI Web Search models do not support any known parameters besides `max_tokens`
+   */
+  if (modelOptions.model && /gpt-4o.*search/.test(modelOptions.model)) {
+    const searchExcludeParams = [
+      'frequency_penalty',
+      'presence_penalty',
+      'reasoning',
+      'reasoning_effort',
+      'temperature',
+      'top_p',
+      'top_k',
+      'stop',
+      'logit_bias',
+      'seed',
+      'response_format',
+      'n',
+      'logprobs',
+      'user',
+    ];
+
+    const updatedDropParams = dropParams || [];
+    const combinedDropParams = [...new Set([...updatedDropParams, ...searchExcludeParams])];
+
+    combinedDropParams.forEach((param) => {
+      if (param in llmConfig) {
+        delete llmConfig[param as keyof t.ClientOptions];
+      }
+    });
+  } else if (dropParams && Array.isArray(dropParams)) {
+    dropParams.forEach((param) => {
+      if (param in llmConfig) {
+        delete llmConfig[param as keyof t.ClientOptions];
+      }
+    });
+  }
+
   return {
     llmConfig,
     configOptions,
+    tools,
   };
 }

@@ -1,6 +1,6 @@
-import { useRef, useEffect, useCallback, useMemo } from 'react';
-import { useRecoilState } from 'recoil';
+import { useCallback, useMemo, useEffect } from 'react';
 import debounce from 'lodash/debounce';
+import { useRecoilState } from 'recoil';
 import { Constants, LocalStorageKeys } from 'librechat-data-provider';
 import type { VerifyToolAuthResponse } from 'librechat-data-provider';
 import type { UseQueryOptions } from '@tanstack/react-query';
@@ -19,8 +19,10 @@ const storageCondition = (value: unknown, rawCurrentValue?: string | null) => {
       console.error(e);
     }
   }
-  return value !== undefined && value !== null && value !== '' && value !== false;
+  return value !== undefined && value !== null;
 };
+
+type ToolValue = boolean | string;
 
 interface UseToolToggleOptions {
   conversationId?: string | null;
@@ -60,36 +62,52 @@ export function useToolToggle({
     [externalIsAuthenticated, authConfig, authQuery.data?.authenticated],
   );
 
-  const isToolEnabled = useMemo(() => {
-    return ephemeralAgent?.[toolKey] ?? false;
-  }, [ephemeralAgent, toolKey]);
-
-  /** Track previous value to prevent infinite loops */
-  const prevIsToolEnabled = useRef(isToolEnabled);
-
-  const [toggleState, setToggleState] = useLocalStorage<boolean>(
+  // Keep localStorage in sync
+  const [, setLocalStorageValue] = useLocalStorage<ToolValue>(
     `${localStorageKey}${key}`,
-    isToolEnabled,
+    false,
     undefined,
     storageCondition,
   );
 
+  // The actual current value comes from ephemeralAgent
+  const toolValue = useMemo(() => {
+    return ephemeralAgent?.[toolKey] ?? false;
+  }, [ephemeralAgent, toolKey]);
+
+  const isToolEnabled = useMemo(() => {
+    // For backward compatibility, treat truthy string values as enabled
+    if (typeof toolValue === 'string') {
+      return toolValue.length > 0;
+    }
+    return toolValue === true;
+  }, [toolValue]);
+
+  // Sync to localStorage when ephemeralAgent changes
+  useEffect(() => {
+    const value = ephemeralAgent?.[toolKey];
+    if (value !== undefined) {
+      setLocalStorageValue(value);
+    }
+  }, [ephemeralAgent, toolKey, setLocalStorageValue]);
+
   const [isPinned, setIsPinned] = useLocalStorage<boolean>(`${localStorageKey}pinned`, false);
 
   const handleChange = useCallback(
-    ({ e, isChecked }: { e?: React.ChangeEvent<HTMLInputElement>; isChecked: boolean }) => {
+    ({ e, value }: { e?: React.ChangeEvent<HTMLInputElement>; value: ToolValue }) => {
       if (isAuthenticated !== undefined && !isAuthenticated && setIsDialogOpen) {
         setIsDialogOpen(true);
         e?.preventDefault?.();
         return;
       }
-      setToggleState(isChecked);
+
+      // Update ephemeralAgent (localStorage will sync automatically via effect)
       setEphemeralAgent((prev) => ({
-        ...prev,
-        [toolKey]: isChecked,
+        ...(prev || {}),
+        [toolKey]: value,
       }));
     },
-    [setToggleState, setIsDialogOpen, isAuthenticated, setEphemeralAgent, toolKey],
+    [setIsDialogOpen, isAuthenticated, setEphemeralAgent, toolKey],
   );
 
   const debouncedChange = useMemo(
@@ -97,18 +115,12 @@ export function useToolToggle({
     [handleChange],
   );
 
-  useEffect(() => {
-    if (prevIsToolEnabled.current !== isToolEnabled) {
-      setToggleState(isToolEnabled);
-    }
-    prevIsToolEnabled.current = isToolEnabled;
-  }, [isToolEnabled, setToggleState]);
-
   return {
-    toggleState,
+    toggleState: toolValue, // Return the actual value from ephemeralAgent
     handleChange,
     isToolEnabled,
-    setToggleState,
+    toolValue,
+    setToggleState: (value: ToolValue) => handleChange({ value }), // Adapter for direct setting
     ephemeralAgent,
     debouncedChange,
     setEphemeralAgent,

@@ -112,9 +112,17 @@ export enum ImageDetail {
 }
 
 export enum ReasoningEffort {
+  none = '',
   low = 'low',
   medium = 'medium',
   high = 'high',
+}
+
+export enum ReasoningSummary {
+  none = '',
+  auto = 'auto',
+  concise = 'concise',
+  detailed = 'detailed',
 }
 
 export const imageDetailNumeric = {
@@ -131,6 +139,7 @@ export const imageDetailValue = {
 
 export const eImageDetailSchema = z.nativeEnum(ImageDetail);
 export const eReasoningEffortSchema = z.nativeEnum(ReasoningEffort);
+export const eReasoningSummarySchema = z.nativeEnum(ReasoningSummary);
 
 export const defaultAssistantFormValues = {
   assistant: '',
@@ -343,6 +352,9 @@ export const anthropicSettings = {
       default: LEGACY_ANTHROPIC_MAX_OUTPUT,
     },
   },
+  web_search: {
+    default: false as const,
+  },
 };
 
 export const agentsSettings = {
@@ -494,6 +506,7 @@ export const tMessageSchema = z.object({
   title: z.string().nullable().or(z.literal('New Chat')).default('New Chat'),
   sender: z.string().optional(),
   text: z.string(),
+  /** @deprecated */
   generation: z.string().nullable().optional(),
   isCreatedByUser: z.boolean(),
   error: z.boolean().optional(),
@@ -619,8 +632,13 @@ export const tConversationSchema = z.object({
   file_ids: z.array(z.string()).optional(),
   /* vision */
   imageDetail: eImageDetailSchema.optional(),
-  /* OpenAI: o1 only */
-  reasoning_effort: eReasoningEffortSchema.optional(),
+  /* OpenAI: Reasoning models only */
+  reasoning_effort: eReasoningEffortSchema.optional().nullable(),
+  reasoning_summary: eReasoningSummarySchema.optional().nullable(),
+  /* OpenAI: use Responses API */
+  useResponsesApi: z.boolean().optional(),
+  /* OpenAI Responses API / Anthropic API / Google API */
+  web_search: z.boolean().optional(),
   /* assistant */
   assistant_id: z.string().optional(),
   /* agents */
@@ -717,6 +735,14 @@ export const tQueryParamsSchema = tConversationSchema
     top_p: true,
     /** @endpoints openAI, custom, azureOpenAI */
     max_tokens: true,
+    /** @endpoints openAI, custom, azureOpenAI */
+    reasoning_effort: true,
+    /** @endpoints openAI, custom, azureOpenAI */
+    reasoning_summary: true,
+    /** @endpoints openAI, custom, azureOpenAI */
+    useResponsesApi: true,
+    /** @endpoints openAI, anthropic, google */
+    web_search: true,
     /** @endpoints google, anthropic, bedrock */
     topP: true,
     /** @endpoints google, anthropic */
@@ -799,6 +825,7 @@ export const googleBaseSchema = tConversationSchema.pick({
   topK: true,
   thinking: true,
   thinkingBudget: true,
+  web_search: true,
   iconURL: true,
   greeting: true,
   spec: true,
@@ -830,6 +857,7 @@ export const googleGenConfigSchema = z
         thinkingBudget: coerceNumber.optional(),
       })
       .optional(),
+    web_search: z.boolean().optional(),
   })
   .strip()
   .optional();
@@ -1044,10 +1072,13 @@ export const openAIBaseSchema = tConversationSchema.pick({
   maxContextTokens: true,
   max_tokens: true,
   reasoning_effort: true,
+  reasoning_summary: true,
+  useResponsesApi: true,
+  web_search: true,
 });
 
 export const openAISchema = openAIBaseSchema
-  .transform((obj: Partial<TConversation>) => removeNullishValues(obj))
+  .transform((obj: Partial<TConversation>) => removeNullishValues(obj, true))
   .catch(() => ({}));
 
 export const compactGoogleSchema = googleBaseSchema
@@ -1087,6 +1118,7 @@ export const anthropicBaseSchema = tConversationSchema.pick({
   greeting: true,
   spec: true,
   maxContextTokens: true,
+  web_search: true,
 });
 
 export const anthropicSchema = anthropicBaseSchema

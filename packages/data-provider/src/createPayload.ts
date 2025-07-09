@@ -11,18 +11,20 @@ export default function createPayload(submission: t.TSubmission) {
     isContinued,
     isTemporary,
     ephemeralAgent,
+    editedContent,
   } = submission;
   const { conversationId } = s.tConvoUpdateSchema.parse(conversation);
-  const { endpoint: _e } = endpointOption as {
+  const { endpoint: _e, endpointType } = endpointOption as {
     endpoint: s.EModelEndpoint;
     endpointType?: s.EModelEndpoint;
   };
 
   const endpoint = _e as s.EModelEndpoint;
   let server = `${EndpointURLs[s.EModelEndpoint.agents]}/${endpoint}`;
-
-  if (isEdited && s.isAssistantsEndpoint(endpoint)) {
-    server += '/modify';
+  if (s.isAssistantsEndpoint(endpoint)) {
+    server =
+      EndpointURLs[(endpointType ?? endpoint) as 'assistants' | 'azureAssistants'] +
+      (isEdited ? '/modify' : '');
   }
 
   const payload: t.TPayload = {
@@ -33,6 +35,7 @@ export default function createPayload(submission: t.TSubmission) {
     isContinued: !!(isEdited && isContinued),
     conversationId,
     isTemporary,
+    editedContent,
   };
 
   return { server, payload };

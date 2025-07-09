@@ -1,6 +1,7 @@
 import { Run, Providers } from '@librechat/agents';
 import { providerEndpointMap, KnownEndpoints } from 'librechat-data-provider';
 import type {
+  OpenAIClientOptions,
   StandardGraphConfig,
   EventHandler,
   GenericTool,
@@ -68,12 +69,17 @@ export async function createRun({
     llmConfig.usage = true;
   }
 
-  let reasoningKey: 'reasoning_content' | 'reasoning' | undefined;
+  let reasoningKey: 'reasoning_content' | 'reasoning' = 'reasoning_content';
   if (provider === Providers.GOOGLE) {
     reasoningKey = 'reasoning';
   } else if (
     llmConfig.configuration?.baseURL?.includes(KnownEndpoints.openrouter) ||
     (agent.endpoint && agent.endpoint.toLowerCase().includes(KnownEndpoints.openrouter))
+  ) {
+    reasoningKey = 'reasoning';
+  } else if (
+    (llmConfig as OpenAIClientOptions).useResponsesApi === true &&
+    (provider === Providers.OPENAI || provider === Providers.AZURE)
   ) {
     reasoningKey = 'reasoning';
   }

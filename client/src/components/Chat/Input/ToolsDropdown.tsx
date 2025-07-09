@@ -2,11 +2,18 @@ import React, { useState, useMemo, useCallback } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { Globe, Settings, Settings2, TerminalSquareIcon } from 'lucide-react';
 import type { MenuItemProps } from '~/common';
-import { Permissions, PermissionTypes, AuthType } from 'librechat-data-provider';
+import {
+  AuthType,
+  Permissions,
+  ArtifactModes,
+  PermissionTypes,
+  defaultAgentCapabilities,
+} from 'librechat-data-provider';
 import { TooltipAnchor, DropdownPopup } from '~/components';
+import { useLocalize, useHasAccess, useAgentCapabilities } from '~/hooks';
+import ArtifactsSubMenu from '~/components/Chat/Input/ArtifactsSubMenu';
 import MCPSubMenu from '~/components/Chat/Input/MCPSubMenu';
 import { PinIcon, VectorIcon } from '~/components/svg';
-import { useLocalize, useHasAccess } from '~/hooks';
 import { useBadgeRowContext } from '~/Providers';
 import { cn } from '~/utils';
 
@@ -21,12 +28,17 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
   const {
     webSearch,
     mcpSelect,
+    artifacts,
     fileSearch,
+    agentsConfig,
     startupConfig,
     codeApiKeyForm,
     codeInterpreter,
     searchApiKeyForm,
   } = useBadgeRowContext();
+  const { codeEnabled, webSearchEnabled, artifactsEnabled, fileSearchEnabled } =
+    useAgentCapabilities(agentsConfig?.capabilities ?? defaultAgentCapabilities);
+
   const { setIsDialogOpen: setIsCodeDialogOpen, menuTriggerRef: codeMenuTriggerRef } =
     codeApiKeyForm;
   const { setIsDialogOpen: setIsSearchDialogOpen, menuTriggerRef: searchMenuTriggerRef } =
@@ -42,6 +54,7 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
     authData: codeAuthData,
   } = codeInterpreter;
   const { isPinned: isFileSearchPinned, setIsPinned: setIsFileSearchPinned } = fileSearch;
+  const { isPinned: isArtifactsPinned, setIsPinned: setIsArtifactsPinned } = artifacts;
   const {
     mcpValues,
     mcpServerNames,
@@ -72,18 +85,45 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
 
   const handleWebSearchToggle = useCallback(() => {
     const newValue = !webSearch.toggleState;
-    webSearch.debouncedChange({ isChecked: newValue });
+    webSearch.debouncedChange({ value: newValue });
   }, [webSearch]);
 
   const handleCodeInterpreterToggle = useCallback(() => {
     const newValue = !codeInterpreter.toggleState;
-    codeInterpreter.debouncedChange({ isChecked: newValue });
+    codeInterpreter.debouncedChange({ value: newValue });
   }, [codeInterpreter]);
 
   const handleFileSearchToggle = useCallback(() => {
     const newValue = !fileSearch.toggleState;
-    fileSearch.debouncedChange({ isChecked: newValue });
+    fileSearch.debouncedChange({ value: newValue });
   }, [fileSearch]);
+
+  const handleArtifactsToggle = useCallback(() => {
+    const currentState = artifacts.toggleState;
+    if (!currentState || currentState === '') {
+      artifacts.debouncedChange({ value: ArtifactModes.DEFAULT });
+    } else {
+      artifacts.debouncedChange({ value: '' });
+    }
+  }, [artifacts]);
+
+  const handleShadcnToggle = useCallback(() => {
+    const currentState = artifacts.toggleState;
+    if (currentState === ArtifactModes.SHADCNUI) {
+      artifacts.debouncedChange({ value: ArtifactModes.DEFAULT });
+    } else {
+      artifacts.debouncedChange({ value: ArtifactModes.SHADCNUI });
+    }
+  }, [artifacts]);
+
+  const handleCustomToggle = useCallback(() => {
+    const currentState = artifacts.toggleState;
+    if (currentState === ArtifactModes.CUSTOM) {
+      artifacts.debouncedChange({ value: ArtifactModes.DEFAULT });
+    } else {
+      artifacts.debouncedChange({ value: ArtifactModes.CUSTOM });
+    }
+  }, [artifacts]);
 
   const handleMCPToggle = useCallback(
     (serverName: string) => {
@@ -98,9 +138,10 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
 
   const mcpPlaceholder = startupConfig?.interface?.mcpServers?.placeholder;
 
-  const dropdownItems = useMemo(() => {
-    const items: MenuItemProps[] = [];
-    items.push({
+  const dropdownItems: MenuItemProps[] = [];
+
+  if (fileSearchEnabled) {
+    dropdownItems.push({
       onClick: handleFileSearchToggle,
       hideOnClick: false,
       render: (props) => (
@@ -129,159 +170,149 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
         </div>
       ),
     });
+  }
 
-    if (canUseWebSearch) {
-      items.push({
-        onClick: handleWebSearchToggle,
-        hideOnClick: false,
-        render: (props) => (
-          <div {...props}>
-            <div className="flex items-center gap-2">
-              <Globe className="icon-md" />
-              <span>{localize('com_ui_web_search')}</span>
-            </div>
-            <div className="flex items-center gap-1">
-              {showWebSearchSettings && (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setIsSearchDialogOpen(true);
-                  }}
-                  className={cn(
-                    'rounded p-1 transition-all duration-200',
-                    'hover:bg-surface-secondary hover:shadow-sm',
-                    'text-text-secondary hover:text-text-primary',
-                  )}
-                  aria-label="Configure web search"
-                  ref={searchMenuTriggerRef}
-                >
-                  <div className="h-4 w-4">
-                    <Settings className="h-4 w-4" />
-                  </div>
-                </button>
-              )}
+  if (canUseWebSearch && webSearchEnabled) {
+    dropdownItems.push({
+      onClick: handleWebSearchToggle,
+      hideOnClick: false,
+      render: (props) => (
+        <div {...props}>
+          <div className="flex items-center gap-2">
+            <Globe className="icon-md" />
+            <span>{localize('com_ui_web_search')}</span>
+          </div>
+          <div className="flex items-center gap-1">
+            {showWebSearchSettings && (
               <button
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  setIsSearchPinned(!isSearchPinned);
+                  setIsSearchDialogOpen(true);
                 }}
                 className={cn(
                   'rounded p-1 transition-all duration-200',
                   'hover:bg-surface-secondary hover:shadow-sm',
-                  !isSearchPinned && 'text-text-secondary hover:text-text-primary',
+                  'text-text-secondary hover:text-text-primary',
                 )}
-                aria-label={isSearchPinned ? 'Unpin' : 'Pin'}
+                aria-label="Configure web search"
+                ref={searchMenuTriggerRef}
               >
                 <div className="h-4 w-4">
-                  <PinIcon unpin={isSearchPinned} />
+                  <Settings className="h-4 w-4" />
                 </div>
               </button>
-            </div>
-          </div>
-        ),
-      });
-    }
-
-    if (canRunCode) {
-      items.push({
-        onClick: handleCodeInterpreterToggle,
-        hideOnClick: false,
-        render: (props) => (
-          <div {...props}>
-            <div className="flex items-center gap-2">
-              <TerminalSquareIcon className="icon-md" />
-              <span>{localize('com_assistants_code_interpreter')}</span>
-            </div>
-            <div className="flex items-center gap-1">
-              {showCodeSettings && (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setIsCodeDialogOpen(true);
-                  }}
-                  ref={codeMenuTriggerRef}
-                  className={cn(
-                    'rounded p-1 transition-all duration-200',
-                    'hover:bg-surface-secondary hover:shadow-sm',
-                    'text-text-secondary hover:text-text-primary',
-                  )}
-                  aria-label="Configure code interpreter"
-                >
-                  <div className="h-4 w-4">
-                    <Settings className="h-4 w-4" />
-                  </div>
-                </button>
+            )}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsSearchPinned(!isSearchPinned);
+              }}
+              className={cn(
+                'rounded p-1 transition-all duration-200',
+                'hover:bg-surface-secondary hover:shadow-sm',
+                !isSearchPinned && 'text-text-secondary hover:text-text-primary',
               )}
+              aria-label={isSearchPinned ? 'Unpin' : 'Pin'}
+            >
+              <div className="h-4 w-4">
+                <PinIcon unpin={isSearchPinned} />
+              </div>
+            </button>
+          </div>
+        </div>
+      ),
+    });
+  }
+
+  if (canRunCode && codeEnabled) {
+    dropdownItems.push({
+      onClick: handleCodeInterpreterToggle,
+      hideOnClick: false,
+      render: (props) => (
+        <div {...props}>
+          <div className="flex items-center gap-2">
+            <TerminalSquareIcon className="icon-md" />
+            <span>{localize('com_assistants_code_interpreter')}</span>
+          </div>
+          <div className="flex items-center gap-1">
+            {showCodeSettings && (
               <button
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  setIsCodePinned(!isCodePinned);
+                  setIsCodeDialogOpen(true);
                 }}
+                ref={codeMenuTriggerRef}
                 className={cn(
                   'rounded p-1 transition-all duration-200',
                   'hover:bg-surface-secondary hover:shadow-sm',
-                  !isCodePinned && 'text-text-primary hover:text-text-primary',
+                  'text-text-secondary hover:text-text-primary',
                 )}
-                aria-label={isCodePinned ? 'Unpin' : 'Pin'}
+                aria-label="Configure code interpreter"
               >
                 <div className="h-4 w-4">
-                  <PinIcon unpin={isCodePinned} />
+                  <Settings className="h-4 w-4" />
                 </div>
               </button>
-            </div>
+            )}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsCodePinned(!isCodePinned);
+              }}
+              className={cn(
+                'rounded p-1 transition-all duration-200',
+                'hover:bg-surface-secondary hover:shadow-sm',
+                !isCodePinned && 'text-text-primary hover:text-text-primary',
+              )}
+              aria-label={isCodePinned ? 'Unpin' : 'Pin'}
+            >
+              <div className="h-4 w-4">
+                <PinIcon unpin={isCodePinned} />
+              </div>
+            </button>
           </div>
-        ),
-      });
-    }
+        </div>
+      ),
+    });
+  }
 
-    if (mcpServerNames && mcpServerNames.length > 0) {
-      items.push({
-        hideOnClick: false,
-        render: (props) => (
-          <MCPSubMenu
-            {...props}
-            mcpValues={mcpValues}
-            isMCPPinned={isMCPPinned}
-            placeholder={mcpPlaceholder}
-            mcpServerNames={mcpServerNames}
-            setIsMCPPinned={setIsMCPPinned}
-            handleMCPToggle={handleMCPToggle}
-          />
-        ),
-      });
-    }
+  if (artifactsEnabled) {
+    dropdownItems.push({
+      hideOnClick: false,
+      render: (props) => (
+        <ArtifactsSubMenu
+          {...props}
+          isArtifactsPinned={isArtifactsPinned}
+          setIsArtifactsPinned={setIsArtifactsPinned}
+          artifactsMode={artifacts.toggleState as string}
+          handleArtifactsToggle={handleArtifactsToggle}
+          handleShadcnToggle={handleShadcnToggle}
+          handleCustomToggle={handleCustomToggle}
+        />
+      ),
+    });
+  }
 
-    return items;
-  }, [
-    localize,
-    mcpValues,
-    canRunCode,
-    isMCPPinned,
-    isCodePinned,
-    mcpPlaceholder,
-    mcpServerNames,
-    isSearchPinned,
-    setIsMCPPinned,
-    canUseWebSearch,
-    setIsCodePinned,
-    handleMCPToggle,
-    showCodeSettings,
-    setIsSearchPinned,
-    isFileSearchPinned,
-    codeMenuTriggerRef,
-    setIsCodeDialogOpen,
-    searchMenuTriggerRef,
-    showWebSearchSettings,
-    setIsFileSearchPinned,
-    handleWebSearchToggle,
-    setIsSearchDialogOpen,
-    handleFileSearchToggle,
-    handleCodeInterpreterToggle,
-  ]);
+  if (mcpServerNames && mcpServerNames.length > 0) {
+    dropdownItems.push({
+      hideOnClick: false,
+      render: (props) => (
+        <MCPSubMenu
+          {...props}
+          mcpValues={mcpValues}
+          isMCPPinned={isMCPPinned}
+          placeholder={mcpPlaceholder}
+          mcpServerNames={mcpServerNames}
+          setIsMCPPinned={setIsMCPPinned}
+          handleMCPToggle={handleMCPToggle}
+        />
+      ),
+    });
+  }
 
   const menuTrigger = (
     <TooltipAnchor

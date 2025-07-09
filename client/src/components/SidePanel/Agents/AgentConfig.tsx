@@ -1,9 +1,10 @@
 import React, { useState, useMemo, useCallback } from 'react';
+import { EModelEndpoint } from 'librechat-data-provider';
 import { Controller, useWatch, useFormContext } from 'react-hook-form';
-import { EModelEndpoint, AgentCapabilities } from 'librechat-data-provider';
 import type { AgentForm, AgentPanelProps, IconComponentTypes } from '~/common';
 import { cn, defaultTextProps, removeFocusOutlines, getEndpointField, getIconKey } from '~/utils';
 import { useToastContext, useFileMapContext, useAgentPanelContext } from '~/Providers';
+import useAgentCapabilities from '~/hooks/Agents/useAgentCapabilities';
 import Action from '~/components/SidePanel/Builder/Action';
 import { ToolSelectDialog } from '~/components/Tools';
 import { icons } from '~/hooks/Endpoint/Icons';
@@ -26,17 +27,20 @@ const inputClass = cn(
   removeFocusOutlines,
 );
 
-export default function AgentConfig({
-  agentsConfig,
-  createMutation,
-  endpointsConfig,
-}: Pick<AgentPanelProps, 'agentsConfig' | 'createMutation' | 'endpointsConfig'>) {
+export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'createMutation'>) {
   const localize = useLocalize();
   const fileMap = useFileMapContext();
   const { showToast } = useToastContext();
   const methods = useFormContext<AgentForm>();
   const [showToolDialog, setShowToolDialog] = useState(false);
-  const { actions, setAction, groupedTools: allTools, setActivePanel } = useAgentPanelContext();
+  const {
+    actions,
+    setAction,
+    agentsConfig,
+    setActivePanel,
+    endpointsConfig,
+    groupedTools: allTools,
+  } = useAgentPanelContext();
 
   const { control } = methods;
   const provider = useWatch({ control, name: 'provider' });
@@ -45,34 +49,15 @@ export default function AgentConfig({
   const tools = useWatch({ control, name: 'tools' });
   const agent_id = useWatch({ control, name: 'id' });
 
-  const toolsEnabled = useMemo(
-    () => agentsConfig?.capabilities?.includes(AgentCapabilities.tools) ?? false,
-    [agentsConfig],
-  );
-  const actionsEnabled = useMemo(
-    () => agentsConfig?.capabilities?.includes(AgentCapabilities.actions) ?? false,
-    [agentsConfig],
-  );
-  const artifactsEnabled = useMemo(
-    () => agentsConfig?.capabilities?.includes(AgentCapabilities.artifacts) ?? false,
-    [agentsConfig],
-  );
-  const ocrEnabled = useMemo(
-    () => agentsConfig?.capabilities?.includes(AgentCapabilities.ocr) ?? false,
-    [agentsConfig],
-  );
-  const fileSearchEnabled = useMemo(
-    () => agentsConfig?.capabilities?.includes(AgentCapabilities.file_search) ?? false,
-    [agentsConfig],
-  );
-  const webSearchEnabled = useMemo(
-    () => agentsConfig?.capabilities?.includes(AgentCapabilities.web_search) ?? false,
-    [agentsConfig],
-  );
-  const codeEnabled = useMemo(
-    () => agentsConfig?.capabilities?.includes(AgentCapabilities.execute_code) ?? false,
-    [agentsConfig],
-  );
+  const {
+    ocrEnabled,
+    codeEnabled,
+    toolsEnabled,
+    actionsEnabled,
+    artifactsEnabled,
+    webSearchEnabled,
+    fileSearchEnabled,
+  } = useAgentCapabilities(agentsConfig?.capabilities);
 
   const context_files = useMemo(() => {
     if (typeof agent === 'string') {

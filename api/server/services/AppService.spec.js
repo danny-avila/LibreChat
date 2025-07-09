@@ -152,12 +152,14 @@ describe('AppService', () => {
       filteredTools: undefined,
       includedTools: undefined,
       webSearch: {
+        safeSearch: 1,
+        jinaApiKey: '${JINA_API_KEY}',
         cohereApiKey: '${COHERE_API_KEY}',
+        serperApiKey: '${SERPER_API_KEY}',
+        searxngApiKey: '${SEARXNG_API_KEY}',
         firecrawlApiKey: '${FIRECRAWL_API_KEY}',
         firecrawlApiUrl: '${FIRECRAWL_API_URL}',
-        jinaApiKey: '${JINA_API_KEY}',
-        safeSearch: 1,
-        serperApiKey: '${SERPER_API_KEY}',
+        searxngInstanceUrl: '${SEARXNG_INSTANCE_URL}',
       },
       memory: undefined,
       agents: {

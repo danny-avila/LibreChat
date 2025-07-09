@@ -525,7 +525,10 @@ class AgentClient extends BaseClient {
           messagesToProcess = [...messages.slice(-messageWindowSize)];
         }
       }
-      return await this.processMemory(messagesToProcess);
+
+      const bufferString = getBufferString(messagesToProcess);
+      const bufferMessage = new HumanMessage(`# Current Chat:\n\n${bufferString}`);
+      return await this.processMemory([bufferMessage]);
     } catch (error) {
       logger.error('Memory Agent failed to process memory', error);
     }
