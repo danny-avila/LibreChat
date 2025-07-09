@@ -1,7 +1,5 @@
 import { memo } from 'react';
 import remarkGfm from 'remark-gfm';
-import remarkMath from 'remark-math';
-import rehypeKatex from 'rehype-katex';
 import supersub from 'remark-supersub';
 import ReactMarkdown from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
@@ -13,7 +11,6 @@ import { langSubset } from '~/utils';
 const MarkdownLite = memo(
   ({ content = '', codeExecution = true }: { content?: string; codeExecution?: boolean }) => {
     const rehypePlugins: PluggableList = [
-      [rehypeKatex],
       [
         rehypeHighlight,
         {
@@ -32,7 +29,6 @@ const MarkdownLite = memo(
               /** @ts-ignore */
               supersub,
               remarkGfm,
-              [remarkMath, { singleDollarTextMath: false }],
             ]}
             /** @ts-ignore */
             rehypePlugins={rehypePlugins}
