@@ -18,8 +18,8 @@ export interface GoogleServiceKey {
 }
 
 /**
- * Load Google service key from file path or URL
- * @param keyPath - The path or URL to the service key file
+ * Load Google service key from file path, URL, or stringified JSON
+ * @param keyPath - The path to the service key file, URL to fetch it from, or stringified JSON
  * @returns The parsed service key object or null if failed
  */
 export async function loadServiceKey(keyPath: string): Promise<GoogleServiceKey | null> {
@@ -29,8 +29,17 @@ export async function loadServiceKey(keyPath: string): Promise<GoogleServiceKey 
 
   let serviceKey: unknown;
 
+  // Check if it's a stringified JSON (starts with '{')
+  if (keyPath.trim().startsWith('{')) {
+    try {
+      serviceKey = JSON.parse(keyPath);
+    } catch (error) {
+      logger.error('Failed to parse service key from stringified JSON', error);
+      return null;
+    }
+  }
   // Check if it's a URL
-  if (/^https?:\/\//.test(keyPath)) {
+  else if (/^https?:\/\//.test(keyPath)) {
     try {
       const response = await axios.get(keyPath);
       serviceKey = response.data;
