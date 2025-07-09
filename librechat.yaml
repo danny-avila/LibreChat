@@ -110,24 +110,58 @@ endpoints:
       userIdQuery: true
       modelDisplayLabel: "AMEND AI-Global"
     #AMEND_AI-Individual: Available to all users - unlocked with individual keys
-    - name: "AMEND_AI-Individual"
+    - name: "AMEND_AI-Coding_Models"
       apiKey: "user_provided"
       baseURL: "${LITELLM_URL}"
       models:
         default: 
-        - "azure/gpt-4.1-mini"
-        - "azure/DeepSeek-R1"
-        - "azure/gpt-image-1"
+        - "azure/gpt-4-1"
+        - "anthropic/claude-sonnet-4-20250514"
+        - "gemini/gemini-2.5-pro"
+        - "gemini/gemini-2.5-flash"
         - "azure/o3-mini"
         - "azure/o4-mini"
-        - "azure/gpt-4-1"
         fetch: false
       titleConvo: true
       titleModel: "azure/gpt-4.1-mini"
       summarize: true
       summaryModel: "azure/gpt-4.1-mini"
       forcePrompt: true
-      modelDisplayLabel: "AMEND AI-Individual"
+      modelDisplayLabel: "AMEND AI - Coding Models"
+          #AMEND_AI-Individual: Available to all users - unlocked with individual keys
+    - name: "AMEND_AI-Reasoning_Models"
+      apiKey: "user_provided"
+      baseURL: "${LITELLM_URL}"
+      models:
+        default: 
+        - "azure/DeepSeek-R1"
+        - "azure/o3-mini"
+        - "azure/o4-mini"
+        - "azure/o3"
+        - "gemini/gemini-2.0-flash-thinking-exp"
+        fetch: false
+      titleConvo: true
+      titleModel: "azure/gpt-4.1-mini"
+      summarize: true
+      summaryModel: "azure/gpt-4.1-mini"
+      forcePrompt: true
+      modelDisplayLabel: "AMEND AI - Reasoning Models"
+    - name: "AMEND_AI-Advanced_Models"
+      apiKey: "user_provided"
+      baseURL: "${LITELLM_URL}"
+      models:
+        default: 
+        - azure/gpt-4-1
+        - "azure/o3"
+        - "anthropic/claude-4-opus-20250514"
+        - "gemini/gemini-2.5-pro"
+        fetch: false
+      titleConvo: true
+      titleModel: "azure/gpt-4.1-mini"
+      summarize: true
+      summaryModel: "azure/gpt-4.1-mini"
+      forcePrompt: true
+      modelDisplayLabel: "AMEND AI - Advanced Models"
 
 ocr:
   mistralModel: "${MISTRAL_MODEL}" # should match deployment name on Azure
