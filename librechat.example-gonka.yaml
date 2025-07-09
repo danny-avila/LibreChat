@@ -1,0 +1,20 @@
+version: 1.2.8
+cache: true
+interface:
+  agents: false
+  sidePanel: true
+endpoints:
+  custom:
+    - name: "Gonka AI"
+      apiKey: "mock-required-by-openai-client-not-used-by-gonka"
+      baseURL: "http://195.242.13.239:8000/v1"
+      models:
+        default: ["Qwen/QwQ-32B"]
+        fetch: false
+      titleConvo: true
+      titleModel: "current_model"
+      summarize: false
+      summaryModel: "current_model"
+      forcePrompt: false
+      modelDisplayLabel: "Gonka AI"
+      iconURL: "https://gonka.ai/images/logo-small.png"

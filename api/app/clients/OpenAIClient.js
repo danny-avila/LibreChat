@@ -1,6 +1,7 @@
 const { OllamaClient } = require('./OllamaClient');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const { SplitStreamHandler, CustomOpenAIClient: OpenAI } = require('@librechat/agents');
+const { gonkaFetch } = require('gonka-openai');
 const {
   isEnabled,
   Tokenizer,
@@ -71,6 +72,13 @@ class OpenAIClient extends BaseClient {
     this.isOmni;
     /** @type {SplitStreamHandler | undefined} */
     this.streamHandler;
+
+    /**
+    * Gonka private key for signing requests.
+    * Loaded once here to avoid modifying all call sites that create OpenAIClient.
+    * This keeps Gonka-specific logic isolated in this file.
+    */
+    this.gonkaPrivateKey = process.env.GONKA_PRIVATE_KEY;
   }
 
   // TODO: PluginsClient calls this 3x, unneeded
@@ -1252,12 +1260,40 @@ ${convo}
       }
 
       let chatCompletion;
+      
+      /**
+      * Selects the appropriate fetch function for the OpenAI client.
+      *
+      * If the selected endpoint is "Gonka AI", we use gonkaFetch —
+      * a custom fetch implementation that signs requests with an ECDSA private key
+      * and adds the required custom headers for the Gonka network.
+      *
+      * For all other endpoints (like OpenAI itself), we use the standard createFetch,
+      * which supports directEndpoint / reverseProxy and correctly adds
+      * Authorization: Bearer {apiKey} headers.
+      *
+      * This conditional setup allows us to use the same OpenAI client instance
+      * seamlessly with both the official OpenAI API and our custom Gonka provider
+      * without hardcoding base URLs or breaking compatibility.
+      * 
+      * NOTE:
+      * The "Gonka AI" endpoint name must be present in ./librechat.yaml under:
+      * endpoints:
+      *   custom:
+      *     - name: "Gonka AI"
+      */
+      const fetch = (this.options.endpoint === 'Gonka AI')
+          ? gonkaFetch({
+            gonkaPrivateKey: this.gonkaPrivateKey
+          })
+        : createFetch({
+          directEndpoint: this.options.directEndpoint,
+          reverseProxyUrl: this.options.reverseProxyUrl
+        });
+
       /** @type {OpenAI} */
       const openai = new OpenAI({
-        fetch: createFetch({
-          directEndpoint: this.options.directEndpoint,
-          reverseProxyUrl: this.options.reverseProxyUrl,
-        }),
+        fetch: fetch,
         apiKey: this.apiKey,
         ...opts,
       });

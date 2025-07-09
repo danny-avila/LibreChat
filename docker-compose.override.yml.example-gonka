@@ -1,0 +1,6 @@
+services:
+  api:
+    build:
+      context: .
+    env_file:
+      - .env
