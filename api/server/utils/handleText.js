@@ -7,9 +7,9 @@ const {
   defaultAssistantsVersion,
   defaultAgentCapabilities,
 } = require('librechat-data-provider');
+const { sendEvent } = require('@librechat/api');
 const { Providers } = require('@librechat/agents');
 const partialRight = require('lodash/partialRight');
-const { sendMessage } = require('./streamResponse');
 
 /** Helper function to escape special characters in regex
  * @param {string} string - The string to escape.
@@ -37,7 +37,7 @@ const createOnProgress = (
     basePayload.text = basePayload.text + chunk;
 
     const payload = Object.assign({}, basePayload, rest);
-    sendMessage(res, payload);
+    sendEvent(res, payload);
     if (_onProgress) {
       _onProgress(payload);
     }
@@ -50,7 +50,7 @@ const createOnProgress = (
   const sendIntermediateMessage = (res, payload, extraTokens = '') => {
     basePayload.text = basePayload.text + extraTokens;
     const message = Object.assign({}, basePayload, payload);
-    sendMessage(res, message);
+    sendEvent(res, message);
     if (i === 0) {
       basePayload.initial = false;
     }

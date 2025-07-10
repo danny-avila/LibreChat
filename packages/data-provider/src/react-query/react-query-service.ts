@@ -12,23 +12,6 @@ import { QueryKeys } from '../keys';
 import * as s from '../schemas';
 import * as t from '../types';
 
-export const useAbortRequestWithMessage = (): UseMutationResult<
-  void,
-  Error,
-  { endpoint: string; abortKey: string; message: string }
-> => {
-  const queryClient = useQueryClient();
-  return useMutation(
-    ({ endpoint, abortKey, message }) =>
-      dataService.abortRequestWithMessage(endpoint, abortKey, message),
-    {
-      onSuccess: () => {
-        queryClient.invalidateQueries([QueryKeys.balance]);
-      },
-    },
-  );
-};
-
 export const useGetSharedMessages = (
   shareId: string,
   config?: UseQueryOptions<t.TSharedMessagesResponse>,

@@ -60,7 +60,7 @@ export default function Artifacts() {
         />
         <SwitchItem
           id="includeShadcnui"
-          label={localize('com_ui_include_shadcnui_agent')}
+          label={localize('com_ui_include_shadcnui')}
           checked={isShadcnEnabled}
           onCheckedChange={handleShadcnuiChange}
           hoverCardText={localize('com_nav_info_include_shadcnui')}

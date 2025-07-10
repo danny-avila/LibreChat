@@ -310,7 +310,6 @@
   "com_nav_delete_cache_storage": "Eliminar almacenamiento caché de TTS",
   "com_nav_delete_data_info": "Se eliminarán todos sus datos",
   "com_nav_delete_warning": "ADVERTENCIA: Esta acción eliminará su cuenta de forma permanente.",
-  "com_nav_edit_chat_badges": "Editar Insignias de Chat",
   "com_nav_enable_cache_tts": "Habilitar caché de texto a voz",
   "com_nav_enable_cloud_browser_voice": "Usar voces basadas en la nube",
   "com_nav_enabled": "Habilitado",
@@ -752,6 +751,5 @@
   "com_ui_x_selected": "{{0}} seleccionado",
   "com_ui_yes": "Sí",
   "com_ui_zoom": "Zoom",
-  "com_user_message": "Usted",
-  "com_warning_resubmit_unsupported": "No se admite el reenvío del mensaje de IA para este punto de conexión."
+  "com_user_message": "Usted"
 }

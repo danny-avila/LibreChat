@@ -192,6 +192,12 @@ export const fileConfig = {
   },
   serverFileSizeLimit: defaultSizeLimit,
   avatarSizeLimit: mbToBytes(2),
+  clientImageResize: {
+    enabled: false,
+    maxWidth: 1900,
+    maxHeight: 1900,
+    quality: 0.92,
+  },
   checkType: function (fileType: string, supportedTypes: RegExp[] = supportedMimeTypes) {
     return supportedTypes.some((regex) => regex.test(fileType));
   },
@@ -232,6 +238,14 @@ export const fileConfigSchema = z.object({
       px: z.number().min(0).optional(),
     })
     .optional(),
+  clientImageResize: z
+    .object({
+      enabled: z.boolean().optional(),
+      maxWidth: z.number().min(0).optional(),
+      maxHeight: z.number().min(0).optional(),
+      quality: z.number().min(0).max(1).optional(),
+    })
+    .optional(),
 });
 
 /** Helper function to safely convert string patterns to RegExp objects */
@@ -258,6 +272,14 @@ export function mergeFileConfig(dynamic: z.infer<typeof fileConfigSchema> | unde
 
   if (dynamic.avatarSizeLimit !== undefined) {
     mergedConfig.avatarSizeLimit = mbToBytes(dynamic.avatarSizeLimit);
+  }
+
+  // Merge clientImageResize configuration
+  if (dynamic.clientImageResize !== undefined) {
+    mergedConfig.clientImageResize = {
+      ...mergedConfig.clientImageResize,
+      ...dynamic.clientImageResize,
+    };
   }
 
   if (!dynamic.endpoints) {

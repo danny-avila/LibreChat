@@ -64,7 +64,7 @@ const getOptions = async ({ req, overrideModel, endpointOption }) => {
 
   /** @type {BedrockClientOptions} */
   const requestOptions = {
-    model: overrideModel ?? endpointOption.model,
+    model: overrideModel ?? endpointOption?.model,
     region: BEDROCK_AWS_DEFAULT_REGION,
   };
 
@@ -76,7 +76,7 @@ const getOptions = async ({ req, overrideModel, endpointOption }) => {
 
   const llmConfig = bedrockOutputParser(
     bedrockInputParser.parse(
-      removeNullishValues(Object.assign(requestOptions, endpointOption.model_parameters)),
+      removeNullishValues(Object.assign(requestOptions, endpointOption?.model_parameters ?? {})),
     ),
   );
 

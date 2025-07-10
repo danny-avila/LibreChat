@@ -1,6 +1,7 @@
 import { Run, Providers } from '@librechat/agents';
 import { providerEndpointMap, KnownEndpoints } from 'librechat-data-provider';
 import type {
+  OpenAIClientOptions,
   StandardGraphConfig,
   EventHandler,
   GenericTool,
@@ -46,7 +47,10 @@ export async function createRun({
   customHandlers?: Record<GraphEvents, EventHandler>;
 }): Promise<Run<IState>> {
   const provider =
-    providerEndpointMap[agent.provider as keyof typeof providerEndpointMap] ?? agent.provider;
+    (providerEndpointMap[
+      agent.provider as keyof typeof providerEndpointMap
+    ] as unknown as Providers) ?? agent.provider;
+
   const llmConfig: t.RunLLMConfig = Object.assign(
     {
       provider,
@@ -65,10 +69,17 @@ export async function createRun({
     llmConfig.usage = true;
   }
 
-  let reasoningKey: 'reasoning_content' | 'reasoning' | undefined;
-  if (
+  let reasoningKey: 'reasoning_content' | 'reasoning' = 'reasoning_content';
+  if (provider === Providers.GOOGLE) {
+    reasoningKey = 'reasoning';
+  } else if (
     llmConfig.configuration?.baseURL?.includes(KnownEndpoints.openrouter) ||
     (agent.endpoint && agent.endpoint.toLowerCase().includes(KnownEndpoints.openrouter))
+  ) {
+    reasoningKey = 'reasoning';
+  } else if (
+    (llmConfig as OpenAIClientOptions).useResponsesApi === true &&
+    (provider === Providers.OPENAI || provider === Providers.AZURE)
   ) {
     reasoningKey = 'reasoning';
   }

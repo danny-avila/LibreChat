@@ -70,6 +70,9 @@ const loadEphemeralAgent = async ({ req, agent_id, endpoint, model_parameters: _
   if (ephemeralAgent?.execute_code === true) {
     tools.push(Tools.execute_code);
   }
+  if (ephemeralAgent?.file_search === true) {
+    tools.push(Tools.file_search);
+  }
   if (ephemeralAgent?.web_search === true) {
     tools.push(Tools.web_search);
   }
@@ -87,7 +90,7 @@ const loadEphemeralAgent = async ({ req, agent_id, endpoint, model_parameters: _
   }
 
   const instructions = req.body.promptPrefix;
-  return {
+  const result = {
     id: agent_id,
     instructions,
     provider: endpoint,
@@ -95,6 +98,11 @@ const loadEphemeralAgent = async ({ req, agent_id, endpoint, model_parameters: _
     model,
     tools,
   };
+
+  if (ephemeralAgent?.artifacts != null && ephemeralAgent.artifacts) {
+    result.artifacts = ephemeralAgent.artifacts;
+  }
+  return result;
 };
 
 /**

@@ -2,7 +2,7 @@ import { logger } from '@librechat/data-schemas';
 import { CallToolResultSchema, ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import type { RequestOptions } from '@modelcontextprotocol/sdk/shared/protocol.js';
 import type { OAuthClientInformation } from '@modelcontextprotocol/sdk/shared/auth.js';
-import type { JsonSchemaType, MCPOptions, TUser } from 'librechat-data-provider';
+import type { JsonSchemaType, TUser } from 'librechat-data-provider';
 import type { TokenMethods } from '@librechat/data-schemas';
 import type { FlowStateManager } from '~/flow/manager';
 import type { MCPOAuthTokens, MCPOAuthFlowMetadata } from './oauth/types';
@@ -13,6 +13,7 @@ import { MCPOAuthHandler } from './oauth/handler';
 import { MCPTokenStorage } from './oauth/tokens';
 import { formatToolContent } from './parsers';
 import { MCPConnection } from './connection';
+import { processMCPEnv } from '~/utils/env';
 
 export class MCPManager {
   private static instance: MCPManager | null = null;
@@ -24,11 +25,6 @@ export class MCPManager {
   private userLastActivity: Map<string, number> = new Map();
   private readonly USER_CONNECTION_IDLE_TIMEOUT = 15 * 60 * 1000; // 15 minutes (TODO: make configurable)
   private mcpConfigs: t.MCPServers = {};
-  private processMCPEnv?: (
-    obj: MCPOptions,
-    user?: TUser,
-    customUserVars?: Record<string, string>,
-  ) => MCPOptions; // Store the processing function
   /** Store MCP server instructions */
   private serverInstructions: Map<string, string> = new Map();
 
@@ -46,14 +42,11 @@ export class MCPManager {
     mcpServers,
     flowManager,
     tokenMethods,
-    processMCPEnv,
   }: {
     mcpServers: t.MCPServers;
     flowManager: FlowStateManager<MCPOAuthTokens | null>;
     tokenMethods?: TokenMethods;
-    processMCPEnv?: (obj: MCPOptions) => MCPOptions;
   }): Promise<void> {
-    this.processMCPEnv = processMCPEnv; // Store the function
     this.mcpConfigs = mcpServers;
 
     if (!flowManager) {
@@ -68,7 +61,7 @@ export class MCPManager {
     const connectionResults = await Promise.allSettled(
       entries.map(async ([serverName, _config], i) => {
         /** Process env for app-level connections */
-        const config = this.processMCPEnv ? this.processMCPEnv(_config) : _config;
+        const config = processMCPEnv(_config);
 
         /** Existing tokens for system-level connections */
         let tokens: MCPOAuthTokens | null = null;
@@ -444,9 +437,7 @@ export class MCPManager {
       );
     }
 
-    if (this.processMCPEnv) {
-      config = { ...(this.processMCPEnv(config, user, customUserVars) ?? {}) };
-    }
+    config = { ...(processMCPEnv(config, user, customUserVars) ?? {}) };
     /** If no in-memory tokens, tokens from persistent storage */
     let tokens: MCPOAuthTokens | null = null;
     if (tokenMethods?.findToken) {

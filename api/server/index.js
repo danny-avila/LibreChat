@@ -55,7 +55,6 @@ const startServer = async () => {
 
   /* Middleware */
   app.use(noIndex);
-  app.use(errorController);
   app.use(express.json({ limit: '3mb' }));
   app.use(express.urlencoded({ extended: true, limit: '3mb' }));
   app.use(mongoSanitize());
@@ -97,7 +96,6 @@ const startServer = async () => {
   app.use('/api/actions', routes.actions);
   app.use('/api/keys', routes.keys);
   app.use('/api/user', routes.user);
-  app.use('/api/ask', routes.ask);
   app.use('/api/search', routes.search);
   app.use('/api/edit', routes.edit);
   app.use('/api/messages', routes.messages);
@@ -118,10 +116,12 @@ const startServer = async () => {
   app.use('/api/roles', routes.roles);
   app.use('/api/agents', routes.agents);
   app.use('/api/banner', routes.banner);
-  app.use('/api/bedrock', routes.bedrock);
   app.use('/api/memories', routes.memories);
   app.use('/api/tags', routes.tags);
   app.use('/api/mcp', routes.mcp);
+
+  // Add the error controller one more time after all routes
+  app.use(errorController);
 
   app.use((req, res) => {
     res.set({
