@@ -8,8 +8,7 @@ const {
   sendEvent,
   MCPOAuthHandler,
   normalizeServerName,
-  resolveJsonSchemaRefs,
-  convertJsonSchemaToZod,
+  convertWithResolvedRefs,
 } = require('@librechat/api');
 const { findToken, createToken, updateToken } = require('~/models');
 const { getMCPManager, getFlowStateManager } = require('~/config');
@@ -114,8 +113,7 @@ async function createMCPTool({ req, res, toolKey, provider: _provider }) {
   /** @type {LCTool} */
   const { description, parameters } = toolDefinition;
   const isGoogle = _provider === Providers.VERTEXAI || _provider === Providers.GOOGLE;
-  const resolvedJsonSchema = resolveJsonSchemaRefs(parameters);
-  let schema = convertJsonSchemaToZod(resolvedJsonSchema, {
+  let schema = convertWithResolvedRefs(parameters, {
     allowEmptyObject: !isGoogle,
     transformOneOfAnyOf: true,
   });

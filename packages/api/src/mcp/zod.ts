@@ -459,3 +459,15 @@ export function convertJsonSchemaToZod(
 
   return zodSchema;
 }
+
+/**
+ * Helper function for tests that automatically resolves refs before converting to Zod
+ * This ensures all tests use resolveJsonSchemaRefs even when not explicitly testing it
+ */
+export function convertWithResolvedRefs(
+  schema: JsonSchemaType & Record<string, unknown>,
+  options?: ConvertJsonSchemaToZodOptions,
+) {
+  const resolved = resolveJsonSchemaRefs(schema);
+  return convertJsonSchemaToZod(resolved, options);
+}
