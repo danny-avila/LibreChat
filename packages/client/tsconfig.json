@@ -19,6 +19,12 @@
       "~/*": ["./*"]
     }
   },
-  "include": ["src/**/*", "../../client/src/components/Input/ModelSelect/SelectDropDownPop.tsx"],
+  "include": [
+    "src/**/*",
+    "../../client/src/components/Input/ModelSelect/SelectDropDownPop.tsx",
+    "../../client/src/components/UI-Components/TermsAndConditionsModal.tsx",
+    "../../client/src/components/Input/ModelSelect/MultiSelectPop.tsx",
+    "../../client/src/components/Input/ModelSelect/MultiSelectDropDown.tsx"
+  ],
   "exclude": ["dist", "node_modules"]
 }

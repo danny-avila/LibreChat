@@ -1,4 +1,4 @@
-import React, { useContext, useCallback, useEffect, useState } from 'react';
+import { useContext, useCallback, useEffect, useState } from 'react';
 import { Sun, Moon, Monitor } from 'lucide-react';
 import { ThemeContext } from '~/hooks';
 
@@ -8,8 +8,10 @@ declare global {
   }
 }
 
+type ThemeType = 'system' | 'dark' | 'light';
+
 const Theme = ({ theme, onChange }: { theme: string; onChange: (value: string) => void }) => {
-  const themeIcons = {
+  const themeIcons: Record<ThemeType, JSX.Element> = {
     system: <Monitor />,
     dark: <Moon color="white" />,
     light: <Sun />,
@@ -45,7 +47,7 @@ const Theme = ({ theme, onChange }: { theme: string; onChange: (value: string) =
         }
       }}
     >
-      {themeIcons[theme]}
+      {themeIcons[theme as ThemeType]}
     </button>
   );
 };
