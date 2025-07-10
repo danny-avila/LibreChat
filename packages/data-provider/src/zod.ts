@@ -187,6 +187,82 @@ function convertToZodUnion(
   return zodSchemas[0];
 }
 
+/**
+ * Helper function to resolve $ref references
+ * @param schema - The schema to resolve
+ * @param definitions - The definitions to use
+ * @param visited - The set of visited references
+ * @returns The resolved schema
+ */
+export function resolveJsonSchemaRefs<T extends Record<string, unknown>>(
+  schema: T,
+  definitions?: Record<string, unknown>,
+  visited = new Set<string>(),
+): T {
+  // Handle null, undefined, or non-object values first
+  if (!schema || typeof schema !== 'object') {
+    return schema;
+  }
+
+  // If no definitions provided, try to extract from schema.$defs or schema.definitions
+  if (!definitions) {
+    definitions = (schema.$defs || schema.definitions) as Record<string, unknown>;
+  }
+
+  // Handle arrays
+  if (Array.isArray(schema)) {
+    return schema.map((item) => resolveJsonSchemaRefs(item, definitions, visited)) as unknown as T;
+  }
+
+  // Handle objects
+  const result: Record<string, unknown> = {};
+
+  for (const [key, value] of Object.entries(schema)) {
+    // Skip $defs/definitions at root level to avoid infinite recursion
+    if ((key === '$defs' || key === 'definitions') && !visited.size) {
+      result[key] = value;
+      continue;
+    }
+
+    // Handle $ref
+    if (key === '$ref' && typeof value === 'string') {
+      // Prevent circular references
+      if (visited.has(value)) {
+        // Return a simple schema to break the cycle
+        return { type: 'object' } as unknown as T;
+      }
+
+      // Extract the reference path
+      const refPath = value.replace(/^#\/(\$defs|definitions)\//, '');
+      const resolved = definitions?.[refPath];
+
+      if (resolved) {
+        visited.add(value);
+        const resolvedSchema = resolveJsonSchemaRefs(
+          resolved as Record<string, unknown>,
+          definitions,
+          visited,
+        );
+        visited.delete(value);
+
+        // Merge the resolved schema into the result
+        Object.assign(result, resolvedSchema);
+      } else {
+        // If we can't resolve the reference, keep it as is
+        result[key] = value;
+      }
+    } else if (value && typeof value === 'object') {
+      // Recursively resolve nested objects/arrays
+      result[key] = resolveJsonSchemaRefs(value as Record<string, unknown>, definitions, visited);
+    } else {
+      // Copy primitive values as is
+      result[key] = value;
+    }
+  }
+
+  return result as T;
+}
+
 export function convertJsonSchemaToZod(
   schema: JsonSchemaType & Record<string, unknown>,
   options: ConvertJsonSchemaToZodOptions = {},

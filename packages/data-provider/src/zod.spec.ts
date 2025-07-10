@@ -1,8 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // zod.spec.ts
 import { z } from 'zod';
-import { convertJsonSchemaToZod } from './zod';
 import type { JsonSchemaType } from './zod';
+import { resolveJsonSchemaRefs, convertJsonSchemaToZod } from './zod';
 
 describe('convertJsonSchemaToZod', () => {
   describe('primitive types', () => {
@@ -1262,6 +1262,224 @@ describe('convertJsonSchemaToZod', () => {
       const result = zodSchema?.parse(testData);
       expect(result).toEqual(testData);
       expect(result?.query?.filter?.title?._icontains).toBe('Pirate');
+    });
+  });
+
+  describe('$ref resolution with resolveJsonSchemaRefs', () => {
+    it('should handle schemas with $ref references when resolved', () => {
+      const schemaWithRefs = {
+        type: 'object' as const,
+        properties: {
+          collection: {
+            type: 'string' as const,
+          },
+          query: {
+            type: 'object' as const,
+            properties: {
+              filter: {
+                anyOf: [{ $ref: '#/$defs/__schema0' }, { type: 'null' as const }],
+              },
+            },
+          },
+        },
+        required: ['collection', 'query'],
+        $defs: {
+          __schema0: {
+            anyOf: [
+              {
+                type: 'object' as const,
+                properties: {
+                  _or: {
+                    type: 'array' as const,
+                    items: { $ref: '#/$defs/__schema0' },
+                  },
+                },
+                required: ['_or'],
+              },
+              {
+                type: 'object' as const,
+                additionalProperties: {
+                  anyOf: [
+                    {
+                      type: 'object' as const,
+                      properties: {
+                        _eq: {
+                          anyOf: [
+                            { type: 'string' as const },
+                            { type: 'number' as const },
+                            { type: 'null' as const },
+                          ],
+                        },
+                      },
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+        },
+      };
+
+      // First test without resolving refs - should not work properly
+      const zodSchemaUnresolved = convertJsonSchemaToZod(schemaWithRefs as any, {
+        allowEmptyObject: true,
+        transformOneOfAnyOf: true,
+      });
+
+      const testData = {
+        collection: 'posts',
+        query: {
+          filter: {
+            status: {
+              _eq: 'draft',
+            },
+          },
+        },
+      };
+
+      // Without resolving refs, the filter field won't work correctly
+      const resultUnresolved = zodSchemaUnresolved?.parse(testData);
+      expect(resultUnresolved?.query?.filter).toEqual({});
+
+      // Now resolve refs first
+      const resolvedSchema = resolveJsonSchemaRefs(schemaWithRefs);
+
+      // Verify refs were resolved
+      expect(resolvedSchema.properties?.query?.properties?.filter?.anyOf?.[0]).not.toHaveProperty(
+        '$ref',
+      );
+      expect(resolvedSchema.properties?.query?.properties?.filter?.anyOf?.[0]).toHaveProperty(
+        'anyOf',
+      );
+
+      const zodSchemaResolved = convertJsonSchemaToZod(resolvedSchema as any, {
+        allowEmptyObject: true,
+        transformOneOfAnyOf: true,
+      });
+
+      // With resolved refs, it should work correctly
+      const resultResolved = zodSchemaResolved?.parse(testData);
+      expect(resultResolved).toEqual(testData);
+      expect(resultResolved?.query?.filter?.status?._eq).toBe('draft');
+    });
+
+    it('should handle circular $ref references without infinite loops', () => {
+      const schemaWithCircularRefs = {
+        type: 'object' as const,
+        properties: {
+          node: { $ref: '#/$defs/TreeNode' },
+        },
+        $defs: {
+          TreeNode: {
+            type: 'object' as const,
+            properties: {
+              value: { type: 'string' as const },
+              children: {
+                type: 'array' as const,
+                items: { $ref: '#/$defs/TreeNode' },
+              },
+            },
+          },
+        },
+      };
+
+      // Should not throw or hang
+      const resolved = resolveJsonSchemaRefs(schemaWithCircularRefs);
+      expect(resolved).toBeDefined();
+
+      // The circular reference should be broken with a simple object schema
+      const zodSchema = convertJsonSchemaToZod(resolved as any, {
+        allowEmptyObject: true,
+        transformOneOfAnyOf: true,
+      });
+
+      expect(zodSchema).toBeDefined();
+
+      const testData = {
+        node: {
+          value: 'root',
+          children: [
+            {
+              value: 'child1',
+              children: [],
+            },
+          ],
+        },
+      };
+
+      expect(() => zodSchema?.parse(testData)).not.toThrow();
+    });
+
+    it('should handle various edge cases safely', () => {
+      // Test with null/undefined
+      expect(resolveJsonSchemaRefs(null as any)).toBeNull();
+      expect(resolveJsonSchemaRefs(undefined as any)).toBeUndefined();
+
+      // Test with non-object primitives
+      expect(resolveJsonSchemaRefs('string' as any)).toBe('string');
+      expect(resolveJsonSchemaRefs(42 as any)).toBe(42);
+      expect(resolveJsonSchemaRefs(true as any)).toBe(true);
+
+      // Test with arrays
+      const arrayInput = [{ type: 'string' }, { $ref: '#/def' }];
+      const arrayResult = resolveJsonSchemaRefs(arrayInput as any);
+      expect(Array.isArray(arrayResult)).toBe(true);
+      expect(arrayResult).toHaveLength(2);
+
+      // Test with schema that has no refs
+      const noRefSchema = {
+        type: 'object' as const,
+        properties: {
+          name: { type: 'string' as const },
+          nested: {
+            type: 'object' as const,
+            properties: {
+              value: { type: 'number' as const },
+            },
+          },
+        },
+      };
+
+      const resolvedNoRef = resolveJsonSchemaRefs(noRefSchema);
+      expect(resolvedNoRef).toEqual(noRefSchema);
+
+      // Test with invalid ref (non-existent)
+      const invalidRefSchema = {
+        type: 'object' as const,
+        properties: {
+          item: { $ref: '#/$defs/nonExistent' },
+        },
+        $defs: {
+          other: { type: 'string' as const },
+        },
+      };
+
+      const resolvedInvalid = resolveJsonSchemaRefs(invalidRefSchema);
+      // Invalid refs should be preserved as-is
+      expect(resolvedInvalid.properties?.item?.$ref).toBe('#/$defs/nonExistent');
+
+      // Test with empty object
+      expect(resolveJsonSchemaRefs({})).toEqual({});
+
+      // Test with schema containing special JSON Schema keywords
+      const schemaWithKeywords = {
+        type: 'object' as const,
+        properties: {
+          value: {
+            type: 'string' as const,
+            minLength: 5,
+            maxLength: 10,
+            pattern: '^[A-Z]',
+          },
+        },
+        additionalProperties: false,
+        minProperties: 1,
+      };
+
+      const resolvedKeywords = resolveJsonSchemaRefs(schemaWithKeywords);
+      expect(resolvedKeywords).toEqual(schemaWithKeywords);
+      expect(resolvedKeywords.properties?.value?.minLength).toBe(5);
+      expect(resolvedKeywords.additionalProperties).toBe(false);
     });
   });
 });
