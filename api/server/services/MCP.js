@@ -2,16 +2,17 @@ const { z } = require('zod');
 const { tool } = require('@langchain/core/tools');
 const { logger } = require('@librechat/data-schemas');
 const { Time, CacheKeys, StepTypes } = require('librechat-data-provider');
-const { sendEvent, normalizeServerName, MCPOAuthHandler } = require('@librechat/api');
 const { Constants: AgentConstants, Providers, GraphEvents } = require('@librechat/agents');
+const { Constants, ContentTypes, isAssistantsEndpoint } = require('librechat-data-provider');
 const {
-  Constants,
-  ContentTypes,
-  isAssistantsEndpoint,
+  sendEvent,
+  MCPOAuthHandler,
+  normalizeServerName,
+  resolveJsonSchemaRefs,
   convertJsonSchemaToZod,
-} = require('librechat-data-provider');
-const { getMCPManager, getFlowStateManager } = require('~/config');
+} = require('@librechat/api');
 const { findToken, createToken, updateToken } = require('~/models');
+const { getMCPManager, getFlowStateManager } = require('~/config');
 const { getCachedTools } = require('./Config');
 const { getLogStores } = require('~/cache');
 
@@ -113,7 +114,8 @@ async function createMCPTool({ req, res, toolKey, provider: _provider }) {
   /** @type {LCTool} */
   const { description, parameters } = toolDefinition;
   const isGoogle = _provider === Providers.VERTEXAI || _provider === Providers.GOOGLE;
-  let schema = convertJsonSchemaToZod(parameters, {
+  const resolvedJsonSchema = resolveJsonSchemaRefs(parameters);
+  let schema = convertJsonSchemaToZod(resolvedJsonSchema, {
     allowEmptyObject: !isGoogle,
     transformOneOfAnyOf: true,
   });
