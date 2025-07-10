@@ -3,7 +3,7 @@ const staticCache = require('../utils/staticCache');
 const paths = require('~/config/paths');
 const { isEnabled } = require('~/server/utils');
 
-const skipGzipScan = isEnabled(process.env.DISABLE_IMAGES_OUTPUT_STATIC_CACHE);
+const skipGzipScan = !isEnabled(process.env.ENABLE_IMAGE_OUTPUT_GZIP_SCAN);
 
 const router = express.Router();
 router.use(staticCache(paths.imageOutput, { skipGzipScan }));

@@ -44,9 +44,9 @@ describe('Static Route Integration', () => {
   // Helper function to set up static route with specific config
   const setupStaticRoute = (skipGzipScan = false) => {
     if (skipGzipScan) {
-      process.env.DISABLE_IMAGES_OUTPUT_STATIC_CACHE = 'true';
+      delete process.env.ENABLE_IMAGE_OUTPUT_GZIP_SCAN;
     } else {
-      delete process.env.DISABLE_IMAGES_OUTPUT_STATIC_CACHE;
+      process.env.ENABLE_IMAGE_OUTPUT_GZIP_SCAN = 'true';
     }
 
     staticRoute = require('../static');
@@ -60,7 +60,7 @@ describe('Static Route Integration', () => {
     app = express();
 
     // Clear environment variables
-    delete process.env.DISABLE_IMAGES_OUTPUT_STATIC_CACHE;
+    delete process.env.ENABLE_IMAGE_OUTPUT_GZIP_SCAN;
     delete process.env.NODE_ENV;
   });
 
