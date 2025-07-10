@@ -122,9 +122,6 @@ export default defineConfig(({ command }) => ({
             if (id.includes('@dicebear')) {
               return 'avatars';
             }
-            if (id.includes('react-dnd') || id.includes('react-flip-toolkit')) {
-              return 'react-interactions';
-            }
             if (id.includes('react-hook-form')) {
               return 'forms';
             }
