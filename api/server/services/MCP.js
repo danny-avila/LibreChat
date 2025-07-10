@@ -8,6 +8,7 @@ const {
   Constants,
   ContentTypes,
   isAssistantsEndpoint,
+  resolveJsonSchemaRefs,
   convertJsonSchemaToZod,
 } = require('librechat-data-provider');
 const { getMCPManager, getFlowStateManager } = require('~/config');
@@ -113,7 +114,8 @@ async function createMCPTool({ req, res, toolKey, provider: _provider }) {
   /** @type {LCTool} */
   const { description, parameters } = toolDefinition;
   const isGoogle = _provider === Providers.VERTEXAI || _provider === Providers.GOOGLE;
-  let schema = convertJsonSchemaToZod(parameters, {
+  const resolvedJsonSchema = resolveJsonSchemaRefs(parameters);
+  let schema = convertJsonSchemaToZod(resolvedJsonSchema, {
     allowEmptyObject: !isGoogle,
     transformOneOfAnyOf: true,
   });
