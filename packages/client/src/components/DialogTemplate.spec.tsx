@@ -1,13 +1,12 @@
 import 'test/matchMedia.mock';
-import React from 'react';
 import { render, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom/extend-expect';
 import DialogTemplate from './DialogTemplate';
 import { Dialog } from '@radix-ui/react-dialog';
-import { RecoilRoot } from 'recoil';
+import { Provider } from 'jotai';
 
 describe('DialogTemplate', () => {
-  let mockSelectHandler;
+  let mockSelectHandler: jest.Mock;
 
   beforeEach(() => {
     mockSelectHandler = jest.fn();
@@ -15,7 +14,7 @@ describe('DialogTemplate', () => {
 
   it('renders correctly with all props', () => {
     const { getByText } = render(
-      <RecoilRoot>
+      <Provider>
         <Dialog
           open
           data-testid="test-dialog"
@@ -32,7 +31,7 @@ describe('DialogTemplate', () => {
             selection={{ selectHandler: mockSelectHandler, selectText: 'Select' }}
           />
         </Dialog>
-      </RecoilRoot>,
+      </Provider>,
     );
 
     expect(getByText('Test Dialog')).toBeInTheDocument();
@@ -46,14 +45,14 @@ describe('DialogTemplate', () => {
 
   it('renders correctly without optional props', () => {
     const { queryByText } = render(
-      <RecoilRoot>
+      <Provider>
         <Dialog
           open
           onOpenChange={() => {
             return;
           }}
         ></Dialog>
-      </RecoilRoot>,
+      </Provider>,
     );
 
     expect(queryByText('Test Dialog')).toBeNull();
@@ -67,7 +66,7 @@ describe('DialogTemplate', () => {
 
   it('calls selectHandler when the select button is clicked', () => {
     const { getByText } = render(
-      <RecoilRoot>
+      <Provider>
         <Dialog
           open
           onOpenChange={() => {
@@ -79,7 +78,7 @@ describe('DialogTemplate', () => {
             selection={{ selectHandler: mockSelectHandler, selectText: 'Select' }}
           />
         </Dialog>
-      </RecoilRoot>,
+      </Provider>,
     );
 
     fireEvent.click(getByText('Select'));

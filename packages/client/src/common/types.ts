@@ -2,7 +2,7 @@ import { RefObject } from 'react';
 import { FileSources, EModelEndpoint } from 'librechat-data-provider';
 import type { UseMutationResult } from '@tanstack/react-query';
 import type * as InputNumberPrimitive from 'rc-input-number';
-import type { SetterOrUpdater, RecoilState } from 'recoil';
+import type { PrimitiveAtom, WritableAtom } from 'jotai';
 import type { ColumnDef } from '@tanstack/react-table';
 import type * as t from 'librechat-data-provider';
 import type { LucideIcon } from 'lucide-react';
@@ -49,9 +49,9 @@ export type AudioChunk = {
 
 export type BadgeItem = {
   id: string;
-  icon: React.ComponentType<any>;
+  icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
   label: string;
-  atom: RecoilState<boolean>;
+  atom: PrimitiveAtom<boolean> | WritableAtom<boolean, [boolean], void>;
   isAvailable: boolean;
 };
 
@@ -147,7 +147,7 @@ export enum Panel {
 }
 
 export type FileSetter =
-  | SetterOrUpdater<Map<string, ExtendedFile>>
+  | GenericSetter<Map<string, ExtendedFile>>
   | React.Dispatch<React.SetStateAction<Map<string, ExtendedFile>>>;
 
 export type ActionAuthForm = {

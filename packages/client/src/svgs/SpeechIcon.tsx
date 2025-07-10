@@ -1,6 +1,10 @@
 import { cn } from '~/utils/';
 
-export default function SpeechIcon({ className }) {
+type SpeechIconProps = {
+  className?: string;
+};
+
+export default function SpeechIcon({ className }: SpeechIconProps) {
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"

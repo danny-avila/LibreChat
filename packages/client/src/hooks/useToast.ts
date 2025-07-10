@@ -1,11 +1,11 @@
-import { useRecoilState } from 'recoil';
+import { useAtom } from 'jotai';
 import { useRef, useEffect } from 'react';
 import type { TShowToast } from '~/common';
 import { NotificationSeverity } from '~/common';
-import store from '~/store';
+import { toastState, type ToastState } from '~/store';
 
 export default function useToast(showDelay = 100) {
-  const [toast, setToast] = useRecoilState(store.toastState);
+  const [toast, setToast] = useAtom(toastState);
   const showTimerRef = useRef<number | null>(null);
   const hideTimerRef = useRef<number | null>(null);
 
@@ -45,7 +45,7 @@ export default function useToast(showDelay = 100) {
       });
       // Hides the toast after the specified duration
       hideTimerRef.current = window.setTimeout(() => {
-        setToast((prevToast) => ({ ...prevToast, open: false }));
+        setToast((prevToast: ToastState) => ({ ...prevToast, open: false }));
       }, duration);
     }, showDelay);
   };
