@@ -54,6 +54,7 @@ const omitTitleOptions = new Set([
   'thinkingBudget',
   'includeThoughts',
   'maxOutputTokens',
+  'additionalModelRequestFields',
 ]);
 
 /**
