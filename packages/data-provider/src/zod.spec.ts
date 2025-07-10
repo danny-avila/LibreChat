@@ -1083,4 +1083,185 @@ describe('convertJsonSchemaToZod', () => {
       expect(() => zodSchema?.parse(true)).toThrow();
     });
   });
+
+  describe('additionalProperties with anyOf/oneOf and allowEmptyObject', () => {
+    it('should handle anyOf with object containing only additionalProperties when allowEmptyObject is false', () => {
+      const schema: JsonSchemaType & { anyOf?: any } = {
+        type: 'object',
+        properties: {
+          filter: {
+            description: 'Filter field',
+            anyOf: [
+              {
+                type: 'object',
+                additionalProperties: {
+                  type: 'object',
+                  properties: {
+                    _icontains: { type: 'string' },
+                  },
+                },
+              },
+              {
+                type: 'null',
+              },
+            ],
+          } as JsonSchemaType & { anyOf?: any },
+        },
+      };
+
+      const zodSchema = convertJsonSchemaToZod(schema, {
+        allowEmptyObject: false,
+        transformOneOfAnyOf: true,
+      });
+
+      expect(zodSchema).toBeDefined();
+
+      const testData = {
+        filter: {
+          title: {
+            _icontains: 'Pirate',
+          },
+        },
+      };
+
+      const result = zodSchema?.parse(testData);
+      expect(result).toEqual(testData);
+      expect(result?.filter).toBeDefined();
+      expect(result?.filter?.title?._icontains).toBe('Pirate');
+    });
+
+    it('should not treat objects with additionalProperties as empty', () => {
+      const schema: JsonSchemaType = {
+        type: 'object',
+        additionalProperties: {
+          type: 'string',
+        },
+      };
+
+      const zodSchemaWithoutAllow = convertJsonSchemaToZod(schema, {
+        allowEmptyObject: false,
+      });
+
+      // Should not return undefined because it has additionalProperties
+      expect(zodSchemaWithoutAllow).toBeDefined();
+
+      const testData = {
+        customField: 'value',
+      };
+
+      expect(zodSchemaWithoutAllow?.parse(testData)).toEqual(testData);
+    });
+
+    it('should handle oneOf with object containing only additionalProperties', () => {
+      const schema: JsonSchemaType & { oneOf?: any } = {
+        type: 'object',
+        properties: {},
+        oneOf: [
+          {
+            type: 'object',
+            additionalProperties: true,
+          },
+          {
+            type: 'object',
+            properties: {
+              specificField: { type: 'string' },
+            },
+          },
+        ],
+      };
+
+      const zodSchema = convertJsonSchemaToZod(schema, {
+        allowEmptyObject: false,
+        transformOneOfAnyOf: true,
+      });
+
+      expect(zodSchema).toBeDefined();
+
+      // Test with additional properties
+      const testData1 = {
+        randomField: 'value',
+        anotherField: 123,
+      };
+
+      expect(zodSchema?.parse(testData1)).toEqual(testData1);
+
+      // Test with specific field
+      const testData2 = {
+        specificField: 'test',
+      };
+
+      expect(zodSchema?.parse(testData2)).toEqual(testData2);
+    });
+
+    it('should handle complex nested schema with $ref-like structure', () => {
+      const schema: JsonSchemaType & { anyOf?: any } = {
+        type: 'object',
+        properties: {
+          query: {
+            type: 'object',
+            properties: {
+              filter: {
+                description: 'Filter conditions',
+                anyOf: [
+                  {
+                    // This simulates a resolved $ref
+                    anyOf: [
+                      {
+                        type: 'object',
+                        properties: {
+                          _or: {
+                            type: 'array',
+                            items: { type: 'object' },
+                          },
+                        },
+                        required: ['_or'],
+                      },
+                      {
+                        type: 'object',
+                        additionalProperties: {
+                          anyOf: [
+                            {
+                              type: 'object',
+                              properties: {
+                                _icontains: { type: 'string' },
+                                _eq: { type: 'string' },
+                              },
+                            },
+                          ],
+                        },
+                      },
+                    ],
+                  },
+                  {
+                    type: 'null',
+                  },
+                ],
+              } as JsonSchemaType & { anyOf?: any },
+            },
+          },
+        },
+      };
+
+      const zodSchema = convertJsonSchemaToZod(schema, {
+        allowEmptyObject: false,
+        transformOneOfAnyOf: true,
+      });
+
+      expect(zodSchema).toBeDefined();
+
+      const testData = {
+        query: {
+          filter: {
+            title: {
+              _icontains: 'Pirate',
+            },
+          },
+        },
+      };
+
+      const result = zodSchema?.parse(testData);
+      expect(result).toEqual(testData);
+      expect(result?.query?.filter?.title?._icontains).toBe('Pirate');
+    });
+  });
 });

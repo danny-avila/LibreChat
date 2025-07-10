@@ -15,7 +15,8 @@ function isEmptyObjectSchema(jsonSchema?: JsonSchemaType): boolean {
     jsonSchema != null &&
     typeof jsonSchema === 'object' &&
     jsonSchema.type === 'object' &&
-    (jsonSchema.properties == null || Object.keys(jsonSchema.properties).length === 0)
+    (jsonSchema.properties == null || Object.keys(jsonSchema.properties).length === 0) &&
+    !jsonSchema.additionalProperties // Don't treat objects with additionalProperties as empty
   );
 }
 
@@ -98,6 +99,10 @@ function convertToZodUnion(
           return convertJsonSchemaToZod(objSchema, options);
         }
 
+        return convertJsonSchemaToZod(objSchema, options);
+      } else if (!subSchema.type && subSchema.additionalProperties) {
+        // It's likely an object schema with additionalProperties
+        const objSchema = { ...subSchema, type: 'object' } as JsonSchemaType;
         return convertJsonSchemaToZod(objSchema, options);
       } else if (!subSchema.type && subSchema.items) {
         // It's likely an array schema
