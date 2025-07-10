@@ -1,14 +1,5 @@
 import { z } from 'zod';
-
-export type JsonSchemaType = {
-  type: 'string' | 'number' | 'boolean' | 'array' | 'object';
-  enum?: string[];
-  items?: JsonSchemaType;
-  properties?: Record<string, JsonSchemaType>;
-  required?: string[];
-  description?: string;
-  additionalProperties?: boolean | JsonSchemaType;
-};
+import type { JsonSchemaType, ConvertJsonSchemaToZodOptions } from '~/types';
 
 function isEmptyObjectSchema(jsonSchema?: JsonSchemaType): boolean {
   return (
@@ -19,12 +10,6 @@ function isEmptyObjectSchema(jsonSchema?: JsonSchemaType): boolean {
     !jsonSchema.additionalProperties // Don't treat objects with additionalProperties as empty
   );
 }
-
-type ConvertJsonSchemaToZodOptions = {
-  allowEmptyObject?: boolean;
-  dropFields?: string[];
-  transformOneOfAnyOf?: boolean;
-};
 
 function dropSchemaFields(
   schema: JsonSchemaType | undefined,
