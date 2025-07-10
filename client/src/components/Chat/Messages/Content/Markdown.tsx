@@ -173,6 +173,44 @@ type TContentProps = {
   isLatestMessage: boolean;
 };
 
+// Error Boundary Component
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error?: Error;
+}
+
+class MarkdownErrorBoundary extends React.Component<
+  { children: React.ReactNode; content: string },
+  ErrorBoundaryState
+> {
+  constructor(props: { children: React.ReactNode; content: string }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error('Markdown rendering error:', error, errorInfo);
+  }
+
+  componentDidUpdate(prevProps: { content: string }) {
+    if (prevProps.content !== this.props.content && this.state.hasError) {
+      this.setState({ hasError: false, error: undefined });
+    }
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return <p className="mb-2 whitespace-pre-wrap">{this.props.content}</p>;
+    }
+
+    return this.props.children;
+  }
+}
+
 const Markdown = memo(({ content = '', isLatestMessage }: TContentProps) => {
   const LaTeXParsing = useRecoilValue<boolean>(store.LaTeXParsing);
   const isInitializing = content === '';
@@ -219,31 +257,33 @@ const Markdown = memo(({ content = '', isLatestMessage }: TContentProps) => {
   }
 
   return (
-    <ArtifactProvider>
-      <CodeBlockProvider>
-        <ReactMarkdown
-          /** @ts-ignore */
-          remarkPlugins={remarkPlugins}
-          /* @ts-ignore */
-          rehypePlugins={rehypePlugins}
-          components={
-            {
-              code,
-              a,
-              p,
-              artifact: Artifact,
-              citation: Citation,
-              'highlighted-text': HighlightedText,
-              'composite-citation': CompositeCitation,
-            } as {
-              [nodeType: string]: React.ElementType;
+    <MarkdownErrorBoundary content={content}>
+      <ArtifactProvider>
+        <CodeBlockProvider>
+          <ReactMarkdown
+            /** @ts-ignore */
+            remarkPlugins={remarkPlugins}
+            /* @ts-ignore */
+            rehypePlugins={rehypePlugins}
+            components={
+              {
+                code,
+                a,
+                p,
+                artifact: Artifact,
+                citation: Citation,
+                'highlighted-text': HighlightedText,
+                'composite-citation': CompositeCitation,
+              } as {
+                [nodeType: string]: React.ElementType;
+              }
             }
-          }
-        >
-          {currentContent}
-        </ReactMarkdown>
-      </CodeBlockProvider>
-    </ArtifactProvider>
+          >
+            {currentContent}
+          </ReactMarkdown>
+        </CodeBlockProvider>
+      </ArtifactProvider>
+    </MarkdownErrorBoundary>
   );
 });
 
