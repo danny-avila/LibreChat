@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState, useMemo, memo, lazy, Suspense, useRef } from 'react';
+import type { Dispatch, SetStateAction } from 'react';
 import { useRecoilValue } from 'recoil';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { ConversationListResponse } from 'librechat-data-provider';
-import type { InfiniteQueryObserverResult } from '@tanstack/react-query';
 import {
   useLocalize,
   useHasAccess,
@@ -50,11 +50,10 @@ const Nav = memo(
     setNavVisible,
   }: {
     navVisible: boolean;
-    setNavVisible: React.Dispatch<React.SetStateAction<boolean>>;
+    setNavVisible: Dispatch<SetStateAction<boolean>>;
   }) => {
-  const { data: startupConfig } = useGetStartupConfig();
+    const { data: startupConfig } = useGetStartupConfig();
     const localize = useLocalize();
-
     const { isAuthenticated } = useAuthContext();
 
     const [navWidth, setNavWidth] = useState(NAV_WIDTH_DESKTOP);
@@ -100,73 +99,10 @@ const Nav = memo(
         if (computedHasNextPage) {
           return fetchNextPage(options);
         }
-        return Promise.resolve(
-          {} as InfiniteQueryObserverResult<ConversationListResponse, unknown>,
-        );
+        return Promise.resolve({} as any);
       },
       isFetchingNext: isFetchingNextPage,
     });
-  const handleMouseEnter = useCallback(() => {
-    setIsHovering(true);
-  }, []);
-
-  const handleMouseLeave = useCallback(() => {
-    setIsHovering(false);
-  }, []);
-
-  useEffect(() => {
-    if (isSmallScreen) {
-      const savedNavVisible = localStorage.getItem('navVisible');
-      if (savedNavVisible === null) {
-        toggleNavVisible();
-      }
-      setNavWidth('320px');
-    } else {
-      setNavWidth('260px');
-    }
-  }, [isSmallScreen]);
-
-  const [showLoading, setShowLoading] = useState(false);
-  const isSearchEnabled = useRecoilValue(store.isSearchEnabled);
-
-  const { pageNumber, searchQuery, setPageNumber, searchQueryRes } = useSearchContext();
-  const [tags, setTags] = useState<string[]>([]);
-  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, refetch } =
-    useConversationsInfiniteQuery(
-      {
-        pageNumber: pageNumber.toString(),
-        isArchived: false,
-        tags: tags.length === 0 ? undefined : tags,
-      },
-      { enabled: isAuthenticated },
-    );
-
-  useEffect(() => {
-    // When a tag is selected, refetch the list of conversations related to that tag
-    refetch();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tags]);
-  const { containerRef, moveToTop } = useNavScrolling<ConversationListResponse>({
-    setShowLoading,
-    hasNextPage: searchQuery ? searchQueryRes?.hasNextPage : hasNextPage,
-    fetchNextPage: searchQuery ? searchQueryRes?.fetchNextPage : fetchNextPage,
-    isFetchingNextPage: searchQuery
-      ? searchQueryRes?.isFetchingNextPage ?? false
-      : isFetchingNextPage,
-  });
-
-  useEffect(() => {
-    if (startupConfig?.customCss) {
-      const link = document.createElement('link');
-      link.rel = 'stylesheet';
-      link.href = startupConfig.customCss;
-      document.head.appendChild(link);
-      // Cleanup to remove the link when the component unmounts or customCss changes
-      return () => {
-        document.head.removeChild(link);
-      };
-    }
-  }, [startupConfig?.customCss]); // Add startupConfig?.customCss to the dependency array
 
     const conversations = useMemo(() => {
       return data ? data.pages.flatMap((page) => page.conversations) : [];
@@ -199,6 +135,19 @@ const Nav = memo(
         setNavWidth(NAV_WIDTH_DESKTOP);
       }
     }, [isSmallScreen, toggleNavVisible]);
+
+    useEffect(() => {
+      if (startupConfig?.customCss) {
+        const link = document.createElement('link');
+        link.rel = 'stylesheet';
+        link.href = startupConfig.customCss;
+        document.head.appendChild(link);
+        // Cleanup to remove the link when the component unmounts or customCss changes
+        return () => {
+          document.head.removeChild(link);
+        };
+      }
+    }, [startupConfig?.customCss]);
 
     useEffect(() => {
       refetch();
