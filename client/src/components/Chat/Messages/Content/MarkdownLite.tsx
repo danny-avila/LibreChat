@@ -26,7 +26,7 @@ const MarkdownLite = memo(
     ];
 
     return (
-      <MarkdownErrorBoundary content={content}>
+      <MarkdownErrorBoundary content={content} codeExecution={codeExecution}>
         <ArtifactProvider>
           <CodeBlockProvider>
             <ReactMarkdown

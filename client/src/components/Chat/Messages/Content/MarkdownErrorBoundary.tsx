@@ -1,4 +1,12 @@
 import React from 'react';
+import remarkGfm from 'remark-gfm';
+import supersub from 'remark-supersub';
+import ReactMarkdown from 'react-markdown';
+import rehypeHighlight from 'rehype-highlight';
+import type { PluggableList } from 'unified';
+import { code, codeNoExecution, a, p } from './Markdown';
+import { CodeBlockProvider } from '~/Providers';
+import { langSubset } from '~/utils';
 
 interface ErrorBoundaryState {
   hasError: boolean;
@@ -8,6 +16,7 @@ interface ErrorBoundaryState {
 interface MarkdownErrorBoundaryProps {
   children: React.ReactNode;
   content: string;
+  codeExecution?: boolean;
 }
 
 class MarkdownErrorBoundary extends React.Component<
@@ -35,7 +44,43 @@ class MarkdownErrorBoundary extends React.Component<
 
   render() {
     if (this.state.hasError) {
-      return <p className="mb-2 whitespace-pre-wrap">{this.props.content}</p>;
+      const { content, codeExecution = true } = this.props;
+
+      const rehypePlugins: PluggableList = [
+        [
+          rehypeHighlight,
+          {
+            detect: true,
+            ignoreMissing: true,
+            subset: langSubset,
+          },
+        ],
+      ];
+
+      return (
+        <CodeBlockProvider>
+          <ReactMarkdown
+            remarkPlugins={[
+              /** @ts-ignore */
+              supersub,
+              remarkGfm,
+            ]}
+            /** @ts-ignore */
+            rehypePlugins={rehypePlugins}
+            components={
+              {
+                code: codeExecution ? code : codeNoExecution,
+                a,
+                p,
+              } as {
+                [nodeType: string]: React.ElementType;
+              }
+            }
+          >
+            {content}
+          </ReactMarkdown>
+        </CodeBlockProvider>
+      );
     }
 
     return this.props.children;

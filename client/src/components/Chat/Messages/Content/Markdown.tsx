@@ -220,7 +220,7 @@ const Markdown = memo(({ content = '', isLatestMessage }: TContentProps) => {
   }
 
   return (
-    <MarkdownErrorBoundary content={content}>
+    <MarkdownErrorBoundary content={content} codeExecution={true}>
       <ArtifactProvider>
         <CodeBlockProvider>
           <ReactMarkdown
