@@ -6,7 +6,6 @@ import {
   ListboxOptions,
   Transition,
 } from '@headlessui/react';
-import { AnchorPropsWithSelection } from '@headlessui/react/dist/internal/floating';
 import type { Option } from '~/common';
 import { cn } from '~/utils/';
 
@@ -16,7 +15,6 @@ interface DropdownProps {
   onChange: (value: string | Option) => void;
   options: (string | Option)[];
   className?: string;
-  anchor?: AnchorPropsWithSelection;
   sizeClasses?: string;
   testId?: string;
 }
@@ -31,7 +29,6 @@ const Dropdown: FC<DropdownProps> = ({
   onChange,
   options,
   className = '',
-  anchor,
   sizeClasses,
   testId = 'dropdown-menu',
 }) => {
@@ -90,7 +87,6 @@ const Dropdown: FC<DropdownProps> = ({
                 sizeClasses,
                 className,
               )}
-              anchor={anchor}
               aria-label="List of options"
             >
               {options.map((item, index) => (

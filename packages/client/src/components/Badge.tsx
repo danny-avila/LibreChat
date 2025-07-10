@@ -5,7 +5,11 @@ import type { ButtonHTMLAttributes } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '~/utils';
 
-interface BadgeProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+interface BadgeProps
+  extends Omit<
+    ButtonHTMLAttributes<HTMLButtonElement>,
+    'onAnimationStart' | 'onDragStart' | 'onDragEnd' | 'onDrag'
+  > {
   icon?: LucideIcon;
   label: string;
   id?: string;
@@ -70,7 +74,7 @@ export default function Badge({
       }}
       whileTap={{ scale: isDragging ? 1.1 : isDisabled ? 1 : 0.97 }}
       transition={{ type: 'tween', duration: 0.1, ease: 'easeOut' }}
-      {...props}
+      {...(props as React.ComponentProps<typeof motion.button>)}
     >
       {Icon && <Icon className={cn('relative h-5 w-5 md:h-4 md:w-4', !label && 'mx-auto')} />}
       <span className="relative hidden md:inline">{label}</span>

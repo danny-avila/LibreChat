@@ -1,6 +1,9 @@
-import React from 'react';
+type SwitchIconProps = {
+  size?: string | number;
+  className?: string;
+};
 
-export default function SwitchIcon({ size = '1em', className }) {
+export default function SwitchIcon({ size = '1em', className }: SwitchIconProps) {
   return (
     <svg
       viewBox="64 64 896 896"

@@ -1,6 +1,10 @@
 import { cn } from '~/utils/';
 
-export default function ListeningIcon({ className }) {
+type ListeningIconProps = {
+  className?: string;
+};
+
+export default function ListeningIcon({ className }: ListeningIconProps) {
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"

@@ -25,8 +25,7 @@ import {
   AnimatedSearchInput,
   Skeleton,
 } from './';
-import { TrashIcon, Spinner } from '~/svg';
-import { LocalizeFunction } from '~/common';
+import { TrashIcon, Spinner } from '~/svgs';
 import { useMediaQuery } from '~/hooks';
 import { cn } from '~/utils';
 

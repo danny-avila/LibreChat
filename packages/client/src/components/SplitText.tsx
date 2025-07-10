@@ -1,6 +1,36 @@
 import { useSprings, animated, SpringConfig } from '@react-spring/web';
 import { useEffect, useRef, useState } from 'react';
 
+interface SegmenterOptions {
+  granularity?: 'grapheme' | 'word' | 'sentence';
+  localeMatcher?: 'lookup' | 'best fit';
+}
+
+interface SegmentData {
+  segment: string;
+  index: number;
+  input: string;
+  isWordLike?: boolean;
+}
+
+interface Segments {
+  [Symbol.iterator](): IterableIterator<SegmentData>;
+}
+
+interface IntlSegmenter {
+  segment(input: string): Segments;
+}
+
+interface IntlSegmenterConstructor {
+  new (locales?: string | string[], options?: SegmenterOptions): IntlSegmenter;
+}
+
+declare global {
+  interface Intl {
+    Segmenter: IntlSegmenterConstructor;
+  }
+}
+
 interface SplitTextProps {
   text?: string;
   className?: string;
@@ -16,12 +46,14 @@ interface SplitTextProps {
 }
 
 const splitGraphemes = (text: string): string[] => {
-  if (typeof Intl !== 'undefined' && Intl.Segmenter) {
-    const segmenter = new Intl.Segmenter('en', { granularity: 'grapheme' });
+  if (typeof Intl !== 'undefined' && 'Segmenter' in Intl) {
+    const segmenter = new (Intl as typeof Intl & { Segmenter: IntlSegmenterConstructor }).Segmenter(
+      'en',
+      { granularity: 'grapheme' },
+    );
     const segments = segmenter.segment(text);
-    return Array.from(segments).map((s) => s.segment);
+    return Array.from(segments).map((s: SegmentData) => s.segment);
   } else {
-    // Fallback for browsers without Intl.Segmenter
     return [...text];
   }
 };
@@ -45,23 +77,20 @@ const SplitText: React.FC<SplitTextProps> = ({
   const ref = useRef<HTMLParagraphElement>(null);
   const animatedCount = useRef(0);
 
-  const springs = useSprings(
-    letters.length,
-    letters.map((_, i) => ({
-      from: animationFrom,
-      to: inView
-        ? async (next: (props: any) => Promise<void>) => {
-            await next(animationTo);
-            animatedCount.current += 1;
-            if (animatedCount.current === letters.length && onLetterAnimationComplete) {
-              onLetterAnimationComplete();
-            }
+  const springs = useSprings(letters.length, (i) => ({
+    from: animationFrom,
+    to: inView
+      ? async (next) => {
+          await next(animationTo);
+          animatedCount.current += 1;
+          if (animatedCount.current === letters.length && onLetterAnimationComplete) {
+            onLetterAnimationComplete();
           }
-        : animationFrom,
-      delay: i * delay,
-      config: { easing },
-    })),
-  );
+        }
+      : animationFrom,
+    delay: i * delay,
+    config: { easing },
+  }));
 
   useEffect(() => {
     const observer = new IntersectionObserver(

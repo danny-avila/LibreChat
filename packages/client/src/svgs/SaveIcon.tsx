@@ -1,6 +1,9 @@
-import React from 'react';
+type SaveIconProps = {
+  size?: string | number;
+  className?: string;
+};
 
-export default function SaveIcon({ size = '1em', className }) {
+export default function SaveIcon({ size = '1em', className }: SaveIconProps) {
   return (
     <svg
       viewBox="64 64 896 896"
