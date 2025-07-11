@@ -13,7 +13,13 @@ import AttachFileMenu from './AttachFileMenu';
 import { useChatContext } from '~/Providers';
 import AttachFile from './AttachFile';
 
-function AttachFileChat({ disableInputs }: { disableInputs: boolean }) {
+function AttachFileChat({
+  disableInputs,
+  textAreaRef
+}: {
+  disableInputs: boolean;
+  textAreaRef?: React.RefObject<HTMLTextAreaElement>;
+}) {
   const { conversation } = useChatContext();
   const conversationId = conversation?.conversationId ?? Constants.NEW_CONVO;
   const { endpoint, endpointType } = conversation ?? { endpoint: null };
@@ -36,6 +42,7 @@ function AttachFileChat({ disableInputs }: { disableInputs: boolean }) {
         disabled={disableInputs}
         conversationId={conversationId}
         endpointFileConfig={endpointFileConfig}
+        textAreaRef={textAreaRef}
       />
     );
   }

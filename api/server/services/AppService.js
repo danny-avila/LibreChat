@@ -28,6 +28,10 @@ const { loadAndFormatTools } = require('./ToolService');
 const { isEnabled } = require('~/server/utils');
 const { initializeRoles } = require('~/models');
 const { setCachedTools } = require('./Config');
+const { logger } = require('~/config');
+const cleanupScheduler = require('./CleanupSchedulerService');
+const indexManagementService = require('./Files/IndexManagementService');
+const configValidationService = require('./Files/ConfigValidationService');
 const paths = require('~/config/paths');
 
 /**
@@ -165,6 +169,46 @@ const AppService = async (app) => {
     modelSpecs: processModelSpecs(endpoints, config.modelSpecs, interfaceConfig),
     ...endpointLocals,
   };
+
+  // Initialize audit service to ensure models are created
+  try {
+    const auditService = require('./Files/AuditService');
+    // This will initialize the audit collection and models
+    logger.debug('[AppService] Audit service initialized');
+  } catch (error) {
+    logger.error('[AppService] Failed to initialize audit service:', error);
+  }
+
+  // Ensure MongoDB indexes for temporary downloads
+  try {
+    await indexManagementService.ensureAllIndexes();
+    logger.info('[AppService] MongoDB indexes ensured successfully');
+  } catch (error) {
+    logger.error('[AppService] Failed to ensure MongoDB indexes:', error);
+    // Don't fail startup for index errors, but log them
+  }
+
+  // Validate temporary download configuration (after other services are initialized)
+  try {
+    const configValidation = configValidationService.validateConfiguration();
+    if (!configValidation.valid) {
+      logger.warn('[AppService] Temporary download configuration has issues - some features may not work correctly');
+    }
+  } catch (error) {
+    logger.error('[AppService] Failed to validate temporary download configuration:', error);
+  }
+
+  // Start cleanup scheduler service
+  if (process.env.TEMP_DOWNLOAD_AUTO_CLEANUP !== 'false') {
+    try {
+      cleanupScheduler.start();
+      logger.info('[AppService] Cleanup scheduler started successfully');
+    } catch (error) {
+      logger.error('[AppService] Failed to start cleanup scheduler:', error);
+    }
+  } else {
+    logger.info('[AppService] Cleanup scheduler disabled by configuration');
+  }
 };
 
 module.exports = AppService;

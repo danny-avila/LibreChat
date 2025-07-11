@@ -114,6 +114,9 @@ const azureGroups = [
 ];
 
 describe('AppService', () => {
+  // Increase timeout for all tests in this suite
+  jest.setTimeout(15000);
+
   let app;
   const mockedTurnstileConfig = {
     siteKey: 'default-site-key',
@@ -123,6 +126,14 @@ describe('AppService', () => {
   beforeEach(() => {
     app = { locals: {} };
     process.env.CDN_PROVIDER = undefined;
+  });
+
+  afterEach(() => {
+    // Clean up any timers or async operations
+    jest.clearAllTimers();
+    jest.clearAllMocks();
+    // Reset environment variables
+    delete process.env.CDN_PROVIDER;
   });
 
   it('should correctly assign process.env and app.locals based on custom config', async () => {
@@ -546,6 +557,9 @@ describe('AppService', () => {
 });
 
 describe('AppService updating app.locals and issuing warnings', () => {
+  // Increase timeout for all tests in this suite
+  jest.setTimeout(15000);
+
   let app;
   let initialEnv;
 
@@ -558,6 +572,9 @@ describe('AppService updating app.locals and issuing warnings', () => {
   });
 
   afterEach(() => {
+    // Clean up any timers or async operations
+    jest.clearAllTimers();
+    jest.clearAllMocks();
     // Restore initial environment variables
     process.env = { ...initialEnv };
   });

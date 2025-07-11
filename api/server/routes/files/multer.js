@@ -78,4 +78,45 @@ const createMulterInstance = async () => {
   });
 };
 
-module.exports = { createMulterInstance, storage, importFileFilter };
+/**
+ * Create a multer instance for secure uploads that allows all file types
+ */
+const createSecureUploadMulterInstance = async () => {
+  const customConfig = await getCustomConfig();
+  const fileConfig = mergeFileConfig(customConfig?.fileConfig);
+
+  // Create a permissive file filter for secure uploads
+  const secureFileFilter = (req, file, cb) => {
+    if (!file) {
+      return cb(new Error('No file provided'), false);
+    }
+
+    // Basic security checks - reject potentially dangerous files
+    const dangerousExtensions = ['.exe', '.bat', '.cmd', '.com', '.scr', '.pif', '.vbs', '.js', '.jar'];
+    const fileExtension = path.extname(file.originalname).toLowerCase();
+
+    if (dangerousExtensions.includes(fileExtension)) {
+      return cb(new Error(`File type ${fileExtension} is not allowed for security reasons`), false);
+    }
+
+    // Check for null bytes in filename (security measure)
+    if (file.originalname.includes('\0')) {
+      return cb(new Error('Invalid filename: contains null bytes'), false);
+    }
+
+    // Validate filename length
+    if (file.originalname.length > 255) {
+      return cb(new Error('Filename too long (max 255 characters)'), false);
+    }
+
+    cb(null, true);
+  };
+
+  return multer({
+    storage,
+    fileFilter: secureFileFilter,
+    limits: { fileSize: 100 * 1024 * 1024 }, // 100MB limit for secure uploads
+  });
+};
+
+module.exports = { createMulterInstance, createSecureUploadMulterInstance, storage, importFileFilter };

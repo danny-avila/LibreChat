@@ -52,6 +52,7 @@ export enum QueryKeys {
 
 export enum MutationKeys {
   fileUpload = 'fileUpload',
+  secureUpload = 'secureUpload',
   fileDelete = 'fileDelete',
   updatePreset = 'updatePreset',
   deletePreset = 'deletePreset',

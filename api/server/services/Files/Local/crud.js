@@ -171,7 +171,9 @@ async function getLocalFileURL({ fileName, basePath = 'images' }) {
  *          Returns true if the filepath is within the specified base and subfolder, false otherwise.
  */
 const isValidPath = (req, base, subfolder, filepath) => {
-  const normalizedBase = path.resolve(base, subfolder, req.user.id);
+  // Ensure subfolder is a valid string to prevent path.resolve errors
+  const safeSubfolder = subfolder || '';
+  const normalizedBase = path.resolve(base, safeSubfolder, req.user.id);
   const normalizedFilepath = path.resolve(filepath);
   return normalizedFilepath.startsWith(normalizedBase);
 };
@@ -203,8 +205,20 @@ const unlinkFile = async (filepath) => {
 const deleteLocalFile = async (req, file) => {
   const { publicPath, uploads } = req.app.locals.paths;
 
+  // Validate that file.filepath exists
+  if (!file.filepath || typeof file.filepath !== 'string') {
+    logger.warn(`Invalid or missing filepath for file ${file.file_id}: ${file.filepath}`);
+    return;
+  }
+
   /** Filepath stripped of query parameters (e.g., ?manual=true) */
   const cleanFilepath = file.filepath.split('?')[0];
+
+  // Additional validation for cleanFilepath
+  if (!cleanFilepath || typeof cleanFilepath !== 'string') {
+    logger.warn(`Invalid cleanFilepath for file ${file.file_id}: ${cleanFilepath}`);
+    return;
+  }
 
   if (file.embedded && process.env.RAG_API_URL) {
     const jwtToken = generateShortLivedToken(req.user.id);
@@ -223,14 +237,16 @@ const deleteLocalFile = async (req, file) => {
     const basePath = cleanFilepath.split(`/uploads/${req.user.id}/`)[1];
 
     if (!basePath) {
-      throw new Error(`Invalid file path: ${cleanFilepath}`);
+      logger.warn(`Invalid file path for file ${file.file_id}: ${cleanFilepath}. File record will be deleted from database but physical file cannot be removed.`);
+      return;
     }
 
     const filepath = path.join(userUploadDir, basePath);
 
     const rel = path.relative(userUploadDir, filepath);
     if (rel.startsWith('..') || path.isAbsolute(rel) || rel.includes(`..${path.sep}`)) {
-      throw new Error(`Invalid file path: ${cleanFilepath}`);
+      logger.warn(`Invalid file path for file ${file.file_id}: ${cleanFilepath}. File record will be deleted from database but physical file cannot be removed.`);
+      return;
     }
 
     await unlinkFile(filepath);
@@ -243,10 +259,18 @@ const deleteLocalFile = async (req, file) => {
     logger.warn(`Agent File ${file.file_id} is missing filepath, may have been deleted already`);
     return;
   }
+
+  // Validate publicPath and cleanFilepath before path.join
+  if (!publicPath || typeof publicPath !== 'string') {
+    logger.error(`Invalid publicPath: ${publicPath}`);
+    throw new Error('Invalid publicPath configuration');
+  }
+
   const filepath = path.join(publicPath, cleanFilepath);
 
   if (!isValidPath(req, publicPath, subfolder, filepath)) {
-    throw new Error('Invalid file path');
+    logger.warn(`Invalid file path for file ${file.file_id}: ${cleanFilepath}. File record will be deleted from database but physical file cannot be removed.`);
+    return; // Don't attempt to delete the physical file, but allow database deletion to proceed
   }
 
   await unlinkFile(filepath);

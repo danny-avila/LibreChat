@@ -4,6 +4,7 @@ const handleText = require('./handleText');
 const sendEmail = require('./sendEmail');
 const queue = require('./queue');
 const files = require('./files');
+const { handleError } = require('@librechat/api');
 
 /**
  * Check if email configuration is set
@@ -27,6 +28,7 @@ function checkEmailConfig() {
 
 module.exports = {
   checkEmailConfig,
+  handleError,
   ...handleText,
   countTokens,
   removePorts,

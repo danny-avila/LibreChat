@@ -335,6 +335,14 @@ export const uploadFile = (data: FormData, signal?: AbortSignal | null): Promise
   return request.postMultiPart(endpoints.files(), data, requestConfig);
 };
 
+export const secureUpload = (
+  data: FormData,
+  signal?: AbortSignal | null,
+): Promise<f.TFileUpload & { downloadUrl: string; expiresAt: string; singleUse: boolean; ttlSeconds: number }> => {
+  const requestConfig = signal ? { signal } : undefined;
+  return request.postMultiPart(`${endpoints.files()}/secure-upload`, data, requestConfig);
+};
+
 /* actions */
 
 export const updateAction = (data: m.UpdateActionVariables): Promise<m.UpdateActionResponse> => {

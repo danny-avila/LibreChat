@@ -1,0 +1,91 @@
+# Example librechat.yaml configuration demonstrating the {{LIBRECHAT_CHAT_URL_FILE}} placeholder
+
+version: 1.2.1
+
+mcpServers:
+  # Document Analysis Server
+  # Processes uploaded documents and provides insights
+  document-analyzer:
+    type: sse
+    url: https://api.document-analyzer.com/mcp
+    headers:
+      Authorization: "Bearer ${DOCUMENT_ANALYZER_API_KEY}"
+      X-Conversation-Files: "{{LIBRECHAT_CHAT_URL_FILE}}"
+      X-User-ID: "{{LIBRECHAT_USER_ID}}"
+      X-User-Email: "{{LIBRECHAT_USER_EMAIL}}"
+      Content-Type: "application/json"
+
+  # Image Processing Server
+  # Analyzes and processes uploaded images
+  image-processor:
+    command: python
+    args: ["-m", "image_processor.server"]
+    cwd: "/opt/mcp-servers/image-processor"
+    env:
+      LIBRECHAT_FILES: "{{LIBRECHAT_CHAT_URL_FILE}}"
+      USER_ID: "{{LIBRECHAT_USER_ID}}"
+      API_KEY: "${IMAGE_PROCESSOR_API_KEY}"
+      LOG_LEVEL: "info"
+
+  # File Converter Server
+  # Converts files between different formats
+  file-converter:
+    type: websocket
+    url: "wss://converter.example.com/mcp"
+    headers:
+      Authorization: "Bearer ${CONVERTER_TOKEN}"
+      X-Files-JSON: "{{LIBRECHAT_CHAT_URL_FILE}}"
+      X-Request-ID: "{{REQUEST_ID}}"
+
+  # Code Analysis Server
+  # Analyzes uploaded code files for security and quality
+  code-analyzer:
+    command: node
+    args: ["dist/server.js"]
+    cwd: "/opt/mcp-servers/code-analyzer"
+    env:
+      CONVERSATION_FILES: "{{LIBRECHAT_CHAT_URL_FILE}}"
+      USER_EMAIL: "{{LIBRECHAT_USER_EMAIL}}"
+      ANALYSIS_MODE: "security"
+      TEMP_DIR: "/tmp/code-analysis"
+
+  # Multi-modal AI Server
+  # Processes various file types with AI models
+  multimodal-ai:
+    type: streamableHTTP
+    url: "https://ai.example.com/mcp/stream"
+    headers:
+      Authorization: "Bearer ${MULTIMODAL_API_KEY}"
+      X-File-URLs: "{{LIBRECHAT_CHAT_URL_FILE}}"
+      X-User-Context: "{{LIBRECHAT_USER_ID}}:{{LIBRECHAT_USER_EMAIL}}"
+      X-Custom-Header: "{{CUSTOM_VARIABLE}}"
+
+  # Local File Processor
+  # Processes files using local tools
+  local-processor:
+    command: "/usr/local/bin/file-processor"
+    args: ["--mode", "interactive"]
+    env:
+      FILES_JSON: "{{LIBRECHAT_CHAT_URL_FILE}}"
+      USER_ID: "{{LIBRECHAT_USER_ID}}"
+      WORKSPACE: "/tmp/processing"
+      TIMEOUT: "300"
+
+# Environment variables that can be referenced in the configuration
+# These should be set in your .env file or environment
+#
+# Required for document analyzer:
+# DOCUMENT_ANALYZER_API_KEY=your_api_key_here
+#
+# Required for image processor:
+# IMAGE_PROCESSOR_API_KEY=your_api_key_here
+#
+# Required for file converter:
+# CONVERTER_TOKEN=your_token_here
+#
+# Required for multimodal AI:
+# MULTIMODAL_API_KEY=your_api_key_here
+#
+# Optional custom variables (set in user settings):
+# CUSTOM_VARIABLE=custom_value
+# REQUEST_ID=req_12345
