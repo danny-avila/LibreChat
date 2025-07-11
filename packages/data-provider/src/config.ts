@@ -132,8 +132,6 @@ export const azureGroupConfigsSchema = z.array(azureGroupSchema).min(1);
 export type TAzureGroup = z.infer<typeof azureGroupSchema>;
 export type TAzureGroups = z.infer<typeof azureGroupConfigsSchema>;
 export type TAzureModelMapSchema = {
-  // deploymentName?: string;
-  // version?: string;
   group: string;
 };
 
@@ -880,8 +878,6 @@ export const bedrockModels = [
   'anthropic.claude-v2',
   'anthropic.claude-v2:1',
   'anthropic.claude-instant-v1',
-  // 'cohere.command-text-v14', // no conversation history
-  // 'cohere.command-light-text-v14', // no conversation history
   'cohere.command-r-v1:0',
   'cohere.command-r-plus-v1:0',
   'meta.llama2-13b-chat-v1',
@@ -897,8 +893,6 @@ export const bedrockModels = [
   'mistral.mistral-large-2407-v1:0',
   'mistral.mistral-small-2402-v1:0',
   'ai21.jamba-instruct-v1:0',
-  // 'ai21.j2-mid-v1', // no streaming
-  // 'ai21.j2-ultra-v1', no conversation history
   'amazon.titan-text-lite-v1',
   'amazon.titan-text-express-v1',
   'amazon.titan-text-premier-v1:0',
