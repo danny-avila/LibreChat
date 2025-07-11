@@ -176,6 +176,12 @@ export const useDeleteFilesMutation = (
 
         return (cachefiles ?? []).filter((file) => !fileMap.has(file.file_id));
       });
+
+      showToast({
+        message: localize('com_ui_delete_success'),
+        status: 'success',
+      });
+
       onSuccess?.(data, vars, context);
       if (vars.agent_id != null && vars.agent_id) {
         queryClient.refetchQueries([QueryKeys.agent, vars.agent_id]);
