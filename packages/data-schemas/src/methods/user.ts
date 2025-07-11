@@ -199,15 +199,95 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
     }).lean()) as IUser | null;
   }
 
-  // Return all methods
+  /**
+   * Search for users by pattern matching on name, email, or username (case-insensitive)
+   * @param searchPattern - The pattern to search for
+   * @param limit - Maximum number of results to return
+   * @param fieldsToSelect - The fields to include or exclude in the returned documents
+   * @returns Array of matching user documents
+   */
+  const searchUsers = async function ({
+    searchPattern,
+    limit = 20,
+    fieldsToSelect = null,
+  }: {
+    searchPattern: string;
+    limit?: number;
+    fieldsToSelect?: string | string[] | null;
+  }) {
+    if (!searchPattern || searchPattern.trim().length === 0) {
+      return [];
+    }
+
+    const regex = new RegExp(searchPattern.trim(), 'i');
+    const User = mongoose.models.User;
+
+    const query = User.find({
+      $or: [{ email: regex }, { name: regex }, { username: regex }],
+    }).limit(limit * 2); // Get more results to allow for relevance sorting
+
+    if (fieldsToSelect) {
+      query.select(fieldsToSelect);
+    }
+
+    const users = await query.lean();
+
+    // Score results by relevance
+    const exactRegex = new RegExp(`^${searchPattern.trim()}$`, 'i');
+    const startsWithPattern = searchPattern.trim().toLowerCase();
+
+    const scoredUsers = users.map((user) => {
+      const searchableFields = [user.name, user.email, user.username].filter(Boolean);
+      let maxScore = 0;
+
+      for (const field of searchableFields) {
+        const fieldLower = field.toLowerCase();
+        let score = 0;
+
+        // Exact match gets highest score
+        if (exactRegex.test(field)) {
+          score = 100;
+        }
+        // Starts with query gets high score
+        else if (fieldLower.startsWith(startsWithPattern)) {
+          score = 80;
+        }
+        // Contains query gets medium score
+        else if (fieldLower.includes(startsWithPattern)) {
+          score = 50;
+        }
+        // Default score for regex match
+        else {
+          score = 10;
+        }
+
+        maxScore = Math.max(maxScore, score);
+      }
+
+      return { ...user, _searchScore: maxScore };
+    });
+
+    /** Top results sorted by relevance */
+    return scoredUsers
+      .sort((a, b) => b._searchScore - a._searchScore)
+      .slice(0, limit)
+      .map((user) => {
+        // Remove the search score from final results
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { _searchScore, ...userWithoutScore } = user;
+        return userWithoutScore;
+      });
+  };
+
   return {
     findUser,
     countUsers,
     createUser,
     updateUser,
+    searchUsers,
     getUserById,
-    deleteUserById,
     generateToken,
+    deleteUserById,
     toggleUserMemories,
   };
 }

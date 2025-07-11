@@ -8,6 +8,7 @@ const concurrentLimiter = require('./concurrentLimiter');
 const validateEndpoint = require('./validateEndpoint');
 const requireLocalAuth = require('./requireLocalAuth');
 const canDeleteAccount = require('./canDeleteAccount');
+const accessResources = require('./accessResources');
 const setBalanceConfig = require('./setBalanceConfig');
 const requireLdapAuth = require('./requireLdapAuth');
 const abortMiddleware = require('./abortMiddleware');
@@ -29,6 +30,7 @@ module.exports = {
   ...validate,
   ...limiters,
   ...roles,
+  ...accessResources,
   noIndex,
   checkBan,
   uaParser,
