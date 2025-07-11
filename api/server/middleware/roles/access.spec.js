@@ -165,10 +165,23 @@ describe('Access Middleware', () => {
       expect(result).toBe(false);
     });
 
-    test('should return true if user has any of multiple permissions', async () => {
+    test('should return false if user has only some of multiple permissions', async () => {
+      // User has USE but not CREATE, so should fail when checking for both
       const result = await checkAccess({
         req: {},
         user: { id: 'user123', role: 'user' },
+        permissionType: PermissionTypes.AGENTS,
+        permissions: [Permissions.CREATE, Permissions.USE],
+        getRoleByName,
+      });
+      expect(result).toBe(false);
+    });
+
+    test('should return true if user has all of multiple permissions', async () => {
+      // Admin has both USE and CREATE
+      const result = await checkAccess({
+        req: {},
+        user: { id: 'admin123', role: 'admin' },
         permissionType: PermissionTypes.AGENTS,
         permissions: [Permissions.CREATE, Permissions.USE],
         getRoleByName,
