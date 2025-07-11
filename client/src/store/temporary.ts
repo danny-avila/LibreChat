@@ -1,6 +1,6 @@
-import { atomWithLocalStorage } from '~/store/utils';
+import { atomWithStorage } from 'jotai/utils';
 
-const isTemporary = atomWithLocalStorage('isTemporary', false);
+const isTemporary = atomWithStorage('isTemporary', false);
 
 export default {
   isTemporary,

@@ -1,11 +1,11 @@
 import React from 'react';
-import { useRecoilState } from 'recoil';
+import { useAtom } from 'jotai';
 import { useLocalize } from '~/hooks';
 import { Button } from '~/components';
 import store from '~/store';
 
 const ChatDirection = () => {
-  const [direction, setDirection] = useRecoilState(store.chatDirection);
+  const [direction, setDirection] = useAtom(store.chatDirection);
   const localize = useLocalize();
 
   const toggleChatDirection = () => {

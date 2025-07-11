@@ -1,7 +1,8 @@
 import { useEffect, useRef } from 'react';
 import debounce from 'lodash/debounce';
 import { useLocation } from 'react-router-dom';
-import { useRecoilState, useSetRecoilState, useResetRecoilState } from 'recoil';
+import { useAtom, useSetAtom } from 'jotai';
+import { useResetAtom } from 'jotai/utils';
 import type { Artifact } from '~/common';
 import FilePreview from '~/components/Chat/Input/Files/FilePreview';
 import { getFileType, logger } from '~/utils';
@@ -11,11 +12,11 @@ import store from '~/store';
 const ArtifactButton = ({ artifact }: { artifact: Artifact | null }) => {
   const localize = useLocalize();
   const location = useLocation();
-  const setVisible = useSetRecoilState(store.artifactsVisibility);
-  const [artifacts, setArtifacts] = useRecoilState(store.artifactsState);
-  const setCurrentArtifactId = useSetRecoilState(store.currentArtifactId);
-  const resetCurrentArtifactId = useResetRecoilState(store.currentArtifactId);
-  const [visibleArtifacts, setVisibleArtifacts] = useRecoilState(store.visibleArtifacts);
+  const setVisible = useSetAtom(store.artifactsVisibility);
+  const [artifacts, setArtifacts] = useAtom(store.artifactsState);
+  const setCurrentArtifactId = useSetAtom(store.currentArtifactId);
+  const resetCurrentArtifactId = useResetAtom(store.currentArtifactId);
+  const [visibleArtifacts, setVisibleArtifacts] = useAtom(store.visibleArtifacts);
 
   const debouncedSetVisibleRef = useRef(
     debounce((artifactToSet: Artifact) => {
@@ -24,10 +25,10 @@ const ArtifactButton = ({ artifact }: { artifact: Artifact | null }) => {
         'Setting artifact to visible state from Artifact button',
         artifactToSet,
       );
-      setVisibleArtifacts((prev) => ({
-        ...prev,
+      setVisibleArtifacts({
+        ...(visibleArtifacts || {}),
         [artifactToSet.id]: artifactToSet,
-      }));
+      });
     }, 750),
   );
 

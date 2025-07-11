@@ -1,5 +1,5 @@
 import { useState, memo } from 'react';
-import { useRecoilState } from 'recoil';
+import { useAtom } from 'jotai';
 import * as Select from '@ariakit/react/select';
 import { FileText, LogOut } from 'lucide-react';
 import { LinkIcon, GearIcon, DropdownMenuSeparator } from '~/components';
@@ -20,7 +20,7 @@ function AccountSettings() {
     enabled: !!isAuthenticated && startupConfig?.balance?.enabled,
   });
   const [showSettings, setShowSettings] = useState(false);
-  const [showFiles, setShowFiles] = useRecoilState(store.showFiles);
+  const [showFiles, setShowFiles] = useAtom(store.showFiles);
 
   const avatarSrc = useAvatar(user);
   const avatarSeed = user?.avatar || user?.name || user?.username || '';

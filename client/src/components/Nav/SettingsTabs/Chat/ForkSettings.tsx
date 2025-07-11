@@ -1,4 +1,4 @@
-import { useRecoilState } from 'recoil';
+import { useAtom } from 'jotai';
 import HoverCardSettings from '../HoverCardSettings';
 import { ForkOptions } from 'librechat-data-provider';
 import { Dropdown, Switch } from '~/components/ui';
@@ -7,9 +7,9 @@ import store from '~/store';
 
 export const ForkSettings = () => {
   const localize = useLocalize();
-  const [forkSetting, setForkSetting] = useRecoilState(store.forkSetting);
-  const [splitAtTarget, setSplitAtTarget] = useRecoilState(store.splitAtTarget);
-  const [remember, setRemember] = useRecoilState<boolean>(store.rememberDefaultFork);
+  const [forkSetting, setForkSetting] = useAtom(store.forkSetting);
+  const [splitAtTarget, setSplitAtTarget] = useAtom(store.splitAtTarget);
+  const [remember, setRemember] = useAtom(store.rememberDefaultFork);
 
   const forkOptions = [
     { value: ForkOptions.DIRECT_PATH, label: localize('com_ui_fork_visible') },

@@ -1,4 +1,4 @@
-import { useRecoilValue } from 'recoil';
+import { useAtomValue } from 'jotai';
 import { ChevronDownIcon } from 'lucide-react';
 import { useState, useEffect, useMemo } from 'react';
 import { useAvailablePluginsQuery } from 'librechat-data-provider/react-query';
@@ -26,7 +26,7 @@ export default function PluginsByIndex({
   const { user } = useAuthContext();
   const [visible, setVisibility] = useState<boolean>(true);
   const isSmallScreen = useMediaQuery('(max-width: 640px)');
-  const availableTools = useRecoilValue(store.availableTools);
+  const availableTools = useAtomValue(store.availableTools);
   const { checkPluginSelection, setTools } = useSetIndexOptions();
 
   const { data: allPlugins } = useAvailablePluginsQuery({

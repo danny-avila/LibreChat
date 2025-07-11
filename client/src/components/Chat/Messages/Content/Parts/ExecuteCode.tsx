@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useRef, useEffect } from 'react';
-import { useRecoilValue } from 'recoil';
+import { useAtomValue } from 'jotai';
 import type { TAttachment } from 'librechat-data-provider';
 import ProgressText from '~/components/Chat/Messages/Content/ProgressText';
 import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
@@ -56,7 +56,7 @@ export default function ExecuteCode({
   attachments?: TAttachment[];
 }) {
   const localize = useLocalize();
-  const showAnalysisCode = useRecoilValue(store.showCode);
+  const showAnalysisCode = useAtomValue(store.showCode);
   const [showCode, setShowCode] = useState(showAnalysisCode);
   const codeContentRef = useRef<HTMLDivElement>(null);
   const [contentHeight, setContentHeight] = useState<number | undefined>(0);

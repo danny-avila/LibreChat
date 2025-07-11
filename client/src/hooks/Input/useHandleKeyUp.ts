@@ -1,7 +1,7 @@
 import { useCallback, useMemo } from 'react';
-import { useSetRecoilState, useRecoilValue } from 'recoil';
+import { useAtomValue, useSetAtom } from 'jotai';
+import type { Dispatch, SetStateAction } from 'react';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
-import type { SetterOrUpdater } from 'recoil';
 import useHasAccess from '~/hooks/Roles/useHasAccess';
 import store from '~/store';
 
@@ -43,8 +43,8 @@ const useHandleKeyUp = ({
 }: {
   index: number;
   textAreaRef: React.RefObject<HTMLTextAreaElement>;
-  setShowPlusPopover: SetterOrUpdater<boolean>;
-  setShowMentionPopover: SetterOrUpdater<boolean>;
+  setShowPlusPopover: Dispatch<SetStateAction<boolean>>;
+  setShowMentionPopover: Dispatch<SetStateAction<boolean>>;
 }) => {
   const hasPromptsAccess = useHasAccess({
     permissionType: PermissionTypes.PROMPTS,
@@ -54,13 +54,13 @@ const useHandleKeyUp = ({
     permissionType: PermissionTypes.MULTI_CONVO,
     permission: Permissions.USE,
   });
-  const latestMessage = useRecoilValue(store.latestMessageFamily(index));
-  const setShowPromptsPopover = useSetRecoilState(store.showPromptsPopoverFamily(index));
+  const latestMessage = useAtomValue(store.latestMessageFamily(index));
+  const setShowPromptsPopover = useSetAtom(store.showPromptsPopoverFamily(index));
 
   // Get the current state of command toggles
-  const atCommandEnabled = useRecoilValue(store.atCommand);
-  const plusCommandEnabled = useRecoilValue(store.plusCommand);
-  const slashCommandEnabled = useRecoilValue(store.slashCommand);
+  const atCommandEnabled = useAtomValue(store.atCommand);
+  const plusCommandEnabled = useAtomValue(store.plusCommand);
+  const slashCommandEnabled = useAtomValue(store.slashCommand);
 
   const handleAtCommand = useCallback(() => {
     if (atCommandEnabled && shouldTriggerCommand(textAreaRef, '@')) {

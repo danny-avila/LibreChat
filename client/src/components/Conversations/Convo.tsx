@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { useRecoilValue } from 'recoil';
+import { useAtomValue } from 'jotai';
 import { useParams } from 'react-router-dom';
 import { Constants } from 'librechat-data-provider';
 import type { TConversation } from 'librechat-data-provider';
@@ -26,7 +26,7 @@ export default function Conversation({
   conversation,
   retainView,
   toggleNav,
-  isLatestConvo,
+  isLatestConvo: _isLatestConvo,
 }: ConversationProps) {
   const params = useParams();
   const localize = useLocalize();
@@ -35,7 +35,7 @@ export default function Conversation({
   const { data: endpointsConfig } = useGetEndpointsQuery();
   const currentConvoId = useMemo(() => params.conversationId, [params.conversationId]);
   const updateConvoMutation = useUpdateConversationMutation(currentConvoId ?? '');
-  const activeConvos = useRecoilValue(store.allConversationsSelector);
+  const activeConvos = useAtomValue(store.allConversationsSelector);
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const { conversationId, title = '' } = conversation;
 
@@ -83,7 +83,7 @@ export default function Conversation({
         title: newTitle.trim() || localize('com_ui_untitled'),
       });
       setRenaming(false);
-    } catch (error) {
+    } catch (_error) {
       setTitleInput(title as string);
       showToast({
         message: localize('com_ui_rename_failed'),

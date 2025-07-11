@@ -11,7 +11,9 @@ import {
   replaceSpecialVars,
   isAssistantsEndpoint,
 } from 'librechat-data-provider';
-import { useSetRecoilState, useResetRecoilState, useRecoilValue } from 'recoil';
+import { useAtomValue, useSetAtom } from 'jotai';
+import { RESET } from 'jotai/utils';
+import type { Dispatch, SetStateAction } from 'react';
 import type {
   TMessage,
   TSubmission,
@@ -20,7 +22,6 @@ import type {
   TEndpointsConfig,
   EndpointSchemaKey,
 } from 'librechat-data-provider';
-import type { SetterOrUpdater } from 'recoil';
 import type { TAskFunction, ExtendedFile } from '~/common';
 import useSetFilesToDelete from '~/hooks/Files/useSetFilesToDelete';
 import useGetSender from '~/hooks/Conversations/useGetSender';
@@ -56,9 +57,9 @@ export default function useChatFunctions({
   getMessages: () => TMessage[] | undefined;
   setMessages: (messages: TMessage[]) => void;
   files?: Map<string, ExtendedFile>;
-  setFiles?: SetterOrUpdater<Map<string, ExtendedFile>>;
-  setSubmission: SetterOrUpdater<TSubmission | null>;
-  setLatestMessage?: SetterOrUpdater<TMessage | null>;
+  setFiles?: Dispatch<SetStateAction<Map<string, ExtendedFile>>>;
+  setSubmission: Dispatch<SetStateAction<TSubmission | null>>;
+  setLatestMessage?: Dispatch<SetStateAction<TMessage | null>>;
 }) {
   const navigate = useNavigate();
   const getSender = useGetSender();
@@ -66,10 +67,10 @@ export default function useChatFunctions({
   const queryClient = useQueryClient();
   const setFilesToDelete = useSetFilesToDelete();
   const getEphemeralAgent = useGetEphemeralAgent();
-  const isTemporary = useRecoilValue(store.isTemporary);
+  const isTemporary = useAtomValue(store.isTemporary);
   const { getExpiry } = useUserKey(immutableConversation?.endpoint ?? '');
-  const setShowStopButton = useSetRecoilState(store.showStopButtonByIndex(index));
-  const resetLatestMultiMessage = useResetRecoilState(store.latestMessageFamily(index + 1));
+  const setShowStopButton = useSetAtom(store.showStopButtonByIndex(index));
+  const setLatestMultiMessage = useSetAtom(store.latestMessageFamily(index + 1));
 
   const ask: TAskFunction = (
     {
@@ -92,7 +93,7 @@ export default function useChatFunctions({
     } = {},
   ) => {
     setShowStopButton(false);
-    resetLatestMultiMessage();
+    setLatestMultiMessage(null);
     if (!!isSubmitting || text === '') {
       return;
     }
@@ -311,7 +312,6 @@ export default function useChatFunctions({
       initialResponse,
       isTemporary,
       ephemeralAgent,
-      editedContent,
     };
 
     if (isRegenerate) {

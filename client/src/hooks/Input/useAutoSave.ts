@@ -1,7 +1,8 @@
 import debounce from 'lodash/debounce';
-import { SetterOrUpdater, useRecoilValue } from 'recoil';
+import { useAtomValue } from 'jotai';
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { LocalStorageKeys, Constants } from 'librechat-data-provider';
+import type { Dispatch, SetStateAction } from 'react';
 import type { TFile } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
 import { useChatFormContext } from '~/Providers';
@@ -16,7 +17,7 @@ const encodeBase64 = (plainText: string): string => {
   try {
     const textBytes = new TextEncoder().encode(plainText);
     return btoa(String.fromCharCode(...textBytes));
-  } catch (e) {
+  } catch {
     return '';
   }
 };
@@ -29,7 +30,7 @@ const decodeBase64 = (base64String: string): string => {
       uint8Array[i] = bytes.charCodeAt(i);
     }
     return new TextDecoder().decode(uint8Array);
-  } catch (e) {
+  } catch {
     return '';
   }
 };
@@ -45,11 +46,11 @@ export const useAutoSave = ({
   conversationId?: string | null;
   textAreaRef?: React.RefObject<HTMLTextAreaElement>;
   files: Map<string, ExtendedFile>;
-  setFiles: SetterOrUpdater<Map<string, ExtendedFile>>;
+  setFiles: Dispatch<SetStateAction<Map<string, ExtendedFile>>>;
 }) => {
   // setting for auto-save
   const { setValue } = useChatFormContext();
-  const saveDrafts = useRecoilValue<boolean>(store.saveDrafts);
+  const saveDrafts = useAtomValue<boolean>(store.saveDrafts);
   const conversationId = isSubmitting ? Constants.PENDING_CONVO : _conversationId;
 
   const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);

@@ -1,9 +1,9 @@
 import React from 'react';
-import { useRecoilValue } from 'recoil';
+import { useAtomValue } from 'jotai';
 import { useMessageProcess } from '~/hooks';
 import type { TMessageProps } from '~/common';
 import MessageRender from './ui/MessageRender';
-// eslint-disable-next-line import/no-cycle
+
 import MultiMessage from './MultiMessage';
 import { cn } from '~/utils';
 import store from '~/store';
@@ -38,7 +38,7 @@ export default function Message(props: TMessageProps) {
     isSubmittingFamily,
   } = useMessageProcess({ message: props.message });
   const { message, currentEditId, setCurrentEditId } = props;
-  const maximizeChatSpace = useRecoilValue(store.maximizeChatSpace);
+  const maximizeChatSpace = useAtomValue(store.maximizeChatSpace);
 
   if (!message || typeof message !== 'object') {
     return null;
@@ -73,7 +73,7 @@ export default function Message(props: TMessageProps) {
             </div>
           </div>
         ) : (
-          <div className="m-auto justify-center p-4 py-2 md:gap-6 ">
+          <div className="m-auto justify-center p-4 py-2 md:gap-6">
             <MessageRender {...props} />
           </div>
         )}

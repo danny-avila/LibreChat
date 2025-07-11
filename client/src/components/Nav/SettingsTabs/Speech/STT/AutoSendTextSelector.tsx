@@ -1,5 +1,5 @@
 import React from 'react';
-import { useRecoilState, useRecoilValue } from 'recoil';
+import { useAtom, useAtomValue } from 'jotai';
 import { cn, defaultTextProps, optionText } from '~/utils/';
 import { Slider, InputNumber } from '~/components/ui';
 import { useLocalize } from '~/hooks';
@@ -8,8 +8,8 @@ import store from '~/store';
 export default function AutoSendTextSelector() {
   const localize = useLocalize();
 
-  const speechToText = useRecoilValue(store.speechToText);
-  const [autoSendText, setAutoSendText] = useRecoilState(store.autoSendText);
+  const speechToText = useAtomValue(store.speechToText);
+  const [autoSendText, setAutoSendText] = useAtom(store.autoSendText);
 
   return (
     <div className="flex items-center justify-between">

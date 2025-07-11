@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import { useRecoilValue } from 'recoil';
+import { useAtomValue } from 'jotai';
 import { EModelEndpoint, isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
 import type {
   TPreset,
@@ -31,8 +31,8 @@ export default function useSelectMention({
 }) {
   const { conversation } = useChatContext();
   const getDefaultConversation = useDefaultConvo();
-  const modularChat = useRecoilValue(store.modularChat);
-  const availableTools = useRecoilValue(store.availableTools);
+  const modularChat = useAtomValue(store.modularChat);
+  const availableTools = useAtomValue(store.availableTools);
 
   const onSelectSpec = useCallback(
     (spec?: TModelSpec) => {

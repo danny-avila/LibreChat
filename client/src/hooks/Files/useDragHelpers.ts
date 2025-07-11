@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import { useDrop } from 'react-dnd';
 import { NativeTypes } from 'react-dnd-html5-backend';
 import { useQueryClient } from '@tanstack/react-query';
-import { useRecoilValue, useSetRecoilState } from 'recoil';
+import { useAtom, useAtomValue } from 'jotai';
 import {
   QueryKeys,
   Constants,
@@ -21,18 +21,18 @@ export default function useDragHelpers() {
   const queryClient = useQueryClient();
   const [showModal, setShowModal] = useState(false);
   const [draggedFiles, setDraggedFiles] = useState<File[]>([]);
-  const conversation = useRecoilValue(store.conversationByIndex(0)) || undefined;
-  const setEphemeralAgent = useSetRecoilState(
+  const conversation = useAtomValue(store.conversationByIndex(0)) || undefined;
+  const [ephemeralAgent, setEphemeralAgent] = useAtom(
     ephemeralAgentByConvoId(conversation?.conversationId ?? Constants.NEW_CONVO),
   );
 
   const handleOptionSelect = (toolResource: EToolResources | undefined) => {
     /** File search is not automatically enabled to simulate legacy behavior */
     if (toolResource && toolResource !== EToolResources.file_search) {
-      setEphemeralAgent((prev) => ({
-        ...prev,
+      setEphemeralAgent({
+        ...ephemeralAgent,
         [toolResource]: true,
-      }));
+      });
     }
     handleFiles(draggedFiles, toolResource);
     setShowModal(false);

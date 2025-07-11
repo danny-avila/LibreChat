@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { useSetRecoilState } from 'recoil';
+import { useSetAtom } from 'jotai';
 import { SmartphoneIcon } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { TUser, TVerify2FARequest } from 'librechat-data-provider';
@@ -27,13 +27,12 @@ const phaseVariants = {
 const TwoFactorAuthentication: React.FC = () => {
   const localize = useLocalize();
   const { user } = useAuthContext();
-  const setUser = useSetRecoilState(store.user);
+  const setUser = useSetAtom(store.user);
   const { showToast } = useToastContext();
 
   const [secret, setSecret] = useState<string>('');
   const [otpauthUrl, setOtpauthUrl] = useState<string>('');
   const [downloaded, setDownloaded] = useState<boolean>(false);
-  const [disableToken, setDisableToken] = useState<string>('');
   const [backupCodes, setBackupCodes] = useState<string[]>([]);
   const [isDialogOpen, setDialogOpen] = useState<boolean>(false);
   const [verificationToken, setVerificationToken] = useState<string>('');
@@ -67,7 +66,6 @@ const TwoFactorAuthentication: React.FC = () => {
     setSecret('');
     setBackupCodes([]);
     setVerificationToken('');
-    setDisableToken('');
     setPhase(user?.twoFactorEnabled ? 'disable' : 'setup');
     setDownloaded(false);
   }, [user, otpauthUrl, disable2FAMutate, localize, showToast]);

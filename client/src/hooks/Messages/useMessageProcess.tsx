@@ -1,5 +1,5 @@
 import throttle from 'lodash/throttle';
-import { useRecoilValue } from 'recoil';
+import { useAtomValue } from 'jotai';
 import { Constants } from 'librechat-data-provider';
 import { useEffect, useRef, useCallback, useMemo, useState } from 'react';
 import type { TMessage } from 'librechat-data-provider';
@@ -21,11 +21,8 @@ export default function useMessageProcess({ message }: { message?: TMessage | nu
     isSubmitting: isSubmittingRoot,
   } = useChatContext();
   const { isSubmitting: isSubmittingAdditional } = useAddedChatContext();
-  const latestMultiMessage = useRecoilValue(store.latestMessageFamily(index + 1));
-  const isSubmittingFamily = useMemo(
-    () => isSubmittingRoot || isSubmittingAdditional,
-    [isSubmittingRoot, isSubmittingAdditional],
-  );
+  const latestMultiMessage = useAtomValue(store.latestMessageFamily(index + 1));
+  const isSubmittingFamily = isSubmittingRoot || isSubmittingAdditional;
 
   useEffect(() => {
     const convoId = conversation?.conversationId;

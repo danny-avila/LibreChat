@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import { useSetRecoilState } from 'recoil';
+import { useSetAtom } from 'jotai';
 import { useLocalize, useCustomLink } from '~/hooks';
 import { Button } from '~/components/ui';
 import { cn } from '~/utils';
@@ -7,8 +7,8 @@ import store from '~/store';
 
 export default function ManagePrompts({ className }: { className?: string }) {
   const localize = useLocalize();
-  const setPromptsName = useSetRecoilState(store.promptsName);
-  const setPromptsCategory = useSetRecoilState(store.promptsCategory);
+  const setPromptsName = useSetAtom(store.promptsName);
+  const setPromptsCategory = useSetAtom(store.promptsCategory);
   const clickCallback = useCallback(() => {
     setPromptsName('');
     setPromptsCategory('');

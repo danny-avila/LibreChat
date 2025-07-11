@@ -1,4 +1,4 @@
-import { useRecoilValue, useSetRecoilState } from 'recoil';
+import { useAtomValue, useSetAtom } from 'jotai';
 import { TPreset, TPlugin, TConversation, tConvoUpdateSchema } from 'librechat-data-provider';
 import type { TSetExample, TSetOption, TSetOptionsPayload } from '~/common';
 import usePresetIndexOptions from './usePresetIndexOptions';
@@ -8,8 +8,8 @@ import store from '~/store';
 type TUseSetOptions = (preset?: TPreset | boolean | null) => TSetOptionsPayload;
 
 const useSetIndexOptions: TUseSetOptions = (preset = false) => {
-  const setShowPluginStoreDialog = useSetRecoilState(store.showPluginStoreDialog);
-  const availableTools = useRecoilValue(store.availableTools);
+  const setShowPluginStoreDialog = useSetAtom(store.showPluginStoreDialog);
+  const availableTools = useAtomValue(store.availableTools);
   const { conversation, setConversation } = useChatContext();
 
   const result = usePresetIndexOptions(preset);
@@ -32,18 +32,17 @@ const useSetIndexOptions: TUseSetOptions = (preset = false) => {
 
     // Auto-enable Responses API when web search is enabled
     if (param === 'web_search' && newValue === true) {
-      const currentUseResponsesApi = conversation?.useResponsesApi ?? false;
+      const currentUseResponsesApi = (conversation as any)?.useResponsesApi ?? false;
       if (!currentUseResponsesApi) {
         update['useResponsesApi'] = true;
       }
     }
 
     setConversation(
-      (prevState) =>
-        tConvoUpdateSchema.parse({
-          ...prevState,
-          ...update,
-        }) as TConversation,
+      tConvoUpdateSchema.parse({
+        ...conversation,
+        ...update,
+      }) as TConversation,
     );
   };
 
@@ -55,11 +54,10 @@ const useSetIndexOptions: TUseSetOptions = (preset = false) => {
     current[i] = currentExample;
     update['examples'] = current;
     setConversation(
-      (prevState) =>
-        tConvoUpdateSchema.parse({
-          ...prevState,
-          ...update,
-        }) as TConversation,
+      tConvoUpdateSchema.parse({
+        ...conversation,
+        ...update,
+      }) as TConversation,
     );
   };
 
@@ -69,11 +67,10 @@ const useSetIndexOptions: TUseSetOptions = (preset = false) => {
     current.push({ input: { content: '' }, output: { content: '' } });
     update['examples'] = current;
     setConversation(
-      (prevState) =>
-        tConvoUpdateSchema.parse({
-          ...prevState,
-          ...update,
-        }) as TConversation,
+      tConvoUpdateSchema.parse({
+        ...conversation,
+        ...update,
+      }) as TConversation,
     );
   };
 
@@ -94,11 +91,10 @@ const useSetIndexOptions: TUseSetOptions = (preset = false) => {
     current.pop();
     update['examples'] = current;
     setConversation(
-      (prevState) =>
-        tConvoUpdateSchema.parse({
-          ...prevState,
-          ...update,
-        }) as TConversation,
+      tConvoUpdateSchema.parse({
+        ...conversation,
+        ...update,
+      }) as TConversation,
     );
   };
 
@@ -156,11 +152,10 @@ const useSetIndexOptions: TUseSetOptions = (preset = false) => {
     }
 
     setConversation(
-      (prevState) =>
-        tConvoUpdateSchema.parse({
-          ...prevState,
-          ...update,
-        }) as TConversation,
+      tConvoUpdateSchema.parse({
+        ...conversation,
+        ...update,
+      }) as TConversation,
     );
   };
 

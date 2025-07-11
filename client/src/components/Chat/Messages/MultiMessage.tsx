@@ -1,4 +1,4 @@
-import { useRecoilState } from 'recoil';
+import { useAtom } from 'jotai';
 import { useEffect, useCallback } from 'react';
 import { isAssistantsEndpoint } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
@@ -18,7 +18,7 @@ export default function MultiMessage({
   currentEditId,
   setCurrentEditId,
 }: TMessageProps) {
-  const [siblingIdx, setSiblingIdx] = useRecoilState(store.messagesSiblingIdxFamily(messageId));
+  const [siblingIdx, setSiblingIdx] = useAtom(store.messagesSiblingIdxFamily(messageId));
 
   const setSiblingIdxRev = useCallback(
     (value: number) => {

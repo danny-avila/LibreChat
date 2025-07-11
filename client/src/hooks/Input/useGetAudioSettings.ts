@@ -1,10 +1,10 @@
 import { useMemo } from 'react';
-import { useRecoilValue } from 'recoil';
+import { useAtomValue } from 'jotai';
 import store from '~/store';
 
 const useGetAudioSettings = () => {
-  const engineSTT = useRecoilValue<string>(store.engineSTT);
-  const engineTTS = useRecoilValue<string>(store.engineTTS);
+  const engineSTT = useAtomValue<string>(store.engineSTT);
+  const engineTTS = useAtomValue<string>(store.engineTTS);
 
   const speechToTextEndpoint = engineSTT;
   const textToSpeechEndpoint = engineTTS;

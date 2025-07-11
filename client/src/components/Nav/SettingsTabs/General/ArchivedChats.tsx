@@ -21,7 +21,7 @@ export default function ArchivedChats() {
           title={localize('com_nav_archived_chats')}
           className="max-w-[1000px]"
           showCancelButton={false}
-          main={<ArchivedChatsTable isOpen={isOpen} onOpenChange={setIsOpen} />}
+          main={<ArchivedChatsTable onOpenChange={(value) => setIsOpen(value)} />}
         />
       </OGDialog>
     </div>

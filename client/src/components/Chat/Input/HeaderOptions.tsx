@@ -1,12 +1,11 @@
-import { useRecoilState } from 'recoil';
+import { useAtom } from 'jotai';
 import { Settings2 } from 'lucide-react';
 import { useState, useEffect, useMemo } from 'react';
 import { Root, Anchor } from '@radix-ui/react-popover';
 import { EModelEndpoint, isParamEndpoint, tConvoUpdateSchema } from 'librechat-data-provider';
-import { useUserKeyQuery } from 'librechat-data-provider/react-query';
 import type { TPreset, TInterfaceConfig } from 'librechat-data-provider';
 import { EndpointSettings, SaveAsPresetDialog, AlternativeSettings } from '~/components/Endpoints';
-import { useSetIndexOptions, useMediaQuery, useLocalize } from '~/hooks';
+import { useSetIndexOptions, useLocalize } from '~/hooks';
 import { PluginStoreDialog, TooltipAnchor } from '~/components';
 import { useGetEndpointsQuery } from '~/data-provider';
 import OptionsPopover from './OptionsPopover';
@@ -23,36 +22,25 @@ export default function HeaderOptions({
   const { data: endpointsConfig } = useGetEndpointsQuery();
 
   const [saveAsDialogShow, setSaveAsDialogShow] = useState<boolean>(false);
-  const [showPluginStoreDialog, setShowPluginStoreDialog] = useRecoilState(
-    store.showPluginStoreDialog,
-  );
+  const [showPluginStoreDialog, setShowPluginStoreDialog] = useAtom(store.showPluginStoreDialog);
   const localize = useLocalize();
 
   const { showPopover, conversation, setShowPopover } = useChatContext();
   const { setOption } = useSetIndexOptions();
-  const { endpoint, conversationId } = conversation ?? {};
-  const { data: keyExpiry = { expiresAt: undefined } } = useUserKeyQuery(endpoint ?? '');
-  const userProvidesKey = useMemo(
-    () => !!(endpointsConfig?.[endpoint ?? '']?.userProvide ?? false),
-    [endpointsConfig, endpoint],
-  );
-  const keyProvided = useMemo(
-    () => (userProvidesKey ? !!(keyExpiry.expiresAt ?? '') : true),
-    [keyExpiry.expiresAt, userProvidesKey],
-  );
+  const { endpoint } = conversation ?? {};
 
   const noSettings = useMemo<{ [key: string]: boolean }>(
     () => ({
       [EModelEndpoint.chatGPTBrowser]: true,
     }),
-    [conversationId],
+    [],
   );
 
   useEffect(() => {
     if (endpoint && noSettings[endpoint]) {
       setShowPopover(false);
     }
-  }, [endpoint, noSettings]);
+  }, [endpoint, noSettings, setShowPopover]);
 
   const saveAsPreset = () => {
     setSaveAsDialogShow(true);

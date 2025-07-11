@@ -1,8 +1,5 @@
-import { atom } from 'recoil';
+import { atom } from 'jotai';
 
-const text = atom<string>({
-  key: 'text',
-  default: '',
-});
+const text = atom<string>('');
 
 export default { text };

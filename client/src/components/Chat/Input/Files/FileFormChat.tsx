@@ -1,12 +1,12 @@
 import { memo } from 'react';
-import { useRecoilValue } from 'recoil';
+import { useAtomValue } from 'jotai';
 import { useChatContext } from '~/Providers';
 import { useFileHandling } from '~/hooks';
 import FileRow from './FileRow';
 import store from '~/store';
 
-function FileFormChat({ disableInputs }: { disableInputs: boolean }) {
-  const chatDirection = useRecoilValue(store.chatDirection).toLowerCase();
+function FileFormChat({ disableInputs: _disableInputs }: { disableInputs: boolean }) {
+  const chatDirection = useAtomValue(store.chatDirection).toLowerCase();
   const { files, setFiles, conversation, setFilesLoading } = useChatContext();
   const { endpoint: _endpoint } = conversation ?? { endpoint: null };
   const { abortUpload } = useFileHandling();

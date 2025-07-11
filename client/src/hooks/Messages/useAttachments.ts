@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { useRecoilValue } from 'recoil';
+import { useAtomValue } from 'jotai';
 import type { TAttachment } from 'librechat-data-provider';
 import { useSearchResultsByTurn } from './useSearchResultsByTurn';
 import store from '~/store';
@@ -11,7 +11,7 @@ export default function useAttachments({
   messageId?: string;
   attachments?: TAttachment[];
 }) {
-  const messageAttachmentsMap = useRecoilValue(store.messageAttachmentsMap);
+  const messageAttachmentsMap = useAtomValue(store.messageAttachmentsMap);
   const messageAttachments = useMemo(
     () => attachments ?? messageAttachmentsMap[messageId ?? ''] ?? [],
     [attachments, messageAttachmentsMap, messageId],

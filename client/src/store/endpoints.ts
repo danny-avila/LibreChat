@@ -1,4 +1,4 @@
-import { atom, selector } from 'recoil';
+import { atom } from 'jotai';
 import { EModelEndpoint } from 'librechat-data-provider';
 import type { TEndpointsConfig } from 'librechat-data-provider';
 
@@ -15,35 +15,23 @@ const defaultConfig: TEndpointsConfig = {
   [EModelEndpoint.custom]: null,
 };
 
-const endpointsConfig = atom<TEndpointsConfig>({
-  key: 'endpointsConfig',
-  default: defaultConfig,
+const endpointsConfig = atom<TEndpointsConfig>(defaultConfig);
+
+const endpointsQueryEnabled = atom<boolean>(true);
+
+const plugins = atom((get) => {
+  const config = get(endpointsConfig) || {};
+  return config.gptPlugins?.plugins || {};
 });
 
-const endpointsQueryEnabled = atom<boolean>({
-  key: 'endpointsQueryEnabled',
-  default: true,
-});
+const endpointsFilter = atom((get) => {
+  const config = get(endpointsConfig) || {};
 
-const plugins = selector({
-  key: 'plugins',
-  get: ({ get }) => {
-    const config = get(endpointsConfig) || {};
-    return config.gptPlugins?.plugins || {};
-  },
-});
-
-const endpointsFilter = selector({
-  key: 'endpointsFilter',
-  get: ({ get }) => {
-    const config = get(endpointsConfig) || {};
-
-    const filter = {};
-    for (const key of Object.keys(config)) {
-      filter[key] = !!config[key];
-    }
-    return filter;
-  },
+  const filter = {};
+  for (const key of Object.keys(config)) {
+    filter[key] = !!config[key];
+  }
+  return filter;
 });
 
 export default {

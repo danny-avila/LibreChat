@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useRecoilValue } from 'recoil';
+import { useAtomValue } from 'jotai';
 import { CSSTransition } from 'react-transition-group';
 import type { TMessage } from 'librechat-data-provider';
 import { useScreenshot, useMessageScrolling, useLocalize } from '~/hooks';
@@ -14,9 +14,9 @@ export default function MessagesView({
   messagesTree?: TMessage[] | null;
 }) {
   const localize = useLocalize();
-  const fontSize = useRecoilValue(store.fontSize);
+  const fontSize = useAtomValue(store.fontSize);
   const { screenshotTargetRef } = useScreenshot();
-  const scrollButtonPreference = useRecoilValue(store.showScrollButton);
+  const scrollButtonPreference = useAtomValue(store.showScrollButton);
   const [currentEditId, setCurrentEditId] = useState<number | string | null>(-1);
 
   const {

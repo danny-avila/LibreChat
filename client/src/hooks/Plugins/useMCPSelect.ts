@@ -1,5 +1,5 @@
 import { useRef, useEffect, useCallback, useMemo } from 'react';
-import { useRecoilState } from 'recoil';
+import { useAtom } from 'jotai';
 import { Constants, LocalStorageKeys, EModelEndpoint } from 'librechat-data-provider';
 import type { TPlugin } from 'librechat-data-provider';
 import { useAvailableToolsQuery } from '~/data-provider';
@@ -27,7 +27,7 @@ interface UseMCPSelectOptions {
 export function useMCPSelect({ conversationId }: UseMCPSelectOptions) {
   const key = conversationId ?? Constants.NEW_CONVO;
   const hasSetFetched = useRef<string | null>(null);
-  const [ephemeralAgent, setEphemeralAgent] = useRecoilState(ephemeralAgentByConvoId(key));
+  const [ephemeralAgent, setEphemeralAgent] = useAtom(ephemeralAgentByConvoId(key));
   const { data: mcpToolDetails, isFetched } = useAvailableToolsQuery(EModelEndpoint.agents, {
     select: (data: TPlugin[]) => {
       const mcpToolsMap = new Map<string, TPlugin>();
@@ -62,12 +62,12 @@ export function useMCPSelect({ conversationId }: UseMCPSelectOptions) {
       if (!Array.isArray(values)) {
         return;
       }
-      setEphemeralAgent((prev) => ({
-        ...prev,
+      setEphemeralAgent({
+        ...ephemeralAgent,
         mcp: values,
-      }));
+      });
     },
-    [setEphemeralAgent],
+    [ephemeralAgent, setEphemeralAgent],
   );
 
   const [mcpValues, setMCPValues] = useLocalStorage<string[]>(

@@ -1,5 +1,5 @@
 import debounce from 'lodash/debounce';
-import { useRecoilValue } from 'recoil';
+import { useAtomValue } from 'jotai';
 import { Menu, Rocket } from 'lucide-react';
 import { useForm, FormProvider } from 'react-hook-form';
 import { useParams, useOutletContext } from 'react-router-dom';
@@ -37,12 +37,12 @@ const PromptForm = () => {
   const params = useParams();
   const localize = useLocalize();
   const { user } = useAuthContext();
-  const alwaysMakeProd = useRecoilValue(store.alwaysMakeProd);
+  const alwaysMakeProd = useAtomValue(store.alwaysMakeProd);
   const { showToast } = useToastContext();
   const promptId = params.promptId || '';
 
   const [selectionIndex, setSelectionIndex] = useState<number>(0);
-  const editorMode = useRecoilValue(store.promptsEditorMode);
+  const editorMode = useAtomValue(store.promptsEditorMode);
   const prevIsEditingRef = useRef(false);
   const [isEditing, setIsEditing] = useState(false);
   const [initialLoad, setInitialLoad] = useState(true);
@@ -287,18 +287,18 @@ const PromptForm = () => {
       {editorMode === PromptsEditorMode.ADVANCED &&
         (isLoadingPrompts
           ? Array.from({ length: 6 }).map((_, index: number) => (
-            <div key={index} className="my-2">
-              <Skeleton className="h-[72px] w-full" />
-            </div>
-          ))
+              <div key={index} className="my-2">
+                <Skeleton className="h-[72px] w-full" />
+              </div>
+            ))
           : prompts.length > 0 && (
-            <PromptVersions
-              group={group}
-              prompts={prompts}
-              selectionIndex={selectionIndex}
-              setSelectionIndex={setSelectionIndex}
-            />
-          ))}
+              <PromptVersions
+                group={group}
+                prompts={prompts}
+                selectionIndex={selectionIndex}
+                setSelectionIndex={setSelectionIndex}
+              />
+            ))}
     </div>
   );
 

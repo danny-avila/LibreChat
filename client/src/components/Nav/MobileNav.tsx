@@ -1,5 +1,5 @@
 import React from 'react';
-import { useRecoilValue } from 'recoil';
+import { useAtomValue } from 'jotai';
 import { useQueryClient } from '@tanstack/react-query';
 import { QueryKeys, Constants } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
@@ -15,7 +15,7 @@ export default function MobileNav({
   const localize = useLocalize();
   const queryClient = useQueryClient();
   const { newConversation } = useNewConvo();
-  const conversation = useRecoilValue(store.conversationByIndex(0));
+  const conversation = useAtomValue(store.conversationByIndex(0));
   const { title = 'New Chat' } = conversation || {};
 
   return (

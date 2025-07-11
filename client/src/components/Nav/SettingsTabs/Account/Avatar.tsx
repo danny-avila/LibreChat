@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback } from 'react';
-import { useSetRecoilState } from 'recoil';
+import { useSetAtom } from 'jotai';
 import AvatarEditor from 'react-avatar-editor';
 import { FileImage, RotateCw, Upload } from 'lucide-react';
 import { fileConfig as defaultFileConfig, mergeFileConfig } from 'librechat-data-provider';
@@ -26,7 +26,7 @@ interface AvatarEditorRef {
 }
 
 function Avatar() {
-  const setUser = useSetRecoilState(store.user);
+  const setUser = useSetAtom(store.user);
 
   const [scale, setScale] = useState<number>(1);
   const [rotation, setRotation] = useState<number>(0);

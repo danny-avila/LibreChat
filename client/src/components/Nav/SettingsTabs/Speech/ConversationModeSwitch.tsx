@@ -1,4 +1,4 @@
-import { useRecoilState, useRecoilValue } from 'recoil';
+import { useAtom, useAtomValue, useSetAtom } from 'jotai';
 import { Switch } from '~/components/ui';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
@@ -9,12 +9,12 @@ export default function ConversationModeSwitch({
   onCheckedChange?: (value: boolean) => void;
 }) {
   const localize = useLocalize();
-  const [conversationMode, setConversationMode] = useRecoilState<boolean>(store.conversationMode);
-  const speechToText = useRecoilValue(store.speechToText);
-  const textToSpeech = useRecoilValue(store.textToSpeech);
-  const [, setAutoSendText] = useRecoilState(store.autoSendText);
-  const [, setDecibelValue] = useRecoilState(store.decibelValue);
-  const [, setAutoTranscribeAudio] = useRecoilState<boolean>(store.autoTranscribeAudio);
+  const [conversationMode, setConversationMode] = useAtom<boolean>(store.conversationMode);
+  const speechToText = useAtomValue(store.speechToText);
+  const textToSpeech = useAtomValue(store.textToSpeech);
+  const setAutoSendText = useSetAtom(store.autoSendText);
+  const setDecibelValue = useSetAtom(store.decibelValue);
+  const setAutoTranscribeAudio = useSetAtom(store.autoTranscribeAudio);
 
   const handleCheckedChange = (value: boolean) => {
     setAutoTranscribeAudio(value);

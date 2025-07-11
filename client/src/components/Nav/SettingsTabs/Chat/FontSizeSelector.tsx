@@ -1,11 +1,11 @@
-import { useRecoilState } from 'recoil';
+import { useAtom } from 'jotai';
 import { Dropdown } from '~/components/ui';
 import { applyFontSize } from '~/utils';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
 
 export default function FontSizeSelector() {
-  const [fontSize, setFontSize] = useRecoilState(store.fontSize);
+  const [fontSize, setFontSize] = useAtom(store.fontSize);
   const localize = useLocalize();
 
   const handleChange = (val: string) => {

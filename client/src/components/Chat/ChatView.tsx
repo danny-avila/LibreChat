@@ -1,5 +1,5 @@
 import { memo, useCallback } from 'react';
-import { useRecoilValue } from 'recoil';
+import { useAtomValue } from 'jotai';
 import { useForm } from 'react-hook-form';
 import { useParams } from 'react-router-dom';
 import { Constants } from 'librechat-data-provider';
@@ -31,9 +31,9 @@ function LoadingSpinner() {
 
 function ChatView({ index = 0 }: { index?: number }) {
   const { conversationId } = useParams();
-  const rootSubmission = useRecoilValue(store.submissionByIndex(index));
-  const addedSubmission = useRecoilValue(store.submissionByIndex(index + 1));
-  const centerFormOnLanding = useRecoilValue(store.centerFormOnLanding);
+  const rootSubmission = useAtomValue(store.submissionByIndex(index));
+  const addedSubmission = useAtomValue(store.submissionByIndex(index + 1));
+  const centerFormOnLanding = useAtomValue(store.centerFormOnLanding);
 
   const fileMap = useFileMapContext();
 
@@ -51,8 +51,30 @@ function ChatView({ index = 0 }: { index?: number }) {
   const chatHelpers = useChatHelpers(index, conversationId);
   const addedChatHelpers = useAddedResponse({ rootIndex: index });
 
-  useSSE(rootSubmission, chatHelpers, false);
-  useSSE(addedSubmission, addedChatHelpers, true);
+  useSSE(
+    rootSubmission,
+    {
+      setMessages: chatHelpers.setMessages,
+      getMessages: chatHelpers.getMessages,
+      setConversation: chatHelpers.setConversation,
+      setIsSubmitting: chatHelpers.setIsSubmitting,
+      newConversation: chatHelpers.newConversation,
+      resetLatestMessage: chatHelpers.resetLatestMessage,
+    },
+    false,
+  );
+  useSSE(
+    addedSubmission,
+    {
+      setMessages: addedChatHelpers.setMessages,
+      getMessages: addedChatHelpers.getMessages,
+      setConversation: addedChatHelpers.setConversation,
+      setIsSubmitting: addedChatHelpers.setIsSubmitting,
+      newConversation: undefined,
+      resetLatestMessage: undefined,
+    },
+    true,
+  );
 
   const methods = useForm<ChatFormValues>({
     defaultValues: { text: '' },

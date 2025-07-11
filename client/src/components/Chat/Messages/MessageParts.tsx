@@ -1,8 +1,8 @@
 import React, { useMemo } from 'react';
-import { useRecoilValue } from 'recoil';
+import { useAtomValue } from 'jotai';
 import type { TMessageContentParts } from 'librechat-data-provider';
 import type { TMessageProps, TMessageIcon } from '~/common';
-import { useMessageHelpers, useLocalize, useAttachments } from '~/hooks';
+import { useMessageHelpers, useMessageActions, useLocalize, useAttachments } from '~/hooks';
 import MessageIcon from '~/components/Chat/Messages/MessageIcon';
 import ContentParts from './Content/ContentParts';
 import SiblingSwitch from './SiblingSwitch';
@@ -37,8 +37,14 @@ export default function Message(props: TMessageProps) {
     regenerateMessage,
   } = useMessageHelpers(props);
 
-  const fontSize = useRecoilValue(store.fontSize);
-  const maximizeChatSpace = useRecoilValue(store.maximizeChatSpace);
+  const { handleFeedback } = useMessageActions({
+    message,
+    currentEditId,
+    setCurrentEditId,
+  });
+
+  const fontSize = useAtomValue(store.fontSize);
+  const maximizeChatSpace = useAtomValue(store.maximizeChatSpace);
   const { children, messageId = null, isCreatedByUser } = message ?? {};
 
   const name = useMemo(() => {
@@ -150,6 +156,7 @@ export default function Message(props: TMessageProps) {
                       handleContinue={handleContinue}
                       latestMessage={latestMessage}
                       isLast={isLast}
+                      handleFeedback={handleFeedback}
                     />
                   </SubRow>
                 )}

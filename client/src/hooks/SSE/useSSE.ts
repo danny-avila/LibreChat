@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { v4 } from 'uuid';
 import { SSE } from 'sse.js';
-import { useSetRecoilState } from 'recoil';
+import { useSetAtom } from 'jotai';
 import {
   request,
   Constants,
@@ -45,12 +45,12 @@ export default function useSSE(
   runIndex = 0,
 ) {
   const genTitle = useGenTitleMutation();
-  const setActiveRunId = useSetRecoilState(store.activeRunFamily(runIndex));
+  const setActiveRunId = useSetAtom(store.activeRunFamily(runIndex));
 
   const { token, isAuthenticated } = useAuthContext();
   const [completed, setCompleted] = useState(new Set());
-  const setAbortScroll = useSetRecoilState(store.abortScrollFamily(runIndex));
-  const setShowStopButton = useSetRecoilState(store.showStopButtonByIndex(runIndex));
+  const setAbortScroll = useSetAtom(store.abortScrollFamily(runIndex));
+  const setShowStopButton = useSetAtom(store.showStopButtonByIndex(runIndex));
 
   const {
     setMessages,

@@ -1,4 +1,4 @@
-import { useRecoilState, useRecoilValue } from 'recoil';
+import { useAtom, useAtomValue } from 'jotai';
 import { useMemo, useRef, useEffect, useCallback } from 'react';
 import { usePromptGroupsInfiniteQuery } from '~/data-provider';
 import debounce from 'lodash/debounce';
@@ -8,10 +8,10 @@ import { QueryKeys } from 'librechat-data-provider';
 
 export default function usePromptGroupsNav() {
   const queryClient = useQueryClient();
-  const category = useRecoilValue(store.promptsCategory);
-  const [name, setName] = useRecoilState(store.promptsName);
-  const [pageSize, setPageSize] = useRecoilState(store.promptsPageSize);
-  const [pageNumber, setPageNumber] = useRecoilState(store.promptsPageNumber);
+  const category = useAtomValue(store.promptsCategory);
+  const [name, setName] = useAtom(store.promptsName);
+  const [pageSize, setPageSize] = useAtom(store.promptsPageSize);
+  const [pageNumber, setPageNumber] = useAtom(store.promptsPageNumber);
 
   const maxPageNumberReached = useRef(1);
 
@@ -32,7 +32,7 @@ export default function usePromptGroupsNav() {
     maxPageNumberReached.current = 1;
     setPageNumber(1);
     queryClient.resetQueries([QueryKeys.promptGroups, name, category, pageSize]);
-  }, [pageSize, name, category, setPageNumber]);
+  }, [pageSize, name, category, setPageNumber, queryClient]);
 
   const promptGroups = useMemo(() => {
     return groupsQuery.data?.pages[pageNumber - 1 + '']?.promptGroups || [];
@@ -52,12 +52,9 @@ export default function usePromptGroupsNav() {
   const hasNextPage = !!groupsQuery.hasNextPage || maxPageNumberReached.current > pageNumber;
   const hasPreviousPage = !!groupsQuery.hasPreviousPage || pageNumber > 1;
 
-  const debouncedSetName = useCallback(
-    debounce((nextValue: string) => {
-      setName(nextValue);
-    }, 850),
-    [setName],
-  );
+  const debouncedSetName = debounce((nextValue: string) => {
+    setName(nextValue);
+  }, 850);
 
   return {
     name,

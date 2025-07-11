@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo } from 'react';
 import { ArrowUpLeft } from 'lucide-react';
-import { useSetRecoilState } from 'recoil';
+import { useSetAtom } from 'jotai';
 import {
   flexRender,
   getCoreRowModel,
@@ -48,7 +48,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
   const [{ pageIndex, pageSize }, setPagination] = useState({ pageIndex: 0, pageSize: 10 });
-  const setShowFiles = useSetRecoilState(store.showFiles);
+  const setShowFiles = useSetAtom(store.showFiles);
 
   const pagination = useMemo(
     () => ({

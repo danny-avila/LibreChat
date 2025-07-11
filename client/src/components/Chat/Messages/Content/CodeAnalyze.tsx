@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useRecoilValue } from 'recoil';
+import { useAtomValue } from 'jotai';
 import { useProgress, useLocalize } from '~/hooks';
 import ProgressText from './ProgressText';
 import MarkdownLite from './MarkdownLite';
@@ -16,7 +16,7 @@ export default function CodeAnalyze({
 }) {
   const localize = useLocalize();
   const progress = useProgress(initialProgress);
-  const showAnalysisCode = useRecoilValue(store.showCode);
+  const showAnalysisCode = useAtomValue(store.showCode);
   const [showCode, setShowCode] = useState(showAnalysisCode);
 
   const logs = outputs.reduce((acc, output) => {

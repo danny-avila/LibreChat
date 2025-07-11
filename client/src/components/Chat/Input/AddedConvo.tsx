@@ -1,6 +1,5 @@
 import { useMemo } from 'react';
 import type { TConversation, TEndpointOption, TPreset } from 'librechat-data-provider';
-import type { SetterOrUpdater } from 'recoil';
 import useGetSender from '~/hooks/Conversations/useGetSender';
 import { useGetEndpointsQuery } from '~/data-provider';
 import { EndpointIcon } from '~/components/Endpoints';
@@ -11,7 +10,7 @@ export default function AddedConvo({
   setAddedConvo,
 }: {
   addedConvo: TConversation | null;
-  setAddedConvo: SetterOrUpdater<TConversation | null>;
+  setAddedConvo: (value: TConversation | null) => void;
 }) {
   const getSender = useGetSender();
   const { data: endpointsConfig } = useGetEndpointsQuery();

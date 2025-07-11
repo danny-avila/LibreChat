@@ -1,6 +1,6 @@
 import { ListFilter, User, Share2 } from 'lucide-react';
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
-import { useRecoilValue, useSetRecoilState } from 'recoil';
+import { useAtomValue, useSetAtom } from 'jotai';
 import { SystemCategories } from 'librechat-data-provider';
 import { usePromptGroupsNav, useLocalize, useCategories } from '~/hooks';
 import { Dropdown, AnimatedSearchInput } from '~/components/ui';
@@ -16,8 +16,8 @@ export default function FilterPrompts({
 }) {
   const localize = useLocalize();
   const [displayName, setDisplayName] = useState('');
-  const setCategory = useSetRecoilState(store.promptsCategory);
-  const categoryFilter = useRecoilValue(store.promptsCategory);
+  const setCategory = useSetAtom(store.promptsCategory);
+  const categoryFilter = useAtomValue(store.promptsCategory);
   const { categories } = useCategories('h-4 w-4');
   const [isSearching, setIsSearching] = useState(false);
 

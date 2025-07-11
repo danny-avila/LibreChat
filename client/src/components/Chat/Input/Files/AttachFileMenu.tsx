@@ -1,4 +1,4 @@
-import { useSetRecoilState } from 'recoil';
+import { useAtom } from 'jotai';
 import * as Ariakit from '@ariakit/react';
 import React, { useRef, useState, useMemo } from 'react';
 import { FileSearch, ImageUpIcon, TerminalSquareIcon, FileType2Icon } from 'lucide-react';
@@ -20,7 +20,7 @@ const AttachFileMenu = ({ disabled, conversationId, endpointFileConfig }: Attach
   const isUploadDisabled = disabled ?? false;
   const inputRef = useRef<HTMLInputElement>(null);
   const [isPopoverActive, setIsPopoverActive] = useState(false);
-  const setEphemeralAgent = useSetRecoilState(ephemeralAgentByConvoId(conversationId));
+  const [ephemeralAgent, setEphemeralAgent] = useAtom(ephemeralAgentByConvoId(conversationId));
   const [toolResource, setToolResource] = useState<EToolResources | undefined>();
   const { handleFileChange } = useFileHandling({
     overrideEndpoint: EModelEndpoint.agents,
@@ -84,10 +84,10 @@ const AttachFileMenu = ({ disabled, conversationId, endpointFileConfig }: Attach
         label: localize('com_ui_upload_code_files'),
         onClick: () => {
           setToolResource(EToolResources.execute_code);
-          setEphemeralAgent((prev) => ({
-            ...prev,
+          setEphemeralAgent({
+            ...(ephemeralAgent || {}),
             [EToolResources.execute_code]: true,
-          }));
+          });
           handleUploadClick();
         },
         icon: <TerminalSquareIcon className="icon-md" />,

@@ -1,6 +1,6 @@
 import { memo, useRef, useMemo, useEffect, useState, useCallback } from 'react';
 import { useWatch } from 'react-hook-form';
-import { useRecoilState, useRecoilValue } from 'recoil';
+import { useAtom, useAtomValue, useSetAtom } from 'jotai';
 import { Constants, isAssistantsEndpoint, isAgentsEndpoint } from 'librechat-data-provider';
 import {
   useChatContext,
@@ -45,21 +45,22 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
   const [isTextAreaFocused, setIsTextAreaFocused] = useState(false);
   const [backupBadges, setBackupBadges] = useState<Pick<BadgeItem, 'id'>[]>([]);
 
-  const SpeechToText = useRecoilValue(store.speechToText);
-  const TextToSpeech = useRecoilValue(store.textToSpeech);
-  const chatDirection = useRecoilValue(store.chatDirection);
-  const automaticPlayback = useRecoilValue(store.automaticPlayback);
-  const maximizeChatSpace = useRecoilValue(store.maximizeChatSpace);
-  const centerFormOnLanding = useRecoilValue(store.centerFormOnLanding);
-  const isTemporary = useRecoilValue(store.isTemporary);
+  const SpeechToText = useAtomValue(store.speechToText);
+  const TextToSpeech = useAtomValue(store.textToSpeech);
+  const chatDirection = useAtomValue(store.chatDirection);
+  const automaticPlayback = useAtomValue(store.automaticPlayback);
+  const maximizeChatSpace = useAtomValue(store.maximizeChatSpace);
+  const centerFormOnLanding = useAtomValue(store.centerFormOnLanding);
+  const isTemporary = useAtomValue(store.isTemporary);
 
-  const [badges, setBadges] = useRecoilState(store.chatBadges);
-  const [isEditingBadges, setIsEditingBadges] = useRecoilState(store.isEditingBadges);
-  const [showStopButton, setShowStopButton] = useRecoilState(store.showStopButtonByIndex(index));
-  const [showPlusPopover, setShowPlusPopover] = useRecoilState(store.showPlusPopoverFamily(index));
-  const [showMentionPopover, setShowMentionPopover] = useRecoilState(
-    store.showMentionPopoverFamily(index),
-  );
+  const [badges, setBadges] = useAtom(store.chatBadges);
+  const [isEditingBadges, setIsEditingBadges] = useAtom(store.isEditingBadges);
+  const showStopButton = useAtomValue(store.showStopButtonByIndex(index));
+  const setShowStopButton = useSetAtom(store.showStopButtonByIndex(index));
+  const showPlusPopover = useAtomValue(store.showPlusPopoverFamily(index));
+  const setShowPlusPopover = useSetAtom(store.showPlusPopoverFamily(index));
+  const showMentionPopover = useAtomValue(store.showMentionPopoverFamily(index));
+  const setShowMentionPopover = useSetAtom(store.showMentionPopoverFamily(index));
 
   const { requiresKey } = useRequiresKey();
   const methods = useChatFormContext();
@@ -80,7 +81,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
     isSubmitting: isSubmittingAdded,
   } = useAddedChatContext();
   const assistantMap = useAssistantsMapContext();
-  const showStopAdded = useRecoilValue(store.showStopButtonByIndex(addedIndex));
+  const showStopAdded = useAtomValue(store.showStopButtonByIndex(addedIndex));
 
   const endpoint = useMemo(
     () => conversation?.endpointType ?? conversation?.endpoint,

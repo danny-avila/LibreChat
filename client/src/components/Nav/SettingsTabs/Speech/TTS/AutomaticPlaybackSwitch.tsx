@@ -1,4 +1,4 @@
-import { useRecoilState } from 'recoil';
+import { useAtom } from 'jotai';
 import { Switch } from '~/components/ui';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
@@ -9,7 +9,7 @@ export default function AutomaticPlaybackSwitch({
   onCheckedChange?: (value: boolean) => void;
 }) {
   const localize = useLocalize();
-  const [automaticPlayback, setAutomaticPlayback] = useRecoilState(store.automaticPlayback);
+  const [automaticPlayback, setAutomaticPlayback] = useAtom(store.automaticPlayback);
 
   const handleCheckedChange = (value: boolean) => {
     setAutomaticPlayback(value);

@@ -1,4 +1,4 @@
-import { useSetRecoilState } from 'recoil';
+import { useSetAtom } from 'jotai';
 import { useEffect, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { TEndpointsConfig, TModelsConfig } from 'librechat-data-provider';
@@ -14,7 +14,7 @@ type TempOverrideType = Record<string, unknown> & {
 };
 
 export default function useConfigOverride() {
-  const setEndpointsQueryEnabled = useSetRecoilState(store.endpointsQueryEnabled);
+  const setEndpointsQueryEnabled = useSetAtom(store.endpointsQueryEnabled);
   const overrideQuery = useGetEndpointsConfigOverride({
     staleTime: Infinity,
   });

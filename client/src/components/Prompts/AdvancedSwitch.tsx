@@ -1,4 +1,4 @@
-import { useRecoilState, useSetRecoilState } from 'recoil';
+import { useAtom, useSetAtom } from 'jotai';
 import { PromptsEditorMode } from '~/common';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
@@ -7,8 +7,8 @@ const { promptsEditorMode, alwaysMakeProd } = store;
 
 const AdvancedSwitch = () => {
   const localize = useLocalize();
-  const [mode, setMode] = useRecoilState(promptsEditorMode);
-  const setAlwaysMakeProd = useSetRecoilState(alwaysMakeProd);
+  const [mode, setMode] = useAtom(promptsEditorMode);
+  const setAlwaysMakeProd = useSetAtom(alwaysMakeProd);
 
   return (
     <div className="relative flex h-10 items-center justify-center rounded-xl border border-border-light bg-surface-primary transition-all duration-300">

@@ -1,5 +1,5 @@
 import { useState, useId, useRef } from 'react';
-import { useRecoilValue } from 'recoil';
+import { useAtomValue } from 'jotai';
 import * as Ariakit from '@ariakit/react';
 import { Upload, Share2 } from 'lucide-react';
 import type * as t from '~/common';
@@ -23,7 +23,7 @@ export default function ExportAndShareMenu({
   const shareButtonRef = useRef<HTMLButtonElement>(null);
   const exportButtonRef = useRef<HTMLButtonElement>(null);
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
-  const conversation = useRecoilValue(store.conversationByIndex(0));
+  const conversation = useAtomValue(store.conversationByIndex(0));
 
   const exportable =
     conversation &&

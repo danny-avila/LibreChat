@@ -1,5 +1,5 @@
 import { memo, Suspense, useMemo } from 'react';
-import { useRecoilValue } from 'recoil';
+import { useAtomValue } from 'jotai';
 import type { TMessage } from 'librechat-data-provider';
 import type { TMessageContentProps, TDisplayProps } from '~/common';
 import Error from '~/components/Messages/Content/Error';
@@ -71,7 +71,7 @@ export const ErrorMessage = ({
 
 const DisplayMessage = ({ text, isCreatedByUser, message, showCursor }: TDisplayProps) => {
   const { isSubmitting, latestMessage } = useChatContext();
-  const enableUserMsgMarkdown = useRecoilValue(store.enableUserMsgMarkdown);
+  const enableUserMsgMarkdown = useAtomValue(store.enableUserMsgMarkdown);
   const showCursorState = useMemo(
     () => showCursor === true && isSubmitting,
     [showCursor, isSubmitting],

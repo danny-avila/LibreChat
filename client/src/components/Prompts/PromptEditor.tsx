@@ -1,5 +1,5 @@
 import { useMemo, memo } from 'react';
-import { useRecoilValue } from 'recoil';
+import { useAtomValue } from 'jotai';
 import { EditIcon } from 'lucide-react';
 import type { PluggableList } from 'unified';
 import rehypeHighlight from 'rehype-highlight';
@@ -31,7 +31,7 @@ type Props = {
 const PromptEditor: React.FC<Props> = ({ name, isEditing, setIsEditing }) => {
   const localize = useLocalize();
   const { control } = useFormContext();
-  const editorMode = useRecoilValue(promptsEditorMode);
+  const editorMode = useAtomValue(promptsEditorMode);
   const { dirtyFields } = useFormState({ control: control });
   const { prompt } = dirtyFields as { prompt?: string };
 

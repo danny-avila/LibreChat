@@ -1,6 +1,6 @@
 import React, { forwardRef, useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import debounce from 'lodash/debounce';
-import { useRecoilState } from 'recoil';
+import { useAtom } from 'jotai';
 import { Search, X } from 'lucide-react';
 import { QueryKeys } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
@@ -25,7 +25,7 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: React.Ref<HTMLDivEleme
   const [showClearIcon, setShowClearIcon] = useState(false);
 
   const { newConversation } = useNewConvo();
-  const [search, setSearchState] = useRecoilState(store.search);
+  const [search, setSearchState] = useAtom(store.search);
 
   const clearSearch = useCallback(() => {
     if (location.pathname.includes('/search')) {

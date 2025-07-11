@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect, useMemo, memo } from 'react';
 import throttle from 'lodash/throttle';
-import { useRecoilValue } from 'recoil';
+import { useAtomValue } from 'jotai';
 import { getConfigDefaults } from 'librechat-data-provider';
 import type { ImperativePanelHandle } from 'react-resizable-panels';
 import { ResizableHandleAlt, ResizablePanel, ResizablePanelGroup } from '~/components/ui/Resizable';
@@ -43,7 +43,7 @@ const SidePanelGroup = ({
   const [collapsedSize, setCollapsedSize] = useState(navCollapsedSize);
 
   const isSmallScreen = useMediaQuery('(max-width: 767px)');
-  const hideSidePanel = useRecoilValue(store.hideSidePanel);
+  const hideSidePanel = useAtomValue(store.hideSidePanel);
 
   const calculateLayout = useCallback(() => {
     if (artifacts == null) {

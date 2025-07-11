@@ -1,7 +1,8 @@
-import { useRecoilValue } from 'recoil';
+import { useAtomValue } from 'jotai';
 import { useCallback, useRef, useEffect } from 'react';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
 import { LocalStorageKeys, isAssistantsEndpoint } from 'librechat-data-provider';
+import type { Dispatch, SetStateAction } from 'react';
 import type {
   TPreset,
   TModelsConfig,
@@ -9,7 +10,6 @@ import type {
   TEndpointsConfig,
   EModelEndpoint,
 } from 'librechat-data-provider';
-import type { SetterOrUpdater } from 'recoil';
 import type { AssistantListItem } from '~/common';
 import { getEndpointField, buildDefaultConvo, getDefaultEndpoint, logger } from '~/utils';
 import useAssistantListMap from '~/hooks/Assistants/useAssistantListMap';
@@ -24,14 +24,14 @@ const useGenerateConvo = ({
 }: {
   index?: number;
   rootIndex: number;
-  setConversation?: SetterOrUpdater<TConversation | null>;
+  setConversation?: Dispatch<SetStateAction<TConversation | null>>;
 }) => {
   const modelsQuery = useGetModelsQuery();
   const assistantsListMap = useAssistantListMap();
   const { data: endpointsConfig = {} as TEndpointsConfig } = useGetEndpointsQuery();
 
   const timeoutIdRef = useRef<NodeJS.Timeout>();
-  const rootConvo = useRecoilValue(store.conversationByKeySelector(rootIndex));
+  const rootConvo = useAtomValue(store.conversationByKeySelector(rootIndex));
 
   useEffect(() => {
     if (rootConvo?.conversationId != null && setConversation) {

@@ -1,4 +1,4 @@
-import { useRecoilValue } from 'recoil';
+import { useAtomValue } from 'jotai';
 import { useState, useMemo, useRef, useCallback, useEffect } from 'react';
 import { useTextToSpeechMutation, useVoicesQuery } from '~/data-provider';
 import { useToastContext } from '~/Providers/ToastContext';
@@ -29,17 +29,17 @@ function useTextToSpeechExternal({
 }: TUseTTSExternal) {
   const localize = useLocalize();
   const { showToast } = useToastContext();
-  const voice = useRecoilValue(store.voice);
-  const cacheTTS = useRecoilValue(store.cacheTTS);
-  const playbackRate = useRecoilValue(store.playbackRate);
+  const voice = useAtomValue(store.voice);
+  const cacheTTS = useAtomValue(store.cacheTTS);
+  const playbackRate = useAtomValue(store.playbackRate);
 
   const [downloadFile, setDownloadFile] = useState(false);
 
   const promiseAudioRef = useRef<HTMLAudioElement | null>(null);
 
   /* Global Audio Variables */
-  const globalIsFetching = useRecoilValue(store.globalAudioFetchingFamily(index));
-  const globalIsPlaying = useRecoilValue(store.globalAudioPlayingFamily(index));
+  const globalIsFetching = useAtomValue(store.globalAudioFetchingFamily(index));
+  const globalIsPlaying = useAtomValue(store.globalAudioPlayingFamily(index));
 
   const autoPlayAudio = (blobUrl: string) => {
     const newAudio = new Audio(blobUrl);

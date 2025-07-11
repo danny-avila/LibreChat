@@ -1,6 +1,6 @@
 import debounce from 'lodash/debounce';
 import { useEffect, useRef, useCallback } from 'react';
-import { useRecoilValue, useRecoilState } from 'recoil';
+import { useAtom, useAtomValue } from 'jotai';
 import type { TEndpointOption } from 'librechat-data-provider';
 import type { KeyboardEvent } from 'react';
 import {
@@ -40,11 +40,11 @@ export default function useTextarea({
   const { handleFiles } = useFileHandling();
   const assistantMap = useAssistantsMapContext();
   const checkHealth = useInteractionHealthCheck();
-  const enterToSend = useRecoilValue(store.enterToSend);
+  const enterToSend = useAtomValue(store.enterToSend);
 
   const { index, conversation, isSubmitting, filesLoading, latestMessage, setFilesLoading } =
     useChatContext();
-  const [activePrompt, setActivePrompt] = useRecoilState(store.activePromptByIndex(index));
+  const [activePrompt, setActivePrompt] = useAtom(store.activePromptByIndex(index));
 
   const { endpoint = '' } = conversation || {};
   const { entity, isAgent, isAssistant } = getEntity({

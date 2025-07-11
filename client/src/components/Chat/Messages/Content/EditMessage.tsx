@@ -1,5 +1,5 @@
 import { useRef, useEffect, useCallback } from 'react';
-import { useRecoilState, useRecoilValue } from 'recoil';
+import { useAtom, useAtomValue } from 'jotai';
 import { useForm } from 'react-hook-form';
 import { useUpdateMessageMutation } from 'librechat-data-provider/react-query';
 import type { TEditProps } from '~/common';
@@ -23,7 +23,7 @@ const EditMessage = ({
   const saveButtonRef = useRef<HTMLButtonElement | null>(null);
   const submitButtonRef = useRef<HTMLButtonElement | null>(null);
   const { getMessages, setMessages, conversation } = useChatContext();
-  const [latestMultiMessage, setLatestMultiMessage] = useRecoilState(
+  const [latestMultiMessage, setLatestMultiMessage] = useAtom(
     store.latestMessageFamily(addedIndex),
   );
 
@@ -33,7 +33,7 @@ const EditMessage = ({
   const updateMessageMutation = useUpdateMessageMutation(conversationId ?? '');
   const localize = useLocalize();
 
-  const chatDirection = useRecoilValue(store.chatDirection).toLowerCase();
+  const chatDirection = useAtomValue(store.chatDirection).toLowerCase();
   const isRTL = chatDirection === 'rtl';
 
   const { register, handleSubmit, setValue } = useForm({

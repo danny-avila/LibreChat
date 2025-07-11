@@ -9,7 +9,7 @@ import {
   LocalStorageKeys,
   isAssistantsEndpoint,
 } from 'librechat-data-provider';
-import { useRecoilState, useRecoilValue, useSetRecoilState, useRecoilCallback } from 'recoil';
+import { useAtom, useAtomValue, useSetAtom } from 'jotai';
 import type {
   TPreset,
   TSubmission,
@@ -38,18 +38,18 @@ const useNewConvo = (index = 0) => {
   const [searchParams] = useSearchParams();
   const { data: startupConfig } = useGetStartupConfig();
   const clearAllConversations = store.useClearConvoState();
-  const defaultPreset = useRecoilValue(store.defaultPreset);
+  const defaultPreset = useAtomValue(store.defaultPreset);
   const { setConversation } = store.useCreateConversationAtom(index);
-  const [files, setFiles] = useRecoilState(store.filesByIndex(index));
-  const saveBadgesState = useRecoilValue<boolean>(store.saveBadgesState);
+  const [files, setFiles] = useAtom(store.filesByIndex(index));
+  const saveBadgesState = useAtomValue<boolean>(store.saveBadgesState);
   const clearAllLatestMessages = store.useClearLatestMessages(`useNewConvo ${index}`);
-  const setSubmission = useSetRecoilState<TSubmission | null>(store.submissionByIndex(index));
+  const setSubmission = useSetAtom(store.submissionByIndex(index));
   const { data: endpointsConfig = {} as TEndpointsConfig } = useGetEndpointsQuery();
 
   const modelsQuery = useGetModelsQuery();
   const assistantsListMap = useAssistantListMap();
   const { pauseGlobalAudio } = usePauseGlobalAudio(index);
-  const saveDrafts = useRecoilValue<boolean>(store.saveDrafts);
+  const saveDrafts = useAtomValue<boolean>(store.saveDrafts);
   const resetBadges = useResetChatBadges();
 
   const { mutateAsync } = useDeleteFilesMutation({
@@ -61,149 +61,147 @@ const useNewConvo = (index = 0) => {
     },
   });
 
-  const switchToConversation = useRecoilCallback(
-    () =>
-      async (
-        conversation: TConversation,
-        preset: Partial<TPreset> | null = null,
-        modelsData?: TModelsConfig,
-        buildDefault?: boolean,
-        keepLatestMessage?: boolean,
-        keepAddedConvos?: boolean,
-        disableFocus?: boolean,
-        _disableParams?: boolean,
-      ) => {
-        const modelsConfig = modelsData ?? modelsQuery.data;
-        const { endpoint = null } = conversation;
-        const buildDefaultConversation = (endpoint === null || buildDefault) ?? false;
-        const activePreset =
-          // use default preset only when it's defined,
-          // preset is not provided,
-          // endpoint matches or is null (to allow endpoint change),
-          // and buildDefaultConversation is true
-          defaultPreset &&
-          !preset &&
-          (defaultPreset.endpoint === endpoint || !endpoint) &&
-          buildDefaultConversation
-            ? defaultPreset
-            : preset;
+  const switchToConversation = useCallback(
+    async (
+      conversation: TConversation,
+      preset: Partial<TPreset> | null = null,
+      modelsData?: TModelsConfig,
+      buildDefault?: boolean,
+      keepLatestMessage?: boolean,
+      keepAddedConvos?: boolean,
+      disableFocus?: boolean,
+      _disableParams?: boolean,
+    ) => {
+      const modelsConfig = modelsData ?? modelsQuery.data;
+      const { endpoint = null } = conversation;
+      const buildDefaultConversation = (endpoint === null || buildDefault) ?? false;
+      const activePreset =
+        // use default preset only when it's defined,
+        // preset is not provided,
+        // endpoint matches or is null (to allow endpoint change),
+        // and buildDefaultConversation is true
+        defaultPreset &&
+        !preset &&
+        (defaultPreset.endpoint === endpoint || !endpoint) &&
+        buildDefaultConversation
+          ? defaultPreset
+          : preset;
 
-        const disableParams =
-          _disableParams ??
-          (activePreset?.presetId != null &&
-            activePreset.presetId &&
-            activePreset.presetId === defaultPreset?.presetId);
+      const disableParams =
+        _disableParams ??
+        (activePreset?.presetId != null &&
+          activePreset.presetId &&
+          activePreset.presetId === defaultPreset?.presetId);
 
-        if (buildDefaultConversation) {
-          let defaultEndpoint = getDefaultEndpoint({
-            convoSetup: activePreset ?? conversation,
-            endpointsConfig,
-          });
-
-          if (!defaultEndpoint) {
-            defaultEndpoint = Object.keys(endpointsConfig ?? {})[0] as EModelEndpoint;
-          }
-
-          const endpointType = getEndpointField(endpointsConfig, defaultEndpoint, 'type');
-          if (!conversation.endpointType && endpointType) {
-            conversation.endpointType = endpointType;
-          } else if (conversation.endpointType && !endpointType) {
-            conversation.endpointType = undefined;
-          }
-
-          const isAssistantEndpoint = isAssistantsEndpoint(defaultEndpoint);
-          const assistants: AssistantListItem[] = assistantsListMap[defaultEndpoint] ?? [];
-          const currentAssistantId = conversation.assistant_id ?? '';
-          const currentAssistant = assistantsListMap[defaultEndpoint]?.[currentAssistantId] as
-            | AssistantListItem
-            | undefined;
-
-          if (currentAssistantId && !currentAssistant) {
-            conversation.assistant_id = undefined;
-          }
-
-          if (!currentAssistantId && isAssistantEndpoint) {
-            conversation.assistant_id =
-              localStorage.getItem(
-                `${LocalStorageKeys.ASST_ID_PREFIX}${index}${defaultEndpoint}`,
-              ) ?? assistants[0]?.id;
-          }
-
-          if (
-            currentAssistantId &&
-            isAssistantEndpoint &&
-            conversation.conversationId === Constants.NEW_CONVO
-          ) {
-            const assistant = assistants.find((asst) => asst.id === currentAssistantId);
-            conversation.model = assistant?.model;
-            updateLastSelectedModel({
-              endpoint: defaultEndpoint,
-              model: conversation.model,
-            });
-          }
-
-          if (currentAssistantId && !isAssistantEndpoint) {
-            conversation.assistant_id = undefined;
-          }
-
-          const models = modelsConfig?.[defaultEndpoint] ?? [];
-          conversation = buildDefaultConvo({
-            conversation,
-            lastConversationSetup: activePreset as TConversation,
-            endpoint: defaultEndpoint,
-            models,
-          });
-        }
-
-        if (disableParams === true) {
-          conversation.disableParams = true;
-        }
-
-        if (!(keepAddedConvos ?? false)) {
-          clearAllConversations(true);
-        }
-        const isCancelled = conversation.conversationId?.startsWith('_');
-        if (isCancelled) {
-          logger.log(
-            'conversation',
-            'Cancelled conversation, setting to `new` in `useNewConvo`',
-            conversation,
-          );
-          setConversation({
-            ...conversation,
-            conversationId: Constants.NEW_CONVO as string,
-          });
-        } else {
-          logger.log('conversation', 'Setting conversation from `useNewConvo`', conversation);
-          setConversation(conversation);
-        }
-        setSubmission({} as TSubmission);
-        if (!(keepLatestMessage ?? false)) {
-          clearAllLatestMessages();
-        }
-        if (isCancelled) {
-          return;
-        }
-
-        const searchParamsString = searchParams?.toString();
-        const getParams = () => (searchParamsString ? `?${searchParamsString}` : '');
-
-        if (conversation.conversationId === Constants.NEW_CONVO && !modelsData) {
-          const appTitle = localStorage.getItem(LocalStorageKeys.APP_TITLE) ?? '';
-          if (appTitle) {
-            document.title = appTitle;
-          }
-          const path = `/c/${Constants.NEW_CONVO}${getParams()}`;
-          navigate(path, { state: { focusChat: true } });
-          return;
-        }
-
-        const path = `/c/${conversation.conversationId}${getParams()}`;
-        navigate(path, {
-          replace: true,
-          state: disableFocus ? {} : { focusChat: true },
+      if (buildDefaultConversation) {
+        let defaultEndpoint = getDefaultEndpoint({
+          convoSetup: activePreset ?? conversation,
+          endpointsConfig,
         });
-      },
+
+        if (!defaultEndpoint) {
+          defaultEndpoint = Object.keys(endpointsConfig ?? {})[0] as EModelEndpoint;
+        }
+
+        const endpointType = getEndpointField(endpointsConfig, defaultEndpoint, 'type');
+        if (!conversation.endpointType && endpointType) {
+          conversation.endpointType = endpointType;
+        } else if (conversation.endpointType && !endpointType) {
+          conversation.endpointType = undefined;
+        }
+
+        const isAssistantEndpoint = isAssistantsEndpoint(defaultEndpoint);
+        const assistants: AssistantListItem[] = assistantsListMap[defaultEndpoint] ?? [];
+        const currentAssistantId = conversation.assistant_id ?? '';
+        const currentAssistant = assistantsListMap[defaultEndpoint]?.[currentAssistantId] as
+          | AssistantListItem
+          | undefined;
+
+        if (currentAssistantId && !currentAssistant) {
+          conversation.assistant_id = undefined;
+        }
+
+        if (!currentAssistantId && isAssistantEndpoint) {
+          conversation.assistant_id =
+            localStorage.getItem(`${LocalStorageKeys.ASST_ID_PREFIX}${index}${defaultEndpoint}`) ??
+            assistants[0]?.id;
+        }
+
+        if (
+          currentAssistantId &&
+          isAssistantEndpoint &&
+          conversation.conversationId === Constants.NEW_CONVO
+        ) {
+          const assistant = assistants.find((asst) => asst.id === currentAssistantId);
+          conversation.model = assistant?.model;
+          updateLastSelectedModel({
+            endpoint: defaultEndpoint,
+            model: conversation.model,
+          });
+        }
+
+        if (currentAssistantId && !isAssistantEndpoint) {
+          conversation.assistant_id = undefined;
+        }
+
+        const models = modelsConfig?.[defaultEndpoint] ?? [];
+        conversation = buildDefaultConvo({
+          conversation,
+          lastConversationSetup: activePreset as TConversation,
+          endpoint: defaultEndpoint,
+          models,
+        });
+      }
+
+      if (disableParams === true) {
+        conversation.disableParams = true;
+      }
+
+      if (!(keepAddedConvos ?? false)) {
+        clearAllConversations(true);
+      }
+      const isCancelled = conversation.conversationId?.startsWith('_');
+      if (isCancelled) {
+        logger.log(
+          'conversation',
+          'Cancelled conversation, setting to `new` in `useNewConvo`',
+          conversation,
+        );
+        setConversation({
+          ...conversation,
+          conversationId: Constants.NEW_CONVO as string,
+        });
+      } else {
+        logger.log('conversation', 'Setting conversation from `useNewConvo`', conversation);
+        setConversation(conversation);
+      }
+      setSubmission({} as TSubmission);
+      if (!(keepLatestMessage ?? false)) {
+        clearAllLatestMessages();
+      }
+      if (isCancelled) {
+        return;
+      }
+
+      const searchParamsString = searchParams?.toString();
+      const getParams = () => (searchParamsString ? `?${searchParamsString}` : '');
+
+      if (conversation.conversationId === Constants.NEW_CONVO && !modelsData) {
+        const appTitle = localStorage.getItem(LocalStorageKeys.APP_TITLE) ?? '';
+        if (appTitle) {
+          document.title = appTitle;
+        }
+        const path = `/c/${Constants.NEW_CONVO}${getParams()}`;
+        navigate(path, { state: { focusChat: true } });
+        return;
+      }
+
+      const path = `/c/${conversation.conversationId}${getParams()}`;
+      navigate(path, {
+        replace: true,
+        state: disableFocus ? {} : { focusChat: true },
+      });
+    },
     [endpointsConfig, defaultPreset, assistantsListMap, modelsQuery.data],
   );
 

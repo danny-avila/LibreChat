@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect } from 'react';
-import { useSetRecoilState } from 'recoil';
+import { useSetAtom } from 'jotai';
 import * as Tabs from '@radix-ui/react-tabs';
 import { ArrowLeft, ChevronLeft, ChevronRight, RefreshCw, X } from 'lucide-react';
 import type { SandpackPreviewRef, CodeEditorRef } from '@codesandbox/sandpack-react';
@@ -18,7 +18,7 @@ export default function Artifacts() {
   const previewRef = useRef<SandpackPreviewRef>();
   const [isVisible, setIsVisible] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const setArtifactsVisible = useSetRecoilState(store.artifactsVisibility);
+  const setArtifactsVisible = useSetAtom(store.artifactsVisibility);
 
   useEffect(() => {
     setIsVisible(true);

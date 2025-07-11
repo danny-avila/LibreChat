@@ -1,5 +1,5 @@
 import { useState, useMemo, memo, useCallback } from 'react';
-import { useRecoilValue } from 'recoil';
+import { useAtomValue } from 'jotai';
 import { Atom, ChevronDown } from 'lucide-react';
 import type { MouseEvent, FC } from 'react';
 import { useLocalize } from '~/hooks';
@@ -49,7 +49,7 @@ export const ThinkingButton = memo(
 
 const Thinking: React.ElementType = memo(({ children }: { children: React.ReactNode }) => {
   const localize = useLocalize();
-  const showThinking = useRecoilValue<boolean>(store.showThinking);
+  const showThinking = useAtomValue<boolean>(store.showThinking);
   const [isExpanded, setIsExpanded] = useState(showThinking);
 
   const handleClick = useCallback((e: MouseEvent<HTMLButtonElement>) => {

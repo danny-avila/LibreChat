@@ -1,8 +1,9 @@
 import { useCallback } from 'react';
+import type { Dispatch, SetStateAction, MouseEvent } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { QueryKeys } from 'librechat-data-provider';
-import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
-import type { TMessage } from 'librechat-data-provider';
+import { useAtom, useAtomValue, useSetAtom } from 'jotai';
+import type { TConversation, TMessage } from 'librechat-data-provider';
 import useChatFunctions from '~/hooks/Chat/useChatFunctions';
 import store from '~/store';
 
@@ -19,19 +20,20 @@ export default function useAddedHelpers({
   const queryClient = useQueryClient();
 
   const clearAllSubmissions = store.useClearSubmissionState();
-  const [files, setFiles] = useRecoilState(store.filesByIndex(rootIndex));
-  const latestMessage = useRecoilValue(store.latestMessageFamily(rootIndex));
-  const setLatestMultiMessage = useSetRecoilState(store.latestMessageFamily(currentIndex));
+  const files = useAtomValue(store.filesByIndex(rootIndex));
+  const setFiles = useSetAtom(store.filesByIndex(rootIndex));
+  const latestMessage = useAtomValue(store.latestMessageFamily(rootIndex));
+  const setLatestMultiMessage = useSetAtom(store.latestMessageFamily(currentIndex));
 
   const { useCreateConversationAtom } = store;
   const { conversation, setConversation } = useCreateConversationAtom(currentIndex);
-  const [isSubmitting, setIsSubmitting] = useRecoilState(store.isSubmittingFamily(currentIndex));
+  const [isSubmitting, setIsSubmitting] = useAtom(store.isSubmittingFamily(currentIndex));
 
-  const setSiblingIdx = useSetRecoilState(
+  const setSiblingIdx = useSetAtom(
     store.messagesSiblingIdxFamily(latestMessage?.parentMessageId ?? null),
   );
 
-  const queryParam = paramId === 'new' ? paramId : conversation?.conversationId ?? paramId ?? '';
+  const queryParam = paramId === 'new' ? paramId : (conversation?.conversationId ?? paramId ?? '');
 
   const setMessages = useCallback(
     (messages: TMessage[]) => {
@@ -51,7 +53,7 @@ export default function useAddedHelpers({
     return queryClient.getQueryData<TMessage[]>([QueryKeys.messages, queryParam, currentIndex]);
   }, [queryParam, queryClient, currentIndex]);
 
-  const setSubmission = useSetRecoilState(store.submissionByIndex(currentIndex));
+  const setSubmission = useSetAtom(store.submissionByIndex(currentIndex));
 
   const { ask, regenerate } = useChatFunctions({
     index: currentIndex,
@@ -88,12 +90,12 @@ export default function useAddedHelpers({
 
   const stopGenerating = () => clearAllSubmissions();
 
-  const handleStopGenerating = (e: React.MouseEvent<HTMLButtonElement>) => {
+  const handleStopGenerating = (e: MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
     stopGenerating();
   };
 
-  const handleRegenerate = (e: React.MouseEvent<HTMLButtonElement>) => {
+  const handleRegenerate = (e: MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
     const parentMessageId = latestMessage?.parentMessageId;
     if (!parentMessageId) {
@@ -103,7 +105,7 @@ export default function useAddedHelpers({
     regenerate({ parentMessageId });
   };
 
-  const handleContinue = (e: React.MouseEvent<HTMLButtonElement>) => {
+  const handleContinue = (e: MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
     continueGeneration();
     setSiblingIdx(0);
@@ -120,8 +122,8 @@ export default function useAddedHelpers({
     latestMessage,
     stopGenerating,
     handleContinue,
-    setConversation,
-    setIsSubmitting,
+    setConversation: setConversation as Dispatch<SetStateAction<TConversation | null>>,
+    setIsSubmitting: setIsSubmitting as Dispatch<SetStateAction<boolean>>,
     handleRegenerate,
     handleStopGenerating,
   };

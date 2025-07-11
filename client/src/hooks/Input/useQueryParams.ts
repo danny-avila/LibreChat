@@ -1,5 +1,5 @@
 import { useEffect, useCallback, useRef } from 'react';
-import { useRecoilValue } from 'recoil';
+import { useAtomValue } from 'jotai';
 import { useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import {
@@ -97,8 +97,8 @@ export default function useQueryParams({
   const methods = useChatFormContext();
   const [searchParams, setSearchParams] = useSearchParams();
   const getDefaultConversation = useDefaultConvo();
-  const modularChat = useRecoilValue(store.modularChat);
-  const availableTools = useRecoilValue(store.availableTools);
+  const modularChat = useAtomValue(store.modularChat);
+  const availableTools = useAtomValue(store.availableTools);
   const { submitMessage } = useSubmitMessage();
 
   const queryClient = useQueryClient();

@@ -1,5 +1,5 @@
 import React from 'react';
-import { useRecoilState, useRecoilValue } from 'recoil';
+import { useAtom, useAtomValue } from 'jotai';
 import { Slider, InputNumber } from '~/components/ui';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
@@ -7,15 +7,17 @@ import { cn, defaultTextProps, optionText } from '~/utils/';
 
 export default function DecibelSelector() {
   const localize = useLocalize();
-  const textToSpeech = useRecoilValue(store.textToSpeech);
-  const [playbackRate, setPlaybackRate] = useRecoilState(store.playbackRate);
+  const textToSpeech = useAtomValue(store.textToSpeech);
+  const [playbackRate, setPlaybackRate] = useAtom(store.playbackRate);
 
   return (
     <div className="flex items-center justify-between">
       <div className="flex items-center justify-between">
         <div>{localize('com_nav_playback_rate')}</div>
         <div className="w-2" />
-        <small className="opacity-40">({localize('com_endpoint_default_with_num', { 0: '1' })})</small>
+        <small className="opacity-40">
+          ({localize('com_endpoint_default_with_num', { 0: '1' })})
+        </small>
       </div>
       <div className="flex items-center justify-between">
         <Slider

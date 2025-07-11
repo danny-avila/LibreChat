@@ -1,6 +1,6 @@
 // client/src/hooks/Audio/useTTSBrowser.ts
 import { useRef, useEffect, useState } from 'react';
-import { useRecoilState, useRecoilValue } from 'recoil';
+import { useAtom, useAtomValue } from 'jotai';
 import { parseTextParts } from 'librechat-data-provider';
 import type { TMessageContentParts } from 'librechat-data-provider';
 import useTextToSpeechBrowser from '~/hooks/Input/useTextToSpeechBrowser';
@@ -25,8 +25,8 @@ const useTTSBrowser = (props?: TUseTextToSpeech) => {
   const { audioRef } = useAudioRef({ setIsPlaying: setIsSpeaking });
 
   const { pauseGlobalAudio } = usePauseGlobalAudio(index);
-  const [voice, setVoice] = useRecoilState(store.voice);
-  const globalIsPlaying = useRecoilValue(store.globalAudioPlayingFamily(index));
+  const [voice, setVoice] = useAtom(store.voice);
+  const globalIsPlaying = useAtomValue(store.globalAudioPlayingFamily(index));
 
   const isSpeaking = isSpeakingState || (isLast && globalIsPlaying);
 

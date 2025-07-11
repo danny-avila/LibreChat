@@ -1,5 +1,5 @@
 import React from 'react';
-import { useRecoilState } from 'recoil';
+import { useAtom } from 'jotai';
 import HoverCardSettings from '../HoverCardSettings';
 import { Switch, Label } from '~/components/ui';
 import { useLocalize } from '~/hooks';
@@ -7,7 +7,7 @@ import store from '~/store';
 
 export default function DisplayUsernameMessages() {
   const localize = useLocalize();
-  const [UsernameDisplay, setUsernameDisplay] = useRecoilState(store.UsernameDisplay);
+  const [UsernameDisplay, setUsernameDisplay] = useAtom(store.UsernameDisplay);
 
   const handleCheckedChange = (checked: boolean) => {
     setUsernameDisplay(checked);

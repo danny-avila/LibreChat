@@ -2,7 +2,8 @@ import { RefObject } from 'react';
 import { FileSources, EModelEndpoint } from 'librechat-data-provider';
 import type { UseMutationResult } from '@tanstack/react-query';
 import type * as InputNumberPrimitive from 'rc-input-number';
-import type { SetterOrUpdater, RecoilState } from 'recoil';
+import type { Atom } from 'jotai';
+import type { SetStateAction } from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
 import type * as t from 'librechat-data-provider';
 import type { LucideIcon } from 'lucide-react';
@@ -51,7 +52,7 @@ export type BadgeItem = {
   id: string;
   icon: React.ComponentType<any>;
   label: string;
-  atom: RecoilState<boolean>;
+  atom: Atom<boolean>;
   isAvailable: boolean;
 };
 
@@ -147,7 +148,7 @@ export enum Panel {
 }
 
 export type FileSetter =
-  | SetterOrUpdater<Map<string, ExtendedFile>>
+  | ((value: SetStateAction<Map<string, ExtendedFile>>) => void)
   | React.Dispatch<React.SetStateAction<Map<string, ExtendedFile>>>;
 
 export type ActionAuthForm = {

@@ -1,4 +1,4 @@
-import { useRecoilValue } from 'recoil';
+import { useAtomValue } from 'jotai';
 import { useState, useEffect, useCallback } from 'react';
 import type { VoiceOption } from '~/common';
 import store from '~/store';
@@ -8,9 +8,9 @@ function useTextToSpeechBrowser({
 }: {
   setIsSpeaking: React.Dispatch<React.SetStateAction<boolean>>;
 }) {
-  const voiceName = useRecoilValue(store.voice);
+  const voiceName = useAtomValue(store.voice);
   const [voices, setVoices] = useState<VoiceOption[]>([]);
-  const cloudBrowserVoices = useRecoilValue(store.cloudBrowserVoices);
+  const cloudBrowserVoices = useAtomValue(store.cloudBrowserVoices);
   const [isSpeechSynthesisSupported, setIsSpeechSynthesisSupported] = useState(true);
 
   const updateVoices = useCallback(() => {

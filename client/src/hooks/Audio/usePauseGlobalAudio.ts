@@ -1,15 +1,15 @@
 import { useCallback } from 'react';
-import { useRecoilState, useSetRecoilState } from 'recoil';
+import { useAtom, useSetAtom } from 'jotai';
 import { globalAudioId } from '~/common';
 import store from '~/store';
 
 function usePauseGlobalAudio(index = 0) {
   /* Global Audio Variables */
-  const setAudioRunId = useSetRecoilState(store.audioRunFamily(index));
-  const setActiveRunId = useSetRecoilState(store.activeRunFamily(index));
-  const setGlobalIsPlaying = useSetRecoilState(store.globalAudioPlayingFamily(index));
-  const setIsGlobalAudioFetching = useSetRecoilState(store.globalAudioFetchingFamily(index));
-  const [globalAudioURL, setGlobalAudioURL] = useRecoilState(store.globalAudioURLFamily(index));
+  const setAudioRunId = useSetAtom(store.audioRunFamily(index));
+  const setActiveRunId = useSetAtom(store.activeRunFamily(index));
+  const setGlobalIsPlaying = useSetAtom(store.globalAudioPlayingFamily(index));
+  const setIsGlobalAudioFetching = useSetAtom(store.globalAudioFetchingFamily(index));
+  const [globalAudioURL, setGlobalAudioURL] = useAtom(store.globalAudioURLFamily(index));
 
   const pauseGlobalAudio = useCallback(() => {
     if (globalAudioURL != null && globalAudioURL !== '') {

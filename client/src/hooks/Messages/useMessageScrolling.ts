@@ -1,4 +1,4 @@
-import { useRecoilValue } from 'recoil';
+import { useAtomValue } from 'jotai';
 import { Constants } from 'librechat-data-provider';
 import { useState, useRef, useCallback, useEffect } from 'react';
 import type { TMessage } from 'librechat-data-provider';
@@ -10,7 +10,7 @@ const threshold = 0.85;
 const debounceRate = 150;
 
 export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
-  const autoScroll = useRecoilValue(store.autoScroll);
+  const autoScroll = useAtomValue(store.autoScroll);
 
   const scrollableRef = useRef<HTMLDivElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);

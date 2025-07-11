@@ -1,12 +1,12 @@
 import { memo } from 'react';
-import { useRecoilValue } from 'recoil';
+import { useAtomValue } from 'jotai';
 import type { TMessageAudio } from '~/common';
 import { BrowserTTS, ExternalTTS } from '~/components/Audio/TTS';
 import { TTSEndpoints } from '~/common';
 import store from '~/store';
 
 function MessageAudio(props: TMessageAudio) {
-  const engineTTS = useRecoilValue<string>(store.engineTTS);
+  const engineTTS = useAtomValue<string>(store.engineTTS);
 
   const TTSComponents = {
     [TTSEndpoints.browser]: BrowserTTS,

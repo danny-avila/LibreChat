@@ -1,4 +1,4 @@
-import { useRecoilState } from 'recoil';
+import { useAtom } from 'jotai';
 import * as Tabs from '@radix-ui/react-tabs';
 import { Lightbulb, Cog } from 'lucide-react';
 import React, { useState, useRef, useEffect, useCallback } from 'react';
@@ -34,24 +34,22 @@ function Speech() {
 
   const [sttExternal, setSttExternal] = useState(false);
   const [ttsExternal, setTtsExternal] = useState(false);
-  const [advancedMode, setAdvancedMode] = useRecoilState(store.advancedMode);
-  const [autoTranscribeAudio, setAutoTranscribeAudio] = useRecoilState(store.autoTranscribeAudio);
-  const [conversationMode, setConversationMode] = useRecoilState(store.conversationMode);
-  const [speechToText, setSpeechToText] = useRecoilState(store.speechToText);
-  const [textToSpeech, setTextToSpeech] = useRecoilState(store.textToSpeech);
-  const [cacheTTS, setCacheTTS] = useRecoilState(store.cacheTTS);
-  const [engineSTT, setEngineSTT] = useRecoilState<string>(store.engineSTT);
-  const [languageSTT, setLanguageSTT] = useRecoilState<string>(store.languageSTT);
-  const [decibelValue, setDecibelValue] = useRecoilState(store.decibelValue);
-  const [autoSendText, setAutoSendText] = useRecoilState(store.autoSendText);
-  const [engineTTS, setEngineTTS] = useRecoilState<string>(store.engineTTS);
-  const [voice, setVoice] = useRecoilState(store.voice);
-  const [cloudBrowserVoices, setCloudBrowserVoices] = useRecoilState<boolean>(
-    store.cloudBrowserVoices,
-  );
-  const [languageTTS, setLanguageTTS] = useRecoilState<string>(store.languageTTS);
-  const [automaticPlayback, setAutomaticPlayback] = useRecoilState(store.automaticPlayback);
-  const [playbackRate, setPlaybackRate] = useRecoilState(store.playbackRate);
+  const [advancedMode, setAdvancedMode] = useAtom(store.advancedMode);
+  const [autoTranscribeAudio, setAutoTranscribeAudio] = useAtom(store.autoTranscribeAudio);
+  const [conversationMode, setConversationMode] = useAtom(store.conversationMode);
+  const [speechToText, setSpeechToText] = useAtom(store.speechToText);
+  const [textToSpeech, setTextToSpeech] = useAtom(store.textToSpeech);
+  const [cacheTTS, setCacheTTS] = useAtom(store.cacheTTS);
+  const [engineSTT, setEngineSTT] = useAtom<string>(store.engineSTT);
+  const [languageSTT, setLanguageSTT] = useAtom<string>(store.languageSTT);
+  const [decibelValue, setDecibelValue] = useAtom(store.decibelValue);
+  const [autoSendText, setAutoSendText] = useAtom(store.autoSendText);
+  const [engineTTS, setEngineTTS] = useAtom<string>(store.engineTTS);
+  const [voice, setVoice] = useAtom(store.voice);
+  const [cloudBrowserVoices, setCloudBrowserVoices] = useAtom<boolean>(store.cloudBrowserVoices);
+  const [languageTTS, setLanguageTTS] = useAtom<string>(store.languageTTS);
+  const [automaticPlayback, setAutomaticPlayback] = useAtom(store.automaticPlayback);
+  const [playbackRate, setPlaybackRate] = useAtom(store.playbackRate);
 
   const updateSetting = useCallback(
     (key: string, newValue: string | number) => {

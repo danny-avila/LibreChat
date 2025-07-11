@@ -1,7 +1,6 @@
 import React from 'react';
-import { motion } from 'framer-motion';
 import { MessageCircleDashed } from 'lucide-react';
-import { useRecoilState, useRecoilCallback } from 'recoil';
+import { useAtom } from 'jotai';
 import { TooltipAnchor } from '~/components/ui';
 import { useChatContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
@@ -10,7 +9,7 @@ import store from '~/store';
 
 export function TemporaryChat() {
   const localize = useLocalize();
-  const [isTemporary, setIsTemporary] = useRecoilState(store.isTemporary);
+  const [isTemporary, setIsTemporary] = useAtom(store.isTemporary);
   const { conversation, isSubmitting } = useChatContext();
 
   const temporaryBadge = {
@@ -21,12 +20,9 @@ export function TemporaryChat() {
     isAvailable: true,
   };
 
-  const handleBadgeToggle = useRecoilCallback(
-    () => () => {
-      setIsTemporary(!isTemporary);
-    },
-    [isTemporary],
-  );
+  const handleBadgeToggle = () => {
+    setIsTemporary(!isTemporary);
+  };
 
   if (
     (Array.isArray(conversation?.messages) && conversation.messages.length >= 1) ||

@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import TagManager from 'react-gtm-module';
-import { useRecoilState, useSetRecoilState } from 'recoil';
+import { useAtom, useSetAtom } from 'jotai';
 import { LocalStorageKeys } from 'librechat-data-provider';
 import { useAvailablePluginsQuery } from 'librechat-data-provider/react-query';
 import type { TStartupConfig, TPlugin, TUser } from 'librechat-data-provider';
@@ -25,8 +25,8 @@ export default function useAppStartup({
   startupConfig?: TStartupConfig;
   user?: TUser;
 }) {
-  const setAvailableTools = useSetRecoilState(store.availableTools);
-  const [defaultPreset, setDefaultPreset] = useRecoilState(store.defaultPreset);
+  const setAvailableTools = useSetAtom(store.availableTools);
+  const [defaultPreset, setDefaultPreset] = useAtom(store.defaultPreset);
   const { data: allPlugins } = useAvailablePluginsQuery({
     enabled: !!user?.plugins,
     select: selectPlugins,

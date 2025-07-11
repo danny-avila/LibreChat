@@ -1,4 +1,4 @@
-import { useSetRecoilState } from 'recoil';
+import { useSetAtom } from 'jotai';
 import type { QueryClient } from '@tanstack/react-query';
 import { QueryKeys, Tools } from 'librechat-data-provider';
 import type { TAttachment, EventSubmission, MemoriesResponse } from 'librechat-data-provider';
@@ -6,7 +6,7 @@ import { handleMemoryArtifact } from '~/utils/memory';
 import store from '~/store';
 
 export default function useAttachmentHandler(queryClient?: QueryClient) {
-  const setAttachmentsMap = useSetRecoilState(store.messageAttachmentsMap);
+  const setAttachmentsMap = useSetAtom(store.messageAttachmentsMap);
 
   return ({ data }: { data: TAttachment; submission: EventSubmission }) => {
     const { messageId } = data;

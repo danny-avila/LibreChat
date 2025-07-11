@@ -1,11 +1,11 @@
-import { useRecoilState } from 'recoil';
+import { useAtom } from 'jotai';
+import type { WritableAtom } from 'jotai';
 import HoverCardSettings from './HoverCardSettings';
 import useLocalize from '~/hooks/useLocalize';
 import { Switch } from '~/components/ui';
-import { RecoilState } from 'recoil';
 
 interface ToggleSwitchProps {
-  stateAtom: RecoilState<boolean>;
+  stateAtom: WritableAtom<boolean, [boolean], void>;
   localizationKey: string;
   hoverCardText?: string;
   switchId: string;
@@ -19,7 +19,7 @@ const ToggleSwitch: React.FC<ToggleSwitchProps> = ({
   switchId,
   onCheckedChange,
 }) => {
-  const [switchState, setSwitchState] = useRecoilState<boolean>(stateAtom);
+  const [switchState, setSwitchState] = useAtom(stateAtom);
   const localize = useLocalize();
 
   const handleCheckedChange = (value: boolean) => {

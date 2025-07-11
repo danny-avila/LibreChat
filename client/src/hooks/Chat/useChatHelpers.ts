@@ -1,8 +1,9 @@
 import { useCallback, useState } from 'react';
+import type { Dispatch, SetStateAction } from 'react';
 import { QueryKeys } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
-import { useRecoilState, useResetRecoilState, useSetRecoilState } from 'recoil';
-import type { TMessage } from 'librechat-data-provider';
+import { useAtomValue, useSetAtom } from 'jotai';
+import type { TConversation, TMessage } from 'librechat-data-provider';
 import useChatFunctions from '~/hooks/Chat/useChatFunctions';
 import { useGetMessagesByConvoId } from '~/data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
@@ -12,7 +13,7 @@ import store from '~/store';
 // this to be set somewhere else
 export default function useChatHelpers(index = 0, paramId?: string) {
   const clearAllSubmissions = store.useClearSubmissionState();
-  const [files, setFiles] = useRecoilState(store.filesByIndex(index));
+  const files = useAtomValue(store.filesByIndex(index));
   const [filesLoading, setFilesLoading] = useState(false);
 
   const queryClient = useQueryClient();
@@ -31,12 +32,23 @@ export default function useChatHelpers(index = 0, paramId?: string) {
     enabled: isAuthenticated,
   });
 
-  const resetLatestMessage = useResetRecoilState(store.latestMessageFamily(index));
-  const [isSubmitting, setIsSubmitting] = useRecoilState(store.isSubmittingFamily(index));
-  const [latestMessage, setLatestMessage] = useRecoilState(store.latestMessageFamily(index));
-  const setSiblingIdx = useSetRecoilState(
+  const setLatestMessageAtom = useSetAtom(store.latestMessageFamily(index));
+  const resetLatestMessage = useCallback(() => setLatestMessageAtom(null), [setLatestMessageAtom]);
+  const isSubmitting = useAtomValue(store.isSubmittingFamily(index));
+  const latestMessage = useAtomValue(store.latestMessageFamily(index));
+  const setSiblingIdx = useSetAtom(
     store.messagesSiblingIdxFamily(latestMessage?.parentMessageId ?? null),
   );
+  const setFiles = useSetAtom(store.filesByIndex(index));
+  const setLatestMessage = useSetAtom(store.latestMessageFamily(index));
+  const setIsSubmitting = useSetAtom(store.isSubmittingFamily(index)) as Dispatch<
+    SetStateAction<boolean>
+  >;
+  const setShowPopover = useSetAtom(store.showPopoverFamily(index));
+  const setAbortScroll = useSetAtom(store.abortScrollFamily(index));
+  const setPreset = useSetAtom(store.presetByIndex(index));
+  const setOptionSettings = useSetAtom(store.optionSettingsFamily(index));
+  const setShowAgentSettings = useSetAtom(store.showAgentSettingsFamily(index));
 
   const setMessages = useCallback(
     (messages: TMessage[]) => {
@@ -52,26 +64,7 @@ export default function useChatHelpers(index = 0, paramId?: string) {
     return queryClient.getQueryData<TMessage[]>([QueryKeys.messages, queryParam]);
   }, [queryParam, queryClient]);
 
-  /* Conversation */
-  // const setActiveConvos = useSetRecoilState(store.activeConversations);
-
-  // const setConversation = useCallback(
-  //   (convoUpdate: TConversation) => {
-  //     _setConversation(prev => {
-  //       const { conversationId: convoId } = prev ?? { conversationId: null };
-  //       const { conversationId: currentId } = convoUpdate;
-  //       if (currentId && convoId && convoId !== 'new' && convoId !== currentId) {
-  //         // for now, we delete the prev convoId from activeConversations
-  //         const newActiveConvos = { [currentId]: true };
-  //         setActiveConvos(newActiveConvos);
-  //       }
-  //       return convoUpdate;
-  //     });
-  //   },
-  //   [_setConversation, setActiveConvos],
-  // );
-
-  const setSubmission = useSetRecoilState(store.submissionByIndex(index));
+  const setSubmission = useSetAtom(store.submissionByIndex(index));
 
   const { ask, regenerate } = useChatFunctions({
     index,
@@ -83,7 +76,7 @@ export default function useChatHelpers(index = 0, paramId?: string) {
     conversation,
     latestMessage,
     setSubmission,
-    setLatestMessage,
+    setLatestMessage: setLatestMessage as Dispatch<SetStateAction<TMessage | null>>,
   });
 
   const continueGeneration = () => {
@@ -130,20 +123,16 @@ export default function useChatHelpers(index = 0, paramId?: string) {
     setSiblingIdx(0);
   };
 
-  const [showPopover, setShowPopover] = useRecoilState(store.showPopoverFamily(index));
-  const [abortScroll, setAbortScroll] = useRecoilState(store.abortScrollFamily(index));
-  const [preset, setPreset] = useRecoilState(store.presetByIndex(index));
-  const [optionSettings, setOptionSettings] = useRecoilState(store.optionSettingsFamily(index));
-  const [showAgentSettings, setShowAgentSettings] = useRecoilState(
-    store.showAgentSettingsFamily(index),
-  );
+  const showPopover = useAtomValue(store.showPopoverFamily(index));
+  const abortScroll = useAtomValue(store.abortScrollFamily(index));
+  const preset = useAtomValue(store.presetByIndex(index));
+  const optionSettings = useAtomValue(store.optionSettingsFamily(index));
+  const showAgentSettings = useAtomValue(store.showAgentSettingsFamily(index));
 
   return {
     newConversation,
     conversation,
-    setConversation,
-    // getConvos,
-    // setConvos,
+    setConversation: setConversation as Dispatch<SetStateAction<TConversation | null>>,
     isSubmitting,
     setIsSubmitting,
     getMessages,

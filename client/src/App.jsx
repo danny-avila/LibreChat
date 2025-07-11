@@ -1,4 +1,4 @@
-import { RecoilRoot } from 'recoil';
+import { Provider } from 'jotai';
 import { DndProvider } from 'react-dnd';
 import { RouterProvider } from 'react-router-dom';
 import * as RadixToast from '@radix-ui/react-toast';
@@ -26,7 +26,7 @@ const App = () => {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <RecoilRoot>
+      <Provider>
         <LiveAnnouncer>
           <ThemeProvider>
             <RadixToast.Provider>
@@ -41,7 +41,7 @@ const App = () => {
             </RadixToast.Provider>
           </ThemeProvider>
         </LiveAnnouncer>
-      </RecoilRoot>
+      </Provider>
     </QueryClientProvider>
   );
 };

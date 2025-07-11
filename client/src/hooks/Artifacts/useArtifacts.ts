@@ -1,6 +1,7 @@
 import { useMemo, useState, useEffect, useRef } from 'react';
 import { Constants } from 'librechat-data-provider';
-import { useRecoilState, useRecoilValue, useResetRecoilState } from 'recoil';
+import { useAtom, useAtomValue, useSetAtom } from 'jotai';
+import { RESET } from 'jotai/utils';
 import { getLatestText, logger } from '~/utils';
 import { useChatContext } from '~/Providers';
 import { getKey } from '~/utils/artifacts';
@@ -10,10 +11,10 @@ export default function useArtifacts() {
   const [activeTab, setActiveTab] = useState('preview');
   const { isSubmitting, latestMessage, conversation } = useChatContext();
 
-  const artifacts = useRecoilValue(store.artifactsState);
-  const resetArtifacts = useResetRecoilState(store.artifactsState);
-  const resetCurrentArtifactId = useResetRecoilState(store.currentArtifactId);
-  const [currentArtifactId, setCurrentArtifactId] = useRecoilState(store.currentArtifactId);
+  const artifacts = useAtomValue(store.artifactsState);
+  const setArtifactsState = useSetAtom(store.artifactsState);
+  const setCurrentArtifactIdState = useSetAtom(store.currentArtifactId);
+  const [currentArtifactId, setCurrentArtifactId] = useAtom(store.currentArtifactId);
 
   const orderedArtifactIds = useMemo(() => {
     return Object.keys(artifacts ?? {}).sort(
@@ -29,8 +30,8 @@ export default function useArtifacts() {
 
   useEffect(() => {
     const resetState = () => {
-      resetArtifacts();
-      resetCurrentArtifactId();
+      setArtifactsState(RESET);
+      setCurrentArtifactIdState(RESET);
       prevConversationIdRef.current = conversation?.conversationId ?? null;
       lastRunMessageIdRef.current = null;
       lastContentRef.current = null;
@@ -50,7 +51,7 @@ export default function useArtifacts() {
       logger.log('artifacts_visibility', 'Unmounting artifacts');
       resetState();
     };
-  }, [conversation?.conversationId, resetArtifacts, resetCurrentArtifactId]);
+  }, [conversation?.conversationId, setArtifactsState, setCurrentArtifactIdState]);
 
   useEffect(() => {
     if (orderedArtifactIds.length > 0) {

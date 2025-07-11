@@ -1,5 +1,5 @@
-import React, { useState, useRef } from 'react';
-import { useRecoilState } from 'recoil';
+import { useState, useRef } from 'react';
+import { useAtom } from 'jotai';
 import * as Ariakit from '@ariakit/react';
 import { VisuallyHidden } from '@ariakit/react';
 import { GitFork, InfoIcon } from 'lucide-react';
@@ -202,10 +202,10 @@ export default function Fork({
   const { navigateToConvo } = useNavigateToConvo();
   const [isActive, setIsActive] = useState(false);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const [forkSetting, setForkSetting] = useRecoilState(store.forkSetting);
+  const [forkSetting, setForkSetting] = useAtom(store.forkSetting);
   const [activeSetting, setActiveSetting] = useState(optionLabels.default);
-  const [splitAtTarget, setSplitAtTarget] = useRecoilState(store.splitAtTarget);
-  const [rememberGlobal, setRememberGlobal] = useRecoilState(store.rememberDefaultFork);
+  const [splitAtTarget, setSplitAtTarget] = useAtom(store.splitAtTarget);
+  const [rememberGlobal, setRememberGlobal] = useAtom(store.rememberDefaultFork);
   const popoverStore = Ariakit.usePopoverStore({
     placement: 'bottom',
   });

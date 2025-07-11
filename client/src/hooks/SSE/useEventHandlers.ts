@@ -1,6 +1,5 @@
 import { v4 } from 'uuid';
 import { useCallback, useRef } from 'react';
-import { useSetRecoilState } from 'recoil';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import {
@@ -17,8 +16,9 @@ import type { TMessage, TConversation, EventSubmission } from 'librechat-data-pr
 import type { TResData, TFinalResData, ConvoGenerator } from '~/common';
 import type { InfiniteData } from '@tanstack/react-query';
 import type { TGenTitleMutation } from '~/data-provider';
-import type { SetterOrUpdater, Resetter } from 'recoil';
+import type { Dispatch, SetStateAction } from 'react';
 import type { ConversationCursorData } from '~/utils';
+import { useSetAtom } from 'jotai';
 import {
   logger,
   scrollToEnd,
@@ -51,11 +51,11 @@ export type EventHandlerParams = {
   setCompleted: React.Dispatch<React.SetStateAction<Set<unknown>>>;
   setMessages: (messages: TMessage[]) => void;
   getMessages: () => TMessage[] | undefined;
-  setIsSubmitting: SetterOrUpdater<boolean>;
-  setConversation?: SetterOrUpdater<TConversation | null>;
+  setIsSubmitting: Dispatch<SetStateAction<boolean>>;
+  setConversation?: Dispatch<SetStateAction<TConversation | null>>;
   newConversation?: ConvoGenerator;
-  setShowStopButton: SetterOrUpdater<boolean>;
-  resetLatestMessage?: Resetter;
+  setShowStopButton: Dispatch<SetStateAction<boolean>>;
+  resetLatestMessage?: () => void;
 };
 
 const createErrorMessage = ({
@@ -172,7 +172,7 @@ export default function useEventHandlers({
   const queryClient = useQueryClient();
   const { announcePolite } = useLiveAnnouncer();
   const applyAgentTemplate = useApplyNewAgentTemplate();
-  const setAbortScroll = useSetRecoilState(store.abortScroll);
+  const setAbortScroll = useSetAtom(store.abortScroll);
   const navigate = useNavigate();
   const location = useLocation();
 

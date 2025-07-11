@@ -8,7 +8,7 @@ import React, {
   useReducer,
   useCallback,
 } from 'react';
-import { useRecoilValue, useRecoilCallback } from 'recoil';
+import { useAtomValue, useStore } from 'jotai';
 import type { LucideIcon } from 'lucide-react';
 import CodeInterpreter from './CodeInterpreter';
 import { BadgeRowProvider } from '~/Providers';
@@ -45,7 +45,7 @@ interface BadgeWrapperProps {
 const BadgeWrapper = React.memo(
   forwardRef<HTMLDivElement, BadgeWrapperProps>(
     ({ badge, isEditing, isInChat, onToggle, onDelete, onMouseDown, badgeRefs }, ref) => {
-      const atomBadge = useRecoilValue(badge.atom);
+      const atomBadge = useAtomValue(badge.atom);
       const isActive = badge.atom ? atomBadge : false;
 
       return (
@@ -162,20 +162,20 @@ function BadgeRow({
   const containerRectRef = useRef<DOMRect | null>(null);
 
   const allBadges = useChatBadges();
-  const isEditing = useRecoilValue(store.isEditingBadges);
+  const isEditing = useAtomValue(store.isEditingBadges);
 
   const badges = useMemo(
     () => allBadges.filter((badge) => badge.isAvailable !== false),
     [allBadges],
   );
 
-  const toggleBadge = useRecoilCallback(
-    ({ snapshot, set }) =>
-      async (badgeAtom: any) => {
-        const current = await snapshot.getPromise(badgeAtom);
-        set(badgeAtom, !current);
-      },
-    [],
+  const jotaiStore = useStore();
+  const toggleBadge = useCallback(
+    (badgeAtom: any) => {
+      const current = jotaiStore.get(badgeAtom);
+      jotaiStore.set(badgeAtom, !current);
+    },
+    [jotaiStore],
   );
 
   useEffect(() => {

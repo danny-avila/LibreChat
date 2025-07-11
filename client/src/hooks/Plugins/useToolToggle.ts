@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useEffect } from 'react';
 import debounce from 'lodash/debounce';
-import { useRecoilState } from 'recoil';
+import { useAtom } from 'jotai';
 import { Constants, LocalStorageKeys } from 'librechat-data-provider';
 import type { VerifyToolAuthResponse } from 'librechat-data-provider';
 import type { UseQueryOptions } from '@tanstack/react-query';
@@ -46,7 +46,7 @@ export function useToolToggle({
   authConfig,
 }: UseToolToggleOptions) {
   const key = conversationId ?? Constants.NEW_CONVO;
-  const [ephemeralAgent, setEphemeralAgent] = useRecoilState(ephemeralAgentByConvoId(key));
+  const [ephemeralAgent, setEphemeralAgent] = useAtom(ephemeralAgentByConvoId(key));
 
   const authQuery = useVerifyAgentToolAuth(
     { toolId: authConfig?.toolId || '' },
@@ -102,12 +102,12 @@ export function useToolToggle({
       }
 
       // Update ephemeralAgent (localStorage will sync automatically via effect)
-      setEphemeralAgent((prev) => ({
-        ...(prev || {}),
+      setEphemeralAgent({
+        ...(ephemeralAgent || {}),
         [toolKey]: value,
-      }));
+      });
     },
-    [setIsDialogOpen, isAuthenticated, setEphemeralAgent, toolKey],
+    [isAuthenticated, setIsDialogOpen, setEphemeralAgent, ephemeralAgent, toolKey],
   );
 
   const debouncedChange = useMemo(

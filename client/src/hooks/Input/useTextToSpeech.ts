@@ -1,4 +1,4 @@
-import { useRecoilState, useRecoilValue } from 'recoil';
+import { useAtom, useAtomValue } from 'jotai';
 import { useRef, useMemo, useEffect, useState } from 'react';
 import { parseTextParts } from 'librechat-data-provider';
 import type { TMessageContentParts } from 'librechat-data-provider';
@@ -28,8 +28,8 @@ const useTextToSpeech = (props?: TUseTextToSpeech) => {
 
   const { textToSpeechEndpoint } = useGetAudioSettings();
   const { pauseGlobalAudio } = usePauseGlobalAudio(index);
-  const [voice, setVoice] = useRecoilState(store.voice);
-  const globalIsPlaying = useRecoilValue(store.globalAudioPlayingFamily(index));
+  const [voice, setVoice] = useAtom(store.voice);
+  const globalIsPlaying = useAtomValue(store.globalAudioPlayingFamily(index));
 
   const isSpeaking = isSpeakingState || (isLast && globalIsPlaying);
 

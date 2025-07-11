@@ -1,11 +1,11 @@
 import Cookies from 'js-cookie';
-import { atomWithLocalStorage } from './utils';
+import { atomWithStorage } from 'jotai/utils';
 
 const defaultLang = () => {
   const userLang = navigator.language || navigator.languages[0];
   return Cookies.get('lang') || localStorage.getItem('lang') || userLang;
 };
 
-const lang = atomWithLocalStorage('lang', defaultLang());
+const lang = atomWithStorage('lang', defaultLang());
 
 export default { lang };

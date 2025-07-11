@@ -1,6 +1,6 @@
 /* eslint-disable jsx-a11y/media-has-caption */
 import { useEffect } from 'react';
-import { useRecoilValue } from 'recoil';
+import { useAtomValue } from 'jotai';
 import type { TMessageAudio } from '~/common';
 import { useLocalize, useTTSBrowser, useTTSExternal } from '~/hooks';
 import { VolumeIcon, VolumeMuteIcon, Spinner } from '~/components';
@@ -16,7 +16,7 @@ export function BrowserTTS({
   renderButton,
 }: TMessageAudio) {
   const localize = useLocalize();
-  const playbackRate = useRecoilValue(store.playbackRate);
+  const playbackRate = useAtomValue(store.playbackRate);
 
   const { toggleSpeech, isSpeaking, isLoading, audioRef } = useTTSBrowser({
     isLast,
@@ -109,7 +109,7 @@ export function ExternalTTS({
   renderButton,
 }: TMessageAudio) {
   const localize = useLocalize();
-  const playbackRate = useRecoilValue(store.playbackRate);
+  const playbackRate = useAtomValue(store.playbackRate);
 
   const { toggleSpeech, isSpeaking, isLoading, audioRef } = useTTSExternal({
     isLast,

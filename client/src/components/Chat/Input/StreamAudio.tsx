@@ -2,7 +2,7 @@ import { useParams } from 'react-router-dom';
 import { useEffect, useCallback } from 'react';
 import { QueryKeys } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
-import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
+import { useAtom, useAtomValue, useSetAtom } from 'jotai';
 import type { TMessage } from 'librechat-data-provider';
 import { useCustomAudioRef, MediaSourceAppender, usePauseGlobalAudio } from '~/hooks/Audio';
 import { getLatestText, logger } from '~/utils';
@@ -22,24 +22,24 @@ const maxPromiseTime = 15000;
 export default function StreamAudio({ index = 0 }) {
   const { token } = useAuthContext();
 
-  const cacheTTS = useRecoilValue(store.cacheTTS);
-  const playbackRate = useRecoilValue(store.playbackRate);
+  const cacheTTS = useAtomValue(store.cacheTTS);
+  const playbackRate = useAtomValue(store.playbackRate);
 
-  const voice = useRecoilValue(store.voice);
-  const activeRunId = useRecoilValue(store.activeRunFamily(index));
-  const automaticPlayback = useRecoilValue(store.automaticPlayback);
-  const isSubmitting = useRecoilValue(store.isSubmittingFamily(index));
-  const latestMessage = useRecoilValue(store.latestMessageFamily(index));
-  const setIsPlaying = useSetRecoilState(store.globalAudioPlayingFamily(index));
-  const [audioRunId, setAudioRunId] = useRecoilState(store.audioRunFamily(index));
-  const [isFetching, setIsFetching] = useRecoilState(store.globalAudioFetchingFamily(index));
-  const [globalAudioURL, setGlobalAudioURL] = useRecoilState(store.globalAudioURLFamily(index));
+  const voice = useAtomValue(store.voice);
+  const activeRunId = useAtomValue(store.activeRunFamily(index));
+  const automaticPlayback = useAtomValue(store.automaticPlayback);
+  const isSubmitting = useAtomValue(store.isSubmittingFamily(index));
+  const latestMessage = useAtomValue(store.latestMessageFamily(index));
+  const setIsPlaying = useSetAtom(store.globalAudioPlayingFamily(index));
+  const [audioRunId, setAudioRunId] = useAtom(store.audioRunFamily(index));
+  const [isFetching, setIsFetching] = useAtom(store.globalAudioFetchingFamily(index));
+  const [globalAudioURL, setGlobalAudioURL] = useAtom(store.globalAudioURLFamily(index));
 
   const { audioRef } = useCustomAudioRef({ setIsPlaying });
   const { pauseGlobalAudio } = usePauseGlobalAudio();
 
   const { conversationId: paramId } = useParams();
-  const queryParam = paramId === 'new' ? paramId : latestMessage?.conversationId ?? paramId ?? '';
+  const queryParam = paramId === 'new' ? paramId : (latestMessage?.conversationId ?? paramId ?? '');
 
   const queryClient = useQueryClient();
   const getMessages = useCallback(

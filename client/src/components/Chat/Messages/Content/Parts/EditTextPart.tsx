@@ -1,7 +1,7 @@
 import { useRef, useEffect, useCallback, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { ContentTypes } from 'librechat-data-provider';
-import { useRecoilState, useRecoilValue } from 'recoil';
+import { useAtom, useAtomValue } from 'jotai';
 import { useUpdateMessageContentMutation } from 'librechat-data-provider/react-query';
 import type { Agents } from 'librechat-data-provider';
 import type { TEditProps } from '~/common';
@@ -26,7 +26,7 @@ const EditTextPart = ({
   const localize = useLocalize();
   const { addedIndex } = useAddedChatContext();
   const { ask, getMessages, setMessages, conversation } = useChatContext();
-  const [latestMultiMessage, setLatestMultiMessage] = useRecoilState(
+  const [latestMultiMessage, setLatestMultiMessage] = useAtom(
     store.latestMessageFamily(addedIndex),
   );
 
@@ -36,7 +36,7 @@ const EditTextPart = ({
     [getMessages, messageId],
   );
 
-  const chatDirection = useRecoilValue(store.chatDirection);
+  const chatDirection = useAtomValue(store.chatDirection);
 
   const textAreaRef = useRef<HTMLTextAreaElement | null>(null);
   const updateMessageContentMutation = useUpdateMessageContentMutation(conversationId ?? '');

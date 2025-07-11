@@ -1,25 +1,25 @@
-import { atom } from 'recoil';
-import { atomWithLocalStorage } from '~/store/utils';
+import { atom } from 'jotai';
+import { atomWithStorage } from 'jotai/utils';
 import { PromptsEditorMode } from '~/common';
 
 // Static atoms without localStorage
 const staticAtoms = {
   // `name` filter
-  promptsName: atom<string>({ key: 'promptsName', default: '' }),
+  promptsName: atom<string>(''),
   // `category` filter
-  promptsCategory: atom<string>({ key: 'promptsCategory', default: '' }),
+  promptsCategory: atom<string>(''),
   // `pageNumber` filter
-  promptsPageNumber: atom<number>({ key: 'promptsPageNumber', default: 1 }),
+  promptsPageNumber: atom<number>(1),
   // `pageSize` filter
-  promptsPageSize: atom<number>({ key: 'promptsPageSize', default: 10 }),
+  promptsPageSize: atom<number>(10),
 };
 
 // Atoms with localStorage
 const localStorageAtoms = {
-  autoSendPrompts: atomWithLocalStorage('autoSendPrompts', true),
-  alwaysMakeProd: atomWithLocalStorage('alwaysMakeProd', true),
+  autoSendPrompts: atomWithStorage('autoSendPrompts', true),
+  alwaysMakeProd: atomWithStorage('alwaysMakeProd', true),
   // Editor mode
-  promptsEditorMode: atomWithLocalStorage<PromptsEditorMode>(
+  promptsEditorMode: atomWithStorage<PromptsEditorMode>(
     'promptsEditorMode',
     PromptsEditorMode.SIMPLE,
   ),

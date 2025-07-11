@@ -8,7 +8,7 @@ import type {
   TPlugin,
   TPluginAction,
 } from 'librechat-data-provider';
-import { useSetRecoilState } from 'recoil';
+import { useSetAtom } from 'jotai';
 import store from '~/store';
 
 interface PluginStoreHandlers {
@@ -19,7 +19,7 @@ interface PluginStoreHandlers {
 }
 
 export default function usePluginInstall(handlers: PluginStoreHandlers = {}) {
-  const setAvailableTools = useSetRecoilState(store.availableTools);
+  const setAvailableTools = useSetAtom(store.availableTools);
   const { onInstallError, onInstallSuccess, onUninstallError, onUninstallSuccess } = handlers;
   const updateUserPlugins = useUpdateUserPluginsMutation();
 

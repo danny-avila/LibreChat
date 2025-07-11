@@ -1,4 +1,4 @@
-import { useRecoilValue } from 'recoil';
+import { useAtomValue } from 'jotai';
 import { Close } from '@radix-ui/react-popover';
 import { Flipper, Flipped } from 'react-flip-toolkit';
 import type { FC } from 'react';
@@ -33,7 +33,7 @@ const PresetItems: FC<{
   onFileSelected,
 }) => {
   const { data: endpointsConfig } = useGetEndpointsQuery();
-  const defaultPreset = useRecoilValue(store.defaultPreset);
+  const defaultPreset = useAtomValue(store.defaultPreset);
   const localize = useLocalize();
   return (
     <>

@@ -1,9 +1,9 @@
-import { useSetRecoilState } from 'recoil';
+import { useSetAtom } from 'jotai';
 import useUpdateTagsInConvo from './useUpdateTagsInConvo';
 import store from '~/store';
 
 const useBookmarkSuccess = (conversationId: string) => {
-  const updateConversation = useSetRecoilState(store.updateConversationSelector(conversationId));
+  const updateConversation = useSetAtom(store.updateConversationSelector(conversationId));
   const { updateTagsInConversation } = useUpdateTagsInConvo();
 
   return (newTags: string[]) => {

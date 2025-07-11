@@ -1,6 +1,6 @@
 import { v4 } from 'uuid';
 import { useCallback } from 'react';
-import { useRecoilValue, useSetRecoilState } from 'recoil';
+import { useAtomValue, useSetAtom } from 'jotai';
 import { Constants, replaceSpecialVars } from 'librechat-data-provider';
 import { useChatContext, useChatFormContext, useAddedChatContext } from '~/Providers';
 import { useAuthContext } from '~/hooks/AuthContext';
@@ -19,9 +19,9 @@ export default function useSubmitMessage() {
   const { ask, index, getMessages, setMessages, latestMessage } = useChatContext();
   const { addedIndex, ask: askAdditional, conversation: addedConvo } = useAddedChatContext();
 
-  const autoSendPrompts = useRecoilValue(store.autoSendPrompts);
-  const activeConvos = useRecoilValue(store.allConversationsSelector);
-  const setActivePrompt = useSetRecoilState(store.activePromptByIndex(index));
+  const autoSendPrompts = useAtomValue(store.autoSendPrompts);
+  const activeConvos = useAtomValue(store.allConversationsSelector);
+  const setActivePrompt = useSetAtom(store.activePromptByIndex(index));
 
   const submitMessage = useCallback(
     (data?: { text: string }) => {

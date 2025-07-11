@@ -1,5 +1,5 @@
 import { Suspense, useMemo } from 'react';
-import { useRecoilValue } from 'recoil';
+import { useAtomValue } from 'jotai';
 import { ContentTypes } from 'librechat-data-provider';
 import type {
   Agents,
@@ -26,7 +26,7 @@ const SearchContent = ({
   attachments?: TAttachment[];
   searchResults?: { [key: string]: SearchResultData };
 }) => {
-  const enableUserMsgMarkdown = useRecoilValue(store.enableUserMsgMarkdown);
+  const enableUserMsgMarkdown = useAtomValue(store.enableUserMsgMarkdown);
   const { messageId } = message;
 
   const attachmentMap = useMemo(() => mapAttachments(attachments ?? []), [attachments]);

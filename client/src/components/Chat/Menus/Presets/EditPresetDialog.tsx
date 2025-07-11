@@ -1,4 +1,4 @@
-import { useRecoilState } from 'recoil';
+import { useAtom } from 'jotai';
 import { useCallback, useEffect, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { QueryKeys, isAgentsEndpoint } from 'librechat-data-provider';
@@ -41,7 +41,7 @@ const EditPresetDialog = ({
     optionKey: 'title',
     initialValue: preset?.title,
   });
-  const [presetModalVisible, setPresetModalVisible] = useRecoilState(store.presetModalVisible);
+  const [presetModalVisible, setPresetModalVisible] = useAtom(store.presetModalVisible);
 
   const { data: _endpoints = [] } = useGetEndpointsQuery({
     select: mapEndpoints,

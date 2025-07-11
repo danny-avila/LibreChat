@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import type { FC } from 'react';
-import { useRecoilValue } from 'recoil';
+import { useAtomValue } from 'jotai';
 import { Menu, MenuButton, MenuItems } from '@headlessui/react';
 import { BookmarkFilledIcon, BookmarkIcon } from '@radix-ui/react-icons';
 import { BookmarkContext } from '~/Providers/BookmarkContext';
@@ -20,7 +20,7 @@ type BookmarkNavProps = {
 const BookmarkNav: FC<BookmarkNavProps> = ({ tags, setTags, isSmallScreen }: BookmarkNavProps) => {
   const localize = useLocalize();
   const { data } = useGetConversationTags();
-  const conversation = useRecoilValue(store.conversationByIndex(0));
+  const conversation = useAtomValue(store.conversationByIndex(0));
   const label = useMemo(
     () => (tags.length > 0 ? tags.join(', ') : localize('com_ui_bookmarks')),
     [tags, localize],

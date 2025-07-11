@@ -1,5 +1,5 @@
 import { Link } from 'lucide-react';
-import { useRecoilValue } from 'recoil';
+import { useAtomValue } from 'jotai';
 import { QueryKeys } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
 import type { TMessage, TConversation } from 'librechat-data-provider';
@@ -12,7 +12,7 @@ import store from '~/store';
 export default function SearchButtons({ message }: { message: TMessage }) {
   const localize = useLocalize();
   const queryClient = useQueryClient();
-  const search = useRecoilValue(store.search);
+  const search = useAtomValue(store.search);
   const { navigateToConvo } = useNavigateToConvo();
   const conversationId = message.conversationId ?? '';
 

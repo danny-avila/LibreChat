@@ -1,4 +1,4 @@
-import { useRecoilValue } from 'recoil';
+import { useAtomValue } from 'jotai';
 import { useEffect, useMemo } from 'react';
 import { FileSources, LocalStorageKeys } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
@@ -11,8 +11,8 @@ import { EditorProvider } from '~/Providers';
 import store from '~/store';
 
 export default function Presentation({ children }: { children: React.ReactNode }) {
-  const artifacts = useRecoilValue(store.artifactsState);
-  const artifactsVisibility = useRecoilValue(store.artifactsVisibility);
+  const artifacts = useAtomValue(store.artifactsState);
+  const artifactsVisibility = useAtomValue(store.artifactsVisibility);
 
   const setFilesToDelete = useSetFilesToDelete();
 
