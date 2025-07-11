@@ -1,10 +1,9 @@
 const { logger } = require('@librechat/data-schemas');
-const { getUserMCPAuthMap } = require('@librechat/api');
+const { isEnabled, getUserMCPAuthMap } = require('@librechat/api');
 const { CacheKeys, EModelEndpoint } = require('librechat-data-provider');
-const { normalizeEndpointName, isEnabled } = require('~/server/utils');
+const { normalizeEndpointName } = require('~/server/utils');
 const loadCustomConfig = require('./loadCustomConfig');
 const { getCachedTools } = require('./getCachedTools');
-const { findPluginAuthsByKeys } = require('~/models');
 const getLogStores = require('~/cache/getLogStores');
 
 /**
@@ -55,46 +54,48 @@ const getCustomEndpointConfig = async (endpoint) => {
   );
 };
 
-async function createGetMCPAuthMap() {
+/**
+ * @param {Object} params
+ * @param {string} params.userId
+ * @param {GenericTool[]} [params.tools]
+ * @param {import('@librechat/data-schemas').PluginAuthMethods['findPluginAuthsByKeys']} params.findPluginAuthsByKeys
+ * @returns {Promise<Record<string, Record<string, string>> | undefined>}
+ */
+async function getMCPAuthMap({ userId, tools, findPluginAuthsByKeys }) {
+  try {
+    if (!tools || tools.length === 0) {
+      return;
+    }
+    const appTools = await getCachedTools({
+      userId,
+    });
+    return await getUserMCPAuthMap({
+      tools,
+      userId,
+      appTools,
+      findPluginAuthsByKeys,
+    });
+  } catch (err) {
+    logger.error(
+      `[api/server/controllers/agents/client.js #chatCompletion] Error getting custom user vars for agent`,
+      err,
+    );
+  }
+}
+
+/**
+ * @returns {Promise<boolean>}
+ */
+async function hasCustomUserVars() {
   const customConfig = await getCustomConfig();
   const mcpServers = customConfig?.mcpServers;
-  const hasCustomUserVars = Object.values(mcpServers ?? {}).some((server) => server.customUserVars);
-  if (!hasCustomUserVars) {
-    return;
-  }
-
-  /**
-   * @param {Object} params
-   * @param {GenericTool[]} [params.tools]
-   * @param {string} params.userId
-   * @returns {Promise<Record<string, Record<string, string>> | undefined>}
-   */
-  return async function ({ tools, userId }) {
-    try {
-      if (!tools || tools.length === 0) {
-        return;
-      }
-      const appTools = await getCachedTools({
-        userId,
-      });
-      return await getUserMCPAuthMap({
-        tools,
-        userId,
-        appTools,
-        findPluginAuthsByKeys,
-      });
-    } catch (err) {
-      logger.error(
-        `[api/server/controllers/agents/client.js #chatCompletion] Error getting custom user vars for agent`,
-        err,
-      );
-    }
-  };
+  return Object.values(mcpServers ?? {}).some((server) => server.customUserVars);
 }
 
 module.exports = {
+  getMCPAuthMap,
   getCustomConfig,
   getBalanceConfig,
-  createGetMCPAuthMap,
+  hasCustomUserVars,
   getCustomEndpointConfig,
 };

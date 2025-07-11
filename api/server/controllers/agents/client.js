@@ -1,5 +1,7 @@
 require('events').EventEmitter.defaultMaxListeners = 100;
 const { logger } = require('@librechat/data-schemas');
+const { DynamicStructuredTool } = require('@langchain/core/tools');
+const { getBufferString, HumanMessage } = require('@langchain/core/messages');
 const {
   sendEvent,
   createRun,
@@ -31,13 +33,16 @@ const {
   bedrockInputSchema,
   removeNullishValues,
 } = require('librechat-data-provider');
-const { DynamicStructuredTool } = require('@langchain/core/tools');
-const { getBufferString, HumanMessage } = require('@langchain/core/messages');
-const { createGetMCPAuthMap, checkCapability } = require('~/server/services/Config');
+const {
+  findPluginAuthsByKeys,
+  getFormattedMemories,
+  deleteMemory,
+  setMemory,
+} = require('~/models');
+const { getMCPAuthMap, checkCapability, hasCustomUserVars } = require('~/server/services/Config');
 const { addCacheControl, createContextHandlers } = require('~/app/clients/prompts');
 const { initializeAgent } = require('~/server/services/Endpoints/agents/agent');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
-const { getFormattedMemories, deleteMemory, setMemory } = require('~/models');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const { getProviderConfig } = require('~/server/services/Endpoints');
 const BaseClient = require('~/app/clients/BaseClient');
@@ -701,8 +706,6 @@ class AgentClient extends BaseClient {
         version: 'v2',
       };
 
-      const getUserMCPAuthMap = await createGetMCPAuthMap();
-
       const toolSet = new Set((this.options.agent.tools ?? []).map((tool) => tool && tool.name));
       let { messages: initialMessages, indexTokenCountMap } = formatAgentMessages(
         payload,
@@ -823,10 +826,11 @@ class AgentClient extends BaseClient {
         }
 
         try {
-          if (getUserMCPAuthMap) {
-            config.configurable.userMCPAuthMap = await getUserMCPAuthMap({
+          if (await hasCustomUserVars()) {
+            config.configurable.userMCPAuthMap = await getMCPAuthMap({
               tools: agent.tools,
               userId: this.options.req.user.id,
+              findPluginAuthsByKeys,
             });
           }
         } catch (err) {
