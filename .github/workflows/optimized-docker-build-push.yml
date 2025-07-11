@@ -2,7 +2,9 @@ name: Simple Optimized API Docker Build & Push
 
 on:
   push:
-    branches: [ master_dev ]
+    branches: [ master, master_dev ]
+
+
   workflow_dispatch:
 
 env:
@@ -59,3 +61,4 @@ jobs:
             type=registry,ref=${{ env.REGISTRY }}/${{ env.REPO_OWNER_LOWER }}/${{ env.IMAGE_NAME }}:cache,mode=max
           build-args: |
             BUILDKIT_INLINE_CACHE=1
+
