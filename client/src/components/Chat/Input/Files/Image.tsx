@@ -11,7 +11,7 @@ const Image = ({
 }: {
   imageBase64?: string;
   url?: string;
-  onDelete: () => void;
+  onDelete?: () => void;
   progress: number; // between 0 and 1
   source?: FileSources;
 }) => {
@@ -20,7 +20,7 @@ const Image = ({
       <div className="relative overflow-hidden rounded-2xl border border-gray-200 dark:border-gray-600">
         <ImagePreview source={source} imageBase64={imageBase64} url={url} progress={progress} />
       </div>
-      <RemoveFile onRemove={onDelete} />
+      {onDelete && <RemoveFile onRemove={onDelete} />}
     </div>
   );
 };

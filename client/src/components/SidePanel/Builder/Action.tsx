@@ -3,22 +3,33 @@ import type { Action } from 'librechat-data-provider';
 import GearIcon from '~/components/svg/GearIcon';
 import { cn } from '~/utils';
 
-export default function Action({ action, onClick }: { action: Action; onClick: () => void }) {
+export default function Action({
+  action,
+  onClick,
+  readonly = false,
+}: {
+  action: Action;
+  onClick: () => void;
+  readonly?: boolean;
+}) {
   const [isHovering, setIsHovering] = useState(false);
 
   return (
     <div
       role="button"
-      tabIndex={0}
-      onClick={onClick}
+      tabIndex={readonly ? -1 : 0}
+      onClick={readonly ? undefined : onClick}
       onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
+        if (!readonly && (e.key === 'Enter' || e.key === ' ')) {
           onClick();
         }
       }}
-      className="group flex w-full rounded-lg border border-border-medium text-sm hover:cursor-pointer focus:outline-none focus:ring-2 focus:ring-text-primary"
-      onMouseEnter={() => setIsHovering(true)}
-      onMouseLeave={() => setIsHovering(false)}
+      className={cn(
+        'group flex w-full rounded-lg border border-border-medium text-sm focus:outline-none focus:ring-2 focus:ring-text-primary',
+        readonly ? 'cursor-default opacity-75' : 'hover:cursor-pointer',
+      )}
+      onMouseEnter={() => !readonly && setIsHovering(true)}
+      onMouseLeave={() => !readonly && setIsHovering(false)}
       aria-label={`Action for ${action.metadata.domain}`}
     >
       <div
@@ -27,15 +38,17 @@ export default function Action({ action, onClick }: { action: Action; onClick: (
       >
         {action.metadata.domain}
       </div>
-      <div
-        className={cn(
-          'h-9 w-9 min-w-9 items-center justify-center rounded-lg transition-colors duration-200 hover:bg-surface-tertiary focus:outline-none focus:ring-2 focus:ring-text-primary group-focus:flex',
-          isHovering ? 'flex' : 'hidden',
-        )}
-        aria-label="Settings"
-      >
-        <GearIcon className="icon-sm" aria-hidden="true" />
-      </div>
+      {!readonly && (
+        <div
+          className={cn(
+            'h-9 w-9 min-w-9 items-center justify-center rounded-lg transition-colors duration-200 hover:bg-surface-tertiary focus:outline-none focus:ring-2 focus:ring-text-primary group-focus:flex',
+            isHovering ? 'flex' : 'hidden',
+          )}
+          aria-label="Settings"
+        >
+          <GearIcon className="icon-sm" aria-hidden="true" />
+        </div>
+      )}
     </div>
   );
 }

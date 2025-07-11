@@ -153,6 +153,7 @@ function DynamicSlider({
       className={cn(
         'flex flex-col items-center justify-start gap-2',
         columnSpan != null ? `col-span-${columnSpan}` : 'col-span-full',
+        readonly && 'cursor-not-allowed opacity-60',
       )}
     >
       <HoverCard openDelay={300}>
@@ -216,7 +217,7 @@ function DynamicSlider({
             max={max}
             min={range ? range.min : 0}
             step={range ? (range.step ?? 1) : 1}
-            className="flex h-4 w-full"
+            className={cn('flex h-4 w-full', readonly && 'cursor-not-allowed')}
           />
         </HoverCardTrigger>
         {description && (

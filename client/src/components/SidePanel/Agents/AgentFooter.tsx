@@ -1,5 +1,5 @@
 import { useWatch, useFormContext } from 'react-hook-form';
-import { SystemRoles, Permissions, PermissionTypes } from 'librechat-data-provider';
+import { SystemRoles, Permissions, PermissionTypes, Constants } from 'librechat-data-provider';
 import type { AgentForm, AgentPanelProps } from '~/common';
 import { useLocalize, useAuthContext, useHasAccess } from '~/hooks';
 import { useUpdateAgentMutation } from '~/data-provider';
@@ -18,11 +18,13 @@ export default function AgentFooter({
   updateMutation,
   setActivePanel,
   setCurrentAgentId,
+  readonly = false,
 }: Pick<
   AgentPanelProps,
   'setCurrentAgentId' | 'createMutation' | 'activePanel' | 'setActivePanel'
 > & {
   updateMutation: ReturnType<typeof useUpdateAgentMutation>;
+  readonly?: boolean;
 }) {
   const localize = useLocalize();
   const { user } = useAuthContext();
@@ -55,15 +57,17 @@ export default function AgentFooter({
   return (
     <div className="mb-1 flex w-full flex-col gap-2">
       {showButtons && <AdvancedButton setActivePanel={setActivePanel} />}
-      {showButtons && agent_id && <VersionButton setActivePanel={setActivePanel} />}
-      {user?.role === SystemRoles.ADMIN && showButtons && <AdminSettings />}
+      {!readonly && showButtons && agent_id && <VersionButton setActivePanel={setActivePanel} />}
+      {!readonly && user?.role === SystemRoles.ADMIN && showButtons && <AdminSettings />}
       {/* Context Button */}
       <div className="flex items-center justify-end gap-2">
-        <DeleteButton
-          agent_id={agent_id}
-          setCurrentAgentId={setCurrentAgentId}
-          createMutation={createMutation}
-        />
+        {!readonly && (
+          <DeleteButton
+            agent_id={agent_id}
+            setCurrentAgentId={setCurrentAgentId}
+            createMutation={createMutation}
+          />
+        )}
         {(agent?.author === user?.id || user?.role === SystemRoles.ADMIN) &&
           hasAccessToShareAgents && (
             <ShareAgent
@@ -73,16 +77,20 @@ export default function AgentFooter({
               isCollaborative={agent?.isCollaborative}
             />
           )}
-        {agent && agent.author === user?.id && <DuplicateAgent agent_id={agent_id} />}
+        {agent && (agent?.author === user?.id || agent?.author === Constants.SYSTEM_USER_ID) && (
+          <DuplicateAgent agent_id={agent_id} />
+        )}
         {/* Submit Button */}
-        <button
-          className="btn btn-primary focus:shadow-outline flex h-9 w-full items-center justify-center px-4 py-2 font-semibold text-white hover:bg-green-600 focus:border-green-500"
-          type="submit"
-          disabled={createMutation.isLoading || updateMutation.isLoading}
-          aria-busy={createMutation.isLoading || updateMutation.isLoading}
-        >
-          {renderSaveButton()}
-        </button>
+        {!readonly && (
+          <button
+            className="btn btn-primary focus:shadow-outline flex h-9 w-full items-center justify-center px-4 py-2 font-semibold text-white hover:bg-green-600 focus:border-green-500"
+            type="submit"
+            disabled={createMutation.isLoading || updateMutation.isLoading}
+            aria-busy={createMutation.isLoading || updateMutation.isLoading}
+          >
+            {renderSaveButton()}
+          </button>
+        )}
       </div>
     </div>
   );

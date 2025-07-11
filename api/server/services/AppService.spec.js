@@ -32,6 +32,9 @@ jest.mock('~/models', () => ({
 jest.mock('~/models/Role', () => ({
   updateAccessPermissions: jest.fn(),
 }));
+jest.mock('~/models/Agent', () => ({
+  syncYamlAgents: jest.fn(),
+}));
 jest.mock('./Config', () => ({
   setCachedTools: jest.fn(),
   getCachedTools: jest.fn().mockResolvedValue({

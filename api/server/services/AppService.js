@@ -28,6 +28,7 @@ const { loadAndFormatTools } = require('./ToolService');
 const { isEnabled } = require('~/server/utils');
 const { initializeRoles } = require('~/models');
 const { setCachedTools } = require('./Config');
+const { syncYamlAgents } = require('~/models/Agent');
 const paths = require('~/config/paths');
 
 /**
@@ -76,6 +77,9 @@ const AppService = async (app) => {
   });
 
   await setCachedTools(availableTools, { isGlobal: true });
+
+  // Sync YAML agents to database at startup
+  await syncYamlAgents();
 
   // Store MCP config for later initialization
   const mcpConfig = config.mcpServers || null;

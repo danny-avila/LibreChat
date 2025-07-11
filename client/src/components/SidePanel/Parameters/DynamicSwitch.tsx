@@ -5,6 +5,7 @@ import { TranslationKeys, useLocalize, useParameterEffects } from '~/hooks';
 import { useChatContext } from '~/Providers';
 import OptionHover from './OptionHover';
 import { ESide } from '~/common';
+import { cn } from '~/utils';
 
 function DynamicSwitch({
   label = '',
@@ -41,9 +42,11 @@ function DynamicSwitch({
 
   return (
     <div
-      className={`flex flex-col items-center justify-start gap-6 ${
-        columnSpan != null ? `col-span-${columnSpan}` : 'col-span-full'
-      }`}
+      className={cn(
+        'flex flex-col items-center justify-start gap-6',
+        columnSpan != null ? `col-span-${columnSpan}` : 'col-span-full',
+        readonly && 'cursor-not-allowed opacity-60',
+      )}
     >
       <HoverCard openDelay={300}>
         <HoverCardTrigger className="grid w-full items-center gap-2">

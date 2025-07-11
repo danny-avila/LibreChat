@@ -9,7 +9,7 @@ import { useLocalize } from '~/hooks';
 import AgentChain from './AgentChain';
 import { Panel } from '~/common';
 
-export default function AdvancedPanel() {
+export default function AdvancedPanel({ readonly = false }: { readonly?: boolean }) {
   const localize = useLocalize();
   const methods = useFormContext<AgentForm>();
   const { control, watch } = methods;
@@ -40,13 +40,15 @@ export default function AdvancedPanel() {
         <div className="mb-2 mt-2 text-xl font-medium">{localize('com_ui_advanced_settings')}</div>
       </div>
       <div className="flex flex-col gap-4 px-2">
-        <MaxAgentSteps />
+        <MaxAgentSteps readonly={readonly} />
         {chainEnabled && (
           <Controller
             name="agent_ids"
             control={control}
             defaultValue={[]}
-            render={({ field }) => <AgentChain field={field} currentAgentId={currentAgentId} />}
+            render={({ field }) => (
+              <AgentChain field={field} currentAgentId={currentAgentId} readonly={readonly} />
+            )}
           />
         )}
       </div>

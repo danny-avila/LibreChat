@@ -2,9 +2,112 @@ const { z } = require('zod');
 const axios = require('axios');
 const { tool } = require('@langchain/core/tools');
 const { logger } = require('@librechat/data-schemas');
-const { Tools, EToolResources } = require('librechat-data-provider');
+const { Tools, EToolResources, FileSources } = require('librechat-data-provider');
 const { generateShortLivedToken } = require('~/server/services/AuthService');
-const { getFiles } = require('~/models/File');
+const { getFiles, updateFile } = require('~/models/File');
+const { uploadVectors } = require('~/server/services/Files/VectorDB/crud');
+
+/**
+ * Embed files that need embedding (typically YAML agent files)
+ * @param {ServerRequest} req - The request object
+ * @param {Array<{ file_id: string; filename: string }>} files - Files to check for embedding
+ * @param {string} entity_id - Entity ID for the embedding
+ */
+const embedPendingFiles = async (req, files, entity_id) => {
+  if (!process.env.RAG_API_URL) {
+    logger.debug('RAG_API_URL not configured, skipping embedding check');
+    return;
+  }
+
+  try {
+    // Get full file details for files that may need embedding
+    const fileIds = files.map((f) => f.file_id);
+    logger.info(
+      `[embedPendingFiles] Checking ${fileIds.length} files for embedding status. File IDs: ${fileIds.join(', ')}`,
+    );
+
+    const dbFiles = await getFiles({
+      file_id: { $in: fileIds },
+      embedded: true, // Files marked for embedding
+    });
+
+    logger.info(`[embedPendingFiles] Found ${dbFiles.length} files marked for embedding`);
+
+    for (const dbFile of dbFiles) {
+      logger.debug(
+        `[embedPendingFiles] Checking file: ${dbFile.filename}, filepath: ${dbFile.filepath}, source: ${dbFile.source}`,
+      );
+    }
+
+    for (const dbFile of dbFiles) {
+      // Check if this is a file that needs embedding (marked as embedded but not in vectordb)
+      const isAlreadyEmbedded = dbFile.source === FileSources.vectordb;
+      const needsEmbedding = dbFile.embedded === true && !isAlreadyEmbedded;
+
+      logger.debug(
+        `[embedPendingFiles] Evaluating ${dbFile.filename}: embedded=${dbFile.embedded}, isAlreadyEmbedded=${isAlreadyEmbedded}, needsEmbedding=${needsEmbedding}`,
+      );
+
+      if (needsEmbedding) {
+        logger.info(
+          `[embedPendingFiles] ✓ File ${dbFile.filename} needs embedding - attempting now`,
+        );
+
+        try {
+          logger.debug(
+            `[embedPendingFiles] Creating file object for embedding ${dbFile.filename}...`,
+          );
+
+          // Create a file object for the uploadVectors function
+          const fakeFile = {
+            path: dbFile.filepath,
+            size: dbFile.bytes,
+            originalname: dbFile.filename,
+            mimetype: dbFile.type,
+          };
+
+          logger.info(`[embedPendingFiles] Starting embedding for ${dbFile.filename}...`);
+
+          await uploadVectors({
+            req,
+            file: fakeFile,
+            file_id: dbFile.file_id,
+            entity_id,
+          });
+
+          // Mark file as embedded by updating its source
+          await updateFile({
+            file_id: dbFile.file_id,
+            source: FileSources.vectordb,
+            filepath: FileSources.vectordb, // Update filepath to indicate it's now in vector DB
+          });
+
+          logger.info(
+            `[embedPendingFiles] ✅ Successfully embedded YAML agent file: ${dbFile.filename}`,
+          );
+        } catch (embedError) {
+          logger.error(
+            `[embedPendingFiles] ❌ Failed to embed file ${dbFile.filename}:`,
+            embedError.message,
+          );
+          if (embedError.response) {
+            logger.error(`[embedPendingFiles] Response details:`, embedError.response.data);
+          }
+
+          // Don't fail the search if embedding fails - file might already be embedded
+          logger.info(
+            `[embedPendingFiles] Continuing with search despite embedding error for ${dbFile.filename}`,
+          );
+        }
+      } else if (isAlreadyEmbedded) {
+        logger.debug(`[embedPendingFiles] ✓ File ${dbFile.filename} already embedded, skipping`);
+      }
+    }
+  } catch (error) {
+    logger.warn('Error checking for pending file embeddings:', error.message);
+    // Don't fail the search if embedding check fails
+  }
+};
 
 /**
  *
@@ -64,6 +167,13 @@ const createFileSearchTool = async ({ req, files, entity_id }) => {
       if (!jwtToken) {
         return 'There was an error authenticating the file search request.';
       }
+
+      // Check if any files need embedding (for YAML agent files)
+      logger.info(
+        `[file_search] About to check ${files.length} files for embedding. Files: ${files.map((f) => f.filename).join(', ')}`,
+      );
+      await embedPendingFiles(req, files, entity_id);
+      logger.info(`[file_search] Completed embedding check`);
 
       /**
        *

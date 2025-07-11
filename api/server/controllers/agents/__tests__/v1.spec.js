@@ -158,13 +158,15 @@ describe('duplicateAgent', () => {
     });
   });
 
-  it('should handle tool_resources.ocr correctly', async () => {
+  it('should copy all tool_resources correctly', async () => {
     const mockAgent = {
       id: 'agent_123',
       name: 'Test Agent',
       tool_resources: {
         ocr: { enabled: true, config: 'test' },
-        other: { should: 'not be copied' },
+        file_search: { vector_store_ids: ['vs_123'] },
+        execute_code: { file_ids: ['file_123'] },
+        image_edit: { file_ids: ['img_123'] },
       },
     };
 
@@ -179,9 +181,72 @@ describe('duplicateAgent', () => {
       expect.objectContaining({
         tool_resources: {
           ocr: { enabled: true, config: 'test' },
+          file_search: { vector_store_ids: ['vs_123'] },
+          execute_code: { file_ids: ['file_123'] },
+          image_edit: { file_ids: ['img_123'] },
         },
       }),
     );
+  });
+
+  it('should handle agents without tool_resources correctly', async () => {
+    const mockAgent = {
+      id: 'agent_123',
+      name: 'Test Agent',
+      description: 'Agent without tool resources',
+    };
+
+    getAgent.mockResolvedValue(mockAgent);
+    getActions.mockResolvedValue([]);
+    nanoid.mockReturnValue('new_123');
+    createAgent.mockResolvedValue({ id: 'agent_new_123' });
+
+    await duplicateAgent(req, res);
+
+    expect(createAgent).toHaveBeenCalledWith(
+      expect.not.objectContaining({
+        tool_resources: expect.anything(),
+      }),
+    );
+  });
+
+  it('should not copy isYamlDefined property when duplicating agent', async () => {
+    const mockAgent = {
+      id: 'agent_123',
+      name: 'YAML Agent',
+      description: 'YAML-defined agent',
+      isYamlDefined: true,
+      provider: 'openai',
+      model: 'gpt-4',
+    };
+
+    const mockNewAgent = {
+      id: 'agent_new_123',
+      name: 'YAML Agent (1/2/23, 12:34)',
+      description: 'YAML-defined agent',
+      provider: 'openai',
+      model: 'gpt-4',
+      author: 'user_456',
+    };
+
+    getAgent.mockResolvedValue(mockAgent);
+    getActions.mockResolvedValue([]);
+    nanoid.mockReturnValue('new_123');
+    createAgent.mockResolvedValue(mockNewAgent);
+
+    await duplicateAgent(req, res);
+
+    expect(createAgent).toHaveBeenCalledWith(
+      expect.not.objectContaining({
+        isYamlDefined: expect.anything(),
+      }),
+    );
+
+    expect(res.status).toHaveBeenCalledWith(201);
+    expect(res.json).toHaveBeenCalledWith({
+      agent: mockNewAgent,
+      actions: [],
+    });
   });
 
   it('should handle errors gracefully', async () => {

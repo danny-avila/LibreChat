@@ -18,6 +18,7 @@ export default function FileRow({
   fileFilter,
   isRTL = false,
   Wrapper,
+  readonly = false,
 }: {
   files: Map<string, ExtendedFile> | undefined;
   abortUpload?: () => void;
@@ -29,6 +30,7 @@ export default function FileRow({
   tool_resource?: EToolResources;
   isRTL?: boolean;
   Wrapper?: React.FC<{ children: React.ReactNode }>;
+  readonly?: boolean;
 }) {
   const files = Array.from(_files?.values() ?? []).filter((file) =>
     fileFilter ? fileFilter(file) : true,
@@ -124,12 +126,12 @@ export default function FileRow({
                 {isImage ? (
                   <Image
                     url={file.preview ?? file.filepath}
-                    onDelete={handleDelete}
+                    onDelete={readonly ? undefined : handleDelete}
                     progress={file.progress}
                     source={file.source}
                   />
                 ) : (
-                  <FileContainer file={file} onDelete={handleDelete} />
+                  <FileContainer file={file} onDelete={readonly ? undefined : handleDelete} />
                 )}
               </div>
             );

@@ -185,6 +185,42 @@ endpoints:
   #   disableBuilder: false
   #   # (optional) Agent Capabilities available to all users. Omit the ones you wish to exclude. Defaults to list below.
   #   capabilities: ["execute_code", "file_search", "actions", "tools"]
+  # definitions:
+  #   - id: "librechat-assistant"
+  #     name: "LibreChat Assistant"
+  #     description: "AI assistant specialized in LibreChat"
+  #     projects: "instance" # Optional: defaults to "instance" if omitted
+  #     instructions: |
+  #       You are a LibreChat assistant specialized in analyzing LibreChat and finding information.
+  #       You have access to uploaded knowledge base files and can search through them to find relevant information.
+  #
+  #       When answering questions:
+  #       - Search through the available files first
+  #       - Cite your sources when possible
+  #       - Provide comprehensive, well-researched answers
+  #       - If information isn't available in the files, clearly state that
+  #     provider: "openai"
+  #     model: "o4-mini"
+  #     tools:
+  #     - "file_search"
+  #     tool_resources:
+  #       file_search:
+  #         files:
+  #         - filepath: "./README.md"
+  #           filename: "README.md"
+  #           description: "LibreChat README"
+  #         - filepath: "./.github/CODE_OF_CONDUCT.md"
+  #           filename: "CODE_OF_CONDUCT.md"
+  #           description: "LibreChat code of conduct"
+  #         - filepath: "./.github/CONTRIBUTING.md"
+  #           filename: "CONTRIBUTING.md"
+  #           description: "LibreChat contributing guidelines"
+  #         - filepath: "./.github/ISSUE_TEMPLATE/BUG-REPORT.yml"
+  #           filename: "BUG-REPORT.yml"
+  #           description: "LibreChat bug report template"
+  #         - filepath: "./.github/ISSUE_TEMPLATE/FEATURE-REQUEST.yml"
+  #           filename: "FEATURE-REQUEST.yml"
+  #           description: "LibreChat feature request template"
   custom:
     # Groq Example
     - name: 'groq'

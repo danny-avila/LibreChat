@@ -12,7 +12,7 @@ import { useLocalize } from '~/hooks';
 import { CircleHelpIcon } from '~/components/svg';
 import { ESide } from '~/common';
 
-export default function Artifacts() {
+export default function Artifacts({ readonly = false }: { readonly?: boolean }) {
   const localize = useLocalize();
   const methods = useFormContext<AgentForm>();
   const { setValue, watch } = methods;
@@ -20,21 +20,31 @@ export default function Artifacts() {
   const artifactsMode = watch(AgentCapabilities.artifacts);
 
   const handleArtifactsChange = (value: boolean) => {
-    setValue(AgentCapabilities.artifacts, value ? ArtifactModes.DEFAULT : '', {
-      shouldDirty: true,
-    });
+    if (!readonly) {
+      setValue(AgentCapabilities.artifacts, value ? ArtifactModes.DEFAULT : '', {
+        shouldDirty: true,
+      });
+    }
   };
 
   const handleShadcnuiChange = (value: boolean) => {
-    setValue(AgentCapabilities.artifacts, value ? ArtifactModes.SHADCNUI : ArtifactModes.DEFAULT, {
-      shouldDirty: true,
-    });
+    if (!readonly) {
+      setValue(
+        AgentCapabilities.artifacts,
+        value ? ArtifactModes.SHADCNUI : ArtifactModes.DEFAULT,
+        {
+          shouldDirty: true,
+        },
+      );
+    }
   };
 
   const handleCustomModeChange = (value: boolean) => {
-    setValue(AgentCapabilities.artifacts, value ? ArtifactModes.CUSTOM : ArtifactModes.DEFAULT, {
-      shouldDirty: true,
-    });
+    if (!readonly) {
+      setValue(AgentCapabilities.artifacts, value ? ArtifactModes.CUSTOM : ArtifactModes.DEFAULT, {
+        shouldDirty: true,
+      });
+    }
   };
 
   const isEnabled = artifactsMode !== undefined && artifactsMode !== '';
@@ -57,6 +67,7 @@ export default function Artifacts() {
           checked={isEnabled}
           onCheckedChange={handleArtifactsChange}
           hoverCardText={localize('com_nav_info_code_artifacts_agent')}
+          disabled={readonly}
         />
         <SwitchItem
           id="includeShadcnui"
@@ -64,7 +75,7 @@ export default function Artifacts() {
           checked={isShadcnEnabled}
           onCheckedChange={handleShadcnuiChange}
           hoverCardText={localize('com_nav_info_include_shadcnui')}
-          disabled={!isEnabled || isCustomEnabled}
+          disabled={readonly || !isEnabled || isCustomEnabled}
         />
         <SwitchItem
           id="customPromptMode"
@@ -72,7 +83,7 @@ export default function Artifacts() {
           checked={isCustomEnabled}
           onCheckedChange={handleCustomModeChange}
           hoverCardText={localize('com_nav_info_custom_prompt_mode')}
-          disabled={!isEnabled}
+          disabled={readonly || !isEnabled}
         />
       </div>
     </div>

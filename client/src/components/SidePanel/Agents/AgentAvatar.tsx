@@ -24,10 +24,12 @@ function Avatar({
   agent_id = '',
   avatar,
   createMutation,
+  readonly = false,
 }: {
   agent_id: string | null;
   avatar: null | AgentAvatar;
   createMutation: UseMutationResult<Agent, Error, AgentCreateParams>;
+  readonly?: boolean;
 }) {
   const queryClient = useQueryClient();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -180,15 +182,15 @@ function Avatar({
   };
 
   return (
-    <Popover.Root open={menuOpen} onOpenChange={setMenuOpen}>
+    <Popover.Root open={menuOpen && !readonly} onOpenChange={setMenuOpen}>
       <div className="flex w-full items-center justify-center gap-4">
         <Popover.Trigger asChild>
-          <button type="button" className="h-20 w-20">
+          <button type="button" className="h-20 w-20" disabled={readonly}>
             {previewUrl ? <AgentAvatarRender url={previewUrl} progress={progress} /> : <NoImage />}
           </button>
         </Popover.Trigger>
       </div>
-      {<AvatarMenu handleFileChange={handleFileChange} />}
+      {!readonly && <AvatarMenu handleFileChange={handleFileChange} />}
     </Popover.Root>
   );
 }

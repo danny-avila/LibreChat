@@ -122,7 +122,7 @@ const getAgentHandler = async (req, res) => {
     agent.author = agent.author.toString();
     agent.isCollaborative = !!agent.isCollaborative;
 
-    if (agent.author !== author) {
+    if (agent.author !== author && agent.author !== Constants.SYSTEM_USER_ID) {
       delete agent.author;
     }
 
@@ -166,6 +166,15 @@ const updateAgentHandler = async (req, res) => {
     }
 
     const isAuthor = existingAgent.author.toString() === req.user.id;
+
+    // Check if agent is YAML-defined and prevent modifications
+    if (existingAgent.isYamlDefined) {
+      return res.status(403).json({
+        error:
+          'Cannot modify YAML-defined agents. This agent is defined in configuration and is read-only.',
+      });
+    }
+
     const hasEditPermission = existingAgent.isCollaborative || isAdmin || isAuthor;
 
     if (!hasEditPermission) {
@@ -198,7 +207,7 @@ const updateAgentHandler = async (req, res) => {
       updatedAgent.author = updatedAgent.author.toString();
     }
 
-    if (updatedAgent.author !== req.user.id) {
+    if (updatedAgent.author !== req.user.id && updatedAgent.author !== Constants.SYSTEM_USER_ID) {
       delete updatedAgent.author;
     }
 
@@ -253,6 +262,7 @@ const duplicateAgentHandler = async (req, res) => {
       tool_resources: _tool_resources = {},
       versions: _versions,
       __v: _v,
+      isYamlDefined: _isYamlDefined,
       ...cloneData
     } = agent;
     cloneData.name = `${agent.name} (${new Date().toLocaleString('en-US', {
@@ -261,10 +271,9 @@ const duplicateAgentHandler = async (req, res) => {
       hour12: false,
     })})`;
 
-    if (_tool_resources?.[EToolResources.ocr]) {
-      cloneData.tool_resources = {
-        [EToolResources.ocr]: _tool_resources[EToolResources.ocr],
-      };
+    // Copy all tool resources if they exist
+    if (_tool_resources && Object.keys(_tool_resources).length > 0) {
+      cloneData.tool_resources = { ..._tool_resources };
     }
 
     const newAgentId = `agent_${nanoid()}`;
@@ -344,6 +353,15 @@ const deleteAgentHandler = async (req, res) => {
     if (!agent) {
       return res.status(404).json({ error: 'Agent not found' });
     }
+
+    // Check if agent is YAML-defined and prevent deletion
+    if (agent.isYamlDefined) {
+      return res.status(403).json({
+        error:
+          'Cannot delete YAML-defined agents. This agent is defined in configuration and is read-only.',
+      });
+    }
+
     await deleteAgent({ id, author: req.user.id });
     return res.json({ message: 'Agent deleted' });
   } catch (error) {
@@ -391,6 +409,19 @@ const uploadAgentAvatarHandler = async (req, res) => {
       return res.status(400).json({ message: 'Agent ID is required' });
     }
 
+    // Check if agent exists and is YAML-defined
+    const agent = await getAgent({ id: agent_id });
+    if (!agent) {
+      return res.status(404).json({ message: 'Agent not found' });
+    }
+
+    if (agent.isYamlDefined) {
+      return res.status(403).json({
+        error:
+          'Cannot modify YAML-defined agents. This agent is defined in configuration and is read-only.',
+      });
+    }
+
     const buffer = await fs.readFile(req.file.path);
 
     const fileStrategy = req.app.locals.fileStrategy;
@@ -415,7 +446,6 @@ const uploadAgentAvatarHandler = async (req, res) => {
 
     let _avatar;
     try {
-      const agent = await getAgent({ id: agent_id });
       _avatar = agent.avatar;
     } catch (error) {
       logger.error('[/:agent_id/avatar] Error fetching agent', error);
@@ -497,6 +527,14 @@ const revertAgentVersionHandler = async (req, res) => {
       return res.status(404).json({ error: 'Agent not found' });
     }
 
+    // Check if agent is YAML-defined and prevent version reverting
+    if (existingAgent.isYamlDefined) {
+      return res.status(403).json({
+        error:
+          'Cannot revert YAML-defined agents. This agent is defined in configuration and is read-only.',
+      });
+    }
+
     const isAuthor = existingAgent.author.toString() === req.user.id;
     const hasEditPermission = existingAgent.isCollaborative || isAdmin || isAuthor;
 
@@ -512,7 +550,7 @@ const revertAgentVersionHandler = async (req, res) => {
       updatedAgent.author = updatedAgent.author.toString();
     }
 
-    if (updatedAgent.author !== req.user.id) {
+    if (updatedAgent.author !== req.user.id && updatedAgent.author !== Constants.SYSTEM_USER_ID) {
       delete updatedAgent.author;
     }
 

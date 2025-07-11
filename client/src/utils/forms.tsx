@@ -65,11 +65,22 @@ export const processAgentOption = ({
 }): TAgentOption => {
   const isGlobal =
     (instanceProjectId != null && _agent?.projectIds?.includes(instanceProjectId)) ?? false;
+
+  // Check if this is a YAML-defined agent
+  const isYamlDefined = (_agent as any)?.isYamlDefined ?? false;
+
+  // Choose the appropriate icon
+  let icon: React.ReactNode = null;
+  if (isGlobal) {
+    icon = <EarthIcon className="icon-md text-green-400" />;
+  }
+
   const agent: TAgentOption = {
     ...(_agent ?? ({} as Agent)),
     label: _agent?.name ?? '',
     value: _agent?.id ?? '',
-    icon: isGlobal ? <EarthIcon className="icon-md text-green-400" /> : null,
+    icon,
+    isYamlDefined,
     context_files: _agent?.tool_resources?.ocr?.file_ids
       ? ([] as Array<[string, ExtendedFile]>)
       : undefined,

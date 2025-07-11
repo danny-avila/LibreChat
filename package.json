@@ -142,5 +142,9 @@
       "admin/",
       "packages/"
     ]
+  },
+  "dependencies": {
+    "form-data": "^4.0.3",
+    "uuid": "^11.1.0"
   }
 }

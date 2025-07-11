@@ -8,9 +8,11 @@ import Files from './Files';
 export default function CodeForm({
   agent_id,
   files,
+  readonly = false,
 }: {
   agent_id: string;
   files?: [string, ExtendedFile][];
+  readonly?: boolean;
 }) {
   const localize = useLocalize();
   const { data } = useVerifyAgentToolAuth({ toolId: Tools.execute_code });
@@ -30,8 +32,12 @@ export default function CodeForm({
         </div>
       </div>
       <div className="flex flex-col items-start gap-2">
-        <Action authType={data?.message} isToolAuthenticated={data?.authenticated} />
-        <Files agent_id={agent_id} files={files} />
+        <Action
+          authType={data?.message}
+          isToolAuthenticated={data?.authenticated}
+          readonly={readonly}
+        />
+        <Files agent_id={agent_id} files={files} readonly={readonly} />
       </div>
     </div>
   );

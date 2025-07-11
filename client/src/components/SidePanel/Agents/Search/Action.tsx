@@ -17,9 +17,11 @@ import { ESide } from '~/common';
 export default function Action({
   authTypes = [],
   isToolAuthenticated = false,
+  readonly = false,
 }: {
   authTypes?: [string, AuthType][];
   isToolAuthenticated?: boolean;
+  readonly?: boolean;
 }) {
   const localize = useLocalize();
   const methods = useFormContext<AgentForm>();
@@ -65,10 +67,10 @@ export default function Action({
                 checked={
                   webSearchIsEnabled ? webSearchIsEnabled : isToolAuthenticated && field.value
                 }
-                onCheckedChange={handleCheckboxChange}
+                onCheckedChange={readonly ? undefined : handleCheckboxChange}
                 className="relative float-left mr-2 inline-flex h-4 w-4 cursor-pointer"
                 value={field.value.toString()}
-                disabled={webSearchIsEnabled ? false : !isToolAuthenticated}
+                disabled={readonly || (webSearchIsEnabled ? false : !isToolAuthenticated)}
               />
             )}
           />
@@ -76,12 +78,15 @@ export default function Action({
             type="button"
             className="flex items-center space-x-2"
             onClick={() => {
-              const value = !getValues(AgentCapabilities.web_search);
-              handleCheckboxChange(value);
+              if (!readonly) {
+                const value = !getValues(AgentCapabilities.web_search);
+                handleCheckboxChange(value);
+              }
             }}
+            disabled={readonly}
           >
             <label
-              className="form-check-label text-token-text-primary w-full cursor-pointer"
+              className={`form-check-label text-token-text-primary w-full ${readonly ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}
               htmlFor={AgentCapabilities.web_search}
             >
               {localize('com_ui_web_search')}
@@ -89,7 +94,12 @@ export default function Action({
           </button>
           <div className="ml-2 flex gap-2">
             {isUserProvided && (isToolAuthenticated || webSearchIsEnabled) && (
-              <button type="button" onClick={() => setIsDialogOpen(true)}>
+              <button
+                type="button"
+                onClick={() => !readonly && setIsDialogOpen(true)}
+                disabled={readonly}
+                className={readonly ? 'cursor-not-allowed opacity-60' : ''}
+              >
                 <KeyRoundIcon className="h-5 w-5 text-text-primary" />
               </button>
             )}
