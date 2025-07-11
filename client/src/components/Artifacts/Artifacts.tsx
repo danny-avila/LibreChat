@@ -1,19 +1,23 @@
 import { useRef, useState, useEffect } from 'react';
 import { useSetRecoilState } from 'recoil';
 import * as Tabs from '@radix-ui/react-tabs';
-import { ArrowLeft, ChevronLeft, ChevronRight, RefreshCw, X } from 'lucide-react';
+import { Code, Play, RefreshCw, X } from 'lucide-react';
 import type { SandpackPreviewRef, CodeEditorRef } from '@codesandbox/sandpack-react';
 import useArtifacts from '~/hooks/Artifacts/useArtifacts';
 import DownloadArtifact from './DownloadArtifact';
+import ArtifactVersion from './ArtifactVersion';
 import { useEditorContext } from '~/Providers';
-import useLocalize from '~/hooks/useLocalize';
+import { Button, Spinner } from '~/components';
 import ArtifactTabs from './ArtifactTabs';
+import { useMediaQuery } from '~/hooks';
 import { CopyCodeButton } from './Code';
+import { useLocalize } from '~/hooks';
 import store from '~/store';
 
 export default function Artifacts() {
   const localize = useLocalize();
   const { isMutating } = useEditorContext();
+  const isMobile = useMediaQuery('(max-width: 868px)'); // DO NOT change this value, it is used to determine the layout of the artifacts panel ONLY
   const editorRef = useRef<CodeEditorRef>();
   const previewRef = useRef<SandpackPreviewRef>();
   const [isVisible, setIsVisible] = useState(false);
@@ -30,19 +34,19 @@ export default function Artifacts() {
     setActiveTab,
     currentIndex,
     isSubmitting,
-    cycleArtifact,
     currentArtifact,
     orderedArtifactIds,
+    setCurrentArtifactId,
   } = useArtifacts();
 
-  if (currentArtifact === null || currentArtifact === undefined) {
+  if (!currentArtifact) {
     return null;
   }
 
   const handleRefresh = () => {
     setIsRefreshing(true);
     const client = previewRef.current?.getClient();
-    if (client != null) {
+    if (client) {
       client.dispatch({ type: 'refresh' });
     }
     setTimeout(() => setIsRefreshing(false), 750);
@@ -55,94 +59,139 @@ export default function Artifacts() {
 
   return (
     <Tabs.Root value={activeTab} onValueChange={setActiveTab} asChild>
-      {/* Main Parent */}
       <div className="flex h-full w-full items-center justify-center">
-        {/* Main Container */}
         <div
-          className={`flex h-full w-full flex-col overflow-hidden border border-border-medium bg-surface-primary text-xl text-text-primary shadow-xl transition-all duration-500 ease-in-out ${
-            isVisible ? 'scale-100 opacity-100 blur-0' : 'scale-105 opacity-0 blur-sm'
-          }`}
+          className={`flex flex-col overflow-hidden bg-surface-primary text-xl text-text-primary shadow-xl transition-all duration-500 ease-in-out ${
+            isVisible ? 'opacity-100 blur-0' : 'opacity-0 blur-sm'
+          } ${isMobile ? 'fixed inset-x-0 bottom-0 z-[100] h-[90vh] rounded-t-xl' : 'h-full w-full'}`}
         >
-          {/* Header */}
-          <div className="flex items-center justify-between border-b border-border-medium bg-surface-primary-alt p-2">
-            <div className="flex items-center">
-              <button className="mr-2 text-text-secondary" onClick={closeArtifacts}>
-                <ArrowLeft className="h-4 w-4" />
-              </button>
-              <h3 className="truncate text-sm text-text-primary">{currentArtifact.title}</h3>
-            </div>
-            <div className="flex items-center">
-              {/* Refresh button */}
+          <div
+            className={`flex items-center ${isMobile ? 'justify-center' : 'justify-between'} overflow-x-auto bg-surface-primary-alt ${activeTab === 'code' ? 'p-3' : 'p-2'}`}
+          >
+            {!isMobile && (
+              <div className="flex items-center">
+                <Tabs.List className="relative inline-flex h-9 gap-2 rounded-xl bg-surface-tertiary p-0.5">
+                  <div
+                    className={`absolute top-0.5 h-8 rounded-xl bg-surface-primary-alt transition-transform duration-200 ease-out ${
+                      activeTab === 'code'
+                        ? 'w-[42%] translate-x-0'
+                        : 'w-[50%] translate-x-[calc(100%-0.250rem)]'
+                    }`}
+                  />
+                  <Tabs.Trigger
+                    value="code"
+                    className="relative z-10 flex items-center gap-1.5 rounded-xl border-transparent py-1 pl-2.5 pr-2.5 text-xs font-medium transition-all duration-200 ease-out hover:text-text-primary data-[state=active]:text-text-primary data-[state=inactive]:text-text-secondary"
+                  >
+                    <Code className="size-3" />
+                    <span className="transition-all duration-200 ease-out">
+                      {localize('com_ui_code')}
+                    </span>
+                  </Tabs.Trigger>
+                  <Tabs.Trigger
+                    value="preview"
+                    disabled={isMutating}
+                    className="relative z-10 flex items-center gap-2 rounded-xl border-transparent py-1 pl-2.5 pr-2.5 text-xs font-medium transition-all duration-200 ease-out hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50 data-[state=active]:text-text-primary data-[state=inactive]:text-text-secondary"
+                  >
+                    <Play className="size-3" />
+                    <span className="transition-all duration-200 ease-out">
+                      {localize('com_ui_preview')}
+                    </span>
+                  </Tabs.Trigger>
+                </Tabs.List>
+              </div>
+            )}
+
+            <div className="flex min-w-max items-center gap-3">
               {activeTab === 'preview' && (
-                <button
-                  className={`mr-2 text-text-secondary transition-transform duration-500 ease-in-out ${
-                    isRefreshing ? 'rotate-180' : ''
-                  }`}
+                <Button
+                  size="icon"
+                  variant="ghost"
                   onClick={handleRefresh}
                   disabled={isRefreshing}
                   aria-label="Refresh"
                 >
-                  <RefreshCw
-                    size={16}
-                    className={`transform ${isRefreshing ? 'animate-spin' : ''}`}
-                  />
-                </button>
+                  {isRefreshing ? (
+                    <Spinner size={16} />
+                  ) : (
+                    <RefreshCw
+                      size={16}
+                      className={`transform ${isRefreshing ? 'animate-spin' : ''}`}
+                    />
+                  )}
+                </Button>
               )}
               {activeTab !== 'preview' && isMutating && (
                 <RefreshCw size={16} className="mr-2 animate-spin text-text-secondary" />
               )}
-              {/* Tabs */}
-              <Tabs.List className="mr-2 inline-flex h-7 rounded-full border border-border-medium bg-surface-tertiary">
+              {orderedArtifactIds.length > 1 && (
+                <ArtifactVersion
+                  currentIndex={currentIndex}
+                  totalVersions={orderedArtifactIds.length}
+                  onVersionChange={(index) => {
+                    const target = orderedArtifactIds[index];
+                    if (target) setCurrentArtifactId(target);
+                  }}
+                />
+              )}
+              <CopyCodeButton content={currentArtifact.content ?? ''} />
+              <DownloadArtifact artifact={currentArtifact} />
+              <Button
+                size="icon"
+                variant="ghost"
+                onClick={closeArtifacts}
+                disabled={isRefreshing}
+                aria-label="Close Artifacts"
+              >
+                <X size={16} />
+              </Button>
+            </div>
+          </div>
+
+          <div className={isMobile ? 'flex-grow overflow-auto' : ''}>
+            <ArtifactTabs
+              isMermaid={isMermaid}
+              artifact={currentArtifact}
+              isSubmitting={isSubmitting}
+              editorRef={editorRef as React.MutableRefObject<CodeEditorRef>}
+              previewRef={previewRef as React.MutableRefObject<SandpackPreviewRef>}
+            />
+          </div>
+
+          {isMobile && (
+            <div className="flex w-full items-center justify-center bg-surface-primary-alt px-3 pb-2 pt-2">
+              <Tabs.List className="relative flex h-9 w-full rounded-xl bg-surface-tertiary px-1 py-0.5">
+                {/* sliding background: exactly half-width, moves 0% or 100% */}
+                <div
+                  className={`absolute left-0 top-0.5 h-8 w-1/2 rounded-xl bg-surface-primary-alt transition-transform duration-200 ease-out ${activeTab === 'code' ? 'translate-x-0' : 'translate-x-full'} `}
+                />
+
+                <Tabs.Trigger
+                  value="code"
+                  className="relative z-10 flex w-1/2 items-center justify-center rounded-xl border-transparent py-1 text-center text-xs font-medium transition-all duration-200 ease-out hover:text-text-primary data-[state=active]:text-text-primary data-[state=inactive]:text-text-secondary"
+                >
+                  <div className="flex items-center gap-1.5">
+                    <Code className="size-3" />
+                    <span className="transition-all duration-200 ease-out">
+                      {localize('com_ui_code')}
+                    </span>
+                  </div>
+                </Tabs.Trigger>
+
                 <Tabs.Trigger
                   value="preview"
                   disabled={isMutating}
-                  className="border-0.5 flex items-center gap-1 rounded-full border-transparent py-1 pl-2.5 pr-2.5 text-xs font-medium text-text-secondary data-[state=active]:border-border-light data-[state=active]:bg-surface-primary-alt data-[state=active]:text-text-primary"
+                  className="relative z-10 flex w-1/2 items-center justify-center rounded-xl border-transparent py-1 text-center text-xs font-medium transition-all duration-200 ease-out hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50 data-[state=active]:text-text-primary data-[state=inactive]:text-text-secondary"
                 >
-                  {localize('com_ui_preview')}
-                </Tabs.Trigger>
-                <Tabs.Trigger
-                  value="code"
-                  className="border-0.5 flex items-center gap-1 rounded-full border-transparent py-1 pl-2.5 pr-2.5 text-xs font-medium text-text-secondary data-[state=active]:border-border-light data-[state=active]:bg-surface-primary-alt data-[state=active]:text-text-primary"
-                >
-                  {localize('com_ui_code')}
+                  <div className="flex items-center gap-1.5">
+                    <Play className="size-3" />
+                    <span className="transition-all duration-200 ease-out">
+                      {localize('com_ui_preview')}
+                    </span>
+                  </div>
                 </Tabs.Trigger>
               </Tabs.List>
-              <button className="text-text-secondary" onClick={closeArtifacts}>
-                <X className="h-4 w-4" />
-              </button>
             </div>
-          </div>
-          {/* Content */}
-          <ArtifactTabs
-            isMermaid={isMermaid}
-            artifact={currentArtifact}
-            isSubmitting={isSubmitting}
-            editorRef={editorRef as React.MutableRefObject<CodeEditorRef>}
-            previewRef={previewRef as React.MutableRefObject<SandpackPreviewRef>}
-          />
-          {/* Footer */}
-          <div className="flex items-center justify-between border-t border-border-medium bg-surface-primary-alt p-2 text-sm text-text-secondary">
-            <div className="flex items-center">
-              <button onClick={() => cycleArtifact('prev')} className="mr-2 text-text-secondary">
-                <ChevronLeft className="h-4 w-4" />
-              </button>
-              <span className="text-xs">{`${currentIndex + 1} / ${
-                orderedArtifactIds.length
-              }`}</span>
-              <button onClick={() => cycleArtifact('next')} className="ml-2 text-text-secondary">
-                <ChevronRight className="h-4 w-4" />
-              </button>
-            </div>
-            <div className="flex items-center gap-2">
-              <CopyCodeButton content={currentArtifact.content ?? ''} />
-              {/* Download Button */}
-              <DownloadArtifact artifact={currentArtifact} />
-              {/* Publish button */}
-              {/* <button className="border-0.5 min-w-[4rem] whitespace-nowrap rounded-md border-border-medium bg-[radial-gradient(ellipse,_var(--tw-gradient-stops))] from-surface-active from-50% to-surface-active px-3 py-1 text-xs font-medium text-text-primary transition-colors hover:bg-surface-active hover:text-text-primary active:scale-[0.985] active:bg-surface-active">
-                Publish
-              </button> */}
-            </div>
-          </div>
+          )}
         </div>
       </div>
     </Tabs.Root>

@@ -1,6 +1,7 @@
 import { useRef, useEffect } from 'react';
 import * as Tabs from '@radix-ui/react-tabs';
-import type { SandpackPreviewRef, CodeEditorRef } from '@codesandbox/sandpack-react';
+import type { SandpackPreviewRef } from '@codesandbox/sandpack-react/unstyled';
+import type { CodeEditorRef } from '@codesandbox/sandpack-react';
 import type { Artifact } from '~/common';
 import useArtifactProps from '~/hooks/Artifacts/useArtifactProps';
 import { useAutoScroll } from '~/hooks/Artifacts/useAutoScroll';
@@ -19,13 +20,14 @@ export default function ArtifactTabs({
 }: {
   artifact: Artifact;
   isMermaid: boolean;
-  isSubmitting: boolean;
   editorRef: React.MutableRefObject<CodeEditorRef>;
   previewRef: React.MutableRefObject<SandpackPreviewRef>;
+  isSubmitting: boolean;
 }) {
   const { currentCode, setCurrentCode } = useEditorContext();
   const { data: startupConfig } = useGetStartupConfig();
   const lastIdRef = useRef<string | null>(null);
+
   useEffect(() => {
     if (artifact.id !== lastIdRef.current) {
       setCurrentCode(undefined);
@@ -36,7 +38,9 @@ export default function ArtifactTabs({
   const content = artifact.content ?? '';
   const contentRef = useRef<HTMLDivElement>(null);
   useAutoScroll({ ref: contentRef, content, isSubmitting });
+
   const { files, fileKey, template, sharedProps } = useArtifactProps({ artifact });
+
   return (
     <>
       <Tabs.Content
