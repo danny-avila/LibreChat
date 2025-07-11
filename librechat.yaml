@@ -95,6 +95,7 @@ fileConfig:
 # Endpoints configuration
 endpoints:
   custom:
+    
     #AMEND_AI-Global: Available to all users
     - name: "AMEND_AI-Global"
       apiKey: "${LITELLM_DEFAULT_APIKEY}"
@@ -109,7 +110,8 @@ endpoints:
       forcePrompt: true
       userIdQuery: true
       modelDisplayLabel: "AMEND AI-Global"
-    #AMEND_AI-Individual: Available to all users - unlocked with individual keys
+    
+    #Group of models with strengths in coding - unlocked with individual keys
     - name: "AMEND_AI-Coding_Models"
       apiKey: "user_provided"
       baseURL: "${LITELLM_URL}"
@@ -128,7 +130,8 @@ endpoints:
       summaryModel: "azure/gpt-4.1-mini"
       forcePrompt: true
       modelDisplayLabel: "AMEND AI - Coding Models"
-          #AMEND_AI-Individual: Available to all users - unlocked with individual keys
+    
+    #Group of reasoning specific models - unlocked with individual keys
     - name: "AMEND_AI-Reasoning_Models"
       apiKey: "user_provided"
       baseURL: "${LITELLM_URL}"
@@ -146,6 +149,8 @@ endpoints:
       summaryModel: "azure/gpt-4.1-mini"
       forcePrompt: true
       modelDisplayLabel: "AMEND AI - Reasoning Models"
+    
+    #Group of Larger more advanced models - unlocked with individual keys
     - name: "AMEND_AI-Advanced_Models"
       apiKey: "user_provided"
       baseURL: "${LITELLM_URL}"
@@ -168,6 +173,13 @@ ocr:
   apiKey: "${OCR_API_KEY}" # arbitrary .env var reference
   baseURL: "${OCR_BASEURL}" # hardcoded, can also be .env var reference
   strategy: "mistral_ocr"
+
+# `librechat.yaml`
+# ocr:
+#   mistralModel: "mistral-ocr-2503-amend"              # Should match your Azure deployment name
+#   apiKey: "${AZURE_MISTRAL_OCR_API_KEY}"                 # Reference to your Azure API key in .env
+#   baseURL: "https://mistral-ocr-2503-amend.eastus.models.ai.azure.com/v1"  # Your Azure endpoint
+#   strategy: "azure_mistral_ocr"                          # Use Azure strategy
 
 mcpServers:
   
@@ -196,20 +208,26 @@ mcpServers:
       JINA_API_KEY: "${JINA_API_KEY}"
     chatMenu: true  # Only available in agent builder
 
-  # docling:
-  #   command: npx
-  #   args:
-  #     - mcp-remote
-  #     - https://n8n.amendllc.com/mcp-test/docling
+  # amend-ai-assistant-tools:
+  #   type: streamable-http
+  #   url: https://n8n.amendllc.com/mcp/email-tools
+  #   headers:
+  #     Authorization: "Bearer ${AMEND_ASSISTANTS_MCP_BEARER}"
+  #     X-User-Email: "{{LIBRECHAT_USER_EMAIL}}"
+  #     X-LIBRECHAT_USER_OPENIDID: "{{LIBRECHAT_USER_OPENIDID}}"
+  #     X-LIBRECHAT_USER_USERNAME: "{{LIBRECHAT_USER_USERNAME}}"
+  #   serverInstructions: |
+  #     When sending emails:
+  #     - Always confirm the message to be sent, who the sender email is, and the email address the email is being sent to
 
-# Balance settings
-balance:
-  enabled: false                # Enable token credit balances for users
-  startBalance: 5000000          # Initial tokens credited upon registration
-  autoRefillEnabled: true     # Enable automatic token refills
-  refillIntervalValue: 30      # Numerical value for refill interval
-  refillIntervalUnit: "days"   # Time unit for refill interval (days, hours, etc.)
-  refillAmount: 1000000          # Tokens added during each refill
+# # Balance settings
+# balance:
+#   enabled: false                # Enable token credit balances for users
+#   startBalance: 5000000          # Initial tokens credited upon registration
+#   autoRefillEnabled: true     # Enable automatic token refills
+#   refillIntervalValue: 30      # Numerical value for refill interval
+#   refillIntervalUnit: "days"   # Time unit for refill interval (days, hours, etc.)
+#   refillAmount: 1000000          # Tokens added during each refill
 
 speech:
   speechTab:
@@ -222,23 +240,22 @@ speech:
       decibelValue: -45
       autoSendText: 0
     textToSpeech:
-      engineTTS: "Browser"
-      voice: "Samantha"
+      engineTTS: "external"
+      voice: "alloy"
       languageTTS: "en"
       automaticPlayback: true
       playbackRate: 1.0
       cacheTTS: true
+
   stt:
-    azureOpenAI:
-      instanceName: "${AZURE_WHISPER_INSTANCE}"
-      apiKey: "${AZURE_WHISPER_KEY}"
-      deploymentName: "${AZURE_WHISPER_MODEL}"
-      apiVersion: "${AZURE_WHISPER_API_VERSION}"
-  # tts:
-  #   azureOpenAI:
-  #     instanceName: "${AZURE_WHISPER_INSTANCE}"
-  #     apiKey: "${AZURE_WHISPER_KEY}"
-  #     deploymentName: "${AZURE_TTS_MODEL}"
-  #     apiVersion: "${AZURE_WHISPER_API_VERSION}"
-  #     model: "${AZURE_TTS_MODEL}"
-  #     voices: ['alloy', 'ballad','echo', 'fable', 'onyx', 'nova', 'shimmer','coral','sage','verse']
+    openai:
+      url: "https://litellm.amendllc.com/v1/audio/transcriptions"
+      model: "azure/whisper"
+      apiKey: "${LITELLM_WHISPER_KEY}"
+
+  tts:
+    openai:
+      url: "https://litellm.amendllc.com/v1/audio/speech"
+      apiKey: "${LITELLM_WHISPER_KEY}"
+      model: "azure/tts"
+      voices: ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer']
