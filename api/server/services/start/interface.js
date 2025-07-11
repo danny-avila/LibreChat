@@ -53,20 +53,20 @@ async function loadDefaultInterface(config, configDefaults, roleName = SystemRol
     customWelcome: interfaceConfig?.customWelcome ?? defaults.customWelcome,
     peoplePicker: {
       admin: {
-        users: interfaceConfig?.peoplePicker?.admin?.users ?? defaults.peoplePicker.admin.users,
-        groups: interfaceConfig?.peoplePicker?.admin?.groups ?? defaults.peoplePicker.admin.groups,
+        users: interfaceConfig?.peoplePicker?.admin?.users ?? defaults.peoplePicker?.admin.users,
+        groups: interfaceConfig?.peoplePicker?.admin?.groups ?? defaults.peoplePicker?.admin.groups,
       },
       user: {
-        users: interfaceConfig?.peoplePicker?.user?.users ?? defaults.peoplePicker.user.users,
-        groups: interfaceConfig?.peoplePicker?.user?.groups ?? defaults.peoplePicker.user.groups,
+        users: interfaceConfig?.peoplePicker?.user?.users ?? defaults.peoplePicker?.user.users,
+        groups: interfaceConfig?.peoplePicker?.user?.groups ?? defaults.peoplePicker?.user.groups,
       },
     },
     marketplace: {
       admin: {
-        use: interfaceConfig?.marketplace?.admin?.use ?? defaults.marketplace.admin.use,
+        use: interfaceConfig?.marketplace?.admin?.use ?? defaults.marketplace?.admin.use,
       },
       user: {
-        use: interfaceConfig?.marketplace?.user?.use ?? defaults.marketplace.user.use,
+        use: interfaceConfig?.marketplace?.user?.use ?? defaults.marketplace?.user.use,
       },
     },
   });
