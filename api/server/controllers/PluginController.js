@@ -1,11 +1,10 @@
 const { logger } = require('@librechat/data-schemas');
-const { CacheKeys, AuthType } = require('librechat-data-provider');
+const { CacheKeys, AuthType, Constants } = require('librechat-data-provider');
 const { getCustomConfig, getCachedTools } = require('~/server/services/Config');
 const { getToolkitKey } = require('~/server/services/ToolService');
 const { getMCPManager, getFlowStateManager } = require('~/config');
 const { availableTools } = require('~/app/clients/tools');
 const { getLogStores } = require('~/cache');
-const { Constants } = require('librechat-data-provider');
 
 /**
  * Filters out duplicate plugins from the list of plugins.
@@ -140,9 +139,9 @@ function createGetServerTools() {
 const getAvailableTools = async (req, res) => {
   try {
     const cache = getLogStores(CacheKeys.CONFIG_STORE);
-    const cachedTools = await cache.get(CacheKeys.TOOLS);
-    if (cachedTools) {
-      res.status(200).json(cachedTools);
+    const cachedToolsArray = await cache.get(CacheKeys.TOOLS);
+    if (cachedToolsArray) {
+      res.status(200).json(cachedToolsArray);
       return;
     }
 
@@ -173,7 +172,7 @@ const getAvailableTools = async (req, res) => {
       }
     });
 
-    const toolDefinitions = await getCachedTools({ includeGlobal: true });
+    const toolDefinitions = (await getCachedTools({ includeGlobal: true })) || {};
 
     const toolsOutput = [];
     for (const plugin of authenticatedPlugins) {
