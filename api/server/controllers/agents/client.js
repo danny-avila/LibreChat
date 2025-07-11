@@ -34,7 +34,11 @@ const {
 const { DynamicStructuredTool } = require('@langchain/core/tools');
 const { getBufferString, HumanMessage } = require('@langchain/core/messages');
 const { createGetMCPAuthMap, checkCapability } = require('~/server/services/Config');
-const { addCacheControl, createContextHandlers } = require('~/app/clients/prompts');
+const {
+  addCacheControl,
+  addBedrockCacheControl,
+  createContextHandlers,
+} = require('~/app/clients/prompts');
 const { initializeAgent } = require('~/server/services/Endpoints/agents/agent');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
 const { getFormattedMemories, deleteMemory, setMemory } = require('~/models');
@@ -781,6 +785,11 @@ class AgentClient extends BaseClient {
           )
         ) {
           messages = addCacheControl(messages);
+        } else if (
+          this.options.endpoint === EModelEndpoint.bedrock &&
+          agent.model_parameters?.promptCache === true
+        ) {
+          messages = addBedrockCacheControl(messages);
         }
 
         if (i === 0) {
