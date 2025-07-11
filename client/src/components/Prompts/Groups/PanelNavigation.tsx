@@ -1,6 +1,8 @@
 import { memo } from 'react';
-import { Button, ThemeSelector } from '~/components/ui';
+import AutoSendPrompt from '~/components/Prompts/Groups/AutoSendPrompt';
+import { Button } from '~/components';
 import { useLocalize } from '~/hooks';
+import { cn } from '~/utils';
 
 function PanelNavigation({
   prevPage,
@@ -19,14 +21,16 @@ function PanelNavigation({
 }) {
   const localize = useLocalize();
   return (
-    <>
-      <div className="flex gap-2">{!isChatRoute && <ThemeSelector returnThemeOnly={true} />}</div>
-      <div
-        className="flex items-center justify-between gap-2"
-        role="navigation"
-        aria-label="Pagination"
-      >
-        <Button variant="outline" size="sm" onClick={() => prevPage()} disabled={!hasPreviousPage}>
+    <div className={cn('my-1 flex justify-between', !isChatRoute && 'mx-2')}>
+      <AutoSendPrompt className="text-xs dark:text-white" />
+      <div className="mb-2 flex gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => prevPage()}
+          disabled={!hasPreviousPage}
+          className="bg-transparent hover:bg-surface-hover"
+        >
           {localize('com_ui_prev')}
         </Button>
         <Button
@@ -34,6 +38,7 @@ function PanelNavigation({
           size="sm"
           onClick={() => nextPage()}
           disabled={!hasNextPage || isFetching}
+          className="bg-transparent hover:bg-surface-hover"
         >
           {localize('com_ui_next')}
         </Button>
