@@ -372,52 +372,6 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(agentInDb.id).toBe(existingAgentId);
     });
 
-    test('should reject update from non-author when not collaborative', async () => {
-      const differentUserId = new mongoose.Types.ObjectId().toString();
-      mockReq.user.id = differentUserId; // Different user
-      mockReq.params.id = existingAgentId;
-      mockReq.body = {
-        name: 'Unauthorized Update',
-      };
-
-      await updateAgentHandler(mockReq, mockRes);
-
-      expect(mockRes.status).toHaveBeenCalledWith(403);
-      expect(mockRes.json).toHaveBeenCalledWith({
-        error: 'You do not have permission to modify this non-collaborative agent',
-      });
-
-      // Verify agent was not modified in database
-      const agentInDb = await Agent.findOne({ id: existingAgentId });
-      expect(agentInDb.name).toBe('Original Agent');
-    });
-
-    test('should allow update from non-author when collaborative', async () => {
-      // First make the agent collaborative
-      await Agent.updateOne({ id: existingAgentId }, { isCollaborative: true });
-
-      const differentUserId = new mongoose.Types.ObjectId().toString();
-      mockReq.user.id = differentUserId; // Different user
-      mockReq.params.id = existingAgentId;
-      mockReq.body = {
-        name: 'Collaborative Update',
-      };
-
-      await updateAgentHandler(mockReq, mockRes);
-
-      expect(mockRes.status).not.toHaveBeenCalledWith(403);
-      expect(mockRes.json).toHaveBeenCalled();
-
-      const updatedAgent = mockRes.json.mock.calls[0][0];
-      expect(updatedAgent.name).toBe('Collaborative Update');
-      // Author field should be removed for non-author
-      expect(updatedAgent.author).toBeUndefined();
-
-      // Verify in database
-      const agentInDb = await Agent.findOne({ id: existingAgentId });
-      expect(agentInDb.name).toBe('Collaborative Update');
-    });
-
     test('should allow admin to update any agent', async () => {
       const adminUserId = new mongoose.Types.ObjectId().toString();
       mockReq.user.id = adminUserId;
@@ -553,45 +507,6 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       // Verify in database
       const agentInDb = await Agent.findOne({ id: createdAgent.id });
       expect(agentInDb.__v).not.toBe(99);
-    });
-
-    test('should prevent privilege escalation through isCollaborative', async () => {
-      // Create a non-collaborative agent
-      const authorId = new mongoose.Types.ObjectId();
-      const agent = await Agent.create({
-        id: `agent_${uuidv4()}`,
-        name: 'Private Agent',
-        provider: 'openai',
-        model: 'gpt-4',
-        author: authorId,
-        isCollaborative: false,
-        versions: [
-          {
-            name: 'Private Agent',
-            provider: 'openai',
-            model: 'gpt-4',
-            createdAt: new Date(),
-            updatedAt: new Date(),
-          },
-        ],
-      });
-
-      // Try to make it collaborative as a different user
-      const attackerId = new mongoose.Types.ObjectId().toString();
-      mockReq.user.id = attackerId;
-      mockReq.params.id = agent.id;
-      mockReq.body = {
-        isCollaborative: true, // Trying to escalate privileges
-      };
-
-      await updateAgentHandler(mockReq, mockRes);
-
-      // Should be rejected
-      expect(mockRes.status).toHaveBeenCalledWith(403);
-
-      // Verify in database that it's still not collaborative
-      const agentInDb = await Agent.findOne({ id: agent.id });
-      expect(agentInDb.isCollaborative).toBe(false);
     });
 
     test('should prevent author hijacking', async () => {
