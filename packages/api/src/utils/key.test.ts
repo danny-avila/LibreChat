@@ -94,4 +94,89 @@ describe('loadServiceKey', () => {
     const result = await loadServiceKey(JSON.stringify(invalidServiceKey));
     expect(result).toEqual(invalidServiceKey); // It returns the object as-is, validation is minimal
   });
+
+  it('should handle escaped newlines in private key from AWS Secrets Manager', async () => {
+    const serviceKeyWithEscapedNewlines = {
+      ...mockServiceKey,
+      private_key: '-----BEGIN PRIVATE KEY-----\\ntest-key\\n-----END PRIVATE KEY-----',
+    };
+    const jsonString = JSON.stringify(serviceKeyWithEscapedNewlines);
+
+    const result = await loadServiceKey(jsonString);
+    expect(result).not.toBeNull();
+    expect(result?.private_key).toBe(
+      '-----BEGIN PRIVATE KEY-----\ntest-key\n-----END PRIVATE KEY-----',
+    );
+  });
+
+  it('should handle double-escaped newlines in private key', async () => {
+    // When you have \\n in JavaScript, JSON.stringify converts it to \\\\n
+    // But we want to test the case where the JSON string contains \\n (single backslash + n)
+    const serviceKeyWithEscapedNewlines = {
+      ...mockServiceKey,
+      private_key: '-----BEGIN PRIVATE KEY-----\\ntest-key\\n-----END PRIVATE KEY-----',
+    };
+    // This will create a JSON string where the private_key contains literal \n (backslash-n)
+    const jsonString = JSON.stringify(serviceKeyWithEscapedNewlines);
+
+    const result = await loadServiceKey(jsonString);
+    expect(result).not.toBeNull();
+    expect(result?.private_key).toBe(
+      '-----BEGIN PRIVATE KEY-----\ntest-key\n-----END PRIVATE KEY-----',
+    );
+  });
+
+  it('should handle private key without any newlines', async () => {
+    const serviceKeyWithoutNewlines = {
+      ...mockServiceKey,
+      private_key: '-----BEGIN PRIVATE KEY-----test-key-----END PRIVATE KEY-----',
+    };
+    const jsonString = JSON.stringify(serviceKeyWithoutNewlines);
+
+    const result = await loadServiceKey(jsonString);
+    expect(result).not.toBeNull();
+    expect(result?.private_key).toBe(
+      '-----BEGIN PRIVATE KEY-----\ntest-key\n-----END PRIVATE KEY-----',
+    );
+  });
+
+  it('should not modify private key that already has proper formatting', async () => {
+    const jsonString = JSON.stringify(mockServiceKey);
+
+    const result = await loadServiceKey(jsonString);
+    expect(result).not.toBeNull();
+    expect(result?.private_key).toBe(mockServiceKey.private_key);
+  });
+
+  it('should handle base64 encoded service key', async () => {
+    const jsonString = JSON.stringify(mockServiceKey);
+    const base64Encoded = Buffer.from(jsonString).toString('base64');
+
+    const result = await loadServiceKey(base64Encoded);
+    expect(result).not.toBeNull();
+    expect(result).toEqual(mockServiceKey);
+  });
+
+  it('should handle base64 encoded service key with escaped newlines', async () => {
+    const serviceKeyWithEscapedNewlines = {
+      ...mockServiceKey,
+      private_key: '-----BEGIN PRIVATE KEY-----\\ntest-key\\n-----END PRIVATE KEY-----',
+    };
+    const jsonString = JSON.stringify(serviceKeyWithEscapedNewlines);
+    const base64Encoded = Buffer.from(jsonString).toString('base64');
+
+    const result = await loadServiceKey(base64Encoded);
+    expect(result).not.toBeNull();
+    expect(result?.private_key).toBe(
+      '-----BEGIN PRIVATE KEY-----\ntest-key\n-----END PRIVATE KEY-----',
+    );
+  });
+
+  it('should handle invalid base64 strings gracefully', async () => {
+    // This looks like base64 but isn't valid
+    const invalidBase64 = 'SGVsbG8gV29ybGQ='; // "Hello World" in base64, not valid JSON
+
+    const result = await loadServiceKey(invalidBase64);
+    expect(result).toBeNull();
+  });
 });
