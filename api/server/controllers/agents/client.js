@@ -307,11 +307,6 @@ class AgentClient extends BaseClient {
           if (file.metadata?.fileIdentifier) {
             continue;
           }
-          // orderedMessages[i].tokenCount += this.calculateImageTokenCost({
-          //   width: file.width,
-          //   height: file.height,
-          //   detail: this.options.imageDetail ?? ImageDetail.auto,
-          // });
         }
       }
 

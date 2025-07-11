@@ -62,24 +62,6 @@ async function initThread({ openai, body, thread_id: _thread_id }) {
 async function saveUserMessage(req, params) {
   const tokenCount = await countTokens(params.text);
 
-  // todo: do this on the frontend
-  // const { file_ids = [] } = params;
-  // let content;
-  // if (file_ids.length) {
-  //   content = [
-  //     {
-  //       value: params.text,
-  //     },
-  //     ...(
-  //       file_ids
-  //         .filter(f => f)
-  //         .map((file_id) => ({
-  //           file_id,
-  //         }))
-  //     ),
-  //   ];
-  // }
-
   const userMessage = {
     user: params.user,
     endpoint: params.endpoint,

@@ -65,27 +65,6 @@ export const fileTypes = {
   // image,
 };
 
-// export const getFileType = (type = '') => {
-//   let fileType = fileTypes.file;
-//   const exactMatch = fileTypes[type];
-//   const partialMatch = !exactMatch && partialTypes.find((type) => type.includes(type));
-//   const category = (!partialMatch && (type.split('/')[0] ?? 'text') || 'text');
-
-//   if (exactMatch) {
-//     fileType = exactMatch;
-//   } else if (partialMatch) {
-//     fileType = fileTypes[partialMatch];
-//   } else if (fileTypes[category]) {
-//     fileType = fileTypes[category];
-//   }
-
-//   if (!fileType) {
-//     fileType = fileTypes.file;
-//   }
-
-//   return fileType;
-// };
-
 export const getFileType = (
   type = '',
 ): {
