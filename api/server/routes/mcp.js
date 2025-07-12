@@ -1,9 +1,12 @@
 const { Router } = require('express');
-const { MCPOAuthHandler } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
-const { CacheKeys } = require('librechat-data-provider');
+const { MCPOAuthHandler } = require('@librechat/api');
+const { CacheKeys, Constants } = require('librechat-data-provider');
+const { findToken, updateToken, createToken, deleteTokens } = require('~/models');
+const { setCachedTools, getCachedTools, loadCustomConfig } = require('~/server/services/Config');
+const { getUserPluginAuthValue } = require('~/server/services/PluginService');
+const { getMCPManager, getFlowStateManager } = require('~/config');
 const { requireJwtAuth } = require('~/server/middleware');
-const { getFlowStateManager } = require('~/config');
 const { getLogStores } = require('~/cache');
 
 const router = Router();
@@ -199,6 +202,108 @@ router.get('/oauth/status/:flowId', async (req, res) => {
   } catch (error) {
     logger.error('[MCP OAuth] Failed to get flow status', error);
     res.status(500).json({ error: 'Failed to get flow status' });
+  }
+});
+
+/**
+ * Reinitialize MCP server
+ * This endpoint allows reinitializing a specific MCP server
+ */
+router.post('/:serverName/reinitialize', requireJwtAuth, async (req, res) => {
+  try {
+    const { serverName } = req.params;
+    const user = req.user;
+
+    if (!user?.id) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+
+    logger.info(`[MCP Reinitialize] Reinitializing server: ${serverName}`);
+
+    const config = await loadCustomConfig();
+    if (!config || !config.mcpServers || !config.mcpServers[serverName]) {
+      return res.status(404).json({
+        error: `MCP server '${serverName}' not found in configuration`,
+      });
+    }
+
+    const flowsCache = getLogStores(CacheKeys.FLOWS);
+    const flowManager = getFlowStateManager(flowsCache);
+    const mcpManager = getMCPManager();
+
+    await mcpManager.disconnectServer(serverName);
+    logger.info(`[MCP Reinitialize] Disconnected existing server: ${serverName}`);
+
+    const serverConfig = config.mcpServers[serverName];
+    mcpManager.mcpConfigs[serverName] = serverConfig;
+    let customUserVars = {};
+    if (serverConfig.customUserVars && typeof serverConfig.customUserVars === 'object') {
+      for (const varName of Object.keys(serverConfig.customUserVars)) {
+        try {
+          const value = await getUserPluginAuthValue(user.id, varName, false);
+          if (value) {
+            customUserVars[varName] = value;
+          }
+        } catch (err) {
+          logger.error(`[MCP Reinitialize] Error fetching ${varName} for user ${user.id}:`, err);
+        }
+      }
+    }
+
+    let userConnection = null;
+    try {
+      userConnection = await mcpManager.getUserConnection({
+        user,
+        serverName,
+        flowManager,
+        customUserVars,
+        tokenMethods: {
+          findToken,
+          updateToken,
+          createToken,
+          deleteTokens,
+        },
+      });
+    } catch (err) {
+      logger.error(`[MCP Reinitialize] Error initializing MCP server ${serverName} for user:`, err);
+      return res.status(500).json({ error: 'Failed to reinitialize MCP server for user' });
+    }
+
+    const userTools = (await getCachedTools({ userId: user.id })) || {};
+
+    // Remove any old tools from this server in the user's cache
+    const mcpDelimiter = Constants.mcp_delimiter;
+    for (const key of Object.keys(userTools)) {
+      if (key.endsWith(`${mcpDelimiter}${serverName}`)) {
+        delete userTools[key];
+      }
+    }
+
+    // Add the new tools from this server
+    const tools = await userConnection.fetchTools();
+    for (const tool of tools) {
+      const name = `${tool.name}${Constants.mcp_delimiter}${serverName}`;
+      userTools[name] = {
+        type: 'function',
+        ['function']: {
+          name,
+          description: tool.description,
+          parameters: tool.inputSchema,
+        },
+      };
+    }
+
+    // Save the updated user tool cache
+    await setCachedTools(userTools, { userId: user.id });
+
+    res.json({
+      success: true,
+      message: `MCP server '${serverName}' reinitialized successfully`,
+      serverName,
+    });
+  } catch (error) {
+    logger.error('[MCP Reinitialize] Unexpected error', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 

@@ -316,6 +316,20 @@ export const useUpdateUserPluginsMutation = (
   });
 };
 
+export const useReinitializeMCPServerMutation = (): UseMutationResult<
+  { success: boolean; message: string; serverName: string },
+  unknown,
+  string,
+  unknown
+> => {
+  const queryClient = useQueryClient();
+  return useMutation((serverName: string) => dataService.reinitializeMCPServer(serverName), {
+    onSuccess: () => {
+      queryClient.refetchQueries([QueryKeys.tools]);
+    },
+  });
+};
+
 export const useGetCustomConfigSpeechQuery = (
   config?: UseQueryOptions<t.TCustomConfigSpeechResponse>,
 ): QueryObserverResult<t.TCustomConfigSpeechResponse> => {
