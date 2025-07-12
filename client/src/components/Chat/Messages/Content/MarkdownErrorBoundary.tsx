@@ -4,7 +4,7 @@ import supersub from 'remark-supersub';
 import ReactMarkdown from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
 import type { PluggableList } from 'unified';
-import { code, codeNoExecution, a, p } from './Markdown';
+import { code, codeNoExecution, a, p } from './MarkdownComponents';
 import { CodeBlockProvider } from '~/Providers';
 import { langSubset } from '~/utils';
 
