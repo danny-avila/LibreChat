@@ -59,6 +59,10 @@ async function initializeMCPs(app) {
     await mcpManager.mapAvailableTools(toolsCopy, flowManager);
     await setCachedTools(toolsCopy, { isGlobal: true });
 
+    const cache = getLogStores(CacheKeys.CONFIG_STORE);
+    await cache.delete(CacheKeys.TOOLS);
+    logger.debug('Cleared tools array cache after MCP initialization');
+
     logger.info('MCP servers initialized successfully');
   } catch (error) {
     logger.error('Failed to initialize MCP servers:', error);
