@@ -231,6 +231,7 @@ export default defineConfig(({ command }) => ({
   resolve: {
     alias: {
       '~': path.join(__dirname, 'src/'),
+      lodash: 'lodash-es',
       $fonts: path.resolve(__dirname, 'public/fonts'),
       'micromark-extension-math': 'micromark-extension-llm-math',
     },

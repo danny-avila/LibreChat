@@ -72,7 +72,7 @@
     "input-otp": "^1.4.2",
     "js-cookie": "^3.0.5",
     "librechat-data-provider": "*",
-    "lodash": "^4.17.21",
+    "lodash-es": "^4.17.21",
     "lucide-react": "^0.394.0",
     "match-sorter": "^6.3.4",
     "micromark-extension-llm-math": "^3.1.0",
