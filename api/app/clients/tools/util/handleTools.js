@@ -235,7 +235,7 @@ const loadTools = async ({
 
   /** @type {Record<string, string>} */
   const toolContextMap = {};
-  const appTools = (await getCachedTools({ includeGlobal: true })) ?? {};
+  const cachedTools = (await getCachedTools({ userId: user, includeGlobal: true })) ?? {};
 
   for (const tool of tools) {
     if (tool === Tools.execute_code) {
@@ -303,7 +303,7 @@ Current Date & Time: ${replaceSpecialVars({ text: '{{iso_datetime}}' })}
         });
       };
       continue;
-    } else if (tool && appTools[tool] && mcpToolPattern.test(tool)) {
+    } else if (tool && cachedTools && mcpToolPattern.test(tool)) {
       requestedTools[tool] = async () =>
         createMCPTool({
           req: options.req,

@@ -141,6 +141,10 @@ export const updateUserPlugins = (payload: t.TUpdateUserPlugins) => {
   return request.post(endpoints.userPlugins(), payload);
 };
 
+export const reinitializeMCPServer = (serverName: string) => {
+  return request.post(endpoints.mcpReinitialize(serverName));
+};
+
 /* Config */
 
 export const getStartupConfig = (): Promise<
