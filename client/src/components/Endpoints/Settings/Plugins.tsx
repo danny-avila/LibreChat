@@ -12,7 +12,6 @@ import {
   InputNumber,
   SelectDropDown,
   HoverCardTrigger,
-  MultiSelectDropDown,
 } from '~/components/ui';
 import {
   removeFocusOutlines,
@@ -25,6 +24,7 @@ import {
 } from '~/utils';
 import OptionHoverAlt from '~/components/SidePanel/Parameters/OptionHover';
 import { useLocalize, useDebouncedInput } from '~/hooks';
+import MultiSelectDropDown from '~/components/Input/ModelSelect/MultiSelectDropDown';
 import OptionHover from './OptionHover';
 import { ESide } from '~/common';
 import store from '~/store';
@@ -165,7 +165,7 @@ export default function Settings({
               )}
               className={cn(
                 defaultTextProps,
-                'flex max-h-[138px] min-h-[100px] w-full resize-none px-3 py-2 ',
+                'flex max-h-[138px] min-h-[100px] w-full resize-none px-3 py-2',
               )}
             />
           </div>
