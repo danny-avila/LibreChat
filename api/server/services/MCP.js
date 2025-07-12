@@ -104,7 +104,7 @@ function createAbortHandler({ userId, serverName, toolName, flowManager }) {
  * @returns { Promise<typeof tool | { _call: (toolInput: Object | string) => unknown}> } An object with `_call` method to execute the tool input.
  */
 async function createMCPTool({ req, res, toolKey, provider: _provider }) {
-  const availableTools = await getCachedTools({ includeGlobal: true });
+  const availableTools = await getCachedTools({ userId: req.user?.id, includeGlobal: true });
   const toolDefinition = availableTools?.[toolKey]?.function;
   if (!toolDefinition) {
     logger.error(`Tool ${toolKey} not found in available tools`);
