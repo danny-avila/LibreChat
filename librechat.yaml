@@ -25,12 +25,10 @@ memory:
   disabled: false
   validKeys:
     - "user_preferences"
-    - "conversation_context" 
     - "learned_facts"
     - "personal_information"
     - "skills"
     - "interests"
-    - "context"
   tokenLimit: 3000
   personalize: true
   messageWindowSize: 8
