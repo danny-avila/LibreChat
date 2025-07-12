@@ -10,12 +10,14 @@ import type { Request as ServerRequest } from 'express';
  * @param filter - MongoDB filter query for files
  * @param _sortOptions - Sorting options (currently unused)
  * @param selectFields - Field selection options
+ * @param options - Additional options including userId and agentId for access control
  * @returns Promise resolving to array of files
  */
 export type TGetFiles = (
   filter: FilterQuery<IMongoFile>,
   _sortOptions: ProjectionType<IMongoFile> | null | undefined,
   selectFields: QueryOptions<IMongoFile> | null | undefined,
+  options?: { userId?: string; agentId?: string },
 ) => Promise<Array<TFile>>;
 
 /**
@@ -145,12 +147,14 @@ export const primeResources = async ({
   requestFileSet,
   attachments: _attachments,
   tool_resources: _tool_resources,
+  agentId,
 }: {
   req: ServerRequest;
   requestFileSet: Set<string>;
   attachments: Promise<Array<TFile | null>> | undefined;
   tool_resources: AgentToolResources | undefined;
   getFiles: TGetFiles;
+  agentId?: string;
 }): Promise<{
   attachments: Array<TFile | undefined> | undefined;
   tool_resources: AgentToolResources | undefined;
@@ -205,6 +209,7 @@ export const primeResources = async ({
         },
         {},
         {},
+        { userId: req.user?.id, agentId },
       );
 
       for (const file of context) {

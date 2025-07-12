@@ -16,11 +16,11 @@ const {
   processDeleteRequest,
   processAgentFileUpload,
 } = require('~/server/services/Files/process');
+const { getFiles, batchUpdateFiles, hasAccessToFilesViaAgent } = require('~/models/File');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { refreshS3FileUrls } = require('~/server/services/Files/S3/crud');
-const { getFiles, batchUpdateFiles } = require('~/models/File');
 const { getAssistant } = require('~/models/Assistant');
 const { getAgent } = require('~/models/Agent');
 const { getLogStores } = require('~/cache');
@@ -86,11 +86,62 @@ router.delete('/', async (req, res) => {
 
     const fileIds = files.map((file) => file.file_id);
     const dbFiles = await getFiles({ file_id: { $in: fileIds } });
-    const unauthorizedFiles = dbFiles.filter((file) => file.user.toString() !== req.user.id);
+
+    const ownedFiles = [];
+    const nonOwnedFiles = [];
+    const fileMap = new Map();
+
+    for (const file of dbFiles) {
+      fileMap.set(file.file_id, file);
+      if (file.user.toString() === req.user.id) {
+        ownedFiles.push(file);
+      } else {
+        nonOwnedFiles.push(file);
+      }
+    }
+
+    // If all files are owned by the user, no need for further checks
+    if (nonOwnedFiles.length === 0) {
+      await processDeleteRequest({ req, files: ownedFiles });
+      logger.debug(
+        `[/files] Files deleted successfully: ${ownedFiles
+          .filter((f) => f.file_id)
+          .map((f) => f.file_id)
+          .join(', ')}`,
+      );
+      res.status(200).json({ message: 'Files deleted successfully' });
+      return;
+    }
+
+    // Check access for non-owned files
+    let authorizedFiles = [...ownedFiles];
+    let unauthorizedFiles = [];
+
+    if (req.body.agent_id && nonOwnedFiles.length > 0) {
+      // Batch check access for all non-owned files
+      const nonOwnedFileIds = nonOwnedFiles.map((f) => f.file_id);
+      const accessMap = await hasAccessToFilesViaAgent(
+        req.user.id,
+        nonOwnedFileIds,
+        req.body.agent_id,
+      );
+
+      // Separate authorized and unauthorized files
+      for (const file of nonOwnedFiles) {
+        if (accessMap.get(file.file_id)) {
+          authorizedFiles.push(file);
+        } else {
+          unauthorizedFiles.push(file);
+        }
+      }
+    } else {
+      // No agent context, all non-owned files are unauthorized
+      unauthorizedFiles = nonOwnedFiles;
+    }
 
     if (unauthorizedFiles.length > 0) {
       return res.status(403).json({
-        message: 'You can only delete your own files',
+        message: 'You can only delete files you have access to',
         unauthorizedFiles: unauthorizedFiles.map((f) => f.file_id),
       });
     }
@@ -131,10 +182,10 @@ router.delete('/', async (req, res) => {
         .json({ message: 'File associations removed successfully from Azure Assistant' });
     }
 
-    await processDeleteRequest({ req, files: dbFiles });
+    await processDeleteRequest({ req, files: authorizedFiles });
 
     logger.debug(
-      `[/files] Files deleted successfully: ${files
+      `[/files] Files deleted successfully: ${authorizedFiles
         .filter((f) => f.file_id)
         .map((f) => f.file_id)
         .join(', ')}`,
