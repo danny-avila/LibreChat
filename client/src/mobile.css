@@ -372,3 +372,129 @@ p.whitespace-pre-wrap a, li a {
 .dark p.whitespace-pre-wrap a, .dark li a {
   color: #52a0ff;
 }
+
+/* .sandpack-mermaid-diagram {
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+.sandpack-mermaid-diagram > div {
+  height: 100% !important;
+  min-height: 100% !important;
+  flex: 1 !important;
+}
+
+.sandpack-mermaid-diagram .sp-wrapper {
+  height: 100% !important;
+  min-height: inherit !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+.sandpack-mermaid-diagram .sp-stack {
+  height: 100% !important;
+  min-height: inherit !important;
+  flex: 1 !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+.sandpack-mermaid-diagram .sp-preview {
+  height: 100% !important;
+  min-height: inherit !important;
+  flex: 1 !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+.sandpack-mermaid-diagram .sp-preview-container {
+  height: 100% !important;
+  min-height: inherit !important;
+  flex: 1 !important;
+  background: transparent !important;
+  display: flex !important;
+  flex-direction: column !important;
+  position: relative !important;
+}
+
+.sandpack-mermaid-diagram .sp-preview-iframe {
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 100% !important;
+  border: none !important;
+}
+
+.sandpack-mermaid-diagram .sp-preview-actions {
+  display: none !important;
+}
+
+.sandpack-mermaid-diagram .sp-preview-container::after {
+  display: none !important;
+}
+
+.sandpack-mermaid-diagram [style*="height: 346px"] {
+  height: 100% !important;
+}
+  
+.sandpack-mermaid-diagram iframe[style*="height"] {
+  height: 100% !important;
+}
+
+.sandpack-mermaid-diagram [style*="height:"] {
+  height: 100% !important;
+  min-height: 100% !important;
+}
+
+.sandpack-mermaid-diagram iframe {
+  height: 100% !important;
+  min-height: 100% !important;
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: 100% !important;
+}
+
+.sandpack-mermaid-diagram .sp-stack {
+  max-height: none !important;
+}
+
+.sandpack-mermaid-diagram .sp-wrapper,
+.sandpack-mermaid-diagram .sp-stack,
+.sandpack-mermaid-diagram .sp-preview,
+.sandpack-mermaid-diagram .sp-preview-container {
+  max-height: none !important;
+  height: 100% !important;
+  min-height: 100% !important;
+}
+
+.sandpack-mermaid-diagram .p-4 > div {
+  height: 100% !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+.sandpack-mermaid-diagram .sp-wrapper {
+  height: 100% !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+.sandpack-mermaid-diagram iframe[style*="height"] {
+  height: 100% !important;
+}
+
+.sandpack-mermaid-diagram [style*="height:"] {
+  height: 100% !important;
+}
+
+.sandpack-mermaid-diagram .sp-wrapper,
+.sandpack-mermaid-diagram .sp-stack,
+.sandpack-mermaid-diagram .sp-preview,
+.sandpack-mermaid-diagram .sp-preview-container {
+  max-height: none !important;
+} */

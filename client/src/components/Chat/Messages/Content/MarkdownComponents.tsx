@@ -1,4 +1,4 @@
-import React, { memo, useMemo, useRef, useEffect } from 'react';
+import React, { memo, useMemo, useRef, useEffect, lazy, Suspense } from 'react';
 import { useRecoilValue } from 'recoil';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import { useToastContext, useCodeBlockContext } from '~/Providers';
@@ -8,6 +8,16 @@ import { useFileDownload } from '~/data-provider';
 import useLocalize from '~/hooks/useLocalize';
 import { handleDoubleClick } from '~/utils';
 import store from '~/store';
+
+// Loading fallback component for lazy-loaded Mermaid diagrams
+const MermaidLoadingFallback = memo(() => {
+  const localize = useLocalize();
+  return (
+    <div className="my-4 rounded-lg border border-border-light bg-surface-primary p-4 text-center text-text-secondary dark:border-border-heavy dark:bg-surface-primary-alt">
+      {localize('com_ui_loading_diagram')}
+    </div>
+  );
+});
 
 type TCodeProps = {
   inline?: boolean;
@@ -23,6 +33,7 @@ export const code: React.ElementType = memo(({ className, children }: TCodeProps
   const match = /language-(\w+)/.exec(className ?? '');
   const lang = match && match[1];
   const isMath = lang === 'math';
+  const isMermaid = lang === 'mermaid';
   const isSingleLine = typeof children === 'string' && children.split('\n').length === 1;
 
   const { getNextIndex, resetCounter } = useCodeBlockContext();
@@ -34,6 +45,13 @@ export const code: React.ElementType = memo(({ className, children }: TCodeProps
 
   if (isMath) {
     return <>{children}</>;
+  } else if (isMermaid && typeof children === 'string') {
+    const SandpackMermaidDiagram = lazy(() => import('./SandpackMermaidDiagram'));
+    return (
+      <Suspense fallback={<MermaidLoadingFallback />}>
+        <SandpackMermaidDiagram content={children} />
+      </Suspense>
+    );
   } else if (isSingleLine) {
     return (
       <code onDoubleClick={handleDoubleClick} className={className}>
@@ -55,9 +73,17 @@ export const code: React.ElementType = memo(({ className, children }: TCodeProps
 export const codeNoExecution: React.ElementType = memo(({ className, children }: TCodeProps) => {
   const match = /language-(\w+)/.exec(className ?? '');
   const lang = match && match[1];
+  const isMermaid = lang === 'mermaid';
 
   if (lang === 'math') {
     return children;
+  } else if (isMermaid && typeof children === 'string') {
+    const SandpackMermaidDiagram = lazy(() => import('./SandpackMermaidDiagram'));
+    return (
+      <Suspense fallback={<MermaidLoadingFallback />}>
+        <SandpackMermaidDiagram content={children} />
+      </Suspense>
+    );
   } else if (typeof children === 'string' && children.split('\n').length === 1) {
     return (
       <code onDoubleClick={handleDoubleClick} className={className}>

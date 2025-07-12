@@ -113,8 +113,8 @@ export default defineConfig(({ command }) => ({
             if (id.includes('i18next') || id.includes('react-i18next')) {
               return 'i18n';
             }
-            if (id.includes('lodash')) {
-              return 'utilities';
+            if (id.includes('node_modules/lodash-es')) {
+              return 'lodash-es';
             }
             if (id.includes('date-fns')) {
               return 'date-utils';
