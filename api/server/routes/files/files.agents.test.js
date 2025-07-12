@@ -209,7 +209,7 @@ describe('File Routes - Agent Files Endpoint', () => {
       expect(response.body).toEqual([]); // Empty array when not collaborative
     });
 
-    it('should return empty array for agent author', async () => {
+    it('should return agent files for agent author', async () => {
       // Create a new app instance with author authentication
       const authorApp = express();
       authorApp.use(express.json());
@@ -223,7 +223,60 @@ describe('File Routes - Agent Files Endpoint', () => {
       const response = await request(authorApp).get(`/files/agent/${agentId}`);
 
       expect(response.status).toBe(200);
-      expect(response.body).toEqual([]); // Empty array for author
+      expect(response.body).toHaveLength(2); // Agent files for author
+
+      const fileIds = response.body.map((f) => f.file_id);
+      expect(fileIds).toContain(fileId1);
+      expect(fileIds).toContain(fileId2);
+      expect(fileIds).not.toContain(fileId3); // User's own file not included
+    });
+
+    it('should return files uploaded by other users to shared agent for author', async () => {
+      // Create a file uploaded by another user
+      const otherUserFileId = uuidv4();
+      const anotherUserId = new mongoose.Types.ObjectId().toString();
+
+      await createFile({
+        user: anotherUserId,
+        file_id: otherUserFileId,
+        filename: 'other-user-file.txt',
+        filepath: `/uploads/${anotherUserId}/${otherUserFileId}`,
+        bytes: 4096,
+        type: 'text/plain',
+      });
+
+      // Update agent to include the file uploaded by another user
+      const { updateAgent } = require('~/models/Agent');
+      await updateAgent(
+        { id: agentId },
+        {
+          tool_resources: {
+            file_search: {
+              file_ids: [fileId1, fileId2, otherUserFileId],
+            },
+          },
+        },
+      );
+
+      // Create app instance with author authentication
+      const authorApp = express();
+      authorApp.use(express.json());
+      authorApp.use((req, res, next) => {
+        req.user = { id: authorId };
+        req.app = { locals: {} };
+        next();
+      });
+      authorApp.use('/files', router);
+
+      const response = await request(authorApp).get(`/files/agent/${agentId}`);
+
+      expect(response.status).toBe(200);
+      expect(response.body).toHaveLength(3); // Including file from another user
+
+      const fileIds = response.body.map((f) => f.file_id);
+      expect(fileIds).toContain(fileId1);
+      expect(fileIds).toContain(fileId2);
+      expect(fileIds).toContain(otherUserFileId); // File uploaded by another user
     });
   });
 });

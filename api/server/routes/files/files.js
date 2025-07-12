@@ -75,21 +75,18 @@ router.get('/agent/:agent_id', async (req, res) => {
       return res.status(200).json([]);
     }
 
-    // If user is the author, return empty array (they already have access via fileMap)
-    if (agent.author.toString() === userId) {
-      return res.status(200).json([]);
-    }
+    // Check if user has access to the agent
+    if (agent.author.toString() !== userId) {
+      // Non-authors need the agent to be globally shared and collaborative
+      const globalProject = await getProjectByName(Constants.GLOBAL_PROJECT_NAME, '_id');
 
-    // Check if agent is globally shared and collaborative
-    const globalProject = await getProjectByName(Constants.GLOBAL_PROJECT_NAME, '_id');
-
-    if (
-      !globalProject ||
-      !agent.projectIds.some((pid) => pid.toString() === globalProject._id.toString()) ||
-      !agent.isCollaborative
-    ) {
-      // Agent is not accessible to this user
-      return res.status(200).json([]);
+      if (
+        !globalProject ||
+        !agent.projectIds.some((pid) => pid.toString() === globalProject._id.toString()) ||
+        !agent.isCollaborative
+      ) {
+        return res.status(200).json([]);
+      }
     }
 
     // Collect all file IDs from agent's tool resources
