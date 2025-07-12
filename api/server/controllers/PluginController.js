@@ -146,11 +146,7 @@ const getAvailableTools = async (req, res) => {
     const userPlugins = convertMCPToolsToPlugins(cachedUserTools, customConfig);
 
     if (cachedToolsArray && userPlugins) {
-      const dedupedTools = [
-        ...new Map(
-          [...userPlugins, ...cachedToolsArray].map((tool) => [tool.pluginKey, tool]),
-        ).values(),
-      ];
+      const dedupedTools = filterUniquePlugins([...userPlugins, ...cachedToolsArray]);
       res.status(200).json(dedupedTools);
       return;
     }
@@ -230,9 +226,7 @@ const getAvailableTools = async (req, res) => {
     const finalTools = filterUniquePlugins(toolsOutput);
     await cache.set(CacheKeys.TOOLS, finalTools);
 
-    const dedupedTools = [
-      ...new Map([...userPlugins, ...finalTools].map((tool) => [tool.pluginKey, tool])).values(),
-    ];
+    const dedupedTools = filterUniquePlugins([...userPlugins, ...finalTools]);
 
     res.status(200).json(dedupedTools);
   } catch (error) {
@@ -295,8 +289,4 @@ function convertMCPToolsToPlugins(functionTools, customConfig) {
 module.exports = {
   getAvailableTools,
   getAvailablePluginsController,
-  filterUniquePlugins,
-  checkPluginAuth,
-  createServerToolsCallback,
-  createGetServerTools,
 };
