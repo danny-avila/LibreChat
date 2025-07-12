@@ -1048,6 +1048,12 @@ class AgentClient extends BaseClient {
       options.llmConfig?.azureOpenAIApiInstanceName == null
     ) {
       provider = Providers.OPENAI;
+    } else if (
+      endpoint === EModelEndpoint.azureOpenAI &&
+      options.llmConfig?.azureOpenAIApiInstanceName != null &&
+      provider !== Providers.AZURE
+    ) {
+      provider = Providers.AZURE;
     }
 
     /** @type {import('@librechat/agents').ClientOptions} */
