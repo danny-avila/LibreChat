@@ -5,6 +5,7 @@ const {
   Time,
   isUUID,
   CacheKeys,
+  Constants,
   FileSources,
   EModelEndpoint,
   isAgentsEndpoint,
@@ -21,6 +22,7 @@ const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { refreshS3FileUrls } = require('~/server/services/Files/S3/crud');
+const { getProjectByName } = require('~/models/Project');
 const { getAssistant } = require('~/models/Assistant');
 const { getAgent } = require('~/models/Agent');
 const { getLogStores } = require('~/cache');
@@ -47,6 +49,71 @@ router.get('/', async (req, res) => {
   } catch (error) {
     logger.error('[/files] Error getting files:', error);
     res.status(400).json({ message: 'Error in request', error: error.message });
+  }
+});
+
+/**
+ * Get files specific to an agent
+ * @route GET /files/agent/:agent_id
+ * @param {string} agent_id - The agent ID to get files for
+ * @returns {Promise<TFile[]>} Array of files attached to the agent
+ */
+router.get('/agent/:agent_id', async (req, res) => {
+  try {
+    const { agent_id } = req.params;
+    const userId = req.user.id;
+
+    if (!agent_id) {
+      return res.status(400).json({ error: 'Agent ID is required' });
+    }
+
+    // Get the agent to check ownership and attached files
+    const agent = await getAgent({ id: agent_id });
+
+    if (!agent) {
+      // No agent found, return empty array
+      return res.status(200).json([]);
+    }
+
+    // If user is the author, return empty array (they already have access via fileMap)
+    if (agent.author.toString() === userId) {
+      return res.status(200).json([]);
+    }
+
+    // Check if agent is globally shared and collaborative
+    const globalProject = await getProjectByName(Constants.GLOBAL_PROJECT_NAME, '_id');
+
+    if (
+      !globalProject ||
+      !agent.projectIds.some((pid) => pid.toString() === globalProject._id.toString()) ||
+      !agent.isCollaborative
+    ) {
+      // Agent is not accessible to this user
+      return res.status(200).json([]);
+    }
+
+    // Collect all file IDs from agent's tool resources
+    const agentFileIds = [];
+    if (agent.tool_resources) {
+      for (const [, resource] of Object.entries(agent.tool_resources)) {
+        if (resource?.file_ids && Array.isArray(resource.file_ids)) {
+          agentFileIds.push(...resource.file_ids);
+        }
+      }
+    }
+
+    // If no files attached to agent, return empty array
+    if (agentFileIds.length === 0) {
+      return res.status(200).json([]);
+    }
+
+    // Get only the files attached to this agent
+    const files = await getFiles({ file_id: { $in: agentFileIds } }, null, { text: 0 });
+
+    res.status(200).json(files);
+  } catch (error) {
+    logger.error('[/files/agent/:agent_id] Error fetching agent files:', error);
+    res.status(500).json({ error: 'Failed to fetch agent files' });
   }
 });
 
