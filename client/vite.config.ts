@@ -7,7 +7,7 @@ import { nodePolyfills } from 'vite-plugin-node-polyfills';
 import { VitePWA } from 'vite-plugin-pwa';
 
 // https://vitejs.dev/config/
-export default defineConfig(({ command }) => ({
+export default defineConfig(({ command, mode }) => ({
   server: {
     host: 'localhost',
     port: 3090,
@@ -29,7 +29,7 @@ export default defineConfig(({ command }) => ({
   plugins: [
     react(),
     nodePolyfills(),
-    VitePWA({
+    ...(mode !== 'ci' ? [VitePWA({
       injectRegister: 'auto', // 'auto' | 'manual' | 'disabled'
       registerType: 'autoUpdate', // 'prompt' | 'autoUpdate'
       devOptions: {
@@ -47,7 +47,7 @@ export default defineConfig(({ command }) => ({
           'manifest.webmanifest',
         ],
         globIgnores: ['images/**/*', '**/*.map', 'index.html'],
-        maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
+        maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
         navigateFallbackDenylist: [/^\/oauth/, /^\/api/],
       },
       includeAssets: [],
@@ -87,7 +87,7 @@ export default defineConfig(({ command }) => ({
           },
         ],
       },
-    }),
+    })] : []),
     sourcemapExclude({ excludeNodeModules: true }),
     compression({
       threshold: 10240,
@@ -113,7 +113,11 @@ export default defineConfig(({ command }) => ({
             if (id.includes('i18next') || id.includes('react-i18next')) {
               return 'i18n';
             }
-            if (id.includes('lodash')) {
+            // Simple mermaid chunking
+            if (id.includes('mermaid')) {
+              return 'mermaid';
+            }
+            if (id.includes('lodash') || id.includes('lodash-es')) {
               return 'utilities';
             }
             if (id.includes('date-fns')) {

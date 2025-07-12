@@ -125,3 +125,4 @@ helm/**/.values.yaml
 
 # SAML Idp cert
 *.cert
+CLAUDE.md
