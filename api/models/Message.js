@@ -288,8 +288,9 @@ async function deleteMessagesSince(req, { messageId, conversationId }) {
     const message = await Message.findOne({ messageId, user: req.user.id }).lean();
 
     if (message) {
-      const query = Message.find({ conversationId, user: req.user.id });
-      return await query.deleteMany({
+      return await Message.deleteMany({
+        conversationId,
+        user: req.user.id,
         createdAt: { $gt: message.createdAt },
       });
     }
