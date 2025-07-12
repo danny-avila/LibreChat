@@ -708,5 +708,53 @@ describe('Environment Variable Extraction (MCP)', () => {
         SYSTEM_PATH: process.env.PATH, // Actual value of PATH from the test environment
       });
     });
+
+    it('should process GitHub MCP server configuration with PAT_TOKEN placeholder', () => {
+      const user = createTestUser({ id: 'github-user-123', email: 'user@example.com' });
+      const customUserVars = {
+        PAT_TOKEN: 'ghp_1234567890abcdef1234567890abcdef12345678', // GitHub Personal Access Token
+      };
+
+      // Simulate the GitHub MCP server configuration from librechat.yaml
+      const obj: MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://api.githubcopilot.com/mcp/',
+        headers: {
+          Authorization: '{{PAT_TOKEN}}',
+          'Content-Type': 'application/json',
+          'User-Agent': 'LibreChat-MCP-Client',
+        },
+      };
+
+      const result = processMCPEnv(obj, user, customUserVars);
+
+      expect('headers' in result && result.headers).toEqual({
+        Authorization: 'ghp_1234567890abcdef1234567890abcdef12345678',
+        'Content-Type': 'application/json',
+        'User-Agent': 'LibreChat-MCP-Client',
+      });
+      expect('url' in result && result.url).toBe('https://api.githubcopilot.com/mcp/');
+      expect(result.type).toBe('streamable-http');
+    });
+
+    it('should handle GitHub MCP server configuration without PAT_TOKEN (placeholder remains)', () => {
+      const user = createTestUser({ id: 'github-user-123' });
+      // No customUserVars provided - PAT_TOKEN should remain as placeholder
+      const obj: MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://api.githubcopilot.com/mcp/',
+        headers: {
+          Authorization: '{{PAT_TOKEN}}',
+          'Content-Type': 'application/json',
+        },
+      };
+
+      const result = processMCPEnv(obj, user);
+
+      expect('headers' in result && result.headers).toEqual({
+        Authorization: '{{PAT_TOKEN}}', // Should remain unchanged since no customUserVars provided
+        'Content-Type': 'application/json',
+      });
+    });
   });
 });

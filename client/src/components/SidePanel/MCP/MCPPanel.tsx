@@ -1,8 +1,11 @@
-import React, { useState, useCallback, useMemo, useEffect } from 'react';
-import { ChevronLeft } from 'lucide-react';
 import { Constants } from 'librechat-data-provider';
+import { ChevronLeft, RefreshCw } from 'lucide-react';
 import { useForm, Controller } from 'react-hook-form';
-import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
+import {
+  useUpdateUserPluginsMutation,
+  useReinitializeMCPServerMutation,
+} from 'librechat-data-provider/react-query';
 import type { TUpdateUserPlugins } from 'librechat-data-provider';
 import { Button, Input, Label } from '~/components/ui';
 import { useGetStartupConfig } from '~/data-provider';
@@ -24,6 +27,8 @@ export default function MCPPanel() {
   const [selectedServerNameForEditing, setSelectedServerNameForEditing] = useState<string | null>(
     null,
   );
+  const [rotatingServers, setRotatingServers] = useState<Set<string>>(new Set());
+  const reinitializeMCPMutation = useReinitializeMCPServerMutation();
 
   const mcpServerDefinitions = useMemo(() => {
     if (!startupConfig?.mcpServers) {
@@ -89,6 +94,32 @@ export default function MCPPanel() {
     setSelectedServerNameForEditing(null);
   };
 
+  const handleReinitializeServer = useCallback(
+    async (serverName: string) => {
+      setRotatingServers((prev) => new Set(prev).add(serverName));
+      try {
+        await reinitializeMCPMutation.mutateAsync(serverName);
+        showToast({
+          message: `MCP server '${serverName}' reinitialized successfully`,
+          status: 'success',
+        });
+      } catch (error) {
+        console.error('Error reinitializing MCP server:', error);
+        showToast({
+          message: 'Failed to reinitialize MCP server',
+          status: 'error',
+        });
+      } finally {
+        setRotatingServers((prev) => {
+          const next = new Set(prev);
+          next.delete(serverName);
+          return next;
+        });
+      }
+    },
+    [showToast, reinitializeMCPMutation],
+  );
+
   if (startupConfigLoading) {
     return <MCPPanelSkeleton />;
   }
@@ -144,14 +175,27 @@ export default function MCPPanel() {
       <div className="h-auto max-w-full overflow-x-hidden p-3">
         <div className="space-y-2">
           {mcpServerDefinitions.map((server) => (
-            <Button
-              key={server.serverName}
-              variant="outline"
-              className="w-full justify-start dark:hover:bg-gray-700"
-              onClick={() => handleServerClickToEdit(server.serverName)}
-            >
-              {server.serverName}
-            </Button>
+            <div key={server.serverName} className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                className="flex-1 justify-start dark:hover:bg-gray-700"
+                onClick={() => handleServerClickToEdit(server.serverName)}
+              >
+                {server.serverName}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => handleReinitializeServer(server.serverName)}
+                className="px-2 py-1"
+                title="Reinitialize MCP server"
+                disabled={reinitializeMCPMutation.isLoading}
+              >
+                <RefreshCw
+                  className={`h-4 w-4 ${rotatingServers.has(server.serverName) ? 'animate-spin' : ''}`}
+                />
+              </Button>
+            </div>
           ))}
         </div>
       </div>
