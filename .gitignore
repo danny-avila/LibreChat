@@ -56,6 +56,7 @@ bower_components/
 .clineignore
 .cursor
 .aider*
+CLAUDE.md
 
 # Floobits
 .floo
