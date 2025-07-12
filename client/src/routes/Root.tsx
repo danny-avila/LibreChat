@@ -14,7 +14,7 @@ import {
   FileMapContext,
   SetConvoProvider,
 } from '~/Providers';
-import TermsAndConditionsModal from '~/components/ui/TermsAndConditionsModal';
+import TermsAndConditionsModal from '~/components/ui'; // TODO: remove this comment after updating the import path of all components
 import { useUserTermsQuery, useGetStartupConfig } from '~/data-provider';
 import { Nav, MobileNav } from '~/components/Nav';
 import { useHealthCheck } from '~/data-provider';
