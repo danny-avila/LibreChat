@@ -20,6 +20,7 @@ import { Artifact, artifactPlugin } from '~/components/Artifacts/Artifact';
 import { langSubset, preprocessLaTeX, handleDoubleClick } from '~/utils';
 import CodeBlock from '~/components/Messages/Content/CodeBlock';
 import MarkdownErrorBoundary from './MarkdownErrorBoundary';
+import InlineMermaidDiagram from './MermaidDiagram';
 import useHasAccess from '~/hooks/Roles/useHasAccess';
 import { unicodeCitation } from '~/components/Web';
 import { useFileDownload } from '~/data-provider';
@@ -40,6 +41,7 @@ export const code: React.ElementType = memo(({ className, children }: TCodeProps
   const match = /language-(\w+)/.exec(className ?? '');
   const lang = match && match[1];
   const isMath = lang === 'math';
+  const isMermaid = lang === 'mermaid';
   const isSingleLine = typeof children === 'string' && children.split('\n').length === 1;
 
   const { getNextIndex, resetCounter } = useCodeBlockContext();
@@ -51,6 +53,8 @@ export const code: React.ElementType = memo(({ className, children }: TCodeProps
 
   if (isMath) {
     return <>{children}</>;
+  } else if (isMermaid && typeof children === 'string') {
+    return <InlineMermaidDiagram content={children} />;
   } else if (isSingleLine) {
     return (
       <code onDoubleClick={handleDoubleClick} className={className}>
@@ -72,9 +76,12 @@ export const code: React.ElementType = memo(({ className, children }: TCodeProps
 export const codeNoExecution: React.ElementType = memo(({ className, children }: TCodeProps) => {
   const match = /language-(\w+)/.exec(className ?? '');
   const lang = match && match[1];
+  const isMermaid = lang === 'mermaid';
 
   if (lang === 'math') {
     return children;
+  } else if (isMermaid && typeof children === 'string') {
+    return <InlineMermaidDiagram content={children} />;
   } else if (typeof children === 'string' && children.split('\n').length === 1) {
     return (
       <code onDoubleClick={handleDoubleClick} className={className}>
