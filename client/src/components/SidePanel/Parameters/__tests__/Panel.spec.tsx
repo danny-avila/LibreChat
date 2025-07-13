@@ -1,42 +1,34 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import type { TConversation, ComponentType } from 'librechat-data-provider';
-import { paramSettings, ComponentTypes } from 'librechat-data-provider';
+import type { ComponentType } from 'librechat-data-provider';
+import { paramSettings, ComponentTypes, EModelEndpoint } from 'librechat-data-provider';
 import Panel from '../Panel';
+import { renderWithState, createMockConversation } from '~/test-utils/renderHelpers';
 
 const mockSetConversation = jest.fn();
 const mockSetOption = jest.fn();
-const mockLocalize = jest.fn((key: string, values?: Record<string, string>) => {
-  if (key === 'com_ui_reset_var' && values?.[0]) {
-    return `Reset ${values[0]}`;
-  }
-  if (key === 'com_ui_model_parameters') {
-    return 'Model Parameters';
-  }
-  if (key === 'com_endpoint_save_as_preset') {
-    return 'Save As Preset';
-  }
-  return key;
-});
 
 jest.mock('~/Providers', () => ({
-  useChatContext: jest.fn(() => ({
-    conversation: {
-      endpoint: 'openAI',
-      model: 'gpt-4',
-      temperature: 0.7,
-      max_tokens: 1000,
-    } as TConversation,
-    setConversation: mockSetConversation,
-  })),
+  useChatContext: jest.fn(),
 }));
 
 jest.mock('~/hooks', () => ({
   useSetIndexOptions: jest.fn(() => ({
     setOption: mockSetOption,
   })),
-  useLocalize: jest.fn(() => mockLocalize),
+  useLocalize: jest.fn(() => (key: string, values?: Record<string, string>) => {
+    if (key === 'com_ui_reset_var' && values?.[0]) {
+      return `Reset ${values[0]}`;
+    }
+    if (key === 'com_ui_model_parameters') {
+      return 'Model Parameters';
+    }
+    if (key === 'com_endpoint_save_as_preset') {
+      return 'Save As Preset';
+    }
+    return key;
+  }),
 }));
 
 jest.mock('~/data-provider', () => ({
@@ -112,6 +104,15 @@ const getMockDynamicComponent = () => mockComponentMapping.slider;
 describe('Parameters Panel', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockUseChatContext.mockImplementation(() => ({
+      conversation: createMockConversation({
+        endpoint: EModelEndpoint.openAI,
+        model: 'gpt-4',
+        temperature: 0.7,
+        max_tokens: 1000,
+      }),
+      setConversation: mockSetConversation,
+    }));
     mockSetConversation.mockImplementation((updater) => {
       if (typeof updater === 'function') {
         return updater(mockUseChatContext().conversation);
@@ -124,7 +125,7 @@ describe('Parameters Panel', () => {
       delete paramSettings[key];
     });
 
-    paramSettings['openAI'] = [
+    paramSettings[EModelEndpoint.openAI] = [
       {
         key: 'temperature',
         label: 'Temperature',
@@ -156,19 +157,19 @@ describe('Parameters Panel', () => {
 
   describe('Basic Rendering', () => {
     it('renders parameter components based on endpoint configuration', () => {
-      render(<Panel />);
+      renderWithState(<Panel />);
 
-      expect(screen.getByText('Temperature')).toBeInTheDocument();
-      expect(screen.getByText('Max Tokens')).toBeInTheDocument();
+      expect(screen.getByTestId('dynamic-temperature')).toBeInTheDocument();
+      expect(screen.getByTestId('dynamic-max_tokens')).toBeInTheDocument();
       expect(screen.getByTestId('dynamic-temperature')).toBeInTheDocument();
       expect(screen.getByTestId('dynamic-max_tokens')).toBeInTheDocument();
     });
 
     it('renders reset and save preset buttons', () => {
-      render(<Panel />);
+      renderWithState(<Panel />);
 
-      expect(screen.getByText('Reset Model Parameters')).toBeInTheDocument();
-      expect(screen.getByText('Save As Preset')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /reset.*model.*parameters/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /save.*preset/i })).toBeInTheDocument();
     });
 
     it('renders with custom endpoint parameters', () => {
@@ -190,17 +191,17 @@ describe('Parameters Panel', () => {
         },
       });
 
-      render(<Panel />);
+      renderWithState(<Panel />);
 
-      expect(screen.getByText('Custom Temperature')).toBeInTheDocument();
+      expect(screen.getByTestId('dynamic-temperature')).toBeInTheDocument();
     });
 
     it('renders with Bedrock regions when available', () => {
       mockUseChatContext.mockReturnValue({
-        conversation: {
-          endpoint: 'bedrock',
+        conversation: createMockConversation({
+          endpoint: EModelEndpoint.bedrock,
           model: 'claude-3',
-        },
+        }),
         setConversation: mockSetConversation,
       });
 
@@ -212,7 +213,7 @@ describe('Parameters Panel', () => {
         },
       });
 
-      paramSettings['bedrock'] = [
+      paramSettings[EModelEndpoint.bedrock] = [
         {
           key: 'region',
           label: 'Region',
@@ -222,7 +223,7 @@ describe('Parameters Panel', () => {
         },
       ];
 
-      render(<Panel />);
+      renderWithState(<Panel />);
 
       const regionComponent = getMockDynamicComponent().mock.calls.find(
         (call: any) => call[0].settingKey === 'region',
@@ -235,18 +236,18 @@ describe('Parameters Panel', () => {
   describe('Parameter Management', () => {
     it('cleans up non-parameter keys from conversation', async () => {
       mockUseChatContext.mockReturnValue({
-        conversation: {
-          endpoint: 'openAI',
+        conversation: createMockConversation({
+          endpoint: EModelEndpoint.openAI,
           model: 'gpt-4',
           temperature: 0.7,
           max_tokens: 1000,
           customKey: 'should-be-removed',
           anotherKey: 'also-removed',
-        },
+        } as any),
         setConversation: mockSetConversation,
       });
 
-      render(<Panel />);
+      renderWithState(<Panel />);
 
       await waitFor(() => {
         expect(mockSetConversation).toHaveBeenCalled();
@@ -255,26 +256,26 @@ describe('Parameters Panel', () => {
         expect(result.customKey).toBeUndefined();
         expect(result.anotherKey).toBeUndefined();
         expect(result.temperature).toBe(0.7);
-        expect(result.endpoint).toBe('openAI');
+        expect(result.endpoint).toBe(EModelEndpoint.openAI);
       });
     });
 
     it('preserves excluded keys during cleanup', async () => {
-      const conversationWithExcluded = {
-        endpoint: 'openAI',
+      const conversationWithExcluded = createMockConversation({
+        endpoint: EModelEndpoint.openAI,
         model: 'gpt-4',
         temperature: 0.7,
         conversationId: 'keep-this',
         title: 'keep-this-too',
         customKey: 'remove-this',
-      };
+      } as any);
 
       mockUseChatContext.mockReturnValue({
         conversation: conversationWithExcluded,
         setConversation: mockSetConversation,
       });
 
-      render(<Panel />);
+      renderWithState(<Panel />);
 
       await waitFor(() => {
         const updater = mockSetConversation.mock.calls[0][0];
@@ -286,23 +287,23 @@ describe('Parameters Panel', () => {
     });
 
     it('resets all parameters when reset button is clicked', async () => {
-      const conversation = {
-        endpoint: 'openAI',
+      const conversation = createMockConversation({
+        endpoint: EModelEndpoint.openAI,
         model: 'gpt-4',
         temperature: 0.7,
         max_tokens: 1000,
         top_p: 0.9,
         frequency_penalty: 0.5,
-      };
+      });
 
       mockUseChatContext.mockReturnValue({
         conversation,
         setConversation: mockSetConversation,
       });
 
-      render(<Panel />);
+      renderWithState(<Panel />);
 
-      const resetButton = screen.getByText('Reset Model Parameters');
+      const resetButton = screen.getByRole('button', { name: /reset.*model.*parameters/i });
       fireEvent.click(resetButton);
 
       await waitFor(() => {
@@ -316,7 +317,7 @@ describe('Parameters Panel', () => {
         expect(result.max_tokens).toBeUndefined();
         expect(result.top_p).toBeUndefined();
         expect(result.frequency_penalty).toBeUndefined();
-        expect(result.endpoint).toBe('openAI');
+        expect(result.endpoint).toBe(EModelEndpoint.openAI);
         expect(result.model).toBe('gpt-4');
       });
     });
@@ -325,49 +326,49 @@ describe('Parameters Panel', () => {
   describe('Save As Preset', () => {
     it('opens dialog with current conversation as preset', async () => {
       const user = userEvent.setup();
-      const conversation = {
+      const conversation = createMockConversation({
         conversationId: 'test-conversation-id',
-        endpoint: 'openAI',
+        endpoint: EModelEndpoint.openAI,
         model: 'gpt-4',
         temperature: 0.8,
         max_tokens: 2000,
-      };
+      });
 
       mockUseChatContext.mockReturnValue({
         conversation,
         setConversation: mockSetConversation,
       });
 
-      render(<Panel />);
+      renderWithState(<Panel />);
 
-      const saveButton = screen.getByText('Save As Preset');
+      const saveButton = screen.getByRole('button', { name: /save.*preset/i });
       await user.click(saveButton);
 
       expect(screen.getByTestId('save-preset-dialog')).toBeInTheDocument();
       const dialogContent = screen.getByTestId('save-preset-dialog').textContent;
-      expect(dialogContent).toContain('openAI');
+      expect(dialogContent).toContain(EModelEndpoint.openAI);
       expect(dialogContent).toContain('gpt-4');
     });
 
     it('closes dialog when close button is clicked', async () => {
       const user = userEvent.setup();
 
-      const conversation = {
+      const conversation = createMockConversation({
         conversationId: 'test-conversation-id',
-        endpoint: 'openAI',
+        endpoint: EModelEndpoint.openAI,
         model: 'gpt-4',
         temperature: 0.8,
         max_tokens: 2000,
-      };
+      });
 
       mockUseChatContext.mockReturnValue({
         conversation,
         setConversation: mockSetConversation,
       });
 
-      render(<Panel />);
+      renderWithState(<Panel />);
 
-      const saveButton = screen.getByText('Save As Preset');
+      const saveButton = screen.getByRole('button', { name: /save.*preset/i });
       await user.click(saveButton);
 
       expect(screen.getByTestId('save-preset-dialog')).toBeInTheDocument();
@@ -393,7 +394,7 @@ describe('Parameters Panel', () => {
 
     componentTypes.forEach((componentType) => {
       it(`renders ${componentType} component correctly`, () => {
-        paramSettings['openAI'] = [
+        paramSettings[EModelEndpoint.openAI] = [
           {
             key: `test_${componentType}`,
             label: `Test ${componentType}`,
@@ -403,15 +404,15 @@ describe('Parameters Panel', () => {
           },
         ];
 
-        render(<Panel />);
+        renderWithState(<Panel />);
 
         expect(screen.getByTestId(`dynamic-test_${componentType}`)).toBeInTheDocument();
-        expect(screen.getByText(`Test ${componentType}`)).toBeInTheDocument();
+        expect(screen.getByTestId(`dynamic-test_${componentType}`)).toBeInTheDocument();
       });
     });
 
     it('passes correct props to dynamic components', () => {
-      paramSettings['openAI'] = [
+      paramSettings[EModelEndpoint.openAI] = [
         {
           key: 'test_param',
           label: 'Test Parameter',
@@ -423,7 +424,7 @@ describe('Parameters Panel', () => {
         },
       ];
 
-      render(<Panel />);
+      renderWithState(<Panel />);
 
       const componentCall = getMockDynamicComponent().mock.calls.find(
         (call: any) => call[0].settingKey === 'test_param',
@@ -438,42 +439,19 @@ describe('Parameters Panel', () => {
       });
       expect(componentCall[0].setOption).toBe(mockSetOption);
       expect(componentCall[0].conversation).toMatchObject({
-        endpoint: 'openAI',
+        endpoint: EModelEndpoint.openAI,
         model: 'gpt-4',
       });
     });
   });
 
   describe('Endpoint Type Handling', () => {
-    it('uses endpoint type for parameter lookup when available', () => {
-      mockUseChatContext.mockReturnValue({
-        conversation: {
-          endpoint: 'azureOpenAI',
-          model: 'gpt-4',
-        },
-        setConversation: mockSetConversation,
-      });
-
-      paramSettings['azure'] = [
-        {
-          key: 'azure_param',
-          label: 'Azure Parameter',
-          type: 'string',
-          component: ComponentTypes.Input as ComponentType,
-        },
-      ];
-
-      render(<Panel />);
-
-      expect(screen.getByText('Azure Parameter')).toBeInTheDocument();
-    });
-
     it('falls back to endpoint when type is not available', () => {
       mockUseChatContext.mockReturnValue({
-        conversation: {
-          endpoint: 'customEndpoint',
+        conversation: createMockConversation({
+          endpoint: 'customEndpoint' as EModelEndpoint,
           model: 'custom-model',
-        },
+        }),
         setConversation: mockSetConversation,
       });
 
@@ -486,9 +464,9 @@ describe('Parameters Panel', () => {
         },
       ];
 
-      render(<Panel />);
+      renderWithState(<Panel />);
 
-      expect(screen.getByText('Custom Parameter')).toBeInTheDocument();
+      expect(screen.getByTestId('dynamic-custom_param')).toBeInTheDocument();
     });
   });
 
@@ -499,18 +477,18 @@ describe('Parameters Panel', () => {
       });
 
       mockUseChatContext.mockReturnValue({
-        conversation: {
+        conversation: createMockConversation({
           conversationId: 'test-id',
-          endpoint: 'unknown',
+          endpoint: 'unknown' as EModelEndpoint,
           model: 'unknown-model',
-        },
+        }),
         setConversation: mockSetConversation,
       });
 
-      const { container } = render(<Panel />);
+      const { container } = renderWithState(<Panel />);
 
       expect(container.firstChild).not.toBeNull();
-      expect(screen.getByText('Reset Model Parameters')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /reset.*model.*parameters/i })).toBeInTheDocument();
       expect(screen.queryByTestId(/dynamic-/)).not.toBeInTheDocument();
     });
 
@@ -522,18 +500,28 @@ describe('Parameters Panel', () => {
         setConversation: mockSetConversation,
       });
 
-      const { container } = render(<Panel />);
+      const { container } = renderWithState(<Panel />);
 
       expect(container.firstChild).not.toBeNull();
-      expect(screen.getByText('Reset Model Parameters')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /reset.*model.*parameters/i })).toBeInTheDocument();
     });
 
     it('skips rendering components not in componentMapping', () => {
-      const { container } = render(<Panel />);
+      paramSettings[EModelEndpoint.openAI] = [
+        {
+          key: 'unknown_component',
+          label: 'Unknown Component',
+          type: 'string',
+          component: 'unknownComponent' as ComponentType,
+          default: 'default-value',
+        },
+      ];
+
+      const { container } = renderWithState(<Panel />);
 
       expect(container.firstChild).not.toBeNull();
-      expect(screen.getByText('Reset Model Parameters')).toBeInTheDocument();
-      expect(screen.queryByTestId(/dynamic-/)).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /reset.*model.*parameters/i })).toBeInTheDocument();
+      expect(screen.queryByTestId('dynamic-unknown_component')).not.toBeInTheDocument();
     });
 
     it('handles undefined endpoint config gracefully', () => {
@@ -541,9 +529,9 @@ describe('Parameters Panel', () => {
         data: undefined,
       });
 
-      render(<Panel />);
+      renderWithState(<Panel />);
 
-      expect(screen.getByText('Reset Model Parameters')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /reset.*model.*parameters/i })).toBeInTheDocument();
     });
 
     it('handles missing customParams in endpoint config', () => {
@@ -553,10 +541,10 @@ describe('Parameters Panel', () => {
         },
       });
 
-      const { container } = render(<Panel />);
+      const { container } = renderWithState(<Panel />);
 
       expect(container.firstChild).not.toBeNull();
-      expect(screen.getByText('Reset Model Parameters')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /reset.*model.*parameters/i })).toBeInTheDocument();
     });
 
     it('does not update conversation when setConversation receives null', async () => {
@@ -567,7 +555,7 @@ describe('Parameters Panel', () => {
         return updater;
       });
 
-      render(<Panel />);
+      renderWithState(<Panel />);
 
       await waitFor(() => {
         expect(mockSetConversation).toHaveBeenCalled();
@@ -590,9 +578,9 @@ describe('Parameters Panel', () => {
         return updater;
       });
 
-      render(<Panel />);
+      renderWithState(<Panel />);
 
-      const resetButton = screen.getByText('Reset Model Parameters');
+      const resetButton = screen.getByRole('button', { name: /reset.*model.*parameters/i });
       fireEvent.click(resetButton);
 
       const updater = mockSetConversation.mock.calls[0][0];

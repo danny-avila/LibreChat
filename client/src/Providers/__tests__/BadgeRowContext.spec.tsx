@@ -1,11 +1,12 @@
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { RecoilRoot, useRecoilState } from 'recoil';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClientProvider } from '@tanstack/react-query';
 import { Tools, Constants, LocalStorageKeys, AgentCapabilities } from 'librechat-data-provider';
 import BadgeRowProvider, { useBadgeRowContext } from '../BadgeRowContext';
 import { ephemeralAgentByConvoId } from '../../store';
 import * as hooks from '../../hooks';
 import * as dataProvider from '../../data-provider';
+import { createQueryClient } from '~/test-utils/renderHelpers';
 
 jest.mock('../../hooks', () => ({
   useGetAgentsConfig: jest.fn(),
@@ -31,12 +32,7 @@ const mockToolToggleResponse = {
 };
 
 const createWrapper = ({ conversationId = 'test-convo-id', isSubmitting = false } = {}) => {
-  const queryClient = new QueryClient({
-    defaultOptions: {
-      queries: { retry: false },
-      mutations: { retry: false },
-    },
-  });
+  const queryClient = createQueryClient();
 
   const Wrapper = ({ children }: { children: React.ReactNode }) => (
     <QueryClientProvider client={queryClient}>

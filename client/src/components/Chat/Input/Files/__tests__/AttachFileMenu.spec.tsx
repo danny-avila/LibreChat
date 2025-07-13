@@ -1,10 +1,11 @@
-import { render, screen, act } from '@testing-library/react';
+import { screen, act } from '@testing-library/react';
 import { renderHook } from '@testing-library/react';
 import { RecoilRoot, useRecoilValue } from 'recoil';
 import { EToolResources, Tools, defaultAgentCapabilities } from 'librechat-data-provider';
 import AttachFileMenu from '../AttachFileMenu';
 import { ephemeralAgentByConvoId } from '~/store';
 import * as hooks from '~/hooks';
+import { renderWithState } from '~/test-utils/renderHelpers';
 
 jest.mock('~/hooks', () => ({
   useLocalize: jest.fn(),
@@ -72,11 +73,11 @@ describe('AttachFileMenu', () => {
         return null;
       };
 
-      render(
-        <RecoilRoot>
+      renderWithState(
+        <>
           <AttachFileMenu conversationId={conversationId} />
           <StateCapture conversationId={conversationId} />
-        </RecoilRoot>,
+        </>,
       );
 
       expect(mockDropdownItems).toHaveLength(4);
@@ -101,19 +102,23 @@ describe('AttachFileMenu', () => {
         return null;
       };
 
-      render(
-        <RecoilRoot
-          initializeState={({ set }) => {
-            set(ephemeralAgentByConvoId(conversationId), {
-              [Tools.web_search]: true,
-              [EToolResources.file_search]: false,
-              customProp: 'test-value',
-            } as any);
-          }}
-        >
+      renderWithState(
+        <>
           <AttachFileMenu conversationId={conversationId} />
           <StateCapture conversationId={conversationId} />
-        </RecoilRoot>,
+        </>,
+        {
+          recoilState: [
+            [
+              ephemeralAgentByConvoId(conversationId),
+              {
+                [Tools.web_search]: true,
+                [EToolResources.file_search]: false,
+                customProp: 'test-value',
+              } as any,
+            ],
+          ],
+        },
       );
 
       act(() => {
@@ -143,11 +148,7 @@ describe('AttachFileMenu', () => {
           codeEnabled,
         });
 
-        render(
-          <RecoilRoot>
-            <AttachFileMenu conversationId="test" />
-          </RecoilRoot>,
-        );
+        renderWithState(<AttachFileMenu conversationId="test" />);
 
         expect(mockDropdownItems).toHaveLength(expectedCount);
       });
@@ -156,11 +157,7 @@ describe('AttachFileMenu', () => {
 
   describe('Component Behavior', () => {
     it('passes correct tool resource to handleFileChange for each menu item', () => {
-      render(
-        <RecoilRoot>
-          <AttachFileMenu conversationId="test" />
-        </RecoilRoot>,
-      );
+      renderWithState(<AttachFileMenu conversationId="test" />);
 
       const menuItemIndices = [0, 1, 2, 3];
 
@@ -178,20 +175,14 @@ describe('AttachFileMenu', () => {
     });
 
     it('handles disabled state correctly', () => {
-      const { rerender } = render(
-        <RecoilRoot>
-          <AttachFileMenu conversationId="test" disabled={true} />
-        </RecoilRoot>,
+      const { rerender } = renderWithState(
+        <AttachFileMenu conversationId="test" disabled={true} />,
       );
 
       const button = screen.getByRole('button');
       expect(button).toBeDisabled();
 
-      rerender(
-        <RecoilRoot>
-          <AttachFileMenu conversationId="test" disabled={false} />
-        </RecoilRoot>,
-      );
+      rerender(<AttachFileMenu conversationId="test" disabled={false} />);
 
       expect(button).not.toBeDisabled();
     });
@@ -202,21 +193,13 @@ describe('AttachFileMenu', () => {
       (hooks.useGetAgentsConfig as jest.Mock).mockReturnValue({ agentsConfig: undefined });
 
       expect(() => {
-        render(
-          <RecoilRoot>
-            <AttachFileMenu conversationId="test" />
-          </RecoilRoot>,
-        );
+        renderWithState(<AttachFileMenu conversationId="test" />);
       }).not.toThrow();
     });
 
     it('handles null conversationId', () => {
       expect(() => {
-        render(
-          <RecoilRoot>
-            <AttachFileMenu conversationId={null as any} />
-          </RecoilRoot>,
-        );
+        renderWithState(<AttachFileMenu conversationId={null as any} />);
       }).not.toThrow();
     });
 
@@ -226,11 +209,7 @@ describe('AttachFileMenu', () => {
       });
 
       expect(() => {
-        render(
-          <RecoilRoot>
-            <AttachFileMenu conversationId="test" />
-          </RecoilRoot>,
-        );
+        renderWithState(<AttachFileMenu conversationId="test" />);
       }).not.toThrow();
     });
 
@@ -248,21 +227,13 @@ describe('AttachFileMenu', () => {
         { wrapper: RecoilRoot },
       );
 
-      render(
-        <RecoilRoot>
-          <AttachFileMenu conversationId={convoId1} />
-        </RecoilRoot>,
-      );
+      renderWithState(<AttachFileMenu conversationId={convoId1} />);
 
       act(() => {
         mockDropdownItems[3].onClick();
       });
 
-      render(
-        <RecoilRoot>
-          <AttachFileMenu conversationId={convoId2} />
-        </RecoilRoot>,
-      );
+      renderWithState(<AttachFileMenu conversationId={convoId2} />);
 
       const dropdownItemsForConvo2 = [...mockDropdownItems];
 

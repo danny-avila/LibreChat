@@ -1,8 +1,8 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
-import { RecoilRoot } from 'recoil';
+import { screen, fireEvent } from '@testing-library/react';
 import SidePanelGroup from '../SidePanelGroup';
 import store from '~/store';
+import { renderWithState } from '~/test-utils/renderHelpers';
 
 jest.mock('~/hooks', () => ({
   useMediaQuery: jest.fn(() => false),
@@ -54,12 +54,11 @@ describe('SidePanelGroup', () => {
 
   describe('Basic Rendering', () => {
     it('renders children and side panel when hideSidePanel is false', () => {
-      render(
-        <RecoilRoot initializeState={({ set }) => set(store.hideSidePanel, false)}>
-          <SidePanelGroup>
-            <div aria-label="Test Content" />
-          </SidePanelGroup>
-        </RecoilRoot>,
+      renderWithState(
+        <SidePanelGroup>
+          <div aria-label="Test Content" />
+        </SidePanelGroup>,
+        { recoilState: [[store.hideSidePanel, false]] },
       );
 
       expect(screen.getByTestId('resizable-panel-messages-view')).toBeInTheDocument();
@@ -67,12 +66,11 @@ describe('SidePanelGroup', () => {
     });
 
     it('hides side panel when hideSidePanel is true', () => {
-      render(
-        <RecoilRoot initializeState={({ set }) => set(store.hideSidePanel, true)}>
-          <SidePanelGroup>
-            <div aria-label="Test Content" />
-          </SidePanelGroup>
-        </RecoilRoot>,
+      renderWithState(
+        <SidePanelGroup>
+          <div aria-label="Test Content" />
+        </SidePanelGroup>,
+        { recoilState: [[store.hideSidePanel, true]] },
       );
 
       expect(screen.getByTestId('resizable-panel-messages-view')).toBeInTheDocument();
@@ -80,12 +78,10 @@ describe('SidePanelGroup', () => {
     });
 
     it('renders artifacts panel when artifacts prop is provided', () => {
-      render(
-        <RecoilRoot>
-          <SidePanelGroup artifacts={<div aria-label="Artifacts Content" />}>
-            <div aria-label="Main Content" />
-          </SidePanelGroup>
-        </RecoilRoot>,
+      renderWithState(
+        <SidePanelGroup artifacts={<div aria-label="Artifacts Content" />}>
+          <div aria-label="Main Content" />
+        </SidePanelGroup>,
       );
 
       expect(screen.getByTestId('resizable-panel-messages-view')).toBeInTheDocument();
@@ -106,12 +102,10 @@ describe('SidePanelGroup', () => {
       it(`calculates layout correctly for defaultLayout=${JSON.stringify(
         defaultLayout,
       )} and artifacts=${artifacts ? 'present' : 'null'}`, () => {
-        render(
-          <RecoilRoot>
-            <SidePanelGroup defaultLayout={defaultLayout} artifacts={artifacts}>
-              <div aria-label="Content" />
-            </SidePanelGroup>
-          </RecoilRoot>,
+        renderWithState(
+          <SidePanelGroup defaultLayout={defaultLayout} artifacts={artifacts}>
+            <div aria-label="Content" />
+          </SidePanelGroup>,
         );
 
         const messagesPanel = screen.getByTestId('resizable-panel-messages-view');
@@ -132,12 +126,10 @@ describe('SidePanelGroup', () => {
     it('collapses panel on small screens', () => {
       mockUseMediaQuery.mockReturnValue(true);
 
-      render(
-        <RecoilRoot>
-          <SidePanelGroup>
-            <div aria-label="Content" />
-          </SidePanelGroup>
-        </RecoilRoot>,
+      renderWithState(
+        <SidePanelGroup>
+          <div aria-label="Content" />
+        </SidePanelGroup>,
       );
 
       expect(mockPanelRef.current.collapse).toHaveBeenCalled();
@@ -147,12 +139,10 @@ describe('SidePanelGroup', () => {
     it('respects defaultCollapsed on large screens', () => {
       mockUseMediaQuery.mockReturnValue(false);
 
-      render(
-        <RecoilRoot>
-          <SidePanelGroup defaultCollapsed={true}>
-            <div aria-label="Content" />
-          </SidePanelGroup>
-        </RecoilRoot>,
+      renderWithState(
+        <SidePanelGroup defaultCollapsed={true}>
+          <div aria-label="Content" />
+        </SidePanelGroup>,
       );
 
       expect(mockPanelRef.current.collapse).not.toHaveBeenCalled();
@@ -161,12 +151,10 @@ describe('SidePanelGroup', () => {
 
   describe('Panel Collapse Functionality', () => {
     it('handles close button click', () => {
-      render(
-        <RecoilRoot>
-          <SidePanelGroup>
-            <div aria-label="Content" />
-          </SidePanelGroup>
-        </RecoilRoot>,
+      renderWithState(
+        <SidePanelGroup>
+          <div aria-label="Content" />
+        </SidePanelGroup>,
       );
 
       const closeButton = screen.getByLabelText('Close right side panel');
@@ -177,12 +165,10 @@ describe('SidePanelGroup', () => {
     });
 
     it('applies active class to nav-mask when not collapsed', () => {
-      render(
-        <RecoilRoot>
-          <SidePanelGroup defaultCollapsed={false}>
-            <div aria-label="Content" />
-          </SidePanelGroup>
-        </RecoilRoot>,
+      renderWithState(
+        <SidePanelGroup defaultCollapsed={false}>
+          <div aria-label="Content" />
+        </SidePanelGroup>,
       );
 
       const navMask = screen.getByLabelText('Close right side panel');
@@ -194,12 +180,10 @@ describe('SidePanelGroup', () => {
     it('saves layout to localStorage on resize', async () => {
       jest.useFakeTimers();
 
-      render(
-        <RecoilRoot>
-          <SidePanelGroup>
-            <div aria-label="Content" />
-          </SidePanelGroup>
-        </RecoilRoot>,
+      renderWithState(
+        <SidePanelGroup>
+          <div aria-label="Content" />
+        </SidePanelGroup>,
       );
 
       jest.advanceTimersByTime(400);
@@ -218,12 +202,10 @@ describe('SidePanelGroup', () => {
         data: { interface: { sidePanel: false } },
       });
 
-      render(
-        <RecoilRoot>
-          <SidePanelGroup>
-            <div aria-label="Content" />
-          </SidePanelGroup>
-        </RecoilRoot>,
+      renderWithState(
+        <SidePanelGroup>
+          <div aria-label="Content" />
+        </SidePanelGroup>,
       );
 
       expect(screen.queryByTestId('side-panel')).not.toBeInTheDocument();
@@ -232,12 +214,11 @@ describe('SidePanelGroup', () => {
     it('uses default interface config when startup config is unavailable', () => {
       mockUseGetStartupConfig.mockReturnValue({ data: null });
 
-      render(
-        <RecoilRoot initializeState={({ set }) => set(store.hideSidePanel, false)}>
-          <SidePanelGroup>
-            <div aria-label="Content" />
-          </SidePanelGroup>
-        </RecoilRoot>,
+      renderWithState(
+        <SidePanelGroup>
+          <div aria-label="Content" />
+        </SidePanelGroup>,
+        { recoilState: [[store.hideSidePanel, false]] },
       );
 
       expect(screen.getByTestId('side-panel')).toBeInTheDocument();
@@ -246,35 +227,29 @@ describe('SidePanelGroup', () => {
 
   describe('Edge cases', () => {
     it('handles undefined defaultLayout', () => {
-      render(
-        <RecoilRoot>
-          <SidePanelGroup defaultLayout={undefined}>
-            <div aria-label="Content" />
-          </SidePanelGroup>
-        </RecoilRoot>,
+      renderWithState(
+        <SidePanelGroup defaultLayout={undefined}>
+          <div aria-label="Content" />
+        </SidePanelGroup>,
       );
 
       expect(screen.getByTestId('resizable-panel-messages-view')).toBeInTheDocument();
     });
 
     it('handles rapid screen size changes', () => {
-      const { rerender } = render(
-        <RecoilRoot>
-          <SidePanelGroup>
-            <div aria-label="Content" />
-          </SidePanelGroup>
-        </RecoilRoot>,
+      const { rerender } = renderWithState(
+        <SidePanelGroup>
+          <div aria-label="Content" />
+        </SidePanelGroup>,
       );
 
       const screenSizes = [true, false, true, false];
       screenSizes.forEach((isSmall) => {
         mockUseMediaQuery.mockReturnValue(isSmall);
         rerender(
-          <RecoilRoot>
-            <SidePanelGroup>
-              <div aria-label="Content" />
-            </SidePanelGroup>
-          </RecoilRoot>,
+          <SidePanelGroup>
+            <div aria-label="Content" />
+          </SidePanelGroup>,
         );
       });
 
@@ -286,12 +261,10 @@ describe('SidePanelGroup', () => {
       SidePanelMock.mockImplementation(() => <div data-testid="side-panel" />);
 
       expect(() => {
-        render(
-          <RecoilRoot>
-            <SidePanelGroup>
-              <div aria-label="Content" />
-            </SidePanelGroup>
-          </RecoilRoot>,
+        renderWithState(
+          <SidePanelGroup>
+            <div aria-label="Content" />
+          </SidePanelGroup>,
         );
       }).not.toThrow();
     });
@@ -299,12 +272,10 @@ describe('SidePanelGroup', () => {
     it('normalizes extreme layout values', () => {
       jest.useFakeTimers();
 
-      render(
-        <RecoilRoot>
-          <SidePanelGroup defaultLayout={[150, -50]}>
-            <div aria-label="Content" />
-          </SidePanelGroup>
-        </RecoilRoot>,
+      renderWithState(
+        <SidePanelGroup defaultLayout={[150, -50]}>
+          <div aria-label="Content" />
+        </SidePanelGroup>,
       );
 
       jest.advanceTimersByTime(400);

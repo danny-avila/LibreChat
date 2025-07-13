@@ -1,6 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
-import { RecoilRoot } from 'recoil';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { Constants } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
@@ -9,6 +7,7 @@ import ChatView from '../ChatView';
 import { FileMapContext } from '~/Providers';
 import { useFileMap } from '~/hooks/Files';
 import store from '~/store';
+import { renderWithState, createMockMessage } from '~/test-utils/renderHelpers';
 
 type FileMapContextType = ReturnType<typeof useFileMap>;
 
@@ -68,27 +67,19 @@ jest.mock('~/hooks', () => ({
   useSSE: jest.fn(),
 }));
 
-const createWrapper = ({ initialEntries = ['/'] }: { initialEntries?: string[] } = {}) => {
-  const queryClient = new QueryClient({
-    defaultOptions: {
-      queries: { retry: false },
-    },
-  });
-
-  return ({ children }: { children: React.ReactNode }) => (
-    <QueryClientProvider client={queryClient}>
+const renderChatView = (props = {}, { initialEntries = ['/'] } = {}) => {
+  const ChatViewWithRouter = (
+    <FileMapContext.Provider value={{} as FileMapContextType}>
       <MemoryRouter initialEntries={initialEntries}>
-        <RecoilRoot>
-          <FileMapContext.Provider value={{} as FileMapContextType}>
-            <Routes>
-              <Route path="/" element={children} />
-              <Route path="/c/:conversationId" element={children} />
-            </Routes>
-          </FileMapContext.Provider>
-        </RecoilRoot>
+        <Routes>
+          <Route path="/" element={<ChatView {...props} />} />
+          <Route path="/c/:conversationId" element={<ChatView {...props} />} />
+        </Routes>
       </MemoryRouter>
-    </QueryClientProvider>
+    </FileMapContext.Provider>
   );
+
+  return renderWithState(ChatViewWithRouter);
 };
 
 describe('ChatView Component', () => {
@@ -124,7 +115,7 @@ describe('ChatView Component', () => {
 
   describe('rendering states', () => {
     it('renders landing page when no conversationId', () => {
-      const { container } = render(<ChatView />, { wrapper: createWrapper() });
+      const { container } = renderChatView();
 
       expect(screen.getByTestId('landing-page')).toBeInTheDocument();
       expect(screen.getByTestId('chat-form')).toBeInTheDocument();
@@ -134,9 +125,7 @@ describe('ChatView Component', () => {
     });
 
     it('renders landing page for new conversation', () => {
-      render(<ChatView />, {
-        wrapper: createWrapper({ initialEntries: [`/c/${Constants.NEW_CONVO}`] }),
-      });
+      renderChatView({}, { initialEntries: [`/c/${Constants.NEW_CONVO}`] });
 
       expect(screen.getByTestId('landing-page')).toBeInTheDocument();
     });
@@ -147,9 +136,7 @@ describe('ChatView Component', () => {
         isLoading: true,
       } as unknown as QueryObserverResult<TMessage[], unknown>);
 
-      const { container } = render(<ChatView />, {
-        wrapper: createWrapper({ initialEntries: ['/c/test-convo-id'] }),
-      });
+      const { container } = renderChatView({}, { initialEntries: ['/c/test-convo-id'] });
 
       expect(screen.getByTestId('presentation')).toBeInTheDocument();
       const spinner = container.querySelector('svg');
@@ -164,20 +151,20 @@ describe('ChatView Component', () => {
 
     it('renders messages view when messages exist', async () => {
       const mockMessages: TMessage[] = [
-        {
+        createMockMessage({
           messageId: '1',
           text: 'Hello',
           parentMessageId: null,
           conversationId: 'test-convo-id',
           isCreatedByUser: true,
-        },
-        {
+        }),
+        createMockMessage({
           messageId: '2',
           text: 'Hi there',
           parentMessageId: '1',
           conversationId: 'test-convo-id',
           isCreatedByUser: false,
-        },
+        }),
       ];
 
       mockUseGetMessagesByConvoId.mockReturnValue({
@@ -185,9 +172,7 @@ describe('ChatView Component', () => {
         isLoading: false,
       } as unknown as QueryObserverResult<TMessage[], unknown>);
 
-      render(<ChatView />, {
-        wrapper: createWrapper({ initialEntries: ['/c/test-convo-id'] }),
-      });
+      renderChatView({}, { initialEntries: ['/c/test-convo-id'] });
 
       await waitFor(() => {
         expect(screen.getByTestId('messages-view')).toBeInTheDocument();
@@ -206,9 +191,7 @@ describe('ChatView Component', () => {
         isLoading: false,
       } as unknown as QueryObserverResult<TMessage[], unknown>);
 
-      const { container } = render(<ChatView />, {
-        wrapper: createWrapper({ initialEntries: ['/c/test-convo-id'] }),
-      });
+      const { container } = renderChatView({}, { initialEntries: ['/c/test-convo-id'] });
 
       const spinner = container.querySelector('svg');
       expect(spinner).toBeInTheDocument();
@@ -217,38 +200,30 @@ describe('ChatView Component', () => {
 
   describe('component props and behavior', () => {
     it('passes correct index to ChatForm', () => {
-      render(<ChatView index={2} />, { wrapper: createWrapper() });
+      renderChatView({ index: 2 });
 
       const chatForm = screen.getByTestId('chat-form');
       expect(chatForm).toHaveAttribute('data-index', '2');
     });
 
     it('respects centerFormOnLanding setting', () => {
-      const { unmount } = render(<ChatView />, {
-        wrapper: createWrapper(),
-      });
+      const { unmount } = renderChatView();
 
       const landingPage = screen.getByTestId('landing-page');
       expect(landingPage).toHaveAttribute('data-centered', 'true');
 
       unmount();
 
-      render(<ChatView />, {
-        wrapper: ({ children }: { children: React.ReactNode }) => (
-          <QueryClientProvider client={new QueryClient()}>
-            <MemoryRouter>
-              <RecoilRoot
-                initializeState={({ set }) => {
-                  set(store.centerFormOnLanding, false);
-                }}
-              >
-                <FileMapContext.Provider value={{} as FileMapContextType}>
-                  {children}
-                </FileMapContext.Provider>
-              </RecoilRoot>
-            </MemoryRouter>
-          </QueryClientProvider>
-        ),
+      const ChatViewWithRouter = (
+        <FileMapContext.Provider value={{} as FileMapContextType}>
+          <MemoryRouter>
+            <ChatView />
+          </MemoryRouter>
+        </FileMapContext.Provider>
+      );
+
+      renderWithState(ChatViewWithRouter, {
+        recoilState: [[store.centerFormOnLanding, false]],
       });
 
       const updatedLandingPage = screen.getByTestId('landing-page');
@@ -261,9 +236,7 @@ describe('ChatView Component', () => {
         isLoading: true,
       } as unknown as QueryObserverResult<TMessage[], unknown>);
 
-      const { rerender } = render(<ChatView />, {
-        wrapper: createWrapper({ initialEntries: ['/c/test-convo-id'] }),
-      });
+      const { rerender } = renderChatView({}, { initialEntries: ['/c/test-convo-id'] });
 
       expect(screen.queryByTestId('chat-header')).not.toBeInTheDocument();
 
@@ -272,13 +245,21 @@ describe('ChatView Component', () => {
         isLoading: false,
       } as unknown as QueryObserverResult<TMessage[], unknown>);
 
-      rerender(<ChatView />);
+      rerender(
+        <FileMapContext.Provider value={{} as FileMapContextType}>
+          <MemoryRouter initialEntries={['/c/test-convo-id']}>
+            <Routes>
+              <Route path="/c/:conversationId" element={<ChatView />} />
+            </Routes>
+          </MemoryRouter>
+        </FileMapContext.Provider>,
+      );
 
       expect(screen.getByTestId('chat-header')).toBeInTheDocument();
     });
 
     it('provides correct contexts to children', () => {
-      render(<ChatView />, { wrapper: createWrapper() });
+      renderChatView();
 
       expect(screen.getByTestId('presentation')).toBeInTheDocument();
       expect(screen.getByTestId('chat-form')).toBeInTheDocument();
@@ -292,26 +273,22 @@ describe('ChatView Component', () => {
         isLoading: false,
       } as unknown as QueryObserverResult<TMessage[], unknown>);
 
-      const { container } = render(<ChatView />, {
-        wrapper: createWrapper({ initialEntries: ['/c/test-convo-id'] }),
-      });
+      const { container } = renderChatView({}, { initialEntries: ['/c/test-convo-id'] });
 
       const spinner = container.querySelector('svg');
       expect(spinner).toBeInTheDocument();
     });
 
     it('handles null fileMap context', () => {
-      const { container } = render(
-        <QueryClientProvider client={new QueryClient()}>
+      const ChatViewWithNullContext = (
+        <FileMapContext.Provider value={null as unknown as FileMapContextType}>
           <MemoryRouter>
-            <RecoilRoot>
-              <FileMapContext.Provider value={null as unknown as FileMapContextType}>
-                <ChatView />
-              </FileMapContext.Provider>
-            </RecoilRoot>
+            <ChatView />
           </MemoryRouter>
-        </QueryClientProvider>,
+        </FileMapContext.Provider>
       );
+
+      const { container } = renderWithState(ChatViewWithNullContext);
 
       expect(container.firstChild).toBeInTheDocument();
     });
@@ -324,18 +301,14 @@ describe('ChatView Component', () => {
         error: new Error('Failed to fetch'),
       } as unknown as QueryObserverResult<TMessage[], unknown>);
 
-      const { container } = render(<ChatView />, {
-        wrapper: createWrapper({ initialEntries: ['/c/test-convo-id'] }),
-      });
+      const { container } = renderChatView({}, { initialEntries: ['/c/test-convo-id'] });
 
       const spinner = container.querySelector('svg');
       expect(spinner).toBeInTheDocument();
     });
 
     it('correctly applies CSS classes based on page type', () => {
-      const { container, rerender } = render(<ChatView />, {
-        wrapper: createWrapper(),
-      });
+      const { container, rerender } = renderChatView();
 
       let flexDiv = container.querySelector('.flex-1.items-center.justify-end');
       expect(flexDiv).toBeInTheDocument();
@@ -343,18 +316,24 @@ describe('ChatView Component', () => {
 
       mockUseGetMessagesByConvoId.mockReturnValue({
         data: [
-          {
+          createMockMessage({
             messageId: '1',
             text: 'Test',
             conversationId: 'test-convo-id',
             isCreatedByUser: true,
             parentMessageId: null,
-          } as TMessage,
+          }),
         ],
         isLoading: false,
       } as unknown as QueryObserverResult<TMessage[], unknown>);
 
-      rerender(<ChatView />);
+      rerender(
+        <FileMapContext.Provider value={{} as FileMapContextType}>
+          <MemoryRouter>
+            <ChatView />
+          </MemoryRouter>
+        </FileMapContext.Provider>,
+      );
 
       flexDiv = container.querySelector('.h-full.overflow-y-auto');
       expect(flexDiv).toBeInTheDocument();
@@ -365,9 +344,7 @@ describe('ChatView Component', () => {
       const indices = [0, 1, 5, 10];
 
       indices.forEach((index) => {
-        const { unmount } = render(<ChatView index={index} />, {
-          wrapper: createWrapper(),
-        });
+        const { unmount } = renderChatView({ index });
 
         const chatForm = screen.getByTestId('chat-form');
         expect(chatForm).toHaveAttribute('data-index', index.toString());
@@ -377,27 +354,27 @@ describe('ChatView Component', () => {
 
     it('renders correctly when messages tree is built', async () => {
       const mockMessages: TMessage[] = [
-        {
+        createMockMessage({
           messageId: '1',
           text: 'Parent',
           parentMessageId: null,
           conversationId: 'test-convo-id',
           isCreatedByUser: true,
-        },
-        {
+        }),
+        createMockMessage({
           messageId: '2',
           text: 'Child',
           parentMessageId: '1',
           conversationId: 'test-convo-id',
           isCreatedByUser: false,
-        },
-        {
+        }),
+        createMockMessage({
           messageId: '3',
           text: 'Grandchild',
           parentMessageId: '2',
           conversationId: 'test-convo-id',
           isCreatedByUser: true,
-        },
+        }),
       ];
 
       mockUseGetMessagesByConvoId.mockImplementation(
@@ -412,9 +389,7 @@ describe('ChatView Component', () => {
           }) as unknown as QueryObserverResult<TMessage[], unknown>,
       );
 
-      render(<ChatView />, {
-        wrapper: createWrapper({ initialEntries: ['/c/test-convo-id'] }),
-      });
+      renderChatView({}, { initialEntries: ['/c/test-convo-id'] });
 
       await waitFor(() => {
         expect(screen.getByTestId('messages-view')).toBeInTheDocument();

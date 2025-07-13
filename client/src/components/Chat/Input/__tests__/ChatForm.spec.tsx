@@ -4,7 +4,9 @@ import { RecoilRoot } from 'recoil';
 import type { RecoilState } from 'recoil';
 import type { UseFormReturn } from 'react-hook-form';
 import type { ChatFormValues } from '~/common';
-import type { TConversation, TMessage, EModelEndpoint } from 'librechat-data-provider';
+import type { TMessage } from 'librechat-data-provider';
+import { EModelEndpoint } from 'librechat-data-provider';
+import { createMockConversation } from '~/test-utils/renderHelpers';
 
 const mockUseChatFormContext = jest.fn();
 const mockUseChatContext = jest.fn();
@@ -151,15 +153,10 @@ const createMockChatContext = (
   setFiles: jest.fn(),
   setFilesLoading: jest.fn(),
   filesLoading: false,
-  conversation: {
+  conversation: createMockConversation({
     conversationId: 'test-id',
-    endpoint: 'openAI' as EModelEndpoint,
-    endpointType: 'openAI' as EModelEndpoint,
-    messages: [],
-    title: 'Test Conversation',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  } as TConversation,
+    ...overrides.conversation,
+  }),
   isSubmitting: false,
   newConversation: jest.fn(),
   handleStopGenerating: jest.fn(),
@@ -374,9 +371,7 @@ describe('ChatForm', () => {
     });
 
     it('applies temporary conversation styles when isTemporary is true', () => {
-      renderWithProviders(<ChatForm />, {
-        recoilState: [[store.isTemporary, true]],
-      });
+      renderWithProviders(<ChatForm />, { recoilState: [[store.isTemporary, true]] });
       const form = document.querySelector('form') as HTMLFormElement;
       expect(form.querySelector('.border-violet-800\\/60')).toBeInTheDocument();
     });
@@ -408,9 +403,7 @@ describe('ChatForm', () => {
 
       unmount();
 
-      renderWithProviders(<ChatForm />, {
-        recoilState: [[store.maximizeChatSpace, true]],
-      });
+      renderWithProviders(<ChatForm />, { recoilState: [[store.maximizeChatSpace, true]] });
 
       form = document.querySelector('form') as HTMLFormElement;
       expect(form.className).toContain('max-w-full');
@@ -421,15 +414,13 @@ describe('ChatForm', () => {
       renderWithProviders(<ChatForm />, {
         recoilState: [[store.centerFormOnLanding, true]],
         chatContext: {
-          conversation: {
+          conversation: createMockConversation({
             conversationId: null,
-            endpoint: 'openAI' as EModelEndpoint,
-            endpointType: 'openAI' as EModelEndpoint,
+            endpoint: EModelEndpoint.openAI,
+            endpointType: EModelEndpoint.openAI,
             messages: [],
             title: 'New Chat',
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-          } as TConversation,
+          }),
           isSubmitting: false,
         },
       });
@@ -458,17 +449,38 @@ describe('ChatForm', () => {
 
       expect(screen.getByTestId('edit-badges')).toBeInTheDocument();
 
+      const chatContext = createMockChatContext();
+      const chatFormMethods = createMockChatFormMethods();
+      const addedChatContext = createMockAddedChatContext();
+      const assistantMap = {};
+
+      mockUseChatFormContext.mockReturnValue(chatFormMethods);
+      mockUseChatContext.mockReturnValue(chatContext);
+      mockUseAddedChatContext.mockReturnValue(addedChatContext);
+      mockUseAssistantsMapContext.mockReturnValue(assistantMap);
+
+      const ChatFormWithProviders = (
+        <ChatContext.Provider value={chatContext}>
+          <ChatFormProvider
+            register={chatFormMethods.register}
+            control={chatFormMethods.control}
+            setValue={chatFormMethods.setValue}
+            getValues={chatFormMethods.getValues}
+            handleSubmit={chatFormMethods.handleSubmit}
+            reset={chatFormMethods.reset}
+          >
+            <AddedChatContext.Provider value={addedChatContext}>
+              <AssistantsMapContext.Provider value={assistantMap}>
+                <ChatForm />
+              </AssistantsMapContext.Provider>
+            </AddedChatContext.Provider>
+          </ChatFormProvider>
+        </ChatContext.Provider>
+      );
+
       rerender(
         <RecoilRoot initializeState={({ set }) => set(store.isEditingBadges, true)}>
-          <ChatContext.Provider value={createMockChatContext()}>
-            <ChatFormProvider {...createMockChatFormMethods()}>
-              <AddedChatContext.Provider value={createMockAddedChatContext()}>
-                <AssistantsMapContext.Provider value={{}}>
-                  <ChatForm />
-                </AssistantsMapContext.Provider>
-              </AddedChatContext.Provider>
-            </ChatFormProvider>
-          </ChatContext.Provider>
+          {ChatFormWithProviders}
         </RecoilRoot>,
       );
 
@@ -677,15 +689,13 @@ describe('ChatForm', () => {
     it('disables inputs for invalid assistant', () => {
       renderWithProviders(<ChatForm />, {
         chatContext: {
-          conversation: {
-            endpoint: 'assistants' as EModelEndpoint,
-            endpointType: 'assistants' as EModelEndpoint,
+          conversation: createMockConversation({
+            endpoint: EModelEndpoint.assistants,
+            endpointType: EModelEndpoint.assistants,
             assistant_id: 'invalid-id',
             conversationId: 'test-id',
             title: 'Test',
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-          } as TConversation,
+          }),
         },
       });
 
@@ -722,13 +732,11 @@ describe('ChatForm', () => {
     it('handles missing endpoint gracefully', () => {
       renderWithProviders(<ChatForm />, {
         chatContext: {
-          conversation: {
+          conversation: createMockConversation({
             endpoint: null,
             conversationId: 'test-id',
             title: 'Test',
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-          } as TConversation,
+          }),
         },
       });
 
@@ -738,14 +746,12 @@ describe('ChatForm', () => {
     it('handles assistant endpoint without showing plus popover', () => {
       renderWithProviders(<ChatForm />, {
         chatContext: {
-          conversation: {
-            endpoint: 'assistants' as EModelEndpoint,
-            endpointType: 'assistants' as EModelEndpoint,
+          conversation: createMockConversation({
+            endpoint: EModelEndpoint.assistants,
+            endpointType: EModelEndpoint.assistants,
             conversationId: 'test-id',
             title: 'Test',
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-          } as TConversation,
+          }),
         },
         recoilState: [
           [store.showPlusPopoverFamily(0), true],
@@ -783,15 +789,13 @@ describe('ChatForm', () => {
     it('handles new conversation with centered form', () => {
       renderWithProviders(<ChatForm />, {
         chatContext: {
-          conversation: {
+          conversation: createMockConversation({
             conversationId: 'new',
-            endpoint: 'openAI' as EModelEndpoint,
-            endpointType: 'openAI' as EModelEndpoint,
+            endpoint: EModelEndpoint.openAI,
+            endpointType: EModelEndpoint.openAI,
             messages: [],
             title: 'New Chat',
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-          } as TConversation,
+          }),
           isSubmitting: false,
         },
         recoilState: [[store.centerFormOnLanding, true]],
@@ -804,15 +808,13 @@ describe('ChatForm', () => {
     it('handles conversation with messages differently', () => {
       renderWithProviders(<ChatForm />, {
         chatContext: {
-          conversation: {
+          conversation: createMockConversation({
             conversationId: 'test-id',
-            endpoint: 'openAI' as EModelEndpoint,
-            endpointType: 'openAI' as EModelEndpoint,
+            endpoint: EModelEndpoint.openAI,
+            endpointType: EModelEndpoint.openAI,
             messages: ['1'],
             title: 'Test Chat',
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-          } as TConversation,
+          }),
           isSubmitting: false,
         },
         recoilState: [[store.centerFormOnLanding, true]],
@@ -825,14 +827,12 @@ describe('ChatForm', () => {
     it('handles agent endpoint badge rendering', () => {
       renderWithProviders(<ChatForm />, {
         chatContext: {
-          conversation: {
-            endpoint: 'agents' as EModelEndpoint,
-            endpointType: 'agents' as EModelEndpoint,
+          conversation: createMockConversation({
+            endpoint: EModelEndpoint.agents,
+            endpointType: EModelEndpoint.agents,
             conversationId: 'test-id',
             title: 'Agent Chat',
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-          } as TConversation,
+          }),
         },
       });
 

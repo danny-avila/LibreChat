@@ -1,9 +1,8 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { RecoilRoot } from 'recoil';
+import { screen, fireEvent, waitFor } from '@testing-library/react';
 import MessagesView from '../MessagesView';
 import * as store from '~/store';
-import { TMessage } from 'librechat-data-provider';
 import * as hooks from '~/hooks';
+import { renderWithState, createMockMessage, TestProviders } from '~/test-utils/renderHelpers';
 
 jest.mock('~/hooks', () => ({
   useScreenshot: jest.fn(() => ({
@@ -66,23 +65,6 @@ const defaultScrollingHook = {
   handleSmoothToRef: mockHandleSmoothToRef,
 };
 
-const createMessage = (id: string, parentMessageId: string | null = null): TMessage => ({
-  messageId: id,
-  parentMessageId,
-  conversationId: 'conv-1',
-  clientId: 'client-1',
-  text: `Message ${id}`,
-  isCreatedByUser: false,
-  model: 'test-model',
-  endpoint: 'test',
-  error: false,
-  createdAt: '2024-01-01',
-  updatedAt: '2024-01-01',
-  searchResult: false,
-  unfinished: false,
-  children: [],
-});
-
 describe('MessagesView', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -91,37 +73,31 @@ describe('MessagesView', () => {
 
   describe('Message Display', () => {
     it('renders messages when messagesTree is provided', () => {
-      const messagesTree: TMessage[] = [
-        { ...createMessage('1'), children: [createMessage('2', '1'), createMessage('3', '1')] },
-        { ...createMessage('4'), children: [] },
+      const messagesTree = [
+        {
+          ...createMockMessage({ messageId: '1' }),
+          children: [
+            createMockMessage({ messageId: '2', parentMessageId: '1' }),
+            createMockMessage({ messageId: '3', parentMessageId: '1' }),
+          ],
+        },
+        { ...createMockMessage({ messageId: '4' }), children: [] },
       ];
 
-      render(
-        <RecoilRoot>
-          <MessagesView messagesTree={messagesTree} />
-        </RecoilRoot>,
-      );
+      renderWithState(<MessagesView messagesTree={messagesTree} />);
 
       expect(screen.getByTestId('message-1')).toBeInTheDocument();
       expect(screen.getByTestId('message-4')).toBeInTheDocument();
     });
 
     it('displays "nothing found" message when messagesTree is empty', () => {
-      render(
-        <RecoilRoot>
-          <MessagesView messagesTree={[]} />
-        </RecoilRoot>,
-      );
+      renderWithState(<MessagesView messagesTree={[]} />);
 
       expect(screen.getByText('com_ui_nothing_found')).toBeInTheDocument();
     });
 
     it('displays "nothing found" message when messagesTree is null', () => {
-      render(
-        <RecoilRoot>
-          <MessagesView messagesTree={null} />
-        </RecoilRoot>,
-      );
+      renderWithState(<MessagesView messagesTree={null} />);
 
       expect(screen.getByText('com_ui_nothing_found')).toBeInTheDocument();
     });
@@ -129,13 +105,12 @@ describe('MessagesView', () => {
 
   describe('Edit Functionality', () => {
     it('tracks current edit state when editing a message', () => {
-      const messagesTree = [createMessage('1'), createMessage('2')];
+      const messagesTree = [
+        createMockMessage({ messageId: '1' }),
+        createMockMessage({ messageId: '2' }),
+      ];
 
-      render(
-        <RecoilRoot>
-          <MessagesView messagesTree={messagesTree} />
-        </RecoilRoot>,
-      );
+      renderWithState(<MessagesView messagesTree={messagesTree} />);
 
       const editButton1 = screen.getByTestId('message-1').querySelector('button');
       fireEvent.click(editButton1!);
@@ -145,13 +120,12 @@ describe('MessagesView', () => {
     });
 
     it('changes edit state when switching to another message', () => {
-      const messagesTree = [createMessage('1'), createMessage('2')];
+      const messagesTree = [
+        createMockMessage({ messageId: '1' }),
+        createMockMessage({ messageId: '2' }),
+      ];
 
-      render(
-        <RecoilRoot>
-          <MessagesView messagesTree={messagesTree} />
-        </RecoilRoot>,
-      );
+      renderWithState(<MessagesView messagesTree={messagesTree} />);
 
       const editButton1 = screen.getByTestId('message-1').querySelector('button');
       const editButton2 = screen.getByTestId('message-2').querySelector('button');
@@ -172,15 +146,9 @@ describe('MessagesView', () => {
         showScrollButton: true,
       });
 
-      render(
-        <RecoilRoot
-          initializeState={({ set }) => {
-            set(store.default.showScrollButton, true);
-          }}
-        >
-          <MessagesView messagesTree={[createMessage('1')]} />
-        </RecoilRoot>,
-      );
+      renderWithState(<MessagesView messagesTree={[createMockMessage({ messageId: '1' })]} />, {
+        recoilState: [[store.default.showScrollButton, true]],
+      });
 
       expect(screen.getByTestId('scroll-to-bottom')).toBeInTheDocument();
     });
@@ -191,29 +159,17 @@ describe('MessagesView', () => {
         showScrollButton: true,
       });
 
-      render(
-        <RecoilRoot
-          initializeState={({ set }) => {
-            set(store.default.showScrollButton, false);
-          }}
-        >
-          <MessagesView messagesTree={[createMessage('1')]} />
-        </RecoilRoot>,
-      );
+      renderWithState(<MessagesView messagesTree={[createMockMessage({ messageId: '1' })]} />, {
+        recoilState: [[store.default.showScrollButton, false]],
+      });
 
       expect(screen.queryByTestId('scroll-to-bottom')).not.toBeInTheDocument();
     });
 
     it('hides scroll button when hook state is false', () => {
-      render(
-        <RecoilRoot
-          initializeState={({ set }) => {
-            set(store.default.showScrollButton, true);
-          }}
-        >
-          <MessagesView messagesTree={[createMessage('1')]} />
-        </RecoilRoot>,
-      );
+      renderWithState(<MessagesView messagesTree={[createMockMessage({ messageId: '1' })]} />, {
+        recoilState: [[store.default.showScrollButton, true]],
+      });
 
       expect(screen.queryByTestId('scroll-to-bottom')).not.toBeInTheDocument();
     });
@@ -224,15 +180,9 @@ describe('MessagesView', () => {
         showScrollButton: true,
       });
 
-      render(
-        <RecoilRoot
-          initializeState={({ set }) => {
-            set(store.default.showScrollButton, true);
-          }}
-        >
-          <MessagesView messagesTree={[createMessage('1')]} />
-        </RecoilRoot>,
-      );
+      renderWithState(<MessagesView messagesTree={[createMockMessage({ messageId: '1' })]} />, {
+        recoilState: [[store.default.showScrollButton, true]],
+      });
 
       const scrollButton = screen.getByTestId('scroll-to-bottom');
       fireEvent.click(scrollButton);
@@ -246,15 +196,9 @@ describe('MessagesView', () => {
 
     fontSizeClasses.forEach((fontSizeClass) => {
       it(`applies correct font size class for fontSize ${fontSizeClass}`, () => {
-        render(
-          <RecoilRoot
-            initializeState={({ set }) => {
-              set(store.default.fontSize, fontSizeClass);
-            }}
-          >
-            <MessagesView messagesTree={[]} />
-          </RecoilRoot>,
-        );
+        renderWithState(<MessagesView messagesTree={[]} />, {
+          recoilState: [[store.default.fontSize, fontSizeClass]],
+        });
 
         const emptyMessage = screen.getByText('com_ui_nothing_found');
         expect(emptyMessage.className).toContain(fontSizeClass);
@@ -264,34 +208,26 @@ describe('MessagesView', () => {
 
   describe('Edge Cases', () => {
     it('handles messages with deep nesting', () => {
-      const deeplyNestedTree: TMessage[] = [
+      const deeplyNestedTree = [
         {
-          ...createMessage('1'),
+          ...createMockMessage({ messageId: '1' }),
           children: [
             {
-              ...createMessage('2', '1'),
-              children: [createMessage('3', '2')],
+              ...createMockMessage({ messageId: '2', parentMessageId: '1' }),
+              children: [createMockMessage({ messageId: '3', parentMessageId: '2' })],
             },
           ],
         },
       ];
 
-      render(
-        <RecoilRoot>
-          <MessagesView messagesTree={deeplyNestedTree} />
-        </RecoilRoot>,
-      );
+      renderWithState(<MessagesView messagesTree={deeplyNestedTree} />);
 
       expect(screen.getByTestId('message-1')).toBeInTheDocument();
       expect(screen.getByTestId('message-1')).toHaveTextContent('Has children: 1');
     });
 
     it('calls handleScroll with debounced behavior', async () => {
-      render(
-        <RecoilRoot>
-          <MessagesView messagesTree={[createMessage('1')]} />
-        </RecoilRoot>,
-      );
+      renderWithState(<MessagesView messagesTree={[createMockMessage({ messageId: '1' })]} />);
 
       const scrollableDiv = document.querySelector('.scrollbar-gutter-stable');
 
@@ -308,17 +244,18 @@ describe('MessagesView', () => {
     });
 
     it('maintains scroll position when messages update', () => {
-      const { rerender } = render(
-        <RecoilRoot>
-          <MessagesView messagesTree={[createMessage('1')]} />
-        </RecoilRoot>,
+      const { rerender } = renderWithState(
+        <MessagesView messagesTree={[createMockMessage({ messageId: '1' })]} />,
       );
 
-      const initialMessages = [createMessage('1'), createMessage('2')];
+      const initialMessages = [
+        createMockMessage({ messageId: '1' }),
+        createMockMessage({ messageId: '2' }),
+      ];
       rerender(
-        <RecoilRoot>
+        <TestProviders>
           <MessagesView messagesTree={initialMessages} />
-        </RecoilRoot>,
+        </TestProviders>,
       );
 
       expect(screen.getByTestId('message-1')).toBeInTheDocument();
@@ -326,15 +263,11 @@ describe('MessagesView', () => {
     });
 
     it('handles undefined children in message tree gracefully', () => {
-      const messageWithUndefinedChildren: TMessage[] = [
-        { ...createMessage('1'), children: undefined as any },
+      const messageWithUndefinedChildren = [
+        { ...createMockMessage({ messageId: '1' }), children: undefined as any },
       ];
 
-      render(
-        <RecoilRoot>
-          <MessagesView messagesTree={messageWithUndefinedChildren} />
-        </RecoilRoot>,
-      );
+      renderWithState(<MessagesView messagesTree={messageWithUndefinedChildren} />);
 
       expect(screen.getByTestId('message-1')).toBeInTheDocument();
     });

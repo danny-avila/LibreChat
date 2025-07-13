@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { QueryObserverResult } from '@tanstack/react-query';
 import type { TStartupConfig } from 'librechat-data-provider';
@@ -6,6 +6,7 @@ import Settings from '../Settings';
 import { useGetStartupConfig } from '~/data-provider';
 import { useMediaQuery, useLocalize } from '~/hooks';
 import usePersonalizationAccess from '~/hooks/usePersonalizationAccess';
+import { renderWithState, mockUseLocalize } from '~/test-utils/renderHelpers';
 
 jest.mock('~/data-provider', () => ({
   useGetStartupConfig: jest.fn(),
@@ -33,12 +34,12 @@ jest.mock('../SettingsTabs', () => ({
 }));
 
 const mockOnOpenChange = jest.fn();
-const mockLocalize = jest.fn((key) => key);
+const mockLocalize = mockUseLocalize();
 const mockUseGetStartupConfig = useGetStartupConfig as jest.MockedFunction<
   typeof useGetStartupConfig
 >;
 const mockUseMediaQuery = useMediaQuery as jest.MockedFunction<typeof useMediaQuery>;
-const mockUseLocalize = useLocalize as jest.MockedFunction<typeof useLocalize>;
+const mockUseLocalizeHook = useLocalize as jest.MockedFunction<typeof useLocalize>;
 const mockUsePersonalizationAccess = usePersonalizationAccess as jest.MockedFunction<
   typeof usePersonalizationAccess
 >;
@@ -74,7 +75,7 @@ const mockQueryResult: Partial<QueryObserverResult<TStartupConfig>> = {
 describe('Settings Component', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockUseLocalize.mockReturnValue(mockLocalize);
+    mockUseLocalizeHook.mockReturnValue(mockLocalize);
     mockUseMediaQuery.mockReturnValue(false);
     mockUseGetStartupConfig.mockReturnValue(mockQueryResult as QueryObserverResult<TStartupConfig>);
     mockUsePersonalizationAccess.mockReturnValue({
@@ -85,17 +86,17 @@ describe('Settings Component', () => {
 
   describe('rendering', () => {
     it('renders when open', () => {
-      render(<Settings open={true} onOpenChange={mockOnOpenChange} />);
+      renderWithState(<Settings open={true} onOpenChange={mockOnOpenChange} />);
       expect(screen.getByText('com_nav_settings')).toBeInTheDocument();
     });
 
     it('does not render when closed', () => {
-      render(<Settings open={false} onOpenChange={mockOnOpenChange} />);
+      renderWithState(<Settings open={false} onOpenChange={mockOnOpenChange} />);
       expect(screen.queryByText('com_nav_settings')).not.toBeInTheDocument();
     });
 
     it('renders all basic tabs', () => {
-      render(<Settings open={true} onOpenChange={mockOnOpenChange} />);
+      renderWithState(<Settings open={true} onOpenChange={mockOnOpenChange} />);
 
       const tabLabels = [
         'com_nav_setting_general',
@@ -127,7 +128,7 @@ describe('Settings Component', () => {
         } as TStartupConfig,
       } as QueryObserverResult<TStartupConfig>);
 
-      render(<Settings open={true} onOpenChange={mockOnOpenChange} />);
+      renderWithState(<Settings open={true} onOpenChange={mockOnOpenChange} />);
       expect(screen.getByText('com_nav_setting_balance')).toBeInTheDocument();
     });
 
@@ -146,7 +147,7 @@ describe('Settings Component', () => {
         } as TStartupConfig,
       } as QueryObserverResult<TStartupConfig>);
 
-      render(<Settings open={true} onOpenChange={mockOnOpenChange} />);
+      renderWithState(<Settings open={true} onOpenChange={mockOnOpenChange} />);
       expect(screen.queryByText('com_nav_setting_balance')).not.toBeInTheDocument();
     });
 
@@ -156,7 +157,7 @@ describe('Settings Component', () => {
         hasMemoryOptOut: true,
       });
 
-      render(<Settings open={true} onOpenChange={mockOnOpenChange} />);
+      renderWithState(<Settings open={true} onOpenChange={mockOnOpenChange} />);
       expect(screen.getByText('com_nav_setting_personalization')).toBeInTheDocument();
     });
 
@@ -166,20 +167,20 @@ describe('Settings Component', () => {
         hasMemoryOptOut: false,
       });
 
-      render(<Settings open={true} onOpenChange={mockOnOpenChange} />);
+      renderWithState(<Settings open={true} onOpenChange={mockOnOpenChange} />);
       expect(screen.queryByText('com_nav_setting_personalization')).not.toBeInTheDocument();
     });
   });
 
   describe('tab navigation', () => {
     it('shows general tab by default', () => {
-      render(<Settings open={true} onOpenChange={mockOnOpenChange} />);
+      renderWithState(<Settings open={true} onOpenChange={mockOnOpenChange} />);
       expect(screen.getByTestId('general-tab-content')).toBeInTheDocument();
     });
 
     it('switches tabs on click', async () => {
       const user = userEvent.setup();
-      render(<Settings open={true} onOpenChange={mockOnOpenChange} />);
+      renderWithState(<Settings open={true} onOpenChange={mockOnOpenChange} />);
 
       await user.click(screen.getByText('com_nav_setting_chat'));
       expect(screen.getByTestId('chat-tab-content')).toBeInTheDocument();
@@ -189,7 +190,7 @@ describe('Settings Component', () => {
     });
 
     it('navigates tabs with arrow keys', async () => {
-      render(<Settings open={true} onOpenChange={mockOnOpenChange} />);
+      renderWithState(<Settings open={true} onOpenChange={mockOnOpenChange} />);
       const tabList = screen.getByLabelText('Settings');
 
       fireEvent.keyDown(tabList, { key: 'ArrowDown' });
@@ -204,7 +205,7 @@ describe('Settings Component', () => {
     });
 
     it('navigates to first tab with Home key', async () => {
-      render(<Settings open={true} onOpenChange={mockOnOpenChange} />);
+      renderWithState(<Settings open={true} onOpenChange={mockOnOpenChange} />);
       const tabList = screen.getByLabelText('Settings');
 
       fireEvent.click(screen.getByText('com_nav_setting_account'));
@@ -216,7 +217,7 @@ describe('Settings Component', () => {
     });
 
     it('navigates to last tab with End key', async () => {
-      render(<Settings open={true} onOpenChange={mockOnOpenChange} />);
+      renderWithState(<Settings open={true} onOpenChange={mockOnOpenChange} />);
       const tabList = screen.getByLabelText('Settings');
 
       fireEvent.keyDown(tabList, { key: 'End' });
@@ -226,7 +227,7 @@ describe('Settings Component', () => {
     });
 
     it('wraps around when navigating past last tab', async () => {
-      render(<Settings open={true} onOpenChange={mockOnOpenChange} />);
+      renderWithState(<Settings open={true} onOpenChange={mockOnOpenChange} />);
       const tabList = screen.getByLabelText('Settings');
 
       fireEvent.keyDown(tabList, { key: 'End' });
@@ -238,7 +239,7 @@ describe('Settings Component', () => {
     });
 
     it('wraps around when navigating before first tab', async () => {
-      render(<Settings open={true} onOpenChange={mockOnOpenChange} />);
+      renderWithState(<Settings open={true} onOpenChange={mockOnOpenChange} />);
       const tabList = screen.getByLabelText('Settings');
 
       fireEvent.keyDown(tabList, { key: 'ArrowUp' });
@@ -251,7 +252,7 @@ describe('Settings Component', () => {
   describe('dialog functionality', () => {
     it('calls onOpenChange when close button is clicked', async () => {
       const user = userEvent.setup();
-      render(<Settings open={true} onOpenChange={mockOnOpenChange} />);
+      renderWithState(<Settings open={true} onOpenChange={mockOnOpenChange} />);
 
       const closeButton = screen.getByRole('button', { name: 'com_ui_close' });
       await user.click(closeButton);
@@ -261,7 +262,7 @@ describe('Settings Component', () => {
 
     it('calls onOpenChange when clicking outside dialog', async () => {
       const user = userEvent.setup();
-      render(<Settings open={true} onOpenChange={mockOnOpenChange} />);
+      renderWithState(<Settings open={true} onOpenChange={mockOnOpenChange} />);
 
       const backdrop = screen
         .getByRole('dialog')
@@ -277,7 +278,7 @@ describe('Settings Component', () => {
   describe('responsive behavior', () => {
     it('applies small screen styles when on mobile', () => {
       mockUseMediaQuery.mockReturnValue(true);
-      render(<Settings open={true} onOpenChange={mockOnOpenChange} />);
+      renderWithState(<Settings open={true} onOpenChange={mockOnOpenChange} />);
 
       const tabList = screen.getByLabelText('Settings');
       expect(tabList).toHaveClass('flex-row', 'rounded-xl', 'bg-surface-secondary');
@@ -285,7 +286,7 @@ describe('Settings Component', () => {
 
     it('applies large screen styles when on desktop', () => {
       mockUseMediaQuery.mockReturnValue(false);
-      render(<Settings open={true} onOpenChange={mockOnOpenChange} />);
+      renderWithState(<Settings open={true} onOpenChange={mockOnOpenChange} />);
 
       const tabList = screen.getByLabelText('Settings');
       expect(tabList).toHaveClass('sticky', 'top-0', 'h-full');
@@ -298,7 +299,7 @@ describe('Settings Component', () => {
         mockQueryResult as QueryObserverResult<TStartupConfig>,
       );
 
-      render(<Settings open={true} onOpenChange={mockOnOpenChange} />);
+      renderWithState(<Settings open={true} onOpenChange={mockOnOpenChange} />);
       expect(screen.queryByText('com_nav_setting_balance')).not.toBeInTheDocument();
     });
 
@@ -321,7 +322,7 @@ describe('Settings Component', () => {
         hasMemoryOptOut: true,
       });
 
-      render(<Settings open={true} onOpenChange={mockOnOpenChange} />);
+      renderWithState(<Settings open={true} onOpenChange={mockOnOpenChange} />);
       const tabList = screen.getByLabelText('Settings');
 
       expect(screen.getByText('com_nav_setting_personalization')).toBeInTheDocument();
@@ -339,7 +340,7 @@ describe('Settings Component', () => {
     });
 
     it('prevents default behavior for navigation keys', () => {
-      render(<Settings open={true} onOpenChange={mockOnOpenChange} />);
+      renderWithState(<Settings open={true} onOpenChange={mockOnOpenChange} />);
       const tabList = screen.getByLabelText('Settings');
 
       const navigationKeys = ['ArrowDown', 'ArrowUp', 'Home', 'End'];
@@ -354,7 +355,7 @@ describe('Settings Component', () => {
     });
 
     it('ignores non-navigation keys', () => {
-      render(<Settings open={true} onOpenChange={mockOnOpenChange} />);
+      renderWithState(<Settings open={true} onOpenChange={mockOnOpenChange} />);
       const tabList = screen.getByLabelText('Settings');
 
       fireEvent.keyDown(tabList, { key: 'Enter' });
@@ -366,7 +367,7 @@ describe('Settings Component', () => {
 
     it('maintains tab focus when switching tabs', async () => {
       const user = userEvent.setup();
-      render(<Settings open={true} onOpenChange={mockOnOpenChange} />);
+      renderWithState(<Settings open={true} onOpenChange={mockOnOpenChange} />);
 
       const chatTab = screen.getByText('com_nav_setting_chat');
       await user.click(chatTab);
