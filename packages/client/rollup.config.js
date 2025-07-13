@@ -31,7 +31,11 @@ const plugins = [
     useTsconfigDeclarationDir: true,
     clean: true,
   }),
-  terser(),
+  terser({
+    compress: {
+      directives: false, // Preserve directives like 'use client'
+    },
+  }),
 ];
 
 export default {
@@ -53,4 +57,11 @@ export default {
   external: [...Object.keys(pkg.peerDependencies || {}), 'react/jsx-runtime'],
   preserveSymlinks: true,
   plugins,
+  onwarn(warning, warn) {
+    // Ignore "use client" directive warnings
+    if (warning.code === 'MODULE_LEVEL_DIRECTIVE') {
+      return;
+    }
+    warn(warning);
+  },
 };
