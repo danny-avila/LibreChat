@@ -48,6 +48,7 @@
     "rimraf": "^5.0.1",
     "rollup": "^4.0.0",
     "rollup-plugin-peer-deps-external": "^2.2.4",
+    "rollup-plugin-postcss": "^4.0.2",
     "rollup-plugin-typescript2": "^0.35.0",
     "typescript": "^5.0.0"
   }

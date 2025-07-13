@@ -1,9 +1,10 @@
 // Components
-export { default as Toast } from './components/Toast';
+export * from './components';
 
 // Hooks
 export * from './hooks';
 
+export * from './common';
 // Common types
 export * from './common/types';
 
