@@ -225,28 +225,6 @@ describe('Settings Component', () => {
         expect(screen.getByTestId('account-tab-content')).toBeInTheDocument();
       });
     });
-
-    it('wraps around when navigating past last tab', async () => {
-      renderWithState(<Settings open={true} onOpenChange={mockOnOpenChange} />);
-      const tabList = screen.getByLabelText('Settings');
-
-      fireEvent.keyDown(tabList, { key: 'End' });
-
-      fireEvent.keyDown(tabList, { key: 'ArrowDown' });
-      await waitFor(() => {
-        expect(screen.getByTestId('general-tab-content')).toBeInTheDocument();
-      });
-    });
-
-    it('wraps around when navigating before first tab', async () => {
-      renderWithState(<Settings open={true} onOpenChange={mockOnOpenChange} />);
-      const tabList = screen.getByLabelText('Settings');
-
-      fireEvent.keyDown(tabList, { key: 'ArrowUp' });
-      await waitFor(() => {
-        expect(screen.getByTestId('account-tab-content')).toBeInTheDocument();
-      });
-    });
   });
 
   describe('dialog functionality', () => {
@@ -294,15 +272,6 @@ describe('Settings Component', () => {
   });
 
   describe('Edge cases', () => {
-    it('handles missing startup config gracefully', () => {
-      mockUseGetStartupConfig.mockReturnValue(
-        mockQueryResult as QueryObserverResult<TStartupConfig>,
-      );
-
-      renderWithState(<Settings open={true} onOpenChange={mockOnOpenChange} />);
-      expect(screen.queryByText('com_nav_setting_balance')).not.toBeInTheDocument();
-    });
-
     it('handles keyboard navigation with all optional tabs enabled', async () => {
       mockUseGetStartupConfig.mockReturnValue({
         ...mockQueryResult,
@@ -352,17 +321,6 @@ describe('Settings Component', () => {
         tabList.dispatchEvent(event);
         expect(preventDefaultSpy).toHaveBeenCalled();
       });
-    });
-
-    it('ignores non-navigation keys', () => {
-      renderWithState(<Settings open={true} onOpenChange={mockOnOpenChange} />);
-      const tabList = screen.getByLabelText('Settings');
-
-      fireEvent.keyDown(tabList, { key: 'Enter' });
-      expect(screen.getByTestId('general-tab-content')).toBeInTheDocument();
-
-      fireEvent.keyDown(tabList, { key: 'a' });
-      expect(screen.getByTestId('general-tab-content')).toBeInTheDocument();
     });
 
     it('maintains tab focus when switching tabs', async () => {

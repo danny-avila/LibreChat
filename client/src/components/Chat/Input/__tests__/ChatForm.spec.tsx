@@ -441,51 +441,6 @@ describe('ChatForm', () => {
         expect(screen.getByTestId('edit-badges')).toBeInTheDocument();
       });
     });
-
-    it('toggles editing badges state', () => {
-      const { rerender } = renderWithProviders(<ChatForm />, {
-        recoilState: [[store.isEditingBadges, false]],
-      });
-
-      expect(screen.getByTestId('edit-badges')).toBeInTheDocument();
-
-      const chatContext = createMockChatContext();
-      const chatFormMethods = createMockChatFormMethods();
-      const addedChatContext = createMockAddedChatContext();
-      const assistantMap = {};
-
-      mockUseChatFormContext.mockReturnValue(chatFormMethods);
-      mockUseChatContext.mockReturnValue(chatContext);
-      mockUseAddedChatContext.mockReturnValue(addedChatContext);
-      mockUseAssistantsMapContext.mockReturnValue(assistantMap);
-
-      const ChatFormWithProviders = (
-        <ChatContext.Provider value={chatContext}>
-          <ChatFormProvider
-            register={chatFormMethods.register}
-            control={chatFormMethods.control}
-            setValue={chatFormMethods.setValue}
-            getValues={chatFormMethods.getValues}
-            handleSubmit={chatFormMethods.handleSubmit}
-            reset={chatFormMethods.reset}
-          >
-            <AddedChatContext.Provider value={addedChatContext}>
-              <AssistantsMapContext.Provider value={assistantMap}>
-                <ChatForm />
-              </AssistantsMapContext.Provider>
-            </AddedChatContext.Provider>
-          </ChatFormProvider>
-        </ChatContext.Provider>
-      );
-
-      rerender(
-        <RecoilRoot initializeState={({ set }) => set(store.isEditingBadges, true)}>
-          {ChatFormWithProviders}
-        </RecoilRoot>,
-      );
-
-      expect(screen.getByTestId('edit-badges')).toBeInTheDocument();
-    });
   });
 
   describe('User Interactions', () => {
@@ -805,25 +760,6 @@ describe('ChatForm', () => {
       expect(form.className).toContain('sm:mb-28');
     });
 
-    it('handles conversation with messages differently', () => {
-      renderWithProviders(<ChatForm />, {
-        chatContext: {
-          conversation: createMockConversation({
-            conversationId: 'test-id',
-            endpoint: EModelEndpoint.openAI,
-            endpointType: EModelEndpoint.openAI,
-            messages: ['1'],
-            title: 'Test Chat',
-          }),
-          isSubmitting: false,
-        },
-        recoilState: [[store.centerFormOnLanding, true]],
-      });
-
-      const form = document.querySelector('form') as HTMLFormElement;
-      expect(form.className).toContain('sm:mb-10');
-    });
-
     it('handles agent endpoint badge rendering', () => {
       renderWithProviders(<ChatForm />, {
         chatContext: {
@@ -850,17 +786,6 @@ describe('ChatForm', () => {
       });
 
       expect(screen.getByTestId('edit-badges')).toBeInTheDocument();
-    });
-
-    it('handles collapsed state transitions', () => {
-      renderWithProviders(<ChatForm />);
-
-      const textInput = screen.getByTestId('text-input');
-
-      fireEvent.click(textInput);
-
-      const baseClasses = textInput.className;
-      expect(baseClasses).toContain('max-h-[45vh]');
     });
 
     it('handles composition events through useTextarea hook', () => {

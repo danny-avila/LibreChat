@@ -167,7 +167,6 @@ describe('AttachFileMenu', () => {
         });
       });
 
-      // Verify all menu items have onClick handlers
       expect(mockDropdownItems).toHaveLength(4);
       mockDropdownItems.forEach((item) => {
         expect(item.onClick).toBeDefined();

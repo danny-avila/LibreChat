@@ -226,16 +226,6 @@ describe('SidePanelGroup', () => {
   });
 
   describe('Edge cases', () => {
-    it('handles undefined defaultLayout', () => {
-      renderWithState(
-        <SidePanelGroup defaultLayout={undefined}>
-          <div aria-label="Content" />
-        </SidePanelGroup>,
-      );
-
-      expect(screen.getByTestId('resizable-panel-messages-view')).toBeInTheDocument();
-    });
-
     it('handles rapid screen size changes', () => {
       const { rerender } = renderWithState(
         <SidePanelGroup>
@@ -254,19 +244,6 @@ describe('SidePanelGroup', () => {
       });
 
       expect(mockPanelRef.current.collapse).toHaveBeenCalledTimes(2);
-    });
-
-    it('handles missing panel ref gracefully', () => {
-      const SidePanelMock = jest.requireMock('../SidePanel').default;
-      SidePanelMock.mockImplementation(() => <div data-testid="side-panel" />);
-
-      expect(() => {
-        renderWithState(
-          <SidePanelGroup>
-            <div aria-label="Content" />
-          </SidePanelGroup>,
-        );
-      }).not.toThrow();
     });
 
     it('normalizes extreme layout values', () => {

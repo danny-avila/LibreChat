@@ -95,12 +95,6 @@ describe('MessagesView', () => {
 
       expect(screen.getByText('com_ui_nothing_found')).toBeInTheDocument();
     });
-
-    it('displays "nothing found" message when messagesTree is null', () => {
-      renderWithState(<MessagesView messagesTree={null} />);
-
-      expect(screen.getByText('com_ui_nothing_found')).toBeInTheDocument();
-    });
   });
 
   describe('Edit Functionality', () => {

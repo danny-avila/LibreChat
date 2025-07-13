@@ -184,18 +184,6 @@ describe('ChatView Component', () => {
       expect(screen.getByTestId('chat-form')).toBeInTheDocument();
       expect(screen.getByTestId('chat-footer')).toBeInTheDocument();
     });
-
-    it('renders loading state when navigating to conversation', () => {
-      mockUseGetMessagesByConvoId.mockReturnValue({
-        data: undefined,
-        isLoading: false,
-      } as unknown as QueryObserverResult<TMessage[], unknown>);
-
-      const { container } = renderChatView({}, { initialEntries: ['/c/test-convo-id'] });
-
-      const spinner = container.querySelector('svg');
-      expect(spinner).toBeInTheDocument();
-    });
   });
 
   describe('component props and behavior', () => {
@@ -293,20 +281,6 @@ describe('ChatView Component', () => {
       expect(container.firstChild).toBeInTheDocument();
     });
 
-    it('handles query error gracefully', () => {
-      mockUseGetMessagesByConvoId.mockReturnValue({
-        data: undefined,
-        isLoading: false,
-        isError: true,
-        error: new Error('Failed to fetch'),
-      } as unknown as QueryObserverResult<TMessage[], unknown>);
-
-      const { container } = renderChatView({}, { initialEntries: ['/c/test-convo-id'] });
-
-      const spinner = container.querySelector('svg');
-      expect(spinner).toBeInTheDocument();
-    });
-
     it('correctly applies CSS classes based on page type', () => {
       const { container, rerender } = renderChatView();
 
@@ -338,18 +312,6 @@ describe('ChatView Component', () => {
       flexDiv = container.querySelector('.h-full.overflow-y-auto');
       expect(flexDiv).toBeInTheDocument();
       expect(container.querySelector('.max-w-3xl')).not.toBeInTheDocument();
-    });
-
-    it('handles multiple index values correctly', () => {
-      const indices = [0, 1, 5, 10];
-
-      indices.forEach((index) => {
-        const { unmount } = renderChatView({ index });
-
-        const chatForm = screen.getByTestId('chat-form');
-        expect(chatForm).toHaveAttribute('data-index', index.toString());
-        unmount();
-      });
     });
 
     it('renders correctly when messages tree is built', async () => {

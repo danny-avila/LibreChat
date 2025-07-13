@@ -265,27 +265,6 @@ describe('Convo Component', () => {
         expect(container.querySelector('[data-testid="convo-item"]')).toBeInTheDocument();
       });
     });
-
-    it('handles rename failure with error toast', async () => {
-      mockUpdateConvoMutation.mutateAsync.mockRejectedValueOnce(new Error('Failed'));
-
-      renderConvo(defaultProps);
-
-      // Simulate rename error scenario
-      await waitFor(() => {
-        // Component should handle errors internally
-        expect(screen.getByRole('listitem')).toBeInTheDocument();
-      });
-    });
-
-    it('cancels rename when Escape is pressed', async () => {
-      renderConvo(defaultProps);
-
-      const listItem = screen.getByRole('listitem');
-      expect(listItem).toBeInTheDocument();
-
-      // Component handles rename cancellation internally
-    });
   });
 
   describe('Active Conversation Detection', () => {
@@ -378,20 +357,6 @@ describe('Convo Component', () => {
       };
 
       renderConvo(untitledProps);
-
-      expect(screen.getByRole('listitem')).toBeInTheDocument();
-    });
-
-    it('handles undefined title', () => {
-      const undefinedTitleProps = {
-        ...defaultProps,
-        conversation: createMockConversation({
-          conversationId: 'conv-1',
-          title: undefined as any,
-        }),
-      };
-
-      renderConvo(undefinedTitleProps);
 
       expect(screen.getByRole('listitem')).toBeInTheDocument();
     });

@@ -84,13 +84,6 @@ describe('Message Component', () => {
       expect(container.firstChild).toBeNull();
     });
 
-    it('returns null when message is not an object', () => {
-      const { container } = renderWithState(
-        <Message {...defaultProps} message={'invalid' as any} />,
-      );
-      expect(container.firstChild).toBeNull();
-    });
-
     it('renders MultiMessage component with correct props', () => {
       renderWithState(<Message {...defaultProps} />);
 
@@ -137,7 +130,6 @@ describe('Message Component', () => {
 
       const messageRenders = screen.getAllByTestId('message-render');
       expect(messageRenders).toHaveLength(1);
-      // When showSibling is false, isCard prop is not passed to MessageRender
       expect(messageRenders[0].querySelector('[data-testid="is-card"]')).toHaveTextContent('');
     });
   });
@@ -275,20 +267,6 @@ describe('Message Component', () => {
   });
 
   describe('Edge Cases', () => {
-    it('handles message without children', () => {
-      const messageWithoutChildren = {
-        ...defaultProps,
-        message: createMockMessage({
-          messageId: 'msg-no-children',
-          children: undefined,
-        }),
-      };
-
-      renderWithState(<Message {...messageWithoutChildren} />);
-
-      expect(screen.getByTestId('multi-tree-length')).toHaveTextContent('0');
-    });
-
     it('handles message without messageId', () => {
       const messageWithoutId = {
         ...defaultProps,

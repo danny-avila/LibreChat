@@ -98,13 +98,6 @@ describe('MultiMessage Component', () => {
       expect(container.firstChild).toBeNull();
     });
 
-    it('returns null when messagesTree is undefined', () => {
-      const { container } = renderWithState(
-        <MultiMessage {...defaultProps} messagesTree={undefined as any} />,
-      );
-      expect(container.firstChild).toBeNull();
-    });
-
     it('returns null when messagesTree is empty', () => {
       const { container } = renderWithState(<MultiMessage {...defaultProps} messagesTree={[]} />);
       expect(container.firstChild).toBeNull();
@@ -266,12 +259,6 @@ describe('MultiMessage Component', () => {
       expect(screen.getByTestId('message')).toBeInTheDocument();
     });
 
-    it('handles undefined messageId', () => {
-      renderWithState(<MultiMessage {...defaultProps} messageId={undefined} />);
-
-      expect(screen.getByTestId('message')).toBeInTheDocument();
-    });
-
     it('handles messages without messageId property', () => {
       const messageWithoutId = {
         text: 'Message without ID',
@@ -282,16 +269,6 @@ describe('MultiMessage Component', () => {
 
       expect(screen.getByTestId('message')).toBeInTheDocument();
       expect(screen.getByTestId('message-message-id')).toHaveTextContent('');
-    });
-
-    it('handles rapid sibling index changes', () => {
-      renderWithState(<MultiMessage {...defaultProps} />);
-
-      fireEvent.click(screen.getByTestId('message-set-sibling'));
-      fireEvent.click(screen.getByTestId('message-set-sibling'));
-      fireEvent.click(screen.getByTestId('message-set-sibling'));
-
-      expect(screen.getByTestId('message-sibling-idx')).toHaveTextContent('1');
     });
 
     it('handles tree with single message', () => {

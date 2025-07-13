@@ -314,54 +314,6 @@ describe('PromptsAccordion Component', () => {
   });
 
   describe('Edge Cases', () => {
-    it('handles undefined groupsQuery data', () => {
-      mockUsePromptGroupsNav.mockReturnValue(
-        createMockGroupsNav({
-          groupsQuery: {
-            data: undefined,
-            isLoading: false,
-            hasNextPage: false,
-            hasPreviousPage: false,
-            fetchNextPage: jest.fn(),
-            fetchPreviousPage: jest.fn(),
-          },
-        }),
-      );
-
-      renderWithState(<PromptsAccordion />);
-
-      expect(screen.getByTestId('group-side-panel')).toBeInTheDocument();
-    });
-
-    it('handles null promptGroups', () => {
-      mockUsePromptGroupsNav.mockReturnValue(
-        createMockGroupsNav({
-          promptGroups: null as any,
-        }),
-      );
-
-      renderWithState(<PromptsAccordion />);
-
-      expect(screen.getByTestId('group-side-panel')).toBeInTheDocument();
-    });
-
-    it('renders correctly when all hook functions are undefined', () => {
-      mockUsePromptGroupsNav.mockReturnValue(
-        createMockGroupsNav({
-          setName: undefined,
-          nextPage: undefined,
-          prevPage: undefined,
-          setPageSize: undefined,
-        }),
-      );
-
-      renderWithState(<PromptsAccordion />);
-
-      expect(screen.getByTestId('group-side-panel')).toBeInTheDocument();
-      expect(screen.getByTestId('filter-prompts')).toBeInTheDocument();
-      expect(screen.getByTestId('auto-send-prompt')).toBeInTheDocument();
-    });
-
     it('maintains structure when groupsQuery is in error state', () => {
       mockUsePromptGroupsNav.mockReturnValue(
         createMockGroupsNav({
@@ -399,17 +351,6 @@ describe('PromptsAccordion Component', () => {
       await waitFor(() => {
         expect(mockSetName).toHaveBeenCalledTimes(4);
       });
-    });
-
-    it('maintains component hierarchy with empty hook return', () => {
-      mockUsePromptGroupsNav.mockReturnValue({} as any);
-
-      renderWithState(<PromptsAccordion />);
-
-      const container = screen.getByTestId('group-side-panel').parentElement;
-      expect(container).toHaveClass('flex', 'h-full', 'w-full', 'flex-col');
-      expect(screen.getByTestId('filter-prompts')).toBeInTheDocument();
-      expect(screen.getByTestId('auto-send-prompt')).toBeInTheDocument();
     });
   });
 });

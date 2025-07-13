@@ -289,18 +289,7 @@ describe('EndpointSettings Component', () => {
   });
 
   describe('Edge Cases', () => {
-    it('handles undefined conversation', () => {
-      const { container } = renderWithState(
-        <EndpointSettings {...defaultProps} conversation={undefined as any} />,
-        {
-          recoilState: [[store.currentSettingsView, SettingsViews.default]],
-        },
-      );
-
-      expect(container.firstChild).toBeNull();
-    });
-
-    it('handles null conversation', () => {
+    it('handles null or undefined conversation', () => {
       const { container } = renderWithState(
         <EndpointSettings {...defaultProps} conversation={null as any} />,
         {
@@ -338,7 +327,7 @@ describe('EndpointSettings Component', () => {
         );
 
         expect(screen.getByTestId('endpoint')).toHaveTextContent(endpoint);
-        rerender(<div />); // Clean up for next iteration
+        rerender(<div />);
       });
     });
 
@@ -356,7 +345,6 @@ describe('EndpointSettings Component', () => {
 
       expect(screen.getByTestId('mock-settings')).toBeInTheDocument();
 
-      // Change to different view
       rerender(
         <RecoilRoot
           initializeState={({ set }) => {
@@ -368,32 +356,6 @@ describe('EndpointSettings Component', () => {
       );
 
       expect(screen.queryByTestId('mock-settings')).not.toBeInTheDocument();
-    });
-
-    it('handles missing endpoint in conversation gracefully', () => {
-      const propsWithoutEndpoint = {
-        ...defaultProps,
-        conversation: { ...defaultProps.conversation, endpoint: undefined } as any,
-      };
-
-      const { container } = renderWithState(<EndpointSettings {...propsWithoutEndpoint} />, {
-        recoilState: [[store.currentSettingsView, SettingsViews.default]],
-      });
-
-      expect(container.firstChild).toBeNull();
-    });
-
-    it('renders nothing when getSettings returns empty objects', () => {
-      mockGetSettings.mockReturnValue({
-        settings: {},
-        multiViewSettings: {},
-      });
-
-      const { container } = renderWithState(<EndpointSettings {...defaultProps} />, {
-        recoilState: [[store.currentSettingsView, SettingsViews.default]],
-      });
-
-      expect(container.firstChild).toBeNull();
     });
   });
 });

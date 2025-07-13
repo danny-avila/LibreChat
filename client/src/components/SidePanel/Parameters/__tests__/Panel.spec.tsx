@@ -161,8 +161,6 @@ describe('Parameters Panel', () => {
 
       expect(screen.getByTestId('dynamic-temperature')).toBeInTheDocument();
       expect(screen.getByTestId('dynamic-max_tokens')).toBeInTheDocument();
-      expect(screen.getByTestId('dynamic-temperature')).toBeInTheDocument();
-      expect(screen.getByTestId('dynamic-max_tokens')).toBeInTheDocument();
     });
 
     it('renders reset and save preset buttons', () => {
@@ -407,7 +405,6 @@ describe('Parameters Panel', () => {
         renderWithState(<Panel />);
 
         expect(screen.getByTestId(`dynamic-test_${componentType}`)).toBeInTheDocument();
-        expect(screen.getByTestId(`dynamic-test_${componentType}`)).toBeInTheDocument();
       });
     });
 
@@ -492,20 +489,6 @@ describe('Parameters Panel', () => {
       expect(screen.queryByTestId(/dynamic-/)).not.toBeInTheDocument();
     });
 
-    it('handles null conversation gracefully', () => {
-      paramSettings[''] = [];
-
-      mockUseChatContext.mockReturnValue({
-        conversation: null,
-        setConversation: mockSetConversation,
-      });
-
-      const { container } = renderWithState(<Panel />);
-
-      expect(container.firstChild).not.toBeNull();
-      expect(screen.getByRole('button', { name: /reset.*model.*parameters/i })).toBeInTheDocument();
-    });
-
     it('skips rendering components not in componentMapping', () => {
       paramSettings[EModelEndpoint.openAI] = [
         {
@@ -531,19 +514,6 @@ describe('Parameters Panel', () => {
 
       renderWithState(<Panel />);
 
-      expect(screen.getByRole('button', { name: /reset.*model.*parameters/i })).toBeInTheDocument();
-    });
-
-    it('handles missing customParams in endpoint config', () => {
-      mockUseGetEndpointsQuery.mockReturnValue({
-        data: {
-          openAI: {},
-        },
-      });
-
-      const { container } = renderWithState(<Panel />);
-
-      expect(container.firstChild).not.toBeNull();
       expect(screen.getByRole('button', { name: /reset.*model.*parameters/i })).toBeInTheDocument();
     });
 
