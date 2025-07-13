@@ -18,6 +18,8 @@
     "clean": "rm -rf dist"
   },
   "peerDependencies": {
+    "@ariakit/react": "^0.4.17",
+    "@headlessui/react": "^2.2.4",
     "@radix-ui/react-separator": "^1.0.0",
     "@radix-ui/react-slot": "^1.0.0",
     "class-variance-authority": "^0.7.1",
@@ -26,6 +28,7 @@
     "lucide-react": "^0.263.0",
     "react": "^18.0.0",
     "react-dom": "^18.0.0",
+    "react-resizable-panels": "^3.0.3",
     "tailwind-merge": "^1.14.0"
   },
   "devDependencies": {
@@ -35,10 +38,5 @@
     "@types/react-dom": "^18.0.0",
     "rollup": "^4.0.0",
     "typescript": "^5.0.0"
-  },
-  "dependencies": {
-    "@ariakit/react": "^0.4.17",
-    "@headlessui/react": "^2.2.4",
-    "react-resizable-panels": "^3.0.3"
   }
 }
