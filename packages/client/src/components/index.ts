@@ -24,6 +24,7 @@ export * from './Tabs';
 export * from './Tag';
 export * from './Textarea';
 export * from './TextareaAutosize';
+export * from './Toast';
 export * from './Tooltip';
 export * from './Pagination';
 export * from './Progress';
