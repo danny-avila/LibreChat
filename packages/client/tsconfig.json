@@ -2,11 +2,12 @@
   "compilerOptions": {
     "target": "ES2020",
     "module": "ESNext",
-    "moduleResolution": "bundler",
+    "moduleResolution": "node",
     "jsx": "react-jsx",
     "jsxImportSource": "react",
     "declaration": true,
     "declarationMap": true,
+    "declarationDir": "./dist/types",
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
     "strict": true,
@@ -17,8 +18,10 @@
     "baseUrl": "./src",
     "paths": {
       "~/*": ["./*"]
-    }
+    },
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "resolveJsonModule": true
   },
   "include": ["src/**/*"],
-  "exclude": ["dist", "node_modules"]
+  "exclude": ["dist", "node_modules", "**/*.test.ts", "**/*.test.tsx"]
 }

@@ -1,27 +1,32 @@
 {
   "name": "@librechat/client",
   "version": "0.1.0",
-  "type": "module",
+  "description": "React components for LibreChat",
+  "main": "dist/index.js",
+  "module": "dist/index.es.js",
+  "types": "dist/types/index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "module": "./dist/index.js"
+      "import": "./dist/index.es.js",
+      "require": "./dist/index.js",
+      "types": "./dist/types/index.d.ts"
     }
   },
-  "types": "./dist/index.d.ts",
   "files": [
     "dist"
   ],
   "scripts": {
-    "build": "rollup -c rollup.config.mjs",
-    "dev": "rollup -c rollup.config.mjs -w",
-    "clean": "rm -rf dist"
+    "clean": "rimraf dist",
+    "build": "npm run clean && rollup -c --bundleConfigAsCjs",
+    "build:watch": "rollup -c -w --bundleConfigAsCjs",
+    "dev": "rollup -c -w --bundleConfigAsCjs"
   },
   "peerDependencies": {
     "@ariakit/react": "^0.4.17",
     "@headlessui/react": "^2.2.4",
     "@radix-ui/react-separator": "^1.0.0",
     "@radix-ui/react-slot": "^1.0.0",
+    "@radix-ui/react-toast": "^1.0.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.0.0",
     "framer-motion": "^10.0.0",
@@ -29,14 +34,21 @@
     "react": "^18.0.0",
     "react-dom": "^18.0.0",
     "react-resizable-panels": "^3.0.3",
+    "recoil": "^0.7.7",
     "tailwind-merge": "^1.14.0"
   },
   "devDependencies": {
+    "@rollup/plugin-alias": "^5.1.0",
+    "@rollup/plugin-commonjs": "^25.0.2",
     "@rollup/plugin-node-resolve": "^15.0.0",
-    "@rollup/plugin-typescript": "^11.0.0",
+    "@rollup/plugin-replace": "^5.0.5",
+    "@rollup/plugin-terser": "^0.4.4",
     "@types/react": "^18.0.0",
     "@types/react-dom": "^18.0.0",
+    "rimraf": "^5.0.1",
     "rollup": "^4.0.0",
+    "rollup-plugin-peer-deps-external": "^2.2.4",
+    "rollup-plugin-typescript2": "^0.35.0",
     "typescript": "^5.0.0"
   }
 }
