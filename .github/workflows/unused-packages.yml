@@ -98,6 +98,8 @@ jobs:
             cd client
             UNUSED=$(depcheck --json | jq -r '.dependencies | join("\n")' || echo "")
             UNUSED=$(comm -23 <(echo "$UNUSED" | sort) <(cat ../client_used_deps.txt ../client_used_code.txt | sort) || echo "")
+            # Filter out false positives
+            UNUSED=$(echo "$UNUSED" | grep -v "^micromark-extension-llm-math$" || echo "")
             echo "CLIENT_UNUSED<<EOF" >> $GITHUB_ENV
             echo "$UNUSED" >> $GITHUB_ENV
             echo "EOF" >> $GITHUB_ENV

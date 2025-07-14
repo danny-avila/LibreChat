@@ -1,16 +1,17 @@
 const rateLimit = require('express-rate-limit');
+const { isEnabled } = require('@librechat/api');
 const { RedisStore } = require('rate-limit-redis');
+const { logger } = require('@librechat/data-schemas');
 const { ViolationTypes } = require('librechat-data-provider');
 const ioredisClient = require('~/cache/ioredisClient');
 const logViolation = require('~/cache/logViolation');
-const { isEnabled } = require('~/server/utils');
-const { logger } = require('~/config');
 
 const getEnvironmentVariables = () => {
   const IMPORT_IP_MAX = parseInt(process.env.IMPORT_IP_MAX) || 100;
   const IMPORT_IP_WINDOW = parseInt(process.env.IMPORT_IP_WINDOW) || 15;
   const IMPORT_USER_MAX = parseInt(process.env.IMPORT_USER_MAX) || 50;
   const IMPORT_USER_WINDOW = parseInt(process.env.IMPORT_USER_WINDOW) || 15;
+  const IMPORT_VIOLATION_SCORE = process.env.IMPORT_VIOLATION_SCORE;
 
   const importIpWindowMs = IMPORT_IP_WINDOW * 60 * 1000;
   const importIpMax = IMPORT_IP_MAX;
@@ -27,12 +28,18 @@ const getEnvironmentVariables = () => {
     importUserWindowMs,
     importUserMax,
     importUserWindowInMinutes,
+    importViolationScore: IMPORT_VIOLATION_SCORE,
   };
 };
 
 const createImportHandler = (ip = true) => {
-  const { importIpMax, importIpWindowInMinutes, importUserMax, importUserWindowInMinutes } =
-    getEnvironmentVariables();
+  const {
+    importIpMax,
+    importUserMax,
+    importViolationScore,
+    importIpWindowInMinutes,
+    importUserWindowInMinutes,
+  } = getEnvironmentVariables();
 
   return async (req, res) => {
     const type = ViolationTypes.FILE_UPLOAD_LIMIT;
@@ -43,7 +50,7 @@ const createImportHandler = (ip = true) => {
       windowInMinutes: ip ? importIpWindowInMinutes : importUserWindowInMinutes,
     };
 
-    await logViolation(req, res, type, errorMessage);
+    await logViolation(req, res, type, errorMessage, importViolationScore);
     res.status(429).json({ message: 'Too many conversation import requests. Try again later' });
   };
 };

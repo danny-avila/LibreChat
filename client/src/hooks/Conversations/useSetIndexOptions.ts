@@ -30,6 +30,14 @@ const useSetIndexOptions: TUseSetOptions = (preset = false) => {
       };
     }
 
+    // Auto-enable Responses API when web search is enabled
+    if (param === 'web_search' && newValue === true) {
+      const currentUseResponsesApi = conversation?.useResponsesApi ?? false;
+      if (!currentUseResponsesApi) {
+        update['useResponsesApi'] = true;
+      }
+    }
+
     setConversation(
       (prevState) =>
         tConvoUpdateSchema.parse({

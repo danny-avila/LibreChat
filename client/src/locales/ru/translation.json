@@ -319,7 +319,6 @@
   "com_nav_delete_cache_storage": "Очистить кэш озвучивания",
   "com_nav_delete_data_info": "Все ваши данные будут удалены",
   "com_nav_delete_warning": "ВНИМАНИЕ: Ваша учетная запись будет удалена без возможности восстановления.",
-  "com_nav_edit_chat_badges": "Редактировать значки чата",
   "com_nav_enable_cache_tts": "Включить кэширование TTS",
   "com_nav_enable_cloud_browser_voice": "Использовать облачные голоса",
   "com_nav_enabled": "Включено",
@@ -689,7 +688,6 @@
   "com_ui_import_conversation_info": "Импортировать беседы из файла JSON",
   "com_ui_import_conversation_success": "Беседы успешно импортированы",
   "com_ui_include_shadcnui": "Включить компоненты shadcn/ui",
-  "com_ui_include_shadcnui_agent": "Включить инструкции shadcn/ui",
   "com_ui_input": "Ввод",
   "com_ui_instructions": "Инструкции",
   "com_ui_late_night": "Доброй ночи",
@@ -865,6 +863,5 @@
   "com_ui_x_selected": "{{0}} выбрано",
   "com_ui_yes": "Да",
   "com_ui_zoom": "Масштаб",
-  "com_user_message": "Вы",
-  "com_warning_resubmit_unsupported": "Повторная отправка сообщения ИИ не поддерживается для данной конечной точки"
+  "com_user_message": "Вы"
 }

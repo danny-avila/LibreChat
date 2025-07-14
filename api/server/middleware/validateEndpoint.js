@@ -1,4 +1,4 @@
-const { handleError } = require('../utils');
+const { handleError } = require('@librechat/api');
 
 function validateEndpoint(req, res, next) {
   const { endpoint: _endpoint, endpointType } = req.body;

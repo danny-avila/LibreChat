@@ -1,5 +1,5 @@
 const uap = require('ua-parser-js');
-const { handleError } = require('../utils');
+const { handleError } = require('@librechat/api');
 const { logViolation } = require('../../cache');
 
 /**

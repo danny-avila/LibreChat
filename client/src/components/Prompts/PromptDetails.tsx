@@ -7,7 +7,7 @@ import supersub from 'remark-supersub';
 import rehypeHighlight from 'rehype-highlight';
 import { replaceSpecialVars } from 'librechat-data-provider';
 import type { TPromptGroup } from 'librechat-data-provider';
-import { codeNoExecution } from '~/components/Chat/Messages/Content/Markdown';
+import { codeNoExecution } from '~/components/Chat/Messages/Content/MarkdownComponents';
 import { useLocalize, useAuthContext } from '~/hooks';
 import CategoryIcon from './Groups/CategoryIcon';
 import PromptVariables from './PromptVariables';
@@ -55,7 +55,7 @@ const PromptDetails = ({ group }: { group?: TPromptGroup }) => {
                   /** @ts-ignore */
                   supersub,
                   remarkGfm,
-                  [remarkMath, { singleDollarTextMath: true }],
+                  [remarkMath, { singleDollarTextMath: false }],
                 ]}
                 rehypePlugins={[
                   /** @ts-ignore */

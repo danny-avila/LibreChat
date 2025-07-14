@@ -1,5 +1,9 @@
 const { Providers } = require('@librechat/agents');
-const { primeResources, optionalChainWithEmptyCheck } = require('@librechat/api');
+const {
+  primeResources,
+  extractLibreChatParams,
+  optionalChainWithEmptyCheck,
+} = require('@librechat/api');
 const {
   ErrorTypes,
   EModelEndpoint,
@@ -7,30 +11,12 @@ const {
   replaceSpecialVars,
   providerEndpointMap,
 } = require('librechat-data-provider');
-const initAnthropic = require('~/server/services/Endpoints/anthropic/initialize');
-const getBedrockOptions = require('~/server/services/Endpoints/bedrock/options');
-const initOpenAI = require('~/server/services/Endpoints/openAI/initialize');
-const initCustom = require('~/server/services/Endpoints/custom/initialize');
-const initGoogle = require('~/server/services/Endpoints/google/initialize');
 const generateArtifactsPrompt = require('~/app/clients/prompts/artifacts');
-const { getCustomEndpointConfig } = require('~/server/services/Config');
+const { getProviderConfig } = require('~/server/services/Endpoints');
 const { processFiles } = require('~/server/services/Files/process');
+const { getFiles, getToolFilesByIds } = require('~/models/File');
 const { getConvoFiles } = require('~/models/Conversation');
-const { getToolFilesByIds } = require('~/models/File');
 const { getModelMaxTokens } = require('~/utils');
-const { getFiles } = require('~/models/File');
-
-const providerConfigMap = {
-  [Providers.XAI]: initCustom,
-  [Providers.OLLAMA]: initCustom,
-  [Providers.DEEPSEEK]: initCustom,
-  [Providers.OPENROUTER]: initCustom,
-  [EModelEndpoint.openAI]: initOpenAI,
-  [EModelEndpoint.google]: initGoogle,
-  [EModelEndpoint.azureOpenAI]: initOpenAI,
-  [EModelEndpoint.anthropic]: initAnthropic,
-  [EModelEndpoint.bedrock]: getBedrockOptions,
-};
 
 /**
  * @param {object} params
@@ -63,11 +49,17 @@ const initializeAgent = async ({
   }
   let currentFiles;
 
-  if (
-    isInitialAgent &&
-    conversationId != null &&
-    (agent.model_parameters?.resendFiles ?? true) === true
-  ) {
+  const _modelOptions = structuredClone(
+    Object.assign(
+      { model: agent.model },
+      agent.model_parameters ?? { model: agent.model },
+      isInitialAgent === true ? endpointOption?.model_parameters : {},
+    ),
+  );
+
+  const { resendFiles, maxContextTokens, modelOptions } = extractLibreChatParams(_modelOptions);
+
+  if (isInitialAgent && conversationId != null && resendFiles) {
     const fileIds = (await getConvoFiles(conversationId)) ?? [];
     /** @type {Set<EToolResources>} */
     const toolResourceSet = new Set();
@@ -90,10 +82,11 @@ const initializeAgent = async ({
     attachments: currentFiles,
     tool_resources: agent.tool_resources,
     requestFileSet: new Set(requestFiles?.map((file) => file.file_id)),
+    agentId: agent.id,
   });
 
   const provider = agent.provider;
-  const { tools, toolContextMap } =
+  const { tools: structuredTools, toolContextMap } =
     (await loadTools?.({
       req,
       res,
@@ -105,27 +98,15 @@ const initializeAgent = async ({
     })) ?? {};
 
   agent.endpoint = provider;
-  let getOptions = providerConfigMap[provider];
-  if (!getOptions && providerConfigMap[provider.toLowerCase()] != null) {
-    agent.provider = provider.toLowerCase();
-    getOptions = providerConfigMap[agent.provider];
-  } else if (!getOptions) {
-    const customEndpointConfig = await getCustomEndpointConfig(provider);
-    if (!customEndpointConfig) {
-      throw new Error(`Provider ${provider} not supported`);
-    }
-    getOptions = initCustom;
-    agent.provider = Providers.OPENAI;
+  const { getOptions, overrideProvider } = await getProviderConfig(provider);
+  if (overrideProvider) {
+    agent.provider = overrideProvider;
   }
-  const model_parameters = Object.assign(
-    {},
-    agent.model_parameters ?? { model: agent.model },
-    isInitialAgent === true ? endpointOption?.model_parameters : {},
-  );
+
   const _endpointOption =
     isInitialAgent === true
-      ? Object.assign({}, endpointOption, { model_parameters })
-      : { model_parameters };
+      ? Object.assign({}, endpointOption, { model_parameters: modelOptions })
+      : { model_parameters: modelOptions };
 
   const options = await getOptions({
     req,
@@ -135,6 +116,19 @@ const initializeAgent = async ({
     overrideModel: agent.model,
     endpointOption: _endpointOption,
   });
+
+  const tokensModel =
+    agent.provider === EModelEndpoint.azureOpenAI ? agent.model : modelOptions.model;
+  const maxTokens = optionalChainWithEmptyCheck(
+    modelOptions.maxOutputTokens,
+    modelOptions.maxTokens,
+    0,
+  );
+  const agentMaxContextTokens = optionalChainWithEmptyCheck(
+    maxContextTokens,
+    getModelMaxTokens(tokensModel, providerEndpointMap[provider]),
+    4096,
+  );
 
   if (
     agent.endpoint === EModelEndpoint.azureOpenAI &&
@@ -147,14 +141,28 @@ const initializeAgent = async ({
     agent.provider = options.provider;
   }
 
-  /** @type {import('@librechat/agents').ClientOptions} */
-  agent.model_parameters = Object.assign(model_parameters, options.llmConfig);
-  if (options.configOptions) {
-    agent.model_parameters.configuration = options.configOptions;
+  /** @type {import('@librechat/agents').GenericTool[]} */
+  let tools = options.tools?.length ? options.tools : structuredTools;
+  if (
+    (agent.provider === Providers.GOOGLE || agent.provider === Providers.VERTEXAI) &&
+    options.tools?.length &&
+    structuredTools?.length
+  ) {
+    throw new Error(`{ "type": "${ErrorTypes.GOOGLE_TOOL_CONFLICT}"}`);
+  } else if (
+    (agent.provider === Providers.OPENAI ||
+      agent.provider === Providers.AZURE ||
+      agent.provider === Providers.ANTHROPIC) &&
+    options.tools?.length &&
+    structuredTools?.length
+  ) {
+    tools = structuredTools.concat(options.tools);
   }
 
-  if (!agent.model_parameters.model) {
-    agent.model_parameters.model = agent.model;
+  /** @type {import('@librechat/agents').ClientOptions} */
+  agent.model_parameters = { ...options.llmConfig };
+  if (options.configOptions) {
+    agent.model_parameters.configuration = options.configOptions;
   }
 
   if (agent.instructions && agent.instructions !== '') {
@@ -171,25 +179,13 @@ const initializeAgent = async ({
     });
   }
 
-  const tokensModel =
-    agent.provider === EModelEndpoint.azureOpenAI ? agent.model : agent.model_parameters.model;
-  const maxTokens = optionalChainWithEmptyCheck(
-    agent.model_parameters.maxOutputTokens,
-    agent.model_parameters.maxTokens,
-    0,
-  );
-  const maxContextTokens = optionalChainWithEmptyCheck(
-    agent.model_parameters.maxContextTokens,
-    agent.max_context_tokens,
-    getModelMaxTokens(tokensModel, providerEndpointMap[provider]),
-    4096,
-  );
   return {
     ...agent,
-    tools,
     attachments,
+    resendFiles,
     toolContextMap,
-    maxContextTokens: (maxContextTokens - maxTokens) * 0.9,
+    tools,
+    maxContextTokens: (agentMaxContextTokens - maxTokens) * 0.9,
   };
 };
 

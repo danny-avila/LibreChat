@@ -1,4 +1,5 @@
 const { SystemRoles } = require('librechat-data-provider');
+const { HttpsProxyAgent } = require('https-proxy-agent');
 const { Strategy: JwtStrategy, ExtractJwt } = require('passport-jwt');
 const { updateUser, findUser } = require('~/models');
 const { logger } = require('~/config');
@@ -13,17 +14,23 @@ const { isEnabled } = require('~/server/utils');
  * The strategy extracts the JWT from the Authorization header as a Bearer token.
  * The JWT is then verified using the signing key, and the user is retrieved from the database.
  */
-const openIdJwtLogin = (openIdConfig) =>
-  new JwtStrategy(
+const openIdJwtLogin = (openIdConfig) => {
+  let jwksRsaOptions = {
+    cache: isEnabled(process.env.OPENID_JWKS_URL_CACHE_ENABLED) || true,
+    cacheMaxAge: process.env.OPENID_JWKS_URL_CACHE_TIME
+      ? eval(process.env.OPENID_JWKS_URL_CACHE_TIME)
+      : 60000,
+    jwksUri: openIdConfig.serverMetadata().jwks_uri,
+  };
+
+  if (process.env.PROXY) {
+    jwksRsaOptions.requestAgent = new HttpsProxyAgent(process.env.PROXY);
+  }
+
+  return new JwtStrategy(
     {
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
-      secretOrKeyProvider: jwksRsa.passportJwtSecret({
-        cache: isEnabled(process.env.OPENID_JWKS_URL_CACHE_ENABLED) || true,
-        cacheMaxAge: process.env.OPENID_JWKS_URL_CACHE_TIME
-          ? eval(process.env.OPENID_JWKS_URL_CACHE_TIME)
-          : 60000,
-        jwksUri: openIdConfig.serverMetadata().jwks_uri,
-      }),
+      secretOrKeyProvider: jwksRsa.passportJwtSecret(jwksRsaOptions),
     },
     async (payload, done) => {
       try {
@@ -48,5 +55,6 @@ const openIdJwtLogin = (openIdConfig) =>
       }
     },
   );
+};
 
 module.exports = openIdJwtLogin;

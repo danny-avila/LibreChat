@@ -5,6 +5,7 @@ const {
   isEnabled,
   Tokenizer,
   createFetch,
+  resolveHeaders,
   constructAzureURL,
   genAzureChatCompletion,
   createStreamEventHandlers,
@@ -15,7 +16,6 @@ const {
   ContentTypes,
   parseTextParts,
   EModelEndpoint,
-  resolveHeaders,
   KnownEndpoints,
   openAISettings,
   ImageDetailCost,
@@ -37,7 +37,6 @@ const { addSpaceIfNeeded, sleep } = require('~/server/utils');
 const { spendTokens } = require('~/models/spendTokens');
 const { handleOpenAIErrors } = require('./tools/util');
 const { createLLM, RunManager } = require('./llm');
-const ChatGPTClient = require('./ChatGPTClient');
 const { summaryBuffer } = require('./memory');
 const { runTitleChain } = require('./chains');
 const { tokenSplit } = require('./document');
@@ -47,12 +46,6 @@ const { logger } = require('~/config');
 class OpenAIClient extends BaseClient {
   constructor(apiKey, options = {}) {
     super(apiKey, options);
-    this.ChatGPTClient = new ChatGPTClient();
-    this.buildPrompt = this.ChatGPTClient.buildPrompt.bind(this);
-    /** @type {getCompletion} */
-    this.getCompletion = this.ChatGPTClient.getCompletion.bind(this);
-    /** @type {cohereChatCompletion} */
-    this.cohereChatCompletion = this.ChatGPTClient.cohereChatCompletion.bind(this);
     this.contextStrategy = options.contextStrategy
       ? options.contextStrategy.toLowerCase()
       : 'discard';
@@ -379,23 +372,12 @@ class OpenAIClient extends BaseClient {
     return files;
   }
 
-  async buildMessages(
-    messages,
-    parentMessageId,
-    { isChatCompletion = false, promptPrefix = null },
-    opts,
-  ) {
+  async buildMessages(messages, parentMessageId, { promptPrefix = null }, opts) {
     let orderedMessages = this.constructor.getMessagesForConversation({
       messages,
       parentMessageId,
       summary: this.shouldSummarize,
     });
-    if (!isChatCompletion) {
-      return await this.buildPrompt(orderedMessages, {
-        isChatGptModel: isChatCompletion,
-        promptPrefix,
-      });
-    }
 
     let payload;
     let instructions;
@@ -1159,6 +1141,7 @@ ${convo}
       logger.debug('[OpenAIClient] chatCompletion', { baseURL, modelOptions });
       const opts = {
         baseURL,
+        fetchOptions: {},
       };
 
       if (this.useOpenRouter) {
@@ -1177,7 +1160,7 @@ ${convo}
       }
 
       if (this.options.proxy) {
-        opts.httpAgent = new HttpsProxyAgent(this.options.proxy);
+        opts.fetchOptions.agent = new HttpsProxyAgent(this.options.proxy);
       }
 
       /** @type {TAzureConfig | undefined} */
@@ -1395,7 +1378,7 @@ ${convo}
           ...modelOptions,
           stream: true,
         };
-        const stream = await openai.beta.chat.completions
+        const stream = await openai.chat.completions
           .stream(params)
           .on('abort', () => {
             /* Do nothing here */

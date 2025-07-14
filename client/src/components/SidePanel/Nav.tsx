@@ -1,20 +1,14 @@
-import { useState } from 'react';
 import * as AccordionPrimitive from '@radix-ui/react-accordion';
 import type { NavLink, NavProps } from '~/common';
-import { Accordion, AccordionItem, AccordionContent } from '~/components/ui/Accordion';
-import { TooltipAnchor, Button } from '~/components';
+import { AccordionContent, AccordionItem, TooltipAnchor, Accordion, Button } from '~/components/ui';
+import { ActivePanelProvider, useActivePanel } from '~/Providers';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
-export default function Nav({ links, isCollapsed, resize, defaultActive }: NavProps) {
+function NavContent({ links, isCollapsed, resize }: Omit<NavProps, 'defaultActive'>) {
   const localize = useLocalize();
-  const [active, _setActive] = useState<string | undefined>(defaultActive);
+  const { active, setActive } = useActivePanel();
   const getVariant = (link: NavLink) => (link.id === active ? 'default' : 'ghost');
-
-  const setActive = (id: string) => {
-    localStorage.setItem('side:active-panel', id + '');
-    _setActive(id);
-  };
 
   return (
     <div
@@ -103,5 +97,13 @@ export default function Nav({ links, isCollapsed, resize, defaultActive }: NavPr
         </div>
       </div>
     </div>
+  );
+}
+
+export default function Nav({ links, isCollapsed, resize, defaultActive }: NavProps) {
+  return (
+    <ActivePanelProvider defaultActive={defaultActive}>
+      <NavContent links={links} isCollapsed={isCollapsed} resize={resize} />
+    </ActivePanelProvider>
   );
 }

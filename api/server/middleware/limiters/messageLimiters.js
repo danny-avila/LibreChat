@@ -11,6 +11,7 @@ const {
   MESSAGE_IP_WINDOW = 1,
   MESSAGE_USER_MAX = 40,
   MESSAGE_USER_WINDOW = 1,
+  MESSAGE_VIOLATION_SCORE: score,
 } = process.env;
 
 const ipWindowMs = MESSAGE_IP_WINDOW * 60 * 1000;
@@ -39,7 +40,7 @@ const createHandler = (ip = true) => {
       windowInMinutes: ip ? ipWindowInMinutes : userWindowInMinutes,
     };
 
-    await logViolation(req, res, type, errorMessage);
+    await logViolation(req, res, type, errorMessage, score);
     return await denyRequest(req, res, errorMessage);
   };
 };

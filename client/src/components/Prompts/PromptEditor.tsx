@@ -9,7 +9,7 @@ import rehypeKatex from 'rehype-katex';
 import remarkMath from 'remark-math';
 import supersub from 'remark-supersub';
 import ReactMarkdown from 'react-markdown';
-import { codeNoExecution } from '~/components/Chat/Messages/Content/Markdown';
+import { codeNoExecution } from '~/components/Chat/Messages/Content/MarkdownComponents';
 import AlwaysMakeProd from '~/components/Prompts/Groups/AlwaysMakeProd';
 import { SaveIcon, CrossIcon } from '~/components/svg';
 import VariablesDropdown from './VariablesDropdown';
@@ -130,7 +130,7 @@ const PromptEditor: React.FC<Props> = ({ name, isEditing, setIsEditing }) => {
                     /** @ts-ignore */
                     supersub,
                     remarkGfm,
-                    [remarkMath, { singleDollarTextMath: true }],
+                    [remarkMath, { singleDollarTextMath: false }],
                   ]}
                   /** @ts-ignore */
                   rehypePlugins={rehypePlugins}
