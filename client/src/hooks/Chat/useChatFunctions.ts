@@ -230,7 +230,10 @@ export default function useChatFunctions({
     }
 
     const responseMessageId =
-      editedMessageId ?? (latestMessage?.messageId ? latestMessage?.messageId + '_' : null) ?? null;
+      editedMessageId ??
+      (latestMessage?.messageId && isRegenerate ? latestMessage?.messageId + '_' : null) ??
+      null;
+
     const initialResponse: TMessage = {
       sender: responseSender,
       text: '',

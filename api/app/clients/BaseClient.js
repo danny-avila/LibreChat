@@ -197,6 +197,10 @@ class BaseClient {
       this.currentMessages[this.currentMessages.length - 1].messageId = head;
     }
 
+    if (opts.isRegenerate && responseMessageId.endsWith('_')) {
+      responseMessageId = crypto.randomUUID();
+    }
+
     this.responseMessageId = responseMessageId;
 
     return {
