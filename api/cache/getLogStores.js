@@ -3,7 +3,7 @@ const { Keyv } = require('keyv');
 const { CacheKeys, ViolationTypes, Time } = require('librechat-data-provider');
 const { logFile } = require('./keyvFiles');
 const keyvMongo = require('./keyvMongo');
-const { redisCache, sessionCache, violationCache } = require('./cacheFactory');
+const { standardCache, sessionCache, violationCache } = require('./cacheFactory');
 
 const namespaces = {
   [ViolationTypes.GENERAL]: new Keyv({ store: logFile, namespace: 'violations' }),
@@ -30,20 +30,20 @@ const namespaces = {
   [CacheKeys.OPENID_SESSION]: sessionCache(CacheKeys.OPENID_SESSION),
   [CacheKeys.SAML_SESSION]: sessionCache(CacheKeys.SAML_SESSION),
 
-  [CacheKeys.ROLES]: redisCache(CacheKeys.ROLES),
-  [CacheKeys.MCP_TOOLS]: redisCache(CacheKeys.MCP_TOOLS),
-  [CacheKeys.CONFIG_STORE]: redisCache(CacheKeys.CONFIG_STORE),
-  [CacheKeys.PENDING_REQ]: redisCache(CacheKeys.PENDING_REQ),
+  [CacheKeys.ROLES]: standardCache(CacheKeys.ROLES),
+  [CacheKeys.MCP_TOOLS]: standardCache(CacheKeys.MCP_TOOLS),
+  [CacheKeys.CONFIG_STORE]: standardCache(CacheKeys.CONFIG_STORE),
+  [CacheKeys.PENDING_REQ]: standardCache(CacheKeys.PENDING_REQ),
   [CacheKeys.ENCODED_DOMAINS]: new Keyv({ store: keyvMongo, namespace: CacheKeys.ENCODED_DOMAINS }),
-  [CacheKeys.ABORT_KEYS]: redisCache(CacheKeys.ABORT_KEYS, Time.TEN_MINUTES),
-  [CacheKeys.TOKEN_CONFIG]: redisCache(CacheKeys.TOKEN_CONFIG, Time.THIRTY_MINUTES),
-  [CacheKeys.GEN_TITLE]: redisCache(CacheKeys.GEN_TITLE, Time.TWO_MINUTES),
-  [CacheKeys.S3_EXPIRY_INTERVAL]: redisCache(CacheKeys.S3_EXPIRY_INTERVAL, Time.THIRTY_MINUTES),
-  [CacheKeys.MODEL_QUERIES]: redisCache(CacheKeys.MODEL_QUERIES),
-  [CacheKeys.AUDIO_RUNS]: redisCache(CacheKeys.AUDIO_RUNS, Time.TEN_MINUTES),
-  [CacheKeys.MESSAGES]: redisCache(CacheKeys.MESSAGES, Time.ONE_MINUTE),
-  [CacheKeys.FLOWS]: redisCache(CacheKeys.FLOWS, Time.ONE_MINUTE * 3),
-  [CacheKeys.OPENID_EXCHANGED_TOKENS]: redisCache(
+  [CacheKeys.ABORT_KEYS]: standardCache(CacheKeys.ABORT_KEYS, Time.TEN_MINUTES),
+  [CacheKeys.TOKEN_CONFIG]: standardCache(CacheKeys.TOKEN_CONFIG, Time.THIRTY_MINUTES),
+  [CacheKeys.GEN_TITLE]: standardCache(CacheKeys.GEN_TITLE, Time.TWO_MINUTES),
+  [CacheKeys.S3_EXPIRY_INTERVAL]: standardCache(CacheKeys.S3_EXPIRY_INTERVAL, Time.THIRTY_MINUTES),
+  [CacheKeys.MODEL_QUERIES]: standardCache(CacheKeys.MODEL_QUERIES),
+  [CacheKeys.AUDIO_RUNS]: standardCache(CacheKeys.AUDIO_RUNS, Time.TEN_MINUTES),
+  [CacheKeys.MESSAGES]: standardCache(CacheKeys.MESSAGES, Time.ONE_MINUTE),
+  [CacheKeys.FLOWS]: standardCache(CacheKeys.FLOWS, Time.ONE_MINUTE * 3),
+  [CacheKeys.OPENID_EXCHANGED_TOKENS]: standardCache(
     CacheKeys.OPENID_EXCHANGED_TOKENS,
     Time.TEN_MINUTES,
   ),

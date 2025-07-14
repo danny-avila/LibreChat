@@ -55,7 +55,7 @@ jest.mock('rate-limit-redis', () => ({
 }));
 
 // Import after mocking
-const { redisCache, sessionCache, violationCache, limiterCache } = require('./cacheFactory');
+const { standardCache, sessionCache, violationCache, limiterCache } = require('./cacheFactory');
 const { cacheConfig } = require('./cacheConfig');
 
 describe('cacheFactory', () => {
@@ -73,7 +73,7 @@ describe('cacheFactory', () => {
       const namespace = 'test-namespace';
       const ttl = 3600;
 
-      redisCache(namespace, ttl);
+      standardCache(namespace, ttl);
 
       expect(require('@keyv/redis').default).toHaveBeenCalledWith(mockKeyvRedisClient);
       expect(mockKeyv).toHaveBeenCalledWith(mockKeyvRedis, { namespace, ttl });
@@ -85,7 +85,7 @@ describe('cacheFactory', () => {
       cacheConfig.USE_REDIS = true;
       const namespace = 'test-namespace';
 
-      redisCache(namespace);
+      standardCache(namespace);
 
       expect(mockKeyv).toHaveBeenCalledWith(mockKeyvRedis, { namespace, ttl: undefined });
     });
@@ -96,7 +96,7 @@ describe('cacheFactory', () => {
       const ttl = 3600;
       const fallbackStore = { some: 'store' };
 
-      redisCache(namespace, ttl, fallbackStore);
+      standardCache(namespace, ttl, fallbackStore);
 
       expect(mockKeyv).toHaveBeenCalledWith({ store: fallbackStore, namespace, ttl });
     });
@@ -106,7 +106,7 @@ describe('cacheFactory', () => {
       const namespace = 'test-namespace';
       const ttl = 3600;
 
-      redisCache(namespace, ttl);
+      standardCache(namespace, ttl);
 
       expect(mockKeyv).toHaveBeenCalledWith({ namespace, ttl });
     });
@@ -114,7 +114,7 @@ describe('cacheFactory', () => {
     it('should handle namespace and ttl as undefined', () => {
       cacheConfig.USE_REDIS = false;
 
-      redisCache();
+      standardCache();
 
       expect(mockKeyv).toHaveBeenCalledWith({ namespace: undefined, ttl: undefined });
     });
