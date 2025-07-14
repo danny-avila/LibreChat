@@ -1,4 +1,5 @@
 require('dotenv').config();
+const { isEnabled } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 
 const mongoose = require('mongoose');
@@ -17,6 +18,17 @@ const maxConnecting = parseInt(process.env.MONGO_MAX_CONNECTING) || undefined;
 const maxIdleTimeMS = parseInt(process.env.MONGO_MAX_IDLE_TIME_MS) || undefined;
 /** The maximum time in milliseconds that a thread can wait for a connection to become available. */
 const waitQueueTimeoutMS = parseInt(process.env.MONGO_WAIT_QUEUE_TIMEOUT_MS) || undefined;
+/** Set to false to disable automatic index creation for all models associated with this connection. */
+const autoIndex =
+  process.env.MONGO_AUTO_INDEX != undefined
+    ? isEnabled(process.env.MONGO_AUTO_INDEX) || false
+    : undefined;
+
+/** Set to `false` to disable Mongoose automatically calling `createCollection()` on every model created on this connection. */
+const autoCreate =
+  process.env.MONGO_AUTO_CREATE != undefined
+    ? isEnabled(process.env.MONGO_AUTO_CREATE) || false
+    : undefined;
 /**
  * Global is used here to maintain a cached connection across hot reloads
  * in development. This prevents connections growing exponentially
@@ -42,6 +54,8 @@ async function connectDb() {
       ...(maxConnecting ? { maxConnecting } : {}),
       ...(maxIdleTimeMS ? { maxIdleTimeMS } : {}),
       ...(waitQueueTimeoutMS ? { waitQueueTimeoutMS } : {}),
+      ...(autoIndex != undefined ? { autoIndex } : {}),
+      ...(autoCreate != undefined ? { autoCreate } : {}),
       // useNewUrlParser: true,
       // useUnifiedTopology: true,
       // bufferMaxEntries: 0,
