@@ -1,11 +1,22 @@
 require('dotenv').config();
+const { logger } = require('@librechat/data-schemas');
+
 const mongoose = require('mongoose');
 const MONGO_URI = process.env.MONGO_URI;
 
 if (!MONGO_URI) {
   throw new Error('Please define the MONGO_URI environment variable');
 }
-
+/** The maximum number of connections in the connection pool. */
+const maxPoolSize = parseInt(process.env.MONGO_MAX_POOL_SIZE) || undefined;
+/** The minimum number of connections in the connection pool. */
+const minPoolSize = parseInt(process.env.MONGO_MIN_POOL_SIZE) || undefined;
+/** The maximum number of connections that may be in the process of being established concurrently by the connection pool. */
+const maxConnecting = parseInt(process.env.MONGO_MAX_CONNECTING) || undefined;
+/** The maximum number of milliseconds that a connection can remain idle in the pool before being removed and closed. */
+const maxIdleTimeMS = parseInt(process.env.MONGO_MAX_IDLE_TIME_MS) || undefined;
+/** The maximum time in milliseconds that a thread can wait for a connection to become available. */
+const waitQueueTimeoutMS = parseInt(process.env.MONGO_WAIT_QUEUE_TIMEOUT_MS) || undefined;
 /**
  * Global is used here to maintain a cached connection across hot reloads
  * in development. This prevents connections growing exponentially
@@ -26,13 +37,19 @@ async function connectDb() {
   if (!cached.promise || disconnected) {
     const opts = {
       bufferCommands: false,
+      ...(maxPoolSize ? { maxPoolSize } : {}),
+      ...(minPoolSize ? { minPoolSize } : {}),
+      ...(maxConnecting ? { maxConnecting } : {}),
+      ...(maxIdleTimeMS ? { maxIdleTimeMS } : {}),
+      ...(waitQueueTimeoutMS ? { waitQueueTimeoutMS } : {}),
       // useNewUrlParser: true,
       // useUnifiedTopology: true,
       // bufferMaxEntries: 0,
       // useFindAndModify: true,
       // useCreateIndex: true
     };
-
+    logger.info('Mongo Connection options');
+    logger.info(JSON.stringify(opts, null, 2));
     mongoose.set('strictQuery', true);
     cached.promise = mongoose.connect(MONGO_URI, opts).then((mongoose) => {
       return mongoose;
