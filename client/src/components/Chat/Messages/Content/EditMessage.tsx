@@ -60,7 +60,6 @@ const EditMessage = ({
           conversationId,
         },
         {
-          isResubmission: true,
           overrideFiles: message.files,
         },
       );
