@@ -160,7 +160,7 @@ const Nav = memo(
           <>
             <div className="mt-1.5" />
             <Suspense fallback={null}>
-              <BookmarkNav tags={tags} setTags={setTags} isSmallScreen={isSmallScreen} />
+              {/* <BookmarkNav tags={tags} setTags={setTags} isSmallScreen={isSmallScreen} /> */}
             </Suspense>
           </>
         ),
