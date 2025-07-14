@@ -14,4 +14,4 @@ Dockerfile*
 docs
 
 # Ignore all hidden files
-.* 
+.*
