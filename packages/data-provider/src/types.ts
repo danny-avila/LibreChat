@@ -105,6 +105,7 @@ export type TEphemeralAgent = {
 export type TPayload = Partial<TMessage> &
   Partial<TEndpointOption> & {
     isContinued: boolean;
+    isRegenerate?: boolean;
     conversationId: string | null;
     messages?: TMessages;
     isTemporary: boolean;
@@ -125,7 +126,6 @@ export type TSubmission = {
   isTemporary: boolean;
   messages: TMessage[];
   isRegenerate?: boolean;
-  isResubmission?: boolean;
   initialResponse?: TMessage;
   conversation: Partial<TConversation>;
   endpointOption: TEndpointOption;
