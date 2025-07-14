@@ -1,5 +1,4 @@
 const IoRedis = require('ioredis');
-const logger = require('~/config/winston');
 const { cacheConfig } = require('./cacheConfig');
 const { createClient, createCluster } = require('@keyv/redis');
 
@@ -26,7 +25,10 @@ if (cacheConfig.USE_REDIS) {
       ? new IoRedis(cacheConfig.REDIS_URI, redisOptions)
       : new IoRedis.Cluster(cacheConfig.REDIS_URI, { redisOptions });
 
-  ioredisClient.on('error', (err) => logger.error(`IoRedis connection error: ${err}`));
+  // Pinging the Redis server every 5 minutes to keep the connection alive
+  const pingInterval = setInterval(() => ioredisClient.ping(), 5 * 60 * 1000);
+  ioredisClient.on('close', () => clearInterval(pingInterval));
+  ioredisClient.on('end', () => clearInterval(pingInterval));
 }
 
 /** @type {import('@keyv/redis').RedisClient | import('@keyv/redis').RedisCluster | null} */
@@ -43,6 +45,11 @@ if (cacheConfig.USE_REDIS) {
         });
 
   keyvRedisClient.setMaxListeners(cacheConfig.REDIS_MAX_LISTENERS);
+
+  // Pinging the Redis server every 5 minutes to keep the connection alive
+  const keyvPingInterval = setInterval(() => keyvRedisClient.ping(), 5 * 60 * 1000);
+  keyvRedisClient.on('disconnect', () => clearInterval(keyvPingInterval));
+  keyvRedisClient.on('end', () => clearInterval(keyvPingInterval));
 }
 
 module.exports = { ioredisClient, keyvRedisClient, GLOBAL_PREFIX_SEPARATOR };
