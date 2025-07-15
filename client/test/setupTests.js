@@ -17,6 +17,9 @@ import '@testing-library/jest-dom/extend-expect';
 // 'react-lottie' uses canvas
 import 'jest-canvas-mock';
 
+// Mock ResizeObserver
+import './resizeObserver.mock';
+
 beforeEach(() => {
   jest.clearAllMocks();
 });

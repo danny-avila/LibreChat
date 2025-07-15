@@ -322,7 +322,6 @@
   "com_nav_delete_cache_storage": "Esborra la memòria cau de TTS",
   "com_nav_delete_data_info": "Totes les teves dades s'eliminaran.",
   "com_nav_delete_warning": "AVÍS: Això eliminarà permanentment el teu compte.",
-  "com_nav_edit_chat_badges": "Edita les insígnies del xat",
   "com_nav_enable_cache_tts": "Habilita la memòria cau TTS",
   "com_nav_enable_cloud_browser_voice": "Utilitza veus al núvol",
   "com_nav_enabled": "Habilitat",
@@ -688,7 +687,6 @@
   "com_ui_import_conversation_info": "Importa converses des d'un fitxer JSON",
   "com_ui_import_conversation_success": "Converses importades amb èxit",
   "com_ui_include_shadcnui": "Inclou instruccions de components shadcn/ui",
-  "com_ui_include_shadcnui_agent": "Inclou instruccions shadcn/ui",
   "com_ui_input": "Entrada",
   "com_ui_instructions": "Instruccions",
   "com_ui_late_night": "Bona matinada",
@@ -868,6 +866,5 @@
   "com_ui_x_selected": "{{0}} seleccionats",
   "com_ui_yes": "Sí",
   "com_ui_zoom": "Zoom",
-  "com_user_message": "Tu",
-  "com_warning_resubmit_unsupported": "Tornar a enviar el missatge de la IA no està suportat per aquest endpoint."
+  "com_user_message": "Tu"
 }

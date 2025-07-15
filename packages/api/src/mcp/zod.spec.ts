@@ -1,8 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // zod.spec.ts
 import { z } from 'zod';
-import { convertJsonSchemaToZod } from './zod';
-import type { JsonSchemaType } from './zod';
+import type { JsonSchemaType } from '~/types';
+import { resolveJsonSchemaRefs, convertJsonSchemaToZod, convertWithResolvedRefs } from './zod';
 
 describe('convertJsonSchemaToZod', () => {
   describe('primitive types', () => {
@@ -10,7 +10,7 @@ describe('convertJsonSchemaToZod', () => {
       const schema: JsonSchemaType = {
         type: 'string',
       };
-      const zodSchema = convertJsonSchemaToZod(schema);
+      const zodSchema = convertWithResolvedRefs(schema);
 
       expect(zodSchema?.parse('test')).toBe('test');
       expect(() => zodSchema?.parse(123)).toThrow();
@@ -21,7 +21,7 @@ describe('convertJsonSchemaToZod', () => {
         type: 'string',
         enum: ['foo', 'bar', 'baz'],
       };
-      const zodSchema = convertJsonSchemaToZod(schema);
+      const zodSchema = convertWithResolvedRefs(schema);
 
       expect(zodSchema?.parse('foo')).toBe('foo');
       expect(() => zodSchema?.parse('invalid')).toThrow();
@@ -31,7 +31,7 @@ describe('convertJsonSchemaToZod', () => {
       const schema: JsonSchemaType = {
         type: 'number',
       };
-      const zodSchema = convertJsonSchemaToZod(schema);
+      const zodSchema = convertWithResolvedRefs(schema);
 
       expect(zodSchema?.parse(123)).toBe(123);
       expect(() => zodSchema?.parse('123')).toThrow();
@@ -41,7 +41,7 @@ describe('convertJsonSchemaToZod', () => {
       const schema: JsonSchemaType = {
         type: 'boolean',
       };
-      const zodSchema = convertJsonSchemaToZod(schema);
+      const zodSchema = convertWithResolvedRefs(schema);
 
       expect(zodSchema?.parse(true)).toBe(true);
       expect(() => zodSchema?.parse('true')).toThrow();
@@ -54,7 +54,7 @@ describe('convertJsonSchemaToZod', () => {
         type: 'array',
         items: { type: 'string' },
       };
-      const zodSchema = convertJsonSchemaToZod(schema);
+      const zodSchema = convertWithResolvedRefs(schema);
 
       expect(zodSchema?.parse(['a', 'b', 'c'])).toEqual(['a', 'b', 'c']);
       expect(() => zodSchema?.parse(['a', 123, 'c'])).toThrow();
@@ -65,7 +65,7 @@ describe('convertJsonSchemaToZod', () => {
         type: 'array',
         items: { type: 'number' },
       };
-      const zodSchema = convertJsonSchemaToZod(schema);
+      const zodSchema = convertWithResolvedRefs(schema);
 
       expect(zodSchema?.parse([1, 2, 3])).toEqual([1, 2, 3]);
       expect(() => zodSchema?.parse([1, '2', 3])).toThrow();
@@ -81,7 +81,7 @@ describe('convertJsonSchemaToZod', () => {
           age: { type: 'number' },
         },
       };
-      const zodSchema = convertJsonSchemaToZod(schema);
+      const zodSchema = convertWithResolvedRefs(schema);
 
       expect(zodSchema?.parse({ name: 'John', age: 30 })).toEqual({ name: 'John', age: 30 });
       expect(() => zodSchema?.parse({ name: 123, age: 30 })).toThrow();
@@ -96,7 +96,7 @@ describe('convertJsonSchemaToZod', () => {
         },
         required: ['name'],
       };
-      const zodSchema = convertJsonSchemaToZod(schema);
+      const zodSchema = convertWithResolvedRefs(schema);
 
       expect(zodSchema?.parse({ name: 'John' })).toEqual({ name: 'John' });
       expect(() => zodSchema?.parse({})).toThrow();
@@ -117,7 +117,7 @@ describe('convertJsonSchemaToZod', () => {
         },
         required: ['user'],
       };
-      const zodSchema = convertJsonSchemaToZod(schema);
+      const zodSchema = convertWithResolvedRefs(schema);
 
       expect(zodSchema?.parse({ user: { name: 'John', age: 30 } })).toEqual({
         user: { name: 'John', age: 30 },
@@ -135,7 +135,7 @@ describe('convertJsonSchemaToZod', () => {
           },
         },
       };
-      const zodSchema = convertJsonSchemaToZod(schema);
+      const zodSchema = convertWithResolvedRefs(schema);
 
       expect(zodSchema?.parse({ names: ['John', 'Jane'] })).toEqual({ names: ['John', 'Jane'] });
       expect(() => zodSchema?.parse({ names: ['John', 123] })).toThrow();
@@ -148,7 +148,7 @@ describe('convertJsonSchemaToZod', () => {
         type: 'object',
         properties: {},
       };
-      const zodSchema = convertJsonSchemaToZod(schema);
+      const zodSchema = convertWithResolvedRefs(schema);
 
       expect(zodSchema?.parse({})).toEqual({});
     });
@@ -157,7 +157,7 @@ describe('convertJsonSchemaToZod', () => {
       const schema = {
         type: 'invalid',
       } as unknown as JsonSchemaType;
-      const zodSchema = convertJsonSchemaToZod(schema);
+      const zodSchema = convertWithResolvedRefs(schema);
 
       expect(zodSchema?.parse('anything')).toBe('anything');
       expect(zodSchema?.parse(123)).toBe(123);
@@ -168,7 +168,7 @@ describe('convertJsonSchemaToZod', () => {
         type: 'string',
         enum: [],
       };
-      const zodSchema = convertJsonSchemaToZod(schema);
+      const zodSchema = convertWithResolvedRefs(schema);
 
       expect(zodSchema?.parse('test')).toBe('test');
     });
@@ -208,7 +208,7 @@ describe('convertJsonSchemaToZod', () => {
         required: ['id', 'user'],
       };
 
-      const zodSchema = convertJsonSchemaToZod(schema);
+      const zodSchema = convertWithResolvedRefs(schema);
 
       const validData = {
         id: 1,
@@ -254,7 +254,7 @@ describe('convertJsonSchemaToZod', () => {
           name: { type: 'string' },
         },
       };
-      const zodSchema = convertJsonSchemaToZod(schema);
+      const zodSchema = convertWithResolvedRefs(schema);
       expect(zodSchema?.description).toBe('A test schema description');
     });
 
@@ -272,7 +272,7 @@ describe('convertJsonSchemaToZod', () => {
           },
         },
       };
-      const zodSchema = convertJsonSchemaToZod(schema);
+      const zodSchema = convertWithResolvedRefs(schema);
 
       const shape = (zodSchema as z.ZodObject<any>).shape;
       expect(shape.name.description).toBe("The user's name");
@@ -307,7 +307,7 @@ describe('convertJsonSchemaToZod', () => {
           },
         },
       };
-      const zodSchema = convertJsonSchemaToZod(schema);
+      const zodSchema = convertWithResolvedRefs(schema);
 
       // Type assertions for better type safety
       const shape = zodSchema instanceof z.ZodObject ? zodSchema.shape : {};
@@ -352,7 +352,7 @@ describe('convertJsonSchemaToZod', () => {
           },
         },
       };
-      const zodSchema = convertJsonSchemaToZod(schema);
+      const zodSchema = convertWithResolvedRefs(schema);
 
       const shape = (zodSchema as z.ZodObject<any>).shape;
       expect(shape.tags.description).toBe('User tags');
@@ -375,7 +375,7 @@ describe('convertJsonSchemaToZod', () => {
           },
         },
       };
-      const zodSchema = convertJsonSchemaToZod(schema);
+      const zodSchema = convertWithResolvedRefs(schema);
 
       const shape = (zodSchema as z.ZodObject<any>).shape;
       expect(shape.role.description).toBe('User role in the system');
@@ -435,7 +435,7 @@ describe('convertJsonSchemaToZod', () => {
         },
       };
 
-      const zodSchema = convertJsonSchemaToZod(schema);
+      const zodSchema = convertWithResolvedRefs(schema);
 
       // Test top-level description
       expect(zodSchema?.description).toBe('User profile configuration');
@@ -476,7 +476,7 @@ describe('convertJsonSchemaToZod', () => {
         },
         additionalProperties: true,
       };
-      const zodSchema = convertJsonSchemaToZod(schema);
+      const zodSchema = convertWithResolvedRefs(schema);
 
       // Should accept the defined property
       expect(zodSchema?.parse({ name: 'John' })).toEqual({ name: 'John' });
@@ -501,7 +501,7 @@ describe('convertJsonSchemaToZod', () => {
         },
         additionalProperties: { type: 'number' },
       };
-      const zodSchema = convertJsonSchemaToZod(schema);
+      const zodSchema = convertWithResolvedRefs(schema);
 
       // Should accept the defined property
       expect(zodSchema?.parse({ name: 'John' })).toEqual({ name: 'John' });
@@ -527,7 +527,7 @@ describe('convertJsonSchemaToZod', () => {
         },
         additionalProperties: false,
       };
-      const zodSchema = convertJsonSchemaToZod(schema);
+      const zodSchema = convertWithResolvedRefs(schema);
 
       // Should accept the defined properties
       expect(zodSchema?.parse({ name: 'John', age: 30 })).toEqual({ name: 'John', age: 30 });
@@ -544,7 +544,7 @@ describe('convertJsonSchemaToZod', () => {
           age: { type: 'number' },
         },
       };
-      const zodSchemaWithoutAdditionalProps = convertJsonSchemaToZod(schemaWithoutAdditionalProps);
+      const zodSchemaWithoutAdditionalProps = convertWithResolvedRefs(schemaWithoutAdditionalProps);
 
       expect(zodSchemaWithoutAdditionalProps?.parse({ name: 'John', age: 30 })).toEqual({
         name: 'John',
@@ -580,7 +580,7 @@ describe('convertJsonSchemaToZod', () => {
         },
         additionalProperties: false,
       };
-      const zodSchema = convertJsonSchemaToZod(schema);
+      const zodSchema = convertWithResolvedRefs(schema);
 
       const validData = {
         user: {
@@ -625,7 +625,7 @@ describe('convertJsonSchemaToZod', () => {
       ];
 
       emptyObjectSchemas.forEach((schema) => {
-        expect(convertJsonSchemaToZod(schema, { allowEmptyObject: false })).toBeUndefined();
+        expect(convertWithResolvedRefs(schema, { allowEmptyObject: false })).toBeUndefined();
       });
     });
 
@@ -636,7 +636,7 @@ describe('convertJsonSchemaToZod', () => {
       ];
 
       emptyObjectSchemas.forEach((schema) => {
-        const result = convertJsonSchemaToZod(schema, { allowEmptyObject: true });
+        const result = convertWithResolvedRefs(schema, { allowEmptyObject: true });
         expect(result).toBeDefined();
         expect(result instanceof z.ZodObject).toBeTruthy();
       });
@@ -649,7 +649,7 @@ describe('convertJsonSchemaToZod', () => {
       ];
 
       emptyObjectSchemas.forEach((schema) => {
-        const result = convertJsonSchemaToZod(schema);
+        const result = convertWithResolvedRefs(schema);
         expect(result).toBeDefined();
         expect(result instanceof z.ZodObject).toBeTruthy();
       });
@@ -663,8 +663,8 @@ describe('convertJsonSchemaToZod', () => {
         },
       };
 
-      const resultWithFlag = convertJsonSchemaToZod(schema, { allowEmptyObject: false });
-      const resultWithoutFlag = convertJsonSchemaToZod(schema);
+      const resultWithFlag = convertWithResolvedRefs(schema, { allowEmptyObject: false });
+      const resultWithoutFlag = convertWithResolvedRefs(schema);
 
       expect(resultWithFlag).toBeDefined();
       expect(resultWithoutFlag).toBeDefined();
@@ -690,7 +690,7 @@ describe('convertJsonSchemaToZod', () => {
       };
 
       // Convert with dropFields option
-      const zodSchema = convertJsonSchemaToZod(schema, {
+      const zodSchema = convertWithResolvedRefs(schema, {
         dropFields: ['anyOf', 'oneOf'],
       });
 
@@ -731,7 +731,7 @@ describe('convertJsonSchemaToZod', () => {
       };
 
       // Convert with dropFields option
-      const zodSchema = convertJsonSchemaToZod(schema, {
+      const zodSchema = convertWithResolvedRefs(schema, {
         dropFields: ['anyOf', 'oneOf'],
       });
 
@@ -769,7 +769,7 @@ describe('convertJsonSchemaToZod', () => {
       };
 
       // Convert with dropFields option for fields that don't exist
-      const zodSchema = convertJsonSchemaToZod(schema, {
+      const zodSchema = convertWithResolvedRefs(schema, {
         dropFields: ['anyOf', 'oneOf', 'nonExistentField'],
       });
 
@@ -811,7 +811,7 @@ describe('convertJsonSchemaToZod', () => {
       };
 
       // Convert with dropFields option
-      const zodSchema = convertJsonSchemaToZod(schema, {
+      const zodSchema = convertWithResolvedRefs(schema, {
         dropFields: ['anyOf', 'oneOf'],
       });
 
@@ -844,14 +844,14 @@ describe('convertJsonSchemaToZod', () => {
       };
 
       // Test with allowEmptyObject: false
-      const result1 = convertJsonSchemaToZod(schema, {
+      const result1 = convertWithResolvedRefs(schema, {
         allowEmptyObject: false,
         dropFields: ['anyOf'],
       });
       expect(result1).toBeUndefined();
 
       // Test with allowEmptyObject: true
-      const result2 = convertJsonSchemaToZod(schema, {
+      const result2 = convertWithResolvedRefs(schema, {
         allowEmptyObject: true,
         dropFields: ['anyOf'],
       });
@@ -870,7 +870,7 @@ describe('convertJsonSchemaToZod', () => {
       } as JsonSchemaType & { oneOf?: any };
 
       // Convert with transformOneOfAnyOf option
-      const zodSchema = convertJsonSchemaToZod(schema, {
+      const zodSchema = convertWithResolvedRefs(schema, {
         transformOneOfAnyOf: true,
       });
 
@@ -889,7 +889,7 @@ describe('convertJsonSchemaToZod', () => {
       } as JsonSchemaType & { anyOf?: any };
 
       // Convert with transformOneOfAnyOf option
-      const zodSchema = convertJsonSchemaToZod(schema, {
+      const zodSchema = convertWithResolvedRefs(schema, {
         transformOneOfAnyOf: true,
       });
 
@@ -925,7 +925,7 @@ describe('convertJsonSchemaToZod', () => {
       } as JsonSchemaType & { oneOf?: any };
 
       // Convert with transformOneOfAnyOf option
-      const zodSchema = convertJsonSchemaToZod(schema, {
+      const zodSchema = convertWithResolvedRefs(schema, {
         transformOneOfAnyOf: true,
       });
 
@@ -949,7 +949,7 @@ describe('convertJsonSchemaToZod', () => {
       } as JsonSchemaType & { oneOf?: any };
 
       // Convert with transformOneOfAnyOf option
-      const zodSchema = convertJsonSchemaToZod(schema, {
+      const zodSchema = convertWithResolvedRefs(schema, {
         transformOneOfAnyOf: true,
       });
 
@@ -1008,7 +1008,7 @@ describe('convertJsonSchemaToZod', () => {
       };
 
       // Convert with transformOneOfAnyOf option
-      const zodSchema = convertJsonSchemaToZod(schema, {
+      const zodSchema = convertWithResolvedRefs(schema, {
         transformOneOfAnyOf: true,
       });
 
@@ -1072,7 +1072,7 @@ describe('convertJsonSchemaToZod', () => {
       } as JsonSchemaType & { oneOf?: any; deprecated?: boolean };
 
       // Convert with both options
-      const zodSchema = convertJsonSchemaToZod(schema, {
+      const zodSchema = convertWithResolvedRefs(schema, {
         transformOneOfAnyOf: true,
         dropFields: ['deprecated'],
       });
@@ -1081,6 +1081,408 @@ describe('convertJsonSchemaToZod', () => {
       expect(zodSchema?.parse('test')).toBe('test');
       expect(zodSchema?.parse(123)).toBe(123);
       expect(() => zodSchema?.parse(true)).toThrow();
+    });
+  });
+
+  describe('additionalProperties with anyOf/oneOf and allowEmptyObject', () => {
+    it('should handle anyOf with object containing only additionalProperties when allowEmptyObject is false', () => {
+      const schema: JsonSchemaType & { anyOf?: any } = {
+        type: 'object',
+        properties: {
+          filter: {
+            description: 'Filter field',
+            anyOf: [
+              {
+                type: 'object',
+                additionalProperties: {
+                  type: 'object',
+                  properties: {
+                    _icontains: { type: 'string' },
+                  },
+                },
+              },
+              {
+                type: 'null',
+              },
+            ],
+          } as JsonSchemaType & { anyOf?: any },
+        },
+      };
+
+      const zodSchema = convertWithResolvedRefs(schema, {
+        allowEmptyObject: false,
+        transformOneOfAnyOf: true,
+      });
+
+      expect(zodSchema).toBeDefined();
+
+      const testData = {
+        filter: {
+          title: {
+            _icontains: 'Pirate',
+          },
+        },
+      };
+
+      const result = zodSchema?.parse(testData);
+      expect(result).toEqual(testData);
+      expect(result?.filter).toBeDefined();
+      expect(result?.filter?.title?._icontains).toBe('Pirate');
+    });
+
+    it('should not treat objects with additionalProperties as empty', () => {
+      const schema: JsonSchemaType = {
+        type: 'object',
+        additionalProperties: {
+          type: 'string',
+        },
+      };
+
+      const zodSchemaWithoutAllow = convertWithResolvedRefs(schema, {
+        allowEmptyObject: false,
+      });
+
+      // Should not return undefined because it has additionalProperties
+      expect(zodSchemaWithoutAllow).toBeDefined();
+
+      const testData = {
+        customField: 'value',
+      };
+
+      expect(zodSchemaWithoutAllow?.parse(testData)).toEqual(testData);
+    });
+
+    it('should handle oneOf with object containing only additionalProperties', () => {
+      const schema: JsonSchemaType & { oneOf?: any } = {
+        type: 'object',
+        properties: {},
+        oneOf: [
+          {
+            type: 'object',
+            additionalProperties: true,
+          },
+          {
+            type: 'object',
+            properties: {
+              specificField: { type: 'string' },
+            },
+          },
+        ],
+      };
+
+      const zodSchema = convertWithResolvedRefs(schema, {
+        allowEmptyObject: false,
+        transformOneOfAnyOf: true,
+      });
+
+      expect(zodSchema).toBeDefined();
+
+      // Test with additional properties
+      const testData1 = {
+        randomField: 'value',
+        anotherField: 123,
+      };
+
+      expect(zodSchema?.parse(testData1)).toEqual(testData1);
+
+      // Test with specific field
+      const testData2 = {
+        specificField: 'test',
+      };
+
+      expect(zodSchema?.parse(testData2)).toEqual(testData2);
+    });
+
+    it('should handle complex nested schema with $ref-like structure', () => {
+      const schema: JsonSchemaType & { anyOf?: any } = {
+        type: 'object',
+        properties: {
+          query: {
+            type: 'object',
+            properties: {
+              filter: {
+                description: 'Filter conditions',
+                anyOf: [
+                  {
+                    // This simulates a resolved $ref
+                    anyOf: [
+                      {
+                        type: 'object',
+                        properties: {
+                          _or: {
+                            type: 'array',
+                            items: { type: 'object' },
+                          },
+                        },
+                        required: ['_or'],
+                      },
+                      {
+                        type: 'object',
+                        additionalProperties: {
+                          anyOf: [
+                            {
+                              type: 'object',
+                              properties: {
+                                _icontains: { type: 'string' },
+                                _eq: { type: 'string' },
+                              },
+                            },
+                          ],
+                        },
+                      },
+                    ],
+                  },
+                  {
+                    type: 'null',
+                  },
+                ],
+              } as JsonSchemaType & { anyOf?: any },
+            },
+          },
+        },
+      };
+
+      const zodSchema = convertWithResolvedRefs(schema, {
+        allowEmptyObject: false,
+        transformOneOfAnyOf: true,
+      });
+
+      expect(zodSchema).toBeDefined();
+
+      const testData = {
+        query: {
+          filter: {
+            title: {
+              _icontains: 'Pirate',
+            },
+          },
+        },
+      };
+
+      const result = zodSchema?.parse(testData);
+      expect(result).toEqual(testData);
+      expect(result?.query?.filter?.title?._icontains).toBe('Pirate');
+    });
+  });
+
+  describe('$ref resolution with resolveJsonSchemaRefs', () => {
+    it('should handle schemas with $ref references when resolved', () => {
+      const schemaWithRefs = {
+        type: 'object' as const,
+        properties: {
+          collection: {
+            type: 'string' as const,
+          },
+          query: {
+            type: 'object' as const,
+            properties: {
+              filter: {
+                anyOf: [{ $ref: '#/$defs/__schema0' }, { type: 'null' as const }],
+              },
+            },
+          },
+        },
+        required: ['collection', 'query'],
+        $defs: {
+          __schema0: {
+            anyOf: [
+              {
+                type: 'object' as const,
+                properties: {
+                  _or: {
+                    type: 'array' as const,
+                    items: { $ref: '#/$defs/__schema0' },
+                  },
+                },
+                required: ['_or'],
+              },
+              {
+                type: 'object' as const,
+                additionalProperties: {
+                  anyOf: [
+                    {
+                      type: 'object' as const,
+                      properties: {
+                        _eq: {
+                          anyOf: [
+                            { type: 'string' as const },
+                            { type: 'number' as const },
+                            { type: 'null' as const },
+                          ],
+                        },
+                      },
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+        },
+      };
+
+      // First test without resolving refs - should not work properly
+      // Intentionally NOT using convertWithResolvedRefs here to test the behavior without ref resolution
+      const zodSchemaUnresolved = convertJsonSchemaToZod(schemaWithRefs as any, {
+        allowEmptyObject: true,
+        transformOneOfAnyOf: true,
+      });
+
+      const testData = {
+        collection: 'posts',
+        query: {
+          filter: {
+            status: {
+              _eq: 'draft',
+            },
+          },
+        },
+      };
+
+      // Without resolving refs, the filter field won't work correctly
+      const resultUnresolved = zodSchemaUnresolved?.parse(testData);
+      expect(resultUnresolved?.query?.filter).toEqual({});
+
+      // Now resolve refs first
+      const resolvedSchema = resolveJsonSchemaRefs(schemaWithRefs);
+
+      // Verify refs were resolved
+      expect(resolvedSchema.properties?.query?.properties?.filter?.anyOf?.[0]).not.toHaveProperty(
+        '$ref',
+      );
+      expect(resolvedSchema.properties?.query?.properties?.filter?.anyOf?.[0]).toHaveProperty(
+        'anyOf',
+      );
+
+      // Already resolved manually above, so we use convertJsonSchemaToZod directly
+      const zodSchemaResolved = convertJsonSchemaToZod(resolvedSchema as any, {
+        allowEmptyObject: true,
+        transformOneOfAnyOf: true,
+      });
+
+      // With resolved refs, it should work correctly
+      const resultResolved = zodSchemaResolved?.parse(testData);
+      expect(resultResolved).toEqual(testData);
+      expect(resultResolved?.query?.filter?.status?._eq).toBe('draft');
+    });
+
+    it('should handle circular $ref references without infinite loops', () => {
+      const schemaWithCircularRefs = {
+        type: 'object' as const,
+        properties: {
+          node: { $ref: '#/$defs/TreeNode' },
+        },
+        $defs: {
+          TreeNode: {
+            type: 'object' as const,
+            properties: {
+              value: { type: 'string' as const },
+              children: {
+                type: 'array' as const,
+                items: { $ref: '#/$defs/TreeNode' },
+              },
+            },
+          },
+        },
+      };
+
+      // Should not throw or hang
+      const resolved = resolveJsonSchemaRefs(schemaWithCircularRefs);
+      expect(resolved).toBeDefined();
+
+      // The circular reference should be broken with a simple object schema
+      // Already resolved manually above, so we use convertJsonSchemaToZod directly
+      const zodSchema = convertJsonSchemaToZod(resolved as any, {
+        allowEmptyObject: true,
+        transformOneOfAnyOf: true,
+      });
+
+      expect(zodSchema).toBeDefined();
+
+      const testData = {
+        node: {
+          value: 'root',
+          children: [
+            {
+              value: 'child1',
+              children: [],
+            },
+          ],
+        },
+      };
+
+      expect(() => zodSchema?.parse(testData)).not.toThrow();
+    });
+
+    it('should handle various edge cases safely', () => {
+      // Test with null/undefined
+      expect(resolveJsonSchemaRefs(null as any)).toBeNull();
+      expect(resolveJsonSchemaRefs(undefined as any)).toBeUndefined();
+
+      // Test with non-object primitives
+      expect(resolveJsonSchemaRefs('string' as any)).toBe('string');
+      expect(resolveJsonSchemaRefs(42 as any)).toBe(42);
+      expect(resolveJsonSchemaRefs(true as any)).toBe(true);
+
+      // Test with arrays
+      const arrayInput = [{ type: 'string' }, { $ref: '#/def' }];
+      const arrayResult = resolveJsonSchemaRefs(arrayInput as any);
+      expect(Array.isArray(arrayResult)).toBe(true);
+      expect(arrayResult).toHaveLength(2);
+
+      // Test with schema that has no refs
+      const noRefSchema = {
+        type: 'object' as const,
+        properties: {
+          name: { type: 'string' as const },
+          nested: {
+            type: 'object' as const,
+            properties: {
+              value: { type: 'number' as const },
+            },
+          },
+        },
+      };
+
+      const resolvedNoRef = resolveJsonSchemaRefs(noRefSchema);
+      expect(resolvedNoRef).toEqual(noRefSchema);
+
+      // Test with invalid ref (non-existent)
+      const invalidRefSchema = {
+        type: 'object' as const,
+        properties: {
+          item: { $ref: '#/$defs/nonExistent' },
+        },
+        $defs: {
+          other: { type: 'string' as const },
+        },
+      };
+
+      const resolvedInvalid = resolveJsonSchemaRefs(invalidRefSchema);
+      // Invalid refs should be preserved as-is
+      expect(resolvedInvalid.properties?.item?.$ref).toBe('#/$defs/nonExistent');
+
+      // Test with empty object
+      expect(resolveJsonSchemaRefs({})).toEqual({});
+
+      // Test with schema containing special JSON Schema keywords
+      const schemaWithKeywords = {
+        type: 'object' as const,
+        properties: {
+          value: {
+            type: 'string' as const,
+            minLength: 5,
+            maxLength: 10,
+            pattern: '^[A-Z]',
+          },
+        },
+        additionalProperties: false,
+        minProperties: 1,
+      };
+
+      const resolvedKeywords = resolveJsonSchemaRefs(schemaWithKeywords);
+      expect(resolvedKeywords).toEqual(schemaWithKeywords);
+      expect(resolvedKeywords.properties?.value?.minLength).toBe(5);
+      expect(resolvedKeywords.additionalProperties).toBe(false);
     });
   });
 });

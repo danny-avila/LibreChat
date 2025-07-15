@@ -1,5 +1,7 @@
 import { ProxyAgent } from 'undici';
 import { KnownEndpoints, removeNullishValues } from 'librechat-data-provider';
+import type { BindToolsInput } from '@langchain/core/language_models/chat_models';
+import type { AzureOpenAIInput } from '@langchain/openai';
 import type { OpenAI } from 'openai';
 import type * as t from '~/types';
 import { sanitizeModelName, constructAzureURL } from '~/utils/azure';
@@ -42,7 +44,9 @@ export function getOpenAIConfig(
     dropParams,
   } = options;
   const { reasoning_effort, reasoning_summary, ...modelOptions } = _modelOptions;
-  const llmConfig: Partial<t.ClientOptions> & Partial<t.OpenAIParameters> = Object.assign(
+  const llmConfig: Partial<t.ClientOptions> &
+    Partial<t.OpenAIParameters> &
+    Partial<AzureOpenAIInput> = Object.assign(
     {
       streaming,
       model: modelOptions.model ?? '',
@@ -100,7 +104,10 @@ export function getOpenAIConfig(
       llmConfig.model = process.env.AZURE_OPENAI_DEFAULT_MODEL;
     }
 
-    if (configOptions.baseURL) {
+    const constructBaseURL = () => {
+      if (!configOptions.baseURL) {
+        return;
+      }
       const azureURL = constructAzureURL({
         baseURL: configOptions.baseURL,
         azureOptions: updatedAzure,
@@ -108,9 +115,40 @@ export function getOpenAIConfig(
       updatedAzure.azureOpenAIBasePath = azureURL.split(
         `/${updatedAzure.azureOpenAIApiDeploymentName}`,
       )[0];
-    }
+    };
 
+    constructBaseURL();
     Object.assign(llmConfig, updatedAzure);
+
+    const constructAzureResponsesApi = () => {
+      if (!llmConfig.useResponsesApi) {
+        return;
+      }
+
+      configOptions.baseURL = constructAzureURL({
+        baseURL: configOptions.baseURL || 'https://${INSTANCE_NAME}.openai.azure.com/openai/v1',
+        azureOptions: llmConfig,
+      });
+
+      delete llmConfig.azureOpenAIApiDeploymentName;
+      delete llmConfig.azureOpenAIApiInstanceName;
+      delete llmConfig.azureOpenAIApiVersion;
+      delete llmConfig.azureOpenAIBasePath;
+      delete llmConfig.azureOpenAIApiKey;
+      llmConfig.apiKey = apiKey;
+
+      configOptions.defaultHeaders = {
+        ...configOptions.defaultHeaders,
+        'api-key': apiKey,
+      };
+      configOptions.defaultQuery = {
+        ...configOptions.defaultQuery,
+        'api-version': configOptions.defaultQuery?.['api-version'] ?? 'preview',
+      };
+    };
+
+    constructAzureResponsesApi();
+
     llmConfig.model = updatedAzure.azureOpenAIApiDeploymentName;
   } else {
     llmConfig.apiKey = apiKey;
@@ -138,6 +176,13 @@ export function getOpenAIConfig(
   if (llmConfig.max_tokens != null) {
     llmConfig.maxTokens = llmConfig.max_tokens;
     delete llmConfig.max_tokens;
+  }
+
+  const tools: BindToolsInput[] = [];
+
+  if (modelOptions.web_search) {
+    llmConfig.useResponsesApi = true;
+    tools.push({ type: 'web_search_preview' });
   }
 
   /**
@@ -180,5 +225,6 @@ export function getOpenAIConfig(
   return {
     llmConfig,
     configOptions,
+    tools,
   };
 }

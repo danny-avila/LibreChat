@@ -1,11 +1,12 @@
 import { logger } from '@librechat/data-schemas';
 import { CallToolResultSchema, ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
-import type { RequestOptions } from '@modelcontextprotocol/sdk/shared/protocol.js';
 import type { OAuthClientInformation } from '@modelcontextprotocol/sdk/shared/auth.js';
-import type { JsonSchemaType, TUser } from 'librechat-data-provider';
+import type { RequestOptions } from '@modelcontextprotocol/sdk/shared/protocol.js';
 import type { TokenMethods } from '@librechat/data-schemas';
-import type { FlowStateManager } from '~/flow/manager';
+import type { TUser } from 'librechat-data-provider';
 import type { MCPOAuthTokens, MCPOAuthFlowMetadata } from './oauth/types';
+import type { FlowStateManager } from '~/flow/manager';
+import type { JsonSchemaType } from '~/types/zod';
 import type { FlowMetadata } from '~/flow/types';
 import type * as t from './types';
 import { CONSTANTS, isSystemUserId } from './enum';
@@ -892,7 +893,7 @@ export class MCPManager {
         this.updateUserLastActivity(userId);
       }
       this.checkIdleConnections();
-      return formatToolContent(result, provider);
+      return formatToolContent(result as t.MCPToolCallResponse, provider);
     } catch (error) {
       // Log with context and re-throw or handle as needed
       logger.error(`${logPrefix}[${toolName}] Tool call failed`, error);

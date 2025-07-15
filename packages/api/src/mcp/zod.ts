@@ -1,29 +1,15 @@
 import { z } from 'zod';
-
-export type JsonSchemaType = {
-  type: 'string' | 'number' | 'boolean' | 'array' | 'object';
-  enum?: string[];
-  items?: JsonSchemaType;
-  properties?: Record<string, JsonSchemaType>;
-  required?: string[];
-  description?: string;
-  additionalProperties?: boolean | JsonSchemaType;
-};
+import type { JsonSchemaType, ConvertJsonSchemaToZodOptions } from '~/types';
 
 function isEmptyObjectSchema(jsonSchema?: JsonSchemaType): boolean {
   return (
     jsonSchema != null &&
     typeof jsonSchema === 'object' &&
     jsonSchema.type === 'object' &&
-    (jsonSchema.properties == null || Object.keys(jsonSchema.properties).length === 0)
+    (jsonSchema.properties == null || Object.keys(jsonSchema.properties).length === 0) &&
+    !jsonSchema.additionalProperties // Don't treat objects with additionalProperties as empty
   );
 }
-
-type ConvertJsonSchemaToZodOptions = {
-  allowEmptyObject?: boolean;
-  dropFields?: string[];
-  transformOneOfAnyOf?: boolean;
-};
 
 function dropSchemaFields(
   schema: JsonSchemaType | undefined,
@@ -98,6 +84,10 @@ function convertToZodUnion(
           return convertJsonSchemaToZod(objSchema, options);
         }
 
+        return convertJsonSchemaToZod(objSchema, options);
+      } else if (!subSchema.type && subSchema.additionalProperties) {
+        // It's likely an object schema with additionalProperties
+        const objSchema = { ...subSchema, type: 'object' } as JsonSchemaType;
         return convertJsonSchemaToZod(objSchema, options);
       } else if (!subSchema.type && subSchema.items) {
         // It's likely an array schema
@@ -180,6 +170,82 @@ function convertToZodUnion(
 
   // This should never happen due to the previous checks, but TypeScript needs it
   return zodSchemas[0];
+}
+
+/**
+ * Helper function to resolve $ref references
+ * @param schema - The schema to resolve
+ * @param definitions - The definitions to use
+ * @param visited - The set of visited references
+ * @returns The resolved schema
+ */
+export function resolveJsonSchemaRefs<T extends Record<string, unknown>>(
+  schema: T,
+  definitions?: Record<string, unknown>,
+  visited = new Set<string>(),
+): T {
+  // Handle null, undefined, or non-object values first
+  if (!schema || typeof schema !== 'object') {
+    return schema;
+  }
+
+  // If no definitions provided, try to extract from schema.$defs or schema.definitions
+  if (!definitions) {
+    definitions = (schema.$defs || schema.definitions) as Record<string, unknown>;
+  }
+
+  // Handle arrays
+  if (Array.isArray(schema)) {
+    return schema.map((item) => resolveJsonSchemaRefs(item, definitions, visited)) as unknown as T;
+  }
+
+  // Handle objects
+  const result: Record<string, unknown> = {};
+
+  for (const [key, value] of Object.entries(schema)) {
+    // Skip $defs/definitions at root level to avoid infinite recursion
+    if ((key === '$defs' || key === 'definitions') && !visited.size) {
+      result[key] = value;
+      continue;
+    }
+
+    // Handle $ref
+    if (key === '$ref' && typeof value === 'string') {
+      // Prevent circular references
+      if (visited.has(value)) {
+        // Return a simple schema to break the cycle
+        return { type: 'object' } as unknown as T;
+      }
+
+      // Extract the reference path
+      const refPath = value.replace(/^#\/(\$defs|definitions)\//, '');
+      const resolved = definitions?.[refPath];
+
+      if (resolved) {
+        visited.add(value);
+        const resolvedSchema = resolveJsonSchemaRefs(
+          resolved as Record<string, unknown>,
+          definitions,
+          visited,
+        );
+        visited.delete(value);
+
+        // Merge the resolved schema into the result
+        Object.assign(result, resolvedSchema);
+      } else {
+        // If we can't resolve the reference, keep it as is
+        result[key] = value;
+      }
+    } else if (value && typeof value === 'object') {
+      // Recursively resolve nested objects/arrays
+      result[key] = resolveJsonSchemaRefs(value as Record<string, unknown>, definitions, visited);
+    } else {
+      // Copy primitive values as is
+      result[key] = value;
+    }
+  }
+
+  return result as T;
 }
 
 export function convertJsonSchemaToZod(
@@ -392,4 +458,16 @@ export function convertJsonSchemaToZod(
   }
 
   return zodSchema;
+}
+
+/**
+ * Helper function for tests that automatically resolves refs before converting to Zod
+ * This ensures all tests use resolveJsonSchemaRefs even when not explicitly testing it
+ */
+export function convertWithResolvedRefs(
+  schema: JsonSchemaType & Record<string, unknown>,
+  options?: ConvertJsonSchemaToZodOptions,
+) {
+  const resolved = resolveJsonSchemaRefs(schema);
+  return convertJsonSchemaToZod(resolved, options);
 }

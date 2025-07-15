@@ -11,6 +11,7 @@ const getEnvironmentVariables = () => {
   const TTS_IP_WINDOW = parseInt(process.env.TTS_IP_WINDOW) || 1;
   const TTS_USER_MAX = parseInt(process.env.TTS_USER_MAX) || 50;
   const TTS_USER_WINDOW = parseInt(process.env.TTS_USER_WINDOW) || 1;
+  const TTS_VIOLATION_SCORE = process.env.TTS_VIOLATION_SCORE;
 
   const ttsIpWindowMs = TTS_IP_WINDOW * 60 * 1000;
   const ttsIpMax = TTS_IP_MAX;
@@ -27,11 +28,12 @@ const getEnvironmentVariables = () => {
     ttsUserWindowMs,
     ttsUserMax,
     ttsUserWindowInMinutes,
+    ttsViolationScore: TTS_VIOLATION_SCORE,
   };
 };
 
 const createTTSHandler = (ip = true) => {
-  const { ttsIpMax, ttsIpWindowInMinutes, ttsUserMax, ttsUserWindowInMinutes } =
+  const { ttsIpMax, ttsIpWindowInMinutes, ttsUserMax, ttsUserWindowInMinutes, ttsViolationScore } =
     getEnvironmentVariables();
 
   return async (req, res) => {
@@ -43,7 +45,7 @@ const createTTSHandler = (ip = true) => {
       windowInMinutes: ip ? ttsIpWindowInMinutes : ttsUserWindowInMinutes,
     };
 
-    await logViolation(req, res, type, errorMessage);
+    await logViolation(req, res, type, errorMessage, ttsViolationScore);
     res.status(429).json({ message: 'Too many TTS requests. Try again later' });
   };
 };

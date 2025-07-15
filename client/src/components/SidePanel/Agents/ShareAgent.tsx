@@ -135,10 +135,9 @@ export default function ShareAgent({
             'btn btn-neutral border-token-border-light relative h-9 rounded-lg font-medium',
             removeFocusOutlines,
           )}
-          aria-label={localize(
-            'com_ui_share_var',
-            { 0: agentName != null && agentName !== '' ? `"${agentName}"` : localize('com_ui_agent') },
-          )}
+          aria-label={localize('com_ui_share_var', {
+            0: agentName != null && agentName !== '' ? `"${agentName}"` : localize('com_ui_agent'),
+          })}
           type="button"
         >
           <div className="flex items-center justify-center gap-2 text-blue-500">
@@ -148,10 +147,9 @@ export default function ShareAgent({
       </OGDialogTrigger>
       <OGDialogContent className="w-11/12 md:max-w-xl">
         <OGDialogTitle>
-          {localize(
-            'com_ui_share_var',
-            { 0: agentName != null && agentName !== '' ? `"${agentName}"` : localize('com_ui_agent') },
-          )}
+          {localize('com_ui_share_var', {
+            0: agentName != null && agentName !== '' ? `"${agentName}"` : localize('com_ui_agent'),
+          })}
         </OGDialogTitle>
         <form
           className="p-2"

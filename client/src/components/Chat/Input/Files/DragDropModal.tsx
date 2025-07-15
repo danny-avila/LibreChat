@@ -1,10 +1,8 @@
 import React, { useMemo } from 'react';
-import { EModelEndpoint, EToolResources } from 'librechat-data-provider';
+import { EToolResources, defaultAgentCapabilities } from 'librechat-data-provider';
 import { FileSearch, ImageUpIcon, FileType2Icon, TerminalSquareIcon } from 'lucide-react';
-import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
-import { useGetEndpointsQuery } from '~/data-provider';
-import useLocalize from '~/hooks/useLocalize';
-import { OGDialog } from '~/components/ui';
+import { useLocalize, useGetAgentsConfig, useAgentCapabilities } from '~/hooks';
+import { OGDialog, OGDialogTemplate } from '~/components/ui';
 
 interface DragDropModalProps {
   onOptionSelect: (option: EToolResources | undefined) => void;
@@ -22,12 +20,12 @@ interface FileOption {
 
 const DragDropModal = ({ onOptionSelect, setShowModal, files, isVisible }: DragDropModalProps) => {
   const localize = useLocalize();
-  const { data: endpointsConfig } = useGetEndpointsQuery();
-  const capabilities = useMemo(
-    () => endpointsConfig?.[EModelEndpoint.agents]?.capabilities ?? [],
-    [endpointsConfig],
-  );
-
+  const { agentsConfig } = useGetAgentsConfig();
+  /** TODO: Ephemeral Agent Capabilities
+   * Allow defining agent capabilities on a per-endpoint basis
+   * Use definition for agents endpoint for ephemeral agents
+   * */
+  const capabilities = useAgentCapabilities(agentsConfig?.capabilities ?? defaultAgentCapabilities);
   const options = useMemo(() => {
     const _options: FileOption[] = [
       {
@@ -37,26 +35,26 @@ const DragDropModal = ({ onOptionSelect, setShowModal, files, isVisible }: DragD
         condition: files.every((file) => file.type?.startsWith('image/')),
       },
     ];
-    for (const capability of capabilities) {
-      if (capability === EToolResources.file_search) {
-        _options.push({
-          label: localize('com_ui_upload_file_search'),
-          value: EToolResources.file_search,
-          icon: <FileSearch className="icon-md" />,
-        });
-      } else if (capability === EToolResources.execute_code) {
-        _options.push({
-          label: localize('com_ui_upload_code_files'),
-          value: EToolResources.execute_code,
-          icon: <TerminalSquareIcon className="icon-md" />,
-        });
-      } else if (capability === EToolResources.ocr) {
-        _options.push({
-          label: localize('com_ui_upload_ocr_text'),
-          value: EToolResources.ocr,
-          icon: <FileType2Icon className="icon-md" />,
-        });
-      }
+    if (capabilities.fileSearchEnabled) {
+      _options.push({
+        label: localize('com_ui_upload_file_search'),
+        value: EToolResources.file_search,
+        icon: <FileSearch className="icon-md" />,
+      });
+    }
+    if (capabilities.codeEnabled) {
+      _options.push({
+        label: localize('com_ui_upload_code_files'),
+        value: EToolResources.execute_code,
+        icon: <TerminalSquareIcon className="icon-md" />,
+      });
+    }
+    if (capabilities.ocrEnabled) {
+      _options.push({
+        label: localize('com_ui_upload_ocr_text'),
+        value: EToolResources.ocr,
+        icon: <FileType2Icon className="icon-md" />,
+      });
     }
 
     return _options;

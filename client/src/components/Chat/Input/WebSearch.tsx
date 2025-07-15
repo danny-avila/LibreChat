@@ -8,7 +8,7 @@ import { useBadgeRowContext } from '~/Providers';
 function WebSearch() {
   const localize = useLocalize();
   const { webSearch: webSearchData, searchApiKeyForm } = useBadgeRowContext();
-  const { toggleState: webSearch, debouncedChange, isPinned } = webSearchData;
+  const { toggleState: webSearch, debouncedChange, isPinned, authData } = webSearchData;
   const { badgeTriggerRef } = searchApiKeyForm;
 
   const canUseWebSearch = useHasAccess({
@@ -21,7 +21,7 @@ function WebSearch() {
   }
 
   return (
-    (webSearch || isPinned) && (
+    (isPinned || (webSearch && authData?.authenticated)) && (
       <CheckboxButton
         ref={badgeTriggerRef}
         className="max-w-fit"

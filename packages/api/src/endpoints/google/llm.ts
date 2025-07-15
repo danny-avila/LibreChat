@@ -106,7 +106,7 @@ export function getGoogleConfig(
   const authHeader = options.authHeader;
 
   const {
-    grounding,
+    web_search,
     thinking = googleSettings.thinking.default,
     thinkingBudget = googleSettings.thinkingBudget.default,
     ...modelOptions
@@ -191,7 +191,7 @@ export function getGoogleConfig(
 
   const tools: GoogleAIToolType[] = [];
 
-  if (grounding) {
+  if (web_search) {
     tools.push({ googleSearch: {} });
   }
 
