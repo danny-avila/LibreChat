@@ -12,6 +12,7 @@ let Agent;
 let AclEntry;
 let User;
 let AccessRole;
+let modelsToCleanup = [];
 
 describe('File Access Control', () => {
   let mongoServer;
@@ -22,23 +23,39 @@ describe('File Access Control', () => {
     await mongoose.connect(mongoUri);
 
     // Initialize all models
-    createModels(mongoose);
+    const models = createModels(mongoose);
+
+    // Track which models we're adding
+    modelsToCleanup = Object.keys(models);
 
     // Register models on mongoose.models so methods can access them
-    const models = require('~/db/models');
-    Object.assign(mongoose.models, models);
+    const dbModels = require('~/db/models');
+    Object.assign(mongoose.models, dbModels);
 
-    File = models.File;
-    Agent = models.Agent;
-    AclEntry = models.AclEntry;
-    User = models.User;
-    AccessRole = models.AccessRole;
+    File = dbModels.File;
+    Agent = dbModels.Agent;
+    AclEntry = dbModels.AclEntry;
+    User = dbModels.User;
+    AccessRole = dbModels.AccessRole;
 
     // Seed default roles
     await seedDefaultRoles();
   });
 
   afterAll(async () => {
+    // Clean up all collections before disconnecting
+    const collections = mongoose.connection.collections;
+    for (const key in collections) {
+      await collections[key].deleteMany({});
+    }
+
+    // Clear only the models we added
+    for (const modelName of modelsToCleanup) {
+      if (mongoose.models[modelName]) {
+        delete mongoose.models[modelName];
+      }
+    }
+
     await mongoose.disconnect();
     await mongoServer.stop();
   });
@@ -48,6 +65,7 @@ describe('File Access Control', () => {
     await Agent.deleteMany({});
     await AclEntry.deleteMany({});
     await User.deleteMany({});
+    // Don't delete AccessRole as they are seeded defaults needed for tests
   });
 
   describe('hasAccessToFilesViaAgent', () => {

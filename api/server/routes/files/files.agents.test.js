@@ -2,8 +2,9 @@ const express = require('express');
 const request = require('supertest');
 const mongoose = require('mongoose');
 const { v4: uuidv4 } = require('uuid');
-const { createMethods } = require('@librechat/data-schemas');
+const { PERMISSION_BITS } = require('librechat-data-provider');
 const { MongoMemoryServer } = require('mongodb-memory-server');
+const { createMethods } = require('@librechat/data-schemas');
 const { createAgent } = require('~/models/Agent');
 const { createFile } = require('~/models/File');
 
@@ -46,6 +47,7 @@ describe('File Routes - Agent Files Endpoint', () => {
   let AclEntry;
   // eslint-disable-next-line no-unused-vars
   let AccessRole;
+  let modelsToCleanup = [];
 
   beforeAll(async () => {
     mongoServer = await MongoMemoryServer.create();
@@ -55,6 +57,9 @@ describe('File Routes - Agent Files Endpoint', () => {
     // Initialize all models using createModels
     const { createModels } = require('@librechat/data-schemas');
     const models = createModels(mongoose);
+
+    // Track which models we're adding
+    modelsToCleanup = Object.keys(models);
 
     // Register models on mongoose.models so methods can access them
     Object.assign(mongoose.models, models);
@@ -86,15 +91,30 @@ describe('File Routes - Agent Files Endpoint', () => {
   });
 
   afterAll(async () => {
+    // Clean up all collections before disconnecting
+    const collections = mongoose.connection.collections;
+    for (const key in collections) {
+      await collections[key].deleteMany({});
+    }
+
+    // Clear only the models we added
+    for (const modelName of modelsToCleanup) {
+      if (mongoose.models[modelName]) {
+        delete mongoose.models[modelName];
+      }
+    }
+
     await mongoose.disconnect();
     await mongoServer.stop();
   });
 
   beforeEach(async () => {
+    // Clean up all test data
     await File.deleteMany({});
     await Agent.deleteMany({});
     await User.deleteMany({});
     await AclEntry.deleteMany({});
+    // Don't delete AccessRole as they are seeded defaults needed for tests
 
     // Create test users
     authorId = new mongoose.Types.ObjectId();
