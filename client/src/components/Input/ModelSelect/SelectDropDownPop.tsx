@@ -1,7 +1,7 @@
 import React from 'react';
+import { useMultiSearch } from '@librechat/client';
 import { Root, Trigger, Content, Portal } from '@radix-ui/react-popover';
 import MenuItem from '~/components/Chat/Menus/UI/MenuItem';
-import { useMultiSearch } from '~/components';
 import type { Option } from '~/common';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils/';

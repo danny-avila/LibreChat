@@ -2,8 +2,6 @@ import { useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
 import TextareaAutosize from 'react-textarea-autosize';
 import { useAvailablePluginsQuery } from 'librechat-data-provider/react-query';
-import type { TPlugin } from 'librechat-data-provider';
-import type { TModelSelectProps, OnInputNumberChange } from '~/common';
 import {
   Input,
   Label,
@@ -12,7 +10,9 @@ import {
   InputNumber,
   SelectDropDown,
   HoverCardTrigger,
-} from '~/components/ui';
+} from '@librechat/client';
+import type { TModelSelectProps, OnInputNumberChange } from '~/common';
+import type { TPlugin } from 'librechat-data-provider';
 import {
   removeFocusOutlines,
   defaultTextProps,
@@ -23,8 +23,8 @@ import {
   cn,
 } from '~/utils';
 import OptionHoverAlt from '~/components/SidePanel/Parameters/OptionHover';
-import { useLocalize, useDebouncedInput } from '~/hooks';
 import MultiSelectDropDown from '~/components/Input/ModelSelect/MultiSelectDropDown';
+import { useLocalize, useDebouncedInput } from '~/hooks';
 import OptionHover from './OptionHover';
 import { ESide } from '~/common';
 import store from '~/store';

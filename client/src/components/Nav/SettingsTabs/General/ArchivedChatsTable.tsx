@@ -2,7 +2,6 @@ import { useState, useCallback, useMemo, useEffect } from 'react';
 import debounce from 'lodash/debounce';
 import { useRecoilValue } from 'recoil';
 import { TrashIcon, ArchiveRestore, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
-import type { ConversationListParams, TConversation } from 'librechat-data-provider';
 import {
   Button,
   OGDialog,
@@ -13,16 +12,18 @@ import {
   TooltipAnchor,
   Spinner,
   DataTable,
-} from '~/components';
+  useToastContext,
+  useMediaQuery,
+} from '@librechat/client';
+import type { ConversationListParams, TConversation } from 'librechat-data-provider';
 import {
   useArchiveConvoMutation,
   useConversationsInfiniteQuery,
   useDeleteConversationMutation,
 } from '~/data-provider';
-import { useLocalize, useMediaQuery } from '~/hooks';
 import { MinimalIcon } from '~/components/Endpoints';
 import { NotificationSeverity } from '~/common';
-import { useToastContext } from '~/Providers';
+import { useLocalize } from '~/hooks';
 import { formatDate } from '~/utils';
 import store from '~/store';
 

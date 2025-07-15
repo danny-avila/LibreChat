@@ -1,9 +1,9 @@
 import React, { useMemo } from 'react';
+import { Dropdown } from '@librechat/client';
 import { useTranslation } from 'react-i18next';
-import type { ReactNode } from 'react';
 import { useFormContext, Controller } from 'react-hook-form';
 import { LocalStorageKeys } from 'librechat-data-provider';
-import { Dropdown } from '~/components/ui';
+import type { ReactNode } from 'react';
 import { useCategories } from '~/hooks';
 
 interface CategorySelectorProps {

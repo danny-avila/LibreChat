@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react';
 import { useFormContext } from 'react-hook-form';
+import { AttachmentIcon } from '@librechat/client';
 import {
   EModelEndpoint,
   EToolResources,
@@ -12,7 +13,6 @@ import { useFileHandling, useLocalize, useLazyEffect } from '~/hooks';
 import FileRow from '~/components/Chat/Input/Files/FileRow';
 import FileSearchCheckbox from './FileSearchCheckbox';
 import { useGetFileConfig } from '~/data-provider';
-import { AttachmentIcon } from '~/components/svg';
 import { useChatContext } from '~/Providers';
 
 export default function FileSearch({

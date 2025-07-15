@@ -1,13 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useFormContext, Controller } from 'react-hook-form';
+import { Label, Checkbox, Spinner, useToastContext } from '@librechat/client';
 import type { MCP } from 'librechat-data-provider';
 import MCPAuth from '~/components/SidePanel/Builder/MCPAuth';
 import MCPIcon from '~/components/SidePanel/Agents/MCPIcon';
-import { Label, Checkbox } from '~/components/ui';
-import useLocalize from '~/hooks/useLocalize';
-import { useToastContext } from '~/Providers';
-import { Spinner } from '~/components/svg';
 import { MCPForm } from '~/common/types';
+import { useLocalize } from '~/hooks';
 
 function useUpdateAgentMCP({
   onSuccess,
