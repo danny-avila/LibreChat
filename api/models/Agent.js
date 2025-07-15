@@ -39,14 +39,6 @@ const createAgent = async (agentData) => {
     category: agentData.category || 'general',
   };
 
-  // Handle empty support_contact object
-  if (agentData.support_contact && Object.keys(agentData.support_contact).length === 0) {
-    initialAgentData.support_contact = {
-      name: '',
-      email: '',
-    };
-  }
-
   return (await Agent.create(initialAgentData)).toObject();
 };
 
