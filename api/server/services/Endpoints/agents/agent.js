@@ -8,6 +8,7 @@ const {
   ErrorTypes,
   EModelEndpoint,
   EToolResources,
+  isAgentsEndpoint,
   replaceSpecialVars,
   providerEndpointMap,
 } = require('librechat-data-provider');
@@ -42,7 +43,11 @@ const initializeAgent = async ({
   allowedProviders,
   isInitialAgent = false,
 }) => {
-  if (allowedProviders.size > 0 && !allowedProviders.has(agent.provider)) {
+  if (
+    isAgentsEndpoint(endpointOption?.endpoint) &&
+    allowedProviders.size > 0 &&
+    !allowedProviders.has(agent.provider)
+  ) {
     throw new Error(
       `{ "type": "${ErrorTypes.INVALID_AGENT_PROVIDER}", "info": "${agent.provider}" }`,
     );

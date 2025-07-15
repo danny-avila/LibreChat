@@ -458,6 +458,12 @@ class AgentClient extends BaseClient {
       res: this.options.res,
       agent: prelimAgent,
       allowedProviders,
+      endpointOption: {
+        endpoint:
+          prelimAgent.id !== Constants.EPHEMERAL_AGENT_ID
+            ? EModelEndpoint.agents
+            : memoryConfig.agent?.provider,
+      },
     });
 
     if (!agent) {
