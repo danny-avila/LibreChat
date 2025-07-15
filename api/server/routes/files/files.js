@@ -17,12 +17,13 @@ const {
   processDeleteRequest,
   processAgentFileUpload,
 } = require('~/server/services/Files/process');
-const { getFiles, batchUpdateFiles, hasAccessToFilesViaAgent } = require('~/models/File');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
 const { checkPermission } = require('~/server/services/PermissionService');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { refreshS3FileUrls } = require('~/server/services/Files/S3/crud');
+const { hasAccessToFilesViaAgent } = require('~/server/services/Files');
+const { getFiles, batchUpdateFiles } = require('~/models/File');
 const { getAssistant } = require('~/models/Assistant');
 const { getAgent } = require('~/models/Agent');
 const { getLogStores } = require('~/cache');
