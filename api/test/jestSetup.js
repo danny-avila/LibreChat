@@ -10,4 +10,9 @@ process.env.JWT_SECRET = 'test';
 process.env.JWT_REFRESH_SECRET = 'test';
 process.env.CREDS_KEY = 'test';
 process.env.CREDS_IV = 'test';
+process.env.ALLOW_EMAIL_LOGIN = 'true';
+
+// Set global test timeout to 30 seconds
+// This can be overridden in individual tests if needed
+jest.setTimeout(30000);
 process.env.OPENAI_API_KEY = 'test';
