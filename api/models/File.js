@@ -1,6 +1,6 @@
 const { logger } = require('@librechat/data-schemas');
-const { EToolResources, FileContext, Constants } = require('librechat-data-provider');
-const { getProjectByName } = require('./Project');
+const { EToolResources, FileContext, PERMISSION_BITS } = require('librechat-data-provider');
+const { checkPermission } = require('~/server/services/PermissionService');
 const { getAgent } = require('./Agent');
 const { File } = require('~/db/models');
 
@@ -40,26 +40,33 @@ const hasAccessToFilesViaAgent = async (userId, fileIds, agentId, checkCollabora
       return accessMap;
     }
 
-    // Check if agent is shared with the user via projects
-    if (!agent.projectIds || agent.projectIds.length === 0) {
+    // Check if user has at least VIEW permission on the agent
+    const hasViewPermission = await checkPermission({
+      userId,
+      resourceType: 'agent',
+      resourceId: agent._id,
+      requiredPermission: PERMISSION_BITS.VIEW,
+    });
+
+    if (!hasViewPermission) {
       return accessMap;
     }
 
-    // Check if agent is in global project
-    const globalProject = await getProjectByName(Constants.GLOBAL_PROJECT_NAME, '_id');
-    if (
-      !globalProject ||
-      !agent.projectIds.some((pid) => pid.toString() === globalProject._id.toString())
-    ) {
+    // Check if user has EDIT permission (which would indicate collaborative access)
+    const hasEditPermission = await checkPermission({
+      userId,
+      resourceType: 'agent',
+      resourceId: agent._id,
+      requiredPermission: PERMISSION_BITS.EDIT,
+    });
+
+    // If user only has VIEW permission, they can't access files
+    // Only users with EDIT permission or higher can access agent files
+    if (!hasEditPermission) {
       return accessMap;
     }
 
-    // Agent is globally shared - check if it's collaborative
-    if (checkCollaborative && !agent.isCollaborative) {
-      return accessMap;
-    }
-
-    // Check which files are actually attached
+    // User has edit permissions - check which files are actually attached
     const attachedFileIds = new Set();
     if (agent.tool_resources) {
       for (const [_resourceType, resource] of Object.entries(agent.tool_resources)) {
