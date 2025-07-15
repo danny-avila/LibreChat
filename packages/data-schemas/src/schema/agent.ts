@@ -100,10 +100,7 @@ const agentSchema = new Schema<IAgent>(
     },
     support_contact: {
       type: Schema.Types.Mixed,
-      default: {
-        name: '',
-        email: '',
-      },
+      default: undefined,
     },
     is_promoted: {
       type: Boolean,
