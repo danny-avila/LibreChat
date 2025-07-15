@@ -1258,6 +1258,328 @@ describe('models/Agent', () => {
       expect(secondUpdate.versions).toHaveLength(3);
     });
 
+    test('should detect changes in support_contact fields', async () => {
+      const agentId = `agent_${uuidv4()}`;
+      const authorId = new mongoose.Types.ObjectId();
+
+      // Create agent with initial support_contact
+      await createAgent({
+        id: agentId,
+        name: 'Agent with Support Contact',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+        support_contact: {
+          name: 'Initial Support',
+          email: 'initial@support.com',
+        },
+      });
+
+      // Update support_contact name only
+      const firstUpdate = await updateAgent(
+        { id: agentId },
+        {
+          support_contact: {
+            name: 'Updated Support',
+            email: 'initial@support.com',
+          },
+        },
+      );
+
+      expect(firstUpdate.versions).toHaveLength(2);
+      expect(firstUpdate.support_contact.name).toBe('Updated Support');
+      expect(firstUpdate.support_contact.email).toBe('initial@support.com');
+
+      // Update support_contact email only
+      const secondUpdate = await updateAgent(
+        { id: agentId },
+        {
+          support_contact: {
+            name: 'Updated Support',
+            email: 'updated@support.com',
+          },
+        },
+      );
+
+      expect(secondUpdate.versions).toHaveLength(3);
+      expect(secondUpdate.support_contact.email).toBe('updated@support.com');
+
+      // Try to update with same support_contact - should be detected as duplicate
+      await expect(
+        updateAgent(
+          { id: agentId },
+          {
+            support_contact: {
+              name: 'Updated Support',
+              email: 'updated@support.com',
+            },
+          },
+        ),
+      ).rejects.toThrow('Duplicate version');
+    });
+
+    test('should handle support_contact from empty to populated', async () => {
+      const agentId = `agent_${uuidv4()}`;
+      const authorId = new mongoose.Types.ObjectId();
+
+      // Create agent without support_contact
+      const agent = await createAgent({
+        id: agentId,
+        name: 'Agent without Support',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+      });
+
+      // Verify support_contact is undefined since it wasn't provided
+      expect(agent.support_contact).toBeUndefined();
+
+      // Update to add support_contact
+      const updated = await updateAgent(
+        { id: agentId },
+        {
+          support_contact: {
+            name: 'New Support Team',
+            email: 'support@example.com',
+          },
+        },
+      );
+
+      expect(updated.versions).toHaveLength(2);
+      expect(updated.support_contact.name).toBe('New Support Team');
+      expect(updated.support_contact.email).toBe('support@example.com');
+    });
+
+    test('should handle support_contact edge cases in isDuplicateVersion', async () => {
+      const agentId = `agent_${uuidv4()}`;
+      const authorId = new mongoose.Types.ObjectId();
+
+      // Create agent with support_contact
+      await createAgent({
+        id: agentId,
+        name: 'Edge Case Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+        support_contact: {
+          name: 'Support',
+          email: 'support@test.com',
+        },
+      });
+
+      // Update to empty support_contact
+      const emptyUpdate = await updateAgent(
+        { id: agentId },
+        {
+          support_contact: {},
+        },
+      );
+
+      expect(emptyUpdate.versions).toHaveLength(2);
+      expect(emptyUpdate.support_contact).toEqual({});
+
+      // Update back to populated support_contact
+      const repopulated = await updateAgent(
+        { id: agentId },
+        {
+          support_contact: {
+            name: 'Support',
+            email: 'support@test.com',
+          },
+        },
+      );
+
+      expect(repopulated.versions).toHaveLength(3);
+
+      // Verify all versions have correct support_contact
+      const finalAgent = await getAgent({ id: agentId });
+      expect(finalAgent.versions[0].support_contact).toEqual({
+        name: 'Support',
+        email: 'support@test.com',
+      });
+      expect(finalAgent.versions[1].support_contact).toEqual({});
+      expect(finalAgent.versions[2].support_contact).toEqual({
+        name: 'Support',
+        email: 'support@test.com',
+      });
+    });
+
+    test('should preserve support_contact in version history', async () => {
+      const agentId = `agent_${uuidv4()}`;
+      const authorId = new mongoose.Types.ObjectId();
+
+      // Create agent
+      await createAgent({
+        id: agentId,
+        name: 'Version History Test',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+        support_contact: {
+          name: 'Initial Contact',
+          email: 'initial@test.com',
+        },
+      });
+
+      // Multiple updates with different support_contact values
+      await updateAgent(
+        { id: agentId },
+        {
+          support_contact: {
+            name: 'Second Contact',
+            email: 'second@test.com',
+          },
+        },
+      );
+
+      await updateAgent(
+        { id: agentId },
+        {
+          support_contact: {
+            name: 'Third Contact',
+            email: 'third@test.com',
+          },
+        },
+      );
+
+      const finalAgent = await getAgent({ id: agentId });
+
+      // Verify version history
+      expect(finalAgent.versions).toHaveLength(3);
+      expect(finalAgent.versions[0].support_contact).toEqual({
+        name: 'Initial Contact',
+        email: 'initial@test.com',
+      });
+      expect(finalAgent.versions[1].support_contact).toEqual({
+        name: 'Second Contact',
+        email: 'second@test.com',
+      });
+      expect(finalAgent.versions[2].support_contact).toEqual({
+        name: 'Third Contact',
+        email: 'third@test.com',
+      });
+
+      // Current state should match last version
+      expect(finalAgent.support_contact).toEqual({
+        name: 'Third Contact',
+        email: 'third@test.com',
+      });
+    });
+
+    test('should handle partial support_contact updates', async () => {
+      const agentId = `agent_${uuidv4()}`;
+      const authorId = new mongoose.Types.ObjectId();
+
+      // Create agent with full support_contact
+      await createAgent({
+        id: agentId,
+        name: 'Partial Update Test',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+        support_contact: {
+          name: 'Original Name',
+          email: 'original@email.com',
+        },
+      });
+
+      // MongoDB's findOneAndUpdate will replace the entire support_contact object
+      // So we need to verify that partial updates still work correctly
+      const updated = await updateAgent(
+        { id: agentId },
+        {
+          support_contact: {
+            name: 'New Name',
+            email: '', // Empty email
+          },
+        },
+      );
+
+      expect(updated.versions).toHaveLength(2);
+      expect(updated.support_contact.name).toBe('New Name');
+      expect(updated.support_contact.email).toBe('');
+
+      // Verify isDuplicateVersion works with partial changes
+      await expect(
+        updateAgent(
+          { id: agentId },
+          {
+            support_contact: {
+              name: 'New Name',
+              email: '',
+            },
+          },
+        ),
+      ).rejects.toThrow('Duplicate version');
+    });
+
+    // Edge Cases
+    describe.each([
+      {
+        operation: 'add',
+        name: 'empty file_id',
+        needsAgent: true,
+        params: { tool_resource: 'file_search', file_id: '' },
+        shouldResolve: true,
+      },
+      {
+        operation: 'add',
+        name: 'non-existent agent',
+        needsAgent: false,
+        params: { tool_resource: 'file_search', file_id: 'file123' },
+        shouldResolve: false,
+        error: 'Agent not found for adding resource file',
+      },
+    ])('addAgentResourceFile with $name', ({ needsAgent, params, shouldResolve, error }) => {
+      test(`should ${shouldResolve ? 'resolve' : 'reject'}`, async () => {
+        const agent = needsAgent ? await createBasicAgent() : null;
+        const agent_id = needsAgent ? agent.id : `agent_${uuidv4()}`;
+
+        if (shouldResolve) {
+          await expect(addAgentResourceFile({ agent_id, ...params })).resolves.toBeDefined();
+        } else {
+          await expect(addAgentResourceFile({ agent_id, ...params })).rejects.toThrow(error);
+        }
+      });
+    });
+
+    describe.each([
+      {
+        name: 'empty files array',
+        files: [],
+        needsAgent: true,
+        shouldResolve: true,
+      },
+      {
+        name: 'non-existent tool_resource',
+        files: [{ tool_resource: 'non_existent_tool', file_id: 'file123' }],
+        needsAgent: true,
+        shouldResolve: true,
+      },
+      {
+        name: 'non-existent agent',
+        files: [{ tool_resource: 'file_search', file_id: 'file123' }],
+        needsAgent: false,
+        shouldResolve: false,
+        error: 'Agent not found for removing resource files',
+      },
+    ])('removeAgentResourceFiles with $name', ({ files, needsAgent, shouldResolve, error }) => {
+      test(`should ${shouldResolve ? 'resolve' : 'reject'}`, async () => {
+        const agent = needsAgent ? await createBasicAgent() : null;
+        const agent_id = needsAgent ? agent.id : `agent_${uuidv4()}`;
+
+        if (shouldResolve) {
+          const result = await removeAgentResourceFiles({ agent_id, files });
+          expect(result).toBeDefined();
+          if (agent) {
+            expect(result.id).toBe(agent.id);
+          }
+        } else {
+          await expect(removeAgentResourceFiles({ agent_id, files })).rejects.toThrow(error);
+        }
+      });
+    });
+
     describe('Edge Cases', () => {
       test('should handle extremely large version history', async () => {
         const agentId = `agent_${uuidv4()}`;
@@ -2575,6 +2897,93 @@ describe('models/Agent', () => {
       expect(updated.versions).toHaveLength(2);
       expect(updated.agent_ids).toEqual(['agent1']);
     });
+  });
+});
+
+describe('Support Contact Field', () => {
+  let mongoServer;
+
+  beforeAll(async () => {
+    mongoServer = await MongoMemoryServer.create();
+    const mongoUri = mongoServer.getUri();
+    Agent = mongoose.models.Agent || mongoose.model('Agent', agentSchema);
+    await mongoose.connect(mongoUri);
+  }, 20000);
+
+  afterAll(async () => {
+    await mongoose.disconnect();
+    await mongoServer.stop();
+  });
+
+  beforeEach(async () => {
+    await Agent.deleteMany({});
+  });
+
+  it('should not create subdocument with ObjectId for support_contact', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    const agentData = {
+      id: 'agent_test_support',
+      name: 'Test Agent',
+      provider: 'openai',
+      model: 'gpt-4',
+      author: userId,
+      support_contact: {
+        name: 'Support Team',
+        email: 'support@example.com',
+      },
+    };
+
+    // Create agent
+    const agent = await createAgent(agentData);
+
+    // Verify support_contact is stored correctly
+    expect(agent.support_contact).toBeDefined();
+    expect(agent.support_contact.name).toBe('Support Team');
+    expect(agent.support_contact.email).toBe('support@example.com');
+
+    // Verify no _id field is created in support_contact
+    expect(agent.support_contact._id).toBeUndefined();
+
+    // Fetch from database to double-check
+    const dbAgent = await Agent.findOne({ id: agentData.id });
+    expect(dbAgent.support_contact).toBeDefined();
+    expect(dbAgent.support_contact.name).toBe('Support Team');
+    expect(dbAgent.support_contact.email).toBe('support@example.com');
+    expect(dbAgent.support_contact._id).toBeUndefined();
+  });
+
+  it('should handle empty support_contact correctly', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    const agentData = {
+      id: 'agent_test_empty_support',
+      name: 'Test Agent',
+      provider: 'openai',
+      model: 'gpt-4',
+      author: userId,
+      support_contact: {},
+    };
+
+    const agent = await createAgent(agentData);
+
+    // Verify empty support_contact is stored as empty object
+    expect(agent.support_contact).toEqual({});
+    expect(agent.support_contact._id).toBeUndefined();
+  });
+
+  it('should handle missing support_contact correctly', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    const agentData = {
+      id: 'agent_test_no_support',
+      name: 'Test Agent',
+      provider: 'openai',
+      model: 'gpt-4',
+      author: userId,
+    };
+
+    const agent = await createAgent(agentData);
+
+    // Verify support_contact is undefined when not provided
+    expect(agent.support_contact).toBeUndefined();
   });
 });
 
