@@ -61,11 +61,11 @@ describe('File Routes - Delete with Agent Access', () => {
   let Agent;
   let AclEntry;
   let User;
+  let AccessRole;
   let methods;
+  let modelsToCleanup = [];
   // eslint-disable-next-line no-unused-vars
   let agentId;
-  // eslint-disable-next-line no-unused-vars
-  let AccessRole;
 
   beforeAll(async () => {
     mongoServer = await MongoMemoryServer.create();
@@ -75,6 +75,9 @@ describe('File Routes - Delete with Agent Access', () => {
     // Initialize all models using createModels
     const { createModels } = require('@librechat/data-schemas');
     const models = createModels(mongoose);
+
+    // Track which models we're adding
+    modelsToCleanup = Object.keys(models);
 
     // Register models on mongoose.models so methods can access them
     Object.assign(mongoose.models, models);
@@ -106,6 +109,19 @@ describe('File Routes - Delete with Agent Access', () => {
   });
 
   afterAll(async () => {
+    // Clean up all collections before disconnecting
+    const collections = mongoose.connection.collections;
+    for (const key in collections) {
+      await collections[key].deleteMany({});
+    }
+
+    // Clear only the models we added
+    for (const modelName of modelsToCleanup) {
+      if (mongoose.models[modelName]) {
+        delete mongoose.models[modelName];
+      }
+    }
+
     await mongoose.disconnect();
     await mongoServer.stop();
   });
@@ -113,11 +129,12 @@ describe('File Routes - Delete with Agent Access', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
 
-    // Clear database
+    // Clear database - clean up all test data
     await File.deleteMany({});
     await Agent.deleteMany({});
     await User.deleteMany({});
     await AclEntry.deleteMany({});
+    // Don't delete AccessRole as they are seeded defaults needed for tests
 
     // Create test data
     authorId = new mongoose.Types.ObjectId();
