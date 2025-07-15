@@ -590,12 +590,59 @@ export class MCPConnection extends EventEmitter {
   }
 
   public async isConnected(): Promise<boolean> {
+    // First check if we're in a connected state
+    if (this.connectionState !== 'connected') {
+      return false;
+    }
+
     try {
+      // Try ping first as it's the lightest check
       await this.client.ping();
       return this.connectionState === 'connected';
     } catch (error) {
-      logger.error(`${this.getLogPrefix()} Ping failed:`, error);
-      return false;
+      // Check if the error is because ping is not supported (method not found)
+      const pingUnsupported =
+        error instanceof Error &&
+        ((error as Error)?.message.includes('-32601') ||
+          (error as Error)?.message.includes('invalid method ping') ||
+          (error as Error)?.message.includes('method not found'));
+
+      if (!pingUnsupported) {
+        logger.error(`${this.getLogPrefix()} Ping failed:`, error);
+        return false;
+      }
+
+      // Ping is not supported by this server, try an alternative verification
+      logger.debug(
+        `${this.getLogPrefix()} Server does not support ping method, verifying connection with capabilities`,
+      );
+
+      try {
+        // Get server capabilities to verify connection is truly active
+        const capabilities = this.client.getServerCapabilities();
+
+        // If we have capabilities, try calling a supported method to verify connection
+        if (capabilities?.tools) {
+          await this.client.listTools();
+          return this.connectionState === 'connected';
+        } else if (capabilities?.resources) {
+          await this.client.listResources();
+          return this.connectionState === 'connected';
+        } else if (capabilities?.prompts) {
+          await this.client.listPrompts();
+          return this.connectionState === 'connected';
+        } else {
+          // No capabilities to test, but we're in connected state and initialization succeeded
+          logger.debug(
+            `${this.getLogPrefix()} No capabilities to test, assuming connected based on state`,
+          );
+          return this.connectionState === 'connected';
+        }
+      } catch (capabilityError) {
+        // If capability check fails, the connection is likely broken
+        logger.error(`${this.getLogPrefix()} Connection verification failed:`, capabilityError);
+        return false;
+      }
     }
   }
 
