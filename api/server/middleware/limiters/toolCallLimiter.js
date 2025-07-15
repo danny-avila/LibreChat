@@ -1,10 +1,7 @@
 const rateLimit = require('express-rate-limit');
-const { RedisStore } = require('rate-limit-redis');
 const { ViolationTypes } = require('librechat-data-provider');
-const ioredisClient = require('~/cache/ioredisClient');
+const { limiterCache } = require('~/cache/cacheFactory');
 const logViolation = require('~/cache/logViolation');
-const { isEnabled } = require('~/server/utils');
-const { logger } = require('~/config');
 
 const { TOOL_CALL_VIOLATION_SCORE: score } = process.env;
 
@@ -28,16 +25,8 @@ const limiterOptions = {
   keyGenerator: function (req) {
     return req.user?.id;
   },
+  store: limiterCache('tool_call_limiter'),
 };
-
-if (isEnabled(process.env.USE_REDIS) && ioredisClient) {
-  logger.debug('Using Redis for tool call rate limiter.');
-  const store = new RedisStore({
-    sendCommand: (...args) => ioredisClient.call(...args),
-    prefix: 'tool_call_limiter:',
-  });
-  limiterOptions.store = store;
-}
 
 const toolCallLimiter = rateLimit(limiterOptions);
 

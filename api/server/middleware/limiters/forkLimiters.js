@@ -1,9 +1,6 @@
 const rateLimit = require('express-rate-limit');
-const { isEnabled } = require('@librechat/api');
-const { RedisStore } = require('rate-limit-redis');
-const { logger } = require('@librechat/data-schemas');
 const { ViolationTypes } = require('librechat-data-provider');
-const ioredisClient = require('~/cache/ioredisClient');
+const { limiterCache } = require('~/cache/cacheFactory');
 const logViolation = require('~/cache/logViolation');
 
 const getEnvironmentVariables = () => {
@@ -62,6 +59,7 @@ const createForkLimiters = () => {
     windowMs: forkIpWindowMs,
     max: forkIpMax,
     handler: createForkHandler(),
+    store: limiterCache('fork_ip_limiter'),
   };
   const userLimiterOptions = {
     windowMs: forkUserWindowMs,
@@ -70,22 +68,8 @@ const createForkLimiters = () => {
     keyGenerator: function (req) {
       return req.user?.id;
     },
+    store: limiterCache('fork_user_limiter'),
   };
-
-  if (isEnabled(process.env.USE_REDIS) && ioredisClient) {
-    logger.debug('Using Redis for fork rate limiters.');
-    const sendCommand = (...args) => ioredisClient.call(...args);
-    const ipStore = new RedisStore({
-      sendCommand,
-      prefix: 'fork_ip_limiter:',
-    });
-    const userStore = new RedisStore({
-      sendCommand,
-      prefix: 'fork_user_limiter:',
-    });
-    ipLimiterOptions.store = ipStore;
-    userLimiterOptions.store = userStore;
-  }
 
   const forkIpLimiter = rateLimit(ipLimiterOptions);
   const forkUserLimiter = rateLimit(userLimiterOptions);
