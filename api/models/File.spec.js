@@ -125,7 +125,7 @@ describe('File Access Control', () => {
       });
 
       // Check access for all files
-      const { hasAccessToFilesViaAgent } = require('./File');
+      const { hasAccessToFilesViaAgent } = require('~/server/services/Files/permissions');
       const accessMap = await hasAccessToFilesViaAgent(userId.toString(), fileIds, agentId);
 
       // Should have access only to the first two files
@@ -163,7 +163,7 @@ describe('File Access Control', () => {
       });
 
       // Check access as the author
-      const { hasAccessToFilesViaAgent } = require('./File');
+      const { hasAccessToFilesViaAgent } = require('~/server/services/Files/permissions');
       const accessMap = await hasAccessToFilesViaAgent(authorId.toString(), fileIds, agentId);
 
       // Author should have access to all files
@@ -184,7 +184,7 @@ describe('File Access Control', () => {
         provider: 'local',
       });
 
-      const { hasAccessToFilesViaAgent } = require('./File');
+      const { hasAccessToFilesViaAgent } = require('~/server/services/Files/permissions');
       const accessMap = await hasAccessToFilesViaAgent(
         userId.toString(),
         fileIds,
@@ -242,7 +242,7 @@ describe('File Access Control', () => {
       });
 
       // Check access for files
-      const { hasAccessToFilesViaAgent } = require('./File');
+      const { hasAccessToFilesViaAgent } = require('~/server/services/Files/permissions');
       const accessMap = await hasAccessToFilesViaAgent(userId.toString(), fileIds, agentId);
 
       // Should have no access to any files when only VIEW permission
@@ -328,13 +328,16 @@ describe('File Access Control', () => {
         bytes: 300,
       });
 
-      // Get files with access control
-      const files = await getFiles(
+      // Get all files first
+      const allFiles = await getFiles(
         { file_id: { $in: [ownedFileId, sharedFileId, inaccessibleFileId] } },
         null,
         { text: 0 },
-        { userId: userId.toString(), agentId },
       );
+
+      // Then filter by access control
+      const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
+      const files = await filterFilesByAgentAccess(allFiles, userId.toString(), agentId);
 
       expect(files).toHaveLength(2);
       expect(files.map((f) => f.file_id)).toContain(ownedFileId);
