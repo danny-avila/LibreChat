@@ -6,9 +6,11 @@ import { TrashIcon, MessageSquare, ArrowUpDown, ArrowUp, ArrowDown } from 'lucid
 import type { SharedLinkItem, SharedLinksListParams } from 'librechat-data-provider';
 import {
   OGDialog,
+  useToastContext,
   OGDialogTemplate,
   OGDialogTrigger,
   OGDialogContent,
+  useMediaQuery,
   OGDialogHeader,
   OGDialogTitle,
   TooltipAnchor,
@@ -16,11 +18,10 @@ import {
   Spinner,
   Button,
   Label,
-} from '~/components';
+} from '@librechat/client';
 import { useDeleteSharedLinkMutation, useSharedLinksQuery } from '~/data-provider';
-import { useLocalize, useMediaQuery } from '~/hooks';
+import { useLocalize } from '~/hooks';
 import { NotificationSeverity } from '~/common';
-import { useToastContext } from '~/Providers';
 import { formatDate } from '~/utils';
 import store from '~/store';
 

@@ -3,10 +3,9 @@ import { useRecoilValue } from 'recoil';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { QueryKeys, Constants } from 'librechat-data-provider';
+import { NewChatIcon, MobileSidebar, Sidebar, TooltipAnchor, Button } from '@librechat/client';
 import type { TMessage, TStartupConfig } from 'librechat-data-provider';
-import { NewChatIcon, MobileSidebar, Sidebar } from '~/components/svg';
 import { getDefaultModelSpec, getModelSpecPreset } from '~/utils';
-import { TooltipAnchor, Button } from '~/components/ui';
 import { useLocalize, useNewConvo } from '~/hooks';
 import store from '~/store';
 

@@ -6,7 +6,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from './';
+} from './Dialog';
 import { cn } from '~/utils/';
 
 type SelectionProps = {

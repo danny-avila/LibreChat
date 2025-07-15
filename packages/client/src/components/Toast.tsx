@@ -2,7 +2,7 @@ import * as RadixToast from '@radix-ui/react-toast';
 import { NotificationSeverity } from '~/common/types';
 import { useToast } from '~/hooks';
 
-export default function Toast() {
+export function Toast() {
   const { toast, onOpenChange } = useToast();
   const severityClassName = {
     [NotificationSeverity.INFO]: 'border-gray-500 bg-gray-500',

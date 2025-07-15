@@ -1,8 +1,7 @@
-import { useRecoilState } from 'recoil';
+import { Switch } from '@librechat/client';
+import { RecoilState, useRecoilState } from 'recoil';
 import HoverCardSettings from './HoverCardSettings';
-import useLocalize from '~/hooks/useLocalize';
-import { Switch } from '~/components/ui';
-import { RecoilState } from 'recoil';
+import { useLocalize } from '~/hooks';
 
 interface ToggleSwitchProps {
   stateAtom: RecoilState<boolean>;

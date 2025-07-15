@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 import { useLocalize } from '~/hooks';
-import { useToastContext } from '~/Providers';
+import { useToastContext } from '@librechat/client';
 import { useAgentPanelContext } from '~/Providers/AgentPanelContext';
 import MCP from '~/components/SidePanel/Builder/MCP';
 import { Panel } from '~/common';

@@ -1,7 +1,7 @@
 import React from 'react';
-import { TranslationKeys, useLocalize } from '~/hooks';
-import { Label } from '~/components';
+import { Label } from '@librechat/client';
 import HoverCardSettings from '~/components/Nav/SettingsTabs/HoverCardSettings';
+import { TranslationKeys, useLocalize } from '~/hooks';
 
 interface AutoRefillSettingsProps {
   lastRefill: Date;

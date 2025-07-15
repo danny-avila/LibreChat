@@ -1,5 +1,5 @@
+import { Button } from '@librechat/client';
 import { useRouteError } from 'react-router-dom';
-import { Button } from '~/components/ui';
 import logger from '~/utils/logger';
 
 interface UserAgentData {
