@@ -2,7 +2,7 @@ name: 🚀 Professional Docker Build & Push Pipeline
 
 on:
   push:
-    branches: [master, master_dev, dev, dev_2]
+    branches: [master, master_dev, dev, develop]
     paths-ignore:
       - '**.md'
       - 'docs/**'
