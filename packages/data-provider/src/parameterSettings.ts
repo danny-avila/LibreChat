@@ -637,8 +637,8 @@ const openAI: SettingsConfiguration = [
   baseDefinitions.imageDetail,
   openAIParams.web_search,
   openAIParams.reasoning_effort,
-  openAIParams.reasoning_summary,
   openAIParams.useResponsesApi,
+  openAIParams.reasoning_summary,
   openAIParams.disableStreaming,
 ];
 
