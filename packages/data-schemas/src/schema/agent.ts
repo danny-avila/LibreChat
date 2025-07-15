@@ -99,21 +99,11 @@ const agentSchema = new Schema<IAgent>(
       default: 'general',
     },
     support_contact: {
-      type: {
-        name: {
-          type: String,
-          trim: true,
-        },
-        email: {
-          type: String,
-          match: [
-            /^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/,
-            'Please enter a valid email address.',
-          ],
-          trim: true,
-        },
+      type: Schema.Types.Mixed,
+      default: {
+        name: '',
+        email: '',
       },
-      default: {},
     },
     is_promoted: {
       type: Boolean,
