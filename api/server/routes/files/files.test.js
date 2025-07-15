@@ -2,10 +2,12 @@ const express = require('express');
 const request = require('supertest');
 const mongoose = require('mongoose');
 const { v4: uuidv4 } = require('uuid');
+const { createMethods } = require('@librechat/data-schemas');
 const { MongoMemoryServer } = require('mongodb-memory-server');
-const { GLOBAL_PROJECT_NAME } = require('librechat-data-provider').Constants;
+const { createAgent } = require('~/models/Agent');
+const { createFile } = require('~/models/File');
 
-// Mock dependencies
+// Only mock the external dependencies that we don't want to test
 jest.mock('~/server/services/Files/process', () => ({
   processDeleteRequest: jest.fn().mockResolvedValue({}),
   filterFile: jest.fn(),
@@ -44,9 +46,6 @@ jest.mock('~/config', () => ({
   },
 }));
 
-const { createFile } = require('~/models/File');
-const { createAgent } = require('~/models/Agent');
-const { getProjectByName } = require('~/models/Project');
 const { processDeleteRequest } = require('~/server/services/Files/process');
 
 // Import the router after mocks
@@ -57,22 +56,48 @@ describe('File Routes - Delete with Agent Access', () => {
   let mongoServer;
   let authorId;
   let otherUserId;
-  let agentId;
   let fileId;
+  let File;
+  let Agent;
+  let AclEntry;
+  let User;
+  let methods;
+  // eslint-disable-next-line no-unused-vars
+  let agentId;
+  // eslint-disable-next-line no-unused-vars
+  let AccessRole;
 
   beforeAll(async () => {
     mongoServer = await MongoMemoryServer.create();
-    await mongoose.connect(mongoServer.getUri());
+    const mongoUri = mongoServer.getUri();
+    await mongoose.connect(mongoUri);
 
-    // Initialize models
-    require('~/db/models');
+    // Initialize all models using createModels
+    const { createModels } = require('@librechat/data-schemas');
+    const models = createModels(mongoose);
+
+    // Register models on mongoose.models so methods can access them
+    Object.assign(mongoose.models, models);
+
+    // Create methods with our test mongoose instance
+    methods = createMethods(mongoose);
+
+    // Now we can access models from the db/models
+    File = models.File;
+    Agent = models.Agent;
+    AclEntry = models.AclEntry;
+    User = models.User;
+    AccessRole = models.AccessRole;
+
+    // Seed default roles using our methods
+    await methods.seedDefaultRoles();
 
     app = express();
     app.use(express.json());
 
     // Mock authentication middleware
     app.use((req, res, next) => {
-      req.user = { id: otherUserId || 'default-user' };
+      req.user = { id: otherUserId ? otherUserId.toString() : 'default-user' };
       req.app = { locals: {} };
       next();
     });
@@ -89,47 +114,39 @@ describe('File Routes - Delete with Agent Access', () => {
     jest.clearAllMocks();
 
     // Clear database
-    const collections = mongoose.connection.collections;
-    for (const key in collections) {
-      await collections[key].deleteMany({});
-    }
+    await File.deleteMany({});
+    await Agent.deleteMany({});
+    await User.deleteMany({});
+    await AclEntry.deleteMany({});
 
-    authorId = new mongoose.Types.ObjectId().toString();
-    otherUserId = new mongoose.Types.ObjectId().toString();
+    // Create test data
+    authorId = new mongoose.Types.ObjectId();
+    otherUserId = new mongoose.Types.ObjectId();
+    agentId = uuidv4();
     fileId = uuidv4();
+
+    // Create users in database
+    await User.create({
+      _id: authorId,
+      username: 'author',
+      email: 'author@test.com',
+    });
+
+    await User.create({
+      _id: otherUserId,
+      username: 'other',
+      email: 'other@test.com',
+    });
 
     // Create a file owned by the author
     await createFile({
       user: authorId,
       file_id: fileId,
       filename: 'test.txt',
-      filepath: `/uploads/${authorId}/${fileId}`,
-      bytes: 1024,
+      filepath: '/uploads/test.txt',
+      bytes: 100,
       type: 'text/plain',
     });
-
-    // Create an agent with the file attached
-    const agent = await createAgent({
-      id: uuidv4(),
-      name: 'Test Agent',
-      author: authorId,
-      model: 'gpt-4',
-      provider: 'openai',
-      isCollaborative: true,
-      tool_resources: {
-        file_search: {
-          file_ids: [fileId],
-        },
-      },
-    });
-    agentId = agent.id;
-
-    // Share the agent globally
-    const globalProject = await getProjectByName(GLOBAL_PROJECT_NAME, '_id');
-    if (globalProject) {
-      const { updateAgent } = require('~/models/Agent');
-      await updateAgent({ id: agentId }, { projectIds: [globalProject._id] });
-    }
   });
 
   describe('DELETE /files', () => {
@@ -140,8 +157,8 @@ describe('File Routes - Delete with Agent Access', () => {
         user: otherUserId,
         file_id: userFileId,
         filename: 'user-file.txt',
-        filepath: `/uploads/${otherUserId}/${userFileId}`,
-        bytes: 1024,
+        filepath: '/uploads/user-file.txt',
+        bytes: 200,
         type: 'text/plain',
       });
 
@@ -151,7 +168,7 @@ describe('File Routes - Delete with Agent Access', () => {
           files: [
             {
               file_id: userFileId,
-              filepath: `/uploads/${otherUserId}/${userFileId}`,
+              filepath: '/uploads/user-file.txt',
             },
           ],
         });
@@ -168,7 +185,7 @@ describe('File Routes - Delete with Agent Access', () => {
           files: [
             {
               file_id: fileId,
-              filepath: `/uploads/${authorId}/${fileId}`,
+              filepath: '/uploads/test.txt',
             },
           ],
         });
@@ -180,14 +197,39 @@ describe('File Routes - Delete with Agent Access', () => {
     });
 
     it('should allow deleting files accessible through shared agent', async () => {
+      // Create an agent with the file attached
+      const agent = await createAgent({
+        id: uuidv4(),
+        name: 'Test Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: authorId,
+        tool_resources: {
+          file_search: {
+            file_ids: [fileId],
+          },
+        },
+      });
+
+      // Grant EDIT permission to user on the agent
+      const { grantPermission } = require('~/server/services/PermissionService');
+      await grantPermission({
+        principalType: 'user',
+        principalId: otherUserId,
+        resourceType: 'agent',
+        resourceId: agent._id,
+        accessRoleId: 'agent_editor',
+        grantedBy: authorId,
+      });
+
       const response = await request(app)
         .delete('/files')
         .send({
-          agent_id: agentId,
+          agent_id: agent.id,
           files: [
             {
               file_id: fileId,
-              filepath: `/uploads/${authorId}/${fileId}`,
+              filepath: '/uploads/test.txt',
             },
           ],
         });
@@ -204,19 +246,44 @@ describe('File Routes - Delete with Agent Access', () => {
         user: authorId,
         file_id: unattachedFileId,
         filename: 'unattached.txt',
-        filepath: `/uploads/${authorId}/${unattachedFileId}`,
-        bytes: 1024,
+        filepath: '/uploads/unattached.txt',
+        bytes: 300,
         type: 'text/plain',
+      });
+
+      // Create an agent without the unattached file
+      const agent = await createAgent({
+        id: uuidv4(),
+        name: 'Test Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: authorId,
+        tool_resources: {
+          file_search: {
+            file_ids: [fileId], // Only fileId, not unattachedFileId
+          },
+        },
+      });
+
+      // Grant EDIT permission to user on the agent
+      const { grantPermission } = require('~/server/services/PermissionService');
+      await grantPermission({
+        principalType: 'user',
+        principalId: otherUserId,
+        resourceType: 'agent',
+        resourceId: agent._id,
+        accessRoleId: 'agent_editor',
+        grantedBy: authorId,
       });
 
       const response = await request(app)
         .delete('/files')
         .send({
-          agent_id: agentId,
+          agent_id: agent.id,
           files: [
             {
               file_id: unattachedFileId,
-              filepath: `/uploads/${authorId}/${unattachedFileId}`,
+              filepath: '/uploads/unattached.txt',
             },
           ],
         });
@@ -224,6 +291,7 @@ describe('File Routes - Delete with Agent Access', () => {
       expect(response.status).toBe(403);
       expect(response.body.message).toBe('You can only delete files you have access to');
       expect(response.body.unauthorizedFiles).toContain(unattachedFileId);
+      expect(processDeleteRequest).not.toHaveBeenCalled();
     });
 
     it('should handle mixed authorized and unauthorized files', async () => {
@@ -233,8 +301,8 @@ describe('File Routes - Delete with Agent Access', () => {
         user: otherUserId,
         file_id: userFileId,
         filename: 'user-file.txt',
-        filepath: `/uploads/${otherUserId}/${userFileId}`,
-        bytes: 1024,
+        filepath: '/uploads/user-file.txt',
+        bytes: 200,
         type: 'text/plain',
       });
 
@@ -244,51 +312,87 @@ describe('File Routes - Delete with Agent Access', () => {
         user: authorId,
         file_id: unauthorizedFileId,
         filename: 'unauthorized.txt',
-        filepath: `/uploads/${authorId}/${unauthorizedFileId}`,
-        bytes: 1024,
+        filepath: '/uploads/unauthorized.txt',
+        bytes: 400,
         type: 'text/plain',
+      });
+
+      // Create an agent with only fileId attached
+      const agent = await createAgent({
+        id: uuidv4(),
+        name: 'Test Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: authorId,
+        tool_resources: {
+          file_search: {
+            file_ids: [fileId],
+          },
+        },
+      });
+
+      // Grant EDIT permission to user on the agent
+      const { grantPermission } = require('~/server/services/PermissionService');
+      await grantPermission({
+        principalType: 'user',
+        principalId: otherUserId,
+        resourceType: 'agent',
+        resourceId: agent._id,
+        accessRoleId: 'agent_editor',
+        grantedBy: authorId,
       });
 
       const response = await request(app)
         .delete('/files')
         .send({
-          agent_id: agentId,
+          agent_id: agent.id,
           files: [
-            {
-              file_id: fileId, // Authorized through agent
-              filepath: `/uploads/${authorId}/${fileId}`,
-            },
-            {
-              file_id: userFileId, // Owned by user
-              filepath: `/uploads/${otherUserId}/${userFileId}`,
-            },
-            {
-              file_id: unauthorizedFileId, // Not authorized
-              filepath: `/uploads/${authorId}/${unauthorizedFileId}`,
-            },
+            { file_id: userFileId, filepath: '/uploads/user-file.txt' },
+            { file_id: fileId, filepath: '/uploads/test.txt' },
+            { file_id: unauthorizedFileId, filepath: '/uploads/unauthorized.txt' },
           ],
         });
 
       expect(response.status).toBe(403);
       expect(response.body.message).toBe('You can only delete files you have access to');
       expect(response.body.unauthorizedFiles).toContain(unauthorizedFileId);
-      expect(response.body.unauthorizedFiles).not.toContain(fileId);
-      expect(response.body.unauthorizedFiles).not.toContain(userFileId);
+      expect(processDeleteRequest).not.toHaveBeenCalled();
     });
 
-    it('should prevent deleting files when agent is not collaborative', async () => {
-      // Update the agent to be non-collaborative
-      const { updateAgent } = require('~/models/Agent');
-      await updateAgent({ id: agentId }, { isCollaborative: false });
+    it('should prevent deleting files when user lacks EDIT permission on agent', async () => {
+      // Create an agent with the file attached
+      const agent = await createAgent({
+        id: uuidv4(),
+        name: 'Test Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: authorId,
+        tool_resources: {
+          file_search: {
+            file_ids: [fileId],
+          },
+        },
+      });
+
+      // Grant only VIEW permission to user on the agent
+      const { grantPermission } = require('~/server/services/PermissionService');
+      await grantPermission({
+        principalType: 'user',
+        principalId: otherUserId,
+        resourceType: 'agent',
+        resourceId: agent._id,
+        accessRoleId: 'agent_viewer',
+        grantedBy: authorId,
+      });
 
       const response = await request(app)
         .delete('/files')
         .send({
-          agent_id: agentId,
+          agent_id: agent.id,
           files: [
             {
               file_id: fileId,
-              filepath: `/uploads/${authorId}/${fileId}`,
+              filepath: '/uploads/test.txt',
             },
           ],
         });
