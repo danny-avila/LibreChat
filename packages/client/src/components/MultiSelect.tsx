@@ -14,7 +14,6 @@ interface MultiSelectProps<T extends string> {
   items: T[];
   label?: string;
   placeholder?: string;
-  defaultSelectedValues?: T[];
   onSelectedValuesChange?: (values: T[]) => void;
   renderSelectedValues?: (values: T[], placeholder?: string) => React.ReactNode;
   className?: string;
@@ -47,7 +46,6 @@ export default function MultiSelect<T extends string>({
   items,
   label,
   placeholder = 'Select...',
-  defaultSelectedValues = [],
   onSelectedValuesChange,
   renderSelectedValues = defaultRender,
   className,
