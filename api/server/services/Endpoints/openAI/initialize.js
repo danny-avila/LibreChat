@@ -144,7 +144,7 @@ const initializeClient = async ({
     clientOptions = Object.assign({ modelOptions }, clientOptions);
     clientOptions.modelOptions.user = req.user.id;
     const options = getOpenAIConfig(apiKey, clientOptions);
-    if (serverless === true) {
+    if (options != null && serverless === true) {
       options.useLegacyContent = true;
     }
     const streamRate = clientOptions.streamRate;

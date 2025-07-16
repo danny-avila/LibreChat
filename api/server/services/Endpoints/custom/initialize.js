@@ -139,7 +139,9 @@ const initializeClient = async ({ req, res, endpointOption, optionsOnly, overrid
       );
       clientOptions.modelOptions.user = req.user.id;
       const options = getOpenAIConfig(apiKey, clientOptions, endpoint);
-      options.useLegacyContent = true;
+      if (options != null) {
+        options.useLegacyContent = true;
+      }
       if (!customOptions.streamRate) {
         return options;
       }
