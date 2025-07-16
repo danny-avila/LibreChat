@@ -68,7 +68,6 @@ COPY --from=data-schemas-build /app/packages/data-schemas/dist ./packages/data-s
 COPY --from=client-build /app/client/dist ./client/dist
 
 COPY ./emails.txt ./emails.txt
-COPY ./librechat.yaml ./librechat.yaml
 
 COPY ./enviar-invitaciones.sh ./enviar-invitaciones.sh
 RUN chmod +x ./enviar-invitaciones.sh

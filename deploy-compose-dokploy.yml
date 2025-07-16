@@ -26,7 +26,8 @@ services:
       - RAG_PORT=${RAG_PORT:-8000}
       - RAG_API_URL=http://rag_api:${RAG_PORT:-8000}
       - ELEVENLABS_AGENT_ID=${ELEVENLABS_AGENT_ID}
-    volumes:      
+    volumes:
+      - ../files/librechat.yaml:/app/librechat.yaml     
       - ../files/images:/app/client/public/images
       - ../files/uploads:/app/uploads
       - ../files/logs:/app/api/logs
