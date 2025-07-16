@@ -24,10 +24,16 @@ jobs:
         with:
           node-version: '20.x'
           
-      - name: Install dependencies
+      - name: Install data-provider dependencies
+        run: cd packages/data-provider && npm ci
+        
+      - name: Build data-provider
+        run: cd packages/data-provider && npm run build
+        
+      - name: Install client dependencies
         run: cd packages/client && npm ci
         
-      - name: Build
+      - name: Build client
         run: cd packages/client && npm run build
         
       - name: Set up npm authentication
