@@ -1,9 +1,13 @@
 import React from 'react';
+import type { ControllerRenderProps, FieldValues, FieldPath } from 'react-hook-form';
 import { Label } from './Label';
 import { Input } from './Input';
 import { cn } from '~/utils';
 
-export default function FormInput({
+export default function FormInput<
+  TFieldValues extends FieldValues = FieldValues,
+  TName extends FieldPath<TFieldValues> = FieldPath<TFieldValues>,
+>({
   field,
   label,
   labelClass,
@@ -13,7 +17,7 @@ export default function FormInput({
   placeholder = '',
   type = 'string',
 }: {
-  field: any;
+  field: ControllerRenderProps<TFieldValues, TName>;
   label: string;
   labelClass?: string;
   inputClass?: string;
