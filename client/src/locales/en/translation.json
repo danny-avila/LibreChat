@@ -1059,6 +1059,7 @@
   "com_ui_update_mcp_error": "There was an error creating or updating the MCP.",
   "com_ui_update_mcp_success": "Successfully created or updated MCP",
   "com_ui_upload": "Upload",
+  "com_ui_upload_agent_avatar": "Successfully updated agent avatar",
   "com_ui_upload_code_files": "Upload for Code Interpreter",
   "com_ui_upload_delay": "Uploading \"{{0}}\" is taking more time than anticipated. Please wait while the file finishes indexing for retrieval.",
   "com_ui_upload_error": "There was an error uploading your file",

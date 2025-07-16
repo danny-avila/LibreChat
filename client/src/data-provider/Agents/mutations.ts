@@ -194,8 +194,7 @@ export const useUploadAgentAvatarMutation = (
   unknown // context
 > => {
   return useMutation([MutationKeys.agentAvatarUpload], {
-    mutationFn: ({ postCreation, ...variables }: t.AgentAvatarVariables) =>
-      dataService.uploadAgentAvatar(variables),
+    mutationFn: (variables: t.AgentAvatarVariables) => dataService.uploadAgentAvatar(variables),
     ...(options || {}),
   });
 };
