@@ -25,11 +25,13 @@ cp docker-compose.override.yml.example-gonka docker-compose.override.yml
 # Create necessary folders and set appropriate access
 # In theory Docker creates all that by itself
 mkdir /opt/gonka-chat/data-node
-chown -R 1000:1000 /opt/gonka-chat/data-node
+sudo chown -R 1000:1000 /opt/gonka-chat/data-node
 mkdir /opt/gonka-chat/meili_data_v1.12
-chown -R 1000:1000 /opt/gonka-chat/meili_data_v1.12
+sudo chown -R 1000:1000 /opt/gonka-chat/meili_data_v1.12
 mkdir -p /opt/gonka-chat/logs
-chown -R 1000:1000 /opt/gonka-chat/logs
+sudo chown -R 1000:1000 /opt/gonka-chat/logs
+mkdir -p /opt/gonka-chat/backups/mongo
+sudo chown -R 1000:1000 /opt/gonka-chat/backups
 
 # Install dependencies
 npm install // optional npm audit / npm audit fix

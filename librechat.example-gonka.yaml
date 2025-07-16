@@ -2,7 +2,9 @@ version: 1.2.8
 cache: true
 interface:
   agents: false
-  sidePanel: true
+  sidePanel: false
+  runCode: false
+  webSearch: false
 endpoints:
   custom:
     - name: "Gonka AI"
