@@ -16,9 +16,9 @@ global:
 
 librechat:
   configEnv:
-    DEBUG_PLUGINS: "true"
-    DEBUG_LOGGING: "true"
-    DEBUG_CONSOLE: "true"
+    DEBUG_PLUGINS: "false"
+    DEBUG_LOGGING: "false"
+    DEBUG_CONSOLE: "false"
     LOG_LEVEL: "info"
 
     ALLOW_REGISTRATION: "false"
