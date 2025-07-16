@@ -15,7 +15,7 @@ on:
       - 'docs/**'
   workflow_dispatch:
     inputs:
-      force_rebuild:
+      force_rebuild: true
         description: 'Force complete rebuild (ignore cache)'
         required: false
         default: false
