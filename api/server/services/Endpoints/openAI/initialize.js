@@ -144,6 +144,9 @@ const initializeClient = async ({
     clientOptions = Object.assign({ modelOptions }, clientOptions);
     clientOptions.modelOptions.user = req.user.id;
     const options = getOpenAIConfig(apiKey, clientOptions);
+    if (serverless === true) {
+      options.useLegacyContent = true;
+    }
     const streamRate = clientOptions.streamRate;
     if (!streamRate) {
       return options;
@@ -153,9 +156,6 @@ const initializeClient = async ({
         handleLLMNewToken: createHandleLLMNewToken(streamRate),
       },
     ];
-    if (serverless === true) {
-      options.useLegacyContent = true;
-    }
     return options;
   }
 
