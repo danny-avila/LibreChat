@@ -2,10 +2,9 @@ import * as Popover from '@radix-ui/react-popover';
 import { useState, useEffect, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
-  fileConfig as defaultFileConfig,
   QueryKeys,
-  defaultOrderQuery,
   mergeFileConfig,
+  fileConfig as defaultFileConfig,
 } from 'librechat-data-provider';
 import type { UseMutationResult } from '@tanstack/react-query';
 import type {
@@ -51,12 +50,11 @@ function Avatar({
     onMutate: () => {
       setProgress(0.4);
     },
-    onSuccess: (data, vars) => {
-      if (vars.postCreation === false) {
-        showToast({ message: localize('com_ui_upload_success') });
-      } else if (lastSeenCreatedId.current !== createMutation.data?.id) {
+    onSuccess: (data) => {
+      if (lastSeenCreatedId.current !== createMutation.data?.id) {
         lastSeenCreatedId.current = createMutation.data?.id ?? '';
       }
+      showToast({ message: localize('com_ui_upload_agent_avatar') });
 
       setInput(null);
       const newUrl = data.avatar?.filepath ?? '';
@@ -143,7 +141,6 @@ function Avatar({
 
       uploadAvatar({
         agent_id: createMutation.data.id,
-        postCreation: true,
         formData,
       });
     }
