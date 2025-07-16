@@ -10,7 +10,7 @@
 data-node
 meili_data*
 librechat*
-!librechat.yaml 
+!librechat.yaml
 Dockerfile*
 docs
 
