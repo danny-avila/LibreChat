@@ -1,5 +1,3 @@
-import { cn } from '~/utils';
-
 export default function ThumbUpIcon({ className = '', size = '1em', bold = false }) {
   return bold ? (
     <svg
