@@ -13,20 +13,13 @@ import {
   getFilteredRowModel,
 } from '@tanstack/react-table';
 import type { Table as TTable } from '@tanstack/react-table';
-import {
-  Button,
-  Table,
-  Checkbox,
-  TableRow,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  AnimatedSearchInput,
-  Skeleton,
-} from './';
+import { Table, TableRow, TableBody, TableCell, TableHead, TableHeader } from './Table';
+import AnimatedSearchInput from './AnimatedSearchInput';
 import { TrashIcon, Spinner } from '~/svgs';
 import { useMediaQuery } from '~/hooks';
+import { Skeleton } from './Skeleton';
+import { Checkbox } from './Checkbox';
+import { Button } from './Button';
 import { cn } from '~/utils';
 
 type TableColumn<TData, TValue> = ColumnDef<TData, TValue> & {
