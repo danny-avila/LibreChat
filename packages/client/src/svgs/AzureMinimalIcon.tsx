@@ -1,4 +1,3 @@
-
 import { cn } from '~/utils/';
 
 export default function AzureMinimalIcon({
