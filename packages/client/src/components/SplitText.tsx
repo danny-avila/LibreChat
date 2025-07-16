@@ -77,20 +77,24 @@ const SplitText: React.FC<SplitTextProps> = ({
   const ref = useRef<HTMLParagraphElement>(null);
   const animatedCount = useRef(0);
 
-  const springs = useSprings(letters.length, (i) => ({
-    from: animationFrom,
-    to: inView
-      ? async (next) => {
-          await next(animationTo);
-          animatedCount.current += 1;
-          if (animatedCount.current === letters.length && onLetterAnimationComplete) {
-            onLetterAnimationComplete();
+  const [springs] = useSprings(
+    letters.length,
+    (i) => ({
+      from: animationFrom,
+      to: inView
+        ? async (next) => {
+            await next(animationTo);
+            animatedCount.current += 1;
+            if (animatedCount.current === letters.length && onLetterAnimationComplete) {
+              onLetterAnimationComplete();
+            }
           }
-        }
-      : animationFrom,
-    delay: i * delay,
-    config: { easing },
-  }));
+        : animationFrom,
+      delay: i * delay,
+      config: { easing },
+    }),
+    [inView, text, delay, animationFrom, animationTo, easing, onLetterAnimationComplete],
+  );
 
   useEffect(() => {
     const observer = new IntersectionObserver(
@@ -147,7 +151,7 @@ const SplitText: React.FC<SplitTextProps> = ({
               return (
                 <animated.span
                   key={index}
-                  style={springs[index] as unknown as React.CSSProperties}
+                  style={springs[index]}
                   className="inline-block transform transition-opacity will-change-transform"
                 >
                   {letter}
