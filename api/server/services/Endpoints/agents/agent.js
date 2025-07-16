@@ -186,10 +186,11 @@ const initializeAgent = async ({
 
   return {
     ...agent,
+    tools,
     attachments,
     resendFiles,
     toolContextMap,
-    tools,
+    useLegacyContent: !!options.useLegacyContent,
     maxContextTokens: (agentMaxContextTokens - maxTokens) * 0.9,
   };
 };

@@ -65,19 +65,20 @@ const initializeClient = async ({
   const isAzureOpenAI = endpoint === EModelEndpoint.azureOpenAI;
   /** @type {false | TAzureConfig} */
   const azureConfig = isAzureOpenAI && req.app.locals[EModelEndpoint.azureOpenAI];
-
+  let serverless = false;
   if (isAzureOpenAI && azureConfig) {
     const { modelGroupMap, groupMap } = azureConfig;
     const {
       azureOptions,
       baseURL,
       headers = {},
-      serverless,
+      serverless: _serverless,
     } = mapModelToAzureConfig({
       modelName,
       modelGroupMap,
       groupMap,
     });
+    serverless = _serverless;
 
     clientOptions.reverseProxyUrl = baseURL ?? clientOptions.reverseProxyUrl;
     clientOptions.headers = resolveHeaders(
@@ -152,6 +153,9 @@ const initializeClient = async ({
         handleLLMNewToken: createHandleLLMNewToken(streamRate),
       },
     ];
+    if (serverless === true) {
+      options.useLegacyContent = true;
+    }
     return options;
   }
 

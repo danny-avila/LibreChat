@@ -26,7 +26,6 @@ const {
   VisionModes,
   ContentTypes,
   EModelEndpoint,
-  KnownEndpoints,
   PermissionTypes,
   isAgentsEndpoint,
   AgentCapabilities,
@@ -75,8 +74,6 @@ const payloadParser = ({ req, agent, endpoint }) => {
   }
   return req.body.endpointOption.model_parameters;
 };
-
-const legacyContentEndpoints = new Set([KnownEndpoints.groq, KnownEndpoints.deepseek]);
 
 const noSystemModelRegex = [/\b(o1-preview|o1-mini|amazon\.titan-text)\b/gi];
 
@@ -718,9 +715,6 @@ class AgentClient extends BaseClient {
         this.indexTokenCountMap,
         toolSet,
       );
-      if (legacyContentEndpoints.has(this.options.agent.endpoint?.toLowerCase())) {
-        initialMessages = formatContentStrings(initialMessages);
-      }
 
       /**
        *
@@ -784,6 +778,9 @@ class AgentClient extends BaseClient {
         }
 
         let messages = _messages;
+        if (agent.useLegacyContent === true) {
+          messages = formatContentStrings(messages);
+        }
         if (
           agent.model_parameters?.clientOptions?.defaultHeaders?.['anthropic-beta']?.includes(
             'prompt-caching',
