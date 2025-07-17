@@ -1,5 +1,6 @@
 import debounce from 'lodash/debounce';
 import React, { memo, useEffect, useMemo, useCallback } from 'react';
+import { autocompletion, completionKeymap } from '@codemirror/autocomplete';
 import {
   useSandpack,
   SandpackCodeEditor,
@@ -106,6 +107,9 @@ const CodeEditor = ({
       showRunButton={false}
       showLineNumbers={true}
       showInlineErrors={true}
+      extensions={[autocompletion()]}
+      // @ts-ignore
+      extensionsKeymap={[completionKeymap]}
       className="hljs language-javascript bg-black"
     />
   );
