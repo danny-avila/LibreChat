@@ -38,7 +38,7 @@ memory:
     instructions: |
       Store memory using only the specified validKeys. For user_preferences: save 
       explicitly stated preferences about communication style, topics of interest, 
-      or workflow preferences. For conversation_context: save important facts or 
+      or workflow preferences. Don't save details about the specific conversation. For conversation_context: save important facts or 
       ongoing projects mentioned. For learned_facts: save objective information 
       about the user. For personal_information: save only what the user explicitly 
       shares about themselves. Delete outdated or incorrect information promptly.
@@ -154,7 +154,7 @@ endpoints:
       baseURL: "${LITELLM_URL}"
       models:
         default: 
-        - azure/gpt-4-1
+        - "azure/gpt-4-1"
         - "azure/o3"
         - "anthropic/claude-4-opus-20250514"
         - "gemini/gemini-2.5-pro"
@@ -165,6 +165,29 @@ endpoints:
       summaryModel: "azure/gpt-4.1-mini"
       forcePrompt: true
       modelDisplayLabel: "AMEND AI - Advanced Models"
+      
+    # - name: "Portkey"
+    #   apiKey: "dummy"  
+    #   baseURL: "${PORTKEY_GATEWAY_URL}"
+    #   headers:
+    #       x-portkey-api-key: "${PORTKEY_API_KEY}"
+    #       # x-portkey-config: "pc-azure-8cb1e3"
+    #       x-portkey-virtual-key: "PORTKEY_OPENAI_VIRTUAL_KEY"
+    #       x-portkey-metadata: '{"_user": "{{LIBRECHAT_USER_EMAIL}}"}' # this header is to edit
+    #   models:
+    #       default: 
+    #       - "gpt-4.1-mini"
+    #       - "gpt-4-1"
+    #       - "o4-mini"
+    #       - "o3-mini"
+    #       fetch: true
+    #   titleConvo: true
+    #   titleModel: "gpt-4.1-mini"
+    #   summarize: false
+    #   summaryModel: "gpt-4.1-mini"
+    #   forcePrompt: false
+    #   modelDisplayLabel: "Portkey:OpenAI"
+    #   iconURL: https://images.crunchbase.com/image/upload/c_pad,f_auto,q_auto:eco,dpr_1/rjqy7ghvjoiu4cd1xjbf
 
 ocr:
   mistralModel: "${MISTRAL_MODEL}" # should match deployment name on Azure
@@ -206,6 +229,32 @@ mcpServers:
       JINA_API_KEY: "${JINA_API_KEY}"
     chatMenu: true  # Only available in agent builder
 
+  platform-feedback:
+    type: streamable-http
+    url: https://n8n.amendllc.com/mcp/platform-feedback
+    headers:
+      Authorization: "Bearer ${AMEND_ASSISTANTS_MCP_BEARER}"
+      X-User-Email: "{{LIBRECHAT_USER_EMAIL}}"
+      X-LIBRECHAT_USER_OPENIDID: "{{LIBRECHAT_USER_OPENIDID}}"
+      X-LIBRECHAT_USER_USERNAME: "{{LIBRECHAT_USER_USERNAME}}"
+    When sending emails:
+      - Make sure you have all the information needed and, if needed, ask for more information
+
+
+  #Microsoft Tools
+  # microsoft-tools:
+  #   command: npx
+  #   args: ["-y", "@softeria/ms-365-mcp-server","--http 3000","-v"]
+  #   env:
+  #     # - ENABLED_TOOLS: Filter tools using regex pattern (alternative to --enabled-tools flag)
+  #     MS365_MCP_FORCE_WORK_SCOPES: "true|1" #Force inclusion of work account scopes (alternative to --force-work-scopes flag)
+  #     # LOG_LEVEL: "info"
+  #     # SILENT: "true|1" #Disable console output
+  #     MS365_MCP_CLIENT_ID: "${MS365_MCP_CLIENT_ID}" #Custom Azure app client ID (defaults to built-in app)
+  #     MS365_MCP_TENANT_ID: "${MS365_MCP_TENANT_ID}" #Custom tenant ID (defaults to 'common' for multi-tenant)
+  #     MS365_MCP_CLIENT_SECRET: "${MS365_MCP_CLIENT_SECRET}"
+  #   chatMenu: true
+
   # amend-ai-assistant-tools:
   #   type: streamable-http
   #   url: https://n8n.amendllc.com/mcp/email-tools
@@ -213,19 +262,20 @@ mcpServers:
   #     Authorization: "Bearer ${AMEND_ASSISTANTS_MCP_BEARER}"
   #     X-User-Email: "{{LIBRECHAT_USER_EMAIL}}"
   #     X-LIBRECHAT_USER_OPENIDID: "{{LIBRECHAT_USER_OPENIDID}}"
-  #     X-LIBRECHAT_USER_USERNAME: "{{LIBRECHAT_USER_USERNAME}}"
+  #     #X-LIBRECHAT_USER_USERNAME: "{{LIBRECHAT_USER_USERNAME}}"
+  #     X-LIBRECHAT_USER_USERNAME: "integration@amendllc.com"
   #   serverInstructions: |
   #     When sending emails:
   #     - Always confirm the message to be sent, who the sender email is, and the email address the email is being sent to
 
-# # Balance settings
-# balance:
-#   enabled: false                # Enable token credit balances for users
-#   startBalance: 5000000          # Initial tokens credited upon registration
-#   autoRefillEnabled: true     # Enable automatic token refills
-#   refillIntervalValue: 30      # Numerical value for refill interval
-#   refillIntervalUnit: "days"   # Time unit for refill interval (days, hours, etc.)
-#   refillAmount: 1000000          # Tokens added during each refill
+# Balance settings
+balance:
+  enabled: true                # Enable token credit balances for users
+  startBalance: 10000000          # Initial tokens credited upon registration
+  autoRefillEnabled: true     # Enable automatic token refills
+  refillIntervalValue: 30      # Numerical value for refill interval
+  refillIntervalUnit: "days"   # Time unit for refill interval (days, hours, etc.)
+  refillAmount: 10000000          # Tokens added during each refill
 
 speech:
   speechTab:
