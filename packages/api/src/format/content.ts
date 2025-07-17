@@ -1,3 +1,4 @@
+import { HumanMessage } from '@langchain/core/messages';
 import { ContentTypes } from 'librechat-data-provider';
 import type { BaseMessage } from '@langchain/core/messages';
 
@@ -49,8 +50,7 @@ export const formatContentStrings = (payload: Array<BaseMessage>): Array<BaseMes
       return acc;
     }, '');
 
-    const clonedMessage = structuredClone(message);
-    clonedMessage.content = content.trim();
+    const clonedMessage = new HumanMessage(content.trim());
     result.push(clonedMessage);
   }
 
