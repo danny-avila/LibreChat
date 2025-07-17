@@ -115,6 +115,7 @@
     "typescript-eslint": "^8.24.0"
   },
   "overrides": {
+    "@langchain/openai": "0.5.18",
     "axios": "1.8.2",
     "elliptic": "^6.6.1",
     "mdast-util-gfm-autolink-literal": "2.0.0",
