@@ -1,10 +1,10 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import type { TTermsOfService } from 'librechat-data-provider';
 import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
 import DialogTemplate from '~/components/ui/DialogTemplate';
 import { useAcceptTermsMutation } from '~/data-provider';
 import { useToastContext } from '~/Providers';
-import { OGDialog } from '~/components/ui';
+import { OGDialog, Checkbox } from '~/components/ui';
 import { useLocalize } from '~/hooks';
 
 const TermsAndConditionsModal = ({
@@ -25,6 +25,8 @@ const TermsAndConditionsModal = ({
 }) => {
   const localize = useLocalize();
   const { showToast } = useToastContext();
+  const [dontShowAgain, setDontShowAgain] = useState(false);
+
   const acceptTermsMutation = useAcceptTermsMutation({
     onSuccess: () => {
       onAccept();
@@ -36,7 +38,10 @@ const TermsAndConditionsModal = ({
   });
 
   const handleAccept = () => {
-    acceptTermsMutation.mutate();
+    if (dontShowAgain) {
+      acceptTermsMutation.mutate();
+    }
+    onOpenChange(false);
   };
 
   const handleDecline = () => {
@@ -101,6 +106,15 @@ const TermsAndConditionsModal = ({
             >
               {localize('com_ui_accept')}
             </button>
+            <Checkbox
+              id="dont-show-again"
+              checked={dontShowAgain}
+              onCheckedChange={(value) => setDontShowAgain(value === true)}
+              className="mt-4 flex items-center"
+            />
+            <label htmlFor="dont-show-again" className="text-sm mt-2 flex items-center text-gray-600 dark:text-gray-200">
+              {localize('com_ui_dont_show')}
+            </label>
           </>
         }
       />
