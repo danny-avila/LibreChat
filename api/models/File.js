@@ -21,7 +21,7 @@ const findFileById = async (file_id, options = {}) => {
  * @param {string} agentId - The agent ID that might grant access
  * @returns {Promise<Map<string, boolean>>} Map of fileId to access status
  */
-const hasAccessToFilesViaAgent = async (userId, fileIds, agentId) => {
+const hasAccessToFilesViaAgent = async (userId, fileIds, agentId, checkCollaborative = true) => {
   const accessMap = new Map();
 
   // Initialize all files as no access
@@ -55,11 +55,11 @@ const hasAccessToFilesViaAgent = async (userId, fileIds, agentId) => {
     }
 
     // Agent is globally shared - check if it's collaborative
-    if (!agent.isCollaborative) {
+    if (checkCollaborative && !agent.isCollaborative) {
       return accessMap;
     }
 
-    // Agent is globally shared and collaborative - check which files are actually attached
+    // Check which files are actually attached
     const attachedFileIds = new Set();
     if (agent.tool_resources) {
       for (const [_resourceType, resource] of Object.entries(agent.tool_resources)) {
@@ -118,7 +118,12 @@ const getFiles = async (filter, _sortOptions, selectFields = { text: 0 }, option
 
     // Batch check access for all non-owned files
     const fileIds = filesToCheck.map((f) => f.file_id);
-    const accessMap = await hasAccessToFilesViaAgent(options.userId, fileIds, options.agentId);
+    const accessMap = await hasAccessToFilesViaAgent(
+      options.userId,
+      fileIds,
+      options.agentId,
+      false,
+    );
 
     // Filter files based on access
     const accessibleFiles = filesToCheck.filter((file) => accessMap.get(file.file_id));

@@ -1,0 +1,32 @@
+name: Publish `@librechat/client` to NPM
+
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reason for manual trigger'
+        required: false
+        default: 'Manual publish requested'
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18.x'
+          
+      - name: Check if client package exists
+        run: |
+          if [ -d "packages/client" ]; then
+            echo "Client package directory found"
+          else
+            echo "Client package directory not found - workflow ready for future use"
+            exit 0
+          fi
+          
+      - name: Placeholder for future publishing
+        run: echo "Client package publishing workflow is ready" 

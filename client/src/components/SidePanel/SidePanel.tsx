@@ -7,8 +7,8 @@ import { useMediaQuery, useLocalStorage, useLocalize } from '~/hooks';
 import useSideNavLinks from '~/hooks/Nav/useSideNavLinks';
 import { useGetEndpointsQuery } from '~/data-provider';
 import NavToggle from '~/components/Nav/NavToggle';
+import { useSidePanelContext } from '~/Providers';
 import { cn, getEndpointField } from '~/utils';
-import { useChatContext } from '~/Providers';
 import Nav from './Nav';
 
 const defaultMinSize = 20;
@@ -43,13 +43,13 @@ const SidePanel = ({
   interfaceConfig: TInterfaceConfig;
 }) => {
   const localize = useLocalize();
+  const { endpoint } = useSidePanelContext();
   const [isHovering, setIsHovering] = useState(false);
   const [newUser, setNewUser] = useLocalStorage('newUser', true);
   const { data: endpointsConfig = {} as TEndpointsConfig } = useGetEndpointsQuery();
 
   const isSmallScreen = useMediaQuery('(max-width: 767px)');
-  const { conversation } = useChatContext();
-  const { endpoint } = conversation ?? {};
+
   const { data: keyExpiry = { expiresAt: undefined } } = useUserKeyQuery(endpoint ?? '');
 
   const defaultActive = useMemo(() => {

@@ -1,4 +1,4 @@
-const { Time, CacheKeys } = require('librechat-data-provider');
+const { Time, CacheKeys, ViolationTypes } = require('librechat-data-provider');
 const clearPendingReq = require('~/cache/clearPendingReq');
 const { logViolation, getLogStores } = require('~/cache');
 const { isEnabled } = require('~/server/utils');
@@ -37,7 +37,7 @@ const concurrentLimiter = async (req, res, next) => {
 
   const userId = req.user?.id ?? req.user?._id ?? '';
   const limit = Math.max(CONCURRENT_MESSAGE_MAX, 1);
-  const type = 'concurrent';
+  const type = ViolationTypes.CONCURRENT;
 
   const key = `${isEnabled(USE_REDIS) ? namespace : ''}:${userId}`;
   const pendingRequests = +((await cache.get(key)) ?? 0);

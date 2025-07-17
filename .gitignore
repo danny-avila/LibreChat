@@ -125,4 +125,12 @@ helm/**/.values.yaml
 
 # SAML Idp cert
 *.cert
-CLAUDE.md
+
+# AI Assistants
+/.claude/
+/.cursor/
+/.copilot/
+/.aider/
+/.openai/
+/.tabnine/
+/.codeium

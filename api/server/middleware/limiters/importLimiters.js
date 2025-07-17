@@ -1,9 +1,6 @@
 const rateLimit = require('express-rate-limit');
-const { isEnabled } = require('@librechat/api');
-const { RedisStore } = require('rate-limit-redis');
-const { logger } = require('@librechat/data-schemas');
 const { ViolationTypes } = require('librechat-data-provider');
-const ioredisClient = require('~/cache/ioredisClient');
+const { limiterCache } = require('~/cache/cacheFactory');
 const logViolation = require('~/cache/logViolation');
 
 const getEnvironmentVariables = () => {
@@ -63,6 +60,7 @@ const createImportLimiters = () => {
     windowMs: importIpWindowMs,
     max: importIpMax,
     handler: createImportHandler(),
+    store: limiterCache('import_ip_limiter'),
   };
   const userLimiterOptions = {
     windowMs: importUserWindowMs,
@@ -71,22 +69,8 @@ const createImportLimiters = () => {
     keyGenerator: function (req) {
       return req.user?.id; // Use the user ID or NULL if not available
     },
+    store: limiterCache('import_user_limiter'),
   };
-
-  if (isEnabled(process.env.USE_REDIS) && ioredisClient) {
-    logger.debug('Using Redis for import rate limiters.');
-    const sendCommand = (...args) => ioredisClient.call(...args);
-    const ipStore = new RedisStore({
-      sendCommand,
-      prefix: 'import_ip_limiter:',
-    });
-    const userStore = new RedisStore({
-      sendCommand,
-      prefix: 'import_user_limiter:',
-    });
-    ipLimiterOptions.store = ipStore;
-    userLimiterOptions.store = userStore;
-  }
 
   const importIpLimiter = rateLimit(ipLimiterOptions);
   const importUserLimiter = rateLimit(userLimiterOptions);
