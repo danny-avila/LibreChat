@@ -5,8 +5,8 @@ const {
   Time,
   isUUID,
   CacheKeys,
-  Constants,
   FileSources,
+  PERMISSION_BITS,
   EModelEndpoint,
   isAgentsEndpoint,
   checkOpenAIStorage,
@@ -17,12 +17,13 @@ const {
   processDeleteRequest,
   processAgentFileUpload,
 } = require('~/server/services/Files/process');
-const { getFiles, batchUpdateFiles, hasAccessToFilesViaAgent } = require('~/models/File');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
+const { checkPermission } = require('~/server/services/PermissionService');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { refreshS3FileUrls } = require('~/server/services/Files/S3/crud');
-const { getProjectByName } = require('~/models/Project');
+const { hasAccessToFilesViaAgent } = require('~/server/services/Files');
+const { getFiles, batchUpdateFiles } = require('~/models/File');
 const { getAssistant } = require('~/models/Assistant');
 const { getAgent } = require('~/models/Agent');
 const { getLogStores } = require('~/cache');
@@ -77,14 +78,15 @@ router.get('/agent/:agent_id', async (req, res) => {
 
     // Check if user has access to the agent
     if (agent.author.toString() !== userId) {
-      // Non-authors need the agent to be globally shared and collaborative
-      const globalProject = await getProjectByName(Constants.GLOBAL_PROJECT_NAME, '_id');
+      // Non-authors need at least EDIT permission to view agent files
+      const hasEditPermission = await checkPermission({
+        userId,
+        resourceType: 'agent',
+        resourceId: agent._id,
+        requiredPermission: PERMISSION_BITS.EDIT,
+      });
 
-      if (
-        !globalProject ||
-        !agent.projectIds.some((pid) => pid.toString() === globalProject._id.toString()) ||
-        !agent.isCollaborative
-      ) {
+      if (!hasEditPermission) {
         return res.status(200).json([]);
       }
     }

@@ -11,6 +11,7 @@ import {
   bookmarkPermissionsSchema,
   multiConvoPermissionsSchema,
   temporaryChatPermissionsSchema,
+  peoplePickerPermissionsSchema,
 } from './permissions';
 
 /**
@@ -74,6 +75,13 @@ const defaultRolesSchema = z.object({
       [PermissionTypes.WEB_SEARCH]: webSearchPermissionsSchema.extend({
         [Permissions.USE]: z.boolean().default(true),
       }),
+      [PermissionTypes.PEOPLE_PICKER]: peoplePickerPermissionsSchema.extend({
+        [Permissions.VIEW_USERS]: z.boolean().default(true),
+        [Permissions.VIEW_GROUPS]: z.boolean().default(true),
+      }),
+      [PermissionTypes.MARKETPLACE]: z.object({
+        [Permissions.USE]: z.boolean().default(false),
+      }),
     }),
   }),
   [SystemRoles.USER]: roleSchema.extend({
@@ -118,6 +126,13 @@ export const roleDefaults = defaultRolesSchema.parse({
       [PermissionTypes.WEB_SEARCH]: {
         [Permissions.USE]: true,
       },
+      [PermissionTypes.PEOPLE_PICKER]: {
+        [Permissions.VIEW_USERS]: true,
+        [Permissions.VIEW_GROUPS]: true,
+      },
+      [PermissionTypes.MARKETPLACE]: {
+        [Permissions.USE]: true,
+      },
     },
   },
   [SystemRoles.USER]: {
@@ -131,6 +146,13 @@ export const roleDefaults = defaultRolesSchema.parse({
       [PermissionTypes.TEMPORARY_CHAT]: {},
       [PermissionTypes.RUN_CODE]: {},
       [PermissionTypes.WEB_SEARCH]: {},
+      [PermissionTypes.PEOPLE_PICKER]: {
+        [Permissions.VIEW_USERS]: false,
+        [Permissions.VIEW_GROUPS]: false,
+      },
+      [PermissionTypes.MARKETPLACE]: {
+        [Permissions.USE]: false,
+      },
     },
   },
 });
