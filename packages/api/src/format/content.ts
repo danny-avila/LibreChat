@@ -1,5 +1,4 @@
 import { ContentTypes } from 'librechat-data-provider';
-import { HumanMessage } from '@langchain/core/messages';
 import type { BaseMessage } from '@langchain/core/messages';
 
 /**
@@ -13,10 +12,10 @@ export const formatContentStrings = (payload: Array<BaseMessage>): Array<BaseMes
 
   for (const message of payload) {
     const messageType = message.getType();
-    const isHumanMessage = messageType === 'human';
+    const isValidMessage =
+      messageType === 'human' || messageType === 'ai' || messageType === 'system';
 
-    // Skip non-human messages - add them as-is
-    if (!isHumanMessage) {
+    if (!isValidMessage) {
       result.push(message);
       continue;
     }
@@ -50,8 +49,8 @@ export const formatContentStrings = (payload: Array<BaseMessage>): Array<BaseMes
       return acc;
     }, '');
 
-    const clonedMessage = new HumanMessage(content.trim());
-    result.push(clonedMessage);
+    message.content = content.trim();
+    result.push(message);
   }
 
   return result;
