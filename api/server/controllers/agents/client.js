@@ -8,6 +8,7 @@ const {
   Tokenizer,
   checkAccess,
   memoryInstructions,
+  formatContentStrings,
   createMemoryProcessor,
 } = require('@librechat/api');
 const {
@@ -16,7 +17,6 @@ const {
   GraphEvents,
   formatMessage,
   formatAgentMessages,
-  formatContentStrings,
   getTokenCountForMessage,
   createMetadataAggregator,
 } = require('@librechat/agents');
