@@ -76,7 +76,6 @@ export const useGetConversationByIdQuery = (
 export const useGetConversationByIdMutation = (id: string): UseMutationResult<s.TConversation> => {
   const queryClient = useQueryClient();
   return useMutation(() => dataService.getConversationById(id), {
-    // onSuccess: (res: s.TConversation) => {
     onSuccess: () => {
       queryClient.invalidateQueries([QueryKeys.conversation, id]);
     },

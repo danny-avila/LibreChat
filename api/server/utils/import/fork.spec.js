@@ -490,31 +490,6 @@ describe('getMessagesForConversation', () => {
 });
 
 describe('splitAtTargetLevel', () => {
-  /* const mockMessagesComplex = [
-    { messageId: '7', parentMessageId: Constants.NO_PARENT, text: 'Message 7' },
-    { messageId: '8', parentMessageId: Constants.NO_PARENT, text: 'Message 8' },
-    { messageId: '5', parentMessageId: '7', text: 'Message 5' },
-    { messageId: '6', parentMessageId: '7', text: 'Message 6' },
-    { messageId: '9', parentMessageId: '8', text: 'Message 9' },
-    { messageId: '2', parentMessageId: '5', text: 'Message 2' },
-    { messageId: '3', parentMessageId: '5', text: 'Message 3' },
-    { messageId: '1', parentMessageId: '6', text: 'Message 1' },
-    { messageId: '4', parentMessageId: '6', text: 'Message 4' },
-    { messageId: '10', parentMessageId: '3', text: 'Message 10' },
-  ];
-
-     mockMessages
-    ├── [7]: Root
-    |   ├── [5]: Child of 7
-    |   |   ├── [2]: Child of 5
-    |   |   └── [3]: Child of 5
-    |   |       └── [10]: Child of 3
-    |   └── [6]: Child of 7
-    |       ├── [1]: Child of 6
-    |       └── [4]: Child of 6
-    └── [8]: Root
-        └── [9]: Child of 8
-  */
   test('should include target message level and all descendants (1/2)', () => {
     console.debug('splitAtTargetLevel: mockMessages\n', printMessageTree(mockMessagesComplex));
     const result = splitAtTargetLevel(mockMessagesComplex, '2');
