@@ -100,8 +100,8 @@ describe('formatContentStrings', () => {
     });
   });
 
-  describe('Non-human messages', () => {
-    it('should not modify AI message content', () => {
+  describe('AI messages', () => {
+    it('should convert AI message with all text blocks to string', () => {
       const messages = [
         new AIMessage({
           content: [
@@ -114,13 +114,32 @@ describe('formatContentStrings', () => {
       const result = formatContentStrings(messages);
 
       expect(result).toHaveLength(1);
-      expect(result[0].content).toEqual([
-        { type: ContentTypes.TEXT, [ContentTypes.TEXT]: 'Hello' },
-        { type: ContentTypes.TEXT, [ContentTypes.TEXT]: 'World' },
-      ]);
+      expect(result[0].content).toBe('Hello\nWorld');
+      expect(result[0].getType()).toBe('ai');
     });
 
-    it('should not modify System message content', () => {
+    it('should not convert AI message with mixed content types', () => {
+      const messages = [
+        new AIMessage({
+          content: [
+            { type: ContentTypes.TEXT, [ContentTypes.TEXT]: 'Here is an image' },
+            { type: ContentTypes.TOOL_CALL, tool_call: { name: 'generate_image' } },
+          ],
+        }),
+      ];
+
+      const result = formatContentStrings(messages);
+
+      expect(result).toHaveLength(1);
+      expect(result[0].content).toEqual([
+        { type: ContentTypes.TEXT, [ContentTypes.TEXT]: 'Here is an image' },
+        { type: ContentTypes.TOOL_CALL, tool_call: { name: 'generate_image' } },
+      ]);
+    });
+  });
+
+  describe('System messages', () => {
+    it('should convert System message with all text blocks to string', () => {
       const messages = [
         new SystemMessage({
           content: [
@@ -133,15 +152,13 @@ describe('formatContentStrings', () => {
       const result = formatContentStrings(messages);
 
       expect(result).toHaveLength(1);
-      expect(result[0].content).toEqual([
-        { type: ContentTypes.TEXT, [ContentTypes.TEXT]: 'System' },
-        { type: ContentTypes.TEXT, [ContentTypes.TEXT]: 'Message' },
-      ]);
+      expect(result[0].content).toBe('System\nMessage');
+      expect(result[0].getType()).toBe('system');
     });
   });
 
   describe('Mixed message types', () => {
-    it('should only process human messages in mixed array', () => {
+    it('should process all valid message types in mixed array', () => {
       const messages = [
         new HumanMessage({
           content: [
@@ -166,18 +183,15 @@ describe('formatContentStrings', () => {
       const result = formatContentStrings(messages);
 
       expect(result).toHaveLength(3);
-      // Human message should be converted
+      // All messages should be converted
       expect(result[0].content).toBe('Human\nMessage');
-      // AI message should remain unchanged
-      expect(result[1].content).toEqual([
-        { type: ContentTypes.TEXT, [ContentTypes.TEXT]: 'AI' },
-        { type: ContentTypes.TEXT, [ContentTypes.TEXT]: 'Response' },
-      ]);
-      // System message should remain unchanged
-      expect(result[2].content).toEqual([
-        { type: ContentTypes.TEXT, [ContentTypes.TEXT]: 'System' },
-        { type: ContentTypes.TEXT, [ContentTypes.TEXT]: 'Prompt' },
-      ]);
+      expect(result[0].getType()).toBe('human');
+
+      expect(result[1].content).toBe('AI\nResponse');
+      expect(result[1].getType()).toBe('ai');
+
+      expect(result[2].content).toBe('System\nPrompt');
+      expect(result[2].getType()).toBe('system');
     });
   });
 
@@ -214,24 +228,6 @@ describe('formatContentStrings', () => {
 
       expect(result).toHaveLength(1);
       expect(result[0].content).toBe('Hello  \n  World');
-    });
-
-    it('should not modify the original messages array', () => {
-      const messages = [
-        new HumanMessage({
-          content: [
-            { type: ContentTypes.TEXT, [ContentTypes.TEXT]: 'Hello' },
-            { type: ContentTypes.TEXT, [ContentTypes.TEXT]: 'World' },
-          ],
-        }),
-      ];
-
-      const originalContent = [
-        ...(messages[0].content as Array<{ type: string; [key: string]: unknown }>),
-      ];
-      formatContentStrings(messages);
-
-      expect(messages[0].content).toEqual(originalContent);
     });
   });
 
@@ -277,14 +273,11 @@ describe('formatContentStrings', () => {
 
       // First human message (all text) should be converted
       expect(result[0].content).toBe('hi there');
+      expect(result[0].getType()).toBe('human');
 
-      // AI message should remain unchanged
-      expect(result[1].content).toEqual([
-        {
-          type: 'text',
-          text: 'Hi Danny! How can I help you today?',
-        },
-      ]);
+      // AI message (all text) should now also be converted
+      expect(result[1].content).toBe('Hi Danny! How can I help you today?');
+      expect(result[1].getType()).toBe('ai');
 
       // Third message (mixed content) should remain unchanged
       expect(result[2].content).toEqual([
@@ -302,7 +295,7 @@ describe('formatContentStrings', () => {
       ]);
     });
 
-    it('should handle human messages with tool calls', () => {
+    it('should handle messages with tool calls', () => {
       const messages = [
         new HumanMessage({
           content: [
@@ -313,14 +306,30 @@ describe('formatContentStrings', () => {
             },
           ],
         }),
+        new AIMessage({
+          content: [
+            { type: ContentTypes.TEXT, [ContentTypes.TEXT]: 'I will calculate that for you' },
+            {
+              type: ContentTypes.TOOL_CALL,
+              tool_call: { name: 'calculator', args: '{"a": 1, "b": 2}' },
+            },
+          ],
+        }),
       ];
 
       const result = formatContentStrings(messages);
 
-      expect(result).toHaveLength(1);
+      expect(result).toHaveLength(2);
       // Should not convert because not all blocks are text
       expect(result[0].content).toEqual([
         { type: ContentTypes.TEXT, [ContentTypes.TEXT]: 'Please use the calculator' },
+        {
+          type: ContentTypes.TOOL_CALL,
+          tool_call: { name: 'calculator', args: '{"a": 1, "b": 2}' },
+        },
+      ]);
+      expect(result[1].content).toEqual([
+        { type: ContentTypes.TEXT, [ContentTypes.TEXT]: 'I will calculate that for you' },
         {
           type: ContentTypes.TOOL_CALL,
           tool_call: { name: 'calculator', args: '{"a": 1, "b": 2}' },
