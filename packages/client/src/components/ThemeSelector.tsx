@@ -1,6 +1,6 @@
 import { useContext, useCallback, useEffect, useState } from 'react';
 import { Sun, Moon, Monitor } from 'lucide-react';
-import { ThemeContext } from '~/hooks';
+import { ThemeContext } from '../theme';
 
 declare global {
   interface Window {

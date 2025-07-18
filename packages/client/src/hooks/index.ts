@@ -1,4 +1,4 @@
-export * from './ThemeContext';
+// Theme exports are now handled by the theme module in the main index.ts
 
 export type { TranslationKeys } from './useLocalize';
 

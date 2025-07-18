@@ -19,3 +19,6 @@ export * from './utils';
 
 // Providers
 export * from './Providers';
+
+// Theme
+export * from './theme';

@@ -7,6 +7,7 @@ import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { Toast, ThemeProvider, ToastProvider } from '@librechat/client';
 import { QueryClient, QueryClientProvider, QueryCache } from '@tanstack/react-query';
 import { ScreenshotProvider, useApiErrorBoundary } from './hooks';
+import { getThemeFromEnv } from './utils/getThemeFromEnv';
 import { LiveAnnouncer } from '~/a11y';
 import { router } from './routes';
 
@@ -23,11 +24,24 @@ const App = () => {
     }),
   });
 
+  // Load theme from environment variables if available
+  const envTheme = getThemeFromEnv();
+
   return (
     <QueryClientProvider client={queryClient}>
       <RecoilRoot>
         <LiveAnnouncer>
-          <ThemeProvider>
+          <ThemeProvider
+            initialTheme="system"
+            themeRGB={envTheme}
+            // The ThemeProvider will automatically:
+            // 1. Apply dark/light mode classes
+            // 2. Apply custom theme colors if envTheme is provided
+            // 3. Otherwise use default theme colors for light mode
+            // 4. Use dark theme colors for dark mode
+            // 5. Store theme preference in localStorage
+            // 6. Respect system theme preference
+          >
             <RadixToast.Provider>
               <ToastProvider>
                 <DndProvider backend={HTML5Backend}>
