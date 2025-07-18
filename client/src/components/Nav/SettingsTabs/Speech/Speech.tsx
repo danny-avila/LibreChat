@@ -146,8 +146,6 @@ function Speech() {
     }
   }, [engineTTS, setEngineTTS]);
 
-  logger.log({ sttExternal, ttsExternal });
-
   const contentRef = useRef(null);
   useOnClickOutside(contentRef, () => confirmClear && setConfirmClear(false), []);
 
