@@ -1,25 +1,24 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useOutletContext } from 'react-router-dom';
-import { useSearchParams, useParams, useNavigate } from 'react-router-dom';
 import { useSetRecoilState, useRecoilValue } from 'recoil';
-
+import { PermissionTypes, Permissions } from 'librechat-data-provider';
+import { useSearchParams, useParams, useNavigate } from 'react-router-dom';
 import type t from 'librechat-data-provider';
 import type { ContextType } from '~/common';
-
 import { useGetEndpointsQuery, useGetAgentCategoriesQuery } from '~/data-provider';
-import { useDocumentTitle, useHasAccess } from '~/hooks';
-import useLocalize from '~/hooks/useLocalize';
-import { TooltipAnchor, Button } from '~/components/ui';
-import { NewChatIcon } from '~/components/svg';
-import { OpenSidebar } from '~/components/Chat/Menus';
-import { SidePanelGroup } from '~/components/SidePanel';
 import { MarketplaceProvider } from './MarketplaceContext';
+import { useDocumentTitle, useHasAccess } from '~/hooks';
+import { TooltipAnchor, Button } from '~/components/ui';
+import { SidePanelGroup } from '~/components/SidePanel';
+import { OpenSidebar } from '~/components/Chat/Menus';
+import { SidePanelProvider } from '~/Providers';
+import { NewChatIcon } from '~/components/svg';
+import useLocalize from '~/hooks/useLocalize';
 import CategoryTabs from './CategoryTabs';
 import AgentDetail from './AgentDetail';
 import SearchBar from './SearchBar';
 import AgentGrid from './AgentGrid';
 import store from '~/store';
-import { PermissionTypes, Permissions } from 'librechat-data-provider';
 
 interface AgentMarketplaceProps {
   className?: string;
@@ -191,128 +190,132 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
   return (
     <div className={`relative flex w-full grow overflow-hidden bg-presentation ${className}`}>
       <MarketplaceProvider>
-        <SidePanelGroup
-          defaultLayout={defaultLayout}
-          fullPanelCollapse={fullCollapse}
-          defaultCollapsed={defaultCollapsed}
-        >
-          <main className="flex h-full flex-col overflow-y-auto" role="main">
-            {/* Simplified header for agents marketplace - only show nav controls when needed */}
-            <div className="sticky top-0 z-10 flex h-14 w-full items-center justify-between bg-white p-2 font-semibold text-text-primary dark:bg-gray-800">
-              <div className="mx-1 flex items-center gap-2">
-                {!navVisible && <OpenSidebar setNavVisible={setNavVisible} />}
-                {!navVisible && (
-                  <TooltipAnchor
-                    description={localize('com_ui_new_chat')}
-                    render={
-                      <Button
-                        size="icon"
-                        variant="outline"
-                        data-testid="agents-new-chat-button"
-                        aria-label={localize('com_ui_new_chat')}
-                        className="rounded-xl border border-border-light bg-surface-secondary p-2 hover:bg-surface-hover max-md:hidden"
-                        onClick={handleNewChat}
-                      >
-                        <NewChatIcon />
-                      </Button>
-                    }
-                  />
-                )}
-              </div>
-            </div>
-            <div className="container mx-auto max-w-4xl px-4 py-8">
-              {/* Hero Section - ChatGPT Style */}
-              <div className="mb-8 mt-12 text-center">
-                <h1 className="mb-3 text-5xl font-bold tracking-tight text-gray-900 dark:text-white">
-                  {localize('com_agents_marketplace')}
-                </h1>
-                <p className="mx-auto mb-6 max-w-2xl text-lg text-gray-600 dark:text-gray-300">
-                  {localize('com_agents_marketplace_subtitle')}
-                </p>
-
-                {/* Search bar */}
-                <div className="mx-auto max-w-2xl">
-                  <SearchBar value={searchQuery} onSearch={handleSearch} />
+        <SidePanelProvider>
+          <SidePanelGroup
+            defaultLayout={defaultLayout}
+            fullPanelCollapse={fullCollapse}
+            defaultCollapsed={defaultCollapsed}
+          >
+            <main className="flex h-full flex-col overflow-y-auto" role="main">
+              {/* Simplified header for agents marketplace - only show nav controls when needed */}
+              <div className="sticky top-0 z-10 flex h-14 w-full items-center justify-between bg-white p-2 font-semibold text-text-primary dark:bg-gray-800">
+                <div className="mx-1 flex items-center gap-2">
+                  {!navVisible && <OpenSidebar setNavVisible={setNavVisible} />}
+                  {!navVisible && (
+                    <TooltipAnchor
+                      description={localize('com_ui_new_chat')}
+                      render={
+                        <Button
+                          size="icon"
+                          variant="outline"
+                          data-testid="agents-new-chat-button"
+                          aria-label={localize('com_ui_new_chat')}
+                          className="rounded-xl border border-border-light bg-surface-secondary p-2 hover:bg-surface-hover max-md:hidden"
+                          onClick={handleNewChat}
+                        >
+                          <NewChatIcon />
+                        </Button>
+                      }
+                    />
+                  )}
                 </div>
               </div>
+              <div className="container mx-auto max-w-4xl px-4 py-8">
+                {/* Hero Section - ChatGPT Style */}
+                <div className="mb-8 mt-12 text-center">
+                  <h1 className="mb-3 text-5xl font-bold tracking-tight text-gray-900 dark:text-white">
+                    {localize('com_agents_marketplace')}
+                  </h1>
+                  <p className="mx-auto mb-6 max-w-2xl text-lg text-gray-600 dark:text-gray-300">
+                    {localize('com_agents_marketplace_subtitle')}
+                  </p>
 
-              {/* Category tabs */}
-              <CategoryTabs
-                categories={categoriesQuery.data || []}
-                activeTab={activeTab}
-                isLoading={categoriesQuery.isLoading}
-                onChange={handleTabChange}
-              />
+                  {/* Search bar */}
+                  <div className="mx-auto max-w-2xl">
+                    <SearchBar value={searchQuery} onSearch={handleSearch} />
+                  </div>
+                </div>
 
-              {/* Category header - only show when not searching */}
-              {!searchQuery && (
-                <div className="mb-6">
-                  {(() => {
-                    // Get category data for display
-                    const getCategoryData = () => {
-                      if (activeTab === 'promoted') {
+                {/* Category tabs */}
+                <CategoryTabs
+                  categories={categoriesQuery.data || []}
+                  activeTab={activeTab}
+                  isLoading={categoriesQuery.isLoading}
+                  onChange={handleTabChange}
+                />
+
+                {/* Category header - only show when not searching */}
+                {!searchQuery && (
+                  <div className="mb-6">
+                    {(() => {
+                      // Get category data for display
+                      const getCategoryData = () => {
+                        if (activeTab === 'promoted') {
+                          return {
+                            name: localize('com_agents_top_picks'),
+                            description: localize('com_agents_recommended'),
+                          };
+                        }
+                        if (activeTab === 'all') {
+                          return {
+                            name: 'All Agents',
+                            description: 'Browse all shared agents across all categories',
+                          };
+                        }
+
+                        // Find the category in the API data
+                        const categoryData = categoriesQuery.data?.find(
+                          (cat) => cat.value === activeTab,
+                        );
+                        if (categoryData) {
+                          return {
+                            name: categoryData.label,
+                            description: categoryData.description || '',
+                          };
+                        }
+
+                        // Fallback for unknown categories
                         return {
-                          name: localize('com_agents_top_picks'),
-                          description: localize('com_agents_recommended'),
+                          name: activeTab.charAt(0).toUpperCase() + activeTab.slice(1),
+                          description: '',
                         };
-                      }
-                      if (activeTab === 'all') {
-                        return {
-                          name: 'All Agents',
-                          description: 'Browse all shared agents across all categories',
-                        };
-                      }
-
-                      // Find the category in the API data
-                      const categoryData = categoriesQuery.data?.find(
-                        (cat) => cat.value === activeTab,
-                      );
-                      if (categoryData) {
-                        return {
-                          name: categoryData.label,
-                          description: categoryData.description || '',
-                        };
-                      }
-
-                      // Fallback for unknown categories
-                      return {
-                        name: activeTab.charAt(0).toUpperCase() + activeTab.slice(1),
-                        description: '',
                       };
-                    };
 
-                    const { name, description } = getCategoryData();
+                      const { name, description } = getCategoryData();
 
-                    return (
-                      <div className="text-left">
-                        <h2 className="text-2xl font-bold text-gray-900 dark:text-white">{name}</h2>
-                        {description && (
-                          <p className="mt-2 text-gray-600 dark:text-gray-300">{description}</p>
-                        )}
-                      </div>
-                    );
-                  })()}
-                </div>
+                      return (
+                        <div className="text-left">
+                          <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
+                            {name}
+                          </h2>
+                          {description && (
+                            <p className="mt-2 text-gray-600 dark:text-gray-300">{description}</p>
+                          )}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
+
+                {/* Agent grid */}
+                <AgentGrid
+                  category={activeTab}
+                  searchQuery={searchQuery}
+                  onSelectAgent={handleAgentSelect}
+                />
+              </div>
+
+              {/* Agent detail dialog */}
+              {isDetailOpen && selectedAgent && (
+                <AgentDetail
+                  agent={selectedAgent}
+                  isOpen={isDetailOpen}
+                  onClose={handleDetailClose}
+                />
               )}
-
-              {/* Agent grid */}
-              <AgentGrid
-                category={activeTab}
-                searchQuery={searchQuery}
-                onSelectAgent={handleAgentSelect}
-              />
-            </div>
-
-            {/* Agent detail dialog */}
-            {isDetailOpen && selectedAgent && (
-              <AgentDetail
-                agent={selectedAgent}
-                isOpen={isDetailOpen}
-                onClose={handleDetailClose}
-              />
-            )}
-          </main>
-        </SidePanelGroup>
+            </main>
+          </SidePanelGroup>
+        </SidePanelProvider>
       </MarketplaceProvider>
     </div>
   );
