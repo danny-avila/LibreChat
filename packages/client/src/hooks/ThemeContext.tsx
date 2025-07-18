@@ -1,7 +1,5 @@
-//ThemeContext.js
-// source: https://plainenglish.io/blog/light-and-dark-mode-in-react-web-application-with-tailwind-css-89674496b942
-import { useSetAtom } from 'jotai';
 import React, { createContext, useState, useEffect } from 'react';
+import { useSetAtom } from 'jotai';
 import { getInitialTheme, applyFontSize } from '~/utils';
 import { fontSizeAtom } from '~/store';
 
@@ -10,21 +8,10 @@ type ProviderValue = {
   setTheme: React.Dispatch<React.SetStateAction<string>>;
 };
 
-const defaultContextValue: ProviderValue = {
-  theme: getInitialTheme(),
-  setTheme: () => {
-    return;
-  },
-};
-
-export const isDark = (theme: string): boolean => {
-  if (theme === 'system') {
-    return window.matchMedia('(prefers-color-scheme: dark)').matches;
-  }
-  return theme === 'dark';
-};
-
-export const ThemeContext = createContext<ProviderValue>(defaultContextValue);
+export const ThemeContext = createContext<ProviderValue>({
+  theme: 'light',
+  setTheme: () => {},
+});
 
 export const ThemeProvider = ({
   initialTheme,
@@ -33,56 +20,35 @@ export const ThemeProvider = ({
   initialTheme?: string;
   children: React.ReactNode;
 }) => {
-  const [theme, setTheme] = useState(getInitialTheme);
+  const [theme, setTheme] = useState<string>(() => initialTheme ?? getInitialTheme());
   const setFontSize = useSetAtom(fontSizeAtom);
 
-  const rawSetTheme = (rawTheme: string) => {
-    const root = window.document.documentElement;
-    const darkMode = isDark(rawTheme);
-
-    root.classList.remove(darkMode ? 'light' : 'dark');
-    root.classList.add(darkMode ? 'dark' : 'light');
-
-    localStorage.setItem('color-theme', rawTheme);
-  };
-
   useEffect(() => {
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-    const changeThemeOnSystemChange = () => {
-      rawSetTheme(mediaQuery.matches ? 'dark' : 'light');
-    };
+    const root = document.documentElement;
+    const darkMode =
+      theme === 'system'
+        ? window.matchMedia('(prefers-color-scheme: dark)').matches
+        : theme === 'dark';
 
-    mediaQuery.addEventListener('change', changeThemeOnSystemChange);
-
-    return () => {
-      mediaQuery.removeEventListener('change', changeThemeOnSystemChange);
-    };
-  }, []);
-
-  useEffect(() => {
-    const fontSize = localStorage.getItem('fontSize');
-    if (fontSize == null) {
-      setFontSize('text-base');
-      applyFontSize('text-base');
-      localStorage.setItem('fontSize', JSON.stringify('text-base'));
-      return;
-    }
-    try {
-      applyFontSize(JSON.parse(fontSize));
-    } catch (error) {
-      console.log(error);
-    }
-    // Reason: This effect should only run once, and `setFontSize` is a stable function
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  if (initialTheme) {
-    rawSetTheme(initialTheme);
-  }
-
-  useEffect(() => {
-    rawSetTheme(theme);
+    root.classList.toggle('dark', darkMode);
+    root.classList.toggle('light', !darkMode);
+    localStorage.setItem('color-theme', theme);
   }, [theme]);
+
+  useEffect(() => {
+    if (theme !== 'system') return;
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const handler = (e: MediaQueryListEvent) => setTheme(e.matches ? 'dark' : 'light');
+
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, [theme]);
+
+  useEffect(() => {
+    const saved = localStorage.getItem('fontSize') || 'text-base';
+    applyFontSize(saved);
+    setFontSize(saved);
+  }, [setFontSize]);
 
   return <ThemeContext.Provider value={{ theme, setTheme }}>{children}</ThemeContext.Provider>;
 };

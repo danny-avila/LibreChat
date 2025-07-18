@@ -4,6 +4,7 @@ export * from './AlertDialog';
 export * from './Breadcrumb';
 export * from './Button';
 export * from './Checkbox';
+export * from './Collapsible';
 export * from './DataTableColumnHeader';
 export * from './Dialog';
 export * from './DropdownMenu';

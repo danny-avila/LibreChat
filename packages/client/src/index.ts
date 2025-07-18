@@ -1,3 +1,6 @@
+// Styles
+import './index.css';
+
 // Components
 export * from './components';
 
