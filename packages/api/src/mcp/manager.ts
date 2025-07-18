@@ -66,7 +66,8 @@ export class MCPManager {
 
         /** Existing tokens for system-level connections */
         let tokens: MCPOAuthTokens | null = null;
-        if (tokenMethods?.findToken) {
+        // Only attempt to get OAuth tokens if the server has OAuth configuration
+        if (tokenMethods?.findToken && config.oauth) {
           try {
             /** Refresh function for app-level connections */
             const refreshTokensFunction = async (
@@ -441,7 +442,8 @@ export class MCPManager {
     config = { ...(processMCPEnv(config, user, customUserVars) ?? {}) };
     /** If no in-memory tokens, tokens from persistent storage */
     let tokens: MCPOAuthTokens | null = null;
-    if (tokenMethods?.findToken) {
+    // Only attempt to get OAuth tokens if the server has OAuth configuration
+    if (tokenMethods?.findToken && config.oauth) {
       try {
         /** Refresh function for user-specific connections */
         const refreshTokensFunction = async (
@@ -570,7 +572,7 @@ export class MCPManager {
     } catch (error) {
       logger.error(`[MCP][User: ${userId}][${serverName}] Failed to establish connection`, error);
       // Ensure partial connection state is cleaned up if initialization fails
-      await connection?.disconnect().catch((disconnectError) => {
+      await connection?.disconnect(false).catch((disconnectError) => {
         logger.error(
           `[MCP][User: ${userId}][${serverName}] Error during cleanup after failed connection`,
           disconnectError,
