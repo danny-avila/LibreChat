@@ -21,7 +21,7 @@
     "build:watch": "rollup -c -w --bundleConfigAsCjs",
     "dev": "rollup -c -w --bundleConfigAsCjs"
   },
-  "dependencies": {
+  "peerDependencies": {
     "@ariakit/react": "^0.4.15",
     "@ariakit/react-core": "^0.4.17",
     "@headlessui/react": "^2.1.2",
