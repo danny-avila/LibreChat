@@ -2,6 +2,8 @@ import {
   MCPOptions,
   StdioOptionsSchema,
   StreamableHTTPOptionsSchema,
+  SSEOptionsSchema,
+  WebSocketOptionsSchema,
 } from 'librechat-data-provider';
 import type { TUser } from 'librechat-data-provider';
 import { processMCPEnv } from '~/utils/env';
@@ -852,6 +854,270 @@ describe('Environment Variable Extraction (MCP)', () => {
       expect('headers' in result && result.headers).toEqual({
         Authorization: '{{PAT_TOKEN}}', // Should remain unchanged since no customUserVars provided
         'Content-Type': 'application/json',
+      });
+    });
+  });
+
+  describe('MCP Retry Configuration', () => {
+    describe('MCPOptions retry parameters validation', () => {
+      it('should validate retry parameters in MCPOptions schema', () => {
+        // Test valid retry configurations
+        const validConfigs = [
+          {
+            command: 'node',
+            args: ['server.js'],
+            maxReconnectAttempts: 5,
+            maxBackoffMs: 60000,
+            reconnectBackoffMs: 2000,
+          },
+          {
+            type: 'sse' as const,
+            url: 'https://example.com/sse',
+            maxReconnectAttempts: -1, // infinite retries
+            maxBackoffMs: 120000,
+            reconnectBackoffMs: 500,
+          },
+          {
+            type: 'streamable-http' as const,
+            url: 'https://example.com/api',
+            maxReconnectAttempts: 0, // no retries
+          },
+          {
+            type: 'websocket' as const,
+            url: 'wss://example.com/ws',
+            // Test with only some retry params set
+            maxReconnectAttempts: 3,
+          },
+        ];
+
+        validConfigs.forEach((config, index) => {
+          expect(() => {
+            const result = StdioOptionsSchema.or(
+              StreamableHTTPOptionsSchema.or(SSEOptionsSchema.or(WebSocketOptionsSchema)),
+            ).parse(config);
+
+            // Verify retry parameters are preserved
+            if (config.maxReconnectAttempts !== undefined) {
+              expect(result.maxReconnectAttempts).toBe(config.maxReconnectAttempts);
+            }
+            if (config.maxBackoffMs !== undefined) {
+              expect(result.maxBackoffMs).toBe(config.maxBackoffMs);
+            }
+            if (config.reconnectBackoffMs !== undefined) {
+              expect(result.reconnectBackoffMs).toBe(config.reconnectBackoffMs);
+            }
+          }).not.toThrow(`Valid config ${index} should not throw`);
+        });
+      });
+
+      it('should reject invalid retry parameter values', () => {
+        const invalidConfigs = [
+          {
+            command: 'node',
+            args: ['server.js'],
+            maxReconnectAttempts: -2, // Invalid: must be >= -1
+          },
+          {
+            type: 'sse' as const,
+            url: 'https://example.com/sse',
+            maxBackoffMs: -1000, // Invalid: must be >= 0
+          },
+          {
+            type: 'streamable-http' as const,
+            url: 'https://example.com/api',
+            reconnectBackoffMs: -500, // Invalid: must be >= 0
+          },
+          {
+            command: 'node',
+            args: ['server.js'],
+            maxReconnectAttempts: 1.5, // Invalid: must be integer
+          },
+        ];
+
+        invalidConfigs.forEach((config) => {
+          expect(() => {
+            StdioOptionsSchema.or(
+              StreamableHTTPOptionsSchema.or(SSEOptionsSchema.or(WebSocketOptionsSchema)),
+            ).parse(config);
+          }).toThrow();
+        });
+      });
+
+      it('should handle retry parameters in processMCPEnv function', () => {
+        const user = createTestUser({ id: 'test-user-123' });
+        const obj: MCPOptions = {
+          type: 'sse',
+          url: 'https://example.com/api',
+          headers: {
+            'User-Id': '{{LIBRECHAT_USER_ID}}',
+            'API-Key': '${TEST_API_KEY}',
+          },
+          maxReconnectAttempts: 5,
+          maxBackoffMs: 45000,
+          reconnectBackoffMs: 1500,
+        };
+
+        const result = processMCPEnv(obj, user);
+
+        // Verify retry parameters are preserved during environment processing
+        expect(result.maxReconnectAttempts).toBe(5);
+        expect(result.maxBackoffMs).toBe(45000);
+        expect(result.reconnectBackoffMs).toBe(1500);
+
+        // Verify other processing still works
+        expect('headers' in result && result.headers).toEqual({
+          'User-Id': 'test-user-123',
+          'API-Key': 'test-api-key-value',
+        });
+      });
+    });
+
+    describe('Retry configuration integration with different transport types', () => {
+      it('should support retry parameters across all MCP transport types', () => {
+        const retryConfig = {
+          maxReconnectAttempts: 7,
+          maxBackoffMs: 90000,
+          reconnectBackoffMs: 2500,
+        };
+
+        // Test stdio transport
+        const stdioConfig = {
+          command: 'node',
+          args: ['server.js'],
+          env: { API_KEY: '${TEST_API_KEY}' },
+          ...retryConfig,
+        };
+        const stdioResult = StdioOptionsSchema.parse(stdioConfig);
+        expect(stdioResult.maxReconnectAttempts).toBe(7);
+        expect(stdioResult.maxBackoffMs).toBe(90000);
+        expect(stdioResult.reconnectBackoffMs).toBe(2500);
+
+        // Test SSE transport
+        const sseConfig = {
+          type: 'sse' as const,
+          url: 'https://example.com/sse',
+          headers: { Authorization: 'Bearer token' },
+          ...retryConfig,
+        };
+        const sseResult = SSEOptionsSchema.parse(sseConfig);
+        expect(sseResult.maxReconnectAttempts).toBe(7);
+        expect(sseResult.maxBackoffMs).toBe(90000);
+        expect(sseResult.reconnectBackoffMs).toBe(2500);
+
+        // Test WebSocket transport
+        const wsConfig = {
+          type: 'websocket' as const,
+          url: 'wss://example.com/ws',
+          ...retryConfig,
+        };
+        const wsResult = WebSocketOptionsSchema.parse(wsConfig);
+        expect(wsResult.maxReconnectAttempts).toBe(7);
+        expect(wsResult.maxBackoffMs).toBe(90000);
+        expect(wsResult.reconnectBackoffMs).toBe(2500);
+
+        // Test Streamable HTTP transport
+        const httpConfig = {
+          type: 'streamable-http' as const,
+          url: 'https://example.com/api',
+          headers: { 'Content-Type': 'application/json' },
+          ...retryConfig,
+        };
+        const httpResult = StreamableHTTPOptionsSchema.parse(httpConfig);
+        expect(httpResult.maxReconnectAttempts).toBe(7);
+        expect(httpResult.maxBackoffMs).toBe(90000);
+        expect(httpResult.reconnectBackoffMs).toBe(2500);
+      });
+
+      it('should handle edge cases and boundary values for retry parameters', () => {
+        // Test minimum values
+        const minConfig = {
+          type: 'sse' as const,
+          url: 'https://example.com/sse',
+          maxReconnectAttempts: -1, // infinite retries
+          maxBackoffMs: 0, // no backoff
+          reconnectBackoffMs: 0, // no initial backoff
+        };
+        const minResult = SSEOptionsSchema.parse(minConfig);
+        expect(minResult.maxReconnectAttempts).toBe(-1);
+        expect(minResult.maxBackoffMs).toBe(0);
+        expect(minResult.reconnectBackoffMs).toBe(0);
+
+        // Test large values
+        const maxConfig = {
+          command: 'node',
+          args: ['server.js'],
+          maxReconnectAttempts: 999999,
+          maxBackoffMs: 3600000, // 1 hour
+          reconnectBackoffMs: 60000, // 1 minute
+        };
+        const maxResult = StdioOptionsSchema.parse(maxConfig);
+        expect(maxResult.maxReconnectAttempts).toBe(999999);
+        expect(maxResult.maxBackoffMs).toBe(3600000);
+        expect(maxResult.reconnectBackoffMs).toBe(60000);
+
+        // Test with only some parameters set (others should be undefined)
+        const partialConfig = {
+          type: 'streamable-http' as const,
+          url: 'https://example.com/api',
+          maxReconnectAttempts: 3,
+          // maxBackoffMs and reconnectBackoffMs intentionally omitted
+        };
+        const partialResult = StreamableHTTPOptionsSchema.parse(partialConfig);
+        expect(partialResult.maxReconnectAttempts).toBe(3);
+        expect(partialResult.maxBackoffMs).toBeUndefined();
+        expect(partialResult.reconnectBackoffMs).toBeUndefined();
+      });
+
+      it('should preserve retry parameters when combined with environment variable processing', () => {
+        const user = createTestUser({
+          id: 'retry-test-user',
+          email: 'retry@example.com',
+        });
+        const customUserVars = {
+          RETRY_ATTEMPTS: '10',
+          BACKOFF_TIME: '5000',
+        };
+
+        // Test configuration with environment variables and retry parameters
+        const complexConfig: MCPOptions = {
+          type: 'streamable-http',
+          url: 'https://{{CUSTOM_ENDPOINT}}.example.com/api',
+          headers: {
+            Authorization: 'Bearer ${API_TOKEN}',
+            'User-Email': '{{LIBRECHAT_USER_EMAIL}}',
+            'X-Retry-Config': 'attempts={{RETRY_ATTEMPTS}},backoff={{BACKOFF_TIME}}',
+          },
+          maxReconnectAttempts: 15,
+          maxBackoffMs: 120000,
+          reconnectBackoffMs: 3000,
+        };
+
+        // Add the custom vars that would be used in headers
+        const allCustomVars = {
+          ...customUserVars,
+          CUSTOM_ENDPOINT: 'api-v2',
+        };
+
+        // Set up environment variable for the test
+        process.env.API_TOKEN = 'test-bearer-token';
+
+        const result = processMCPEnv(complexConfig, user, allCustomVars);
+
+        // Verify retry parameters are preserved
+        expect(result.maxReconnectAttempts).toBe(15);
+        expect(result.maxBackoffMs).toBe(120000);
+        expect(result.reconnectBackoffMs).toBe(3000);
+
+        // Verify environment processing still works correctly
+        expect('url' in result && result.url).toBe('https://api-v2.example.com/api');
+        expect('headers' in result && result.headers).toEqual({
+          Authorization: 'Bearer test-bearer-token',
+          'User-Email': 'retry@example.com',
+          'X-Retry-Config': 'attempts=10,backoff=5000',
+        });
+
+        // Clean up
+        delete process.env.API_TOKEN;
       });
     });
   });

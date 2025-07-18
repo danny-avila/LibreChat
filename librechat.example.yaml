@@ -143,6 +143,9 @@ actions:
 #     # type: sse # type can optionally be omitted
 #     url: http://localhost:3001/sse
 #     timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
+#     maxReconnectAttempts: 3   # retries in case of disconnection, default is 3
+#     maxBackoffMs: 30000       # max Backoff between reconnection attempts, default is 30000
+#     reconnectBackoffMs: 1000  # Initial backoff time between reconnection attemps, doubled until maxBackoffMs, default is 1000
 #   puppeteer:
 #     type: stdio
 #     command: npx

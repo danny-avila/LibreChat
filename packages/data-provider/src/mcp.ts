@@ -6,6 +6,9 @@ const BaseOptionsSchema = z.object({
   iconPath: z.string().optional(),
   timeout: z.number().optional(),
   initTimeout: z.number().optional(),
+  maxReconnectAttempts: z.number().int().min(-1).optional(),
+  maxBackoffMs: z.number().int().min(0).optional(),
+  reconnectBackoffMs: z.number().int().min(0).optional(),
   /** Controls visibility in chat dropdown menu (MCPSelect) */
   chatMenu: z.boolean().optional(),
   /**
