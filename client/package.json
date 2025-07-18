@@ -71,6 +71,7 @@
     "i18next": "^24.2.2",
     "i18next-browser-languagedetector": "^8.0.3",
     "input-otp": "^1.4.2",
+    "jotai": "^2.12.5",
     "js-cookie": "^3.0.5",
     "librechat-data-provider": "*",
     "lodash": "^4.17.21",
@@ -109,9 +110,6 @@
     "tailwindcss-animate": "^1.0.5",
     "tailwindcss-radix": "^2.8.0",
     "zod": "^3.22.4"
-  },
-  "peerDependencies": {
-    "jotai": "^2.12.5"
   },
   "devDependencies": {
     "@babel/plugin-transform-runtime": "^7.22.15",

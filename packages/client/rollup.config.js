@@ -21,6 +21,8 @@ const plugins = [
   }),
   resolve({
     extensions: ['.js', '.jsx', '.ts', '.tsx'],
+    browser: true,
+    preferBuiltins: false,
   }),
   replace({
     'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'production'),
@@ -65,7 +67,11 @@ export default {
       exports: 'named',
     },
   ],
-  external: [...Object.keys(pkg.peerDependencies || {}), 'react/jsx-runtime'],
+  external: [
+    ...Object.keys(pkg.peerDependencies || {}),
+    'react/jsx-runtime',
+    'react/jsx-dev-runtime',
+  ],
   preserveSymlinks: true,
   plugins,
   onwarn(warning, warn) {
