@@ -6,18 +6,9 @@ const BaseOptionsSchema = z.object({
   iconPath: z.string().optional(),
   timeout: z.number().optional(),
   initTimeout: z.number().optional(),
-  maxReconnectAttempts: z.preprocess(
-    (val) => (val ? Number(val) : undefined),
-    z.number().int().min(-1).optional().default(3),
-  ),
-  maxBackoffMs: z.preprocess(
-    (val) => (val ? Number(val) : undefined),
-    z.number().int().min(0).optional().default(30000),
-  ),
-  reconnectBackoffMs: z.preprocess(
-    (val) => (val ? Number(val) : undefined),
-    z.number().int().min(0).optional().default(1000),
-  ),
+  maxReconnectAttempts: z.number().int().min(-1).optional(),
+  maxBackoffMs: z.number().int().min(0).optional(),
+  reconnectBackoffMs: z.number().int().min(0).optional(),
   /** Controls visibility in chat dropdown menu (MCPSelect) */
   chatMenu: z.boolean().optional(),
   /**
