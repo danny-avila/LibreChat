@@ -201,7 +201,6 @@ const updateAgentHandler = async (req, res) => {
     if (updatedAgent.author !== req.user.id) {
       delete updatedAgent.author;
     }
-
     return res.json(updatedAgent);
   } catch (error) {
     if (error instanceof z.ZodError) {

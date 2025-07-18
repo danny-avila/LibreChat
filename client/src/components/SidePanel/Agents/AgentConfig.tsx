@@ -50,6 +50,38 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
   const tools = useWatch({ control, name: 'tools' });
   const agent_id = useWatch({ control, name: 'id' });
 
+  const toolsEnabled = useMemo(
+    () => agentsConfig?.capabilities?.includes(AgentCapabilities.tools) ?? false,
+    [agentsConfig],
+  );
+  const actionsEnabled = useMemo(
+    () => agentsConfig?.capabilities?.includes(AgentCapabilities.actions) ?? false,
+    [agentsConfig],
+  );
+  const artifactsEnabled = useMemo(
+    () => agentsConfig?.capabilities?.includes(AgentCapabilities.artifacts) ?? false,
+    [agentsConfig],
+  );
+  const chartsEnabled = useMemo(
+    () => agentsConfig?.capabilities?.includes(AgentCapabilities.charts) ?? false,
+    [agentsConfig],
+  );
+  const ocrEnabled = useMemo(
+    () => agentsConfig?.capabilities?.includes(AgentCapabilities.ocr) ?? false,
+    [agentsConfig],
+  );
+  const fileSearchEnabled = useMemo(
+    () => agentsConfig?.capabilities?.includes(AgentCapabilities.file_search) ?? false,
+    [agentsConfig],
+  );
+  const webSearchEnabled = useMemo(
+    () => agentsConfig?.capabilities?.includes(AgentCapabilities.web_search) ?? false,
+    [agentsConfig],
+  );
+  const codeEnabled = useMemo(
+    () => agentsConfig?.capabilities?.includes(AgentCapabilities.execute_code) ?? false,
+    [agentsConfig],
+  );
   const { data: agentFiles = [] } = useGetAgentFiles(agent_id);
 
   const mergedFileMap = useMemo(() => {
