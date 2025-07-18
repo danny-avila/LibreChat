@@ -1,10 +1,11 @@
-export {
+export type {
   TShowToast,
   Option,
   OptionWithIcon,
   DropdownValueSetter,
   MentionOption,
-  NotificationSeverity,
 } from './types';
 
-export { MenuItemProps } from './menus';
+export { NotificationSeverity } from './types';
+
+export type { MenuItemProps } from './menus';
