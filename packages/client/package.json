@@ -63,7 +63,6 @@
     "class-variance-authority": "^0.6.0",
     "clsx": "^1.2.1",
     "input-otp": "^1.4.2",
-    "librechat-data-provider": "*",
     "lucide-react": "^0.394.0",
     "match-sorter": "^6.3.4",
     "rc-input-number": "^7.4.2",
