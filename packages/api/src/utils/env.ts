@@ -139,6 +139,17 @@ export function processMCPEnv(
     newObj.url = processSingleValue({ originalValue: newObj.url, customUserVars, user });
   }
 
+  // Add reconnection settings from environment variables
+  if (process.env.MCP_MAX_RECONNECT_ATTEMPTS) {
+    newObj.maxReconnectAttempts = Number(process.env.MCP_MAX_RECONNECT_ATTEMPTS);
+  }
+  if (process.env.MCP_MAX_BACKOFF_MS) {
+    newObj.maxBackoffMs = Number(process.env.MCP_MAX_BACKOFF_MS);
+  }
+  if (process.env.MCP_RECONNECT_BACKOFF_MS) {
+    newObj.reconnectBackoffMs = Number(process.env.MCP_RECONNECT_BACKOFF_MS);
+  }
+
   return newObj;
 }
 
