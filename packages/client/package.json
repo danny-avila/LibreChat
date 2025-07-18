@@ -21,7 +21,7 @@
     "build:watch": "rollup -c -w --bundleConfigAsCjs",
     "dev": "rollup -c -w --bundleConfigAsCjs"
   },
-  "peerDependencies": {
+  "dependencies": {
     "@ariakit/react": "^0.4.15",
     "@ariakit/react-core": "^0.4.17",
     "@headlessui/react": "^2.1.2",
@@ -45,6 +45,7 @@
     "@react-spring/web": "^9.7.5",
     "@tanstack/react-query": "^4.28.0",
     "@tanstack/react-table": "^8.11.7",
+    "@tanstack/react-virtual": "^3.0.0",
     "class-variance-authority": "^0.6.0",
     "clsx": "^1.2.1",
     "framer-motion": "^11.5.4",
@@ -61,7 +62,6 @@
     "react-i18next": "^15.4.0",
     "react-resizable-panels": "^3.0.2",
     "react-textarea-autosize": "^8.4.0",
-    "recoil": "^0.7.7",
     "tailwind-merge": "^1.9.1"
   },
   "devDependencies": {
