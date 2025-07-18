@@ -281,6 +281,7 @@ export const endpointSchema = baseEndpointSchema.merge(
     }),
     titleConvo: z.boolean().optional(),
     titleMethod: z.union([z.literal('completion'), z.literal('functions')]).optional(),
+    titleMaxTokens: z.number().optional(),
     summarize: z.boolean().optional(),
     summaryModel: z.string().optional(),
     forcePrompt: z.boolean().optional(),
