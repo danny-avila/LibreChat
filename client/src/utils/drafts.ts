@@ -26,3 +26,14 @@ export const decodeBase64 = (base64String: string): string => {
     return '';
   }
 };
+
+export const setDraft = ({ id, value }: { id: string; value?: string }) => {
+  if (value && value.length > 1) {
+    localStorage.setItem(`${LocalStorageKeys.TEXT_DRAFT}${id}`, encodeBase64(value));
+    return;
+  }
+  localStorage.removeItem(`${LocalStorageKeys.TEXT_DRAFT}${id}`);
+};
+
+export const getDraft = (id?: string): string | null =>
+  (localStorage.getItem(`${LocalStorageKeys.TEXT_DRAFT}${id ?? ''}`) ?? '') || '';
