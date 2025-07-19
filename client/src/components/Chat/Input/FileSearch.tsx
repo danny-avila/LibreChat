@@ -1,7 +1,6 @@
 import React, { memo } from 'react';
-import CheckboxButton from '~/components/ui/CheckboxButton';
+import { CheckboxButton, VectorIcon } from '@librechat/client';
 import { useBadgeRowContext } from '~/Providers';
-import { VectorIcon } from '~/components/svg';
 import { useLocalize } from '~/hooks';
 
 function FileSearch() {

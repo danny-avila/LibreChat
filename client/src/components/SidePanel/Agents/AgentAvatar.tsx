@@ -1,5 +1,6 @@
-import * as Popover from '@radix-ui/react-popover';
 import { useState, useEffect, useRef } from 'react';
+import * as Popover from '@radix-ui/react-popover';
+import { useToastContext } from '@librechat/client';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   fileConfig as defaultFileConfig,
@@ -16,7 +17,6 @@ import type {
 } from 'librechat-data-provider';
 import { useUploadAgentAvatarMutation, useGetFileConfig } from '~/data-provider';
 import { AgentAvatarRender, NoImage, AvatarMenu } from './Images';
-import { useToastContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
 import { formatBytes } from '~/utils';
 

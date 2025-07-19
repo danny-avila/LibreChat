@@ -1,11 +1,10 @@
 import React, { useRef } from 'react';
 import { useDrag, useDrop } from 'react-dnd';
 import type { TConversationTag } from 'librechat-data-provider';
+import { TableRow, TableCell, useToastContext } from '@librechat/client';
 import { DeleteBookmarkButton, EditBookmarkButton } from '~/components/Bookmarks';
 import { useConversationTagMutation } from '~/data-provider';
-import { TableRow, TableCell } from '~/components/ui';
 import { NotificationSeverity } from '~/common';
-import { useToastContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
 
 interface BookmarkTableRowProps {

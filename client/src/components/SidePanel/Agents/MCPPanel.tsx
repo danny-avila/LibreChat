@@ -1,21 +1,25 @@
 import { useEffect } from 'react';
 import { ChevronLeft } from 'lucide-react';
 import { useForm, FormProvider } from 'react-hook-form';
-import { useAgentPanelContext } from '~/Providers/AgentPanelContext';
-import { OGDialog, OGDialogTrigger, Label } from '~/components/ui';
-import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
-import { defaultMCPFormValues } from '~/common/mcp';
-import useLocalize from '~/hooks/useLocalize';
-import { useToastContext } from '~/Providers';
-import { TrashIcon } from '~/components/svg';
-import type { MCPForm } from '~/common';
-import MCPInput from './MCPInput';
-import { Panel } from '~/common';
 import {
   AuthTypeEnum,
   AuthorizationTypeEnum,
   TokenExchangeMethodEnum,
 } from 'librechat-data-provider';
+import {
+  OGDialog,
+  OGDialogTrigger,
+  Label,
+  OGDialogTemplate,
+  TrashIcon,
+  useToastContext,
+} from '@librechat/client';
+import { useAgentPanelContext } from '~/Providers/AgentPanelContext';
+import { defaultMCPFormValues } from '~/common/mcp';
+import type { MCPForm } from '~/common';
+import { useLocalize } from '~/hooks';
+import MCPInput from './MCPInput';
+import { Panel } from '~/common';
 // TODO: Add MCP delete (for now mocked for ui)
 // import { useDeleteAgentMCP } from '~/data-provider';
 

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { Button, OGDialog, OGDialogContent, TooltipAnchor } from '@librechat/client';
 import { X, ArrowDownToLine, PanelLeftOpen, PanelLeftClose, RotateCcw } from 'lucide-react';
-import { Button, OGDialog, OGDialogContent, TooltipAnchor } from '~/components';
 import { useLocalize } from '~/hooks';
 
 const getQualityStyles = (quality: string): string => {

@@ -1,7 +1,7 @@
 import React from 'react';
-import { HoverCardPortal, HoverCardContent } from '~/components/ui';
-import { ESide } from '~/common';
+import { HoverCardPortal, HoverCardContent } from '@librechat/client';
 import { useLocalize } from '~/hooks';
+import { ESide } from '~/common';
 
 type TOptionHoverProps = {
   endpoint: string;

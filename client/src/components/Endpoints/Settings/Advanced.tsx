@@ -1,7 +1,5 @@
 import TextareaAutosize from 'react-textarea-autosize';
 import { ImageDetail, imageDetailNumeric, imageDetailValue } from 'librechat-data-provider';
-import type { ValueType } from '@rc-component/mini-decimal';
-import type { TModelSelectProps } from '~/common';
 import {
   Input,
   Label,
@@ -10,8 +8,10 @@ import {
   HoverCard,
   InputNumber,
   HoverCardTrigger,
-} from '~/components/ui';
-import { cn, defaultTextProps, optionText, removeFocusOutlines } from '~/utils/';
+} from '@librechat/client';
+import type { ValueType } from '@rc-component/mini-decimal';
+import type { TModelSelectProps } from '~/common';
+import { cn, defaultTextProps, optionText, removeFocusOutlines } from '~/utils';
 import { useLocalize, useDebouncedInput } from '~/hooks';
 import OptionHover from './OptionHover';
 import { ESide } from '~/common';
@@ -109,7 +109,7 @@ export default function Settings({
             placeholder={localize('com_endpoint_openai_prompt_prefix_placeholder')}
             className={cn(
               defaultTextProps,
-              'flex max-h-[138px] min-h-[100px] w-full resize-none px-3 py-2 ',
+              'flex max-h-[138px] min-h-[100px] w-full resize-none px-3 py-2',
             )}
           />
         </div>

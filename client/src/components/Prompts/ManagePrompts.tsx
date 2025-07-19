@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
 import { useSetRecoilState } from 'recoil';
+import { Button } from '@librechat/client';
 import { useLocalize, useCustomLink } from '~/hooks';
-import { Button } from '~/components/ui';
 import { cn } from '~/utils';
 import store from '~/store';
 

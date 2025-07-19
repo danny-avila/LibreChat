@@ -6,9 +6,9 @@ import type { SandpackPreviewRef, CodeEditorRef } from '@codesandbox/sandpack-re
 import useArtifacts from '~/hooks/Artifacts/useArtifacts';
 import DownloadArtifact from './DownloadArtifact';
 import { useEditorContext } from '~/Providers';
-import useLocalize from '~/hooks/useLocalize';
 import ArtifactTabs from './ArtifactTabs';
 import { CopyCodeButton } from './Code';
+import { useLocalize } from '~/hooks';
 import store from '~/store';
 
 export default function Artifacts() {

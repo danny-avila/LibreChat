@@ -4,12 +4,12 @@ import { useFormContext, Controller, useWatch } from 'react-hook-form';
 import {
   Checkbox,
   HoverCard,
+  CircleHelpIcon,
   HoverCardContent,
   HoverCardPortal,
   HoverCardTrigger,
-} from '~/components/ui';
+} from '@librechat/client';
 import OptionHover from '~/components/SidePanel/Parameters/OptionHover';
-import { CircleHelpIcon } from '~/components/svg';
 import type { AgentForm } from '~/common';
 import { useLocalize } from '~/hooks';
 import { ESide } from '~/common';

@@ -1,11 +1,11 @@
 import { useEffect } from 'react';
 import { FormProvider, useForm } from 'react-hook-form';
-import ActionsAuth from '~/components/SidePanel/Builder/ActionsAuth';
 import {
   AuthorizationTypeEnum,
   TokenExchangeMethodEnum,
   AuthTypeEnum,
 } from 'librechat-data-provider';
+import ActionsAuth from '~/components/SidePanel/Builder/ActionsAuth';
 
 export default function MCPAuth() {
   // Create a separate form for auth

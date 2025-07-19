@@ -14,8 +14,8 @@ import {
   FileMapContext,
   SetConvoProvider,
 } from '~/Providers';
-import TermsAndConditionsModal from '~/components/ui/TermsAndConditionsModal';
 import { useUserTermsQuery, useGetStartupConfig } from '~/data-provider';
+import { TermsAndConditionsModal } from '~/components/ui';
 import { Nav, MobileNav } from '~/components/Nav';
 import { useHealthCheck } from '~/data-provider';
 import { Banner } from '~/components/Banners';

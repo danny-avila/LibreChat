@@ -1,6 +1,6 @@
 import React from 'react';
+import { Label } from '@librechat/client';
 import { RevokeKeysButton } from './RevokeKeysButton';
-import { Label } from '~/components/ui';
 import { useLocalize } from '~/hooks';
 
 export const RevokeAllKeys = () => {

@@ -19,6 +19,7 @@ const directories = [
   rootDir,
   path.resolve(rootDir, 'packages', 'data-provider'),
   path.resolve(rootDir, 'packages', 'data-schemas'),
+  path.resolve(rootDir, 'packages', 'client'),
   path.resolve(rootDir, 'packages', 'api'),
   path.resolve(rootDir, 'client'),
   path.resolve(rootDir, 'api'),

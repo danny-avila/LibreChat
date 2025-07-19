@@ -1,12 +1,11 @@
 import React, { memo, useCallback, useState } from 'react';
 import { SettingsIcon } from 'lucide-react';
 import { Constants } from 'librechat-data-provider';
+import { MCPIcon, MultiSelect, useToastContext } from '@librechat/client';
 import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
 import type { TUpdateUserPlugins, TPlugin } from 'librechat-data-provider';
-import MCPConfigDialog, { type ConfigFieldDetail } from '~/components/ui/MCPConfigDialog';
-import { useToastContext, useBadgeRowContext } from '~/Providers';
-import MultiSelect from '~/components/ui/MultiSelect';
-import { MCPIcon } from '~/components/svg';
+import MCPConfigDialog, { type ConfigFieldDetail } from './MCPConfigDialog';
+import { useBadgeRowContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
 
 const getBaseMCPPluginKey = (fullPluginKey: string): string => {
@@ -136,7 +135,6 @@ function MCPSelect() {
         items={mcpServerNames}
         selectedValues={mcpValues ?? []}
         setSelectedValues={setMCPValues}
-        defaultSelectedValues={mcpValues ?? []}
         renderSelectedValues={renderSelectedValues}
         renderItemContent={renderItemContent}
         placeholder={placeholderText}

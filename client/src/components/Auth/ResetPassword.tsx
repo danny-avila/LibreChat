@@ -1,10 +1,10 @@
 import { useForm } from 'react-hook-form';
+import { Spinner, Button } from '@librechat/client';
 import { useOutletContext } from 'react-router-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useResetPasswordMutation } from 'librechat-data-provider/react-query';
 import type { TResetPassword } from 'librechat-data-provider';
 import type { TLoginLayoutContext } from '~/common';
-import { Spinner, Button } from '~/components';
 import { useLocalize } from '~/hooks';
 
 function ResetPassword() {

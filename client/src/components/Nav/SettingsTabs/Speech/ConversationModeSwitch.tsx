@@ -1,5 +1,5 @@
+import { Switch } from '@librechat/client';
 import { useRecoilState, useRecoilValue } from 'recoil';
-import { Switch } from '~/components/ui';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
 

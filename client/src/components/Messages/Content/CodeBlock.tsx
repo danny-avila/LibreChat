@@ -1,15 +1,14 @@
+import React, { useRef, useState, useMemo, useEffect } from 'react';
 import copy from 'copy-to-clipboard';
 import { InfoIcon } from 'lucide-react';
 import { Tools } from 'librechat-data-provider';
-import React, { useRef, useState, useMemo, useEffect } from 'react';
+import { Clipboard, CheckMark } from '@librechat/client';
 import type { CodeBarProps } from '~/common';
 import ResultSwitcher from '~/components/Messages/Content/ResultSwitcher';
 import { useToolCallsMapContext, useMessageContext } from '~/Providers';
 import { LogContent } from '~/components/Chat/Messages/Content/Parts';
 import RunCode from '~/components/Messages/Content/RunCode';
-import Clipboard from '~/components/svg/Clipboard';
-import CheckMark from '~/components/svg/CheckMark';
-import useLocalize from '~/hooks/useLocalize';
+import { useLocalize } from '~/hooks';
 import cn from '~/utils/cn';
 
 type CodeBlockProps = Pick<

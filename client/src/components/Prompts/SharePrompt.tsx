@@ -2,11 +2,6 @@ import React, { useEffect, useMemo } from 'react';
 import { Share2Icon } from 'lucide-react';
 import { useForm, Controller } from 'react-hook-form';
 import { Permissions } from 'librechat-data-provider';
-import type {
-  TPromptGroup,
-  TStartupConfig,
-  TUpdatePromptGroupPayload,
-} from 'librechat-data-provider';
 import {
   Button,
   Switch,
@@ -15,9 +10,14 @@ import {
   OGDialogClose,
   OGDialogContent,
   OGDialogTrigger,
-} from '~/components/ui';
+  useToastContext,
+} from '@librechat/client';
+import type {
+  TPromptGroup,
+  TStartupConfig,
+  TUpdatePromptGroupPayload,
+} from 'librechat-data-provider';
 import { useUpdatePromptGroup, useGetStartupConfig } from '~/data-provider';
-import { useToastContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
 
 type FormValues = {

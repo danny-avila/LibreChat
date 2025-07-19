@@ -2,12 +2,11 @@ import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { ChevronLeft } from 'lucide-react';
 import { Constants } from 'librechat-data-provider';
 import { useForm, Controller } from 'react-hook-form';
+import { Button, Input, Label, useToastContext } from '@librechat/client';
 import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
 import type { TUpdateUserPlugins } from 'librechat-data-provider';
-import { Button, Input, Label } from '~/components/ui';
 import { useGetStartupConfig } from '~/data-provider';
 import MCPPanelSkeleton from './MCPPanelSkeleton';
-import { useToastContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
 
 interface ServerConfigWithVars {

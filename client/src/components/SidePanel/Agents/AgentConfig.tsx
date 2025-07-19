@@ -1,9 +1,10 @@
 import React, { useState, useMemo, useCallback } from 'react';
+import { useToastContext } from '@librechat/client';
 import { EModelEndpoint } from 'librechat-data-provider';
 import { Controller, useWatch, useFormContext } from 'react-hook-form';
 import type { AgentForm, AgentPanelProps, IconComponentTypes } from '~/common';
 import { cn, defaultTextProps, removeFocusOutlines, getEndpointField, getIconKey } from '~/utils';
-import { useToastContext, useFileMapContext, useAgentPanelContext } from '~/Providers';
+import { useFileMapContext, useAgentPanelContext } from '~/Providers';
 import useAgentCapabilities from '~/hooks/Agents/useAgentCapabilities';
 import Action from '~/components/SidePanel/Builder/Action';
 import { ToolSelectDialog } from '~/components/Tools';

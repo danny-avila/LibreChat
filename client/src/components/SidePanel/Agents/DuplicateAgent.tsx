@@ -1,7 +1,7 @@
 import { CopyIcon } from 'lucide-react';
+import { useToastContext } from '@librechat/client';
 import { useDuplicateAgentMutation } from '~/data-provider';
 import { cn, removeFocusOutlines } from '~/utils';
-import { useToastContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
 
 export default function DuplicateAgent({ agent_id }: { agent_id: string }) {
