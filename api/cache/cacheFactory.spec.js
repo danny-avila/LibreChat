@@ -44,9 +44,7 @@ jest.mock('./keyvFiles', () => ({
   violationFile: mockViolationFile,
 }));
 
-jest.mock('connect-redis', () => ({
-  default: mockConnectRedis,
-}));
+jest.mock('connect-redis', () => ({ RedisStore: mockConnectRedis }));
 
 jest.mock('memorystore', () => jest.fn(() => mockMemoryStore));
 
