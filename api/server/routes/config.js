@@ -97,6 +97,7 @@ router.get('/', async function (req, res) {
       instanceProjectId: instanceProject._id.toString(),
       bundlerURL: process.env.SANDPACK_BUNDLER_URL,
       staticBundlerURL: process.env.SANDPACK_STATIC_BUNDLER_URL,
+      forwardedAuthEnabled: isEnabled(process.env.FORWARD_AUTH_ENABLED),
     };
 
     payload.mcpServers = {};

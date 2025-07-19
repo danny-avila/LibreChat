@@ -25,6 +25,7 @@ const {
   requireLdapAuth,
   setBalanceConfig,
   requireLocalAuth,
+  requireForwardedAuth,
   resetPasswordLimiter,
   validateRegistration,
   validatePasswordReset,
