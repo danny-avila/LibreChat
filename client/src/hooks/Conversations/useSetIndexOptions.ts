@@ -1,5 +1,11 @@
 import { useRecoilValue, useSetRecoilState } from 'recoil';
-import { TPreset, TPlugin, TConversation, tConvoUpdateSchema } from 'librechat-data-provider';
+import {
+  TPreset,
+  TPlugin,
+  TConversation,
+  tConvoUpdateSchema,
+  EModelEndpoint,
+} from 'librechat-data-provider';
 import type { TSetExample, TSetOption, TSetOptionsPayload } from '~/common';
 import usePresetIndexOptions from './usePresetIndexOptions';
 import { useChatContext } from '~/Providers/ChatContext';
@@ -30,11 +36,19 @@ const useSetIndexOptions: TUseSetOptions = (preset = false) => {
       };
     }
 
-    // Auto-enable Responses API when web search is enabled
+    // Auto-enable Responses API when web search is enabled (only for OpenAI/Azure/Custom endpoints)
     if (param === 'web_search' && newValue === true) {
-      const currentUseResponsesApi = conversation?.useResponsesApi ?? false;
-      if (!currentUseResponsesApi) {
-        update['useResponsesApi'] = true;
+      const currentEndpoint = conversation?.endpoint;
+      const isOpenAICompatible =
+        currentEndpoint === EModelEndpoint.openAI ||
+        currentEndpoint === EModelEndpoint.azureOpenAI ||
+        currentEndpoint === EModelEndpoint.custom;
+
+      if (isOpenAICompatible) {
+        const currentUseResponsesApi = conversation?.useResponsesApi ?? false;
+        if (!currentUseResponsesApi) {
+          update['useResponsesApi'] = true;
+        }
       }
     }
 
