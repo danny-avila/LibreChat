@@ -70,7 +70,7 @@
   },
   "peerDependencies": {
     "@langchain/core": "^0.3.62",
-    "@librechat/agents": "^2.4.62",
+    "@librechat/agents": "^2.4.63",
     "@librechat/data-schemas": "*",
     "@modelcontextprotocol/sdk": "^1.13.3",
     "axios": "^1.8.2",
