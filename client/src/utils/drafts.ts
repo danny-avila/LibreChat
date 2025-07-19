@@ -36,4 +36,4 @@ export const setDraft = ({ id, value }: { id: string; value?: string }) => {
 };
 
 export const getDraft = (id?: string): string | null =>
-  (localStorage.getItem(`${LocalStorageKeys.TEXT_DRAFT}${id ?? ''}`) ?? '') || '';
+  decodeBase64((localStorage.getItem(`${LocalStorageKeys.TEXT_DRAFT}${id ?? ''}`) ?? '') || '');
