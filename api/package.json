@@ -56,6 +56,8 @@
     "@waylaidwanderer/fetch-event-source": "^3.0.1",
     "axios": "^1.8.2",
     "bcryptjs": "^2.4.3",
+    "better-sqlite3": "^11.10.0",
+    "cheerio": "^1.1.0",
     "compression": "^1.7.4",
     "connect-redis": "^7.1.0",
     "cookie": "^0.7.2",
