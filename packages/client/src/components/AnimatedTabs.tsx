@@ -1,13 +1,13 @@
 import * as Ariakit from '@ariakit/react';
-import { ReactNode, forwardRef, useEffect, useRef } from 'react';
+import { forwardRef, useEffect, useRef } from 'react';
 import type { ElementRef } from 'react';
 import { cn } from '~/utils';
 import './AnimatedTabs.css';
 
 export interface TabItem {
   id?: string;
-  label: ReactNode;
-  content: ReactNode;
+  label: React.ReactNode;
+  content: React.ReactNode;
   disabled?: boolean;
 }
 
@@ -23,7 +23,7 @@ export interface AnimatedTabsProps {
 }
 
 function usePrevious<T>(value: T) {
-  const ref = useRef<T>();
+  const ref = useRef<T | undefined>(undefined);
   useEffect(() => {
     ref.current = value;
   }, [value]);
@@ -132,7 +132,8 @@ export function AnimatedTabs({
               className={tabClassName}
               data-state={tabIds[index] === firstTabId ? 'active' : 'inactive'}
             >
-              {tab.label}
+              {/* TypeScript workaround for React i18next children type compatibility */}
+              {tab.label as any}
             </Tab>
           ))}
         </Ariakit.TabList>
@@ -150,7 +151,8 @@ export function AnimatedTabs({
               tabId={tabIds[index]}
               className={tabPanelClassName}
             >
-              {tab.content}
+              {/* TypeScript workaround for React i18next children type compatibility */}
+              {tab.content as any}
             </TabPanel>
           ))}
         </div>

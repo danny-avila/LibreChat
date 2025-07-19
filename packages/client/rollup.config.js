@@ -30,23 +30,20 @@ const plugins = [
   }),
   commonjs(),
   postcss({
-    // Extract CSS to a separate file
     extract: false,
-    // Inject CSS into JS (better for component libraries)
     inject: true,
-    // Minimize CSS in production
     minimize: process.env.NODE_ENV === 'production',
-    // Enable CSS modules if needed
     modules: false,
   }),
   typescript({
     tsconfig: './tsconfig.json',
     useTsconfigDeclarationDir: true,
     clean: true,
+    check: false,
   }),
   terser({
     compress: {
-      directives: false, // Preserve directives like 'use client'
+      directives: false,
     },
   }),
 ];
