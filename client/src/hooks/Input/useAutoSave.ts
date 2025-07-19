@@ -4,35 +4,10 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { LocalStorageKeys, Constants } from 'librechat-data-provider';
 import type { TFile } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
+import { clearDraft, decodeBase64, encodeBase64 } from '~/utils';
 import { useChatFormContext } from '~/Providers';
 import { useGetFiles } from '~/data-provider';
 import store from '~/store';
-
-const clearDraft = debounce((id?: string | null) => {
-  localStorage.removeItem(`${LocalStorageKeys.TEXT_DRAFT}${id ?? ''}`);
-}, 2500);
-
-const encodeBase64 = (plainText: string): string => {
-  try {
-    const textBytes = new TextEncoder().encode(plainText);
-    return btoa(String.fromCharCode(...textBytes));
-  } catch (e) {
-    return '';
-  }
-};
-
-const decodeBase64 = (base64String: string): string => {
-  try {
-    const bytes = atob(base64String);
-    const uint8Array = new Uint8Array(bytes.length);
-    for (let i = 0; i < bytes.length; i++) {
-      uint8Array[i] = bytes.charCodeAt(i);
-    }
-    return new TextDecoder().decode(uint8Array);
-  } catch (e) {
-    return '';
-  }
-};
 
 export const useAutoSave = ({
   isSubmitting,
