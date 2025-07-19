@@ -13,8 +13,6 @@ export * from './generate';
 export * from './models';
 /* mcp */
 export * from './mcp';
-/* web search */
-export * from './web';
 /* memory */
 export * from './memory';
 /* RBAC */

@@ -21,6 +21,8 @@ export * from './agents';
 export * from './endpoints';
 /* Files */
 export * from './files';
+/* web search */
+export * from './web';
 /* types */
 export type * from './mcp/types';
 export type * from './flow/types';
