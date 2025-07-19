@@ -34,6 +34,9 @@ const plugins = [
     inject: true,
     minimize: process.env.NODE_ENV === 'production',
     modules: false,
+    config: {
+      path: './postcss.config.js',
+    },
   }),
   typescript({
     tsconfig: './tsconfig.json',
@@ -74,6 +77,14 @@ export default {
   onwarn(warning, warn) {
     // Ignore "use client" directive warnings
     if (warning.code === 'MODULE_LEVEL_DIRECTIVE') {
+      return;
+    }
+    // Ignore PostCSS warnings about complex selectors
+    if (
+      warning.plugin === 'postcss' &&
+      warning.message &&
+      warning.message.includes('can not be transformed to an equivalent selector')
+    ) {
       return;
     }
     warn(warning);
