@@ -13,6 +13,7 @@ const requireLdapAuth = require('./requireLdapAuth');
 const abortMiddleware = require('./abortMiddleware');
 const checkInviteUser = require('./checkInviteUser');
 const requireJwtAuth = require('./requireJwtAuth');
+const requireForwardedAuth = require('./requireForwardedAuth');
 const validateModel = require('./validateModel');
 const moderateText = require('./moderateText');
 const logHeaders = require('./logHeaders');
@@ -41,6 +42,7 @@ module.exports = {
   checkInviteUser,
   requireLdapAuth,
   requireLocalAuth,
+  requireForwardedAuth,
   canDeleteAccount,
   validateEndpoint,
   concurrentLimiter,

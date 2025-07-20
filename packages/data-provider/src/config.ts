@@ -618,6 +618,8 @@ export type TStartupConfig = {
     /** Whether LDAP uses username vs. email */
     username?: boolean;
   };
+  /** Forwarded Auth Configuration */
+  forwardedAuthEnabled?: boolean;
   serverDomain: string;
   emailLoginEnabled: boolean;
   registrationEnabled: boolean;
