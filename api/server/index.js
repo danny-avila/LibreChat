@@ -18,7 +18,7 @@ const mongoSanitize = require('express-mongo-sanitize');
 const { isEnabled, ErrorController } = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
 const validateImageRequest = require('./middleware/validateImageRequest');
-const { jwtLogin, ldapLogin, passportLogin } = require('~/strategies');
+const { jwtLogin, ldapLogin, passportLogin, forwardedAuthLogin } = require('~/strategies');
 const initializeMCPs = require('./services/initializeMCPs');
 const configureSocialLogins = require('./socialLogins');
 const AppService = require('./services/AppService');
@@ -83,6 +83,7 @@ const startServer = async () => {
   app.use(passport.initialize());
   passport.use(jwtLogin());
   passport.use(passportLogin());
+  passport.use('forwardedAuth', forwardedAuthLogin());
 
   /* LDAP Auth */
   if (process.env.LDAP_URL && process.env.LDAP_USER_SEARCH_BASE) {
@@ -95,6 +96,11 @@ const startServer = async () => {
 
   app.use('/oauth', routes.oauth);
   /* API Endpoints */
+  // Apply forwarded auth middleware globally if enabled
+  if (process.env.FORWARD_AUTH_ENABLED === 'true') {
+    app.use(require('~/server/middleware/requireForwardedAuth'));
+  }
+
   app.use('/api/auth', routes.auth);
   app.use('/api/actions', routes.actions);
   app.use('/api/keys', routes.keys);

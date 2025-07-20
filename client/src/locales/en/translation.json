@@ -1,6 +1,7 @@
 {
   "chat_direction_left_to_right": "something needs to go here. was empty",
   "chat_direction_right_to_left": "something needs to go here. was empty",
+  "com_auth_authenticating": "Authenticating...",
   "com_a11y_ai_composing": "The AI is still composing.",
   "com_a11y_end": "The AI has finished their reply.",
   "com_a11y_start": "The AI has started their reply.",
