@@ -1021,7 +1021,8 @@ class AgentClient extends BaseClient {
     let titleProviderConfig = await getProviderConfig(endpoint);
 
     /** @type {TEndpoint | undefined} */
-    const endpointConfig = req.app.locals[endpoint] ?? titleProviderConfig.customEndpointConfig;
+    const endpointConfig =
+      req.app.locals.all ?? req.app.locals[endpoint] ?? titleProviderConfig.customEndpointConfig;
     if (!endpointConfig) {
       logger.warn(
         '[api/server/controllers/agents/client.js #titleConvo] Error getting endpoint config',

@@ -700,6 +700,49 @@ describe('AppService', () => {
       titleMethod: 'structured',
     });
   });
+
+  it('should correctly configure all endpoint when specified', async () => {
+    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
+      Promise.resolve({
+        endpoints: {
+          all: {
+            titleConvo: true,
+            titleModel: 'gpt-4o-mini',
+            titleMethod: 'structured',
+            titlePrompt: 'Default title prompt for all endpoints',
+            titlePromptTemplate: 'Default template: {{conversation}}',
+            titleEndpoint: EModelEndpoint.anthropic,
+            streamRate: 50,
+          },
+          [EModelEndpoint.openAI]: {
+            titleConvo: true,
+            titleModel: 'gpt-3.5-turbo',
+          },
+        },
+      }),
+    );
+
+    await AppService(app);
+
+    // Check that 'all' endpoint config is loaded
+    expect(app.locals).toHaveProperty('all');
+    expect(app.locals.all).toMatchObject({
+      titleConvo: true,
+      titleModel: 'gpt-4o-mini',
+      titleMethod: 'structured',
+      titlePrompt: 'Default title prompt for all endpoints',
+      titlePromptTemplate: 'Default template: {{conversation}}',
+      titleEndpoint: EModelEndpoint.anthropic,
+      streamRate: 50,
+    });
+
+    // Check that OpenAI endpoint has its own config
+    expect(app.locals).toHaveProperty(EModelEndpoint.openAI);
+    expect(app.locals[EModelEndpoint.openAI]).toMatchObject({
+      titleConvo: true,
+      titleModel: 'gpt-3.5-turbo',
+    });
+  });
 });
 
 describe('AppService updating app.locals and issuing warnings', () => {
