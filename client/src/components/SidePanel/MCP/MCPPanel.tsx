@@ -1,24 +1,20 @@
-import { Constants } from 'librechat-data-provider';
 import { ChevronLeft } from 'lucide-react';
-import React, { useState, useCallback, useMemo } from 'react';
-import {
-  useUpdateUserPluginsMutation,
-  useReinitializeMCPServerMutation,
-} from 'librechat-data-provider/react-query';
 import { useQueryClient } from '@tanstack/react-query';
-import { QueryKeys } from 'librechat-data-provider';
+import React, { useState, useCallback, useMemo } from 'react';
+import { Constants, QueryKeys } from 'librechat-data-provider';
+import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
 import type { TUpdateUserPlugins } from 'librechat-data-provider';
-import { Button } from '~/components/ui';
-import { useGetStartupConfig } from '~/data-provider';
-import { useMCPConnectionStatusQuery } from '~/data-provider/Tools/queries';
-import MCPPanelSkeleton from './MCPPanelSkeleton';
-import { useToastContext } from '~/Providers';
-import { useLocalize } from '~/hooks';
 import {
   CustomUserVarsSection,
   ServerInitializationSection,
   type ConfigFieldDetail,
 } from '~/components/ui/MCP';
+import { useMCPConnectionStatusQuery } from '~/data-provider/Tools/queries';
+import { useGetStartupConfig } from '~/data-provider';
+import MCPPanelSkeleton from './MCPPanelSkeleton';
+import { useToastContext } from '~/Providers';
+import { Button } from '~/components/ui';
+import { useLocalize } from '~/hooks';
 
 export default function MCPPanel() {
   const localize = useLocalize();
@@ -27,7 +23,6 @@ export default function MCPPanel() {
   const [selectedServerNameForEditing, setSelectedServerNameForEditing] = useState<string | null>(
     null,
   );
-  const reinitializeMCPMutation = useReinitializeMCPServerMutation();
   const queryClient = useQueryClient();
 
   // Get real connection status from MCPManager
