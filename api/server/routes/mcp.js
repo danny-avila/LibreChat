@@ -219,7 +219,7 @@ router.get('/connection/status', requireJwtAuth, async (req, res) => {
       return res.status(401).json({ error: 'User not authenticated' });
     }
 
-    const mcpManager = getMCPManager();
+    const mcpManager = getMCPManager(null, true); // Skip idle checks to avoid ping spam
     const connectionStatus = {};
 
     // Get all MCP server names from custom config
@@ -237,12 +237,14 @@ router.get('/connection/status', requireJwtAuth, async (req, res) => {
           const userConnection = mcpManager.getUserConnectionIfExists(user.id, serverName);
           const hasUserConnection = !!userConnection;
 
-          // Determine if connected based on actual connection state
+          // Use lightweight connection state check instead of ping-based isConnected()
           let connected = false;
           if (hasAppConnection) {
-            connected = await appConnection.isConnected();
+            // Check connection state without ping to avoid rate limits
+            connected = appConnection.connectionState === 'connected';
           } else if (hasUserConnection) {
-            connected = await userConnection.isConnected();
+            // Check connection state without ping to avoid rate limits
+            connected = userConnection.connectionState === 'connected';
           }
 
           // Determine if this server requires user authentication

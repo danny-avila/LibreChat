@@ -97,7 +97,6 @@ function createServerToolsCallback() {
         return;
       }
       await mcpToolsCache.set(serverName, serverTools);
-      logger.warn(`MCP tools for ${serverName} added to cache.`);
     } catch (error) {
       logger.error('Error retrieving MCP tools from cache:', error);
     }
@@ -240,7 +239,6 @@ const getAvailableTools = async (req, res) => {
         // Check if the app-level connection is active
         try {
           const mcpManager = getMCPManager();
-          const allConnections = mcpManager.getAllConnections();
 
           const appConnection = mcpManager.getConnection(serverName);
 

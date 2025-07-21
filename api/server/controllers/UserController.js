@@ -182,7 +182,7 @@ const updateUserPluginsController = async (req, res) => {
               `[updateUserPluginsController] Disconnecting MCP connection for user ${user.id} and server ${serverName} after plugin auth update for ${pluginKey}.`,
             );
             // Don't kill the server connection on revoke anymore, user can just reinitialize the server if thats what they want
-            // await mcpManager.disconnectUserConnection(user.id, serverName);
+            await mcpManager.disconnectUserConnection(user.id, serverName);
           }
         } catch (disconnectError) {
           logger.error(

@@ -51,9 +51,10 @@ export const useMCPConnectionStatusQuery = <TData = t.TMCPConnectionStatusRespon
     [QueryKeys.mcpConnectionStatus],
     () => dataService.getMCPConnectionStatus(),
     {
-      // refetchOnWindowFocus: false,
-      // refetchOnReconnect: false,
-      // refetchOnMount: true,
+      refetchOnWindowFocus: false, // Stop window focus spam
+      refetchOnReconnect: false, // Stop reconnect spam
+      refetchOnMount: false, // Only fetch when explicitly needed
+      staleTime: 2000, // 2 second cache to prevent excessive calls
       ...config,
     },
   );

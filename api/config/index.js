@@ -11,12 +11,13 @@ let flowManager = null;
 
 /**
  * @param {string} [userId] - Optional user ID, to avoid disconnecting the current user.
+ * @param {boolean} [skipIdleCheck] - Skip idle connection checking to avoid unnecessary pings.
  * @returns {MCPManager}
  */
-function getMCPManager(userId) {
+function getMCPManager(userId, skipIdleCheck = false) {
   if (!mcpManager) {
     mcpManager = MCPManager.getInstance();
-  } else {
+  } else if (!skipIdleCheck) {
     mcpManager.checkIdleConnections(userId);
   }
   return mcpManager;
