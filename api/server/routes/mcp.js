@@ -11,6 +11,8 @@ const { getLogStores } = require('~/cache');
 
 const router = Router();
 
+const suppressLogging = true;
+
 /**
  * Initiate OAuth flow
  * This endpoint is called when the user clicks the auth link in the UI
@@ -221,7 +223,7 @@ router.get('/connection/status', requireJwtAuth, async (req, res) => {
     const connectionStatus = {};
 
     // Get all MCP server names from custom config
-    const config = await loadCustomConfig();
+    const config = await loadCustomConfig(suppressLogging);
     const mcpConfig = config?.mcpServers;
 
     if (mcpConfig) {
@@ -297,7 +299,7 @@ router.get('/:serverName/auth-values', requireJwtAuth, async (req, res) => {
       return res.status(401).json({ error: 'User not authenticated' });
     }
 
-    const config = await loadCustomConfig();
+    const config = await loadCustomConfig(suppressLogging);
     if (!config || !config.mcpServers || !config.mcpServers[serverName]) {
       return res.status(404).json({
         error: `MCP server '${serverName}' not found in configuration`,
@@ -494,7 +496,7 @@ router.post('/:serverName/reinitialize', requireJwtAuth, async (req, res) => {
 
     logger.info(`[MCP Reinitialize] Reinitializing server: ${serverName}`);
 
-    const config = await loadCustomConfig();
+    const config = await loadCustomConfig(suppressLogging);
     if (!config || !config.mcpServers || !config.mcpServers[serverName]) {
       responseSent = true;
       return res.status(404).json({

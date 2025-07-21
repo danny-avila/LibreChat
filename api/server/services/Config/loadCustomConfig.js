@@ -23,9 +23,10 @@ let i = 0;
  * Load custom configuration files and caches the object if the `cache` field at root is true.
  * Validation via parsing the config file with the config schema.
  * @function loadCustomConfig
+ * @param {boolean} [suppressLogging=false] - If true, suppresses the verbose config logging of the entire config when called.
  * @returns {Promise<TCustomConfig | null>} A promise that resolves to null or the custom config object.
  * */
-async function loadCustomConfig() {
+async function loadCustomConfig(suppressLogging = false) {
   // Use CONFIG_PATH if set, otherwise fallback to defaultConfigPath
   const configPath = process.env.CONFIG_PATH || defaultConfigPath;
 
@@ -108,9 +109,11 @@ https://www.librechat.ai/docs/configuration/stt_tts`);
 
     return null;
   } else {
-    logger.info('Custom config file loaded:');
-    logger.info(JSON.stringify(customConfig, null, 2));
-    logger.debug('Custom config:', customConfig);
+    if (!suppressLogging) {
+      logger.info('Custom config file loaded:');
+      logger.info(JSON.stringify(customConfig, null, 2));
+      logger.debug('Custom config:', customConfig);
+    }
   }
 
   (customConfig.endpoints?.custom ?? [])
