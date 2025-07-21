@@ -59,6 +59,8 @@ export default function MCPPanel() {
       await Promise.all([
         queryClient.invalidateQueries([QueryKeys.tools]),
         queryClient.refetchQueries([QueryKeys.tools]),
+        queryClient.invalidateQueries([QueryKeys.mcpAuthValues]),
+        queryClient.refetchQueries([QueryKeys.mcpAuthValues]),
         queryClient.invalidateQueries([QueryKeys.mcpConnectionStatus]),
         queryClient.refetchQueries([QueryKeys.mcpConnectionStatus]),
       ]);

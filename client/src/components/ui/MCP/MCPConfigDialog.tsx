@@ -45,13 +45,8 @@ export default function MCPConfigDialog({
 }: MCPConfigDialogProps) {
   const localize = useLocalize();
 
-  // Get connection status to determine OAuth requirements with aggressive refresh
-  const { data: statusQuery } = useMCPConnectionStatusQuery({
-    refetchOnMount: true,
-    refetchOnWindowFocus: true,
-    staleTime: 0,
-    cacheTime: 0,
-  });
+  // Get connection status to determine OAuth requirements
+  const { data: statusQuery } = useMCPConnectionStatusQuery();
   const mcpServerStatuses = statusQuery?.connectionStatus || {};
 
   // Derive real-time connection status and OAuth requirements

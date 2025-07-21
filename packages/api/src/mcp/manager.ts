@@ -160,6 +160,7 @@ export class MCPManager extends EventEmitter {
   }): Promise<void> {
     const processedConfig = processMCPEnv(config);
     let tokens: MCPOAuthTokens | null = null;
+
     if (tokenMethods?.findToken) {
       try {
         /** Refresh function for app-level connections */
@@ -204,10 +205,13 @@ export class MCPManager extends EventEmitter {
         logger.debug(`[MCP][${serverName}] No existing tokens found`);
       }
     }
+
     if (tokens) {
       logger.info(`[MCP][${serverName}] Loaded OAuth tokens`);
     }
-    const connection = new MCPConnection(serverName, processedConfig, undefined, tokens);
+
+    // Create connection in startup mode to prevent OAuth timeouts
+    const connection = new MCPConnection(serverName, processedConfig, undefined, tokens, true);
 
     // Track OAuth skipped state explicitly
     let oauthSkipped = false;
@@ -347,7 +351,8 @@ export class MCPManager extends EventEmitter {
     while (attempts < maxAttempts) {
       try {
         await connection.connect();
-        if (await connection.isConnected()) {
+        // Use lightweight connection state check instead of ping
+        if (connection.connectionState === 'connected') {
           return;
         }
         throw new Error('Connection attempt succeeded but status is not connected');
@@ -493,7 +498,8 @@ export class MCPManager extends EventEmitter {
       }
       connection = undefined; // Force creation of a new connection
     } else if (connection) {
-      if (await connection.isConnected()) {
+      // Use lightweight connection state check instead of ping
+      if (connection.connectionState === 'connected') {
         logger.debug(`[MCP][User: ${userId}][${serverName}] Reusing active connection`);
         this.updateUserLastActivity(userId);
         return connection;
@@ -636,7 +642,8 @@ export class MCPManager extends EventEmitter {
       });
       await Promise.race([connectionAttempt, connectionTimeout]);
 
-      if (!(await connection?.isConnected())) {
+      // Use lightweight connection state check instead of ping
+      if (connection?.connectionState !== 'connected') {
         throw new Error('Failed to establish connection after initialization attempt.');
       }
 
@@ -747,7 +754,8 @@ export class MCPManager extends EventEmitter {
     flowManager: FlowStateManager<MCPOAuthTokens | null>;
     skipReconnect?: boolean;
   }): Promise<boolean> {
-    if (await connection.isConnected()) {
+    // Use lightweight connection state check instead of ping
+    if (connection.connectionState === 'connected') {
       return true;
     }
 
@@ -775,7 +783,8 @@ export class MCPManager extends EventEmitter {
         flowManager,
       });
 
-      if (await connection.isConnected()) {
+      // Use lightweight connection state check instead of ping
+      if (connection.connectionState === 'connected') {
         logger.info(`[MCP][${serverName}] App-level connection successfully reconnected`);
         return true;
       } else {
@@ -959,7 +968,8 @@ export class MCPManager extends EventEmitter {
         }
       }
 
-      if (!(await connection.isConnected())) {
+      // Use lightweight connection state check instead of ping
+      if (connection.connectionState !== 'connected') {
         /** May happen if getUserConnection failed silently or app connection dropped */
         throw new McpError(
           ErrorCode.InternalError, // Use InternalError for connection issues
