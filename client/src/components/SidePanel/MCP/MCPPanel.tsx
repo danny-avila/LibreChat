@@ -20,13 +20,6 @@ import {
   type ConfigFieldDetail,
 } from '~/components/ui/MCP';
 
-interface ServerConfigWithVars {
-  serverName: string;
-  config: {
-    customUserVars: Record<string, { title: string; description: string }>;
-  };
-}
-
 export default function MCPPanel() {
   const localize = useLocalize();
   const { showToast } = useToastContext();
@@ -115,87 +108,6 @@ export default function MCPPanel() {
   const handleGoBackToList = () => {
     setSelectedServerNameForEditing(null);
   };
-
-  const handleReinitializeServer = useCallback(
-    async (serverName: string) => {
-      try {
-        const response = await reinitializeMCPMutation.mutateAsync(serverName);
-
-        // Check if OAuth is required
-        if (response.oauthRequired) {
-          if (response.authURL) {
-            // Show OAuth URL to user
-            showToast({
-              message: `OAuth required for ${serverName}. Please visit the authorization URL.`,
-              status: 'info',
-            });
-
-            // Open OAuth URL in new window/tab
-            window.open(response.authURL, '_blank', 'noopener,noreferrer');
-
-            // Show a more detailed message with the URL
-            setTimeout(() => {
-              showToast({
-                message: `OAuth URL opened for ${serverName}. Complete authentication and try reinitializing again.`,
-                status: 'info',
-              });
-            }, 1000);
-          } else {
-            showToast({
-              message: `OAuth authentication required for ${serverName}. Please configure OAuth credentials.`,
-              status: 'warning',
-            });
-          }
-        } else if (response.oauthCompleted) {
-          showToast({
-            message:
-              response.message ||
-              `MCP server '${serverName}' reinitialized successfully after OAuth`,
-            status: 'success',
-          });
-        } else {
-          showToast({
-            message: response.message || `MCP server '${serverName}' reinitialized successfully`,
-            status: 'success',
-          });
-        }
-      } catch (error) {
-        console.error('Error reinitializing MCP server:', error);
-
-        // Check if the error response contains OAuth information
-        if ((error as any)?.response?.data?.oauthRequired) {
-          const errorData = (error as any).response.data;
-          if (errorData.authURL) {
-            showToast({
-              message: `OAuth required for ${serverName}. Please visit the authorization URL.`,
-              status: 'info',
-            });
-
-            // Open OAuth URL in new window/tab
-            window.open(errorData.authURL, '_blank', 'noopener,noreferrer');
-
-            setTimeout(() => {
-              showToast({
-                message: `OAuth URL opened for ${serverName}. Complete authentication and try reinitializing again.`,
-                status: 'info',
-              });
-            }, 1000);
-          } else {
-            showToast({
-              message: errorData.message || `OAuth authentication required for ${serverName}`,
-              status: 'warning',
-            });
-          }
-        } else {
-          showToast({
-            message: 'Failed to reinitialize MCP server',
-            status: 'error',
-          });
-        }
-      }
-    },
-    [showToast, reinitializeMCPMutation],
-  );
 
   // Create save and revoke handlers with latest state
   const handleSave = useCallback(
