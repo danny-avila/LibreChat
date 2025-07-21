@@ -6,6 +6,8 @@ import {
   useUpdateUserPluginsMutation,
   useReinitializeMCPServerMutation,
 } from 'librechat-data-provider/react-query';
+import { useQueryClient } from '@tanstack/react-query';
+import { QueryKeys } from 'librechat-data-provider';
 import type { TUpdateUserPlugins } from 'librechat-data-provider';
 import { Button, Input, Label } from '~/components/ui';
 import { useGetStartupConfig } from '~/data-provider';
@@ -29,6 +31,7 @@ export default function MCPPanel() {
   );
   const [rotatingServers, setRotatingServers] = useState<Set<string>>(new Set());
   const reinitializeMCPMutation = useReinitializeMCPServerMutation();
+  const queryClient = useQueryClient();
 
   const mcpServerDefinitions = useMemo(() => {
     if (!startupConfig?.mcpServers) {
@@ -50,11 +53,43 @@ export default function MCPPanel() {
   }, [startupConfig?.mcpServers]);
 
   const updateUserPluginsMutation = useUpdateUserPluginsMutation({
-    onSuccess: () => {
+    onSuccess: async (data, variables) => {
       showToast({ message: localize('com_nav_mcp_vars_updated'), status: 'success' });
+
+      // Refetch tools query to refresh authentication state in the dropdown
+      queryClient.refetchQueries([QueryKeys.tools]);
+
+      // For 'uninstall' actions (revoke), remove the server from selected values
+      if (variables.action === 'uninstall') {
+        const serverName = variables.pluginKey.replace(Constants.mcp_prefix, '');
+        // Note: MCPPanel doesn't directly manage selected values, but this ensures
+        // the tools query is refreshed so MCPSelect will pick up the changes
+      }
+
+      // Only reinitialize for 'install' actions (save), not 'uninstall' actions (revoke)
+      if (variables.action === 'install') {
+        // Extract server name from pluginKey (e.g., "mcp_myServer" -> "myServer")
+        const serverName = variables.pluginKey.replace(Constants.mcp_prefix, '');
+
+        // Reinitialize the MCP server to pick up the new authentication values
+        try {
+          await reinitializeMCPMutation.mutateAsync(serverName);
+          console.log(
+            `[MCP Panel] Successfully reinitialized server ${serverName} after auth update`,
+          );
+        } catch (error) {
+          console.error(
+            `[MCP Panel] Error reinitializing server ${serverName} after auth update:`,
+            error,
+          );
+          // Don't show error toast to user as the auth update was successful
+        }
+      }
+      // For 'uninstall' actions (revoke), the backend already disconnects the connections
+      // so no additional action is needed here
     },
-    onError: (error) => {
-      console.error('Error updating MCP custom user variables:', error);
+    onError: (error: unknown) => {
+      console.error('Error updating MCP auth:', error);
       showToast({
         message: localize('com_nav_mcp_vars_update_error'),
         status: 'error',
@@ -98,17 +133,79 @@ export default function MCPPanel() {
     async (serverName: string) => {
       setRotatingServers((prev) => new Set(prev).add(serverName));
       try {
-        await reinitializeMCPMutation.mutateAsync(serverName);
-        showToast({
-          message: `MCP server '${serverName}' reinitialized successfully`,
-          status: 'success',
-        });
+        const response = await reinitializeMCPMutation.mutateAsync(serverName);
+
+        // Check if OAuth is required
+        if (response.oauthRequired) {
+          if (response.authorizationUrl) {
+            // Show OAuth URL to user
+            showToast({
+              message: `OAuth required for ${serverName}. Please visit the authorization URL.`,
+              status: 'info',
+            });
+
+            // Open OAuth URL in new window/tab
+            window.open(response.authorizationUrl, '_blank', 'noopener,noreferrer');
+
+            // Show a more detailed message with the URL
+            setTimeout(() => {
+              showToast({
+                message: `OAuth URL opened for ${serverName}. Complete authentication and try reinitializing again.`,
+                status: 'info',
+              });
+            }, 1000);
+          } else {
+            showToast({
+              message: `OAuth authentication required for ${serverName}. Please configure OAuth credentials.`,
+              status: 'warning',
+            });
+          }
+        } else if (response.oauthCompleted) {
+          showToast({
+            message:
+              response.message ||
+              `MCP server '${serverName}' reinitialized successfully after OAuth`,
+            status: 'success',
+          });
+        } else {
+          showToast({
+            message: response.message || `MCP server '${serverName}' reinitialized successfully`,
+            status: 'success',
+          });
+        }
       } catch (error) {
         console.error('Error reinitializing MCP server:', error);
-        showToast({
-          message: 'Failed to reinitialize MCP server',
-          status: 'error',
-        });
+
+        // Check if the error response contains OAuth information
+        if (error?.response?.data?.oauthRequired) {
+          const errorData = error.response.data;
+          if (errorData.authorizationUrl) {
+            showToast({
+              message: `OAuth required for ${serverName}. Please visit the authorization URL.`,
+              status: 'info',
+            });
+
+            // Open OAuth URL in new window/tab
+            window.open(errorData.authorizationUrl, '_blank', 'noopener,noreferrer');
+
+            setTimeout(() => {
+              showToast({
+                message: `OAuth URL opened for ${serverName}. Complete authentication and try reinitializing again.`,
+                status: 'info',
+              });
+            }, 1000);
+          } else {
+            showToast({
+              message: errorData.message || `OAuth authentication required for ${serverName}`,
+              status: 'warning',
+            });
+          }
+        } else {
+          showToast({
+            message: 'Failed to reinitialize MCP server',
+            status: 'error',
+          });
+        }
       } finally {
         setRotatingServers((prev) => {
           const next = new Set(prev);

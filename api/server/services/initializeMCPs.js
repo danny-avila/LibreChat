@@ -10,6 +10,15 @@ const { getLogStores } = require('~/cache');
  * @param {import('express').Application} app - Express app instance
  */
 async function initializeMCPs(app) {
+  // TEMPORARY: Reset all OAuth tokens for fresh testing
+  try {
+    logger.info('[MCP] Resetting all OAuth tokens for fresh testing...');
+    await deleteTokens({});
+    logger.info('[MCP] All OAuth tokens reset successfully');
+  } catch (error) {
+    logger.error('[MCP] Error resetting OAuth tokens:', error);
+  }
+
   const mcpServers = app.locals.mcpConfig;
   if (!mcpServers) {
     return;
@@ -36,7 +45,7 @@ async function initializeMCPs(app) {
   const flowManager = flowsCache ? getFlowStateManager(flowsCache) : null;
 
   try {
-    await mcpManager.initializeMCPs({
+    const oauthRequirements = await mcpManager.initializeMCPs({
       mcpServers: filteredServers,
       flowManager,
       tokenMethods: {
@@ -64,6 +73,9 @@ async function initializeMCPs(app) {
     logger.debug('Cleared tools array cache after MCP initialization');
 
     logger.info('MCP servers initialized successfully');
+
+    // Store OAuth requirement information in app locals for client access
+    app.locals.mcpOAuthRequirements = oauthRequirements;
   } catch (error) {
     logger.error('Failed to initialize MCP servers:', error);
   }

@@ -629,3 +629,14 @@ export type TBalanceResponse = {
   lastRefill?: Date;
   refillAmount?: number;
 };
+
+export type TMCPConnectionStatus = {
+  connected: boolean;
+  hasAuthConfig: boolean;
+  hasConnection: boolean;
+  isAppLevel: boolean;
+  isUserLevel: boolean;
+  requiresOAuth: boolean;
+};
+
+export type TMCPConnectionStatusResponse = Record<string, TMCPConnectionStatus>;

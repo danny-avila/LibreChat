@@ -69,6 +69,7 @@ export class MCPConnection extends EventEmitter {
   private lastPingTime: number;
   private oauthTokens?: MCPOAuthTokens | null;
   private oauthRequired = false;
+  private oauthTimeoutId: NodeJS.Timeout | null = null;
   iconPath?: string;
   timeout?: number;
   url?: string;
@@ -421,6 +422,7 @@ export class MCPConnection extends EventEmitter {
             const cleanup = () => {
               if (timeoutId) {
                 clearTimeout(timeoutId);
+                this.oauthTimeoutId = null;
               }
               if (oauthHandledListener) {
                 this.off('oauthHandled', oauthHandledListener);
@@ -448,10 +450,25 @@ export class MCPConnection extends EventEmitter {
               reject(new Error(`OAuth handling timeout after ${oauthTimeout}ms`));
             }, oauthTimeout);
 
+            // Store the timeout ID for potential cancellation
+            this.oauthTimeoutId = timeoutId;
+
             // Listen for both success and failure events
             this.once('oauthHandled', oauthHandledListener);
             this.once('oauthFailed', oauthFailedListener);
           });
+
+          // Check if there are any listeners for oauthRequired event
+          const hasOAuthListeners = this.listenerCount('oauthRequired') > 0;
+
+          if (!hasOAuthListeners) {
+            // No OAuth handler available (like during startup), immediately fail
+            logger.warn(
+              `${this.getLogPrefix()} OAuth required but no handler available, failing immediately`,
+            );
+            this.oauthRequired = false;
+            throw error;
+          }
 
           // Emit the event
           this.emit('oauthRequired', {
@@ -517,7 +534,7 @@ export class MCPConnection extends EventEmitter {
     try {
       await this.disconnect();
       await this.connectClient();
-      if (!(await this.isConnected())) {
+      if (!(await this.isConnected()) && !(this.isInitializing && this.oauthTokens)) {
         throw new Error('Connection not established');
       }
     } catch (error) {
@@ -545,6 +562,37 @@ export class MCPConnection extends EventEmitter {
 
   public async disconnect(): Promise<void> {
     try {
+      // Cancel any pending OAuth timeout
+      if (this.oauthTimeoutId) {
+        clearTimeout(this.oauthTimeoutId);
+        this.oauthTimeoutId = null;
+      }
+
+      if (this.transport) {
+        await this.client.close();
+        this.transport = null;
+      }
+      if (this.connectionState === 'disconnected') {
+        return;
+      }
+      this.connectionState = 'disconnected';
+      this.emit('connectionChange', 'disconnected');
+    } finally {
+      this.connectPromise = null;
+    }
+  }
+
+  public async disconnectAndStopReconnecting(): Promise<void> {
+    try {
+      // Stop any reconnection attempts
+      this.shouldStopReconnecting = true;
+
+      // Cancel any pending OAuth timeout
+      if (this.oauthTimeoutId) {
+        clearTimeout(this.oauthTimeoutId);
+        this.oauthTimeoutId = null;
+      }
+
       if (this.transport) {
         await this.client.close();
         this.transport = null;
@@ -648,6 +696,11 @@ export class MCPConnection extends EventEmitter {
 
   public setOAuthTokens(tokens: MCPOAuthTokens): void {
     this.oauthTokens = tokens;
+  }
+
+  /** Get the current connection state */
+  public getConnectionState(): t.ConnectionState {
+    return this.connectionState;
   }
 
   private isOAuthError(error: unknown): boolean {
