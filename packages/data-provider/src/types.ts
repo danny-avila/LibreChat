@@ -1,4 +1,3 @@
-import type OpenAI from 'openai';
 import type { InfiniteData } from '@tanstack/react-query';
 import type {
   TBanner,
@@ -13,8 +12,6 @@ import type {
 import type { SettingDefinition } from './generate';
 import type { TMinimalFeedback } from './feedback';
 import type { Agent } from './types/assistants';
-
-export type TOpenAIMessage = OpenAI.Chat.ChatCompletionMessageParam;
 
 export * from './schemas';
 
