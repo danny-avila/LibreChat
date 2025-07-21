@@ -967,8 +967,6 @@
   "com_ui_saving": "Saving...",
   "com_ui_set": "Set",
   "com_ui_unset": "Unset",
-  "com_ui_configuration": "Configuration",
-  "com_ui_mcp_auth_desc": "Configure authentication credentials for this MCP server.",
   "com_ui_authorization_url": "Authorization URL",
   "com_ui_continue_oauth": "Continue OAuth Flow",
   "com_ui_oauth_flow_desc": "Click the button above to continue the OAuth flow in a new tab.",
@@ -1100,5 +1098,5 @@
   "com_ui_x_selected": "{{0}} selected",
   "com_ui_yes": "Yes",
   "com_ui_zoom": "Zoom",
-      "com_user_message": "You"
+  "com_user_message": "You"
 }

@@ -542,7 +542,6 @@ router.post('/:serverName/reinitialize', requireJwtAuth, async (req, res) => {
     }
 
     let userConnection = null;
-    let oauthRequired = false;
 
     try {
       userConnection = await mcpManager.getUserConnection({
@@ -558,7 +557,6 @@ router.post('/:serverName/reinitialize', requireJwtAuth, async (req, res) => {
         },
         oauthStart: (authURL) => {
           // This will be called if OAuth is required
-          oauthRequired = true;
           responseSent = true;
           logger.info(`[MCP Reinitialize] OAuth required for ${serverName}, auth URL: ${authURL}`);
 

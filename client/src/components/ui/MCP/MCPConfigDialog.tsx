@@ -1,9 +1,7 @@
-import React, { useMemo, useCallback } from 'react';
+import React, { useMemo } from 'react';
 import { useLocalize } from '~/hooks';
 import { useMCPConnectionStatusQuery } from '~/data-provider/Tools/queries';
 import { CustomUserVarsSection, ServerInitializationSection } from './';
-import { useQueryClient } from '@tanstack/react-query';
-import { QueryKeys } from 'librechat-data-provider';
 
 import {
   OGDialog,
@@ -46,10 +44,9 @@ export default function MCPConfigDialog({
   serverName,
 }: MCPConfigDialogProps) {
   const localize = useLocalize();
-  const queryClient = useQueryClient();
 
   // Get connection status to determine OAuth requirements with aggressive refresh
-  const { data: statusQuery, refetch: refetchConnectionStatus } = useMCPConnectionStatusQuery({
+  const { data: statusQuery } = useMCPConnectionStatusQuery({
     refetchOnMount: true,
     refetchOnWindowFocus: true,
     staleTime: 0,
