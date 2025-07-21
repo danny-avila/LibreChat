@@ -1,5 +1,5 @@
 import { Constants } from 'librechat-data-provider';
-import { ChevronLeft, RefreshCw } from 'lucide-react';
+import { ChevronLeft } from 'lucide-react';
 import React, { useState, useCallback, useMemo } from 'react';
 import {
   useUpdateUserPluginsMutation,
@@ -34,7 +34,6 @@ export default function MCPPanel() {
   const [selectedServerNameForEditing, setSelectedServerNameForEditing] = useState<string | null>(
     null,
   );
-  const [rotatingServers, setRotatingServers] = useState<Set<string>>(new Set());
   const reinitializeMCPMutation = useReinitializeMCPServerMutation();
   const queryClient = useQueryClient();
 
@@ -119,7 +118,6 @@ export default function MCPPanel() {
 
   const handleReinitializeServer = useCallback(
     async (serverName: string) => {
-      setRotatingServers((prev) => new Set(prev).add(serverName));
       try {
         const response = await reinitializeMCPMutation.mutateAsync(serverName);
 
@@ -194,12 +192,6 @@ export default function MCPPanel() {
             status: 'error',
           });
         }
-      } finally {
-        setRotatingServers((prev) => {
-          const next = new Set(prev);
-          next.delete(serverName);
-          return next;
-        });
       }
     },
     [showToast, reinitializeMCPMutation],
@@ -317,9 +309,6 @@ export default function MCPPanel() {
       <div className="h-auto max-w-full overflow-x-hidden p-3">
         <div className="space-y-2">
           {mcpServerDefinitions.map((server) => {
-            const serverStatus = mcpServerStatuses[server.serverName];
-            const isConnected = serverStatus?.connected || false;
-
             return (
               <div key={server.serverName} className="flex items-center gap-2">
                 <Button
@@ -327,29 +316,7 @@ export default function MCPPanel() {
                   className="flex-1 justify-start dark:hover:bg-gray-700"
                   onClick={() => handleServerClickToEdit(server.serverName)}
                 >
-                  <div className="flex w-full items-center gap-2">
-                    <span>{server.serverName}</span>
-                    {isConnected && (
-                      <div className="ml-auto flex items-center gap-1">
-                        <div className="h-1.5 w-1.5 rounded-full bg-green-500" />
-                        <span className="text-xs text-green-600 dark:text-green-400">
-                          {localize('com_ui_active')}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => handleReinitializeServer(server.serverName)}
-                  className="px-2 py-1"
-                  title="Reinitialize MCP server"
-                  disabled={reinitializeMCPMutation.isLoading}
-                >
-                  <RefreshCw
-                    className={`h-4 w-4 ${rotatingServers.has(server.serverName) ? 'animate-spin' : ''}`}
-                  />
+                  <span>{server.serverName}</span>
                 </Button>
               </div>
             );
