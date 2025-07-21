@@ -138,15 +138,21 @@ function createGetServerTools() {
  */
 const getAvailableTools = async (req, res) => {
   try {
+    const userId = req.user?.id;
+    const customConfig = await getCustomConfig();
     const cache = getLogStores(CacheKeys.CONFIG_STORE);
     const cachedToolsArray = await cache.get(CacheKeys.TOOLS);
-    if (cachedToolsArray) {
-      res.status(200).json(cachedToolsArray);
+    const cachedUserTools = await getCachedTools({ userId });
+    const userPlugins = convertMCPToolsToPlugins(cachedUserTools, customConfig);
+
+    if (cachedToolsArray && userPlugins) {
+      const dedupedTools = filterUniquePlugins([...userPlugins, ...cachedToolsArray]);
+      res.status(200).json(dedupedTools);
       return;
     }
 
+    // If not in cache, build from manifest
     let pluginManifest = availableTools;
-    const customConfig = await getCustomConfig();
     if (customConfig?.mcpServers != null) {
       const mcpManager = getMCPManager();
       const flowsCache = getLogStores(CacheKeys.FLOWS);
@@ -217,15 +223,68 @@ const getAvailableTools = async (req, res) => {
 
       toolsOutput.push(toolToAdd);
     }
-
     const finalTools = filterUniquePlugins(toolsOutput);
     await cache.set(CacheKeys.TOOLS, finalTools);
-    res.status(200).json(finalTools);
+
+    const dedupedTools = filterUniquePlugins([...userPlugins, ...finalTools]);
+
+    res.status(200).json(dedupedTools);
   } catch (error) {
     logger.error('[getAvailableTools]', error);
     res.status(500).json({ message: error.message });
   }
 };
+
+/**
+ * Converts MCP function format tools to plugin format
+ * @param {Object} functionTools - Object with function format tools
+ * @param {Object} customConfig - Custom configuration for MCP servers
+ * @returns {Array} Array of plugin objects
+ */
+function convertMCPToolsToPlugins(functionTools, customConfig) {
+  const plugins = [];
+
+  for (const [toolKey, toolData] of Object.entries(functionTools)) {
+    if (!toolData.function || !toolKey.includes(Constants.mcp_delimiter)) {
+      continue;
+    }
+
+    const functionData = toolData.function;
+    const parts = toolKey.split(Constants.mcp_delimiter);
+    const serverName = parts[parts.length - 1];
+
+    const plugin = {
+      name: parts[0], // Use the tool name without server suffix
+      pluginKey: toolKey,
+      description: functionData.description || '',
+      authenticated: true,
+      icon: undefined,
+    };
+
+    // Build authConfig for MCP tools
+    const serverConfig = customConfig?.mcpServers?.[serverName];
+    if (!serverConfig?.customUserVars) {
+      plugin.authConfig = [];
+      plugins.push(plugin);
+      continue;
+    }
+
+    const customVarKeys = Object.keys(serverConfig.customUserVars);
+    if (customVarKeys.length === 0) {
+      plugin.authConfig = [];
+    } else {
+      plugin.authConfig = Object.entries(serverConfig.customUserVars).map(([key, value]) => ({
+        authField: key,
+        label: value.title || key,
+        description: value.description || '',
+      }));
+    }
+
+    plugins.push(plugin);
+  }
+
+  return plugins;
+}
 
 module.exports = {
   getAvailableTools,
