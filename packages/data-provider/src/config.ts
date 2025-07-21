@@ -606,6 +606,7 @@ export type TStartupConfig = {
           description: string;
         }
       >;
+      requiresOAuth?: boolean;
     }
   >;
   mcpPlaceholder?: string;

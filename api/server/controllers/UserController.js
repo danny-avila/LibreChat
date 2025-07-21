@@ -180,14 +180,18 @@ const updateUserPluginsController = async (req, res) => {
         try {
           const mcpManager = getMCPManager(user.id);
           if (mcpManager) {
+            // Extract server name from pluginKey (e.g., "mcp_myserver" -> "myserver")
+            const serverName = pluginKey.replace(Constants.mcp_prefix, '');
+
             logger.info(
-              `[updateUserPluginsController] Disconnecting MCP connections for user ${user.id} after plugin auth update for ${pluginKey}.`,
+              `[updateUserPluginsController] Disconnecting MCP connection for user ${user.id} and server ${serverName} after plugin auth update for ${pluginKey}.`,
             );
-            await mcpManager.disconnectUserConnections(user.id);
+            // COMMENTED OUT: Don't kill the server connection on revoke
+            // await mcpManager.disconnectUserConnection(user.id, serverName);
           }
         } catch (disconnectError) {
           logger.error(
-            `[updateUserPluginsController] Error disconnecting MCP connections for user ${user.id} after plugin auth update:`,
+            `[updateUserPluginsController] Error disconnecting MCP connection for user ${user.id} after plugin auth update:`,
             disconnectError,
           );
           // Do not fail the request for this, but log it.

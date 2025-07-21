@@ -145,6 +145,26 @@ export const reinitializeMCPServer = (serverName: string) => {
   return request.post(endpoints.mcpReinitialize(serverName));
 };
 
+export const completeMCPServerReinitialize = (serverName: string) => {
+  return request.post(endpoints.mcpReinitializeComplete(serverName));
+};
+
+export const getMCPConnectionStatus = (): Promise<t.TMCPConnectionStatusResponse> => {
+  return request.get(endpoints.mcpConnectionStatus());
+};
+
+export const getMCPAuthValues = (
+  serverName: string,
+): Promise<{ success: boolean; serverName: string; authValueFlags: Record<string, boolean> }> => {
+  return request.get(endpoints.mcpAuthValues(serverName));
+};
+
+export const getMCPOAuthStatus = (
+  flowId: string,
+): Promise<{ status: string; completed: boolean; failed: boolean; error?: string }> => {
+  return request.get(endpoints.mcpOAuthStatus(flowId));
+};
+
 /* Config */
 
 export const getStartupConfig = (): Promise<

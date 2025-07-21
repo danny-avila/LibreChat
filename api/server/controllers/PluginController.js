@@ -97,7 +97,7 @@ function createServerToolsCallback() {
         return;
       }
       await mcpToolsCache.set(serverName, serverTools);
-      logger.debug(`MCP tools for ${serverName} added to cache.`);
+      logger.warn(`MCP tools for ${serverName} added to cache.`);
     } catch (error) {
       logger.error('Error retrieving MCP tools from cache:', error);
     }
@@ -143,7 +143,7 @@ const getAvailableTools = async (req, res) => {
     const cache = getLogStores(CacheKeys.CONFIG_STORE);
     const cachedToolsArray = await cache.get(CacheKeys.TOOLS);
     const cachedUserTools = await getCachedTools({ userId });
-    const userPlugins = convertMCPToolsToPlugins(cachedUserTools, customConfig);
+    const userPlugins = await convertMCPToolsToPlugins(cachedUserTools, customConfig, userId);
 
     if (cachedToolsArray && userPlugins) {
       const dedupedTools = filterUniquePlugins([...userPlugins, ...cachedToolsArray]);
@@ -202,23 +202,102 @@ const getAvailableTools = async (req, res) => {
       const serverName = parts[parts.length - 1];
       const serverConfig = customConfig?.mcpServers?.[serverName];
 
-      if (!serverConfig?.customUserVars) {
+      logger.warn(
+        `[getAvailableTools] Processing MCP tool:`,
+        JSON.stringify({
+          pluginKey: plugin.pluginKey,
+          serverName,
+          hasServerConfig: !!serverConfig,
+          hasCustomUserVars: !!serverConfig?.customUserVars,
+        }),
+      );
+
+      if (!serverConfig) {
+        logger.warn(
+          `[getAvailableTools] No server config found for ${serverName}, skipping auth check`,
+        );
         toolsOutput.push(toolToAdd);
         continue;
       }
 
-      const customVarKeys = Object.keys(serverConfig.customUserVars);
+      // Handle MCP servers with customUserVars (user-level auth required)
+      if (serverConfig.customUserVars) {
+        logger.warn(`[getAvailableTools] Processing user-level MCP server: ${serverName}`);
+        const customVarKeys = Object.keys(serverConfig.customUserVars);
 
-      if (customVarKeys.length === 0) {
-        toolToAdd.authConfig = [];
-        toolToAdd.authenticated = true;
-      } else {
+        // Build authConfig for MCP tools
         toolToAdd.authConfig = Object.entries(serverConfig.customUserVars).map(([key, value]) => ({
           authField: key,
           label: value.title || key,
           description: value.description || '',
         }));
-        toolToAdd.authenticated = false;
+
+        // Check actual connection status for MCP tools with auth requirements
+        if (userId) {
+          try {
+            const mcpManager = getMCPManager(userId);
+            const connectionStatus = await mcpManager.getUserConnectionStatus(userId, serverName);
+            toolToAdd.authenticated = connectionStatus.connected;
+            logger.warn(`[getAvailableTools] User-level connection status for ${serverName}:`, {
+              connected: connectionStatus.connected,
+              hasConnection: connectionStatus.hasConnection,
+            });
+          } catch (error) {
+            logger.error(
+              `[getAvailableTools] Error checking connection status for ${serverName}:`,
+              error,
+            );
+            toolToAdd.authenticated = false;
+          }
+        } else {
+          // For non-authenticated requests, default to false
+          toolToAdd.authenticated = false;
+        }
+      } else {
+        // Handle app-level MCP servers (no auth required)
+        logger.warn(`[getAvailableTools] Processing app-level MCP server: ${serverName}`);
+        toolToAdd.authConfig = [];
+
+        // Check if the app-level connection is active
+        try {
+          const mcpManager = getMCPManager();
+          const allConnections = mcpManager.getAllConnections();
+          logger.warn(`[getAvailableTools] All app-level connections:`, {
+            connectionNames: Array.from(allConnections.keys()),
+            serverName,
+          });
+
+          const appConnection = mcpManager.getConnection(serverName);
+          logger.warn(`[getAvailableTools] Checking app-level connection for ${serverName}:`, {
+            hasConnection: !!appConnection,
+            connectionState: appConnection?.getConnectionState?.(),
+          });
+
+          if (appConnection) {
+            const connectionState = appConnection.getConnectionState();
+            logger.warn(`[getAvailableTools] App-level connection status for ${serverName}:`, {
+              connectionState,
+              hasConnection: !!appConnection,
+            });
+
+            // For app-level connections, consider them authenticated if they're in 'connected' state
+            // This is more reliable than isConnected() which does network calls
+            toolToAdd.authenticated = connectionState === 'connected';
+            logger.warn(`[getAvailableTools] Final authenticated status for ${serverName}:`, {
+              authenticated: toolToAdd.authenticated,
+              connectionState,
+            });
+          } else {
+            logger.warn(`[getAvailableTools] No app-level connection found for ${serverName}`);
+            toolToAdd.authenticated = false;
+          }
+        } catch (error) {
+          logger.error(
+            `[getAvailableTools] Error checking app-level connection status for ${serverName}:`,
+            error,
+          );
+          toolToAdd.authenticated = false;
+        }
       }
 
       toolsOutput.push(toolToAdd);
@@ -241,7 +320,7 @@ const getAvailableTools = async (req, res) => {
  * @param {Object} customConfig - Custom configuration for MCP servers
  * @returns {Array} Array of plugin objects
  */
-function convertMCPToolsToPlugins(functionTools, customConfig) {
+async function convertMCPToolsToPlugins(functionTools, customConfig, userId = null) {
   const plugins = [];
 
   for (const [toolKey, toolData] of Object.entries(functionTools)) {
@@ -257,7 +336,7 @@ function convertMCPToolsToPlugins(functionTools, customConfig) {
       name: parts[0], // Use the tool name without server suffix
       pluginKey: toolKey,
       description: functionData.description || '',
-      authenticated: true,
+      authenticated: false, // Default to false, will be updated based on connection status
       icon: undefined,
     };
 
@@ -265,6 +344,7 @@ function convertMCPToolsToPlugins(functionTools, customConfig) {
     const serverConfig = customConfig?.mcpServers?.[serverName];
     if (!serverConfig?.customUserVars) {
       plugin.authConfig = [];
+      plugin.authenticated = true; // No auth required
       plugins.push(plugin);
       continue;
     }
@@ -272,12 +352,30 @@ function convertMCPToolsToPlugins(functionTools, customConfig) {
     const customVarKeys = Object.keys(serverConfig.customUserVars);
     if (customVarKeys.length === 0) {
       plugin.authConfig = [];
+      plugin.authenticated = true; // No auth required
     } else {
       plugin.authConfig = Object.entries(serverConfig.customUserVars).map(([key, value]) => ({
         authField: key,
         label: value.title || key,
         description: value.description || '',
       }));
+
+      // Check actual connection status for MCP tools with auth requirements
+      if (userId) {
+        try {
+          const mcpManager = getMCPManager(userId);
+          const connectionStatus = await mcpManager.getUserConnectionStatus(userId, serverName);
+          plugin.authenticated = connectionStatus.connected;
+        } catch (error) {
+          logger.error(
+            `[convertMCPToolsToPlugins] Error checking connection status for ${serverName}:`,
+            error,
+          );
+          plugin.authenticated = false;
+        }
+      } else {
+        plugin.authenticated = false;
+      }
     }
 
     plugins.push(plugin);

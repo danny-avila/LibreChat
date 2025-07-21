@@ -311,13 +311,22 @@ export const useUpdateUserPluginsMutation = (
     ...options,
     onSuccess: (...args) => {
       queryClient.invalidateQueries([QueryKeys.user]);
+      queryClient.refetchQueries([QueryKeys.tools]);
       onSuccess?.(...args);
     },
   });
 };
 
 export const useReinitializeMCPServerMutation = (): UseMutationResult<
-  { success: boolean; message: string; serverName: string },
+  {
+    success: boolean;
+    message: string;
+    serverName: string;
+    oauthRequired?: boolean;
+    oauthCompleted?: boolean;
+    authURL?: string;
+    flowId?: string;
+  },
   unknown,
   string,
   unknown
@@ -327,6 +336,54 @@ export const useReinitializeMCPServerMutation = (): UseMutationResult<
     onSuccess: () => {
       queryClient.refetchQueries([QueryKeys.tools]);
     },
+  });
+};
+
+export const useCompleteMCPServerReinitializeMutation = (): UseMutationResult<
+  {
+    success: boolean;
+    message: string;
+    serverName: string;
+  },
+  unknown,
+  string,
+  unknown
+> => {
+  const queryClient = useQueryClient();
+  return useMutation(
+    (serverName: string) => dataService.completeMCPServerReinitialize(serverName),
+    {
+      onSuccess: () => {
+        queryClient.refetchQueries([QueryKeys.tools]);
+        queryClient.refetchQueries([QueryKeys.mcpConnectionStatus]);
+      },
+    },
+  );
+};
+
+export const useMCPOAuthStatusQuery = (
+  flowId: string,
+  config?: UseQueryOptions<
+    { status: string; completed: boolean; failed: boolean; error?: string },
+    unknown,
+    { status: string; completed: boolean; failed: boolean; error?: string }
+  >,
+): QueryObserverResult<
+  { status: string; completed: boolean; failed: boolean; error?: string },
+  unknown
+> => {
+  return useQuery<
+    { status: string; completed: boolean; failed: boolean; error?: string },
+    unknown,
+    { status: string; completed: boolean; failed: boolean; error?: string }
+  >([QueryKeys.mcpOAuthStatus, flowId], () => dataService.getMCPOAuthStatus(flowId), {
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: true,
+    staleTime: 1000, // Consider data stale after 1 second for polling
+    enabled: !!flowId,
+    refetchInterval: flowId ? 2000 : false, // Poll every 2 seconds when OAuth is active
+    ...config,
   });
 };
 

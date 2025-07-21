@@ -41,6 +41,38 @@ const getUserPluginAuthValue = async (userId, authField, throwError = true) => {
   }
 };
 
+/**
+ * Asynchronously retrieves and decrypts the authentication value for a user's specific plugin, based on a specified authentication field and plugin key.
+ *
+ * @param {string} userId - The unique identifier of the user for whom the plugin authentication value is to be retrieved.
+ * @param {string} authField - The specific authentication field (e.g., 'API_KEY', 'URL') whose value is to be retrieved and decrypted.
+ * @param {string} pluginKey - The plugin key to filter by (e.g., 'mcp_github-mcp').
+ * @param {boolean} throwError - Whether to throw an error if the authentication value does not exist. Defaults to `true`.
+ * @returns {Promise<string|null>} A promise that resolves to the decrypted authentication value if found, or `null` if no such authentication value exists for the given user, field, and plugin.
+ *
+ * @throws {Error} Throws an error if there's an issue during the retrieval or decryption process, or if the authentication value does not exist.
+ * @async
+ */
+const getUserPluginAuthValueByPlugin = async (userId, authField, pluginKey, throwError = true) => {
+  try {
+    const pluginAuth = await findOnePluginAuth({ userId, authField, pluginKey });
+    if (!pluginAuth) {
+      throw new Error(
+        `No plugin auth ${authField} found for user ${userId} and plugin ${pluginKey}`,
+      );
+    }
+
+    const decryptedValue = await decrypt(pluginAuth.value);
+    return decryptedValue;
+  } catch (err) {
+    if (!throwError) {
+      return null;
+    }
+    logger.error('[getUserPluginAuthValueByPlugin]', err);
+    throw err;
+  }
+};
+
 // const updateUserPluginAuth = async (userId, authField, pluginKey, value) => {
 //   try {
 //     const encryptedValue = encrypt(value);
@@ -119,6 +151,7 @@ const deleteUserPluginAuth = async (userId, authField, all = false, pluginKey) =
 
 module.exports = {
   getUserPluginAuthValue,
+  getUserPluginAuthValueByPlugin,
   updateUserPluginAuth,
   deleteUserPluginAuth,
 };
