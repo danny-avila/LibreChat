@@ -61,15 +61,28 @@ export function createPluginAuthMethods(mongoose: typeof import('mongoose')) {
   }: UpdatePluginAuthParams): Promise<IPluginAuth> {
     try {
       const PluginAuth: Model<IPluginAuth> = mongoose.models.PluginAuth;
-      const existingAuth = await PluginAuth.findOne({ userId, pluginKey, authField }).lean();
+
+      // First try to find existing record by { userId, authField } (for backward compatibility)
+      let existingAuth = await PluginAuth.findOne({ userId, authField }).lean();
+
+      // If not found and pluginKey is provided, try to find by { userId, pluginKey, authField }
+      if (!existingAuth && pluginKey) {
+        existingAuth = await PluginAuth.findOne({ userId, pluginKey, authField }).lean();
+      }
 
       if (existingAuth) {
+        // Update existing record, preserving the original structure
+        const updateQuery = existingAuth.pluginKey
+          ? { userId, pluginKey: existingAuth.pluginKey, authField }
+          : { userId, authField };
+
         return await PluginAuth.findOneAndUpdate(
-          { userId, pluginKey, authField },
+          updateQuery,
           { $set: { value } },
           { new: true, upsert: true },
         ).lean();
       } else {
+        // Create new record
         const newPluginAuth = await new PluginAuth({
           userId,
           authField,
@@ -109,7 +122,16 @@ export function createPluginAuthMethods(mongoose: typeof import('mongoose')) {
         throw new Error('authField is required when all is false');
       }
 
-      return await PluginAuth.deleteOne({ userId, authField });
+      // Build the filter based on available parameters
+      const filter: { userId: string; authField: string; pluginKey?: string } = {
+        userId,
+        authField,
+      };
+      if (pluginKey) {
+        filter.pluginKey = pluginKey;
+      }
+
+      return await PluginAuth.deleteOne(filter);
     } catch (error) {
       throw new Error(
         `Failed to delete plugin auth: ${error instanceof Error ? error.message : 'Unknown error'}`,

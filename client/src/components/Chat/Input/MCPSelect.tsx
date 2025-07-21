@@ -1,9 +1,12 @@
-import React, { memo, useCallback, useState } from 'react';
-import { SettingsIcon } from 'lucide-react';
+import React, { memo, useCallback, useState, useMemo } from 'react';
+import { SettingsIcon, PlugZap } from 'lucide-react';
 import { Constants } from 'librechat-data-provider';
 import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
+import { useMCPConnectionStatusQuery, useMCPAuthValuesQuery } from '~/data-provider';
+import { useQueryClient } from '@tanstack/react-query';
+import { QueryKeys } from 'librechat-data-provider';
 import type { TUpdateUserPlugins, TPlugin } from 'librechat-data-provider';
-import MCPConfigDialog, { type ConfigFieldDetail } from '~/components/ui/MCPConfigDialog';
+import { MCPConfigDialog, type ConfigFieldDetail } from '~/components/ui/MCP';
 import { useToastContext, useBadgeRowContext } from '~/Providers';
 import MultiSelect from '~/components/ui/MultiSelect';
 import { MCPIcon } from '~/components/svg';
@@ -18,15 +21,47 @@ function MCPSelect() {
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const { mcpSelect, startupConfig } = useBadgeRowContext();
-  const { mcpValues, setMCPValues, mcpServerNames, mcpToolDetails, isPinned } = mcpSelect;
+  const { mcpValues, setMCPValues, mcpToolDetails, isPinned } = mcpSelect;
+
+  // Get real connection status from MCPManager
+  const { data: statusQuery } = useMCPConnectionStatusQuery();
+
+  const mcpServerStatuses = statusQuery?.connectionStatus || {};
+
+  console.log('mcpServerStatuses', mcpServerStatuses);
+  console.log('statusQuery', statusQuery);
 
   const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
   const [selectedToolForConfig, setSelectedToolForConfig] = useState<TPlugin | null>(null);
 
+  // Fetch auth values for the selected server
+  const { data: authValuesData } = useMCPAuthValuesQuery(selectedToolForConfig?.name || '', {
+    enabled: isConfigModalOpen && !!selectedToolForConfig?.name,
+  });
+
+  const queryClient = useQueryClient();
+
   const updateUserPluginsMutation = useUpdateUserPluginsMutation({
-    onSuccess: () => {
-      setIsConfigModalOpen(false);
+    onSuccess: async (data, variables) => {
       showToast({ message: localize('com_nav_mcp_vars_updated'), status: 'success' });
+
+      // // For 'uninstall' actions (revoke), remove the server from selected values
+      // if (variables.action === 'uninstall') {
+      //   const serverName = variables.pluginKey.replace(Constants.mcp_prefix, '');
+      //   const currentValues = mcpValues ?? [];
+      //   const filteredValues = currentValues.filter((name) => name !== serverName);
+      //   setMCPValues(filteredValues);
+      // }
+
+      // Wait for all refetches to complete before ending loading state
+      await Promise.all([
+        queryClient.invalidateQueries([QueryKeys.tools]),
+        queryClient.refetchQueries([QueryKeys.tools]),
+        queryClient.invalidateQueries([QueryKeys.mcpAuthValues]),
+        queryClient.refetchQueries([QueryKeys.mcpAuthValues]),
+        queryClient.invalidateQueries([QueryKeys.mcpConnectionStatus]),
+        queryClient.refetchQueries([QueryKeys.mcpConnectionStatus]),
+      ]);
     },
     onError: (error: unknown) => {
       console.error('Error updating MCP auth:', error);
@@ -53,10 +88,12 @@ function MCPSelect() {
   const handleConfigSave = useCallback(
     (targetName: string, authData: Record<string, string>) => {
       if (selectedToolForConfig && selectedToolForConfig.name === targetName) {
-        const basePluginKey = getBaseMCPPluginKey(selectedToolForConfig.pluginKey);
-
+        // Use the pluginKey directly since it's already in the correct format
+        console.log(
+          `[MCP Select] Saving config for ${targetName}, pluginKey: ${`${Constants.mcp_prefix}${targetName}`}`,
+        );
         const payload: TUpdateUserPlugins = {
-          pluginKey: basePluginKey,
+          pluginKey: `${Constants.mcp_prefix}${targetName}`,
           action: 'install',
           auth: authData,
         };
@@ -69,10 +106,12 @@ function MCPSelect() {
   const handleConfigRevoke = useCallback(
     (targetName: string) => {
       if (selectedToolForConfig && selectedToolForConfig.name === targetName) {
-        const basePluginKey = getBaseMCPPluginKey(selectedToolForConfig.pluginKey);
-
+        // Use the pluginKey directly since it's already in the correct format
+        console.log(
+          `[MCP Select] Revoking config for ${targetName}, pluginKey: ${`${Constants.mcp_prefix}${targetName}`}`,
+        );
         const payload: TUpdateUserPlugins = {
-          pluginKey: basePluginKey,
+          pluginKey: `${Constants.mcp_prefix}${targetName}`,
           action: 'uninstall',
           auth: {},
         };
@@ -82,49 +121,138 @@ function MCPSelect() {
     [selectedToolForConfig, updateUserPluginsMutation],
   );
 
+  // Create stable callback references to prevent stale closures
+  const handleSave = useCallback(
+    (authData: Record<string, string>) => {
+      if (selectedToolForConfig) {
+        handleConfigSave(selectedToolForConfig.name, authData);
+      }
+    },
+    [selectedToolForConfig, handleConfigSave],
+  );
+
+  const handleRevoke = useCallback(() => {
+    if (selectedToolForConfig) {
+      handleConfigRevoke(selectedToolForConfig.name);
+    }
+  }, [selectedToolForConfig, handleConfigRevoke]);
+
+  // Only allow connected servers to be selected
+  const handleSetSelectedValues = useCallback(
+    (values: string[]) => {
+      // Filter to only include connected servers
+      const connectedValues = values.filter((serverName) => {
+        const serverStatus = mcpServerStatuses?.[serverName];
+        return serverStatus?.connected || false;
+      });
+      setMCPValues(connectedValues);
+    },
+    [setMCPValues, mcpServerStatuses],
+  );
+
   const renderItemContent = useCallback(
     (serverName: string, defaultContent: React.ReactNode) => {
-      const tool = mcpToolDetails?.find((t) => t.name === serverName);
-      const hasAuthConfig = tool?.authConfig && tool.authConfig.length > 0;
+      const serverStatus = mcpServerStatuses?.[serverName];
+      const connected = serverStatus?.connected || false;
+      const hasAuthConfig = serverStatus?.hasAuthConfig || false;
 
-      // Common wrapper for the main content (check mark + text)
-      // Ensures Check & Text are adjacent and the group takes available space.
-      const mainContentWrapper = (
-        <div className="flex flex-grow items-center">{defaultContent}</div>
-      );
+      // Icon logic:
+      // - connected with auth config = gear (green)
+      // - connected without auth config = no icon (just text)
+      // - not connected = zap (orange)
+      let icon: React.ReactNode = null;
+      let tooltip = 'Configure server';
 
-      if (tool && hasAuthConfig) {
-        return (
-          <div className="flex w-full items-center justify-between">
-            {mainContentWrapper}
+      if (connected) {
+        if (hasAuthConfig) {
+          icon = <SettingsIcon className="h-4 w-4 text-green-500" />;
+          tooltip = 'Configure connected server';
+        } else {
+          // No icon for connected servers without auth config
+          tooltip = 'Connected server (no configuration needed)';
+        }
+      } else {
+        icon = <PlugZap className="h-4 w-4 text-orange-400" />;
+        tooltip = 'Configure server';
+      }
+
+      const onClick = () => {
+        const serverConfig = startupConfig?.mcpServers?.[serverName];
+        if (serverConfig) {
+          const serverTool = {
+            name: serverName,
+            pluginKey: `${Constants.mcp_prefix}${serverName}`,
+            authConfig: Object.entries(serverConfig.customUserVars || {}).map(([key, config]) => ({
+              authField: key,
+              label: config.title,
+              description: config.description,
+              requiresOAuth: serverConfig.requiresOAuth || false,
+            })),
+            authenticated: connected,
+          };
+          setSelectedToolForConfig(serverTool);
+          setIsConfigModalOpen(true);
+        }
+      };
+
+      return (
+        <div className="flex w-full items-center justify-between">
+          <div className={`flex flex-grow items-center ${!connected ? 'opacity-50' : ''}`}>
+            {defaultContent}
+          </div>
+          {icon && (
             <button
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
                 e.preventDefault();
-                setSelectedToolForConfig(tool);
-                setIsConfigModalOpen(true);
+                onClick();
               }}
               className="ml-2 flex h-6 w-6 items-center justify-center rounded p-1 hover:bg-surface-secondary"
-              aria-label={`Configure ${serverName}`}
+              aria-label={tooltip}
+              title={tooltip}
             >
-              <SettingsIcon className={`h-4 w-4 ${tool.authenticated ? 'text-green-500' : ''}`} />
+              {icon}
             </button>
-          </div>
-        );
-      }
-      // For items without a settings icon, return the consistently wrapped main content.
-      return mainContentWrapper;
+          )}
+        </div>
+      );
     },
-    [mcpToolDetails, setSelectedToolForConfig, setIsConfigModalOpen],
+    [mcpServerStatuses, setSelectedToolForConfig, setIsConfigModalOpen, startupConfig],
   );
 
-  // Don't render if no servers are selected and not pinned
-  if ((!mcpValues || mcpValues.length === 0) && !isPinned) {
+  // Memoize schema and initial values to prevent unnecessary re-renders
+  const fieldsSchema = useMemo(() => {
+    const schema: Record<string, ConfigFieldDetail> = {};
+    if (selectedToolForConfig?.authConfig) {
+      selectedToolForConfig.authConfig.forEach((field) => {
+        schema[field.authField] = {
+          title: field.label,
+          description: field.description,
+        };
+      });
+    }
+    return schema;
+  }, [selectedToolForConfig?.authConfig]);
+
+  const initialValues = useMemo(() => {
+    const initial: Record<string, string> = {};
+    // Always start with empty values for security - never prefill sensitive data
+    if (selectedToolForConfig?.authConfig) {
+      selectedToolForConfig.authConfig.forEach((field) => {
+        initial[field.authField] = '';
+      });
+    }
+    return initial;
+  }, [selectedToolForConfig?.authConfig]);
+
+  // Don't render if no MCP servers are available at all
+  if (!mcpServerStatuses || Object.keys(mcpServerStatuses).length === 0) {
     return null;
   }
 
-  if (!mcpToolDetails || mcpToolDetails.length === 0) {
+  // Don't render if no servers are selected and not pinned
+  if ((!mcpValues || mcpValues.length === 0) && !isPinned) {
     return null;
   }
 
@@ -133,9 +261,9 @@ function MCPSelect() {
   return (
     <>
       <MultiSelect
-        items={mcpServerNames}
+        items={Object.keys(mcpServerStatuses) || []}
         selectedValues={mcpValues ?? []}
-        setSelectedValues={setMCPValues}
+        setSelectedValues={handleSetSelectedValues}
         defaultSelectedValues={mcpValues ?? []}
         renderSelectedValues={renderSelectedValues}
         renderItemContent={renderItemContent}
@@ -151,39 +279,13 @@ function MCPSelect() {
           isOpen={isConfigModalOpen}
           onOpenChange={setIsConfigModalOpen}
           serverName={selectedToolForConfig.name}
-          fieldsSchema={(() => {
-            const schema: Record<string, ConfigFieldDetail> = {};
-            if (selectedToolForConfig?.authConfig) {
-              selectedToolForConfig.authConfig.forEach((field) => {
-                schema[field.authField] = {
-                  title: field.label,
-                  description: field.description,
-                };
-              });
-            }
-            return schema;
-          })()}
-          initialValues={(() => {
-            const initial: Record<string, string> = {};
-            // Note: Actual initial values might need to be fetched if they are stored user-specifically
-            if (selectedToolForConfig?.authConfig) {
-              selectedToolForConfig.authConfig.forEach((field) => {
-                initial[field.authField] = ''; // Or fetched value
-              });
-            }
-            return initial;
-          })()}
-          onSave={(authData) => {
-            if (selectedToolForConfig) {
-              handleConfigSave(selectedToolForConfig.name, authData);
-            }
-          }}
-          onRevoke={() => {
-            if (selectedToolForConfig) {
-              handleConfigRevoke(selectedToolForConfig.name);
-            }
-          }}
+          fieldsSchema={fieldsSchema}
+          initialValues={initialValues}
+          onSave={handleSave}
+          onRevoke={handleRevoke}
           isSubmitting={updateUserPluginsMutation.isLoading}
+          isConnected={mcpServerStatuses?.[selectedToolForConfig.name]?.connected || false}
+          authConfig={selectedToolForConfig.authConfig}
         />
       )}
     </>

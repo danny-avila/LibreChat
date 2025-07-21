@@ -46,6 +46,9 @@ export enum QueryKeys {
   health = 'health',
   userTerms = 'userTerms',
   banner = 'banner',
+  mcpConnectionStatus = 'mcpConnectionStatus',
+  mcpAuthValues = 'mcpAuthValues',
+  mcpOAuthStatus = 'mcpOAuthStatus',
   /* Memories */
   memories = 'memories',
 }

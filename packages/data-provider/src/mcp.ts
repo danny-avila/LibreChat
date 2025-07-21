@@ -9,6 +9,12 @@ const BaseOptionsSchema = z.object({
   /** Controls visibility in chat dropdown menu (MCPSelect) */
   chatMenu: z.boolean().optional(),
   /**
+   * Controls whether the MCP server should be initialized on startup
+   * - true: Initialize on startup (default)
+   * - false: Skip initialization on startup (can be initialized later)
+   */
+  startup: z.boolean().optional(),
+  /**
    * Controls server instruction behavior:
    * - undefined/not set: No instructions included (default)
    * - true: Use server-provided instructions
