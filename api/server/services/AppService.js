@@ -157,6 +157,10 @@ const AppService = async (app) => {
     }
   });
 
+  if (endpoints?.all) {
+    endpointLocals.all = endpoints.all;
+  }
+
   app.locals = {
     ...defaultLocals,
     fileConfig: config?.fileConfig,
