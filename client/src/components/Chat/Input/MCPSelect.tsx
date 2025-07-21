@@ -2,7 +2,7 @@ import React, { memo, useCallback, useState, useMemo } from 'react';
 import { SettingsIcon, PlugZap } from 'lucide-react';
 import { Constants } from 'librechat-data-provider';
 import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
-import { useMCPConnectionStatusQuery, useMCPAuthValuesQuery } from '~/data-provider';
+import { useMCPConnectionStatusQuery } from '~/data-provider';
 import { useQueryClient } from '@tanstack/react-query';
 import { QueryKeys } from 'librechat-data-provider';
 import type { TUpdateUserPlugins, TPlugin } from 'librechat-data-provider';

@@ -239,16 +239,6 @@ export default function MCPPanel() {
     return schema;
   }, [selectedServer]);
 
-  const initialValues = useMemo(() => {
-    if (!selectedServer) return {};
-    // Initialize with empty strings for all fields
-    const values: Record<string, string> = {};
-    Object.keys(selectedServer.config.customUserVars).forEach((key) => {
-      values[key] = '';
-    });
-    return values;
-  }, [selectedServer]);
-
   if (startupConfigLoading) {
     return <MCPPanelSkeleton />;
   }
