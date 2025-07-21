@@ -21,12 +21,14 @@ function MCPSelect() {
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const { mcpSelect, startupConfig } = useBadgeRowContext();
-  const { mcpValues, setMCPValues, mcpToolDetails, isPinned } = mcpSelect;
+  const { mcpValues, setMCPValues, isPinned } = mcpSelect;
 
   // Get real connection status from MCPManager
   const { data: statusQuery } = useMCPConnectionStatusQuery();
-
-  const mcpServerStatuses = statusQuery?.connectionStatus || {};
+  const mcpServerStatuses = useMemo(
+    () => statusQuery?.connectionStatus || {},
+    [statusQuery?.connectionStatus],
+  );
 
   console.log('mcpServerStatuses', mcpServerStatuses);
   console.log('statusQuery', statusQuery);
@@ -34,15 +36,10 @@ function MCPSelect() {
   const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
   const [selectedToolForConfig, setSelectedToolForConfig] = useState<TPlugin | null>(null);
 
-  // Fetch auth values for the selected server
-  const { data: authValuesData } = useMCPAuthValuesQuery(selectedToolForConfig?.name || '', {
-    enabled: isConfigModalOpen && !!selectedToolForConfig?.name,
-  });
-
   const queryClient = useQueryClient();
 
   const updateUserPluginsMutation = useUpdateUserPluginsMutation({
-    onSuccess: async (data, variables) => {
+    onSuccess: async () => {
       showToast({ message: localize('com_nav_mcp_vars_updated'), status: 'success' });
 
       // // For 'uninstall' actions (revoke), remove the server from selected values

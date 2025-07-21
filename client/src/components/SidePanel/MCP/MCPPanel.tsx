@@ -1,7 +1,6 @@
 import { Constants } from 'librechat-data-provider';
 import { ChevronLeft, RefreshCw } from 'lucide-react';
-import { useForm, Controller } from 'react-hook-form';
-import React, { useState, useCallback, useMemo, useEffect } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import {
   useUpdateUserPluginsMutation,
   useReinitializeMCPServerMutation,
@@ -9,11 +8,17 @@ import {
 import { useQueryClient } from '@tanstack/react-query';
 import { QueryKeys } from 'librechat-data-provider';
 import type { TUpdateUserPlugins } from 'librechat-data-provider';
-import { Button, Input, Label } from '~/components/ui';
+import { Button } from '~/components/ui';
 import { useGetStartupConfig } from '~/data-provider';
+import { useMCPConnectionStatusQuery } from '~/data-provider/Tools/queries';
 import MCPPanelSkeleton from './MCPPanelSkeleton';
 import { useToastContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
+import {
+  CustomUserVarsSection,
+  ServerInitializationSection,
+  type ConfigFieldDetail,
+} from '~/components/ui/MCP';
 
 interface ServerConfigWithVars {
   serverName: string;
@@ -32,6 +37,13 @@ export default function MCPPanel() {
   const [rotatingServers, setRotatingServers] = useState<Set<string>>(new Set());
   const reinitializeMCPMutation = useReinitializeMCPServerMutation();
   const queryClient = useQueryClient();
+
+  // Get real connection status from MCPManager
+  const { data: statusQuery } = useMCPConnectionStatusQuery();
+  const mcpServerStatuses = useMemo(
+    () => statusQuery?.connectionStatus || {},
+    [statusQuery?.connectionStatus],
+  );
 
   const mcpServerDefinitions = useMemo(() => {
     if (!startupConfig?.mcpServers) {
@@ -53,40 +65,16 @@ export default function MCPPanel() {
   }, [startupConfig?.mcpServers]);
 
   const updateUserPluginsMutation = useUpdateUserPluginsMutation({
-    onSuccess: async (data, variables) => {
+    onSuccess: async () => {
       showToast({ message: localize('com_nav_mcp_vars_updated'), status: 'success' });
 
-      // Refetch tools query to refresh authentication state in the dropdown
-      queryClient.refetchQueries([QueryKeys.tools]);
-
-      // For 'uninstall' actions (revoke), remove the server from selected values
-      if (variables.action === 'uninstall') {
-        const serverName = variables.pluginKey.replace(Constants.mcp_prefix, '');
-        // Note: MCPPanel doesn't directly manage selected values, but this ensures
-        // the tools query is refreshed so MCPSelect will pick up the changes
-      }
-
-      // Only reinitialize for 'install' actions (save), not 'uninstall' actions (revoke)
-      if (variables.action === 'install') {
-        // Extract server name from pluginKey (e.g., "mcp_myServer" -> "myServer")
-        const serverName = variables.pluginKey.replace(Constants.mcp_prefix, '');
-
-        // Reinitialize the MCP server to pick up the new authentication values
-        try {
-          await reinitializeMCPMutation.mutateAsync(serverName);
-          console.log(
-            `[MCP Panel] Successfully reinitialized server ${serverName} after auth update`,
-          );
-        } catch (error) {
-          console.error(
-            `[MCP Panel] Error reinitializing server ${serverName} after auth update:`,
-            error,
-          );
-          // Don't show error toast to user as the auth update was successful
-        }
-      }
-      // For 'uninstall' actions (revoke), the backend already disconnects the connections
-      // so no additional action is needed here
+      // Wait for all queries to refetch before resolving loading state
+      await Promise.all([
+        queryClient.invalidateQueries([QueryKeys.tools]),
+        queryClient.refetchQueries([QueryKeys.tools]),
+        queryClient.invalidateQueries([QueryKeys.mcpConnectionStatus]),
+        queryClient.refetchQueries([QueryKeys.mcpConnectionStatus]),
+      ]);
     },
     onError: (error: unknown) => {
       console.error('Error updating MCP auth:', error);
@@ -137,7 +125,7 @@ export default function MCPPanel() {
 
         // Check if OAuth is required
         if (response.oauthRequired) {
-          if (response.authorizationUrl) {
+          if (response.authURL) {
             // Show OAuth URL to user
             showToast({
               message: `OAuth required for ${serverName}. Please visit the authorization URL.`,
@@ -145,7 +133,7 @@ export default function MCPPanel() {
             });
 
             // Open OAuth URL in new window/tab
-            window.open(response.authorizationUrl, '_blank', 'noopener,noreferrer');
+            window.open(response.authURL, '_blank', 'noopener,noreferrer');
 
             // Show a more detailed message with the URL
             setTimeout(() => {
@@ -177,16 +165,16 @@ export default function MCPPanel() {
         console.error('Error reinitializing MCP server:', error);
 
         // Check if the error response contains OAuth information
-        if (error?.response?.data?.oauthRequired) {
-          const errorData = error.response.data;
-          if (errorData.authorizationUrl) {
+        if ((error as any)?.response?.data?.oauthRequired) {
+          const errorData = (error as any).response.data;
+          if (errorData.authURL) {
             showToast({
               message: `OAuth required for ${serverName}. Please visit the authorization URL.`,
               status: 'info',
             });
 
             // Open OAuth URL in new window/tab
-            window.open(errorData.authorizationUrl, '_blank', 'noopener,noreferrer');
+            window.open(errorData.authURL, '_blank', 'noopener,noreferrer');
 
             setTimeout(() => {
               showToast({
@@ -217,6 +205,50 @@ export default function MCPPanel() {
     [showToast, reinitializeMCPMutation],
   );
 
+  // Create save and revoke handlers with latest state
+  const handleSave = useCallback(
+    (updatedValues: Record<string, string>) => {
+      if (selectedServerNameForEditing) {
+        handleSaveServerVars(selectedServerNameForEditing, updatedValues);
+      }
+    },
+    [selectedServerNameForEditing, handleSaveServerVars],
+  );
+
+  const handleRevoke = useCallback(() => {
+    if (selectedServerNameForEditing) {
+      handleRevokeServerVars(selectedServerNameForEditing);
+    }
+  }, [selectedServerNameForEditing, handleRevokeServerVars]);
+
+  // Prepare data for MCPConfigDialog
+  const selectedServer = useMemo(() => {
+    if (!selectedServerNameForEditing) return null;
+    return mcpServerDefinitions.find((s) => s.serverName === selectedServerNameForEditing);
+  }, [selectedServerNameForEditing, mcpServerDefinitions]);
+
+  const fieldsSchema = useMemo(() => {
+    if (!selectedServer) return {};
+    const schema: Record<string, ConfigFieldDetail> = {};
+    Object.entries(selectedServer.config.customUserVars).forEach(([key, value]) => {
+      schema[key] = {
+        title: value.title,
+        description: value.description,
+      };
+    });
+    return schema;
+  }, [selectedServer]);
+
+  const initialValues = useMemo(() => {
+    if (!selectedServer) return {};
+    // Initialize with empty strings for all fields
+    const values: Record<string, string> = {};
+    Object.keys(selectedServer.config.customUserVars).forEach((key) => {
+      values[key] = '';
+    });
+    return values;
+  }, [selectedServer]);
+
   if (startupConfigLoading) {
     return <MCPPanelSkeleton />;
   }
@@ -229,21 +261,11 @@ export default function MCPPanel() {
     );
   }
 
-  if (selectedServerNameForEditing) {
-    // Editing View
-    const serverBeingEdited = mcpServerDefinitions.find(
-      (s) => s.serverName === selectedServerNameForEditing,
-    );
-
-    if (!serverBeingEdited) {
-      // Fallback to list view if server not found
-      setSelectedServerNameForEditing(null);
-      return (
-        <div className="p-4 text-center text-sm text-gray-500">
-          {localize('com_ui_error')}: {localize('com_ui_mcp_server_not_found')}
-        </div>
-      );
-    }
+  if (selectedServerNameForEditing && selectedServer) {
+    // Editing View - use MCPConfigDialog-style layout but inline
+    const serverStatus = mcpServerStatuses[selectedServerNameForEditing];
+    const isConnected = serverStatus?.connected || false;
+    const requiresOAuth = serverStatus?.requiresOAuth || false;
 
     return (
       <div className="h-auto max-w-full overflow-x-hidden p-3">
@@ -255,15 +277,48 @@ export default function MCPPanel() {
           <ChevronLeft className="mr-1 h-4 w-4" />
           {localize('com_ui_back')}
         </Button>
-        <h3 className="mb-3 text-lg font-medium">
-          {localize('com_sidepanel_mcp_variables_for', { '0': serverBeingEdited.serverName })}
-        </h3>
-        <MCPVariableEditor
-          server={serverBeingEdited}
-          onSave={handleSaveServerVars}
-          onRevoke={handleRevokeServerVars}
-          isSubmitting={updateUserPluginsMutation.isLoading}
-        />
+
+        {/* Header with status */}
+        <div className="mb-4">
+          <div className="mb-2 flex items-center gap-3">
+            <h3 className="text-lg font-medium">
+              {localize('com_sidepanel_mcp_variables_for', { '0': selectedServer.serverName })}
+            </h3>
+            {isConnected && (
+              <div className="flex items-center gap-2 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700 dark:bg-green-900 dark:text-green-300">
+                <div className="h-1.5 w-1.5 rounded-full bg-green-500" />
+                <span>{localize('com_ui_active')}</span>
+              </div>
+            )}
+          </div>
+          <p className="text-sm text-text-secondary">
+            {Object.keys(fieldsSchema).length > 0
+              ? localize('com_ui_mcp_dialog_desc')
+              : `Manage connection and settings for the ${selectedServer.serverName} MCP server.`}
+          </p>
+        </div>
+
+        {/* Content sections */}
+        <div className="space-y-6">
+          {/* Custom User Variables Section */}
+          {Object.keys(fieldsSchema).length > 0 && (
+            <div>
+              <CustomUserVarsSection
+                serverName={selectedServer.serverName}
+                fields={fieldsSchema}
+                onSave={handleSave}
+                onRevoke={handleRevoke}
+                isSubmitting={updateUserPluginsMutation.isLoading}
+              />
+            </div>
+          )}
+
+          {/* Server Initialization Section */}
+          <ServerInitializationSection
+            serverName={selectedServer.serverName}
+            requiresOAuth={requiresOAuth}
+          />
+        </div>
       </div>
     );
   } else {
@@ -271,124 +326,46 @@ export default function MCPPanel() {
     return (
       <div className="h-auto max-w-full overflow-x-hidden p-3">
         <div className="space-y-2">
-          {mcpServerDefinitions.map((server) => (
-            <div key={server.serverName} className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                className="flex-1 justify-start dark:hover:bg-gray-700"
-                onClick={() => handleServerClickToEdit(server.serverName)}
-              >
-                {server.serverName}
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => handleReinitializeServer(server.serverName)}
-                className="px-2 py-1"
-                title="Reinitialize MCP server"
-                disabled={reinitializeMCPMutation.isLoading}
-              >
-                <RefreshCw
-                  className={`h-4 w-4 ${rotatingServers.has(server.serverName) ? 'animate-spin' : ''}`}
-                />
-              </Button>
-            </div>
-          ))}
+          {mcpServerDefinitions.map((server) => {
+            const serverStatus = mcpServerStatuses[server.serverName];
+            const isConnected = serverStatus?.connected || false;
+
+            return (
+              <div key={server.serverName} className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  className="flex-1 justify-start dark:hover:bg-gray-700"
+                  onClick={() => handleServerClickToEdit(server.serverName)}
+                >
+                  <div className="flex w-full items-center gap-2">
+                    <span>{server.serverName}</span>
+                    {isConnected && (
+                      <div className="ml-auto flex items-center gap-1">
+                        <div className="h-1.5 w-1.5 rounded-full bg-green-500" />
+                        <span className="text-xs text-green-600 dark:text-green-400">
+                          {localize('com_ui_active')}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => handleReinitializeServer(server.serverName)}
+                  className="px-2 py-1"
+                  title="Reinitialize MCP server"
+                  disabled={reinitializeMCPMutation.isLoading}
+                >
+                  <RefreshCw
+                    className={`h-4 w-4 ${rotatingServers.has(server.serverName) ? 'animate-spin' : ''}`}
+                  />
+                </Button>
+              </div>
+            );
+          })}
         </div>
       </div>
     );
   }
-}
-
-// Inner component for the form - remains the same
-interface MCPVariableEditorProps {
-  server: ServerConfigWithVars;
-  onSave: (serverName: string, updatedValues: Record<string, string>) => void;
-  onRevoke: (serverName: string) => void;
-  isSubmitting: boolean;
-}
-
-function MCPVariableEditor({ server, onSave, onRevoke, isSubmitting }: MCPVariableEditorProps) {
-  const localize = useLocalize();
-
-  const {
-    control,
-    handleSubmit,
-    reset,
-    formState: { errors, isDirty },
-  } = useForm<Record<string, string>>({
-    defaultValues: {}, // Initialize empty, will be reset by useEffect
-  });
-
-  useEffect(() => {
-    // Always initialize with empty strings based on the schema
-    const initialFormValues = Object.keys(server.config.customUserVars).reduce(
-      (acc, key) => {
-        acc[key] = '';
-        return acc;
-      },
-      {} as Record<string, string>,
-    );
-    reset(initialFormValues);
-  }, [reset, server.config.customUserVars]);
-
-  const onFormSubmit = (data: Record<string, string>) => {
-    onSave(server.serverName, data);
-  };
-
-  const handleRevokeClick = () => {
-    onRevoke(server.serverName);
-  };
-
-  return (
-    <form onSubmit={handleSubmit(onFormSubmit)} className="mb-4 mt-2 space-y-4">
-      {Object.entries(server.config.customUserVars).map(([key, details]) => (
-        <div key={key} className="space-y-2">
-          <Label htmlFor={`${server.serverName}-${key}`} className="text-sm font-medium">
-            {details.title}
-          </Label>
-          <Controller
-            name={key}
-            control={control}
-            defaultValue={''}
-            render={({ field }) => (
-              <Input
-                id={`${server.serverName}-${key}`}
-                type="text"
-                {...field}
-                placeholder={localize('com_sidepanel_mcp_enter_value', { '0': details.title })}
-                className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white sm:text-sm"
-              />
-            )}
-          />
-          {details.description && (
-            <p
-              className="text-xs text-text-secondary [&_a]:text-blue-500 [&_a]:hover:text-blue-600 dark:[&_a]:text-blue-400 dark:[&_a]:hover:text-blue-300"
-              dangerouslySetInnerHTML={{ __html: details.description }}
-            />
-          )}
-          {errors[key] && <p className="text-xs text-red-500">{errors[key]?.message}</p>}
-        </div>
-      ))}
-      <div className="flex justify-end gap-2 pt-2">
-        {Object.keys(server.config.customUserVars).length > 0 && (
-          <Button
-            type="button"
-            onClick={handleRevokeClick}
-            className="bg-red-600 text-white hover:bg-red-700 dark:hover:bg-red-800"
-            disabled={isSubmitting}
-          >
-            {localize('com_ui_revoke')}
-          </Button>
-        )}
-        <Button
-          type="submit"
-          className="bg-green-500 text-white hover:bg-green-600"
-          disabled={isSubmitting || !isDirty}
-        >
-          {isSubmitting ? localize('com_ui_saving') : localize('com_ui_save')}
-        </Button>
-      </div>
-    </form>
-  );
 }

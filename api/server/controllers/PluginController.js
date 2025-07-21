@@ -223,7 +223,6 @@ const getAvailableTools = async (req, res) => {
       // Handle MCP servers with customUserVars (user-level auth required)
       if (serverConfig.customUserVars) {
         logger.warn(`[getAvailableTools] Processing user-level MCP server: ${serverName}`);
-        const customVarKeys = Object.keys(serverConfig.customUserVars);
 
         // Build authConfig for MCP tools
         toolToAdd.authConfig = Object.entries(serverConfig.customUserVars).map(([key, value]) => ({
