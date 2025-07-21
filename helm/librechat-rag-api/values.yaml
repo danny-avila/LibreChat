@@ -4,8 +4,15 @@ rag:
   enabled: true
   existingSecret: ''
   configEnv:
-    DB_PORT: '5432'
     EMBEDDINGS_PROVIDER: openai
+    OPENAI_API_KEY: user_provided
+
+  secretEnv:
+    DB_HOST: 'POSTGRES_HOST'
+    DB_PORT: 'POSTGRES_PORT'
+    POSTGRES_DB: 'POSTGRES_DB'
+    POSTGRES_USER: 'POSTGRES_USER'
+    POSTGRES_PASSWORD: 'POSTGRES_PASSWORD'
 
 image:
   repository: danny-avila/librechat-rag-api-dev-lite # there is rag-api-dev and rag-api-dev-lite. currently only lite is docuimented
@@ -15,19 +22,19 @@ image:
   tag: latest
 
 postgresql:
-  enabled: true
+  enabled: false
   # nameOverride: vectordb
   image:
     registry: ghcr.io
     repository: bat-bs/bitnami-pgvector
     tag: pg16
   auth:
-    database: librechat-vectordb
-    username: postgres
+    database: chat_rag_test
+    username: chat_rag_test
     # define a secret with values for "postgres-password", "password" (user Password)  and "replication-password" or add values directly
-    existingSecret: librechat-vectordb
-    # postgres-password is needed to enable pgvector extension. If you enable it manually you can use "password" and user "librechat"
-    existingSecretKey: postgres-password
+#    existingSecret: librechat-vectordb
+#    # postgres-password is needed to enable pgvector extension. If you enable it manually you can use "password" and user "librechat"
+#    existingSecretKey: postgres-password
 
 imagePullSecrets: []
 nameOverride: ''
@@ -74,17 +81,19 @@ resources: {}
 #     port: http
 
 # Additional volumes on the output Deployment definition.
-volumes: []
-# - name: foo
-#   secret:
-#     secretName: mysecret
-#     optional: false
+volumes:
+  - name: secrets-store-inline
+    csi:
+      driver: secrets-store.csi.k8s.io
+      readOnly: true
+      volumeAttributes:
+        secretProviderClass: chat-rag-secrets
 
 # Additional volumeMounts on the output Deployment definition.
-volumeMounts: []
-# - name: foo
-#   mountPath: "/etc/foo"
-#   readOnly: true
+volumeMounts:
+  - name: secrets-store-inline
+    mountPath: "/mnt/secrets-store"
+    readOnly: true
 
 nodeSelector: {}
 

@@ -22,6 +22,7 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
     spec:
+      serviceAccountName: chat
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
@@ -52,20 +53,12 @@ spec:
               name: {{ .Values.rag.existingSecret }}
           {{- end }}
           env:
-          {{- if .Values.postgresql.auth.existingSecret }}
-          - name: POSTGRES_PASSWORD
+          {{- range $key, $value := .Values.rag.secretEnv }}
+          - name: {{ $key | quote }}
             valueFrom:
               secretKeyRef:
-                name: {{ .Values.postgresql.auth.existingSecret }}
-                key: {{ .Values.postgresql.auth.existingSecretKey }}
-          {{- end }}
-          {{- if .Values.global.librechat.existingSecretName }}
-          - name: OPENAI_API_KEY
-            valueFrom:
-              secretKeyRef:
-                name: {{ .Values.global.librechat.existingSecretName }}
-                key: {{ .Values.global.librechat.existingSecretApiKey }}
-                optional: true
+                name: chat-rag-secrets
+                key: {{ $key | quote }}
           {{- end }}
           {{- with .Values.volumeMounts }}
           volumeMounts:

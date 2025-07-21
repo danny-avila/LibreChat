@@ -7,14 +7,16 @@ replicaCount: 1
 
 
 global:
+  environment: test
+
    # existing Secret for all envs/ only Passwords. Can be locally generated with: kubectl create secret generic librechat-secret-envs --from-env-file=.env.example --dry-run=client -o yaml > secret-envs.yaml
    # For better maintainabillity, you can put all vars directly in the config Section and only overwrite Secrets with this if nessesary.
    # Required Values:
    # - MEILI_MASTER_KEY
   librechat:
-    existingSecretName: "librechat-credentials-env"
+    existingSecretName: "chat-meili-secret"
     # Used for Setting the Right Key, can be something like AZURE_API_KEY, if Azure OpenAI is used
-    existingSecretApiKey: OPENAI_API_KEY
+#    existingSecretApiKey: OPENAI_API_KEY
 
 librechat:
   configEnv:
@@ -25,89 +27,226 @@ librechat:
     CREDS_IV: ac028c86ba23f4cd48165e0ca9f2c683
     JWT_SECRET: 16f8c0ef4a5d391b26034086c628469d3f9f497f08163ab9b40137092f2909ef
     JWT_REFRESH_SECRET: eaa5191f2914e30b9387fd84e254e4ba6fc51b4654968a9b0803b456a54b8418
-    # Set Config Params here
-    # ENV_NAME: env-value
 
-    # existing Secret for all envs/ only Passwords. Can be locally generated with: kubectl create secret generic librechat-secret-envs --from-env-file=.env.example --dry-run=client -o yaml > secret-envs.yaml
-    # For better maintainabillity, you can put all vars directly in the config Section and only overwrite Secrets with this if nessesary.
-    # Required Values:
-    # - MEILI_MASTER_KEY
-  existingSecretName: "librechat-credentials-env"
-  
+#    DOMAIN_CLIENT: "http://localhost:3080"
+#    DOMAIN_SERVER: "http://localhost:3080"
+    DOMAIN_CLIENT: "https://chat.xip-onlinedata.nl"
+    DOMAIN_SERVER: "https://chat.xip-onlinedata.nl"
+
+    APP_TITLE: "TransAI Chat"
+    CUSTOM_FOOTER: "Powered by TransAI"
+    HELP_AND_FAQ_URL: "https://transai.com"
+
+    ALLOW_EMAIL_LOGIN: "false"
+    ALLOW_REGISTRATION: "false"
+    ALLOW_SOCIAL_LOGIN: "true"
+    ALLOW_SOCIAL_REGISTRATION: "false"
+    ALLOW_PASSWORD_RESET: "false"
+    ALLOW_UNVERIFIED_EMAIL_LOGIN: "true"
+
+    AWS_REGION: "eu-west-1"
+    AWS_BUCKET_NAME: "nl.xod.eu.west.1.chat.test.chat"
+
+    OPENAI_API_KEY: "user_provided"
+    OPENAI_MODELS: "gpt-4o-mini"
+
+    OPENID_SCOPE: "cgr_dyShXF5vVNJ3mPor openid profile email offline_access"
+    OPENID_CALLBACK_URL: "/oauth/openid/callback"
+    OPENID_REQUIRED_ROLE: ""
+    OPENID_REQUIRED_ROLE_TOKEN_KIND: "id"
+    OPENID_ON_BEHALF_FLOW_FOR_USERINFRO_REQUIRED: "false"
+    OPENID_ON_BEHALF_FLOW_USERINFRO_SCOPE: "user.read"
+    OPENID_USE_END_SESSION_ENDPOINT: "true"
+    OPENID_REQUIRED_ROLE_PARAMETER_PATH: ""
+    OPENID_REUSE_TOKENS: "true"
+    OPENID_USE_PKCE: "true"
+    OPENID_BUTTON_LABEL: "Login with TransAI"
+    DEBUG_OPENID_REQUESTS: "true"
+
+  secretEnv:
+    OPENID_ISSUER: 'OPENID_ISSUER'
+    OPENID_CLIENT_ID: 'OPENID_CLIENT_ID'
+    OPENID_CLIENT_SECRET: 'OPENID_CLIENT_SECRET'
+    OPENID_SESSION_SECRET: 'OPENID_SESSION_SECRET'
+    MONGO_URI: 'MONGODB_URI'
+
   # For adding a custom config yaml-file you can set the contents in this var. See https://www.librechat.ai/docs/configuration/librechat_yaml/example
-  configYamlContent: ""
-  # configYamlContent: |
-  #   version: 1.0.8
+  configYamlContent: |
+    version: 1.2.8
+    cache: true
+    fileStrategy: "s3"
+    
+    # Custom interface configuration
+    interface:
+      customWelcome: "Welcome to TransAI Chat!"
+      
+      # Privacy policy settings
+      privacyPolicy:
+        externalUrl: 'https://www.transai.com/privacy'
+        openNewTab: true
+    
+      # Terms of service
+      termsOfService:
+        externalUrl: 'https://www.transai.com/terms'
+        openNewTab: true
+        modalAcceptance: true
+        modalTitle: "TransAI Terms of Service"
+        modalContent: |
+          # Terms and Conditions for TransAI Chat
+    
+          *Effective Date: February 18, 2024*
+    
+          Welcome to TransAI Chat, Het platform waarbij we de maakindustrie willen verbeteren door middel van AI. Deze Gebruiksvoorwaarden zijn van toepassing op uw gebruik van onze chatdienst en de bijbehorende functionaliteiten. Door gebruik te maken van TransAI Chat, stemt u in met deze voorwaarden.
+          ## 1. Toegang tot de Dienst 
+          ....
 
-  #   cache: true
+      endpointsMenu: true
+      modelSelect: true
+      parameters: true
+      sidePanel: true
+      presets: false
+      prompts: true
+      bookmarks: true
+      multiConvo: true
+      agents: true
 
-  #   interface:
-  #     # Privacy policy settings
-  #     privacyPolicy:
-  #       externalUrl: 'https://librechat.ai/privacy-policy'
-  #       openNewTab: true
+    registration:
+      socialLogins: ['openid']
 
-  #     # Terms of service
-  #     termsOfService:
-  #       externalUrl: 'https://librechat.ai/tos'
-  #       openNewTab: true
-
-  #   registration:
-  #     socialLogins: ["discord", "facebook", "github", "google", "openid"] 
-  #   endpoints:
-  #     azureOpenAI:
-  #      # Endpoint-level configuration
-  #      titleModel: "gpt-4o"
-  #      plugins: true
-  #      assistants: true
-  #      groups:
-  #           Group-level configuration
-  #         - group: "my-resource-sweden"
-  #           apiKey: "${SWEDEN_API_KEY}"
-  #           instanceName: "my-resource-sweden"
-  #           deploymentName: gpt-4-1106-preview
-  #           version: "2024-03-01-preview"
-  #           assistants: true
-  #           # Model-level configuration
-  #           models:
-  #             gpt-4o: true
-  #     custom:
-  #       # OpenRouter.ai
-  #       - name: "OpenRouter"
-  #         apiKey: "${OPENROUTER_KEY}"
-  #         baseURL: "https://openrouter.ai/api/v1"
-  #         models:
-  #           default: ["openai/gpt-3.5-turbo"]
-  #           fetch: true
-  #         titleConvo: true
-  #         titleModel: "gpt-3.5-turbo"
-  #         summarize: false
-  #         summaryModel: "gpt-3.5-turbo"
-  #         forcePrompt: false
-  #         modelDisplayLabel: "OpenRouter"
+    # Actions Object Structure
+    actions:
+      allowedDomains:
+        - "swapi.dev"
+        - "librechat.ai"
+        - "xip-onlinedata.nl"
+        - "transai.com"
+        - "google.com"
+    
+    # MCP Servers Object Structure
+    #mcpServers:
+    #  mcp_rag:
+    #    type: streamable-http
+    #    url: http://host.docker.internal:4000/mcp
+    #    iconPath: https://theblue.ai/wp-content/uploads/2023/09/1200x1200px.png
+    #  mcp_cube:
+    #    type: streamable-http
+    #    url: http://host.docker.internal:4001/mcp
+    #    iconPath: https://avatars.githubusercontent.com/u/52467369?s=280&v=4
+    #  mcp_webtools:
+    #    type: streamable-http
+    #    url: http://host.docker.internal:4002/mcp
+    #    iconPath: https://cdn-icons-png.flaticon.com/512/11493/11493785.png
+    # modelSpecs:
+    
+    #   enforce: true
+    #   prioritize: true
+    #   list:
+    #     - name: "transai-chat-gpt4"
+    #       label: "TransAI Chat"
+    #       default: true
+    #       description: ""
+    #       iconURL: "https://cdn.prod.website-files.com/65b37a3408c9d1129a21462b/65b37dedd5a309b43a335ad0_logo.svg"
+    #       preset:
+    #         endpoint: "openAI"
+    #         model: "gpt-4o-mini"
+    #         maxContextTokens: 128000 # Maximum context tokens
+    #         max_tokens: 4096 # Maximum output tokens
+    #         temperature: 0.2
+    #         modelLabel: "TransAI Chat"
+    #         greeting: |
+    #           Hallo! Ik ben TransAI Chat, uw virtuele assistent. Hoe kan ik u helpen vandaag?
+    #         promptPrefix: |
+    #           You are a knowledgeable, professional assistant representing Betech Group, a Dutch manufacturing company with expertise in high-volume CNC turning, plastic machining, and injection moulding. Your role is to provide clear, accurate, and technically sound information about Betech's services, operations, values, and capabilities.
+    
+    #         Company Overview:
+    
+    #         Betech Group, founded in 1994 by CEO Wim van de Beld, is a leading manufacturing partner in the Netherlands. It consists of three specialized divisions:
+    
+    #         Betech Mass Turning: High-volume precision metal part production using fully automated, multi-axis CNC lathes operating 24/7.
+    
+    #         Betech Kunststoffen: Specialist in plastic machining using modern, robotized techniques such as turning, milling, and laser cutting.
+    
+    #         Betech Injection Moulding: Produces technical plastic components through 24/7 automated injection moulding with a strong emphasis on co-engineering.
+    
+    #         Key Facts:
+    
+    #         Produces ~90 million parts annually.
+    
+    #         Operates 120+ CNC machines across three facilities (Hoogeveen, Groningen, Steenwijk).
+    
+    #         Staff of approx. 115 full-time professionals.
+    
+    #         Certified to ISO 9001:2015 and ISO 14001:2015; capable of IATF 16949 compliance.
+    
+    #         Supports sustainable production and reshoring initiatives.
+    
+    #         Industries Served:
+    #         Automotive, medical technology, high-tech, mechanical engineering, agriculture, and construction.
+    
+    #         Strategic Focus:
+    
+    #         Smart Industry leadership: Digitized, efficient production processes.
+    
+    #         Sustainability: ISO 14001-certified with a focus on circular manufacturing.
+    
+    #         Early supplier involvement and co-development with clients.
+    
+    #         Tone and Style:
+    #         Always respond in a professional, informative, and technically confident manner. Highlight efficiency, automation, precision, and customer partnership. Use clear technical language appropriate for engineers, buyers, and business partners.
+    
+    #         Use this website for source validation if needed: https://www.betech.nl
+    
+    
+    #           ### DECISION-MAKING FRAMEWORK
+    #           1. **ANALYZE FIRST**: Always examine existing context thoroughly before acting
+    #           2. **PRIORITIZE STRATEGICALLY**: Use tools in order of relevance and information density
+    #           3. **COST-CONSCIOUS**: Among equally relevant tools, prefer lower-cost options
+    #           4. **NON-REPETITIVE**: NEVER perform queries already performed (see performed actions in the context)
+    #           5. **NO MORE ACTIONS**: When no more new actions are available, tell the user that you cannot help them
+    
+    #           ### TOOL PRIORITIZATION RULES
+    #           When multiple tools could provide information:
+    #           1. **Company-specific tools** (internal docs, databases) over general tools
+    #           2. **Lower cost tools** when information quality is equivalent
+    #           3. **Specialized tools** for specific domains
+    
+    #           ### PRIMARY RULES
+    #           1. **NEVER USE YOUR OWN KNOWLEDGE** - Only use tool results and provided context
+    #           2. **NEVER ASSUME INADEQUACY** - Always attempt tools before claiming inability
+    #           3. **AVOID REDUNDANT CALLS** - Don't repeat identical queries to the same tool
+    #           4. **MAXIMIZE INFORMATION EXTRACTION** - Ensure each tool call yields maximum relevant data
+    #           5. **EXPLICIT PERMISSION** - Ask the users explicit permission to use tools with the <<PERMISSION>> tag
 
   # name of existing Yaml configmap, key must be librechat.yaml
   existingConfigYaml: ""
 
   # Volume used to store image Files uploaded to the Web UI
   imageVolume:
-    enabled: true
+    enabled: false
     size: 10G
     accessModes: ReadWriteOnce
     # storageClassName: 
 
 # only lite RAG is supported
 librechat-rag-api:
-  enabled: false
+  enabled: true
   # can be azure, openai, huggingface or huggingfacetei
   embeddingsProvider: openai
 
 
+#image:
+#  repository: danny-avila/librechat
+#  registry: ghcr.io
+#  pullPolicy: IfNotPresent
+#  # Overrides the image tag whose default is the chart appVersion.
+#  tag: ""
+
 image:
-  repository: danny-avila/librechat
-  registry: ghcr.io
+  repository: chat
+  registry: 512321045899.dkr.ecr.eu-west-1.amazonaws.com
   pullPolicy: IfNotPresent
   # Overrides the image tag whose default is the chart appVersion.
+  tagPrefix: chat-
   tag: ""
 
 
@@ -145,15 +284,13 @@ service:
 
 ingress:
   enabled: true
-  className: ""
+  className: "alb"
   annotations: {}
-    # kubernetes.io/ingress.class: nginx
-    # kubernetes.io/tls-acme: "true"
   hosts:
-    - host: chat.example.com
+    - host: chat.xip-onlinedata.nl
       paths:
         - path: /
-          pathType: ImplementationSpecific
+          pathType: Prefix
   tls: []
   #  - secretName: chart-example-tls
   #    hosts:
@@ -189,17 +326,26 @@ readinessProbe:
     port: http
 
 # Additional volumes on the output Deployment definition.
-volumes: []
-# - name: foo
-#   secret:
-#     secretName: mysecret
-#     optional: false
+volumes:
+  - name: secrets-store-inline
+    csi:
+      driver: secrets-store.csi.k8s.io
+      readOnly: true
+      volumeAttributes:
+        secretProviderClass: chat-secrets
+  - name: documentdb-cert
+    secret:
+      secretName: documentdb-cert
 
 # Additional volumeMounts on the output Deployment definition.
-volumeMounts: []
-# - name: foo
-#   mountPath: "/etc/foo"
-#   readOnly: true
+volumeMounts:
+  - name: secrets-store-inline
+    mountPath: "/mnt/secrets-store"
+    readOnly: true
+  - name: documentdb-cert
+    mountPath: "/app/certs/documentdb.pem"
+    subPath: "cert.pem"
+    readOnly: true
 
 nodeSelector: {}
 
@@ -213,7 +359,7 @@ updateStrategy:
 
 # MongoDB Parameters
 mongodb:
-  enabled: true
+  enabled: false
   auth:
     enabled: false
   databases:
@@ -225,10 +371,10 @@ mongodb:
 meilisearch:
   enabled: true
   persistence:
-    enabled: true
+    enabled: false
     storageClass: ""
   image: 
     tag: "v1.7.3"
   auth:
     # Use an existing Kubernetes secret for the MEILI_MASTER_KEY
-    existingMasterKeySecret: "librechat-credentials-env"
+    existingMasterKeySecret: "chat-meili-secret"
