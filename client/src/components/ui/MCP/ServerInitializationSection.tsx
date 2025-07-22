@@ -93,6 +93,22 @@ export default function ServerInitializationSection({
     }
   }, [isPollingOAuth, isConnected, serverName, handleSuccessfulConnection, localize]);
 
+  // Set up polling when OAuth URL is present
+  useEffect(() => {
+    if (!oauthUrl || !isPollingOAuth) {
+      return;
+    }
+
+    const pollInterval = setInterval(() => {
+      // Refetch connection status to check if OAuth completed
+      queryClient.refetchQueries([QueryKeys.mcpConnectionStatus]);
+    }, 2000); // Poll every 2 seconds
+
+    return () => {
+      clearInterval(pollInterval);
+    };
+  }, [oauthUrl, isPollingOAuth, queryClient]);
+
   const isLoading = reinitializeMutation.isLoading;
 
   // Show subtle reinitialize option if connected

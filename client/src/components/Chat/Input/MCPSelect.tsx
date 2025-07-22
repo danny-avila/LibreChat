@@ -207,8 +207,11 @@ function MCPSelect() {
         } else if (connectionState === 'connected') {
           if (hasAuthConfig) {
             IconComponent = SettingsIcon;
-            className = `h-4 w-4 ${tool?.authenticated ? 'text-green-500' : 'text-gray-400'}`;
-            label = tool?.authenticated
+            // If the server is connected and required OAuth, it must be authenticated
+            // (you can't connect without completing OAuth successfully)
+            const isAuthenticated = tool?.authenticated || requiresOAuth;
+            className = `h-4 w-4 ${isAuthenticated ? 'text-green-500' : 'text-gray-400'}`;
+            label = isAuthenticated
               ? localize('com_nav_mcp_status_authenticated', { 0: serverName })
               : localize('com_nav_mcp_status_not_authenticated', { 0: serverName });
           } else {

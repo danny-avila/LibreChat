@@ -50,6 +50,22 @@ export class MCPManager {
     flowManager: FlowStateManager<MCPOAuthTokens | null>;
     tokenMethods?: TokenMethods;
   }): Promise<void> {
+    // Clear all MCP OAuth tokens for fresh start (keeping this here for easy testing)
+    // if (tokenMethods?.deleteTokens) {
+    //   try {
+    //     logger.info('[MCP] 🧹 Clearing all OAuth tokens for fresh testing...');
+
+    //     // Clear OAuth tokens
+    //     await tokenMethods.deleteTokens({
+    //       identifier: 'oauth',
+    //     });
+
+    //     logger.info('[MCP] ✅ OAuth tokens cleared successfully');
+    //   } catch (error) {
+    //     logger.warn('[MCP] Failed to clear OAuth tokens:', error);
+    //   }
+    // }
+
     this.mcpConfigs = mcpServers;
 
     if (!flowManager) {
@@ -372,6 +388,7 @@ export class MCPManager {
     oauthStart,
     oauthEnd,
     signal,
+    returnOnOAuthInitiated = false,
   }: {
     user: TUser;
     serverName: string;
@@ -381,6 +398,7 @@ export class MCPManager {
     oauthStart?: (authURL: string) => Promise<void>;
     oauthEnd?: () => Promise<void>;
     signal?: AbortSignal;
+    returnOnOAuthInitiated?: boolean;
   }): Promise<MCPConnection> {
     const userId = user.id;
     if (!userId) {
@@ -491,6 +509,48 @@ export class MCPManager {
 
     connection.on('oauthRequired', async (data) => {
       logger.info(`[MCP][User: ${userId}][${serverName}] oauthRequired event received`);
+
+      // If we just want to initiate OAuth and return, handle it differently
+      if (returnOnOAuthInitiated) {
+        try {
+          const config = this.mcpConfigs[serverName];
+          const { authorizationUrl, flowId, flowMetadata } =
+            await MCPOAuthHandler.initiateOAuthFlow(
+              serverName,
+              data.serverUrl || '',
+              userId,
+              config?.oauth,
+            );
+
+          // Create the flow state so the OAuth callback can find it
+          // We spawn this in the background without waiting for it
+          flowManager.createFlow(flowId, 'mcp_oauth', flowMetadata).catch(() => {
+            // The OAuth callback will resolve this flow, so we expect it to timeout here
+            // which is fine - we just need the flow state to exist
+          });
+
+          if (oauthStart) {
+            logger.info(
+              `[MCP][User: ${userId}][${serverName}] OAuth flow started, issuing authorization URL`,
+            );
+            await oauthStart(authorizationUrl);
+          }
+
+          // Emit oauthFailed to signal that connection should not proceed
+          // but OAuth was successfully initiated
+          connection?.emit('oauthFailed', new Error('OAuth flow initiated - return early'));
+          return;
+        } catch (error) {
+          logger.error(
+            `[MCP][User: ${userId}][${serverName}] Failed to initiate OAuth flow`,
+            error,
+          );
+          connection?.emit('oauthFailed', new Error('OAuth initiation failed'));
+          return;
+        }
+      }
+
+      // Normal OAuth handling - wait for completion
       const result = await this.handleOAuthRequired({
         ...data,
         flowManager,
