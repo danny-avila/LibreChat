@@ -32,8 +32,6 @@ registration:
   # allowedDomains:
   # - "gmail.com"
 
-
-
 # Example Actions Object Structure
 actions:
   allowedDomains:

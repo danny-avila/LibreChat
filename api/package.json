@@ -8,13 +8,16 @@
     "test": "cross-env NODE_ENV=test jest",
     "b:test": "NODE_ENV=test bun jest",
     "test:ci": "jest --ci",
-    "add-balance": "node ./add-balance.js",
-    "list-balances": "node ./list-balances.js",
-    "user-stats": "node ./user-stats.js",
-    "create-user": "node ./create-user.js",
-    "invite-user": "node ./invite-user.js",
-    "ban-user": "node ./ban-user.js",
-    "delete-user": "node ./delete-user.js"
+    "add-balance": "node ../config/add-balance.js",
+    "list-balances": "node ../config/list-balances.js",
+    "user-stats": "node ../config/user-stats.js",
+    "create-user": "node ../config/create-user.js",
+    "invite-user": "node ../config/invite-user.js",
+    "ban-user": "node ../config/ban-user.js",
+    "delete-user": "node ../config/delete-user.js",
+    "export-user-chats": "node ../config/export-user-chats.js",
+    "export-all-chats": "node ../config/export-all-chats.js",
+    "show-export-commands": "node ../config/show-export-commands.js"
   },
   "repository": {
     "type": "git",

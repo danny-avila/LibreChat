@@ -122,3 +122,8 @@ helm/**/.values.yaml
 
 !/client/src/@types/i18next.d.ts
 
+
+# Documentos de referencia
+ARQUITECTURA-DETALLADA-REFERENCIAS.md
+ARQUITECTURA-MULTI-SERVER.md
+RESUMEN-EJECUTIVO.md
