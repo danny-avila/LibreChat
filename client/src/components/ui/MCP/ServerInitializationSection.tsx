@@ -1,10 +1,6 @@
 import { RefreshCw, Link } from 'lucide-react';
-import { QueryKeys } from 'librechat-data-provider';
-import { useQueryClient } from '@tanstack/react-query';
-import React, { useState, useCallback, useEffect } from 'react';
-import { useReinitializeMCPServerMutation } from 'librechat-data-provider/react-query';
-import { useMCPConnectionStatusQuery } from '~/data-provider/Tools/queries';
-import { useToastContext } from '~/Providers';
+import React, { useState, useCallback } from 'react';
+import { useMCPServerInitialization } from '~/hooks/MCP/useMCPServerInitialization';
 import { Button } from '~/components/ui';
 import { useLocalize } from '~/hooks';
 
@@ -18,105 +14,35 @@ export default function ServerInitializationSection({
   requiresOAuth,
 }: ServerInitializationSectionProps) {
   const localize = useLocalize();
-  const { showToast } = useToastContext();
-  const queryClient = useQueryClient();
 
   const [oauthUrl, setOauthUrl] = useState<string | null>(null);
-  const [isPollingOAuth, setIsPollingOAuth] = useState(false);
 
-  const { data: statusQuery } = useMCPConnectionStatusQuery();
-  const mcpServerStatuses = statusQuery?.connectionStatus || {};
-  const serverStatus = mcpServerStatuses[serverName];
+  // Use the shared initialization hook
+  const { initializeServer, isLoading, connectionStatus } = useMCPServerInitialization({
+    onOAuthStarted: (name, url) => {
+      // Store the OAuth URL locally for display
+      setOauthUrl(url);
+    },
+    onSuccess: () => {
+      // Clear OAuth URL on success
+      setOauthUrl(null);
+    },
+  });
+
+  const serverStatus = connectionStatus[serverName];
   const isConnected = serverStatus?.connectionState === 'connected';
 
-  // Helper function to invalidate caches after successful connection
-  const handleSuccessfulConnection = useCallback(
-    async (message: string) => {
-      showToast({ message, status: 'success' });
-
-      // Force immediate refetch to update UI
-      await Promise.all([
-        queryClient.refetchQueries([QueryKeys.mcpConnectionStatus]),
-        queryClient.refetchQueries([QueryKeys.tools]),
-      ]);
-    },
-    [showToast, queryClient],
-  );
-
-  // Main initialization mutation
-  const reinitializeMutation = useReinitializeMCPServerMutation();
-
-  // Simple initialization handler - mirrors callTool flow
-  const handleInitializeServer = useCallback(() => {
-    // Reset OAuth state before starting
+  const handleInitializeClick = useCallback(() => {
     setOauthUrl(null);
-
-    // Trigger initialization
-    reinitializeMutation.mutate(serverName, {
-      onSuccess: (response: any) => {
-        if (response.success) {
-          if (response.oauthRequired && response.oauthUrl) {
-            // OAuth URL provided directly from backend
-            setOauthUrl(response.oauthUrl);
-            setIsPollingOAuth(true);
-          } else if (response.oauthRequired) {
-            // OAuth required but no URL yet - should not happen with new implementation
-            showToast({
-              message: localize('com_ui_mcp_oauth_no_url'),
-              status: 'warning',
-            });
-          } else {
-            // Successful connection without OAuth
-            handleSuccessfulConnection(
-              response.message || localize('com_ui_mcp_initialized_success', { 0: serverName }),
-            );
-          }
-        }
-      },
-      onError: (error: any) => {
-        console.error('Error initializing MCP server:', error);
-        showToast({
-          message: localize('com_ui_mcp_init_failed'),
-          status: 'error',
-        });
-      },
-    });
-  }, [reinitializeMutation, serverName, showToast, localize, handleSuccessfulConnection]);
-
-  // Poll for OAuth completion
-  useEffect(() => {
-    if (isPollingOAuth && isConnected) {
-      // OAuth completed successfully
-      setIsPollingOAuth(false);
-      setOauthUrl(null);
-      handleSuccessfulConnection(localize('com_ui_mcp_authenticated_success', { 0: serverName }));
-    }
-  }, [isPollingOAuth, isConnected, serverName, handleSuccessfulConnection, localize]);
-
-  // Set up polling when OAuth URL is present
-  useEffect(() => {
-    if (!oauthUrl || !isPollingOAuth) {
-      return;
-    }
-
-    const pollInterval = setInterval(() => {
-      // Refetch connection status to check if OAuth completed
-      queryClient.refetchQueries([QueryKeys.mcpConnectionStatus]);
-    }, 2000); // Poll every 2 seconds
-
-    return () => {
-      clearInterval(pollInterval);
-    };
-  }, [oauthUrl, isPollingOAuth, queryClient]);
-
-  const isLoading = reinitializeMutation.isLoading;
+    initializeServer(serverName);
+  }, [initializeServer, serverName]);
 
   // Show subtle reinitialize option if connected
   if (isConnected) {
     return (
       <div className="flex justify-start">
         <button
-          onClick={handleInitializeServer}
+          onClick={handleInitializeClick}
           disabled={isLoading}
           className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 disabled:opacity-50 dark:text-gray-500 dark:hover:text-gray-400"
         >
@@ -140,7 +66,7 @@ export default function ServerInitializationSection({
         {/* Only show authenticate button when OAuth URL is not present */}
         {!oauthUrl && (
           <Button
-            onClick={handleInitializeServer}
+            onClick={handleInitializeClick}
             disabled={isLoading}
             className="flex items-center gap-2 bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 dark:hover:bg-blue-800"
           >

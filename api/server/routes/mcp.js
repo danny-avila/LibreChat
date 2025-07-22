@@ -445,15 +445,68 @@ router.get('/connection/status', requireJwtAuth, async (req, res) => {
       return res.status(404).json({ error: 'MCP config not found' });
     }
 
+    // Get flow manager to check for active/timed-out OAuth flows
+    const flowsCache = getLogStores(CacheKeys.FLOWS);
+    const flowManager = getFlowStateManager(flowsCache);
+
     for (const [serverName] of Object.entries(mcpConfig)) {
       const getConnectionState = (serverName) =>
         appConnections.get(serverName)?.connectionState ??
         userConnections.get(serverName)?.connectionState ??
         'disconnected';
 
+      const baseConnectionState = getConnectionState(serverName);
+
+      let hasActiveOAuthFlow = false;
+      let hasFailedOAuthFlow = false;
+
+      if (baseConnectionState === 'disconnected' && oauthServers.has(serverName)) {
+        try {
+          // Check for user-specific OAuth flows
+          const flowId = MCPOAuthHandler.generateFlowId(user.id, serverName);
+          const flowState = await flowManager.getFlowState(flowId, 'mcp_oauth');
+          if (flowState) {
+            // Check if flow failed or timed out
+            const flowAge = Date.now() - flowState.createdAt;
+            const flowTTL = flowState.ttl || 180000; // Default 3 minutes
+
+            if (flowState.status === 'FAILED' || flowAge > flowTTL) {
+              hasFailedOAuthFlow = true;
+              logger.debug(`[MCP Connection Status] Found failed OAuth flow for ${serverName}`, {
+                flowId,
+                status: flowState.status,
+                flowAge,
+                flowTTL,
+                timedOut: flowAge > flowTTL,
+              });
+            } else if (flowState.status === 'PENDING') {
+              hasActiveOAuthFlow = true;
+              logger.debug(`[MCP Connection Status] Found active OAuth flow for ${serverName}`, {
+                flowId,
+                flowAge,
+                flowTTL,
+              });
+            }
+          }
+        } catch (error) {
+          logger.error(
+            `[MCP Connection Status] Error checking OAuth flows for ${serverName}:`,
+            error,
+          );
+        }
+      }
+
+      // Determine the final connection state
+      let finalConnectionState = baseConnectionState;
+      if (hasFailedOAuthFlow) {
+        finalConnectionState = 'error'; // Report as error if OAuth failed
+      } else if (hasActiveOAuthFlow && baseConnectionState === 'disconnected') {
+        finalConnectionState = 'connecting'; // Still waiting for OAuth
+      }
+
       connectionStatus[serverName] = {
         requiresOAuth: oauthServers.has(serverName),
-        connectionState: getConnectionState(serverName),
+        connectionState: finalConnectionState,
       };
     }
 

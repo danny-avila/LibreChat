@@ -5,8 +5,8 @@ import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-quer
 import { SettingsIcon, AlertTriangle, Loader2, KeyRound, PlugZap } from 'lucide-react';
 import type { TUpdateUserPlugins, TPlugin } from 'librechat-data-provider';
 import MCPConfigDialog, { ConfigFieldDetail } from '~/components/ui/MCP/MCPConfigDialog';
-import { useMCPConnectionStatusQuery } from '~/data-provider/Tools/queries';
 import { useToastContext, useBadgeRowContext } from '~/Providers';
+import { useMCPServerInitialization } from '~/hooks/MCP/useMCPServerInitialization';
 import MultiSelect from '~/components/ui/MultiSelect';
 import { MCPIcon } from '~/components/svg';
 import { useLocalize } from '~/hooks';
@@ -46,6 +46,58 @@ function MCPSelect() {
         message: localize('com_nav_mcp_vars_update_error'),
         status: 'error',
       });
+    },
+  });
+
+  // Use the shared initialization hook
+  const { initializeServer, isInitializing, connectionStatus } = useMCPServerInitialization({
+    onSuccess: (serverName) => {
+      // Add to selected values after successful initialization
+      const currentValues = mcpValues ?? [];
+      if (!currentValues.includes(serverName)) {
+        setMCPValues([...currentValues, serverName]);
+      }
+    },
+    onError: (serverName) => {
+      // Find the tool/server configuration
+      const tool = mcpToolDetails?.find((t) => t.name === serverName);
+      const serverConfig = startupConfig?.mcpServers?.[serverName];
+      const serverStatus = connectionStatus[serverName];
+
+      // Check if this server would show a config button
+      const hasAuthConfig =
+        (tool?.authConfig && tool.authConfig.length > 0) ||
+        (serverConfig?.customUserVars && Object.keys(serverConfig.customUserVars).length > 0);
+
+      // Only open dialog if the server would have shown a config button
+      // (disconnected/error states always show button, connected only shows if hasAuthConfig)
+      const wouldShowButton =
+        !serverStatus ||
+        serverStatus.connectionState === 'disconnected' ||
+        serverStatus.connectionState === 'error' ||
+        (serverStatus.connectionState === 'connected' && hasAuthConfig);
+
+      if (!wouldShowButton) {
+        return; // Don't open dialog if no button would be shown
+      }
+
+      // Create tool object if it doesn't exist
+      const configTool = tool || {
+        name: serverName,
+        pluginKey: `${Constants.mcp_prefix}${serverName}`,
+        authConfig: serverConfig?.customUserVars
+          ? Object.entries(serverConfig.customUserVars).map(([key, config]) => ({
+              authField: key,
+              label: config.title,
+              description: config.description,
+            }))
+          : [],
+        authenticated: false,
+      };
+
+      // Open the config dialog on error
+      setSelectedToolForConfig(configTool);
+      setIsConfigModalOpen(true);
     },
   });
 
@@ -115,23 +167,34 @@ function MCPSelect() {
     }
   }, [selectedToolForConfig, handleConfigRevoke]);
 
-  // Get connection status for all MCP servers
-  const { data: connectionStatusData } = useMCPConnectionStatusQuery();
-  const connectionStatus = useMemo(
-    () => connectionStatusData?.connectionStatus || {},
-    [connectionStatusData?.connectionStatus],
-  );
+  // Get connection status for all MCP servers (now from hook)
+  // Remove the duplicate useMCPConnectionStatusQuery since it's in the hook
 
-  // Create a filtered setValue function that only allows connected servers
+  // Modified setValue function that attempts to initialize disconnected servers
   const filteredSetMCPValues = useCallback(
     (values: string[]) => {
-      const filteredValues = values.filter((serverName) => {
+      // Separate connected and disconnected servers
+      const connectedServers: string[] = [];
+      const disconnectedServers: string[] = [];
+
+      values.forEach((serverName) => {
         const serverStatus = connectionStatus[serverName];
-        return serverStatus?.connectionState === 'connected';
+        if (serverStatus?.connectionState === 'connected') {
+          connectedServers.push(serverName);
+        } else {
+          disconnectedServers.push(serverName);
+        }
       });
-      setMCPValues(filteredValues);
+
+      // Only set connected servers as selected values
+      setMCPValues(connectedServers);
+
+      // Attempt to initialize each disconnected server (once)
+      disconnectedServers.forEach((serverName) => {
+        initializeServer(serverName);
+      });
     },
-    [connectionStatus, setMCPValues],
+    [connectionStatus, setMCPValues, initializeServer],
   );
 
   const renderItemContent = useCallback(
@@ -171,6 +234,18 @@ function MCPSelect() {
 
       // Determine which icon to show based on connection state and auth config
       const getStatusIcon = () => {
+        // Check if server is currently initializing
+        if (isInitializing(serverName)) {
+          return (
+            <div className="flex h-6 w-6 items-center justify-center rounded p-1">
+              <Loader2
+                className="h-4 w-4 animate-spin text-blue-500"
+                aria-label={localize('com_nav_mcp_status_connecting', { 0: serverName })}
+              />
+            </div>
+          );
+        }
+
         if (!serverStatus) {
           return null; // No status info available
         }
@@ -180,10 +255,12 @@ function MCPSelect() {
         // For connecting state, just show loading - not clickable
         if (connectionState === 'connecting') {
           return (
-            <Loader2
-              className="h-4 w-4 animate-spin text-blue-500"
-              aria-label={localize('com_nav_mcp_status_connecting', { 0: serverName })}
-            />
+            <div className="flex h-6 w-6 items-center justify-center rounded p-1">
+              <Loader2
+                className="h-4 w-4 animate-spin text-blue-500"
+                aria-label={localize('com_nav_mcp_status_connecting', { 0: serverName })}
+              />
+            </div>
           );
         }
 
@@ -240,9 +317,7 @@ function MCPSelect() {
       // Common wrapper for the main content (check mark + text)
       // Ensures Check & Text are adjacent and the group takes available space.
       const mainContentWrapper = (
-        <div className={`flex flex-grow items-center ${!isConnected ? 'opacity-50' : ''}`}>
-          {defaultContent}
-        </div>
+        <div className="flex flex-grow items-center">{defaultContent}</div>
       );
 
       const statusIcon = getStatusIcon();
@@ -274,7 +349,7 @@ function MCPSelect() {
       // For items without a settings icon, return the consistently wrapped main content.
       return mainContentWrapper;
     },
-    [mcpToolDetails, connectionStatus, startupConfig?.mcpServers, localize],
+    [mcpToolDetails, connectionStatus, startupConfig?.mcpServers, localize, isInitializing],
   );
 
   // Don't render if no servers are selected and not pinned
