@@ -1111,4 +1111,7 @@ ${logPrefix} Flow ID: ${newFlowId}
       return null;
     }
   }
+  public getUserConnections(userId: string) {
+    return this.userConnections.get(userId);
+  }
 }

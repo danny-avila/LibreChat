@@ -307,4 +307,52 @@ router.post('/:serverName/reinitialize', requireJwtAuth, async (req, res) => {
   }
 });
 
+/**
+ * Get connection status for all MCP servers
+ * This endpoint returns the actual connection status from MCPManager without disconnecting idle connections
+ */
+router.get('/connection/status', requireJwtAuth, async (req, res) => {
+  try {
+    const user = req.user;
+
+    if (!user?.id) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+
+    const mcpManager = getMCPManager(user.id);
+    const connectionStatus = {};
+
+    const config = await loadCustomConfig();
+    const mcpConfig = config?.mcpServers;
+
+    const appConnections = mcpManager.getConnections();
+    const userConnections = mcpManager.getUserConnections(user.id);
+
+    if (!mcpConfig) {
+      return res.status(404).json({ error: 'MCP config not found' });
+    }
+
+    for (const [serverName, config] of Object.entries(mcpConfig)) {
+      const getConnectionState = (serverName) =>
+        appConnections[serverName]?.connectionState ??
+        userConnections[serverName]?.connectionState ??
+        'disconnected';
+
+      connectionStatus[serverName] = {
+        hasAuthConfig: config.customUserVars && Object.keys(config.customUserVars).length > 0,
+        requiresOAuth: req.app.locals.mcpOAuthRequirements?.[serverName] || false,
+        connectionState: getConnectionState(serverName),
+      };
+    }
+
+    res.json({
+      success: true,
+      connectionStatus,
+    });
+  } catch (error) {
+    logger.error('[MCP Connection Status] Failed to get connection status', error);
+    res.status(500).json({ error: 'Failed to get connection status' });
+  }
+});
+
 module.exports = router;
