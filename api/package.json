@@ -17,6 +17,8 @@
     "delete-user": "node ../config/delete-user.js",
     "export-user-chats": "node ../config/export-user-chats.js",
     "export-all-chats": "node ../config/export-all-chats.js",
+    "upload-to-sheets": "node ../config/upload-to-sheets.js",
+    "sync-chats-to-sheets": "npm run export-all-chats && npm run upload-to-sheets",
     "show-export-commands": "node ../config/show-export-commands.js"
   },
   "repository": {
@@ -62,6 +64,7 @@
     "cookie": "^0.7.2",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
+    "csv-parser": "^3.0.0",
     "dedent": "^1.5.3",
     "dotenv": "^16.0.3",
     "eventsource": "^3.0.2",

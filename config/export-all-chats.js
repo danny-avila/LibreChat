@@ -69,7 +69,8 @@ function cleanTextForCSV(text) {
     // Determinar archivo de salida
     if (!outputFile) {
       const timestamp = new Date().toISOString().slice(0, 10);
-      outputFile = `todas_conversaciones_${timestamp}.${format}`;
+      // ✅ Si no hay outputFile, usar 'chats.csv' para CSV o el nombre con timestamp para JSON
+      outputFile = format === 'csv' ? 'chats.csv' : `todas_conversaciones_${timestamp}.${format}`;
     }
 
     console.orange('📝 Generando exportación...');
