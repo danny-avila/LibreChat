@@ -141,8 +141,9 @@ const initializeClient = async ({ req, res, endpointOption, optionsOnly, overrid
       const options = getOpenAIConfig(apiKey, clientOptions, endpoint);
       if (options != null) {
         options.useLegacyContent = true;
+        options.endpointTokenConfig = endpointTokenConfig;
       }
-      if (!customOptions.streamRate) {
+      if (!clientOptions.streamRate) {
         return options;
       }
       options.llmConfig.callbacks = [
