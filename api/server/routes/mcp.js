@@ -330,7 +330,7 @@ router.post('/:serverName/reinitialize', requireJwtAuth, async (req, res) => {
           createToken,
           deleteTokens,
         },
-        returnOnOAuthInitiated: true, // Return immediately when OAuth is initiated
+        returnOnOAuth: true, // Return immediately when OAuth is initiated
         // Add OAuth handlers to capture the OAuth URL when needed
         oauthStart: async (authURL) => {
           logger.info(`[MCP Reinitialize] OAuth URL received: ${authURL}`);

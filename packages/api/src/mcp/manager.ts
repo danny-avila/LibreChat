@@ -372,7 +372,7 @@ export class MCPManager {
     oauthStart,
     oauthEnd,
     signal,
-    returnOnOAuthInitiated = false,
+    returnOnOAuth = false,
   }: {
     user: TUser;
     serverName: string;
@@ -382,7 +382,7 @@ export class MCPManager {
     oauthStart?: (authURL: string) => Promise<void>;
     oauthEnd?: () => Promise<void>;
     signal?: AbortSignal;
-    returnOnOAuthInitiated?: boolean;
+    returnOnOAuth?: boolean;
   }): Promise<MCPConnection> {
     const userId = user.id;
     if (!userId) {
@@ -495,7 +495,7 @@ export class MCPManager {
       logger.info(`[MCP][User: ${userId}][${serverName}] oauthRequired event received`);
 
       // If we just want to initiate OAuth and return, handle it differently
-      if (returnOnOAuthInitiated) {
+      if (returnOnOAuth) {
         try {
           const config = this.mcpConfigs[serverName];
           const { authorizationUrl, flowId, flowMetadata } =
