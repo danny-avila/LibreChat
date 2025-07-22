@@ -1,9 +1,10 @@
-import React, { memo, useCallback, useState } from 'react';
-import { SettingsIcon } from 'lucide-react';
 import { Constants } from 'librechat-data-provider';
+import React, { memo, useCallback, useState, useMemo } from 'react';
 import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
+import { SettingsIcon, AlertTriangle, Loader2, KeyRound, PlugZap } from 'lucide-react';
 import type { TUpdateUserPlugins, TPlugin } from 'librechat-data-provider';
 import MCPConfigDialog, { type ConfigFieldDetail } from '~/components/ui/MCPConfigDialog';
+import { useMCPConnectionStatusQuery } from '~/data-provider/Tools/queries';
 import { useToastContext, useBadgeRowContext } from '~/Providers';
 import MultiSelect from '~/components/ui/MultiSelect';
 import { MCPIcon } from '~/components/svg';
@@ -18,7 +19,12 @@ function MCPSelect() {
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const { mcpSelect, startupConfig } = useBadgeRowContext();
-  const { mcpValues, setMCPValues, mcpServerNames, mcpToolDetails, isPinned } = mcpSelect;
+  const { mcpValues, setMCPValues, mcpToolDetails, isPinned } = mcpSelect;
+
+  // Get all configured MCP servers from config
+  const configuredServers = useMemo(() => {
+    return Object.keys(startupConfig?.mcpServers || {});
+  }, [startupConfig?.mcpServers]);
 
   const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
   const [selectedToolForConfig, setSelectedToolForConfig] = useState<TPlugin | null>(null);
@@ -82,10 +88,107 @@ function MCPSelect() {
     [selectedToolForConfig, updateUserPluginsMutation],
   );
 
+  // Get connection status for all MCP servers
+  const { data: connectionStatusData } = useMCPConnectionStatusQuery();
+  const connectionStatus = useMemo(
+    () => connectionStatusData?.connectionStatus || {},
+    [connectionStatusData?.connectionStatus],
+  );
+
   const renderItemContent = useCallback(
     (serverName: string, defaultContent: React.ReactNode) => {
       const tool = mcpToolDetails?.find((t) => t.name === serverName);
-      const hasAuthConfig = tool?.authConfig && tool.authConfig.length > 0;
+      const serverStatus = connectionStatus[serverName];
+      const serverConfig = startupConfig?.mcpServers?.[serverName];
+
+      // Check for auth config from either tool details or server config
+      const hasAuthConfig =
+        (tool?.authConfig && tool.authConfig.length > 0) ||
+        (serverConfig?.customUserVars && Object.keys(serverConfig.customUserVars).length > 0);
+
+      // Handle click for opening config dialog
+      const handleConfigClick = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        e.preventDefault();
+        // Create tool object if it doesn't exist
+        const configTool = tool || {
+          name: serverName,
+          pluginKey: `${Constants.mcp_prefix}${serverName}`,
+          authConfig: serverConfig?.customUserVars
+            ? Object.entries(serverConfig.customUserVars).map(([key, config]) => ({
+                authField: key,
+                label: config.title,
+                description: config.description,
+              }))
+            : [],
+          authenticated: false,
+        };
+        setSelectedToolForConfig(configTool);
+        setIsConfigModalOpen(true);
+      };
+
+      // Determine which icon to show based on connection state and auth config
+      const getStatusIcon = () => {
+        if (!serverStatus) {
+          return null; // No status info available
+        }
+
+        const { connectionState, requiresOAuth } = serverStatus;
+
+        // For connecting state, just show loading - not clickable
+        if (connectionState === 'connecting') {
+          return (
+            <Loader2
+              className="h-4 w-4 animate-spin text-blue-500"
+              aria-label={`${serverName} - Connecting`}
+            />
+          );
+        }
+
+        // All other states should be clickable buttons
+        let IconComponent, className, label;
+
+        if (connectionState === 'disconnected') {
+          if (requiresOAuth) {
+            IconComponent = KeyRound;
+            className = 'h-4 w-4 text-amber-500';
+            label = `${serverName} - Disconnected (OAuth Required)`;
+          } else {
+            IconComponent = PlugZap;
+            className = 'h-4 w-4 text-orange-500';
+            label = `${serverName} - Disconnected`;
+          }
+        } else if (connectionState === 'error') {
+          IconComponent = AlertTriangle;
+          className = 'h-4 w-4 text-red-500';
+          label = `${serverName} - Error`;
+        } else if (connectionState === 'connected') {
+          if (hasAuthConfig) {
+            IconComponent = SettingsIcon;
+            className = `h-4 w-4 ${tool?.authenticated ? 'text-green-500' : 'text-gray-400'}`;
+            label = `${serverName} - ${tool?.authenticated ? 'Authenticated' : 'Not Authenticated'}`;
+          } else {
+            // Connected but no auth config - no icon
+            return null;
+          }
+        }
+
+        // Return clickable button for all states except connecting
+        if (IconComponent) {
+          return (
+            <button
+              type="button"
+              onClick={handleConfigClick}
+              className="flex h-6 w-6 items-center justify-center rounded p-1 hover:bg-surface-secondary"
+              aria-label={`Configure ${serverName} - ${label}`}
+            >
+              <IconComponent className={className} />
+            </button>
+          );
+        }
+
+        return null;
+      };
 
       // Common wrapper for the main content (check mark + text)
       // Ensures Check & Text are adjacent and the group takes available space.
@@ -93,30 +196,42 @@ function MCPSelect() {
         <div className="flex flex-grow items-center">{defaultContent}</div>
       );
 
-      if (tool && hasAuthConfig) {
+      const statusIcon = getStatusIcon();
+
+      // Show status icon if available, or settings button for connected servers with auth config
+      if (statusIcon || (hasAuthConfig && serverStatus?.connectionState === 'connected')) {
         return (
           <div className="flex w-full items-center justify-between">
             {mainContentWrapper}
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                e.preventDefault();
-                setSelectedToolForConfig(tool);
-                setIsConfigModalOpen(true);
-              }}
-              className="ml-2 flex h-6 w-6 items-center justify-center rounded p-1 hover:bg-surface-secondary"
-              aria-label={`Configure ${serverName}`}
-            >
-              <SettingsIcon className={`h-4 w-4 ${tool.authenticated ? 'text-green-500' : ''}`} />
-            </button>
+            <div className="ml-2 flex items-center">
+              {/* Show status icon (which includes clickable config buttons) */}
+              {statusIcon ||
+                (hasAuthConfig && serverStatus?.connectionState === 'connected' && (
+                  <button
+                    type="button"
+                    onClick={handleConfigClick}
+                    className="flex h-6 w-6 items-center justify-center rounded p-1 hover:bg-surface-secondary"
+                    aria-label={`Configure ${serverName}`}
+                  >
+                    <SettingsIcon
+                      className={`h-4 w-4 ${tool?.authenticated ? 'text-green-500' : 'text-gray-400'}`}
+                    />
+                  </button>
+                ))}
+            </div>
           </div>
         );
       }
       // For items without a settings icon, return the consistently wrapped main content.
       return mainContentWrapper;
     },
-    [mcpToolDetails, setSelectedToolForConfig, setIsConfigModalOpen],
+    [
+      mcpToolDetails,
+      connectionStatus,
+      startupConfig,
+      setSelectedToolForConfig,
+      setIsConfigModalOpen,
+    ],
   );
 
   // Don't render if no servers are selected and not pinned
@@ -124,7 +239,8 @@ function MCPSelect() {
     return null;
   }
 
-  if (!mcpToolDetails || mcpToolDetails.length === 0) {
+  // Don't render if no MCP servers are configured
+  if (!configuredServers || configuredServers.length === 0) {
     return null;
   }
 
@@ -133,7 +249,7 @@ function MCPSelect() {
   return (
     <>
       <MultiSelect
-        items={mcpServerNames}
+        items={configuredServers}
         selectedValues={mcpValues ?? []}
         setSelectedValues={setMCPValues}
         defaultSelectedValues={mcpValues ?? []}
