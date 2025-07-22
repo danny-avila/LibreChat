@@ -1100,5 +1100,7 @@
   "com_ui_mcp_update_var": "Update {{0}}",
   "com_ui_set": "Set",
   "com_ui_unset": "Unset",
+  "com_ui_connecting": "Connecting",
+  "com_ui_offline": "Offline",
   "com_ui_active": "Active"
 }
