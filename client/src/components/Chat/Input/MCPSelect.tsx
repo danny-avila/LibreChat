@@ -1,19 +1,15 @@
-import { Constants } from 'librechat-data-provider';
+import { useQueryClient } from '@tanstack/react-query';
+import { Constants, QueryKeys } from 'librechat-data-provider';
 import React, { memo, useCallback, useState, useMemo } from 'react';
 import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
 import { SettingsIcon, AlertTriangle, Loader2, KeyRound, PlugZap } from 'lucide-react';
 import type { TUpdateUserPlugins, TPlugin } from 'librechat-data-provider';
-import MCPConfigDialog, { type ConfigFieldDetail } from '~/components/ui/MCP/MCPConfigDialog';
+import MCPConfigDialog, { ConfigFieldDetail } from '~/components/ui/MCP/MCPConfigDialog';
 import { useMCPConnectionStatusQuery } from '~/data-provider/Tools/queries';
 import { useToastContext, useBadgeRowContext } from '~/Providers';
 import MultiSelect from '~/components/ui/MultiSelect';
 import { MCPIcon } from '~/components/svg';
 import { useLocalize } from '~/hooks';
-
-const getBaseMCPPluginKey = (fullPluginKey: string): string => {
-  const parts = fullPluginKey.split(Constants.mcp_delimiter);
-  return Constants.mcp_prefix + parts[parts.length - 1];
-};
 
 function MCPSelect() {
   const localize = useLocalize();
@@ -29,10 +25,20 @@ function MCPSelect() {
   const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
   const [selectedToolForConfig, setSelectedToolForConfig] = useState<TPlugin | null>(null);
 
+  const queryClient = useQueryClient();
+
   const updateUserPluginsMutation = useUpdateUserPluginsMutation({
-    onSuccess: () => {
-      setIsConfigModalOpen(false);
+    onSuccess: async () => {
       showToast({ message: localize('com_nav_mcp_vars_updated'), status: 'success' });
+
+      // tools so we dont leave tools available for use in chat if we revoke and thus kill mcp server
+      // auth values so customUserVars flags are updated in customUserVarsSection
+      // connection status so connection indicators are updated in the dropdown
+      await Promise.all([
+        queryClient.refetchQueries([QueryKeys.tools]),
+        queryClient.refetchQueries([QueryKeys.mcpAuthValues]),
+        queryClient.refetchQueries([QueryKeys.mcpConnectionStatus]),
+      ]);
     },
     onError: (error: unknown) => {
       console.error('Error updating MCP auth:', error);
@@ -59,10 +65,12 @@ function MCPSelect() {
   const handleConfigSave = useCallback(
     (targetName: string, authData: Record<string, string>) => {
       if (selectedToolForConfig && selectedToolForConfig.name === targetName) {
-        const basePluginKey = getBaseMCPPluginKey(selectedToolForConfig.pluginKey);
-
+        // Use the pluginKey directly since it's already in the correct format
+        console.log(
+          `[MCP Select] Saving config for ${targetName}, pluginKey: ${`${Constants.mcp_prefix}${targetName}`}`,
+        );
         const payload: TUpdateUserPlugins = {
-          pluginKey: basePluginKey,
+          pluginKey: `${Constants.mcp_prefix}${targetName}`,
           action: 'install',
           auth: authData,
         };
@@ -75,18 +83,37 @@ function MCPSelect() {
   const handleConfigRevoke = useCallback(
     (targetName: string) => {
       if (selectedToolForConfig && selectedToolForConfig.name === targetName) {
-        const basePluginKey = getBaseMCPPluginKey(selectedToolForConfig.pluginKey);
-
+        // Use the pluginKey directly since it's already in the correct format
         const payload: TUpdateUserPlugins = {
-          pluginKey: basePluginKey,
+          pluginKey: `${Constants.mcp_prefix}${targetName}`,
           action: 'uninstall',
           auth: {},
         };
         updateUserPluginsMutation.mutate(payload);
+
+        // Remove the server from selected values after revoke
+        const currentValues = mcpValues ?? [];
+        const filteredValues = currentValues.filter((name) => name !== targetName);
+        setMCPValues(filteredValues);
       }
     },
-    [selectedToolForConfig, updateUserPluginsMutation],
+    [selectedToolForConfig, updateUserPluginsMutation, mcpValues, setMCPValues],
   );
+
+  const handleSave = useCallback(
+    (authData: Record<string, string>) => {
+      if (selectedToolForConfig) {
+        handleConfigSave(selectedToolForConfig.name, authData);
+      }
+    },
+    [selectedToolForConfig, handleConfigSave],
+  );
+
+  const handleRevoke = useCallback(() => {
+    if (selectedToolForConfig) {
+      handleConfigRevoke(selectedToolForConfig.name);
+    }
+  }, [selectedToolForConfig, handleConfigRevoke]);
 
   // Get connection status for all MCP servers
   const { data: connectionStatusData } = useMCPConnectionStatusQuery();
@@ -277,9 +304,11 @@ function MCPSelect() {
       />
       {selectedToolForConfig && (
         <MCPConfigDialog
+          serverName={selectedToolForConfig.name}
+          serverStatus={connectionStatus[selectedToolForConfig.name]}
+          authConfig={selectedToolForConfig.authConfig}
           isOpen={isConfigModalOpen}
           onOpenChange={setIsConfigModalOpen}
-          serverName={selectedToolForConfig.name}
           fieldsSchema={(() => {
             const schema: Record<string, ConfigFieldDetail> = {};
             if (selectedToolForConfig?.authConfig) {
@@ -302,16 +331,8 @@ function MCPSelect() {
             }
             return initial;
           })()}
-          onSave={(authData) => {
-            if (selectedToolForConfig) {
-              handleConfigSave(selectedToolForConfig.name, authData);
-            }
-          }}
-          onRevoke={() => {
-            if (selectedToolForConfig) {
-              handleConfigRevoke(selectedToolForConfig.name);
-            }
-          }}
+          onSave={handleSave}
+          onRevoke={handleRevoke}
           isSubmitting={updateUserPluginsMutation.isLoading}
         />
       )}
