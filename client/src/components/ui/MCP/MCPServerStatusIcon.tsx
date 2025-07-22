@@ -23,6 +23,7 @@ interface MCPServerStatusIconProps {
   isInitializing: boolean;
   canCancel: boolean;
   onCancel: (e: React.MouseEvent) => void;
+  hasCustomUserVars?: boolean;
 }
 
 /**
@@ -36,6 +37,7 @@ export default function MCPServerStatusIcon({
   isInitializing,
   canCancel,
   onCancel,
+  hasCustomUserVars = false,
 }: MCPServerStatusIconProps) {
   localize = useLocalize();
   if (isInitializing) {
@@ -71,14 +73,18 @@ export default function MCPServerStatusIcon({
   }
 
   if (connectionState === 'connected') {
-    const isAuthenticated = tool?.authenticated || requiresOAuth;
-    return (
-      <AuthenticatedStatusIcon
-        serverName={serverName}
-        onConfigClick={onConfigClick}
-        isAuthenticated={isAuthenticated}
-      />
-    );
+    // Only show config button if there are customUserVars to configure
+    if (hasCustomUserVars) {
+      const isAuthenticated = tool?.authenticated || requiresOAuth;
+      return (
+        <AuthenticatedStatusIcon
+          serverName={serverName}
+          onConfigClick={onConfigClick}
+          isAuthenticated={isAuthenticated}
+        />
+      );
+    }
+    return null; // No config button for connected servers without customUserVars
   }
 
   return null;

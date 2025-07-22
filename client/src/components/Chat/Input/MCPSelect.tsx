@@ -262,6 +262,10 @@ function MCPSelect() {
         </button>
       );
 
+      // Check if this server has customUserVars to configure
+      const hasCustomUserVars =
+        serverConfig?.customUserVars && Object.keys(serverConfig.customUserVars).length > 0;
+
       const statusIcon = (
         <MCPServerStatusIcon
           serverName={serverName}
@@ -271,6 +275,7 @@ function MCPSelect() {
           isInitializing={isInitializing(serverName)}
           canCancel={isCancellable(serverName)}
           onCancel={handleCancelClick}
+          hasCustomUserVars={hasCustomUserVars}
         />
       );
 
