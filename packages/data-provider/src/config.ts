@@ -517,6 +517,7 @@ export const intefaceSchema = z
     temporaryChatRetention: z.number().min(1).max(8760).optional(),
     runCode: z.boolean().optional(),
     webSearch: z.boolean().optional(),
+    fileSearch: z.boolean().optional(),
   })
   .default({
     endpointsMenu: true,
@@ -532,6 +533,7 @@ export const intefaceSchema = z
     temporaryChat: true,
     runCode: true,
     webSearch: true,
+    fileSearch: true,
   });
 
 export type TInterfaceConfig = z.infer<typeof intefaceSchema>;
