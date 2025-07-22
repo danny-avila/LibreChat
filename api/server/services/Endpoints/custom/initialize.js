@@ -28,7 +28,10 @@ const initializeClient = async ({ req, res, endpointOption, optionsOnly, overrid
   const CUSTOM_API_KEY = extractEnvVariable(endpointConfig.apiKey);
   const CUSTOM_BASE_URL = extractEnvVariable(endpointConfig.baseURL);
 
-  let resolvedHeaders = resolveHeaders(endpointConfig.headers, req.user);
+  const customUserVars = {};
+  customUserVars.LIBRECHAT_CONVERSATION_ID = req.body.conversationId;
+
+  let resolvedHeaders = resolveHeaders(endpointConfig.headers, req.user, customUserVars);
 
   if (CUSTOM_API_KEY.match(envVarRegex)) {
     throw new Error(`Missing API Key for ${endpoint}.`);
