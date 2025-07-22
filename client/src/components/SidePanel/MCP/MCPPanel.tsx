@@ -1,26 +1,46 @@
-import { Constants } from 'librechat-data-provider';
 import { ChevronLeft } from 'lucide-react';
-import React, { useState, useMemo } from 'react';
-import { Button } from '~/components/ui';
-import { useGetStartupConfig } from '~/data-provider';
-import { useMCPConnectionStatusQuery } from '~/data-provider/Tools/queries';
-import CustomUserVarsSection from '~/components/ui/MCP/CustomUserVarsSection';
+import { useQueryClient } from '@tanstack/react-query';
+import React, { useState, useMemo, useCallback } from 'react';
+import { Constants, QueryKeys } from 'librechat-data-provider';
+import type { TUpdateUserPlugins } from 'librechat-data-provider';
+import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
 import ServerInitializationSection from '~/components/ui/MCP/ServerInitializationSection';
+import CustomUserVarsSection from '~/components/ui/MCP/CustomUserVarsSection';
+import { useMCPConnectionStatusQuery } from '~/data-provider/Tools/queries';
+import { useGetStartupConfig } from '~/data-provider';
 import MCPPanelSkeleton from './MCPPanelSkeleton';
+import { useToastContext } from '~/Providers';
+import { Button } from '~/components/ui';
 import { useLocalize } from '~/hooks';
 
 export default function MCPPanel() {
   const localize = useLocalize();
+  const { showToast } = useToastContext();
+  const queryClient = useQueryClient();
   const { data: startupConfig, isLoading: startupConfigLoading } = useGetStartupConfig();
   const { data: connectionStatusData } = useMCPConnectionStatusQuery();
   const [selectedServerNameForEditing, setSelectedServerNameForEditing] = useState<string | null>(
     null,
   );
 
-  // Get all configured MCP servers (same as MCPSelect)
-  const configuredServers = useMemo(() => {
-    return Object.keys(startupConfig?.mcpServers || {});
-  }, [startupConfig?.mcpServers]);
+  const updateUserPluginsMutation = useUpdateUserPluginsMutation({
+    onSuccess: async () => {
+      showToast({ message: localize('com_nav_mcp_vars_updated'), status: 'success' });
+
+      await Promise.all([
+        queryClient.refetchQueries([QueryKeys.tools]),
+        queryClient.refetchQueries([QueryKeys.mcpAuthValues]),
+        queryClient.refetchQueries([QueryKeys.mcpConnectionStatus]),
+      ]);
+    },
+    onError: (error: unknown) => {
+      console.error('Error updating MCP auth:', error);
+      showToast({
+        message: localize('com_nav_mcp_vars_update_error'),
+        status: 'error',
+      });
+    },
+  });
 
   const mcpServerDefinitions = useMemo(() => {
     if (!startupConfig?.mcpServers) {
@@ -49,6 +69,33 @@ export default function MCPPanel() {
     setSelectedServerNameForEditing(null);
   };
 
+  const handleConfigSave = useCallback(
+    (targetName: string, authData: Record<string, string>) => {
+      console.log(
+        `[MCP Panel] Saving config for ${targetName}, pluginKey: ${`${Constants.mcp_prefix}${targetName}`}`,
+      );
+      const payload: TUpdateUserPlugins = {
+        pluginKey: `${Constants.mcp_prefix}${targetName}`,
+        action: 'install',
+        auth: authData,
+      };
+      updateUserPluginsMutation.mutate(payload);
+    },
+    [updateUserPluginsMutation],
+  );
+
+  const handleConfigRevoke = useCallback(
+    (targetName: string) => {
+      const payload: TUpdateUserPlugins = {
+        pluginKey: `${Constants.mcp_prefix}${targetName}`,
+        action: 'uninstall',
+        auth: {},
+      };
+      updateUserPluginsMutation.mutate(payload);
+    },
+    [updateUserPluginsMutation],
+  );
+
   if (startupConfigLoading) {
     return <MCPPanelSkeleton />;
   }
@@ -62,7 +109,7 @@ export default function MCPPanel() {
   }
 
   if (selectedServerNameForEditing) {
-    // Editing View - Modern Components
+    // Editing View
     const serverBeingEdited = mcpServerDefinitions.find(
       (s) => s.serverName === selectedServerNameForEditing,
     );
@@ -107,18 +154,21 @@ export default function MCPPanel() {
           serverName={selectedServerNameForEditing}
           fields={serverBeingEdited.config.customUserVars}
           onSave={(authData) => {
-            // This will be handled by the CustomUserVarsSection component internally
-            console.log('Auth data saved:', authData);
+            if (selectedServerNameForEditing) {
+              handleConfigSave(selectedServerNameForEditing, authData);
+            }
           }}
           onRevoke={() => {
-            // This will be handled by the CustomUserVarsSection component internally
-            console.log('Auth data revoked for server:', selectedServerNameForEditing);
+            if (selectedServerNameForEditing) {
+              handleConfigRevoke(selectedServerNameForEditing);
+            }
           }}
+          isSubmitting={updateUserPluginsMutation.isLoading}
         />
       </div>
     );
   } else {
-    // Server List View - Clean and Modern
+    // Server List View
     return (
       <div className="h-auto max-w-full overflow-x-hidden p-3">
         <div className="space-y-2">
