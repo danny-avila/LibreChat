@@ -451,7 +451,7 @@
   "com_nav_mcp_status_disconnected_oauth": "{{0}} - Disconnected (OAuth Required)",
   "com_nav_mcp_status_error": "{{0}} - Error",
   "com_nav_mcp_status_authenticated": "{{0}} - Authenticated",
-  "com_nav_mcp_status_not_authenticated": "{{0}} - Not Authenticated",
+  "com_nav_mcp_status_not_authenticated": "{{0}} - Not Authenticated", 
   "com_nav_mcp_configure_server": "Configure {{0}}",
   "com_nav_modular_chat": "Enable switching Endpoints mid-conversation",
   "com_nav_my_files": "My Files",
@@ -1096,5 +1096,8 @@
   "com_ui_x_selected": "{{0}} selected",
   "com_ui_yes": "Yes",
   "com_ui_zoom": "Zoom",
-  "com_user_message": "You"
+  "com_user_message": "You",
+  "com_ui_mcp_update_var": "Update {{0}}",
+  "com_ui_set": "Set",
+  "com_ui_unset": "Unset"
 }
