@@ -1,4 +1,4 @@
-import { AgentCapabilities, ArtifactModes } from 'librechat-data-provider';
+import { AgentCapabilities, ArtifactModes, ChartModes } from 'librechat-data-provider';
 import type { Agent, AgentProvider, AgentModelParameters } from 'librechat-data-provider';
 import type { OptionWithIcon, ExtendedFile } from './types';
 
@@ -29,5 +29,6 @@ export type AgentForm = {
   provider?: AgentProvider | OptionWithIcon;
   agent_ids?: string[];
   [AgentCapabilities.artifacts]?: ArtifactModes | string;
+  [AgentCapabilities.charts]?: ChartModes | string;
   recursion_limit?: number;
 } & TAgentCapabilities;

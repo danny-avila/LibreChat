@@ -343,6 +343,7 @@
   "com_nav_hide_panel": "Masquer le panneau latéral le plus à droite",
   "com_nav_info_code_artifacts": "Active l'affichage des artéfacts de code expérimentaux à côté du chat",
   "com_nav_info_code_artifacts_agent": "Active l'utilisation d'artefacts de code pour cet agent. Par défaut, des instructions supplémentaires spécifiques à l'utilisation des artefacts sont ajoutées, à moins que le \"Mode d'invite personnalisé\" ne soit activé.",
+  "com_nav_info_code_charts_agent": "Active la visualisation des données pour cet agent via des graphiques tels que des graphiques en barres, en lignes et d'autres types. Permet des représentations visuelles interactives dans les réponses.",
   "com_nav_info_custom_prompt_mode": "Lorsqu'activé, le prompt système par défaut pour les artéfacts ne sera pas inclus. Toutes les instructions de génération d'artéfacts doivent être fournies manuellement dans ce mode.",
   "com_nav_info_enter_to_send": "Lorsqu'activée, appuyez sur la touche ENTRÉE pour envoyer votre message. Lorsque désactivée, appuyez sur Entrée ajoutera une nouvelle ligne, et vous devrez appuyer sur CTRL + ENTRÉE pour envoyer votre message.",
   "com_nav_info_fork_change_default": "Messages visibles uniquement, inclut uniquement le chemin direct vers le message sélectionné. Inclure les branches liées, ajoute des branches tout au long du chemin. Inclure tous depuis/jusque là, inclut tous les messages et branches connectés.",

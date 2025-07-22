@@ -336,6 +336,7 @@
   "com_nav_hide_panel": "Ocultar el panel lateral derecho",
   "com_nav_info_code_artifacts": "Permite mostrar artefactos de código experimentales junto al chat",
   "com_nav_info_code_artifacts_agent": "Habilita el uso de artefactos de código para este agente. De forma predeterminada, instrucciones adicionales específicas para el uso de artefactos son añadidas, a menos que \"Modo personalizado de Prompt\" esté habilitado.",
+  "com_nav_info_code_charts_agent": "Permite la visualización de datos para este agente mediante gráficos como de barras, líneas y otros tipos. Facilita representaciones visuales interactivas en las respuestas.",
   "com_nav_info_custom_prompt_mode": "Cuando está habilitado, no se incluirá el mensaje del sistema predeterminado para artefactos. En este modo, todas las instrucciones para generar artefactos deberán proporcionarse manualmente.",
   "com_nav_info_enter_to_send": "Cuando está habilitado, al presionar `ENTER` se enviará su mensaje. Cuando está deshabilitado, al presionar Enter se agregará una nueva línea, y necesitará presionar `CTRL + ENTER` / `⌘ + ENTER` para enviar su mensaje.",
   "com_nav_info_fork_change_default": "\"Mostrar únicamente mensajes visibles\" incluye solo la ruta directa hacia el mensaje seleccionado. \"Incluir ramas relacionadas\" añade las ramificaciones a lo largo de la ruta. \"Incluir todo desde/hacia aquí\" incluye todos los mensajes y ramificaciones conectados.",
