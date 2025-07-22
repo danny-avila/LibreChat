@@ -3,7 +3,7 @@ import React, { memo, useCallback, useState, useMemo } from 'react';
 import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
 import { SettingsIcon, AlertTriangle, Loader2, KeyRound, PlugZap } from 'lucide-react';
 import type { TUpdateUserPlugins, TPlugin } from 'librechat-data-provider';
-import MCPConfigDialog, { type ConfigFieldDetail } from '~/components/ui/MCPConfigDialog';
+import MCPConfigDialog, { type ConfigFieldDetail } from '~/components/ui/MCP/MCPConfigDialog';
 import { useMCPConnectionStatusQuery } from '~/data-provider/Tools/queries';
 import { useToastContext, useBadgeRowContext } from '~/Providers';
 import MultiSelect from '~/components/ui/MultiSelect';
