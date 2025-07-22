@@ -1,7 +1,10 @@
 import { useCallback, useState, useEffect, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { QueryKeys } from 'librechat-data-provider';
-import { useReinitializeMCPServerMutation } from 'librechat-data-provider/react-query';
+import {
+  useReinitializeMCPServerMutation,
+  useCancelMCPOAuthMutation,
+} from 'librechat-data-provider/react-query';
 import { useMCPConnectionStatusQuery } from '~/data-provider/Tools/queries';
 import { useToastContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
@@ -22,6 +25,7 @@ export function useMCPServerInitialization(options?: UseMCPServerInitializationO
   const [oauthPollingServers, setOauthPollingServers] = useState<Map<string, string>>(new Map());
   const [oauthStartTimes, setOauthStartTimes] = useState<Map<string, number>>(new Map());
   const [initializingServers, setInitializingServers] = useState<Set<string>>(new Set());
+  const [cancellableServers, setCancellableServers] = useState<Set<string>>(new Set());
 
   // Get connection status
   const { data: connectionStatusData } = useMCPConnectionStatusQuery();
@@ -32,6 +36,59 @@ export function useMCPServerInitialization(options?: UseMCPServerInitializationO
 
   // Main initialization mutation
   const reinitializeMutation = useReinitializeMCPServerMutation();
+
+  // Cancel OAuth mutation
+  const cancelOAuthMutation = useCancelMCPOAuthMutation();
+
+  // Helper function to clean up OAuth state
+  const cleanupOAuthState = useCallback((serverName: string) => {
+    setOauthPollingServers((prev) => {
+      const newMap = new Map(prev);
+      newMap.delete(serverName);
+      return newMap;
+    });
+
+    setOauthStartTimes((prev) => {
+      const newMap = new Map(prev);
+      newMap.delete(serverName);
+      return newMap;
+    });
+
+    setInitializingServers((prev) => {
+      const newSet = new Set(prev);
+      newSet.delete(serverName);
+      return newSet;
+    });
+
+    setCancellableServers((prev) => {
+      const newSet = new Set(prev);
+      newSet.delete(serverName);
+      return newSet;
+    });
+  }, []);
+
+  // Cancel OAuth flow
+  const cancelOAuthFlow = useCallback(
+    (serverName: string) => {
+      logger.info(`[MCP OAuth] User cancelling OAuth flow for ${serverName}`);
+
+      cancelOAuthMutation.mutate(serverName, {
+        onSuccess: () => {
+          cleanupOAuthState(serverName);
+          showToast({
+            message: localize('com_ui_mcp_oauth_cancelled', { 0: serverName }),
+            status: 'info',
+          });
+        },
+        onError: (error) => {
+          logger.error(`[MCP OAuth] Failed to cancel OAuth flow for ${serverName}:`, error);
+          // Clean up state anyway
+          cleanupOAuthState(serverName);
+        },
+      });
+    },
+    [cancelOAuthMutation, cleanupOAuthState, showToast, localize],
+  );
 
   // Helper function to handle successful connection
   const handleSuccessfulConnection = useCallback(
@@ -44,31 +101,13 @@ export function useMCPServerInitialization(options?: UseMCPServerInitializationO
         queryClient.refetchQueries([QueryKeys.tools]),
       ]);
 
-      // Stop polling for this server
-      setOauthPollingServers((prev) => {
-        const newMap = new Map(prev);
-        newMap.delete(serverName);
-        return newMap;
-      });
-
-      // Remove OAuth start time
-      setOauthStartTimes((prev) => {
-        const newMap = new Map(prev);
-        newMap.delete(serverName);
-        return newMap;
-      });
-
-      // Remove from initializing set
-      setInitializingServers((prev) => {
-        const newSet = new Set(prev);
-        newSet.delete(serverName);
-        return newSet;
-      });
+      // Clean up OAuth state
+      cleanupOAuthState(serverName);
 
       // Call optional success callback
       options?.onSuccess?.(serverName);
     },
-    [showToast, queryClient, options],
+    [showToast, queryClient, options, cleanupOAuthState],
   );
 
   // Helper function to handle OAuth timeout/failure
@@ -78,26 +117,8 @@ export function useMCPServerInitialization(options?: UseMCPServerInitializationO
         `[MCP OAuth] OAuth ${isTimeout ? 'timed out' : 'failed'} for ${serverName}, stopping poll`,
       );
 
-      // Remove from polling servers
-      setOauthPollingServers((prev) => {
-        const newMap = new Map(prev);
-        newMap.delete(serverName);
-        return newMap;
-      });
-
-      // Remove start time
-      setOauthStartTimes((prev) => {
-        const newMap = new Map(prev);
-        newMap.delete(serverName);
-        return newMap;
-      });
-
-      // Remove from initializing
-      setInitializingServers((prev) => {
-        const newSet = new Set(prev);
-        newSet.delete(serverName);
-        return newSet;
-      });
+      // Clean up OAuth state
+      cleanupOAuthState(serverName);
 
       // Show error toast
       showToast({
@@ -107,7 +128,7 @@ export function useMCPServerInitialization(options?: UseMCPServerInitializationO
         status: 'error',
       });
     },
-    [showToast, localize],
+    [showToast, localize, cleanupOAuthState],
   );
 
   // Poll for OAuth completion
@@ -135,9 +156,10 @@ export function useMCPServerInitialization(options?: UseMCPServerInitializationO
           // OAuth failed or timed out
           handleOAuthFailure(serverName, !!hasTimedOut);
         }
+
+        setCancellableServers((prev) => new Set(prev).add(serverName));
       });
 
-      // Refetch connection status
       queryClient.refetchQueries([QueryKeys.mcpConnectionStatus]);
     }, 3500);
 
@@ -256,10 +278,12 @@ export function useMCPServerInitialization(options?: UseMCPServerInitializationO
   return {
     initializeServer,
     isInitializing: (serverName: string) => initializingServers.has(serverName),
+    isCancellable: (serverName: string) => cancellableServers.has(serverName),
     initializingServers,
     oauthPollingServers,
     oauthStartTimes,
     connectionStatus,
     isLoading: reinitializeMutation.isLoading,
+    cancelOAuthFlow,
   };
 }

@@ -2,7 +2,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Constants, QueryKeys } from 'librechat-data-provider';
 import React, { memo, useCallback, useState, useMemo } from 'react';
 import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
-import { SettingsIcon, AlertTriangle, Loader2, KeyRound, PlugZap } from 'lucide-react';
+import { SettingsIcon, AlertTriangle, Loader2, KeyRound, PlugZap, X } from 'lucide-react';
 import type { TUpdateUserPlugins, TPlugin } from 'librechat-data-provider';
 import MCPConfigDialog, { ConfigFieldDetail } from '~/components/ui/MCP/MCPConfigDialog';
 import { useToastContext, useBadgeRowContext } from '~/Providers';
@@ -50,56 +50,57 @@ function MCPSelect() {
   });
 
   // Use the shared initialization hook
-  const { initializeServer, isInitializing, connectionStatus } = useMCPServerInitialization({
-    onSuccess: (serverName) => {
-      // Add to selected values after successful initialization
-      const currentValues = mcpValues ?? [];
-      if (!currentValues.includes(serverName)) {
-        setMCPValues([...currentValues, serverName]);
-      }
-    },
-    onError: (serverName) => {
-      // Find the tool/server configuration
-      const tool = mcpToolDetails?.find((t) => t.name === serverName);
-      const serverConfig = startupConfig?.mcpServers?.[serverName];
-      const serverStatus = connectionStatus[serverName];
+  const { initializeServer, isInitializing, connectionStatus, cancelOAuthFlow, isCancellable } =
+    useMCPServerInitialization({
+      onSuccess: (serverName) => {
+        // Add to selected values after successful initialization
+        const currentValues = mcpValues ?? [];
+        if (!currentValues.includes(serverName)) {
+          setMCPValues([...currentValues, serverName]);
+        }
+      },
+      onError: (serverName) => {
+        // Find the tool/server configuration
+        const tool = mcpToolDetails?.find((t) => t.name === serverName);
+        const serverConfig = startupConfig?.mcpServers?.[serverName];
+        const serverStatus = connectionStatus[serverName];
 
-      // Check if this server would show a config button
-      const hasAuthConfig =
-        (tool?.authConfig && tool.authConfig.length > 0) ||
-        (serverConfig?.customUserVars && Object.keys(serverConfig.customUserVars).length > 0);
+        // Check if this server would show a config button
+        const hasAuthConfig =
+          (tool?.authConfig && tool.authConfig.length > 0) ||
+          (serverConfig?.customUserVars && Object.keys(serverConfig.customUserVars).length > 0);
 
-      // Only open dialog if the server would have shown a config button
-      // (disconnected/error states always show button, connected only shows if hasAuthConfig)
-      const wouldShowButton =
-        !serverStatus ||
-        serverStatus.connectionState === 'disconnected' ||
-        serverStatus.connectionState === 'error' ||
-        (serverStatus.connectionState === 'connected' && hasAuthConfig);
+        // Only open dialog if the server would have shown a config button
+        // (disconnected/error states always show button, connected only shows if hasAuthConfig)
+        const wouldShowButton =
+          !serverStatus ||
+          serverStatus.connectionState === 'disconnected' ||
+          serverStatus.connectionState === 'error' ||
+          (serverStatus.connectionState === 'connected' && hasAuthConfig);
 
-      if (!wouldShowButton) {
-        return; // Don't open dialog if no button would be shown
-      }
+        if (!wouldShowButton) {
+          return; // Don't open dialog if no button would be shown
+        }
 
-      // Create tool object if it doesn't exist
-      const configTool = tool || {
-        name: serverName,
-        pluginKey: `${Constants.mcp_prefix}${serverName}`,
-        authConfig: serverConfig?.customUserVars
-          ? Object.entries(serverConfig.customUserVars).map(([key, config]) => ({
-              authField: key,
-              label: config.title,
-              description: config.description,
-            }))
-          : [],
-        authenticated: false,
-      };
+        // Create tool object if it doesn't exist
+        const configTool = tool || {
+          name: serverName,
+          pluginKey: `${Constants.mcp_prefix}${serverName}`,
+          authConfig: serverConfig?.customUserVars
+            ? Object.entries(serverConfig.customUserVars).map(([key, config]) => ({
+                authField: key,
+                label: config.title,
+                description: config.description,
+              }))
+            : [],
+          authenticated: false,
+        };
 
-      // Open the config dialog on error
-      setSelectedToolForConfig(configTool);
-      setIsConfigModalOpen(true);
-    },
-  });
+        // Open the config dialog on error
+        setSelectedToolForConfig(configTool);
+        setIsConfigModalOpen(true);
+      },
+    });
 
   const renderSelectedValues = useCallback(
     (values: string[], placeholder?: string) => {
@@ -236,7 +237,26 @@ function MCPSelect() {
       const getStatusIcon = () => {
         // Check if server is currently initializing
         if (isInitializing(serverName)) {
-          return (
+          const canCancel = isCancellable(serverName);
+
+          return canCancel ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                cancelOAuthFlow(serverName);
+              }}
+              className="flex h-6 w-6 items-center justify-center rounded p-1 hover:bg-red-100 dark:hover:bg-red-900/20"
+              aria-label={localize('com_ui_cancel')}
+              title={localize('com_ui_cancel')}
+            >
+              <div className="group relative h-4 w-4">
+                <Loader2 className="h-4 w-4 animate-spin text-blue-500 group-hover:opacity-0" />
+                <X className="absolute inset-0 h-4 w-4 text-red-500 opacity-0 group-hover:opacity-100" />
+              </div>
+            </button>
+          ) : (
             <div className="flex h-6 w-6 items-center justify-center rounded p-1">
               <Loader2
                 className="h-4 w-4 animate-spin text-blue-500"
@@ -346,10 +366,17 @@ function MCPSelect() {
           </div>
         );
       }
-      // For items without a settings icon, return the consistently wrapped main content.
       return mainContentWrapper;
     },
-    [mcpToolDetails, connectionStatus, startupConfig?.mcpServers, localize, isInitializing],
+    [
+      localize,
+      isInitializing,
+      isCancellable,
+      mcpToolDetails,
+      cancelOAuthFlow,
+      connectionStatus,
+      startupConfig?.mcpServers,
+    ],
   );
 
   // Don't render if no servers are selected and not pinned

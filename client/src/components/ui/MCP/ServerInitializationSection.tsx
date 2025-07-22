@@ -18,24 +18,31 @@ export default function ServerInitializationSection({
   const [oauthUrl, setOauthUrl] = useState<string | null>(null);
 
   // Use the shared initialization hook
-  const { initializeServer, isLoading, connectionStatus } = useMCPServerInitialization({
-    onOAuthStarted: (name, url) => {
-      // Store the OAuth URL locally for display
-      setOauthUrl(url);
-    },
-    onSuccess: () => {
-      // Clear OAuth URL on success
-      setOauthUrl(null);
-    },
-  });
+  const { initializeServer, isLoading, connectionStatus, cancelOAuthFlow, isCancellable } =
+    useMCPServerInitialization({
+      onOAuthStarted: (name, url) => {
+        // Store the OAuth URL locally for display
+        setOauthUrl(url);
+      },
+      onSuccess: () => {
+        // Clear OAuth URL on success
+        setOauthUrl(null);
+      },
+    });
 
   const serverStatus = connectionStatus[serverName];
   const isConnected = serverStatus?.connectionState === 'connected';
+  const canCancel = isCancellable(serverName);
 
   const handleInitializeClick = useCallback(() => {
     setOauthUrl(null);
     initializeServer(serverName);
   }, [initializeServer, serverName]);
+
+  const handleCancelClick = useCallback(() => {
+    setOauthUrl(null);
+    cancelOAuthFlow(serverName);
+  }, [cancelOAuthFlow, serverName]);
 
   // Show subtle reinitialize option if connected
   if (isConnected) {
@@ -101,9 +108,17 @@ export default function ServerInitializationSection({
           <div className="flex items-center gap-2">
             <Button
               onClick={() => window.open(oauthUrl, '_blank', 'noopener,noreferrer')}
-              className="w-full bg-blue-600 text-white hover:bg-blue-700 dark:hover:bg-blue-800"
+              className="flex-1 bg-blue-600 text-white hover:bg-blue-700 dark:hover:bg-blue-800"
             >
               {localize('com_ui_continue_oauth')}
+            </Button>
+            <Button
+              onClick={handleCancelClick}
+              disabled={!canCancel}
+              className="bg-gray-200 text-gray-700 hover:bg-gray-300 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600"
+              title={!canCancel ? 'disabled' : undefined}
+            >
+              {localize('com_ui_cancel')}
             </Button>
           </div>
           <p className="mt-2 text-xs text-blue-600 dark:text-blue-400">

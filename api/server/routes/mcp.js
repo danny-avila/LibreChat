@@ -270,6 +270,53 @@ router.get('/oauth/status/:flowId', async (req, res) => {
 });
 
 /**
+ * Cancel OAuth flow
+ * This endpoint cancels a pending OAuth flow
+ */
+router.post('/oauth/cancel/:serverName', requireJwtAuth, async (req, res) => {
+  try {
+    const { serverName } = req.params;
+    const user = req.user;
+
+    if (!user?.id) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+
+    logger.info(`[MCP OAuth Cancel] Cancelling OAuth flow for ${serverName} by user ${user.id}`);
+
+    const flowsCache = getLogStores(CacheKeys.FLOWS);
+    const flowManager = getFlowStateManager(flowsCache);
+
+    // Generate the flow ID for this user/server combination
+    const flowId = MCPOAuthHandler.generateFlowId(user.id, serverName);
+
+    // Check if flow exists
+    const flowState = await flowManager.getFlowState(flowId, 'mcp_oauth');
+
+    if (!flowState) {
+      logger.debug(`[MCP OAuth Cancel] No active flow found for ${serverName}`);
+      return res.json({
+        success: true,
+        message: 'No active OAuth flow to cancel',
+      });
+    }
+
+    // Cancel the flow by marking it as failed
+    await flowManager.completeFlow(flowId, 'mcp_oauth', null, 'User cancelled OAuth flow');
+
+    logger.info(`[MCP OAuth Cancel] Successfully cancelled OAuth flow for ${serverName}`);
+
+    res.json({
+      success: true,
+      message: `OAuth flow for ${serverName} cancelled successfully`,
+    });
+  } catch (error) {
+    logger.error('[MCP OAuth Cancel] Failed to cancel OAuth flow', error);
+    res.status(500).json({ error: 'Failed to cancel OAuth flow' });
+  }
+});
+
+/**
  * Reinitialize MCP server
  * This endpoint allows reinitializing a specific MCP server
  */

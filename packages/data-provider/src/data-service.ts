@@ -153,6 +153,10 @@ export const getMCPAuthValues = (serverName: string): Promise<q.MCPAuthValuesRes
   return request.get(endpoints.mcpAuthValues(serverName));
 };
 
+export function cancelMCPOAuth(serverName: string): Promise<m.CancelMCPOAuthResponse> {
+  return request.post(endpoints.cancelMCPOAuth(serverName), {});
+}
+
 /* Config */
 
 export const getStartupConfig = (): Promise<
