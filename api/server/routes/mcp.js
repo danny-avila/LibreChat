@@ -322,7 +322,8 @@ router.get('/connection/status', requireJwtAuth, async (req, res) => {
     const mcpManager = getMCPManager(user.id);
     const connectionStatus = {};
 
-    const config = await loadCustomConfig();
+    const printConfig = false;
+    const config = await loadCustomConfig(printConfig);
     const mcpConfig = config?.mcpServers;
 
     const appConnections = mcpManager.getAllConnections() || new Map();
