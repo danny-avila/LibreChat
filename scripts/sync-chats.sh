@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 # scripts/sync-chats.sh
 
 echo "🚀 Iniciando sincronización de chats a Google Sheets..."

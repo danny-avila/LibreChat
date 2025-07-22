@@ -154,7 +154,7 @@ GOOGLE_SHEETS_ID=1-bhyU4cglhQHp5Ls8_ZitUvA7onz-Tu0SUtKPV4Gfgc
 Service Name: api
 Task Name: Daily Chat Sync to Google Sheets
 Schedule: 0 2 * * *
-Shell Type: Bash
+Shell Type: sh
 Command: /app/scripts/sync-chats.sh
 Enabled: ✅
 ```
@@ -174,7 +174,7 @@ Ejecuta el script manualmente para verificar que funcione:
 
 ```bash
 # Conectarse al contenedor
-docker exec -it <nombre_contenedor_api> bash
+docker exec -it LibreChat-API-local /bin/sh
 
 # Ejecutar el script manualmente
 /app/scripts/sync-chats.sh
