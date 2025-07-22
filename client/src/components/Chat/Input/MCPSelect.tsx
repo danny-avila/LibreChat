@@ -140,7 +140,7 @@ function MCPSelect() {
           return (
             <Loader2
               className="h-4 w-4 animate-spin text-blue-500"
-              aria-label={`${serverName} - Connecting`}
+              aria-label={localize('com_nav_mcp_status_connecting', { 0: serverName })}
             />
           );
         }
@@ -152,21 +152,23 @@ function MCPSelect() {
           if (requiresOAuth) {
             IconComponent = KeyRound;
             className = 'h-4 w-4 text-amber-500';
-            label = `${serverName} - Disconnected (OAuth Required)`;
+            label = localize('com_nav_mcp_status_disconnected_oauth', { 0: serverName });
           } else {
             IconComponent = PlugZap;
             className = 'h-4 w-4 text-orange-500';
-            label = `${serverName} - Disconnected`;
+            label = localize('com_nav_mcp_status_disconnected', { 0: serverName });
           }
         } else if (connectionState === 'error') {
           IconComponent = AlertTriangle;
           className = 'h-4 w-4 text-red-500';
-          label = `${serverName} - Error`;
+          label = localize('com_nav_mcp_status_error', { 0: serverName });
         } else if (connectionState === 'connected') {
           if (hasAuthConfig) {
             IconComponent = SettingsIcon;
             className = `h-4 w-4 ${tool?.authenticated ? 'text-green-500' : 'text-gray-400'}`;
-            label = `${serverName} - ${tool?.authenticated ? 'Authenticated' : 'Not Authenticated'}`;
+            label = tool?.authenticated
+              ? localize('com_nav_mcp_status_authenticated', { 0: serverName })
+              : localize('com_nav_mcp_status_not_authenticated', { 0: serverName });
           } else {
             // Connected but no auth config - no icon
             return null;
@@ -180,7 +182,7 @@ function MCPSelect() {
               type="button"
               onClick={handleConfigClick}
               className="flex h-6 w-6 items-center justify-center rounded p-1 hover:bg-surface-secondary"
-              aria-label={`Configure ${serverName} - ${label}`}
+              aria-label={localize('com_nav_mcp_configure_server', { 0: serverName })}
             >
               <IconComponent className={className} />
             </button>
@@ -225,13 +227,7 @@ function MCPSelect() {
       // For items without a settings icon, return the consistently wrapped main content.
       return mainContentWrapper;
     },
-    [
-      mcpToolDetails,
-      connectionStatus,
-      startupConfig,
-      setSelectedToolForConfig,
-      setIsConfigModalOpen,
-    ],
+    [mcpToolDetails, connectionStatus, startupConfig?.mcpServers, localize],
   );
 
   // Don't render if no servers are selected and not pinned
