@@ -306,7 +306,6 @@ function MCPSelect() {
         <MCPConfigDialog
           serverName={selectedToolForConfig.name}
           serverStatus={connectionStatus[selectedToolForConfig.name]}
-          authConfig={selectedToolForConfig.authConfig}
           isOpen={isConfigModalOpen}
           onOpenChange={setIsConfigModalOpen}
           fieldsSchema={(() => {

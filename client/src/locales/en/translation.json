@@ -1102,5 +1102,16 @@
   "com_ui_unset": "Unset",
   "com_ui_connecting": "Connecting",
   "com_ui_offline": "Offline",
+  "com_ui_continue_oauth": "Continue with OAuth",
+  "com_ui_oauth_flow_desc": "Complete the OAuth flow in the new window, then return here.",
+  "com_ui_authenticate": "Authenticate",
+  "com_ui_mcp_initialize": "Initialize",
+  "com_ui_mcp_not_authenticated": "{{0}} not authenticated (OAuth Required)",
+  "com_ui_mcp_not_initialized": "{{0}} not initialized",
+  "com_ui_reinitialize": "Reinitialize",
+  "com_ui_mcp_initialized_success": "MCP server '{{0}}' initialized successfully",
+  "com_ui_mcp_authenticated_success": "MCP server '{{0}}' authenticated successfully",
+  "com_ui_mcp_oauth_no_url": "OAuth authentication required but no URL provided",
+  "com_ui_mcp_init_failed": "Failed to initialize MCP server",
   "com_ui_active": "Active"
 }

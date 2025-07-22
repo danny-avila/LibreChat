@@ -251,6 +251,9 @@ router.post('/:serverName/reinitialize', requireJwtAuth, async (req, res) => {
     }
 
     let userConnection = null;
+    let oauthRequired = false;
+    let oauthUrl = null;
+
     try {
       userConnection = await mcpManager.getUserConnection({
         user,
@@ -263,43 +266,73 @@ router.post('/:serverName/reinitialize', requireJwtAuth, async (req, res) => {
           createToken,
           deleteTokens,
         },
+        // Add OAuth handlers to capture the OAuth URL when needed
+        oauthStart: async (authURL) => {
+          logger.info(`[MCP Reinitialize] OAuth URL received: ${authURL}`);
+          oauthUrl = authURL;
+          oauthRequired = true;
+        },
       });
+
+      logger.info(`[MCP Reinitialize] Successfully established connection for ${serverName}`);
     } catch (err) {
-      logger.error(`[MCP Reinitialize] Error initializing MCP server ${serverName} for user:`, err);
-      return res.status(500).json({ error: 'Failed to reinitialize MCP server for user' });
-    }
+      // Check if this is an OAuth error - if so, the flow state should be set up now
+      const isOAuthError =
+        err.message?.includes('OAuth') ||
+        err.message?.includes('authentication') ||
+        err.message?.includes('401');
 
-    const userTools = (await getCachedTools({ userId: user.id })) || {};
-
-    // Remove any old tools from this server in the user's cache
-    const mcpDelimiter = Constants.mcp_delimiter;
-    for (const key of Object.keys(userTools)) {
-      if (key.endsWith(`${mcpDelimiter}${serverName}`)) {
-        delete userTools[key];
+      if (isOAuthError) {
+        logger.info(`[MCP Reinitialize] OAuth required for ${serverName}`);
+        oauthRequired = true;
+        // Don't return error - continue so frontend can handle OAuth
+      } else {
+        logger.error(
+          `[MCP Reinitialize] Error initializing MCP server ${serverName} for user:`,
+          err,
+        );
+        return res.status(500).json({ error: 'Failed to reinitialize MCP server for user' });
       }
     }
 
-    // Add the new tools from this server
-    const tools = await userConnection.fetchTools();
-    for (const tool of tools) {
-      const name = `${tool.name}${Constants.mcp_delimiter}${serverName}`;
-      userTools[name] = {
-        type: 'function',
-        ['function']: {
-          name,
-          description: tool.description,
-          parameters: tool.inputSchema,
-        },
-      };
-    }
+    // Only fetch and cache tools if we successfully connected (no OAuth required)
+    if (userConnection && !oauthRequired) {
+      const userTools = (await getCachedTools({ userId: user.id })) || {};
 
-    // Save the updated user tool cache
-    await setCachedTools(userTools, { userId: user.id });
+      // Remove any old tools from this server in the user's cache
+      const mcpDelimiter = Constants.mcp_delimiter;
+      for (const key of Object.keys(userTools)) {
+        if (key.endsWith(`${mcpDelimiter}${serverName}`)) {
+          delete userTools[key];
+        }
+      }
+
+      // Add the new tools from this server
+      const tools = await userConnection.fetchTools();
+      for (const tool of tools) {
+        const name = `${tool.name}${Constants.mcp_delimiter}${serverName}`;
+        userTools[name] = {
+          type: 'function',
+          ['function']: {
+            name,
+            description: tool.description,
+            parameters: tool.inputSchema,
+          },
+        };
+      }
+
+      // Save the updated user tool cache
+      await setCachedTools(userTools, { userId: user.id });
+    }
 
     res.json({
       success: true,
-      message: `MCP server '${serverName}' reinitialized successfully`,
+      message: oauthRequired
+        ? `MCP server '${serverName}' ready for OAuth authentication`
+        : `MCP server '${serverName}' reinitialized successfully`,
       serverName,
+      oauthRequired,
+      oauthUrl,
     });
   } catch (error) {
     logger.error('[MCP Reinitialize] Unexpected error', error);

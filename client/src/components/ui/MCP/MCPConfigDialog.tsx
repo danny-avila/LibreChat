@@ -9,6 +9,7 @@ import {
   OGDialogDescription,
 } from '~/components/ui/OriginalDialog';
 import CustomUserVarsSection from './CustomUserVarsSection';
+import ServerInitializationSection from './ServerInitializationSection';
 import { useLocalize } from '~/hooks';
 
 export interface ConfigFieldDetail {
@@ -26,11 +27,6 @@ interface MCPConfigDialogProps {
   onRevoke?: () => void;
   serverName: string;
   serverStatus?: MCPServerStatus;
-  authConfig?: Array<{
-    authField: string;
-    label: string;
-    description: string;
-  }>;
 }
 
 export default function MCPConfigDialog({
@@ -42,7 +38,6 @@ export default function MCPConfigDialog({
   onRevoke,
   serverName,
   serverStatus,
-  authConfig,
 }: MCPConfigDialogProps) {
   const localize = useLocalize();
 
@@ -132,6 +127,12 @@ export default function MCPConfigDialog({
             isSubmitting={isSubmitting}
           />
         </div>
+
+        {/* Server Initialization Section */}
+        <ServerInitializationSection
+          serverName={serverName}
+          requiresOAuth={serverStatus?.requiresOAuth || false}
+        />
       </OGDialogContent>
     </OGDialog>
   );
