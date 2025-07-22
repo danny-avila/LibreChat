@@ -71,7 +71,11 @@ const payloadParser = ({ req, agent, endpoint }) => {
   if (isAgentsEndpoint(endpoint)) {
     return { model: undefined };
   } else if (endpoint === EModelEndpoint.bedrock) {
-    return bedrockInputSchema.parse(agent.model_parameters);
+    const parsedValues = bedrockInputSchema.parse(agent.model_parameters);
+    if (parsedValues.thinking == null) {
+      parsedValues.thinking = false;
+    }
+    return parsedValues;
   }
   return req.body.endpointOption.model_parameters;
 };

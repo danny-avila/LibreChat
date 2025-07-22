@@ -714,3 +714,45 @@ describe('Claude Model Tests', () => {
     });
   });
 });
+
+describe('Kimi Model Tests', () => {
+  describe('getModelMaxTokens', () => {
+    test('should return correct tokens for Kimi models', () => {
+      expect(getModelMaxTokens('kimi')).toBe(131000);
+      expect(getModelMaxTokens('kimi-k2')).toBe(131000);
+      expect(getModelMaxTokens('kimi-vl')).toBe(131000);
+    });
+
+    test('should return correct tokens for Kimi models with provider prefix', () => {
+      expect(getModelMaxTokens('moonshotai/kimi-k2')).toBe(131000);
+      expect(getModelMaxTokens('moonshotai/kimi')).toBe(131000);
+      expect(getModelMaxTokens('moonshotai/kimi-vl')).toBe(131000);
+    });
+
+    test('should handle partial matches for Kimi models', () => {
+      expect(getModelMaxTokens('kimi-k2-latest')).toBe(131000);
+      expect(getModelMaxTokens('kimi-vl-preview')).toBe(131000);
+      expect(getModelMaxTokens('kimi-2024')).toBe(131000);
+    });
+  });
+
+  describe('matchModelName', () => {
+    test('should match exact Kimi model names', () => {
+      expect(matchModelName('kimi')).toBe('kimi');
+      expect(matchModelName('kimi-k2')).toBe('kimi');
+      expect(matchModelName('kimi-vl')).toBe('kimi');
+    });
+
+    test('should match Kimi model variations with provider prefix', () => {
+      expect(matchModelName('moonshotai/kimi')).toBe('kimi');
+      expect(matchModelName('moonshotai/kimi-k2')).toBe('kimi');
+      expect(matchModelName('moonshotai/kimi-vl')).toBe('kimi');
+    });
+
+    test('should match Kimi model variations with suffixes', () => {
+      expect(matchModelName('kimi-k2-latest')).toBe('kimi');
+      expect(matchModelName('kimi-vl-preview')).toBe('kimi');
+      expect(matchModelName('kimi-2024')).toBe('kimi');
+    });
+  });
+});

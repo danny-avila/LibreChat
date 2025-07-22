@@ -6,25 +6,18 @@ import { useGetStartupConfig } from '~/data-provider';
 import type { TDialogProps } from '~/common';
 import { Dialog, DialogPanel, DialogTitle, Transition, TransitionChild } from '@headlessui/react';
 import {
-  GearIcon,
-  DataIcon,
-  SpeechIcon,
-  UserIcon,
-  ExperimentIcon,
-  PersonalizationIcon,
-} from '~/components/svg';
-import {
-  General,
-  Chat,
-  Speech,
+  Personalization,
   Commands,
-  Data,
+  General,
   Account,
   Balance,
-  Personalization,
+  Speech,
+  Data,
+  Chat,
 } from './SettingsTabs';
-import { useMediaQuery, useLocalize, TranslationKeys } from '~/hooks';
+import { GearIcon, DataIcon, SpeechIcon, UserIcon, PersonalizationIcon } from '~/components/svg';
 import usePersonalizationAccess from '~/hooks/usePersonalizationAccess';
+import { useMediaQuery, useLocalize, TranslationKeys } from '~/hooks';
 import { cn } from '~/utils';
 
 export default function Settings({ open, onOpenChange }: TDialogProps) {
@@ -39,7 +32,6 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
     const tabs: SettingsTabValues[] = [
       SettingsTabValues.GENERAL,
       SettingsTabValues.CHAT,
-      SettingsTabValues.BETA,
       SettingsTabValues.COMMANDS,
       SettingsTabValues.SPEECH,
       ...(hasAnyPersonalizationFeature ? [SettingsTabValues.PERSONALIZATION] : []),
@@ -83,11 +75,6 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
       value: SettingsTabValues.CHAT,
       icon: <MessageSquare className="icon-sm" />,
       label: 'com_nav_setting_chat',
-    },
-    {
-      value: SettingsTabValues.BETA,
-      icon: <ExperimentIcon />,
-      label: 'com_nav_setting_beta',
     },
     {
       value: SettingsTabValues.COMMANDS,

@@ -468,7 +468,6 @@
   "com_nav_send_message": "Send message",
   "com_nav_setting_account": "Account",
   "com_nav_setting_balance": "Balance",
-  "com_nav_setting_beta": "Beta features",
   "com_nav_setting_chat": "Chat",
   "com_nav_setting_data": "Data controls",
   "com_nav_setting_general": "General",
@@ -1109,5 +1108,6 @@
   "com_ui_mcp_oauth_cancelled": "OAuth login cancelled for {{0}}",
   "com_ui_mcp_oauth_timeout": "OAuth login timed out for {{0}}",
   "com_ui_mcp_init_failed": "Failed to initialize MCP server",
-  "com_ui_active": "Active"
+  "com_ui_active": "Active",
+  "com_user_message": "You"
 }
