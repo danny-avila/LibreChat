@@ -1,12 +1,12 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { Constants, QueryKeys } from 'librechat-data-provider';
 import React, { memo, useCallback, useState, useMemo } from 'react';
-import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
-import { SettingsIcon, AlertTriangle, Loader2, KeyRound, PlugZap, X } from 'lucide-react';
 import type { TUpdateUserPlugins, TPlugin } from 'librechat-data-provider';
+import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
 import MCPConfigDialog, { ConfigFieldDetail } from '~/components/ui/MCP/MCPConfigDialog';
-import { useToastContext, useBadgeRowContext } from '~/Providers';
 import { useMCPServerInitialization } from '~/hooks/MCP/useMCPServerInitialization';
+import MCPServerStatusIcon from '~/components/ui/MCP/MCPServerStatusIcon';
+import { useToastContext, useBadgeRowContext } from '~/Providers';
 import MultiSelect from '~/components/ui/MultiSelect';
 import { MCPIcon } from '~/components/svg';
 import { useLocalize } from '~/hooks';
@@ -204,19 +204,9 @@ function MCPSelect() {
       const serverStatus = connectionStatus[serverName];
       const serverConfig = startupConfig?.mcpServers?.[serverName];
 
-      // Check for auth config from either tool details or server config
-      const hasAuthConfig =
-        (tool?.authConfig && tool.authConfig.length > 0) ||
-        (serverConfig?.customUserVars && Object.keys(serverConfig.customUserVars).length > 0);
-
-      // Check if server is connected
-      const isConnected = serverStatus?.connectionState === 'connected';
-
-      // Handle click for opening config dialog
       const handleConfigClick = (e: React.MouseEvent) => {
         e.stopPropagation();
         e.preventDefault();
-        // Create tool object if it doesn't exist
         const configTool = tool || {
           name: serverName,
           pluginKey: `${Constants.mcp_prefix}${serverName}`,
@@ -233,105 +223,10 @@ function MCPSelect() {
         setIsConfigModalOpen(true);
       };
 
-      // Determine which icon to show based on connection state and auth config
-      const getStatusIcon = () => {
-        // Check if server is currently initializing
-        if (isInitializing(serverName)) {
-          const canCancel = isCancellable(serverName);
-
-          return canCancel ? (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                e.preventDefault();
-                cancelOAuthFlow(serverName);
-              }}
-              className="flex h-6 w-6 items-center justify-center rounded p-1 hover:bg-red-100 dark:hover:bg-red-900/20"
-              aria-label={localize('com_ui_cancel')}
-              title={localize('com_ui_cancel')}
-            >
-              <div className="group relative h-4 w-4">
-                <Loader2 className="h-4 w-4 animate-spin text-blue-500 group-hover:opacity-0" />
-                <X className="absolute inset-0 h-4 w-4 text-red-500 opacity-0 group-hover:opacity-100" />
-              </div>
-            </button>
-          ) : (
-            <div className="flex h-6 w-6 items-center justify-center rounded p-1">
-              <Loader2
-                className="h-4 w-4 animate-spin text-blue-500"
-                aria-label={localize('com_nav_mcp_status_connecting', { 0: serverName })}
-              />
-            </div>
-          );
-        }
-
-        if (!serverStatus) {
-          return null; // No status info available
-        }
-
-        const { connectionState, requiresOAuth } = serverStatus;
-
-        // For connecting state, just show loading - not clickable
-        if (connectionState === 'connecting') {
-          return (
-            <div className="flex h-6 w-6 items-center justify-center rounded p-1">
-              <Loader2
-                className="h-4 w-4 animate-spin text-blue-500"
-                aria-label={localize('com_nav_mcp_status_connecting', { 0: serverName })}
-              />
-            </div>
-          );
-        }
-
-        // All other states should be clickable buttons
-        let IconComponent, className, label;
-
-        if (connectionState === 'disconnected') {
-          if (requiresOAuth) {
-            IconComponent = KeyRound;
-            className = 'h-4 w-4 text-amber-500';
-            label = localize('com_nav_mcp_status_disconnected_oauth', { 0: serverName });
-          } else {
-            IconComponent = PlugZap;
-            className = 'h-4 w-4 text-orange-500';
-            label = localize('com_nav_mcp_status_disconnected', { 0: serverName });
-          }
-        } else if (connectionState === 'error') {
-          IconComponent = AlertTriangle;
-          className = 'h-4 w-4 text-red-500';
-          label = localize('com_nav_mcp_status_error', { 0: serverName });
-        } else if (connectionState === 'connected') {
-          if (hasAuthConfig) {
-            IconComponent = SettingsIcon;
-            // If the server is connected and required OAuth, it must be authenticated
-            // (you can't connect without completing OAuth successfully)
-            const isAuthenticated = tool?.authenticated || requiresOAuth;
-            className = `h-4 w-4 ${isAuthenticated ? 'text-green-500' : 'text-gray-400'}`;
-            label = isAuthenticated
-              ? localize('com_nav_mcp_status_authenticated', { 0: serverName })
-              : localize('com_nav_mcp_status_not_authenticated', { 0: serverName });
-          } else {
-            // Connected but no auth config - no icon
-            return null;
-          }
-        }
-
-        // Return clickable button for all states except connecting
-        if (IconComponent) {
-          return (
-            <button
-              type="button"
-              onClick={handleConfigClick}
-              className="flex h-6 w-6 items-center justify-center rounded p-1 hover:bg-surface-secondary"
-              aria-label={localize('com_nav_mcp_configure_server', { 0: serverName })}
-            >
-              <IconComponent className={className} />
-            </button>
-          );
-        }
-
-        return null;
+      const handleCancelClick = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        e.preventDefault();
+        cancelOAuthFlow(serverName);
       };
 
       // Common wrapper for the main content (check mark + text)
@@ -340,36 +235,30 @@ function MCPSelect() {
         <div className="flex flex-grow items-center">{defaultContent}</div>
       );
 
-      const statusIcon = getStatusIcon();
+      const statusIcon = (
+        <MCPServerStatusIcon
+          serverName={serverName}
+          serverStatus={serverStatus}
+          tool={tool}
+          onConfigClick={handleConfigClick}
+          isInitializing={isInitializing(serverName)}
+          canCancel={isCancellable(serverName)}
+          onCancel={handleCancelClick}
+        />
+      );
 
-      // Show status icon if available, or settings button for connected servers with auth config
-      if (statusIcon || (hasAuthConfig && serverStatus?.connectionState === 'connected')) {
+      if (statusIcon) {
         return (
           <div className="flex w-full items-center justify-between">
             {mainContentWrapper}
-            <div className="ml-2 flex items-center">
-              {/* Show status icon (which includes clickable config buttons) */}
-              {statusIcon ||
-                (hasAuthConfig && serverStatus?.connectionState === 'connected' && (
-                  <button
-                    type="button"
-                    onClick={handleConfigClick}
-                    className="flex h-6 w-6 items-center justify-center rounded p-1 hover:bg-surface-secondary"
-                    aria-label={localize('com_nav_mcp_configure_server', { 0: serverName })}
-                  >
-                    <SettingsIcon
-                      className={`h-4 w-4 ${tool?.authenticated ? 'text-green-500' : 'text-gray-400'}`}
-                    />
-                  </button>
-                ))}
-            </div>
+            <div className="ml-2 flex items-center">{statusIcon}</div>
           </div>
         );
       }
+
       return mainContentWrapper;
     },
     [
-      localize,
       isInitializing,
       isCancellable,
       mcpToolDetails,
