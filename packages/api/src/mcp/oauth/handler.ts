@@ -268,6 +268,19 @@ export class MCPOAuthHandler {
         /** Add state parameter with flowId to the authorization URL */
         authorizationUrl.searchParams.set('state', flowId);
         logger.debug(`[MCPOAuth] Added state parameter to authorization URL`);
+
+        if (resourceMetadata?.resource) {
+          authorizationUrl.searchParams.set('resource', resourceMetadata.resource);
+        } else {
+          logger.warn(
+            `[MCPOAuth] Resource metadata missing 'resource' property for ${serverName}. ` +
+              'This can cause issues with some Authorization Servers who expect a "resource" parameter.',
+          );
+        }
+
+        logger.debug(
+          `[MCPOAuth] Added resource parameter to authorization URL: ${resourceMetadata.resource}`,
+        );
       } catch (error) {
         logger.error(`[MCPOAuth] startAuthorization failed:`, error);
         throw error;
@@ -330,12 +343,27 @@ export class MCPOAuthHandler {
         throw new Error('Invalid flow metadata');
       }
 
+      let resource;
+      try {
+        if (metadata.resourceMetadata?.resource) {
+          resource = new URL(metadata.resourceMetadata.resource);
+          logger.debug(`[MCPOAuth] Resource URL for flow ${flowId}: ${resource.toString()}`);
+        }
+      } catch (error) {
+        logger.warn(
+          `[MCPOAuth] Invalid resource URL format for flow ${flowId}: '${metadata.resourceMetadata!.resource}'. ` +
+            `Error: ${error instanceof Error ? error.message : 'Unknown error'}. Proceeding without resource parameter.`,
+        );
+        resource = undefined;
+      }
+
       const tokens = await exchangeAuthorization(metadata.serverUrl, {
         metadata: metadata.metadata as unknown as SDKOAuthMetadata,
         clientInformation: metadata.clientInfo,
         authorizationCode,
         codeVerifier: metadata.codeVerifier,
         redirectUri: metadata.clientInfo.redirect_uris?.[0] || this.getDefaultRedirectUri(),
+        resource: resource,
       });
 
       logger.debug('[MCPOAuth] Raw tokens from exchange:', {
