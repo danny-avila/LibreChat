@@ -95,6 +95,18 @@ function MCPSelect() {
     [connectionStatusData?.connectionStatus],
   );
 
+  // Create a filtered setValue function that only allows connected servers
+  const filteredSetMCPValues = useCallback(
+    (values: string[]) => {
+      const filteredValues = values.filter((serverName) => {
+        const serverStatus = connectionStatus[serverName];
+        return serverStatus?.connectionState === 'connected';
+      });
+      setMCPValues(filteredValues);
+    },
+    [connectionStatus, setMCPValues],
+  );
+
   const renderItemContent = useCallback(
     (serverName: string, defaultContent: React.ReactNode) => {
       const tool = mcpToolDetails?.find((t) => t.name === serverName);
@@ -105,6 +117,9 @@ function MCPSelect() {
       const hasAuthConfig =
         (tool?.authConfig && tool.authConfig.length > 0) ||
         (serverConfig?.customUserVars && Object.keys(serverConfig.customUserVars).length > 0);
+
+      // Check if server is connected
+      const isConnected = serverStatus?.connectionState === 'connected';
 
       // Handle click for opening config dialog
       const handleConfigClick = (e: React.MouseEvent) => {
@@ -195,7 +210,9 @@ function MCPSelect() {
       // Common wrapper for the main content (check mark + text)
       // Ensures Check & Text are adjacent and the group takes available space.
       const mainContentWrapper = (
-        <div className="flex flex-grow items-center">{defaultContent}</div>
+        <div className={`flex flex-grow items-center ${!isConnected ? 'opacity-50' : ''}`}>
+          {defaultContent}
+        </div>
       );
 
       const statusIcon = getStatusIcon();
@@ -213,7 +230,7 @@ function MCPSelect() {
                     type="button"
                     onClick={handleConfigClick}
                     className="flex h-6 w-6 items-center justify-center rounded p-1 hover:bg-surface-secondary"
-                    aria-label={`Configure ${serverName}`}
+                    aria-label={localize('com_nav_mcp_configure_server', { 0: serverName })}
                   >
                     <SettingsIcon
                       className={`h-4 w-4 ${tool?.authenticated ? 'text-green-500' : 'text-gray-400'}`}
@@ -247,7 +264,7 @@ function MCPSelect() {
       <MultiSelect
         items={configuredServers}
         selectedValues={mcpValues ?? []}
-        setSelectedValues={setMCPValues}
+        setSelectedValues={filteredSetMCPValues}
         defaultSelectedValues={mcpValues ?? []}
         renderSelectedValues={renderSelectedValues}
         renderItemContent={renderItemContent}
