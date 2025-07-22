@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { useSetRecoilState, useRecoilValue } from 'recoil';
-import { PermissionTypes, Permissions } from 'librechat-data-provider';
+import { useQueryClient } from '@tanstack/react-query';
+import { PermissionTypes, Permissions, QueryKeys, Constants } from 'librechat-data-provider';
 import { useSearchParams, useParams, useNavigate } from 'react-router-dom';
 import type t from 'librechat-data-provider';
 import type { ContextType } from '~/common';
@@ -11,7 +12,7 @@ import { useDocumentTitle, useHasAccess } from '~/hooks';
 import { TooltipAnchor, Button } from '~/components/ui';
 import { SidePanelGroup } from '~/components/SidePanel';
 import { OpenSidebar } from '~/components/Chat/Menus';
-import { SidePanelProvider } from '~/Providers';
+import { SidePanelProvider, useChatContext } from '~/Providers';
 import { NewChatIcon } from '~/components/svg';
 import useLocalize from '~/hooks/useLocalize';
 import CategoryTabs from './CategoryTabs';
@@ -34,6 +35,8 @@ interface AgentMarketplaceProps {
 const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) => {
   const localize = useLocalize();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const { conversation, newConversation } = useChatContext();
   const [searchParams, setSearchParams] = useSearchParams();
   const { category } = useParams();
   const setHideSidePanel = useSetRecoilState(store.hideSidePanel);
@@ -142,12 +145,18 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
   /**
    * Handle new chat button click
    */
+
   const handleNewChat = (e: React.MouseEvent<HTMLButtonElement>) => {
     if (e.button === 0 && (e.ctrlKey || e.metaKey)) {
       window.open('/c/new', '_blank');
       return;
     }
-    navigate('/c/new');
+    queryClient.setQueryData<t.TMessage[]>(
+      [QueryKeys.messages, conversation?.conversationId ?? Constants.NEW_CONVO],
+      [],
+    );
+    queryClient.invalidateQueries([QueryKeys.messages]);
+    newConversation();
   };
 
   // Check if a detail view should be open based on URL

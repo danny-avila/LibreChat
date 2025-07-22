@@ -1,8 +1,20 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-
+import { useQueryClient } from '@tanstack/react-query';
 import type t from 'librechat-data-provider';
-import { AgentListResponse, PERMISSION_BITS, QueryKeys } from 'librechat-data-provider';
+import {
+  AgentListResponse,
+  PERMISSION_BITS,
+  QueryKeys,
+  Constants,
+  EModelEndpoint,
+  LocalStorageKeys,
+} from 'librechat-data-provider';
+import { useChatContext } from '~/Providers';
+import { Dialog, DialogContent, Button } from '~/components/ui';
+import { renderAgentAvatar } from '~/utils/agents';
+import { DotsIcon } from '~/components/svg';
+import { useToast, useLocalize } from '~/hooks';
+
 interface SupportContact {
   name?: string;
   email?: string;
@@ -11,14 +23,6 @@ interface SupportContact {
 interface AgentWithSupport extends t.Agent {
   support_contact?: SupportContact;
 }
-
-import { useQueryClient } from '@tanstack/react-query';
-import { Dialog, DialogContent, Button } from '~/components/ui';
-import { renderAgentAvatar } from '~/utils/agents';
-import useLocalize from '~/hooks/useLocalize';
-import { DotsIcon } from '~/components/svg';
-import { useToast } from '~/hooks';
-
 interface AgentDetailProps {
   agent: AgentWithSupport; // The agent data to display
   isOpen: boolean; // Whether the detail dialog is open
@@ -30,7 +34,8 @@ interface AgentDetailProps {
  */
 const AgentDetail: React.FC<AgentDetailProps> = ({ agent, isOpen, onClose }) => {
   const localize = useLocalize();
-  const navigate = useNavigate();
+  // const navigate = useNavigate();
+  const { conversation, newConversation } = useChatContext();
   const { showToast } = useToast();
   const dialogRef = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -67,7 +72,23 @@ const AgentDetail: React.FC<AgentDetailProps> = ({ agent, isOpen, onClose }) => 
           queryClient.setQueryData<AgentListResponse>(keys, { ...listResp, data: currentAgents });
         }
       }
-      navigate(`/c/new?agent_id=${agent.id}`);
+
+      localStorage.setItem(`${LocalStorageKeys.AGENT_ID_PREFIX}0`, agent.id);
+
+      queryClient.setQueryData<t.TMessage[]>(
+        [QueryKeys.messages, conversation?.conversationId ?? Constants.NEW_CONVO],
+        [],
+      );
+      queryClient.invalidateQueries([QueryKeys.messages]);
+
+      newConversation({
+        template: {
+          conversationId: Constants.NEW_CONVO as string,
+          endpoint: EModelEndpoint.agents,
+          agent_id: agent.id,
+          title: `Chat with ${agent.name || 'Agent'}`,
+        },
+      });
     }
   };
 
