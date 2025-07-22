@@ -1,7 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { Constants, QueryKeys } from 'librechat-data-provider';
-import React, { memo, useCallback, useState, useMemo } from 'react';
 import type { TUpdateUserPlugins, TPlugin } from 'librechat-data-provider';
+import React, { memo, useCallback, useState, useMemo, useRef } from 'react';
 import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
 import MCPConfigDialog, { ConfigFieldDetail } from '~/components/ui/MCP/MCPConfigDialog';
 import { useMCPServerInitialization } from '~/hooks/MCP/useMCPServerInitialization';
@@ -24,6 +24,7 @@ function MCPSelect() {
 
   const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
   const [selectedToolForConfig, setSelectedToolForConfig] = useState<TPlugin | null>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
 
   const queryClient = useQueryClient();
 
@@ -95,6 +96,8 @@ function MCPSelect() {
             : [],
           authenticated: false,
         };
+
+        previousFocusRef.current = document.activeElement as HTMLElement;
 
         // Open the config dialog on error
         setSelectedToolForConfig(configTool);
@@ -168,6 +171,21 @@ function MCPSelect() {
     }
   }, [selectedToolForConfig, handleConfigRevoke]);
 
+  const handleDialogOpenChange = useCallback((open: boolean) => {
+    setIsConfigModalOpen(open);
+
+    // Restore focus when dialog closes
+    if (!open && previousFocusRef.current) {
+      // Use setTimeout to ensure the dialog has fully closed before restoring focus
+      setTimeout(() => {
+        if (previousFocusRef.current && typeof previousFocusRef.current.focus === 'function') {
+          previousFocusRef.current.focus();
+        }
+        previousFocusRef.current = null;
+      }, 0);
+    }
+  }, []);
+
   // Get connection status for all MCP servers (now from hook)
   // Remove the duplicate useMCPConnectionStatusQuery since it's in the hook
 
@@ -207,6 +225,9 @@ function MCPSelect() {
       const handleConfigClick = (e: React.MouseEvent) => {
         e.stopPropagation();
         e.preventDefault();
+
+        previousFocusRef.current = document.activeElement as HTMLElement;
+
         const configTool = tool || {
           name: serverName,
           pluginKey: `${Constants.mcp_prefix}${serverName}`,
@@ -232,7 +253,13 @@ function MCPSelect() {
       // Common wrapper for the main content (check mark + text)
       // Ensures Check & Text are adjacent and the group takes available space.
       const mainContentWrapper = (
-        <div className="flex flex-grow items-center">{defaultContent}</div>
+        <button
+          type="button"
+          className="flex flex-grow items-center rounded bg-transparent p-0 text-left transition-colors focus:outline-none"
+          tabIndex={0}
+        >
+          {defaultContent}
+        </button>
       );
 
       const statusIcon = (
@@ -301,7 +328,7 @@ function MCPSelect() {
           serverName={selectedToolForConfig.name}
           serverStatus={connectionStatus[selectedToolForConfig.name]}
           isOpen={isConfigModalOpen}
-          onOpenChange={setIsConfigModalOpen}
+          onOpenChange={handleDialogOpenChange}
           fieldsSchema={(() => {
             const schema: Record<string, ConfigFieldDetail> = {};
             if (selectedToolForConfig?.authConfig) {
