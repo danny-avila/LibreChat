@@ -333,14 +333,13 @@ router.get('/connection/status', requireJwtAuth, async (req, res) => {
       return res.status(404).json({ error: 'MCP config not found' });
     }
 
-    for (const [serverName, config] of Object.entries(mcpConfig)) {
+    for (const [serverName] of Object.entries(mcpConfig)) {
       const getConnectionState = (serverName) =>
         appConnections.get(serverName)?.connectionState ??
         userConnections.get(serverName)?.connectionState ??
         'disconnected';
 
       connectionStatus[serverName] = {
-        hasAuthConfig: config.customUserVars && Object.keys(config.customUserVars).length > 0,
         requiresOAuth: oauthServers.has(serverName),
         connectionState: getConnectionState(serverName),
       };
