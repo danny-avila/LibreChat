@@ -269,18 +269,17 @@ export class MCPOAuthHandler {
         authorizationUrl.searchParams.set('state', flowId);
         logger.debug(`[MCPOAuth] Added state parameter to authorization URL`);
 
-        if (resourceMetadata?.resource) {
+        if (resourceMetadata?.resource != null && resourceMetadata.resource) {
           authorizationUrl.searchParams.set('resource', resourceMetadata.resource);
+          logger.debug(
+            `[MCPOAuth] Added resource parameter to authorization URL: ${resourceMetadata.resource}`,
+          );
         } else {
           logger.warn(
             `[MCPOAuth] Resource metadata missing 'resource' property for ${serverName}. ` +
               'This can cause issues with some Authorization Servers who expect a "resource" parameter.',
           );
         }
-
-        logger.debug(
-          `[MCPOAuth] Added resource parameter to authorization URL: ${resourceMetadata.resource}`,
-        );
       } catch (error) {
         logger.error(`[MCPOAuth] startAuthorization failed:`, error);
         throw error;
