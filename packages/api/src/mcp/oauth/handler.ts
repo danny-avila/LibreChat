@@ -342,9 +342,9 @@ export class MCPOAuthHandler {
         throw new Error('Invalid flow metadata');
       }
 
-      let resource;
+      let resource: URL | undefined;
       try {
-        if (metadata.resourceMetadata?.resource) {
+        if (metadata.resourceMetadata?.resource != null && metadata.resourceMetadata.resource) {
           resource = new URL(metadata.resourceMetadata.resource);
           logger.debug(`[MCPOAuth] Resource URL for flow ${flowId}: ${resource.toString()}`);
         }
@@ -357,12 +357,12 @@ export class MCPOAuthHandler {
       }
 
       const tokens = await exchangeAuthorization(metadata.serverUrl, {
+        redirectUri: metadata.clientInfo.redirect_uris?.[0] || this.getDefaultRedirectUri(),
         metadata: metadata.metadata as unknown as SDKOAuthMetadata,
         clientInformation: metadata.clientInfo,
-        authorizationCode,
         codeVerifier: metadata.codeVerifier,
-        redirectUri: metadata.clientInfo.redirect_uris?.[0] || this.getDefaultRedirectUri(),
-        resource: resource,
+        authorizationCode,
+        resource,
       });
 
       logger.debug('[MCPOAuth] Raw tokens from exchange:', {
