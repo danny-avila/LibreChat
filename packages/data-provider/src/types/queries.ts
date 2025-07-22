@@ -124,3 +124,13 @@ export type MemoriesResponse = {
   tokenLimit: number | null;
   usagePercentage: number | null;
 };
+
+export interface MCPServerStatus {
+  requiresOAuth: boolean;
+  connectionState: 'disconnected' | 'connecting' | 'connected' | 'error';
+}
+
+export interface MCPConnectionStatusResponse {
+  success: boolean;
+  connectionStatus: Record<string, MCPServerStatus>;
+}

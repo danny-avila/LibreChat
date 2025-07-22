@@ -133,6 +133,7 @@ export const resendVerificationEmail = () => '/api/user/verify/resend';
 export const plugins = () => '/api/plugins';
 
 export const mcpReinitialize = (serverName: string) => `/api/mcp/${serverName}/reinitialize`;
+export const mcpConnectionStatus = () => '/api/mcp/connection/status';
 
 export const config = () => '/api/config';
 

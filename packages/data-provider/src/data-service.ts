@@ -145,6 +145,10 @@ export const reinitializeMCPServer = (serverName: string) => {
   return request.post(endpoints.mcpReinitialize(serverName));
 };
 
+export const getMCPConnectionStatus = (): Promise<q.MCPConnectionStatusResponse> => {
+  return request.get(endpoints.mcpConnectionStatus());
+};
+
 /* Config */
 
 export const getStartupConfig = (): Promise<
