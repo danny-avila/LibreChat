@@ -356,4 +356,61 @@ router.get('/connection/status', requireJwtAuth, async (req, res) => {
   }
 });
 
+/**
+ * Check which authentication values exist for a specific MCP server
+ * This endpoint returns only boolean flags indicating if values are set, not the actual values
+ */
+router.get('/:serverName/auth-values', requireJwtAuth, async (req, res) => {
+  try {
+    const { serverName } = req.params;
+    const user = req.user;
+
+    if (!user?.id) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+
+    const printConfig = false;
+    const config = await loadCustomConfig(printConfig);
+    if (!config || !config.mcpServers || !config.mcpServers[serverName]) {
+      return res.status(404).json({
+        error: `MCP server '${serverName}' not found in configuration`,
+      });
+    }
+
+    const serverConfig = config.mcpServers[serverName];
+    const pluginKey = `${Constants.mcp_prefix}${serverName}`;
+    const authValueFlags = {};
+
+    // Check existence of saved values for each custom user variable (don't fetch actual values)
+    if (serverConfig.customUserVars && typeof serverConfig.customUserVars === 'object') {
+      for (const varName of Object.keys(serverConfig.customUserVars)) {
+        try {
+          const value = await getUserPluginAuthValue(user.id, varName, false, pluginKey);
+          // Only store boolean flag indicating if value exists
+          authValueFlags[varName] = !!(value && value.length > 0);
+        } catch (err) {
+          logger.error(
+            `[MCP Auth Value Flags] Error checking ${varName} for user ${user.id}:`,
+            err,
+          );
+          // Default to false if we can't check
+          authValueFlags[varName] = false;
+        }
+      }
+    }
+
+    res.json({
+      success: true,
+      serverName,
+      authValueFlags,
+    });
+  } catch (error) {
+    logger.error(
+      `[MCP Auth Value Flags] Failed to check auth value flags for ${req.params.serverName}`,
+      error,
+    );
+    res.status(500).json({ error: 'Failed to check auth value flags' });
+  }
+});
+
 module.exports = router;

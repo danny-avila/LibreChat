@@ -134,3 +134,9 @@ export interface MCPConnectionStatusResponse {
   success: boolean;
   connectionStatus: Record<string, MCPServerStatus>;
 }
+
+export interface MCPAuthValuesResponse {
+  success: boolean;
+  serverName: string;
+  authValueFlags: Record<string, boolean>;
+}

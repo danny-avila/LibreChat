@@ -134,6 +134,7 @@ export const plugins = () => '/api/plugins';
 
 export const mcpReinitialize = (serverName: string) => `/api/mcp/${serverName}/reinitialize`;
 export const mcpConnectionStatus = () => '/api/mcp/connection/status';
+export const mcpAuthValues = (serverName: string) => `/api/mcp/${serverName}/auth-values`;
 
 export const config = () => '/api/config';
 

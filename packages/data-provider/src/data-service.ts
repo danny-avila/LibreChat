@@ -149,6 +149,10 @@ export const getMCPConnectionStatus = (): Promise<q.MCPConnectionStatusResponse>
   return request.get(endpoints.mcpConnectionStatus());
 };
 
+export const getMCPAuthValues = (serverName: string): Promise<q.MCPAuthValuesResponse> => {
+  return request.get(endpoints.mcpAuthValues(serverName));
+};
+
 /* Config */
 
 export const getStartupConfig = (): Promise<

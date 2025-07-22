@@ -56,3 +56,20 @@ export const useMCPConnectionStatusQuery = (
     },
   );
 };
+
+export const useMCPAuthValuesQuery = (
+  serverName: string,
+  config?: UseQueryOptions<t.MCPAuthValuesResponse>,
+): QueryObserverResult<t.MCPAuthValuesResponse> => {
+  return useQuery<t.MCPAuthValuesResponse>(
+    [QueryKeys.mcpAuthValues, serverName],
+    () => dataService.getMCPAuthValues(serverName),
+    {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      enabled: !!serverName,
+      ...config,
+    },
+  );
+};
