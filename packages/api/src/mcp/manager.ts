@@ -50,22 +50,6 @@ export class MCPManager {
     flowManager: FlowStateManager<MCPOAuthTokens | null>;
     tokenMethods?: TokenMethods;
   }): Promise<void> {
-    // Clear all MCP OAuth tokens for fresh start (keeping this here for easy testing)
-    // if (tokenMethods?.deleteTokens) {
-    //   try {
-    //     logger.info('[MCP] 🧹 Clearing all OAuth tokens for fresh testing...');
-
-    //     // Clear OAuth tokens
-    //     await tokenMethods.deleteTokens({
-    //       identifier: 'oauth',
-    //     });
-
-    //     logger.info('[MCP] ✅ OAuth tokens cleared successfully');
-    //   } catch (error) {
-    //     logger.warn('[MCP] Failed to clear OAuth tokens:', error);
-    //   }
-    // }
-
     this.mcpConfigs = mcpServers;
 
     if (!flowManager) {
@@ -636,7 +620,6 @@ export class MCPManager {
 
   /** Removes a specific user connection entry */
   private removeUserConnection(userId: string, serverName: string): void {
-    // Remove connection object
     const userMap = this.userConnections.get(userId);
     if (userMap) {
       userMap.delete(serverName);
