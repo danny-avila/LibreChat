@@ -85,7 +85,7 @@ function SelectDropDown({
   if (emptyTitle) {
     title = '';
   } else if (!(title ?? '')) {
-    title = localize('com_ui_model');
+    title = String(localize('com_ui_model'));
   }
   const values = availableValues ?? [];
 
@@ -186,7 +186,7 @@ function SelectDropDown({
               </ListboxButton>
               <Transition
                 show={open}
-                as={React.Fragment}
+                as="div"
                 leave="transition ease-in duration-100"
                 leaveFrom="opacity-100"
                 leaveTo="opacity-0"
@@ -207,10 +207,10 @@ function SelectDropDown({
                         optionsClass ?? '',
                       )}
                     >
-                      {renderOption()}
+                      {renderOption() as React.JSX.Element}
                     </ListboxOption>
                   )}
-                  {searchRender}
+                  {searchRender as React.JSX.Element}
                   {options.map((option: string | Option, i: number) => {
                     if (!option) {
                       return null;

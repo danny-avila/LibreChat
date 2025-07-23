@@ -99,7 +99,7 @@ const ModelParameters: React.FC<ModelParametersProps> = ({
           htmlFor={id}
           className={`text-sm font-medium ${disabled ? 'text-gray-400 dark:text-gray-400' : ''}`}
         >
-          {displayLabel}
+          {String(displayLabel)}
         </label>
         <div className="flex items-center gap-2">
           <output
@@ -109,7 +109,7 @@ const ModelParameters: React.FC<ModelParametersProps> = ({
             }`}
             aria-live="polite"
           >
-            {value.toFixed(decimalPlaces).replace('-0.00', '0.00')}
+            {String(value.toFixed(decimalPlaces).replace('-0.00', '0.00'))}
           </output>
           {showButtons && (
             <div className="flex items-center gap-1">

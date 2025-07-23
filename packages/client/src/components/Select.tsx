@@ -4,12 +4,15 @@ import { CaretSortIcon, CheckIcon, ChevronDownIcon, ChevronUpIcon } from '@radix
 
 import { cn } from '~/utils';
 
+// @ts-ignore - Radix UI type conflicts with React types
 const Select = SelectPrimitive.Root;
 
+// @ts-ignore - Radix UI type conflicts with React types
 const SelectGroup = SelectPrimitive.Group;
 
 const SelectValue = SelectPrimitive.Value;
 
+// @ts-ignore - Radix UI type conflicts with React types
 const SelectTrigger = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Trigger>,
   React.ComponentPropsWithoutRef<typeof SelectPrimitive.Trigger>

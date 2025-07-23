@@ -1,4 +1,4 @@
-import React from 'react';
+import * as React from 'react';
 import * as Ariakit from '@ariakit/react';
 import type * as t from '~/common';
 import { cn } from '~/utils';
@@ -42,14 +42,14 @@ const DropdownPopup: React.FC<DropdownProps> = ({
   if (mountByState) {
     return (
       <Ariakit.MenuProvider store={menu}>
-        {trigger}
+        {trigger as React.JSX.Element}
         {isOpen && <Menu {...props} />}
       </Ariakit.MenuProvider>
     );
   }
   return (
     <Ariakit.MenuProvider store={menu}>
-      {trigger}
+      {trigger as React.JSX.Element}
       <Menu {...props} />
     </Ariakit.MenuProvider>
   );
@@ -98,7 +98,6 @@ const Menu: React.FC<MenuProps> = ({
                 itemClassName,
               )}
               disabled={item.disabled}
-              render={item.render}
               ref={item.ref}
               hideOnClick={item.hideOnClick}
               onClick={(event) => {

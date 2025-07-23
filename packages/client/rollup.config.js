@@ -79,14 +79,6 @@ export default {
     if (warning.code === 'MODULE_LEVEL_DIRECTIVE') {
       return;
     }
-    // Ignore PostCSS warnings about complex selectors
-    if (
-      warning.plugin === 'postcss' &&
-      warning.message &&
-      warning.message.includes('can not be transformed to an equivalent selector')
-    ) {
-      return;
-    }
     warn(warning);
   },
 };

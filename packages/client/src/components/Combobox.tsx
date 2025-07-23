@@ -110,7 +110,7 @@ export default function ComboboxComponent({
             )}
           >
             <RadixSelect.Viewport className="mb-5 h-[var(--radix-select-trigger-height)] w-full min-w-[var(--radix-select-trigger-width)]">
-              <div className="group sticky left-0 top-0 z-10 flex h-12 items-center gap-2 bg-white px-2 px-3 py-2 text-black duration-300 dark:bg-gray-700 dark:text-white">
+              <div className="group sticky left-0 top-0 z-10 flex h-12 items-center gap-2 bg-white px-3 py-2 text-black duration-300 dark:bg-gray-700 dark:text-white">
                 <SearchIcon className="h-4 w-4 text-gray-500 transition-colors duration-300 dark:group-focus-within:text-gray-300 dark:group-hover:text-gray-300" />
                 <Combobox
                   autoSelect

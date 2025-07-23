@@ -46,7 +46,7 @@ export default function MultiSearch({
         type="text"
         value={value ?? ''}
         onChange={onChangeHandler}
-        placeholder={placeholder ?? localize('com_ui_select_search_model')}
+        placeholder={String(placeholder ?? localize('com_ui_select_search_model'))}
         aria-label="Search Model"
         className="flex-1 rounded-md border-none bg-transparent px-2.5 py-2 text-sm placeholder-text-secondary focus:outline-none focus:ring-1 focus:ring-ring-primary"
       />
