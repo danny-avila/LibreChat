@@ -8,6 +8,8 @@ interface ChartData {
   identifier: string;
   complexity: 'simple' | 'moderate' | 'complex';
   title: string;
+  xLabel: string;
+  yLabel: string;
   data: any;
 }
 
@@ -22,6 +24,7 @@ const ChartToggle = ({
     <div className="mb-4 flex w-fit items-center rounded-lg bg-gray-100 p-1 dark:border dark:border-slate-700/50 dark:bg-slate-800/50">
       <button
         onClick={() => onToggle('bar')}
+        aria-label="Switch to bar chart view"
         className={cn(
           'flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-all duration-200',
           activeChart === 'bar'
@@ -34,6 +37,7 @@ const ChartToggle = ({
       </button>
       <button
         onClick={() => onToggle('line')}
+        aria-label="Switch to line chart view"
         className={cn(
           'flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-all duration-200',
           activeChart === 'line'
@@ -48,263 +52,332 @@ const ChartToggle = ({
   );
 };
 
-const extractAxisLabels = (data: any) => {
-  let xAxisLabel = '';
-  let yAxisLabel = '';
+// Custom Interactive Legend Component
+const CustomLegend = ({
+  series,
+  colors,
+  chartInstance,
+  isDark,
+}: {
+  series: any[];
+  colors: string[];
+  chartInstance: React.RefObject<echarts.ECharts | null>;
+  isDark: boolean;
+}) => {
+  const [hiddenSeries, setHiddenSeries] = useState(new Set<string>());
 
-  // Extract X-axis label - check multiple possible locations
-  if (data.xAxis) {
-    if (Array.isArray(data.xAxis)) {
-      xAxisLabel = data.xAxis[0]?.name || data.xAxis[0]?.axisLabel?.name || '';
+  const handleLegendClick = (seriesName: string) => {
+    const newHidden = new Set(hiddenSeries);
+    const isCurrentlyHidden = newHidden.has(seriesName);
+
+    if (isCurrentlyHidden) {
+      newHidden.delete(seriesName);
     } else {
-      xAxisLabel = data.xAxis?.name || data.xAxis?.axisLabel?.name || '';
+      newHidden.add(seriesName);
     }
-  }
 
-  // Extract Y-axis label - check multiple possible locations
-  if (data.yAxis) {
-    if (Array.isArray(data.yAxis)) {
-      yAxisLabel = data.yAxis[0]?.name || data.yAxis[0]?.axisLabel?.name || '';
-    } else {
-      yAxisLabel = data.yAxis?.name || data.yAxis?.axisLabel?.name || '';
+    setHiddenSeries(newHidden);
+
+    // Update ECharts to show/hide series
+    if (chartInstance.current) {
+      chartInstance.current.dispatchAction({
+        type: 'legendToggleSelect',
+        name: seriesName,
+      });
     }
-  }
+  };
 
-  // Fallback: try to infer from series names or data structure
-  if (!xAxisLabel && data.series && data.series[0]) {
-    xAxisLabel = 'Categories'; // Generic fallback
-  }
-
-  if (!yAxisLabel && data.series && data.series[0]) {
-    yAxisLabel = 'Values'; // Generic fallback
-  }
-
-  return { xAxisLabel, yAxisLabel };
+  return (
+    <div className="flex items-center justify-center gap-4 py-1">
+      {series.map((s, index) => (
+        <button
+          key={s.name}
+          onClick={() => handleLegendClick(s.name)}
+          className={`flex items-center gap-2 transition-all duration-200 hover:opacity-80 ${
+            hiddenSeries.has(s.name) ? 'opacity-50' : 'opacity-100'
+          }`}
+        >
+          <div
+            className="h-3 w-3 rounded transition-all duration-200"
+            style={{
+              backgroundColor: hiddenSeries.has(s.name) ? '#ccc' : colors[index],
+            }}
+          />
+          <span
+            className={`text-xs font-medium transition-all duration-200 ${
+              isDark ? 'text-slate-300' : 'text-gray-700'
+            } ${hiddenSeries.has(s.name) ? 'line-through' : ''}`}
+          >
+            {s.name}
+          </span>
+        </button>
+      ))}
+    </div>
+  );
 };
 
+// Enhanced chart options with optimized padding
 const enhanceChartOptions = (data: any, isDark: boolean) => {
-  const enhancedOptions = { ...data };
+  try {
+    const enhancedOptions = JSON.parse(JSON.stringify(data));
 
-  // Calculate dynamic height
-  const calculateHeight = () => {
-    if (data.series && Array.isArray(data.series)) {
-      const maxDataPoints = Math.max(
-        ...data.series.map((s: any) => (Array.isArray(s.data) ? s.data.length : 0)),
-      );
-      if (maxDataPoints > 20) return 450;
-      if (maxDataPoints > 10) return 400;
-    }
-    return 350;
-  };
-
-  // Enhanced grid configuration with better spacing
-  enhancedOptions.grid = {
-    ...enhancedOptions.grid,
-    left: '70px',
-    right: '40px',
-    top: '100px',
-    bottom: '50px',
-    containLabel: false,
-  };
-
-  // Title configuration with better positioning
-  if (enhancedOptions.title) {
-    enhancedOptions.title = {
-      ...enhancedOptions.title,
-      left: 'center',
-      top: '12px',
-      textStyle: {
-        ...enhancedOptions.title.textStyle,
-        color: isDark ? '#ffffff' : '#333333',
-        fontSize: 16,
-        fontWeight: 'bold',
-      },
-    };
-  }
-
-  // Legend with increased spacing from title
-  enhancedOptions.legend = {
-    ...enhancedOptions.legend,
-    top: '45px',
-    left: 'center',
-    orient: 'horizontal',
-    itemGap: 20,
-    textStyle: {
-      color: isDark ? '#ffffff' : '#333333',
-      fontSize: 12,
-    },
-  };
-
-  // X-axis configuration
-  if (enhancedOptions.xAxis) {
-    const xAxisConfig = {
-      name: '',
-      axisLine: { lineStyle: { color: isDark ? '#ffffff' : '#333333' } },
-      axisTick: { lineStyle: { color: isDark ? '#ffffff' : '#333333' } },
-      axisLabel: {
-        color: isDark ? '#ffffff' : '#333333',
-        fontSize: 11,
-        hideOverlap: true,
-        interval: 'auto',
-        margin: 6,
-      },
+    // OPTIMIZED padding - tighter spacing
+    enhancedOptions.grid = {
+      left: '5%',
+      right: '5%',
+      top: '5px',
+      bottom: '35px',
+      containLabel: true,
     };
 
-    if (Array.isArray(enhancedOptions.xAxis)) {
-      enhancedOptions.xAxis.forEach((axis: any) => {
-        Object.assign(axis, xAxisConfig);
-      });
-    } else {
-      Object.assign(enhancedOptions.xAxis, xAxisConfig);
-    }
-  }
+    // Remove title - handled by our layout
+    delete enhancedOptions.title;
 
-  // Y-axis configuration
-  if (enhancedOptions.yAxis) {
-    const yAxisConfig = {
-      name: '',
-      axisLine: { lineStyle: { color: isDark ? '#ffffff' : '#333333' } },
-      axisTick: { lineStyle: { color: isDark ? '#ffffff' : '#333333' } },
-      axisLabel: {
-        color: isDark ? '#ffffff' : '#333333',
-        fontSize: 11,
-        hideOverlap: true,
-        margin: 6,
-      },
+    // DISABLE ECharts legend - we use custom legend
+    enhancedOptions.legend = {
+      show: false,
     };
 
-    if (Array.isArray(enhancedOptions.yAxis)) {
-      enhancedOptions.yAxis.forEach((axis: any) => {
-        Object.assign(axis, yAxisConfig);
-      });
-    } else {
-      Object.assign(enhancedOptions.yAxis, yAxisConfig);
-    }
-  }
+    // X-axis with word wrap AND rotation
+    if (enhancedOptions.xAxis) {
+      const xAxisConfig = {
+        axisLine: { lineStyle: { color: isDark ? '#ffffff' : '#333333' } },
+        axisTick: { lineStyle: { color: isDark ? '#ffffff' : '#333333' } },
+        axisLabel: {
+          color: isDark ? '#ffffff' : '#333333',
+          fontSize: 10,
+          interval: 0,
+          rotate: 35,
+          margin: 6,
+          width: 70,
+          overflow: 'break',
+          lineHeight: 12,
+          formatter: function (value: string) {
+            if (value.length > 12) {
+              const words = value.split(' ');
+              if (words.length > 1) {
+                const mid = Math.ceil(words.length / 2);
+                return words.slice(0, mid).join(' ') + '\n' + words.slice(mid).join(' ');
+              } else {
+                const breakPoint = Math.ceil(value.length / 2);
+                return value.substring(0, breakPoint) + '\n' + value.substring(breakPoint);
+              }
+            }
+            return value;
+          },
+        },
+      };
 
-  return { options: enhancedOptions, height: calculateHeight() };
+      if (Array.isArray(enhancedOptions.xAxis)) {
+        enhancedOptions.xAxis.forEach((axis: any) => {
+          Object.assign(axis, xAxisConfig);
+        });
+      } else {
+        Object.assign(enhancedOptions.xAxis, xAxisConfig);
+      }
+    }
+
+    // Y-axis configuration
+    if (enhancedOptions.yAxis) {
+      const yAxisConfig = {
+        axisLine: { lineStyle: { color: isDark ? '#ffffff' : '#333333' } },
+        axisTick: { lineStyle: { color: isDark ? '#ffffff' : '#333333' } },
+        axisLabel: {
+          color: isDark ? '#ffffff' : '#333333',
+          fontSize: 10,
+          margin: 6,
+        },
+      };
+
+      if (Array.isArray(enhancedOptions.yAxis)) {
+        enhancedOptions.yAxis.forEach((axis: any) => {
+          Object.assign(axis, yAxisConfig);
+        });
+      } else {
+        Object.assign(enhancedOptions.yAxis, yAxisConfig);
+      }
+    }
+
+    return enhancedOptions;
+  } catch (error) {
+    console.error('Error enhancing chart options:', error);
+    throw error;
+  }
 };
 
-const ChartWithLabels = ({
+const ChartWithCustomLegend = ({
   data,
   complexity,
   identifier,
+  xLabel,
+  yLabel,
+  title,
   isDark,
 }: {
   data: any;
   complexity: string;
   identifier: string;
+  xLabel: string;
+  yLabel: string;
+  title: string;
   isDark: boolean;
 }) => {
   const chartRef = useRef<HTMLDivElement>(null);
   const chartInstance = useRef<echarts.ECharts | null>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
+  const [hasError, setHasError] = useState(false);
 
-  const { xAxisLabel, yAxisLabel } = extractAxisLabels(data);
-  const [labelPositions, setLabelPositions] = useState({ yCenter: '50%', xBottom: '25px' });
+  const hasMultipleSeries = data.series && data.series.length > 1;
 
-  // Enhanced positioning calculation
-  const calculateLabelPositions = () => {
-    if (!chartRef.current || !containerRef.current) return;
+  const titleHeight = 40;
+  const legendHeight = hasMultipleSeries ? 30 : 0;
+  const yLabelWidth = 45;
+  const xLabelHeight = 30;
+  const chartHeight = 350;
 
-    const chartRect = chartRef.current.getBoundingClientRect();
-    const { options } = enhanceChartOptions(data, isDark);
-    const gridTop = parseInt(options.grid.top) || 100;
-    const gridBottom = parseInt(options.grid.bottom) || 50;
-    const chartHeight = chartRect.height;
-
-    // Y-label centered on the actual plotting area
-    const plotAreaTop = gridTop;
-    const plotAreaHeight = chartHeight - gridTop - gridBottom;
-    const yLabelCenter = plotAreaTop + plotAreaHeight / 2;
-
-    // X-label positioned closer to chart bottom
-    const xLabelBottom = gridBottom - 18;
-
-    setLabelPositions({
-      yCenter: `${yLabelCenter}px`,
-      xBottom: `${xLabelBottom}px`,
-    });
-  };
+  const totalHeight = titleHeight + legendHeight + chartHeight + xLabelHeight;
 
   useEffect(() => {
-    if (!chartRef.current) return;
+    if (!chartRef.current || hasError) return;
 
-    const { options, height } = enhanceChartOptions(data, isDark);
+    let mounted = true;
 
-    chartInstance.current = echarts.init(chartRef.current);
-    chartInstance.current.setOption(options);
+    try {
+      const options = enhanceChartOptions(data, isDark);
 
-    setTimeout(calculateLabelPositions, 100);
+      if (chartInstance.current) {
+        chartInstance.current.dispose();
+      }
 
-    const handleResize = () => {
-      chartInstance.current?.resize();
-      setTimeout(calculateLabelPositions, 100);
-    };
+      chartInstance.current = echarts.init(chartRef.current);
 
-    window.addEventListener('resize', handleResize);
+      if (!chartInstance.current) {
+        throw new Error('Failed to initialize ECharts instance');
+      }
 
-    return () => {
-      window.removeEventListener('resize', handleResize);
-      chartInstance.current?.dispose();
-    };
-  }, [data, isDark]);
+      chartInstance.current.setOption(options);
 
-  const { height } = enhanceChartOptions(data, isDark);
+      const handleResize = () => {
+        try {
+          if (mounted && chartInstance.current) {
+            chartInstance.current.resize();
+          }
+        } catch (error) {
+          console.error('Error during chart resize:', error);
+          if (mounted) {
+            setHasError(true);
+          }
+        }
+      };
+
+      window.addEventListener('resize', handleResize);
+
+      return () => {
+        mounted = false;
+        window.removeEventListener('resize', handleResize);
+        try {
+          if (chartInstance.current) {
+            chartInstance.current.dispose();
+            chartInstance.current = null;
+          }
+        } catch (error) {
+          console.error('Error disposing chart instance:', error);
+        }
+      };
+    } catch (error) {
+      console.error('Error initializing chart:', error);
+      if (mounted) {
+        setHasError(true);
+      }
+    }
+  }, [data, isDark, hasError, identifier]);
+
+  if (hasError) {
+    return (
+      <div className="flex items-center justify-center rounded-lg border border-red-200 bg-red-50 p-8 dark:border-red-800 dark:bg-red-900/20">
+        <div className="text-center">
+          <p className="font-medium text-red-600 dark:text-red-400">Chart rendering failed</p>
+          <p className="mt-1 text-sm text-red-600 dark:text-red-400">
+            Unable to display this chart
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
-      ref={containerRef}
-      className="relative w-full rounded-lg border bg-white dark:border-slate-700 dark:bg-slate-900 dark:shadow-xl dark:shadow-slate-900/20"
+      className="relative rounded-lg border bg-white dark:border-slate-700 dark:bg-slate-900"
+      style={{ width: '700px', height: `${totalHeight}px` }}
     >
-      <div className="overflow-x-auto">
-        <div className="relative p-5" style={{ minWidth: '600px', minHeight: `${height + 90}px` }}>
-          {/* Y-axis label */}
-          {yAxisLabel && (
-            <div
-              className="absolute left-2 flex items-center justify-center"
-              style={{
-                top: labelPositions.yCenter,
-                transform: 'translateY(-50%) rotate(-90deg)',
-                transformOrigin: 'center',
-                zIndex: 10,
-              }}
-            >
-              <span className="whitespace-nowrap rounded bg-white/95 px-2 py-1 text-sm font-semibold text-gray-700 shadow-sm dark:bg-slate-800/95 dark:text-slate-300">
-                {yAxisLabel}
-              </span>
-            </div>
-          )}
+      {/* Container 1: Title - Reduced padding */}
+      <div
+        className="absolute left-0 right-0 top-0 flex items-center justify-center py-2"
+        style={{ height: `${titleHeight}px` }}
+      >
+        <h3 className="text-center text-lg font-semibold text-gray-900 dark:text-white">{title}</h3>
+      </div>
 
-          {/* Chart container */}
-          <div className="flex justify-center" style={{ marginLeft: '32px', marginRight: '16px' }}>
-            <div
-              ref={chartRef}
-              className="w-full max-w-5xl"
-              style={{
-                height: `${height}px`,
-                minHeight: '350px',
-                minWidth: '500px',
-              }}
-            />
-          </div>
-
-          {/* X-axis label */}
-          {xAxisLabel && (
-            <div
-              className="absolute left-1/2 flex items-center justify-center"
-              style={{
-                bottom: labelPositions.xBottom,
-                transform: 'translateX(-50%)',
-                zIndex: 10,
-              }}
-            >
-              <span className="whitespace-nowrap rounded bg-white/95 px-2 py-1 text-sm font-semibold text-gray-700 shadow-sm dark:bg-slate-800/95 dark:text-slate-300">
-                {xAxisLabel}
-              </span>
-            </div>
-          )}
+      {/* Container 2: Custom Legend - Reduced padding */}
+      {hasMultipleSeries && (
+        <div
+          className="absolute left-0 right-0"
+          style={{
+            top: `${titleHeight}px`,
+            height: `${legendHeight}px`,
+          }}
+        >
+          <CustomLegend
+            series={data.series}
+            colors={data.color}
+            chartInstance={chartInstance}
+            isDark={isDark}
+          />
         </div>
+      )}
+
+      {/* Container 3: Y-Axis Label*/}
+      <div
+        className="absolute left-0 flex items-center justify-center pl-6"
+        style={{
+          top: `${titleHeight + legendHeight}px`,
+          width: `${yLabelWidth}px`,
+          height: `${chartHeight}px`,
+        }}
+      >
+        <div
+          className="-rotate-90 transform whitespace-nowrap"
+          style={{ transformOrigin: 'center' }}
+        >
+          <span className="text-sm font-medium text-gray-700 dark:text-slate-300">{yLabel}</span>
+        </div>
+      </div>
+
+      {/* Container 4: Chart Area*/}
+      <div
+        className="absolute"
+        style={{
+          top: `${titleHeight + legendHeight}px`,
+          left: `${yLabelWidth}px`,
+          right: '0px',
+          height: `${chartHeight}px`,
+        }}
+      >
+        <div
+          ref={chartRef}
+          className="h-full w-full"
+          aria-label={`Chart showing ${xLabel} vs ${yLabel}`}
+        />
+      </div>
+
+      {/* Container 5: X-Axis Label*/}
+      <div
+        className="absolute left-0 right-0 flex items-center justify-center py-1"
+        style={{
+          top: `${titleHeight + legendHeight + chartHeight - 30}px`,
+          height: `${xLabelHeight}px`,
+        }}
+      >
+        <span className="text-sm font-medium text-gray-700 dark:text-slate-300">{xLabel}</span>
       </div>
     </div>
   );
@@ -314,10 +387,16 @@ const ChartComponent = ({
   data,
   complexity,
   identifier,
+  xLabel,
+  yLabel,
+  title,
 }: {
   data: any;
   complexity: string;
   identifier: string;
+  xLabel: string;
+  yLabel: string;
+  title: string;
 }) => {
   const [isDark, setIsDark] = useState(false);
 
@@ -338,7 +417,17 @@ const ChartComponent = ({
   }, []);
 
   return (
-    <ChartWithLabels data={data} complexity={complexity} identifier={identifier} isDark={isDark} />
+    <div className="flex justify-center">
+      <ChartWithCustomLegend
+        data={data}
+        complexity={complexity}
+        identifier={identifier}
+        xLabel={xLabel}
+        yLabel={yLabel}
+        title={title}
+        isDark={isDark}
+      />
+    </div>
   );
 };
 
@@ -348,17 +437,26 @@ const ChartRenderer = ({ charts }: { charts: ChartData[] }) => {
   const barChart = charts.find((chart) => chart.type === 'bar');
   const lineChart = charts.find((chart) => chart.type === 'line');
 
-  if (!barChart && !lineChart) return null;
+  if (!barChart && !lineChart) {
+    return null;
+  }
+
+  const handleToggle = (type: 'bar' | 'line') => {
+    setActiveChart(type);
+  };
 
   return (
-    <div className="my-6">
-      <ChartToggle onToggle={setActiveChart} activeChart={activeChart} />
+    <div className="my-6" role="region" aria-label="Interactive chart display">
+      <ChartToggle onToggle={handleToggle} activeChart={activeChart} />
 
       {activeChart === 'bar' && barChart && (
         <ChartComponent
           data={barChart.data}
           complexity={barChart.complexity}
           identifier={barChart.identifier}
+          xLabel={barChart.xLabel}
+          yLabel={barChart.yLabel}
+          title={barChart.title}
         />
       )}
 
@@ -367,6 +465,9 @@ const ChartRenderer = ({ charts }: { charts: ChartData[] }) => {
           data={lineChart.data}
           complexity={lineChart.complexity}
           identifier={lineChart.identifier}
+          xLabel={lineChart.xLabel}
+          yLabel={lineChart.yLabel}
+          title={lineChart.title}
         />
       )}
     </div>

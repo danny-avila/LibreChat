@@ -5,7 +5,7 @@ import Markdown from '~/components/Chat/Messages/Content/Markdown';
 import { useChatContext, useMessageContext } from '~/Providers';
 import { cn } from '~/utils';
 import store from '~/store';
-import ChartRenderer from '~/components/Chat/Messages/Content/ChartRenderer';
+import { ContentEnhancer } from '~/components/Chat/Messages/Content/ContentEnhancer';
 
 type TextPartProps = {
   text: string;
@@ -18,44 +18,6 @@ type ContentType =
   | ReactElement<React.ComponentProps<typeof MarkdownLite>>
   | ReactElement;
 
-// Minimal chart parsing function (moved from the bloated version)
-const parseChartBlocks = (text: string) => {
-  const chartRegex = /:::(bar|line)chart\{([^}]+)\}\n([\s\S]*?)\n:::/g;
-  const charts: any[] = [];
-  let cleanedText = text;
-  let match;
-
-  while ((match = chartRegex.exec(text)) !== null) {
-    const [fullMatch, chartType, attributes, jsonData] = match;
-
-    try {
-      const attrMatches = attributes.match(/(\w+)="([^"]+)"/g) || [];
-      const attrs: Record<string, string> = {};
-
-      attrMatches.forEach((attr) => {
-        const [key, value] = attr.split('=');
-        attrs[key] = value.replace(/"/g, '');
-      });
-
-      const parsedData = JSON.parse(jsonData.trim());
-
-      charts.push({
-        type: chartType as 'bar' | 'line',
-        identifier: attrs.identifier || `chart-${Date.now()}`,
-        complexity: (attrs.complexity as 'simple' | 'moderate' | 'complex') || 'simple',
-        title: attrs.title || 'Chart',
-        data: parsedData,
-      });
-
-      cleanedText = cleanedText.replace(fullMatch, '');
-    } catch (error) {
-      console.error('Error parsing chart block:', error);
-    }
-  }
-
-  return { charts, cleanedText: cleanedText.trim() };
-};
-
 const TextPart = memo(({ text, isCreatedByUser, showCursor }: TextPartProps) => {
   const { messageId } = useMessageContext();
   const { isSubmitting, latestMessage } = useChatContext();
@@ -66,23 +28,20 @@ const TextPart = memo(({ text, isCreatedByUser, showCursor }: TextPartProps) => 
     [messageId, latestMessage?.messageId],
   );
 
-  // Only parse charts for non-user messages
-  const { charts, cleanedText } = useMemo(() => {
-    if (!isCreatedByUser) {
-      return parseChartBlocks(text);
-    }
-    return { charts: [], cleanedText: text };
+  // Process content through the enhancer - this is the only addition
+  const { processedText, enhancedElements } = useMemo(() => {
+    return ContentEnhancer.process(text, isCreatedByUser);
   }, [text, isCreatedByUser]);
 
   const content: ContentType = useMemo(() => {
     if (!isCreatedByUser) {
-      return <Markdown content={cleanedText} isLatestMessage={isLatestMessage} />;
+      return <Markdown content={processedText} isLatestMessage={isLatestMessage} />;
     } else if (enableUserMsgMarkdown) {
-      return <MarkdownLite content={cleanedText} />;
+      return <MarkdownLite content={processedText} />;
     } else {
-      return <>{cleanedText}</>;
+      return <>{processedText}</>;
     }
-  }, [isCreatedByUser, enableUserMsgMarkdown, cleanedText, isLatestMessage]);
+  }, [isCreatedByUser, enableUserMsgMarkdown, processedText, isLatestMessage]);
 
   return (
     <div
@@ -95,7 +54,7 @@ const TextPart = memo(({ text, isCreatedByUser, showCursor }: TextPartProps) => 
       )}
     >
       {content}
-      {charts.length > 0 && <ChartRenderer charts={charts} />}
+      {enhancedElements}
     </div>
   );
 });
