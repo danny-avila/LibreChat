@@ -4,7 +4,7 @@ services:
     #   context: .
     #   dockerfile: Dockerfile.multi
     #   target: api-build
-    image: ghcr.io/edo-andres/librechat-avi-api:master_dev
+    image: ghcr.io/edo-andres/librechat-avi-api:develop
     #container_name: LibreChat-API
     expose:
       - 3080
@@ -15,7 +15,7 @@ services:
     networks:
       - dokploy-network
     extra_hosts:
-    - "host.docker.internal:host-gateway"
+      - "host.docker.internal:host-gateway"
     env_file:
       - ../files/.env
     environment:
@@ -25,14 +25,12 @@ services:
       - MEILI_HOST=http://meilisearch:7700
       - RAG_PORT=${RAG_PORT:-8000}
       - RAG_API_URL=http://rag_api:${RAG_PORT:-8000}
-      - ELEVENLABS_AGENT_ID=${ELEVENLABS_AGENT_ID}
+      #- ELEVENLABS_AGENT_ID=${ELEVENLABS_AGENT_ID}
     volumes:
-      - type: bind
-        source: ./librechat.yaml
-        target: /app/librechat.yaml
-      - ./images:/app/client/public/images
-      - ./uploads:/app/uploads
-      - ./logs:/app/api/logs
+      - ../files/librechat.yaml:/app/librechat.yaml     
+      - ../files/images:/app/client/public/images
+      - ../files/uploads:/app/uploads
+      - ../files/logs:/app/api/logs
 
   client:
     image: nginx:1.27.0-alpine
@@ -64,7 +62,7 @@ services:
     networks:
       - dokploy-network
     volumes:
-      - ./data-node:/data/db
+      - ../files/data-node:/data/db
     command: mongod --noauth
 
   meilisearch:
@@ -81,7 +79,7 @@ services:
       - MEILI_HOST=http://meilisearch:7700
       - MEILI_NO_ANALYTICS=true
     volumes:
-      - ./meili_data_v1.12:/meili_data
+      - ../files/meili_data_v1.12:/meili_data
 
   vectordb:
     image: ankane/pgvector:latest
@@ -93,7 +91,7 @@ services:
     networks:
       - dokploy-network
     volumes:
-      - pgdata2:/var/lib/postgresql/data
+      - ../files/pgdata2:/var/lib/postgresql/data
 
   rag_api:
     image: ghcr.io/danny-avila/librechat-rag-api-dev-lite:latest
