@@ -13,6 +13,7 @@ const knownEndpointAssets = {
   [KnownEndpoints.google]: '/assets/google.svg',
   [KnownEndpoints.groq]: '/assets/groq.png',
   [KnownEndpoints.huggingface]: '/assets/huggingface.svg',
+  [KnownEndpoints.langdb]: '/assets/langdb.svg',
   [KnownEndpoints.mistral]: '/assets/mistral.png',
   [KnownEndpoints.mlx]: '/assets/mlx.png',
   [KnownEndpoints.ollama]: '/assets/ollama.png',

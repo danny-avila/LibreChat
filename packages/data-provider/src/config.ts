@@ -818,6 +818,7 @@ export enum KnownEndpoints {
   deepseek = 'deepseek',
   groq = 'groq',
   huggingface = 'huggingface',
+  langdb = 'langdb',
   mistral = 'mistral',
   mlx = 'mlx',
   ollama = 'ollama',
