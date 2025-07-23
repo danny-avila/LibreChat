@@ -28,6 +28,8 @@ export class MCPManager {
   private mcpConfigs: t.MCPServers = {};
   /** Store MCP server instructions */
   private serverInstructions: Map<string, string> = new Map();
+  /** Track servers that required OAuth at startup */
+  private oauthServers: Set<string> = new Set();
 
   public static getInstance(): MCPManager {
     if (!MCPManager.instance) {
@@ -167,38 +169,14 @@ export class MCPManager {
     }
     const connection = new MCPConnection(serverName, processedConfig, undefined, tokens);
     logger.info(`[MCP][${serverName}] Setting up OAuth event listener`);
-    connection.on('oauthRequired', async (data) => {
+    connection.on('oauthRequired', async () => {
       logger.debug(`[MCP][${serverName}] oauthRequired event received`);
-      const result = await this.handleOAuthRequired({
-        ...data,
-        flowManager,
-      });
-      if (result?.tokens && tokenMethods?.createToken) {
-        try {
-          connection.setOAuthTokens(result.tokens);
-          await MCPTokenStorage.storeTokens({
-            userId: CONSTANTS.SYSTEM_USER_ID,
-            serverName,
-            tokens: result.tokens,
-            createToken: tokenMethods.createToken,
-            updateToken: tokenMethods.updateToken,
-            findToken: tokenMethods.findToken,
-            clientInfo: result.clientInfo,
-          });
-          logger.info(`[MCP][${serverName}] OAuth tokens saved to storage`);
-        } catch (error) {
-          logger.error(`[MCP][${serverName}] Failed to save OAuth tokens to storage`, error);
-        }
-      }
 
-      // Only emit oauthHandled if we actually got tokens (OAuth succeeded)
-      if (result?.tokens) {
-        connection.emit('oauthHandled');
-      } else {
-        // OAuth failed, emit oauthFailed to properly reject the promise
-        logger.warn(`[MCP][${serverName}] OAuth failed, emitting oauthFailed event`);
-        connection.emit('oauthFailed', new Error('OAuth authentication failed'));
-      }
+      this.oauthServers.add(serverName);
+
+      // Skip OAuth at startup - let connection fail gracefully
+      logger.info(`[MCP][${serverName}] OAuth required, skipping at startup`);
+      connection.emit('oauthFailed', new Error('OAuth authentication skipped at startup'));
     });
     try {
       const connectTimeout = processedConfig.initTimeout ?? 30000;
@@ -394,6 +372,7 @@ export class MCPManager {
     oauthStart,
     oauthEnd,
     signal,
+    returnOnOAuth = false,
   }: {
     user: TUser;
     serverName: string;
@@ -403,6 +382,7 @@ export class MCPManager {
     oauthStart?: (authURL: string) => Promise<void>;
     oauthEnd?: () => Promise<void>;
     signal?: AbortSignal;
+    returnOnOAuth?: boolean;
   }): Promise<MCPConnection> {
     const userId = user.id;
     if (!userId) {
@@ -513,6 +493,48 @@ export class MCPManager {
 
     connection.on('oauthRequired', async (data) => {
       logger.info(`[MCP][User: ${userId}][${serverName}] oauthRequired event received`);
+
+      // If we just want to initiate OAuth and return, handle it differently
+      if (returnOnOAuth) {
+        try {
+          const config = this.mcpConfigs[serverName];
+          const { authorizationUrl, flowId, flowMetadata } =
+            await MCPOAuthHandler.initiateOAuthFlow(
+              serverName,
+              data.serverUrl || '',
+              userId,
+              config?.oauth,
+            );
+
+          // Create the flow state so the OAuth callback can find it
+          // We spawn this in the background without waiting for it
+          flowManager.createFlow(flowId, 'mcp_oauth', flowMetadata).catch(() => {
+            // The OAuth callback will resolve this flow, so we expect it to timeout here
+            // which is fine - we just need the flow state to exist
+          });
+
+          if (oauthStart) {
+            logger.info(
+              `[MCP][User: ${userId}][${serverName}] OAuth flow started, issuing authorization URL`,
+            );
+            await oauthStart(authorizationUrl);
+          }
+
+          // Emit oauthFailed to signal that connection should not proceed
+          // but OAuth was successfully initiated
+          connection?.emit('oauthFailed', new Error('OAuth flow initiated - return early'));
+          return;
+        } catch (error) {
+          logger.error(
+            `[MCP][User: ${userId}][${serverName}] Failed to initiate OAuth flow`,
+            error,
+          );
+          connection?.emit('oauthFailed', new Error('OAuth initiation failed'));
+          return;
+        }
+      }
+
+      // Normal OAuth handling - wait for completion
       const result = await this.handleOAuthRequired({
         ...data,
         flowManager,
@@ -598,7 +620,6 @@ export class MCPManager {
 
   /** Removes a specific user connection entry */
   private removeUserConnection(userId: string, serverName: string): void {
-    // Remove connection object
     const userMap = this.userConnections.get(userId);
     if (userMap) {
       userMap.delete(serverName);
@@ -1110,5 +1131,13 @@ ${logPrefix} Flow ID: ${newFlowId}
       logger.error(`${logPrefix} Failed to complete OAuth flow for ${serverName}`, error);
       return null;
     }
+  }
+  public getUserConnections(userId: string) {
+    return this.userConnections.get(userId);
+  }
+
+  /** Get servers that require OAuth */
+  public getOAuthServers(): Set<string> {
+    return this.oauthServers;
   }
 }

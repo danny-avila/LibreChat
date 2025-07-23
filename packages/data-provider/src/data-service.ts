@@ -145,6 +145,18 @@ export const reinitializeMCPServer = (serverName: string) => {
   return request.post(endpoints.mcpReinitialize(serverName));
 };
 
+export const getMCPConnectionStatus = (): Promise<q.MCPConnectionStatusResponse> => {
+  return request.get(endpoints.mcpConnectionStatus());
+};
+
+export const getMCPAuthValues = (serverName: string): Promise<q.MCPAuthValuesResponse> => {
+  return request.get(endpoints.mcpAuthValues(serverName));
+};
+
+export function cancelMCPOAuth(serverName: string): Promise<m.CancelMCPOAuthResponse> {
+  return request.post(endpoints.cancelMCPOAuth(serverName), {});
+}
+
 /* Config */
 
 export const getStartupConfig = (): Promise<
