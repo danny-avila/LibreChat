@@ -285,8 +285,25 @@ endpoints:
       forcePrompt: false
       modelDisplayLabel: 'Portkey'
       iconURL: https://images.crunchbase.com/image/upload/c_pad,f_auto,q_auto:eco,dpr_1/rjqy7ghvjoiu4cd1xjbf
-# fileConfig:
-#   endpoints:
+    
+    # LangDB Example
+    - name: 'LangDB'
+      apiKey: '${LANGDB_API_KEY}'
+      baseURL: 'https://api.us-east-1.langdb.ai'
+      models:
+        default: ['openai/gpt-4.1-nano']
+        fetch: true
+      titleConvo: true
+      titleModel: 'openai/gpt-4.1-nano'
+      modelDisplayLabel: 'LangDB'
+      headers:
+        x-project-id: '${LANGDB_PROJECT_ID}'
+        x-user-id: '{{LIBRECHAT_USER_ID}}'
+        x-user-name: '{{LIBRECHAT_USER_NAME}}'
+        x-email: '{{LIBRECHAT_USER_EMAIL}}'
+        x-user-tiers: '{{LIBRECHAT_USER_ROLE}}'
+        x-thread-id: '{{LIBRECHAT_CONVERSATION_ID}}'
+      iconURL: 'https://raw.githubusercontent.com/langdb/ai-gateway/main/assets/images/logos/icon_red.png'
 #     assistants:
 #       fileLimit: 5
 #       fileSizeLimit: 10  # Maximum size for an individual file in MB

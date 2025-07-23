@@ -28,7 +28,24 @@ const initializeClient = async ({ req, res, endpointOption, optionsOnly, overrid
   const CUSTOM_API_KEY = extractEnvVariable(endpointConfig.apiKey);
   const CUSTOM_BASE_URL = extractEnvVariable(endpointConfig.baseURL);
 
-  let resolvedHeaders = resolveHeaders(endpointConfig.headers, req.user);
+  // Set conversation ID in customUserVars if it exists
+  const customUserVars = {};
+  if (req.body.conversationId) {
+    customUserVars.LIBRECHAT_CONVERSATION_ID = req.body.conversationId;
+  }
+
+  let resolvedHeaders = resolveHeaders(endpointConfig.headers, req.user, customUserVars);
+
+  // Filter out headers with unresolved placeholders
+  const filteredHeaders = {};
+  for (const [key, value] of Object.entries(resolvedHeaders)) {
+    if (typeof value === 'string' && value.includes('{{') && value.includes('}}')) {
+      continue;
+    }
+    filteredHeaders[key] = value;
+  }
+
+  resolvedHeaders = filteredHeaders;
 
   if (CUSTOM_API_KEY.match(envVarRegex)) {
     throw new Error(`Missing API Key for ${endpoint}.`);
