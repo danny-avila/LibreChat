@@ -1485,4 +1485,265 @@ describe('convertJsonSchemaToZod', () => {
       expect(resolvedKeywords.additionalProperties).toBe(false);
     });
   });
+
+  describe('Bare object schema handling for dynamic properties', () => {
+    it('should handle object type without explicit properties but expecting dynamic field definitions', () => {
+      // This simulates the Kintone add_fields tool schema
+      const schema: JsonSchemaType = {
+        type: 'object',
+        properties: {
+          app_id: {
+            type: 'number',
+            description: 'アプリID',
+          },
+          properties: {
+            type: 'object',
+            description: 'フィールドの設定（各フィールドには code, type, label の指定が必須）',
+          },
+        },
+        required: ['app_id', 'properties'],
+      };
+
+      const zodSchema = convertWithResolvedRefs(schema);
+
+      // Test case 1: Basic field definition
+      const testData1 = {
+        app_id: 810,
+        properties: {
+          minutes_id: {
+            code: 'minutes_id',
+            type: 'SINGLE_LINE_TEXT',
+            label: 'minutes_id',
+          },
+        },
+      };
+
+      // WITH THE FIX: Bare object schemas now act as passthrough
+      const result = zodSchema?.parse(testData1);
+      expect(result).toEqual(testData1); // Properties pass through!
+    });
+
+    it('should work when properties field has additionalProperties true', () => {
+      const schema: JsonSchemaType = {
+        type: 'object',
+        properties: {
+          app_id: {
+            type: 'number',
+            description: 'アプリID',
+          },
+          properties: {
+            type: 'object',
+            description: 'フィールドの設定（各フィールドには code, type, label の指定が必須）',
+            additionalProperties: true,
+          },
+        },
+        required: ['app_id', 'properties'],
+      };
+
+      const zodSchema = convertWithResolvedRefs(schema);
+
+      const testData = {
+        app_id: 810,
+        properties: {
+          minutes_id: {
+            code: 'minutes_id',
+            type: 'SINGLE_LINE_TEXT',
+            label: 'minutes_id',
+          },
+        },
+      };
+
+      const result = zodSchema?.parse(testData);
+      expect(result).toEqual(testData);
+      expect(result?.properties?.minutes_id).toBeDefined();
+    });
+
+    it('should work with proper field type definitions in additionalProperties', () => {
+      const schema: JsonSchemaType = {
+        type: 'object',
+        properties: {
+          app_id: {
+            type: 'number',
+            description: 'アプリID',
+          },
+          properties: {
+            type: 'object',
+            description: 'フィールドの設定（各フィールドには code, type, label の指定が必須）',
+            additionalProperties: {
+              type: 'object',
+              properties: {
+                type: { type: 'string' },
+                code: { type: 'string' },
+                label: { type: 'string' },
+                required: { type: 'boolean' },
+                options: {
+                  type: 'object',
+                  additionalProperties: {
+                    type: 'object',
+                    properties: {
+                      label: { type: 'string' },
+                      index: { type: 'string' },
+                    },
+                  },
+                },
+              },
+              required: ['type', 'code', 'label'],
+            },
+          },
+        },
+        required: ['app_id', 'properties'],
+      };
+
+      const zodSchema = convertWithResolvedRefs(schema);
+
+      // Test case 1: Simple text field
+      const testData1 = {
+        app_id: 810,
+        properties: {
+          minutes_id: {
+            code: 'minutes_id',
+            type: 'SINGLE_LINE_TEXT',
+            label: 'minutes_id',
+            required: false,
+          },
+        },
+      };
+
+      const result1 = zodSchema?.parse(testData1);
+      expect(result1).toEqual(testData1);
+
+      // Test case 2: Dropdown field with options
+      const testData2 = {
+        app_id: 820,
+        properties: {
+          status: {
+            type: 'DROP_DOWN',
+            code: 'status',
+            label: 'Status',
+            options: {
+              'Not Started': {
+                label: 'Not Started',
+                index: '0',
+              },
+              'In Progress': {
+                label: 'In Progress',
+                index: '1',
+              },
+            },
+          },
+        },
+      };
+
+      const result2 = zodSchema?.parse(testData2);
+      expect(result2).toEqual(testData2);
+
+      // Test case 3: Multiple fields
+      const testData3 = {
+        app_id: 123,
+        properties: {
+          number_field: {
+            type: 'NUMBER',
+            code: 'number_field',
+            label: '数値フィールド',
+          },
+          text_field: {
+            type: 'SINGLE_LINE_TEXT',
+            code: 'text_field',
+            label: 'テキストフィールド',
+          },
+        },
+      };
+
+      const result3 = zodSchema?.parse(testData3);
+      expect(result3).toEqual(testData3);
+    });
+
+    it('should handle the actual reported failing case', () => {
+      // This is the exact schema that's failing for the user
+      const schema: JsonSchemaType = {
+        type: 'object',
+        properties: {
+          app_id: {
+            type: 'number',
+            description: 'アプリID',
+          },
+          properties: {
+            type: 'object',
+            description: 'フィールドの設定（各フィールドには code, type, label の指定が必須）',
+          },
+        },
+        required: ['app_id', 'properties'],
+      };
+
+      const zodSchema = convertWithResolvedRefs(schema);
+
+      // The exact data the user is trying to send
+      const userData = {
+        app_id: 810,
+        properties: {
+          minutes_id: {
+            code: 'minutes_id',
+            type: 'SINGLE_LINE_TEXT',
+            label: 'minutes_id',
+            required: false,
+          },
+        },
+      };
+
+      // WITH THE FIX: The properties now pass through correctly!
+      const result = zodSchema?.parse(userData);
+      expect(result).toEqual(userData);
+
+      // This fixes the error "properties requires at least one field definition"
+      // The MCP server now receives the full properties object
+    });
+
+    it('should demonstrate fix by treating bare object type as passthrough', () => {
+      // Test what happens if we modify the conversion to treat bare object types
+      // without properties as passthrough schemas
+      const schema: JsonSchemaType = {
+        type: 'object',
+        properties: {
+          app_id: {
+            type: 'number',
+            description: 'アプリID',
+          },
+          properties: {
+            type: 'object',
+            description: 'フィールドの設定（各フィールドには code, type, label の指定が必須）',
+          },
+        },
+        required: ['app_id', 'properties'],
+      };
+
+      // For now, we'll simulate the fix by adding additionalProperties
+      const fixedSchema: JsonSchemaType = {
+        ...schema,
+        properties: {
+          ...schema.properties,
+          properties: {
+            ...(schema.properties!.properties as JsonSchemaType),
+            additionalProperties: true,
+          },
+        },
+      };
+
+      const zodSchema = convertWithResolvedRefs(fixedSchema);
+
+      const userData = {
+        app_id: 810,
+        properties: {
+          minutes_id: {
+            code: 'minutes_id',
+            type: 'SINGLE_LINE_TEXT',
+            label: 'minutes_id',
+            required: false,
+          },
+        },
+      };
+
+      const result = zodSchema?.parse(userData);
+      expect(result).toEqual(userData);
+    });
+  });
 });
