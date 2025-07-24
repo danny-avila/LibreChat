@@ -3,8 +3,7 @@ import { Button, Spinner } from '@librechat/client';
 import { PERMISSION_BITS } from 'librechat-data-provider';
 import type t from 'librechat-data-provider';
 import { useMarketplaceAgentsInfiniteQuery } from '~/data-provider/Agents';
-import { useAgentCategories } from '~/hooks/Agents';
-import useLocalize from '~/hooks/useLocalize';
+import { useAgentCategories, useLocalize } from '~/hooks';
 import { useHasData } from './SmartLoader';
 import ErrorDisplay from './ErrorDisplay';
 import AgentCard from './AgentCard';
@@ -124,8 +123,8 @@ const AgentGrid: React.FC<AgentGridProps> = ({ category, searchQuery, onSelectAg
   const loadingSkeleton = (
     <div className="space-y-6">
       <div className="mb-4">
-        <div className="mb-2 h-6 w-48 animate-pulse rounded-md bg-gray-200 dark:bg-gray-700"></div>
-        <div className="h-4 w-64 animate-pulse rounded-md bg-gray-200 dark:bg-gray-700"></div>
+        <div className="mb-2 h-6 w-48 animate-pulse rounded-md bg-surface-tertiary"></div>
+        <div className="h-4 w-64 animate-pulse rounded-md bg-surface-tertiary"></div>
       </div>
       <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
         {Array(6)
@@ -134,15 +133,21 @@ const AgentGrid: React.FC<AgentGridProps> = ({ category, searchQuery, onSelectAg
             <div
               key={index}
               className={cn(
-                'flex h-[250px] animate-pulse flex-col overflow-hidden rounded-lg',
-                'bg-gray-200 dark:bg-gray-800',
+                'flex animate-pulse overflow-hidden rounded-2xl',
+                'aspect-[5/2.5] w-full',
+                'bg-surface-tertiary',
               )}
             >
-              <div className="h-40 bg-gray-300 dark:bg-gray-700"></div>
-              <div className="flex-1 p-5">
-                <div className="mb-3 h-4 w-3/4 rounded bg-gray-300 dark:bg-gray-700"></div>
-                <div className="mb-2 h-3 w-full rounded bg-gray-300 dark:bg-gray-700"></div>
-                <div className="h-3 w-2/3 rounded bg-gray-300 dark:bg-gray-700"></div>
+              <div className="flex h-full gap-2 px-3 py-2 sm:gap-3 sm:px-4 sm:py-3">
+                {/* Avatar skeleton */}
+                <div className="flex flex-shrink-0 items-center">
+                  <div className="h-10 w-10 rounded-full bg-surface-secondary sm:h-12 sm:w-12"></div>
+                </div>
+                {/* Content skeleton */}
+                <div className="flex flex-1 flex-col justify-center space-y-2">
+                  <div className="h-4 w-3/4 rounded bg-surface-secondary"></div>
+                  <div className="h-3 w-full rounded bg-surface-secondary"></div>
+                </div>
               </div>
             </div>
           ))}
@@ -178,7 +183,7 @@ const AgentGrid: React.FC<AgentGridProps> = ({ category, searchQuery, onSelectAg
       {searchQuery && (
         <div className="mb-4">
           <h2
-            className="text-xl font-bold text-gray-900 dark:text-white"
+            className="text-xl font-bold text-text-primary"
             id={`category-heading-${category}`}
             aria-label={`${getGridTitle()}, ${currentAgents.length || 0} agents available`}
           >
@@ -190,7 +195,7 @@ const AgentGrid: React.FC<AgentGridProps> = ({ category, searchQuery, onSelectAg
       {/* Handle empty results with enhanced accessibility */}
       {(!currentAgents || currentAgents.length === 0) && !isLoading && !isFetching ? (
         <div
-          className="py-12 text-center text-gray-500"
+          className="py-12 text-center text-text-secondary"
           role="status"
           aria-live="polite"
           aria-label={
@@ -258,11 +263,9 @@ const AgentGrid: React.FC<AgentGridProps> = ({ category, searchQuery, onSelectAg
                 variant="outline"
                 onClick={handleLoadMore}
                 className={cn(
-                  'min-w-[160px] border-2 border-gray-300 bg-white px-6 py-3 font-medium text-gray-700',
-                  'shadow-sm transition-all duration-200 hover:border-gray-400 hover:bg-gray-50',
-                  'hover:shadow-md focus:ring-2 focus:ring-blue-500 focus:ring-offset-2',
-                  'dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200',
-                  'dark:hover:border-gray-500 dark:hover:bg-gray-700 dark:focus:ring-blue-400',
+                  'min-w-[160px] border-2 border-border-medium bg-surface-primary px-6 py-3 font-medium text-text-primary',
+                  'shadow-sm transition-all duration-200 hover:border-border-heavy hover:bg-surface-hover',
+                  'hover:shadow-md focus:ring-2 focus:ring-ring focus:ring-offset-2',
                 )}
                 aria-label={localize('com_agents_load_more_label', {
                   category: getCategoryDisplayName(category),

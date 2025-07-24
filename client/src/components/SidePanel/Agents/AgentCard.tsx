@@ -24,7 +24,7 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, onClick, className = '' })
         'group relative flex overflow-hidden rounded-2xl',
         'cursor-pointer transition-colors duration-200',
         'aspect-[5/2.5] w-full',
-        'bg-gray-50 hover:bg-gray-100 dark:bg-gray-700 dark:hover:bg-gray-600',
+        'bg-surface-tertiary hover:bg-surface-hover-alt',
         className,
       )}
       onClick={onClick}
@@ -51,7 +51,7 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, onClick, className = '' })
         {/* Agent info section - right side, responsive */}
         <div className="flex min-w-0 flex-1 flex-col justify-center">
           {/* Agent name - responsive text sizing */}
-          <h3 className="mb-1 line-clamp-1 text-base font-bold text-gray-900 dark:text-white sm:mb-2 sm:text-lg">
+          <h3 className="mb-1 line-clamp-1 text-base font-bold text-text-primary sm:mb-2 sm:text-lg">
             {agent.name}
           </h3>
 
@@ -59,13 +59,15 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, onClick, className = '' })
           <p
             id={`agent-${agent.id}-description`}
             className={cn(
-              'mb-1 line-clamp-2 text-xs leading-relaxed text-gray-600 dark:text-gray-300',
+              'mb-1 line-clamp-2 text-xs leading-relaxed text-text-secondary',
               'sm:mb-2 sm:text-sm',
             )}
             aria-label={`Description: ${agent.description || localize('com_agents_no_description')}`}
           >
             {agent.description || (
-              <span className="italic text-gray-400">{localize('com_agents_no_description')}</span>
+              <span className="italic text-text-secondary">
+                {localize('com_agents_no_description')}
+              </span>
             )}
           </p>
 
@@ -75,7 +77,7 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, onClick, className = '' })
 
             if (displayName) {
               return (
-                <div className="flex items-center text-xs text-gray-500 dark:text-gray-400 sm:text-sm">
+                <div className="flex items-center text-xs text-text-tertiary sm:text-sm">
                   <span className="font-light">{localize('com_agents_created_by')}</span>
                   <span className="ml-1 font-bold">{displayName}</span>
                 </div>

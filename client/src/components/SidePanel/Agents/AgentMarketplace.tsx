@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useRecoilState } from 'recoil';
 import { useOutletContext } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { useSetRecoilState, useRecoilValue } from 'recoil';
-import { TooltipAnchor, Button, NewChatIcon } from '@librechat/client';
 import { useSearchParams, useParams, useNavigate } from 'react-router-dom';
+import { TooltipAnchor, Button, NewChatIcon, useMediaQuery } from '@librechat/client';
 import { PermissionTypes, Permissions, QueryKeys, Constants } from 'librechat-data-provider';
 import type t from 'librechat-data-provider';
 import type { ContextType } from '~/common';
@@ -17,6 +17,7 @@ import CategoryTabs from './CategoryTabs';
 import AgentDetail from './AgentDetail';
 import SearchBar from './SearchBar';
 import AgentGrid from './AgentGrid';
+import { cn } from '~/utils';
 import store from '~/store';
 
 interface AgentMarketplaceProps {
@@ -33,13 +34,14 @@ interface AgentMarketplaceProps {
 const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) => {
   const localize = useLocalize();
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
-  const { conversation, newConversation } = useChatContext();
-  const [searchParams, setSearchParams] = useSearchParams();
   const { category } = useParams();
-  const setHideSidePanel = useSetRecoilState(store.hideSidePanel);
-  const hideSidePanel = useRecoilValue(store.hideSidePanel);
+  const queryClient = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const { conversation, newConversation } = useChatContext();
+
+  const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const { navVisible, setNavVisible } = useOutletContext<ContextType>();
+  const [hideSidePanel, setHideSidePanel] = useRecoilState(store.hideSidePanel);
 
   // Get URL parameters (default to 'promoted' instead of 'all')
   const activeTab = category || 'promoted';
@@ -203,123 +205,145 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
             fullPanelCollapse={fullCollapse}
             defaultCollapsed={defaultCollapsed}
           >
-            <main className="flex h-full flex-col overflow-y-auto" role="main">
-              {/* Simplified header for agents marketplace - only show nav controls when needed */}
-              <div className="sticky top-0 z-10 flex h-14 w-full items-center justify-between bg-white p-2 font-semibold text-text-primary dark:bg-gray-800">
-                <div className="mx-1 flex items-center gap-2">
-                  {!navVisible && <OpenSidebar setNavVisible={setNavVisible} />}
-                  {!navVisible && (
-                    <TooltipAnchor
-                      description={localize('com_ui_new_chat')}
-                      render={
-                        <Button
-                          size="icon"
-                          variant="outline"
-                          data-testid="agents-new-chat-button"
-                          aria-label={localize('com_ui_new_chat')}
-                          className="rounded-xl border border-border-light bg-surface-secondary p-2 hover:bg-surface-hover max-md:hidden"
-                          onClick={handleNewChat}
-                        >
-                          <NewChatIcon />
-                        </Button>
-                      }
-                    />
-                  )}
-                </div>
-              </div>
-              <div className="container mx-auto max-w-4xl px-4 py-8">
-                {/* Hero Section - ChatGPT Style */}
-                <div className="mb-8 mt-12 text-center">
-                  <h1 className="mb-3 text-5xl font-bold tracking-tight text-gray-900 dark:text-white">
-                    {localize('com_agents_marketplace')}
-                  </h1>
-                  <p className="mx-auto mb-6 max-w-2xl text-lg text-gray-600 dark:text-gray-300">
-                    {localize('com_agents_marketplace_subtitle')}
-                  </p>
-
-                  {/* Search bar */}
-                  <div className="mx-auto max-w-2xl">
-                    <SearchBar value={searchQuery} onSearch={handleSearch} />
-                  </div>
-                </div>
-
-                {/* Category tabs */}
-                <CategoryTabs
-                  categories={categoriesQuery.data || []}
-                  activeTab={activeTab}
-                  isLoading={categoriesQuery.isLoading}
-                  onChange={handleTabChange}
-                />
-
-                {/* Category header - only show when not searching */}
-                {!searchQuery && (
-                  <div className="mb-6">
-                    {(() => {
-                      // Get category data for display
-                      const getCategoryData = () => {
-                        if (activeTab === 'promoted') {
-                          return {
-                            name: localize('com_agents_top_picks'),
-                            description: localize('com_agents_recommended'),
-                          };
-                        }
-                        if (activeTab === 'all') {
-                          return {
-                            name: 'All Agents',
-                            description: 'Browse all shared agents across all categories',
-                          };
-                        }
-
-                        // Find the category in the API data
-                        const categoryData = categoriesQuery.data?.find(
-                          (cat) => cat.value === activeTab,
-                        );
-                        if (categoryData) {
-                          return {
-                            name: categoryData.label,
-                            description: categoryData.description || '',
-                          };
-                        }
-
-                        // Fallback for unknown categories
-                        return {
-                          name: activeTab.charAt(0).toUpperCase() + activeTab.slice(1),
-                          description: '',
-                        };
-                      };
-
-                      const { name, description } = getCategoryData();
-
-                      return (
-                        <div className="text-left">
-                          <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
-                            {name}
-                          </h2>
-                          {description && (
-                            <p className="mt-2 text-gray-600 dark:text-gray-300">{description}</p>
-                          )}
-                        </div>
-                      );
-                    })()}
+            <main className="flex h-full flex-col overflow-hidden" role="main">
+              {/* Scrollable container */}
+              <div className="scrollbar-gutter-stable flex h-full flex-col overflow-y-auto overflow-x-hidden">
+                {/* Simplified header for agents marketplace - only show nav controls when needed */}
+                {!isSmallScreen && (
+                  <div className="sticky top-0 z-20 flex items-center justify-between bg-surface-secondary p-2 font-semibold text-text-primary md:h-14">
+                    <div className="mx-1 flex items-center gap-2">
+                      {!navVisible ? (
+                        <>
+                          <OpenSidebar setNavVisible={setNavVisible} />
+                          <TooltipAnchor
+                            description={localize('com_ui_new_chat')}
+                            render={
+                              <Button
+                                size="icon"
+                                variant="outline"
+                                data-testid="agents-new-chat-button"
+                                aria-label={localize('com_ui_new_chat')}
+                                className="rounded-xl border border-border-light bg-surface-secondary p-2 hover:bg-surface-hover max-md:hidden"
+                                onClick={handleNewChat}
+                              >
+                                <NewChatIcon />
+                              </Button>
+                            }
+                          />
+                        </>
+                      ) : (
+                        // Invisible placeholder to maintain height
+                        <div className="h-10 w-10" />
+                      )}
+                    </div>
                   </div>
                 )}
 
-                {/* Agent grid */}
-                <AgentGrid
-                  category={activeTab}
-                  searchQuery={searchQuery}
-                  onSelectAgent={handleAgentSelect}
-                />
-              </div>
+                {/* Hero Section - scrolls away */}
+                <div className="container mx-auto max-w-4xl">
+                  <div className={cn('mb-8 text-center', isSmallScreen ? 'mt-6' : 'mt-12')}>
+                    <h1 className="mb-3 text-3xl font-bold tracking-tight text-text-primary md:text-5xl">
+                      {localize('com_agents_marketplace')}
+                    </h1>
+                    <p className="mx-auto mb-6 max-w-2xl text-lg text-text-secondary">
+                      {localize('com_agents_marketplace_subtitle')}
+                    </p>
+                  </div>
+                </div>
 
-              {/* Agent detail dialog */}
-              {isDetailOpen && selectedAgent && (
-                <AgentDetail
-                  agent={selectedAgent}
-                  isOpen={isDetailOpen}
-                  onClose={handleDetailClose}
-                />
-              )}
+                {/* Sticky wrapper for search bar and categories */}
+                <div
+                  className={cn(
+                    'sticky z-10 bg-presentation pb-4',
+                    isSmallScreen ? 'top-0' : 'top-14',
+                  )}
+                >
+                  <div className="container mx-auto max-w-4xl px-4">
+                    {/* Search bar */}
+                    <div className="mx-auto max-w-2xl pb-6">
+                      <SearchBar value={searchQuery} onSearch={handleSearch} />
+                    </div>
+
+                    {/* Category tabs */}
+                    <CategoryTabs
+                      categories={categoriesQuery.data || []}
+                      activeTab={activeTab}
+                      isLoading={categoriesQuery.isLoading}
+                      onChange={handleTabChange}
+                    />
+                  </div>
+                </div>
+
+                {/* Scrollable content area */}
+                <div className="container mx-auto max-w-4xl px-4 pb-8">
+                  {/* Category header - only show when not searching */}
+                  {!searchQuery && (
+                    <div className="mb-6 mt-6">
+                      {(() => {
+                        // Get category data for display
+                        const getCategoryData = () => {
+                          if (activeTab === 'promoted') {
+                            return {
+                              name: localize('com_agents_top_picks'),
+                              description: localize('com_agents_recommended'),
+                            };
+                          }
+                          if (activeTab === 'all') {
+                            return {
+                              name: 'All Agents',
+                              description: 'Browse all shared agents across all categories',
+                            };
+                          }
+
+                          // Find the category in the API data
+                          const categoryData = categoriesQuery.data?.find(
+                            (cat) => cat.value === activeTab,
+                          );
+                          if (categoryData) {
+                            return {
+                              name: categoryData.label,
+                              description: categoryData.description || '',
+                            };
+                          }
+
+                          // Fallback for unknown categories
+                          return {
+                            name: activeTab.charAt(0).toUpperCase() + activeTab.slice(1),
+                            description: '',
+                          };
+                        };
+
+                        const { name, description } = getCategoryData();
+
+                        return (
+                          <div className="text-left">
+                            <h2 className="text-2xl font-bold text-text-primary">{name}</h2>
+                            {description && (
+                              <p className="mt-2 text-text-secondary">{description}</p>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  )}
+
+                  {/* Agent grid */}
+                  <AgentGrid
+                    category={activeTab}
+                    searchQuery={searchQuery}
+                    onSelectAgent={handleAgentSelect}
+                  />
+                </div>
+
+                {/* Agent detail dialog */}
+                {isDetailOpen && selectedAgent && (
+                  <AgentDetail
+                    agent={selectedAgent}
+                    isOpen={isDetailOpen}
+                    onClose={handleDetailClose}
+                  />
+                )}
+              </div>
             </main>
           </SidePanelGroup>
         </SidePanelProvider>

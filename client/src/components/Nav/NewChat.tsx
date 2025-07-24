@@ -113,20 +113,20 @@ export default function NewChat({
 
       {/* Agent Marketplace button - separate row like ChatGPT */}
       {showAgentMarketplace && (
-        <div className="flex px-2 pb-4 pt-2 md:px-3">
+        <div className="flex">
           <TooltipAnchor
-            description={localize('com_nav_agents_marketplace')}
+            description={localize('com_agents_marketplace')}
             render={
               <Button
                 variant="outline"
                 data-testid="nav-agents-marketplace-button"
-                aria-label={localize('com_nav_agents_marketplace')}
+                aria-label={localize('com_agents_marketplace')}
                 className="flex w-full items-center justify-start gap-3 rounded-xl border-none bg-transparent p-3 text-left hover:bg-surface-hover"
                 onClick={handleAgentMarketplace}
               >
                 <LayoutGrid className="h-5 w-5 flex-shrink-0" />
-                <span className="truncate text-base font-medium">
-                  {localize('com_nav_agents_marketplace')}
+                <span className="truncate text-sm font-medium">
+                  {localize('com_agents_marketplace')}
                 </span>
               </Button>
             }
