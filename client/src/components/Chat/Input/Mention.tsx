@@ -72,7 +72,7 @@ export default function Mention({
       }
     };
 
-    if ((mention.type === 'endpoint' || mention.type == 'modelSpec') && mention.value === EModelEndpoint.agents) {
+    if ((mention.type === 'endpoint' || mention.type === 'modelSpec') && mention.value === EModelEndpoint.agents) {
       setSearchValue('');
       setInputOptions(agentsList ?? []);
       setActiveIndex(0);
