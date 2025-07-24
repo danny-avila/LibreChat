@@ -718,6 +718,21 @@ export function getRandomPrompts(
   return request.get(endpoints.getRandomPrompts(variables.limit, variables.skip));
 }
 
+/* Prompt Favorites and Rankings */
+export function togglePromptFavorite(groupId: string): Promise<t.TPromptFavoriteResponse> {
+  return request.post(endpoints.togglePromptFavorite(groupId));
+}
+
+export function updatePromptRankings(
+  variables: t.TPromptRankingRequest,
+): Promise<t.TPromptRankingResponse> {
+  return request.put(endpoints.updatePromptRankings(), variables);
+}
+
+export function getUserPromptPreferences(): Promise<t.TGetUserPromptPreferencesResponse> {
+  return request.get(endpoints.getUserPromptPreferences());
+}
+
 /* Roles */
 export function getRole(roleName: string): Promise<r.TRole> {
   return request.get(endpoints.getRole(roleName));

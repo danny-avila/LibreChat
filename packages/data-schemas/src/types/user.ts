@@ -30,6 +30,11 @@ export interface IUser extends Document {
   }>;
   expiresAt?: Date;
   termsAccepted?: boolean;
+  promptFavorites?: Types.ObjectId[];
+  promptRanking?: Array<{
+    promptGroupId: Types.ObjectId;
+    order: number;
+  }>;
   personalization?: {
     memories?: boolean;
   };

@@ -1,5 +1,14 @@
+import { Cog } from 'lucide-react';
 import { useRecoilState } from 'recoil';
-import { Switch } from '~/components/ui';
+import {
+  Label,
+  Switch,
+  Button,
+  OGDialog,
+  OGDialogTrigger,
+  OGDialogContent,
+  OGDialogTitle,
+} from '~/components';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
@@ -22,20 +31,30 @@ export default function AutoSendPrompt({
   };
 
   return (
-    <div
-      className={cn(
-        'flex select-none items-center justify-end gap-2 text-right text-sm',
-        className,
-      )}
-    >
-      <div> {localize('com_nav_auto_send_prompts')} </div>
-      <Switch
-        aria-label="toggle-auto-send-prompts"
-        id="autoSendPrompts"
-        checked={autoSendPrompts}
-        onCheckedChange={handleCheckedChange}
-        data-testid="autoSendPrompts"
-      />
-    </div>
+    <>
+      <OGDialog>
+        <OGDialogTrigger className="flex items-center justify-center">
+          <Button size="sm" variant="outline" className="bg-transparent hover:bg-surface-hover">
+            <Cog className="h-4 w-4 text-text-primary" />
+          </Button>
+        </OGDialogTrigger>
+        <OGDialogContent className="w-96">
+          <OGDialogTitle className="text-lg font-semibold">
+            {localize('com_ui_prompts_settings')}
+          </OGDialogTitle>
+
+          <div className={cn('flex justify-between text-text-secondary', className)}>
+            <Label>{localize('com_nav_auto_send_prompts')}</Label>
+            <Switch
+              aria-label="toggle-auto-send-prompts"
+              id="autoSendPrompts"
+              checked={autoSendPrompts}
+              onCheckedChange={handleCheckedChange}
+              data-testid="autoSendPrompts"
+            />
+          </div>
+        </OGDialogContent>
+      </OGDialog>
+    </>
   );
 }

@@ -2,12 +2,12 @@ import { memo, useState, useRef, useMemo, useCallback, KeyboardEvent } from 'rea
 import { EarthIcon, Pen } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { SystemRoles, type TPromptGroup } from 'librechat-data-provider';
+import { Input, Label, Button, OGDialog, OGDialogTrigger, TrashIcon } from '~/components';
 import { useDeletePromptGroup, useUpdatePromptGroup } from '~/data-provider';
-import { Input, Label, Button, OGDialog, OGDialogTrigger } from '~/components/ui';
+import FavoriteButton from '~/components/Prompts/Groups/FavoriteButton';
 import CategoryIcon from '~/components/Prompts/Groups/CategoryIcon';
 import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
 import { useLocalize, useAuthContext } from '~/hooks';
-import { TrashIcon } from '~/components/svg';
 import { cn } from '~/utils/';
 
 interface DashGroupItemProps {
@@ -49,7 +49,6 @@ function DashGroupItemComponent({ group, instanceProjectId }: DashGroupItemProps
   const { isLoading } = updateGroup;
 
   const handleSaveRename = useCallback(() => {
-    console.log(group._id ?? '', { name: nameInputValue });
     updateGroup.mutate({ id: group._id ?? '', payload: { name: nameInputValue } });
   }, [group._id, nameInputValue, updateGroup]);
 
@@ -99,6 +98,7 @@ function DashGroupItemComponent({ group, instanceProjectId }: DashGroupItemProps
               aria-label={localize('com_ui_global_group')}
             />
           )}
+          <FavoriteButton groupId={group._id ?? ''} size="16" />
           {(isOwner || user?.role === SystemRoles.ADMIN) && (
             <>
               <OGDialog>

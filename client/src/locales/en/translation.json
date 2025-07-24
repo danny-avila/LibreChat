@@ -943,6 +943,7 @@
   "com_ui_prompts_allow_create": "Allow creating Prompts",
   "com_ui_prompts_allow_share_global": "Allow sharing Prompts to all users",
   "com_ui_prompts_allow_use": "Allow using Prompts",
+  "com_ui_prompts_settings": "Prompt Settings",
   "com_ui_provider": "Provider",
   "com_ui_quality": "Quality",
   "com_ui_read_aloud": "Read aloud",
@@ -1108,5 +1109,9 @@
   "com_ui_x_selected": "{{0}} selected",
   "com_ui_yes": "Yes",
   "com_ui_zoom": "Zoom",
-  "com_user_message": "You"
+  "com_user_message": "You",
+  "com_warning_resubmit_unsupported": "Resubmitting the AI message is not supported for this endpoint.",
+  "com_ui_add_to_favorites": "Add to favorites",
+  "com_ui_remove_from_favorites": "Remove from favorites"
 }
+
