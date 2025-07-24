@@ -4,13 +4,12 @@ import type {
   RerankerTypes,
   SearchProviders,
   TWebSearchConfig,
-} from '../src/config';
-import { webSearchAuth, loadWebSearchAuth, extractWebSearchEnvVars } from '../src/web';
-import { SafeSearchTypes } from '../src/config';
-import { AuthType } from '../src/schemas';
+} from 'librechat-data-provider';
+import { webSearchAuth, loadWebSearchAuth, extractWebSearchEnvVars } from './web';
+import { SafeSearchTypes, AuthType } from 'librechat-data-provider';
 
 // Mock the extractVariableName function
-jest.mock('../src/utils', () => ({
+jest.mock('../utils', () => ({
   extractVariableName: (value: string) => {
     if (!value || typeof value !== 'string') return null;
     const match = value.match(/^\${(.+)}$/);
@@ -77,6 +76,8 @@ describe('web.ts', () => {
       // Initialize a basic webSearchConfig
       webSearchConfig = {
         serperApiKey: '${SERPER_API_KEY}',
+        searxngInstanceUrl: '${SEARXNG_INSTANCE_URL}',
+        searxngApiKey: '${SEARXNG_API_KEY}',
         firecrawlApiKey: '${FIRECRAWL_API_KEY}',
         firecrawlApiUrl: '${FIRECRAWL_API_URL}',
         jinaApiKey: '${JINA_API_KEY}',
@@ -89,7 +90,7 @@ describe('web.ts', () => {
       // Mock successful authentication for all services
       mockLoadAuthValues.mockImplementation(({ authFields }) => {
         const result: Record<string, string> = {};
-        authFields.forEach((field) => {
+        authFields.forEach((field: string) => {
           result[field] =
             field === 'FIRECRAWL_API_URL' ? 'https://api.firecrawl.dev' : 'test-api-key';
         });
@@ -124,9 +125,9 @@ describe('web.ts', () => {
       // Mock authentication failure for the providers category
       mockLoadAuthValues.mockImplementation(({ authFields }) => {
         const result: Record<string, string> = {};
-        authFields.forEach((field) => {
+        authFields.forEach((field: string) => {
           // Only provide values for scrapers and rerankers, not for providers
-          if (field !== 'SERPER_API_KEY') {
+          if (field !== 'SERPER_API_KEY' && field !== 'SEARXNG_INSTANCE_URL') {
             result[field] =
               field === 'FIRECRAWL_API_URL' ? 'https://api.firecrawl.dev' : 'test-api-key';
           }
@@ -174,7 +175,7 @@ describe('web.ts', () => {
       // Mock loadAuthValues to return different values for some keys
       mockLoadAuthValues.mockImplementation(({ authFields }) => {
         const result: Record<string, string> = {};
-        authFields.forEach((field) => {
+        authFields.forEach((field: string) => {
           if (field === 'SERPER_API_KEY') {
             // This matches the system env var
             result[field] = 'system-api-key';
@@ -220,7 +221,7 @@ describe('web.ts', () => {
 
       mockLoadAuthValues.mockImplementation(({ authFields, optional }) => {
         const result: Record<string, string> = {};
-        authFields.forEach((field) => {
+        authFields.forEach((field: string) => {
           // Don't provide values for optional fields
           if (!optional?.has(field)) {
             result[field] = 'test-api-key';
@@ -245,7 +246,7 @@ describe('web.ts', () => {
       // Mock successful authentication
       mockLoadAuthValues.mockImplementation(({ authFields }) => {
         const result: Record<string, string> = {};
-        authFields.forEach((field) => {
+        authFields.forEach((field: string) => {
           result[field] = 'test-api-key';
         });
         return Promise.resolve(result);
@@ -270,7 +271,7 @@ describe('web.ts', () => {
       // Mock successful authentication
       mockLoadAuthValues.mockImplementation(({ authFields }) => {
         const result: Record<string, string> = {};
-        authFields.forEach((field) => {
+        authFields.forEach((field: string) => {
           result[field] =
             field === 'FIRECRAWL_API_URL' ? 'https://api.firecrawl.dev' : 'test-api-key';
         });
@@ -294,6 +295,8 @@ describe('web.ts', () => {
       // Initialize a webSearchConfig without specific services
       const webSearchConfig: TCustomConfig['webSearch'] = {
         serperApiKey: '${SERPER_API_KEY}',
+        searxngInstanceUrl: '${SEARXNG_INSTANCE_URL}',
+        searxngApiKey: '${SEARXNG_API_KEY}',
         firecrawlApiKey: '${FIRECRAWL_API_KEY}',
         firecrawlApiUrl: '${FIRECRAWL_API_URL}',
         jinaApiKey: '${JINA_API_KEY}',
@@ -304,7 +307,7 @@ describe('web.ts', () => {
       // Mock successful authentication
       mockLoadAuthValues.mockImplementation(({ authFields }) => {
         const result: Record<string, string> = {};
-        authFields.forEach((field) => {
+        authFields.forEach((field: string) => {
           result[field] =
             field === 'FIRECRAWL_API_URL' ? 'https://api.firecrawl.dev' : 'test-api-key';
         });
@@ -343,6 +346,8 @@ describe('web.ts', () => {
       // Initialize webSearchConfig with environment variable references
       const webSearchConfig: TCustomConfig['webSearch'] = {
         serperApiKey: '${SERPER_API_KEY}',
+        searxngInstanceUrl: '${SEARXNG_INSTANCE_URL}',
+        searxngApiKey: '${SEARXNG_API_KEY}',
         firecrawlApiKey: '${FIRECRAWL_API_KEY}',
         firecrawlApiUrl: '${FIRECRAWL_API_URL}',
         jinaApiKey: '${JINA_API_KEY}',
@@ -357,7 +362,7 @@ describe('web.ts', () => {
       // Mock loadAuthValues to return the actual values
       mockLoadAuthValues.mockImplementation(({ authFields }) => {
         const result: Record<string, string> = {};
-        authFields.forEach((field) => {
+        authFields.forEach((field: string) => {
           if (field === 'SERPER_API_KEY') {
             result[field] = 'system-serper-key';
           } else if (field === 'FIRECRAWL_API_KEY') {
@@ -432,6 +437,8 @@ describe('web.ts', () => {
       // Initialize webSearchConfig with custom variable names
       const webSearchConfig: TCustomConfig['webSearch'] = {
         serperApiKey: '${CUSTOM_SERPER_KEY}',
+        searxngInstanceUrl: '${SEARXNG_INSTANCE_URL}',
+        searxngApiKey: '${SEARXNG_API_KEY}',
         firecrawlApiKey: '${CUSTOM_FIRECRAWL_KEY}',
         firecrawlApiUrl: '${CUSTOM_FIRECRAWL_URL}',
         jinaApiKey: '${CUSTOM_JINA_KEY}',
@@ -446,7 +453,7 @@ describe('web.ts', () => {
       // Mock loadAuthValues to return the actual values
       mockLoadAuthValues.mockImplementation(({ authFields }) => {
         const result: Record<string, string> = {};
-        authFields.forEach((field) => {
+        authFields.forEach((field: string) => {
           if (field === 'CUSTOM_SERPER_KEY') {
             result[field] = 'custom-serper-key';
           } else if (field === 'CUSTOM_FIRECRAWL_KEY') {
@@ -500,6 +507,8 @@ describe('web.ts', () => {
       // Initialize webSearchConfig with environment variable references
       const webSearchConfig: TCustomConfig['webSearch'] = {
         serperApiKey: '${SERPER_API_KEY}',
+        searxngInstanceUrl: '${SEARXNG_INSTANCE_URL}',
+        searxngApiKey: '${SEARXNG_API_KEY}',
         firecrawlApiKey: '${FIRECRAWL_API_KEY}',
         firecrawlApiUrl: '${FIRECRAWL_API_URL}',
         jinaApiKey: '${JINA_API_KEY}',
@@ -510,7 +519,7 @@ describe('web.ts', () => {
       // Mock loadAuthValues to return values
       mockLoadAuthValues.mockImplementation(({ authFields }) => {
         const result: Record<string, string> = {};
-        authFields.forEach((field) => {
+        authFields.forEach((field: string) => {
           result[field] = field === 'FIRECRAWL_API_URL' ? 'https://api.firecrawl.dev' : 'test-key';
         });
         return Promise.resolve(result);
@@ -559,6 +568,8 @@ describe('web.ts', () => {
       // Initialize webSearchConfig with environment variable references
       const webSearchConfig: TCustomConfig['webSearch'] = {
         serperApiKey: '${SERPER_API_KEY}',
+        searxngInstanceUrl: '${SEARXNG_INSTANCE_URL}',
+        searxngApiKey: '${SEARXNG_API_KEY}',
         firecrawlApiKey: '${FIRECRAWL_API_KEY}',
         firecrawlApiUrl: '${FIRECRAWL_API_URL}',
         jinaApiKey: '${JINA_API_KEY}',
@@ -569,7 +580,7 @@ describe('web.ts', () => {
       // Mock loadAuthValues to return partial values
       mockLoadAuthValues.mockImplementation(({ authFields }) => {
         const result: Record<string, string> = {};
-        authFields.forEach((field) => {
+        authFields.forEach((field: string) => {
           if (field === 'SERPER_API_KEY') {
             result[field] = 'test-key';
           }
@@ -666,6 +677,8 @@ describe('web.ts', () => {
       // Initialize a webSearchConfig with a specific searchProvider
       const webSearchConfig: TCustomConfig['webSearch'] = {
         serperApiKey: '${SERPER_API_KEY}',
+        searxngInstanceUrl: '${SEARXNG_INSTANCE_URL}',
+        searxngApiKey: '${SEARXNG_API_KEY}',
         firecrawlApiKey: '${FIRECRAWL_API_KEY}',
         firecrawlApiUrl: '${FIRECRAWL_API_URL}',
         jinaApiKey: '${JINA_API_KEY}',
@@ -677,7 +690,7 @@ describe('web.ts', () => {
       // Mock successful authentication
       mockLoadAuthValues.mockImplementation(({ authFields }) => {
         const result: Record<string, string> = {};
-        authFields.forEach((field) => {
+        authFields.forEach((field: string) => {
           result[field] =
             field === 'FIRECRAWL_API_URL' ? 'https://api.firecrawl.dev' : 'test-api-key';
         });
@@ -704,6 +717,8 @@ describe('web.ts', () => {
       // Initialize a webSearchConfig with a specific scraperType
       const webSearchConfig: TCustomConfig['webSearch'] = {
         serperApiKey: '${SERPER_API_KEY}',
+        searxngInstanceUrl: '${SEARXNG_INSTANCE_URL}',
+        searxngApiKey: '${SEARXNG_API_KEY}',
         firecrawlApiKey: '${FIRECRAWL_API_KEY}',
         firecrawlApiUrl: '${FIRECRAWL_API_URL}',
         jinaApiKey: '${JINA_API_KEY}',
@@ -715,7 +730,7 @@ describe('web.ts', () => {
       // Mock successful authentication
       mockLoadAuthValues.mockImplementation(({ authFields }) => {
         const result: Record<string, string> = {};
-        authFields.forEach((field) => {
+        authFields.forEach((field: string) => {
           result[field] =
             field === 'FIRECRAWL_API_URL' ? 'https://api.firecrawl.dev' : 'test-api-key';
         });
@@ -742,6 +757,8 @@ describe('web.ts', () => {
       // Initialize a webSearchConfig with a specific rerankerType
       const webSearchConfig: TCustomConfig['webSearch'] = {
         serperApiKey: '${SERPER_API_KEY}',
+        searxngInstanceUrl: '${SEARXNG_INSTANCE_URL}',
+        searxngApiKey: '${SEARXNG_API_KEY}',
         firecrawlApiKey: '${FIRECRAWL_API_KEY}',
         firecrawlApiUrl: '${FIRECRAWL_API_URL}',
         jinaApiKey: '${JINA_API_KEY}',
@@ -753,7 +770,7 @@ describe('web.ts', () => {
       // Mock successful authentication
       mockLoadAuthValues.mockImplementation(({ authFields }) => {
         const result: Record<string, string> = {};
-        authFields.forEach((field) => {
+        authFields.forEach((field: string) => {
           result[field] =
             field === 'FIRECRAWL_API_URL' ? 'https://api.firecrawl.dev' : 'test-api-key';
         });
@@ -786,6 +803,8 @@ describe('web.ts', () => {
       // Initialize a webSearchConfig with an invalid searchProvider
       const webSearchConfig: TCustomConfig['webSearch'] = {
         serperApiKey: '${SERPER_API_KEY}',
+        searxngInstanceUrl: '${SEARXNG_INSTANCE_URL}',
+        searxngApiKey: '${SEARXNG_API_KEY}',
         firecrawlApiKey: '${FIRECRAWL_API_KEY}',
         firecrawlApiUrl: '${FIRECRAWL_API_URL}',
         jinaApiKey: '${JINA_API_KEY}',
@@ -797,7 +816,7 @@ describe('web.ts', () => {
       // Mock successful authentication
       mockLoadAuthValues.mockImplementation(({ authFields }) => {
         const result: Record<string, string> = {};
-        authFields.forEach((field) => {
+        authFields.forEach((field: string) => {
           result[field] =
             field === 'FIRECRAWL_API_URL' ? 'https://api.firecrawl.dev' : 'test-api-key';
         });
@@ -818,6 +837,8 @@ describe('web.ts', () => {
       // Initialize a webSearchConfig with a specific rerankerType (jina)
       const webSearchConfig: TCustomConfig['webSearch'] = {
         serperApiKey: '${SERPER_API_KEY}',
+        searxngInstanceUrl: '${SEARXNG_INSTANCE_URL}',
+        searxngApiKey: '${SEARXNG_API_KEY}',
         firecrawlApiKey: '${FIRECRAWL_API_KEY}',
         firecrawlApiUrl: '${FIRECRAWL_API_URL}',
         jinaApiKey: '${JINA_API_KEY}',
@@ -829,7 +850,7 @@ describe('web.ts', () => {
       // Mock authentication where cohere is authenticated but jina is not
       mockLoadAuthValues.mockImplementation(({ authFields }) => {
         const result: Record<string, string> = {};
-        authFields.forEach((field) => {
+        authFields.forEach((field: string) => {
           // Authenticate all fields except JINA_API_KEY
           if (field !== 'JINA_API_KEY') {
             result[field] =
@@ -866,6 +887,8 @@ describe('web.ts', () => {
       // Initialize a webSearchConfig without specific services
       const webSearchConfig: TCustomConfig['webSearch'] = {
         serperApiKey: '${SERPER_API_KEY}',
+        searxngInstanceUrl: '${SEARXNG_INSTANCE_URL}',
+        searxngApiKey: '${SEARXNG_API_KEY}',
         firecrawlApiKey: '${FIRECRAWL_API_KEY}',
         firecrawlApiUrl: '${FIRECRAWL_API_URL}',
         jinaApiKey: '${JINA_API_KEY}',
@@ -876,7 +899,7 @@ describe('web.ts', () => {
       // Mock successful authentication
       mockLoadAuthValues.mockImplementation(({ authFields }) => {
         const result: Record<string, string> = {};
-        authFields.forEach((field) => {
+        authFields.forEach((field: string) => {
           result[field] =
             field === 'FIRECRAWL_API_URL' ? 'https://api.firecrawl.dev' : 'test-api-key';
         });
@@ -898,6 +921,290 @@ describe('web.ts', () => {
       expect(result.authResult.searchProvider).toBeDefined();
       expect(result.authResult.scraperType).toBeDefined();
       expect(result.authResult.rerankerType).toBeDefined();
+    });
+
+    it('should handle firecrawlOptions properties', async () => {
+      // Initialize a webSearchConfig with comprehensive firecrawlOptions
+      const webSearchConfig: TCustomConfig['webSearch'] = {
+        serperApiKey: '${SERPER_API_KEY}',
+        searxngInstanceUrl: '${SEARXNG_INSTANCE_URL}',
+        searxngApiKey: '${SEARXNG_API_KEY}',
+        firecrawlApiKey: '${FIRECRAWL_API_KEY}',
+        firecrawlApiUrl: '${FIRECRAWL_API_URL}',
+        jinaApiKey: '${JINA_API_KEY}',
+        cohereApiKey: '${COHERE_API_KEY}',
+        safeSearch: SafeSearchTypes.MODERATE,
+        firecrawlOptions: {
+          formats: ['markdown', 'html'],
+          includeTags: ['img', 'p', 'h1'],
+          excludeTags: ['script', 'style'],
+          headers: { 'User-Agent': 'TestBot' },
+          waitFor: 2000,
+          timeout: 15000,
+          maxAge: 3600,
+          mobile: true,
+          skipTlsVerification: false,
+          blockAds: true,
+          removeBase64Images: false,
+          parsePDF: true,
+          storeInCache: false,
+          zeroDataRetention: true,
+          location: {
+            country: 'US',
+            languages: ['en'],
+          },
+          onlyMainContent: true,
+          changeTrackingOptions: {
+            modes: ['diff'],
+            schema: { title: 'string' },
+            prompt: 'Track changes',
+            tag: 'test-tag',
+          },
+        },
+      };
+
+      // Mock successful authentication
+      mockLoadAuthValues.mockImplementation(({ authFields }) => {
+        const result: Record<string, string> = {};
+        authFields.forEach((field: string) => {
+          result[field] =
+            field === 'FIRECRAWL_API_URL' ? 'https://api.firecrawl.dev' : 'test-api-key';
+        });
+        return Promise.resolve(result);
+      });
+
+      const result = await loadWebSearchAuth({
+        userId,
+        webSearchConfig,
+        loadAuthValues: mockLoadAuthValues,
+      });
+
+      expect(result.authenticated).toBe(true);
+      expect(result.authResult.firecrawlOptions).toEqual(webSearchConfig.firecrawlOptions);
+      expect(result.authResult.scraperTimeout).toBe(15000); // Should use firecrawlOptions.timeout
+    });
+
+    it('should use scraperTimeout when both scraperTimeout and firecrawlOptions.timeout are provided', async () => {
+      // Initialize a webSearchConfig with both scraperTimeout and firecrawlOptions.timeout
+      const webSearchConfig = {
+        serperApiKey: '${SERPER_API_KEY}',
+        firecrawlApiKey: '${FIRECRAWL_API_KEY}',
+        firecrawlApiUrl: '${FIRECRAWL_API_URL}',
+        jinaApiKey: '${JINA_API_KEY}',
+        safeSearch: SafeSearchTypes.MODERATE,
+        scraperTimeout: 15000, // This should take priority
+        firecrawlOptions: {
+          timeout: 10000, // This should be ignored
+          includeTags: ['p'],
+          formats: ['markdown'],
+        },
+      } as TCustomConfig['webSearch'];
+
+      // Mock successful authentication
+      mockLoadAuthValues.mockImplementation(({ authFields }) => {
+        const result: Record<string, string> = {};
+        authFields.forEach((field: string) => {
+          result[field] =
+            field === 'FIRECRAWL_API_URL' ? 'https://api.firecrawl.dev' : 'test-api-key';
+        });
+        return Promise.resolve(result);
+      });
+
+      const result = await loadWebSearchAuth({
+        userId,
+        webSearchConfig,
+        loadAuthValues: mockLoadAuthValues,
+      });
+
+      expect(result.authenticated).toBe(true);
+      expect(result.authResult.scraperTimeout).toBe(15000); // Should use explicit scraperTimeout
+      expect(result.authResult.firecrawlOptions).toEqual({
+        timeout: 10000,
+        includeTags: ['p'],
+        formats: ['markdown'],
+      });
+    });
+
+    it('should fallback to default timeout when neither scraperTimeout nor firecrawlOptions.timeout are provided', async () => {
+      // Initialize a webSearchConfig without timeout values
+      const webSearchConfig = {
+        serperApiKey: '${SERPER_API_KEY}',
+        firecrawlApiKey: '${FIRECRAWL_API_KEY}',
+        firecrawlApiUrl: '${FIRECRAWL_API_URL}',
+        jinaApiKey: '${JINA_API_KEY}',
+        safeSearch: SafeSearchTypes.MODERATE,
+        firecrawlOptions: {
+          includeTags: ['p'],
+          formats: ['markdown'],
+        },
+      } as TCustomConfig['webSearch'];
+
+      // Mock successful authentication
+      mockLoadAuthValues.mockImplementation(({ authFields }) => {
+        const result: Record<string, string> = {};
+        authFields.forEach((field: string) => {
+          result[field] =
+            field === 'FIRECRAWL_API_URL' ? 'https://api.firecrawl.dev' : 'test-api-key';
+        });
+        return Promise.resolve(result);
+      });
+
+      const result = await loadWebSearchAuth({
+        userId,
+        webSearchConfig,
+        loadAuthValues: mockLoadAuthValues,
+      });
+
+      expect(result.authenticated).toBe(true);
+      expect(result.authResult.scraperTimeout).toBe(7500); // Should use default timeout
+      expect(result.authResult.firecrawlOptions).toEqual({
+        includeTags: ['p'],
+        formats: ['markdown'],
+      });
+    });
+
+    it('should use firecrawlOptions.timeout when only firecrawlOptions.timeout is provided', async () => {
+      // Initialize a webSearchConfig with only firecrawlOptions.timeout
+      const webSearchConfig = {
+        serperApiKey: '${SERPER_API_KEY}',
+        firecrawlApiKey: '${FIRECRAWL_API_KEY}',
+        firecrawlApiUrl: '${FIRECRAWL_API_URL}',
+        jinaApiKey: '${JINA_API_KEY}',
+        safeSearch: SafeSearchTypes.MODERATE,
+        firecrawlOptions: {
+          timeout: 12000, // Only timeout provided
+        },
+      } as TCustomConfig['webSearch'];
+
+      // Mock successful authentication
+      mockLoadAuthValues.mockImplementation(({ authFields }) => {
+        const result: Record<string, string> = {};
+        authFields.forEach((field: string) => {
+          result[field] =
+            field === 'FIRECRAWL_API_URL' ? 'https://api.firecrawl.dev' : 'test-api-key';
+        });
+        return Promise.resolve(result);
+      });
+
+      const result = await loadWebSearchAuth({
+        userId,
+        webSearchConfig,
+        loadAuthValues: mockLoadAuthValues,
+      });
+
+      expect(result.authenticated).toBe(true);
+      expect(result.authResult.scraperTimeout).toBe(12000); // Should use firecrawlOptions.timeout
+      expect(result.authResult.firecrawlOptions).toEqual({
+        timeout: 12000,
+      });
+    });
+
+    it('should handle firecrawlOptions.formats when only formats is provided', async () => {
+      // Initialize a webSearchConfig with only firecrawlOptions.formats
+      const webSearchConfig = {
+        serperApiKey: '${SERPER_API_KEY}',
+        firecrawlApiKey: '${FIRECRAWL_API_KEY}',
+        firecrawlApiUrl: '${FIRECRAWL_API_URL}',
+        jinaApiKey: '${JINA_API_KEY}',
+        safeSearch: SafeSearchTypes.MODERATE,
+        firecrawlOptions: {
+          formats: ['html', 'markdown'], // Only formats provided
+        },
+      } as TCustomConfig['webSearch'];
+
+      // Mock successful authentication
+      mockLoadAuthValues.mockImplementation(({ authFields }) => {
+        const result: Record<string, string> = {};
+        authFields.forEach((field: string) => {
+          result[field] =
+            field === 'FIRECRAWL_API_URL' ? 'https://api.firecrawl.dev' : 'test-api-key';
+        });
+        return Promise.resolve(result);
+      });
+
+      const result = await loadWebSearchAuth({
+        userId,
+        webSearchConfig,
+        loadAuthValues: mockLoadAuthValues,
+      });
+
+      expect(result.authenticated).toBe(true);
+      expect(result.authResult.scraperTimeout).toBe(7500); // Should use default timeout
+      expect(result.authResult.firecrawlOptions).toEqual({
+        formats: ['html', 'markdown'],
+      });
+    });
+
+    it('should handle firecrawlOptions without formats property', async () => {
+      // Initialize a webSearchConfig with firecrawlOptions but no formats
+      const webSearchConfig = {
+        serperApiKey: '${SERPER_API_KEY}',
+        firecrawlApiKey: '${FIRECRAWL_API_KEY}',
+        firecrawlApiUrl: '${FIRECRAWL_API_URL}',
+        jinaApiKey: '${JINA_API_KEY}',
+        safeSearch: SafeSearchTypes.MODERATE,
+        firecrawlOptions: {
+          timeout: 8000,
+          includeTags: ['p', 'h1'],
+          // formats is intentionally missing
+        },
+      } as TCustomConfig['webSearch'];
+
+      // Mock successful authentication
+      mockLoadAuthValues.mockImplementation(({ authFields }) => {
+        const result: Record<string, string> = {};
+        authFields.forEach((field: string) => {
+          result[field] =
+            field === 'FIRECRAWL_API_URL' ? 'https://api.firecrawl.dev' : 'test-api-key';
+        });
+        return Promise.resolve(result);
+      });
+
+      const result = await loadWebSearchAuth({
+        userId,
+        webSearchConfig,
+        loadAuthValues: mockLoadAuthValues,
+      });
+
+      expect(result.authenticated).toBe(true);
+      expect(result.authResult.scraperTimeout).toBe(8000); // Should use firecrawlOptions.timeout
+      expect(result.authResult.firecrawlOptions).toEqual({
+        timeout: 8000,
+        includeTags: ['p', 'h1'],
+        // formats should be undefined/missing
+      });
+    });
+
+    it('should handle webSearchConfig without firecrawlOptions at all', async () => {
+      // Initialize a webSearchConfig without any firecrawlOptions
+      const webSearchConfig = {
+        serperApiKey: '${SERPER_API_KEY}',
+        firecrawlApiKey: '${FIRECRAWL_API_KEY}',
+        firecrawlApiUrl: '${FIRECRAWL_API_URL}',
+        jinaApiKey: '${JINA_API_KEY}',
+        safeSearch: SafeSearchTypes.MODERATE,
+        // firecrawlOptions is intentionally missing
+      } as TCustomConfig['webSearch'];
+
+      // Mock successful authentication
+      mockLoadAuthValues.mockImplementation(({ authFields }) => {
+        const result: Record<string, string> = {};
+        authFields.forEach((field: string) => {
+          result[field] =
+            field === 'FIRECRAWL_API_URL' ? 'https://api.firecrawl.dev' : 'test-api-key';
+        });
+        return Promise.resolve(result);
+      });
+
+      const result = await loadWebSearchAuth({
+        userId,
+        webSearchConfig,
+        loadAuthValues: mockLoadAuthValues,
+      });
+
+      expect(result.authenticated).toBe(true);
+      expect(result.authResult.scraperTimeout).toBe(7500); // Should use default timeout
+      expect(result.authResult.firecrawlOptions).toBeUndefined(); // Should be undefined
     });
   });
 });

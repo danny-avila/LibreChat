@@ -130,3 +130,12 @@ helm/**/.values.yaml
 
 # specstory
 .specstory*
+
+# AI Assistants
+/.claude/
+/.cursor/
+/.copilot/
+/.aider/
+/.openai/
+/.tabnine/
+/.codeium

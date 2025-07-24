@@ -391,6 +391,22 @@ const uploadAgentAvatarHandler = async (req, res) => {
       return res.status(400).json({ message: 'Agent ID is required' });
     }
 
+    const isAdmin = req.user.role === SystemRoles.ADMIN;
+    const existingAgent = await getAgent({ id: agent_id });
+
+    if (!existingAgent) {
+      return res.status(404).json({ error: 'Agent not found' });
+    }
+
+    const isAuthor = existingAgent.author.toString() === req.user.id;
+    const hasEditPermission = existingAgent.isCollaborative || isAdmin || isAuthor;
+
+    if (!hasEditPermission) {
+      return res.status(403).json({
+        error: 'You do not have permission to modify this non-collaborative agent',
+      });
+    }
+
     const buffer = await fs.readFile(req.file.path);
 
     const fileStrategy = req.app.locals.fileStrategy;
@@ -413,14 +429,7 @@ const uploadAgentAvatarHandler = async (req, res) => {
       source: fileStrategy,
     };
 
-    let _avatar;
-    try {
-      const agent = await getAgent({ id: agent_id });
-      _avatar = agent.avatar;
-    } catch (error) {
-      logger.error('[/:agent_id/avatar] Error fetching agent', error);
-      _avatar = {};
-    }
+    let _avatar = existingAgent.avatar;
 
     if (_avatar && _avatar.source) {
       const { deleteFile } = getStrategyFunctions(_avatar.source);
@@ -442,7 +451,7 @@ const uploadAgentAvatarHandler = async (req, res) => {
     };
 
     promises.push(
-      await updateAgent({ id: agent_id, author: req.user.id }, data, {
+      await updateAgent({ id: agent_id }, data, {
         updatingUserId: req.user.id,
       }),
     );

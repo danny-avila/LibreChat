@@ -108,12 +108,15 @@ class BaseClient {
   /**
    * Abstract method to record token usage. Subclasses must implement this method.
    * If a correction to the token usage is needed, the method should return an object with the corrected token counts.
+   * Should only be used if `recordCollectedUsage` was not used instead.
+   * @param {string} [model]
    * @param {number} promptTokens
    * @param {number} completionTokens
    * @returns {Promise<void>}
    */
-  async recordTokenUsage({ promptTokens, completionTokens }) {
+  async recordTokenUsage({ model, promptTokens, completionTokens }) {
     logger.debug('[BaseClient] `recordTokenUsage` not implemented.', {
+      model,
       promptTokens,
       completionTokens,
     });
@@ -195,6 +198,10 @@ class BaseClient {
       responseMessageId = crypto.randomUUID();
       head = responseMessageId;
       this.currentMessages[this.currentMessages.length - 1].messageId = head;
+    }
+
+    if (opts.isRegenerate && responseMessageId.endsWith('_')) {
+      responseMessageId = crypto.randomUUID();
     }
 
     this.responseMessageId = responseMessageId;
@@ -737,9 +744,13 @@ class BaseClient {
       } else {
         responseMessage.tokenCount = this.getTokenCountForResponse(responseMessage);
         completionTokens = responseMessage.tokenCount;
+        await this.recordTokenUsage({
+          usage,
+          promptTokens,
+          completionTokens,
+          model: responseMessage.model,
+        });
       }
-
-      await this.recordTokenUsage({ promptTokens, completionTokens, usage });
     }
 
     if (userMessagePromise) {

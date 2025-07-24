@@ -9,9 +9,24 @@ const { getLogStores } = require('~/cache');
  * Initialize MCP servers
  * @param {import('express').Application} app - Express app instance
  */
-async function initializeMCP(app) {
+async function initializeMCPs(app) {
   const mcpServers = app.locals.mcpConfig;
   if (!mcpServers) {
+    return;
+  }
+
+  // Filter out servers with startup: false
+  const filteredServers = {};
+  for (const [name, config] of Object.entries(mcpServers)) {
+    if (config.startup === false) {
+      logger.info(`Skipping MCP server '${name}' due to startup: false`);
+      continue;
+    }
+    filteredServers[name] = config;
+  }
+
+  if (Object.keys(filteredServers).length === 0) {
+    logger.info('[MCP] No MCP servers to initialize (all skipped or none configured)');
     return;
   }
 
@@ -21,8 +36,8 @@ async function initializeMCP(app) {
   const flowManager = flowsCache ? getFlowStateManager(flowsCache) : null;
 
   try {
-    await mcpManager.initializeMCP({
-      mcpServers,
+    await mcpManager.initializeMCPs({
+      mcpServers: filteredServers,
       flowManager,
       tokenMethods: {
         findToken,
@@ -44,10 +59,14 @@ async function initializeMCP(app) {
     await mcpManager.mapAvailableTools(toolsCopy, flowManager);
     await setCachedTools(toolsCopy, { isGlobal: true });
 
+    const cache = getLogStores(CacheKeys.CONFIG_STORE);
+    await cache.delete(CacheKeys.TOOLS);
+    logger.debug('Cleared tools array cache after MCP initialization');
+
     logger.info('MCP servers initialized successfully');
   } catch (error) {
     logger.error('Failed to initialize MCP servers:', error);
   }
 }
 
-module.exports = initializeMCP;
+module.exports = initializeMCPs;

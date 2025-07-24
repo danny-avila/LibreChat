@@ -101,7 +101,33 @@ export interface ProcessSourcesConfig {
 export interface FirecrawlConfig {
   firecrawlApiKey?: string;
   firecrawlApiUrl?: string;
-  firecrawlFormats?: string[];
+  firecrawlOptions?: {
+    formats?: string[];
+    includeTags?: string[];
+    excludeTags?: string[];
+    headers?: Record<string, string>;
+    waitFor?: number;
+    timeout?: number;
+    maxAge?: number;
+    mobile?: boolean;
+    skipTlsVerification?: boolean;
+    blockAds?: boolean;
+    removeBase64Images?: boolean;
+    parsePDF?: boolean;
+    storeInCache?: boolean;
+    zeroDataRetention?: boolean;
+    location?: {
+      country?: string;
+      languages?: string[];
+    };
+    onlyMainContent?: boolean;
+    changeTrackingOptions?: {
+      modes?: string[];
+      schema?: Record<string, unknown>;
+      prompt?: string;
+      tag?: string | null;
+    };
+  };
 }
 
 export interface ScraperContentResult {

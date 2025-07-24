@@ -140,6 +140,31 @@ describe('Environment Variable Extraction (MCP)', () => {
 
       expect(result.headers).toEqual(options.headers);
     });
+
+    it('should accept "http" as an alias for "streamable-http"', () => {
+      const options = {
+        type: 'http',
+        url: 'https://example.com/api',
+        headers: {
+          Authorization: 'Bearer token',
+        },
+      };
+
+      const result = StreamableHTTPOptionsSchema.parse(options);
+
+      expect(result.type).toBe('http');
+      expect(result.url).toBe('https://example.com/api');
+      expect(result.headers).toEqual(options.headers);
+    });
+
+    it('should reject websocket URLs with "http" type', () => {
+      const options = {
+        type: 'http',
+        url: 'ws://example.com/socket',
+      };
+
+      expect(() => StreamableHTTPOptionsSchema.parse(options)).toThrow();
+    });
   });
 
   describe('processMCPEnv', () => {
@@ -296,6 +321,38 @@ describe('Environment Variable Extraction (MCP)', () => {
       const result = processMCPEnv(obj);
 
       expect(result.type).toBe('streamable-http');
+    });
+
+    it('should maintain http type in processed options', () => {
+      const obj = {
+        type: 'http' as const,
+        url: 'https://example.com/api',
+      };
+
+      const result = processMCPEnv(obj as unknown as MCPOptions);
+
+      expect(result.type).toBe('http');
+    });
+
+    it('should process headers in http options', () => {
+      const user = createTestUser({ id: 'test-user-123' });
+      const obj = {
+        type: 'http' as const,
+        url: 'https://example.com',
+        headers: {
+          Authorization: '${TEST_API_KEY}',
+          'User-Id': '{{LIBRECHAT_USER_ID}}',
+          'Content-Type': 'application/json',
+        },
+      };
+
+      const result = processMCPEnv(obj as unknown as MCPOptions, user);
+
+      expect('headers' in result && result.headers).toEqual({
+        Authorization: 'test-api-key-value',
+        'User-Id': 'test-user-123',
+        'Content-Type': 'application/json',
+      });
     });
 
     it('should process dynamic user fields in headers', () => {
@@ -706,6 +763,54 @@ describe('Environment Variable Extraction (MCP)', () => {
         PROCESS_MODE: 'production',
         USER_HOME_DIR: '/home/john.doe',
         SYSTEM_PATH: process.env.PATH, // Actual value of PATH from the test environment
+      });
+    });
+
+    it('should process GitHub MCP server configuration with PAT_TOKEN placeholder', () => {
+      const user = createTestUser({ id: 'github-user-123', email: 'user@example.com' });
+      const customUserVars = {
+        PAT_TOKEN: 'ghp_1234567890abcdef1234567890abcdef12345678', // GitHub Personal Access Token
+      };
+
+      // Simulate the GitHub MCP server configuration from librechat.yaml
+      const obj: MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://api.githubcopilot.com/mcp/',
+        headers: {
+          Authorization: '{{PAT_TOKEN}}',
+          'Content-Type': 'application/json',
+          'User-Agent': 'LibreChat-MCP-Client',
+        },
+      };
+
+      const result = processMCPEnv(obj, user, customUserVars);
+
+      expect('headers' in result && result.headers).toEqual({
+        Authorization: 'ghp_1234567890abcdef1234567890abcdef12345678',
+        'Content-Type': 'application/json',
+        'User-Agent': 'LibreChat-MCP-Client',
+      });
+      expect('url' in result && result.url).toBe('https://api.githubcopilot.com/mcp/');
+      expect(result.type).toBe('streamable-http');
+    });
+
+    it('should handle GitHub MCP server configuration without PAT_TOKEN (placeholder remains)', () => {
+      const user = createTestUser({ id: 'github-user-123' });
+      // No customUserVars provided - PAT_TOKEN should remain as placeholder
+      const obj: MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://api.githubcopilot.com/mcp/',
+        headers: {
+          Authorization: '{{PAT_TOKEN}}',
+          'Content-Type': 'application/json',
+        },
+      };
+
+      const result = processMCPEnv(obj, user);
+
+      expect('headers' in result && result.headers).toEqual({
+        Authorization: '{{PAT_TOKEN}}', // Should remain unchanged since no customUserVars provided
+        'Content-Type': 'application/json',
       });
     });
   });

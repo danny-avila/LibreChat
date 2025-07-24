@@ -223,9 +223,17 @@ const xAIModels = {
   'grok-3-fast': 131072,
   'grok-3-mini': 131072,
   'grok-3-mini-fast': 131072,
+  'grok-4': 256000, // 256K context
 };
 
-const aggregateModels = { ...openAIModels, ...googleModels, ...bedrockModels, ...xAIModels };
+const aggregateModels = {
+  ...openAIModels,
+  ...googleModels,
+  ...bedrockModels,
+  ...xAIModels,
+  // misc.
+  kimi: 131000,
+};
 
 const maxTokensMap = {
   [EModelEndpoint.azureOpenAI]: openAIModels,
