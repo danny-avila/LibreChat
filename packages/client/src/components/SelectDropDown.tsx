@@ -9,7 +9,6 @@ import {
 } from '@headlessui/react';
 import type { Option, OptionWithIcon, DropdownValueSetter } from '~/common';
 import { useMultiSearch } from './MultiSearch';
-import { useLocalize } from '~/hooks';
 import { CheckMark } from '~/svgs';
 import { cn } from '~/utils';
 
@@ -75,7 +74,6 @@ function SelectDropDown({
   searchPlaceholder,
   showOptionIcon = false,
 }: SelectDropDownProps) {
-  const localize = useLocalize();
   const transitionProps = { className: 'top-full mt-3' };
   if (showAbove) {
     transitionProps.className = 'bottom-full mb-3';
@@ -84,9 +82,8 @@ function SelectDropDown({
   let title = _title;
   if (emptyTitle) {
     title = '';
-  } else if (!(title ?? '')) {
-    title = String(localize('com_ui_model'));
   }
+
   const values = availableValues ?? [];
 
   // Enable searchable select if enough items are provided.

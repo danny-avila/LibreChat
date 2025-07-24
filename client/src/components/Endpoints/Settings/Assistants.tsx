@@ -121,6 +121,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
         <div className="grid w-full items-center gap-2">
           <SelectDropDown
             value={model ?? ''}
+            title={localize('com_ui_model')}
             setValue={createDropdownSetter(setModel)}
             availableValues={modelOptions}
             disabled={readonly}
