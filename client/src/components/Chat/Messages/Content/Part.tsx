@@ -144,6 +144,7 @@ const Part = memo(
             attachments={attachments}
             auth={toolCall.auth}
             expires_at={toolCall.expires_at}
+            tool_call_id={toolCall.id}
             isLast={isLast}
           />
         );
@@ -193,6 +194,7 @@ const Part = memo(
             args={toolCall.function.arguments as string}
             name={toolCall.function.name}
             output={toolCall.function.output}
+            tool_call_id={toolCall.id}
             isLast={isLast}
           />
         );
