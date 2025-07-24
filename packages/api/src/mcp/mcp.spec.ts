@@ -140,6 +140,31 @@ describe('Environment Variable Extraction (MCP)', () => {
 
       expect(result.headers).toEqual(options.headers);
     });
+
+    it('should accept "http" as an alias for "streamable-http"', () => {
+      const options = {
+        type: 'http',
+        url: 'https://example.com/api',
+        headers: {
+          Authorization: 'Bearer token',
+        },
+      };
+
+      const result = StreamableHTTPOptionsSchema.parse(options);
+
+      expect(result.type).toBe('http');
+      expect(result.url).toBe('https://example.com/api');
+      expect(result.headers).toEqual(options.headers);
+    });
+
+    it('should reject websocket URLs with "http" type', () => {
+      const options = {
+        type: 'http',
+        url: 'ws://example.com/socket',
+      };
+
+      expect(() => StreamableHTTPOptionsSchema.parse(options)).toThrow();
+    });
   });
 
   describe('processMCPEnv', () => {
@@ -296,6 +321,38 @@ describe('Environment Variable Extraction (MCP)', () => {
       const result = processMCPEnv(obj);
 
       expect(result.type).toBe('streamable-http');
+    });
+
+    it('should maintain http type in processed options', () => {
+      const obj = {
+        type: 'http' as const,
+        url: 'https://example.com/api',
+      };
+
+      const result = processMCPEnv(obj as unknown as MCPOptions);
+
+      expect(result.type).toBe('http');
+    });
+
+    it('should process headers in http options', () => {
+      const user = createTestUser({ id: 'test-user-123' });
+      const obj = {
+        type: 'http' as const,
+        url: 'https://example.com',
+        headers: {
+          Authorization: '${TEST_API_KEY}',
+          'User-Id': '{{LIBRECHAT_USER_ID}}',
+          'Content-Type': 'application/json',
+        },
+      };
+
+      const result = processMCPEnv(obj as unknown as MCPOptions, user);
+
+      expect('headers' in result && result.headers).toEqual({
+        Authorization: 'test-api-key-value',
+        'User-Id': 'test-user-123',
+        'Content-Type': 'application/json',
+      });
     });
 
     it('should process dynamic user fields in headers', () => {

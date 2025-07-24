@@ -125,7 +125,7 @@ export const SSEOptionsSchema = BaseOptionsSchema.extend({
 });
 
 export const StreamableHTTPOptionsSchema = BaseOptionsSchema.extend({
-  type: z.literal('streamable-http'),
+  type: z.union([z.literal('streamable-http'), z.literal('http')]),
   headers: z.record(z.string(), z.string()).optional(),
   url: z
     .string()
