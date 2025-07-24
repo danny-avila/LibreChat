@@ -268,6 +268,18 @@ export class MCPOAuthHandler {
         /** Add state parameter with flowId to the authorization URL */
         authorizationUrl.searchParams.set('state', flowId);
         logger.debug(`[MCPOAuth] Added state parameter to authorization URL`);
+
+        if (resourceMetadata?.resource != null && resourceMetadata.resource) {
+          authorizationUrl.searchParams.set('resource', resourceMetadata.resource);
+          logger.debug(
+            `[MCPOAuth] Added resource parameter to authorization URL: ${resourceMetadata.resource}`,
+          );
+        } else {
+          logger.warn(
+            `[MCPOAuth] Resource metadata missing 'resource' property for ${serverName}. ` +
+              'This can cause issues with some Authorization Servers who expect a "resource" parameter.',
+          );
+        }
       } catch (error) {
         logger.error(`[MCPOAuth] startAuthorization failed:`, error);
         throw error;
@@ -330,12 +342,27 @@ export class MCPOAuthHandler {
         throw new Error('Invalid flow metadata');
       }
 
+      let resource: URL | undefined;
+      try {
+        if (metadata.resourceMetadata?.resource != null && metadata.resourceMetadata.resource) {
+          resource = new URL(metadata.resourceMetadata.resource);
+          logger.debug(`[MCPOAuth] Resource URL for flow ${flowId}: ${resource.toString()}`);
+        }
+      } catch (error) {
+        logger.warn(
+          `[MCPOAuth] Invalid resource URL format for flow ${flowId}: '${metadata.resourceMetadata!.resource}'. ` +
+            `Error: ${error instanceof Error ? error.message : 'Unknown error'}. Proceeding without resource parameter.`,
+        );
+        resource = undefined;
+      }
+
       const tokens = await exchangeAuthorization(metadata.serverUrl, {
+        redirectUri: metadata.clientInfo.redirect_uris?.[0] || this.getDefaultRedirectUri(),
         metadata: metadata.metadata as unknown as SDKOAuthMetadata,
         clientInformation: metadata.clientInfo,
-        authorizationCode,
         codeVerifier: metadata.codeVerifier,
-        redirectUri: metadata.clientInfo.redirect_uris?.[0] || this.getDefaultRedirectUri(),
+        authorizationCode,
+        resource,
       });
 
       logger.debug('[MCPOAuth] Raw tokens from exchange:', {

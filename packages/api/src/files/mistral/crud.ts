@@ -442,7 +442,7 @@ async function loadGoogleAuthConfig(): Promise<{
 }> {
   /** Path from environment variable or default location */
   const serviceKeyPath =
-    process.env.GOOGLE_SERVICE_KEY_FILE_PATH ||
+    process.env.GOOGLE_SERVICE_KEY_FILE ||
     path.join(__dirname, '..', '..', '..', 'api', 'data', 'auth.json');
 
   const serviceKey = await loadServiceKey(serviceKeyPath);

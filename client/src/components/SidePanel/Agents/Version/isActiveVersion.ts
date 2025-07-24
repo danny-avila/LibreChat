@@ -1,4 +1,4 @@
-import { AgentState, VersionRecord } from './VersionPanel';
+import type { AgentState, VersionRecord } from './types';
 
 export const isActiveVersion = (
   version: VersionRecord,

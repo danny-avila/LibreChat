@@ -4,10 +4,13 @@ import type {
   TCustomConfig,
   SearchProviders,
   TWebSearchConfig,
-} from './config';
-import { SearchCategories, SafeSearchTypes } from './config';
-import { extractVariableName } from './utils';
-import { AuthType } from './schemas';
+} from 'librechat-data-provider';
+import {
+  SearchCategories,
+  SafeSearchTypes,
+  extractVariableName,
+  AuthType,
+} from 'librechat-data-provider';
 
 export function loadWebSearchConfig(
   config: TCustomConfig['webSearch'],
@@ -278,7 +281,9 @@ export async function loadWebSearchAuth({
   }
 
   authResult.safeSearch = webSearchConfig?.safeSearch ?? SafeSearchTypes.MODERATE;
-  authResult.scraperTimeout = webSearchConfig?.scraperTimeout ?? 7500;
+  authResult.scraperTimeout =
+    webSearchConfig?.scraperTimeout ?? webSearchConfig?.firecrawlOptions?.timeout ?? 7500;
+  authResult.firecrawlOptions = webSearchConfig?.firecrawlOptions;
 
   return {
     authTypes,

@@ -1,4 +1,3 @@
-import type OpenAI from 'openai';
 import type { InfiniteData } from '@tanstack/react-query';
 import type {
   TBanner,
@@ -13,8 +12,6 @@ import type {
 import type { SettingDefinition } from './generate';
 import type { TMinimalFeedback } from './feedback';
 import type { Agent } from './types/assistants';
-
-export type TOpenAIMessage = OpenAI.Chat.ChatCompletionMessageParam;
 
 export * from './schemas';
 
@@ -105,6 +102,7 @@ export type TEphemeralAgent = {
 export type TPayload = Partial<TMessage> &
   Partial<TEndpointOption> & {
     isContinued: boolean;
+    isRegenerate?: boolean;
     conversationId: string | null;
     messages?: TMessages;
     isTemporary: boolean;
@@ -125,7 +123,6 @@ export type TSubmission = {
   isTemporary: boolean;
   messages: TMessage[];
   isRegenerate?: boolean;
-  isResubmission?: boolean;
   initialResponse?: TMessage;
   conversation: Partial<TConversation>;
   endpointOption: TEndpointOption;

@@ -2,16 +2,16 @@ const { z } = require('zod');
 const { tool } = require('@langchain/core/tools');
 const { logger } = require('@librechat/data-schemas');
 const { Time, CacheKeys, StepTypes } = require('librechat-data-provider');
-const { sendEvent, normalizeServerName, MCPOAuthHandler } = require('@librechat/api');
 const { Constants: AgentConstants, Providers, GraphEvents } = require('@librechat/agents');
+const { Constants, ContentTypes, isAssistantsEndpoint } = require('librechat-data-provider');
 const {
-  Constants,
-  ContentTypes,
-  isAssistantsEndpoint,
-  convertJsonSchemaToZod,
-} = require('librechat-data-provider');
-const { getMCPManager, getFlowStateManager } = require('~/config');
+  sendEvent,
+  MCPOAuthHandler,
+  normalizeServerName,
+  convertWithResolvedRefs,
+} = require('@librechat/api');
 const { findToken, createToken, updateToken } = require('~/models');
+const { getMCPManager, getFlowStateManager } = require('~/config');
 const { getCachedTools } = require('./Config');
 const { getLogStores } = require('~/cache');
 
@@ -104,7 +104,7 @@ function createAbortHandler({ userId, serverName, toolName, flowManager }) {
  * @returns { Promise<typeof tool | { _call: (toolInput: Object | string) => unknown}> } An object with `_call` method to execute the tool input.
  */
 async function createMCPTool({ req, res, toolKey, provider: _provider }) {
-  const availableTools = await getCachedTools({ includeGlobal: true });
+  const availableTools = await getCachedTools({ userId: req.user?.id, includeGlobal: true });
   const toolDefinition = availableTools?.[toolKey]?.function;
   if (!toolDefinition) {
     logger.error(`Tool ${toolKey} not found in available tools`);
@@ -113,7 +113,7 @@ async function createMCPTool({ req, res, toolKey, provider: _provider }) {
   /** @type {LCTool} */
   const { description, parameters } = toolDefinition;
   const isGoogle = _provider === Providers.VERTEXAI || _provider === Providers.GOOGLE;
-  let schema = convertJsonSchemaToZod(parameters, {
+  let schema = convertWithResolvedRefs(parameters, {
     allowEmptyObject: !isGoogle,
     transformOneOfAnyOf: true,
   });

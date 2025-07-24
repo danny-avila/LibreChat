@@ -386,7 +386,7 @@ describe('matchModelName', () => {
   });
 
   it('should return the closest matching key for gpt-4-1106 partial matches', () => {
-    expect(matchModelName('something/gpt-4-1106')).toBe('gpt-4-1106');
+    expect(matchModelName('gpt-4-1106/something')).toBe('gpt-4-1106');
     expect(matchModelName('gpt-4-1106-preview')).toBe('gpt-4-1106');
     expect(matchModelName('gpt-4-1106-vision-preview')).toBe('gpt-4-1106');
   });
@@ -589,6 +589,10 @@ describe('Grok Model Tests - Tokens', () => {
       expect(getModelMaxTokens('grok-3-mini-fast')).toBe(131072);
     });
 
+    test('should return correct tokens for Grok 4 model', () => {
+      expect(getModelMaxTokens('grok-4-0709')).toBe(256000);
+    });
+
     test('should handle partial matches for Grok models with prefixes', () => {
       // Vision models should match before general models
       expect(getModelMaxTokens('xai/grok-2-vision-1212')).toBe(32768);
@@ -606,6 +610,8 @@ describe('Grok Model Tests - Tokens', () => {
       expect(getModelMaxTokens('xai/grok-3-fast')).toBe(131072);
       expect(getModelMaxTokens('xai/grok-3-mini')).toBe(131072);
       expect(getModelMaxTokens('xai/grok-3-mini-fast')).toBe(131072);
+      // Grok 4 model
+      expect(getModelMaxTokens('xai/grok-4-0709')).toBe(256000);
     });
   });
 
@@ -627,6 +633,8 @@ describe('Grok Model Tests - Tokens', () => {
       expect(matchModelName('grok-3-fast')).toBe('grok-3-fast');
       expect(matchModelName('grok-3-mini')).toBe('grok-3-mini');
       expect(matchModelName('grok-3-mini-fast')).toBe('grok-3-mini-fast');
+      // Grok 4 model
+      expect(matchModelName('grok-4-0709')).toBe('grok-4');
     });
 
     test('should match Grok model variations with prefixes', () => {
@@ -646,6 +654,8 @@ describe('Grok Model Tests - Tokens', () => {
       expect(matchModelName('xai/grok-3-fast')).toBe('grok-3-fast');
       expect(matchModelName('xai/grok-3-mini')).toBe('grok-3-mini');
       expect(matchModelName('xai/grok-3-mini-fast')).toBe('grok-3-mini-fast');
+      // Grok 4 model
+      expect(matchModelName('xai/grok-4-0709')).toBe('grok-4');
     });
   });
 });
@@ -701,6 +711,48 @@ describe('Claude Model Tests', () => {
       const isSonnet = model.includes('sonnet');
       const expectedModel = isSonnet ? 'claude-sonnet-4' : 'claude-opus-4';
       expect(matchModelName(model, EModelEndpoint.anthropic)).toBe(expectedModel);
+    });
+  });
+});
+
+describe('Kimi Model Tests', () => {
+  describe('getModelMaxTokens', () => {
+    test('should return correct tokens for Kimi models', () => {
+      expect(getModelMaxTokens('kimi')).toBe(131000);
+      expect(getModelMaxTokens('kimi-k2')).toBe(131000);
+      expect(getModelMaxTokens('kimi-vl')).toBe(131000);
+    });
+
+    test('should return correct tokens for Kimi models with provider prefix', () => {
+      expect(getModelMaxTokens('moonshotai/kimi-k2')).toBe(131000);
+      expect(getModelMaxTokens('moonshotai/kimi')).toBe(131000);
+      expect(getModelMaxTokens('moonshotai/kimi-vl')).toBe(131000);
+    });
+
+    test('should handle partial matches for Kimi models', () => {
+      expect(getModelMaxTokens('kimi-k2-latest')).toBe(131000);
+      expect(getModelMaxTokens('kimi-vl-preview')).toBe(131000);
+      expect(getModelMaxTokens('kimi-2024')).toBe(131000);
+    });
+  });
+
+  describe('matchModelName', () => {
+    test('should match exact Kimi model names', () => {
+      expect(matchModelName('kimi')).toBe('kimi');
+      expect(matchModelName('kimi-k2')).toBe('kimi');
+      expect(matchModelName('kimi-vl')).toBe('kimi');
+    });
+
+    test('should match Kimi model variations with provider prefix', () => {
+      expect(matchModelName('moonshotai/kimi')).toBe('kimi');
+      expect(matchModelName('moonshotai/kimi-k2')).toBe('kimi');
+      expect(matchModelName('moonshotai/kimi-vl')).toBe('kimi');
+    });
+
+    test('should match Kimi model variations with suffixes', () => {
+      expect(matchModelName('kimi-k2-latest')).toBe('kimi');
+      expect(matchModelName('kimi-vl-preview')).toBe('kimi');
+      expect(matchModelName('kimi-2024')).toBe('kimi');
     });
   });
 });

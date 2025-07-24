@@ -40,38 +40,38 @@ export const memoryInstructions =
 const getDefaultInstructions = (
   validKeys?: string[],
   tokenLimit?: number,
-) => `Use the \`set_memory\` tool to save important information about the user, but ONLY when the user has explicitly provided this information. If there is nothing to note about the user specifically, END THE TURN IMMEDIATELY.
+) => `Use the \`set_memory\` tool to save important information about the user, but ONLY when the user has requested you to remember something.
 
-  The \`delete_memory\` tool should only be used in two scenarios:
+The \`delete_memory\` tool should only be used in two scenarios:
   1. When the user explicitly asks to forget or remove specific information
   2. When updating existing memories, use the \`set_memory\` tool instead of deleting and re-adding the memory.
-  
-  ${
-    validKeys && validKeys.length > 0
-      ? `CRITICAL INSTRUCTION: Only the following keys are valid for storing memories:
-  ${validKeys.map((key) => `- ${key}`).join('\n  ')}`
-      : 'You can use any appropriate key to store memories about the user.'
-  }
 
-  ${
-    tokenLimit
-      ? `⚠️ TOKEN LIMIT: Each memory value must not exceed ${tokenLimit} tokens. Be concise and store only essential information.`
-      : ''
-  }
+1. ONLY use memory tools when the user requests memory actions with phrases like:
+   - "Remember [that] [I]..."
+   - "Don't forget [that] [I]..."
+   - "Please remember..."
+   - "Store this..."
+   - "Forget [that] [I]..."
+   - "Delete the memory about..."
 
-  ⚠️ WARNING ⚠️
-  DO NOT STORE ANY INFORMATION UNLESS THE USER HAS EXPLICITLY PROVIDED IT.
-  ONLY store information the user has EXPLICITLY shared.
-  NEVER guess or assume user information.
-  ALL memory values must be factual statements about THIS specific user.
-  If nothing needs to be stored, DO NOT CALL any memory tools.
-  If you're unsure whether to store something, DO NOT store it.
-  If nothing needs to be stored, END THE TURN IMMEDIATELY.`;
+2. NEVER store information just because the user mentioned it in conversation.
+
+3. NEVER use memory tools when the user asks you to use other tools or invoke tools in general.
+
+4. Memory tools are ONLY for memory requests, not for general tool usage.
+
+5. If the user doesn't ask you to remember or forget something, DO NOT use any memory tools.
+
+${validKeys && validKeys.length > 0 ? `\nVALID KEYS: ${validKeys.join(', ')}` : ''}
+
+${tokenLimit ? `\nTOKEN LIMIT: Maximum ${tokenLimit} tokens per memory value.` : ''}
+
+When in doubt, and the user hasn't asked to remember or forget anything, END THE TURN IMMEDIATELY.`;
 
 /**
  * Creates a memory tool instance with user context
  */
-const createMemoryTool = ({
+export const createMemoryTool = ({
   userId,
   setMemory,
   validKeys,
@@ -84,6 +84,9 @@ const createMemoryTool = ({
   tokenLimit?: number;
   totalTokens?: number;
 }) => {
+  const remainingTokens = tokenLimit ? tokenLimit - totalTokens : Infinity;
+  const isOverflowing = tokenLimit ? remainingTokens <= 0 : false;
+
   return tool(
     async ({ key, value }) => {
       try {
@@ -93,24 +96,48 @@ const createMemoryTool = ({
               ', ',
             )}`,
           );
-          return `Invalid key "${key}". Must be one of: ${validKeys.join(', ')}`;
+          return [`Invalid key "${key}". Must be one of: ${validKeys.join(', ')}`, undefined];
         }
 
         const tokenCount = Tokenizer.getTokenCount(value, 'o200k_base');
 
-        if (tokenLimit && tokenCount > tokenLimit) {
-          logger.warn(
-            `Memory Agent failed to set memory: Value exceeds token limit. Value has ${tokenCount} tokens, but limit is ${tokenLimit}`,
-          );
-          return `Memory value too large: ${tokenCount} tokens exceeds limit of ${tokenLimit}`;
+        if (isOverflowing) {
+          const errorArtifact: Record<Tools.memory, MemoryArtifact> = {
+            [Tools.memory]: {
+              key: 'system',
+              type: 'error',
+              value: JSON.stringify({
+                errorType: 'already_exceeded',
+                tokenCount: Math.abs(remainingTokens),
+                totalTokens: totalTokens,
+                tokenLimit: tokenLimit!,
+              }),
+              tokenCount: totalTokens,
+            },
+          };
+          return [`Memory storage exceeded. Cannot save new memories.`, errorArtifact];
         }
 
-        if (tokenLimit && totalTokens + tokenCount > tokenLimit) {
-          const remainingCapacity = tokenLimit - totalTokens;
-          logger.warn(
-            `Memory Agent failed to set memory: Would exceed total token limit. Current usage: ${totalTokens}, new memory: ${tokenCount} tokens, limit: ${tokenLimit}`,
-          );
-          return `Cannot add memory: would exceed token limit. Current usage: ${totalTokens}/${tokenLimit} tokens. This memory requires ${tokenCount} tokens, but only ${remainingCapacity} tokens available.`;
+        if (tokenLimit) {
+          const newTotalTokens = totalTokens + tokenCount;
+          const newRemainingTokens = tokenLimit - newTotalTokens;
+
+          if (newRemainingTokens < 0) {
+            const errorArtifact: Record<Tools.memory, MemoryArtifact> = {
+              [Tools.memory]: {
+                key: 'system',
+                type: 'error',
+                value: JSON.stringify({
+                  errorType: 'would_exceed',
+                  tokenCount: Math.abs(newRemainingTokens),
+                  totalTokens: newTotalTokens,
+                  tokenLimit,
+                }),
+                tokenCount: totalTokens,
+              },
+            };
+            return [`Memory storage would exceed limit. Cannot save this memory.`, errorArtifact];
+          }
         }
 
         const artifact: Record<Tools.memory, MemoryArtifact> = {
@@ -177,7 +204,7 @@ const createDeleteMemoryTool = ({
               ', ',
             )}`,
           );
-          return `Invalid key "${key}". Must be one of: ${validKeys.join(', ')}`;
+          return [`Invalid key "${key}". Must be one of: ${validKeys.join(', ')}`, undefined];
         }
 
         const artifact: Record<Tools.memory, MemoryArtifact> = {
@@ -269,7 +296,13 @@ export async function processMemory({
   llmConfig?: Partial<LLMConfig>;
 }): Promise<(TAttachment | null)[] | undefined> {
   try {
-    const memoryTool = createMemoryTool({ userId, tokenLimit, setMemory, validKeys, totalTokens });
+    const memoryTool = createMemoryTool({
+      userId,
+      tokenLimit,
+      setMemory,
+      validKeys,
+      totalTokens,
+    });
     const deleteMemoryTool = createDeleteMemoryTool({
       userId,
       validKeys,
@@ -335,6 +368,7 @@ ${memory ?? 'No existing memories'}`;
         thread_id: `memory-run-${conversationId}`,
       },
       streamMode: 'values',
+      recursionLimit: 3,
       version: 'v2',
     } as const;
 

@@ -1074,7 +1074,7 @@
 
 /**
  * @exports JsonSchemaType
- * @typedef {import('librechat-data-provider').JsonSchemaType} JsonSchemaType
+ * @typedef {import('@librechat/api').JsonSchemaType} JsonSchemaType
  * @memberof typedefs
  */
 

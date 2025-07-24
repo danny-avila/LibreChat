@@ -143,7 +143,7 @@ export function getOpenAIConfig(
       };
       configOptions.defaultQuery = {
         ...configOptions.defaultQuery,
-        'api-version': 'preview',
+        'api-version': configOptions.defaultQuery?.['api-version'] ?? 'preview',
       };
     };
 
