@@ -1,4 +1,5 @@
 import {
+  AuthType,
   EModelEndpoint,
   isAgentsEndpoint,
   orderEndpointsConfig,
@@ -9,7 +10,7 @@ import type { AgentCapabilities, TEndpointsConfig, TConfig } from 'librechat-dat
 import type { ServerRequest, TCustomEndpointsConfig } from '~/types';
 import { loadCustomEndpointsConfig as defaultLoadCustomEndpoints } from '~/endpoints/custom';
 
-type PartialEndpointEntry = Partial<TConfig>;
+type PartialEndpointEntry = Partial<TConfig> & Record<string, unknown>;
 type DefaultEndpointsResult = Record<string, PartialEndpointEntry | false | null>;
 type MutableEndpointsConfig = Record<string, PartialEndpointEntry | false | null | undefined>;
 
@@ -106,6 +107,17 @@ export function createEndpointsConfigService(deps: EndpointsConfigDeps) {
       mergedConfig[EModelEndpoint.bedrock] = {
         ...mergedConfig[EModelEndpoint.bedrock],
         availableRegions,
+      };
+    }
+
+    if (mergedConfig[EModelEndpoint.bedrock]) {
+      mergedConfig[EModelEndpoint.bedrock] = {
+        ...mergedConfig[EModelEndpoint.bedrock],
+        userProvideAccessKeyId: process.env.BEDROCK_AWS_ACCESS_KEY_ID === AuthType.USER_PROVIDED,
+        userProvideSecretAccessKey:
+          process.env.BEDROCK_AWS_SECRET_ACCESS_KEY === AuthType.USER_PROVIDED,
+        userProvideSessionToken: process.env.BEDROCK_AWS_SESSION_TOKEN === AuthType.USER_PROVIDED,
+        userProvideBearerToken: process.env.BEDROCK_AWS_BEARER_TOKEN === AuthType.USER_PROVIDED,
       };
     }
 

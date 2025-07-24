@@ -9,6 +9,13 @@ import type { BedrockConverseInput } from 'librechat-data-provider';
 export type BedrockCredentials = Partial<AwsCredentialIdentity>;
 
 /**
+ * User-provided Bedrock credentials can be either AWS credentials or an API key.
+ */
+export type BedrockUserCredentials = BedrockCredentials & {
+  bearerToken?: string;
+};
+
+/**
  * AWS Bedrock Guardrail configuration
  * @see https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_GuardrailConfiguration.html
  */

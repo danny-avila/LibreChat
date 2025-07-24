@@ -2,6 +2,7 @@ import { HttpsProxyAgent } from 'https-proxy-agent';
 import { NodeHttpHandler } from '@smithy/node-http-handler';
 import { fromNodeProviderChain } from '@aws-sdk/credential-providers';
 import { BedrockRuntimeClient } from '@aws-sdk/client-bedrock-runtime';
+import type { BedrockRuntimeClientConfig } from '@aws-sdk/client-bedrock-runtime';
 import {
   AuthType,
   EModelEndpoint,
@@ -14,6 +15,7 @@ import type {
   BaseInitializeParams,
   InitializeResultBase,
   BedrockCredentials,
+  BedrockUserCredentials,
   GuardrailConfiguration,
   InferenceProfileConfig,
 } from '~/types';
@@ -63,19 +65,23 @@ export async function initializeBedrock({
     BEDROCK_AWS_ACCESS_KEY_ID,
     BEDROCK_AWS_SESSION_TOKEN,
     BEDROCK_AWS_PROFILE,
+    BEDROCK_AWS_BEARER_TOKEN,
     BEDROCK_REVERSE_PROXY,
     BEDROCK_AWS_DEFAULT_REGION,
     PROXY,
   } = process.env;
 
   const { key: expiresAt } = req.body;
-  const isUserProvided = BEDROCK_AWS_SECRET_ACCESS_KEY === AuthType.USER_PROVIDED;
+  const isUserProvided =
+    BEDROCK_AWS_SECRET_ACCESS_KEY === AuthType.USER_PROVIDED ||
+    BEDROCK_AWS_BEARER_TOKEN === AuthType.USER_PROVIDED;
 
   const hasAccessKey = BEDROCK_AWS_ACCESS_KEY_ID != null && BEDROCK_AWS_ACCESS_KEY_ID !== '';
   const hasSecretKey =
     BEDROCK_AWS_SECRET_ACCESS_KEY != null && BEDROCK_AWS_SECRET_ACCESS_KEY !== '';
 
   let credentials: BedrockCredentials | undefined;
+  let bearerToken: string | undefined;
 
   if (isUserProvided) {
     const userKey = await db.getUserKey({
@@ -87,11 +93,28 @@ export async function initializeBedrock({
       throw new Error('Bedrock credentials not provided. Please provide them again.');
     }
 
-    credentials = JSON.parse(userKey) as BedrockCredentials;
+    let userCredentials: BedrockUserCredentials;
+    try {
+      const storedCredentials = JSON.parse(userKey) as BedrockUserCredentials & { apiKey?: string };
+      userCredentials =
+        typeof storedCredentials.apiKey === 'string'
+          ? (JSON.parse(storedCredentials.apiKey) as BedrockUserCredentials)
+          : storedCredentials;
+    } catch {
+      throw new Error('Bedrock credentials not provided. Please provide them again.');
+    }
+
+    if (userCredentials.bearerToken) {
+      bearerToken = userCredentials.bearerToken;
+    } else {
+      credentials = userCredentials;
+    }
 
     if (expiresAt) {
       checkUserKeyExpiry(expiresAt, EModelEndpoint.bedrock);
     }
+  } else if (BEDROCK_AWS_BEARER_TOKEN) {
+    bearerToken = BEDROCK_AWS_BEARER_TOKEN;
   } else if (hasAccessKey !== hasSecretKey) {
     throw new Error(
       'Both BEDROCK_AWS_ACCESS_KEY_ID and BEDROCK_AWS_SECRET_ACCESS_KEY must be provided together.',
@@ -150,33 +173,48 @@ export async function initializeBedrock({
     credentials.accessKeyId !== '' &&
     typeof credentials.secretAccessKey === 'string' &&
     credentials.secretAccessKey !== '';
+  const hasBearerToken = typeof bearerToken === 'string' && bearerToken !== '';
 
-  if (PROXY) {
-    const proxyAgent = new HttpsProxyAgent(PROXY);
+  if (PROXY || hasBearerToken) {
+    const proxyAgent = PROXY ? new HttpsProxyAgent(PROXY) : undefined;
     const credentialProvider =
-      !hasCompleteCredentials && BEDROCK_AWS_PROFILE
+      !hasCompleteCredentials && !hasBearerToken && BEDROCK_AWS_PROFILE
         ? fromNodeProviderChain({ profile: BEDROCK_AWS_PROFILE })
         : undefined;
 
-    // Create a custom BedrockRuntimeClient with proxy-enabled request handler.
+    // Create a custom BedrockRuntimeClient for proxy routing or Bedrock API keys.
     // ChatBedrockConverse will use this pre-configured client directly instead of
     // creating its own. Credentials are only set if explicitly provided; otherwise
     // the AWS SDK's default credential provider chain is used (instance profiles,
     // AWS profiles, environment variables, etc.)
-    const customClient = new BedrockRuntimeClient({
+    const customClientConfig: BedrockRuntimeClientConfig = {
       region: (llmConfig.region as string) ?? BEDROCK_AWS_DEFAULT_REGION,
-      ...(hasCompleteCredentials && {
-        credentials: credentials as { accessKeyId: string; secretAccessKey: string },
-      }),
-      ...(!hasCompleteCredentials && credentialProvider && { credentials: credentialProvider }),
-      requestHandler: new NodeHttpHandler({
+    };
+
+    if (hasBearerToken && bearerToken) {
+      customClientConfig.token = { token: bearerToken };
+      customClientConfig.authSchemePreference = ['httpBearerAuth'];
+    } else if (hasCompleteCredentials) {
+      customClientConfig.credentials = credentials as {
+        accessKeyId: string;
+        secretAccessKey: string;
+      };
+    } else if (credentialProvider) {
+      customClientConfig.credentials = credentialProvider;
+    }
+
+    if (proxyAgent) {
+      customClientConfig.requestHandler = new NodeHttpHandler({
         httpAgent: proxyAgent,
         httpsAgent: proxyAgent,
-      }),
-      ...(BEDROCK_REVERSE_PROXY && {
-        endpoint: `https://${BEDROCK_REVERSE_PROXY}`,
-      }),
-    });
+      });
+    }
+
+    if (BEDROCK_REVERSE_PROXY) {
+      customClientConfig.endpoint = `https://${BEDROCK_REVERSE_PROXY}`;
+    }
+
+    const customClient = new BedrockRuntimeClient(customClientConfig);
 
     llmConfig.client = customClient;
   } else {
