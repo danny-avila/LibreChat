@@ -735,6 +735,9 @@ class AgentClient extends BaseClient {
         if (i > 0) {
           this.model = agent.model_parameters.model;
         }
+        if (i > 0 && config.signal == null) {
+          config.signal = abortController.signal;
+        }
         if (agent.recursion_limit && typeof agent.recursion_limit === 'number') {
           config.recursionLimit = agent.recursion_limit;
         }
@@ -1019,7 +1022,7 @@ class AgentClient extends BaseClient {
     /** @type {import('@librechat/agents').ClientOptions} */
     let clientOptions = {
       maxTokens: 75,
-      model: agent.model_parameters.model,
+      model: agent.model || agent.model_parameters.model,
     };
 
     let titleProviderConfig = await getProviderConfig(endpoint);

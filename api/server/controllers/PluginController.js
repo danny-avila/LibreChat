@@ -253,16 +253,17 @@ function convertMCPToolsToPlugins(functionTools, customConfig) {
     const parts = toolKey.split(Constants.mcp_delimiter);
     const serverName = parts[parts.length - 1];
 
+    const serverConfig = customConfig?.mcpServers?.[serverName];
+
     const plugin = {
       name: parts[0], // Use the tool name without server suffix
       pluginKey: toolKey,
       description: functionData.description || '',
       authenticated: true,
-      icon: undefined,
+      icon: serverConfig?.iconPath,
     };
 
     // Build authConfig for MCP tools
-    const serverConfig = customConfig?.mcpServers?.[serverName];
     if (!serverConfig?.customUserVars) {
       plugin.authConfig = [];
       plugins.push(plugin);
