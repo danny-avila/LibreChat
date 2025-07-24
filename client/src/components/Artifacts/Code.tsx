@@ -1,12 +1,12 @@
 import React, { memo, useEffect, useRef, useState } from 'react';
+import copy from 'copy-to-clipboard';
 import rehypeKatex from 'rehype-katex';
+import { Copy, CircleCheckBig } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
-import copy from 'copy-to-clipboard';
 import { handleDoubleClick, langSubset } from '~/utils';
-import Clipboard from '~/components/svg/Clipboard';
-import CheckMark from '~/components/svg/CheckMark';
-import useLocalize from '~/hooks/useLocalize';
+import { useLocalize } from '~/hooks';
+import { Button } from '~/components';
 
 type TCodeProps = {
   inline: boolean;
@@ -108,12 +108,13 @@ export const CopyCodeButton: React.FC<{ content: string }> = ({ content }) => {
   };
 
   return (
-    <button
-      className="mr-2 text-text-secondary"
+    <Button
+      size="icon"
+      variant="ghost"
       onClick={handleCopy}
       aria-label={isCopied ? localize('com_ui_copied') : localize('com_ui_copy_code')}
     >
-      {isCopied ? <CheckMark className="h-[18px] w-[18px]" /> : <Clipboard />}
-    </button>
+      {isCopied ? <CircleCheckBig size={16} /> : <Copy size={16} />}
+    </Button>
   );
 };
