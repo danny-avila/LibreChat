@@ -1745,5 +1745,74 @@ describe('convertJsonSchemaToZod', () => {
       const result = zodSchema?.parse(userData);
       expect(result).toEqual(userData);
     });
+
+    it('should NOT treat object schemas with $ref or complex properties as bare objects', () => {
+      // This test ensures our fix doesn't affect schemas with $ref or other complex structures
+      const schemaWithRef = {
+        type: 'object' as const,
+        properties: {
+          data: {
+            type: 'object' as const,
+            // This has anyOf with $ref - should NOT be treated as a bare object
+            anyOf: [{ $ref: '#/$defs/dataSchema' }, { type: 'null' as const }],
+          },
+        },
+        $defs: {
+          dataSchema: {
+            type: 'object' as const,
+            additionalProperties: {
+              type: 'string' as const,
+            },
+          },
+        },
+      };
+
+      // Convert without resolving refs
+      const zodSchema = convertJsonSchemaToZod(schemaWithRef as any, {
+        transformOneOfAnyOf: true,
+      });
+
+      const testData = {
+        data: {
+          field1: 'value1',
+          field2: 'value2',
+        },
+      };
+
+      // Without ref resolution, the data field should be stripped/empty
+      const result = zodSchema?.parse(testData);
+      expect(result?.data).toEqual({});
+    });
+
+    it('should NOT treat object schemas with oneOf/anyOf as bare objects', () => {
+      // Ensure schemas with oneOf/anyOf are not treated as bare objects
+      const schemaWithOneOf = {
+        type: 'object' as const,
+        properties: {
+          config: {
+            type: 'object' as const,
+            // Empty properties but has oneOf - should NOT be passthrough
+            oneOf: [
+              { properties: { type: { const: 'A' } } },
+              { properties: { type: { const: 'B' } } },
+            ],
+          } as any,
+        },
+      };
+
+      const zodSchema = convertWithResolvedRefs(schemaWithOneOf as any, {
+        transformOneOfAnyOf: true,
+      });
+
+      const testData = {
+        config: {
+          randomField: 'should not pass through',
+        },
+      };
+
+      // The random field should be stripped because this isn't a bare object
+      const result = zodSchema?.parse(testData);
+      expect(result?.config).toEqual({});
+    });
   });
 });
