@@ -7,6 +7,7 @@ import { BirthdayIcon, TooltipAnchor, SplitText } from '~/components';
 import ConvoIcon from '~/components/Endpoints/ConvoIcon';
 import { useLocalize, useAuthContext } from '~/hooks';
 import { getIconEndpoint, getEntity } from '~/utils';
+import DOMPurify from 'dompurify';
 
 const containerClassName =
   'shadow-stroke relative flex h-full items-center justify-center rounded-full bg-white dark:bg-presentation dark:text-white text-black dark:after:shadow-none ';
@@ -204,9 +205,10 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
           )}
         </div>
         {description && (
-          <div className="animate-fadeIn mt-4 max-w-md text-center text-sm font-normal text-text-primary">
-            {description}
-          </div>
+          <div
+            className="animate-fadeIn mt-4 max-w-md text-center text-sm font-normal text-text-primary"
+            dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(description || '') }}
+          />
         )}
       </div>
     </div>
