@@ -1,9 +1,10 @@
-import { isAssistantsEndpoint } from 'librechat-data-provider';
+import { isAssistantsEndpoint, isAgentsEndpoint } from 'librechat-data-provider';
 import type {
   TConversation,
   TEndpointsConfig,
   TPreset,
   TAssistantsMap,
+  TAgentsMap,
 } from 'librechat-data-provider';
 import ConvoIconURL from '~/components/Endpoints/ConvoIconURL';
 import MinimalIcon from '~/components/Endpoints/MinimalIcon';
@@ -14,6 +15,7 @@ export default function EndpointIcon({
   endpointsConfig,
   className = 'mr-0',
   assistantMap,
+  agentsMap,
   context,
 }: {
   conversation: TConversation | TPreset | null;
@@ -21,6 +23,7 @@ export default function EndpointIcon({
   containerClassName?: string;
   context?: 'message' | 'nav' | 'landing' | 'menu-item';
   assistantMap?: TAssistantsMap;
+  agentsMap?: TAgentsMap;
   className?: string;
   size?: number;
 }) {
@@ -34,10 +37,15 @@ export default function EndpointIcon({
   const assistant = isAssistantsEndpoint(endpoint)
     ? assistantMap?.[endpoint]?.[conversation?.assistant_id ?? '']
     : null;
+  const agent = isAgentsEndpoint(endpoint)
+    ? agentsMap?.[conversation?.agent_id ?? '']
+    : null;
   const assistantAvatar = (assistant && (assistant.metadata?.avatar as string)) || '';
   const assistantName = assistant && (assistant.name ?? '');
+  const agentAvatar = agent?.avatar?.filepath || '';
+  const agentName = agent?.name || '';
 
-  const iconURL = assistantAvatar || convoIconURL;
+  const iconURL = agentAvatar || assistantAvatar || convoIconURL;
 
   if (iconURL && (iconURL.includes('http') || iconURL.startsWith('/images/'))) {
     return (
@@ -48,6 +56,8 @@ export default function EndpointIcon({
         endpointIconURL={endpointIconURL}
         assistantAvatar={assistantAvatar}
         assistantName={assistantName ?? ''}
+        agentAvatar={agentAvatar}
+        agentName={agentName}
       />
     );
   } else {
@@ -63,6 +73,9 @@ export default function EndpointIcon({
         isCreatedByUser={false}
         chatGptLabel={undefined}
         modelLabel={undefined}
+        assistantName={assistantName}
+        agentName={agentName}
+        agentAvatar={agentAvatar}
       />
     );
   }

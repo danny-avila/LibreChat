@@ -4,6 +4,7 @@ import { useParams } from 'react-router-dom';
 import { Constants } from 'librechat-data-provider';
 import type { TConversation } from 'librechat-data-provider';
 import { useNavigateToConvo, useMediaQuery, useLocalize } from '~/hooks';
+import { useListAgentsQuery } from '~/data-provider/Agents';
 import { useUpdateConversationMutation } from '~/data-provider';
 import EndpointIcon from '~/components/Endpoints/EndpointIcon';
 import { useGetEndpointsQuery } from '~/data-provider';
@@ -33,6 +34,16 @@ export default function Conversation({
   const { showToast } = useToastContext();
   const { navigateToConvo } = useNavigateToConvo();
   const { data: endpointsConfig } = useGetEndpointsQuery();
+  const { data: agentsData } = useListAgentsQuery();
+  const agentsMap = useMemo(() => {
+    if (!agentsData?.data) {
+      return {};
+    }
+    return agentsData.data.reduce((acc, agent) => {
+      acc[agent.id] = agent;
+      return acc;
+    }, {} as Record<string, any>);
+  }, [agentsData?.data]);
   const currentConvoId = useMemo(() => params.conversationId, [params.conversationId]);
   const updateConvoMutation = useUpdateConversationMutation(currentConvoId ?? '');
   const activeConvos = useRecoilValue(store.allConversationsSelector);
@@ -180,6 +191,7 @@ export default function Conversation({
           <EndpointIcon
             conversation={conversation}
             endpointsConfig={endpointsConfig}
+            agentsMap={agentsMap}
             size={20}
             context="menu-item"
           />
