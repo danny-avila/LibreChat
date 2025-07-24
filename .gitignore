@@ -127,3 +127,6 @@ helm/**/.values.yaml
 
 # SAML Idp cert
 *.cert
+
+# specstory
+.specstory*

@@ -214,7 +214,7 @@ mcpServers:
     chatMenu: true  # Only available in agent builder
 
   #Searxng MCP Server
-  searxngmcp:
+  private-web-searching-searxng:
     command: npx
     args: ["-y", "mcp-searxng"]
     env:
@@ -222,7 +222,7 @@ mcpServers:
     chatMenu: true  # Only available in agent builder
 
   #Jina MCP Server
-  jina-mcp-tools:
+  commercial-web-searching-jina:
     command: npx
     args: ["jina-mcp-tools"]
     env:
@@ -239,6 +239,12 @@ mcpServers:
       X-LIBRECHAT_USER_USERNAME: "{{LIBRECHAT_USER_USERNAME}}"
     When sending emails:
       - Make sure you have all the information needed and, if needed, ask for more information
+
+  kantata-tools:
+    type: streamable-http
+    url: https://ktmcp.amendllc.com/mcp
+    headers:
+      Authorization: "${KANTATA_MCP_BEARER_TOKEN}"
 
 
   #Microsoft Tools
