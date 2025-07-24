@@ -17,6 +17,7 @@ const { getMCPTools } = require('~/server/controllers/mcp');
 const { requireJwtAuth } = require('~/server/middleware');
 const { findPluginAuthsByKeys } = require('~/models');
 const { getLogStores } = require('~/cache');
+const elicitationRouter = require('./mcp/elicitation');
 
 const router = Router();
 
@@ -549,5 +550,8 @@ function getOAuthHeaders(serverName) {
   const serverConfig = mcpManager.getRawConfig(serverName);
   return serverConfig?.oauth_headers ?? {};
 }
+
+// Mount elicitation routes
+router.use('/elicitations', elicitationRouter);
 
 module.exports = router;
