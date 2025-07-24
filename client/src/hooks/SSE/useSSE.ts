@@ -16,7 +16,7 @@ import type { TResData } from '~/common';
 import { useGetStartupConfig, useGetUserBalance } from '~/data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
 import useEventHandlers from './useEventHandlers';
-import store from '~/store';
+import store, { activeElicitationsState, elicitationDataState } from '~/store';
 
 const clearDraft = (conversationId?: string | null) => {
   if (conversationId) {
@@ -50,6 +50,10 @@ export default function useSSE(
   const [completed, setCompleted] = useState(new Set());
   const setAbortScroll = useSetRecoilState(store.abortScrollFamily(runIndex));
   const setShowStopButton = useSetRecoilState(store.showStopButtonByIndex(runIndex));
+
+  // Elicitation state setters
+  const setActiveElicitations = useSetRecoilState(activeElicitationsState);
+  const setElicitationData = useSetRecoilState(elicitationDataState);
 
   const {
     setMessages,
@@ -148,6 +152,25 @@ export default function useSSE(
         setActiveRunId(runId);
         /* synchronize messages to Assistants API as well as with real DB ID's */
         syncHandler(data, { ...submission, userMessage } as EventSubmission);
+      } else if (data.type === 'elicitation_created' && data.elicitationData) {
+        const elicitationData = data.elicitationData;
+        // Store the full elicitation data
+        setElicitationData((prev) => ({
+          ...prev,
+          [elicitationData.id]: elicitationData,
+        }));
+
+        if (elicitationData.tool_call_id) {
+          setActiveElicitations((prev) => {
+            const newState = {
+              ...prev,
+              [elicitationData.tool_call_id]: {
+                ...elicitationData,
+              },
+            };
+            return newState;
+          });
+        }
       } else if (data.type != null) {
         const { text, index } = data;
         if (text != null && index !== textIndex) {

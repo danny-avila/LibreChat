@@ -4,7 +4,9 @@ import { TriangleAlert } from 'lucide-react';
 import { actionDelimiter, actionDomainSeparator, Constants } from 'librechat-data-provider';
 import type { TAttachment } from 'librechat-data-provider';
 import { useLocalize, useProgress } from '~/hooks';
+import { useElicitation } from '~/hooks/Chat/useElicitation';
 import { AttachmentGroup } from './Parts';
+import ElicitationForm from './ElicitationForm';
 import ToolCallInfo from './ToolCallInfo';
 import ProgressText from './ProgressText';
 import { logger, cn } from '~/utils';
@@ -18,6 +20,7 @@ export default function ToolCall({
   output,
   attachments,
   auth,
+  tool_call_id,
 }: {
   initialProgress: number;
   isLast?: boolean;
@@ -28,8 +31,12 @@ export default function ToolCall({
   attachments?: TAttachment[];
   auth?: string;
   expires_at?: number;
+  tool_call_id?: string;
 }) {
   const localize = useLocalize();
+  const progress = useProgress(initialProgress);
+  const { activeElicitation, hasActiveElicitation, respondToElicitation } =
+    useElicitation(tool_call_id);
   const [showInfo, setShowInfo] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
   const [contentHeight, setContentHeight] = useState<number | undefined>(0);
@@ -98,7 +105,6 @@ export default function ToolCall({
     }
   }, [auth]);
 
-  const progress = useProgress(initialProgress);
   const cancelled = (!isSubmitting && progress < 1) || error === true;
 
   const getFinishedText = () => {
@@ -242,6 +248,20 @@ export default function ToolCall({
         </div>
       )}
       {attachments && attachments.length > 0 && <AttachmentGroup attachments={attachments} />}
+      {hasActiveElicitation && activeElicitation && (
+        <div className="mt-4 space-y-4">
+          <ElicitationForm
+            key={activeElicitation.id}
+            request={activeElicitation.request}
+            serverName={activeElicitation.serverName}
+            onAccept={(data) =>
+              respondToElicitation(activeElicitation.id, { action: 'accept', content: data })
+            }
+            onDecline={() => respondToElicitation(activeElicitation.id, { action: 'decline' })}
+            onCancel={() => respondToElicitation(activeElicitation.id, { action: 'cancel' })}
+          />
+        </div>
+      )}
     </>
   );
 }

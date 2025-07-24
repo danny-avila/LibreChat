@@ -38,6 +38,7 @@ const {
   updateMCPServerController,
   deleteMCPServerController,
 } = require('~/server/controllers/mcp');
+const elicitationRouter = require('./mcp/elicitation');
 
 const router = Router();
 
@@ -679,5 +680,8 @@ router.delete(
   }),
   deleteMCPServerController,
 );
+
+// Mount elicitation routes
+router.use('/elicitations', elicitationRouter);
 
 module.exports = router;
