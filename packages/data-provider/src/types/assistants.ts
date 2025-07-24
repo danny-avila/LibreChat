@@ -3,7 +3,7 @@ import type { AssistantsEndpoint, AgentProvider } from 'src/schemas';
 import type { ContentTypes } from './runs';
 import type { Agents } from './agents';
 import type { TFile } from './files';
-import { ArtifactModes } from 'src/artifacts';
+import { ArtifactModes, ChartModes } from 'src/artifacts';
 
 export type Schema = OpenAPIV3.SchemaObject & { description?: string };
 export type Reference = OpenAPIV3.ReferenceObject & { description?: string };
@@ -223,6 +223,7 @@ export type Agent = {
   end_after_tools?: boolean;
   hide_sequential_outputs?: boolean;
   artifacts?: ArtifactModes;
+  charts?: ChartModes;
   recursion_limit?: number;
   version?: number;
 };
@@ -241,7 +242,12 @@ export type AgentCreateParams = {
   model_parameters: AgentModelParameters;
 } & Pick<
   Agent,
-  'agent_ids' | 'end_after_tools' | 'hide_sequential_outputs' | 'artifacts' | 'recursion_limit'
+  | 'agent_ids'
+  | 'end_after_tools'
+  | 'hide_sequential_outputs'
+  | 'artifacts'
+  | 'recursion_limit'
+  | 'charts'
 >;
 
 export type AgentUpdateParams = {
@@ -260,7 +266,12 @@ export type AgentUpdateParams = {
   isCollaborative?: boolean;
 } & Pick<
   Agent,
-  'agent_ids' | 'end_after_tools' | 'hide_sequential_outputs' | 'artifacts' | 'recursion_limit'
+  | 'agent_ids'
+  | 'end_after_tools'
+  | 'hide_sequential_outputs'
+  | 'artifacts'
+  | 'recursion_limit'
+  | 'charts'
 >;
 
 export type AgentListParams = {
