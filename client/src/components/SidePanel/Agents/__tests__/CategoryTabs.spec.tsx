@@ -10,7 +10,7 @@ jest.mock('~/hooks/useLocalize', () => () => (key: string) => {
   const mockTranslations: Record<string, string> = {
     com_agents_top_picks: 'Top Picks',
     com_agents_all: 'All',
-    com_agents_no_categories: 'No categories available',
+    com_ui_no_categories: 'No categories available',
     com_agents_category_tabs_label: 'Agent Categories',
     com_ui_agent_category_general: 'General',
     com_ui_agent_category_hr: 'HR',
@@ -83,7 +83,7 @@ describe('CategoryTabs', () => {
     );
 
     const generalTab = screen.getByText('General').closest('button');
-    expect(generalTab).toHaveClass('text-gray-900');
+    expect(generalTab).toHaveClass('bg-surface-tertiary');
 
     // Should have active underline
     const underline = generalTab?.querySelector('.absolute.bottom-0');
@@ -149,7 +149,8 @@ describe('CategoryTabs', () => {
     );
 
     const generalTab = screen.getByText('General').closest('button');
-    expect(generalTab).toHaveClass('text-gray-600');
+    expect(generalTab).toHaveClass('bg-surface-secondary');
+    expect(generalTab).toHaveClass('text-text-secondary');
 
     // Should not have active underline
     const underline = generalTab?.querySelector('.absolute.bottom-0');
