@@ -18,7 +18,6 @@ import {
   compactAssistantSchema,
 } from './schemas';
 import { bedrockInputSchema } from './bedrock';
-import { extractEnvVariable } from './utils';
 import { alternateName } from './config';
 
 type EndpointSchema =
@@ -44,10 +43,6 @@ const endpointSchemas: Record<EndpointSchemaKey, EndpointSchema> = {
   [EModelEndpoint.agents]: compactAgentsSchema,
   [EModelEndpoint.bedrock]: bedrockInputSchema,
 };
-
-// const schemaCreators: Record<EModelEndpoint, (customSchema: DefaultSchemaValues) => EndpointSchema> = {
-//   [EModelEndpoint.google]: createGoogleSchema,
-// };
 
 /** Get the enabled endpoints from the `ENDPOINTS` environment variable */
 export function getEnabledEndpoints() {
@@ -167,10 +162,6 @@ export const parseConvo = ({
   } else if (!schema && endpointType) {
     schema = endpointSchemas[endpointType];
   }
-
-  // if (defaultSchema && schemaCreators[endpoint]) {
-  //   schema = schemaCreators[endpoint](defaultSchema);
-  // }
 
   const convo = schema?.parse(conversation) as s.TConversation | undefined;
   const { models, secondaryModels } = possibleValues ?? {};
@@ -345,16 +336,11 @@ export const parseCompactConvo = ({
   }
 
   const convo = schema.parse(conversation) as s.TConversation | null;
-  // const { models, secondaryModels } = possibleValues ?? {};
   const { models } = possibleValues ?? {};
 
   if (models && convo) {
     convo.model = getFirstDefinedValue(models) ?? convo.model;
   }
-
-  // if (secondaryModels && convo.agentOptions) {
-  //   convo.agentOptionmodel = getFirstDefinedValue(secondaryModels) ?? convo.agentOptionmodel;
-  // }
 
   return convo;
 };
