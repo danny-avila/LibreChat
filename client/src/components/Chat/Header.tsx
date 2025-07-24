@@ -47,7 +47,7 @@ export default function Header() {
                 : 'pointer-events-none translate-x-[-100px] opacity-0'
             }`}
           >
-            <OpenSidebar setNavVisible={setNavVisible} />
+            <OpenSidebar setNavVisible={setNavVisible} className="max-md:hidden" />
             <HeaderNewChat />
           </div>
           <div

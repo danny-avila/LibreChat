@@ -1,7 +1,5 @@
 import React from 'react';
-
 import type t from 'librechat-data-provider';
-
 import useLocalize from '~/hooks/useLocalize';
 import { SmartLoader } from './SmartLoader';
 import { cn } from '~/utils';
@@ -50,16 +48,14 @@ const CategoryTabs: React.FC<CategoryTabsProps> = ({
 
   // Loading skeleton component
   const loadingSkeleton = (
-    <div className="mb-8">
-      <div className="flex justify-center">
-        <div className="flex flex-wrap items-center justify-center gap-6">
-          {[...Array(6)].map((_, i) => (
-            <div
-              key={i}
-              className="h-6 min-w-[60px] animate-pulse rounded bg-gray-200 dark:bg-gray-700"
-            />
-          ))}
-        </div>
+    <div className="w-full pb-2">
+      <div className="no-scrollbar flex gap-1.5 overflow-x-auto px-4">
+        {[...Array(6)].map((_, i) => (
+          <div
+            key={i}
+            className="h-[36px] min-w-[80px] animate-pulse rounded-md bg-surface-tertiary"
+          />
+        ))}
       </div>
     </div>
   );
@@ -106,52 +102,54 @@ const CategoryTabs: React.FC<CategoryTabsProps> = ({
   // Early return if no categories available
   if (!isLoading && (!categories || categories.length === 0)) {
     return (
-      <div className="mb-8 text-center text-gray-500">{localize('com_agents_no_categories')}</div>
+      <div className="text-center text-text-secondary">{localize('com_ui_no_categories')}</div>
     );
   }
 
   // Main tabs content
   const tabsContent = (
-    <div className="mb-8">
-      <div className="flex justify-center">
-        {/* Accessible tab navigation with proper ARIA attributes */}
-        <div
-          className="flex flex-wrap items-center justify-center gap-6"
-          role="tablist"
-          aria-label={localize('com_agents_category_tabs_label')}
-          aria-orientation="horizontal"
-        >
-          {categories.map((category, index) => (
-            <button
-              key={category.value}
-              id={`category-tab-${category.value}`}
-              onClick={() => onChange(category.value)}
-              onKeyDown={(e) => handleKeyDown(e, category.value)}
-              className={cn(
-                'relative px-4 py-2 text-sm font-medium transition-colors duration-200',
-                'focus:bg-gray-100 focus:outline-none dark:focus:bg-gray-800',
-                'hover:text-gray-900 dark:hover:text-white',
-                activeTab === category.value
-                  ? 'text-gray-900 dark:text-white'
-                  : 'text-gray-600 dark:text-gray-400',
-              )}
-              role="tab"
-              aria-selected={activeTab === category.value}
-              aria-controls={`tabpanel-${category.value}`}
-              tabIndex={activeTab === category.value ? 0 : -1}
-              aria-label={`${getCategoryDisplayName(category)} tab (${index + 1} of ${categories.length})`}
-            >
-              <span className="truncate">{getCategoryDisplayName(category)}</span>
-              {/* Underline for active tab */}
-              {activeTab === category.value && (
-                <div
-                  className="absolute bottom-0 left-0 right-0 h-0.5 rounded-full bg-gray-900 dark:bg-white"
-                  aria-hidden="true"
-                />
-              )}
-            </button>
-          ))}
-        </div>
+    <div className="relative w-full pb-2">
+      <div
+        className="no-scrollbar flex gap-1.5 overflow-x-auto overscroll-x-contain px-4 [-webkit-overflow-scrolling:touch] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        role="tablist"
+        aria-label={localize('com_agents_category_tabs_label')}
+        aria-orientation="horizontal"
+        style={{
+          scrollSnapType: 'x mandatory',
+          WebkitOverflowScrolling: 'touch',
+        }}
+      >
+        {categories.map((category, index) => (
+          <button
+            key={category.value}
+            id={`category-tab-${category.value}`}
+            onClick={() => onChange(category.value)}
+            onKeyDown={(e) => handleKeyDown(e, category.value)}
+            className={cn(
+              'relative mt-1 cursor-pointer select-none whitespace-nowrap rounded-md px-3 py-2',
+              activeTab === category.value
+                ? 'bg-surface-tertiary text-text-primary'
+                : 'bg-surface-secondary text-text-secondary hover:bg-surface-hover hover:text-text-primary',
+            )}
+            style={{
+              scrollSnapAlign: 'start',
+            }}
+            role="tab"
+            aria-selected={activeTab === category.value}
+            aria-controls={`tabpanel-${category.value}`}
+            tabIndex={activeTab === category.value ? 0 : -1}
+            aria-label={`${getCategoryDisplayName(category)} tab (${index + 1} of ${categories.length})`}
+          >
+            {getCategoryDisplayName(category)}
+            {/* Underline for active tab */}
+            {activeTab === category.value && (
+              <div
+                className="absolute bottom-0 left-0 right-0 h-0.5 bg-text-primary"
+                aria-hidden="true"
+              />
+            )}
+          </button>
+        ))}
       </div>
     </div>
   );

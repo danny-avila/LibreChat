@@ -1,19 +1,19 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import type t from 'librechat-data-provider';
+import { Link } from 'lucide-react';
 import {
-  AgentListResponse,
-  PERMISSION_BITS,
   QueryKeys,
   Constants,
   EModelEndpoint,
+  PERMISSION_BITS,
   LocalStorageKeys,
+  AgentListResponse,
 } from 'librechat-data-provider';
-import { useChatContext } from '~/Providers';
-import { Dialog, DialogContent, Button } from '~/components/ui';
+import type t from 'librechat-data-provider';
+import { OGDialog, OGDialogContent, Button } from '~/components/ui';
 import { renderAgentAvatar } from '~/utils/agents';
-import { DotsIcon } from '~/components/svg';
 import { useToast, useLocalize } from '~/hooks';
+import { useChatContext } from '~/Providers';
 
 interface SupportContact {
   name?: string;
@@ -38,26 +38,7 @@ const AgentDetail: React.FC<AgentDetailProps> = ({ agent, isOpen, onClose }) => 
   const { conversation, newConversation } = useChatContext();
   const { showToast } = useToast();
   const dialogRef = useRef<HTMLDivElement>(null);
-  const dropdownRef = useRef<HTMLDivElement>(null);
-  const [dropdownOpen, setDropdownOpen] = useState(false);
   const queryClient = useQueryClient();
-  // Close dropdown when clicking outside the dropdown menu
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (
-        dropdownOpen &&
-        dropdownRef.current &&
-        !dropdownRef.current.contains(event.target as Node)
-      ) {
-        setDropdownOpen(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, [dropdownOpen]);
 
   /**
    * Navigate to chat with the selected agent
@@ -144,63 +125,46 @@ const AgentDetail: React.FC<AgentDetailProps> = ({ agent, isOpen, onClose }) => 
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent ref={dialogRef} className="max-h-[90vh] overflow-y-auto py-8 sm:max-w-[450px]">
-        {/* Context menu - top right */}
-        <div ref={dropdownRef} className="absolute right-12 top-5 z-50">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 rounded-lg text-text-secondary hover:bg-surface-hover hover:text-text-primary dark:hover:bg-surface-hover"
-            aria-label={localize('com_agents_more_options')}
-            aria-expanded={dropdownOpen}
-            aria-haspopup="menu"
-            onClick={(e) => {
-              e.stopPropagation();
-              setDropdownOpen(!dropdownOpen);
-            }}
-          >
-            <DotsIcon className="h-4 w-4" />
-          </Button>
-
-          {/* Simple dropdown menu */}
-          {dropdownOpen && (
-            <div className="absolute right-0 top-10 z-[9999] w-48 rounded-xl border border-border-light bg-surface-primary py-1 shadow-lg dark:bg-surface-secondary dark:shadow-2xl">
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setDropdownOpen(false);
-                  handleCopyLink();
-                }}
-                className="w-full px-3 py-2 text-left text-sm text-text-primary transition-colors hover:bg-surface-hover focus:bg-surface-hover focus:outline-none"
-              >
-                {localize('com_agents_copy_link')}
-              </button>
-            </div>
-          )}
-        </div>
+    <OGDialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+      <OGDialogContent
+        ref={dialogRef}
+        className="max-h-[90vh] overflow-y-auto py-8 sm:max-w-[450px]"
+      >
+        {/* Copy link button - positioned next to close button */}
+        <Button
+          variant="ghost"
+          size="icon"
+          className="absolute right-11 top-4 h-4 w-4 rounded-sm p-0 opacity-70 ring-ring-primary ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+          aria-label={localize('com_agents_copy_link')}
+          onClick={handleCopyLink}
+          title={localize('com_agents_copy_link')}
+        >
+          <Link />
+        </Button>
 
         {/* Agent avatar - top center */}
         <div className="mt-6 flex justify-center">{renderAgentAvatar(agent, { size: 'xl' })}</div>
 
         {/* Agent name - center aligned below image */}
         <div className="mt-3 text-center">
-          <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
+          <h2 className="text-2xl font-bold text-text-primary">
             {agent?.name || localize('com_agents_loading')}
           </h2>
         </div>
 
         {/* Contact info - center aligned below name */}
         {agent?.support_contact && formatContact() && (
-          <div className="mt-1 text-center text-sm text-gray-600 dark:text-gray-400">
+          <div className="mt-1 text-center text-sm text-text-secondary">
             {localize('com_agents_contact')}: {formatContact()}
           </div>
         )}
 
         {/* Agent description - below contact */}
-        <div className="mt-4 whitespace-pre-wrap px-6 text-center text-base text-gray-700 dark:text-gray-300">
+        <div className="mt-4 whitespace-pre-wrap px-6 text-center text-base text-text-primary">
           {agent?.description || (
-            <span className="italic text-gray-400">{localize('com_agents_no_description')}</span>
+            <span className="italic text-text-tertiary">
+              {localize('com_agents_no_description')}
+            </span>
           )}
         </div>
 
@@ -210,8 +174,8 @@ const AgentDetail: React.FC<AgentDetailProps> = ({ agent, isOpen, onClose }) => 
             {localize('com_agents_start_chat')}
           </Button>
         </div>
-      </DialogContent>
-    </Dialog>
+      </OGDialogContent>
+    </OGDialog>
   );
 };
 

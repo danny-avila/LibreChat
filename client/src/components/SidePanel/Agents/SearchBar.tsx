@@ -75,7 +75,7 @@ const SearchBar: React.FC<SearchBarProps> = ({ value, onSearch, className = '' }
         value={searchTerm}
         onChange={handleChange}
         placeholder={localize('com_agents_search_placeholder')}
-        className="h-14 rounded-2xl border-2 border-gray-200 bg-white pl-12 pr-12 text-lg text-gray-900 shadow-lg placeholder:text-gray-500 focus:border-gray-300 focus:ring-0 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:placeholder:text-gray-400 dark:focus:border-gray-500"
+        className="h-14 rounded-2xl border-2 border-border-medium bg-transparent pl-12 pr-12 text-lg text-text-primary shadow-lg placeholder:text-text-tertiary focus:border-border-heavy focus:ring-0"
         aria-label={localize('com_agents_search_aria')}
         aria-describedby="search-instructions search-results-count"
         autoComplete="off"
@@ -84,7 +84,7 @@ const SearchBar: React.FC<SearchBarProps> = ({ value, onSearch, className = '' }
 
       {/* Search icon with proper accessibility */}
       <div className="absolute inset-y-0 left-0 flex items-center pl-4" aria-hidden="true">
-        <Search className="h-6 w-6 text-gray-400" />
+        <Search className="h-6 w-6 text-text-tertiary" />
       </div>
 
       {/* Hidden instructions for screen readers */}
@@ -97,7 +97,7 @@ const SearchBar: React.FC<SearchBarProps> = ({ value, onSearch, className = '' }
         <button
           type="button"
           onClick={handleClear}
-          className="group absolute right-3 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full bg-gray-400 transition-colors duration-150 hover:bg-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:bg-gray-500 dark:hover:bg-gray-400"
+          className="group absolute right-3 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full bg-text-tertiary transition-colors duration-150 hover:bg-text-secondary focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
           aria-label={localize('com_agents_clear_search')}
           title={localize('com_agents_clear_search')}
         >
