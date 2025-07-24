@@ -16,11 +16,18 @@ import type {
   TextContent,
   Tool,
 } from '@modelcontextprotocol/sdk/types.js';
-import type { SearchResultData, UIResource, TPlugin } from 'librechat-data-provider';
+import type { SearchResultData, UIResource, TPlugin, ElicitationRequestSchema } from 'librechat-data-provider';
 import type { TokenMethods, JsonSchemaType, IUser } from '@librechat/data-schemas';
 import type { FlowStateManager } from '~/flow/manager';
 import type { RequestBody } from '~/types/http';
 import type * as o from '~/mcp/oauth/types';
+import {
+  ElicitationActionSchema,
+  ElicitationRequestSchemaSchema,
+  ElicitationCreateRequestSchema,
+  ElicitationResponseSchema,
+  ElicitationStateSchema,
+} from '../zod';
 
 export type StdioOptions = z.infer<typeof StdioOptionsSchema>;
 export type WebSocketOptions = z.infer<typeof WebSocketOptionsSchema>;
@@ -185,3 +192,45 @@ export interface OAuthConnectionOptions {
   returnOnOAuth?: boolean;
   connectionTimeout?: number;
 }
+
+// Elicitation types
+export type ElicitationAction = 'accept' | 'decline' | 'cancel';
+
+// Import elicitation types from data-provider to avoid duplication
+export type { ElicitationRequestSchema as ElicitationRequestSchemaInterface } from 'librechat-data-provider';
+
+// Zod inferred types
+export type ElicitationActionType = z.infer<typeof ElicitationActionSchema>;
+export type ElicitationRequestSchemaType = z.infer<typeof ElicitationRequestSchemaSchema>;
+export type ElicitationCreateRequestType = z.infer<typeof ElicitationCreateRequestSchema>;
+export type ElicitationResponseType = z.infer<typeof ElicitationResponseSchema>;
+export type ElicitationStateType = z.infer<typeof ElicitationStateSchema>;
+
+export interface ElicitationCreateRequest {
+  message: string;
+  requestedSchema: ElicitationRequestSchema;
+  tool_call_id?: string;
+}
+
+export interface ElicitationResponse {
+  action: ElicitationAction;
+  content?: Record<string, unknown>;
+}
+
+export interface ElicitationState {
+  id: string;
+  serverName: string;
+  userId: string;
+  request: ElicitationCreateRequest;
+  tool_call_id?: string;
+  timestamp: number;
+}
+
+// Export Zod schemas
+export {
+  ElicitationActionSchema,
+  ElicitationRequestSchemaSchema,
+  ElicitationCreateRequestSchema,
+  ElicitationResponseSchema,
+  ElicitationStateSchema,
+};
