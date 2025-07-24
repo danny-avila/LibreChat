@@ -935,6 +935,7 @@
   "com_ui_no": "No",
   "com_ui_no_backup_codes": "No backup codes available. Please generate new ones",
   "com_ui_no_bookmarks": "it seems like you have no bookmarks yet. Click on a chat and add a new one",
+  "com_ui_no_categories": "No categories available",
   "com_ui_no_category": "No category",
   "com_ui_no_data": "something needs to go here. was empty",
   "com_ui_no_personalization_available": "No personalization options are currently available",
@@ -1246,7 +1247,6 @@
   "com_agents_none_in_category": "No agents found in this category",
   "com_agents_no_results": "No agents found. Try another search term.",
   "com_agents_results_for": "Results for '{{query}}'",
-  "com_nav_agents_marketplace": "Agent Marketplace",
   "com_agents_marketplace_subtitle": "Discover and use powerful AI agents to enhance your workflows and productivity",
   "com_ui_agent_name_is_required": "Agent name is required",
   "com_agents_missing_name": "Please type in a name before creating an agent."
