@@ -17,9 +17,14 @@ function MCPSelect() {
   const { mcpSelect, startupConfig } = useBadgeRowContext();
   const { mcpValues, setMCPValues, mcpToolDetails, isPinned } = mcpSelect;
 
-  // Get all configured MCP servers from config
+  // Get all configured MCP servers from config that allow chat menu
   const configuredServers = useMemo(() => {
-    return Object.keys(startupConfig?.mcpServers || {});
+    if (!startupConfig?.mcpServers) {
+      return [];
+    }
+    return Object.entries(startupConfig.mcpServers)
+      .filter(([, config]) => config.chatMenu !== false)
+      .map(([serverName]) => serverName);
   }, [startupConfig?.mcpServers]);
 
   const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);

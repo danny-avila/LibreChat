@@ -612,6 +612,7 @@ export type TStartupConfig = {
           description: string;
         }
       >;
+      chatMenu?: boolean;
     }
   >;
   mcpPlaceholder?: string;
