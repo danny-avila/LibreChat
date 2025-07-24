@@ -303,7 +303,6 @@ endpoints:
         x-email: '{{LIBRECHAT_USER_EMAIL}}'
         x-user-tiers: '{{LIBRECHAT_USER_ROLE}}'
         x-thread-id: '{{LIBRECHAT_CONVERSATION_ID}}'
-      iconURL: 'https://raw.githubusercontent.com/langdb/ai-gateway/main/assets/images/logos/icon_red.png'
 #     assistants:
 #       fileLimit: 5
 #       fileSizeLimit: 10  # Maximum size for an individual file in MB
