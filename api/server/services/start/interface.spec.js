@@ -28,7 +28,11 @@ describe('loadDefaultInterface', () => {
     expect(updateAccessPermissions).toHaveBeenCalledWith(SystemRoles.USER, {
       [PermissionTypes.PROMPTS]: { [Permissions.USE]: true },
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: true },
-      [PermissionTypes.MEMORIES]: { [Permissions.USE]: true, [Permissions.OPT_OUT]: undefined, [Permissions.OPT_OUT]: undefined },
+      [PermissionTypes.MEMORIES]: {
+        [Permissions.USE]: true,
+        [Permissions.OPT_OUT]: undefined,
+        [Permissions.OPT_OUT]: undefined,
+      },
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: true },
       [PermissionTypes.AGENTS]: { [Permissions.USE]: true },
       [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: true },

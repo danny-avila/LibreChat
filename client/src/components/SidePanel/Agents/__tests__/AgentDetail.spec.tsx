@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
 import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -6,10 +7,10 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { RecoilRoot } from 'recoil';
 
 import type t from 'librechat-data-provider';
+import { Constants, EModelEndpoint } from 'librechat-data-provider';
 
 import AgentDetail from '../AgentDetail';
 import { useToast } from '~/hooks';
-import useLocalize from '~/hooks/useLocalize';
 
 // Mock dependencies
 jest.mock('react-router-dom', () => ({
@@ -20,17 +21,22 @@ jest.mock('react-router-dom', () => ({
 jest.mock('~/hooks', () => ({
   useToast: jest.fn(),
   useMediaQuery: jest.fn(() => false), // Mock as desktop by default
-}));
-
-jest.mock('~/hooks/useLocalize', () => ({
-  __esModule: true,
-  default: jest.fn(),
+  useLocalize: jest.fn(),
 }));
 
 jest.mock('~/utils/agents', () => ({
   renderAgentAvatar: jest.fn((agent, options) => (
     <div data-testid="agent-avatar" data-size={options?.size} />
   )),
+}));
+
+jest.mock('~/Providers', () => ({
+  useChatContext: jest.fn(),
+}));
+
+jest.mock('@tanstack/react-query', () => ({
+  ...jest.requireActual('@tanstack/react-query'),
+  useQueryClient: jest.fn(),
 }));
 
 // Mock clipboard API
@@ -96,7 +102,23 @@ describe('AgentDetail', () => {
     jest.clearAllMocks();
     (useNavigate as jest.Mock).mockReturnValue(mockNavigate);
     (useToast as jest.Mock).mockReturnValue({ showToast: mockShowToast });
+    const { useLocalize } = require('~/hooks');
     (useLocalize as jest.Mock).mockReturnValue(mockLocalize);
+
+    // Mock useChatContext
+    const { useChatContext } = require('~/Providers');
+    (useChatContext as jest.Mock).mockReturnValue({
+      conversation: { conversationId: 'test-convo-id' },
+      newConversation: jest.fn(),
+    });
+
+    // Mock useQueryClient
+    const { useQueryClient } = require('@tanstack/react-query');
+    (useQueryClient as jest.Mock).mockReturnValue({
+      getQueryData: jest.fn(),
+      setQueryData: jest.fn(),
+      invalidateQueries: jest.fn(),
+    });
 
     // Setup clipboard mock if it doesn't exist
     if (!navigator.clipboard) {
@@ -176,12 +198,36 @@ describe('AgentDetail', () => {
   describe('Interactions', () => {
     it('should navigate to chat when Start Chat button is clicked', async () => {
       const user = userEvent.setup();
+      const mockNewConversation = jest.fn();
+      const mockQueryClient = {
+        getQueryData: jest.fn().mockReturnValue(null),
+        setQueryData: jest.fn(),
+        invalidateQueries: jest.fn(),
+      };
+
+      // Update mocks for this test
+      const { useChatContext } = require('~/Providers');
+      (useChatContext as jest.Mock).mockReturnValue({
+        conversation: { conversationId: 'test-convo-id' },
+        newConversation: mockNewConversation,
+      });
+
+      const { useQueryClient } = require('@tanstack/react-query');
+      (useQueryClient as jest.Mock).mockReturnValue(mockQueryClient);
+
       renderWithProviders(<AgentDetail {...defaultProps} />);
 
       const startChatButton = screen.getByRole('button', { name: 'com_agents_start_chat' });
       await user.click(startChatButton);
 
-      expect(mockNavigate).toHaveBeenCalledWith('/c/new?agent_id=test-agent-id');
+      expect(mockNewConversation).toHaveBeenCalledWith({
+        template: {
+          conversationId: Constants.NEW_CONVO,
+          endpoint: EModelEndpoint.agents,
+          agent_id: 'test-agent-id',
+          title: 'Chat with Test Agent',
+        },
+      });
     });
 
     it('should not navigate when agent is null', async () => {

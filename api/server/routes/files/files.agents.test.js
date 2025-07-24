@@ -2,7 +2,6 @@ const express = require('express');
 const request = require('supertest');
 const mongoose = require('mongoose');
 const { v4: uuidv4 } = require('uuid');
-const { PERMISSION_BITS } = require('librechat-data-provider');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const { createMethods } = require('@librechat/data-schemas');
 const { createAgent } = require('~/models/Agent');

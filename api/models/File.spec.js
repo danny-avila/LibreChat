@@ -11,7 +11,6 @@ let File;
 let Agent;
 let AclEntry;
 let User;
-let AccessRole;
 let modelsToCleanup = [];
 
 describe('File Access Control', () => {
@@ -36,7 +35,6 @@ describe('File Access Control', () => {
     Agent = dbModels.Agent;
     AclEntry = dbModels.AclEntry;
     User = dbModels.User;
-    AccessRole = dbModels.AccessRole;
 
     // Seed default roles
     await seedDefaultRoles();
@@ -149,7 +147,7 @@ describe('File Access Control', () => {
       });
 
       // Create agent
-      const agent = await createAgent({
+      await createAgent({
         id: agentId,
         name: 'Test Agent',
         author: authorId,
