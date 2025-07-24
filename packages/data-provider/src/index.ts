@@ -9,6 +9,7 @@ export * from './messages';
 export * from './artifacts';
 /* schema helpers  */
 export * from './parsers';
+export * from './schemas';
 /* custom/dynamic configurations  */
 export * from './generate';
 export * from './models';
@@ -29,6 +30,7 @@ export * from './types/web';
 export * from './types/graph';
 /* access permissions */
 export * from './accessPermissions';
+export * from './types/mcp';
 /* query/mutation keys */
 export * from './keys';
 /* api call helpers */
@@ -36,6 +38,7 @@ export * from './headers-helpers';
 export { loginPage, registerPage, apiBaseUrl } from './api-endpoints';
 export { default as request } from './request';
 export { dataService };
+export { respondToElicitation } from './data-service';
 import * as dataService from './data-service';
 /* general helpers */
 export * from './utils';
