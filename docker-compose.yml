@@ -28,7 +28,7 @@ services:
       - ./uploads:/app/uploads
       - ./logs:/app/api/logs
   mongodb:
-    container_name: chat-mongodb
+    container_name: chat-mongodb-dev
     image: mongo
     restart: always
     user: "${UID}:${GID}"
@@ -36,7 +36,7 @@ services:
       - ./data-node:/data/db
     command: mongod --noauth
   meilisearch:
-    container_name: chat-meilisearch
+    container_name: chat-meilisearch-dev
     image: getmeili/meilisearch:v1.12.3
     restart: always
     user: "${UID}:${GID}"
@@ -47,7 +47,7 @@ services:
     volumes:
       - ./meili_data_v1.12:/meili_data
   rag_api:
-    container_name: rag_api
+    container_name: rag_api-dev
     image: ghcr.io/danny-avila/librechat-rag-api-dev-lite:latest
     environment:
       - DB_HOST=postgres
@@ -60,7 +60,7 @@ services:
       - .env
   postgres:
     image: pgvector/pgvector:pg16
-    container_name: chat-postgres
+    container_name: chat-postgres-dev
     restart: always
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
