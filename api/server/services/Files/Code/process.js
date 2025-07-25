@@ -225,7 +225,17 @@ const primeFiles = async (options, apiKey) => {
             entity_id: queryParams.entity_id,
             apiKey,
           });
-          await updateFile({ file_id: file.file_id, metadata: { fileIdentifier } });
+
+          // Preserve existing metadata when adding fileIdentifier
+          const updatedMetadata = {
+            ...file.metadata, // Preserve existing metadata (like S3 storage info)
+            fileIdentifier, // Add fileIdentifier
+          };
+
+          await updateFile({
+            file_id: file.file_id,
+            metadata: updatedMetadata,
+          });
           sessions.set(session_id, true);
           pushFile();
         } catch (error) {

@@ -546,6 +546,7 @@ async function loadAgentTools({ req, res, agent, tool_resources, openAIApiKey })
   if (includesWebSearch) {
     webSearchCallbacks = createOnSearchResults(res);
   }
+
   const { loadedTools, toolContextMap } = await loadTools({
     agent,
     functions: true,
