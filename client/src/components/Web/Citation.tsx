@@ -130,9 +130,10 @@ export function Citation(props: CitationComponentProps) {
 
   // Setup file download hook
   const isFileType = refData?.refType === 'file' && (refData as any)?.fileId;
+  const isLocalFile = isFileType && (refData as any)?.metadata?.storageType === 'local';
   const { refetch: downloadFile } = useFileDownload(
     user?.id ?? '',
-    isFileType ? (refData as any).fileId : '',
+    isFileType && !isLocalFile ? (refData as any).fileId : '',
   );
 
   const handleFileDownload = useCallback(
@@ -141,6 +142,15 @@ export function Citation(props: CitationComponentProps) {
       e.stopPropagation();
 
       if (!isFileType || !(refData as any)?.fileId) return;
+
+      // Don't allow download for local files
+      if (isLocalFile) {
+        showToast({
+          status: 'error',
+          message: localize('com_sources_download_local_unavailable'),
+        });
+        return;
+      }
 
       try {
         const stream = await downloadFile();
@@ -167,7 +177,7 @@ export function Citation(props: CitationComponentProps) {
         });
       }
     },
-    [downloadFile, isFileType, refData, localize, showToast],
+    [downloadFile, isFileType, isLocalFile, refData, localize, showToast],
   );
 
   if (!refData) return null;
@@ -187,8 +197,9 @@ export function Citation(props: CitationComponentProps) {
       label={getCitationLabel()}
       onMouseEnter={() => setHoveredCitationId(citationId || null)}
       onMouseLeave={() => setHoveredCitationId(null)}
-      onClick={isFileType ? handleFileDownload : undefined}
+      onClick={isFileType && !isLocalFile ? handleFileDownload : undefined}
       isFile={isFileType}
+      isLocalFile={isLocalFile}
     />
   );
 }

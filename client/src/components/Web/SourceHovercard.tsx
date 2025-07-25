@@ -19,6 +19,7 @@ interface SourceHovercardProps {
   onMouseLeave?: () => void;
   onClick?: (e: React.MouseEvent) => void;
   isFile?: boolean;
+  isLocalFile?: boolean;
   children?: ReactNode;
 }
 
@@ -50,6 +51,7 @@ export function SourceHovercard({
   onMouseLeave,
   onClick,
   isFile = false,
+  isLocalFile = false,
   children,
 }: SourceHovercardProps) {
   const localize = useLocalize();
@@ -64,9 +66,16 @@ export function SourceHovercard({
               isFile ? (
                 <button
                   onClick={onClick}
-                  className="ml-1 inline-block h-5 max-w-36 cursor-pointer items-center overflow-hidden text-ellipsis whitespace-nowrap rounded-xl border border-border-heavy bg-surface-secondary px-2 text-xs font-medium text-blue-600 no-underline transition-colors hover:bg-surface-hover dark:border-border-medium dark:text-blue-400 dark:hover:bg-surface-tertiary"
+                  className={`ml-1 inline-block h-5 max-w-36 items-center overflow-hidden text-ellipsis whitespace-nowrap rounded-xl border border-border-heavy bg-surface-secondary px-2 text-xs font-medium no-underline transition-colors ${
+                    isLocalFile
+                      ? 'cursor-default text-text-tertiary opacity-60'
+                      : 'cursor-pointer text-blue-600 hover:bg-surface-hover dark:text-blue-400 dark:hover:bg-surface-tertiary'
+                  } dark:border-border-medium`}
                   onMouseEnter={onMouseEnter}
                   onMouseLeave={onMouseLeave}
+                  title={
+                    isLocalFile ? localize('com_sources_download_local_unavailable') : undefined
+                  }
                 >
                   {label}
                 </button>

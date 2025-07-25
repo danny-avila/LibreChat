@@ -31,6 +31,7 @@ const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { checkCapability } = require('~/server/services/Config');
 const { LB_QueueAsyncCall } = require('~/server/utils/queue');
 const { getStrategyFunctions } = require('./strategies');
+const { getFileStrategy } = require('~/server/utils/getFileStrategy');
 const { determineFileType } = require('~/server/utils');
 const { logger } = require('~/config');
 
@@ -319,7 +320,7 @@ const processFileURL = async ({ fileStrategy, userId, URL, fileName, basePath, c
  */
 const processImageFile = async ({ req, res, metadata, returnFile = false }) => {
   const { file } = req;
-  const source = req.app.locals.fileStrategy;
+  const source = getFileStrategy(req.app.locals, { isImage: true });
   const { handleImageUpload } = getStrategyFunctions(source);
   const { file_id, temp_file_id, endpoint } = metadata;
 
@@ -365,7 +366,7 @@ const processImageFile = async ({ req, res, metadata, returnFile = false }) => {
  * @returns {Promise<{ filepath: string, filename: string, source: string, type: string}>}
  */
 const uploadImageBuffer = async ({ req, context, metadata = {}, resize = true }) => {
-  const source = req.app.locals.fileStrategy;
+  const source = getFileStrategy(req.app.locals, { isImage: true });
   const { saveBuffer } = getStrategyFunctions(source);
   let { buffer, width, height, bytes, filename, file_id, type } = metadata;
   if (resize) {
@@ -595,7 +596,8 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
 
   // Dual storage pattern for RAG files: Storage + Vector DB
   let storageResult, embeddingResult;
-  const source = req.app.locals.fileStrategy;
+  const isImageFile = file.mimetype.startsWith('image');
+  const source = getFileStrategy(req.app.locals, { isImage: isImageFile });
 
   if (tool_resource === EToolResources.file_search) {
     // FIRST: Upload to Storage for permanent backup (S3/local/etc.)
@@ -763,7 +765,7 @@ const processOpenAIImageOutput = async ({ req, buffer, file_id, filename, fileEx
     type: mime.getType(fileExt),
     createdAt: formattedDate,
     updatedAt: formattedDate,
-    source,
+    source: getFileStrategy(req.app.locals, { isImage: true }),
     context: FileContext.assistants_output,
     file_id,
     filename,
@@ -904,7 +906,7 @@ async function saveBase64Image(
   }
 
   const image = await resizeImageBuffer(inputBuffer, effectiveResolution, endpoint);
-  const source = req.app.locals.fileStrategy;
+  const source = getFileStrategy(req.app.locals, { isImage: true });
   const { saveBuffer } = getStrategyFunctions(source);
   const filepath = await saveBuffer({
     userId: req.user.id,
