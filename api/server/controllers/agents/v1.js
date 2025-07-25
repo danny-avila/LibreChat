@@ -28,6 +28,7 @@ const {
 } = require('~/server/services/PermissionService');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { resizeAvatar } = require('~/server/services/Files/images/avatar');
+const { getFileStrategy } = require('~/server/utils/getFileStrategy');
 const { refreshS3Url } = require('~/server/services/Files/S3/crud');
 const { filterFile } = require('~/server/services/Files/process');
 const { updateAction, getActions } = require('~/models/Action');
@@ -502,7 +503,7 @@ const uploadAgentAvatarHandler = async (req, res) => {
 
     const buffer = await fs.readFile(req.file.path);
 
-    const fileStrategy = req.app.locals.fileStrategy;
+    const fileStrategy = getFileStrategy(req.app.locals, { isAvatar: true });
 
     const resizedBuffer = await resizeAvatar({
       userId: req.user.id,
