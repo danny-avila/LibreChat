@@ -1122,85 +1122,88 @@ export enum CacheKeys {
   /**
    * Key for the config store namespace.
    */
-  CONFIG_STORE = 'configStore',
+  CONFIG_STORE = 'CONFIG_STORE',
   /**
-   * Key for the config store namespace.
+   * Key for the roles cache.
    */
-  ROLES = 'roles',
+  ROLES = 'ROLES',
   /**
    * Key for the plugins cache.
    */
-  PLUGINS = 'plugins',
+  PLUGINS = 'PLUGINS',
   /**
    * Key for the title generation cache.
    */
-  GEN_TITLE = 'genTitle',
-  /**
+  GEN_TITLE = 'GEN_TITLE',
   /**
    * Key for the tools cache.
    */
-  TOOLS = 'tools',
+  TOOLS = 'TOOLS',
   /**
    * Key for the model config cache.
    */
-  MODELS_CONFIG = 'modelsConfig',
+  MODELS_CONFIG = 'MODELS_CONFIG',
   /**
    * Key for the model queries cache.
    */
-  MODEL_QUERIES = 'modelQueries',
+  MODEL_QUERIES = 'MODEL_QUERIES',
   /**
    * Key for the default startup config cache.
    */
-  STARTUP_CONFIG = 'startupConfig',
+  STARTUP_CONFIG = 'STARTUP_CONFIG',
   /**
    * Key for the default endpoint config cache.
    */
-  ENDPOINT_CONFIG = 'endpointsConfig',
+  ENDPOINT_CONFIG = 'ENDPOINT_CONFIG',
   /**
    * Key for accessing the model token config cache.
    */
-  TOKEN_CONFIG = 'tokenConfig',
+  TOKEN_CONFIG = 'TOKEN_CONFIG',
   /**
-   * Key for the custom config cache.
+   * Key for the librechat yaml config cache.
    */
-  CUSTOM_CONFIG = 'customConfig',
+  LIBRECHAT_YAML_CONFIG = 'LIBRECHAT_YAML_CONFIG',
+  /**
+   * Key for the static config namespace.
+   */
+  STATIC_CONFIG = 'STATIC_CONFIG',
   /**
    * Key for accessing Abort Keys
    */
-  ABORT_KEYS = 'abortKeys',
+  ABORT_KEYS = 'ABORT_KEYS',
   /**
    * Key for the override config cache.
    */
-  OVERRIDE_CONFIG = 'overrideConfig',
+  OVERRIDE_CONFIG = 'OVERRIDE_CONFIG',
   /**
    * Key for the bans cache.
    */
-  BANS = 'bans',
+  BANS = 'BANS',
   /**
    * Key for the encoded domains cache.
    * Used by Azure OpenAI Assistants.
    */
-  ENCODED_DOMAINS = 'encoded_domains',
+  ENCODED_DOMAINS = 'ENCODED_DOMAINS',
   /**
    * Key for the cached audio run Ids.
    */
-  AUDIO_RUNS = 'audioRuns',
+  AUDIO_RUNS = 'AUDIO_RUNS',
   /**
    * Key for in-progress messages.
    */
-  MESSAGES = 'messages',
+  MESSAGES = 'MESSAGES',
   /**
    * Key for in-progress flow states.
    */
-  FLOWS = 'flows',
+  FLOWS = 'FLOWS',
   /**
    * Key for individual MCP Tool Manifests.
    */
-  MCP_TOOLS = 'mcp_tools',
+  MCP_TOOLS = 'MCP_TOOLS',
   /**
    * Key for pending chat requests (concurrency check)
    */
-  PENDING_REQ = 'pending_req',
+  PENDING_REQ = 'PENDING_REQ',
   /**
    * Key for s3 check intervals per user
    */
@@ -1212,11 +1215,11 @@ export enum CacheKeys {
   /**
    * Key for OpenID session.
    */
-  OPENID_SESSION = 'openid_session',
+  OPENID_SESSION = 'OPENID_SESSION',
   /**
    * Key for SAML session.
    */
-  SAML_SESSION = 'saml_session',
+  SAML_SESSION = 'SAML_SESSION',
 }
 
 /**
