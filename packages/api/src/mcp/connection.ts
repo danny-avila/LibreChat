@@ -211,11 +211,6 @@ export class MCPConnection extends EventEmitter {
             this.emit('connectionChange', 'disconnected');
           };
 
-          transport.onerror = (error) => {
-            logger.error(`${this.getLogPrefix()} SSE transport error:`, error);
-            this.emitError(error, 'SSE transport error:');
-          };
-
           transport.onmessage = (message) => {
             logger.info(`${this.getLogPrefix()} Message received: ${JSON.stringify(message)}`);
           };
@@ -251,11 +246,6 @@ export class MCPConnection extends EventEmitter {
           transport.onclose = () => {
             logger.info(`${this.getLogPrefix()} Streamable-http transport closed`);
             this.emit('connectionChange', 'disconnected');
-          };
-
-          transport.onerror = (error: Error | unknown) => {
-            logger.error(`${this.getLogPrefix()} Streamable-http transport error:`, error);
-            this.emitError(error, 'Streamable-http transport error:');
           };
 
           transport.onmessage = (message: JSONRPCMessage) => {
