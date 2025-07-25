@@ -37,6 +37,9 @@ export function useMCPServerInitialization(options?: UseMCPServerInitializationO
   // Main initialization mutation
   const reinitializeMutation = useReinitializeMCPServerMutation();
 
+  // Track which server is currently being processed
+  const [currentProcessingServer, setCurrentProcessingServer] = useState<string | null>(null);
+
   // Cancel OAuth mutation
   const cancelOAuthMutation = useCancelMCPOAuthMutation();
 
@@ -184,12 +187,32 @@ export function useMCPServerInitialization(options?: UseMCPServerInitializationO
         return;
       }
 
+      if (connectionStatus[serverName]?.requiresOAuth) {
+        setCancellableServers((prev) => new Set(prev).add(serverName));
+      }
+
       // Add to initializing set
       setInitializingServers((prev) => new Set(prev).add(serverName));
 
-      // Trigger initialization
+      // If there's already a server being processed, that one will be cancelled
+      if (currentProcessingServer && currentProcessingServer !== serverName) {
+        // Clean up the cancelled server's state immediately
+        showToast({
+          message: localize('com_ui_mcp_init_cancelled', { 0: currentProcessingServer }),
+          status: 'warning',
+        });
+
+        cleanupOAuthState(currentProcessingServer);
+      }
+
+      // Track the current server being processed
+      setCurrentProcessingServer(serverName);
+
       reinitializeMutation.mutate(serverName, {
         onSuccess: (response: any) => {
+          // Clear current processing server
+          setCurrentProcessingServer(null);
+
           if (response.success) {
             if (response.oauthRequired && response.oauthUrl) {
               // OAuth required - store URL and start polling
@@ -238,40 +261,45 @@ export function useMCPServerInitialization(options?: UseMCPServerInitializationO
           }
         },
         onError: (error: any) => {
-          console.error('Error initializing MCP server:', error);
-          showToast({
-            message: localize('com_ui_mcp_init_failed'),
-            status: 'error',
-          });
-          // Remove from initializing on error
-          setInitializingServers((prev) => {
-            const newSet = new Set(prev);
-            newSet.delete(serverName);
-            return newSet;
-          });
-          // Remove from OAuth tracking
-          setOauthPollingServers((prev) => {
-            const newMap = new Map(prev);
-            newMap.delete(serverName);
-            return newMap;
-          });
-          setOauthStartTimes((prev) => {
-            const newMap = new Map(prev);
-            newMap.delete(serverName);
-            return newMap;
-          });
+          console.error(`Error initializing MCP server ${serverName}:`, error);
+          setCurrentProcessingServer(null);
+
+          const isCancelled =
+            error?.name === 'CanceledError' ||
+            error?.code === 'ERR_CANCELED' ||
+            error?.message?.includes('cancel') ||
+            error?.message?.includes('abort');
+
+          if (isCancelled) {
+            showToast({
+              message: localize('com_ui_mcp_init_cancelled', { 0: serverName }),
+              status: 'warning',
+            });
+          } else {
+            showToast({
+              message: localize('com_ui_mcp_init_failed'),
+              status: 'error',
+            });
+          }
+
+          // Clean up OAuth state using helper function
+          cleanupOAuthState(serverName);
+
           // Call optional error callback
           options?.onError?.(serverName, error);
         },
       });
     },
     [
+      initializingServers,
+      connectionStatus,
+      currentProcessingServer,
       reinitializeMutation,
       showToast,
       localize,
-      handleSuccessfulConnection,
-      initializingServers,
+      cleanupOAuthState,
       options,
+      handleSuccessfulConnection,
     ],
   );
 
