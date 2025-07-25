@@ -25,7 +25,7 @@ let i = 0;
  * @function loadCustomConfig
  * @returns {Promise<TCustomConfig | null>} A promise that resolves to null or the custom config object.
  * */
-async function loadCustomConfig() {
+async function loadCustomConfig(printConfig = true) {
   // Use CONFIG_PATH if set, otherwise fallback to defaultConfigPath
   const configPath = process.env.CONFIG_PATH || defaultConfigPath;
 
@@ -108,9 +108,11 @@ https://www.librechat.ai/docs/configuration/stt_tts`);
 
     return null;
   } else {
-    logger.info('Custom config file loaded:');
-    logger.info(JSON.stringify(customConfig, null, 2));
-    logger.debug('Custom config:', customConfig);
+    if (printConfig) {
+      logger.info('Custom config file loaded:');
+      logger.info(JSON.stringify(customConfig, null, 2));
+      logger.debug('Custom config:', customConfig);
+    }
   }
 
   (customConfig.endpoints?.custom ?? [])

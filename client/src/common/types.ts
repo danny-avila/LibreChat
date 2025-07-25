@@ -345,9 +345,7 @@ export type TOptions = {
   isContinued?: boolean;
   isEdited?: boolean;
   overrideMessages?: t.TMessage[];
-  /** This value is only true when the user submits a message with "Save & Submit" for a user-created message */
-  isResubmission?: boolean;
-  /** Currently only utilized when `isResubmission === true`, uses that message's currently attached files */
+  /** Currently only utilized when resubmitting user-created message, uses that message's currently attached files */
   overrideFiles?: t.TMessage['files'];
 };
 

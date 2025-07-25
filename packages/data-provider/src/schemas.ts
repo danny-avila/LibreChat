@@ -534,7 +534,7 @@ export type MemoryArtifact = {
   key: string;
   value?: string;
   tokenCount?: number;
-  type: 'update' | 'delete';
+  type: 'update' | 'delete' | 'error';
 };
 
 export type TAttachmentMetadata = {
@@ -639,6 +639,8 @@ export const tConversationSchema = z.object({
   useResponsesApi: z.boolean().optional(),
   /* OpenAI Responses API / Anthropic API / Google API */
   web_search: z.boolean().optional(),
+  /* disable streaming */
+  disableStreaming: z.boolean().optional(),
   /* assistant */
   assistant_id: z.string().optional(),
   /* agents */
@@ -743,6 +745,8 @@ export const tQueryParamsSchema = tConversationSchema
     useResponsesApi: true,
     /** @endpoints openAI, anthropic, google */
     web_search: true,
+    /** @endpoints openAI, custom, azureOpenAI */
+    disableStreaming: true,
     /** @endpoints google, anthropic, bedrock */
     topP: true,
     /** @endpoints google, anthropic */
@@ -1075,6 +1079,7 @@ export const openAIBaseSchema = tConversationSchema.pick({
   reasoning_summary: true,
   useResponsesApi: true,
   web_search: true,
+  disableStreaming: true,
 });
 
 export const openAISchema = openAIBaseSchema

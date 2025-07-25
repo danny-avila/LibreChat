@@ -61,7 +61,7 @@ const getAgent = async (searchParameter) => await Agent.findOne(searchParameter)
 const loadEphemeralAgent = async ({ req, agent_id, endpoint, model_parameters: _m }) => {
   const { model, ...model_parameters } = _m;
   /** @type {Record<string, FunctionTool>} */
-  const availableTools = await getCachedTools({ includeGlobal: true });
+  const availableTools = await getCachedTools({ userId: req.user.id, includeGlobal: true });
   /** @type {TEphemeralAgent | null} */
   const ephemeralAgent = req.body.ephemeralAgent;
   const mcpServers = new Set(ephemeralAgent?.mcp);

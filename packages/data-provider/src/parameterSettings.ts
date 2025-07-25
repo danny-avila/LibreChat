@@ -284,6 +284,19 @@ const openAIParams: Record<string, SettingDefinition> = {
     optionType: 'model',
     columnSpan: 4,
   },
+  disableStreaming: {
+    key: 'disableStreaming',
+    label: 'com_endpoint_disable_streaming_label',
+    labelCode: true,
+    description: 'com_endpoint_disable_streaming',
+    descriptionCode: true,
+    type: 'boolean',
+    default: false,
+    component: 'switch',
+    optionType: 'model',
+    showDefault: false,
+    columnSpan: 2,
+  } as const,
 };
 
 const anthropic: Record<string, SettingDefinition> = {
@@ -626,6 +639,7 @@ const openAI: SettingsConfiguration = [
   openAIParams.reasoning_effort,
   openAIParams.useResponsesApi,
   openAIParams.reasoning_summary,
+  openAIParams.disableStreaming,
 ];
 
 const openAICol1: SettingsConfiguration = [
@@ -648,6 +662,7 @@ const openAICol2: SettingsConfiguration = [
   openAIParams.reasoning_summary,
   openAIParams.useResponsesApi,
   openAIParams.web_search,
+  openAIParams.disableStreaming,
 ];
 
 const anthropicConfig: SettingsConfiguration = [

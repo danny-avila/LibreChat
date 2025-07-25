@@ -83,7 +83,6 @@ export default function useChatFunctions({
     {
       editedContent = null,
       editedMessageId = null,
-      isResubmission = false,
       isRegenerate = false,
       isContinued = false,
       isEdited = false,
@@ -230,7 +229,10 @@ export default function useChatFunctions({
     }
 
     const responseMessageId =
-      editedMessageId ?? (latestMessage?.messageId ? latestMessage?.messageId + '_' : null) ?? null;
+      editedMessageId ??
+      (latestMessage?.messageId && isRegenerate ? latestMessage?.messageId + '_' : null) ??
+      null;
+
     const initialResponse: TMessage = {
       sender: responseSender,
       text: '',
@@ -307,7 +309,6 @@ export default function useChatFunctions({
       isEdited: isEditOrContinue,
       isContinued,
       isRegenerate,
-      isResubmission,
       initialResponse,
       isTemporary,
       ephemeralAgent,
