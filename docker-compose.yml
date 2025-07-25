@@ -3,7 +3,7 @@
 
 services:
   api:
-    container_name: LibreChat
+    container_name: LibreChat-dev
     ports:
       - "${PORT}:${PORT}"
     depends_on:
