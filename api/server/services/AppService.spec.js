@@ -133,6 +133,9 @@ describe('AppService', () => {
     expect(process.env.CDN_PROVIDER).toEqual('testStrategy');
 
     expect(app.locals).toEqual({
+      config: expect.objectContaining({
+        fileStrategy: 'testStrategy',
+      }),
       socialLogins: ['testLogin'],
       fileStrategy: 'testStrategy',
       interfaceConfig: expect.objectContaining({
@@ -775,6 +778,7 @@ describe('AppService updating app.locals and issuing warnings', () => {
 
     expect(app.locals).toBeDefined();
     expect(app.locals.paths).toBeDefined();
+    expect(app.locals.config).toEqual({});
     expect(app.locals.fileStrategy).toEqual(FileSources.local);
     expect(app.locals.socialLogins).toEqual(defaultSocialLogins);
     expect(app.locals.balance).toEqual(
@@ -807,6 +811,7 @@ describe('AppService updating app.locals and issuing warnings', () => {
 
     expect(app.locals).toBeDefined();
     expect(app.locals.paths).toBeDefined();
+    expect(app.locals.config).toEqual(customConfig);
     expect(app.locals.fileStrategy).toEqual(customConfig.fileStrategy);
     expect(app.locals.socialLogins).toEqual(customConfig.registration.socialLogins);
     expect(app.locals.balance).toEqual(customConfig.balance);
