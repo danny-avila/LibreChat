@@ -147,3 +147,15 @@ export interface MCPAuthValuesResponse {
   serverName: string;
   authValueFlags: Record<string, boolean>;
 }
+
+/* SharePoint Graph API Token */
+export type GraphTokenParams = {
+  scopes: string;
+};
+
+export type GraphTokenResponse = {
+  access_token: string;
+  token_type: string;
+  expires_in: number;
+  scope: string;
+};
