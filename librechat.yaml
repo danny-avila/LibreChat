@@ -240,11 +240,19 @@ mcpServers:
     When sending emails:
       - Make sure you have all the information needed and, if needed, ask for more information
 
+
   kantata-tools:
     type: streamable-http
-    url: https://ktmcp.amendllc.com/mcp
+    url: https://ktmcp.amendllc.com/mcp #for production
+    #url: http://kantata-mcp.kantata-mcp.orb.local/mcp #for local testing
     headers:
       Authorization: "${KANTATA_MCP_BEARER_TOKEN}"
+      x-auth-token: "{{USER_PROVIDED_TOKEN}}"
+    customUserVars:
+      USER_PROVIDED_TOKEN:
+        title: "My Session Id"
+        description: "Your Kantata OX session ID after you go through the auth process with Kantata"
+    chatMenu: true
 
 
   #Microsoft Tools
