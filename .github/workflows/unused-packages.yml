@@ -100,6 +100,8 @@ jobs:
                 if [[ -f "$workspace_package_json" ]]; then
                   # Extract all dependencies from the workspace package
                   jq -r '.dependencies | keys[]' "$workspace_package_json" 2>/dev/null >> "$output_file"
+                  # Also extract peerDependencies
+                  jq -r '.peerDependencies | keys[]' "$workspace_package_json" 2>/dev/null >> "$output_file"
                 fi
               done
             fi
