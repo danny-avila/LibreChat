@@ -87,6 +87,7 @@ const AppService = async (app) => {
   const turnstileConfig = loadTurnstileConfig(config, configDefaults);
 
   const defaultLocals = {
+    config,
     ocr,
     paths,
     memory,
