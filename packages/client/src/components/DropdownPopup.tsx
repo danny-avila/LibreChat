@@ -94,8 +94,11 @@ const Menu: React.FC<MenuProps> = ({
               key={`${keyPrefix ?? ''}${index}-${item.id ?? ''}`}
               id={item.id}
               className={cn(
-                'group flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-3.5 text-sm text-text-primary outline-none transition-colors duration-200 hover:bg-surface-hover focus:bg-surface-hover md:px-2.5 md:py-2',
-                itemClassName,
+                'group flex w-full cursor-pointer outline-none transition-colors duration-200',
+                item.render
+                  ? itemClassName
+                  : 'items-center gap-2 rounded-lg px-3 py-3.5 text-sm text-text-primary hover:bg-surface-hover focus:bg-surface-hover md:px-2.5 md:py-2',
+                !item.render && itemClassName,
               )}
               disabled={item.disabled}
               ref={item.ref}
@@ -111,16 +114,30 @@ const Menu: React.FC<MenuProps> = ({
                 menu?.hide();
               }}
             >
-              {item.icon != null && (
-                <span className={cn('mr-2 size-4', iconClassName)} aria-hidden="true">
-                  {item.icon}
-                </span>
-              )}
-              {item.label}
-              {item.kbd != null && (
-                <kbd className="ml-auto hidden font-sans text-xs text-black/50 group-hover:inline group-focus:inline dark:text-white/50">
-                  ⌘{item.kbd}
-                </kbd>
+              {item.render ? (
+                typeof item.render === 'function' ? (
+                  item.render({
+                    className: cn(
+                      'flex w-full items-center rounded-lg px-3 py-3.5 text-sm text-text-primary hover:bg-surface-hover md:px-2.5 md:py-2',
+                    ),
+                  })
+                ) : (
+                  item.render
+                )
+              ) : (
+                <>
+                  {item.icon != null && (
+                    <span className={cn('mr-2 size-4', iconClassName)} aria-hidden="true">
+                      {item.icon}
+                    </span>
+                  )}
+                  {item.label}
+                  {item.kbd != null && (
+                    <kbd className="ml-auto hidden font-sans text-xs text-black/50 group-hover:inline group-focus:inline dark:text-white/50">
+                      ⌘{item.kbd}
+                    </kbd>
+                  )}
+                </>
               )}
             </Ariakit.MenuItem>
           );
