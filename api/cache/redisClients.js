@@ -1,6 +1,7 @@
 const IoRedis = require('ioredis');
-const { cacheConfig } = require('./cacheConfig');
+const { logger } = require('@librechat/data-schemas');
 const { createClient, createCluster } = require('@keyv/redis');
+const { cacheConfig } = require('./cacheConfig');
 
 const GLOBAL_PREFIX_SEPARATOR = '::';
 
@@ -25,20 +26,37 @@ if (cacheConfig.USE_REDIS) {
       ? new IoRedis(cacheConfig.REDIS_URI, redisOptions)
       : new IoRedis.Cluster(cacheConfig.REDIS_URI, { redisOptions });
 
-  // Pinging the Redis server to keep the connection alive (if enabled)
+  ioredisClient.on('error', (err) => {
+    logger.error('ioredis client error:', err);
+  });
+
+  /** Ping Interval to keep the Redis server connection alive (if enabled) */
   let pingInterval = null;
+  const clearPingInterval = () => {
+    if (pingInterval) {
+      clearInterval(pingInterval);
+      pingInterval = null;
+    }
+  };
+
   if (cacheConfig.REDIS_PING_INTERVAL > 0) {
-    pingInterval = setInterval(() => ioredisClient.ping(), cacheConfig.REDIS_PING_INTERVAL * 1000);
-    ioredisClient.on('close', () => clearInterval(pingInterval));
-    ioredisClient.on('end', () => clearInterval(pingInterval));
+    pingInterval = setInterval(() => {
+      if (ioredisClient && ioredisClient.status === 'ready') {
+        ioredisClient.ping();
+      }
+    }, cacheConfig.REDIS_PING_INTERVAL * 1000);
+    ioredisClient.on('close', clearPingInterval);
+    ioredisClient.on('end', clearPingInterval);
   }
 }
 
 /** @type {import('@keyv/redis').RedisClient | import('@keyv/redis').RedisCluster | null} */
 let keyvRedisClient = null;
 if (cacheConfig.USE_REDIS) {
-  // ** WARNING ** Keyv Redis client does not support Prefix like ioredis above.
-  // The prefix feature will be handled by the Keyv-Redis store in cacheFactory.js
+  /**
+   * ** WARNING ** Keyv Redis client does not support Prefix like ioredis above.
+   * The prefix feature will be handled by the Keyv-Redis store in cacheFactory.js
+   */
   const redisOptions = { username, password, socket: { tls: ca != null, ca } };
 
   keyvRedisClient =
@@ -51,15 +69,27 @@ if (cacheConfig.USE_REDIS) {
 
   keyvRedisClient.setMaxListeners(cacheConfig.REDIS_MAX_LISTENERS);
 
-  // Pinging the Redis server to keep the connection alive (if enabled)
+  keyvRedisClient.on('error', (err) => {
+    logger.error('@keyv/redis client error:', err);
+  });
+
+  /** Ping Interval to keep the Redis server connection alive (if enabled) */
   let pingInterval = null;
+  const clearPingInterval = () => {
+    if (pingInterval) {
+      clearInterval(pingInterval);
+      pingInterval = null;
+    }
+  };
+
   if (cacheConfig.REDIS_PING_INTERVAL > 0) {
-    pingInterval = setInterval(
-      () => keyvRedisClient.ping(),
-      cacheConfig.REDIS_PING_INTERVAL * 1000,
-    );
-    keyvRedisClient.on('disconnect', () => clearInterval(pingInterval));
-    keyvRedisClient.on('end', () => clearInterval(pingInterval));
+    pingInterval = setInterval(() => {
+      if (keyvRedisClient && keyvRedisClient.isReady) {
+        keyvRedisClient.ping();
+      }
+    }, cacheConfig.REDIS_PING_INTERVAL * 1000);
+    keyvRedisClient.on('disconnect', clearPingInterval);
+    keyvRedisClient.on('end', clearPingInterval);
   }
 }
 
