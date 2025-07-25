@@ -7,8 +7,23 @@ version: 1.2.1
 # Cache settings: Set to true to enable caching
 cache: true
 
-# File strategy s3/firebase
+# File storage configuration
+# Single strategy for all file types (legacy format, still supported)
 # fileStrategy: "s3"
+
+# Granular file storage strategies (new format - recommended)
+# Allows different storage strategies for different file types
+# fileStrategy:
+#   avatar: "s3"        # Storage for user/agent avatar images
+#   image: "firebase"   # Storage for uploaded images in chats
+#   document: "local"   # Storage for document uploads (PDFs, text files, etc.)
+
+# Available strategies: "local", "s3", "firebase"
+# If not specified, defaults to "local" for all file types
+# You can mix and match strategies based on your needs:
+# - Use S3 for avatars for fast global access
+# - Use Firebase for images with automatic optimization
+# - Use local storage for documents for privacy/compliance
 
 # Custom interface configuration
 interface:
