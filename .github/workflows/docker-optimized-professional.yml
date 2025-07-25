@@ -8,11 +8,17 @@ on:
       - 'docs/**'
       - '.github/**'
       - '!.github/workflows/docker-optimized-professional.yml'
+      - 'deploy-compose*.yml'
+      - 'docker-compose*.yml'
   pull_request:
     branches: [master, master_dev]
     paths-ignore:
       - '**.md'
       - 'docs/**'
+      - '!.github/workflows/docker-optimized-professional.yml'
+      - 'deploy-compose*.yml'
+      - 'docker-compose*.yml'
+
   workflow_dispatch:
     inputs:
       force_rebuild:

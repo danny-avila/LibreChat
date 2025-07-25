@@ -51,26 +51,14 @@ async function readCSV() {
     fs.createReadStream(CSV_FILE)
       .pipe(csv())
       .on('headers', (headerList) => {
-        // Filtrar columnas no deseadas
-        const filteredHeaders = headerList.filter(header => 
-          header !== 'isCreatedByUser' && header !== 'unfinished'
-        );
-        headers.push(...filteredHeaders);
+        headers.push(...headerList);
       })
       .on('data', (data) => {
-        // Filtrar columnas no deseadas del data
-        const filteredData = {};
-        Object.keys(data).forEach(key => {
-          if (key !== 'isCreatedByUser' && key !== 'unfinished') {
-            filteredData[key] = data[key];
-          }
-        });
-        
         if (isFirstRow) {
           results.push(headers);
           isFirstRow = false;
         }
-        results.push(Object.values(filteredData));
+        results.push(Object.values(data));
       })
       .on('end', () => {
         console.log(`📖 CSV leído: ${results.length - 1} filas, ${headers.length} columnas`);
