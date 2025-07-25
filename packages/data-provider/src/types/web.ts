@@ -34,7 +34,7 @@ export type ValidSource = ProcessedOrganic | ProcessedTopStory;
 
 export type ResultReference = {
   link: string;
-  type: 'link' | 'image' | 'video';
+  type: 'link' | 'image' | 'video' | 'file';
   title?: string;
   attribution?: string;
 };

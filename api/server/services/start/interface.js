@@ -51,6 +51,7 @@ async function loadDefaultInterface(config, configDefaults, roleName = SystemRol
     runCode: interfaceConfig?.runCode ?? defaults.runCode,
     webSearch: interfaceConfig?.webSearch ?? defaults.webSearch,
     fileSearch: interfaceConfig?.fileSearch ?? defaults.fileSearch,
+    fileCitations: interfaceConfig?.fileCitations ?? defaults.fileCitations,
     customWelcome: interfaceConfig?.customWelcome ?? defaults.customWelcome,
   });
 
@@ -67,6 +68,7 @@ async function loadDefaultInterface(config, configDefaults, roleName = SystemRol
     [PermissionTypes.RUN_CODE]: { [Permissions.USE]: loadedInterface.runCode },
     [PermissionTypes.WEB_SEARCH]: { [Permissions.USE]: loadedInterface.webSearch },
     [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: loadedInterface.fileSearch },
+    [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: loadedInterface.fileCitations },
   });
   await updateAccessPermissions(SystemRoles.ADMIN, {
     [PermissionTypes.PROMPTS]: { [Permissions.USE]: loadedInterface.prompts },
@@ -81,6 +83,7 @@ async function loadDefaultInterface(config, configDefaults, roleName = SystemRol
     [PermissionTypes.RUN_CODE]: { [Permissions.USE]: loadedInterface.runCode },
     [PermissionTypes.WEB_SEARCH]: { [Permissions.USE]: loadedInterface.webSearch },
     [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: loadedInterface.fileSearch },
+    [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: loadedInterface.fileCitations },
   });
 
   let i = 0;

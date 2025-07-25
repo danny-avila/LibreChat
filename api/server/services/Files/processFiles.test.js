@@ -24,6 +24,26 @@ jest.mock('librechat-data-provider', () => ({
   mergeFileConfig: jest.fn(),
   removeNullishValues: jest.fn((obj) => obj),
   isAssistantsEndpoint: jest.fn(),
+  Constants: { COMMANDS_MAX_LENGTH: 56 },
+  PermissionTypes: {
+    BOOKMARKS: 'BOOKMARKS',
+    PROMPTS: 'PROMPTS',
+    MEMORIES: 'MEMORIES',
+    MULTI_CONVO: 'MULTI_CONVO',
+    AGENTS: 'AGENTS',
+    TEMPORARY_CHAT: 'TEMPORARY_CHAT',
+    RUN_CODE: 'RUN_CODE',
+    WEB_SEARCH: 'WEB_SEARCH',
+    FILE_CITATIONS: 'FILE_CITATIONS',
+  },
+  Permissions: {
+    USE: 'USE',
+    OPT_OUT: 'OPT_OUT',
+  },
+  SystemRoles: {
+    USER: 'USER',
+    ADMIN: 'ADMIN',
+  },
 }));
 
 jest.mock('~/server/services/Files/images', () => ({

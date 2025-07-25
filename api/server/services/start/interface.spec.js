@@ -19,6 +19,7 @@ describe('loadDefaultInterface', () => {
         runCode: true,
         webSearch: true,
         fileSearch: true,
+        fileCitations: true,
       },
     };
     const configDefaults = { interface: {} };
@@ -35,6 +36,7 @@ describe('loadDefaultInterface', () => {
       [PermissionTypes.RUN_CODE]: { [Permissions.USE]: true },
       [PermissionTypes.WEB_SEARCH]: { [Permissions.USE]: true },
       [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: true },
+      [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: true },
     });
   });
 
@@ -50,6 +52,7 @@ describe('loadDefaultInterface', () => {
         runCode: false,
         webSearch: false,
         fileSearch: false,
+        fileCitations: false,
       },
     };
     const configDefaults = { interface: {} };
@@ -66,6 +69,7 @@ describe('loadDefaultInterface', () => {
       [PermissionTypes.RUN_CODE]: { [Permissions.USE]: false },
       [PermissionTypes.WEB_SEARCH]: { [Permissions.USE]: false },
       [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: false },
+      [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: false },
     });
   });
 
@@ -88,6 +92,7 @@ describe('loadDefaultInterface', () => {
       [PermissionTypes.RUN_CODE]: { [Permissions.USE]: undefined },
       [PermissionTypes.WEB_SEARCH]: { [Permissions.USE]: undefined },
       [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: undefined },
+      [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: undefined },
     });
   });
 
@@ -122,6 +127,7 @@ describe('loadDefaultInterface', () => {
       [PermissionTypes.RUN_CODE]: { [Permissions.USE]: undefined },
       [PermissionTypes.WEB_SEARCH]: { [Permissions.USE]: undefined },
       [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: undefined },
+      [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: undefined },
     });
   });
 
@@ -137,6 +143,7 @@ describe('loadDefaultInterface', () => {
         runCode: false,
         webSearch: true,
         fileSearch: false,
+        fileCitations: true,
       },
     };
     const configDefaults = { interface: {} };
@@ -153,6 +160,7 @@ describe('loadDefaultInterface', () => {
       [PermissionTypes.RUN_CODE]: { [Permissions.USE]: false },
       [PermissionTypes.WEB_SEARCH]: { [Permissions.USE]: true },
       [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: false },
+      [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: true },
     });
   });
 
@@ -169,6 +177,7 @@ describe('loadDefaultInterface', () => {
         runCode: true,
         webSearch: true,
         fileSearch: true,
+        fileCitations: true,
       },
     };
 
@@ -184,6 +193,7 @@ describe('loadDefaultInterface', () => {
       [PermissionTypes.RUN_CODE]: { [Permissions.USE]: true },
       [PermissionTypes.WEB_SEARCH]: { [Permissions.USE]: true },
       [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: true },
+      [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: true },
     });
   });
 
@@ -206,6 +216,7 @@ describe('loadDefaultInterface', () => {
       [PermissionTypes.RUN_CODE]: { [Permissions.USE]: undefined },
       [PermissionTypes.WEB_SEARCH]: { [Permissions.USE]: undefined },
       [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: undefined },
+      [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: undefined },
     });
   });
 
@@ -228,6 +239,7 @@ describe('loadDefaultInterface', () => {
       [PermissionTypes.RUN_CODE]: { [Permissions.USE]: undefined },
       [PermissionTypes.WEB_SEARCH]: { [Permissions.USE]: undefined },
       [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: undefined },
+      [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: undefined },
     });
   });
 
@@ -250,6 +262,7 @@ describe('loadDefaultInterface', () => {
       [PermissionTypes.RUN_CODE]: { [Permissions.USE]: undefined },
       [PermissionTypes.WEB_SEARCH]: { [Permissions.USE]: undefined },
       [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: undefined },
+      [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: undefined },
     });
   });
 
@@ -280,6 +293,7 @@ describe('loadDefaultInterface', () => {
       [PermissionTypes.RUN_CODE]: { [Permissions.USE]: false },
       [PermissionTypes.WEB_SEARCH]: { [Permissions.USE]: undefined },
       [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: true },
+      [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: undefined },
     });
   });
 
@@ -311,6 +325,7 @@ describe('loadDefaultInterface', () => {
       [PermissionTypes.RUN_CODE]: { [Permissions.USE]: undefined },
       [PermissionTypes.WEB_SEARCH]: { [Permissions.USE]: undefined },
       [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: true },
+      [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: undefined },
     });
   });
 
@@ -324,6 +339,7 @@ describe('loadDefaultInterface', () => {
         agents: false,
         temporaryChat: true,
         runCode: false,
+        fileCitations: true,
       },
     };
     const configDefaults = { interface: {} };
@@ -417,6 +433,45 @@ describe('loadDefaultInterface', () => {
       [PermissionTypes.RUN_CODE]: { [Permissions.USE]: false },
       [PermissionTypes.WEB_SEARCH]: { [Permissions.USE]: true },
       [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: true },
+      [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: true },
+    });
+  });
+
+  it('should call updateAccessPermissions with the correct parameters when fileCitations is true', async () => {
+    const config = { interface: { fileCitations: true } };
+    const configDefaults = { interface: {} };
+
+    await loadDefaultInterface(config, configDefaults);
+
+    expect(updateAccessPermissions).toHaveBeenCalledWith(SystemRoles.USER, {
+      [PermissionTypes.PROMPTS]: { [Permissions.USE]: undefined },
+      [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: undefined },
+      [PermissionTypes.MEMORIES]: { [Permissions.USE]: undefined },
+      [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: undefined },
+      [PermissionTypes.AGENTS]: { [Permissions.USE]: undefined },
+      [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: undefined },
+      [PermissionTypes.RUN_CODE]: { [Permissions.USE]: undefined },
+      [PermissionTypes.WEB_SEARCH]: { [Permissions.USE]: undefined },
+      [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: true },
+    });
+  });
+
+  it('should call updateAccessPermissions with false when fileCitations is false', async () => {
+    const config = { interface: { fileCitations: false } };
+    const configDefaults = { interface: {} };
+
+    await loadDefaultInterface(config, configDefaults);
+
+    expect(updateAccessPermissions).toHaveBeenCalledWith(SystemRoles.USER, {
+      [PermissionTypes.PROMPTS]: { [Permissions.USE]: undefined },
+      [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: undefined },
+      [PermissionTypes.MEMORIES]: { [Permissions.USE]: undefined },
+      [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: undefined },
+      [PermissionTypes.AGENTS]: { [Permissions.USE]: undefined },
+      [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: undefined },
+      [PermissionTypes.RUN_CODE]: { [Permissions.USE]: undefined },
+      [PermissionTypes.WEB_SEARCH]: { [Permissions.USE]: undefined },
+      [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: false },
     });
   });
 });
