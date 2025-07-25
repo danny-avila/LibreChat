@@ -79,12 +79,52 @@ jobs:
           extract_deps_from_code "client" client_used_code.txt
           extract_deps_from_code "api" api_used_code.txt
 
+      - name: Extract Workspace Dependencies
+        id: extract-workspace-deps
+        run: |
+          # Function to get dependencies from a workspace package that are used by another package
+          get_workspace_package_deps() {
+            local package_json=$1
+            local output_file=$2
+            
+            # Get all workspace dependencies (starting with @librechat/)
+            if [[ -f "$package_json" ]]; then
+              local workspace_deps=$(jq -r '.dependencies // {} | to_entries[] | select(.key | startswith("@librechat/")) | .key' "$package_json" 2>/dev/null || echo "")
+              
+              # For each workspace dependency, get its dependencies
+              for dep in $workspace_deps; do
+                # Convert @librechat/api to packages/api
+                local workspace_path=$(echo "$dep" | sed 's/@librechat\//packages\//')
+                local workspace_package_json="${workspace_path}/package.json"
+                
+                if [[ -f "$workspace_package_json" ]]; then
+                  # Extract all dependencies from the workspace package
+                  jq -r '.dependencies // {} | keys[]' "$workspace_package_json" 2>/dev/null >> "$output_file"
+                  # Also extract peerDependencies
+                  jq -r '.peerDependencies // {} | keys[]' "$workspace_package_json" 2>/dev/null >> "$output_file"
+                fi
+              done
+            fi
+            
+            if [[ -f "$output_file" ]]; then
+              sort -u "$output_file" -o "$output_file"
+            else
+              touch "$output_file"
+            fi
+          }
+          
+          # Get workspace dependencies for each package
+          get_workspace_package_deps "package.json" root_workspace_deps.txt
+          get_workspace_package_deps "client/package.json" client_workspace_deps.txt
+          get_workspace_package_deps "api/package.json" api_workspace_deps.txt
+
       - name: Run depcheck for root package.json
         id: check-root
         run: |
           if [[ -f "package.json" ]]; then
             UNUSED=$(depcheck --json | jq -r '.dependencies | join("\n")' || echo "")
-            UNUSED=$(comm -23 <(echo "$UNUSED" | sort) <(cat root_used_deps.txt root_used_code.txt | sort) || echo "")
+            # Exclude dependencies used in scripts, code, and workspace packages
+            UNUSED=$(comm -23 <(echo "$UNUSED" | sort) <(cat root_used_deps.txt root_used_code.txt root_workspace_deps.txt | sort) || echo "")
             echo "ROOT_UNUSED<<EOF" >> $GITHUB_ENV
             echo "$UNUSED" >> $GITHUB_ENV
             echo "EOF" >> $GITHUB_ENV
@@ -97,7 +137,8 @@ jobs:
             chmod -R 755 client
             cd client
             UNUSED=$(depcheck --json | jq -r '.dependencies | join("\n")' || echo "")
-            UNUSED=$(comm -23 <(echo "$UNUSED" | sort) <(cat ../client_used_deps.txt ../client_used_code.txt | sort) || echo "")
+            # Exclude dependencies used in scripts, code, and workspace packages
+            UNUSED=$(comm -23 <(echo "$UNUSED" | sort) <(cat ../client_used_deps.txt ../client_used_code.txt ../client_workspace_deps.txt | sort) || echo "")
             # Filter out false positives
             UNUSED=$(echo "$UNUSED" | grep -v "^micromark-extension-llm-math$" || echo "")
             echo "CLIENT_UNUSED<<EOF" >> $GITHUB_ENV
@@ -113,7 +154,8 @@ jobs:
             chmod -R 755 api
             cd api
             UNUSED=$(depcheck --json | jq -r '.dependencies | join("\n")' || echo "")
-            UNUSED=$(comm -23 <(echo "$UNUSED" | sort) <(cat ../api_used_deps.txt ../api_used_code.txt | sort) || echo "")
+            # Exclude dependencies used in scripts, code, and workspace packages
+            UNUSED=$(comm -23 <(echo "$UNUSED" | sort) <(cat ../api_used_deps.txt ../api_used_code.txt ../api_workspace_deps.txt | sort) || echo "")
             echo "API_UNUSED<<EOF" >> $GITHUB_ENV
             echo "$UNUSED" >> $GITHUB_ENV
             echo "EOF" >> $GITHUB_ENV
