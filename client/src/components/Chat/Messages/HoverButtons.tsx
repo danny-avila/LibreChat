@@ -229,13 +229,13 @@ const HoverButtons = ({
       )}
 
       {/* Fork Button */}
-      <Fork
+      {/* <Fork
         messageId={message.messageId}
         conversationId={conversation.conversationId}
         forkingSupported={forkingSupported}
         latestMessageId={latestMessage?.messageId}
         isLast={isLast}
-      />
+      /> */}
 
       {/* Feedback Buttons */}
       {!isCreatedByUser && (

@@ -83,31 +83,32 @@ const RunCode: React.FC<CodeBarProps> = React.memo(({ lang, codeRef, blockIndex 
     return null;
   }
 
+  // <button
+  //       type="button"
+  //       className={cn('ml-auto flex gap-2')}
+  //       onClick={debouncedExecute}
+  //       disabled={execute.isLoading}
+  //     >
+  //       {execute.isLoading ? (
+  //         <Spinner className="animate-spin" size={18} />
+  //       ) : (
+  //         <TerminalSquareIcon size={18} />
+  //       )}
+  //       {localize('com_ui_run_code')}
+  //     </button>
+  //     <ApiKeyDialog
+  //       onSubmit={onSubmit}
+  //       isOpen={isDialogOpen}
+  //       register={methods.register}
+  //       onRevoke={handleRevokeApiKey}
+  //       onOpenChange={setIsDialogOpen}
+  //       handleSubmit={methods.handleSubmit}
+  //       isToolAuthenticated={isAuthenticated}
+  //       isUserProvided={authType === AuthType.USER_PROVIDED}
+  //     />
+
   return (
     <>
-      <button
-        type="button"
-        className={cn('ml-auto flex gap-2')}
-        onClick={debouncedExecute}
-        disabled={execute.isLoading}
-      >
-        {execute.isLoading ? (
-          <Spinner className="animate-spin" size={18} />
-        ) : (
-          <TerminalSquareIcon size={18} />
-        )}
-        {localize('com_ui_run_code')}
-      </button>
-      <ApiKeyDialog
-        onSubmit={onSubmit}
-        isOpen={isDialogOpen}
-        register={methods.register}
-        onRevoke={handleRevokeApiKey}
-        onOpenChange={setIsDialogOpen}
-        handleSubmit={methods.handleSubmit}
-        isToolAuthenticated={isAuthenticated}
-        isUserProvided={authType === AuthType.USER_PROVIDED}
-      />
     </>
   );
 });

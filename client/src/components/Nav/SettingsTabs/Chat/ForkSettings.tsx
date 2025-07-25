@@ -19,7 +19,7 @@ export const ForkSettings = () => {
 
   return (
     <>
-      <div className="pb-3">
+      {/* <div className="pb-3">
         <div className="flex items-center justify-between">
           <div> {localize('com_ui_fork_default')} </div>
           <Switch
@@ -63,7 +63,7 @@ export const ForkSettings = () => {
             data-testid="splitAtTarget"
           />
         </div>
-      </div>
+      </div> */}
     </>
   );
 };

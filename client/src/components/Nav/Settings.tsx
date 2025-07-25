@@ -100,15 +100,15 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
       icon: <SpeechIcon className="icon-sm" />,
       label: 'com_nav_setting_speech',
     },
-    ...(hasAnyPersonalizationFeature
-      ? [
-          {
-            value: SettingsTabValues.PERSONALIZATION,
-            icon: <PersonalizationIcon />,
-            label: 'com_nav_setting_personalization' as TranslationKeys,
-          },
-        ]
-      : []),
+    // ...(hasAnyPersonalizationFeature
+    //   ? [
+    //       {
+    //         value: SettingsTabValues.PERSONALIZATION,
+    //         icon: <PersonalizationIcon />,
+    //         label: 'com_nav_setting_personalization' as TranslationKeys,
+    //       },
+    //     ]
+    //   : []),
     {
       value: SettingsTabValues.DATA,
       icon: <DataIcon />,
