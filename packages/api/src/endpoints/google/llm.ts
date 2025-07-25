@@ -1,6 +1,7 @@
 import { Providers } from '@librechat/agents';
 import { googleSettings, AuthKeys } from 'librechat-data-provider';
 import type { GoogleClientOptions, VertexAIClientOptions } from '@librechat/agents';
+import type { GoogleAIToolType } from '@langchain/google-common';
 import type * as t from '~/types';
 import { isEnabled } from '~/utils';
 
@@ -98,13 +99,14 @@ export function getGoogleConfig(
   const serviceKey =
     typeof serviceKeyRaw === 'string' ? JSON.parse(serviceKeyRaw) : (serviceKeyRaw ?? {});
 
-  const project_id = serviceKey?.project_id ?? null;
   const apiKey = creds[AuthKeys.GOOGLE_API_KEY] ?? null;
+  const project_id = !apiKey ? (serviceKey?.project_id ?? null) : null;
 
   const reverseProxyUrl = options.reverseProxyUrl;
   const authHeader = options.authHeader;
 
   const {
+    web_search,
     thinking = googleSettings.thinking.default,
     thinkingBudget = googleSettings.thinkingBudget.default,
     ...modelOptions
@@ -128,7 +130,7 @@ export function getGoogleConfig(
   }
 
   // If we have a GCP project => Vertex AI
-  if (project_id && provider === Providers.VERTEXAI) {
+  if (provider === Providers.VERTEXAI) {
     (llmConfig as VertexAIClientOptions).authOptions = {
       credentials: { ...serviceKey },
       projectId: project_id,
@@ -136,6 +138,10 @@ export function getGoogleConfig(
     (llmConfig as VertexAIClientOptions).location = process.env.GOOGLE_LOC || 'us-central1';
   } else if (apiKey && provider === Providers.GOOGLE) {
     llmConfig.apiKey = apiKey;
+  } else {
+    throw new Error(
+      `Invalid credentials provided. Please provide either a valid API key or service account credentials for Google Cloud.`,
+    );
   }
 
   const shouldEnableThinking =
@@ -183,8 +189,16 @@ export function getGoogleConfig(
     };
   }
 
+  const tools: GoogleAIToolType[] = [];
+
+  if (web_search) {
+    tools.push({ googleSearch: {} });
+  }
+
   // Return the final shape
   return {
+    /** @type {GoogleAIToolType[]} */
+    tools,
     /** @type {Providers.GOOGLE | Providers.VERTEXAI} */
     provider,
     /** @type {GoogleClientOptions | VertexAIClientOptions} */

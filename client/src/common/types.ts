@@ -206,9 +206,7 @@ export type AgentPanelProps = {
   setActivePanel: React.Dispatch<React.SetStateAction<Panel>>;
   setMcp: React.Dispatch<React.SetStateAction<t.MCP | undefined>>;
   setAction: React.Dispatch<React.SetStateAction<t.Action | undefined>>;
-  endpointsConfig?: t.TEndpointsConfig;
   setCurrentAgentId: React.Dispatch<React.SetStateAction<string | undefined>>;
-  agentsConfig?: t.TAgentsEndpoint | null;
 };
 
 export type AgentPanelContextType = {
@@ -225,6 +223,8 @@ export type AgentPanelContextType = {
   setCurrentAgentId: React.Dispatch<React.SetStateAction<string | undefined>>;
   groupedTools?: Record<string, t.AgentToolType & { tools?: t.AgentToolType[] }>;
   agent_id?: string;
+  agentsConfig?: t.TAgentsEndpoint | null;
+  endpointsConfig?: t.TEndpointsConfig | null;
 };
 
 export type AgentModelPanelProps = {
@@ -336,13 +336,16 @@ export type TAskProps = {
 export type TOptions = {
   editedMessageId?: string | null;
   editedText?: string | null;
+  editedContent?: {
+    index: number;
+    text: string;
+    type: 'text' | 'think';
+  };
   isRegenerate?: boolean;
   isContinued?: boolean;
   isEdited?: boolean;
   overrideMessages?: t.TMessage[];
-  /** This value is only true when the user submits a message with "Save & Submit" for a user-created message */
-  isResubmission?: boolean;
-  /** Currently only utilized when `isResubmission === true`, uses that message's currently attached files */
+  /** Currently only utilized when resubmitting user-created message, uses that message's currently attached files */
   overrideFiles?: t.TMessage['files'];
 };
 

@@ -15,6 +15,7 @@
   "com_agents_file_search_disabled": "L'Agente deve essere creato prima di caricare file per la Ricerca File.",
   "com_agents_file_search_info": "Quando abilitato, l'agente verrà informato dei nomi esatti dei file elencati di seguito, permettendogli di recuperare il contesto pertinente da questi file.",
   "com_agents_instructions_placeholder": "Le istruzioni di sistema utilizzate dall'agente",
+  "com_agents_mcp_icon_size": "Dimensione minima 128 x 128 px",
   "com_agents_missing_provider_model": "Seleziona un provider e un modello prima di creare un agente.",
   "com_agents_name_placeholder": "Opzionale: Il nome dell'agente",
   "com_agents_no_access": "Non hai l'autorizzazione per modificare questo agente.",
@@ -314,7 +315,6 @@
   "com_nav_delete_cache_storage": "Elimina cache TTS",
   "com_nav_delete_data_info": "Tutti i tuoi dati verranno eliminati.",
   "com_nav_delete_warning": "ATTENZIONE: Questa azione eliminerà definitivamente il tuo account.",
-  "com_nav_edit_chat_badges": "Modifica i badge della chat",
   "com_nav_enable_cache_tts": "Abilita cache TTS",
   "com_nav_enable_cloud_browser_voice": "Usa voci basate su cloud",
   "com_nav_enabled": "Abilitato",
@@ -399,7 +399,6 @@
   "com_nav_search_placeholder": "Cerca messaggi",
   "com_nav_send_message": "Invia messaggio",
   "com_nav_setting_account": "Account",
-  "com_nav_setting_beta": "Funzioni Beta",
   "com_nav_setting_chat": "Chat",
   "com_nav_setting_data": "Controlli dati",
   "com_nav_setting_general": "Generale",
@@ -666,7 +665,6 @@
   "com_ui_import_conversation_info": "Importa conversazioni da un file JSON",
   "com_ui_import_conversation_success": "Conversazioni importate con successo",
   "com_ui_include_shadcnui": "Includi istruzioni per i componenti shadcn/ui",
-  "com_ui_include_shadcnui_agent": "Includere istruzioni shadcn/ui",
   "com_ui_input": "Input",
   "com_ui_instructions": "Istruzioni",
   "com_ui_late_night": "Buona tarda serata",
@@ -789,7 +787,7 @@
   "com_ui_storage": "Archiviazione",
   "com_ui_submit": "Invia",
   "com_ui_teach_or_explain": "Istruzione",
-  "com_ui_temporary": "Temporanea",
+  "com_ui_temporary": "Chat temporanea",
   "com_ui_terms_and_conditions": "Termini d'uso",
   "com_ui_terms_of_service": "Termini di servizio",
   "com_ui_thinking": "Pensando...",
@@ -831,6 +829,5 @@
   "com_ui_write": "Scrittura",
   "com_ui_yes": "Sì",
   "com_ui_zoom": "Zoom",
-  "com_user_message": "Mostra nome utente nei messaggi",
-  "com_warning_resubmit_unsupported": "Il reinvio del messaggio AI non è supportato per questo endpoint."
+  "com_user_message": "Mostra nome utente nei messaggi"
 }

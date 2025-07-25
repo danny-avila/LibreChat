@@ -4,15 +4,20 @@ import type {
   TCustomConfig,
   SearchProviders,
   TWebSearchConfig,
-} from './config';
-import { SearchCategories, SafeSearchTypes } from './config';
-import { extractVariableName } from './utils';
-import { AuthType } from './schemas';
+} from 'librechat-data-provider';
+import {
+  SearchCategories,
+  SafeSearchTypes,
+  extractVariableName,
+  AuthType,
+} from 'librechat-data-provider';
 
 export function loadWebSearchConfig(
   config: TCustomConfig['webSearch'],
 ): TCustomConfig['webSearch'] {
   const serperApiKey = config?.serperApiKey ?? '${SERPER_API_KEY}';
+  const searxngInstanceUrl = config?.searxngInstanceUrl ?? '${SEARXNG_INSTANCE_URL}';
+  const searxngApiKey = config?.searxngApiKey ?? '${SEARXNG_API_KEY}';
   const firecrawlApiKey = config?.firecrawlApiKey ?? '${FIRECRAWL_API_KEY}';
   const firecrawlApiUrl = config?.firecrawlApiUrl ?? '${FIRECRAWL_API_URL}';
   const jinaApiKey = config?.jinaApiKey ?? '${JINA_API_KEY}';
@@ -25,6 +30,8 @@ export function loadWebSearchConfig(
     jinaApiKey,
     cohereApiKey,
     serperApiKey,
+    searxngInstanceUrl,
+    searxngApiKey,
     firecrawlApiKey,
     firecrawlApiUrl,
   };
@@ -32,6 +39,8 @@ export function loadWebSearchConfig(
 
 export type TWebSearchKeys =
   | 'serperApiKey'
+  | 'searxngInstanceUrl'
+  | 'searxngApiKey'
   | 'firecrawlApiKey'
   | 'firecrawlApiUrl'
   | 'jinaApiKey'
@@ -46,6 +55,11 @@ export const webSearchAuth = {
   providers: {
     serper: {
       serperApiKey: 1 as const,
+    },
+    searxng: {
+      searxngInstanceUrl: 1 as const,
+      /** Optional (0) */
+      searxngApiKey: 0 as const,
     },
   },
   scrapers: {
@@ -267,7 +281,9 @@ export async function loadWebSearchAuth({
   }
 
   authResult.safeSearch = webSearchConfig?.safeSearch ?? SafeSearchTypes.MODERATE;
-  authResult.scraperTimeout = webSearchConfig?.scraperTimeout ?? 7500;
+  authResult.scraperTimeout =
+    webSearchConfig?.scraperTimeout ?? webSearchConfig?.firecrawlOptions?.timeout ?? 7500;
+  authResult.firecrawlOptions = webSearchConfig?.firecrawlOptions;
 
   return {
     authTypes,

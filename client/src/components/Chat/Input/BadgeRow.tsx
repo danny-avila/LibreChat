@@ -18,6 +18,7 @@ import { useChatBadges } from '~/hooks';
 import { Badge } from '~/components/ui';
 import ToolDialogs from './ToolDialogs';
 import FileSearch from './FileSearch';
+import Artifacts from './Artifacts';
 import MCPSelect from './MCPSelect';
 import WebSearch from './WebSearch';
 import store from '~/store';
@@ -27,6 +28,7 @@ interface BadgeRowProps {
   onChange: (badges: Pick<BadgeItem, 'id'>[]) => void;
   onToggle?: (badgeId: string, currentActive: boolean) => void;
   conversationId?: string | null;
+  isSubmitting?: boolean;
   isInChat: boolean;
 }
 
@@ -140,6 +142,7 @@ const dragReducer = (state: DragState, action: DragAction): DragState => {
 function BadgeRow({
   showEphemeralBadges,
   conversationId,
+  isSubmitting,
   onChange,
   onToggle,
   isInChat,
@@ -317,7 +320,7 @@ function BadgeRow({
   }, [dragState.draggedBadge, handleMouseMove, handleMouseUp]);
 
   return (
-    <BadgeRowProvider conversationId={conversationId}>
+    <BadgeRowProvider conversationId={conversationId} isSubmitting={isSubmitting}>
       <div ref={containerRef} className="relative flex flex-wrap items-center gap-2">
         {showEphemeralBadges === true && <ToolsDropdown />}
         {tempBadges.map((badge, index) => (
@@ -364,6 +367,7 @@ function BadgeRow({
             <WebSearch />
             <CodeInterpreter />
             <FileSearch />
+            <Artifacts />
             <MCPSelect />
           </>
         )}

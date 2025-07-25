@@ -1,7 +1,7 @@
 import { Spinner } from '~/components/svg';
 import { useLocalize } from '~/hooks';
 import VersionItem from './VersionItem';
-import { VersionContext } from './VersionPanel';
+import type { VersionContext } from './types';
 
 type VersionContentProps = {
   selectedAgentId: string;

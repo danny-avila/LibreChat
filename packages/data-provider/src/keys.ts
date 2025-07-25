@@ -27,6 +27,8 @@ export enum QueryKeys {
   tools = 'tools',
   toolAuth = 'toolAuth',
   toolCalls = 'toolCalls',
+  mcpConnectionStatus = 'mcpConnectionStatus',
+  mcpAuthValues = 'mcpAuthValues',
   agentTools = 'agentTools',
   actions = 'actions',
   assistantDocs = 'assistantDocs',
@@ -49,6 +51,11 @@ export enum QueryKeys {
   /* Memories */
   memories = 'memories',
 }
+
+// Dynamic query keys that require parameters
+export const DynamicQueryKeys = {
+  agentFiles: (agentId: string) => ['agentFiles', agentId] as const,
+} as const;
 
 export enum MutationKeys {
   fileUpload = 'fileUpload',

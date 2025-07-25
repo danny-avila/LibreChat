@@ -1,12 +1,11 @@
+const { agentsConfigSetup, loadWebSearchConfig } = require('@librechat/api');
 const {
   FileSources,
   loadOCRConfig,
   EModelEndpoint,
   loadMemoryConfig,
   getConfigDefaults,
-  loadWebSearchConfig,
 } = require('librechat-data-provider');
-const { agentsConfigSetup } = require('@librechat/api');
 const {
   checkHealth,
   checkConfig,
@@ -157,6 +156,10 @@ const AppService = async (app) => {
       endpointLocals[key] = endpoints[key];
     }
   });
+
+  if (endpoints?.all) {
+    endpointLocals.all = endpoints.all;
+  }
 
   app.locals = {
     ...defaultLocals,

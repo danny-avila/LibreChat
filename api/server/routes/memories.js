@@ -172,40 +172,68 @@ router.patch('/preferences', checkMemoryOptOut, async (req, res) => {
 /**
  * PATCH /memories/:key
  * Updates the value of an existing memory entry for the authenticated user.
- * Body: { value: string }
+ * Body: { key?: string, value: string }
  * Returns 200 and { updated: true, memory: <updatedDoc> } when successful.
  */
 router.patch('/:key', checkMemoryUpdate, async (req, res) => {
-  const { key } = req.params;
-  const { value } = req.body || {};
+  const { key: urlKey } = req.params;
+  const { key: bodyKey, value } = req.body || {};
 
   if (typeof value !== 'string' || value.trim() === '') {
     return res.status(400).json({ error: 'Value is required and must be a non-empty string.' });
   }
 
+  // Use the key from the body if provided, otherwise use the key from the URL
+  const newKey = bodyKey || urlKey;
+
   try {
     const tokenCount = Tokenizer.getTokenCount(value, 'o200k_base');
 
     const memories = await getAllUserMemories(req.user.id);
-    const existingMemory = memories.find((m) => m.key === key);
+    const existingMemory = memories.find((m) => m.key === urlKey);
 
     if (!existingMemory) {
       return res.status(404).json({ error: 'Memory not found.' });
     }
 
-    const result = await setMemory({
-      userId: req.user.id,
-      key,
-      value,
-      tokenCount,
-    });
+    // If the key is changing, we need to handle it specially
+    if (newKey !== urlKey) {
+      const keyExists = memories.find((m) => m.key === newKey);
+      if (keyExists) {
+        return res.status(409).json({ error: 'Memory with this key already exists.' });
+      }
 
-    if (!result.ok) {
-      return res.status(500).json({ error: 'Failed to update memory.' });
+      const createResult = await createMemory({
+        userId: req.user.id,
+        key: newKey,
+        value,
+        tokenCount,
+      });
+
+      if (!createResult.ok) {
+        return res.status(500).json({ error: 'Failed to create new memory.' });
+      }
+
+      const deleteResult = await deleteMemory({ userId: req.user.id, key: urlKey });
+      if (!deleteResult.ok) {
+        return res.status(500).json({ error: 'Failed to delete old memory.' });
+      }
+    } else {
+      // Key is not changing, just update the value
+      const result = await setMemory({
+        userId: req.user.id,
+        key: newKey,
+        value,
+        tokenCount,
+      });
+
+      if (!result.ok) {
+        return res.status(500).json({ error: 'Failed to update memory.' });
+      }
     }
 
     const updatedMemories = await getAllUserMemories(req.user.id);
-    const updatedMemory = updatedMemories.find((m) => m.key === key);
+    const updatedMemory = updatedMemories.find((m) => m.key === newKey);
 
     res.json({ updated: true, memory: updatedMemory });
   } catch (error) {

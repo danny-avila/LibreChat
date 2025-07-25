@@ -4,6 +4,7 @@ import {
   openAISettings,
   googleSettings,
   ReasoningEffort,
+  ReasoningSummary,
   BedrockProviders,
   anthropicSettings,
 } from './types';
@@ -71,6 +72,11 @@ const baseDefinitions: Record<string, SettingDefinition> = {
     default: ImageDetail.auto,
     component: 'slider',
     options: [ImageDetail.low, ImageDetail.auto, ImageDetail.high],
+    enumMappings: {
+      [ImageDetail.low]: 'com_ui_low',
+      [ImageDetail.auto]: 'com_ui_auto',
+      [ImageDetail.high]: 'com_ui_high',
+    },
     optionType: 'conversation',
     columnSpan: 2,
   },
@@ -211,12 +217,86 @@ const openAIParams: Record<string, SettingDefinition> = {
     description: 'com_endpoint_openai_reasoning_effort',
     descriptionCode: true,
     type: 'enum',
-    default: ReasoningEffort.medium,
+    default: ReasoningEffort.none,
     component: 'slider',
-    options: [ReasoningEffort.low, ReasoningEffort.medium, ReasoningEffort.high],
+    options: [
+      ReasoningEffort.none,
+      ReasoningEffort.low,
+      ReasoningEffort.medium,
+      ReasoningEffort.high,
+    ],
+    enumMappings: {
+      [ReasoningEffort.none]: 'com_ui_none',
+      [ReasoningEffort.low]: 'com_ui_low',
+      [ReasoningEffort.medium]: 'com_ui_medium',
+      [ReasoningEffort.high]: 'com_ui_high',
+    },
     optionType: 'model',
     columnSpan: 4,
   },
+  useResponsesApi: {
+    key: 'useResponsesApi',
+    label: 'com_endpoint_use_responses_api',
+    labelCode: true,
+    description: 'com_endpoint_openai_use_responses_api',
+    descriptionCode: true,
+    type: 'boolean',
+    default: false,
+    component: 'switch',
+    optionType: 'model',
+    showDefault: false,
+    columnSpan: 2,
+  },
+  web_search: {
+    key: 'web_search',
+    label: 'com_ui_web_search',
+    labelCode: true,
+    description: 'com_endpoint_openai_use_web_search',
+    descriptionCode: true,
+    type: 'boolean',
+    default: false,
+    component: 'switch',
+    optionType: 'model',
+    showDefault: false,
+    columnSpan: 2,
+  },
+  reasoning_summary: {
+    key: 'reasoning_summary',
+    label: 'com_endpoint_reasoning_summary',
+    labelCode: true,
+    description: 'com_endpoint_openai_reasoning_summary',
+    descriptionCode: true,
+    type: 'enum',
+    default: ReasoningSummary.none,
+    component: 'slider',
+    options: [
+      ReasoningSummary.none,
+      ReasoningSummary.auto,
+      ReasoningSummary.concise,
+      ReasoningSummary.detailed,
+    ],
+    enumMappings: {
+      [ReasoningSummary.none]: 'com_ui_none',
+      [ReasoningSummary.auto]: 'com_ui_auto',
+      [ReasoningSummary.concise]: 'com_ui_concise',
+      [ReasoningSummary.detailed]: 'com_ui_detailed',
+    },
+    optionType: 'model',
+    columnSpan: 4,
+  },
+  disableStreaming: {
+    key: 'disableStreaming',
+    label: 'com_endpoint_disable_streaming_label',
+    labelCode: true,
+    description: 'com_endpoint_disable_streaming',
+    descriptionCode: true,
+    type: 'boolean',
+    default: false,
+    component: 'switch',
+    optionType: 'model',
+    showDefault: false,
+    columnSpan: 2,
+  } as const,
 };
 
 const anthropic: Record<string, SettingDefinition> = {
@@ -314,6 +394,19 @@ const anthropic: Record<string, SettingDefinition> = {
     optionType: 'conversation',
     columnSpan: 2,
   },
+  web_search: {
+    key: 'web_search',
+    label: 'com_ui_web_search',
+    labelCode: true,
+    description: 'com_endpoint_anthropic_use_web_search',
+    descriptionCode: true,
+    type: 'boolean',
+    default: anthropicSettings.web_search.default,
+    component: 'switch',
+    optionType: 'conversation',
+    showDefault: false,
+    columnSpan: 2,
+  },
 };
 
 const bedrock: Record<string, SettingDefinition> = {
@@ -347,7 +440,9 @@ const bedrock: Record<string, SettingDefinition> = {
     labelCode: true,
     type: 'number',
     component: 'input',
-    placeholder: 'com_endpoint_anthropic_maxoutputtokens',
+    description: 'com_endpoint_anthropic_maxoutputtokens',
+    descriptionCode: true,
+    placeholder: 'com_nav_theme_system',
     placeholderCode: true,
     optionType: 'model',
     columnSpan: 2,
@@ -481,6 +576,19 @@ const google: Record<string, SettingDefinition> = {
     optionType: 'conversation',
     columnSpan: 2,
   },
+  web_search: {
+    key: 'web_search',
+    label: 'com_endpoint_use_search_grounding',
+    labelCode: true,
+    description: 'com_endpoint_google_use_search_grounding',
+    descriptionCode: true,
+    type: 'boolean',
+    default: false,
+    component: 'switch',
+    optionType: 'model',
+    showDefault: false,
+    columnSpan: 2,
+  },
 };
 
 const googleConfig: SettingsConfiguration = [
@@ -494,6 +602,7 @@ const googleConfig: SettingsConfiguration = [
   librechat.resendFiles,
   google.thinking,
   google.thinkingBudget,
+  google.web_search,
 ];
 
 const googleCol1: SettingsConfiguration = [
@@ -511,6 +620,7 @@ const googleCol2: SettingsConfiguration = [
   librechat.resendFiles,
   google.thinking,
   google.thinkingBudget,
+  google.web_search,
 ];
 
 const openAI: SettingsConfiguration = [
@@ -525,7 +635,11 @@ const openAI: SettingsConfiguration = [
   baseDefinitions.stop,
   librechat.resendFiles,
   baseDefinitions.imageDetail,
+  openAIParams.web_search,
   openAIParams.reasoning_effort,
+  openAIParams.useResponsesApi,
+  openAIParams.reasoning_summary,
+  openAIParams.disableStreaming,
 ];
 
 const openAICol1: SettingsConfiguration = [
@@ -542,9 +656,13 @@ const openAICol2: SettingsConfiguration = [
   openAIParams.frequency_penalty,
   openAIParams.presence_penalty,
   baseDefinitions.stop,
-  openAIParams.reasoning_effort,
   librechat.resendFiles,
   baseDefinitions.imageDetail,
+  openAIParams.reasoning_effort,
+  openAIParams.reasoning_summary,
+  openAIParams.useResponsesApi,
+  openAIParams.web_search,
+  openAIParams.disableStreaming,
 ];
 
 const anthropicConfig: SettingsConfiguration = [
@@ -559,6 +677,7 @@ const anthropicConfig: SettingsConfiguration = [
   anthropic.promptCache,
   anthropic.thinking,
   anthropic.thinkingBudget,
+  anthropic.web_search,
 ];
 
 const anthropicCol1: SettingsConfiguration = [
@@ -577,6 +696,7 @@ const anthropicCol2: SettingsConfiguration = [
   anthropic.promptCache,
   anthropic.thinking,
   anthropic.thinkingBudget,
+  anthropic.web_search,
 ];
 
 const bedrockAnthropic: SettingsConfiguration = [

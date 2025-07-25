@@ -1,5 +1,5 @@
 const OpenAI = require('openai');
-const { HttpsProxyAgent } = require('https-proxy-agent');
+const { ProxyAgent } = require('undici');
 const { constructAzureURL, isUserProvided, resolveHeaders } = require('@librechat/api');
 const { ErrorTypes, EModelEndpoint, mapModelToAzureConfig } = require('librechat-data-provider');
 const {
@@ -158,7 +158,10 @@ const initializeClient = async ({ req, res, version, endpointOption, initAppClie
   }
 
   if (PROXY) {
-    opts.httpAgent = new HttpsProxyAgent(PROXY);
+    const proxyAgent = new ProxyAgent(PROXY);
+    opts.fetchOptions = {
+      dispatcher: proxyAgent,
+    };
   }
 
   if (OPENAI_ORGANIZATION) {

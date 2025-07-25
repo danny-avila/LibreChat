@@ -377,7 +377,6 @@
   "com_nav_search_placeholder": "Mesajları ara",
   "com_nav_send_message": "Mesajı gönder",
   "com_nav_setting_account": "Hesap",
-  "com_nav_setting_beta": "Beta özellikleri",
   "com_nav_setting_chat": "Sohbet",
   "com_nav_setting_data": "Veri kontrolleri",
   "com_nav_setting_general": "Genel",
@@ -725,6 +724,5 @@
   "com_ui_view_source": "Kaynak sohbeti görüntüle",
   "com_ui_yes": "Evet",
   "com_ui_zoom": "Yakınlaştır",
-  "com_user_message": "Sen",
-  "com_warning_resubmit_unsupported": "Bu uç nokta için yapay zeka mesajını yeniden gönderme desteklenmiyor."
+  "com_user_message": "Sen"
 }

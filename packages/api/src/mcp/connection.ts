@@ -45,9 +45,12 @@ function isSSEOptions(options: t.MCPOptions): options is t.SSEOptions {
  * @returns True if options are for a streamable HTTP transport
  */
 function isStreamableHTTPOptions(options: t.MCPOptions): options is t.StreamableHTTPOptions {
-  if ('url' in options && options.type === 'streamable-http') {
-    const protocol = new URL(options.url).protocol;
-    return protocol !== 'ws:' && protocol !== 'wss:';
+  if ('url' in options && 'type' in options) {
+    const optionType = options.type as string;
+    if (optionType === 'streamable-http' || optionType === 'http') {
+      const protocol = new URL(options.url).protocol;
+      return protocol !== 'ws:' && protocol !== 'wss:';
+    }
   }
   return false;
 }
@@ -59,9 +62,6 @@ export class MCPConnection extends EventEmitter {
   private transport: Transport | null = null; // Make this nullable
   private connectionState: t.ConnectionState = 'disconnected';
   private connectPromise: Promise<void> | null = null;
-  private lastError: Error | null = null;
-  private lastConfigUpdate = 0;
-  private readonly CONFIG_TTL = 5 * 60 * 1000; // 5 minutes
   private readonly MAX_RECONNECT_ATTEMPTS = 3;
   public readonly serverName: string;
   private shouldStopReconnecting = false;
@@ -135,7 +135,6 @@ export class MCPConnection extends EventEmitter {
   private emitError(error: unknown, errorContext: string): void {
     const errorMessage = error instanceof Error ? error.message : String(error);
     logger.error(`${this.getLogPrefix()} ${errorContext}: ${errorMessage}`);
-    this.emit('error', new Error(`${errorContext}: ${errorMessage}`));
   }
 
   private constructTransport(options: t.MCPOptions): Transport {
@@ -146,6 +145,7 @@ export class MCPConnection extends EventEmitter {
       } else if (isWebSocketOptions(options)) {
         type = 'websocket';
       } else if (isStreamableHTTPOptions(options)) {
+        // Could be either 'streamable-http' or 'http', normalize to 'streamable-http'
         type = 'streamable-http';
       } else if (isSSEOptions(options)) {
         type = 'sse';
@@ -359,14 +359,8 @@ export class MCPConnection extends EventEmitter {
 
   private subscribeToResources(): void {
     this.client.setNotificationHandler(ResourceListChangedNotificationSchema, async () => {
-      this.invalidateCache();
       this.emit('resourcesChanged');
     });
-  }
-
-  private invalidateCache(): void {
-    // this.cachedConfig = null;
-    this.lastConfigUpdate = 0;
   }
 
   async connectClient(): Promise<void> {
@@ -527,7 +521,7 @@ export class MCPConnection extends EventEmitter {
     try {
       await this.disconnect();
       await this.connectClient();
-      if (!this.isConnected()) {
+      if (!(await this.isConnected())) {
         throw new Error('Connection not established');
       }
     } catch (error) {
@@ -564,11 +558,7 @@ export class MCPConnection extends EventEmitter {
       }
       this.connectionState = 'disconnected';
       this.emit('connectionChange', 'disconnected');
-    } catch (error) {
-      this.emit('error', error);
-      throw error;
     } finally {
-      this.invalidateCache();
       this.connectPromise = null;
     }
   }
@@ -603,86 +593,60 @@ export class MCPConnection extends EventEmitter {
     }
   }
 
-  // public async modifyConfig(config: ContinueConfig): Promise<ContinueConfig> {
-  //   try {
-  //     // Check cache
-  //     if (this.cachedConfig && Date.now() - this.lastConfigUpdate < this.CONFIG_TTL) {
-  //       return this.cachedConfig;
-  //     }
-
-  //     await this.connectClient();
-
-  //     // Fetch and process resources
-  //     const resources = await this.fetchResources();
-  //     const submenuItems = resources.map(resource => ({
-  //       title: resource.name,
-  //       description: resource.description,
-  //       id: resource.uri,
-  //     }));
-
-  //     if (!config.contextProviders) {
-  //       config.contextProviders = [];
-  //     }
-
-  //     config.contextProviders.push(
-  //       new MCPContextProvider({
-  //         submenuItems,
-  //         client: this.client,
-  //       }),
-  //     );
-
-  //     // Fetch and process tools
-  //     const tools = await this.fetchTools();
-  //     const continueTools: Tool[] = tools.map(tool => ({
-  //       displayTitle: tool.name,
-  //       function: {
-  //         description: tool.description,
-  //         name: tool.name,
-  //         parameters: tool.inputSchema,
-  //       },
-  //       readonly: false,
-  //       type: 'function',
-  //       wouldLikeTo: `use the ${tool.name} tool`,
-  //       uri: `mcp://${tool.name}`,
-  //     }));
-
-  //     config.tools = [...(config.tools || []), ...continueTools];
-
-  //     // Fetch and process prompts
-  //     const prompts = await this.fetchPrompts();
-  //     if (!config.slashCommands) {
-  //       config.slashCommands = [];
-  //     }
-
-  //     const slashCommands: SlashCommand[] = prompts.map(prompt =>
-  //       constructMcpSlashCommand(
-  //         this.client,
-  //         prompt.name,
-  //         prompt.description,
-  //         prompt.arguments?.map(a => a.name),
-  //       ),
-  //     );
-  //     config.slashCommands.push(...slashCommands);
-
-  //     // Update cache
-  //     this.cachedConfig = config;
-  //     this.lastConfigUpdate = Date.now();
-
-  //     return config;
-  //   } catch (error) {
-  //     this.emit('error', error);
-  //     // Return original config if modification fails
-  //     return config;
-  //   }
-  // }
-
   public async isConnected(): Promise<boolean> {
+    // First check if we're in a connected state
+    if (this.connectionState !== 'connected') {
+      return false;
+    }
+
     try {
+      // Try ping first as it's the lightest check
       await this.client.ping();
       return this.connectionState === 'connected';
     } catch (error) {
-      logger.error(`${this.getLogPrefix()} Ping failed:`, error);
-      return false;
+      // Check if the error is because ping is not supported (method not found)
+      const pingUnsupported =
+        error instanceof Error &&
+        ((error as Error)?.message.includes('-32601') ||
+          (error as Error)?.message.includes('invalid method ping') ||
+          (error as Error)?.message.includes('method not found'));
+
+      if (!pingUnsupported) {
+        logger.error(`${this.getLogPrefix()} Ping failed:`, error);
+        return false;
+      }
+
+      // Ping is not supported by this server, try an alternative verification
+      logger.debug(
+        `${this.getLogPrefix()} Server does not support ping method, verifying connection with capabilities`,
+      );
+
+      try {
+        // Get server capabilities to verify connection is truly active
+        const capabilities = this.client.getServerCapabilities();
+
+        // If we have capabilities, try calling a supported method to verify connection
+        if (capabilities?.tools) {
+          await this.client.listTools();
+          return this.connectionState === 'connected';
+        } else if (capabilities?.resources) {
+          await this.client.listResources();
+          return this.connectionState === 'connected';
+        } else if (capabilities?.prompts) {
+          await this.client.listPrompts();
+          return this.connectionState === 'connected';
+        } else {
+          // No capabilities to test, but we're in connected state and initialization succeeded
+          logger.debug(
+            `${this.getLogPrefix()} No capabilities to test, assuming connected based on state`,
+          );
+          return this.connectionState === 'connected';
+        }
+      } catch (capabilityError) {
+        // If capability check fails, the connection is likely broken
+        logger.error(`${this.getLogPrefix()} Connection verification failed:`, capabilityError);
+        return false;
+      }
     }
   }
 

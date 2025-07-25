@@ -113,7 +113,7 @@ export default function MultiSelect<T extends string>({
           {items.map((value) => {
             const defaultContent = (
               <>
-                <SelectItemCheck className="text-primary" />
+                <SelectItemCheck className="mr-0.5 text-primary" />
                 <span className="truncate">{value}</span>
               </>
             );
