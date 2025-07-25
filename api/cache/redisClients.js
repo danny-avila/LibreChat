@@ -53,8 +53,10 @@ if (cacheConfig.USE_REDIS) {
 /** @type {import('@keyv/redis').RedisClient | import('@keyv/redis').RedisCluster | null} */
 let keyvRedisClient = null;
 if (cacheConfig.USE_REDIS) {
-  // ** WARNING ** Keyv Redis client does not support Prefix like ioredis above.
-  // The prefix feature will be handled by the Keyv-Redis store in cacheFactory.js
+  /**
+   * ** WARNING ** Keyv Redis client does not support Prefix like ioredis above.
+   * The prefix feature will be handled by the Keyv-Redis store in cacheFactory.js
+   */
   const redisOptions = { username, password, socket: { tls: ca != null, ca } };
 
   keyvRedisClient =
