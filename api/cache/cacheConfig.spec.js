@@ -15,6 +15,7 @@ describe('cacheConfig', () => {
     delete process.env.REDIS_KEY_PREFIX;
     delete process.env.USE_REDIS;
     delete process.env.REDIS_PING_INTERVAL;
+    delete process.env.FORCED_IN_MEMORY_CACHE_NAMESPACES;
 
     // Clear require cache
     jest.resetModules();
@@ -118,6 +119,39 @@ describe('cacheConfig', () => {
 
       const { cacheConfig } = require('./cacheConfig');
       expect(cacheConfig.REDIS_PING_INTERVAL).toBe(300);
+    });
+  });
+
+  describe('FORCED_IN_MEMORY_CACHE_NAMESPACES validation', () => {
+    test('should parse comma-separated cache keys correctly', () => {
+      process.env.FORCED_IN_MEMORY_CACHE_NAMESPACES = ' ROLES, STATIC_CONFIG ,MESSAGES ';
+
+      const { cacheConfig } = require('./cacheConfig');
+      expect(cacheConfig.FORCED_IN_MEMORY_CACHE_NAMESPACES).toEqual([
+        'ROLES',
+        'STATIC_CONFIG',
+        'MESSAGES',
+      ]);
+    });
+
+    test('should throw error for invalid cache keys', () => {
+      process.env.FORCED_IN_MEMORY_CACHE_NAMESPACES = 'INVALID_KEY,ROLES';
+
+      expect(() => {
+        require('./cacheConfig');
+      }).toThrow('Invalid cache keys in FORCED_IN_MEMORY_CACHE_NAMESPACES: INVALID_KEY');
+    });
+
+    test('should handle empty string gracefully', () => {
+      process.env.FORCED_IN_MEMORY_CACHE_NAMESPACES = '';
+
+      const { cacheConfig } = require('./cacheConfig');
+      expect(cacheConfig.FORCED_IN_MEMORY_CACHE_NAMESPACES).toEqual([]);
+    });
+
+    test('should handle undefined env var gracefully', () => {
+      const { cacheConfig } = require('./cacheConfig');
+      expect(cacheConfig.FORCED_IN_MEMORY_CACHE_NAMESPACES).toEqual([]);
     });
   });
 });

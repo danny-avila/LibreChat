@@ -1022,7 +1022,7 @@ class AgentClient extends BaseClient {
     /** @type {import('@librechat/agents').ClientOptions} */
     let clientOptions = {
       maxTokens: 75,
-      model: agent.model_parameters.model,
+      model: agent.model || agent.model_parameters.model,
     };
 
     let titleProviderConfig = await getProviderConfig(endpoint);

@@ -235,6 +235,7 @@ async function createMCPTool({ req, res, toolKey, provider: _provider }) {
     responseFormat: AgentConstants.CONTENT_AND_ARTIFACT,
   });
   toolInstance.mcp = true;
+  toolInstance.mcpRawServerName = serverName;
   return toolInstance;
 }
 

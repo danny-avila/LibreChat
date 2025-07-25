@@ -31,6 +31,7 @@ jest.mock('./cacheConfig', () => ({
   cacheConfig: {
     USE_REDIS: false,
     REDIS_KEY_PREFIX: 'test',
+    FORCED_IN_MEMORY_CACHE_NAMESPACES: [],
   },
 }));
 
@@ -63,6 +64,7 @@ describe('cacheFactory', () => {
     // Reset cache config mock
     cacheConfig.USE_REDIS = false;
     cacheConfig.REDIS_KEY_PREFIX = 'test';
+    cacheConfig.FORCED_IN_MEMORY_CACHE_NAMESPACES = [];
   });
 
   describe('redisCache', () => {
@@ -115,6 +117,30 @@ describe('cacheFactory', () => {
       standardCache();
 
       expect(mockKeyv).toHaveBeenCalledWith({ namespace: undefined, ttl: undefined });
+    });
+
+    it('should use fallback when namespace is in FORCED_IN_MEMORY_CACHE_NAMESPACES', () => {
+      cacheConfig.USE_REDIS = true;
+      cacheConfig.FORCED_IN_MEMORY_CACHE_NAMESPACES = ['forced-memory'];
+      const namespace = 'forced-memory';
+      const ttl = 3600;
+
+      standardCache(namespace, ttl);
+
+      expect(require('@keyv/redis').default).not.toHaveBeenCalled();
+      expect(mockKeyv).toHaveBeenCalledWith({ namespace, ttl });
+    });
+
+    it('should use Redis when namespace is not in FORCED_IN_MEMORY_CACHE_NAMESPACES', () => {
+      cacheConfig.USE_REDIS = true;
+      cacheConfig.FORCED_IN_MEMORY_CACHE_NAMESPACES = ['other-namespace'];
+      const namespace = 'test-namespace';
+      const ttl = 3600;
+
+      standardCache(namespace, ttl);
+
+      expect(require('@keyv/redis').default).toHaveBeenCalledWith(mockKeyvRedisClient);
+      expect(mockKeyv).toHaveBeenCalledWith(mockKeyvRedis, { namespace, ttl });
     });
   });
 
