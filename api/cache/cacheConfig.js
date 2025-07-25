@@ -43,6 +43,7 @@ const cacheConfig = {
   REDIS_CA: process.env.REDIS_CA ? fs.readFileSync(process.env.REDIS_CA, 'utf8') : null,
   REDIS_KEY_PREFIX: process.env[REDIS_KEY_PREFIX_VAR] || REDIS_KEY_PREFIX || '',
   REDIS_MAX_LISTENERS: math(process.env.REDIS_MAX_LISTENERS, 40),
+  REDIS_PING_INTERVAL: math(process.env.REDIS_PING_INTERVAL, 0),
 
   CI: isEnabled(process.env.CI),
   DEBUG_MEMORY_CACHE: isEnabled(process.env.DEBUG_MEMORY_CACHE),
