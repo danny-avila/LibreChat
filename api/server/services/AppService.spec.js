@@ -165,6 +165,9 @@ describe('AppService', () => {
       agents: {
         disableBuilder: false,
         capabilities: expect.arrayContaining([...defaultAgentCapabilities]),
+        maxCitations: 30,
+        maxCitationsPerFile: 7,
+        minRelevanceScore: 0.45,
       },
     });
   });

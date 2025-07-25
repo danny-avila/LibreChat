@@ -25,8 +25,54 @@ const { refreshS3FileUrls } = require('~/server/services/Files/S3/crud');
 const { getProjectByName } = require('~/models/Project');
 const { getAssistant } = require('~/models/Assistant');
 const { getAgent } = require('~/models/Agent');
+const { cleanFileName } = require('~/server/utils/files');
 const { getLogStores } = require('~/cache');
 const { logger } = require('~/config');
+
+/**
+ * Checks if user has access to shared agent file through agent ownership or permissions
+ */
+const checkSharedFileAccess = async (userId, fileId) => {
+  try {
+    // Find agents that have this file in their tool_resources
+    const agentsWithFile = await getAgent({
+      $or: [
+        { 'tool_resources.file_search.file_ids': fileId },
+        { 'tool_resources.execute_code.file_ids': fileId },
+        { 'tool_resources.ocr.file_ids': fileId },
+      ],
+    });
+
+    if (!agentsWithFile || agentsWithFile.length === 0) {
+      return false;
+    }
+
+    // Check if user has access to any of these agents
+    for (const agent of Array.isArray(agentsWithFile) ? agentsWithFile : [agentsWithFile]) {
+      // Check if user is the agent author
+      if (agent.author && agent.author.toString() === userId) {
+        return true;
+      }
+
+      // Check if agent is collaborative
+      if (agent.isCollaborative) {
+        return true;
+      }
+
+      // Check if user has access through project membership
+      if (agent.projectIds && agent.projectIds.length > 0) {
+        // For now, return true if agent has project IDs (simplified check)
+        // This could be enhanced to check actual project membership
+        return true;
+      }
+    }
+
+    return false;
+  } catch (error) {
+    logger.error('[checkSharedFileAccess] Error:', error);
+    return false;
+  }
+};
 
 const router = express.Router();
 
@@ -308,21 +354,32 @@ router.get('/download/:userId/:file_id', async (req, res) => {
     const { userId, file_id } = req.params;
     logger.debug(`File download requested by user ${userId}: ${file_id}`);
 
-    if (userId !== req.user.id) {
-      logger.warn(`${errorPrefix} forbidden: ${file_id}`);
-      return res.status(403).send('Forbidden');
-    }
-
-    const [file] = await getFiles({ file_id });
     const errorPrefix = `File download requested by user ${userId}`;
+    const [file] = await getFiles({ file_id });
 
     if (!file) {
       logger.warn(`${errorPrefix} not found: ${file_id}`);
       return res.status(404).send('File not found');
     }
 
-    if (!file.filepath.includes(userId)) {
-      logger.warn(`${errorPrefix} forbidden: ${file_id}`);
+    // Extract actual file owner from S3 filepath (e.g., /uploads/ownerId/filename)
+    let actualFileOwner = userId;
+    if (file.filepath && file.filepath.includes('/uploads/')) {
+      const pathMatch = file.filepath.match(/\/uploads\/([^/]+)\//);
+      if (pathMatch) {
+        actualFileOwner = pathMatch[1];
+      }
+    }
+
+    // Check access: either own the file or have shared access through conversations
+    const isFileOwner = req.user.id === actualFileOwner;
+    const hasSharedAccess = !isFileOwner && (await checkSharedFileAccess(req.user.id, file_id));
+
+    if (!isFileOwner && !hasSharedAccess) {
+      return res.status(403).send('Forbidden');
+    }
+
+    if (isFileOwner && userId !== actualFileOwner) {
       return res.status(403).send('Forbidden');
     }
 
@@ -338,7 +395,8 @@ router.get('/download/:userId/:file_id', async (req, res) => {
     }
 
     const setHeaders = () => {
-      res.setHeader('Content-Disposition', `attachment; filename="${file.filename}"`);
+      const cleanedFilename = cleanFileName(file.filename);
+      res.setHeader('Content-Disposition', `attachment; filename="${cleanedFilename}"`);
       res.setHeader('Content-Type', 'application/octet-stream');
       res.setHeader('X-File-Metadata', JSON.stringify(file));
     };
@@ -365,12 +423,17 @@ router.get('/download/:userId/:file_id', async (req, res) => {
       logger.debug(`File ${file_id} downloaded from OpenAI`);
       passThrough.body.pipe(res);
     } else {
-      fileStream = getDownloadStream(file_id);
+      fileStream = await getDownloadStream(req, file.filepath);
+
+      fileStream.on('error', (streamError) => {
+        logger.error('[DOWNLOAD ROUTE] Stream error:', streamError);
+      });
+
       setHeaders();
       fileStream.pipe(res);
     }
   } catch (error) {
-    logger.error('Error downloading file:', error);
+    logger.error('[DOWNLOAD ROUTE] Error downloading file:', error);
     res.status(500).send('Error downloading file');
   }
 });
@@ -405,7 +468,6 @@ router.post('/', async (req, res) => {
       message = error.message;
     }
 
-    // TODO: delete remote file if it exists
     try {
       await fs.unlink(req.file.path);
       cleanup = false;

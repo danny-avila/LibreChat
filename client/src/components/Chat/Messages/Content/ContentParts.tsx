@@ -115,7 +115,7 @@ const ContentParts = memo(
       <>
         <SearchContext.Provider value={{ searchResults }}>
           <MemoryArtifacts attachments={attachments} />
-          <Sources />
+          <Sources messageId={messageId} conversationId={conversationId || undefined} />
           {hasReasoningParts && (
             <div className="mb-5">
               <ThinkingButton

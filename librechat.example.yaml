@@ -12,10 +12,7 @@ cache: true
 
 # Custom interface configuration
 interface:
-  customWelcome: "Welcome to LibreChat! Enjoy your experience."
-  # MCP Servers UI configuration
-  mcpServers:
-    placeholder: 'MCP Servers'
+  customWelcome: 'Welcome to LibreChat! Enjoy your experience.'
   # Enable/disable file search as a chatarea selection (default: true)
   # Note: This setting does not disable the Agents File Search Capability.
   # To disable the Agents Capability, see the Agents Endpoint configuration instead.
@@ -30,7 +27,7 @@ interface:
     externalUrl: 'https://librechat.ai/tos'
     openNewTab: true
     modalAcceptance: true
-    modalTitle: "Terms of Service for LibreChat"
+    modalTitle: 'Terms of Service for LibreChat'
     modalContent: |
       # Terms and Conditions for LibreChat
 
@@ -77,6 +74,7 @@ interface:
   bookmarks: true
   multiConvo: true
   agents: true
+  fileCitations: true
   # Temporary chat retention period in hours (default: 720, min: 1, max: 8760)
   # temporaryChatRetention: 1
 
@@ -92,7 +90,6 @@ registration:
   socialLogins: ['github', 'google', 'discord', 'openid', 'facebook', 'apple', 'saml']
   # allowedDomains:
   # - "gmail.com"
-
 
 # Example Balance settings
 # balance:
@@ -133,9 +130,9 @@ registration:
 # Example Actions Object Structure
 actions:
   allowedDomains:
-    - "swapi.dev"
-    - "librechat.ai"
-    - "google.com"
+    - 'swapi.dev'
+    - 'librechat.ai'
+    - 'google.com'
 
 # Example MCP Servers Object Structure
 # mcpServers:
@@ -187,6 +184,13 @@ endpoints:
   #   maxRecursionLimit: 100
   #   # (optional) Disable the builder interface for agents
   #   disableBuilder: false
+  #   # (optional) Maximum total citations to include in agent responses, defaults to 30
+  #   maxCitations: 30
+  #   # (optional) Maximum citations per file to include in agent responses, defaults to 7
+  #   maxCitationsPerFile: 7
+  #   # (optional) Minimum relevance score for sources to be included in responses, defaults to 0.45 (45% relevance threshold)
+  #   # Set to 0.0 to show all sources (no filtering), or higher like 0.7 for stricter filtering
+  #   minRelevanceScore: 0.45
   #   # (optional) Agent Capabilities available to all users. Omit the ones you wish to exclude. Defaults to list below.
   #   capabilities: ["execute_code", "file_search", "actions", "tools"]
   custom:
@@ -269,15 +273,15 @@ endpoints:
       modelDisplayLabel: 'OpenRouter'
 
     # Portkey AI Example
-    - name: "Portkey"
-      apiKey: "dummy"
+    - name: 'Portkey'
+      apiKey: 'dummy'
       baseURL: 'https://api.portkey.ai/v1'
       headers:
-          x-portkey-api-key: '${PORTKEY_API_KEY}'
-          x-portkey-virtual-key: '${PORTKEY_OPENAI_VIRTUAL_KEY}'
+        x-portkey-api-key: '${PORTKEY_API_KEY}'
+        x-portkey-virtual-key: '${PORTKEY_OPENAI_VIRTUAL_KEY}'
       models:
-          default: ['gpt-4o-mini', 'gpt-4o', 'chatgpt-4o-latest']
-          fetch: true
+        default: ['gpt-4o-mini', 'gpt-4o', 'chatgpt-4o-latest']
+        fetch: true
       titleConvo: true
       titleModel: 'current_model'
       summarize: false
