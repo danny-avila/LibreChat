@@ -62,6 +62,15 @@ export enum SettingsViews {
 
 export const fileSourceSchema = z.nativeEnum(FileSources);
 
+export const fileStrategiesSchema = z
+  .object({
+    default: fileSourceSchema.optional(),
+    avatar: fileSourceSchema.optional(),
+    image: fileSourceSchema.optional(),
+    document: fileSourceSchema.optional(),
+  })
+  .optional();
+
 // Helper type to extract the shape of the Zod object schema
 type SchemaShape<T> = T extends z.ZodObject<infer U> ? U : never;
 
@@ -822,6 +831,7 @@ export const configSchema = z.object({
   interface: interfaceSchema,
   turnstile: turnstileSchema.optional(),
   fileStrategy: fileSourceSchema.default(FileSources.local),
+  fileStrategies: fileStrategiesSchema,
   actions: z
     .object({
       allowedDomains: z.array(z.string()).optional(),
