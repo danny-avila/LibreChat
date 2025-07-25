@@ -50,6 +50,7 @@ export enum QueryKeys {
   banner = 'banner',
   /* Memories */
   memories = 'memories',
+  graphToken = 'graphToken',
 }
 
 // Dynamic query keys that require parameters

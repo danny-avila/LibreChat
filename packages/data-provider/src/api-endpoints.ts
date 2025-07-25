@@ -305,3 +305,7 @@ export const verifyTwoFactorTemp = () => '/api/auth/2fa/verify-temp';
 export const memories = () => '/api/memories';
 export const memory = (key: string) => `${memories()}/${encodeURIComponent(key)}`;
 export const memoryPreferences = () => `${memories()}/preferences`;
+
+// SharePoint Graph API Token
+export const graphToken = (scopes: string) =>
+  `/api/auth/graph-token?scopes=${encodeURIComponent(scopes)}`;
