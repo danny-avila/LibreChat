@@ -6,7 +6,6 @@ const {
   isUUID,
   CacheKeys,
   FileSources,
-  PERMISSION_BITS,
   EModelEndpoint,
   isAgentsEndpoint,
   checkOpenAIStorage,
@@ -19,61 +18,15 @@ const {
 } = require('~/server/services/Files/process');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
-const { checkPermission } = require('~/server/services/PermissionService');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { refreshS3FileUrls } = require('~/server/services/Files/S3/crud');
-const { hasAccessToFilesViaAgent } = require('~/server/services/Files');
 const { getFiles, batchUpdateFiles } = require('~/models/File');
 const { getAssistant } = require('~/models/Assistant');
 const { getAgent } = require('~/models/Agent');
 const { cleanFileName } = require('~/server/utils/files');
 const { getLogStores } = require('~/cache');
 const { logger } = require('~/config');
-
-/**
- * Checks if user has access to shared agent file through agent ownership or permissions
- */
-const checkSharedFileAccess = async (userId, fileId) => {
-  try {
-    // Find agents that have this file in their tool_resources
-    const agentsWithFile = await getAgent({
-      $or: [
-        { 'tool_resources.file_search.file_ids': fileId },
-        { 'tool_resources.execute_code.file_ids': fileId },
-        { 'tool_resources.ocr.file_ids': fileId },
-      ],
-    });
-
-    if (!agentsWithFile || agentsWithFile.length === 0) {
-      return false;
-    }
-
-    // Check if user has access to any of these agents
-    for (const agent of Array.isArray(agentsWithFile) ? agentsWithFile : [agentsWithFile]) {
-      // Check if user is the agent author
-      if (agent.author && agent.author.toString() === userId) {
-        return true;
-      }
-
-      // Check if agent is collaborative
-      if (agent.isCollaborative) {
-        return true;
-      }
-
-      // Check if user has access through project membership
-      if (agent.projectIds && agent.projectIds.length > 0) {
-        // For now, return true if agent has project IDs (simplified check)
-        // This could be enhanced to check actual project membership
-        return true;
-      }
-    }
-
-    return false;
-  } catch (error) {
-    logger.error('[checkSharedFileAccess] Error:', error);
-    return false;
-  }
-};
+const { fileAccess } = require('~/server/middleware/accessResources/fileAccess');
 
 const router = express.Router();
 
@@ -96,69 +49,6 @@ router.get('/', async (req, res) => {
   } catch (error) {
     logger.error('[/files] Error getting files:', error);
     res.status(400).json({ message: 'Error in request', error: error.message });
-  }
-});
-
-/**
- * Get files specific to an agent
- * @route GET /files/agent/:agent_id
- * @param {string} agent_id - The agent ID to get files for
- * @returns {Promise<TFile[]>} Array of files attached to the agent
- */
-router.get('/agent/:agent_id', async (req, res) => {
-  try {
-    const { agent_id } = req.params;
-    const userId = req.user.id;
-
-    if (!agent_id) {
-      return res.status(400).json({ error: 'Agent ID is required' });
-    }
-
-    // Get the agent to check ownership and attached files
-    const agent = await getAgent({ id: agent_id });
-
-    if (!agent) {
-      // No agent found, return empty array
-      return res.status(200).json([]);
-    }
-
-    // Check if user has access to the agent
-    if (agent.author.toString() !== userId) {
-      // Non-authors need at least EDIT permission to view agent files
-      const hasEditPermission = await checkPermission({
-        userId,
-        resourceType: 'agent',
-        resourceId: agent._id,
-        requiredPermission: PERMISSION_BITS.EDIT,
-      });
-
-      if (!hasEditPermission) {
-        return res.status(200).json([]);
-      }
-    }
-
-    // Collect all file IDs from agent's tool resources
-    const agentFileIds = [];
-    if (agent.tool_resources) {
-      for (const [, resource] of Object.entries(agent.tool_resources)) {
-        if (resource?.file_ids && Array.isArray(resource.file_ids)) {
-          agentFileIds.push(...resource.file_ids);
-        }
-      }
-    }
-
-    // If no files attached to agent, return empty array
-    if (agentFileIds.length === 0) {
-      return res.status(200).json([]);
-    }
-
-    // Get only the files attached to this agent
-    const files = await getFiles({ file_id: { $in: agentFileIds } }, null, { text: 0 });
-
-    res.status(200).json(files);
-  } catch (error) {
-    logger.error('[/files/agent/:agent_id] Error fetching agent files:', error);
-    res.status(500).json({ error: 'Failed to fetch agent files' });
   }
 });
 
@@ -198,62 +88,11 @@ router.delete('/', async (req, res) => {
 
     const fileIds = files.map((file) => file.file_id);
     const dbFiles = await getFiles({ file_id: { $in: fileIds } });
-
-    const ownedFiles = [];
-    const nonOwnedFiles = [];
-    const fileMap = new Map();
-
-    for (const file of dbFiles) {
-      fileMap.set(file.file_id, file);
-      if (file.user.toString() === req.user.id) {
-        ownedFiles.push(file);
-      } else {
-        nonOwnedFiles.push(file);
-      }
-    }
-
-    // If all files are owned by the user, no need for further checks
-    if (nonOwnedFiles.length === 0) {
-      await processDeleteRequest({ req, files: ownedFiles });
-      logger.debug(
-        `[/files] Files deleted successfully: ${ownedFiles
-          .filter((f) => f.file_id)
-          .map((f) => f.file_id)
-          .join(', ')}`,
-      );
-      res.status(200).json({ message: 'Files deleted successfully' });
-      return;
-    }
-
-    // Check access for non-owned files
-    let authorizedFiles = [...ownedFiles];
-    let unauthorizedFiles = [];
-
-    if (req.body.agent_id && nonOwnedFiles.length > 0) {
-      // Batch check access for all non-owned files
-      const nonOwnedFileIds = nonOwnedFiles.map((f) => f.file_id);
-      const accessMap = await hasAccessToFilesViaAgent(
-        req.user.id,
-        nonOwnedFileIds,
-        req.body.agent_id,
-      );
-
-      // Separate authorized and unauthorized files
-      for (const file of nonOwnedFiles) {
-        if (accessMap.get(file.file_id)) {
-          authorizedFiles.push(file);
-        } else {
-          unauthorizedFiles.push(file);
-        }
-      }
-    } else {
-      // No agent context, all non-owned files are unauthorized
-      unauthorizedFiles = nonOwnedFiles;
-    }
+    const unauthorizedFiles = dbFiles.filter((file) => file.user.toString() !== req.user.id);
 
     if (unauthorizedFiles.length > 0) {
       return res.status(403).json({
-        message: 'You can only delete files you have access to',
+        message: 'You can only delete your own files',
         unauthorizedFiles: unauthorizedFiles.map((f) => f.file_id),
       });
     }
@@ -294,10 +133,10 @@ router.delete('/', async (req, res) => {
         .json({ message: 'File associations removed successfully from Azure Assistant' });
     }
 
-    await processDeleteRequest({ req, files: authorizedFiles });
+    await processDeleteRequest({ req, files: dbFiles });
 
     logger.debug(
-      `[/files] Files deleted successfully: ${authorizedFiles
+      `[/files] Files deleted successfully: ${files
         .filter((f) => f.file_id)
         .map((f) => f.file_id)
         .join(', ')}`,
@@ -351,48 +190,24 @@ router.get('/code/download/:session_id/:fileId', async (req, res) => {
   }
 });
 
-router.get('/download/:userId/:file_id', async (req, res) => {
+router.get('/download/:userId/:file_id', fileAccess, async (req, res) => {
   try {
     const { userId, file_id } = req.params;
     logger.debug(`File download requested by user ${userId}: ${file_id}`);
 
-    const errorPrefix = `File download requested by user ${userId}`;
-    const [file] = await getFiles({ file_id });
-
-    if (!file) {
-      logger.warn(`${errorPrefix} not found: ${file_id}`);
-      return res.status(404).send('File not found');
-    }
-
-    // Extract actual file owner from S3 filepath (e.g., /uploads/ownerId/filename)
-    let actualFileOwner = userId;
-    if (file.filepath && file.filepath.includes('/uploads/')) {
-      const pathMatch = file.filepath.match(/\/uploads\/([^/]+)\//);
-      if (pathMatch) {
-        actualFileOwner = pathMatch[1];
-      }
-    }
-
-    // Check access: either own the file or have shared access through conversations
-    const isFileOwner = req.user.id === actualFileOwner;
-    const hasSharedAccess = !isFileOwner && (await checkSharedFileAccess(req.user.id, file_id));
-
-    if (!isFileOwner && !hasSharedAccess) {
-      return res.status(403).send('Forbidden');
-    }
-
-    if (isFileOwner && userId !== actualFileOwner) {
-      return res.status(403).send('Forbidden');
-    }
+    // Access already validated by fileAccess middleware
+    const file = req.fileAccess.file;
 
     if (checkOpenAIStorage(file.source) && !file.model) {
-      logger.warn(`${errorPrefix} has no associated model: ${file_id}`);
+      logger.warn(`File download requested by user ${userId} has no associated model: ${file_id}`);
       return res.status(400).send('The model used when creating this file is not available');
     }
 
     const { getDownloadStream } = getStrategyFunctions(file.source);
     if (!getDownloadStream) {
-      logger.warn(`${errorPrefix} has no stream method implemented: ${file.source}`);
+      logger.warn(
+        `File download requested by user ${userId} has no stream method implemented: ${file.source}`,
+      );
       return res.status(501).send('Not Implemented');
     }
 

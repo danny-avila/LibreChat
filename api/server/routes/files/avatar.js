@@ -3,6 +3,7 @@ const express = require('express');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { resizeAvatar } = require('~/server/services/Files/images/avatar');
 const { filterFile } = require('~/server/services/Files/process');
+const { getFileStrategy } = require('~/server/utils/getFileStrategy');
 const { logger } = require('~/config');
 
 const router = express.Router();
@@ -18,7 +19,7 @@ router.post('/', async (req, res) => {
       throw new Error('User ID is undefined');
     }
 
-    const fileStrategy = req.app.locals.fileStrategy;
+    const fileStrategy = getFileStrategy(req.app.locals, { isAvatar: true });
     const desiredFormat = req.app.locals.imageOutputType;
     const resizedBuffer = await resizeAvatar({
       userId,
