@@ -89,7 +89,7 @@ jobs:
             
             # Get all workspace dependencies (starting with @librechat/)
             if [[ -f "$package_json" ]]; then
-              local workspace_deps=$(jq -r '.dependencies | to_entries[] | select(.key | startswith("@librechat/")) | .key' "$package_json" 2>/dev/null || echo "")
+              local workspace_deps=$(jq -r '.dependencies // {} | to_entries[] | select(.key | startswith("@librechat/")) | .key' "$package_json" 2>/dev/null || echo "")
               
               # For each workspace dependency, get its dependencies
               for dep in $workspace_deps; do
@@ -99,9 +99,9 @@ jobs:
                 
                 if [[ -f "$workspace_package_json" ]]; then
                   # Extract all dependencies from the workspace package
-                  jq -r '.dependencies | keys[]' "$workspace_package_json" 2>/dev/null >> "$output_file"
+                  jq -r '.dependencies // {} | keys[]' "$workspace_package_json" 2>/dev/null >> "$output_file"
                   # Also extract peerDependencies
-                  jq -r '.peerDependencies | keys[]' "$workspace_package_json" 2>/dev/null >> "$output_file"
+                  jq -r '.peerDependencies // {} | keys[]' "$workspace_package_json" 2>/dev/null >> "$output_file"
                 fi
               done
             fi
