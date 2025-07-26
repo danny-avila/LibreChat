@@ -1,11 +1,11 @@
 import React from 'react';
 import { object, string } from 'zod';
+import { Label } from '@librechat/client';
 import { AuthKeys } from 'librechat-data-provider';
 import type { TConfigProps } from '~/common';
 import FileUpload from '~/components/Chat/Input/Files/FileUpload';
 import { useLocalize, useMultipleKeys } from '~/hooks';
 import InputWithLabel from './InputWithLabel';
-import { Label } from '~/components/ui';
 
 const CredentialsSchema = object({
   client_email: string().email().min(3),

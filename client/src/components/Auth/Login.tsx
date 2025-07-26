@@ -1,10 +1,10 @@
 import { useOutletContext, useSearchParams } from 'react-router-dom';
 import { useEffect, useState } from 'react';
-import { useAuthContext } from '~/hooks/AuthContext';
+import { OpenIDIcon } from '@librechat/client';
 import type { TLoginLayoutContext } from '~/common';
 import { ErrorMessage } from '~/components/Auth/ErrorMessage';
 import SocialButton from '~/components/Auth/SocialButton';
-import { OpenIDIcon } from '~/components';
+import { useAuthContext } from '~/hooks/AuthContext';
 import { getLoginError } from '~/utils';
 import { useLocalize } from '~/hooks';
 import LoginForm from './LoginForm';

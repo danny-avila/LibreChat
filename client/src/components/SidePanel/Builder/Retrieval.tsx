@@ -8,13 +8,13 @@ import {
   HoverCardContent,
   HoverCardPortal,
   HoverCardTrigger,
-} from '~/components/ui';
+  CircleHelpIcon,
+} from '@librechat/client';
 import OptionHover from '~/components/SidePanel/Parameters/OptionHover';
-import { CircleHelpIcon } from '~/components/svg';
 import type { AssistantForm } from '~/common';
 import { useLocalize } from '~/hooks';
 import { ESide } from '~/common';
-import { cn } from '~/utils/';
+import { cn } from '~/utils';
 
 export default function Retrieval({
   version,

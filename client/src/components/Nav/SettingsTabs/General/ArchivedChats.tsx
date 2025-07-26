@@ -1,6 +1,5 @@
 import { useState } from 'react';
-import { OGDialog, OGDialogTrigger, Button } from '~/components';
-import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
+import { OGDialogTemplate, OGDialog, OGDialogTrigger, Button } from '@librechat/client';
 import ArchivedChatsTable from './ArchivedChatsTable';
 import { useLocalize } from '~/hooks';
 

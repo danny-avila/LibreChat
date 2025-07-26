@@ -1,8 +1,7 @@
 import { useCallback } from 'react';
-import { useChatFormContext, useToastContext } from '~/Providers';
-import { ListeningIcon, Spinner } from '~/components/svg';
+import { useToastContext, TooltipAnchor, ListeningIcon, Spinner } from '@librechat/client';
 import { useLocalize, useSpeechToText } from '~/hooks';
-import { TooltipAnchor } from '~/components/ui';
+import { useChatFormContext } from '~/Providers';
 import { globalAudioId } from '~/common';
 import { cn } from '~/utils';
 

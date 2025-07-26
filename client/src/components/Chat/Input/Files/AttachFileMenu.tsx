@@ -1,11 +1,11 @@
-import { useSetRecoilState } from 'recoil';
-import * as Ariakit from '@ariakit/react';
 import React, { useRef, useState, useMemo } from 'react';
+import * as Ariakit from '@ariakit/react';
+import { useSetRecoilState } from 'recoil';
 import { FileSearch, ImageUpIcon, TerminalSquareIcon, FileType2Icon } from 'lucide-react';
+import { FileUpload, TooltipAnchor, DropdownPopup, AttachmentIcon } from '@librechat/client';
 import { EToolResources, EModelEndpoint, defaultAgentCapabilities } from 'librechat-data-provider';
 import type { EndpointFileConfig } from 'librechat-data-provider';
 import { useLocalize, useGetAgentsConfig, useFileHandling, useAgentCapabilities } from '~/hooks';
-import { FileUpload, TooltipAnchor, DropdownPopup, AttachmentIcon } from '~/components';
 import { ephemeralAgentByConvoId } from '~/store';
 import { cn } from '~/utils';
 

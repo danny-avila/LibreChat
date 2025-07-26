@@ -1,6 +1,5 @@
 import { Trash2 } from 'lucide-react';
-import { Button, OGDialog, OGDialogTrigger, Label } from '~/components/ui';
-import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
+import { Button, OGDialog, OGDialogTrigger, Label, OGDialogTemplate } from '@librechat/client';
 import { useLocalize } from '~/hooks';
 
 const DeleteVersion = ({

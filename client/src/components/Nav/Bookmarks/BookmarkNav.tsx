@@ -1,12 +1,12 @@
 import { useMemo } from 'react';
 import type { FC } from 'react';
 import { useRecoilValue } from 'recoil';
+import { TooltipAnchor } from '@librechat/client';
 import { Menu, MenuButton, MenuItems } from '@headlessui/react';
 import { BookmarkFilledIcon, BookmarkIcon } from '@radix-ui/react-icons';
 import { BookmarkContext } from '~/Providers/BookmarkContext';
 import { useGetConversationTags } from '~/data-provider';
 import BookmarkNavItems from './BookmarkNavItems';
-import { TooltipAnchor } from '~/components/ui';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';

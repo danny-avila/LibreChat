@@ -1,11 +1,12 @@
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import debounce from 'lodash/debounce';
 import { useRecoilValue } from 'recoil';
 import { Menu, Rocket } from 'lucide-react';
 import { useForm, FormProvider } from 'react-hook-form';
 import { useParams, useOutletContext } from 'react-router-dom';
-import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
-import type { TCreatePrompt } from 'librechat-data-provider';
+import { Button, Skeleton, useToastContext } from '@librechat/client';
 import { SystemRoles, PermissionTypes, Permissions } from 'librechat-data-provider';
+import type { TCreatePrompt } from 'librechat-data-provider';
 import {
   useCreatePrompt,
   useGetPrompts,
@@ -17,10 +18,8 @@ import {
 import { useAuthContext, usePromptGroupsNav, useHasAccess, useLocalize } from '~/hooks';
 import CategorySelector from './Groups/CategorySelector';
 import NoPromptGroup from './Groups/NoPromptGroup';
-import { Button, Skeleton } from '~/components/ui';
 import PromptVariables from './PromptVariables';
 import { cn, findPromptGroup } from '~/utils';
-import { useToastContext } from '~/Providers';
 import PromptVersions from './PromptVersions';
 import { PromptsEditorMode } from '~/common';
 import DeleteConfirm from './DeleteVersion';
@@ -287,18 +286,18 @@ const PromptForm = () => {
       {editorMode === PromptsEditorMode.ADVANCED &&
         (isLoadingPrompts
           ? Array.from({ length: 6 }).map((_, index: number) => (
-            <div key={index} className="my-2">
-              <Skeleton className="h-[72px] w-full" />
-            </div>
-          ))
+              <div key={index} className="my-2">
+                <Skeleton className="h-[72px] w-full" />
+              </div>
+            ))
           : prompts.length > 0 && (
-            <PromptVersions
-              group={group}
-              prompts={prompts}
-              selectionIndex={selectionIndex}
-              setSelectionIndex={setSelectionIndex}
-            />
-          ))}
+              <PromptVersions
+                group={group}
+                prompts={prompts}
+                selectionIndex={selectionIndex}
+                setSelectionIndex={setSelectionIndex}
+              />
+            ))}
     </div>
   );
 

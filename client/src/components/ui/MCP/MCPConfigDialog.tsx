@@ -7,9 +7,9 @@ import {
   OGDialogHeader,
   OGDialogTitle,
   OGDialogDescription,
-} from '~/components/ui/OriginalDialog';
-import CustomUserVarsSection from './CustomUserVarsSection';
+} from '@librechat/client';
 import ServerInitializationSection from './ServerInitializationSection';
+import CustomUserVarsSection from './CustomUserVarsSection';
 import { useLocalize } from '~/hooks';
 
 export interface ConfigFieldDetail {

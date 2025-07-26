@@ -1,9 +1,10 @@
 import { useMemo } from 'react';
 import { useLocation } from 'react-router-dom';
+import { useMediaQuery } from '@librechat/client';
 import PanelNavigation from '~/components/Prompts/Groups/PanelNavigation';
 import ManagePrompts from '~/components/Prompts/ManagePrompts';
-import { useMediaQuery, usePromptGroupsNav } from '~/hooks';
 import List from '~/components/Prompts/Groups/List';
+import { usePromptGroupsNav } from '~/hooks';
 import { cn } from '~/utils';
 
 export default function GroupSidePanel({

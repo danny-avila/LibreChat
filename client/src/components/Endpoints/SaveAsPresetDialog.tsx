@@ -1,11 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { useCreatePresetMutation } from 'librechat-data-provider/react-query';
+import { OGDialogTemplate, OGDialog, Input, Label, useToastContext } from '@librechat/client';
 import type { TEditPresetProps } from '~/common';
-import { cn, removeFocusOutlines, cleanupPreset, defaultTextProps } from '~/utils/';
-import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
-import { OGDialog, Input, Label } from '~/components/ui/';
+import { cn, removeFocusOutlines, cleanupPreset, defaultTextProps } from '~/utils';
 import { NotificationSeverity } from '~/common';
-import { useToastContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
 
 const SaveAsPresetDialog = ({ open, onOpenChange, preset }: TEditPresetProps) => {
@@ -23,7 +21,7 @@ const SaveAsPresetDialog = ({ open, onOpenChange, preset }: TEditPresetProps) =>
     });
 
     const toastTitle =
-      _preset.title ?? '' ? `\`${_preset.title}\`` : localize('com_endpoint_preset_title');
+      (_preset.title ?? '') ? `\`${_preset.title}\`` : localize('com_endpoint_preset_title');
 
     createPresetMutation.mutate(_preset, {
       onSuccess: () => {
@@ -76,7 +74,7 @@ const SaveAsPresetDialog = ({ open, onOpenChange, preset }: TEditPresetProps) =>
                 aria-label={localize('com_endpoint_preset_name')}
                 className={cn(
                   defaultTextProps,
-                  'flex h-10 max-h-10 w-full resize-none border-border-medium px-3 py-2 ',
+                  'flex h-10 max-h-10 w-full resize-none border-border-medium px-3 py-2',
                   removeFocusOutlines,
                 )}
               />

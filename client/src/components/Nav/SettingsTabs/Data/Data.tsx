@@ -1,8 +1,8 @@
 import React, { useState, useRef } from 'react';
+import { useOnClickOutside } from '@librechat/client';
 import ImportConversations from './ImportConversations';
 import { RevokeAllKeys } from './RevokeAllKeys';
 import { DeleteCache } from './DeleteCache';
-import { useOnClickOutside } from '~/hooks';
 import { ClearChats } from './ClearChats';
 import SharedLinks from './SharedLinks';
 

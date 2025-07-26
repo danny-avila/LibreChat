@@ -11,9 +11,9 @@ import { ThinkingButton } from '~/components/Artifacts/Thinking';
 import { MessageContext, SearchContext } from '~/Providers';
 import MemoryArtifacts from './MemoryArtifacts';
 import Sources from '~/components/Web/Sources';
-import useLocalize from '~/hooks/useLocalize';
 import { mapAttachments } from '~/utils/map';
 import { EditTextPart } from './Parts';
+import { useLocalize } from '~/hooks';
 import store from '~/store';
 import Part from './Part';
 

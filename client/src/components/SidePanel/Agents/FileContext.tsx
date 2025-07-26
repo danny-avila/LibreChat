@@ -5,12 +5,18 @@ import {
   mergeFileConfig,
   fileConfig as defaultFileConfig,
 } from 'librechat-data-provider';
+import {
+  HoverCard,
+  HoverCardContent,
+  HoverCardPortal,
+  HoverCardTrigger,
+  AttachmentIcon,
+  CircleHelpIcon,
+} from '@librechat/client';
 import type { ExtendedFile } from '~/common';
 import { useFileHandling, useLocalize, useLazyEffect } from '~/hooks';
 import FileRow from '~/components/Chat/Input/Files/FileRow';
 import { useGetFileConfig } from '~/data-provider';
-import { HoverCard, HoverCardContent, HoverCardPortal, HoverCardTrigger } from '~/components/ui';
-import { AttachmentIcon, CircleHelpIcon } from '~/components/svg';
 import { useChatContext } from '~/Providers';
 import { ESide } from '~/common';
 

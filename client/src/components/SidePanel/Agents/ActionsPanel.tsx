@@ -1,21 +1,26 @@
 import { useEffect } from 'react';
 import { ChevronLeft } from 'lucide-react';
 import { useForm, FormProvider } from 'react-hook-form';
+
 import {
   AuthTypeEnum,
   AuthorizationTypeEnum,
   TokenExchangeMethodEnum,
 } from 'librechat-data-provider';
+import {
+  OGDialogTemplate,
+  TrashIcon,
+  OGDialog,
+  OGDialogTrigger,
+  Label,
+  useToastContext,
+} from '@librechat/client';
 import ActionsAuth from '~/components/SidePanel/Builder/ActionsAuth';
 import { useAgentPanelContext } from '~/Providers/AgentPanelContext';
-import { OGDialog, OGDialogTrigger, Label } from '~/components/ui';
-import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
 import { useDeleteAgentAction } from '~/data-provider';
 import type { ActionAuthForm } from '~/common';
-import useLocalize from '~/hooks/useLocalize';
-import { useToastContext } from '~/Providers';
-import { TrashIcon } from '~/components/svg';
 import ActionsInput from './ActionsInput';
+import { useLocalize } from '~/hooks';
 import { Panel } from '~/common';
 
 export default function ActionsPanel() {

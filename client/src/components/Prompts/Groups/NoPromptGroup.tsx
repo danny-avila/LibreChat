@@ -1,5 +1,5 @@
+import { Button } from '@librechat/client';
 import { useNavigate } from 'react-router-dom';
-import { Button } from '~/components/ui';
 import { useLocalize } from '~/hooks';
 
 export default function NoPromptGroup() {

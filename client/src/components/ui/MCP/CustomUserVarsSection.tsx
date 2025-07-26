@@ -1,8 +1,8 @@
 import React, { useMemo } from 'react';
 import { useForm, Controller } from 'react-hook-form';
-import { Input, Label, Button } from '~/components/ui';
-import { useLocalize } from '~/hooks';
+import { Input, Label, Button } from '@librechat/client';
 import { useMCPAuthValuesQuery } from '~/data-provider/Tools/queries';
+import { useLocalize } from '~/hooks';
 
 export interface CustomUserVarConfig {
   title: string;

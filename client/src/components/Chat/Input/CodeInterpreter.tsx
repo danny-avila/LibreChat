@@ -1,7 +1,7 @@
 import React, { memo } from 'react';
 import { TerminalSquareIcon } from 'lucide-react';
+import { CheckboxButton } from '@librechat/client';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
-import CheckboxButton from '~/components/ui/CheckboxButton';
 import { useLocalize, useHasAccess } from '~/hooks';
 import { useBadgeRowContext } from '~/Providers';
 

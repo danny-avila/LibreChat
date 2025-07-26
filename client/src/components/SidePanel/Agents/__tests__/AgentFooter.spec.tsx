@@ -198,14 +198,14 @@ describe('AgentFooter', () => {
       expect(screen.queryByTestId('admin-settings')).not.toBeInTheDocument();
       expect(screen.queryByTestId('share-agent')).not.toBeInTheDocument();
       expect(screen.queryByTestId('duplicate-agent')).not.toBeInTheDocument();
-      expect(screen.queryByTestId('spinner')).not.toBeInTheDocument();
+      expect(document.querySelector('.spinner')).not.toBeInTheDocument();
     });
 
     test('handles loading states for createMutation', () => {
       const { unmount } = render(
         <AgentFooter {...defaultProps} createMutation={createBaseMutation(true)} />,
       );
-      expect(screen.getByTestId('spinner')).toBeInTheDocument();
+      expect(document.querySelector('.spinner')).toBeInTheDocument();
       expect(screen.queryByText('Save')).not.toBeInTheDocument();
       expect(screen.getByRole('button')).toBeDisabled();
       expect(screen.getByRole('button')).toHaveAttribute('aria-busy', 'true');
@@ -214,7 +214,7 @@ describe('AgentFooter', () => {
 
     test('handles loading states for updateMutation', () => {
       render(<AgentFooter {...defaultProps} updateMutation={createBaseMutation(true)} />);
-      expect(screen.getByTestId('spinner')).toBeInTheDocument();
+      expect(document.querySelector('.spinner')).toBeInTheDocument();
       expect(screen.queryByText('Save')).not.toBeInTheDocument();
     });
   });

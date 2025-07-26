@@ -1,13 +1,11 @@
 import React, { useState } from 'react';
 import { useForm, FormProvider } from 'react-hook-form';
+import { OGDialogTemplate, OGDialog, Dropdown, useToastContext } from '@librechat/client';
 import { EModelEndpoint, alternateName, isAssistantsEndpoint } from 'librechat-data-provider';
 import type { TDialogProps } from '~/common';
-import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
 import { useGetEndpointsQuery } from '~/data-provider';
-import { OGDialog, Dropdown } from '~/components/ui';
 import { RevokeKeysButton } from '~/components/Nav';
 import { useUserKey, useLocalize } from '~/hooks';
-import { useToastContext } from '~/Providers';
 import CustomConfig from './CustomEndpoint';
 import GoogleConfig from './GoogleConfig';
 import OpenAIConfig from './OpenAIConfig';
@@ -171,8 +169,8 @@ const SetKeyDialog = ({
               {expiryTime === 'never'
                 ? localize('com_endpoint_config_key_never_expires')
                 : `${localize('com_endpoint_config_key_encryption')} ${new Date(
-                  expiryTime ?? 0,
-                ).toLocaleString()}`}
+                    expiryTime ?? 0,
+                  ).toLocaleString()}`}
             </small>
             <Dropdown
               label="Expires "

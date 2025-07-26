@@ -1,7 +1,7 @@
 import React from 'react';
 import { useRecoilState } from 'recoil';
+import { Switch, Label } from '@librechat/client';
 import HoverCardSettings from '../HoverCardSettings';
-import { Switch, Label } from '~/components/ui';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
 
