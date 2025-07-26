@@ -30,6 +30,32 @@ function cleanTextForCSV(text) {
     .trim();
 }
 
+/**
+ * Convierte fecha a zona horaria America/Santiago
+ */
+function formatDateWithTimezone(date) {
+  if (!date) return '';
+  
+  const timezone = process.env.TZ || 'America/Santiago';
+  
+  try {
+    // Crear formato ISO compatible con CSV usando la zona horaria configurada
+    return new Date(date).toLocaleString('sv-SE', { 
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit', 
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    }).replace(' ', 'T') + '.000Z';
+  } catch (error) {
+    // Fallback a ISO si hay problemas
+    console.warn(`⚠️ Error convirtiendo fecha a ${timezone}, usando UTC:`, error.message);
+    return new Date(date).toISOString();
+  }
+}
+
 (async () => {
   await connect();
 
@@ -69,7 +95,8 @@ function cleanTextForCSV(text) {
     // Determinar archivo de salida
     if (!outputFile) {
       const timestamp = new Date().toISOString().slice(0, 10);
-      outputFile = `todas_conversaciones_${timestamp}.${format}`;
+      // ✅ Si no hay outputFile, usar 'chats.csv' para CSV o el nombre con timestamp para JSON
+      outputFile = format === 'csv' ? 'chats.csv' : `todas_conversaciones_${timestamp}.${format}`;
     }
 
     console.orange('📝 Generando exportación...');
@@ -77,7 +104,7 @@ function cleanTextForCSV(text) {
     if (format === 'json') {
       // Generar JSON
       const result = {
-        exportDate: new Date().toISOString(),
+        exportDate: formatDateWithTimezone(new Date()),
         totalUsers: users.length,
         totalConversations: conversations.length,
         totalMessages: messages.length,
@@ -107,15 +134,15 @@ function cleanTextForCSV(text) {
             sender: msg.sender || '',
             text: msg.text || extractTextFromContent(msg.content),
             isCreatedByUser: msg.isCreatedByUser || false,
-            createdAt: msg.createdAt,
+            createdAt: formatDateWithTimezone(msg.createdAt),
             parentMessageId: msg.parentMessageId || ''
           }));
 
         result.users[userEmail].conversations.push({
           conversationId: conv.conversationId,
           title: conv.title || 'Sin título',
-          createdAt: conv.createdAt,
-          updatedAt: conv.updatedAt,
+          createdAt: formatDateWithTimezone(conv.createdAt),
+          updatedAt: formatDateWithTimezone(conv.updatedAt),
           messageCount: convMessages.length,
           messages: convMessages
         });
@@ -124,8 +151,8 @@ function cleanTextForCSV(text) {
       fs.writeFileSync(outputFile, JSON.stringify(result, null, 2), 'utf8');
 
     } else {
-      // Generar CSV
-      const lines = ['userEmail,userName,conversationId,conversationTitle,sender,text,isCreatedByUser,error,unfinished,messageId,parentMessageId,createdAt'];
+      // Generar CSV - Solo las columnas requeridas
+      const lines = ['userEmail,userName,conversationId,conversationTitle,sender,text,isCreatedByUser,messageId,createdAt'];
       
       conversations.forEach(conv => {
         const user = userMap[conv.user];
@@ -145,11 +172,8 @@ function cleanTextForCSV(text) {
             msg.sender || '',
             `"${text}"`,
             msg.isCreatedByUser || false,
-            msg.error || false,
-            msg.unfinished || false,
             msg.messageId,
-            msg.parentMessageId || '',
-            msg.createdAt ? msg.createdAt.toISOString() : ''
+            formatDateWithTimezone(msg.createdAt)
           ];
           lines.push(row.join(','));
         });

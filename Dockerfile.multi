@@ -75,6 +75,11 @@ RUN chmod +x ./enviar-invitaciones.sh
 COPY ./send-invitaciones.sh ./send-invitaciones.sh
 RUN sed -i 's/\r$//' ./send-invitaciones.sh && chmod +x ./send-invitaciones.sh
 
+# ✅ Scripts para sincronización con Google Sheets
+COPY ./config/upload-to-sheets.js ./config/upload-to-sheets.js
+COPY ./scripts/sync-chats.sh ./scripts/sync-chats.sh
+RUN chmod +x ./scripts/sync-chats.sh
+
 WORKDIR /app/api
 EXPOSE 3080
 ENV HOST=0.0.0.0
