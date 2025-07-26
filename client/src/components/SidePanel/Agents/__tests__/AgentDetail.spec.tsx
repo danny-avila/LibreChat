@@ -178,12 +178,12 @@ describe('AgentDetail', () => {
       expect(screen.getByText('com_agents_no_description')).toBeInTheDocument();
     });
 
-    it('should render 3-dot menu button', () => {
+    it('should render copy link button', () => {
       renderWithProviders(<AgentDetail {...defaultProps} />);
 
-      const menuButton = screen.getByRole('button', { name: 'com_agents_more_options' });
-      expect(menuButton).toBeInTheDocument();
-      expect(menuButton).toHaveAttribute('aria-haspopup', 'menu');
+      const copyLinkButton = screen.getByRole('button', { name: 'com_agents_copy_link' });
+      expect(copyLinkButton).toBeInTheDocument();
+      expect(copyLinkButton).toHaveAttribute('aria-label', 'com_agents_copy_link');
     });
 
     it('should render Start Chat button', () => {
@@ -241,46 +241,11 @@ describe('AgentDetail', () => {
       expect(mockNavigate).not.toHaveBeenCalled();
     });
 
-    it('should open dropdown when 3-dot menu is clicked', async () => {
-      const user = userEvent.setup();
-      renderWithProviders(<AgentDetail {...defaultProps} />);
-
-      const menuButton = screen.getByRole('button', { name: 'com_agents_more_options' });
-      await user.click(menuButton);
-
-      expect(screen.getByRole('button', { name: 'com_agents_copy_link' })).toBeInTheDocument();
-    });
-
-    it('should close dropdown when clicking outside', async () => {
-      const user = userEvent.setup();
-      renderWithProviders(<AgentDetail {...defaultProps} />);
-
-      // Open dropdown
-      const menuButton = screen.getByRole('button', { name: 'com_agents_more_options' });
-      await user.click(menuButton);
-
-      expect(screen.getByRole('button', { name: 'com_agents_copy_link' })).toBeInTheDocument();
-
-      // Click outside (on the agent name)
-      const agentName = screen.getByText('Test Agent');
-      await user.click(agentName);
-
-      await waitFor(() => {
-        expect(
-          screen.queryByRole('button', { name: 'com_agents_copy_link' }),
-        ).not.toBeInTheDocument();
-      });
-    });
-
     it('should copy link and show success toast when Copy Link is clicked', async () => {
       const user = userEvent.setup();
       renderWithProviders(<AgentDetail {...defaultProps} />);
 
-      // Open dropdown
-      const menuButton = screen.getByRole('button', { name: 'com_agents_more_options' });
-      await user.click(menuButton);
-
-      // Click copy link
+      // Click copy link button directly (no dropdown needed)
       const copyLinkButton = screen.getByRole('button', { name: 'com_agents_copy_link' });
       await user.click(copyLinkButton);
 
@@ -296,13 +261,6 @@ describe('AgentDetail', () => {
           message: 'com_agents_link_copied',
         });
       });
-
-      // Dropdown should close
-      await waitFor(() => {
-        expect(
-          screen.queryByRole('button', { name: 'com_agents_copy_link' }),
-        ).not.toBeInTheDocument();
-      });
     });
 
     it('should show error toast when clipboard write fails', async () => {
@@ -311,10 +269,7 @@ describe('AgentDetail', () => {
 
       renderWithProviders(<AgentDetail {...defaultProps} />);
 
-      // Open dropdown and click copy link
-      const menuButton = screen.getByRole('button', { name: 'com_agents_more_options' });
-      await user.click(menuButton);
-
+      // Click copy link button directly
       const copyLinkButton = screen.getByRole('button', { name: 'com_agents_copy_link' });
       await user.click(copyLinkButton);
 
@@ -345,33 +300,32 @@ describe('AgentDetail', () => {
     it('should have proper ARIA attributes', () => {
       renderWithProviders(<AgentDetail {...defaultProps} />);
 
-      const menuButton = screen.getByRole('button', { name: 'com_agents_more_options' });
-      expect(menuButton).toHaveAttribute('aria-haspopup', 'menu');
-      expect(menuButton).toHaveAttribute('aria-label', 'com_agents_more_options');
+      const copyLinkButton = screen.getByRole('button', { name: 'com_agents_copy_link' });
+      expect(copyLinkButton).toHaveAttribute('aria-label', 'com_agents_copy_link');
     });
 
-    it('should support keyboard navigation for dropdown', async () => {
+    it('should support keyboard navigation', async () => {
       const user = userEvent.setup();
       renderWithProviders(<AgentDetail {...defaultProps} />);
 
-      const menuButton = screen.getByRole('button', { name: 'com_agents_more_options' });
+      const copyLinkButton = screen.getByRole('button', { name: 'com_agents_copy_link' });
 
-      // Focus and open with Enter key
-      menuButton.focus();
+      // Focus and activate with Enter key
+      copyLinkButton.focus();
       await user.keyboard('{Enter}');
 
-      expect(screen.getByRole('button', { name: 'com_agents_copy_link' })).toBeInTheDocument();
+      await waitFor(() => {
+        expect(mockWriteText).toHaveBeenCalledWith(
+          `${window.location.origin}/c/new?agent_id=test-agent-id`,
+        );
+      });
     });
 
     it('should have proper focus management', async () => {
-      const user = userEvent.setup();
       renderWithProviders(<AgentDetail {...defaultProps} />);
 
-      const menuButton = screen.getByRole('button', { name: 'com_agents_more_options' });
-      await user.click(menuButton);
-
       const copyLinkButton = screen.getByRole('button', { name: 'com_agents_copy_link' });
-      expect(copyLinkButton).toHaveClass('focus:bg-surface-hover', 'focus:outline-none');
+      expect(copyLinkButton).toHaveClass('focus:outline-none', 'focus:ring-2');
     });
   });
 
