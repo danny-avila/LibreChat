@@ -28,6 +28,8 @@ const {
   revertAgentVersion,
 } = require('./Agent');
 const { getCachedTools } = require('~/server/services/Config');
+const permissionService = require('~/server/services/PermissionService');
+const { AclEntry } = require('~/db/models');
 
 /**
  * @type {import('mongoose').Model<import('@librechat/data-schemas').IAgent>}
@@ -407,12 +409,26 @@ describe('models/Agent', () => {
 
   describe('Agent CRUD Operations', () => {
     let mongoServer;
+    let AccessRole;
 
     beforeAll(async () => {
       mongoServer = await MongoMemoryServer.create();
       const mongoUri = mongoServer.getUri();
       Agent = mongoose.models.Agent || mongoose.model('Agent', agentSchema);
       await mongoose.connect(mongoUri);
+
+      // Initialize models
+      const dbModels = require('~/db/models');
+      AccessRole = dbModels.AccessRole;
+
+      // Create necessary access roles for agents
+      await AccessRole.create({
+        accessRoleId: 'agent_owner',
+        name: 'Owner',
+        description: 'Full control over agents',
+        resourceType: 'agent',
+        permBits: 15, // VIEW | EDIT | DELETE | SHARE
+      });
     }, 20000);
 
     afterAll(async () => {
@@ -466,6 +482,51 @@ describe('models/Agent', () => {
 
       const agentAfterDelete = await getAgent({ id: agentId });
       expect(agentAfterDelete).toBeNull();
+    });
+
+    test('should remove ACL entries when deleting an agent', async () => {
+      const agentId = `agent_${uuidv4()}`;
+      const authorId = new mongoose.Types.ObjectId();
+
+      // Create agent
+      const agent = await createAgent({
+        id: agentId,
+        name: 'Agent With Permissions',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+      });
+
+      // Grant permissions (simulating sharing)
+      await permissionService.grantPermission({
+        principalType: 'user',
+        principalId: authorId,
+        resourceType: 'agent',
+        resourceId: agent._id,
+        accessRoleId: 'agent_owner',
+        grantedBy: authorId,
+      });
+
+      // Verify ACL entry exists
+      const aclEntriesBefore = await AclEntry.find({
+        resourceType: 'agent',
+        resourceId: agent._id,
+      });
+      expect(aclEntriesBefore).toHaveLength(1);
+
+      // Delete the agent
+      await deleteAgent({ id: agentId });
+
+      // Verify agent is deleted
+      const agentAfterDelete = await getAgent({ id: agentId });
+      expect(agentAfterDelete).toBeNull();
+
+      // Verify ACL entries are removed
+      const aclEntriesAfter = await AclEntry.find({
+        resourceType: 'agent',
+        resourceId: agent._id,
+      });
+      expect(aclEntriesAfter).toHaveLength(0);
     });
 
     test('should list agents by author', async () => {

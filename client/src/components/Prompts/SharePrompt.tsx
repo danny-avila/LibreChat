@@ -1,90 +1,57 @@
-import React, { useEffect, useMemo } from 'react';
+import React from 'react';
 import { Share2Icon } from 'lucide-react';
-import { useForm, Controller } from 'react-hook-form';
-import { Permissions } from 'librechat-data-provider';
 import {
-  Button,
-  Switch,
-  OGDialog,
-  OGDialogTitle,
-  OGDialogClose,
-  OGDialogContent,
-  OGDialogTrigger,
-  useToastContext,
-} from '@librechat/client';
-import type {
-  TPromptGroup,
-  TStartupConfig,
-  TUpdatePromptGroupPayload,
+  SystemRoles,
+  Permissions,
+  PermissionTypes,
+  PERMISSION_BITS,
 } from 'librechat-data-provider';
-import { useUpdatePromptGroup, useGetStartupConfig } from '~/data-provider';
-import { useLocalize } from '~/hooks';
+import { Button } from '@librechat/client';
+import type { TPromptGroup } from 'librechat-data-provider';
+import { useAuthContext, useHasAccess, useResourcePermissions } from '~/hooks';
+import { GenericGrantAccessDialog } from '~/components/Sharing';
 
-type FormValues = {
-  [Permissions.SHARED_GLOBAL]: boolean;
-};
+const SharePrompt = React.memo(
+  ({ group, disabled }: { group?: TPromptGroup; disabled: boolean }) => {
+    const { user } = useAuthContext();
 
-const SharePrompt = ({ group, disabled }: { group?: TPromptGroup; disabled: boolean }) => {
-  const localize = useLocalize();
-  const { showToast } = useToastContext();
-  const updateGroup = useUpdatePromptGroup();
-  const { data: startupConfig = {} as TStartupConfig, isFetching } = useGetStartupConfig();
-  const { instanceProjectId } = startupConfig;
-  const groupIsGlobal = useMemo(
-    () => ((group?.projectIds ?? []) as string[]).includes(instanceProjectId as string),
-    [group, instanceProjectId],
-  );
-
-  const {
-    control,
-    setValue,
-    handleSubmit,
-    formState: { isSubmitting },
-  } = useForm<FormValues>({
-    mode: 'onChange',
-    defaultValues: {
-      [Permissions.SHARED_GLOBAL]: groupIsGlobal,
-    },
-  });
-
-  useEffect(() => {
-    setValue(Permissions.SHARED_GLOBAL, groupIsGlobal);
-  }, [groupIsGlobal, setValue]);
-
-  if (group == null || !instanceProjectId) {
-    return null;
-  }
-
-  const onSubmit = (data: FormValues) => {
-    const groupId = group._id ?? '';
-    if (groupId === '' || !instanceProjectId) {
-      return;
-    }
-
-    if (data[Permissions.SHARED_GLOBAL] === true && groupIsGlobal) {
-      showToast({
-        message: localize('com_ui_prompt_already_shared_to_all'),
-        status: 'info',
-      });
-      return;
-    }
-
-    const payload = {} as TUpdatePromptGroupPayload;
-    if (data[Permissions.SHARED_GLOBAL] === true) {
-      payload.projectIds = [startupConfig.instanceProjectId];
-    } else {
-      payload.removeProjectIds = [startupConfig.instanceProjectId];
-    }
-
-    updateGroup.mutate({
-      id: groupId,
-      payload,
+    // Check if user has permission to share prompts globally
+    const hasAccessToSharePrompts = useHasAccess({
+      permissionType: PermissionTypes.PROMPTS,
+      permission: Permissions.SHARED_GLOBAL,
     });
-  };
 
-  return (
-    <OGDialog>
-      <OGDialogTrigger asChild>
+    // Check user's permissions on this specific promptGroup
+    // The query will be disabled if groupId is empty
+    const groupId = group?._id || '';
+    const { hasPermission, isLoading: permissionsLoading } = useResourcePermissions(
+      'promptGroup',
+      groupId,
+    );
+
+    // Early return if no group
+    if (!group || !groupId) {
+      return null;
+    }
+
+    const canShareThisPrompt = hasPermission(PERMISSION_BITS.SHARE);
+
+    const shouldShowShareButton =
+      (group.author === user?.id || user?.role === SystemRoles.ADMIN || canShareThisPrompt) &&
+      hasAccessToSharePrompts &&
+      !permissionsLoading;
+
+    if (!shouldShowShareButton) {
+      return null;
+    }
+
+    return (
+      <GenericGrantAccessDialog
+        resourceDbId={groupId}
+        resourceName={group.name}
+        resourceType="promptGroup"
+        disabled={disabled}
+      >
         <Button
           variant="default"
           size="sm"
@@ -94,50 +61,11 @@ const SharePrompt = ({ group, disabled }: { group?: TPromptGroup; disabled: bool
         >
           <Share2Icon className="size-5 cursor-pointer text-white" />
         </Button>
-      </OGDialogTrigger>
-      <OGDialogContent className="w-11/12 max-w-lg" role="dialog" aria-labelledby="dialog-title">
-        <OGDialogTitle id="dialog-title" className="truncate pr-2" title={group.name}>
-          {localize('com_ui_share_var', { 0: `"${group.name}"` })}
-        </OGDialogTitle>
-        <form className="p-2" onSubmit={handleSubmit(onSubmit)} aria-describedby="form-description">
-          <div id="form-description" className="sr-only">
-            {localize('com_ui_share_form_description')}
-          </div>
-          <div className="mb-4 flex items-center justify-between gap-2 py-4">
-            <div className="flex items-center" id="share-to-all-users">
-              {localize('com_ui_share_to_all_users')}
-            </div>
-            <Controller
-              name={Permissions.SHARED_GLOBAL}
-              control={control}
-              disabled={isFetching === true || updateGroup.isLoading || !instanceProjectId}
-              render={({ field }) => (
-                <Switch
-                  {...field}
-                  checked={field.value}
-                  onCheckedChange={field.onChange}
-                  value={field.value.toString()}
-                  aria-labelledby="share-to-all-users"
-                />
-              )}
-            />
-          </div>
-          <div className="flex justify-end">
-            <OGDialogClose asChild>
-              <Button
-                type="submit"
-                disabled={isSubmitting || isFetching}
-                variant="submit"
-                aria-label={localize('com_ui_save')}
-              >
-                {localize('com_ui_save')}
-              </Button>
-            </OGDialogClose>
-          </div>
-        </form>
-      </OGDialogContent>
-    </OGDialog>
-  );
-};
+      </GenericGrantAccessDialog>
+    );
+  },
+);
+
+SharePrompt.displayName = 'SharePrompt';
 
 export default SharePrompt;

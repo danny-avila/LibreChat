@@ -46,11 +46,35 @@ router.get('/:resourceType/:resourceId', getResourcePermissions);
  */
 router.put(
   '/:resourceType/:resourceId',
-  canAccessResource({
-    resourceType: 'agent',
-    requiredPermission: PermissionBits.SHARE,
-    resourceIdParam: 'resourceId',
-  }),
+  // Use middleware that dynamically handles resource type and permissions
+  (req, res, next) => {
+    const { resourceType } = req.params;
+
+    // Define resource-specific middleware based on resourceType
+    let middleware;
+
+    if (resourceType === 'agent') {
+      middleware = canAccessResource({
+        resourceType: 'agent',
+        requiredPermission: PermissionBits.SHARE,
+        resourceIdParam: 'resourceId',
+      });
+    } else if (resourceType === 'promptGroup') {
+      middleware = canAccessResource({
+        resourceType: 'promptGroup',
+        requiredPermission: PermissionBits.SHARE,
+        resourceIdParam: 'resourceId',
+      });
+    } else {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: `Unsupported resource type: ${resourceType}`,
+      });
+    }
+
+    // Execute the middleware
+    middleware(req, res, next);
+  },
   updateResourcePermissions,
 );
 

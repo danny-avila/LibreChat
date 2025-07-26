@@ -7,8 +7,9 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from '@librechat/client';
+import { PERMISSION_BITS } from 'librechat-data-provider';
 import type { TPromptGroup } from 'librechat-data-provider';
-import { useLocalize, useSubmitMessage, useCustomLink, useAuthContext } from '~/hooks';
+import { useLocalize, useSubmitMessage, useCustomLink, useResourcePermissions } from '~/hooks';
 import VariableDialog from '~/components/Prompts/Groups/VariableDialog';
 import PreviewPrompt from '~/components/Prompts/PreviewPrompt';
 import ListCard from '~/components/Prompts/Groups/ListCard';
@@ -22,7 +23,6 @@ function ChatGroupItem({
   instanceProjectId?: string;
 }) {
   const localize = useLocalize();
-  const { user } = useAuthContext();
   const { submitPrompt } = useSubmitMessage();
   const [isPreviewDialogOpen, setPreviewDialogOpen] = useState(false);
   const [isVariableDialogOpen, setVariableDialogOpen] = useState(false);
@@ -32,7 +32,10 @@ function ChatGroupItem({
     () => instanceProjectId != null && group.projectIds?.includes(instanceProjectId),
     [group, instanceProjectId],
   );
-  const isOwner = useMemo(() => user?.id === group.author, [user, group]);
+
+  // Check permissions for the promptGroup
+  const { hasPermission } = useResourcePermissions('promptGroup', group._id || '');
+  const canEdit = hasPermission(PERMISSION_BITS.EDIT);
 
   const onCardClick: React.MouseEventHandler<HTMLButtonElement> = () => {
     const text = group.productionPrompt?.prompt;
@@ -108,10 +111,10 @@ function ChatGroupItem({
                 <TextSearch className="mr-2 h-4 w-4" aria-hidden="true" />
                 <span>{localize('com_ui_preview')}</span>
               </DropdownMenuItem>
-              {isOwner && (
+              {canEdit && (
                 <DropdownMenuGroup>
                   <DropdownMenuItem
-                    disabled={!isOwner}
+                    disabled={!canEdit}
                     className="cursor-pointer rounded-lg text-text-secondary hover:bg-surface-hover focus:bg-surface-hover disabled:cursor-not-allowed"
                     onClick={(e) => {
                       e.stopPropagation();

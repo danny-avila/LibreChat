@@ -145,21 +145,42 @@ jest.mock('../AdminSettings', () => ({
 
 jest.mock('../DeleteButton', () => ({
   __esModule: true,
-  default: jest.fn(() => <div data-testid="delete-button" />),
-}));
-
-jest.mock('../Sharing/GrantAccessDialog', () => ({
-  __esModule: true,
-  default: jest.fn(() => <div data-testid="grant-access-dialog" />),
+  default: ({ agent_id }: { agent_id: string }) => (
+    <button data-testid="delete-button" data-agent-id={agent_id} title="Delete Agent" />
+  ),
 }));
 
 jest.mock('../DuplicateAgent', () => ({
   __esModule: true,
-  default: jest.fn(() => <div data-testid="duplicate-agent" />),
+  default: ({ agent_id }: { agent_id: string }) => (
+    <button data-testid="duplicate-button" data-agent-id={agent_id} title="Duplicate Agent" />
+  ),
 }));
 
 jest.mock('~/components', () => ({
   Spinner: () => <div data-testid="spinner" />,
+}));
+
+jest.mock('~/components/Sharing', () => ({
+  GenericGrantAccessDialog: ({
+    resourceDbId,
+    resourceId,
+    resourceName,
+    resourceType,
+  }: {
+    resourceDbId: string;
+    resourceId: string;
+    resourceName: string;
+    resourceType: string;
+  }) => (
+    <div
+      data-testid="grant-access-dialog"
+      data-resource-db-id={resourceDbId}
+      data-resource-id={resourceId}
+      data-resource-name={resourceName}
+      data-resource-type={resourceType}
+    />
+  ),
 }));
 
 describe('AgentFooter', () => {

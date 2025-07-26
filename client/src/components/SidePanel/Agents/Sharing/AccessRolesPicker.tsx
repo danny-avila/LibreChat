@@ -6,13 +6,13 @@ import { ACCESS_ROLE_IDS } from 'librechat-data-provider';
 import { useGetAccessRolesQuery } from 'librechat-data-provider/react-query';
 import type { AccessRole } from 'librechat-data-provider';
 import type * as t from '~/common';
+import { cn, getRoleLocalizationKeys } from '~/utils';
 import { useLocalize } from '~/hooks';
-import { cn } from '~/utils';
 
 interface AccessRolesPickerProps {
   resourceType?: string;
-  selectedRoleId?: string;
-  onRoleChange: (roleId: string) => void;
+  selectedRoleId?: ACCESS_ROLE_IDS;
+  onRoleChange: (roleId: ACCESS_ROLE_IDS) => void;
   className?: string;
 }
 
@@ -24,42 +24,17 @@ export default function AccessRolesPicker({
 }: AccessRolesPickerProps) {
   const localize = useLocalize();
   const [isOpen, setIsOpen] = React.useState(false);
-
-  // Fetch access roles from API
   const { data: accessRoles, isLoading: rolesLoading } = useGetAccessRolesQuery(resourceType);
 
-  // Helper function to get localized role name and description
-  const getLocalizedRoleInfo = (roleId: string) => {
-    switch (roleId) {
-      case 'agent_viewer':
-        return {
-          name: localize('com_ui_role_viewer'),
-          description: localize('com_ui_role_viewer_desc'),
-        };
-      case 'agent_editor':
-        return {
-          name: localize('com_ui_role_editor'),
-          description: localize('com_ui_role_editor_desc'),
-        };
-      case 'agent_manager':
-        return {
-          name: localize('com_ui_role_manager'),
-          description: localize('com_ui_role_manager_desc'),
-        };
-      case 'agent_owner':
-        return {
-          name: localize('com_ui_role_owner'),
-          description: localize('com_ui_role_owner_desc'),
-        };
-      default:
-        return {
-          name: localize('com_ui_unknown'),
-          description: localize('com_ui_unknown'),
-        };
-    }
+  /** Helper function to get localized role name and description */
+  const getLocalizedRoleInfo = (roleId: ACCESS_ROLE_IDS) => {
+    const keys = getRoleLocalizationKeys(roleId);
+    return {
+      name: localize(keys.name),
+      description: localize(keys.description),
+    };
   };
 
-  // Find the currently selected role
   const selectedRole = accessRoles?.find((role) => role.accessRoleId === selectedRoleId);
   const selectedRoleInfo = selectedRole ? getLocalizedRoleInfo(selectedRole.accessRoleId) : null;
 
