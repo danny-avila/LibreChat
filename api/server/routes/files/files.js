@@ -6,6 +6,7 @@ const {
   isUUID,
   CacheKeys,
   FileSources,
+  PERMISSION_BITS,
   EModelEndpoint,
   isAgentsEndpoint,
   checkOpenAIStorage,
@@ -18,8 +19,10 @@ const {
 } = require('~/server/services/Files/process');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
+const { checkPermission } = require('~/server/services/PermissionService');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { refreshS3FileUrls } = require('~/server/services/Files/S3/crud');
+const { hasAccessToFilesViaAgent } = require('~/server/services/Files');
 const { getFiles, batchUpdateFiles } = require('~/models/File');
 const { getAssistant } = require('~/models/Assistant');
 const { getAgent } = require('~/models/Agent');
@@ -49,6 +52,61 @@ router.get('/', async (req, res) => {
   } catch (error) {
     logger.error('[/files] Error getting files:', error);
     res.status(400).json({ message: 'Error in request', error: error.message });
+  }
+});
+
+/**
+ * Get files specific to an agent
+ * @route GET /files/agent/:agent_id
+ * @param {string} agent_id - The agent ID to get files for
+ * @returns {Promise<TFile[]>} Array of files attached to the agent
+ */
+router.get('/agent/:agent_id', async (req, res) => {
+  try {
+    const { agent_id } = req.params;
+    const userId = req.user.id;
+
+    if (!agent_id) {
+      return res.status(400).json({ error: 'Agent ID is required' });
+    }
+
+    const agent = await getAgent({ id: agent_id });
+    if (!agent) {
+      return res.status(200).json([]);
+    }
+
+    if (agent.author.toString() !== userId) {
+      const hasEditPermission = await checkPermission({
+        userId,
+        resourceType: 'agent',
+        resourceId: agent._id,
+        requiredPermission: PERMISSION_BITS.EDIT,
+      });
+
+      if (!hasEditPermission) {
+        return res.status(200).json([]);
+      }
+    }
+
+    const agentFileIds = [];
+    if (agent.tool_resources) {
+      for (const [, resource] of Object.entries(agent.tool_resources)) {
+        if (resource?.file_ids && Array.isArray(resource.file_ids)) {
+          agentFileIds.push(...resource.file_ids);
+        }
+      }
+    }
+
+    if (agentFileIds.length === 0) {
+      return res.status(200).json([]);
+    }
+
+    const files = await getFiles({ file_id: { $in: agentFileIds } }, null, { text: 0 });
+
+    res.status(200).json(files);
+  } catch (error) {
+    logger.error('[/files/agent/:agent_id] Error fetching agent files:', error);
+    res.status(500).json({ error: 'Failed to fetch agent files' });
   }
 });
 
@@ -88,11 +146,55 @@ router.delete('/', async (req, res) => {
 
     const fileIds = files.map((file) => file.file_id);
     const dbFiles = await getFiles({ file_id: { $in: fileIds } });
-    const unauthorizedFiles = dbFiles.filter((file) => file.user.toString() !== req.user.id);
+
+    const ownedFiles = [];
+    const nonOwnedFiles = [];
+
+    for (const file of dbFiles) {
+      if (file.user.toString() === req.user.id) {
+        ownedFiles.push(file);
+      } else {
+        nonOwnedFiles.push(file);
+      }
+    }
+
+    if (nonOwnedFiles.length === 0) {
+      await processDeleteRequest({ req, files: ownedFiles });
+      logger.debug(
+        `[/files] Files deleted successfully: ${ownedFiles
+          .filter((f) => f.file_id)
+          .map((f) => f.file_id)
+          .join(', ')}`,
+      );
+      res.status(200).json({ message: 'Files deleted successfully' });
+      return;
+    }
+
+    let authorizedFiles = [...ownedFiles];
+    let unauthorizedFiles = [];
+
+    if (req.body.agent_id && nonOwnedFiles.length > 0) {
+      const nonOwnedFileIds = nonOwnedFiles.map((f) => f.file_id);
+      const accessMap = await hasAccessToFilesViaAgent(
+        req.user.id,
+        nonOwnedFileIds,
+        req.body.agent_id,
+      );
+
+      for (const file of nonOwnedFiles) {
+        if (accessMap.get(file.file_id)) {
+          authorizedFiles.push(file);
+        } else {
+          unauthorizedFiles.push(file);
+        }
+      }
+    } else {
+      unauthorizedFiles = nonOwnedFiles;
+    }
 
     if (unauthorizedFiles.length > 0) {
       return res.status(403).json({
-        message: 'You can only delete your own files',
+        message: 'You can only delete files you have access to',
         unauthorizedFiles: unauthorizedFiles.map((f) => f.file_id),
       });
     }
@@ -133,10 +235,10 @@ router.delete('/', async (req, res) => {
         .json({ message: 'File associations removed successfully from Azure Assistant' });
     }
 
-    await processDeleteRequest({ req, files: dbFiles });
+    await processDeleteRequest({ req, files: authorizedFiles });
 
     logger.debug(
-      `[/files] Files deleted successfully: ${files
+      `[/files] Files deleted successfully: ${authorizedFiles
         .filter((f) => f.file_id)
         .map((f) => f.file_id)
         .join(', ')}`,
