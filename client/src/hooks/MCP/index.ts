@@ -1,1 +1,1 @@
-export { useMCPServerInitialization } from './useMCPServerInitialization';
+export { useMCPServerManager } from './useMCPServerManager';

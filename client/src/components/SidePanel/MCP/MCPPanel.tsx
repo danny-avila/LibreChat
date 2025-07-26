@@ -7,13 +7,14 @@ import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-quer
 import ServerInitializationSection from '~/components/ui/MCP/ServerInitializationSection';
 import CustomUserVarsSection from '~/components/ui/MCP/CustomUserVarsSection';
 import { useMCPConnectionStatusQuery } from '~/data-provider/Tools/queries';
+import BadgeRowProvider from '~/Providers/BadgeRowContext';
 import { useGetStartupConfig } from '~/data-provider';
 import MCPPanelSkeleton from './MCPPanelSkeleton';
 import { useToastContext } from '~/Providers';
 import { Button } from '~/components/ui';
 import { useLocalize } from '~/hooks';
 
-export default function MCPPanel() {
+function MCPPanelContent() {
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const queryClient = useQueryClient();
@@ -205,4 +206,12 @@ export default function MCPPanel() {
       </div>
     );
   }
+}
+
+export default function MCPPanel() {
+  return (
+    <BadgeRowProvider>
+      <MCPPanelContent />
+    </BadgeRowProvider>
+  );
 }
