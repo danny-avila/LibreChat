@@ -25,7 +25,7 @@ const aclEntrySchema = new Schema<IAclEntry>(
     },
     resourceType: {
       type: String,
-      enum: ['agent', 'project', 'file'],
+      enum: ['agent', 'project', 'file', 'prompt', 'promptGroup'],
       required: true,
     },
     resourceId: {

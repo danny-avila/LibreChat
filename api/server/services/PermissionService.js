@@ -706,6 +706,31 @@ const bulkUpdateResourcePermissions = async ({
   }
 };
 
+/**
+ * Remove all permissions for a specific resource
+ * @param {Object} params - Parameters for removing permissions
+ * @param {string} params.resourceType - Type of resource (e.g., 'agent', 'prompt')
+ * @param {string|mongoose.Types.ObjectId} params.resourceId - The ID of the resource
+ * @returns {Promise<Object>} Delete result
+ */
+const removeAllPermissions = async ({ resourceType, resourceId }) => {
+  try {
+    if (!resourceId || !mongoose.Types.ObjectId.isValid(resourceId)) {
+      throw new Error(`Invalid resource ID: ${resourceId}`);
+    }
+
+    const result = await AclEntry.deleteMany({
+      resourceType,
+      resourceId,
+    });
+
+    return result;
+  } catch (error) {
+    logger.error(`[PermissionService.removeAllPermissions] Error: ${error.message}`);
+    throw error;
+  }
+};
+
 module.exports = {
   grantPermission,
   checkPermission,
@@ -718,4 +743,5 @@ module.exports = {
   ensurePrincipalExists,
   ensureGroupPrincipalExists,
   syncUserEntraGroupMemberships,
+  removeAllPermissions,
 };

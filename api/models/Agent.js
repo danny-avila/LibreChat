@@ -4,7 +4,6 @@ const { logger } = require('@librechat/data-schemas');
 const { SystemRoles, Tools, actionDelimiter } = require('librechat-data-provider');
 const { GLOBAL_PROJECT_NAME, EPHEMERAL_AGENT_ID, mcp_delimiter } =
   require('librechat-data-provider').Constants;
-// Default category value for new agents
 const {
   getProjectByName,
   addAgentIdsToProject,
@@ -12,11 +11,13 @@ const {
   removeAgentFromAllProjects,
 } = require('./Project');
 const { getCachedTools } = require('~/server/services/Config');
-
-// Category values are now imported from shared constants
-// Schema fields (category, support_contact, is_promoted) are defined in @librechat/data-schemas
-const { getActions } = require('./Action');
+const { removeAllPermissions } = require('~/server/services/PermissionService');
 const { Agent } = require('~/db/models');
+
+/**
+ * Category values are now imported from shared constants
+ */
+const { getActions } = require('./Action');
 
 /**
  * Create an agent with the provided data.
@@ -516,6 +517,10 @@ const deleteAgent = async (searchParameter) => {
   const agent = await Agent.findOneAndDelete(searchParameter);
   if (agent) {
     await removeAgentFromAllProjects(agent.id);
+    await removeAllPermissions({
+      resourceType: 'agent',
+      resourceId: agent._id,
+    });
   }
   return agent;
 };

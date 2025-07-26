@@ -727,6 +727,13 @@ export function createPrompt(payload: t.TCreatePrompt): Promise<t.TCreatePromptR
   return request.post(endpoints.postPrompt(), payload);
 }
 
+export function addPromptToGroup(
+  groupId: string,
+  payload: t.TCreatePrompt,
+): Promise<t.TCreatePromptResponse> {
+  return request.post(endpoints.addPromptToGroup(groupId), payload);
+}
+
 export function updatePromptGroup(
   variables: t.TUpdatePromptGroupVariables,
 ): Promise<t.TUpdatePromptGroupResponse> {

@@ -76,7 +76,10 @@
     "flush-cache": "node config/flush-cache.js",
     "migrate:agent-permissions:dry-run": "node config/migrate-agent-permissions.js --dry-run",
     "migrate:agent-permissions": "node config/migrate-agent-permissions.js",
-    "migrate:agent-permissions:batch": "node config/migrate-agent-permissions.js --batch-size=50"
+    "migrate:agent-permissions:batch": "node config/migrate-agent-permissions.js --batch-size=50",
+    "migrate:prompt-permissions:dry-run": "node config/migrate-prompt-permissions.js --dry-run",
+    "migrate:prompt-permissions": "node config/migrate-prompt-permissions.js",
+    "migrate:prompt-permissions:batch": "node config/migrate-prompt-permissions.js --batch-size=50"
   },
   "repository": {
     "type": "git",
