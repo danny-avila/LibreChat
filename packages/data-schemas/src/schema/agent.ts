@@ -36,6 +36,9 @@ const agentSchema = new Schema<IAgent>(
     artifacts: {
       type: String,
     },
+    charts: {
+      type: String,
+    },
     access_level: {
       type: Number,
     },
