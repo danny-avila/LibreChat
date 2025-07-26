@@ -12,8 +12,6 @@ import {
   DropdownPopup,
   AttachmentIcon,
   CircleHelpIcon,
-  AttachmentIcon,
-  CircleHelpIcon,
   SharePointIcon,
   HoverCardPortal,
   HoverCardContent,

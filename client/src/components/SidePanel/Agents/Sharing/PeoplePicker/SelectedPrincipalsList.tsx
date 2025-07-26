@@ -2,7 +2,8 @@ import React, { useState, useId } from 'react';
 import * as Menu from '@ariakit/react/menu';
 import { Button, DropdownPopup } from '@librechat/client';
 import { Users, X, ExternalLink, ChevronDown } from 'lucide-react';
-import type { TPrincipal, TAccessRole } from 'librechat-data-provider';
+import type { TPrincipal, TAccessRole, ACCESS_ROLE_IDS } from 'librechat-data-provider';
+import { getRoleLocalizationKeys } from '~/utils';
 import PrincipalAvatar from '../PrincipalAvatar';
 import { useLocalize } from '~/hooks';
 
@@ -97,8 +98,8 @@ export default function SelectedPrincipalsList({
 }
 
 interface RoleSelectorProps {
-  currentRole: string;
-  onRoleChange: (newRole: string) => void;
+  currentRole: ACCESS_ROLE_IDS;
+  onRoleChange: (newRole: ACCESS_ROLE_IDS) => void;
   availableRoles: Omit<TAccessRole, 'resourceType'>[];
 }
 
@@ -107,19 +108,9 @@ function RoleSelector({ currentRole, onRoleChange, availableRoles }: RoleSelecto
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const localize = useLocalize();
 
-  const getLocalizedRoleName = (roleId: string) => {
-    switch (roleId) {
-      case 'agent_viewer':
-        return localize('com_ui_role_viewer');
-      case 'agent_editor':
-        return localize('com_ui_role_editor');
-      case 'agent_manager':
-        return localize('com_ui_role_manager');
-      case 'agent_owner':
-        return localize('com_ui_role_owner');
-      default:
-        return localize('com_ui_unknown');
-    }
+  const getLocalizedRoleName = (roleId: ACCESS_ROLE_IDS) => {
+    const keys = getRoleLocalizationKeys(roleId);
+    return localize(keys.name);
   };
 
   return (
@@ -139,7 +130,6 @@ function RoleSelector({ currentRole, onRoleChange, availableRoles }: RoleSelecto
       items={availableRoles?.map((role) => ({
         id: role.accessRoleId,
         label: getLocalizedRoleName(role.accessRoleId),
-
         onClick: () => onRoleChange(role.accessRoleId),
       }))}
       menuId={menuId}
