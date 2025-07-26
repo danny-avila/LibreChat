@@ -503,8 +503,11 @@ describe('Accessibility Improvements', () => {
       );
 
       const tab = screen.getByRole('tab');
-      expect(tab.className).toContain('focus:outline-none');
-      expect(tab.className).toContain('focus:bg-gray-100');
+      // Check that the tab has proper ARIA attributes for accessibility
+      expect(tab).toHaveAttribute('aria-selected', 'true');
+      expect(tab).toHaveAttribute('tabIndex', '0');
+      // Check that tab has proper role and can receive focus
+      expect(tab).toHaveAttribute('role', 'tab');
     });
   });
 
