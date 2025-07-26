@@ -1,15 +1,15 @@
 import React from 'react';
 import { Loader2, KeyRound, PlugZap, AlertTriangle } from 'lucide-react';
-import { MCPServerStatus } from 'librechat-data-provider/dist/types/types/queries';
 import {
   OGDialog,
-  OGDialogContent,
-  OGDialogHeader,
   OGDialogTitle,
+  OGDialogHeader,
+  OGDialogContent,
   OGDialogDescription,
-} from '~/components/ui/OriginalDialog';
-import CustomUserVarsSection from './CustomUserVarsSection';
+} from '@librechat/client';
+import type { MCPServerStatus } from 'librechat-data-provider';
 import ServerInitializationSection from './ServerInitializationSection';
+import CustomUserVarsSection from './CustomUserVarsSection';
 import { useLocalize } from '~/hooks';
 
 export interface ConfigFieldDetail {

@@ -1,8 +1,7 @@
-import { RefreshCw, Link } from 'lucide-react';
 import React, { useState, useCallback } from 'react';
-import { useMCPServerInitialization } from '~/hooks/MCP/useMCPServerInitialization';
-import { Button } from '~/components/ui';
-import { useLocalize } from '~/hooks';
+import { Button } from '@librechat/client';
+import { RefreshCw, Link } from 'lucide-react';
+import { useLocalize, useMCPServerInitialization } from '~/hooks';
 
 interface ServerInitializationSectionProps {
   serverName: string;

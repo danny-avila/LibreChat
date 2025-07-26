@@ -8,6 +8,7 @@ export * from './Nav';
 export * from './Files';
 export * from './Generic';
 export * from './Input';
+export * from './MCP';
 export * from './Messages';
 export * from './Plugins';
 export * from './Prompts';
