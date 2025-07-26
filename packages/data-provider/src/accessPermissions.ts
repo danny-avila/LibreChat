@@ -38,11 +38,17 @@ export const PERMISSION_BITS = {
 /**
  * Standard access role IDs
  */
-export const ACCESS_ROLE_IDS = {
-  AGENT_VIEWER: 'agent_viewer',
-  AGENT_EDITOR: 'agent_editor',
-  AGENT_OWNER: 'agent_owner', // Future use
-} as const;
+export enum ACCESS_ROLE_IDS {
+  AGENT_VIEWER = 'agent_viewer',
+  AGENT_EDITOR = 'agent_editor',
+  AGENT_OWNER = 'agent_owner', // Future use
+  PROMPT_VIEWER = 'prompt_viewer',
+  PROMPT_EDITOR = 'prompt_editor',
+  PROMPT_OWNER = 'prompt_owner',
+  PROMPTGROUP_VIEWER = 'promptGroup_viewer',
+  PROMPTGROUP_EDITOR = 'promptGroup_editor',
+  PROMPTGROUP_OWNER = 'promptGroup_owner',
+}
 
 // ===== ZOD SCHEMAS =====
 
@@ -58,7 +64,7 @@ export const principalSchema = z.object({
   avatar: z.string().optional(), // for user and group types
   description: z.string().optional(), // for group type
   idOnTheSource: z.string().optional(), // Entra ID for users/groups
-  accessRoleId: z.string().optional(), // Access role ID for permissions
+  accessRoleId: z.nativeEnum(ACCESS_ROLE_IDS).optional(), // Access role ID for permissions
   memberCount: z.number().optional(), // for group type
 });
 
@@ -66,7 +72,7 @@ export const principalSchema = z.object({
  * Access role schema - defines named permission sets
  */
 export const accessRoleSchema = z.object({
-  accessRoleId: z.string(),
+  accessRoleId: z.nativeEnum(ACCESS_ROLE_IDS),
   name: z.string(),
   description: z.string().optional(),
   resourceType: z.string().default('agent'),

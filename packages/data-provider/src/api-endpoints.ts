@@ -148,6 +148,8 @@ export const config = () => '/api/config';
 
 export const prompts = () => '/api/prompts';
 
+export const addPromptToGroup = (groupId: string) => `/api/prompts/groups/${groupId}/prompts`;
+
 export const assistants = ({
   path = '',
   options,
