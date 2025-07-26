@@ -419,6 +419,7 @@ describe('loadDefaultInterface', () => {
         [Permissions.VIEW_USERS]: undefined,
       },
       [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: undefined },
+      [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: true },
     });
   });
 
@@ -450,6 +451,7 @@ describe('loadDefaultInterface', () => {
         [Permissions.VIEW_USERS]: undefined,
       },
       [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: true },
+      [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: undefined },
     });
   });
 
@@ -481,6 +483,7 @@ describe('loadDefaultInterface', () => {
         [Permissions.VIEW_USERS]: undefined,
       },
       [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: false },
+      [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: undefined },
     });
   });
 
@@ -517,7 +520,7 @@ describe('loadDefaultInterface', () => {
         [Permissions.VIEW_USERS]: undefined,
       },
       [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: true },
-      [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: true },
+      [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: undefined },
     });
   });
 
@@ -530,13 +533,22 @@ describe('loadDefaultInterface', () => {
     expect(updateAccessPermissions).toHaveBeenCalledWith(SystemRoles.USER, {
       [PermissionTypes.PROMPTS]: { [Permissions.USE]: undefined },
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: undefined },
-      [PermissionTypes.MEMORIES]: { [Permissions.USE]: undefined },
+      [PermissionTypes.MEMORIES]: {
+        [Permissions.USE]: undefined,
+        [Permissions.OPT_OUT]: undefined,
+      },
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: undefined },
       [PermissionTypes.AGENTS]: { [Permissions.USE]: undefined },
       [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: undefined },
       [PermissionTypes.RUN_CODE]: { [Permissions.USE]: undefined },
       [PermissionTypes.WEB_SEARCH]: { [Permissions.USE]: undefined },
       [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: true },
+      [PermissionTypes.MARKETPLACE]: { [Permissions.USE]: undefined },
+      [PermissionTypes.PEOPLE_PICKER]: {
+        [Permissions.VIEW_GROUPS]: undefined,
+        [Permissions.VIEW_USERS]: undefined,
+      },
+      [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: undefined },
     });
   });
 
@@ -549,13 +561,22 @@ describe('loadDefaultInterface', () => {
     expect(updateAccessPermissions).toHaveBeenCalledWith(SystemRoles.USER, {
       [PermissionTypes.PROMPTS]: { [Permissions.USE]: undefined },
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: undefined },
-      [PermissionTypes.MEMORIES]: { [Permissions.USE]: undefined },
+      [PermissionTypes.MEMORIES]: {
+        [Permissions.USE]: undefined,
+        [Permissions.OPT_OUT]: undefined,
+      },
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: undefined },
       [PermissionTypes.AGENTS]: { [Permissions.USE]: undefined },
       [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: undefined },
       [PermissionTypes.RUN_CODE]: { [Permissions.USE]: undefined },
       [PermissionTypes.WEB_SEARCH]: { [Permissions.USE]: undefined },
       [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: false },
+      [PermissionTypes.MARKETPLACE]: { [Permissions.USE]: undefined },
+      [PermissionTypes.PEOPLE_PICKER]: {
+        [Permissions.VIEW_GROUPS]: undefined,
+        [Permissions.VIEW_USERS]: undefined,
+      },
+      [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: undefined },
     });
   });
 });
