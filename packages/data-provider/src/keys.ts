@@ -50,6 +50,10 @@ export enum QueryKeys {
   banner = 'banner',
   /* Memories */
   memories = 'memories',
+  /* Conversation Costs */
+  conversationCost = 'conversationCost',
+  conversationCostDetail = 'conversationCostDetail',
+  multipleConversationCosts = 'multipleConversationCosts',
 }
 
 // Dynamic query keys that require parameters
