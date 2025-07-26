@@ -13,8 +13,9 @@ const ArtifactButton = ({ artifact }: { artifact: Artifact | null }) => {
   const location = useLocation();
   const setVisible = useSetRecoilState(store.artifactsVisibility);
   const [artifacts, setArtifacts] = useRecoilState(store.artifactsState);
-  const setCurrentArtifactId = useSetRecoilState(store.currentArtifactId);
+  const [currentArtifactId, setCurrentArtifactId] = useRecoilState(store.currentArtifactId);
   const resetCurrentArtifactId = useResetRecoilState(store.currentArtifactId);
+  const isSelected = artifact?.id === currentArtifactId;
   const [visibleArtifacts, setVisibleArtifacts] = useRecoilState(store.visibleArtifacts);
 
   const debouncedSetVisibleRef = useRef(
@@ -69,9 +70,14 @@ const ArtifactButton = ({ artifact }: { artifact: Artifact | null }) => {
             setCurrentArtifactId(artifact.id);
           }, 15);
         }}
-        className="relative overflow-hidden rounded-xl border border-border-medium transition-all duration-300 hover:border-border-xheavy hover:shadow-lg"
+        className={
+          `relative overflow-hidden rounded-xl transition-all duration-200 hover:border-border-medium hover:bg-surface-hover hover:shadow-lg ` +
+          (isSelected
+            ? 'border-border-medium bg-surface-hover shadow-lg'
+            : 'border-border-light bg-surface-tertiary shadow-sm')
+        }
       >
-        <div className="w-fit bg-surface-tertiary p-2">
+        <div className="w-fit p-2">
           <div className="flex flex-row items-center gap-2">
             <FilePreview fileType={fileType} className="relative" />
             <div className="overflow-hidden text-left">
