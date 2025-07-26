@@ -63,7 +63,7 @@ const CheckboxButton = React.forwardRef<
       render={<button type="button" aria-label={label} />}
     >
       {/* Icon if provided */}
-      {icon && <span className="icon-md text-text-primary">{icon}</span>}
+      {icon && <span className="icon-md text-text-primary">{icon as React.JSX.Element}</span>}
 
       {/* Show the label on larger screens */}
       <span className="hidden truncate md:block">{label}</span>

@@ -87,7 +87,7 @@ export default function MultiSelect<T extends string>({
           )}
           onChange={(e) => e.stopPropagation()}
         >
-          {selectIcon && selectIcon}
+          {selectIcon && <span>{selectIcon as React.JSX.Element}</span>}
           <span className="mr-auto hidden truncate md:block">
             {renderSelectedValues(selectedValues, placeholder)}
           </span>
@@ -130,8 +130,12 @@ export default function MultiSelect<T extends string>({
                 )}
               >
                 {renderItemContent
-                  ? renderItemContent(value, defaultContent, isCurrentItemSelected)
-                  : defaultContent}
+                  ? (renderItemContent(
+                      value,
+                      defaultContent,
+                      isCurrentItemSelected,
+                    ) as React.JSX.Element)
+                  : (defaultContent as React.JSX.Element)}
               </SelectItem>
             );
           })}

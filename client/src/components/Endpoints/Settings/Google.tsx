@@ -55,6 +55,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
       <div className="col-span-5 flex flex-col items-center justify-start gap-6 sm:col-span-3">
         <div className="grid w-full items-center gap-2">
           <SelectDropDown
+            title={localize('com_ui_model')}
             value={model ?? ''}
             setValue={setModel}
             availableValues={models}

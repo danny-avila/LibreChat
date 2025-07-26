@@ -3,11 +3,10 @@ import { useToastContext } from '@librechat/client';
 import { useQueryClient } from '@tanstack/react-query';
 import { Constants, QueryKeys } from 'librechat-data-provider';
 import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
-import { useMCPServerInitialization } from '~/hooks/MCP/useMCPServerInitialization';
-import type { ConfigFieldDetail } from '~/components/MCP/MCPConfigDialog';
 import type { TUpdateUserPlugins, TPlugin } from 'librechat-data-provider';
+import type { ConfigFieldDetail } from '~/components/MCP/MCPConfigDialog';
+import { useLocalize, useMCPServerInitialization } from '~/hooks';
 import { useBadgeRowContext } from '~/Providers';
-import { useLocalize } from '~/hooks';
 
 export function useMCPServerManager() {
   const localize = useLocalize();

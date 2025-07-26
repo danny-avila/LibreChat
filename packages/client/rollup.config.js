@@ -21,6 +21,8 @@ const plugins = [
   }),
   resolve({
     extensions: ['.js', '.jsx', '.ts', '.tsx'],
+    browser: true,
+    preferBuiltins: false,
   }),
   replace({
     'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'production'),
@@ -28,23 +30,23 @@ const plugins = [
   }),
   commonjs(),
   postcss({
-    // Extract CSS to a separate file
     extract: false,
-    // Inject CSS into JS (better for component libraries)
     inject: true,
-    // Minimize CSS in production
     minimize: process.env.NODE_ENV === 'production',
-    // Enable CSS modules if needed
     modules: false,
+    config: {
+      path: './postcss.config.js',
+    },
   }),
   typescript({
     tsconfig: './tsconfig.json',
     useTsconfigDeclarationDir: true,
     clean: true,
+    check: false,
   }),
   terser({
     compress: {
-      directives: false, // Preserve directives like 'use client'
+      directives: false,
     },
   }),
 ];
@@ -65,7 +67,11 @@ export default {
       exports: 'named',
     },
   ],
-  external: [...Object.keys(pkg.peerDependencies || {}), 'react/jsx-runtime'],
+  external: [
+    ...Object.keys(pkg.peerDependencies || {}),
+    'react/jsx-runtime',
+    'react/jsx-dev-runtime',
+  ],
   preserveSymlinks: true,
   plugins,
   onwarn(warning, warn) {

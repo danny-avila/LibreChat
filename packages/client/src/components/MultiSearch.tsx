@@ -1,6 +1,5 @@
 import { Search, X } from 'lucide-react';
 import React, { useState, useMemo, useCallback, useRef } from 'react';
-import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
 /** This is a generic that can be added to Menu and Select components */
@@ -15,7 +14,6 @@ export default function MultiSearch({
   placeholder?: string;
   className?: string;
 }) {
-  const localize = useLocalize();
   const inputRef = useRef<HTMLInputElement>(null);
 
   const onChangeHandler: React.ChangeEventHandler<HTMLInputElement> = useCallback(
@@ -46,7 +44,7 @@ export default function MultiSearch({
         type="text"
         value={value ?? ''}
         onChange={onChangeHandler}
-        placeholder={placeholder ?? localize('com_ui_select_search_model')}
+        placeholder={String(placeholder ?? 'Search...')}
         aria-label="Search Model"
         className="flex-1 rounded-md border-none bg-transparent px-2.5 py-2 text-sm placeholder-text-secondary focus:outline-none focus:ring-1 focus:ring-ring-primary"
       />

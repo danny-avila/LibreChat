@@ -173,7 +173,7 @@ export default function PixelCard({
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const pixelsRef = useRef<Pixel[]>([]);
-  const animationRef = useRef<number>();
+  const animationRef = useRef<number | undefined>(undefined);
   const timePrevRef = useRef(performance.now());
   const progressRef = useRef<number | undefined>(progress);
   const reducedMotion = useRef(
@@ -221,9 +221,11 @@ export default function PixelCard({
       let idle = true;
       for (const p of pixelsRef.current) {
         if (method === 'appearWithProgress') {
-          progressRef.current !== undefined
-            ? p.appearWithProgress(progressRef.current)
-            : (p.isIdle = true);
+          if (progressRef.current !== undefined) {
+            p.appearWithProgress(progressRef.current);
+          } else {
+            p.isIdle = true;
+          }
         } else {
           // @ts-ignore dynamic dispatch
           p[method]();
@@ -312,7 +314,9 @@ export default function PixelCard({
   useEffect(() => {
     initPixels();
     const obs = new ResizeObserver(initPixels);
-    containerRef.current && obs.observe(containerRef.current);
+    if (containerRef.current) {
+      obs.observe(containerRef.current);
+    }
     return () => {
       obs.disconnect();
       cancelAnimationFrame(animationRef.current!);
