@@ -61,11 +61,8 @@ describe('File Routes - Delete with Agent Access', () => {
   let Agent;
   let AclEntry;
   let User;
-  let AccessRole;
   let methods;
   let modelsToCleanup = [];
-  // eslint-disable-next-line no-unused-vars
-  let agentId;
 
   beforeAll(async () => {
     mongoServer = await MongoMemoryServer.create();
@@ -90,7 +87,6 @@ describe('File Routes - Delete with Agent Access', () => {
     Agent = models.Agent;
     AclEntry = models.AclEntry;
     User = models.User;
-    AccessRole = models.AccessRole;
 
     // Seed default roles using our methods
     await methods.seedDefaultRoles();
@@ -139,7 +135,6 @@ describe('File Routes - Delete with Agent Access', () => {
     // Create test data
     authorId = new mongoose.Types.ObjectId();
     otherUserId = new mongoose.Types.ObjectId();
-    agentId = uuidv4();
     fileId = uuidv4();
 
     // Create users in database
