@@ -7,6 +7,7 @@ const {
   removeGroupIdsFromProject,
   removeGroupFromAllProjects,
 } = require('./Project');
+const { removeAllPermissions } = require('~/server/services/PermissionService');
 const { PromptGroup, Prompt } = require('~/db/models');
 const { escapeRegExp } = require('~/server/utils');
 
@@ -100,10 +101,6 @@ const getAllPromptGroups = async (req, filter) => {
   try {
     const { name, ...query } = filter;
 
-    if (!query.author) {
-      throw new Error('Author is required');
-    }
-
     let searchShared = true;
     let searchSharedOnly = false;
     if (name) {
@@ -152,10 +149,6 @@ const getPromptGroups = async (req, filter) => {
 
     const validatedPageNumber = Math.max(parseInt(pageNumber, 10), 1);
     const validatedPageSize = Math.max(parseInt(pageSize, 10), 1);
-
-    if (!query.author) {
-      throw new Error('Author is required');
-    }
 
     let searchShared = true;
     let searchSharedOnly = false;
@@ -221,12 +214,16 @@ const getPromptGroups = async (req, filter) => {
  * @returns {Promise<TDeletePromptGroupResponse>}
  */
 const deletePromptGroup = async ({ _id, author, role }) => {
-  const query = { _id, author };
-  const groupQuery = { groupId: new ObjectId(_id), author };
-  if (role === SystemRoles.ADMIN) {
-    delete query.author;
-    delete groupQuery.author;
+  // Build query - with ACL, author is optional
+  const query = { _id };
+  const groupQuery = { groupId: new ObjectId(_id) };
+
+  // Legacy: Add author filter if provided (backward compatibility)
+  if (author && role !== SystemRoles.ADMIN) {
+    query.author = author;
+    groupQuery.author = author;
   }
+
   const response = await PromptGroup.deleteOne(query);
 
   if (!response || response.deletedCount === 0) {
@@ -235,6 +232,13 @@ const deletePromptGroup = async ({ _id, author, role }) => {
 
   await Prompt.deleteMany(groupQuery);
   await removeGroupFromAllProjects(_id);
+
+  try {
+    await removeAllPermissions({ resourceType: 'promptGroup', resourceId: _id });
+  } catch (error) {
+    logger.error('Error removing promptGroup permissions:', error);
+  }
+
   return { message: 'Prompt group deleted successfully' };
 };
 
@@ -424,12 +428,32 @@ module.exports = {
       throw new Error('Failed to delete the prompt');
     }
 
+    // Remove all ACL entries for this prompt
+    try {
+      await removeAllPermissions({
+        resourceType: 'prompt',
+        resourceId: promptId,
+      });
+    } catch (error) {
+      logger.error('Error removing prompt permissions:', error);
+    }
+
     const remainingPrompts = await Prompt.find({ groupId })
       .select('_id')
       .sort({ createdAt: 1 })
       .lean();
 
     if (remainingPrompts.length === 0) {
+      // Remove all ACL entries for the promptGroup when deleting the last prompt
+      try {
+        await removeAllPermissions({
+          resourceType: 'promptGroup',
+          resourceId: groupId,
+        });
+      } catch (error) {
+        logger.error('Error removing promptGroup permissions:', error);
+      }
+
       await PromptGroup.deleteOne({ _id: groupId });
       await removeGroupFromAllProjects(groupId);
 
