@@ -8,7 +8,7 @@ import {
 } from 'librechat-data-provider';
 import type { AgentForm, AgentPanelProps } from '~/common';
 import { useLocalize, useAuthContext, useHasAccess, useResourcePermissions } from '~/hooks';
-import GrantAccessDialog from './Sharing/GrantAccessDialog';
+import { GenericGrantAccessDialog } from '~/components/Sharing';
 import { useUpdateAgentMutation } from '~/data-provider';
 import AdvancedButton from './Advanced/AdvancedButton';
 import VersionButton from './Version/VersionButton';
@@ -80,10 +80,11 @@ export default function AgentFooter({
         {(agent?.author === user?.id || user?.role === SystemRoles.ADMIN || canShareThisAgent) &&
           hasAccessToShareAgents &&
           !permissionsLoading && (
-            <GrantAccessDialog
-              agentDbId={agent?._id}
-              agentId={agent_id}
-              agentName={agent?.name ?? ''}
+            <GenericGrantAccessDialog
+              resourceDbId={agent?._id}
+              resourceId={agent_id}
+              resourceName={agent?.name ?? ''}
+              resourceType="agent"
             />
           )}
         {agent && agent.author === user?.id && <DuplicateAgent agent_id={agent_id} />}
