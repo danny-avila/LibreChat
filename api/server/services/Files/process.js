@@ -561,7 +561,7 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
       text,
       bytes,
       // TODO: OCR images support?
-      images,
+      images: _i,
       filename,
       filepath: ocrFileURL,
     } = await uploadOCR({ req, file, loadAuthValues });
@@ -753,9 +753,6 @@ const processOpenAIImageOutput = async ({ req, buffer, file_id, filename, fileEx
   const currentDate = new Date();
   const formattedDate = currentDate.toISOString();
   const _file = await convertImage(req, buffer, undefined, `${file_id}${fileExt}`);
-  // Determine the correct source for the assistant
-  const source =
-    req.body.endpoint === EModelEndpoint.azureAssistants ? FileSources.azure : FileSources.openai;
 
   // Create only one file record with the correct information
   const file = {
