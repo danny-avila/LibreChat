@@ -133,7 +133,7 @@ export function AnimatedTabs({
               data-state={tabIds[index] === firstTabId ? 'active' : 'inactive'}
             >
               {/* TypeScript workaround for React i18next children type compatibility */}
-              {tab.label as any}
+              {tab.label}
             </Tab>
           ))}
         </Ariakit.TabList>
@@ -152,7 +152,7 @@ export function AnimatedTabs({
               className={tabPanelClassName}
             >
               {/* TypeScript workaround for React i18next children type compatibility */}
-              {tab.content as any}
+              {tab.content}
             </TabPanel>
           ))}
         </div>

@@ -11,8 +11,8 @@ const Separator = React.forwardRef<
 >(({ className = '', orientation = 'horizontal', decorative = true, ...props }, ref) => (
   <SeparatorPrimitive.Root
     ref={ref}
-    {...(props as any)}
-    {...({
+    {...props}
+    {...{
       decorative,
       orientation,
       className: cn(
@@ -20,7 +20,7 @@ const Separator = React.forwardRef<
         orientation === 'horizontal' ? 'h-[1px] w-full' : 'h-full w-[1px]',
         className,
       ),
-    } as any)}
+    }}
   />
 ));
 Separator.displayName = SeparatorPrimitive.Root.displayName;
