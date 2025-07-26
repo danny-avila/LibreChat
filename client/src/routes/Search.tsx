@@ -23,7 +23,7 @@ export default function Search() {
     isError,
     fetchNextPage,
     isFetchingNextPage,
-    hasNextPage,
+    hasNextPage: _hasNextPage,
   } = useMessagesInfiniteQuery(
     {
       search: searchQuery || undefined,

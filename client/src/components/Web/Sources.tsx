@@ -21,7 +21,7 @@ interface SourceItemProps {
   expanded?: boolean;
 }
 
-function SourceItem({ source, isNews, expanded = false }: SourceItemProps) {
+function SourceItem({ source, isNews: _isNews, expanded = false }: SourceItemProps) {
   const localize = useLocalize();
   const domain = getCleanDomain(source.link);
 

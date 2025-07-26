@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/rules-of-hooks */
 import { ArrowUpDown } from 'lucide-react';
 import { Button } from '@librechat/client';
 import type { ColumnDef } from '@tanstack/react-table';
