@@ -1,10 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { ACCESS_ROLE_IDS, PermissionTypes, Permissions } from 'librechat-data-provider';
+import React, { useState } from 'react';
 import { Share2Icon, Users, Loader, Shield, Link, CopyCheck } from 'lucide-react';
-import {
-  useGetResourcePermissionsQuery,
-  useUpdateResourcePermissionsMutation,
-} from 'librechat-data-provider/react-query';
 import {
   Button,
   OGDialog,
@@ -15,98 +10,64 @@ import {
   useToastContext,
 } from '@librechat/client';
 import type { TPrincipal } from 'librechat-data-provider';
-import { useLocalize, useCopyToClipboard, useHasAccess } from '~/hooks';
-import ManagePermissionsDialog from './ManagePermissionsDialog';
+import { useLocalize, useCopyToClipboard } from '~/hooks';
+import { usePeoplePickerPermissions, useResourcePermissionState } from '~/hooks/Sharing';
+import GenericManagePermissionsDialog from './GenericManagePermissionsDialog';
+import PeoplePicker from '../SidePanel/Agents/Sharing/PeoplePicker/PeoplePicker';
+import AccessRolesPicker from '../SidePanel/Agents/Sharing/AccessRolesPicker';
 import PublicSharingToggle from './PublicSharingToggle';
-import PeoplePicker from './PeoplePicker/PeoplePicker';
-import AccessRolesPicker from './AccessRolesPicker';
 import { cn, removeFocusOutlines } from '~/utils';
 
-export default function GrantAccessDialog({
-  agentName,
+export default function GenericGrantAccessDialog({
+  resourceName,
+  resourceDbId,
+  resourceId,
+  resourceType,
   onGrantAccess,
-  resourceType = 'agent',
-  agentDbId,
-  agentId,
+  disabled = false,
+  children,
 }: {
-  agentDbId?: string | null;
-  agentId?: string | null;
-  agentName?: string;
+  resourceDbId?: string | null;
+  resourceId?: string | null;
+  resourceName?: string;
+  resourceType: string;
   onGrantAccess?: (shares: TPrincipal[], isPublic: boolean, publicRole: string) => void;
-  resourceType?: string;
+  disabled?: boolean;
+  children?: React.ReactNode;
 }) {
   const localize = useLocalize();
   const { showToast } = useToastContext();
-
-  // Check if user has permission to access people picker
-  const canViewUsers = useHasAccess({
-    permissionType: PermissionTypes.PEOPLE_PICKER,
-    permission: Permissions.VIEW_USERS,
-  });
-  const canViewGroups = useHasAccess({
-    permissionType: PermissionTypes.PEOPLE_PICKER,
-    permission: Permissions.VIEW_GROUPS,
-  });
-  const hasPeoplePickerAccess = canViewUsers || canViewGroups;
-
-  /** Type filter based on permissions */
-  const peoplePickerTypeFilter = useMemo(() => {
-    if (canViewUsers && canViewGroups) {
-      return null; // Both types allowed
-    } else if (canViewUsers) {
-      return 'user' as const;
-    } else if (canViewGroups) {
-      return 'group' as const;
-    }
-    return null;
-  }, [canViewUsers, canViewGroups]);
-
-  const {
-    data: permissionsData,
-    // isLoading: isLoadingPermissions,
-    // error: permissionsError,
-  } = useGetResourcePermissionsQuery(resourceType, agentDbId!, {
-    enabled: !!agentDbId,
-  });
-
-  const updatePermissionsMutation = useUpdateResourcePermissionsMutation();
-
-  const [newShares, setNewShares] = useState<TPrincipal[]>([]);
-  const [defaultPermissionId, setDefaultPermissionId] = useState<string>(
-    ACCESS_ROLE_IDS.AGENT_VIEWER,
-  );
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isCopying, setIsCopying] = useState(false);
 
-  const agentUrl = `${window.location.origin}/c/new?agent_id=${agentId}`;
-  const copyAgentUrl = useCopyToClipboard({ text: agentUrl });
+  // Use shared hooks
+  const { hasPeoplePickerAccess, peoplePickerTypeFilter } = usePeoplePickerPermissions();
+  const {
+    config,
+    updatePermissionsMutation,
+    currentShares,
+    currentIsPublic,
+    currentPublicRole,
+    isPublic,
+    setIsPublic,
+    publicRole,
+    setPublicRole,
+  } = useResourcePermissionState(resourceType, resourceDbId, isModalOpen);
 
-  const currentShares: TPrincipal[] =
-    permissionsData?.principals?.map((principal) => ({
-      type: principal.type,
-      id: principal.id,
-      name: principal.name,
-      email: principal.email,
-      source: principal.source,
-      avatar: principal.avatar,
-      description: principal.description,
-      accessRoleId: principal.accessRoleId,
-    })) || [];
+  const [newShares, setNewShares] = useState<TPrincipal[]>([]);
+  const [defaultPermissionId, setDefaultPermissionId] = useState<string>(
+    config?.defaultViewerRoleId ?? '',
+  );
 
-  const currentIsPublic = permissionsData?.public ?? false;
-  const currentPublicRole = permissionsData?.publicAccessRoleId || ACCESS_ROLE_IDS.AGENT_VIEWER;
+  const resourceUrl = config?.getResourceUrl ? config?.getResourceUrl(resourceId || '') : '';
+  const copyResourceUrl = useCopyToClipboard({ text: resourceUrl });
 
-  const [isPublic, setIsPublic] = useState(false);
-  const [publicRole, setPublicRole] = useState<string>(ACCESS_ROLE_IDS.AGENT_VIEWER);
+  if (!resourceDbId) {
+    return null;
+  }
 
-  useEffect(() => {
-    if (permissionsData && isModalOpen) {
-      setIsPublic(currentIsPublic ?? false);
-      setPublicRole(currentPublicRole);
-    }
-  }, [permissionsData, isModalOpen, currentIsPublic, currentPublicRole]);
-
-  if (!agentDbId) {
+  if (!config) {
+    console.error(`Unsupported resource type: ${resourceType}`);
     return null;
   }
 
@@ -121,7 +82,7 @@ export default function GrantAccessDialog({
 
       await updatePermissionsMutation.mutateAsync({
         resourceType,
-        resourceId: agentDbId,
+        resourceId: resourceDbId,
         data: {
           updated: sharesToAdd,
           removed: [],
@@ -140,9 +101,9 @@ export default function GrantAccessDialog({
       });
 
       setNewShares([]);
-      setDefaultPermissionId(ACCESS_ROLE_IDS.AGENT_VIEWER);
+      setDefaultPermissionId(config?.defaultViewerRoleId);
       setIsPublic(false);
-      setPublicRole(ACCESS_ROLE_IDS.AGENT_VIEWER);
+      setPublicRole(config?.defaultViewerRoleId);
       setIsModalOpen(false);
     } catch (error) {
       console.error('Error granting access:', error);
@@ -155,46 +116,51 @@ export default function GrantAccessDialog({
 
   const handleCancel = () => {
     setNewShares([]);
-    setDefaultPermissionId(ACCESS_ROLE_IDS.AGENT_VIEWER);
+    setDefaultPermissionId(config?.defaultViewerRoleId);
     setIsPublic(false);
-    setPublicRole(ACCESS_ROLE_IDS.AGENT_VIEWER);
+    setPublicRole(config?.defaultViewerRoleId);
     setIsModalOpen(false);
   };
 
   const totalCurrentShares = currentShares.length + (currentIsPublic ? 1 : 0);
   const submitButtonActive =
     newShares.length > 0 || isPublic !== currentIsPublic || publicRole !== currentPublicRole;
+
+  const TriggerComponent = children ? (
+    children
+  ) : (
+    <button
+      className={cn(
+        'btn btn-neutral border-token-border-light relative h-9 rounded-lg font-medium',
+        removeFocusOutlines,
+      )}
+      aria-label={localize('com_ui_share_var', {
+        0: config?.getShareMessage(resourceName),
+      })}
+      type="button"
+      disabled={disabled}
+    >
+      <div className="flex items-center justify-center gap-2 text-blue-500">
+        <Share2Icon className="icon-md h-4 w-4" />
+        {totalCurrentShares > 0 && (
+          <span className="rounded-full bg-blue-100 px-1.5 py-0.5 text-xs font-medium text-blue-800 dark:bg-blue-900 dark:text-blue-300">
+            {totalCurrentShares}
+          </span>
+        )}
+      </div>
+    </button>
+  );
+
   return (
     <OGDialog open={isModalOpen} onOpenChange={setIsModalOpen} modal>
-      <OGDialogTrigger asChild>
-        <button
-          className={cn(
-            'btn btn-neutral border-token-border-light relative h-9 rounded-lg font-medium',
-            removeFocusOutlines,
-          )}
-          aria-label={localize('com_ui_share_var', {
-            0: agentName != null && agentName !== '' ? `"${agentName}"` : localize('com_ui_agent'),
-          })}
-          type="button"
-        >
-          <div className="flex items-center justify-center gap-2 text-blue-500">
-            <Share2Icon className="icon-md h-4 w-4" />
-            {totalCurrentShares > 0 && (
-              <span className="rounded-full bg-blue-100 px-1.5 py-0.5 text-xs font-medium text-blue-800 dark:bg-blue-900 dark:text-blue-300">
-                {totalCurrentShares}
-              </span>
-            )}
-          </div>
-        </button>
-      </OGDialogTrigger>
+      <OGDialogTrigger asChild>{TriggerComponent}</OGDialogTrigger>
 
       <OGDialogContent className="max-h-[90vh] w-11/12 overflow-y-auto md:max-w-3xl">
         <OGDialogTitle>
           <div className="flex items-center gap-2">
             <Users className="h-5 w-5" />
             {localize('com_ui_share_var', {
-              0:
-                agentName != null && agentName !== '' ? `"${agentName}"` : localize('com_ui_agent'),
+              0: config?.getShareMessage(resourceName),
             })}
           </div>
         </OGDialogTitle>
@@ -235,19 +201,19 @@ export default function GrantAccessDialog({
           <div className="flex justify-between border-t pt-4">
             <div className="flex gap-2">
               {hasPeoplePickerAccess && (
-                <ManagePermissionsDialog
-                  agentDbId={agentDbId}
-                  agentName={agentName}
+                <GenericManagePermissionsDialog
+                  resourceDbId={resourceDbId}
+                  resourceName={resourceName}
                   resourceType={resourceType}
                 />
               )}
-              {agentId && (
+              {resourceId && resourceUrl && (
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={() => {
                     if (isCopying) return;
-                    copyAgentUrl(setIsCopying);
+                    copyResourceUrl(setIsCopying);
                     showToast({
                       message: localize('com_ui_agent_url_copied'),
                       status: 'success',
@@ -258,7 +224,7 @@ export default function GrantAccessDialog({
                   aria-label={localize('com_ui_copy_url_to_clipboard')}
                   title={
                     isCopying
-                      ? localize('com_ui_agent_url_copied')
+                      ? config?.getCopyUrlMessage()
                       : localize('com_ui_copy_url_to_clipboard')
                   }
                 >

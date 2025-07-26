@@ -124,6 +124,50 @@ export function createAccessRoleMethods(mongoose: typeof import('mongoose')) {
         resourceType: 'agent',
         permBits: RoleBits.OWNER,
       },
+      // Prompt access roles
+      {
+        accessRoleId: 'prompt_viewer',
+        name: 'com_ui_role_viewer',
+        description: 'com_ui_role_viewer_desc',
+        resourceType: 'prompt',
+        permBits: RoleBits.VIEWER,
+      },
+      {
+        accessRoleId: 'prompt_editor',
+        name: 'com_ui_role_editor',
+        description: 'com_ui_role_editor_desc',
+        resourceType: 'prompt',
+        permBits: RoleBits.EDITOR,
+      },
+      {
+        accessRoleId: 'prompt_owner',
+        name: 'com_ui_role_owner',
+        description: 'com_ui_role_owner_desc',
+        resourceType: 'prompt',
+        permBits: RoleBits.OWNER,
+      },
+      // PromptGroup access roles
+      {
+        accessRoleId: 'promptGroup_viewer',
+        name: 'com_ui_role_viewer',
+        description: 'com_ui_role_viewer_desc',
+        resourceType: 'promptGroup',
+        permBits: RoleBits.VIEWER,
+      },
+      {
+        accessRoleId: 'promptGroup_editor',
+        name: 'com_ui_role_editor',
+        description: 'com_ui_role_editor_desc',
+        resourceType: 'promptGroup',
+        permBits: RoleBits.EDITOR,
+      },
+      {
+        accessRoleId: 'promptGroup_owner',
+        name: 'com_ui_role_owner',
+        description: 'com_ui_role_owner_desc',
+        resourceType: 'promptGroup',
+        permBits: RoleBits.OWNER,
+      },
     ];
 
     const result: Record<string, IAccessRole> = {};
