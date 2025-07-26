@@ -5,8 +5,8 @@ const {
   Time,
   isUUID,
   CacheKeys,
-  Constants,
   FileSources,
+  PERMISSION_BITS,
   EModelEndpoint,
   isAgentsEndpoint,
   checkOpenAIStorage,
@@ -17,16 +17,19 @@ const {
   processDeleteRequest,
   processAgentFileUpload,
 } = require('~/server/services/Files/process');
-const { getFiles, batchUpdateFiles, hasAccessToFilesViaAgent } = require('~/models/File');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
+const { checkPermission } = require('~/server/services/PermissionService');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { refreshS3FileUrls } = require('~/server/services/Files/S3/crud');
-const { getProjectByName } = require('~/models/Project');
+const { hasAccessToFilesViaAgent } = require('~/server/services/Files');
+const { getFiles, batchUpdateFiles } = require('~/models/File');
 const { getAssistant } = require('~/models/Assistant');
 const { getAgent } = require('~/models/Agent');
+const { cleanFileName } = require('~/server/utils/files');
 const { getLogStores } = require('~/cache');
 const { logger } = require('~/config');
+const { fileAccess } = require('~/server/middleware/accessResources/fileAccess');
 
 const router = express.Router();
 
@@ -67,29 +70,24 @@ router.get('/agent/:agent_id', async (req, res) => {
       return res.status(400).json({ error: 'Agent ID is required' });
     }
 
-    // Get the agent to check ownership and attached files
     const agent = await getAgent({ id: agent_id });
-
     if (!agent) {
-      // No agent found, return empty array
       return res.status(200).json([]);
     }
 
-    // Check if user has access to the agent
     if (agent.author.toString() !== userId) {
-      // Non-authors need the agent to be globally shared and collaborative
-      const globalProject = await getProjectByName(Constants.GLOBAL_PROJECT_NAME, '_id');
+      const hasEditPermission = await checkPermission({
+        userId,
+        resourceType: 'agent',
+        resourceId: agent._id,
+        requiredPermission: PERMISSION_BITS.EDIT,
+      });
 
-      if (
-        !globalProject ||
-        !agent.projectIds.some((pid) => pid.toString() === globalProject._id.toString()) ||
-        !agent.isCollaborative
-      ) {
+      if (!hasEditPermission) {
         return res.status(200).json([]);
       }
     }
 
-    // Collect all file IDs from agent's tool resources
     const agentFileIds = [];
     if (agent.tool_resources) {
       for (const [, resource] of Object.entries(agent.tool_resources)) {
@@ -99,12 +97,10 @@ router.get('/agent/:agent_id', async (req, res) => {
       }
     }
 
-    // If no files attached to agent, return empty array
     if (agentFileIds.length === 0) {
       return res.status(200).json([]);
     }
 
-    // Get only the files attached to this agent
     const files = await getFiles({ file_id: { $in: agentFileIds } }, null, { text: 0 });
 
     res.status(200).json(files);
@@ -153,10 +149,8 @@ router.delete('/', async (req, res) => {
 
     const ownedFiles = [];
     const nonOwnedFiles = [];
-    const fileMap = new Map();
 
     for (const file of dbFiles) {
-      fileMap.set(file.file_id, file);
       if (file.user.toString() === req.user.id) {
         ownedFiles.push(file);
       } else {
@@ -164,7 +158,6 @@ router.delete('/', async (req, res) => {
       }
     }
 
-    // If all files are owned by the user, no need for further checks
     if (nonOwnedFiles.length === 0) {
       await processDeleteRequest({ req, files: ownedFiles });
       logger.debug(
@@ -177,12 +170,10 @@ router.delete('/', async (req, res) => {
       return;
     }
 
-    // Check access for non-owned files
     let authorizedFiles = [...ownedFiles];
     let unauthorizedFiles = [];
 
     if (req.body.agent_id && nonOwnedFiles.length > 0) {
-      // Batch check access for all non-owned files
       const nonOwnedFileIds = nonOwnedFiles.map((f) => f.file_id);
       const accessMap = await hasAccessToFilesViaAgent(
         req.user.id,
@@ -190,7 +181,6 @@ router.delete('/', async (req, res) => {
         req.body.agent_id,
       );
 
-      // Separate authorized and unauthorized files
       for (const file of nonOwnedFiles) {
         if (accessMap.get(file.file_id)) {
           authorizedFiles.push(file);
@@ -199,7 +189,6 @@ router.delete('/', async (req, res) => {
         }
       }
     } else {
-      // No agent context, all non-owned files are unauthorized
       unauthorizedFiles = nonOwnedFiles;
     }
 
@@ -303,42 +292,30 @@ router.get('/code/download/:session_id/:fileId', async (req, res) => {
   }
 });
 
-router.get('/download/:userId/:file_id', async (req, res) => {
+router.get('/download/:userId/:file_id', fileAccess, async (req, res) => {
   try {
     const { userId, file_id } = req.params;
     logger.debug(`File download requested by user ${userId}: ${file_id}`);
 
-    if (userId !== req.user.id) {
-      logger.warn(`${errorPrefix} forbidden: ${file_id}`);
-      return res.status(403).send('Forbidden');
-    }
-
-    const [file] = await getFiles({ file_id });
-    const errorPrefix = `File download requested by user ${userId}`;
-
-    if (!file) {
-      logger.warn(`${errorPrefix} not found: ${file_id}`);
-      return res.status(404).send('File not found');
-    }
-
-    if (!file.filepath.includes(userId)) {
-      logger.warn(`${errorPrefix} forbidden: ${file_id}`);
-      return res.status(403).send('Forbidden');
-    }
+    // Access already validated by fileAccess middleware
+    const file = req.fileAccess.file;
 
     if (checkOpenAIStorage(file.source) && !file.model) {
-      logger.warn(`${errorPrefix} has no associated model: ${file_id}`);
+      logger.warn(`File download requested by user ${userId} has no associated model: ${file_id}`);
       return res.status(400).send('The model used when creating this file is not available');
     }
 
     const { getDownloadStream } = getStrategyFunctions(file.source);
     if (!getDownloadStream) {
-      logger.warn(`${errorPrefix} has no stream method implemented: ${file.source}`);
+      logger.warn(
+        `File download requested by user ${userId} has no stream method implemented: ${file.source}`,
+      );
       return res.status(501).send('Not Implemented');
     }
 
     const setHeaders = () => {
-      res.setHeader('Content-Disposition', `attachment; filename="${file.filename}"`);
+      const cleanedFilename = cleanFileName(file.filename);
+      res.setHeader('Content-Disposition', `attachment; filename="${cleanedFilename}"`);
       res.setHeader('Content-Type', 'application/octet-stream');
       res.setHeader('X-File-Metadata', JSON.stringify(file));
     };
@@ -365,12 +342,17 @@ router.get('/download/:userId/:file_id', async (req, res) => {
       logger.debug(`File ${file_id} downloaded from OpenAI`);
       passThrough.body.pipe(res);
     } else {
-      fileStream = getDownloadStream(file_id);
+      fileStream = await getDownloadStream(req, file.filepath);
+
+      fileStream.on('error', (streamError) => {
+        logger.error('[DOWNLOAD ROUTE] Stream error:', streamError);
+      });
+
       setHeaders();
       fileStream.pipe(res);
     }
   } catch (error) {
-    logger.error('Error downloading file:', error);
+    logger.error('[DOWNLOAD ROUTE] Error downloading file:', error);
     res.status(500).send('Error downloading file');
   }
 });
@@ -405,7 +387,6 @@ router.post('/', async (req, res) => {
       message = error.message;
     }
 
-    // TODO: delete remote file if it exists
     try {
       await fs.unlink(req.file.path);
       cleanup = false;

@@ -7,6 +7,7 @@ const {
   removeGroupIdsFromProject,
   removeGroupFromAllProjects,
 } = require('./Project');
+const { removeAllPermissions } = require('~/server/services/PermissionService');
 const { PromptGroup, Prompt } = require('~/db/models');
 const { escapeRegExp } = require('~/server/utils');
 
@@ -422,6 +423,16 @@ module.exports = {
     const { deletedCount } = await Prompt.deleteOne(query);
     if (deletedCount === 0) {
       throw new Error('Failed to delete the prompt');
+    }
+
+    // Remove all ACL entries for this prompt
+    try {
+      await removeAllPermissions({
+        resourceType: 'prompt',
+        resourceId: promptId,
+      });
+    } catch (error) {
+      logger.error('Error removing prompt permissions:', error);
     }
 
     const remainingPrompts = await Prompt.find({ groupId })

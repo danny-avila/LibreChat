@@ -54,6 +54,7 @@
     "@librechat/data-schemas": "*",
     "@modelcontextprotocol/sdk": "^1.17.0",
     "@node-saml/passport-saml": "^5.1.0",
+    "@microsoft/microsoft-graph-client": "^3.0.7",
     "@waylaidwanderer/fetch-event-source": "^3.0.1",
     "axios": "^1.8.2",
     "bcryptjs": "^2.4.3",

@@ -1,5 +1,5 @@
 const express = require('express');
-const { logger } = require('@librechat/data-schemas');
+const { logger, PermissionBits } = require('@librechat/data-schemas');
 const { generateCheckAccess } = require('@librechat/api');
 const { Permissions, SystemRoles, PermissionTypes } = require('librechat-data-provider');
 const {
@@ -16,7 +16,8 @@ const {
   // updatePromptLabels,
   makePromptProduction,
 } = require('~/models/Prompt');
-const { requireJwtAuth } = require('~/server/middleware');
+const { grantPermission } = require('~/server/services/PermissionService');
+const { requireJwtAuth, canAccessPromptResource } = require('~/server/middleware');
 const { getRoleByName } = require('~/models/Role');
 
 const router = express.Router();
@@ -135,6 +136,29 @@ const createPrompt = async (req, res) => {
     } else {
       result = await savePrompt(saveData);
     }
+
+    // Grant owner permissions to the creator
+    if (result.prompt && result.prompt._id) {
+      try {
+        await grantPermission({
+          principalType: 'user',
+          principalId: req.user.id,
+          resourceType: 'prompt',
+          resourceId: result.prompt._id,
+          accessRoleId: 'prompt_owner',
+          grantedBy: req.user.id,
+        });
+        logger.debug(
+          `[createPrompt] Granted owner permissions to user ${req.user.id} for prompt ${result.prompt._id}`,
+        );
+      } catch (permissionError) {
+        logger.error(
+          `[createPrompt] Failed to grant owner permissions for prompt ${result.prompt._id}:`,
+          permissionError,
+        );
+      }
+    }
+
     res.status(200).send(result);
   } catch (error) {
     logger.error(error);
@@ -170,27 +194,37 @@ const patchPromptGroup = async (req, res) => {
 
 router.patch('/groups/:groupId', checkGlobalPromptShare, patchPromptGroup);
 
-router.patch('/:promptId/tags/production', checkPromptCreate, async (req, res) => {
-  try {
-    const { promptId } = req.params;
-    const result = await makePromptProduction(promptId);
-    res.status(200).send(result);
-  } catch (error) {
-    logger.error(error);
-    res.status(500).send({ error: 'Error updating prompt production' });
-  }
-});
+router.patch(
+  '/:promptId/tags/production',
+  checkPromptCreate,
+  canAccessPromptResource({
+    requiredPermission: PermissionBits.EDIT,
+    resourceIdParam: 'promptId',
+  }),
+  async (req, res) => {
+    try {
+      const { promptId } = req.params;
+      const result = await makePromptProduction(promptId);
+      res.status(200).send(result);
+    } catch (error) {
+      logger.error(error);
+      res.status(500).send({ error: 'Error updating prompt production' });
+    }
+  },
+);
 
-router.get('/:promptId', async (req, res) => {
-  const { promptId } = req.params;
-  const author = req.user.id;
-  const query = { _id: promptId, author };
-  if (req.user.role === SystemRoles.ADMIN) {
-    delete query.author;
-  }
-  const prompt = await getPrompt(query);
-  res.status(200).send(prompt);
-});
+router.get(
+  '/:promptId',
+  canAccessPromptResource({
+    requiredPermission: PermissionBits.VIEW,
+    resourceIdParam: 'promptId',
+  }),
+  async (req, res) => {
+    const { promptId } = req.params;
+    const prompt = await getPrompt({ _id: promptId });
+    res.status(200).send(prompt);
+  },
+);
 
 router.get('/', async (req, res) => {
   try {
@@ -248,7 +282,15 @@ const deletePromptGroupController = async (req, res) => {
   }
 };
 
-router.delete('/:promptId', checkPromptCreate, deletePromptController);
+router.delete(
+  '/:promptId',
+  checkPromptCreate,
+  canAccessPromptResource({
+    requiredPermission: PermissionBits.DELETE,
+    resourceIdParam: 'promptId',
+  }),
+  deletePromptController,
+);
 router.delete('/groups/:groupId', checkPromptCreate, deletePromptGroupController);
 
 module.exports = router;

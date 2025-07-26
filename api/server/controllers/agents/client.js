@@ -49,6 +49,7 @@ const BaseClient = require('~/app/clients/BaseClient');
 const { getRoleByName } = require('~/models/Role');
 const { loadAgent } = require('~/models/Agent');
 const { getMCPManager } = require('~/config');
+const { processAgentResponse } = require('~/app/clients/agents/processAgentResponse');
 
 const omitTitleOptions = new Set([
   'stream',
@@ -776,7 +777,7 @@ class AgentClient extends BaseClient {
 
         if (noSystemMessages === true && systemContent?.length) {
           const latestMessageContent = _messages.pop().content;
-          if (typeof latestMessage !== 'string') {
+          if (typeof latestMessageContent !== 'string') {
             latestMessageContent[0].text = [systemContent, latestMessageContent[0].text].join('\n');
             _messages.push(new HumanMessage({ content: latestMessageContent }));
           } else {
@@ -974,6 +975,28 @@ class AgentClient extends BaseClient {
             this.artifactPromises.push(...attachments);
           }
         }
+
+        // Process agent response to capture file references and create attachments
+
+        const processedResponse = await processAgentResponse(
+          {
+            messageId: this.responseMessageId,
+            attachments: this.artifactPromises,
+          },
+          this.user ?? this.options.req.user?.id,
+          this.conversationId,
+          this.contentParts,
+          this.options.req.user,
+        );
+
+        // Update artifact promises with any new attachments from agent response
+        if (processedResponse.attachments && processedResponse.attachments.length > 0) {
+          // Add new attachments to existing artifactPromises
+          processedResponse.attachments.forEach((attachment) => {
+            this.artifactPromises.push(Promise.resolve(attachment));
+          });
+        }
+
         await this.recordCollectedUsage({ context: 'message' });
       } catch (err) {
         logger.error(
