@@ -432,6 +432,32 @@ function App() {
 }
 ```
 
+### Using with the Main Application
+
+When using the ThemeProvider in your main application with localStorage persistence:
+
+```tsx
+import { ThemeProvider } from '@librechat/client';
+import { getThemeFromEnv } from './utils';
+
+function App() {
+  const envTheme = getThemeFromEnv();
+  
+  return (
+    <ThemeProvider 
+      // Only pass props if you want to override stored values
+      // If you always pass props, they will override localStorage
+      initialTheme={envTheme ? "system" : undefined}
+      themeRGB={envTheme || undefined}
+    >
+      {/* Your app content */}
+    </ThemeProvider>
+  );
+}
+```
+
+**Important**: Props passed to ThemeProvider will override stored values on initial mount. Only pass props when you explicitly want to override the user's saved preferences.
+
 ## Contributing
 
 When adding new theme colors:

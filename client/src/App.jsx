@@ -32,16 +32,15 @@ const App = () => {
       <RecoilRoot>
         <LiveAnnouncer>
           <ThemeProvider
-            initialTheme="system"
-            themeRGB={envTheme}
-            // The ThemeProvider will automatically:
-            // 1. Apply dark/light mode classes
-            // 2. Apply custom theme colors if envTheme is provided
-            // 3. Otherwise use default theme colors for light mode
-            // 4. Use dark theme colors for dark mode
-            // 5. Store theme preference in localStorage
-            // 6. Respect system theme preference
+            // Only pass initialTheme and themeRGB if environment theme exists
+            // This allows localStorage values to persist when no env theme is set
+            {...(envTheme && { initialTheme: 'system', themeRGB: envTheme })}
           >
+            {/* The ThemeProvider will automatically:
+                1. Apply dark/light mode classes
+                2. Apply custom theme colors if envTheme is provided
+                3. Otherwise use stored theme preferences from localStorage
+                4. Fall back to default theme colors if nothing is stored */}
             <RadixToast.Provider>
               <ToastProvider>
                 <DndProvider backend={HTML5Backend}>

@@ -8,5 +8,8 @@ export { ThemeProvider, ThemeContext, useTheme, isDark } from './context/ThemePr
 export { default as applyTheme } from './utils/applyTheme';
 export { createTailwindColors } from './utils/tailwindConfig';
 
+// Export theme atoms for persistence
+export { themeModeAtom, themeColorsAtom, themeNameAtom } from './atoms/themeAtoms';
+
 // Export predefined themes
 export * from './themes';
