@@ -16,6 +16,7 @@ COPY package*.json ./
 COPY packages/data-provider/package*.json ./packages/data-provider/
 COPY packages/api/package*.json ./packages/api/
 COPY packages/data-schemas/package*.json ./packages/data-schemas/
+COPY packages/client/package*.json ./packages/client/
 COPY client/package*.json ./client/
 COPY api/package*.json ./api/
 
@@ -45,11 +46,18 @@ COPY --from=data-provider-build /app/packages/data-provider/dist /app/packages/d
 COPY --from=data-schemas-build /app/packages/data-schemas/dist /app/packages/data-schemas/dist
 RUN npm run build
 
+# Build `client` package
+FROM base AS client-package-build
+WORKDIR /app/packages/client
+COPY packages/client ./
+RUN npm run build
+
 # Client build
 FROM base AS client-build
 WORKDIR /app/client
 COPY client ./
 COPY --from=data-provider-build /app/packages/data-provider/dist /app/packages/data-provider/dist
+COPY --from=client-package-build /app/packages/client/dist /app/packages/client/dist
 ENV NODE_OPTIONS="--max-old-space-size=2048"
 RUN npm run build
 
