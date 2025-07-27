@@ -182,13 +182,22 @@ export class MCPOAuthHandler {
           token_endpoint: config.token_url,
           issuer: serverUrl,
           scopes_supported: config.scope?.split(' ') ?? [],
-          // Add sensible defaults for the pre-configured path
-          grant_types_supported: ['authorization_code', 'refresh_token'],
-          token_endpoint_auth_methods_supported: ['client_secret_basic', 'client_secret_post'],
-          response_types_supported: ['code'],
-          code_challenge_methods_supported: ['S256', 'plain'],
+          // Use config values or sensible defaults for the pre-configured path
+          grant_types_supported: config?.grant_types_supported ?? [
+            'authorization_code',
+            'refresh_token',
+          ],
+          token_endpoint_auth_methods_supported: config?.token_endpoint_auth_methods_supported ?? [
+            'client_secret_basic',
+            'client_secret_post',
+          ],
+          response_types_supported: config?.response_types_supported ?? ['code'],
+          code_challenge_methods_supported: config?.code_challenge_methods_supported ?? [
+            'S256',
+            'plain',
+          ],
         };
-
+        logger.debug(`Using metadata: ${JSON.stringify(metadata)}`);
         const clientInfo: OAuthClientInformation = {
           client_id: config.client_id,
           client_secret: config.client_secret,
