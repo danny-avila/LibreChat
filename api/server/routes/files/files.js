@@ -318,7 +318,8 @@ router.delete('/global/:file_id', async (req, res) => {
 });
 
 function isValidID(str) {
-  return /^[A-Za-z0-9_-]{21}$/.test(str);
+  // UUID v4 format: xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(str);
 }
 
 router.get('/code/download/:session_id/:fileId', async (req, res) => {

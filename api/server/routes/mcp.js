@@ -490,7 +490,12 @@ router.get('/connection/status', requireJwtAuth, async (req, res) => {
     const oauthServers = mcpManager.getOAuthServers() || new Set();
 
     if (!mcpConfig) {
-      return res.status(404).json({ error: 'MCP config not found' });
+      // Return empty connection status instead of 404 error
+      // This is a harmless case when no MCP servers are configured
+      return res.json({
+        success: true,
+        connectionStatus: {},
+      });
     }
 
     // Get flow manager to check for active/timed-out OAuth flows
