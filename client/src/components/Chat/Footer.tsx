@@ -5,9 +5,13 @@ import { Constants } from 'librechat-data-provider';
 import { useGetStartupConfig } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 
-export default function Footer({ className }: { className?: string }) {
+export default function Footer({ className, showFooter = false }: { className?: string, showFooter?: boolean }) {
   const { data: config } = useGetStartupConfig();
   const localize = useLocalize();
+
+  if (!showFooter) {
+    return null;
+  }
 
   const privacyPolicy = config?.interface?.privacyPolicy;
   const termsOfService = config?.interface?.termsOfService;

@@ -90,7 +90,7 @@ function AuthLayout({
             )}
         </div>
       </div>
-      <Footer startupConfig={startupConfig} />
+      {/* <Footer startupConfig={startupConfig} /> */}
     </div>
   );
 }
