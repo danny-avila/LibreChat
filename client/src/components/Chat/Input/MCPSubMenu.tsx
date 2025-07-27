@@ -1,10 +1,10 @@
 import React from 'react';
 import * as Ariakit from '@ariakit/react';
 import { ChevronRight } from 'lucide-react';
-import { PinIcon, MCPIcon } from '~/components/svg';
-import MCPConfigDialog from '~/components/ui/MCP/MCPConfigDialog';
-import MCPServerStatusIcon from '~/components/ui/MCP/MCPServerStatusIcon';
+import { PinIcon, MCPIcon } from '@librechat/client';
+import MCPServerStatusIcon from '~/components/MCP/MCPServerStatusIcon';
 import { useMCPServerManager } from '~/hooks/MCP/useMCPServerManager';
+import MCPConfigDialog from '~/components/MCP/MCPConfigDialog';
 import { cn } from '~/utils';
 
 interface MCPSubMenuProps {

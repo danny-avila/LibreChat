@@ -1,8 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import mermaid from 'mermaid';
+import { Button } from '@librechat/client';
 import { TransformWrapper, TransformComponent, ReactZoomPanPinchRef } from 'react-zoom-pan-pinch';
-// import { Button } from '/components/ui/Button'; // Live component
-import { Button } from '~/components/ui/Button';
 import { ZoomIn, ZoomOut, RefreshCw } from 'lucide-react';
 
 interface MermaidDiagramProps {

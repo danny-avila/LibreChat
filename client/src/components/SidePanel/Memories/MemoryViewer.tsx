@@ -3,7 +3,6 @@ import { useMemo, useState, useRef, useEffect } from 'react';
 import { Plus } from 'lucide-react';
 import { matchSorter } from 'match-sorter';
 import { SystemRoles, PermissionTypes, Permissions } from 'librechat-data-provider';
-import type { TUserMemory } from 'librechat-data-provider';
 import {
   Spinner,
   EditIcon,
@@ -20,8 +19,11 @@ import {
   TableCell,
   TableHeader,
   TooltipAnchor,
+  useToastContext,
   OGDialogTrigger,
-} from '~/components';
+  OGDialogTemplate,
+} from '@librechat/client';
+import type { TUserMemory } from 'librechat-data-provider';
 import {
   useGetUserQuery,
   useMemoriesQuery,
@@ -29,10 +31,8 @@ import {
   useUpdateMemoryPreferencesMutation,
 } from '~/data-provider';
 import { useLocalize, useAuthContext, useHasAccess } from '~/hooks';
-import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
 import MemoryCreateDialog from './MemoryCreateDialog';
 import MemoryEditDialog from './MemoryEditDialog';
-import { useToastContext } from '~/Providers';
 import AdminSettings from './AdminSettings';
 import { cn } from '~/utils';
 

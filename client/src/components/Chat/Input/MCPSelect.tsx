@@ -1,9 +1,8 @@
 import React, { memo, useCallback } from 'react';
-import MCPConfigDialog from '~/components/ui/MCP/MCPConfigDialog';
-import MCPServerStatusIcon from '~/components/ui/MCP/MCPServerStatusIcon';
-import MultiSelect from '~/components/ui/MultiSelect';
-import { MCPIcon } from '~/components/svg';
+import { MultiSelect, MCPIcon } from '@librechat/client';
+import MCPServerStatusIcon from '~/components/MCP/MCPServerStatusIcon';
 import { useMCPServerManager } from '~/hooks/MCP/useMCPServerManager';
+import MCPConfigDialog from '~/components/MCP/MCPConfigDialog';
 
 function MCPSelect() {
   const {
@@ -80,7 +79,6 @@ function MCPSelect() {
         items={configuredServers}
         selectedValues={mcpValues ?? []}
         setSelectedValues={batchToggleServers}
-        defaultSelectedValues={mcpValues ?? []}
         renderSelectedValues={renderSelectedValues}
         renderItemContent={renderItemContent}
         placeholder={placeholderText}

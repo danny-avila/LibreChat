@@ -2,18 +2,18 @@ import React, { useMemo } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { VisuallyHidden } from '@ariakit/react';
 import { X, Globe, Newspaper, Image, ChevronDown } from 'lucide-react';
-import type { ValidSource, ImageResult } from 'librechat-data-provider';
-import { FaviconImage, getCleanDomain } from '~/components/Web/SourceHovercard';
-import { useSearchContext } from '~/Providers';
-import { AnimatedTabs } from '~/components/ui';
-import { useLocalize } from '~/hooks';
 import {
+  AnimatedTabs,
   OGDialog,
   OGDialogClose,
   OGDialogTitle,
   OGDialogContent,
   OGDialogTrigger,
-} from '~/components/ui/OriginalDialog';
+} from '@librechat/client';
+import type { ValidSource, ImageResult } from 'librechat-data-provider';
+import { FaviconImage, getCleanDomain } from '~/components/Web/SourceHovercard';
+import { useSearchContext } from '~/Providers';
+import { useLocalize } from '~/hooks';
 
 interface SourceItemProps {
   source: ValidSource;
@@ -21,7 +21,7 @@ interface SourceItemProps {
   expanded?: boolean;
 }
 
-function SourceItem({ source, isNews, expanded = false }: SourceItemProps) {
+function SourceItem({ source, isNews: _isNews, expanded = false }: SourceItemProps) {
   const localize = useLocalize();
   const domain = getCleanDomain(source.link);
 
