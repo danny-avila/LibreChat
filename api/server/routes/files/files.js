@@ -10,6 +10,7 @@ const {
   EModelEndpoint,
   isAgentsEndpoint,
   checkOpenAIStorage,
+  SystemRoles,
 } = require('librechat-data-provider');
 const {
   filterFile,
@@ -17,7 +18,7 @@ const {
   processDeleteRequest,
   processAgentFileUpload,
 } = require('~/server/services/Files/process');
-const { getFiles, batchUpdateFiles, hasAccessToFilesViaAgent } = require('~/models/File');
+const { getFiles, batchUpdateFiles, hasAccessToFilesViaAgent, findFileById } = require('~/models/File');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
@@ -27,12 +28,13 @@ const { getAssistant } = require('~/models/Assistant');
 const { getAgent } = require('~/models/Agent');
 const { getLogStores } = require('~/cache');
 const { logger } = require('~/config');
+const { createMulterInstance } = require('./multer');
 
 const router = express.Router();
 
 router.get('/', async (req, res) => {
   try {
-    const files = await getFiles({ user: req.user.id });
+    const files = await getFiles({ user: req.user.id }, undefined, { text: 0 }, { userId: req.user.id });
     if (req.app.locals.fileStrategy === FileSources.s3) {
       try {
         const cache = getLogStores(CacheKeys.S3_EXPIRY_INTERVAL);
@@ -261,6 +263,60 @@ router.delete('/', async (req, res) => {
   }
 });
 
+/**
+ * Get global files (admin only)
+ * @route GET /files/global
+ * @returns {Promise<TFile[]>} Array of global files
+ */
+router.get('/global', async (req, res) => {
+  try {
+    if (req.user.role !== SystemRoles.ADMIN) {
+      return res.status(403).json({ message: 'Only admins can access global files.' });
+    }
+
+    const files = await getFiles({ isGlobal: true }, undefined, { text: 0 });
+    res.status(200).send(files);
+  } catch (error) {
+    logger.error('[/files/global] Error getting global files:', error);
+    res.status(400).json({ message: 'Error in request', error: error.message });
+  }
+});
+
+/**
+ * Delete a global file (admin only)
+ * @route DELETE /files/global/:file_id
+ * @param {string} file_id - The file ID to delete
+ * @returns {Promise<Object>} Deletion result
+ */
+router.delete('/global/:file_id', async (req, res) => {
+  try {
+    if (req.user.role !== SystemRoles.ADMIN) {
+      return res.status(403).json({ message: 'Only admins can delete global files.' });
+    }
+
+    const { file_id } = req.params;
+    
+    if (!isValidID(file_id)) {
+      return res.status(400).json({ message: 'Invalid file ID' });
+    }
+
+    const file = await findFileById(file_id);
+    if (!file) {
+      return res.status(404).json({ message: 'File not found' });
+    }
+
+    if (!file.isGlobal) {
+      return res.status(400).json({ message: 'Only global files can be deleted via this endpoint' });
+    }
+
+    await processDeleteRequest({ req, files: [file] });
+    res.status(200).json({ message: 'Global file deleted successfully' });
+  } catch (error) {
+    logger.error('[/files/global/:file_id] Error deleting global file:', error);
+    res.status(500).json({ message: 'Error deleting global file', error: error.message });
+  }
+});
+
 function isValidID(str) {
   return /^[A-Za-z0-9_-]{21}$/.test(str);
 }
@@ -375,52 +431,114 @@ router.get('/download/:userId/:file_id', async (req, res) => {
   }
 });
 
+router.get('/test', (req, res) => {
+  console.log('[/files] GET /test route hit!');
+  res.json({ message: 'Files router is working' });
+});
+
 router.post('/', async (req, res) => {
-  const metadata = req.body;
-  let cleanup = true;
-
+  console.log('[/files] POST /files route hit!');
+  
   try {
-    filterFile({ req });
+    // Create multer instance and apply it to this request
+    const upload = await createMulterInstance();
+    
+    // Apply multer middleware to this request
+    upload.single('file')(req, res, async (err) => {
+      if (err) {
+        logger.error('[/files] Multer error:', err);
+        return res.status(400).json({ message: 'File upload error: ' + err.message });
+      }
 
-    metadata.temp_file_id = metadata.file_id;
-    metadata.file_id = req.file_id;
+      const metadata = req.body;
+      let cleanup = true;
 
-    if (isAgentsEndpoint(metadata.endpoint)) {
-      return await processAgentFileUpload({ req, res, metadata });
-    }
+      // Debug logging at the very beginning
+      logger.debug('[/files] POST /files received:', {
+        hasFile: !!req.file,
+        fileId: req.file_id,
+        bodyKeys: Object.keys(req.body),
+        contentType: req.headers['content-type'],
+      });
 
-    await processFileUpload({ req, res, metadata });
+      // Accept isGlobal from form-data or JSON
+      let isGlobal = false;
+      if (req.body.isGlobal === 'true' || req.body.isGlobal === true) {
+        if (req.user && req.user.role === SystemRoles.ADMIN) {
+          isGlobal = true;
+        } else {
+          return res.status(403).json({ message: 'Only admins can upload global files.' });
+        }
+      }
+
+      try {
+        // Generate file_id if not set by multer (do this BEFORE filterFile)
+        if (!req.file_id) {
+          const { v4: uuidv4 } = require('uuid');
+          req.file_id = uuidv4();
+          logger.debug('[/files] Generated file_id:', req.file_id);
+        }
+        
+        // Set file_id in body for filterFile to find
+        req.body.file_id = req.file_id;
+
+        // Debug logging
+        logger.debug('[/files] File upload request:', {
+          hasFile: !!req.file,
+          fileId: req.file_id,
+          isGlobal,
+          userRole: req.user?.role,
+        });
+
+        filterFile({ req });
+
+        metadata.temp_file_id = metadata.file_id;
+        metadata.file_id = req.file_id;
+        metadata.isGlobal = isGlobal;
+
+        if (isAgentsEndpoint(metadata.endpoint)) {
+          return await processAgentFileUpload({ req, res, metadata });
+        }
+
+        await processFileUpload({ req, res, metadata });
+      } catch (error) {
+        let message = 'Error processing file';
+        logger.error('[/files] Error processing file:', error);
+
+        if (error.message?.includes('file_ids')) {
+          message += ': ' + error.message;
+        }
+
+        if (
+          error.message?.includes('Invalid file format') ||
+          error.message?.includes('No OCR result')
+        ) {
+          message = error.message;
+        }
+
+        // TODO: delete remote file if it exists
+        try {
+          if (req.file?.path) {
+            await fs.unlink(req.file.path);
+            cleanup = false;
+          }
+        } catch (error) {
+          logger.error('[/files] Error deleting file:', error);
+        }
+        res.status(500).json({ message });
+      }
+
+      if (cleanup && req.file?.path) {
+        try {
+          await fs.unlink(req.file.path);
+        } catch (error) {
+          logger.error('[/files] Error deleting file after file processing:', error);
+        }
+      }
+    });
   } catch (error) {
-    let message = 'Error processing file';
-    logger.error('[/files] Error processing file:', error);
-
-    if (error.message?.includes('file_ids')) {
-      message += ': ' + error.message;
-    }
-
-    if (
-      error.message?.includes('Invalid file format') ||
-      error.message?.includes('No OCR result')
-    ) {
-      message = error.message;
-    }
-
-    // TODO: delete remote file if it exists
-    try {
-      await fs.unlink(req.file.path);
-      cleanup = false;
-    } catch (error) {
-      logger.error('[/files] Error deleting file:', error);
-    }
-    res.status(500).json({ message });
-  }
-
-  if (cleanup) {
-    try {
-      await fs.unlink(req.file.path);
-    } catch (error) {
-      logger.error('[/files] Error deleting file after file processing:', error);
-    }
+    logger.error('[/files] Error setting up multer:', error);
+    res.status(500).json({ message: 'Internal server error' });
   }
 });
 

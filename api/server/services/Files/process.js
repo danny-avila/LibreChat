@@ -457,6 +457,7 @@ const processFileUpload = async ({ req, res, metadata }) => {
       source,
       height,
       width,
+      isGlobal: metadata.isGlobal || false,
     },
     true,
   );
@@ -917,20 +918,19 @@ function filterFile({ req, image, isAvatar }) {
     isUUID.parse(file_id);
   }
 
-  if (!endpoint && !isAvatar) {
-    throw new Error('No endpoint provided');
-  }
+  // For global file uploads or when no endpoint is provided, use default configuration
+  const effectiveEndpoint = endpoint || 'default';
 
   const fileConfig = mergeFileConfig(req.app.locals.fileConfig);
 
   const { fileSizeLimit: sizeLimit, supportedMimeTypes } =
-    fileConfig.endpoints[endpoint] ?? fileConfig.endpoints.default;
+    fileConfig.endpoints[effectiveEndpoint] ?? fileConfig.endpoints.default;
   const fileSizeLimit = isAvatar === true ? fileConfig.avatarSizeLimit : sizeLimit;
 
   if (file.size > fileSizeLimit) {
     throw new Error(
       `File size limit of ${fileSizeLimit / megabyte} MB exceeded for ${
-        isAvatar ? 'avatar upload' : `${endpoint} endpoint`
+        isAvatar ? 'avatar upload' : `${effectiveEndpoint} endpoint`
       }`,
     );
   }

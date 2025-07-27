@@ -83,6 +83,7 @@ export type TFile = {
   metadata?: { fileIdentifier?: string };
   createdAt?: string | Date;
   updatedAt?: string | Date;
+  isGlobal?: boolean;
 };
 
 export type TFileUpload = TFile & {

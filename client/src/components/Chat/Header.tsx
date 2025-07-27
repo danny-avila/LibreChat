@@ -10,6 +10,7 @@ import { useMediaQuery, useHasAccess } from '~/hooks';
 import BookmarkMenu from './Menus/BookmarkMenu';
 import { TemporaryChat } from './TemporaryChat';
 import AddMultiConvo from './AddMultiConvo';
+import AdminButton from '~/components/Admin/AdminButton';
 
 const defaultInterface = getConfigDefaults().interface;
 
@@ -60,6 +61,7 @@ export default function Header() {
             {hasAccessToMultiConvo === true && <AddMultiConvo />}
             {isSmallScreen && (
               <>
+                <AdminButton />
                 <ExportAndShareMenu
                   isSharedButtonEnabled={startupConfig?.sharedLinksEnabled ?? false}
                 />
@@ -70,6 +72,7 @@ export default function Header() {
         </div>
         {!isSmallScreen && (
           <div className="flex items-center gap-2">
+            <AdminButton />
             <ExportAndShareMenu
               isSharedButtonEnabled={startupConfig?.sharedLinksEnabled ?? false}
             />

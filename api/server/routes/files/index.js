@@ -23,7 +23,8 @@ const initialize = async () => {
 
   const { fileUploadIpLimiter, fileUploadUserLimiter } = createFileLimiters();
   router.post('*', fileUploadIpLimiter, fileUploadUserLimiter);
-  router.post('/', upload.single('file'));
+  // Remove the conflicting multer middleware from here
+  // router.post('/', upload.single('file'));
   router.post('/images', upload.single('file'));
   router.post('/images/avatar', upload.single('file'));
   router.post('/images/agents/:agent_id/avatar', upload.single('file'));

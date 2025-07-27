@@ -96,6 +96,61 @@ const hasAccessToFilesViaAgent = async (userId, fileIds, agentId, checkCollabora
  */
 const getFiles = async (filter, _sortOptions, selectFields = { text: 0 }, options = {}) => {
   const sortOptions = { updatedAt: -1, ..._sortOptions };
+  
+  // If fetching for a user, always include global files
+  if (options.userId) {
+    const userFilter = { ...filter, user: options.userId };
+    const globalFilter = { ...filter, isGlobal: true };
+    // Remove user from globalFilter if present
+    delete globalFilter.user;
+    
+    const [userFiles, globalFiles] = await Promise.all([
+      File.find(userFilter).select(selectFields).sort(sortOptions).lean(),
+      File.find(globalFilter).select(selectFields).sort(sortOptions).lean(),
+    ]);
+    
+    // Merge and deduplicate by file_id
+    const allFiles = [
+      ...userFiles,
+      ...globalFiles.filter((gf) => !userFiles.some((uf) => uf.file_id === gf.file_id)),
+    ];
+    
+    // If userId and agentId are provided, filter files based on access
+    if (options.agentId) {
+      // Collect file IDs that need access check
+      const filesToCheck = [];
+      const ownedFiles = [];
+
+      for (const file of allFiles) {
+        if (file.user && file.user.toString() === options.userId) {
+          ownedFiles.push(file);
+        } else {
+          filesToCheck.push(file);
+        }
+      }
+
+      if (filesToCheck.length === 0) {
+        return ownedFiles;
+      }
+
+      // Batch check access for all non-owned files
+      const fileIds = filesToCheck.map((f) => f.file_id);
+      const accessMap = await hasAccessToFilesViaAgent(
+        options.userId,
+        fileIds,
+        options.agentId,
+        false,
+      );
+
+      // Filter files based on access
+      const accessibleFiles = filesToCheck.filter((file) => accessMap.get(file.file_id));
+
+      return [...ownedFiles, ...accessibleFiles];
+    }
+    
+    return allFiles;
+  }
+  
   const files = await File.find(filter).select(selectFields).sort(sortOptions).lean();
 
   // If userId and agentId are provided, filter files based on access

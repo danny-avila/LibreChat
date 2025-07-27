@@ -74,6 +74,10 @@ const file: Schema<IMongoFile> = new Schema(
       type: Date,
       expires: 3600, // 1 hour in seconds
     },
+    isGlobal: {
+      type: Boolean,
+      default: false,
+    },
   },
   {
     timestamps: true,

@@ -48,7 +48,8 @@ function createContextHandlers(req, userMessageContent) {
   };
 
   const processFile = async (file) => {
-    if (file.embedded && !processedIds.has(file.file_id)) {
+    if ((file.embedded && !processedIds.has(file.file_id)) || 
+        (file.isGlobal && !processedIds.has(file.file_id))) {
       try {
         const promise = query(file);
         queryPromises.push(promise);

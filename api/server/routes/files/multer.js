@@ -15,7 +15,9 @@ const storage = multer.diskStorage({
     cb(null, outputPath);
   },
   filename: function (req, file, cb) {
+    const { logger } = require('~/config');
     req.file_id = crypto.randomUUID();
+    logger.debug('[/multer] Generated file_id in filename function:', req.file_id);
     file.originalname = decodeURIComponent(file.originalname);
     const sanitizedFilename = sanitizeFilename(file.originalname);
     cb(null, sanitizedFilename);
