@@ -1,6 +1,6 @@
 {
   "name": "@librechat/client",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "description": "React components for LibreChat",
   "main": "dist/index.js",
   "module": "dist/index.es.js",
