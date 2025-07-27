@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
-const { MongoMemoryServer } = require('mongodb-memory-server');
 const { v4: uuidv4 } = require('uuid');
 const { messageSchema } = require('@librechat/data-schemas');
+const { MongoMemoryServer } = require('mongodb-memory-server');
 
 const {
   saveMessage,
@@ -117,21 +117,21 @@ describe('Message Operations', () => {
       const conversationId = uuidv4();
 
       // Create multiple messages in the same conversation
-      const message1 = await saveMessage(mockReq, {
+      await saveMessage(mockReq, {
         messageId: 'msg1',
         conversationId,
         text: 'First message',
         user: 'user123',
       });
 
-      const message2 = await saveMessage(mockReq, {
+      await saveMessage(mockReq, {
         messageId: 'msg2',
         conversationId,
         text: 'Second message',
         user: 'user123',
       });
 
-      const message3 = await saveMessage(mockReq, {
+      await saveMessage(mockReq, {
         messageId: 'msg3',
         conversationId,
         text: 'Third message',
