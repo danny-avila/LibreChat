@@ -1,4 +1,5 @@
 import React, { useState, useRef, useLayoutEffect, useCallback, memo } from 'react';
+import { useLocalize } from '~/hooks';
 
 interface Option {
   value: string;
@@ -13,6 +14,7 @@ interface RadioProps {
 }
 
 const Radio = memo(function Radio({ options, value, onChange, disabled = false }: RadioProps) {
+  const localize = useLocalize();
   const [currentValue, setCurrentValue] = useState<string>(value ?? '');
   const buttonRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const [backgroundStyle, setBackgroundStyle] = useState<React.CSSProperties>({});
@@ -55,7 +57,9 @@ const Radio = memo(function Radio({ options, value, onChange, disabled = false }
         className="relative inline-flex items-center rounded-lg bg-muted p-1 opacity-50"
         role="radiogroup"
       >
-        <span className="px-4 py-2 text-xs text-muted-foreground">No options available</span>
+        <span className="px-4 py-2 text-xs text-muted-foreground">
+          {localize('com_ui_no_options')}
+        </span>
       </div>
     );
   }
