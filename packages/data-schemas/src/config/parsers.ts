@@ -1,6 +1,7 @@
 import { klona } from 'klona';
 import winston from 'winston';
-import traverse from 'traverse';
+import traverse from '../utils/object-traverse';
+import type { TraverseContext } from '../utils/object-traverse';
 
 const SPLAT_SYMBOL = Symbol.for('splat');
 const MESSAGE_SYMBOL = Symbol.for('message');
@@ -155,38 +156,43 @@ const debugTraverse = winston.format.printf(
       msg += '\n{';
 
       const copy = klona(metadata);
+      try {
+        const traversal = traverse(copy);
+        traversal.forEach(function (this: TraverseContext, value: unknown) {
+          if (typeof this?.key === 'symbol') {
+            return;
+          }
 
-      traverse(copy).forEach(function (this: traverse.TraverseContext, value: unknown) {
-        if (typeof this?.key === 'symbol') {
-          return;
-        }
+          let _parentKey = '';
+          const parent = this.parent;
 
-        let _parentKey = '';
-        const parent = this.parent;
+          if (typeof parent?.key !== 'symbol' && parent?.key !== undefined) {
+            _parentKey = String(parent.key);
+          }
 
-        if (typeof parent?.key !== 'symbol' && parent?.key) {
-          _parentKey = parent.key;
-        }
+          const parentKey = `${parent && parent.notRoot ? _parentKey + '.' : ''}`;
+          const tabs = `${parent && parent.notRoot ? '    ' : '  '}`;
+          const currentKey = this?.key ?? 'unknown';
 
-        const parentKey = `${parent && parent.notRoot ? _parentKey + '.' : ''}`;
-        const tabs = `${parent && parent.notRoot ? '    ' : '  '}`;
-        const currentKey = this?.key ?? 'unknown';
-
-        if (this.isLeaf && typeof value === 'string') {
-          const truncatedText = truncateLongStrings(value);
-          msg += `\n${tabs}${parentKey}${currentKey}: ${JSON.stringify(truncatedText)},`;
-        } else if (this.notLeaf && Array.isArray(value) && value.length > 0) {
-          const currentMessage = `\n${tabs}// ${value.length} ${currentKey.replace(/s$/, '')}(s)`;
-          this.update(currentMessage, true);
-          msg += currentMessage;
-          const stringifiedArray = value.map(condenseArray);
-          msg += `\n${tabs}${parentKey}${currentKey}: [${stringifiedArray}],`;
-        } else if (this.isLeaf && typeof value === 'function') {
-          msg += `\n${tabs}${parentKey}${currentKey}: function,`;
-        } else if (this.isLeaf) {
-          msg += `\n${tabs}${parentKey}${currentKey}: ${value},`;
-        }
-      });
+          if (this.isLeaf && typeof value === 'string') {
+            const truncatedText = truncateLongStrings(value);
+            msg += `\n${tabs}${parentKey}${currentKey}: ${JSON.stringify(truncatedText)},`;
+          } else if (this.notLeaf && Array.isArray(value) && value.length > 0) {
+            const currentMessage = `\n${tabs}// ${value.length} ${String(currentKey).replace(/s$/, '')}(s)`;
+            this.update(currentMessage, true);
+            msg += currentMessage;
+            const stringifiedArray = value.map(condenseArray);
+            msg += `\n${tabs}${parentKey}${currentKey}: [${stringifiedArray}],`;
+          } else if (this.isLeaf && typeof value === 'function') {
+            msg += `\n${tabs}${parentKey}${currentKey}: function,`;
+          } else if (this.isLeaf) {
+            msg += `\n${tabs}${parentKey}${currentKey}: ${value},`;
+          }
+        });
+      } catch (e: unknown) {
+        const errorMessage = e instanceof Error ? e.message : 'Unknown error';
+        msg += `\n[LOGGER TRAVERSAL ERROR] ${errorMessage}`;
+      }
 
       msg += '\n}';
       return msg;
