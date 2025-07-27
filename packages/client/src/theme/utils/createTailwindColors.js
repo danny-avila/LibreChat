@@ -51,6 +51,35 @@ function createTailwindColors() {
     'border-xheavy': withOpacity('--border-xheavy'),
     'brand-purple': withOpacity('--brand-purple'),
     presentation: withOpacity('--presentation'),
+    background: withOpacity('--background'),
+    foreground: withOpacity('--foreground'),
+    primary: {
+      DEFAULT: withOpacity('--primary'),
+      foreground: withOpacity('--primary-foreground'),
+    },
+    secondary: {
+      DEFAULT: withOpacity('--secondary'),
+      foreground: withOpacity('--secondary-foreground'),
+    },
+    muted: {
+      DEFAULT: withOpacity('--muted'),
+      foreground: withOpacity('--muted-foreground'),
+    },
+    accent: {
+      DEFAULT: withOpacity('--accent'),
+      foreground: withOpacity('--accent-foreground'),
+    },
+    destructive: {
+      DEFAULT: withOpacity('--surface-destructive'),
+      foreground: withOpacity('--destructive-foreground'),
+    },
+    border: withOpacity('--border'),
+    input: withOpacity('--input'),
+    ring: withOpacity('--ring'),
+    card: {
+      DEFAULT: withOpacity('--card'),
+      foreground: withOpacity('--card-foreground'),
+    },
   };
 }
 

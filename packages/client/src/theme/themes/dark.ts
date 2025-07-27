@@ -51,4 +51,22 @@ export const darkTheme: IThemeRGB = {
 
   // Presentation
   'rgb-presentation': '33 33 33', // #212121 (gray-800)
+
+  // Utility colors (mapped to existing colors for backwards compatibility)
+  'rgb-background': '33 33 33', // Same as surface-primary
+  'rgb-foreground': '255 255 255', // Same as text-primary
+  'rgb-primary': '66 66 66', // Same as surface-active
+  'rgb-primary-foreground': '255 255 255', // Same as surface-primary-contrast
+  'rgb-secondary': '42 42 42', // Same as surface-secondary
+  'rgb-secondary-foreground': '193 193 193', // Same as text-secondary
+  'rgb-muted': '56 56 56', // Same as surface-tertiary
+  'rgb-muted-foreground': '140 140 140', // Same as text-tertiary
+  'rgb-accent': '82 82 82', // Same as surface-active-alt
+  'rgb-accent-foreground': '255 255 255', // Same as text-primary
+  'rgb-destructive-foreground': '255 255 255', // Same as text-primary
+  'rgb-border': '82 82 82', // Same as border-medium
+  'rgb-input': '66 66 66', // Same as border-light
+  'rgb-ring': '255 255 255', // Same as ring-primary
+  'rgb-card': '42 42 42', // Same as surface-secondary
+  'rgb-card-foreground': '255 255 255', // Same as text-primary
 };

@@ -59,6 +59,24 @@ function mapTheme(rgb: IThemeRGB): Partial<IThemeVariables> {
     'rgb-border-xheavy': '--border-xheavy',
     'rgb-brand-purple': '--brand-purple',
     'rgb-presentation': '--presentation',
+
+    // Utility colors
+    'rgb-background': '--background',
+    'rgb-foreground': '--foreground',
+    'rgb-primary': '--primary',
+    'rgb-primary-foreground': '--primary-foreground',
+    'rgb-secondary': '--secondary',
+    'rgb-secondary-foreground': '--secondary-foreground',
+    'rgb-muted': '--muted',
+    'rgb-muted-foreground': '--muted-foreground',
+    'rgb-accent': '--accent',
+    'rgb-accent-foreground': '--accent-foreground',
+    'rgb-destructive-foreground': '--destructive-foreground',
+    'rgb-border': '--border',
+    'rgb-input': '--input',
+    'rgb-ring': '--ring',
+    'rgb-card': '--card',
+    'rgb-card-foreground': '--card-foreground',
   };
 
   Object.entries(mappings).forEach(([rgbKey, cssVar]) => {
