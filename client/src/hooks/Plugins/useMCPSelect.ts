@@ -81,12 +81,20 @@ export function useMCPSelect({ conversationId }: UseMCPSelectOptions) {
     [setEphemeralAgent],
   );
 
-  const [mcpValues, setMCPValues] = useLocalStorage<string[]>(
+  const [mcpValues, setMCPValuesRaw] = useLocalStorage<string[]>(
     `${LocalStorageKeys.LAST_MCP_}${key}`,
     mcpState,
     setSelectedValues,
     storageCondition,
   );
+
+  const setMCPValuesRawRef = useRef(setMCPValuesRaw);
+  setMCPValuesRawRef.current = setMCPValuesRaw;
+
+  // Create a stable memoized setter to avoid re-creating it on every render and causing an infinite render loop
+  const setMCPValues = useCallback((value: string[]) => {
+    setMCPValuesRawRef.current(value);
+  }, []);
 
   const [isPinned, setIsPinned] = useLocalStorage<boolean>(
     `${LocalStorageKeys.PIN_MCP_}${key}`,
