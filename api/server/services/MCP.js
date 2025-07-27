@@ -12,7 +12,7 @@ const {
 } = require('@librechat/api');
 const { findToken, createToken, updateToken } = require('~/models');
 const { getMCPManager, getFlowStateManager } = require('~/config');
-const { getCachedTools } = require('./Config');
+const { getCachedTools, loadCustomConfig } = require('./Config');
 const { getLogStores } = require('~/cache');
 
 /**
@@ -239,6 +239,123 @@ async function createMCPTool({ req, res, toolKey, provider: _provider }) {
   return toolInstance;
 }
 
+/**
+ * Get MCP setup data including config, connections, and OAuth servers
+ * @param {string} userId - The user ID
+ * @returns {Object} Object containing mcpConfig, appConnections, userConnections, and oauthServers
+ */
+async function getMCPSetupData(userId) {
+  const printConfig = false;
+  const config = await loadCustomConfig(printConfig);
+  const mcpConfig = config?.mcpServers;
+
+  if (!mcpConfig) {
+    throw new Error('MCP config not found');
+  }
+
+  const mcpManager = getMCPManager(userId);
+  const appConnections = mcpManager.getAllConnections() || new Map();
+  const userConnections = mcpManager.getUserConnections(userId) || new Map();
+  const oauthServers = mcpManager.getOAuthServers() || new Set();
+
+  return {
+    mcpConfig,
+    appConnections,
+    userConnections,
+    oauthServers,
+  };
+}
+
+/**
+ * Check OAuth flow status for a user and server
+ * @param {string} userId - The user ID
+ * @param {string} serverName - The server name
+ * @returns {Object} Object containing hasActiveFlow and hasFailedFlow flags
+ */
+async function checkOAuthFlowStatus(userId, serverName) {
+  const flowsCache = getLogStores(CacheKeys.FLOWS);
+  const flowManager = getFlowStateManager(flowsCache);
+  const flowId = MCPOAuthHandler.generateFlowId(userId, serverName);
+
+  try {
+    const flowState = await flowManager.getFlowState(flowId, 'mcp_oauth');
+    if (!flowState) {
+      return { hasActiveFlow: false, hasFailedFlow: false };
+    }
+
+    const flowAge = Date.now() - flowState.createdAt;
+    const flowTTL = flowState.ttl || 180000; // Default 3 minutes
+
+    if (flowState.status === 'FAILED' || flowAge > flowTTL) {
+      logger.debug(`[MCP Connection Status] Found failed OAuth flow for ${serverName}`, {
+        flowId,
+        status: flowState.status,
+        flowAge,
+        flowTTL,
+        timedOut: flowAge > flowTTL,
+      });
+      return { hasActiveFlow: false, hasFailedFlow: true };
+    }
+
+    if (flowState.status === 'PENDING') {
+      logger.debug(`[MCP Connection Status] Found active OAuth flow for ${serverName}`, {
+        flowId,
+        flowAge,
+        flowTTL,
+      });
+      return { hasActiveFlow: true, hasFailedFlow: false };
+    }
+
+    return { hasActiveFlow: false, hasFailedFlow: false };
+  } catch (error) {
+    logger.error(`[MCP Connection Status] Error checking OAuth flows for ${serverName}:`, error);
+    return { hasActiveFlow: false, hasFailedFlow: false };
+  }
+}
+
+/**
+ * Get connection status for a specific MCP server
+ * @param {string} userId - The user ID
+ * @param {string} serverName - The server name
+ * @param {Map} appConnections - App-level connections
+ * @param {Map} userConnections - User-level connections
+ * @param {Set} oauthServers - Set of OAuth servers
+ * @returns {Object} Object containing requiresOAuth and connectionState
+ */
+async function getServerConnectionStatus(
+  userId,
+  serverName,
+  appConnections,
+  userConnections,
+  oauthServers,
+) {
+  const getConnectionState = () =>
+    appConnections.get(serverName)?.connectionState ??
+    userConnections.get(serverName)?.connectionState ??
+    'disconnected';
+
+  const baseConnectionState = getConnectionState();
+  let finalConnectionState = baseConnectionState;
+
+  if (baseConnectionState === 'disconnected' && oauthServers.has(serverName)) {
+    const { hasActiveFlow, hasFailedFlow } = await checkOAuthFlowStatus(userId, serverName);
+
+    if (hasFailedFlow) {
+      finalConnectionState = 'error';
+    } else if (hasActiveFlow) {
+      finalConnectionState = 'connecting';
+    }
+  }
+
+  return {
+    requiresOAuth: oauthServers.has(serverName),
+    connectionState: finalConnectionState,
+  };
+}
+
 module.exports = {
   createMCPTool,
+  getMCPSetupData,
+  checkOAuthFlowStatus,
+  getServerConnectionStatus,
 };

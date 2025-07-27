@@ -4,6 +4,7 @@ const { MCPOAuthHandler } = require('@librechat/api');
 const { CacheKeys, Constants } = require('librechat-data-provider');
 const { findToken, updateToken, createToken, deleteTokens } = require('~/models');
 const { setCachedTools, getCachedTools, loadCustomConfig } = require('~/server/services/Config');
+const { getMCPSetupData, getServerConnectionStatus } = require('~/server/services/MCP');
 const { getUserPluginAuthValue } = require('~/server/services/PluginService');
 const { getMCPManager, getFlowStateManager } = require('~/config');
 const { requireJwtAuth } = require('~/server/middleware');
@@ -465,100 +466,6 @@ router.post('/:serverName/reinitialize', requireJwtAuth, async (req, res) => {
     res.status(500).json({ error: 'Internal server error' });
   }
 });
-
-async function getMCPSetupData(userId) {
-  const printConfig = false;
-  const config = await loadCustomConfig(printConfig);
-  const mcpConfig = config?.mcpServers;
-
-  if (!mcpConfig) {
-    throw new Error('MCP config not found');
-  }
-
-  const mcpManager = getMCPManager(userId);
-  const appConnections = mcpManager.getAllConnections() || new Map();
-  const userConnections = mcpManager.getUserConnections(userId) || new Map();
-  const oauthServers = mcpManager.getOAuthServers() || new Set();
-
-  return {
-    mcpConfig,
-    appConnections,
-    userConnections,
-    oauthServers,
-  };
-}
-
-async function checkOAuthFlowStatus(userId, serverName) {
-  const flowsCache = getLogStores(CacheKeys.FLOWS);
-  const flowManager = getFlowStateManager(flowsCache);
-  const flowId = MCPOAuthHandler.generateFlowId(userId, serverName);
-
-  try {
-    const flowState = await flowManager.getFlowState(flowId, 'mcp_oauth');
-    if (!flowState) {
-      return { hasActiveFlow: false, hasFailedFlow: false };
-    }
-
-    const flowAge = Date.now() - flowState.createdAt;
-    const flowTTL = flowState.ttl || 180000; // Default 3 minutes
-
-    if (flowState.status === 'FAILED' || flowAge > flowTTL) {
-      logger.debug(`[MCP Connection Status] Found failed OAuth flow for ${serverName}`, {
-        flowId,
-        status: flowState.status,
-        flowAge,
-        flowTTL,
-        timedOut: flowAge > flowTTL,
-      });
-      return { hasActiveFlow: false, hasFailedFlow: true };
-    }
-
-    if (flowState.status === 'PENDING') {
-      logger.debug(`[MCP Connection Status] Found active OAuth flow for ${serverName}`, {
-        flowId,
-        flowAge,
-        flowTTL,
-      });
-      return { hasActiveFlow: true, hasFailedFlow: false };
-    }
-
-    return { hasActiveFlow: false, hasFailedFlow: false };
-  } catch (error) {
-    logger.error(`[MCP Connection Status] Error checking OAuth flows for ${serverName}:`, error);
-    return { hasActiveFlow: false, hasFailedFlow: false };
-  }
-}
-
-async function getServerConnectionStatus(
-  userId,
-  serverName,
-  appConnections,
-  userConnections,
-  oauthServers,
-) {
-  const getConnectionState = () =>
-    appConnections.get(serverName)?.connectionState ??
-    userConnections.get(serverName)?.connectionState ??
-    'disconnected';
-
-  const baseConnectionState = getConnectionState();
-  let finalConnectionState = baseConnectionState;
-
-  if (baseConnectionState === 'disconnected' && oauthServers.has(serverName)) {
-    const { hasActiveFlow, hasFailedFlow } = await checkOAuthFlowStatus(userId, serverName);
-
-    if (hasFailedFlow) {
-      finalConnectionState = 'error';
-    } else if (hasActiveFlow) {
-      finalConnectionState = 'connecting';
-    }
-  }
-
-  return {
-    requiresOAuth: oauthServers.has(serverName),
-    connectionState: finalConnectionState,
-  };
-}
 
 /**
  * Get connection status for all MCP servers
