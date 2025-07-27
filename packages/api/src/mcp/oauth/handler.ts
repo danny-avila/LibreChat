@@ -188,7 +188,6 @@ export class MCPOAuthHandler {
           response_types_supported: ['code'],
           code_challenge_methods_supported: ['S256', 'plain'],
         };
-        logger.info('Using metadata: ', metadata);
 
         const clientInfo: OAuthClientInformation = {
           client_id: config.client_id,
