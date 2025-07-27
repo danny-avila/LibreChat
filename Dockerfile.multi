@@ -58,6 +58,7 @@ WORKDIR /app/client
 COPY client ./
 COPY --from=data-provider-build /app/packages/data-provider/dist /app/packages/data-provider/dist
 COPY --from=client-package-build /app/packages/client/dist /app/packages/client/dist
+COPY --from=client-package-build /app/packages/client/src /app/packages/client/src
 ENV NODE_OPTIONS="--max-old-space-size=2048"
 RUN npm run build
 
