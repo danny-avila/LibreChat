@@ -33,7 +33,8 @@ const standardCache = (namespace, ttl = undefined, fallbackStore = undefined) =>
 
       return cache;
     } catch (err) {
-      logger.error(`Failed to create Redis cache for namespace ${namespace}, falling back:`, err);
+      logger.error(`Failed to create Redis cache for namespace ${namespace}:`, err);
+      throw err;
     }
   }
   if (fallbackStore) return new Keyv({ store: fallbackStore, namespace, ttl });

@@ -6,7 +6,10 @@ const mockKeyvRedis = {
   keyPrefixSeparator: '',
 };
 
-const mockKeyv = jest.fn().mockReturnValue({ mock: 'keyv' });
+const mockKeyv = jest.fn().mockReturnValue({
+  mock: 'keyv',
+  on: jest.fn(),
+});
 const mockConnectRedis = jest.fn().mockReturnValue({ mock: 'connectRedis' });
 const mockMemoryStore = jest.fn().mockReturnValue({ mock: 'memoryStore' });
 const mockRedisStore = jest.fn().mockReturnValue({ mock: 'redisStore' });
@@ -150,6 +153,28 @@ describe('cacheFactory', () => {
 
       expect(require('@keyv/redis').default).toHaveBeenCalledWith(mockKeyvRedisClient);
       expect(mockKeyv).toHaveBeenCalledWith(mockKeyvRedis, { namespace, ttl });
+    });
+
+    it('should throw error when Redis cache creation fails', () => {
+      cacheConfig.USE_REDIS = true;
+      const namespace = 'test-namespace';
+      const ttl = 3600;
+      const testError = new Error('Redis connection failed');
+
+      const KeyvRedis = require('@keyv/redis').default;
+      KeyvRedis.mockImplementationOnce(() => {
+        throw testError;
+      });
+
+      expect(() => standardCache(namespace, ttl)).toThrow('Redis connection failed');
+
+      const { logger } = require('@librechat/data-schemas');
+      expect(logger.error).toHaveBeenCalledWith(
+        `Failed to create Redis cache for namespace ${namespace}:`,
+        testError,
+      );
+
+      expect(mockKeyv).not.toHaveBeenCalled();
     });
   });
 

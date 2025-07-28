@@ -174,9 +174,9 @@ if (cacheConfig.USE_REDIS) {
     logger.warn('@keyv/redis client disconnected');
   });
 
-  // Connect the client
   keyvRedisClient.connect().catch((err) => {
     logger.error('@keyv/redis initial connection failed:', err);
+    throw err;
   });
 
   /** Ping Interval to keep the Redis server connection alive (if enabled) */
