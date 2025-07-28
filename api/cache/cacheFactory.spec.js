@@ -13,6 +13,7 @@ const mockRedisStore = jest.fn().mockReturnValue({ mock: 'redisStore' });
 
 const mockIoredisClient = {
   call: jest.fn(),
+  on: jest.fn(),
 };
 
 const mockKeyvRedisClient = {};
@@ -51,6 +52,14 @@ jest.mock('memorystore', () => jest.fn(() => mockMemoryStore));
 
 jest.mock('rate-limit-redis', () => ({
   RedisStore: mockRedisStore,
+}));
+
+jest.mock('@librechat/data-schemas', () => ({
+  logger: {
+    error: jest.fn(),
+    warn: jest.fn(),
+    info: jest.fn(),
+  },
 }));
 
 // Import after mocking
@@ -274,8 +283,10 @@ describe('cacheFactory', () => {
       });
     });
 
-    it('should pass sendCommand function that calls ioredisClient.call', () => {
+    it('should pass sendCommand function that calls ioredisClient.call', async () => {
       cacheConfig.USE_REDIS = true;
+      mockIoredisClient.call.mockResolvedValue('test-value');
+
       limiterCache('rate-limit');
 
       const sendCommandCall = mockRedisStore.mock.calls[0][0];
@@ -283,8 +294,28 @@ describe('cacheFactory', () => {
 
       // Test that sendCommand properly delegates to ioredisClient.call
       const args = ['GET', 'test-key'];
-      sendCommand(...args);
+      const result = await sendCommand(...args);
 
+      expect(mockIoredisClient.call).toHaveBeenCalledWith(...args);
+      expect(result).toBe('test-value');
+    });
+
+    it('should handle sendCommand errors properly', async () => {
+      cacheConfig.USE_REDIS = true;
+
+      // Mock the call method to reject with an error
+      const testError = new Error('Redis error');
+      mockIoredisClient.call.mockRejectedValue(testError);
+
+      limiterCache('rate-limit');
+
+      const sendCommandCall = mockRedisStore.mock.calls[0][0];
+      const sendCommand = sendCommandCall.sendCommand;
+
+      // Test that sendCommand properly handles errors
+      const args = ['GET', 'test-key'];
+
+      await expect(sendCommand(...args)).rejects.toThrow('Redis error');
       expect(mockIoredisClient.call).toHaveBeenCalledWith(...args);
     });
 
