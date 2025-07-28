@@ -6,7 +6,7 @@ import {
   QueryKeys,
   Constants,
   EModelEndpoint,
-  PERMISSION_BITS,
+  PermissionBits,
   LocalStorageKeys,
   AgentListResponse,
 } from 'librechat-data-provider';
@@ -45,7 +45,7 @@ const AgentDetail: React.FC<AgentDetailProps> = ({ agent, isOpen, onClose }) => 
    */
   const handleStartChat = () => {
     if (agent) {
-      const keys = [QueryKeys.agents, { requiredPermission: PERMISSION_BITS.EDIT }];
+      const keys = [QueryKeys.agents, { requiredPermission: PermissionBits.EDIT }];
       const listResp = queryClient.getQueryData<AgentListResponse>(keys);
       if (listResp != null) {
         if (!listResp.data.some((a) => a.id === agent.id)) {

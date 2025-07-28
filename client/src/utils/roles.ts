@@ -1,4 +1,4 @@
-import type { ACCESS_ROLE_IDS } from 'librechat-data-provider';
+import type { AccessRoleIds } from 'librechat-data-provider';
 import type { TranslationKeys } from '~/hooks/useLocalize';
 
 /**
@@ -43,7 +43,7 @@ export const ROLE_LOCALIZATIONS = {
  * @returns Object with name and description localization keys, or unknown keys if not found
  */
 export const getRoleLocalizationKeys = (
-  roleId: ACCESS_ROLE_IDS,
+  roleId: AccessRoleIds,
 ): {
   name: TranslationKeys;
   description: TranslationKeys;

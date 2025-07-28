@@ -16,7 +16,7 @@ const accessRoleSchema = new Schema<IAccessRole>(
     description: String,
     resourceType: {
       type: String,
-      enum: ['agent', 'project', 'file', 'prompt', 'promptGroup'],
+      enum: ['agent', 'project', 'file', 'promptGroup'],
       required: true,
       default: 'agent',
     },
