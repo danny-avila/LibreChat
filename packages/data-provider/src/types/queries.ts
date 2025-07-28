@@ -1,5 +1,5 @@
 import type { InfiniteData } from '@tanstack/react-query';
-import type { ACCESS_ROLE_IDS } from '../accessPermissions';
+import type { AccessRoleIds } from '../accessPermissions';
 import type * as a from '../types/agents';
 import type * as s from '../schemas';
 import type * as t from '../types';
@@ -159,7 +159,7 @@ export type PrincipalSearchResponse = {
 };
 
 export type AccessRole = {
-  accessRoleId: ACCESS_ROLE_IDS;
+  accessRoleId: AccessRoleIds;
   name: string;
   description: string;
   permBits: number;

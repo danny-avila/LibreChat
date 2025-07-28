@@ -1,8 +1,8 @@
 const { logger } = require('@librechat/data-schemas');
-const { PERMISSION_BITS, hasPermissions } = require('librechat-data-provider');
+const { PermissionBits, hasPermissions, ResourceType } = require('librechat-data-provider');
 const { getEffectivePermissions } = require('~/server/services/PermissionService');
-const { getFiles } = require('~/models/File');
 const { getAgent } = require('~/models/Agent');
+const { getFiles } = require('~/models/File');
 
 /**
  * Checks if user has access to a file through agent permissions
@@ -35,11 +35,11 @@ const checkAgentBasedFileAccess = async (userId, fileId) => {
       try {
         const permissions = await getEffectivePermissions({
           userId,
-          resourceType: 'agent',
+          resourceType: ResourceType.AGENT,
           resourceId: agent._id || agent.id,
         });
 
-        if (hasPermissions(permissions, PERMISSION_BITS.VIEW)) {
+        if (hasPermissions(permissions, PermissionBits.VIEW)) {
           logger.debug(`[fileAccess] User ${userId} has VIEW permissions on agent ${agent.id}`);
           return true;
         }

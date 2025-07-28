@@ -1,16 +1,4 @@
-/**
- * Permission bit flags
- */
-export enum PermissionBits {
-  /** 0001 - Can view/access the resource */
-  VIEW = 1,
-  /** 0010 - Can modify the resource */
-  EDIT = 2,
-  /** 0100 - Can delete the resource */
-  DELETE = 4,
-  /** 1000 - Can share the resource with others */
-  SHARE = 8,
-}
+import { PermissionBits } from 'librechat-data-provider';
 
 /**
  * Common role combinations

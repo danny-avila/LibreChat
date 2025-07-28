@@ -1,30 +1,33 @@
 const { z } = require('zod');
 const fs = require('fs').promises;
 const { nanoid } = require('nanoid');
-const { logger, PermissionBits } = require('@librechat/data-schemas');
+const { logger } = require('@librechat/data-schemas');
 const { agentCreateSchema, agentUpdateSchema } = require('@librechat/api');
 const {
   Tools,
   SystemRoles,
   FileSources,
+  ResourceType,
+  AccessRoleIds,
   EToolResources,
   actionDelimiter,
+  PermissionBits,
   removeNullishValues,
 } = require('librechat-data-provider');
 const {
-  getAgent,
-  createAgent,
-  updateAgent,
-  deleteAgent,
   getListAgentsByAccess,
   countPromotedAgents,
   revertAgentVersion,
+  createAgent,
+  updateAgent,
+  deleteAgent,
+  getAgent,
 } = require('~/models/Agent');
 const {
-  grantPermission,
-  findAccessibleResources,
   findPubliclyAccessibleResources,
+  findAccessibleResources,
   hasPublicPermission,
+  grantPermission,
 } = require('~/server/services/PermissionService');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { resizeAvatar } = require('~/server/services/Files/images/avatar');
@@ -79,9 +82,9 @@ const createAgentHandler = async (req, res) => {
       await grantPermission({
         principalType: 'user',
         principalId: userId,
-        resourceType: 'agent',
+        resourceType: ResourceType.AGENT,
         resourceId: agent._id,
-        accessRoleId: 'agent_owner',
+        accessRoleId: AccessRoleIds.AGENT_OWNER,
         grantedBy: userId,
       });
       logger.debug(
@@ -146,7 +149,7 @@ const getAgentHandler = async (req, res, expandProperties = false) => {
 
     // Check if agent is public
     const isPublic = await hasPublicPermission({
-      resourceType: 'agent',
+      resourceType: ResourceType.AGENT,
       resourceId: agent._id,
       requiredPermissions: PermissionBits.VIEW,
     });
@@ -345,9 +348,9 @@ const duplicateAgentHandler = async (req, res) => {
       await grantPermission({
         principalType: 'user',
         principalId: userId,
-        resourceType: 'agent',
+        resourceType: ResourceType.AGENT,
         resourceId: newAgent._id,
-        accessRoleId: 'agent_owner',
+        accessRoleId: AccessRoleIds.AGENT_OWNER,
         grantedBy: userId,
       });
       logger.debug(
@@ -440,11 +443,11 @@ const getListAgentsHandler = async (req, res) => {
     // Get agent IDs the user has VIEW access to via ACL
     const accessibleIds = await findAccessibleResources({
       userId,
-      resourceType: 'agent',
+      resourceType: ResourceType.AGENT,
       requiredPermissions: requiredPermission,
     });
     const publiclyAccessibleIds = await findPubliclyAccessibleResources({
-      resourceType: 'agent',
+      resourceType: ResourceType.AGENT,
       requiredPermissions: PermissionBits.VIEW,
     });
     // Use the new ACL-aware function

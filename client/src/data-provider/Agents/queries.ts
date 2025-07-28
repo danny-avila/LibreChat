@@ -3,7 +3,7 @@ import {
   dataService,
   Permissions,
   EModelEndpoint,
-  PERMISSION_BITS,
+  PermissionBits,
   PermissionTypes,
 } from 'librechat-data-provider';
 import { useQuery, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
@@ -26,7 +26,7 @@ export const useAgentListingDefaultPermissionLevel = () => {
 
   // When marketplace is active: EDIT permissions (builder mode)
   // When marketplace is not active: VIEW permissions (browse mode)
-  return hasMarketplaceAccess ? PERMISSION_BITS.EDIT : PERMISSION_BITS.VIEW;
+  return hasMarketplaceAccess ? PermissionBits.EDIT : PermissionBits.VIEW;
 };
 
 /**
@@ -34,7 +34,7 @@ export const useAgentListingDefaultPermissionLevel = () => {
  */
 export const defaultAgentParams: t.AgentListParams = {
   limit: 10,
-  requiredPermission: PERMISSION_BITS.EDIT,
+  requiredPermission: PermissionBits.EDIT,
 };
 /**
  * Hook for getting all available tools for A

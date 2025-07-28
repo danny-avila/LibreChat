@@ -3,8 +3,9 @@ import { Share2Icon } from 'lucide-react';
 import {
   SystemRoles,
   Permissions,
+  ResourceType,
   PermissionTypes,
-  PERMISSION_BITS,
+  PermissionBits,
 } from 'librechat-data-provider';
 import { Button } from '@librechat/client';
 import type { TPromptGroup } from 'librechat-data-provider';
@@ -25,7 +26,7 @@ const SharePrompt = React.memo(
     // The query will be disabled if groupId is empty
     const groupId = group?._id || '';
     const { hasPermission, isLoading: permissionsLoading } = useResourcePermissions(
-      'promptGroup',
+      ResourceType.PROMPTGROUP,
       groupId,
     );
 
@@ -34,7 +35,7 @@ const SharePrompt = React.memo(
       return null;
     }
 
-    const canShareThisPrompt = hasPermission(PERMISSION_BITS.SHARE);
+    const canShareThisPrompt = hasPermission(PermissionBits.SHARE);
 
     const shouldShowShareButton =
       (group.author === user?.id || user?.role === SystemRoles.ADMIN || canShareThisPrompt) &&
@@ -49,7 +50,7 @@ const SharePrompt = React.memo(
       <GenericGrantAccessDialog
         resourceDbId={groupId}
         resourceName={group.name}
-        resourceType="promptGroup"
+        resourceType={ResourceType.PROMPTGROUP}
         disabled={disabled}
       >
         <Button

@@ -1,11 +1,12 @@
 const mongoose = require('mongoose');
 const { v4: uuidv4 } = require('uuid');
-const { MongoMemoryServer } = require('mongodb-memory-server');
 const { createModels } = require('@librechat/data-schemas');
-const { getFiles, createFile } = require('./File');
-const { createAgent } = require('./Agent');
+const { MongoMemoryServer } = require('mongodb-memory-server');
+const { AccessRoleIds, ResourceType } = require('librechat-data-provider');
 const { grantPermission } = require('~/server/services/PermissionService');
+const { getFiles, createFile } = require('./File');
 const { seedDefaultRoles } = require('~/models');
+const { createAgent } = require('./Agent');
 
 let File;
 let Agent;
@@ -116,9 +117,9 @@ describe('File Access Control', () => {
       await grantPermission({
         principalType: 'user',
         principalId: userId,
-        resourceType: 'agent',
+        resourceType: ResourceType.AGENT,
         resourceId: agent._id,
-        accessRoleId: 'agent_editor',
+        accessRoleId: AccessRoleIds.AGENT_EDITOR,
         grantedBy: authorId,
       });
 
@@ -233,9 +234,9 @@ describe('File Access Control', () => {
       await grantPermission({
         principalType: 'user',
         principalId: userId,
-        resourceType: 'agent',
+        resourceType: ResourceType.AGENT,
         resourceId: agent._id,
-        accessRoleId: 'agent_viewer',
+        accessRoleId: AccessRoleIds.AGENT_VIEWER,
         grantedBy: authorId,
       });
 
@@ -291,9 +292,9 @@ describe('File Access Control', () => {
       await grantPermission({
         principalType: 'user',
         principalId: userId,
-        resourceType: 'agent',
+        resourceType: ResourceType.AGENT,
         resourceId: agent._id,
-        accessRoleId: 'agent_editor',
+        accessRoleId: AccessRoleIds.AGENT_EDITOR,
         grantedBy: authorId,
       });
 

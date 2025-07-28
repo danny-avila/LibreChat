@@ -3,7 +3,7 @@ import type { TPrincipal, PrincipalSearchParams } from 'librechat-data-provider'
 import { useSearchPrincipalsQuery } from 'librechat-data-provider/react-query';
 import PeoplePickerSearchItem from './PeoplePickerSearchItem';
 import SelectedPrincipalsList from './SelectedPrincipalsList';
-import { SearchPicker } from '~/components/ui/SearchPicker';
+import { SearchPicker } from './SearchPicker';
 import { useLocalize } from '~/hooks';
 
 interface PeoplePickerProps {

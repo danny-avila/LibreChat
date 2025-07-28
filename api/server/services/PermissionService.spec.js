@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const { RoleBits } = require('@librechat/data-schemas');
 const { MongoMemoryServer } = require('mongodb-memory-server');
+const { AccessRoleIds, ResourceType } = require('librechat-data-provider');
 const {
   bulkUpdateResourcePermissions,
   getEffectivePermissions,
@@ -48,49 +49,49 @@ beforeEach(async () => {
   // Seed some roles for testing
   await AccessRole.create([
     {
-      accessRoleId: 'agent_viewer',
+      accessRoleId: AccessRoleIds.AGENT_VIEWER,
       name: 'Agent Viewer',
       description: 'Can view agents',
-      resourceType: 'agent',
+      resourceType: ResourceType.AGENT,
       permBits: RoleBits.VIEWER, // VIEW permission
     },
     {
-      accessRoleId: 'agent_editor',
+      accessRoleId: AccessRoleIds.AGENT_EDITOR,
       name: 'Agent Editor',
       description: 'Can edit agents',
-      resourceType: 'agent',
+      resourceType: ResourceType.AGENT,
       permBits: RoleBits.EDITOR, // VIEW + EDIT permissions
     },
     {
-      accessRoleId: 'agent_owner',
+      accessRoleId: AccessRoleIds.AGENT_OWNER,
       name: 'Agent Owner',
       description: 'Full control over agents',
-      resourceType: 'agent',
+      resourceType: ResourceType.AGENT,
       permBits: RoleBits.OWNER, // VIEW + EDIT + DELETE + SHARE permissions
     },
     {
-      accessRoleId: 'project_viewer',
+      accessRoleId: AccessRoleIds.PROJECT_VIEWER,
       name: 'Project Viewer',
       description: 'Can view projects',
       resourceType: 'project',
       permBits: RoleBits.VIEWER,
     },
     {
-      accessRoleId: 'project_editor',
+      accessRoleId: AccessRoleIds.PROJECT_EDITOR,
       name: 'Project Editor',
       description: 'Can edit projects',
       resourceType: 'project',
       permBits: RoleBits.EDITOR,
     },
     {
-      accessRoleId: 'project_manager',
+      accessRoleId: AccessRoleIds.PROJECT_MANAGER,
       name: 'Project Manager',
       description: 'Can manage projects',
       resourceType: 'project',
       permBits: RoleBits.MANAGER,
     },
     {
-      accessRoleId: 'project_owner',
+      accessRoleId: AccessRoleIds.PROJECT_OWNER,
       name: 'Project Owner',
       description: 'Full control over projects',
       resourceType: 'project',
@@ -117,9 +118,9 @@ describe('PermissionService', () => {
       const entry = await grantPermission({
         principalType: 'user',
         principalId: userId,
-        resourceType: 'agent',
+        resourceType: ResourceType.AGENT,
         resourceId,
-        accessRoleId: 'agent_viewer',
+        accessRoleId: AccessRoleIds.AGENT_VIEWER,
         grantedBy: grantedById,
       });
 
@@ -131,7 +132,7 @@ describe('PermissionService', () => {
       expect(entry.resourceId.toString()).toBe(resourceId.toString());
 
       // Get the role to verify the permission bits are correctly set
-      const role = await findRoleByIdentifier('agent_viewer');
+      const role = await findRoleByIdentifier(AccessRoleIds.AGENT_VIEWER);
       expect(entry.permBits).toBe(role.permBits);
       expect(entry.roleId.toString()).toBe(role._id.toString());
       expect(entry.grantedBy.toString()).toBe(grantedById.toString());
@@ -142,9 +143,9 @@ describe('PermissionService', () => {
       const entry = await grantPermission({
         principalType: 'group',
         principalId: groupId,
-        resourceType: 'agent',
+        resourceType: ResourceType.AGENT,
         resourceId,
-        accessRoleId: 'agent_editor',
+        accessRoleId: AccessRoleIds.AGENT_EDITOR,
         grantedBy: grantedById,
       });
 
@@ -154,7 +155,7 @@ describe('PermissionService', () => {
       expect(entry.principalModel).toBe('Group');
 
       // Get the role to verify the permission bits are correctly set
-      const role = await findRoleByIdentifier('agent_editor');
+      const role = await findRoleByIdentifier(AccessRoleIds.AGENT_EDITOR);
       expect(entry.permBits).toBe(role.permBits);
       expect(entry.roleId.toString()).toBe(role._id.toString());
     });
@@ -163,9 +164,9 @@ describe('PermissionService', () => {
       const entry = await grantPermission({
         principalType: 'public',
         principalId: null,
-        resourceType: 'agent',
+        resourceType: ResourceType.AGENT,
         resourceId,
-        accessRoleId: 'agent_viewer',
+        accessRoleId: AccessRoleIds.AGENT_VIEWER,
         grantedBy: grantedById,
       });
 
@@ -175,7 +176,7 @@ describe('PermissionService', () => {
       expect(entry.principalModel).toBeUndefined();
 
       // Get the role to verify the permission bits are correctly set
-      const role = await findRoleByIdentifier('agent_viewer');
+      const role = await findRoleByIdentifier(AccessRoleIds.AGENT_VIEWER);
       expect(entry.permBits).toBe(role.permBits);
       expect(entry.roleId.toString()).toBe(role._id.toString());
     });
@@ -185,9 +186,9 @@ describe('PermissionService', () => {
         grantPermission({
           principalType: 'invalid',
           principalId: userId,
-          resourceType: 'agent',
+          resourceType: ResourceType.AGENT,
           resourceId,
-          accessRoleId: 'agent_viewer',
+          accessRoleId: AccessRoleIds.AGENT_VIEWER,
           grantedBy: grantedById,
         }),
       ).rejects.toThrow('Invalid principal type: invalid');
@@ -198,9 +199,9 @@ describe('PermissionService', () => {
         grantPermission({
           principalType: 'user',
           principalId: null,
-          resourceType: 'agent',
+          resourceType: ResourceType.AGENT,
           resourceId,
-          accessRoleId: 'agent_viewer',
+          accessRoleId: AccessRoleIds.AGENT_VIEWER,
           grantedBy: grantedById,
         }),
       ).rejects.toThrow('Principal ID is required for user and group principals');
@@ -211,7 +212,7 @@ describe('PermissionService', () => {
         grantPermission({
           principalType: 'user',
           principalId: userId,
-          resourceType: 'agent',
+          resourceType: ResourceType.AGENT,
           resourceId,
           accessRoleId: 'non_existent_role',
           grantedBy: grantedById,
@@ -224,9 +225,9 @@ describe('PermissionService', () => {
         grantPermission({
           principalType: 'user',
           principalId: userId,
-          resourceType: 'agent',
+          resourceType: ResourceType.AGENT,
           resourceId,
-          accessRoleId: 'project_viewer', // Project role for agent resource
+          accessRoleId: AccessRoleIds.PROJECT_VIEWER, // Project role for agent resource
           grantedBy: grantedById,
         }),
       ).rejects.toThrow('Role project_viewer is for project resources, not agent');
@@ -237,9 +238,9 @@ describe('PermissionService', () => {
       await grantPermission({
         principalType: 'user',
         principalId: userId,
-        resourceType: 'agent',
+        resourceType: ResourceType.AGENT,
         resourceId,
-        accessRoleId: 'agent_viewer',
+        accessRoleId: AccessRoleIds.AGENT_VIEWER,
         grantedBy: grantedById,
       });
 
@@ -247,13 +248,13 @@ describe('PermissionService', () => {
       const updated = await grantPermission({
         principalType: 'user',
         principalId: userId,
-        resourceType: 'agent',
+        resourceType: ResourceType.AGENT,
         resourceId,
-        accessRoleId: 'agent_editor',
+        accessRoleId: AccessRoleIds.AGENT_EDITOR,
         grantedBy: grantedById,
       });
 
-      const editorRole = await findRoleByIdentifier('agent_editor');
+      const editorRole = await findRoleByIdentifier(AccessRoleIds.AGENT_EDITOR);
       expect(updated.permBits).toBe(editorRole.permBits);
       expect(updated.roleId.toString()).toBe(editorRole._id.toString());
 
@@ -261,7 +262,7 @@ describe('PermissionService', () => {
       const entries = await AclEntry.find({
         principalType: 'user',
         principalId: userId,
-        resourceType: 'agent',
+        resourceType: ResourceType.AGENT,
         resourceId,
       });
       expect(entries).toHaveLength(1);
@@ -279,9 +280,9 @@ describe('PermissionService', () => {
       await grantPermission({
         principalType: 'user',
         principalId: userId,
-        resourceType: 'agent',
+        resourceType: ResourceType.AGENT,
         resourceId,
-        accessRoleId: 'agent_viewer',
+        accessRoleId: AccessRoleIds.AGENT_VIEWER,
         grantedBy: grantedById,
       });
 
@@ -289,9 +290,9 @@ describe('PermissionService', () => {
       await grantPermission({
         principalType: 'group',
         principalId: groupId,
-        resourceType: 'agent',
+        resourceType: ResourceType.AGENT,
         resourceId: otherResourceId,
-        accessRoleId: 'agent_editor',
+        accessRoleId: AccessRoleIds.AGENT_EDITOR,
         grantedBy: grantedById,
       });
     });
@@ -302,7 +303,7 @@ describe('PermissionService', () => {
 
       const hasViewPermission = await checkPermission({
         userId,
-        resourceType: 'agent',
+        resourceType: ResourceType.AGENT,
         resourceId,
         requiredPermission: 1, // RoleBits.VIEWER // 1 = VIEW
       });
@@ -312,7 +313,7 @@ describe('PermissionService', () => {
       // Check higher permission level that user doesn't have
       const hasEditPermission = await checkPermission({
         userId,
-        resourceType: 'agent',
+        resourceType: ResourceType.AGENT,
         resourceId,
         requiredPermission: 3, // RoleBits.EDITOR = VIEW + EDIT
       });
@@ -330,7 +331,7 @@ describe('PermissionService', () => {
       // Check original resource (user has access)
       const hasViewOnOriginal = await checkPermission({
         userId,
-        resourceType: 'agent',
+        resourceType: ResourceType.AGENT,
         resourceId,
         requiredPermission: 1, // RoleBits.VIEWER // 1 = VIEW
       });
@@ -340,7 +341,7 @@ describe('PermissionService', () => {
       // Check other resource (group has access)
       const hasViewOnOther = await checkPermission({
         userId,
-        resourceType: 'agent',
+        resourceType: ResourceType.AGENT,
         resourceId: otherResourceId,
         requiredPermission: 1, // RoleBits.VIEWER // 1 = VIEW
       });
@@ -356,9 +357,9 @@ describe('PermissionService', () => {
       await grantPermission({
         principalType: 'public',
         principalId: null,
-        resourceType: 'agent',
+        resourceType: ResourceType.AGENT,
         resourceId: publicResourceId,
-        accessRoleId: 'agent_viewer',
+        accessRoleId: AccessRoleIds.AGENT_VIEWER,
         grantedBy: grantedById,
       });
 
@@ -371,7 +372,7 @@ describe('PermissionService', () => {
 
       const hasPublicAccess = await checkPermission({
         userId,
-        resourceType: 'agent',
+        resourceType: ResourceType.AGENT,
         resourceId: publicResourceId,
         requiredPermission: 1, // RoleBits.VIEWER // 1 = VIEW
       });
@@ -385,7 +386,7 @@ describe('PermissionService', () => {
       await expect(
         checkPermission({
           userId,
-          resourceType: 'agent',
+          resourceType: ResourceType.AGENT,
           resourceId,
           requiredPermission: 'invalid',
         }),
@@ -393,7 +394,7 @@ describe('PermissionService', () => {
 
       const nonExistentResource = await checkPermission({
         userId,
-        resourceType: 'agent',
+        resourceType: ResourceType.AGENT,
         resourceId: new mongoose.Types.ObjectId(),
         requiredPermission: 1, // RoleBits.VIEWER
       });
@@ -406,7 +407,7 @@ describe('PermissionService', () => {
 
       const hasPermission = await checkPermission({
         userId,
-        resourceType: 'agent',
+        resourceType: ResourceType.AGENT,
         resourceId,
         requiredPermission: 1, // RoleBits.VIEWER
       });
@@ -424,18 +425,18 @@ describe('PermissionService', () => {
       await grantPermission({
         principalType: 'user',
         principalId: userId,
-        resourceType: 'agent',
+        resourceType: ResourceType.AGENT,
         resourceId,
-        accessRoleId: 'agent_viewer',
+        accessRoleId: AccessRoleIds.AGENT_VIEWER,
         grantedBy: grantedById,
       });
 
       await grantPermission({
         principalType: 'group',
         principalId: groupId,
-        resourceType: 'agent',
+        resourceType: ResourceType.AGENT,
         resourceId,
-        accessRoleId: 'agent_editor',
+        accessRoleId: AccessRoleIds.AGENT_EDITOR,
         grantedBy: grantedById,
       });
 
@@ -444,9 +445,9 @@ describe('PermissionService', () => {
       await grantPermission({
         principalType: 'public',
         principalId: null,
-        resourceType: 'agent',
+        resourceType: ResourceType.AGENT,
         resourceId: publicResourceId,
-        accessRoleId: 'agent_viewer',
+        accessRoleId: AccessRoleIds.AGENT_VIEWER,
         grantedBy: grantedById,
       });
 
@@ -459,7 +460,7 @@ describe('PermissionService', () => {
         principalId: userId,
         resourceType: 'project',
         resourceId: projectId,
-        accessRoleId: 'project_viewer',
+        accessRoleId: AccessRoleIds.PROJECT_VIEWER,
         grantedBy: grantedById,
       });
 
@@ -467,10 +468,10 @@ describe('PermissionService', () => {
         principalType: 'user',
         principalId: userId,
         principalModel: 'User',
-        resourceType: 'agent',
+        resourceType: ResourceType.AGENT,
         resourceId: childResourceId,
         permBits: RoleBits.VIEWER,
-        roleId: (await findRoleByIdentifier('agent_viewer'))._id,
+        roleId: (await findRoleByIdentifier(AccessRoleIds.AGENT_VIEWER))._id,
         grantedBy: grantedById,
         grantedAt: new Date(),
         inheritedFrom: projectId,
@@ -486,7 +487,7 @@ describe('PermissionService', () => {
 
       const effective = await getEffectivePermissions({
         userId,
-        resourceType: 'agent',
+        resourceType: ResourceType.AGENT,
         resourceId,
       });
 
@@ -505,7 +506,7 @@ describe('PermissionService', () => {
 
       const effective = await getEffectivePermissions({
         userId,
-        resourceType: 'agent',
+        resourceType: ResourceType.AGENT,
         resourceId: childResourceId,
       });
 
@@ -519,7 +520,7 @@ describe('PermissionService', () => {
       const nonExistentResource = new mongoose.Types.ObjectId();
       const effective = await getEffectivePermissions({
         userId,
-        resourceType: 'agent',
+        resourceType: ResourceType.AGENT,
         resourceId: nonExistentResource,
       });
 
@@ -532,7 +533,7 @@ describe('PermissionService', () => {
 
       const effective = await getEffectivePermissions({
         userId,
-        resourceType: 'agent',
+        resourceType: ResourceType.AGENT,
         resourceId,
       });
 
@@ -555,9 +556,9 @@ describe('PermissionService', () => {
       await grantPermission({
         principalType: 'user',
         principalId: userId,
-        resourceType: 'agent',
+        resourceType: ResourceType.AGENT,
         resourceId: resource1,
-        accessRoleId: 'agent_viewer',
+        accessRoleId: AccessRoleIds.AGENT_VIEWER,
         grantedBy: grantedById,
       });
 
@@ -565,9 +566,9 @@ describe('PermissionService', () => {
       await grantPermission({
         principalType: 'user',
         principalId: userId,
-        resourceType: 'agent',
+        resourceType: ResourceType.AGENT,
         resourceId: resource2,
-        accessRoleId: 'agent_editor',
+        accessRoleId: AccessRoleIds.AGENT_EDITOR,
         grantedBy: grantedById,
       });
 
@@ -575,9 +576,9 @@ describe('PermissionService', () => {
       await grantPermission({
         principalType: 'group',
         principalId: groupId,
-        resourceType: 'agent',
+        resourceType: ResourceType.AGENT,
         resourceId: resource3,
-        accessRoleId: 'agent_viewer',
+        accessRoleId: AccessRoleIds.AGENT_VIEWER,
         grantedBy: grantedById,
       });
     });
@@ -588,7 +589,7 @@ describe('PermissionService', () => {
 
       const viewableResources = await findAccessibleResources({
         userId,
-        resourceType: 'agent',
+        resourceType: ResourceType.AGENT,
         requiredPermissions: 1, // RoleBits.VIEWER // 1 = VIEW
       });
 
@@ -602,7 +603,7 @@ describe('PermissionService', () => {
 
       const editableResources = await findAccessibleResources({
         userId,
-        resourceType: 'agent',
+        resourceType: ResourceType.AGENT,
         requiredPermissions: 3, // RoleBits.EDITOR = VIEW + EDIT
       });
 
@@ -619,7 +620,7 @@ describe('PermissionService', () => {
 
       const viewableResources = await findAccessibleResources({
         userId,
-        resourceType: 'agent',
+        resourceType: ResourceType.AGENT,
         requiredPermissions: 1, // RoleBits.VIEWER // 1 = VIEW
       });
 
@@ -633,7 +634,7 @@ describe('PermissionService', () => {
       await expect(
         findAccessibleResources({
           userId,
-          resourceType: 'agent',
+          resourceType: ResourceType.AGENT,
           requiredPermissions: 'invalid',
         }),
       ).rejects.toThrow('requiredPermissions must be a positive number');
@@ -652,7 +653,7 @@ describe('PermissionService', () => {
 
       const resources = await findAccessibleResources({
         userId,
-        resourceType: 'agent',
+        resourceType: ResourceType.AGENT,
         requiredPermissions: 1, // RoleBits.VIEWER
       });
 
@@ -663,12 +664,12 @@ describe('PermissionService', () => {
   describe('getAvailableRoles', () => {
     test('should get all roles for a resource type', async () => {
       const roles = await getAvailableRoles({
-        resourceType: 'agent',
+        resourceType: ResourceType.AGENT,
       });
 
       expect(roles).toHaveLength(3);
       expect(roles.map((r) => r.accessRoleId).sort()).toEqual(
-        ['agent_editor', 'agent_owner', 'agent_viewer'].sort(),
+        [AccessRoleIds.AGENT_EDITOR, AccessRoleIds.AGENT_OWNER, AccessRoleIds.AGENT_VIEWER].sort(),
       );
     });
 
@@ -689,27 +690,27 @@ describe('PermissionService', () => {
       await grantPermission({
         principalType: 'user',
         principalId: userId,
-        resourceType: 'agent',
+        resourceType: ResourceType.AGENT,
         resourceId,
-        accessRoleId: 'agent_viewer',
+        accessRoleId: AccessRoleIds.AGENT_VIEWER,
         grantedBy: grantedById,
       });
 
       await grantPermission({
         principalType: 'group',
         principalId: groupId,
-        resourceType: 'agent',
+        resourceType: ResourceType.AGENT,
         resourceId,
-        accessRoleId: 'agent_editor',
+        accessRoleId: AccessRoleIds.AGENT_EDITOR,
         grantedBy: grantedById,
       });
 
       await grantPermission({
         principalType: 'public',
         principalId: null,
-        resourceType: 'agent',
+        resourceType: ResourceType.AGENT,
         resourceId,
-        accessRoleId: 'agent_viewer',
+        accessRoleId: AccessRoleIds.AGENT_VIEWER,
         grantedBy: grantedById,
       });
     });
@@ -720,22 +721,22 @@ describe('PermissionService', () => {
         {
           type: 'user',
           id: userId,
-          accessRoleId: 'agent_viewer',
+          accessRoleId: AccessRoleIds.AGENT_VIEWER,
         },
         {
           type: 'user',
           id: otherUserId,
-          accessRoleId: 'agent_editor',
+          accessRoleId: AccessRoleIds.AGENT_EDITOR,
         },
         {
           type: 'group',
           id: groupId,
-          accessRoleId: 'agent_owner',
+          accessRoleId: AccessRoleIds.AGENT_OWNER,
         },
       ];
 
       const results = await bulkUpdateResourcePermissions({
-        resourceType: 'agent',
+        resourceType: ResourceType.AGENT,
         resourceId: newResourceId,
         updatedPrincipals,
         grantedBy: grantedById,
@@ -748,7 +749,7 @@ describe('PermissionService', () => {
 
       // Verify permissions were created
       const aclEntries = await AclEntry.find({
-        resourceType: 'agent',
+        resourceType: ResourceType.AGENT,
         resourceId: newResourceId,
       });
       expect(aclEntries).toHaveLength(3);
@@ -759,21 +760,21 @@ describe('PermissionService', () => {
         {
           type: 'user',
           id: userId,
-          accessRoleId: 'agent_editor', // Upgrade from viewer to editor
+          accessRoleId: AccessRoleIds.AGENT_EDITOR, // Upgrade from viewer to editor
         },
         {
           type: 'group',
           id: groupId,
-          accessRoleId: 'agent_owner', // Upgrade from editor to owner
+          accessRoleId: AccessRoleIds.AGENT_OWNER, // Upgrade from editor to owner
         },
         {
           type: 'public',
-          accessRoleId: 'agent_viewer', // Keep same role
+          accessRoleId: AccessRoleIds.AGENT_VIEWER, // Keep same role
         },
       ];
 
       const results = await bulkUpdateResourcePermissions({
-        resourceType: 'agent',
+        resourceType: ResourceType.AGENT,
         resourceId,
         updatedPrincipals,
         grantedBy: grantedById,
@@ -789,18 +790,18 @@ describe('PermissionService', () => {
       const userEntry = await AclEntry.findOne({
         principalType: 'user',
         principalId: userId,
-        resourceType: 'agent',
+        resourceType: ResourceType.AGENT,
         resourceId,
       }).populate('roleId', 'accessRoleId');
-      expect(userEntry.roleId.accessRoleId).toBe('agent_editor');
+      expect(userEntry.roleId.accessRoleId).toBe(AccessRoleIds.AGENT_EDITOR);
 
       const groupEntry = await AclEntry.findOne({
         principalType: 'group',
         principalId: groupId,
-        resourceType: 'agent',
+        resourceType: ResourceType.AGENT,
         resourceId,
       }).populate('roleId', 'accessRoleId');
-      expect(groupEntry.roleId.accessRoleId).toBe('agent_owner');
+      expect(groupEntry.roleId.accessRoleId).toBe(AccessRoleIds.AGENT_OWNER);
     });
 
     test('should revoke specified permissions', async () => {
@@ -815,7 +816,7 @@ describe('PermissionService', () => {
       ];
 
       const results = await bulkUpdateResourcePermissions({
-        resourceType: 'agent',
+        resourceType: ResourceType.AGENT,
         resourceId,
         revokedPrincipals,
         grantedBy: grantedById,
@@ -828,7 +829,7 @@ describe('PermissionService', () => {
 
       // Verify only user permission remains
       const remainingEntries = await AclEntry.find({
-        resourceType: 'agent',
+        resourceType: ResourceType.AGENT,
         resourceId,
       });
       expect(remainingEntries).toHaveLength(1);
@@ -841,12 +842,12 @@ describe('PermissionService', () => {
         {
           type: 'user',
           id: userId,
-          accessRoleId: 'agent_owner', // Update existing
+          accessRoleId: AccessRoleIds.AGENT_OWNER, // Update existing
         },
         {
           type: 'user',
           id: otherUserId,
-          accessRoleId: 'agent_viewer', // New permission
+          accessRoleId: AccessRoleIds.AGENT_VIEWER, // New permission
         },
       ];
 
@@ -861,7 +862,7 @@ describe('PermissionService', () => {
       ];
 
       const results = await bulkUpdateResourcePermissions({
-        resourceType: 'agent',
+        resourceType: ResourceType.AGENT,
         resourceId,
         updatedPrincipals,
         revokedPrincipals,
@@ -875,19 +876,19 @@ describe('PermissionService', () => {
 
       // Verify final state
       const finalEntries = await AclEntry.find({
-        resourceType: 'agent',
+        resourceType: ResourceType.AGENT,
         resourceId,
       }).populate('roleId', 'accessRoleId');
 
       expect(finalEntries).toHaveLength(2);
 
       const userEntry = finalEntries.find((e) => e.principalId.toString() === userId.toString());
-      expect(userEntry.roleId.accessRoleId).toBe('agent_owner');
+      expect(userEntry.roleId.accessRoleId).toBe(AccessRoleIds.AGENT_OWNER);
 
       const otherUserEntry = finalEntries.find(
         (e) => e.principalId.toString() === otherUserId.toString(),
       );
-      expect(otherUserEntry.roleId.accessRoleId).toBe('agent_viewer');
+      expect(otherUserEntry.roleId.accessRoleId).toBe(AccessRoleIds.AGENT_VIEWER);
     });
 
     test('should handle errors for invalid roles gracefully', async () => {
@@ -895,7 +896,7 @@ describe('PermissionService', () => {
         {
           type: 'user',
           id: userId,
-          accessRoleId: 'agent_viewer', // Valid
+          accessRoleId: AccessRoleIds.AGENT_VIEWER, // Valid
         },
         {
           type: 'user',
@@ -905,12 +906,12 @@ describe('PermissionService', () => {
         {
           type: 'group',
           id: groupId,
-          accessRoleId: 'project_viewer', // Wrong resource type
+          accessRoleId: AccessRoleIds.PROJECT_VIEWER, // Wrong resource type
         },
       ];
 
       const results = await bulkUpdateResourcePermissions({
-        resourceType: 'agent',
+        resourceType: ResourceType.AGENT,
         resourceId,
         updatedPrincipals,
         grantedBy: grantedById,
@@ -928,7 +929,7 @@ describe('PermissionService', () => {
 
     test('should handle empty arrays (no operations)', async () => {
       const results = await bulkUpdateResourcePermissions({
-        resourceType: 'agent',
+        resourceType: ResourceType.AGENT,
         resourceId,
         updatedPrincipals: [],
         revokedPrincipals: [],
@@ -942,7 +943,7 @@ describe('PermissionService', () => {
 
       // Verify no changes to existing permissions (since no operations were performed)
       const remainingEntries = await AclEntry.find({
-        resourceType: 'agent',
+        resourceType: ResourceType.AGENT,
         resourceId,
       });
       expect(remainingEntries).toHaveLength(3); // Original permissions still exist
@@ -951,7 +952,7 @@ describe('PermissionService', () => {
     test('should throw error for invalid updatedPrincipals array', async () => {
       await expect(
         bulkUpdateResourcePermissions({
-          resourceType: 'agent',
+          resourceType: ResourceType.AGENT,
           resourceId,
           updatedPrincipals: 'not an array',
           grantedBy: grantedById,
@@ -962,7 +963,7 @@ describe('PermissionService', () => {
     test('should throw error for invalid resource ID', async () => {
       await expect(
         bulkUpdateResourcePermissions({
-          resourceType: 'agent',
+          resourceType: ResourceType.AGENT,
           resourceId: 'invalid-id',
           permissions: [],
           grantedBy: grantedById,
@@ -974,12 +975,12 @@ describe('PermissionService', () => {
       const updatedPrincipals = [
         {
           type: 'public',
-          accessRoleId: 'agent_editor', // Update public permission
+          accessRoleId: AccessRoleIds.AGENT_EDITOR, // Update public permission
         },
         {
           type: 'user',
           id: otherUserId,
-          accessRoleId: 'agent_viewer', // New user permission
+          accessRoleId: AccessRoleIds.AGENT_VIEWER, // New user permission
         },
       ];
 
@@ -995,7 +996,7 @@ describe('PermissionService', () => {
       ];
 
       const results = await bulkUpdateResourcePermissions({
-        resourceType: 'agent',
+        resourceType: ResourceType.AGENT,
         resourceId,
         updatedPrincipals,
         revokedPrincipals,
@@ -1010,12 +1011,12 @@ describe('PermissionService', () => {
       // Verify public permission was updated
       const publicEntry = await AclEntry.findOne({
         principalType: 'public',
-        resourceType: 'agent',
+        resourceType: ResourceType.AGENT,
         resourceId,
       }).populate('roleId', 'accessRoleId');
 
       expect(publicEntry).toBeDefined();
-      expect(publicEntry.roleId.accessRoleId).toBe('agent_editor');
+      expect(publicEntry.roleId.accessRoleId).toBe(AccessRoleIds.AGENT_EDITOR);
     });
 
     test('should work with different resource types', async () => {
@@ -1025,12 +1026,12 @@ describe('PermissionService', () => {
         {
           type: 'user',
           id: userId,
-          accessRoleId: 'project_viewer',
+          accessRoleId: AccessRoleIds.PROJECT_VIEWER,
         },
         {
           type: 'group',
           id: groupId,
-          accessRoleId: 'project_editor',
+          accessRoleId: AccessRoleIds.PROJECT_EDITOR,
         },
       ];
 

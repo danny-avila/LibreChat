@@ -2,6 +2,7 @@ const path = require('path');
 const { logger } = require('@librechat/data-schemas');
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
 
+const { AccessRoleIds, ResourceType } = require('librechat-data-provider');
 const { GLOBAL_PROJECT_NAME } = require('librechat-data-provider').Constants;
 const connect = require('./connect');
 
@@ -146,9 +147,9 @@ async function migrateToPromptGroupPermissions({ dryRun = true, batchSize = 100 
         await grantPermission({
           principalType: 'user',
           principalId: group.author,
-          resourceType: 'promptGroup',
+          resourceType: ResourceType.PROMPTGROUP,
           resourceId: group._id,
-          accessRoleId: 'promptGroup_owner',
+          accessRoleId: AccessRoleIds.PROMPTGROUP_OWNER,
           grantedBy: group.author,
         });
         results.ownerGrants++;
@@ -158,9 +159,9 @@ async function migrateToPromptGroupPermissions({ dryRun = true, batchSize = 100 
           await grantPermission({
             principalType: 'public',
             principalId: null,
-            resourceType: 'promptGroup',
+            resourceType: ResourceType.PROMPTGROUP,
             resourceId: group._id,
-            accessRoleId: 'promptGroup_viewer',
+            accessRoleId: AccessRoleIds.PROMPTGROUP_VIEWER,
             grantedBy: group.author,
           });
           results.publicViewGrants++;

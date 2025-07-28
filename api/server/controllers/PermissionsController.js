@@ -4,12 +4,13 @@
 
 const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
+const { ResourceType } = require('librechat-data-provider');
 const {
-  getAvailableRoles,
-  ensurePrincipalExists,
-  getEffectivePermissions,
-  ensureGroupPrincipalExists,
   bulkUpdateResourcePermissions,
+  ensureGroupPrincipalExists,
+  getEffectivePermissions,
+  ensurePrincipalExists,
+  getAvailableRoles,
 } = require('~/server/services/PermissionService');
 const { AclEntry } = require('~/db/models');
 const {
@@ -18,14 +19,26 @@ const {
   calculateRelevanceScore,
 } = require('~/models');
 const {
-  searchEntraIdPrincipals,
   entraIdPrincipalFeatureEnabled,
+  searchEntraIdPrincipals,
 } = require('~/server/services/GraphApiService');
 
 /**
  * Generic controller for resource permission endpoints
  * Delegates validation and logic to PermissionService
  */
+
+/**
+ * Validates that the resourceType is one of the supported enum values
+ * @param {string} resourceType - The resource type to validate
+ * @throws {Error} If resourceType is not valid
+ */
+const validateResourceType = (resourceType) => {
+  const validTypes = Object.values(ResourceType);
+  if (!validTypes.includes(resourceType)) {
+    throw new Error(`Invalid resourceType: ${resourceType}. Valid types: ${validTypes.join(', ')}`);
+  }
+};
 
 /**
  * Bulk update permissions for a resource (grant, update, remove)
@@ -41,6 +54,8 @@ const {
 const updateResourcePermissions = async (req, res) => {
   try {
     const { resourceType, resourceId } = req.params;
+    validateResourceType(resourceType);
+
     /** @type {TUpdateResourcePermissionsRequest} */
     const { updated, removed, public: isPublic, publicAccessRoleId } = req.body;
     const { id: userId } = req.user;
@@ -163,6 +178,7 @@ const updateResourcePermissions = async (req, res) => {
 const getResourcePermissions = async (req, res) => {
   try {
     const { resourceType, resourceId } = req.params;
+    validateResourceType(resourceType);
 
     // Use aggregation pipeline for efficient single-query data retrieval
     const results = await AclEntry.aggregate([
@@ -278,6 +294,7 @@ const getResourcePermissions = async (req, res) => {
 const getResourceRoles = async (req, res) => {
   try {
     const { resourceType } = req.params;
+    validateResourceType(resourceType);
 
     const roles = await getAvailableRoles({ resourceType });
 
@@ -305,6 +322,8 @@ const getResourceRoles = async (req, res) => {
 const getUserEffectivePermissions = async (req, res) => {
   try {
     const { resourceType, resourceId } = req.params;
+    validateResourceType(resourceType);
+
     const { id: userId } = req.user;
 
     const permissionBits = await getEffectivePermissions({

@@ -1,5 +1,5 @@
 const { logger } = require('@librechat/data-schemas');
-const { Constants, isAgentsEndpoint } = require('librechat-data-provider');
+const { Constants, isAgentsEndpoint, ResourceType } = require('librechat-data-provider');
 const { canAccessResource } = require('./canAccessResource');
 const { getAgent } = require('~/models/Agent');
 
@@ -67,7 +67,7 @@ const canAccessAgentFromBody = (options) => {
       }
 
       const agentAccessMiddleware = canAccessResource({
-        resourceType: 'agent',
+        resourceType: ResourceType.AGENT,
         requiredPermission,
         resourceIdParam: 'agent_id', // This will be ignored since we use custom resolver
         idResolver: () => resolveAgentIdFromBody(agentId),

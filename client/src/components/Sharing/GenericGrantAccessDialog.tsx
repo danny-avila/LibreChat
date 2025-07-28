@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { AccessRoleIds, ResourceType } from 'librechat-data-provider';
 import { Share2Icon, Users, Loader, Shield, Link, CopyCheck } from 'lucide-react';
 import {
   Button,
@@ -10,13 +11,17 @@ import {
   useToastContext,
 } from '@librechat/client';
 import type { TPrincipal } from 'librechat-data-provider';
-import { useLocalize, useCopyToClipboard } from '~/hooks';
-import { usePeoplePickerPermissions, useResourcePermissionState } from '~/hooks/Sharing';
+import {
+  usePeoplePickerPermissions,
+  useResourcePermissionState,
+  useCopyToClipboard,
+  useLocalize,
+} from '~/hooks';
 import GenericManagePermissionsDialog from './GenericManagePermissionsDialog';
-import PeoplePicker from '../SidePanel/Agents/Sharing/PeoplePicker/PeoplePicker';
-import AccessRolesPicker from '../SidePanel/Agents/Sharing/AccessRolesPicker';
 import PublicSharingToggle from './PublicSharingToggle';
+import AccessRolesPicker from './AccessRolesPicker';
 import { cn, removeFocusOutlines } from '~/utils';
+import { PeoplePicker } from './PeoplePicker';
 
 export default function GenericGrantAccessDialog({
   resourceName,
@@ -30,8 +35,8 @@ export default function GenericGrantAccessDialog({
   resourceDbId?: string | null;
   resourceId?: string | null;
   resourceName?: string;
-  resourceType: string;
-  onGrantAccess?: (shares: TPrincipal[], isPublic: boolean, publicRole: string) => void;
+  resourceType: ResourceType;
+  onGrantAccess?: (shares: TPrincipal[], isPublic: boolean, publicRole: AccessRoleIds) => void;
   disabled?: boolean;
   children?: React.ReactNode;
 }) {
@@ -55,8 +60,8 @@ export default function GenericGrantAccessDialog({
   } = useResourcePermissionState(resourceType, resourceDbId, isModalOpen);
 
   const [newShares, setNewShares] = useState<TPrincipal[]>([]);
-  const [defaultPermissionId, setDefaultPermissionId] = useState<string>(
-    config?.defaultViewerRoleId ?? '',
+  const [defaultPermissionId, setDefaultPermissionId] = useState<AccessRoleIds | undefined>(
+    config?.defaultViewerRoleId,
   );
 
   const resourceUrl = config?.getResourceUrl ? config?.getResourceUrl(resourceId || '') : '';

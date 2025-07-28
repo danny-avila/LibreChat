@@ -1,6 +1,7 @@
+import { AccessRoleIds, ResourceType, PermissionBits } from 'librechat-data-provider';
 import type { Model, Types, DeleteResult } from 'mongoose';
-import { RoleBits, PermissionBits } from '~/common';
 import type { IAccessRole } from '~/types';
+import { RoleBits } from '~/common';
 
 export function createAccessRoleMethods(mongoose: typeof import('mongoose')) {
   /**
@@ -104,68 +105,45 @@ export function createAccessRoleMethods(mongoose: typeof import('mongoose')) {
     const AccessRole = mongoose.models.AccessRole as Model<IAccessRole>;
     const defaultRoles = [
       {
-        accessRoleId: 'agent_viewer',
+        accessRoleId: AccessRoleIds.AGENT_VIEWER,
         name: 'com_ui_role_viewer',
         description: 'com_ui_role_viewer_desc',
-        resourceType: 'agent',
+        resourceType: ResourceType.AGENT,
         permBits: RoleBits.VIEWER,
       },
       {
-        accessRoleId: 'agent_editor',
+        accessRoleId: AccessRoleIds.AGENT_EDITOR,
         name: 'com_ui_role_editor',
         description: 'com_ui_role_editor_desc',
-        resourceType: 'agent',
+        resourceType: ResourceType.AGENT,
         permBits: RoleBits.EDITOR,
       },
       {
-        accessRoleId: 'agent_owner',
+        accessRoleId: AccessRoleIds.AGENT_OWNER,
         name: 'com_ui_role_owner',
         description: 'com_ui_role_owner_desc',
-        resourceType: 'agent',
+        resourceType: ResourceType.AGENT,
         permBits: RoleBits.OWNER,
       },
-      // Prompt access roles
       {
-        accessRoleId: 'prompt_viewer',
+        accessRoleId: AccessRoleIds.PROMPTGROUP_VIEWER,
         name: 'com_ui_role_viewer',
         description: 'com_ui_role_viewer_desc',
-        resourceType: 'prompt',
+        resourceType: ResourceType.PROMPTGROUP,
         permBits: RoleBits.VIEWER,
       },
       {
-        accessRoleId: 'prompt_editor',
+        accessRoleId: AccessRoleIds.PROMPTGROUP_EDITOR,
         name: 'com_ui_role_editor',
         description: 'com_ui_role_editor_desc',
-        resourceType: 'prompt',
+        resourceType: ResourceType.PROMPTGROUP,
         permBits: RoleBits.EDITOR,
       },
       {
-        accessRoleId: 'prompt_owner',
+        accessRoleId: AccessRoleIds.PROMPTGROUP_OWNER,
         name: 'com_ui_role_owner',
         description: 'com_ui_role_owner_desc',
-        resourceType: 'prompt',
-        permBits: RoleBits.OWNER,
-      },
-      // PromptGroup access roles
-      {
-        accessRoleId: 'promptGroup_viewer',
-        name: 'com_ui_role_viewer',
-        description: 'com_ui_role_viewer_desc',
-        resourceType: 'promptGroup',
-        permBits: RoleBits.VIEWER,
-      },
-      {
-        accessRoleId: 'promptGroup_editor',
-        name: 'com_ui_role_editor',
-        description: 'com_ui_role_editor_desc',
-        resourceType: 'promptGroup',
-        permBits: RoleBits.EDITOR,
-      },
-      {
-        accessRoleId: 'promptGroup_owner',
-        name: 'com_ui_role_owner',
-        description: 'com_ui_role_owner_desc',
-        resourceType: 'promptGroup',
+        resourceType: ResourceType.PROMPTGROUP,
         permBits: RoleBits.OWNER,
       },
     ];

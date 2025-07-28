@@ -1,11 +1,16 @@
 const { ObjectId } = require('mongodb');
 const { logger } = require('@librechat/data-schemas');
-const { SystemRoles, SystemCategories, Constants } = require('librechat-data-provider');
 const {
-  getProjectByName,
-  addGroupIdsToProject,
-  removeGroupIdsFromProject,
+  Constants,
+  SystemRoles,
+  ResourceType,
+  SystemCategories,
+} = require('librechat-data-provider');
+const {
   removeGroupFromAllProjects,
+  removeGroupIdsFromProject,
+  addGroupIdsToProject,
+  getProjectByName,
 } = require('./Project');
 const { removeAllPermissions } = require('~/server/services/PermissionService');
 const { PromptGroup, Prompt } = require('~/db/models');
@@ -234,7 +239,7 @@ const deletePromptGroup = async ({ _id, author, role }) => {
   await removeGroupFromAllProjects(_id);
 
   try {
-    await removeAllPermissions({ resourceType: 'promptGroup', resourceId: _id });
+    await removeAllPermissions({ resourceType: ResourceType.PROMPTGROUP, resourceId: _id });
   } catch (error) {
     logger.error('Error removing promptGroup permissions:', error);
   }
@@ -428,16 +433,6 @@ module.exports = {
       throw new Error('Failed to delete the prompt');
     }
 
-    // Remove all ACL entries for this prompt
-    try {
-      await removeAllPermissions({
-        resourceType: 'prompt',
-        resourceId: promptId,
-      });
-    } catch (error) {
-      logger.error('Error removing prompt permissions:', error);
-    }
-
     const remainingPrompts = await Prompt.find({ groupId })
       .select('_id')
       .sort({ createdAt: 1 })
@@ -447,7 +442,7 @@ module.exports = {
       // Remove all ACL entries for the promptGroup when deleting the last prompt
       try {
         await removeAllPermissions({
-          resourceType: 'promptGroup',
+          resourceType: ResourceType.PROMPTGROUP,
           resourceId: groupId,
         });
       } catch (error) {
