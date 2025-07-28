@@ -331,7 +331,8 @@ router.post('/:serverName/reinitialize', requireJwtAuth, async (req, res) => {
 
     logger.info(`[MCP Reinitialize] Reinitializing server: ${serverName}`);
 
-    const config = await loadCustomConfig();
+    const printConfig = false;
+    const config = await loadCustomConfig(printConfig);
     if (!config || !config.mcpServers || !config.mcpServers[serverName]) {
       return res.status(404).json({
         error: `MCP server '${serverName}' not found in configuration`,

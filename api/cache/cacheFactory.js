@@ -16,7 +16,10 @@ const { RedisStore } = require('rate-limit-redis');
  * @returns {Keyv} Cache instance.
  */
 const standardCache = (namespace, ttl = undefined, fallbackStore = undefined) => {
-  if (cacheConfig.USE_REDIS) {
+  if (
+    cacheConfig.USE_REDIS &&
+    !cacheConfig.FORCED_IN_MEMORY_CACHE_NAMESPACES?.includes(namespace)
+  ) {
     const keyvRedis = new KeyvRedis(keyvRedisClient);
     const cache = new Keyv(keyvRedis, { namespace, ttl });
     keyvRedis.namespace = cacheConfig.REDIS_KEY_PREFIX;

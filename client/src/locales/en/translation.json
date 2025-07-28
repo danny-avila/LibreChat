@@ -863,6 +863,7 @@
   "com_ui_mcp_servers": "MCP Servers",
   "com_ui_mcp_update_var": "Update {{0}}",
   "com_ui_mcp_url": "MCP Server URL",
+  "com_ui_mcp_init_cancelled": "MCP server '{{0}}' initialization was cancelled due to simultaneous request",
   "com_ui_medium": "Medium",
   "com_ui_memories": "Memories",
   "com_ui_memories_allow_create": "Allow creating Memories",
