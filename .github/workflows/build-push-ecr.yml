@@ -40,8 +40,10 @@ jobs:
       - name: Extract metadata for images
         id: meta
         run: |
-          VERSION=$(grep 'tag:' helm/librechat/values.yaml | \
-            awk -F'"' '{print $2}')
+          VERSION=$(grep 'tag:' helm/librechat/values.yaml | grep -v '#' | awk -F'"' '{print $2}')
+          if [ -z "$VERSION" ]; then
+            VERSION="v1.7.3"  # Default to meilisearch version if no explicit tag
+          fi
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
 
       - name: Build and push LibreChat image
@@ -52,21 +54,19 @@ jobs:
           tags: >-
             ${{ env.ECR_REGISTRY }}/librechat:${{ steps.meta.outputs.version }}
 
-      - name: Build and push MongoDB image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: docker/mongodb/Dockerfile
-          push: true
-          tags: ${{ env.ECR_REGISTRY }}/mongodb:8.0.3
+      # Use official MongoDB image instead of building custom one
+      - name: Pull and push MongoDB image
+        run: |
+          docker pull mongo:8.0.3
+          docker tag mongo:8.0.3 ${{ env.ECR_REGISTRY }}/mongodb:8.0.3
+          docker push ${{ env.ECR_REGISTRY }}/mongodb:8.0.3
 
-      - name: Build and push Meilisearch image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: docker/meilisearch/Dockerfile
-          push: true
-          tags: ${{ env.ECR_REGISTRY }}/meilisearch:v1.7.3
+      # Use official Meilisearch image instead of building custom one
+      - name: Pull and push Meilisearch image
+        run: |
+          docker pull getmeili/meilisearch:v1.7.3
+          docker tag getmeili/meilisearch:v1.7.3 ${{ env.ECR_REGISTRY }}/meilisearch:v1.7.3
+          docker push ${{ env.ECR_REGISTRY }}/meilisearch:v1.7.3
 
       - name: Set up Helm
         uses: azure/setup-helm@v3
