@@ -12,6 +12,19 @@ const {
   deleteMessagesSince,
 } = require('./Message');
 
+// Mock the createTempChatExpirationDate function
+jest.mock('@librechat/api', () => ({
+  createTempChatExpirationDate: jest.fn(),
+}));
+
+// Mock the getCustomConfig function
+jest.mock('~/server/services/Config', () => ({
+  getCustomConfig: jest.fn(),
+}));
+
+const { createTempChatExpirationDate } = require('@librechat/api');
+const { getCustomConfig } = require('~/server/services/Config');
+
 /**
  * @type {import('mongoose').Model<import('@librechat/data-schemas').IMessage>}
  */
@@ -37,6 +50,9 @@ describe('Message Operations', () => {
   beforeEach(async () => {
     // Clear database
     await Message.deleteMany({});
+
+    // Reset mocks - but don't set up default mock values here
+    jest.clearAllMocks();
 
     mockReq = {
       user: { id: 'user123' },
@@ -117,21 +133,21 @@ describe('Message Operations', () => {
       const conversationId = uuidv4();
 
       // Create multiple messages in the same conversation
-      const message1 = await saveMessage(mockReq, {
+      await saveMessage(mockReq, {
         messageId: 'msg1',
         conversationId,
         text: 'First message',
         user: 'user123',
       });
 
-      const message2 = await saveMessage(mockReq, {
+      await saveMessage(mockReq, {
         messageId: 'msg2',
         conversationId,
         text: 'Second message',
         user: 'user123',
       });
 
-      const message3 = await saveMessage(mockReq, {
+      await saveMessage(mockReq, {
         messageId: 'msg3',
         conversationId,
         text: 'Third message',
@@ -312,6 +328,137 @@ describe('Message Operations', () => {
       const messages = await getMessages({ conversationId: victimConversationId });
       expect(messages).toHaveLength(1);
       expect(messages[0].text).toBe('Victim message');
+    });
+  });
+
+  describe('saveMessage - Temporary Conversation Behavior', () => {
+    it('should set expiredAt when isTemporary is true with default config', async () => {
+      // Set up the integration: getCustomConfig returns default config
+      const defaultConfig = { interface: { temporaryChatRetention: 24 } };
+      getCustomConfig.mockResolvedValue(defaultConfig);
+
+      const mockExpirationDate = new Date('2024-12-31T23:59:59.000Z');
+      createTempChatExpirationDate.mockReturnValue(mockExpirationDate);
+
+      const tempReq = {
+        user: { id: 'user123' },
+        body: { isTemporary: true },
+      };
+
+      const result = await saveMessage(tempReq, mockMessageData);
+
+      // Test the integration: verify the config was passed through correctly
+      expect(getCustomConfig).toHaveBeenCalled();
+      expect(createTempChatExpirationDate).toHaveBeenCalledWith(defaultConfig);
+      expect(result.expiredAt).toEqual(mockExpirationDate);
+
+      // Verify the message was saved with the correct expiredAt value
+      const savedMessage = await Message.findOne({ messageId: 'msg123', user: 'user123' });
+      expect(savedMessage.expiredAt).toEqual(mockExpirationDate);
+    });
+
+    it('should set expiredAt when isTemporary is true with custom config', async () => {
+      // Test with different config values to ensure integration works
+      const customConfig = { interface: { temporaryChatRetention: 48 } };
+      getCustomConfig.mockResolvedValue(customConfig);
+
+      const mockExpirationDate = new Date('2025-01-01T12:00:00.000Z');
+      createTempChatExpirationDate.mockReturnValue(mockExpirationDate);
+
+      const tempReq = {
+        user: { id: 'user123' },
+        body: { isTemporary: true },
+      };
+
+      const result = await saveMessage(tempReq, mockMessageData);
+
+      // Test the integration: verify the custom config was passed through
+      expect(getCustomConfig).toHaveBeenCalled();
+      expect(createTempChatExpirationDate).toHaveBeenCalledWith(customConfig);
+      expect(result.expiredAt).toEqual(mockExpirationDate);
+
+      // Verify the message was saved with the correct expiredAt value
+      const savedMessage = await Message.findOne({ messageId: 'msg123', user: 'user123' });
+      expect(savedMessage.expiredAt).toEqual(mockExpirationDate);
+    });
+
+    it('should set expiredAt to null when isTemporary is false', async () => {
+      // Set up getCustomConfig even though it shouldn't be called
+      getCustomConfig.mockResolvedValue({ interface: { temporaryChatRetention: 24 } });
+
+      const tempReq = {
+        user: { id: 'user123' },
+        body: { isTemporary: false },
+      };
+
+      const result = await saveMessage(tempReq, mockMessageData);
+
+      // Verify the integration: config should not be fetched for non-temporary messages
+      expect(getCustomConfig).not.toHaveBeenCalled();
+      expect(createTempChatExpirationDate).not.toHaveBeenCalled();
+      expect(result.expiredAt).toBeNull();
+
+      // Verify the message was saved with expiredAt as null
+      const savedMessage = await Message.findOne({ messageId: 'msg123', user: 'user123' });
+      expect(savedMessage.expiredAt).toBeNull();
+    });
+
+    it('should set expiredAt to null when isTemporary is not set', async () => {
+      // Set up getCustomConfig even though it shouldn't be called
+      getCustomConfig.mockResolvedValue({ interface: { temporaryChatRetention: 24 } });
+
+      const result = await saveMessage(mockReq, mockMessageData);
+
+      // Verify the integration: config should not be fetched when isTemporary is undefined
+      expect(getCustomConfig).not.toHaveBeenCalled();
+      expect(createTempChatExpirationDate).not.toHaveBeenCalled();
+      expect(result.expiredAt).toBeNull();
+    });
+
+    it('should handle getCustomConfig error gracefully', async () => {
+      // Test integration error handling: what happens when getCustomConfig fails
+      getCustomConfig.mockRejectedValue(new Error('Config service unavailable'));
+
+      const tempReq = {
+        user: { id: 'user123' },
+        body: { isTemporary: true },
+      };
+
+      const result = await saveMessage(tempReq, mockMessageData);
+
+      // Verify the integration: config was attempted but failed
+      expect(getCustomConfig).toHaveBeenCalled();
+      expect(createTempChatExpirationDate).not.toHaveBeenCalled();
+      expect(result.expiredAt).toBeNull();
+
+      // Verify the message was saved with expiredAt as null (graceful degradation)
+      const savedMessage = await Message.findOne({ messageId: 'msg123', user: 'user123' });
+      expect(savedMessage.expiredAt).toBeNull();
+    });
+
+    it('should handle createTempChatExpirationDate error gracefully', async () => {
+      // Test integration error handling: config succeeds but date creation fails
+      const validConfig = { interface: { temporaryChatRetention: 72 } };
+      getCustomConfig.mockResolvedValue(validConfig);
+      createTempChatExpirationDate.mockImplementation(() => {
+        throw new Error('Date calculation error');
+      });
+
+      const tempReq = {
+        user: { id: 'user123' },
+        body: { isTemporary: true },
+      };
+
+      const result = await saveMessage(tempReq, mockMessageData);
+
+      // Verify the integration: config was fetched and passed, but date creation failed
+      expect(getCustomConfig).toHaveBeenCalled();
+      expect(createTempChatExpirationDate).toHaveBeenCalledWith(validConfig);
+      expect(result.expiredAt).toBeNull();
+
+      // Verify graceful degradation: message still saved without expiration
+      const savedMessage = await Message.findOne({ messageId: 'msg123', user: 'user123' });
+      expect(savedMessage.expiredAt).toBeNull();
     });
   });
 });
