@@ -17,6 +17,7 @@ env:
 
 permissions:
   contents: read
+  id-token: write
 
 jobs:
   build-and-push:
@@ -28,7 +29,7 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::781189302813:role/github_actions_role
+          role-to-assume: arn:aws:iam::781189302813:role/github-actions-research
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to Amazon ECR
