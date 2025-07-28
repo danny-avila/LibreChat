@@ -26,6 +26,30 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Set version
+        run: |
+          echo "Searching for version in values.yaml..."
+          cat helm/librechat/values.yaml
+          echo "Extracting version..."
+          VERSION=$(grep '^[[:space:]]*tag:' helm/librechat/values.yaml | grep -v '#' | head -n1 | awk -F'"' '{print $2}')
+          echo "Extracted version: '$VERSION'"
+          if [ -z "$VERSION" ]; then
+            echo "No version found, using default"
+            VERSION="1.7.3"
+          else
+            # Remove 'v' prefix if present
+            VERSION=${VERSION#v}
+            echo "Version after removing potential 'v' prefix: $VERSION"
+          fi
+          # Validate version format
+          if [[ ! $VERSION =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Error: Invalid version format: $VERSION"
+            echo "Using default version"
+            VERSION="1.7.3"
+          fi
+          echo "Final version: $VERSION"
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -37,22 +61,13 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Extract metadata for images
-        id: meta
-        run: |
-          VERSION=$(grep 'tag:' helm/librechat/values.yaml | grep -v '#' | awk -F'"' '{print $2}')
-          if [ -z "$VERSION" ]; then
-            VERSION="v1.7.3"  # Default to meilisearch version if no explicit tag
-          fi
-          echo "version=${VERSION}" >> $GITHUB_OUTPUT
-
       - name: Build and push LibreChat image
         uses: docker/build-push-action@v5
         with:
           context: .
           push: true
           tags: >-
-            ${{ env.ECR_REGISTRY }}/librechat:${{ steps.meta.outputs.version }}
+            ${{ env.ECR_REGISTRY }}/librechat:${{ env.VERSION }}
 
       # Use official MongoDB image instead of building custom one
       - name: Pull and push MongoDB image
