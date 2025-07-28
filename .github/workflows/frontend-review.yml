@@ -6,6 +6,7 @@ on:
       - main
       - dev
       - release/*
+      - stacklok-main
     paths:
       - 'client/**'
       - 'packages/data-provider/**'
