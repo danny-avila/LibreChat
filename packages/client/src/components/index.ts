@@ -30,6 +30,7 @@ export * from './Progress';
 export * from './InputOTP';
 export * from './MultiSearch';
 export * from './Resizable';
+export { default as Radio } from './Radio';
 export { default as Badge } from './Badge';
 export { default as Combobox } from './Combobox';
 export { default as Dropdown } from './Dropdown';
