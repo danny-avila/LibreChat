@@ -26,25 +26,34 @@ export type TPrincipalSource = 'local' | 'entra';
 export type TAccessLevel = 'none' | 'viewer' | 'editor' | 'owner';
 
 /**
+ * Resource types for permission system
+ */
+export enum ResourceType {
+  AGENT = 'agent',
+  PROMPTGROUP = 'promptGroup',
+}
+
+/**
  * Permission bit constants for bitwise operations
  */
-export const PERMISSION_BITS = {
-  VIEW: 1, // 001 - Can view and use agent
-  EDIT: 2, // 010 - Can modify agent settings
-  DELETE: 4, // 100 - Can delete agent
-  SHARE: 8, // 1000 - Can share agent with others (future)
-} as const;
+export enum PermissionBits {
+  /** 001 - Can view and use agent */
+  VIEW = 1,
+  /**  010 - Can modify agent settings */
+  EDIT = 2,
+  /**  100 - Can delete agent */
+  DELETE = 4,
+  /**  1000 - Can share agent with others (future) */
+  SHARE = 8,
+}
 
 /**
  * Standard access role IDs
  */
-export enum ACCESS_ROLE_IDS {
+export enum AccessRoleIds {
   AGENT_VIEWER = 'agent_viewer',
   AGENT_EDITOR = 'agent_editor',
-  AGENT_OWNER = 'agent_owner', // Future use
-  PROMPT_VIEWER = 'prompt_viewer',
-  PROMPT_EDITOR = 'prompt_editor',
-  PROMPT_OWNER = 'prompt_owner',
+  AGENT_OWNER = 'agent_owner',
   PROMPTGROUP_VIEWER = 'promptGroup_viewer',
   PROMPTGROUP_EDITOR = 'promptGroup_editor',
   PROMPTGROUP_OWNER = 'promptGroup_owner',
@@ -64,7 +73,7 @@ export const principalSchema = z.object({
   avatar: z.string().optional(), // for user and group types
   description: z.string().optional(), // for group type
   idOnTheSource: z.string().optional(), // Entra ID for users/groups
-  accessRoleId: z.nativeEnum(ACCESS_ROLE_IDS).optional(), // Access role ID for permissions
+  accessRoleId: z.nativeEnum(AccessRoleIds).optional(), // Access role ID for permissions
   memberCount: z.number().optional(), // for group type
 });
 
@@ -72,10 +81,10 @@ export const principalSchema = z.object({
  * Access role schema - defines named permission sets
  */
 export const accessRoleSchema = z.object({
-  accessRoleId: z.nativeEnum(ACCESS_ROLE_IDS),
+  accessRoleId: z.nativeEnum(AccessRoleIds),
   name: z.string(),
   description: z.string().optional(),
-  resourceType: z.string().default('agent'),
+  resourceType: z.nativeEnum(ResourceType).default(ResourceType.AGENT),
   permBits: z.number(),
 });
 
@@ -98,7 +107,7 @@ export const permissionEntrySchema = z.object({
  * Resource permissions response schema
  */
 export const resourcePermissionsResponseSchema = z.object({
-  resourceType: z.string(),
+  resourceType: z.nativeEnum(ResourceType),
   resourceId: z.string(),
   permissions: z.array(permissionEntrySchema),
 });
@@ -210,7 +219,7 @@ export type TPrincipalSearchResponse = {
  * Available roles response
  */
 export type TAvailableRolesResponse = {
-  resourceType: string;
+  resourceType: ResourceType;
   roles: TAccessRole[];
 };
 
@@ -219,11 +228,11 @@ export type TAvailableRolesResponse = {
  * This matches the enhanced aggregation-based endpoint response format
  */
 export const getResourcePermissionsResponseSchema = z.object({
-  resourceType: z.string(),
-  resourceId: z.string(),
+  resourceType: z.nativeEnum(ResourceType),
+  resourceId: z.nativeEnum(AccessRoleIds),
   principals: z.array(principalSchema),
   public: z.boolean(),
-  publicAccessRoleId: z.string().optional(),
+  publicAccessRoleId: z.nativeEnum(AccessRoleIds).optional(),
 });
 
 /**
@@ -265,9 +274,9 @@ export interface TPermissionCheck {
  * Convert permission bits to access level
  */
 export function permBitsToAccessLevel(permBits: number): TAccessLevel {
-  if ((permBits & PERMISSION_BITS.DELETE) > 0) return 'owner';
-  if ((permBits & PERMISSION_BITS.EDIT) > 0) return 'editor';
-  if ((permBits & PERMISSION_BITS.VIEW) > 0) return 'viewer';
+  if ((permBits & PermissionBits.DELETE) > 0) return 'owner';
+  if ((permBits & PermissionBits.EDIT) > 0) return 'editor';
+  if ((permBits & PermissionBits.VIEW) > 0) return 'viewer';
   return 'none';
 }
 
@@ -276,14 +285,14 @@ export function permBitsToAccessLevel(permBits: number): TAccessLevel {
  */
 export function accessRoleToPermBits(accessRoleId: string): number {
   switch (accessRoleId) {
-    case ACCESS_ROLE_IDS.AGENT_VIEWER:
-      return PERMISSION_BITS.VIEW;
-    case ACCESS_ROLE_IDS.AGENT_EDITOR:
-      return PERMISSION_BITS.VIEW | PERMISSION_BITS.EDIT;
-    case ACCESS_ROLE_IDS.AGENT_OWNER:
-      return PERMISSION_BITS.VIEW | PERMISSION_BITS.EDIT | PERMISSION_BITS.DELETE;
+    case AccessRoleIds.AGENT_VIEWER:
+      return PermissionBits.VIEW;
+    case AccessRoleIds.AGENT_EDITOR:
+      return PermissionBits.VIEW | PermissionBits.EDIT;
+    case AccessRoleIds.AGENT_OWNER:
+      return PermissionBits.VIEW | PermissionBits.EDIT | PermissionBits.DELETE;
     default:
-      return PERMISSION_BITS.VIEW;
+      return PermissionBits.VIEW;
   }
 }
 

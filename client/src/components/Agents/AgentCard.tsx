@@ -1,10 +1,7 @@
 import React from 'react';
-
 import type t from 'librechat-data-provider';
-
 import useLocalize from '~/hooks/useLocalize';
-import { renderAgentAvatar, getContactDisplayName } from '~/utils/agents';
-import { cn } from '~/utils';
+import { cn, renderAgentAvatar, getContactDisplayName } from '~/utils';
 
 interface AgentCardProps {
   agent: t.Agent; // The agent data to display

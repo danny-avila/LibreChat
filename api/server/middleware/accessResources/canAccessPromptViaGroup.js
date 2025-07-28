@@ -1,5 +1,6 @@
-const { getPrompt } = require('~/models/Prompt');
+const { ResourceType } = require('librechat-data-provider');
 const { canAccessResource } = require('./canAccessResource');
+const { getPrompt } = require('~/models/Prompt');
 
 /**
  * Prompt to PromptGroup ID resolver function
@@ -42,7 +43,7 @@ const canAccessPromptViaGroup = (options) => {
   }
 
   return canAccessResource({
-    resourceType: 'promptGroup',
+    resourceType: ResourceType.PROMPTGROUP,
     requiredPermission,
     resourceIdParam,
     idResolver: resolvePromptToGroupId,

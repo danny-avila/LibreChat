@@ -1,7 +1,7 @@
 import { memo, useState, useRef, useMemo, useCallback, KeyboardEvent } from 'react';
 import { EarthIcon, Pen } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { PERMISSION_BITS, type TPromptGroup } from 'librechat-data-provider';
+import { PermissionBits, type TPromptGroup } from 'librechat-data-provider';
 import {
   Input,
   Label,
@@ -30,8 +30,8 @@ function DashGroupItemComponent({ group, instanceProjectId }: DashGroupItemProps
   const [nameInputValue, setNameInputValue] = useState(group.name);
 
   const { hasPermission } = useResourcePermissions('promptGroup', group._id || '');
-  const canEdit = hasPermission(PERMISSION_BITS.EDIT);
-  const canDelete = hasPermission(PERMISSION_BITS.DELETE);
+  const canEdit = hasPermission(PermissionBits.EDIT);
+  const canDelete = hasPermission(PermissionBits.DELETE);
 
   const isGlobalGroup = useMemo(
     () => instanceProjectId && group.projectIds?.includes(instanceProjectId),

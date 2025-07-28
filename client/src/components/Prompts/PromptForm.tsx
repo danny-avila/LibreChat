@@ -6,7 +6,7 @@ import { Menu, Rocket } from 'lucide-react';
 import { useForm, FormProvider } from 'react-hook-form';
 import { useParams, useOutletContext } from 'react-router-dom';
 import { Button, Skeleton, useToastContext } from '@librechat/client';
-import { Permissions, PermissionTypes, PERMISSION_BITS } from 'librechat-data-provider';
+import { Permissions, PermissionTypes, PermissionBits } from 'librechat-data-provider';
 import type { TCreatePrompt, TPrompt, TPromptGroup } from 'librechat-data-provider';
 import {
   useGetPrompts,
@@ -186,8 +186,8 @@ const PromptForm = () => {
     group?._id || '',
   );
 
-  const canEdit = hasPermission(PERMISSION_BITS.EDIT);
-  const canView = hasPermission(PERMISSION_BITS.VIEW);
+  const canEdit = hasPermission(PermissionBits.EDIT);
+  const canView = hasPermission(PermissionBits.VIEW);
 
   const methods = useForm({
     defaultValues: {
