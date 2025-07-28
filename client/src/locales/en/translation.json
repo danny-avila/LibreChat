@@ -851,6 +851,7 @@
   "com_ui_mcp_authenticated_success": "MCP server '{{0}}' authenticated successfully",
   "com_ui_mcp_dialog_desc": "Please enter the necessary information below.",
   "com_ui_mcp_enter_var": "Enter value for {{0}}",
+  "com_ui_mcp_init_cancelled": "MCP server '{{0}}' initialization was cancelled due to simultaneous request",
   "com_ui_mcp_init_failed": "Failed to initialize MCP server",
   "com_ui_mcp_initialize": "Initialize",
   "com_ui_mcp_initialized_success": "MCP server '{{0}}' initialized successfully",
