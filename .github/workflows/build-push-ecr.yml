@@ -2,7 +2,7 @@ name: Build and Push to ECR
 
 on:
   push:
-    branches: [ main ]
+    branches: [ stacklok-main ]
     paths:
       - 'Dockerfile'
       - 'helm/librechat/values.yaml'
