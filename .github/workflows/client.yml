@@ -1,6 +1,11 @@
 name: Publish `@librechat/client` to NPM
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'packages/client/package.json'
   workflow_dispatch:
     inputs:
       reason:
@@ -17,16 +22,37 @@ jobs:
       - name: Use Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18.x'
-          
-      - name: Check if client package exists
+          node-version: '20.x'
+        
+      - name: Install client dependencies
+        run: cd packages/client && npm ci
+        
+      - name: Build client
+        run: cd packages/client && npm run build
+        
+      - name: Set up npm authentication
+        run: echo "//registry.npmjs.org/:_authToken=${{ secrets.PUBLISH_NPM_TOKEN }}" > ~/.npmrc
+        
+      - name: Check version change
+        id: check
+        working-directory: packages/client
         run: |
-          if [ -d "packages/client" ]; then
-            echo "Client package directory found"
+          PACKAGE_VERSION=$(node -p "require('./package.json').version")
+          PUBLISHED_VERSION=$(npm view @librechat/client version 2>/dev/null || echo "0.0.0")
+          if [ "$PACKAGE_VERSION" = "$PUBLISHED_VERSION" ]; then
+            echo "No version change, skipping publish"
+            echo "skip=true" >> $GITHUB_OUTPUT
           else
-            echo "Client package directory not found - workflow ready for future use"
-            exit 0
+            echo "Version changed, proceeding with publish"
+            echo "skip=false" >> $GITHUB_OUTPUT
           fi
-          
-      - name: Placeholder for future publishing
-        run: echo "Client package publishing workflow is ready" 
+            
+      - name: Pack package
+        if: steps.check.outputs.skip != 'true'
+        working-directory: packages/client
+        run: npm pack
+        
+      - name: Publish
+        if: steps.check.outputs.skip != 'true'
+        working-directory: packages/client
+        run: npm publish *.tgz --access public

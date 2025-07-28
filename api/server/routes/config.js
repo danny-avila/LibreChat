@@ -106,6 +106,7 @@ router.get('/', async function (req, res) {
         const serverConfig = config.mcpServers[serverName];
         payload.mcpServers[serverName] = {
           customUserVars: serverConfig?.customUserVars || {},
+          chatMenu: serverConfig?.chatMenu,
         };
       }
     }

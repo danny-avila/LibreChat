@@ -11,8 +11,8 @@ const getLogStores = require('~/cache/getLogStores');
  * @returns {Promise<TCustomConfig | null>}
  * */
 async function getCustomConfig() {
-  const cache = getLogStores(CacheKeys.CONFIG_STORE);
-  return (await cache.get(CacheKeys.CUSTOM_CONFIG)) || (await loadCustomConfig());
+  const cache = getLogStores(CacheKeys.STATIC_CONFIG);
+  return (await cache.get(CacheKeys.LIBRECHAT_YAML_CONFIG)) || (await loadCustomConfig());
 }
 
 /**

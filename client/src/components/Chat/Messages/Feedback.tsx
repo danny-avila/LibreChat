@@ -2,6 +2,14 @@ import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { TFeedback, TFeedbackTag, getTagsForRating } from 'librechat-data-provider';
 import {
+  Button,
+  OGDialog,
+  OGDialogContent,
+  OGDialogTitle,
+  ThumbUpIcon,
+  ThumbDownIcon,
+} from '@librechat/client';
+import {
   AlertCircle,
   PenTool,
   ImageOff,
@@ -11,14 +19,6 @@ import {
   Lightbulb,
   Search,
 } from 'lucide-react';
-import {
-  Button,
-  OGDialog,
-  OGDialogContent,
-  OGDialogTitle,
-  ThumbUpIcon,
-  ThumbDownIcon,
-} from '~/components';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 

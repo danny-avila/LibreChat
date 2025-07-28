@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { Spinner } from '@librechat/client';
 import { useParams } from 'react-router-dom';
 import { Constants, EModelEndpoint } from 'librechat-data-provider';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
@@ -10,7 +11,6 @@ import { ToolCallsMapProvider } from '~/Providers';
 import ChatView from '~/components/Chat/ChatView';
 import useAuthRedirect from './useAuthRedirect';
 import temporaryStore from '~/store/temporary';
-import { Spinner } from '~/components/svg';
 import { useRecoilCallback } from 'recoil';
 import store from '~/store';
 

@@ -1,19 +1,19 @@
+import React, { useState, useMemo, useCallback } from 'react';
 import { ChevronLeft } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
-import React, { useState, useMemo, useCallback } from 'react';
+import { Button, useToastContext } from '@librechat/client';
 import { Constants, QueryKeys } from 'librechat-data-provider';
-import type { TUpdateUserPlugins } from 'librechat-data-provider';
 import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
-import ServerInitializationSection from '~/components/ui/MCP/ServerInitializationSection';
-import CustomUserVarsSection from '~/components/ui/MCP/CustomUserVarsSection';
+import type { TUpdateUserPlugins } from 'librechat-data-provider';
+import ServerInitializationSection from '~/components/MCP/ServerInitializationSection';
+import CustomUserVarsSection from '~/components/MCP/CustomUserVarsSection';
 import { useMCPConnectionStatusQuery } from '~/data-provider/Tools/queries';
+import BadgeRowProvider from '~/Providers/BadgeRowContext';
 import { useGetStartupConfig } from '~/data-provider';
 import MCPPanelSkeleton from './MCPPanelSkeleton';
-import { useToastContext } from '~/Providers';
-import { Button } from '~/components/ui';
 import { useLocalize } from '~/hooks';
 
-export default function MCPPanel() {
+function MCPPanelContent() {
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const queryClient = useQueryClient();
@@ -205,4 +205,12 @@ export default function MCPPanel() {
       </div>
     );
   }
+}
+
+export default function MCPPanel() {
+  return (
+    <BadgeRowProvider>
+      <MCPPanelContent />
+    </BadgeRowProvider>
+  );
 }

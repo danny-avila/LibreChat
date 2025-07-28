@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
-import { useForm, FormProvider, Controller, useWatch } from 'react-hook-form';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
+import { Spinner, useToastContext, SelectDropDown } from '@librechat/client';
+import { useForm, FormProvider, Controller, useWatch } from 'react-hook-form';
 import {
   Tools,
   Capabilities,
@@ -18,16 +19,14 @@ import {
 import { cn, cardStyle, defaultTextProps, removeFocusOutlines } from '~/utils';
 import AssistantConversationStarters from './AssistantConversationStarters';
 import AssistantToolsDialog from '~/components/Tools/AssistantToolsDialog';
-import { useAssistantsMapContext, useToastContext } from '~/Providers';
 import { useSelectAssistant, useLocalize } from '~/hooks';
+import { useAssistantsMapContext } from '~/Providers';
 import AppendDateCheckbox from './AppendDateCheckbox';
 import CapabilitiesForm from './CapabilitiesForm';
-import { SelectDropDown } from '~/components/ui';
 import AssistantAvatar from './AssistantAvatar';
 import AssistantSelect from './AssistantSelect';
 import ContextButton from './ContextButton';
 import AssistantTool from './AssistantTool';
-import { Spinner } from '~/components/svg';
 import Knowledge from './Knowledge';
 import { Panel } from '~/common';
 import Action from './Action';

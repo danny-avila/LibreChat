@@ -1,9 +1,8 @@
-// Translation.spec.ts
-
 import i18n from './i18n';
 import English from './en/translation.json';
 import French from './fr/translation.json';
 import Spanish from './es/translation.json';
+import { TranslationKeys } from '~/hooks';
 
 describe('i18next translation tests', () => {
   // Ensure i18next is initialized before any tests run
@@ -36,7 +35,7 @@ describe('i18next translation tests', () => {
 
   it('should return the key itself for an invalid key', () => {
     i18n.changeLanguage('en');
-    expect(i18n.t('invalid-key')).toBe('invalid-key'); // Returns the key itself
+    expect(i18n.t('invalid-key' as TranslationKeys)).toBe('invalid-key'); // Returns the key itself
   });
 
   it('should correctly format placeholders in the translation', () => {
