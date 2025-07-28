@@ -3,8 +3,9 @@ import { useWatch, useFormContext } from 'react-hook-form';
 import {
   SystemRoles,
   Permissions,
+  ResourceType,
   PermissionTypes,
-  PERMISSION_BITS,
+  PermissionBits,
 } from 'librechat-data-provider';
 import type { AgentForm, AgentPanelProps } from '~/common';
 import { useLocalize, useAuthContext, useHasAccess, useResourcePermissions } from '~/hooks';
@@ -46,8 +47,8 @@ export default function AgentFooter({
     agent?._id || '',
   );
 
-  const canShareThisAgent = hasPermission(PERMISSION_BITS.SHARE);
-  const canDeleteThisAgent = hasPermission(PERMISSION_BITS.DELETE);
+  const canShareThisAgent = hasPermission(PermissionBits.SHARE);
+  const canDeleteThisAgent = hasPermission(PermissionBits.DELETE);
   const renderSaveButton = () => {
     if (createMutation.isLoading || updateMutation.isLoading) {
       return <Spinner className="icon-md" aria-hidden="true" />;
@@ -84,7 +85,7 @@ export default function AgentFooter({
               resourceDbId={agent?._id}
               resourceId={agent_id}
               resourceName={agent?.name ?? ''}
-              resourceType="agent"
+              resourceType={ResourceType.AGENT}
             />
           )}
         {agent && agent.author === user?.id && <DuplicateAgent agent_id={agent_id} />}

@@ -1,5 +1,6 @@
-const { getAgent } = require('~/models/Agent');
+const { ResourceType } = require('librechat-data-provider');
 const { canAccessResource } = require('./canAccessResource');
+const { getAgent } = require('~/models/Agent');
 
 /**
  * Agent ID resolver function
@@ -46,7 +47,7 @@ const canAccessAgentResource = (options) => {
   }
 
   return canAccessResource({
-    resourceType: 'agent',
+    resourceType: ResourceType.AGENT,
     requiredPermission,
     resourceIdParam,
     idResolver: resolveAgentId,

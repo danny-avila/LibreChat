@@ -1,23 +1,19 @@
 const mongoose = require('mongoose');
 const crypto = require('node:crypto');
 const { logger } = require('@librechat/data-schemas');
-const { SystemRoles, Tools, actionDelimiter } = require('librechat-data-provider');
+const { ResourceType, SystemRoles, Tools, actionDelimiter } = require('librechat-data-provider');
 const { GLOBAL_PROJECT_NAME, EPHEMERAL_AGENT_ID, mcp_delimiter } =
   require('librechat-data-provider').Constants;
 const {
-  getProjectByName,
-  addAgentIdsToProject,
-  removeAgentIdsFromProject,
   removeAgentFromAllProjects,
+  removeAgentIdsFromProject,
+  addAgentIdsToProject,
+  getProjectByName,
 } = require('./Project');
-const { getCachedTools } = require('~/server/services/Config');
 const { removeAllPermissions } = require('~/server/services/PermissionService');
-const { Agent } = require('~/db/models');
-
-/**
- * Category values are now imported from shared constants
- */
+const { getCachedTools } = require('~/server/services/Config');
 const { getActions } = require('./Action');
+const { Agent } = require('~/db/models');
 
 /**
  * Create an agent with the provided data.
@@ -518,7 +514,7 @@ const deleteAgent = async (searchParameter) => {
   if (agent) {
     await removeAgentFromAllProjects(agent.id);
     await removeAllPermissions({
-      resourceType: 'agent',
+      resourceType: ResourceType.AGENT,
       resourceId: agent._id,
     });
   }

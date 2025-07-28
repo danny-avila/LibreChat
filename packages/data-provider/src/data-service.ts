@@ -909,19 +909,21 @@ export function searchPrincipals(
   return request.get(endpoints.searchPrincipals(params));
 }
 
-export function getAccessRoles(resourceType: string): Promise<q.AccessRolesResponse> {
+export function getAccessRoles(
+  resourceType: permissions.ResourceType,
+): Promise<q.AccessRolesResponse> {
   return request.get(endpoints.getAccessRoles(resourceType));
 }
 
 export function getResourcePermissions(
-  resourceType: string,
+  resourceType: permissions.ResourceType,
   resourceId: string,
 ): Promise<permissions.TGetResourcePermissionsResponse> {
   return request.get(endpoints.getResourcePermissions(resourceType, resourceId));
 }
 
 export function updateResourcePermissions(
-  resourceType: string,
+  resourceType: permissions.ResourceType,
   resourceId: string,
   data: permissions.TUpdateResourcePermissionsRequest,
 ): Promise<permissions.TUpdateResourcePermissionsResponse> {
@@ -929,7 +931,7 @@ export function updateResourcePermissions(
 }
 
 export function getEffectivePermissions(
-  resourceType: string,
+  resourceType: permissions.ResourceType,
   resourceId: string,
 ): Promise<permissions.TEffectivePermissionsResponse> {
   return request.get(endpoints.getEffectivePermissions(resourceType, resourceId));

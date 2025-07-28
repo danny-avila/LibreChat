@@ -7,8 +7,8 @@ export type AclEntry = {
   principalId?: Types.ObjectId;
   /** The model name for the principal ('User' or 'Group') */
   principalModel?: 'User' | 'Group';
-  /** The type of resource ('agent', 'project', 'file', 'prompt', 'promptGroup') */
-  resourceType: 'agent' | 'project' | 'file' | 'prompt' | 'promptGroup';
+  /** The type of resource ('agent', 'project', 'file', 'promptGroup') */
+  resourceType: 'agent' | 'project' | 'file' | 'promptGroup';
   /** The ID of the resource */
   resourceId: Types.ObjectId;
   /** Permission bits for this entry */

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { ACCESS_ROLE_IDS, PermissionTypes, Permissions } from 'librechat-data-provider';
 import { Share2Icon, Users, Loader, Shield, Link, CopyCheck } from 'lucide-react';
+import { Permissions, ResourceType, PermissionTypes, AccessRoleIds } from 'librechat-data-provider';
 import {
   useGetResourcePermissionsQuery,
   useUpdateResourcePermissionsMutation,
@@ -18,22 +18,22 @@ import type { TPrincipal } from 'librechat-data-provider';
 import { useLocalize, useCopyToClipboard, useHasAccess } from '~/hooks';
 import ManagePermissionsDialog from './ManagePermissionsDialog';
 import PublicSharingToggle from './PublicSharingToggle';
-import PeoplePicker from './PeoplePicker/PeoplePicker';
 import AccessRolesPicker from './AccessRolesPicker';
 import { cn, removeFocusOutlines } from '~/utils';
+import { PeoplePicker } from './PeoplePicker';
 
 export default function GrantAccessDialog({
   agentName,
   onGrantAccess,
-  resourceType = 'agent',
+  resourceType = ResourceType.AGENT,
   agentDbId,
   agentId,
 }: {
   agentDbId?: string | null;
   agentId?: string | null;
   agentName?: string;
-  onGrantAccess?: (shares: TPrincipal[], isPublic: boolean, publicRole: string) => void;
-  resourceType?: string;
+  onGrantAccess?: (shares: TPrincipal[], isPublic: boolean, publicRole: AccessRoleIds) => void;
+  resourceType?: ResourceType;
 }) {
   const localize = useLocalize();
   const { showToast } = useToastContext();
@@ -73,7 +73,7 @@ export default function GrantAccessDialog({
 
   const [newShares, setNewShares] = useState<TPrincipal[]>([]);
   const [defaultPermissionId, setDefaultPermissionId] = useState<string>(
-    ACCESS_ROLE_IDS.AGENT_VIEWER,
+    AccessRoleIds.AGENT_VIEWER,
   );
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isCopying, setIsCopying] = useState(false);
@@ -94,10 +94,10 @@ export default function GrantAccessDialog({
     })) || [];
 
   const currentIsPublic = permissionsData?.public ?? false;
-  const currentPublicRole = permissionsData?.publicAccessRoleId || ACCESS_ROLE_IDS.AGENT_VIEWER;
+  const currentPublicRole = permissionsData?.publicAccessRoleId || AccessRoleIds.AGENT_VIEWER;
 
   const [isPublic, setIsPublic] = useState(false);
-  const [publicRole, setPublicRole] = useState<string>(ACCESS_ROLE_IDS.AGENT_VIEWER);
+  const [publicRole, setPublicRole] = useState<AccessRoleIds>(AccessRoleIds.AGENT_VIEWER);
 
   useEffect(() => {
     if (permissionsData && isModalOpen) {
@@ -140,9 +140,9 @@ export default function GrantAccessDialog({
       });
 
       setNewShares([]);
-      setDefaultPermissionId(ACCESS_ROLE_IDS.AGENT_VIEWER);
+      setDefaultPermissionId(AccessRoleIds.AGENT_VIEWER);
       setIsPublic(false);
-      setPublicRole(ACCESS_ROLE_IDS.AGENT_VIEWER);
+      setPublicRole(AccessRoleIds.AGENT_VIEWER);
       setIsModalOpen(false);
     } catch (error) {
       console.error('Error granting access:', error);
@@ -155,9 +155,9 @@ export default function GrantAccessDialog({
 
   const handleCancel = () => {
     setNewShares([]);
-    setDefaultPermissionId(ACCESS_ROLE_IDS.AGENT_VIEWER);
+    setDefaultPermissionId(AccessRoleIds.AGENT_VIEWER);
     setIsPublic(false);
-    setPublicRole(ACCESS_ROLE_IDS.AGENT_VIEWER);
+    setPublicRole(AccessRoleIds.AGENT_VIEWER);
     setIsModalOpen(false);
   };
 

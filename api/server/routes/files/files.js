@@ -6,8 +6,9 @@ const {
   isUUID,
   CacheKeys,
   FileSources,
-  PERMISSION_BITS,
+  ResourceType,
   EModelEndpoint,
+  PermissionBits,
   isAgentsEndpoint,
   checkOpenAIStorage,
 } = require('librechat-data-provider');
@@ -17,6 +18,7 @@ const {
   processDeleteRequest,
   processAgentFileUpload,
 } = require('~/server/services/Files/process');
+const { fileAccess } = require('~/server/middleware/accessResources/fileAccess');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
 const { checkPermission } = require('~/server/services/PermissionService');
@@ -24,12 +26,11 @@ const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { refreshS3FileUrls } = require('~/server/services/Files/S3/crud');
 const { hasAccessToFilesViaAgent } = require('~/server/services/Files');
 const { getFiles, batchUpdateFiles } = require('~/models/File');
+const { cleanFileName } = require('~/server/utils/files');
 const { getAssistant } = require('~/models/Assistant');
 const { getAgent } = require('~/models/Agent');
-const { cleanFileName } = require('~/server/utils/files');
 const { getLogStores } = require('~/cache');
 const { logger } = require('~/config');
-const { fileAccess } = require('~/server/middleware/accessResources/fileAccess');
 
 const router = express.Router();
 
@@ -78,9 +79,9 @@ router.get('/agent/:agent_id', async (req, res) => {
     if (agent.author.toString() !== userId) {
       const hasEditPermission = await checkPermission({
         userId,
-        resourceType: 'agent',
+        resourceType: ResourceType.AGENT,
         resourceId: agent._id,
-        requiredPermission: PERMISSION_BITS.EDIT,
+        requiredPermission: PermissionBits.EDIT,
       });
 
       if (!hasEditPermission) {

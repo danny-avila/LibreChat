@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { Button, Spinner } from '@librechat/client';
-import { PERMISSION_BITS } from 'librechat-data-provider';
+import { PermissionBits } from 'librechat-data-provider';
 import type t from 'librechat-data-provider';
 import { useMarketplaceAgentsInfiniteQuery } from '~/data-provider/Agents';
 import { useAgentCategories, useLocalize } from '~/hooks';
@@ -33,7 +33,7 @@ const AgentGrid: React.FC<AgentGridProps> = ({ category, searchQuery, onSelectAg
       limit: number;
       promoted?: 0 | 1;
     } = {
-      requiredPermission: PERMISSION_BITS.VIEW, // View permission for marketplace viewing
+      requiredPermission: PermissionBits.VIEW, // View permission for marketplace viewing
       limit: 6,
     };
 

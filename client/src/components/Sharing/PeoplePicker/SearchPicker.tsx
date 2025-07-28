@@ -1,4 +1,5 @@
 import * as React from 'react';
+import debounce from 'lodash/debounce';
 import { Search, X } from 'lucide-react';
 import * as Ariakit from '@ariakit/react';
 import { Spinner, Skeleton } from '@librechat/client';
@@ -36,10 +37,31 @@ export function SearchPicker<TOption extends { key: string; value: string }>({
   const localize = useLocalize();
   const [_open, setOpen] = React.useState(false);
   const inputRef = React.useRef<HTMLInputElement>(null);
+  const [localQuery, setLocalQuery] = React.useState(query);
   const combobox = Ariakit.useComboboxStore({
     resetValueOnHide,
   });
+
+  React.useEffect(() => {
+    setLocalQuery(query);
+  }, [query]);
+
+  const debouncedOnQueryChange = React.useMemo(
+    () =>
+      debounce((value: string) => {
+        onQueryChange(value);
+      }, 500),
+    [onQueryChange],
+  );
+
+  React.useEffect(() => {
+    return () => {
+      debouncedOnQueryChange.cancel();
+    };
+  }, [debouncedOnQueryChange]);
+
   const onPickHandler = (option: TOption) => {
+    setLocalQuery('');
     onQueryChange('');
     onPick(option);
     setOpen(false);
@@ -47,9 +69,11 @@ export function SearchPicker<TOption extends { key: string; value: string }>({
       inputRef.current.focus();
     }
   };
-  const showClearIcon = query.trim().length > 0;
+  const showClearIcon = localQuery.trim().length > 0;
   const clearText = () => {
+    setLocalQuery('');
     onQueryChange('');
+    debouncedOnQueryChange.cancel();
     if (inputRef.current) {
       inputRef.current.focus();
     }
@@ -77,7 +101,9 @@ export function SearchPicker<TOption extends { key: string; value: string }>({
               if (e.key === 'Escape' && combobox.getState().open) {
                 e.preventDefault();
                 e.stopPropagation();
+                setLocalQuery('');
                 onQueryChange('');
+                debouncedOnQueryChange.cancel();
                 setOpen(false);
               }
             }}
@@ -85,9 +111,11 @@ export function SearchPicker<TOption extends { key: string; value: string }>({
             setValueOnClick={false}
             setValueOnChange={false}
             onChange={(e) => {
-              onQueryChange(e.target.value);
+              const value = e.target.value;
+              setLocalQuery(value);
+              debouncedOnQueryChange(value);
             }}
-            value={query}
+            value={localQuery}
             // autoSelect
             placeholder={placeholder || localize('com_ui_select_options')}
             className="m-0 mr-0 w-full rounded-md border-none bg-transparent p-0 py-2 pl-9 pr-3 text-sm leading-tight text-text-primary placeholder-text-secondary placeholder-opacity-100 focus:outline-none focus-visible:outline-none group-focus-within:placeholder-text-primary group-hover:placeholder-text-primary"
@@ -115,7 +143,7 @@ export function SearchPicker<TOption extends { key: string; value: string }>({
         open={
           isLoading ||
           options.length > 0 ||
-          (query.trim().length >= minQueryLengthForNoResults && !isLoading)
+          (localQuery.trim().length >= minQueryLengthForNoResults && !isLoading)
         }
         store={combobox}
         unmountOnHide
@@ -162,7 +190,7 @@ export function SearchPicker<TOption extends { key: string; value: string }>({
             ));
           }
 
-          if (query.trim().length >= minQueryLengthForNoResults) {
+          if (localQuery.trim().length >= minQueryLengthForNoResults) {
             return (
               <div
                 className={cn(

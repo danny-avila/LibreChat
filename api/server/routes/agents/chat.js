@@ -1,7 +1,6 @@
 const express = require('express');
-const { PermissionBits } = require('@librechat/data-schemas');
 const { generateCheckAccess, skipAgentCheck } = require('@librechat/api');
-const { PermissionTypes, Permissions } = require('librechat-data-provider');
+const { PermissionTypes, Permissions, PermissionBits } = require('librechat-data-provider');
 const {
   setHeaders,
   moderateText,

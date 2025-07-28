@@ -4,6 +4,7 @@ const path = require('path');
 const { logger } = require('@librechat/data-schemas');
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
 
+const { AccessRoleIds, ResourceType } = require('librechat-data-provider');
 const { GLOBAL_PROJECT_NAME } = require('librechat-data-provider').Constants;
 const connect = require('./connect');
 
@@ -164,9 +165,9 @@ async function migrateAgentPermissionsEnhanced({ dryRun = true, batchSize = 100 
         await grantPermission({
           principalType: 'user',
           principalId: agent.author,
-          resourceType: 'agent',
+          resourceType: ResourceType.AGENT,
           resourceId: agent._id,
-          accessRoleId: 'agent_owner',
+          accessRoleId: AccessRoleIds.AGENT_OWNER,
           grantedBy: agent.author,
         });
         results.ownerGrants++;
@@ -178,12 +179,12 @@ async function migrateAgentPermissionsEnhanced({ dryRun = true, batchSize = 100 
         if (isGlobal) {
           if (isCollab) {
             // Global project + collaborative = Public EDIT access
-            publicRoleId = 'agent_editor';
+            publicRoleId = AccessRoleIds.AGENT_EDITOR;
             description = 'Global Edit';
             results.publicEditGrants++;
           } else {
             // Global project + not collaborative = Public VIEW access
-            publicRoleId = 'agent_viewer';
+            publicRoleId = AccessRoleIds.AGENT_VIEWER;
             description = 'Global View';
             results.publicViewGrants++;
           }
@@ -192,7 +193,7 @@ async function migrateAgentPermissionsEnhanced({ dryRun = true, batchSize = 100 
           await grantPermission({
             principalType: 'public',
             principalId: null,
-            resourceType: 'agent',
+            resourceType: ResourceType.AGENT,
             resourceId: agent._id,
             accessRoleId: publicRoleId,
             grantedBy: agent.author,

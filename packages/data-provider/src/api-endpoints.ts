@@ -1,5 +1,6 @@
 import type { AssistantsEndpoint } from './schemas';
 import * as q from './types/queries';
+import { ResourceType } from './accessPermissions';
 
 // Testing this buildQuery function
 const buildQuery = (params: Record<string, unknown>): string => {
@@ -323,15 +324,16 @@ export const searchPrincipals = (params: q.PrincipalSearchParams) => {
   return url;
 };
 
-export const getAccessRoles = (resourceType: string) => `/api/permissions/${resourceType}/roles`;
+export const getAccessRoles = (resourceType: ResourceType) =>
+  `/api/permissions/${resourceType}/roles`;
 
-export const getResourcePermissions = (resourceType: string, resourceId: string) =>
+export const getResourcePermissions = (resourceType: ResourceType, resourceId: string) =>
   `/api/permissions/${resourceType}/${resourceId}`;
 
-export const updateResourcePermissions = (resourceType: string, resourceId: string) =>
+export const updateResourcePermissions = (resourceType: ResourceType, resourceId: string) =>
   `/api/permissions/${resourceType}/${resourceId}`;
 
-export const getEffectivePermissions = (resourceType: string, resourceId: string) =>
+export const getEffectivePermissions = (resourceType: ResourceType, resourceId: string) =>
   `/api/permissions/${resourceType}/${resourceId}/effective`;
 
 // SharePoint Graph API Token

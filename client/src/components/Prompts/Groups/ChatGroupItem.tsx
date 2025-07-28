@@ -7,7 +7,7 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from '@librechat/client';
-import { PERMISSION_BITS } from 'librechat-data-provider';
+import { PermissionBits } from 'librechat-data-provider';
 import type { TPromptGroup } from 'librechat-data-provider';
 import { useLocalize, useSubmitMessage, useCustomLink, useResourcePermissions } from '~/hooks';
 import VariableDialog from '~/components/Prompts/Groups/VariableDialog';
@@ -35,7 +35,7 @@ function ChatGroupItem({
 
   // Check permissions for the promptGroup
   const { hasPermission } = useResourcePermissions('promptGroup', group._id || '');
-  const canEdit = hasPermission(PERMISSION_BITS.EDIT);
+  const canEdit = hasPermission(PermissionBits.EDIT);
 
   const onCardClick: React.MouseEventHandler<HTMLButtonElement> = () => {
     const text = group.productionPrompt?.prompt;

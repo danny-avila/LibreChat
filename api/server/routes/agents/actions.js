@@ -1,21 +1,22 @@
 const express = require('express');
 const { nanoid } = require('nanoid');
+const { logger } = require('@librechat/data-schemas');
 const { generateCheckAccess } = require('@librechat/api');
-const { logger, PermissionBits } = require('@librechat/data-schemas');
 const {
   Permissions,
+  ResourceType,
   PermissionTypes,
   actionDelimiter,
+  PermissionBits,
   removeNullishValues,
 } = require('librechat-data-provider');
 const { encryptMetadata, domainParser } = require('~/server/services/ActionService');
 const { findAccessibleResources } = require('~/server/services/PermissionService');
+const { getAgent, updateAgent, getListAgentsByAccess } = require('~/models/Agent');
 const { updateAction, getActions, deleteAction } = require('~/models/Action');
 const { isActionDomainAllowed } = require('~/server/services/domains');
 const { canAccessAgentResource } = require('~/server/middleware');
-const { getAgent, updateAgent } = require('~/models/Agent');
 const { getRoleByName } = require('~/models/Role');
-const { getListAgentsByAccess } = require('~/models/Agent');
 
 const router = express.Router();
 
@@ -36,7 +37,7 @@ router.get('/', async (req, res) => {
     const userId = req.user.id;
     const editableAgentObjectIds = await findAccessibleResources({
       userId,
-      resourceType: 'agent',
+      resourceType: ResourceType.AGENT,
       requiredPermissions: PermissionBits.EDIT,
     });
 

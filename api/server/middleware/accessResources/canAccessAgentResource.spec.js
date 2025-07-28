@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { ResourceType } = require('librechat-data-provider');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const { canAccessAgentResource } = require('./canAccessAgentResource');
 const { User, Role, AclEntry } = require('~/db/models');
@@ -99,7 +100,7 @@ describe('canAccessAgentResource middleware', () => {
         principalType: 'user',
         principalId: testUser._id,
         principalModel: 'User',
-        resourceType: 'agent',
+        resourceType: ResourceType.AGENT,
         resourceId: agent._id,
         permBits: 15, // All permissions (1+2+4+8)
         grantedBy: testUser._id,
@@ -136,7 +137,7 @@ describe('canAccessAgentResource middleware', () => {
         principalType: 'user',
         principalId: otherUser._id,
         principalModel: 'User',
-        resourceType: 'agent',
+        resourceType: ResourceType.AGENT,
         resourceId: agent._id,
         permBits: 15, // All permissions
         grantedBy: otherUser._id,
@@ -177,7 +178,7 @@ describe('canAccessAgentResource middleware', () => {
         principalType: 'user',
         principalId: testUser._id,
         principalModel: 'User',
-        resourceType: 'agent',
+        resourceType: ResourceType.AGENT,
         resourceId: agent._id,
         permBits: 1, // VIEW permission
         grantedBy: otherUser._id,
@@ -214,7 +215,7 @@ describe('canAccessAgentResource middleware', () => {
         principalType: 'user',
         principalId: testUser._id,
         principalModel: 'User',
-        resourceType: 'agent',
+        resourceType: ResourceType.AGENT,
         resourceId: agent._id,
         permBits: 1, // VIEW permission only
         grantedBy: otherUser._id,
@@ -261,7 +262,7 @@ describe('canAccessAgentResource middleware', () => {
         principalType: 'user',
         principalId: testUser._id,
         principalModel: 'User',
-        resourceType: 'agent',
+        resourceType: ResourceType.AGENT,
         resourceId: agent._id,
         permBits: 15, // All permissions
         grantedBy: testUser._id,
@@ -297,7 +298,7 @@ describe('canAccessAgentResource middleware', () => {
         principalType: 'user',
         principalId: testUser._id,
         principalModel: 'User',
-        resourceType: 'agent',
+        resourceType: ResourceType.AGENT,
         resourceId: agent._id,
         permBits: 15, // All permissions (1+2+4+8)
         grantedBy: testUser._id,
@@ -357,7 +358,7 @@ describe('canAccessAgentResource middleware', () => {
         principalType: 'user',
         principalId: testUser._id,
         principalModel: 'User',
-        resourceType: 'agent',
+        resourceType: ResourceType.AGENT,
         resourceId: agent._id,
         permBits: 15, // All permissions
         grantedBy: testUser._id,

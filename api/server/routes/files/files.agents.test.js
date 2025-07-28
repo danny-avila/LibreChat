@@ -4,6 +4,7 @@ const mongoose = require('mongoose');
 const { v4: uuidv4 } = require('uuid');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const { createMethods } = require('@librechat/data-schemas');
+const { AccessRoleIds, ResourceType } = require('librechat-data-provider');
 const { createAgent } = require('~/models/Agent');
 const { createFile } = require('~/models/File');
 
@@ -186,9 +187,9 @@ describe('File Routes - Agent Files Endpoint', () => {
       await grantPermission({
         principalType: 'user',
         principalId: otherUserId,
-        resourceType: 'agent',
+        resourceType: ResourceType.AGENT,
         resourceId: agent._id,
-        accessRoleId: 'agent_editor',
+        accessRoleId: AccessRoleIds.AGENT_EDITOR,
         grantedBy: authorId,
       });
 
@@ -241,9 +242,9 @@ describe('File Routes - Agent Files Endpoint', () => {
       await grantPermission({
         principalType: 'user',
         principalId: otherUserId,
-        resourceType: 'agent',
+        resourceType: ResourceType.AGENT,
         resourceId: agent._id,
-        accessRoleId: 'agent_viewer',
+        accessRoleId: AccessRoleIds.AGENT_VIEWER,
         grantedBy: authorId,
       });
 

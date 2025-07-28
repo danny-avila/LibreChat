@@ -1,31 +1,44 @@
 const mongoose = require('mongoose');
+const { isEnabled } = require('@librechat/api');
+const { ResourceType } = require('librechat-data-provider');
 const { getTransactionSupport, logger } = require('@librechat/data-schemas');
-const { isEnabled } = require('~/server/utils');
 const {
   entraIdPrincipalFeatureEnabled,
-  getUserEntraGroups,
   getUserOwnedEntraGroups,
+  getUserEntraGroups,
   getGroupMembers,
   getGroupOwners,
 } = require('~/server/services/GraphApiService');
 const {
+  findAccessibleResources: findAccessibleResourcesACL,
+  getEffectivePermissions: getEffectivePermissionsACL,
+  grantPermission: grantPermissionACL,
+  findEntriesByPrincipalsAndResource,
   findGroupByExternalId,
   findRoleByIdentifier,
   getUserPrincipals,
+  hasPermission,
   createGroup,
   createUser,
   updateUser,
   findUser,
-  grantPermission: grantPermissionACL,
-  findAccessibleResources: findAccessibleResourcesACL,
-  hasPermission,
-  getEffectivePermissions: getEffectivePermissionsACL,
-  findEntriesByPrincipalsAndResource,
 } = require('~/models');
 const { AclEntry, AccessRole, Group } = require('~/db/models');
 
 /** @type {boolean|null} */
 let transactionSupportCache = null;
+
+/**
+ * Validates that the resourceType is one of the supported enum values
+ * @param {string} resourceType - The resource type to validate
+ * @throws {Error} If resourceType is not valid
+ */
+const validateResourceType = (resourceType) => {
+  const validTypes = Object.values(ResourceType);
+  if (!validTypes.includes(resourceType)) {
+    throw new Error(`Invalid resourceType: ${resourceType}. Valid types: ${validTypes.join(', ')}`);
+  }
+};
 
 /**
  * @import { TPrincipal } from 'librechat-data-provider'
@@ -37,7 +50,7 @@ let transactionSupportCache = null;
  * @param {string|mongoose.Types.ObjectId|null} params.principalId - The ID of the principal (null for 'public')
  * @param {string} params.resourceType - Type of resource (e.g., 'agent')
  * @param {string|mongoose.Types.ObjectId} params.resourceId - The ID of the resource
- * @param {string} params.accessRoleId - The ID of the role (e.g., 'agent_viewer', 'agent_editor')
+ * @param {string} params.accessRoleId - The ID of the role (e.g., AccessRoleIds.AGENT_VIEWER, AccessRoleIds.AGENT_EDITOR)
  * @param {string|mongoose.Types.ObjectId} params.grantedBy - User ID granting the permission
  * @param {mongoose.ClientSession} [params.session] - Optional MongoDB session for transactions
  * @returns {Promise<Object>} The created or updated ACL entry
@@ -67,6 +80,8 @@ const grantPermission = async ({
     if (!resourceId || !mongoose.Types.ObjectId.isValid(resourceId)) {
       throw new Error(`Invalid resource ID: ${resourceId}`);
     }
+
+    validateResourceType(resourceType);
 
     // Get the role to determine permission bits
     const role = await findRoleByIdentifier(accessRoleId);
@@ -111,6 +126,8 @@ const checkPermission = async ({ userId, resourceType, resourceId, requiredPermi
       throw new Error('requiredPermission must be a positive number');
     }
 
+    validateResourceType(resourceType);
+
     // Get all principals for the user (user + groups + public)
     const principals = await getUserPrincipals(userId);
 
@@ -139,6 +156,8 @@ const checkPermission = async ({ userId, resourceType, resourceId, requiredPermi
  */
 const getEffectivePermissions = async ({ userId, resourceType, resourceId }) => {
   try {
+    validateResourceType(resourceType);
+
     // Get all principals for the user (user + groups + public)
     const principals = await getUserPrincipals(userId);
 
@@ -165,6 +184,8 @@ const findAccessibleResources = async ({ userId, resourceType, requiredPermissio
     if (typeof requiredPermissions !== 'number' || requiredPermissions < 1) {
       throw new Error('requiredPermissions must be a positive number');
     }
+
+    validateResourceType(resourceType);
 
     // Get all principals for the user (user + groups + public)
     const principalsList = await getUserPrincipals(userId);
@@ -196,6 +217,8 @@ const findPubliclyAccessibleResources = async ({ resourceType, requiredPermissio
       throw new Error('requiredPermissions must be a positive number');
     }
 
+    validateResourceType(resourceType);
+
     // Find all public ACL entries where the public principal has at least the required permission bits
     const entries = await AclEntry.find({
       principalType: 'public',
@@ -221,12 +244,9 @@ const findPubliclyAccessibleResources = async ({ resourceType, requiredPermissio
  * @returns {Promise<Array>} Array of role definitions
  */
 const getAvailableRoles = async ({ resourceType }) => {
-  try {
-    return await AccessRole.find({ resourceType }).lean();
-  } catch (error) {
-    logger.error(`[PermissionService.getAvailableRoles] Error: ${error.message}`);
-    return [];
-  }
+  validateResourceType(resourceType);
+
+  return await AccessRole.find({ resourceType }).lean();
 };
 
 /**
@@ -482,6 +502,8 @@ const hasPublicPermission = async ({ resourceType, resourceId, requiredPermissio
       throw new Error('requiredPermissions must be a positive number');
     }
 
+    validateResourceType(resourceType);
+
     // Use public principal to check permissions
     const publicPrincipal = [{ principalType: 'public' }];
 
@@ -707,14 +729,16 @@ const bulkUpdateResourcePermissions = async ({
 };
 
 /**
- * Remove all permissions for a specific resource
- * @param {Object} params - Parameters for removing permissions
+ * Remove all permissions for a resource (cleanup when resource is deleted)
+ * @param {Object} params - Parameters for removing all permissions
  * @param {string} params.resourceType - Type of resource (e.g., 'agent', 'prompt')
  * @param {string|mongoose.Types.ObjectId} params.resourceId - The ID of the resource
- * @returns {Promise<Object>} Delete result
+ * @returns {Promise<Object>} Result of the deletion operation
  */
 const removeAllPermissions = async ({ resourceType, resourceId }) => {
   try {
+    validateResourceType(resourceType);
+
     if (!resourceId || !mongoose.Types.ObjectId.isValid(resourceId)) {
       throw new Error(`Invalid resource ID: ${resourceId}`);
     }

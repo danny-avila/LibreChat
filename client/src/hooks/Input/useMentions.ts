@@ -8,7 +8,7 @@ import {
   isAgentsEndpoint,
   getConfigDefaults,
   isAssistantsEndpoint,
-  PERMISSION_BITS,
+  PermissionBits,
 } from 'librechat-data-provider';
 import type { TAssistantsMap, TEndpointsConfig } from 'librechat-data-provider';
 import type { MentionOption } from '~/common';
@@ -81,7 +81,7 @@ export default function useMentions({
     [startupConfig?.interface],
   );
   const { data: agentsList = null } = useListAgentsQuery(
-    { requiredPermission: PERMISSION_BITS.VIEW },
+    { requiredPermission: PermissionBits.VIEW },
     {
       enabled: hasAgentAccess && interfaceConfig.modelSelect === true,
       select: (res) => {

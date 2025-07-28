@@ -14,6 +14,7 @@ import { QueryKeys } from '../keys';
 import * as s from '../schemas';
 import * as t from '../types';
 import * as permissions from '../accessPermissions';
+import { ResourceType } from '../accessPermissions';
 
 export { hasPermissions } from '../accessPermissions';
 
@@ -405,7 +406,7 @@ export const useSearchPrincipalsQuery = (
 };
 
 export const useGetAccessRolesQuery = (
-  resourceType: string,
+  resourceType: ResourceType,
   config?: UseQueryOptions<q.AccessRolesResponse>,
 ): QueryObserverResult<q.AccessRolesResponse> => {
   return useQuery<q.AccessRolesResponse>(
@@ -423,7 +424,7 @@ export const useGetAccessRolesQuery = (
 };
 
 export const useGetResourcePermissionsQuery = (
-  resourceType: string,
+  resourceType: ResourceType,
   resourceId: string,
   config?: UseQueryOptions<permissions.TGetResourcePermissionsResponse>,
 ): QueryObserverResult<permissions.TGetResourcePermissionsResponse> => {
@@ -445,7 +446,7 @@ export const useUpdateResourcePermissionsMutation = (): UseMutationResult<
   permissions.TUpdateResourcePermissionsResponse,
   Error,
   {
-    resourceType: string;
+    resourceType: ResourceType;
     resourceId: string;
     data: permissions.TUpdateResourcePermissionsRequest;
   }
@@ -472,7 +473,7 @@ export const useUpdateResourcePermissionsMutation = (): UseMutationResult<
 };
 
 export const useGetEffectivePermissionsQuery = (
-  resourceType: string,
+  resourceType: ResourceType,
   resourceId: string,
   config?: UseQueryOptions<permissions.TEffectivePermissionsResponse>,
 ): QueryObserverResult<permissions.TEffectivePermissionsResponse> => {

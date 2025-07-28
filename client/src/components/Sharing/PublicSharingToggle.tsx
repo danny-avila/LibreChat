@@ -1,7 +1,9 @@
 import React from 'react';
-import { Globe, Shield } from 'lucide-react';
 import { Switch } from '@librechat/client';
-import AccessRolesPicker from '../SidePanel/Agents/Sharing/AccessRolesPicker';
+import { Globe, Shield } from 'lucide-react';
+import type { AccessRoleIds } from 'librechat-data-provider';
+import { ResourceType } from 'librechat-data-provider';
+import AccessRolesPicker from './AccessRolesPicker';
 import { useLocalize } from '~/hooks';
 
 export default function PublicSharingToggle({
@@ -9,13 +11,13 @@ export default function PublicSharingToggle({
   publicRole,
   onPublicToggle,
   onPublicRoleChange,
-  resourceType = 'agent',
+  resourceType = ResourceType.AGENT,
 }: {
   isPublic: boolean;
-  publicRole: string;
+  publicRole: AccessRoleIds;
   onPublicToggle: (isPublic: boolean) => void;
-  onPublicRoleChange: (role: string) => void;
-  resourceType?: string;
+  onPublicRoleChange: (role: AccessRoleIds) => void;
+  resourceType?: ResourceType;
 }) {
   const localize = useLocalize();
 
