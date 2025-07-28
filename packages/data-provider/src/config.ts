@@ -613,6 +613,7 @@ export type TStartupConfig = {
         }
       >;
       chatMenu?: boolean;
+      isOAuth?: boolean;
     }
   >;
   mcpPlaceholder?: string;
