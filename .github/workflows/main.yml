@@ -1,0 +1,20 @@
+            - name: Docker image exists
+  # You may pin to the exact commit or the version.
+  # uses: cloudposse/github-action-docker-image-exists@4bdf41f05434b8b3570d45f34f9d43bc37b5f6a5
+  uses: cloudposse/github-action-docker-image-exists@0.2.0
+  with:
+    # Organization
+    organization: 
+    # Repository
+    repository: 
+    # Docker registry
+    registry: 
+    # Image name (excluding registry). Defaults to {{$organization/$repository}}.
+    image_name: # optional, default is 
+    # Tag
+    tag: 
+    # Docker login
+    login: # optional, default is 
+    # Docker password
+    password: # optional, default is 
+          
