@@ -1,6 +1,4 @@
-name: Linux_Container_Workflow (Disabled)
-
-permissions: {}
+name: Linux_Container_Workflow
 
 on:
   workflow_dispatch:
