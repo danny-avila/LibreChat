@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { ACCESS_ROLE_IDS, TPrincipal } from 'librechat-data-provider';
+import { AccessRoleIds, ResourceType } from 'librechat-data-provider';
 import { Settings, Users, Loader, UserCheck, Trash2, Shield } from 'lucide-react';
 import {
   useGetAccessRolesQuery,
   useGetResourcePermissionsQuery,
   useUpdateResourcePermissionsMutation,
 } from 'librechat-data-provider/react-query';
+import type { TPrincipal } from 'librechat-data-provider';
 import {
   Button,
   OGDialog,
@@ -15,21 +16,25 @@ import {
   OGDialogTrigger,
   useToastContext,
 } from '@librechat/client';
-import SelectedPrincipalsList from './PeoplePicker/SelectedPrincipalsList';
+import { SelectedPrincipalsList } from './PeoplePicker';
 import PublicSharingToggle from './PublicSharingToggle';
 import { cn, removeFocusOutlines } from '~/utils';
 import { useLocalize } from '~/hooks';
 
 export default function ManagePermissionsDialog({
-  agentDbId,
   agentName,
-  resourceType = 'agent',
+  resourceType = ResourceType.AGENT,
+  agentDbId,
   onUpdatePermissions,
 }: {
   agentDbId: string;
   agentName?: string;
-  resourceType?: string;
-  onUpdatePermissions?: (shares: TPrincipal[], isPublic: boolean, publicRole: string) => void;
+  resourceType?: ResourceType;
+  onUpdatePermissions?: (
+    shares: TPrincipal[],
+    isPublic: boolean,
+    publicRole: AccessRoleIds,
+  ) => void;
 }) {
   const localize = useLocalize();
   const { showToast } = useToastContext();
@@ -50,20 +55,22 @@ export default function ManagePermissionsDialog({
 
   const [managedShares, setManagedShares] = useState<TPrincipal[]>([]);
   const [managedIsPublic, setManagedIsPublic] = useState(false);
-  const [managedPublicRole, setManagedPublicRole] = useState<string>(ACCESS_ROLE_IDS.AGENT_VIEWER);
+  const [managedPublicRole, setManagedPublicRole] = useState<AccessRoleIds>(
+    AccessRoleIds.AGENT_VIEWER,
+  );
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
 
   const currentShares: TPrincipal[] = permissionsData?.principals || [];
 
   const isPublic = permissionsData?.public || false;
-  const publicRole = permissionsData?.publicAccessRoleId || ACCESS_ROLE_IDS.AGENT_VIEWER;
+  const publicRole = permissionsData?.publicAccessRoleId || AccessRoleIds.AGENT_VIEWER;
 
   useEffect(() => {
     if (permissionsData) {
       const shares = permissionsData.principals || [];
       const isPublicValue = permissionsData.public || false;
-      const publicRoleValue = permissionsData.publicAccessRoleId || ACCESS_ROLE_IDS.AGENT_VIEWER;
+      const publicRoleValue = permissionsData.publicAccessRoleId || AccessRoleIds.AGENT_VIEWER;
 
       setManagedShares(shares);
       setManagedIsPublic(isPublicValue);
@@ -85,7 +92,7 @@ export default function ManagePermissionsDialog({
     setHasChanges(true);
   };
 
-  const handleRoleChange = (idOnTheSource: string, newRole: string) => {
+  const handleRoleChange = (idOnTheSource: string, newRole: AccessRoleIds) => {
     setManagedShares(
       managedShares.map((s) =>
         s.idOnTheSource === idOnTheSource ? { ...s, accessRoleId: newRole } : s,
@@ -160,10 +167,10 @@ export default function ManagePermissionsDialog({
     setManagedIsPublic(isPublic);
     setHasChanges(true);
     if (!isPublic) {
-      setManagedPublicRole(ACCESS_ROLE_IDS.AGENT_VIEWER);
+      setManagedPublicRole(AccessRoleIds.AGENT_VIEWER);
     }
   };
-  const handlePublicRoleChange = (role: string) => {
+  const handlePublicRoleChange = (role: AccessRoleIds) => {
     setManagedPublicRole(role);
     setHasChanges(true);
   };
@@ -172,8 +179,8 @@ export default function ManagePermissionsDialog({
 
   /** Check if there's at least one owner (user, group, or public with owner role) */
   const hasAtLeastOneOwner =
-    managedShares.some((share) => share.accessRoleId === ACCESS_ROLE_IDS.AGENT_OWNER) ||
-    (managedIsPublic && managedPublicRole === ACCESS_ROLE_IDS.AGENT_OWNER);
+    managedShares.some((share) => share.accessRoleId === AccessRoleIds.AGENT_OWNER) ||
+    (managedIsPublic && managedPublicRole === AccessRoleIds.AGENT_OWNER);
 
   let peopleLabel = localize('com_ui_people');
   if (managedShares.length === 1) {

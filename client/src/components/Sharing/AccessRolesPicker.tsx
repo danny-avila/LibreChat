@@ -2,7 +2,7 @@ import React from 'react';
 import * as Ariakit from '@ariakit/react';
 import { ChevronDown } from 'lucide-react';
 import { DropdownPopup } from '@librechat/client';
-import { ACCESS_ROLE_IDS } from 'librechat-data-provider';
+import { AccessRoleIds, ResourceType } from 'librechat-data-provider';
 import { useGetAccessRolesQuery } from 'librechat-data-provider/react-query';
 import type { AccessRole } from 'librechat-data-provider';
 import type * as t from '~/common';
@@ -10,15 +10,15 @@ import { cn, getRoleLocalizationKeys } from '~/utils';
 import { useLocalize } from '~/hooks';
 
 interface AccessRolesPickerProps {
-  resourceType?: string;
-  selectedRoleId?: ACCESS_ROLE_IDS;
-  onRoleChange: (roleId: ACCESS_ROLE_IDS) => void;
+  resourceType?: ResourceType;
+  selectedRoleId?: AccessRoleIds;
+  onRoleChange: (roleId: AccessRoleIds) => void;
   className?: string;
 }
 
 export default function AccessRolesPicker({
-  resourceType = 'agent',
-  selectedRoleId = ACCESS_ROLE_IDS.AGENT_VIEWER,
+  resourceType = ResourceType.AGENT,
+  selectedRoleId = AccessRoleIds.AGENT_VIEWER,
   onRoleChange,
   className = '',
 }: AccessRolesPickerProps) {
@@ -27,7 +27,7 @@ export default function AccessRolesPicker({
   const { data: accessRoles, isLoading: rolesLoading } = useGetAccessRolesQuery(resourceType);
 
   /** Helper function to get localized role name and description */
-  const getLocalizedRoleInfo = (roleId: ACCESS_ROLE_IDS) => {
+  const getLocalizedRoleInfo = (roleId: AccessRoleIds) => {
     const keys = getRoleLocalizationKeys(roleId);
     return {
       name: localize(keys.name),
