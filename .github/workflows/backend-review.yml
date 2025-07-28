@@ -5,6 +5,7 @@ on:
       - main
       - dev
       - release/*
+      - stacklok-main
     paths:
       - 'api/**'
       - 'packages/**'
