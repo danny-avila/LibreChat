@@ -1,4 +1,6 @@
-name: Deploy_GHRunner_Linux_ACI
+name: Deploy_GHRunner_Linux_ACI (Disabled)
+
+permissions: {}
 
 on:
   workflow_dispatch:

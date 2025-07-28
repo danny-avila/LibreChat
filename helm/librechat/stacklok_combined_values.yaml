@@ -1,0 +1,230 @@
+# Default values for librechat.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+replicaCount: 1
+
+
+
+global:
+   # existing Secret for all envs/ only Passwords. Can be locally generated with: kubectl create secret generic librechat-secret-envs --from-env-file=.env.example --dry-run=client -o yaml > secret-envs.yaml
+   # For better maintainabillity, you can put all vars directly in the config Section and only overwrite Secrets with this if nessesary.
+   # Required Values:
+   # - MEILI_MASTER_KEY
+  librechat:
+    existingSecretName: "librechat-credentials-env"
+    # Used for Setting the Right Key, can be something like AZURE_API_KEY, if Azure OpenAI is used
+    existingSecretApiKey: OPENAI_API_KEY
+
+librechat:
+  configEnv:
+    PLUGIN_MODELS: "anthropic/claude-3.5-haiku"
+    DEBUG_PLUGINS: "true"
+
+    ALLOW_REGISTRATION: "true"
+    ALLOW_ACCOUNT_DELETION: "true"
+    ALLOW_PASSWORD_RESET: "true"
+    ALLOW_UNVERIFIED_EMAIL_LOGIN: "true"
+    # Set Config Params here
+    # ENV_NAME: env-value
+
+    # existing Secret for all envs/ only Passwords. Can be locally generated with: kubectl create secret generic librechat-secret-envs --from-env-file=.env.example --dry-run=client -o yaml > secret-envs.yaml
+    # For better maintainabillity, you can put all vars directly in the config Section and only overwrite Secrets with this if nessesary.
+    # Required Values:
+    # - MEILI_MASTER_KEY
+  existingSecretName: "librechat-credentials-env"
+  
+  # For adding a custom config yaml-file you can set the contents in this var. See https://www.librechat.ai/docs/configuration/librechat_yaml/example
+  # configYamlContent: ""
+  configYamlContent: |
+    version: 1.2.8
+    cache: true
+    endpoints:
+      custom:
+        - name: "OpenRouter"
+          apiKey: "${OPENROUTER_KEY}"
+          baseURL: "https://openrouter.ai/api/v1"
+          models:
+            default: ["anthropic/claude-3.5-haiku"]
+            fetch: true
+          titleConvo: true
+          titleModel: "anthropic/claude-3.5-haiku"
+          summarize: false
+          summaryModel: "anthropic/claude-3.5-haiku"
+          forcePrompt: false
+          modelDisplayLabel: "OpenRouter"
+          dropParams: ['stop']
+    mcpServers:
+      stacklok-internal:
+        type: streamable-http
+        url: http://mcp-knowledge-mcp-server-headless.toolhive-system.svc.cluster.local:8000/mcp
+      kubernetes:
+        type: sse
+        url: http://mcp-mkp-headless.toolhive-system.svc.cluster.local:25482/sse
+      time:
+        type: streamable-http
+        url: http://mcp-time-mcp-server-headless.toolhive-system.svc.cluster.local:8000/mcp
+
+  # name of existing Yaml configmap, key must be librechat.yaml
+  existingConfigYaml: ""
+
+  # Volume used to store image Files uploaded to the Web UI
+  imageVolume:
+    enabled: true
+    size: 10G
+    accessModes: ReadWriteOnce
+    # storageClassName: 
+
+# only lite RAG is supported
+librechat-rag-api:
+  enabled: false
+  # can be azure, openai, huggingface or huggingfacetei
+  embeddingsProvider: openai
+
+
+image:
+  registry: 781189302813.dkr.ecr.us-east-1.amazonaws.com
+  repository: librechat
+  pullPolicy: Always
+  # Overrides the image tag whose default is the chart appVersion.
+  tag: "v0.7.9-rc1"
+
+
+imagePullSecrets:
+  - name: ecr-secret
+nameOverride: ""
+fullnameOverride: ""
+
+
+lifecycle: {}
+# # base for adding a custom banner // see https://github.com/danny-avila/LibreChat/pull/3952 for an example
+#   postStart:
+#     exec:
+#       command: ["/bin/sh", "-c", "npm run update-banner <displayFrom(Format: yyyy-mm-ddTHH:MM:SSZ)> <displayTo(Format: yyyy-mm-ddTHH:MM:SSZ)> <message> <isPublic(true/false)>"]
+
+
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext:
+  fsGroup: 2000
+
+securityContext:
+  capabilities:
+    drop:
+    - ALL
+  # readOnlyRootFilesystem: true # not supported yet
+  runAsNonRoot: true
+  runAsUser: 1000
+
+service:
+  type: ClusterIP
+  port: 3080
+  annotations: {}
+
+ingress:
+  enabled: true
+  className: ""
+  annotations: {}
+    # kubernetes.io/ingress.class: nginx
+    # kubernetes.io/tls-acme: "true"
+  hosts:
+    - host: chat.example.com
+      paths:
+        - path: /
+          pathType: ImplementationSpecific
+  tls: []
+  #  - secretName: chart-example-tls
+  #    hosts:
+  #      - chat.example.com
+
+resources: {}
+  # We usually recommend not to specify default resources and to leave this as a conscious
+  # choice for the user. This also increases chances charts run on environments with little
+  # resources, such as Minikube. If you do want to specify resources, uncomment the following
+  # lines, adjust them as necessary, and remove the curly braces after 'resources:'.
+  # limits:
+  #   cpu: 100m
+  #   memory: 128Mi
+  # requests:
+  #   cpu: 100m
+  #   memory: 128Mi
+
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 100
+  targetCPUUtilizationPercentage: 80
+  # targetMemoryUtilizationPercentage: 80
+
+livenessProbe:
+  httpGet:
+    path: /health
+    port: http
+readinessProbe:
+  httpGet:
+    path: /health
+    port: http
+
+# Additional volumes on the output Deployment definition.
+volumes: []
+# - name: foo
+#   secret:
+#     secretName: mysecret
+#     optional: false
+
+# Additional volumeMounts on the output Deployment definition.
+volumeMounts: []
+# - name: foo
+#   mountPath: "/etc/foo"
+#   readOnly: true
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+# Strategy for LibreChat deployment updates
+updateStrategy:
+  type: RollingUpdate
+
+# MongoDB Parameters
+mongodb:
+  enabled: true
+  auth:
+    enabled: false
+  databases:
+   - LibreChat
+  image:
+    registry: 781189302813.dkr.ecr.us-east-1.amazonaws.com
+    repository: mongodb
+    tag: "8.0.3"
+  containerSecurityContext:
+    enabled: true
+    runAsUser: 999
+    runAsNonRoot: true
+  podSecurityContext:
+    enabled: true
+    fsGroup: 999
+    runAsUser: 999
+  extraEnvVars:
+    - name: MONGODB_DATA_DIR
+      value: /bitnami/mongodb
+#  persistence: 
+#    size: 8Gi
+
+
+meilisearch-kubernetes:
+  enabled: true
+  persistence:
+    enabled: true
+    storageClass: ""
+  image:
+    repository: 781189302813.dkr.ecr.us-east-1.amazonaws.com/meilisearch
+    tag: "v1.7.3"
+  auth:
+    # Use an existing Kubernetes secret for the MEILI_MASTER_KEY
+    existingMasterKeySecret: "librechat-credentials-env"
