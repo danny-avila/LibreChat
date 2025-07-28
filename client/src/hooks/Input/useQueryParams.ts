@@ -8,7 +8,7 @@ import {
   isAgentsEndpoint,
   tQueryParamsSchema,
   isAssistantsEndpoint,
-  PERMISSION_BITS,
+  PermissionBits,
 } from 'librechat-data-provider';
 import type {
   TPreset,
@@ -80,7 +80,7 @@ const processValidSettings = (queryParams: Record<string, string>) => {
 };
 
 const injectAgentIntoAgentsMap = (queryClient: QueryClient, agent: any) => {
-  const editCacheKey = [QueryKeys.agents, { requiredPermission: PERMISSION_BITS.EDIT }];
+  const editCacheKey = [QueryKeys.agents, { requiredPermission: PermissionBits.EDIT }];
   const editCache = queryClient.getQueryData<AgentListResponse>(editCacheKey);
 
   if (editCache?.data && !editCache.data.some((cachedAgent) => cachedAgent.id === agent.id)) {

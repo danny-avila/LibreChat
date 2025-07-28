@@ -8,7 +8,7 @@ import {
   Constants,
   SystemRoles,
   EModelEndpoint,
-  PERMISSION_BITS,
+  PermissionBits,
   isAssistantsEndpoint,
 } from 'librechat-data-provider';
 import type { AgentForm, StringOption } from '~/common';
@@ -57,7 +57,7 @@ export default function AgentPanel() {
     basicAgentQuery.data?._id || '',
   );
 
-  const canEdit = hasPermission(PERMISSION_BITS.EDIT);
+  const canEdit = hasPermission(PermissionBits.EDIT);
 
   const expandedAgentQuery = useGetExpandedAgentByIdQuery(current_agent_id ?? '', {
     enabled:

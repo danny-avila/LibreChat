@@ -1,9 +1,10 @@
 import mongoose from 'mongoose';
+import { AccessRoleIds, ResourceType, PermissionBits } from 'librechat-data-provider';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { createAccessRoleMethods } from './accessRole';
-import { PermissionBits, RoleBits } from '~/common';
-import accessRoleSchema from '~/schema/accessRole';
 import type * as t from '~/types';
+import { createAccessRoleMethods } from './accessRole';
+import accessRoleSchema from '~/schema/accessRole';
+import { RoleBits } from '~/common';
 
 let mongoServer: MongoMemoryServer;
 let AccessRole: mongoose.Model<t.IAccessRole>;
@@ -32,7 +33,7 @@ describe('AccessRole Model Tests', () => {
       accessRoleId: 'test_viewer',
       name: 'Test Viewer',
       description: 'Test role for viewer permissions',
-      resourceType: 'agent',
+      resourceType: ResourceType.AGENT,
       permBits: RoleBits.VIEWER,
     };
 
@@ -98,7 +99,7 @@ describe('AccessRole Model Tests', () => {
           accessRoleId: 'test_editor',
           name: 'Test Editor',
           description: 'Test role for editor permissions',
-          resourceType: 'agent',
+          resourceType: ResourceType.AGENT,
           permBits: RoleBits.EDITOR,
         },
       ];
@@ -120,17 +121,17 @@ describe('AccessRole Model Tests', () => {
       // Create sample roles for testing
       await Promise.all([
         methods.createRole({
-          accessRoleId: 'agent_viewer',
+          accessRoleId: AccessRoleIds.AGENT_VIEWER,
           name: 'Agent Viewer',
           description: 'Can view agents',
-          resourceType: 'agent',
+          resourceType: ResourceType.AGENT,
           permBits: RoleBits.VIEWER,
         }),
         methods.createRole({
-          accessRoleId: 'agent_editor',
+          accessRoleId: AccessRoleIds.AGENT_EDITOR,
           name: 'Agent Editor',
           description: 'Can edit agents',
-          resourceType: 'agent',
+          resourceType: ResourceType.AGENT,
           permBits: RoleBits.EDITOR,
         }),
         methods.createRole({
@@ -154,7 +155,7 @@ describe('AccessRole Model Tests', () => {
       const agentRoles = await methods.findRolesByResourceType('agent');
       expect(agentRoles).toHaveLength(2);
       expect(agentRoles.map((r) => r.accessRoleId).sort()).toEqual(
-        ['agent_editor', 'agent_viewer'].sort(),
+        [AccessRoleIds.AGENT_EDITOR, AccessRoleIds.AGENT_VIEWER].sort(),
       );
 
       const projectRoles = await methods.findRolesByResourceType('project');
@@ -167,11 +168,11 @@ describe('AccessRole Model Tests', () => {
     test('should find role by permissions', async () => {
       const viewerRole = await methods.findRoleByPermissions('agent', RoleBits.VIEWER);
       expect(viewerRole).toBeDefined();
-      expect(viewerRole?.accessRoleId).toBe('agent_viewer');
+      expect(viewerRole?.accessRoleId).toBe(AccessRoleIds.AGENT_VIEWER);
 
       const editorRole = await methods.findRoleByPermissions('agent', RoleBits.EDITOR);
       expect(editorRole).toBeDefined();
-      expect(editorRole?.accessRoleId).toBe('agent_editor');
+      expect(editorRole?.accessRoleId).toBe(AccessRoleIds.AGENT_EDITOR);
     });
 
     test('should return null when no role matches the permissions', async () => {
@@ -192,19 +193,26 @@ describe('AccessRole Model Tests', () => {
 
       // Verify the result contains the default roles
       expect(Object.keys(result).sort()).toEqual(
-        ['agent_editor', 'agent_owner', 'agent_viewer'].sort(),
+        [
+          AccessRoleIds.AGENT_EDITOR,
+          AccessRoleIds.AGENT_OWNER,
+          AccessRoleIds.AGENT_VIEWER,
+          AccessRoleIds.PROMPTGROUP_EDITOR,
+          AccessRoleIds.PROMPTGROUP_OWNER,
+          AccessRoleIds.PROMPTGROUP_VIEWER,
+        ].sort(),
       );
 
       // Verify each role exists in the database
-      const agentViewerRole = await methods.findRoleByIdentifier('agent_viewer');
+      const agentViewerRole = await methods.findRoleByIdentifier(AccessRoleIds.AGENT_VIEWER);
       expect(agentViewerRole).toBeDefined();
       expect(agentViewerRole?.permBits).toBe(RoleBits.VIEWER);
 
-      const agentEditorRole = await methods.findRoleByIdentifier('agent_editor');
+      const agentEditorRole = await methods.findRoleByIdentifier(AccessRoleIds.AGENT_EDITOR);
       expect(agentEditorRole).toBeDefined();
       expect(agentEditorRole?.permBits).toBe(RoleBits.EDITOR);
 
-      const agentOwnerRole = await methods.findRoleByIdentifier('agent_owner');
+      const agentOwnerRole = await methods.findRoleByIdentifier(AccessRoleIds.AGENT_OWNER);
       expect(agentOwnerRole).toBeDefined();
       expect(agentOwnerRole?.permBits).toBe(RoleBits.OWNER);
     });
@@ -212,10 +220,10 @@ describe('AccessRole Model Tests', () => {
     test('should not modify existing roles when seeding', async () => {
       // Create a modified version of a default role
       const customRole = {
-        accessRoleId: 'agent_viewer',
+        accessRoleId: AccessRoleIds.AGENT_VIEWER,
         name: 'Custom Viewer',
         description: 'Custom viewer description',
-        resourceType: 'agent',
+        resourceType: ResourceType.AGENT,
         permBits: RoleBits.VIEWER,
       };
 
@@ -225,7 +233,7 @@ describe('AccessRole Model Tests', () => {
       await methods.seedDefaultRoles();
 
       // Verify the custom role was not modified
-      const role = await methods.findRoleByIdentifier('agent_viewer');
+      const role = await methods.findRoleByIdentifier(AccessRoleIds.AGENT_VIEWER);
       expect(role?.name).toBe(customRole.name);
       expect(role?.description).toBe(customRole.description);
     });
@@ -238,27 +246,27 @@ describe('AccessRole Model Tests', () => {
       // Create sample roles with ascending permission levels
       await Promise.all([
         methods.createRole({
-          accessRoleId: 'agent_viewer',
+          accessRoleId: AccessRoleIds.AGENT_VIEWER,
           name: 'Agent Viewer',
-          resourceType: 'agent',
+          resourceType: ResourceType.AGENT,
           permBits: RoleBits.VIEWER, // 1
         }),
         methods.createRole({
-          accessRoleId: 'agent_editor',
+          accessRoleId: AccessRoleIds.AGENT_EDITOR,
           name: 'Agent Editor',
-          resourceType: 'agent',
+          resourceType: ResourceType.AGENT,
           permBits: RoleBits.EDITOR, // 3
         }),
         methods.createRole({
           accessRoleId: 'agent_manager',
           name: 'Agent Manager',
-          resourceType: 'agent',
+          resourceType: ResourceType.AGENT,
           permBits: RoleBits.MANAGER, // 7
         }),
         methods.createRole({
-          accessRoleId: 'agent_owner',
+          accessRoleId: AccessRoleIds.AGENT_OWNER,
           name: 'Agent Owner',
-          resourceType: 'agent',
+          resourceType: ResourceType.AGENT,
           permBits: RoleBits.OWNER, // 15
         }),
       ]);
@@ -267,7 +275,7 @@ describe('AccessRole Model Tests', () => {
     test('should find exact matching role', async () => {
       const role = await methods.getRoleForPermissions('agent', RoleBits.EDITOR);
       expect(role).toBeDefined();
-      expect(role?.accessRoleId).toBe('agent_editor');
+      expect(role?.accessRoleId).toBe(AccessRoleIds.AGENT_EDITOR);
       expect(role?.permBits).toBe(RoleBits.EDITOR);
     });
 
@@ -278,7 +286,7 @@ describe('AccessRole Model Tests', () => {
       // Should return VIEWER (1) as closest matching role without exceeding the permission bits
       const role = await methods.getRoleForPermissions('agent', customPerm);
       expect(role).toBeDefined();
-      expect(role?.accessRoleId).toBe('agent_viewer');
+      expect(role?.accessRoleId).toBe(AccessRoleIds.AGENT_VIEWER);
     });
 
     test('should return null when no compatible role is found', async () => {
@@ -301,7 +309,7 @@ describe('AccessRole Model Tests', () => {
       // Query for agent roles
       const agentRole = await methods.getRoleForPermissions('agent', RoleBits.VIEWER);
       expect(agentRole).toBeDefined();
-      expect(agentRole?.accessRoleId).toBe('agent_viewer');
+      expect(agentRole?.accessRoleId).toBe(AccessRoleIds.AGENT_VIEWER);
 
       // Query for project roles
       const projectRole = await methods.getRoleForPermissions('project', RoleBits.VIEWER);

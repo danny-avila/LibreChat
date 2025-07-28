@@ -3,7 +3,7 @@ import { SystemRoles } from 'librechat-data-provider';
 import { render, screen } from '@testing-library/react';
 import type { UseMutationResult } from '@tanstack/react-query';
 import '@testing-library/jest-dom/extend-expect';
-import type { Agent, AgentCreateParams, TUser } from 'librechat-data-provider';
+import type { Agent, AgentCreateParams, TUser, ResourceType } from 'librechat-data-provider';
 import AgentFooter from '../AgentFooter';
 import { Panel } from '~/common';
 
@@ -171,7 +171,7 @@ jest.mock('~/components/Sharing', () => ({
     resourceDbId: string;
     resourceId: string;
     resourceName: string;
-    resourceType: string;
+    resourceType: ResourceType;
   }) => (
     <div
       data-testid="grant-access-dialog"

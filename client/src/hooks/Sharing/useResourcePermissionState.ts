@@ -3,18 +3,18 @@ import {
   useGetResourcePermissionsQuery,
   useUpdateResourcePermissionsMutation,
 } from 'librechat-data-provider/react-query';
-import type { TPrincipal } from 'librechat-data-provider';
+import type { TPrincipal, ResourceType, AccessRoleIds } from 'librechat-data-provider';
 import { getResourceConfig } from '~/utils';
 
 /**
  * Hook to manage resource permission state including current shares, public access, and mutations
- * @param resourceType - Type of resource (e.g., 'agent', 'promptGroup')
+ * @param resourceType - Type of resource (e.g., ResourceType.AGENT, ResourceType.PROMPTGROUP)
  * @param resourceDbId - Database ID of the resource
  * @param isModalOpen - Whether the modal is open (for effect dependencies)
  * @returns Object with permission state and update mutation
  */
 export const useResourcePermissionState = (
-  resourceType: string,
+  resourceType: ResourceType,
   resourceDbId: string | null | undefined,
   isModalOpen: boolean = false,
 ) => {
@@ -52,13 +52,15 @@ export const useResourcePermissionState = (
 
   // State for managing public access
   const [isPublic, setIsPublic] = useState(false);
-  const [publicRole, setPublicRole] = useState<string>(config?.defaultViewerRoleId ?? '');
+  const [publicRole, setPublicRole] = useState<AccessRoleIds | undefined>(
+    config?.defaultViewerRoleId,
+  );
 
   // Sync state with permissions data when modal opens
   useEffect(() => {
     if (permissionsData && isModalOpen) {
       setIsPublic(currentIsPublic ?? false);
-      setPublicRole(currentPublicRole ?? '');
+      setPublicRole(currentPublicRole);
     }
   }, [permissionsData, isModalOpen, currentIsPublic, currentPublicRole]);
 
