@@ -242,6 +242,86 @@ describe('cacheFactory', () => {
         checkPeriod: Time.ONE_DAY,
       });
     });
+
+    it('should throw error when ConnectRedis constructor fails', () => {
+      cacheConfig.USE_REDIS = true;
+      const namespace = 'sessions';
+      const ttl = 86400;
+
+      // Mock ConnectRedis to throw an error during construction
+      const redisError = new Error('Redis connection failed');
+      mockConnectRedis.mockImplementationOnce(() => {
+        throw redisError;
+      });
+
+      // The error should propagate up, not be caught
+      expect(() => sessionCache(namespace, ttl)).toThrow('Redis connection failed');
+
+      // Verify that MemoryStore was NOT used as fallback
+      expect(mockMemoryStore).not.toHaveBeenCalled();
+    });
+
+    it('should register error handler but let errors propagate to Express', () => {
+      cacheConfig.USE_REDIS = true;
+      const namespace = 'sessions';
+
+      // Create a mock session store with middleware methods
+      const mockSessionStore = {
+        get: jest.fn(),
+        set: jest.fn(),
+        destroy: jest.fn(),
+      };
+      mockConnectRedis.mockReturnValue(mockSessionStore);
+
+      const store = sessionCache(namespace);
+
+      // Verify error handler was registered
+      expect(mockIoredisClient.on).toHaveBeenCalledWith('error', expect.any(Function));
+
+      // Get the error handler
+      const errorHandler = mockIoredisClient.on.mock.calls.find((call) => call[0] === 'error')[1];
+
+      // Simulate an error from Redis during a session operation
+      const redisError = new Error('Socket closed unexpectedly');
+
+      // The error handler should log but not swallow the error
+      const { logger } = require('@librechat/data-schemas');
+      errorHandler(redisError);
+
+      expect(logger.error).toHaveBeenCalledWith(
+        `Session store Redis error for namespace ${namespace}::`,
+        redisError,
+      );
+
+      // Now simulate what happens when session middleware tries to use the store
+      const callback = jest.fn();
+      mockSessionStore.get.mockImplementation((sid, cb) => {
+        cb(new Error('Redis connection lost'));
+      });
+
+      // Call the store's get method (as Express session would)
+      store.get('test-session-id', callback);
+
+      // The error should be passed to the callback, not swallowed
+      expect(callback).toHaveBeenCalledWith(new Error('Redis connection lost'));
+    });
+
+    it('should handle null ioredisClient gracefully', () => {
+      cacheConfig.USE_REDIS = true;
+      const namespace = 'sessions';
+
+      // Temporarily set ioredisClient to null (simulating connection not established)
+      const originalClient = require('./redisClients').ioredisClient;
+      require('./redisClients').ioredisClient = null;
+
+      // ConnectRedis might accept null client but would fail on first use
+      // The important thing is it doesn't throw uncaught exceptions during construction
+      const store = sessionCache(namespace);
+      expect(store).toBeDefined();
+
+      // Restore original client
+      require('./redisClients').ioredisClient = originalClient;
+    });
   });
 
   describe('limiterCache', () => {

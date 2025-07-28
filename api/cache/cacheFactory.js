@@ -60,23 +60,13 @@ const violationCache = (namespace, ttl = undefined) => {
 const sessionCache = (namespace, ttl = undefined) => {
   namespace = namespace.endsWith(':') ? namespace : `${namespace}:`;
   if (!cacheConfig.USE_REDIS) return new MemoryStore({ ttl, checkPeriod: Time.ONE_DAY });
-
-  try {
-    const store = new ConnectRedis({ client: ioredisClient, ttl, prefix: namespace });
-    if (ioredisClient) {
-      ioredisClient.on('error', (err) => {
-        logger.error(`Session store Redis error for namespace ${namespace}:`, err);
-      });
-    }
-
-    return store;
-  } catch (err) {
-    logger.error(
-      `Failed to create Redis session store for namespace ${namespace}, falling back to memory:`,
-      err,
-    );
-    return new MemoryStore({ ttl, checkPeriod: Time.ONE_DAY });
+  const store = new ConnectRedis({ client: ioredisClient, ttl, prefix: namespace });
+  if (ioredisClient) {
+    ioredisClient.on('error', (err) => {
+      logger.error(`Session store Redis error for namespace ${namespace}:`, err);
+    });
   }
+  return store;
 };
 
 /**
