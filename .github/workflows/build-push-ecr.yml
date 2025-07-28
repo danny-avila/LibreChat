@@ -1,8 +1,9 @@
+---
 name: Build and Push to ECR
 
-on:
+'on':
   push:
-    branches: [ stacklok-main ]
+    branches: [stacklok-main]
     paths:
       - 'Dockerfile'
       - 'helm/librechat/values.yaml'
@@ -26,7 +27,8 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-secret-access-key: >-
+            ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to Amazon ECR
@@ -36,7 +38,8 @@ jobs:
       - name: Extract metadata for images
         id: meta
         run: |
-          VERSION=$(grep 'tag:' helm/librechat/values.yaml | awk -F'"' '{print $2}')
+          VERSION=$(grep 'tag:' helm/librechat/values.yaml | \
+            awk -F'"' '{print $2}')
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
 
       - name: Build and push LibreChat image
@@ -44,7 +47,8 @@ jobs:
         with:
           context: .
           push: true
-          tags: ${{ env.ECR_REGISTRY }}/librechat:${{ steps.meta.outputs.version }}
+          tags: >-
+            ${{ env.ECR_REGISTRY }}/librechat:${{ steps.meta.outputs.version }}
 
       - name: Build and push MongoDB image
         uses: docker/build-push-action@v5
@@ -61,13 +65,3 @@ jobs:
           file: docker/meilisearch/Dockerfile
           push: true
           tags: ${{ env.ECR_REGISTRY }}/meilisearch:v1.7.3
-
-      - name: Update Helm values with new image tags
-        run: |
-          VERSION=${{ steps.meta.outputs.version }}
-          sed -i "s|tag: .*|tag: \"${VERSION}\"|" helm/librechat/values.yaml
-          git config --global user.name "GitHub Actions"
-          git config --global user.email "actions@github.com"
-          git add helm/librechat/values.yaml
-          git commit -m "Update image tags to ${VERSION}"
-          git push
