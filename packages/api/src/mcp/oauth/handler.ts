@@ -1,10 +1,10 @@
 import { randomBytes } from 'crypto';
 import { logger } from '@librechat/data-schemas';
 import {
-  discoverOAuthMetadata,
   registerClient,
   startAuthorization,
   exchangeAuthorization,
+  discoverAuthorizationServerMetadata,
   discoverOAuthProtectedResourceMetadata,
 } from '@modelcontextprotocol/sdk/client/auth.js';
 import { OAuthMetadataSchema } from '@modelcontextprotocol/sdk/shared/auth.js';
@@ -61,7 +61,7 @@ export class MCPOAuthHandler {
 
     // Discover OAuth metadata
     logger.debug(`[MCPOAuth] Discovering OAuth metadata from ${authServerUrl}`);
-    const rawMetadata = await discoverOAuthMetadata(authServerUrl);
+    const rawMetadata = await discoverAuthorizationServerMetadata(authServerUrl);
 
     if (!rawMetadata) {
       logger.error(`[MCPOAuth] Failed to discover OAuth metadata from ${authServerUrl}`);
@@ -466,7 +466,10 @@ export class MCPOAuthHandler {
           throw new Error('No token URL available for refresh');
         } else {
           /** Auto-discover OAuth configuration for refresh */
-          const { metadata: oauthMetadata } = await this.discoverMetadata(metadata.serverUrl);
+          const oauthMetadata = await discoverAuthorizationServerMetadata(metadata.serverUrl);
+          if (!oauthMetadata) {
+            throw new Error('Failed to discover OAuth metadata for token refresh');
+          }
           if (!oauthMetadata.token_endpoint) {
             throw new Error('No token endpoint found in OAuth metadata');
           }
@@ -584,7 +587,7 @@ export class MCPOAuthHandler {
       }
 
       /** Auto-discover OAuth configuration for refresh */
-      const { metadata: oauthMetadata } = await this.discoverMetadata(metadata.serverUrl);
+      const oauthMetadata = await discoverAuthorizationServerMetadata(metadata.serverUrl);
 
       if (!oauthMetadata.token_endpoint) {
         throw new Error('No token endpoint found in OAuth metadata');
