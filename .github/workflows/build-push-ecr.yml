@@ -114,8 +114,8 @@ jobs:
           LIBRECHAT_CHART=$(ls librechat-*.tgz)
           aws ecr get-login-password --region ${{ env.AWS_REGION }} | \
             helm registry login --username AWS --password-stdin ${{ env.ECR_REGISTRY }}
-          helm push "oci://./$LIBRECHAT_CHART" oci://${{ env.ECR_REGISTRY }}/helm-charts/
+          helm push "$LIBRECHAT_CHART" "oci://${{ env.ECR_REGISTRY }}/helm-charts"
 
           # Push LibreChat RAG API chart
           RAG_CHART=$(ls librechat-rag-api-*.tgz)
-          helm push "oci://./$RAG_CHART" oci://${{ env.ECR_REGISTRY }}/helm-charts/
+          helm push "$RAG_CHART" "oci://${{ env.ECR_REGISTRY }}/helm-charts"
