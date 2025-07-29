@@ -1,0 +1,12 @@
+# For more information, see the Configuration Guide:
+# https://www.librechat.ai/docs/configuration/librechat_yaml
+
+# Configuration version (required)
+version: 1.2.1
+
+# OCR
+ocr:
+  mistralModel: "mistral-ocr-2503-edge"                  # Should match your Azure deployment name
+  apiKey: "${AZURE_MISTRAL_OCR_API_KEY}"                 # Reference to your Azure API key in .env
+  baseURL: "https://mistral-ocr-2503-edge.eastus2.models.ai.azure.com/v1"  # Your Azure endpoint
+  strategy: "azure_mistral_ocr"                          # Use Azure strategy

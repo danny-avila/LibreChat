@@ -50,3 +50,20 @@ if env | grep -q FAVICON_PATH; then
 else
     echo "FAVICON_PATH not set, skipping custom favicon setup"
 fi
+
+# If LIBRECHAT_CUSTOM_CONFIG is set, rename the corresponding config file
+if env | grep -q LIBRECHAT_CUSTOM_CONFIG; then
+    echo "Found LIBRECHAT_CUSTOM_CONFIG set to: $LIBRECHAT_CUSTOM_CONFIG"
+    
+    SOURCE_CONFIG_FILE="librechat.${LIBRECHAT_CUSTOM_CONFIG}.yaml"
+    TARGET_CONFIG_FILE="librechat.yaml"
+    
+    if [ -f "$SOURCE_CONFIG_FILE" ]; then
+        echo "Renaming $SOURCE_CONFIG_FILE to $TARGET_CONFIG_FILE"
+        mv "$SOURCE_CONFIG_FILE" "$TARGET_CONFIG_FILE"
+    else
+        echo "Warning: $SOURCE_CONFIG_FILE not found, skipping rename"
+    fi
+else
+    echo "LIBRECHAT_CUSTOM_CONFIG not set, skipping custom config setup"
+fi
