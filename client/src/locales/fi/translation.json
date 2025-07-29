@@ -596,7 +596,6 @@
   "com_ui_upload_invalid_var": "Virheellinen ladattava tiedosto. Tiedoston täytyy olla enintään {{0}} MB kokoinen kuvatiedosto",
   "com_ui_upload_success": "Tiedoston lataus onnistui",
   "com_ui_use_micrphone": "Käytä mikrofonia",
-  "com_ui_use_prompt": "Käytä syötettä",
   "com_ui_variables": "Muuttujat",
   "com_ui_variables_info": "Käytä kaksoisaaltosulkeita tekstissäsi muuttujien luomiseen, esim. {{esimerkkimuuttuja}}. Muuttujia voi täyttää myöhemmin syötettä käyttäessä.",
   "com_ui_version_var": "Versio {{0}}",

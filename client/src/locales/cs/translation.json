@@ -721,7 +721,6 @@
   "com_ui_use_2fa_code": "Použít kód 2FA",
   "com_ui_use_backup_code": "Použít záložní kód",
   "com_ui_use_micrphone": "Použít mikrofon",
-  "com_ui_use_prompt": "Použít výzvu",
   "com_ui_used": "Použito",
   "com_ui_variables": "Proměnné",
   "com_ui_variables_info": "Použijte dvojité složené závorky k vytvoření proměnných, např. `{{příklad proměnné}}`, které lze vyplnit při použití výzvy.",
