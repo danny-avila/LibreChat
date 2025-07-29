@@ -9,6 +9,8 @@ const jwtLogin = require('./jwtStrategy');
 const ldapLogin = require('./ldapStrategy');
 const { setupSaml } = require('./samlStrategy');
 const openIdJwtLogin = require('./openIdJwtStrategy');
+const { customBackendStrategy } = require('./customBackendStrategy');
+const customJwtStrategy = require('./customJwtStrategy');
 
 module.exports = {
   appleLogin,
@@ -23,4 +25,6 @@ module.exports = {
   ldapLogin,
   setupSaml,
   openIdJwtLogin,
+  customBackendStrategy,
+  customJwtStrategy,
 };

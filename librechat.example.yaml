@@ -332,3 +332,20 @@ endpoints:
 #     # instructions: "You are a memory management assistant. Store and manage user information accurately."
 #     # model_parameters:
 #     #   temperature: 0.1
+
+# MCP Servers should be defined at the root level
+mcpServers:
+  div-sales:
+    type: stdio
+    command: node
+    args:
+      - "C:/localDev/div25-sales-app-mcp-server/build/index.js"
+
+# Security configuration for iframe embedding
+security:
+  # Allow embedding in iframe (removes X-Frame-Options: DENY)
+  allowIframe: true
+  # Allowed origins for iframe embedding (same origin + div25.com domains)
+  frameAncestors: ['self', 'http://localhost:4200', 'https://*.div25.com']
+  # Enable token-based authentication via query parameters
+  allowTokenAuth: true

@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { RecoilRoot } from 'recoil';
 import { DndProvider } from 'react-dnd';
 import { RouterProvider } from 'react-router-dom';
@@ -10,9 +11,57 @@ import { ToastProvider } from './Providers';
 import Toast from './components/ui/Toast';
 import { LiveAnnouncer } from '~/a11y';
 import { router } from './routes';
+import { useIframeComm } from './hooks/useIframeComm';
 
 const App = () => {
   const { setError } = useApiErrorBoundary();
+
+  // Use iframe communication hook
+  const { sendToParent, inIframe } = useIframeComm({
+    onAuthToken: ({ token, reload }) => {
+      if (token) {
+        console.log('Received auth token from parent');
+        localStorage.setItem('librechat_token', token);
+        if (reload) {
+          window.location.reload();
+        }
+      }
+    },
+    onThemeChange: ({ theme }) => {
+      if (theme) {
+        console.log('Theme change requested:', theme);
+        // Apply theme change logic here
+        // You can integrate this with your theme context
+      }
+    },
+    onNavigate: ({ path }) => {
+      if (path) {
+        console.log('Navigation requested to:', path);
+        router.navigate(path);
+      }
+    },
+    onUserData: ({ user }) => {
+      if (user) {
+        console.log('Received user data from parent:', user);
+        // Dispatch to user store/context if needed
+      }
+    }
+  });
+
+  // Send ready signal when app is loaded
+  useEffect(() => {
+    if (inIframe) {
+      setTimeout(() => {
+        sendToParent('IFRAME_READY', {
+          timestamp: Date.now(),
+          origin: window.location.origin,
+          path: window.location.pathname,
+          version: '1.0.0',
+          features: ['auth', 'navigation', 'themes', 'resize']
+        });
+      }, 1000); // Delay to ensure everything is loaded
+    }
+  }, [inIframe, sendToParent]);
 
   const queryClient = new QueryClient({
     queryCache: new QueryCache({

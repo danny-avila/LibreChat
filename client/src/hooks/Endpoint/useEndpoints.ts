@@ -69,22 +69,44 @@ export const useEndpoints = ({
   );
 
   const filteredEndpoints = useMemo(() => {
-    if (!interfaceConfig.modelSelect) {
-      return [];
-    }
-    const result: EModelEndpoint[] = [];
-    for (let i = 0; i < endpoints.length; i++) {
-      if (endpoints[i] === EModelEndpoint.agents && !hasAgentAccess) {
-        continue;
+    if (interfaceConfig.modelSelect === true) {
+      // When modelSelect is true, only allow agents and assistants endpoints
+      const result: EModelEndpoint[] = [];
+      if (hasAgentAccess && endpoints.includes(EModelEndpoint.agents)) {
+        if (includedEndpoints.size === 0 || includedEndpoints.has(EModelEndpoint.agents)) {
+          result.push(EModelEndpoint.agents);
+        }
       }
-      if (includedEndpoints.size > 0 && !includedEndpoints.has(endpoints[i])) {
-        continue;
+      if (endpoints.includes(EModelEndpoint.assistants)) {
+        if (includedEndpoints.size === 0 || includedEndpoints.has(EModelEndpoint.assistants)) {
+          result.push(EModelEndpoint.assistants);
+        }
       }
-      result.push(endpoints[i]);
+      if (endpoints.includes(EModelEndpoint.azureAssistants)) {
+        if (includedEndpoints.size === 0 || includedEndpoints.has(EModelEndpoint.azureAssistants)) {
+          result.push(EModelEndpoint.azureAssistants);
+        }
+      }
+      return result;
     }
-
-    return result;
-  }, [endpoints, hasAgentAccess, includedEndpoints]);
+    if (interfaceConfig.modelSelect === false) {
+      // When modelSelect is false, allow all endpoints except agents and assistants
+      const result: EModelEndpoint[] = [];
+      for (let i = 0; i < endpoints.length; i++) {
+        if (endpoints[i] === EModelEndpoint.agents ||
+            endpoints[i] === EModelEndpoint.assistants ||
+            endpoints[i] === EModelEndpoint.azureAssistants) {
+          continue;
+        }
+        if (includedEndpoints.size > 0 && !includedEndpoints.has(endpoints[i])) {
+          continue;
+        }
+        result.push(endpoints[i]);
+      }
+      return result;
+    }
+    return [];
+  }, [endpoints, hasAgentAccess, includedEndpoints, interfaceConfig.modelSelect]);
 
   const endpointRequiresUserKey = useCallback(
     (ep: string) => {

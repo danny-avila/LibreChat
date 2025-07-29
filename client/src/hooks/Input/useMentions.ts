@@ -138,7 +138,7 @@ export default function useMentions({
         return [];
       }
 
-      if (interfaceConfig.modelSelect !== true) {
+      if (interfaceConfig.modelSelect === true) {
         return [];
       }
 
@@ -157,7 +157,7 @@ export default function useMentions({
     });
 
     const mentions = [
-      ...(modelSpecs.length > 0 ? modelSpecs : []).map((modelSpec) => ({
+      ...(modelSpecs.length > 0 && interfaceConfig.modelSelect !== true ? modelSpecs : []).map((modelSpec) => ({
         value: modelSpec.name,
         label: modelSpec.label,
         description: modelSpec.description,
@@ -172,7 +172,7 @@ export default function useMentions({
         }),
         type: 'modelSpec' as const,
       })),
-      ...(interfaceConfig.modelSelect === true ? validEndpoints : []).map((endpoint) => ({
+      ...(interfaceConfig.modelSelect === false ? validEndpoints.filter(endpoint => !isAgentsEndpoint(endpoint)) : []).map((endpoint) => ({
         value: endpoint,
         label: alternateName[endpoint as string] ?? endpoint ?? '',
         type: 'endpoint' as const,

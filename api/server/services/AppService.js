@@ -161,6 +161,7 @@ const AppService = async (app) => {
     ...defaultLocals,
     fileConfig: config?.fileConfig,
     secureImageLinks: config?.secureImageLinks,
+    securityConfig: config?.security,
     modelSpecs: processModelSpecs(endpoints, config.modelSpecs, interfaceConfig),
     ...endpointLocals,
   };

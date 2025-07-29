@@ -5,7 +5,9 @@ const {
   resetPasswordController,
   resetPasswordRequestController,
 } = require('~/server/controllers/AuthController');
+const { refreshController: customRefreshController } = require('~/server/controllers/CustomAuthController');
 const { loginController } = require('~/server/controllers/auth/LoginController');
+const { customBackendLoginController } = require('~/server/controllers/auth/CustomBackendLoginController');
 const { logoutController } = require('~/server/controllers/auth/LogoutController');
 const { verify2FAWithTempToken } = require('~/server/controllers/auth/TwoFactorAuthController');
 const {
@@ -28,11 +30,13 @@ const {
   resetPasswordLimiter,
   validateRegistration,
   validatePasswordReset,
+  requireCustomBackendAuth,
 } = require('~/server/middleware');
 
 const router = express.Router();
 
 const ldapAuth = !!process.env.LDAP_URL && !!process.env.LDAP_USER_SEARCH_BASE;
+const customBackendAuth = !!process.env.USE_CUSTOM_BACKEND_AUTH;
 //Local
 router.post('/logout', requireJwtAuth, logoutController);
 router.post(
@@ -40,11 +44,11 @@ router.post(
   logHeaders,
   loginLimiter,
   checkBan,
-  ldapAuth ? requireLdapAuth : requireLocalAuth,
+  customBackendAuth ? requireCustomBackendAuth : (ldapAuth ? requireLdapAuth : requireLocalAuth),
   setBalanceConfig,
-  loginController,
+  customBackendAuth ? customBackendLoginController : loginController,
 );
-router.post('/refresh', refreshController);
+router.post('/refresh', customBackendAuth ? customRefreshController : refreshController);
 router.post(
   '/register',
   registerLimiter,

@@ -737,12 +737,21 @@ export const memorySchema = z.object({
 
 export type TMemoryConfig = z.infer<typeof memorySchema>;
 
+export const securitySchema = z.object({
+  allowIframe: z.boolean().optional().default(false),
+  frameAncestors: z.array(z.string()).optional().default(["'self'"]),
+  allowTokenAuth: z.boolean().optional().default(false),
+});
+
+export type TSecurityConfig = z.infer<typeof securitySchema>;
+
 export const configSchema = z.object({
   version: z.string(),
   cache: z.boolean().default(true),
   ocr: ocrSchema.optional(),
   webSearch: webSearchSchema.optional(),
   memory: memorySchema.optional(),
+  security: securitySchema.optional(),
   secureImageLinks: z.boolean().optional(),
   imageOutputType: z.nativeEnum(EImageOutputType).default(EImageOutputType.PNG),
   includedTools: z.array(z.string()).optional(),

@@ -21,6 +21,7 @@ type ModelSelectorContextType = {
   agentsMap: t.TAgentsMap | undefined;
   assistantsMap: t.TAssistantsMap | undefined;
   endpointsConfig: t.TEndpointsConfig;
+  interfaceConfig: t.TInterfaceConfig;
 
   // Functions
   endpointRequiresUserKey: (endpoint: string) => boolean;
@@ -52,7 +53,12 @@ export function ModelSelectorProvider({ children, startupConfig }: ModelSelector
   const assistantsMap = useAssistantsMapContext();
   const { data: endpointsConfig } = useGetEndpointsQuery();
   const { conversation, newConversation } = useChatContext();
-  const modelSpecs = useMemo(() => startupConfig?.modelSpecs?.list ?? [], [startupConfig]);
+  const interfaceConfig = startupConfig?.interface ?? {};
+  const modelSpecs = useMemo(() => {
+    const specs = startupConfig?.modelSpecs?.list ?? [];
+    // Filter out model specs when modelSelect is true (only agents should be available)
+    return interfaceConfig.modelSelect === true ? [] : specs;
+  }, [startupConfig, interfaceConfig.modelSelect]);
   const { mappedEndpoints, endpointRequiresUserKey } = useEndpoints({
     agentsMap,
     assistantsMap,
@@ -171,6 +177,7 @@ export function ModelSelectorProvider({ children, startupConfig }: ModelSelector
     assistantsMap,
     mappedEndpoints,
     endpointsConfig,
+    interfaceConfig,
 
     // Functions
     handleSelectSpec,

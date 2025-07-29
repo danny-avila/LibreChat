@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LibreChat Iframe Test - Same Origin</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        .iframe-container {
+            border: 2px solid #333;
+            border-radius: 8px;
+            overflow: hidden;
+            background-color: white;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        iframe {
+            border: none;
+            display: block;
+        }
+        .info {
+            margin: 20px 0;
+            padding: 15px;
+            background-color: #e3f2fd;
+            border-radius: 4px;
+            border-left: 4px solid #2196f3;
+        }
+        .success {
+            background-color: #e8f5e8;
+            border-left: 4px solid #4caf50;
+        }
+        .test-links {
+            margin: 20px 0;
+        }
+        .test-links a {
+            display: inline-block;
+            margin: 5px 10px;
+            padding: 10px 15px;
+            background-color: #2196f3;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+        }
+        .test-links a:hover {
+            background-color: #1976d2;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>LibreChat Iframe Embedding Test - Same Origin TEST</h1>
+        
+        <div class="info success">
+            <strong>✅ Same Origin Test:</strong> This page is served from the same domain as LibreChat.
+            <br><strong>URL:</strong> http://localhost:3080/iframe-test.html
+            <br><strong>Expected Behavior:</strong> The iframe below should load LibreChat successfully.
+            <br><strong>Configuration:</strong> allowIframe: true, frameAncestors: ['self'], allowTokenAuth: true
+        </div>
+
+        <div class="test-links">
+            <strong>Test URLs:</strong>
+            <a href="#" onclick="loadIframe('/?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJodHRwOi8vc2NoZW1hcy54bWxzb2FwLm9yZy93cy8yMDA1LzA1L2lkZW50aXR5L2NsYWltcy9uYW1laWRlbnRpZmllciI6IjI2MyIsImh0dHA6Ly9zY2hlbWFzLnhtbHNvYXAub3JnL3dzLzIwMDUvMDUvaWRlbnRpdHkvY2xhaW1zL25hbWUiOiJhdWdpZWxAZGl2MjUuY29tIiwiaHR0cDovL3NjaGVtYXMueG1sc29hcC5vcmcvd3MvMjAwNS8wNS9pZGVudGl0eS9jbGFpbXMvZW1haWxhZGRyZXNzIjoiYXVnaWVsQGRpdjI1LmNvbSIsIkFzcE5ldC5JZGVudGl0eS5TZWN1cml0eVN0YW1wIjoiNUVHN01XMjZIRVlXWjJYNlpONlBSRktTVE5BQUtEN08iLCJQZXJtaXNzaW9uIjoiR2xvYmFsQWRtaW4iLCJpYXQiOjYzODg4NzExNTM1MjEzODk5NywiZXhwIjoxNzUzMTMyNzM1LCJpc3MiOiJhdHMucHJvZCJ9.h3RlDK30HY9ikFLbKAHLD6uEsphRdkM6AOyr6RLZbts')">Load Main App</a>
+            <a href="#" onclick="loadIframe('/c/new')">Load New Chat</a>
+            <a href="#" onclick="loadIframe('/c/new?agent_id=agent_BxVQEJQ8vYYOV9KRppPBc')">Load with Agent</a>
+        </div>
+
+        <div class="iframe-container">
+            <iframe 
+                id="librechat-iframe"
+                src="/" 
+                width="100%" 
+                height="800"
+                title="LibreChat Application"
+                allowfullscreen>
+                Your browser does not support iframes.
+            </iframe>
+        </div>
+
+        <div class="info">
+            <strong>Instructions for Token Authentication Test:</strong>
+            <ol>
+                <li>First, manually log into LibreChat at <a href="/" target="_blank" rel="noopener">the main app</a></li>
+                <li>Open browser developer tools (F12) and go to the Application/Storage tab</li>
+                <li>Find the JWT token in cookies or localStorage</li>
+                <li>Use the token test link below with your actual token</li>
+            </ol>
+            <a href="#" onclick="testTokenAuth()">Test Token Authentication</a>
+        </div>
+
+        <div class="info">
+            <strong>Debug Information:</strong>
+            <p>Current page origin: <span id="current-origin"></span></p>
+            <p>Iframe source: <span id="iframe-source"></span></p>
+            <p>Last load status: <span id="load-status">Not loaded yet</span></p>
+        </div>
+    </div>
+
+    <script>
+        // Display debug information
+        document.getElementById('current-origin').textContent = window.location.origin;
+        
+        function loadIframe(url) {
+            const iframe = document.getElementById('librechat-iframe');
+            iframe.src = url;
+            document.getElementById('iframe-source').textContent = url;
+            document.getElementById('load-status').textContent = 'Loading...';
+            console.log('Loading iframe with URL:', url);
+        }
+
+        function testTokenAuth() {
+            const token = prompt('Enter your JWT token for testing:');
+            if (token) {
+                const url = `/?token=${encodeURIComponent(token)}`;
+                loadIframe(url);
+                console.log('Testing token auth with URL:', url);
+            }
+        }
+
+        // Log iframe load events
+        document.getElementById('librechat-iframe').addEventListener('load', function() {
+            console.log('Iframe loaded successfully!');
+            document.getElementById('load-status').textContent = '✅ Loaded successfully';
+            document.getElementById('load-status').style.color = 'green';
+        });
+
+        document.getElementById('librechat-iframe').addEventListener('error', function(e) {
+            console.error('Iframe failed to load!', e);
+            document.getElementById('load-status').textContent = '❌ Failed to load';
+            document.getElementById('load-status').style.color = 'red';
+        });
+
+        // Update iframe source display on initial load
+        window.addEventListener('load', function() {
+            const iframe = document.getElementById('librechat-iframe');
+            document.getElementById('iframe-source').textContent = iframe.src;
+        });
+    </script>
+</body>
+</html>

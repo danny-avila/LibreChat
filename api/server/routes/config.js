@@ -72,6 +72,7 @@ router.get('/', async function (req, res) {
       samlLoginEnabled: !isOpenIdEnabled && isSamlEnabled,
       samlLabel: process.env.SAML_BUTTON_LABEL,
       samlImageUrl: process.env.SAML_IMAGE_URL,
+      customBackendAuth: isEnabled(process.env.USE_CUSTOM_BACKEND_AUTH),
       serverDomain: process.env.DOMAIN_SERVER || 'http://localhost:3080',
       emailLoginEnabled,
       registrationEnabled: !ldap?.enabled && isEnabled(process.env.ALLOW_REGISTRATION),

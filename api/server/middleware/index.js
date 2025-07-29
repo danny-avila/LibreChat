@@ -21,8 +21,10 @@ const validate = require('./validate');
 const limiters = require('./limiters');
 const uaParser = require('./uaParser');
 const checkBan = require('./checkBan');
+const requireCustomBackendAuth = require('./requireCustomBackendAuth');
 const noIndex = require('./noIndex');
 const roles = require('./roles');
+const iframeAuth = require('./iframeAuth');
 
 module.exports = {
   ...abortMiddleware,
@@ -50,4 +52,6 @@ module.exports = {
   validateRegistration,
   validateImageRequest,
   validatePasswordReset,
+  requireCustomBackendAuth,
+  iframeAuth,
 };

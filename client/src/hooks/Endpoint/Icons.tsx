@@ -41,12 +41,12 @@ const AssistantAvatar = ({
 };
 
 const AgentAvatar = ({ className = '', avatar = '', agentName, size }: AgentIconMapProps) => {
-  if (agentName != null && agentName && avatar) {
+  if (avatar && avatar.trim() !== '') {
     return (
       <img
         src={avatar}
         className="bg-token-surface-secondary dark:bg-token-surface-tertiary h-full w-full rounded-full object-cover"
-        alt={agentName}
+        alt={agentName || 'Agent'}
         width="80"
         height="80"
       />

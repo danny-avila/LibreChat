@@ -21,6 +21,8 @@ const configureSocialLogins = require('./socialLogins');
 const AppService = require('./services/AppService');
 const staticCache = require('./utils/staticCache');
 const noIndex = require('./middleware/noIndex');
+const iframeAuth = require('./middleware/iframeAuth');
+const customBackendTokenAuth = require('./middleware/customBackendTokenAuth');
 const routes = require('./routes');
 
 const { PORT, HOST, ALLOW_SOCIAL_LOGIN, DISABLE_COMPRESSION, TRUST_PROXY } = process.env ?? {};
@@ -55,10 +57,33 @@ const startServer = async () => {
 
   /* Middleware */
   app.use(noIndex);
+  app.use(iframeAuth); // Apply iframe auth middleware early
+  app.use(customBackendTokenAuth); // Handle custom backend token authentication
   app.use(express.json({ limit: '3mb' }));
   app.use(express.urlencoded({ extended: true, limit: '3mb' }));
   app.use(mongoSanitize());
-  app.use(cors());
+  
+  // Configure CORS for iframe compatibility
+  const corsOptions = {
+    origin: function (origin, callback) {
+      // Allow same-origin requests and iframe requests
+      const securityConfig = app.locals.securityConfig || {};
+      if (securityConfig.allowIframe) {
+        // Allow requests without origin (same-origin) and specific origins
+        if (!origin || origin === `http://localhost:${port}` || origin === `http://${host}:${port}`) {
+          callback(null, true);
+        } else {
+          callback(null, true); // For now, allow all origins when iframe is enabled
+        }
+      } else {
+        callback(null, true); // Default behavior
+      }
+    },
+    credentials: true, // Allow cookies to be sent
+    optionsSuccessStatus: 200
+  };
+  
+  app.use(cors(corsOptions));
   app.use(cookieParser());
 
   if (!isEnabled(DISABLE_COMPRESSION)) {
@@ -78,7 +103,16 @@ const startServer = async () => {
 
   /* OAUTH */
   app.use(passport.initialize());
-  passport.use(jwtLogin());
+  
+  // Check if custom backend authentication is enabled
+  if (process.env.USE_CUSTOM_BACKEND_AUTH === 'true') {
+    const { customBackendStrategy, customJwtStrategy } = require('~/strategies');
+    passport.use('custom-backend', customBackendStrategy());
+    passport.use('jwt', customJwtStrategy());
+  } else {
+    passport.use(jwtLogin());
+  }
+  
   passport.use(passportLogin());
 
   /* LDAP Auth */
