@@ -463,7 +463,7 @@ router.post('/:serverName/reinitialize', requireJwtAuth, async (req, res) => {
     };
 
     res.json({
-      success: userConnection && !oauthRequired,
+      success: (userConnection && !oauthRequired) || (oauthRequired && oauthUrl),
       message: getResponseMessage(),
       serverName,
       oauthRequired,
