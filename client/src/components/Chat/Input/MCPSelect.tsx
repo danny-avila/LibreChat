@@ -35,8 +35,10 @@ function MCPSelect() {
       const statusIconProps = getServerStatusIconProps(serverName);
       const isServerInitializing = isInitializing(serverName);
 
-      // Common wrapper for the main content (check mark + text)
-      // Ensures Check & Text are adjacent and the group takes available space.
+      /**
+       Common wrapper for the main content (check mark + text).
+       Ensures Check & Text are adjacent and the group takes available space.
+        */
       const mainContentWrapper = (
         <button
           type="button"
@@ -66,12 +68,10 @@ function MCPSelect() {
     [getServerStatusIconProps, isInitializing],
   );
 
-  // Don't render if no servers are selected and not pinned
   if ((!mcpValues || mcpValues.length === 0) && !isPinned) {
     return null;
   }
 
-  // Don't render if no MCP servers are configured
   if (!configuredServers || configuredServers.length === 0) {
     return null;
   }

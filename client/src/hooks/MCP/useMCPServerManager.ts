@@ -3,15 +3,15 @@ import { useToastContext } from '@librechat/client';
 import { useQueryClient } from '@tanstack/react-query';
 import { Constants, QueryKeys } from 'librechat-data-provider';
 import {
+  useCancelMCPOAuthMutation,
   useUpdateUserPluginsMutation,
   useReinitializeMCPServerMutation,
-  useCancelMCPOAuthMutation,
 } from 'librechat-data-provider/react-query';
-import { useMCPConnectionStatusQuery } from '~/data-provider/Tools/queries';
 import type { TUpdateUserPlugins, TPlugin } from 'librechat-data-provider';
 import type { ConfigFieldDetail } from '~/components/MCP/MCPConfigDialog';
-import { useLocalize } from '~/hooks';
+import { useMCPConnectionStatusQuery } from '~/data-provider/Tools/queries';
 import { useBadgeRowContext } from '~/Providers';
+import { useLocalize } from '~/hooks';
 
 interface ServerState {
   isInitializing: boolean;
@@ -273,10 +273,8 @@ export function useMCPServerManager() {
 
   const cancelOAuthFlow = useCallback(
     (serverName: string) => {
-      // Call backend cancellation first, then clean up frontend state on success
       cancelOAuthMutation.mutate(serverName, {
         onSuccess: () => {
-          // Only clean up frontend state after backend confirms cancellation
           cleanupServerState(serverName);
           queryClient.invalidateQueries([QueryKeys.mcpConnectionStatus]);
 

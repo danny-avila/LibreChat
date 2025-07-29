@@ -93,7 +93,6 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
       return res.redirect('/oauth/error?error=missing_state');
     }
 
-    // Extract flow ID from state
     const flowId = state;
     logger.debug('[MCP OAuth] Using flow ID from state', { flowId });
 
@@ -116,22 +115,17 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
       hasCodeVerifier: !!flowState.codeVerifier,
     });
 
-    // Complete the OAuth flow
     logger.debug('[MCP OAuth] Completing OAuth flow');
     const tokens = await MCPOAuthHandler.completeOAuthFlow(flowId, code, flowManager);
     logger.info('[MCP OAuth] OAuth flow completed, tokens received in callback route');
 
-    // Try to establish the MCP connection with the new tokens
     try {
       const mcpManager = getMCPManager(flowState.userId);
       logger.debug(`[MCP OAuth] Attempting to reconnect ${serverName} with new OAuth tokens`);
 
-      // For user-level OAuth, try to establish the connection
       if (flowState.userId !== 'system') {
-        // We need to get the user object - in this case we'll need to reconstruct it
         const user = { id: flowState.userId };
 
-        // Try to establish connection with the new tokens
         const userConnection = await mcpManager.getUserConnection({
           user,
           serverName,
@@ -148,10 +142,8 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
           `[MCP OAuth] Successfully reconnected ${serverName} for user ${flowState.userId}`,
         );
 
-        // Fetch and cache tools now that we have a successful connection
         const userTools = (await getCachedTools({ userId: flowState.userId })) || {};
 
-        // Remove any old tools from this server in the user's cache
         const mcpDelimiter = Constants.mcp_delimiter;
         for (const key of Object.keys(userTools)) {
           if (key.endsWith(`${mcpDelimiter}${serverName}`)) {
@@ -159,7 +151,6 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
           }
         }
 
-        // Add the new tools from this server
         const tools = await userConnection.fetchTools();
         for (const tool of tools) {
           const name = `${tool.name}${Constants.mcp_delimiter}${serverName}`;
@@ -173,7 +164,6 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
           };
         }
 
-        // Save the updated user tool cache
         await setCachedTools(userTools, { userId: flowState.userId });
 
         logger.debug(
@@ -183,7 +173,6 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
         logger.debug(`[MCP OAuth] System-level OAuth completed for ${serverName}`);
       }
     } catch (error) {
-      // Don't fail the OAuth callback if reconnection fails - the tokens are still saved
       logger.warn(
         `[MCP OAuth] Failed to reconnect ${serverName} after OAuth, but tokens are saved:`,
         error,
@@ -219,7 +208,6 @@ router.get('/oauth/tokens/:flowId', requireJwtAuth, async (req, res) => {
       return res.status(401).json({ error: 'User not authenticated' });
     }
 
-    // Allow system flows or user-owned flows
     if (!flowId.startsWith(`${user.id}:`) && !flowId.startsWith('system:')) {
       return res.status(403).json({ error: 'Access denied' });
     }
@@ -287,11 +275,7 @@ router.post('/oauth/cancel/:serverName', requireJwtAuth, async (req, res) => {
 
     const flowsCache = getLogStores(CacheKeys.FLOWS);
     const flowManager = getFlowStateManager(flowsCache);
-
-    // Generate the flow ID for this user/server combination
     const flowId = MCPOAuthHandler.generateFlowId(user.id, serverName);
-
-    // Check if flow exists
     const flowState = await flowManager.getFlowState(flowId, 'mcp_oauth');
 
     if (!flowState) {
@@ -302,7 +286,6 @@ router.post('/oauth/cancel/:serverName', requireJwtAuth, async (req, res) => {
       });
     }
 
-    // Cancel the flow by marking it as failed
     await flowManager.failFlow(flowId, 'mcp_oauth', 'User cancelled OAuth flow');
 
     logger.info(`[MCP OAuth Cancel] Successfully cancelled OAuth flow for ${serverName}`);
@@ -379,8 +362,7 @@ router.post('/:serverName/reinitialize', requireJwtAuth, async (req, res) => {
           createToken,
           deleteTokens,
         },
-        returnOnOAuth: true, // Return immediately when OAuth is initiated
-        // Add OAuth handlers to capture the OAuth URL when needed
+        returnOnOAuth: true,
         oauthStart: async (authURL) => {
           logger.info(`[MCP Reinitialize] OAuth URL received: ${authURL}`);
           oauthUrl = authURL;
@@ -395,7 +377,6 @@ router.post('/:serverName/reinitialize', requireJwtAuth, async (req, res) => {
         `[MCP Reinitialize] OAuth state - oauthRequired: ${oauthRequired}, oauthUrl: ${oauthUrl ? 'present' : 'null'}`,
       );
 
-      // Check if this is an OAuth error - if so, the flow state should be set up now
       const isOAuthError =
         err.message?.includes('OAuth') ||
         err.message?.includes('authentication') ||
@@ -408,7 +389,6 @@ router.post('/:serverName/reinitialize', requireJwtAuth, async (req, res) => {
           `[MCP Reinitialize] OAuth required for ${serverName} (isOAuthError: ${isOAuthError}, oauthRequired: ${oauthRequired}, isOAuthFlowInitiated: ${isOAuthFlowInitiated})`,
         );
         oauthRequired = true;
-        // Don't return error - continue so frontend can handle OAuth
       } else {
         logger.error(
           `[MCP Reinitialize] Error initializing MCP server ${serverName} for user:`,
@@ -418,11 +398,9 @@ router.post('/:serverName/reinitialize', requireJwtAuth, async (req, res) => {
       }
     }
 
-    // Only fetch and cache tools if we successfully connected (no OAuth required)
     if (userConnection && !oauthRequired) {
       const userTools = (await getCachedTools({ userId: user.id })) || {};
 
-      // Remove any old tools from this server in the user's cache
       const mcpDelimiter = Constants.mcp_delimiter;
       for (const key of Object.keys(userTools)) {
         if (key.endsWith(`${mcpDelimiter}${serverName}`)) {
@@ -430,7 +408,6 @@ router.post('/:serverName/reinitialize', requireJwtAuth, async (req, res) => {
         }
       }
 
-      // Add the new tools from this server
       const tools = await userConnection.fetchTools();
       for (const tool of tools) {
         const name = `${tool.name}${Constants.mcp_delimiter}${serverName}`;
@@ -444,7 +421,6 @@ router.post('/:serverName/reinitialize', requireJwtAuth, async (req, res) => {
         };
       }
 
-      // Save the updated user tool cache
       await setCachedTools(userTools, { userId: user.id });
     }
 
@@ -593,19 +569,16 @@ router.get('/:serverName/auth-values', requireJwtAuth, async (req, res) => {
     const pluginKey = `${Constants.mcp_prefix}${serverName}`;
     const authValueFlags = {};
 
-    // Check existence of saved values for each custom user variable (don't fetch actual values)
     if (serverConfig.customUserVars && typeof serverConfig.customUserVars === 'object') {
       for (const varName of Object.keys(serverConfig.customUserVars)) {
         try {
           const value = await getUserPluginAuthValue(user.id, varName, false, pluginKey);
-          // Only store boolean flag indicating if value exists
           authValueFlags[varName] = !!(value && value.length > 0);
         } catch (err) {
           logger.error(
             `[MCP Auth Value Flags] Error checking ${varName} for user ${user.id}:`,
             err,
           );
-          // Default to false if we can't check
           authValueFlags[varName] = false;
         }
       }
