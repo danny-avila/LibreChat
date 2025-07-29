@@ -141,29 +141,31 @@ function MCPPanelContent() {
           {localize('com_sidepanel_mcp_variables_for', { '0': serverBeingEdited.serverName })}
         </h3>
 
-        {/* Server Initialization Section */}
         <div className="mb-4">
-          <ServerInitializationSection
+          <CustomUserVarsSection
             serverName={selectedServerNameForEditing}
-            requiresOAuth={serverStatus?.requiresOAuth || false}
+            fields={serverBeingEdited.config.customUserVars}
+            onSave={(authData) => {
+              if (selectedServerNameForEditing) {
+                handleConfigSave(selectedServerNameForEditing, authData);
+              }
+            }}
+            onRevoke={() => {
+              if (selectedServerNameForEditing) {
+                handleConfigRevoke(selectedServerNameForEditing);
+              }
+            }}
+            isSubmitting={updateUserPluginsMutation.isLoading}
           />
         </div>
 
-        {/* Custom User Variables Section */}
-        <CustomUserVarsSection
+        <ServerInitializationSection
           serverName={selectedServerNameForEditing}
-          fields={serverBeingEdited.config.customUserVars}
-          onSave={(authData) => {
-            if (selectedServerNameForEditing) {
-              handleConfigSave(selectedServerNameForEditing, authData);
-            }
-          }}
-          onRevoke={() => {
-            if (selectedServerNameForEditing) {
-              handleConfigRevoke(selectedServerNameForEditing);
-            }
-          }}
-          isSubmitting={updateUserPluginsMutation.isLoading}
+          requiresOAuth={serverStatus?.requiresOAuth || false}
+          hasCustomUserVars={
+            serverBeingEdited.config.customUserVars &&
+            Object.keys(serverBeingEdited.config.customUserVars).length > 0
+          }
         />
       </div>
     );

@@ -155,7 +155,10 @@ export default function useSideNavLinks({
     if (
       startupConfig?.mcpServers &&
       Object.values(startupConfig.mcpServers).some(
-        (server) => server.customUserVars && Object.keys(server.customUserVars).length > 0,
+        (server: any) =>
+          (server.customUserVars && Object.keys(server.customUserVars).length > 0) ||
+          server.isOAuth ||
+          server.startup === false,
       )
     ) {
       links.push({

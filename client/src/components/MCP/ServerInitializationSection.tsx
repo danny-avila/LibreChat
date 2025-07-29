@@ -7,11 +7,13 @@ import { useLocalize } from '~/hooks';
 interface ServerInitializationSectionProps {
   serverName: string;
   requiresOAuth: boolean;
+  hasCustomUserVars?: boolean;
 }
 
 export default function ServerInitializationSection({
   serverName,
   requiresOAuth,
+  hasCustomUserVars = false,
 }: ServerInitializationSectionProps) {
   const localize = useLocalize();
 
@@ -39,8 +41,7 @@ export default function ServerInitializationSection({
     cancelOAuthFlow(serverName);
   }, [cancelOAuthFlow, serverName]);
 
-  // Show subtle reinitialize option if connected
-  if (isConnected) {
+  if (isConnected && (requiresOAuth || hasCustomUserVars)) {
     return (
       <div className="flex justify-start">
         <button
@@ -55,11 +56,15 @@ export default function ServerInitializationSection({
     );
   }
 
+  if (isConnected) {
+    return null;
+  }
+
   return (
-    <div className="rounded-lg border border-[#991b1b] bg-[#2C1315] p-4">
+    <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-700 dark:bg-amber-900/20">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <span className="text-sm font-medium text-red-700 dark:text-red-300">
+          <span className="text-sm font-medium text-amber-800 dark:text-amber-200">
             {requiresOAuth
               ? localize('com_ui_mcp_not_authenticated', { 0: serverName })
               : localize('com_ui_mcp_not_initialized', { 0: serverName })}
@@ -70,7 +75,7 @@ export default function ServerInitializationSection({
           <Button
             onClick={handleInitializeClick}
             disabled={isServerInitializing}
-            className="flex items-center gap-2 bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 dark:hover:bg-blue-800"
+            className="btn btn-primary focus:shadow-outline flex w-full items-center justify-center px-4 py-2 font-semibold text-white hover:bg-green-600 focus:border-green-500"
           >
             {isServerInitializing ? (
               <>
@@ -103,7 +108,7 @@ export default function ServerInitializationSection({
           <div className="flex items-center gap-2">
             <Button
               onClick={() => window.open(serverOAuthUrl, '_blank', 'noopener,noreferrer')}
-              className="flex-1 bg-blue-600 text-white hover:bg-blue-700 dark:hover:bg-blue-800"
+              className="flex-1 bg-green-600 text-white hover:bg-green-700 dark:hover:bg-green-800"
             >
               {localize('com_ui_continue_oauth')}
             </Button>

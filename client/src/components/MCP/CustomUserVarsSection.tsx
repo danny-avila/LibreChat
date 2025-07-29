@@ -110,13 +110,15 @@ export default function CustomUserVarsSection({
 
   const handleRevokeClick = () => {
     onRevoke();
-    // Reset form after revoke
     reset();
   };
 
-  // Don't render if no fields to configure
   if (!fields || Object.keys(fields).length === 0) {
-    return null;
+    return (
+      <div className="p-4 text-center text-sm text-gray-500">
+        {localize('com_sidepanel_mcp_no_custom_vars', { '0': serverName })}
+      </div>
+    );
   }
 
   return (
