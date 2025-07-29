@@ -201,7 +201,7 @@ export function useMCPServerManager() {
   );
 
   const initializeServer = useCallback(
-    async (serverName: string) => {
+    async (serverName: string, autoOpenOAuth: boolean = true) => {
       updateServerState(serverName, { isInitializing: true });
 
       try {
@@ -216,7 +216,9 @@ export function useMCPServerManager() {
               isInitializing: true,
             });
 
-            window.open(response.oauthUrl, '_blank', 'noopener,noreferrer');
+            if (autoOpenOAuth) {
+              window.open(response.oauthUrl, '_blank', 'noopener,noreferrer');
+            }
 
             startServerPolling(serverName);
           } else {

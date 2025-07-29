@@ -34,7 +34,7 @@ export default function ServerInitializationSection({
   const serverOAuthUrl = getOAuthUrl(serverName);
 
   const handleInitializeClick = useCallback(() => {
-    initializeServer(serverName);
+    initializeServer(serverName, false);
   }, [initializeServer, serverName]);
 
   const handleCancelClick = useCallback(() => {
