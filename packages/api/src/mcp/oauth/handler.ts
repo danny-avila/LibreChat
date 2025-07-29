@@ -1,10 +1,10 @@
 import { randomBytes } from 'crypto';
 import { logger } from '@librechat/data-schemas';
 import {
-  discoverAuthorizationServerMetadata,
   registerClient,
   startAuthorization,
   exchangeAuthorization,
+  discoverAuthorizationServerMetadata,
   discoverOAuthProtectedResourceMetadata,
 } from '@modelcontextprotocol/sdk/client/auth.js';
 import { OAuthMetadataSchema } from '@modelcontextprotocol/sdk/shared/auth.js';
