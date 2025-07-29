@@ -45,9 +45,12 @@ function isSSEOptions(options: t.MCPOptions): options is t.SSEOptions {
  * @returns True if options are for a streamable HTTP transport
  */
 function isStreamableHTTPOptions(options: t.MCPOptions): options is t.StreamableHTTPOptions {
-  if ('url' in options && options.type === 'streamable-http') {
-    const protocol = new URL(options.url).protocol;
-    return protocol !== 'ws:' && protocol !== 'wss:';
+  if ('url' in options && 'type' in options) {
+    const optionType = options.type as string;
+    if (optionType === 'streamable-http' || optionType === 'http') {
+      const protocol = new URL(options.url).protocol;
+      return protocol !== 'ws:' && protocol !== 'wss:';
+    }
   }
   return false;
 }
@@ -142,6 +145,7 @@ export class MCPConnection extends EventEmitter {
       } else if (isWebSocketOptions(options)) {
         type = 'websocket';
       } else if (isStreamableHTTPOptions(options)) {
+        // Could be either 'streamable-http' or 'http', normalize to 'streamable-http'
         type = 'streamable-http';
       } else if (isSSEOptions(options)) {
         type = 'sse';
@@ -207,11 +211,6 @@ export class MCPConnection extends EventEmitter {
             this.emit('connectionChange', 'disconnected');
           };
 
-          transport.onerror = (error) => {
-            logger.error(`${this.getLogPrefix()} SSE transport error:`, error);
-            this.emitError(error, 'SSE transport error:');
-          };
-
           transport.onmessage = (message) => {
             logger.info(`${this.getLogPrefix()} Message received: ${JSON.stringify(message)}`);
           };
@@ -247,11 +246,6 @@ export class MCPConnection extends EventEmitter {
           transport.onclose = () => {
             logger.info(`${this.getLogPrefix()} Streamable-http transport closed`);
             this.emit('connectionChange', 'disconnected');
-          };
-
-          transport.onerror = (error: Error | unknown) => {
-            logger.error(`${this.getLogPrefix()} Streamable-http transport error:`, error);
-            this.emitError(error, 'Streamable-http transport error:');
           };
 
           transport.onmessage = (message: JSONRPCMessage) => {

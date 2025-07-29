@@ -52,6 +52,11 @@ function assistantsConfigSetup(config, assistantsEndpoint, prevConfig = {}) {
     privateAssistants: parsedConfig.privateAssistants,
     timeoutMs: parsedConfig.timeoutMs,
     streamRate: parsedConfig.streamRate,
+    titlePrompt: parsedConfig.titlePrompt,
+    titleMethod: parsedConfig.titleMethod,
+    titleModel: parsedConfig.titleModel,
+    titleEndpoint: parsedConfig.titleEndpoint,
+    titlePromptTemplate: parsedConfig.titlePromptTemplate,
   };
 }
 

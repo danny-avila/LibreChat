@@ -55,12 +55,7 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
   } = codeInterpreter;
   const { isPinned: isFileSearchPinned, setIsPinned: setIsFileSearchPinned } = fileSearch;
   const { isPinned: isArtifactsPinned, setIsPinned: setIsArtifactsPinned } = artifacts;
-  const {
-    mcpValues,
-    mcpServerNames,
-    isPinned: isMCPPinned,
-    setIsPinned: setIsMCPPinned,
-  } = mcpSelect;
+  const { mcpServerNames } = mcpSelect;
 
   const canUseWebSearch = useHasAccess({
     permissionType: PermissionTypes.WEB_SEARCH,
@@ -69,6 +64,11 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
 
   const canRunCode = useHasAccess({
     permissionType: PermissionTypes.RUN_CODE,
+    permission: Permissions.USE,
+  });
+
+  const canUseFileSearch = useHasAccess({
+    permissionType: PermissionTypes.FILE_SEARCH,
     permission: Permissions.USE,
   });
 
@@ -125,22 +125,11 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
     }
   }, [artifacts]);
 
-  const handleMCPToggle = useCallback(
-    (serverName: string) => {
-      const currentValues = mcpSelect.mcpValues ?? [];
-      const newValues = currentValues.includes(serverName)
-        ? currentValues.filter((v) => v !== serverName)
-        : [...currentValues, serverName];
-      mcpSelect.setMCPValues(newValues);
-    },
-    [mcpSelect],
-  );
-
   const mcpPlaceholder = startupConfig?.interface?.mcpServers?.placeholder;
 
   const dropdownItems: MenuItemProps[] = [];
 
-  if (fileSearchEnabled) {
+  if (fileSearchEnabled && canUseFileSearch) {
     dropdownItems.push({
       onClick: handleFileSearchToggle,
       hideOnClick: false,
@@ -300,17 +289,7 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
   if (mcpServerNames && mcpServerNames.length > 0) {
     dropdownItems.push({
       hideOnClick: false,
-      render: (props) => (
-        <MCPSubMenu
-          {...props}
-          mcpValues={mcpValues}
-          isMCPPinned={isMCPPinned}
-          placeholder={mcpPlaceholder}
-          mcpServerNames={mcpServerNames}
-          setIsMCPPinned={setIsMCPPinned}
-          handleMCPToggle={handleMCPToggle}
-        />
-      ),
+      render: (props) => <MCPSubMenu {...props} placeholder={mcpPlaceholder} />,
     });
   }
 

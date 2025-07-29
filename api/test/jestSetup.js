@@ -10,3 +10,4 @@ process.env.JWT_SECRET = 'test';
 process.env.JWT_REFRESH_SECRET = 'test';
 process.env.CREDS_KEY = 'test';
 process.env.CREDS_IV = 'test';
+process.env.OPENAI_API_KEY = 'test';

@@ -104,7 +104,7 @@ const initializeAgent = async ({
 
   agent.endpoint = provider;
   const { getOptions, overrideProvider } = await getProviderConfig(provider);
-  if (overrideProvider) {
+  if (overrideProvider !== agent.provider) {
     agent.provider = overrideProvider;
   }
 
@@ -131,7 +131,7 @@ const initializeAgent = async ({
   );
   const agentMaxContextTokens = optionalChainWithEmptyCheck(
     maxContextTokens,
-    getModelMaxTokens(tokensModel, providerEndpointMap[provider]),
+    getModelMaxTokens(tokensModel, providerEndpointMap[provider], options.endpointTokenConfig),
     4096,
   );
 
@@ -191,7 +191,7 @@ const initializeAgent = async ({
     resendFiles,
     toolContextMap,
     useLegacyContent: !!options.useLegacyContent,
-    maxContextTokens: (agentMaxContextTokens - maxTokens) * 0.9,
+    maxContextTokens: Math.round((agentMaxContextTokens - maxTokens) * 0.9),
   };
 };
 
