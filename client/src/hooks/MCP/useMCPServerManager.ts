@@ -273,13 +273,25 @@ export function useMCPServerManager() {
 
   const cancelOAuthFlow = useCallback(
     (serverName: string) => {
-      queryClient.invalidateQueries([QueryKeys.mcpConnectionStatus]);
-      cleanupServerState(serverName);
-      cancelOAuthMutation.mutate(serverName);
+      // Call backend cancellation first, then clean up frontend state on success
+      cancelOAuthMutation.mutate(serverName, {
+        onSuccess: () => {
+          // Only clean up frontend state after backend confirms cancellation
+          cleanupServerState(serverName);
+          queryClient.invalidateQueries([QueryKeys.mcpConnectionStatus]);
 
-      showToast({
-        message: localize('com_ui_mcp_oauth_cancelled', { 0: serverName }),
-        status: 'warning',
+          showToast({
+            message: localize('com_ui_mcp_oauth_cancelled', { 0: serverName }),
+            status: 'warning',
+          });
+        },
+        onError: (error) => {
+          console.error(`[MCP Manager] Failed to cancel OAuth for ${serverName}:`, error);
+          showToast({
+            message: localize('com_ui_mcp_init_failed', { 0: serverName }),
+            status: 'error',
+          });
+        },
       });
     },
     [queryClient, cleanupServerState, showToast, localize, cancelOAuthMutation],
