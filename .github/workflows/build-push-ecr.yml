@@ -3,12 +3,13 @@ name: Build and Push to ECR
 
 'on':
   push:
-    branches: [stacklok-main]
+    branches: [stacklok-main, main]
     paths:
       - 'Dockerfile'
       - 'helm/librechat/values.yaml'
       - 'helm/librechat/**'
       - 'helm/librechat-rag-api/**'
+      - '.github/workflows/**'
   workflow_dispatch:
 
 env:
@@ -138,25 +139,25 @@ jobs:
           aws ecr get-login-password --region ${{ env.AWS_REGION }} | \
             helm registry login --username AWS --password-stdin ${{ env.ECR_REGISTRY }}
 
-          # Debug: List directory contents
-          echo "Current directory contents:"
-          ls -la
-
           # Push LibreChat chart
           echo "Pushing LibreChat chart..."
           LIBRECHAT_CHART=$(ls librechat-[0-9]*.tgz 2>/dev/null || true)
           if [ -z "$LIBRECHAT_CHART" ]; then
             echo "Error: LibreChat chart package not found in root directory"
-            exit 1
+            echo "Current directory contents:"
+            ls -la
+          exit 1
           fi
           echo "Found chart: $LIBRECHAT_CHART"
           helm push "$LIBRECHAT_CHART" "oci://${{ env.ECR_REGISTRY }}"
-
+          
           # Push LibreChat RAG API chart
           echo "Pushing LibreChat RAG API chart..."
           RAG_CHART=$(ls librechat-rag-api-[0-9]*.tgz 2>/dev/null || true)
           if [ -z "$RAG_CHART" ]; then
             echo "Error: LibreChat RAG API chart package not found in root directory"
+            echo "Current directory contents:"
+            ls -la
             exit 1
           fi
           echo "Found chart: $RAG_CHART"
