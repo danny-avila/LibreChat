@@ -22,6 +22,7 @@ const MCPSubMenu = React.forwardRef<HTMLDivElement, MCPSubMenuProps>(
       toggleServerSelection,
       getServerStatusIconProps,
       getConfigDialogProps,
+      isInitializing,
     } = useMCPServerManager();
 
     const menuStore = Ariakit.useMenuStore({
@@ -86,6 +87,7 @@ const MCPSubMenu = React.forwardRef<HTMLDivElement, MCPSubMenuProps>(
             {configuredServers.map((serverName) => {
               const statusIconProps = getServerStatusIconProps(serverName);
               const isSelected = mcpValues?.includes(serverName) ?? false;
+              const isServerInitializing = isInitializing(serverName);
 
               const statusIcon = statusIconProps && <MCPServerStatusIcon {...statusIconProps} />;
 
@@ -96,12 +98,15 @@ const MCPSubMenu = React.forwardRef<HTMLDivElement, MCPSubMenuProps>(
                     event.preventDefault();
                     toggleServerSelection(serverName);
                   }}
+                  disabled={isServerInitializing}
                   className={cn(
                     'flex items-center gap-2 rounded-lg px-2 py-1.5 text-text-primary hover:cursor-pointer',
                     'scroll-m-1 outline-none transition-colors',
                     'hover:bg-black/[0.075] dark:hover:bg-white/10',
                     'data-[active-item]:bg-black/[0.075] dark:data-[active-item]:bg-white/10',
                     'w-full min-w-0 justify-between text-sm',
+                    isServerInitializing &&
+                      'opacity-50 hover:bg-transparent dark:hover:bg-transparent',
                   )}
                 >
                   <div className="flex flex-grow items-center gap-2">

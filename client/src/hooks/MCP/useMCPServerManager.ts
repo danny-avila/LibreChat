@@ -171,6 +171,7 @@ export function useMCPServerManager() {
               message: localize('com_ui_mcp_oauth_timeout', { 0: serverName }),
               status: 'error',
             });
+            clearInterval(pollInterval);
             cleanupServerState(serverName);
             return;
           }
@@ -180,10 +181,15 @@ export function useMCPServerManager() {
               message: localize('com_ui_mcp_init_failed'),
               status: 'error',
             });
+            clearInterval(pollInterval);
             cleanupServerState(serverName);
+            return;
           }
         } catch (error) {
           console.error(`[MCP Manager] Error polling server ${serverName}:`, error);
+          clearInterval(pollInterval);
+          cleanupServerState(serverName);
+          return;
         }
       }, 3500);
 
@@ -201,7 +207,7 @@ export function useMCPServerManager() {
   );
 
   const initializeServer = useCallback(
-    async (serverName: string) => {
+    async (serverName: string, autoOpenOAuth: boolean = true) => {
       updateServerState(serverName, { isInitializing: true });
 
       try {
@@ -216,7 +222,9 @@ export function useMCPServerManager() {
               isInitializing: true,
             });
 
-            window.open(response.oauthUrl, '_blank', 'noopener,noreferrer');
+            if (autoOpenOAuth) {
+              window.open(response.oauthUrl, '_blank', 'noopener,noreferrer');
+            }
 
             startServerPolling(serverName);
           } else {
@@ -265,13 +273,25 @@ export function useMCPServerManager() {
 
   const cancelOAuthFlow = useCallback(
     (serverName: string) => {
-      queryClient.invalidateQueries([QueryKeys.mcpConnectionStatus]);
-      cleanupServerState(serverName);
-      cancelOAuthMutation.mutate(serverName);
+      // Call backend cancellation first, then clean up frontend state on success
+      cancelOAuthMutation.mutate(serverName, {
+        onSuccess: () => {
+          // Only clean up frontend state after backend confirms cancellation
+          cleanupServerState(serverName);
+          queryClient.invalidateQueries([QueryKeys.mcpConnectionStatus]);
 
-      showToast({
-        message: localize('com_ui_mcp_oauth_cancelled', { 0: serverName }),
-        status: 'warning',
+          showToast({
+            message: localize('com_ui_mcp_oauth_cancelled', { 0: serverName }),
+            status: 'warning',
+          });
+        },
+        onError: (error) => {
+          console.error(`[MCP Manager] Failed to cancel OAuth for ${serverName}:`, error);
+          showToast({
+            message: localize('com_ui_mcp_init_failed', { 0: serverName }),
+            status: 'error',
+          });
+        },
       });
     },
     [queryClient, cleanupServerState, showToast, localize, cancelOAuthMutation],
@@ -309,6 +329,10 @@ export function useMCPServerManager() {
       const disconnectedServers: string[] = [];
 
       serverNames.forEach((serverName) => {
+        if (isInitializing(serverName)) {
+          return;
+        }
+
         const serverStatus = connectionStatus[serverName];
         if (serverStatus?.connectionState === 'connected') {
           connectedServers.push(serverName);
@@ -323,11 +347,15 @@ export function useMCPServerManager() {
         initializeServer(serverName);
       });
     },
-    [connectionStatus, setMCPValues, initializeServer],
+    [connectionStatus, setMCPValues, initializeServer, isInitializing],
   );
 
   const toggleServerSelection = useCallback(
     (serverName: string) => {
+      if (isInitializing(serverName)) {
+        return;
+      }
+
       const currentValues = mcpValues ?? [];
       const isCurrentlySelected = currentValues.includes(serverName);
 
@@ -343,7 +371,7 @@ export function useMCPServerManager() {
         }
       }
     },
-    [mcpValues, setMCPValues, connectionStatus, initializeServer],
+    [mcpValues, setMCPValues, connectionStatus, initializeServer, isInitializing],
   );
 
   const handleConfigSave = useCallback(
