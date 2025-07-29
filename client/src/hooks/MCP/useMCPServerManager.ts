@@ -234,6 +234,12 @@ export function useMCPServerManager() {
 
             cleanupServerState(serverName);
           }
+        } else {
+          showToast({
+            message: localize('com_ui_mcp_init_failed', { 0: serverName }),
+            status: 'error',
+          });
+          cleanupServerState(serverName);
         }
       } catch (error) {
         console.error(`[MCP Manager] Failed to initialize ${serverName}:`, error);

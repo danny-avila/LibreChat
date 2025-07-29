@@ -452,11 +452,19 @@ router.post('/:serverName/reinitialize', requireJwtAuth, async (req, res) => {
       `[MCP Reinitialize] Sending response for ${serverName} - oauthRequired: ${oauthRequired}, oauthUrl: ${oauthUrl ? 'present' : 'null'}`,
     );
 
+    const getResponseMessage = () => {
+      if (oauthRequired) {
+        return `MCP server '${serverName}' ready for OAuth authentication`;
+      }
+      if (userConnection) {
+        return `MCP server '${serverName}' reinitialized successfully`;
+      }
+      return `Failed to reinitialize MCP server '${serverName}'`;
+    };
+
     res.json({
-      success: true,
-      message: oauthRequired
-        ? `MCP server '${serverName}' ready for OAuth authentication`
-        : `MCP server '${serverName}' reinitialized successfully`,
+      success: userConnection && !oauthRequired,
+      message: getResponseMessage(),
       serverName,
       oauthRequired,
       oauthUrl,
