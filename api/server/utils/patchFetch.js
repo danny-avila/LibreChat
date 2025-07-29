@@ -7,6 +7,7 @@ const { logger } = require('@librechat/data-schemas');
 function patchFetchPorts() {
   try {
     // Read from environment variable
+    // comma separated list of ports to allow, ex 10080,10081,10082
     const portsToAllow = process.env.ALLOWED_FETCH_PORTS 
       ? process.env.ALLOWED_FETCH_PORTS.split(',').map(p => p.trim())
       : [];
@@ -40,7 +41,7 @@ function patchFetchPorts() {
     if (removedPorts.length > 0) {
       logger.info(`[patchFetch] Removed ports ${removedPorts.join(', ')} from undici badPorts list`);
     } else {
-      logger.debug(`[patchFetch] No ports were removed from badPorts list`);
+      logger.info(`[patchFetch] No ports were removed from badPorts list`);
     }
     
     return;
@@ -50,22 +51,6 @@ function patchFetchPorts() {
   }
 }
 
-/**
- * Check if a port is currently in the badPorts list
- * @param {string|number} port - Port to check
- * @returns {boolean} True if port is blocked
- */
-function isPortBlocked(port) {
-  try {
-    const badPorts = require('undici/lib/web/fetch/constants').badPorts;
-    return badPorts.includes(port.toString());
-  } catch (error) {
-    logger.error(`[patchFetch] Failed to check port status: ${error.message}`);
-    return false;
-  }
-}
-
 module.exports = {
   patchFetchPorts,
-  isPortBlocked,
 }; 
