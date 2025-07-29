@@ -106,16 +106,20 @@ jobs:
 
       - name: Push Helm Charts to ECR
         run: |
-          # Create ECR repository for Helm if it doesn't exist
-          aws ecr describe-repositories --repository-names helm-charts || \
-            aws ecr create-repository --repository-name helm-charts
+          # Create ECR repository for LibreChat chart if it doesn't exist
+          aws ecr describe-repositories --repository-names librechat || \
+            aws ecr create-repository --repository-name librechat
+          aws ecr describe-repositories --repository-names librechat-rag-api || \
+            aws ecr create-repository --repository-name librechat-rag-api
+
+          # Login to ECR
+          aws ecr get-login-password --region ${{ env.AWS_REGION }} | \
+            helm registry login --username AWS --password-stdin ${{ env.ECR_REGISTRY }}
 
           # Push LibreChat chart
           LIBRECHAT_CHART=$(ls librechat-*.tgz)
-          aws ecr get-login-password --region ${{ env.AWS_REGION }} | \
-            helm registry login --username AWS --password-stdin ${{ env.ECR_REGISTRY }}
-          helm push "$LIBRECHAT_CHART" "oci://${{ env.ECR_REGISTRY }}"
+          helm push "$LIBRECHAT_CHART" "oci://${{ env.ECR_REGISTRY }}/"
 
           # Push LibreChat RAG API chart
           RAG_CHART=$(ls librechat-rag-api-*.tgz)
-          helm push "$RAG_CHART" "oci://${{ env.ECR_REGISTRY }}"
+          helm push "$RAG_CHART" "oci://${{ env.ECR_REGISTRY }}/"
