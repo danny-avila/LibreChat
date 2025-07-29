@@ -2,10 +2,20 @@ const { logger } = require('@librechat/data-schemas');
 
 /**
  * Patches the global fetch to allow specific ports that are normally blocked by undici
- * @param {string[]|string} portsToAllow - Array of port numbers or single port to allow
+ * Reads allowed ports from ALLOWED_FETCH_PORTS environment variable
  */
-function patchFetchPorts(portsToAllow = ['10080']) {
+function patchFetchPorts() {
   try {
+    // Read from environment variable
+    const portsToAllow = process.env.ALLOWED_FETCH_PORTS 
+      ? process.env.ALLOWED_FETCH_PORTS.split(',').map(p => p.trim())
+      : [];
+    
+    if (portsToAllow.length === 0) {
+      logger.info('[patchFetch] No ports to allow specified in ALLOWED_FETCH_PORTS');
+      return;
+    }
+    
     // Ensure portsToAllow is an array
     const ports = Array.isArray(portsToAllow) ? portsToAllow : [portsToAllow];
     
@@ -33,10 +43,10 @@ function patchFetchPorts(portsToAllow = ['10080']) {
       logger.debug(`[patchFetch] No ports were removed from badPorts list`);
     }
     
-    return true;
+    return;
   } catch (error) {
     logger.error(`[patchFetch] Failed to patch fetch: ${error.message}`);
-    return false;
+    return;
   }
 }
 
