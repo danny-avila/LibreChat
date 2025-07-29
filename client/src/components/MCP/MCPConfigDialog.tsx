@@ -1,11 +1,12 @@
 import React from 'react';
-import { Loader2, KeyRound, PlugZap, AlertTriangle } from 'lucide-react';
+import { KeyRound, PlugZap, AlertTriangle } from 'lucide-react';
 import {
+  Label,
+  Spinner,
   OGDialog,
   OGDialogTitle,
   OGDialogHeader,
   OGDialogContent,
-  OGDialogDescription,
 } from '@librechat/client';
 import type { MCPServerStatus } from 'librechat-data-provider';
 import ServerInitializationSection from './ServerInitializationSection';
@@ -45,9 +46,6 @@ export default function MCPConfigDialog({
   const dialogTitle = hasFields
     ? localize('com_ui_configure_mcp_variables_for', { 0: serverName })
     : `${serverName} MCP Server`;
-  const dialogDescription = hasFields
-    ? localize('com_ui_mcp_dialog_desc')
-    : `Manage connection and settings for the ${serverName} MCP server.`;
 
   // Helper function to render status badge based on connection state
   const renderStatusBadge = () => {
@@ -60,7 +58,7 @@ export default function MCPConfigDialog({
     if (connectionState === 'connecting') {
       return (
         <div className="flex items-center gap-2 rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-600 dark:bg-blue-950 dark:text-blue-400">
-          <Loader2 className="h-3 w-3 animate-spin" />
+          <Spinner className="h-3 w-3" />
           <span>{localize('com_ui_connecting')}</span>
         </div>
       );
@@ -107,26 +105,30 @@ export default function MCPConfigDialog({
 
   return (
     <OGDialog open={isOpen} onOpenChange={onOpenChange}>
-      <OGDialogContent className="flex max-h-[90vh] w-full max-w-md flex-col">
+      <OGDialogContent className="flex max-h-screen w-11/12 max-w-lg flex-col">
         <OGDialogHeader>
           <div className="flex items-center gap-3">
-            <OGDialogTitle>{dialogTitle}</OGDialogTitle>
+            <OGDialogTitle className="text-xl">
+              {dialogTitle.charAt(0).toUpperCase() + dialogTitle.slice(1)}
+            </OGDialogTitle>
             {renderStatusBadge()}
           </div>
-          <OGDialogDescription>{dialogDescription}</OGDialogDescription>
         </OGDialogHeader>
 
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6">
-          {/* Custom User Variables Section */}
-          <CustomUserVarsSection
-            serverName={serverName}
-            fields={fieldsSchema}
-            onSave={onSave}
-            onRevoke={onRevoke || (() => {})}
-            isSubmitting={isSubmitting}
-          />
-        </div>
+        <Label className="text-text-secondary">
+          {serverStatus?.requiresOAuth
+            ? localize('com_ui_mcp_not_authenticated', { 0: serverName })
+            : localize('com_ui_mcp_not_initialized', { 0: serverName })}
+        </Label>
+
+        {/* Custom User Variables Section */}
+        <CustomUserVarsSection
+          serverName={serverName}
+          fields={fieldsSchema}
+          onSave={onSave}
+          onRevoke={onRevoke || (() => {})}
+          isSubmitting={isSubmitting}
+        />
 
         {/* Server Initialization Section */}
         <ServerInitializationSection
