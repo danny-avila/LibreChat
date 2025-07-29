@@ -132,6 +132,7 @@ export default function MCPConfigDialog({
         <ServerInitializationSection
           serverName={serverName}
           requiresOAuth={serverStatus?.requiresOAuth || false}
+          hasCustomUserVars={fieldsSchema && Object.keys(fieldsSchema).length > 0}
         />
       </OGDialogContent>
     </OGDialog>

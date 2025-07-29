@@ -146,6 +146,10 @@ function MCPPanelContent() {
           <ServerInitializationSection
             serverName={selectedServerNameForEditing}
             requiresOAuth={serverStatus?.requiresOAuth || false}
+            hasCustomUserVars={
+              serverBeingEdited.config.customUserVars &&
+              Object.keys(serverBeingEdited.config.customUserVars).length > 0
+            }
           />
         </div>
 

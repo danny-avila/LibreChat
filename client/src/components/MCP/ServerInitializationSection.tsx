@@ -7,11 +7,13 @@ import { useLocalize } from '~/hooks';
 interface ServerInitializationSectionProps {
   serverName: string;
   requiresOAuth: boolean;
+  hasCustomUserVars?: boolean;
 }
 
 export default function ServerInitializationSection({
   serverName,
   requiresOAuth,
+  hasCustomUserVars = false,
 }: ServerInitializationSectionProps) {
   const localize = useLocalize();
 
@@ -39,8 +41,8 @@ export default function ServerInitializationSection({
     cancelOAuthFlow(serverName);
   }, [cancelOAuthFlow, serverName]);
 
-  // Show subtle reinitialize option if connected
-  if (isConnected) {
+  // Show subtle reinitialize option if connected AND server has OAuth or custom user vars
+  if (isConnected && (requiresOAuth || hasCustomUserVars)) {
     return (
       <div className="flex justify-start">
         <button
@@ -53,6 +55,11 @@ export default function ServerInitializationSection({
         </button>
       </div>
     );
+  }
+
+  // Don't show anything for connected servers that don't need OAuth or custom vars
+  if (isConnected) {
+    return null;
   }
 
   return (
