@@ -96,13 +96,35 @@ jobs:
 
       - name: Package Helm Charts
         run: |
+          # Debug: Show current directory
+          pwd
+          echo "Directory contents before packaging:"
+          ls -la
+
           # Package LibreChat chart
+          echo "Packaging LibreChat chart..."
           helm dependency update helm/librechat
           helm package helm/librechat
+          
+          # Verify LibreChat chart was created
+          if [ ! -f librechat-*.tgz ]; then
+            echo "Error: LibreChat chart package was not created"
+            exit 1
+          fi
 
           # Package LibreChat RAG API chart
+          echo "Packaging LibreChat RAG API chart..."
           helm dependency update helm/librechat-rag-api
           helm package helm/librechat-rag-api
+          
+          # Verify RAG API chart was created
+          if [ ! -f librechat-rag-api-*.tgz ]; then
+            echo "Error: LibreChat RAG API chart package was not created"
+            exit 1
+          fi
+
+          echo "Directory contents after packaging:"
+          ls -la *.tgz
 
       - name: Push Helm Charts to ECR
         run: |
@@ -116,10 +138,24 @@ jobs:
           aws ecr get-login-password --region ${{ env.AWS_REGION }} | \
             helm registry login --username AWS --password-stdin ${{ env.ECR_REGISTRY }}
 
-          # Push LibreChat chart
-          LIBRECHAT_CHART=$(ls librechat-*.tgz)
+          # Debug: List directory contents
+          echo "Current directory contents:"
+          ls -la
+
+          # Verify and push LibreChat chart
+          LIBRECHAT_CHART=$(find . -name "librechat-*.tgz")
+          if [ -z "$LIBRECHAT_CHART" ]; then
+            echo "Error: LibreChat chart package not found"
+            exit 1
+          fi
+          echo "Found LibreChat chart: $LIBRECHAT_CHART"
           helm push "$LIBRECHAT_CHART" "oci://${{ env.ECR_REGISTRY }}/"
 
-          # Push LibreChat RAG API chart
-          RAG_CHART=$(ls librechat-rag-api-*.tgz)
+          # Verify and push LibreChat RAG API chart
+          RAG_CHART=$(find . -name "librechat-rag-api-*.tgz")
+          if [ -z "$RAG_CHART" ]; then
+            echo "Error: LibreChat RAG API chart package not found"
+            exit 1
+          fi
+          echo "Found RAG API chart: $RAG_CHART"
           helm push "$RAG_CHART" "oci://${{ env.ECR_REGISTRY }}/"
