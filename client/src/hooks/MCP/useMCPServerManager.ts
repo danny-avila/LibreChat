@@ -171,6 +171,7 @@ export function useMCPServerManager() {
               message: localize('com_ui_mcp_oauth_timeout', { 0: serverName }),
               status: 'error',
             });
+            clearInterval(pollInterval);
             cleanupServerState(serverName);
             return;
           }
@@ -180,10 +181,15 @@ export function useMCPServerManager() {
               message: localize('com_ui_mcp_init_failed'),
               status: 'error',
             });
+            clearInterval(pollInterval);
             cleanupServerState(serverName);
+            return;
           }
         } catch (error) {
           console.error(`[MCP Manager] Error polling server ${serverName}:`, error);
+          clearInterval(pollInterval);
+          cleanupServerState(serverName);
+          return;
         }
       }, 3500);
 
