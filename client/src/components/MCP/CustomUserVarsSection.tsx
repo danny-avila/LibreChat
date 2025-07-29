@@ -110,11 +110,9 @@ export default function CustomUserVarsSection({
 
   const handleRevokeClick = () => {
     onRevoke();
-    // Reset form after revoke
     reset();
   };
 
-  // Show message if no fields to configure
   if (!fields || Object.keys(fields).length === 0) {
     return (
       <div className="p-4 text-center text-sm text-gray-500">

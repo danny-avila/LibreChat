@@ -41,7 +41,6 @@ export default function ServerInitializationSection({
     cancelOAuthFlow(serverName);
   }, [cancelOAuthFlow, serverName]);
 
-  // Show subtle reinitialize option if connected AND server has OAuth or custom user vars
   if (isConnected && (requiresOAuth || hasCustomUserVars)) {
     return (
       <div className="flex justify-start">
@@ -57,7 +56,6 @@ export default function ServerInitializationSection({
     );
   }
 
-  // Don't show anything for connected servers that don't need OAuth or custom vars
   if (isConnected) {
     return null;
   }
