@@ -142,20 +142,18 @@ jobs:
           echo "Current directory contents:"
           ls -la
 
-          # Verify and push LibreChat chart
-          LIBRECHAT_CHART=$(find . -name "librechat-*.tgz")
-          if [ -z "$LIBRECHAT_CHART" ]; then
-            echo "Error: LibreChat chart package not found"
+          # Push LibreChat chart
+          echo "Pushing LibreChat chart..."
+          if [ ! -f librechat-*.tgz ]; then
+            echo "Error: LibreChat chart package not found in root directory"
             exit 1
           fi
-          echo "Found LibreChat chart: $LIBRECHAT_CHART"
-          helm push "$LIBRECHAT_CHART" "oci://${{ env.ECR_REGISTRY }}/"
+          helm push librechat-*.tgz "oci://${{ env.ECR_REGISTRY }}/"
 
-          # Verify and push LibreChat RAG API chart
-          RAG_CHART=$(find . -name "librechat-rag-api-*.tgz")
-          if [ -z "$RAG_CHART" ]; then
-            echo "Error: LibreChat RAG API chart package not found"
+          # Push LibreChat RAG API chart
+          echo "Pushing LibreChat RAG API chart..."
+          if [ ! -f librechat-rag-api-*.tgz ]; then
+            echo "Error: LibreChat RAG API chart package not found in root directory"
             exit 1
           fi
-          echo "Found RAG API chart: $RAG_CHART"
-          helm push "$RAG_CHART" "oci://${{ env.ECR_REGISTRY }}/"
+          helm push librechat-rag-api-*.tgz "oci://${{ env.ECR_REGISTRY }}/"
