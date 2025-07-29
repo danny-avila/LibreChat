@@ -2,6 +2,14 @@ require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 require('module-alias')({ base: path.resolve(__dirname, '..') });
+
+// Patch fetch to allow specific ports
+const { patchFetchPorts } = require('./utils/patchFetch');
+const allowedPorts = process.env.ALLOWED_FETCH_PORTS 
+  ? process.env.ALLOWED_FETCH_PORTS.split(',').map(p => p.trim())
+  : ['10080'];
+patchFetchPorts(allowedPorts);
+
 const cors = require('cors');
 const axios = require('axios');
 const express = require('express');
