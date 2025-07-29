@@ -26,12 +26,18 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Install yq
+        run: |
+          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod a+x /usr/local/bin/yq
+
       - name: Set version
+        id: version
         run: |
           echo "Searching for version in values.yaml..."
           cat helm/librechat/values.yaml
           echo "Extracting version..."
-          VERSION=$(grep '^[[:space:]]*tag:' helm/librechat/values.yaml | grep -v '#' | head -n1 | awk -F'"' '{print $2}')
+          VERSION=$(yq -r '.image.tag // ""' helm/librechat/values.yaml)
           echo "Extracted version: '$VERSION'"
           if [ -z "$VERSION" ]; then
             echo "No version found, using default"
@@ -48,7 +54,7 @@ jobs:
             VERSION="1.7.3"
           fi
           echo "Final version: $VERSION"
-          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -67,7 +73,7 @@ jobs:
           context: .
           push: true
           tags: >-
-            ${{ env.ECR_REGISTRY }}/librechat:${{ env.VERSION }}
+            ${{ env.ECR_REGISTRY }}/librechat:${{ steps.version.outputs.version }}
 
       # Use official MongoDB image instead of building custom one
       - name: Pull and push MongoDB image
