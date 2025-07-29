@@ -287,14 +287,26 @@ async function checkOAuthFlowStatus(userId, serverName) {
     const flowTTL = flowState.ttl || 180000; // Default 3 minutes
 
     if (flowState.status === 'FAILED' || flowAge > flowTTL) {
-      logger.debug(`[MCP Connection Status] Found failed OAuth flow for ${serverName}`, {
-        flowId,
-        status: flowState.status,
-        flowAge,
-        flowTTL,
-        timedOut: flowAge > flowTTL,
-      });
-      return { hasActiveFlow: false, hasFailedFlow: true };
+      const wasCancelled = flowState.error && flowState.error.includes('cancelled');
+
+      if (wasCancelled) {
+        logger.debug(`[MCP Connection Status] Found cancelled OAuth flow for ${serverName}`, {
+          flowId,
+          status: flowState.status,
+          error: flowState.error,
+        });
+        return { hasActiveFlow: false, hasFailedFlow: false };
+      } else {
+        logger.debug(`[MCP Connection Status] Found failed OAuth flow for ${serverName}`, {
+          flowId,
+          status: flowState.status,
+          flowAge,
+          flowTTL,
+          timedOut: flowAge > flowTTL,
+          error: flowState.error,
+        });
+        return { hasActiveFlow: false, hasFailedFlow: true };
+      }
     }
 
     if (flowState.status === 'PENDING') {
