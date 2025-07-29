@@ -309,6 +309,10 @@ export function useMCPServerManager() {
       const disconnectedServers: string[] = [];
 
       serverNames.forEach((serverName) => {
+        if (isInitializing(serverName)) {
+          return;
+        }
+
         const serverStatus = connectionStatus[serverName];
         if (serverStatus?.connectionState === 'connected') {
           connectedServers.push(serverName);
@@ -323,11 +327,15 @@ export function useMCPServerManager() {
         initializeServer(serverName);
       });
     },
-    [connectionStatus, setMCPValues, initializeServer],
+    [connectionStatus, setMCPValues, initializeServer, isInitializing],
   );
 
   const toggleServerSelection = useCallback(
     (serverName: string) => {
+      if (isInitializing(serverName)) {
+        return;
+      }
+
       const currentValues = mcpValues ?? [];
       const isCurrentlySelected = currentValues.includes(serverName);
 
@@ -343,7 +351,7 @@ export function useMCPServerManager() {
         }
       }
     },
-    [mcpValues, setMCPValues, connectionStatus, initializeServer],
+    [mcpValues, setMCPValues, connectionStatus, initializeServer, isInitializing],
   );
 
   const handleConfigSave = useCallback(
