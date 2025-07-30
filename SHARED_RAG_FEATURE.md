@@ -1,69 +1,104 @@
-# Shared RAG (Retrieval-Augmented Generation) Feature
+# 공유 RAG (Retrieval-Augmented Generation) 기능
 
-This document describes the implementation of a shared RAG capability for LibreChat, allowing admin users to upload PDF files that are globally accessible to all logged-in users in RAG responses.
+이 문서는 LibreChat에서 관리자가 업로드한 PDF 파일을 모든 로그인된 사용자가 RAG 응답에서 전역적으로 접근할 수 있도록 하는 공유 RAG 기능의 구현을 설명합니다.
 
-## Overview
+## 개요
 
-The shared RAG feature enhances LibreChat by implementing a global document repository that is accessible to all users. When any user performs a RAG query, the system now searches through both:
-1. Their own uploaded PDF files
-2. Admin-uploaded global PDF files
+공유 RAG 기능은 LibreChat을 향상시켜 모든 사용자가 접근할 수 있는 전역 문서 저장소를 구현합니다. 사용자가 RAG 쿼리를 수행할 때 시스템은 다음 두 가지를 모두 검색합니다:
+1. 사용자가 업로드한 개인 PDF 파일
+2. 관리자가 업로드한 전역 PDF 파일
 
-## Features
+## 기능
 
-### 🔧 Admin Capabilities
-- **Upload Global Files**: Admin users can upload PDF files that become globally accessible
-- **Manage Global Files**: View, list, and delete global files through admin-only endpoints
-- **Access Control**: Only admins can upload, edit, or delete global files
+### 🔧 관리자 기능
+- **전역 파일 업로드**: 관리자가 전역적으로 접근 가능한 PDF 파일을 업로드할 수 있습니다
+- **전역 파일 관리**: 관리자 전용 인터페이스를 통해 전역 파일을 조회, 목록 확인, 삭제할 수 있습니다
+- **접근 제어**: 관리자만 전역 파일을 업로드, 편집, 삭제할 수 있습니다
 
-### 👥 User Experience
-- **Seamless Access**: All logged-in users automatically have access to global files in RAG queries
-- **Combined Results**: RAG responses include context from both user files and global files
-- **No Management**: Regular users cannot manage global files but benefit from their content
+### 👥 사용자 경험
+- **원활한 접근**: 모든 로그인된 사용자가 RAG 쿼리에서 전역 파일에 자동으로 접근할 수 있습니다
+- **결합된 결과**: RAG 응답에는 사용자 파일과 전역 파일의 컨텍스트가 모두 포함됩니다
+- **관리 불필요**: 일반 사용자는 전역 파일을 관리할 수 없지만 그 내용의 혜택을 받을 수 있습니다
 
-## Implementation Details
+## 사용자 인터페이스
 
-### Database Schema Changes
+### Global File Management 모달
 
-The file schema has been extended with an `isGlobal` field:
+관리자는 "Global Files" 버튼을 클릭하여 전역 파일 관리 인터페이스에 접근할 수 있습니다.
+
+#### 업로드 섹션
+- **제목**: "Global File Management" (문서 아이콘 포함)
+- **부제목**: "Upload Global File"
+- **파일 선택**: "Choose File" 버튼이 있는 파일 입력 필드
+- **전역 설정**: "Make this file global (shared with all users)" 체크박스 (기본적으로 체크됨)
+- **업로드 버튼**: "Upload File" 버튼 (위쪽 화살표 아이콘 포함)
+
+#### 전역 파일 목록 섹션
+- **제목**: "Global Files"
+- **상태 메시지**: "No global files uploaded yet." (파일이 없을 때)
+- **파일 목록**: 업로드된 전역 파일들의 목록 표시
+
+## 구현 세부사항
+
+### 데이터베이스 스키마 변경
+
+파일 스키마에 `isGlobal` 필드가 추가되었습니다:
 
 ```typescript
 interface IMongoFile {
-  // ... existing fields
-  isGlobal?: boolean; // New field for global file identification
+  // ... 기존 필드들
+  isGlobal?: boolean; // 전역 파일 식별을 위한 새 필드
 }
 ```
 
-### API Endpoints
+### API 엔드포인트
 
-#### New Admin-Only Endpoints
+#### 새로운 관리자 전용 엔드포인트
 
-1. **GET /api/files/global** - List all global files (admin only)
-2. **DELETE /api/files/global/:file_id** - Delete a specific global file (admin only)
+1. **GET /api/files/global** - 모든 전역 파일 목록 조회 (관리자만)
+2. **DELETE /api/files/global/:file_id** - 특정 전역 파일 삭제 (관리자만)
 
-#### Enhanced Endpoints
+#### 향상된 엔드포인트
 
-1. **POST /api/files** - Now supports `isGlobal` parameter for admin uploads
-2. **GET /api/files** - Now includes global files in user file listings
+1. **POST /api/files** - 관리자 업로드를 위한 `isGlobal` 매개변수 지원
+2. **GET /api/files** - 사용자 파일 목록에 전역 파일 포함
 
-### File Processing
+### 파일 처리
 
-The file processing pipeline has been updated to:
-- Accept `isGlobal` parameter during upload
-- Store global files with the `isGlobal` flag
-- Include global files in RAG queries automatically
+파일 처리 파이프라인이 다음을 위해 업데이트되었습니다:
+- 업로드 중 `isGlobal` 매개변수 수용
+- `isGlobal` 플래그로 전역 파일 저장
+- RAG 쿼리에서 전역 파일 자동 포함
 
-### RAG Integration
+### RAG 통합
 
-The RAG system now:
-- Processes both user files and global files in context generation
-- Includes global files in file search tools
-- Maintains proper access control while providing universal access
+RAG 시스템은 이제 다음을 수행합니다:
+- 컨텍스트 생성에서 사용자 파일과 전역 파일 모두 처리
+- 파일 검색 도구에 전역 파일 포함
+- 보편적 접근을 제공하면서 적절한 접근 제어 유지
 
-## Usage
+## 사용법
 
-### For Administrators
+### 관리자를 위한
 
-1. **Upload Global Files**:
+#### UI를 통한 사용법
+
+1. **Global Files 버튼 클릭**:
+   - 관리자 대시보드에서 "Global Files" 버튼을 클릭합니다
+   - Global File Management 모달이 열립니다
+
+2. **전역 파일 업로드**:
+   - "Choose File" 버튼을 클릭하여 PDF 파일을 선택합니다
+   - "Make this file global (shared with all users)" 체크박스가 기본적으로 체크되어 있는지 확인합니다
+   - "Upload File" 버튼을 클릭하여 업로드를 완료합니다
+
+3. **전역 파일 관리**:
+   - 업로드된 전역 파일들이 "Global Files" 섹션에 표시됩니다
+   - 각 파일에 대한 삭제 옵션을 사용할 수 있습니다
+
+#### API를 통한 사용법
+
+1. **전역 파일 업로드**:
    ```bash
    curl -X POST /api/files \
      -H "Authorization: Bearer <admin_token>" \
@@ -71,88 +106,97 @@ The RAG system now:
      -F "isGlobal=true"
    ```
 
-2. **List Global Files**:
+2. **전역 파일 목록 조회**:
    ```bash
    curl -X GET /api/files/global \
      -H "Authorization: Bearer <admin_token>"
    ```
 
-3. **Delete Global File**:
+3. **전역 파일 삭제**:
    ```bash
    curl -X DELETE /api/files/global/<file_id> \
      -H "Authorization: Bearer <admin_token>"
    ```
 
-### For Users
+### 사용자를 위한
 
-Users automatically benefit from global files:
-- No additional setup required
-- Global files appear in RAG responses alongside personal files
-- File search tools include global files in results
+사용자는 전역 파일의 혜택을 자동으로 받습니다:
+- 추가 설정 불필요
+- 전역 파일이 개인 파일과 함께 RAG 응답에 나타남
+- 파일 검색 도구가 결과에 전역 파일 포함
 
-## Security Considerations
+## 보안 고려사항
 
-- **Access Control**: Only admin users can upload, edit, or delete global files
-- **Role Verification**: All global file operations verify admin role
-- **File Isolation**: Global files are stored separately from user files
-- **Audit Trail**: All global file operations are logged
+- **접근 제어**: 관리자만 전역 파일을 업로드, 편집, 삭제할 수 있습니다
+- **역할 검증**: 모든 전역 파일 작업에서 관리자 역할을 확인합니다
+- **파일 격리**: 전역 파일은 사용자 파일과 별도로 저장됩니다
+- **감사 추적**: 모든 전역 파일 작업이 로그에 기록됩니다
 
-## Configuration
+## 설정
 
-No additional configuration is required. The feature is automatically enabled when:
-- RAG is properly configured (`RAG_API_URL` environment variable)
-- Admin users exist in the system
-- File upload endpoints are accessible
+추가 설정이 필요하지 않습니다. 다음 조건에서 기능이 자동으로 활성화됩니다:
+- RAG가 올바르게 구성됨 (`RAG_API_URL` 환경 변수)
+- 관리자 사용자가 존재함
+- 파일 업로드 엔드포인트에 접근 가능함
 
-## Migration Notes
+## 마이그레이션 참고사항
 
-For existing installations:
-- The `isGlobal` field is optional and defaults to `false`
-- Existing files remain unchanged
-- No migration scripts are required
-- The feature is backward compatible
+기존 설치의 경우:
+- `isGlobal` 필드는 선택사항이며 기본값은 `false`입니다
+- 기존 파일은 변경되지 않습니다
+- 마이그레이션 스크립트가 필요하지 않습니다
+- 기능은 이전 버전과 호환됩니다
 
-## Testing
+## 테스트
 
-To test the implementation:
+구현을 테스트하려면:
 
-1. **Upload a global file as admin**:
-   - Use the admin interface or API
-   - Verify the file is marked as global
+1. **관리자로 전역 파일 업로드**:
+   - "Global Files" 버튼을 클릭하여 관리 인터페이스 접근
+   - 파일을 선택하고 "Upload File" 클릭
+   - 파일이 전역으로 표시되는지 확인
 
-2. **Verify user access**:
-   - Login as a regular user
-   - Perform a RAG query
-   - Confirm global files are included in results
+2. **사용자 접근 확인**:
+   - 일반 사용자로 로그인
+   - RAG 쿼리 수행
+   - 전역 파일이 결과에 포함되는지 확인
 
-3. **Test access control**:
-   - Attempt to upload global files as non-admin (should fail)
-   - Attempt to delete global files as non-admin (should fail)
+3. **접근 제어 테스트**:
+   - 비관리자로 전역 파일 업로드 시도 (실패해야 함)
+   - 비관리자로 전역 파일 삭제 시도 (실패해야 함)
 
-## Troubleshooting
+## 문제 해결
 
-### Common Issues
+### 일반적인 문제
 
-1. **Global files not appearing in RAG results**:
-   - Check that files are properly marked as `isGlobal: true`
-   - Verify RAG API is functioning correctly
-   - Check file embedding status
+1. **RAG 결과에 전역 파일이 나타나지 않음**:
+   - 파일이 `isGlobal: true`로 올바르게 표시되었는지 확인
+   - RAG API가 올바르게 작동하는지 확인
+   - 파일 임베딩 상태 확인
 
-2. **Admin uploads failing**:
-   - Verify user has admin role
-   - Check file format compatibility
-   - Review server logs for errors
+2. **관리자 업로드 실패**:
+   - 사용자가 관리자 역할을 가지고 있는지 확인
+   - 파일 형식 호환성 확인 (PDF 파일만 지원)
+   - 서버 로그에서 오류 검토
 
-3. **Permission denied errors**:
-   - Ensure user has `SystemRoles.ADMIN` role
-   - Check authentication token validity
-   - Verify endpoint access permissions
+3. **권한 거부 오류**:
+   - 사용자가 `SystemRoles.ADMIN` 역할을 가지고 있는지 확인
+   - 인증 토큰 유효성 확인
+   - 엔드포인트 접근 권한 확인
 
-## Future Enhancements
+4. **UI 관련 문제**:
+   - "Global Files" 버튼이 관리자에게만 표시되는지 확인
+   - 모달이 올바르게 열리고 닫히는지 확인
+   - 파일 업로드 진행률이 표시되는지 확인
 
-Potential improvements for future versions:
-- File categories and tagging for global files
-- Usage analytics for global files
-- Selective global file access based on user groups
-- Global file versioning and updates
-- Integration with external document repositories 
+## 향후 개선사항
+
+향후 버전을 위한 잠재적 개선사항:
+- 전역 파일의 파일 카테고리 및 태깅
+- 전역 파일 사용 분석 및 통계
+- 사용자 그룹 기반 선택적 전역 파일 접근
+- 전역 파일 버전 관리 및 업데이트
+- 외부 문서 저장소와의 통합
+- 드래그 앤 드롭 파일 업로드 지원
+- 파일 미리보기 기능
+- 전역 파일 검색 및 필터링 기능 
