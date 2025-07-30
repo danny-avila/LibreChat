@@ -171,15 +171,13 @@ endpoints:
     #   baseURL: "${PORTKEY_GATEWAY_URL}"
     #   headers:
     #       x-portkey-api-key: "${PORTKEY_API_KEY}"
-    #       # x-portkey-config: "pc-azure-8cb1e3"
-    #       x-portkey-virtual-key: "PORTKEY_OPENAI_VIRTUAL_KEY"
+    #       x-portkey-provider: "azure-open-ai-0369c1"
+    #       # x-portkey-config: "pc-amend-706c47"
+    #       # x-portkey-virtual-key: "PORTKEY_OPENAI_VIRTUAL_KEY"
     #       x-portkey-metadata: '{"_user": "{{LIBRECHAT_USER_EMAIL}}"}' # this header is to edit
     #   models:
     #       default: 
     #       - "gpt-4.1-mini"
-    #       - "gpt-4-1"
-    #       - "o4-mini"
-    #       - "o3-mini"
     #       fetch: true
     #   titleConvo: true
     #   titleModel: "gpt-4.1-mini"
@@ -189,18 +187,18 @@ endpoints:
     #   modelDisplayLabel: "Portkey:OpenAI"
     #   iconURL: https://images.crunchbase.com/image/upload/c_pad,f_auto,q_auto:eco,dpr_1/rjqy7ghvjoiu4cd1xjbf
 
-ocr:
-  mistralModel: "${MISTRAL_MODEL}" # should match deployment name on Azure
-  apiKey: "${OCR_API_KEY}" # arbitrary .env var reference
-  baseURL: "${OCR_BASEURL}" # hardcoded, can also be .env var reference
-  strategy: "mistral_ocr"
+# ocr:
+#   mistralModel: "${MISTRAL_MODEL}" # should match deployment name on Azure
+#   apiKey: "${OCR_API_KEY}" # arbitrary .env var reference
+#   baseURL: "${OCR_BASEURL}" # hardcoded, can also be .env var reference
+#   strategy: "mistral_ocr"
 
 # `librechat.yaml`
-# ocr:
-#   mistralModel: "mistral-ocr-2503-amend"              # Should match your Azure deployment name
-#   apiKey: "${AZURE_MISTRAL_OCR_API_KEY}"                 # Reference to your Azure API key in .env
-#   baseURL: "https://mistral-ocr-2503-amend.eastus.models.ai.azure.com/v1"  # Your Azure endpoint
-#   strategy: "azure_mistral_ocr"                          # Use Azure strategy
+ocr:
+  mistralModel: "mistral-ocr-2503-amend"              # Should match your Azure deployment name
+  apiKey: "${AZURE_MISTRAL_OCR_API_KEY}"                 # Reference to your Azure API key in .env
+  baseURL: "https://mistral-ocr-2503-amend.eastus.models.ai.azure.com/v1"  # Your Azure endpoint
+  strategy: "azure_mistral_ocr"                          # Use Azure strategy
 
 mcpServers:
   
@@ -252,6 +250,19 @@ mcpServers:
       USER_PROVIDED_TOKEN:
         title: "My Session Id"
         description: "Your Kantata OX session ID after you go through the auth process with Kantata"
+    chatMenu: true
+
+  lucid-chart-tools:
+    type: streamable-http
+    #url: http://localhost:3009/mcp #for production
+    url: http://lucid-mcp.lucid-mcp-server.orb.local/mcp #for local testing
+    headers:
+      Authorization: "Bearer ${LUCIDCHART_MCP_BEARER_TOKEN}"
+      x-auth-token: "{{USER_PROVIDED_TOKEN}}"
+    customUserVars:
+      USER_PROVIDED_TOKEN:
+        title: "My Session Id"
+        description: "Your Lucid session ID after you go through the auth process with Lucid"
     chatMenu: true
 
 
