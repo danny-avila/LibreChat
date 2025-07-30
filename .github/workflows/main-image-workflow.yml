@@ -9,9 +9,6 @@ jobs:
     strategy:
       matrix:
         include:
-          - target: api-build
-            file: Dockerfile.multi
-            image_name: librechat-api
           - target: node
             file: Dockerfile
             image_name: librechat
@@ -53,6 +50,6 @@ jobs:
           file: ${{ matrix.file }}
           push: true
           tags: |
-            stripe/librechat/${{ matrix.image_name }}:latest
+            stripe/librechat:latest
           platforms: linux/amd64,linux/arm64
           target: ${{ matrix.target }}
