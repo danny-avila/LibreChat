@@ -58,6 +58,9 @@ export const useUpdateConversationMutation = (
       onSuccess: (updatedConvo) => {
         queryClient.setQueryData([QueryKeys.conversation, id], updatedConvo);
         updateConvoInAllQueries(queryClient, id, () => updatedConvo);
+        // Force a re-render of the conversation panel
+        queryClient.invalidateQueries([QueryKeys.allConversations]);
+        // We do not invalidate archived conversations because they cannot be updated while archived
       },
     },
   );
