@@ -13,3 +13,8 @@ services:
   mongodb:
     ports:
       - 27018:27017 
+
+  rag_api:
+    environment:
+      - EMBEDDINGS_PROVIDER=huggingface
+      - HF_TOKEN=${HF_TOKEN}
