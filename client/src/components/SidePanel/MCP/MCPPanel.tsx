@@ -6,8 +6,8 @@ import { Constants, QueryKeys } from 'librechat-data-provider';
 import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
 import type { TUpdateUserPlugins } from 'librechat-data-provider';
 import ServerInitializationSection from '~/components/MCP/ServerInitializationSection';
-import CustomUserVarsSection from '~/components/MCP/CustomUserVarsSection';
 import { useMCPConnectionStatusQuery } from '~/data-provider/Tools/queries';
+import CustomUserVarsSection from '~/components/MCP/CustomUserVarsSection';
 import BadgeRowProvider from '~/Providers/BadgeRowContext';
 import { useGetStartupConfig } from '~/data-provider';
 import MCPPanelSkeleton from './MCPPanelSkeleton';
@@ -127,19 +127,11 @@ function MCPPanelContent() {
     const serverStatus = connectionStatus[selectedServerNameForEditing];
 
     return (
-      <div className="h-auto max-w-full overflow-x-hidden p-3">
-        <Button
-          variant="outline"
-          onClick={handleGoBackToList}
-          className="mb-3 flex items-center px-3 py-2 text-sm"
-        >
+      <div className="h-auto max-w-full space-y-4 overflow-x-hidden py-2">
+        <Button variant="outline" onClick={handleGoBackToList} size="sm">
           <ChevronLeft className="mr-1 h-4 w-4" />
           {localize('com_ui_back')}
         </Button>
-
-        <h3 className="mb-3 text-lg font-medium">
-          {localize('com_sidepanel_mcp_variables_for', { '0': serverBeingEdited.serverName })}
-        </h3>
 
         <div className="mb-4">
           <CustomUserVarsSection
@@ -160,6 +152,7 @@ function MCPPanelContent() {
         </div>
 
         <ServerInitializationSection
+          sidePanel={true}
           serverName={selectedServerNameForEditing}
           requiresOAuth={serverStatus?.requiresOAuth || false}
           hasCustomUserVars={
@@ -172,7 +165,7 @@ function MCPPanelContent() {
   } else {
     // Server List View
     return (
-      <div className="h-auto max-w-full overflow-x-hidden p-3">
+      <div className="h-auto max-w-full overflow-x-hidden py-2">
         <div className="space-y-2">
           {mcpServerDefinitions.map((server) => {
             const serverStatus = connectionStatus[server.serverName];
@@ -189,7 +182,7 @@ function MCPPanelContent() {
                     <span>{server.serverName}</span>
                     {serverStatus && (
                       <span
-                        className={`rounded px-2 py-0.5 text-xs ${
+                        className={`rounded-xl px-2 py-0.5 text-xs ${
                           isConnected
                             ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300'
                             : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'
