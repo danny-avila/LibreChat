@@ -64,6 +64,9 @@ librechat:
       time:
         type: streamable-http
         url: http://mcp-time-mcp-server-headless.toolhive-system.svc.cluster.local:8000/mcp
+      postgres-telemetry:
+        type: sse
+        url: url: http://mcp-stackloklens-postgres-mcp-headless.stackloklens.svc.cluster.local:8000/sse
 
   # name of existing Yaml configmap, key must be librechat.yaml
   existingConfigYaml: ""
