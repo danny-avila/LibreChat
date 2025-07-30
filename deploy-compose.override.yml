@@ -1,0 +1,15 @@
+# Deploy-compose override configuration
+# This file applies custom configurations to deploy-compose.yml
+
+services:
+  api:
+    build:
+      context: .
+    image: librechat-custom
+    environment:
+      - GOOGLE_KEY=${GOOGLE_KEY}
+      - GOOGLE_MODELS=${GOOGLE_MODELS}
+
+  mongodb:
+    ports:
+      - 27018:27017 
