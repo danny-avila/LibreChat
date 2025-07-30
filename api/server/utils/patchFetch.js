@@ -7,11 +7,11 @@ const { logger } = require('@librechat/data-schemas');
 function patchFetchPorts() {
   try {
     const enableNodeFetch = process.env.ENABLE_NODE_FETCH === 'true';
-    
+
     if (enableNodeFetch) {
       global.fetch = require('node-fetch');
       logger.info('[patchFetch] Successfully set global.fetch to node-fetch');
-    } 
+    }
   } catch (error) {
     logger.error(`[patchFetch] Failed to patch fetch: ${error.message}`);
     return;
@@ -20,4 +20,4 @@ function patchFetchPorts() {
 
 module.exports = {
   patchFetchPorts,
-}; 
+};
