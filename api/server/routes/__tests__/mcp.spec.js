@@ -672,7 +672,7 @@ describe('MCP Routes', () => {
       });
 
       const mockMcpManager = {
-        disconnectServer: jest.fn().mockResolvedValue(),
+        disconnectUserConnection: jest.fn().mockResolvedValue(),
         mcpConfigs: {},
         getUserConnection: jest.fn().mockImplementation(async ({ oauthStart }) => {
           if (oauthStart) {
@@ -706,7 +706,7 @@ describe('MCP Routes', () => {
       });
 
       const mockMcpManager = {
-        disconnectServer: jest.fn().mockResolvedValue(),
+        disconnectUserConnection: jest.fn().mockResolvedValue(),
         mcpConfigs: {},
         getUserConnection: jest.fn().mockRejectedValue(new Error('Connection failed')),
       };
@@ -768,7 +768,7 @@ describe('MCP Routes', () => {
       };
 
       const mockMcpManager = {
-        disconnectServer: jest.fn().mockResolvedValue(),
+        disconnectUserConnection: jest.fn().mockResolvedValue(),
         mcpConfigs: {},
         getUserConnection: jest.fn().mockResolvedValue(mockUserConnection),
       };
@@ -795,7 +795,7 @@ describe('MCP Routes', () => {
       });
 
       const mockMcpManager = {
-        disconnectServer: jest.fn().mockResolvedValue(),
+        disconnectUserConnection: jest.fn().mockResolvedValue(),
         mcpConfigs: {},
         getUserConnection: jest.fn().mockResolvedValue(null),
       };
@@ -1107,7 +1107,7 @@ describe('MCP Routes', () => {
 
       const mockMcpManager = {
         getUserConnection: jest.fn().mockResolvedValue(mockUserConnection),
-        disconnectServer: jest.fn(),
+        disconnectUserConnection: jest.fn(),
         initializeServer: jest.fn(),
         mcpConfigs: {},
       };
@@ -1145,7 +1145,7 @@ describe('MCP Routes', () => {
 
       const mockMcpManager = {
         getUserConnection: jest.fn().mockResolvedValue(mockUserConnection),
-        disconnectServer: jest.fn(),
+        disconnectUserConnection: jest.fn(),
         initializeServer: jest.fn(),
         mcpConfigs: {},
       };
