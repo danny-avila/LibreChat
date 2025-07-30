@@ -182,7 +182,7 @@ function MCPPanelContent() {
                     <span>{server.serverName}</span>
                     {serverStatus && (
                       <span
-                        className={`rounded px-2 py-0.5 text-xs ${
+                        className={`rounded-xl px-2 py-0.5 text-xs ${
                           isConnected
                             ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300'
                             : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'
