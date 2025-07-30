@@ -138,7 +138,7 @@ export default function CustomUserVarsSection({
         })}
       </form>
 
-      <div className="flex justify-end gap-2 pt-2">
+      <div className="flex justify-end gap-2">
         <Button onClick={handleRevokeClick} variant="destructive" disabled={isSubmitting}>
           {localize('com_ui_revoke')}
         </Button>

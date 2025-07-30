@@ -1,7 +1,6 @@
 import React from 'react';
 import { KeyRound, PlugZap, AlertTriangle } from 'lucide-react';
 import {
-  Label,
   Spinner,
   OGDialog,
   OGDialogTitle,
@@ -105,7 +104,7 @@ export default function MCPConfigDialog({
 
   return (
     <OGDialog open={isOpen} onOpenChange={onOpenChange}>
-      <OGDialogContent className="flex max-h-screen w-11/12 max-w-lg flex-col">
+      <OGDialogContent className="flex max-h-screen w-11/12 max-w-lg flex-col space-y-2">
         <OGDialogHeader>
           <div className="flex items-center gap-3">
             <OGDialogTitle className="text-xl">
@@ -114,12 +113,6 @@ export default function MCPConfigDialog({
             {renderStatusBadge()}
           </div>
         </OGDialogHeader>
-
-        <Label className="text-text-secondary">
-          {serverStatus?.requiresOAuth
-            ? localize('com_ui_mcp_not_authenticated', { 0: serverName })
-            : localize('com_ui_mcp_not_initialized', { 0: serverName })}
-        </Label>
 
         {/* Custom User Variables Section */}
         <CustomUserVarsSection

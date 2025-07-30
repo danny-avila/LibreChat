@@ -506,7 +506,7 @@
   "com_sidepanel_hide_panel": "Hide Panel",
   "com_sidepanel_manage_files": "Manage Files",
   "com_sidepanel_mcp_no_servers_with_vars": "No MCP servers with configurable variables.",
-  "com_sidepanel_mcp_variables_for": "MCP Variables for {{0}}",
+
   "com_sidepanel_parameters": "Parameters",
   "com_sources_image_alt": "Search result image",
   "com_sources_more_sources": "+{{count}} sources",
@@ -914,7 +914,6 @@
   "com_ui_oauth_error_missing_code": "Authorization code is missing. Please try again.",
   "com_ui_oauth_error_missing_state": "State parameter is missing. Please try again.",
   "com_ui_oauth_error_title": "Authentication Failed",
-  "com_ui_oauth_flow_desc": "Complete the OAuth flow in the new window, then return here.",
   "com_ui_oauth_success_description": "Your authentication was successful. This window will close in",
   "com_ui_oauth_success_title": "Authentication Successful",
   "com_ui_of": "of",

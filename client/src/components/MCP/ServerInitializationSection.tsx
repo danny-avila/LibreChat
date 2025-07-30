@@ -1,16 +1,18 @@
 import React from 'react';
-import { RefreshCw, Link } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import { Button, Spinner } from '@librechat/client';
 import { useMCPServerManager } from '~/hooks/MCP/useMCPServerManager';
 import { useLocalize } from '~/hooks';
 
 interface ServerInitializationSectionProps {
+  sidePanel?: boolean;
   serverName: string;
   requiresOAuth: boolean;
   hasCustomUserVars?: boolean;
 }
 
 export default function ServerInitializationSection({
+  sidePanel = false,
   serverName,
   requiresOAuth,
   hasCustomUserVars = false,
@@ -41,35 +43,25 @@ export default function ServerInitializationSection({
 
   if (serverOAuthUrl) {
     return (
-      <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50 p-3 dark:border-blue-700 dark:bg-blue-900/20">
-        <div className="mb-2 flex items-center gap-2">
-          <div className="flex h-4 w-4 items-center justify-center rounded-full bg-blue-500">
-            <Link className="h-2.5 w-2.5 text-white" />
-          </div>
-          <span className="text-sm font-medium text-blue-700 dark:text-blue-300">
-            {localize('com_ui_auth_url')}
-          </span>
-        </div>
+      <>
         <div className="flex items-center gap-2">
-          <Button
-            onClick={() => window.open(serverOAuthUrl, '_blank', 'noopener,noreferrer')}
-            className="flex-1 bg-green-600 text-white hover:bg-green-700 dark:hover:bg-green-800"
-          >
-            {localize('com_ui_continue_oauth')}
-          </Button>
           <Button
             onClick={() => cancelOAuthFlow(serverName)}
             disabled={!canCancel}
-            className="bg-gray-200 text-gray-700 hover:bg-gray-300 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600"
+            variant="outline"
             title={!canCancel ? 'disabled' : undefined}
           >
             {localize('com_ui_cancel')}
           </Button>
+          <Button
+            variant="submit"
+            onClick={() => window.open(serverOAuthUrl, '_blank', 'noopener,noreferrer')}
+            className="flex-1"
+          >
+            {localize('com_ui_continue_oauth')}
+          </Button>
         </div>
-        <p className="mt-2 text-xs text-blue-600 dark:text-blue-400">
-          {localize('com_ui_oauth_flow_desc')}
-        </p>
-      </div>
+      </>
     );
   }
 
@@ -96,6 +88,7 @@ export default function ServerInitializationSection({
         variant={buttonVariant}
         onClick={() => initializeServer(serverName, false)}
         disabled={isServerInitializing}
+        size={sidePanel ? 'sm' : 'default'}
         className="w-full"
       >
         {icon}
