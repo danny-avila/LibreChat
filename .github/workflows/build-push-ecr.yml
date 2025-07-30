@@ -79,7 +79,7 @@ jobs:
         with:
           context: .
           push: true
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/arm64,linux/amd64
           tags: >-
             ${{ env.ECR_REGISTRY }}/librechat:${{ steps.version.outputs.version }}
 
@@ -93,8 +93,8 @@ jobs:
           docker push ${{ env.ECR_REGISTRY }}/mongodb:8.0.3-amd64
           docker push ${{ env.ECR_REGISTRY }}/mongodb:8.0.3-arm64
           docker manifest create ${{ env.ECR_REGISTRY }}/mongodb:8.0.3 \
-            ${{ env.ECR_REGISTRY }}/mongodb:8.0.3-amd64 \
-            ${{ env.ECR_REGISTRY }}/mongodb:8.0.3-arm64
+            ${{ env.ECR_REGISTRY }}/mongodb:8.0.3-arm64 \
+            ${{ env.ECR_REGISTRY }}/mongodb:8.0.3-amd64
           docker manifest push ${{ env.ECR_REGISTRY }}/mongodb:8.0.3
 
       # Use official Meilisearch image instead of building custom one
@@ -107,8 +107,8 @@ jobs:
           docker push ${{ env.ECR_REGISTRY }}/meilisearch:v1.7.3-amd64
           docker push ${{ env.ECR_REGISTRY }}/meilisearch:v1.7.3-arm64
           docker manifest create ${{ env.ECR_REGISTRY }}/meilisearch:v1.7.3 \
-            ${{ env.ECR_REGISTRY }}/meilisearch:v1.7.3-amd64 \
-            ${{ env.ECR_REGISTRY }}/meilisearch:v1.7.3-arm64
+            ${{ env.ECR_REGISTRY }}/meilisearch:v1.7.3-arm64 \
+            ${{ env.ECR_REGISTRY }}/meilisearch:v1.7.3-amd64
           docker manifest push ${{ env.ECR_REGISTRY }}/meilisearch:v1.7.3
 
       - name: Set up Helm
