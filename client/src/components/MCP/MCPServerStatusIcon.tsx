@@ -97,11 +97,11 @@ function InitializingStatusIcon({ serverName, onCancel, canCancel }: Initializin
       <button
         type="button"
         onClick={onCancel}
-        className="flex h-6 w-6 items-center justify-center rounded p-1 hover:bg-red-100 dark:hover:bg-red-900/20"
+        className="group flex h-6 w-6 items-center justify-center rounded p-1 hover:bg-red-100 dark:hover:bg-red-900/20"
         aria-label={localize('com_ui_cancel')}
         title={localize('com_ui_cancel')}
       >
-        <div className="group relative h-4 w-4">
+        <div className="relative h-4 w-4">
           <Spinner className="h-4 w-4 group-hover:opacity-0" />
           <X className="absolute inset-0 h-4 w-4 text-red-500 opacity-0 group-hover:opacity-100" />
         </div>
