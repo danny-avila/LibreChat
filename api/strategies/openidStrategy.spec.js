@@ -52,9 +52,7 @@ jest.mock('openid-client', () => {
     }),
     fetchUserInfo: jest.fn().mockImplementation((config, accessToken, sub) => {
       // Only return additional properties, but don't override any claims
-      return Promise.resolve({
-        preferred_username: 'preferred_username',
-      });
+      return Promise.resolve({});
     }),
     customFetch: Symbol('customFetch'),
   };
@@ -104,6 +102,7 @@ describe('setupOpenId', () => {
       given_name: 'First',
       family_name: 'Last',
       name: 'My Full',
+      preferred_username: 'testusername',
       username: 'flast',
       picture: 'https://example.com/avatar.png',
     }),
@@ -156,20 +155,20 @@ describe('setupOpenId', () => {
     verifyCallback = require('openid-client/passport').__getVerifyCallback();
   });
 
-  it('should create a new user with correct username when username claim exists', async () => {
-    // Arrange – our userinfo already has username 'flast'
+  it('should create a new user with correct username when preferred_username claim exists', async () => {
+    // Arrange – our userinfo already has preferred_username 'testusername'
     const userinfo = tokenset.claims();
 
     // Act
     const { user } = await validate(tokenset);
 
     // Assert
-    expect(user.username).toBe(userinfo.username);
+    expect(user.username).toBe(userinfo.preferred_username);
     expect(createUser).toHaveBeenCalledWith(
       expect.objectContaining({
         provider: 'openid',
         openidId: userinfo.sub,
-        username: userinfo.username,
+        username: userinfo.preferred_username,
         email: userinfo.email,
         name: `${userinfo.given_name} ${userinfo.family_name}`,
       }),
@@ -179,12 +178,12 @@ describe('setupOpenId', () => {
     );
   });
 
-  it('should use given_name as username when username claim is missing', async () => {
-    // Arrange – remove username from userinfo
+  it('should use username as username when preferred_username claim is missing', async () => {
+    // Arrange – remove preferred_username from userinfo
     const userinfo = { ...tokenset.claims() };
-    delete userinfo.username;
-    // Expect the username to be the given name (unchanged case)
-    const expectUsername = userinfo.given_name;
+    delete userinfo.preferred_username;
+    // Expect the username to be the "username"
+    const expectUsername = userinfo.username;
 
     // Act
     const { user } = await validate({ ...tokenset, claims: () => userinfo });
@@ -199,11 +198,11 @@ describe('setupOpenId', () => {
     );
   });
 
-  it('should use email as username when username and given_name are missing', async () => {
-    // Arrange – remove username and given_name
+  it('should use email as username when username and preferred_username are missing', async () => {
+    // Arrange – remove username and preferred_username
     const userinfo = { ...tokenset.claims() };
     delete userinfo.username;
-    delete userinfo.given_name;
+    delete userinfo.preferred_username;
     const expectUsername = userinfo.email;
 
     // Act
@@ -289,7 +288,7 @@ describe('setupOpenId', () => {
       expect.objectContaining({
         provider: 'openid',
         openidId: userinfo.sub,
-        username: userinfo.username,
+        username: userinfo.preferred_username,
         name: `${userinfo.given_name} ${userinfo.family_name}`,
       }),
     );
