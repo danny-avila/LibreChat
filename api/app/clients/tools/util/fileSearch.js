@@ -143,18 +143,21 @@ const createFileSearchTool = async ({ req, files, entity_id }) => {
         )
         .join('\n---\n');
 
-      // Add hidden file_id data for processAgentResponse parsing
-      const internalData = formattedResults
-        .map(
-          (result) =>
-            `File: ${result.filename}\nFile_ID: ${result.file_id}\nRelevance: ${(1.0 - result.distance).toFixed(4)}\nPage: ${result.page || 'N/A'}\nContent: ${result.content}\n`,
-        )
-        .join('\n---\n');
+      const sources = formattedResults.map((result) => ({
+        type: 'file',
+        fileId: result.file_id,
+        content: result.content,
+        fileName: result.filename,
+        relevance: 1.0 - result.distance,
+        pages: result.page ? [result.page] : [],
+        pageRelevance: result.page ? { [result.page]: 1.0 - result.distance } : {},
+      }));
 
-      return `${formattedString}\n\n<!-- INTERNAL_DATA_START -->\n${internalData}\n<!-- INTERNAL_DATA_END -->`;
+      return [formattedString, { [Tools.file_search]: { sources } }];
     },
     {
       name: Tools.file_search,
+      responseFormat: 'content_and_artifact',
       description: `Performs semantic search across attached "${Tools.file_search}" documents using natural language queries. This tool analyzes the content of uploaded files to find relevant information, quotes, and passages that best match your query. Use this to extract specific information or find relevant sections within the available documents.
 
 **CITE FILE SEARCH RESULTS:**
