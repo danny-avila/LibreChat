@@ -2,7 +2,11 @@
 
 /** @type {import('tailwindcss').Config} */
 module.exports = {
-  content: ['./src/**/*.{js,jsx,ts,tsx}'],
+  content: [
+    './src/**/*.{js,jsx,ts,tsx}',
+    // Include component library files
+    '../packages/client/src/**/*.{js,jsx,ts,tsx}',
+  ],
   // darkMode: 'class',
   darkMode: ['class'],
   theme: {
@@ -61,8 +65,8 @@ module.exports = {
           800: '#06373e',
           900: '#031f29',
         },
-        'brand-purple': '#ab68ff',
-        'presentation': 'var(--presentation)',
+        'brand-purple': 'var(--brand-purple)',
+        presentation: 'var(--presentation)',
         'text-primary': 'var(--text-primary)',
         'text-secondary': 'var(--text-secondary)',
         'text-secondary-alt': 'var(--text-secondary-alt)',
@@ -135,7 +139,7 @@ module.exports = {
   },
   plugins: [
     require('tailwindcss-animate'),
-    require('tailwindcss-radix')(),
+    require('tailwindcss-radix'),
     // require('@tailwindcss/typography'),
   ],
 };

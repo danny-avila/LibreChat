@@ -3,7 +3,7 @@ import { ViolationTypes, ErrorTypes, alternateName } from 'librechat-data-provid
 import type { TOpenAIMessage } from 'librechat-data-provider';
 import type { LocalizeFunction } from '~/common';
 import { formatJSON, extractJson, isJson } from '~/utils/json';
-import useLocalize from '~/hooks/useLocalize';
+import { useLocalize } from '~/hooks';
 import CodeBlock from './CodeBlock';
 
 const localizedErrorPrefix = 'com_error';

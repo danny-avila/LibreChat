@@ -1,12 +1,13 @@
 import React, { memo, useMemo, useRef, useEffect } from 'react';
 import { useRecoilValue } from 'recoil';
+import { useToastContext } from '@librechat/client';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
-import { useToastContext, useCodeBlockContext } from '~/Providers';
 import CodeBlock from '~/components/Messages/Content/CodeBlock';
 import useHasAccess from '~/hooks/Roles/useHasAccess';
 import { useFileDownload } from '~/data-provider';
-import useLocalize from '~/hooks/useLocalize';
+import { useCodeBlockContext } from '~/Providers';
 import { handleDoubleClick } from '~/utils';
+import { useLocalize } from '~/hooks';
 import store from '~/store';
 
 type TCodeProps = {

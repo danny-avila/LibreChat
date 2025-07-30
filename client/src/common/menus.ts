@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 export type RenderProp<
   P = React.HTMLAttributes<any> & {
     ref?: React.Ref<any>;

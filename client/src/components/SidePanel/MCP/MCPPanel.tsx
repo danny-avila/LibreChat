@@ -1,19 +1,19 @@
+import React, { useState, useMemo, useCallback } from 'react';
 import { ChevronLeft } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
-import React, { useState, useMemo, useCallback } from 'react';
+import { Button, useToastContext } from '@librechat/client';
 import { Constants, QueryKeys } from 'librechat-data-provider';
-import type { TUpdateUserPlugins } from 'librechat-data-provider';
 import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
-import ServerInitializationSection from '~/components/ui/MCP/ServerInitializationSection';
-import CustomUserVarsSection from '~/components/ui/MCP/CustomUserVarsSection';
+import type { TUpdateUserPlugins } from 'librechat-data-provider';
+import ServerInitializationSection from '~/components/MCP/ServerInitializationSection';
+import CustomUserVarsSection from '~/components/MCP/CustomUserVarsSection';
 import { useMCPConnectionStatusQuery } from '~/data-provider/Tools/queries';
+import BadgeRowProvider from '~/Providers/BadgeRowContext';
 import { useGetStartupConfig } from '~/data-provider';
 import MCPPanelSkeleton from './MCPPanelSkeleton';
-import { useToastContext } from '~/Providers';
-import { Button } from '~/components/ui';
 import { useLocalize } from '~/hooks';
 
-export default function MCPPanel() {
+function MCPPanelContent() {
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const queryClient = useQueryClient();
@@ -141,29 +141,31 @@ export default function MCPPanel() {
           {localize('com_sidepanel_mcp_variables_for', { '0': serverBeingEdited.serverName })}
         </h3>
 
-        {/* Server Initialization Section */}
         <div className="mb-4">
-          <ServerInitializationSection
+          <CustomUserVarsSection
             serverName={selectedServerNameForEditing}
-            requiresOAuth={serverStatus?.requiresOAuth || false}
+            fields={serverBeingEdited.config.customUserVars}
+            onSave={(authData) => {
+              if (selectedServerNameForEditing) {
+                handleConfigSave(selectedServerNameForEditing, authData);
+              }
+            }}
+            onRevoke={() => {
+              if (selectedServerNameForEditing) {
+                handleConfigRevoke(selectedServerNameForEditing);
+              }
+            }}
+            isSubmitting={updateUserPluginsMutation.isLoading}
           />
         </div>
 
-        {/* Custom User Variables Section */}
-        <CustomUserVarsSection
+        <ServerInitializationSection
           serverName={selectedServerNameForEditing}
-          fields={serverBeingEdited.config.customUserVars}
-          onSave={(authData) => {
-            if (selectedServerNameForEditing) {
-              handleConfigSave(selectedServerNameForEditing, authData);
-            }
-          }}
-          onRevoke={() => {
-            if (selectedServerNameForEditing) {
-              handleConfigRevoke(selectedServerNameForEditing);
-            }
-          }}
-          isSubmitting={updateUserPluginsMutation.isLoading}
+          requiresOAuth={serverStatus?.requiresOAuth || false}
+          hasCustomUserVars={
+            serverBeingEdited.config.customUserVars &&
+            Object.keys(serverBeingEdited.config.customUserVars).length > 0
+          }
         />
       </div>
     );
@@ -205,4 +207,12 @@ export default function MCPPanel() {
       </div>
     );
   }
+}
+
+export default function MCPPanel() {
+  return (
+    <BadgeRowProvider>
+      <MCPPanelContent />
+    </BadgeRowProvider>
+  );
 }
