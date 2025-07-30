@@ -506,7 +506,6 @@
   "com_sidepanel_hide_panel": "Hide Panel",
   "com_sidepanel_manage_files": "Manage Files",
   "com_sidepanel_mcp_no_servers_with_vars": "No MCP servers with configurable variables.",
-
   "com_sidepanel_parameters": "Parameters",
   "com_sources_image_alt": "Search result image",
   "com_sources_more_sources": "+{{count}} sources",
@@ -853,8 +852,6 @@
   "com_ui_mcp_init_failed": "Failed to initialize MCP server",
   "com_ui_mcp_initialize": "Initialize",
   "com_ui_mcp_initialized_success": "MCP server '{{0}}' initialized successfully",
-  "com_ui_mcp_not_authenticated": "{{0}} not authenticated (OAuth Required)",
-  "com_ui_mcp_not_initialized": "{{0}} not initialized",
   "com_ui_mcp_oauth_cancelled": "OAuth login cancelled for {{0}}",
   "com_ui_mcp_oauth_timeout": "OAuth login timed out for {{0}}",
   "com_ui_mcp_server_not_found": "Server not found.",
