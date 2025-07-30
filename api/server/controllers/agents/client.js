@@ -513,6 +513,39 @@ class AgentClient extends BaseClient {
   }
 
   /**
+   * Filters out image URLs from message content
+   * @param {BaseMessage} message - The message to filter
+   * @returns {BaseMessage} - A new message with image URLs removed
+   */
+  filterImageUrls(message) {
+    if (!message.content || typeof message.content === 'string') {
+      return message;
+    }
+
+    if (Array.isArray(message.content)) {
+      const filteredContent = message.content.filter(
+        (part) => part.type !== ContentTypes.IMAGE_URL,
+      );
+
+      if (filteredContent.length === 1 && filteredContent[0].type === ContentTypes.TEXT) {
+        const MessageClass = message.constructor;
+        return new MessageClass({
+          content: filteredContent[0].text,
+          additional_kwargs: message.additional_kwargs,
+        });
+      }
+
+      const MessageClass = message.constructor;
+      return new MessageClass({
+        content: filteredContent,
+        additional_kwargs: message.additional_kwargs,
+      });
+    }
+
+    return message;
+  }
+
+  /**
    * @param {BaseMessage[]} messages
    * @returns {Promise<void | (TAttachment | null)[]>}
    */
@@ -540,7 +573,8 @@ class AgentClient extends BaseClient {
         }
       }
 
-      const bufferString = getBufferString(messagesToProcess);
+      const filteredMessages = messagesToProcess.map((msg) => this.filterImageUrls(msg));
+      const bufferString = getBufferString(filteredMessages);
       const bufferMessage = new HumanMessage(`# Current Chat:\n\n${bufferString}`);
       return await this.processMemory([bufferMessage]);
     } catch (error) {
