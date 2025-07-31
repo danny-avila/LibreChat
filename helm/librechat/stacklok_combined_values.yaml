@@ -66,7 +66,7 @@ librechat:
         url: http://mcp-time-mcp-server-headless.toolhive-system.svc.cluster.local:8000/mcp
       postgres-telemetry:
         type: sse
-        url: url: http://mcp-stackloklens-postgres-mcp-headless.stackloklens.svc.cluster.local:8000/sse
+        url: http://mcp-stackloklens-postgres-mcp-headless.stackloklens.svc.cluster.local:8000/sse
 
   # name of existing Yaml configmap, key must be librechat.yaml
   existingConfigYaml: ""
@@ -90,7 +90,7 @@ image:
   repository: librechat
   pullPolicy: Always
   # Overrides the image tag whose default is the chart appVersion.
-  tag: "v0.7.9-rc1"
+  tag: "1.7.3"
 
 
 imagePullSecrets:
