@@ -11,6 +11,8 @@ Esta guía te permitirá configurar el sistema automático de Health Check Audit
 - [🚀 Configuración en Dokploy](#-configuración-en-dokploy)
 - [🧪 Pruebas y Verificación](#-pruebas-y-verificación)
 - [🐛 Resolución de Problemas](#-resolución-de-problemas)
+- [📧 Tipos de Notificaciones](#-tipos-de-notificaciones)
+- [🎛️ Scripts Disponibles](#-scripts-disponibles)
 
 ## 🎯 Objetivo
 
@@ -90,6 +92,15 @@ git status
 
 En Dokploy, ejecuta un **rebuild** de la imagen para incluir los nuevos scripts:
 
+```bash
+# En tu repositorio Git
+git add .
+git commit -m "feat: Add Health Check Audit system with differentiated email notifications"
+git push origin develop
+
+# En Dokploy: Trigger rebuild from UI
+```
+
 ## 🔧 Configuración de Variables de Entorno
 
 ### **Variables Ya Configuradas en .env**
@@ -106,7 +117,7 @@ HEALTH_CHECK_URL=https://avi.corporacionccm.cl
 HEALTH_CHECK_EMAIL=email@gmail.com
 HEALTH_CHECK_PASSWORD=password123
 HEALTH_CHECK_AGENT_ID=agent_nC338LEca541Mt80BSC0i
-HEALTH_CHECK_ADMIN_EMAIL=email_principal@corporacionccm.cl, email_2@corporacionccm.cl, email_3@corporacionccm.cl
+HEALTH_CHECK_ADMIN_EMAIL=asistente@corporacionccm.cl, email_2@corporacionccm.cl, email_3@corporacionccm.cl
 
 # Email Notification Configuration  
 EMAIL_SERVICE=gmail
@@ -342,6 +353,9 @@ npm run health-check-audit
 ```bash
 # Health Check completo con notificaciones diferenciadas (⭐ Principal)
 npm run health-check-audit
+
+# Health Check básico sin email
+npm run health-check-simple  
 
 # Health Check con notificaciones (alias)
 npm run health-check-with-notifications
