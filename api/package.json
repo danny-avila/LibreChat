@@ -19,7 +19,13 @@
     "export-all-chats": "node ../config/export-all-chats.js",
     "upload-to-sheets": "node ../config/upload-to-sheets.js",
     "sync-chats-to-sheets": "npm run export-all-chats && npm run upload-to-sheets",
-    "show-export-commands": "node ../config/show-export-commands.js"
+    "show-export-commands": "node ../config/show-export-commands.js",
+    "health-check-simple": "node ../config/health-check/simple-health-check.js",
+    "health-check-with-notifications": "node ../config/health-check/health-check-with-email.js",
+    "health-check-audit": "npm run health-check-with-notifications",
+    "test-health-email": "node ../config/health-check/test-email.js",
+    "debug-email": "node ../config/health-check/debug-email.js",
+    "debug-email-parsing": "node ../config/health-check/debug-test-parsing.js"
   },
   "repository": {
     "type": "git",

@@ -80,6 +80,12 @@ COPY ./config/upload-to-sheets.js ./config/upload-to-sheets.js
 COPY ./scripts/sync-chats.sh ./scripts/sync-chats.sh
 RUN chmod +x ./scripts/sync-chats.sh
 
+# ✅ Scripts para Health Check Audit
+COPY ./config/health-check/ ./config/health-check/
+COPY ./config/services/ ./config/services/
+COPY ./scripts/health-check.sh ./scripts/health-check.sh
+RUN chmod +x ./scripts/health-check.sh
+
 WORKDIR /app/api
 EXPOSE 3080
 ENV HOST=0.0.0.0
