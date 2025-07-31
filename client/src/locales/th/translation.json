@@ -789,7 +789,6 @@
   "com_ui_use_2fa_code": "ใช้รหัส 2FA แทน",
   "com_ui_use_backup_code": "ใช้รหัสสำรองแทน",
   "com_ui_use_micrphone": "ใช้ไมโครโฟน",
-  "com_ui_use_prompt": "ใช้พรอมต์",
   "com_ui_used": "ใช้แล้ว",
   "com_ui_variables": "ตัวแปร",
   "com_ui_variables_info": "ใช้วงเล็บคู่ในข้อความของคุณเพื่อสร้างตัวแปร เช่น {{example variable}} เพื่อเติมภายหลังเมื่อใช้พรอมต์",

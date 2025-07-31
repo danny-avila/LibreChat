@@ -817,7 +817,6 @@
   "com_ui_use_2fa_code": "Use o código 2FA em vez disso",
   "com_ui_use_backup_code": "Use o código de backup",
   "com_ui_use_micrphone": "Usar microfone",
-  "com_ui_use_prompt": "Usar prompt",
   "com_ui_used": "Usado",
   "com_ui_variables": "Variáveis",
   "com_ui_variables_info": "Use chaves duplas no seu texto para criar variáveis, por exemplo, `{{exemplo de variável}}`, para preencher posteriormente ao usar o prompt.",

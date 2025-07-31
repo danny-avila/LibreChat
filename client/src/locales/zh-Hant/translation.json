@@ -737,7 +737,6 @@
   "com_ui_usage": "使用率",
   "com_ui_use_memory": "使用記憶",
   "com_ui_use_micrphone": "使用麥克風",
-  "com_ui_use_prompt": "使用提示",
   "com_ui_variables": "變數",
   "com_ui_variables_info": "在文字中使用雙大括號來建立變數，例如 `{{example variable}}`，以便在使用提示時填入。",
   "com_ui_version_var": "版本 {{0}}",

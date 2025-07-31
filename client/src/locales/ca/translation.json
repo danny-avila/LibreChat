@@ -852,7 +852,6 @@
   "com_ui_use_2fa_code": "Utilitza codi 2FA",
   "com_ui_use_backup_code": "Utilitza codi de recuperació",
   "com_ui_use_micrphone": "Utilitza el micròfon",
-  "com_ui_use_prompt": "Utilitza prompt",
   "com_ui_used": "Utilitzat",
   "com_ui_variables": "Variables",
   "com_ui_variables_info": "Utilitza claus dobles per crear variables, per ex. `{{exemple variable}}`, per omplir-les quan utilitzis el prompt.",
