@@ -13,6 +13,7 @@ export * from './generate';
 export * from './models';
 /* mcp */
 export * from './mcp';
+export * from './types/mcp';
 /* memory */
 export * from './memory';
 /* RBAC */
@@ -27,12 +28,14 @@ export * from './types/mutations';
 export * from './types/queries';
 export * from './types/runs';
 export * from './types/web';
+export * from './types/mcp';
 /* query/mutation keys */
 export * from './keys';
 /* api call helpers */
 export * from './headers-helpers';
 export { default as request } from './request';
 export { dataService };
+export { respondToElicitation } from './data-service';
 import * as dataService from './data-service';
 /* general helpers */
 export * from './utils';

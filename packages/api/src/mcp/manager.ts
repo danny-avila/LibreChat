@@ -1,7 +1,8 @@
+import { v4 as uuidv4 } from 'uuid';
 import { logger } from '@librechat/data-schemas';
 import { CallToolResultSchema, ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import type { OAuthClientInformation } from '@modelcontextprotocol/sdk/shared/auth.js';
-import type { RequestOptions } from '@modelcontextprotocol/sdk/shared/protocol.js';
+import type { CallToolRequestOptions } from './types/request';
 import type { TokenMethods } from '@librechat/data-schemas';
 import type { TUser } from 'librechat-data-provider';
 import type { MCPOAuthTokens, MCPOAuthFlowMetadata } from './oauth/types';
@@ -16,7 +17,9 @@ import { formatToolContent } from './parsers';
 import { MCPConnection } from './connection';
 import { processMCPEnv } from '~/utils/env';
 
-export class MCPManager {
+import { EventEmitter } from 'events';
+
+export class MCPManager extends EventEmitter {
   private static instance: MCPManager | null = null;
   /** App-level connections initialized at startup */
   private connections: Map<string, MCPConnection> = new Map();
@@ -30,6 +33,14 @@ export class MCPManager {
   private serverInstructions: Map<string, string> = new Map();
   /** Track servers that required OAuth at startup */
   private oauthServers: Set<string> = new Set();
+  /** Store active elicitation requests */
+  private elicitationStates: Map<string, t.ElicitationState> = new Map();
+  /** Store elicitation response resolvers */
+  private elicitationResolvers: Map<string, (response: t.ElicitationResponse) => void> = new Map();
+
+  constructor() {
+    super();
+  }
 
   public static getInstance(): MCPManager {
     if (!MCPManager.instance) {
@@ -178,6 +189,47 @@ export class MCPManager {
       logger.info(`[MCP][${serverName}] OAuth required, skipping at startup`);
       connection.emit('oauthFailed', new Error('OAuth authentication skipped at startup'));
     });
+
+    // Set up elicitation event listener
+    connection.on(
+      'elicitationRequest',
+      async (data: {
+        serverName: string;
+        userId?: string;
+        request: t.ElicitationCreateRequest;
+        resolve: (response: t.ElicitationResponse) => void;
+        context?: { tool_call_id?: string };
+      }) => {
+        logger.info(`[MCP][${serverName}] Elicitation request received`);
+
+        // For app-level connections, we can't handle elicitation since there's no specific user
+        if (!data.userId) {
+          logger.warn(`[MCP][${serverName}] Cannot handle elicitation for app-level connection`);
+          data.resolve({ action: 'decline' });
+          return;
+        }
+
+        const elicitationId = uuidv4();
+        const elicitationState: t.ElicitationState = {
+          id: elicitationId,
+          serverName: data.serverName,
+          userId: data.userId,
+          request: data.request,
+          tool_call_id: data.context?.tool_call_id ?? data.request?.tool_call_id,
+          timestamp: Date.now(),
+        };
+
+        this.elicitationStates.set(elicitationId, elicitationState);
+        this.elicitationResolvers.set(elicitationId, data.resolve);
+
+        this.emit('elicitationCreated', {
+          userId: data.userId,
+          elicitationId,
+          tool_call_id: elicitationState.tool_call_id,
+        });
+        logger.info(`[MCP][${serverName}] Elicitation state stored with ID: ${elicitationId}`);
+      },
+    );
     try {
       const connectTimeout = processedConfig.initTimeout ?? 30000;
       const connectionTimeout = new Promise<void>((_, reject) =>
@@ -575,6 +627,42 @@ export class MCPManager {
       }
     });
 
+    // Set up elicitation event listener for user connections
+    connection.on(
+      'elicitationRequest',
+      async (data: {
+        serverName: string;
+        userId?: string;
+        request: t.ElicitationCreateRequest;
+        resolve: (response: t.ElicitationResponse) => void;
+        context?: { tool_call_id?: string };
+      }) => {
+        logger.info(`[MCP][User: ${userId}][${serverName}] Elicitation request received`);
+
+        const elicitationId = uuidv4();
+        const elicitationState: t.ElicitationState = {
+          id: elicitationId,
+          serverName: data.serverName,
+          userId: userId,
+          request: data.request,
+          tool_call_id: data.context?.tool_call_id ?? data.request?.tool_call_id,
+          timestamp: Date.now(),
+        };
+
+        this.elicitationStates.set(elicitationId, elicitationState);
+        this.elicitationResolvers.set(elicitationId, data.resolve);
+
+        this.emit('elicitationCreated', {
+          userId,
+          elicitationId,
+          tool_call_id: elicitationState.tool_call_id,
+        });
+        logger.info(
+          `[MCP][User: ${userId}][${serverName}] Elicitation state stored with ID: ${elicitationId}`,
+        );
+      },
+    );
+
     try {
       const connectTimeout = config.initTimeout ?? 30000;
       const connectionTimeout = new Promise<void>((_, reject) =>
@@ -865,7 +953,7 @@ export class MCPManager {
     toolName: string;
     provider: t.Provider;
     toolArguments?: Record<string, unknown>;
-    options?: RequestOptions;
+    options?: CallToolRequestOptions;
     tokenMethods?: TokenMethods;
     customUserVars?: Record<string, string>;
     flowManager: FlowStateManager<MCPOAuthTokens | null>;
@@ -910,30 +998,45 @@ export class MCPManager {
         );
       }
 
-      const result = await connection.client.request(
-        {
-          method: 'tools/call',
-          params: {
-            name: toolName,
-            arguments: toolArguments,
+      // Set the current tool_call_id on the connection before making the call
+      connection.setCurrentToolCallId(options?.tool_call_id);
+
+      try {
+        const result = await connection.client.request(
+          {
+            method: 'tools/call',
+            params: {
+              name: toolName,
+              arguments: toolArguments,
+            },
           },
-        },
-        CallToolResultSchema,
-        {
-          timeout: connection.timeout,
-          ...options,
-        },
-      );
-      if (userId) {
-        this.updateUserLastActivity(userId);
+          CallToolResultSchema,
+          {
+            timeout: connection.timeout,
+            ...options,
+          },
+        );
+        if (userId) {
+          this.updateUserLastActivity(userId);
+        }
+        this.checkIdleConnections();
+        return formatToolContent(result as t.MCPToolCallResponse, provider);
+      } finally {
+        // Always clear the tool_call_id after the call completes
+        connection.clearCurrentToolCallId();
       }
-      this.checkIdleConnections();
-      return formatToolContent(result as t.MCPToolCallResponse, provider);
     } catch (error) {
-      // Log with context and re-throw or handle as needed
-      logger.error(`${logPrefix}[${toolName}] Tool call failed`, error);
-      // Rethrowing allows the caller (createMCPTool) to handle the final user message
-      throw error;
+      const aerror = error as Error;
+      logger.error(`${logPrefix} Error calling tool "${toolName}":`, aerror);
+      if (aerror.name === 'TimeoutError') {
+        const activeElicitations = this.getActiveElicitationsForToolCall(
+          options?.tool_call_id ?? '',
+        );
+        for (const elicitation of activeElicitations) {
+          this.respondToElicitation(elicitation.id, { action: 'decline' });
+        }
+      }
+      throw aerror;
     }
   }
 
@@ -967,6 +1070,24 @@ export class MCPManager {
     this.connections.clear();
 
     logger.info('[MCP] All connections processed for disconnection.');
+  }
+
+  /**
+   * Retrieves all active elicitations for a given tool call ID.
+   * @param toolCallId The ID of the tool call.
+   * @returns An array of active elicitation states.
+   */
+  private getActiveElicitationsForToolCall(toolCallId: string): t.ElicitationState[] {
+    if (!toolCallId) {
+      return [];
+    }
+    const activeElicitations: t.ElicitationState[] = [];
+    for (const elicitation of this.elicitationStates.values()) {
+      if (elicitation.tool_call_id === toolCallId) {
+        activeElicitations.push(elicitation);
+      }
+    }
+    return activeElicitations;
   }
 
   /** Destroys the singleton instance and disconnects all connections */
@@ -1139,5 +1260,33 @@ ${logPrefix} Flow ID: ${newFlowId}
   /** Get servers that require OAuth */
   public getOAuthServers(): Set<string> {
     return this.oauthServers;
+  }
+
+  /** Get active elicitation request by ID */
+  public getElicitationState(elicitationId: string): t.ElicitationState | undefined {
+    return this.elicitationStates.get(elicitationId);
+  }
+
+  /** Get all active elicitation requests for a user */
+  public getUserElicitationStates(userId: string): t.ElicitationState[] {
+    return Array.from(this.elicitationStates.values()).filter((state) => state.userId === userId);
+  }
+
+  /** Respond to an elicitation request */
+  public respondToElicitation(elicitationId: string, response: t.ElicitationResponse): boolean {
+    const resolver = this.elicitationResolvers.get(elicitationId);
+    if (!resolver) {
+      logger.warn(`[MCP] No resolver found for elicitation ID: ${elicitationId}`);
+      return false;
+    }
+
+    // Clean up state
+    this.elicitationStates.delete(elicitationId);
+    this.elicitationResolvers.delete(elicitationId);
+
+    // Resolve the promise
+    resolver(response);
+    logger.info(`[MCP] Elicitation ${elicitationId} resolved with action: ${response.action}`);
+    return true;
   }
 }

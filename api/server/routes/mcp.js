@@ -598,4 +598,8 @@ router.get('/:serverName/auth-values', requireJwtAuth, async (req, res) => {
   }
 });
 
+// Mount elicitation routes
+const elicitationRouter = require('./mcp/elicitation');
+router.use('/elicitations', elicitationRouter);
+
 module.exports = router;
