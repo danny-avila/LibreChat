@@ -708,7 +708,6 @@
   "com_ui_upload_success": "Pomyślnie przesłano plik",
   "com_ui_upload_type": "Wybierz typ przesyłania",
   "com_ui_use_micrphone": "Użyj mikrofonu",
-  "com_ui_use_prompt": "Użyj podpowiedzi",
   "com_ui_variables": "Zmienne",
   "com_ui_variables_info": "Użyj podwójnych nawiasów klamrowych w tekście, aby utworzyć zmienne, np. `{{przykładowa zmienna}}`, które później można wypełnić podczas używania promptu.",
   "com_ui_version_var": "Wersja {{0}}",

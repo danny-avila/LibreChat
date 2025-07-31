@@ -124,6 +124,14 @@ export function processMCPEnv(
     newObj.env = processedEnv;
   }
 
+  if ('args' in newObj && newObj.args) {
+    const processedArgs: string[] = [];
+    for (const originalValue of newObj.args) {
+      processedArgs.push(processSingleValue({ originalValue, customUserVars, user }));
+    }
+    newObj.args = processedArgs;
+  }
+
   // Process headers if they exist (for WebSocket, SSE, StreamableHTTP types)
   // Note: `env` and `headers` are on different branches of the MCPOptions union type.
   if ('headers' in newObj && newObj.headers) {

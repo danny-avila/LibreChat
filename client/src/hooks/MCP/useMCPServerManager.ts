@@ -3,15 +3,15 @@ import { useToastContext } from '@librechat/client';
 import { useQueryClient } from '@tanstack/react-query';
 import { Constants, QueryKeys } from 'librechat-data-provider';
 import {
+  useCancelMCPOAuthMutation,
   useUpdateUserPluginsMutation,
   useReinitializeMCPServerMutation,
-  useCancelMCPOAuthMutation,
 } from 'librechat-data-provider/react-query';
-import { useMCPConnectionStatusQuery } from '~/data-provider/Tools/queries';
 import type { TUpdateUserPlugins, TPlugin } from 'librechat-data-provider';
 import type { ConfigFieldDetail } from '~/components/MCP/MCPConfigDialog';
-import { useLocalize } from '~/hooks';
+import { useMCPConnectionStatusQuery } from '~/data-provider/Tools/queries';
 import { useBadgeRowContext } from '~/Providers';
+import { useLocalize } from '~/hooks';
 
 interface ServerState {
   isInitializing: boolean;
@@ -171,6 +171,7 @@ export function useMCPServerManager() {
               message: localize('com_ui_mcp_oauth_timeout', { 0: serverName }),
               status: 'error',
             });
+            clearInterval(pollInterval);
             cleanupServerState(serverName);
             return;
           }
@@ -180,10 +181,15 @@ export function useMCPServerManager() {
               message: localize('com_ui_mcp_init_failed'),
               status: 'error',
             });
+            clearInterval(pollInterval);
             cleanupServerState(serverName);
+            return;
           }
         } catch (error) {
           console.error(`[MCP Manager] Error polling server ${serverName}:`, error);
+          clearInterval(pollInterval);
+          cleanupServerState(serverName);
+          return;
         }
       }, 3500);
 
@@ -201,7 +207,7 @@ export function useMCPServerManager() {
   );
 
   const initializeServer = useCallback(
-    async (serverName: string) => {
+    async (serverName: string, autoOpenOAuth: boolean = true) => {
       updateServerState(serverName, { isInitializing: true });
 
       try {
@@ -216,7 +222,9 @@ export function useMCPServerManager() {
               isInitializing: true,
             });
 
-            window.open(response.oauthUrl, '_blank', 'noopener,noreferrer');
+            if (autoOpenOAuth) {
+              window.open(response.oauthUrl, '_blank', 'noopener,noreferrer');
+            }
 
             startServerPolling(serverName);
           } else {
@@ -234,6 +242,12 @@ export function useMCPServerManager() {
 
             cleanupServerState(serverName);
           }
+        } else {
+          showToast({
+            message: localize('com_ui_mcp_init_failed', { 0: serverName }),
+            status: 'error',
+          });
+          cleanupServerState(serverName);
         }
       } catch (error) {
         console.error(`[MCP Manager] Failed to initialize ${serverName}:`, error);
@@ -259,13 +273,23 @@ export function useMCPServerManager() {
 
   const cancelOAuthFlow = useCallback(
     (serverName: string) => {
-      queryClient.invalidateQueries([QueryKeys.mcpConnectionStatus]);
-      cleanupServerState(serverName);
-      cancelOAuthMutation.mutate(serverName);
+      cancelOAuthMutation.mutate(serverName, {
+        onSuccess: () => {
+          cleanupServerState(serverName);
+          queryClient.invalidateQueries([QueryKeys.mcpConnectionStatus]);
 
-      showToast({
-        message: localize('com_ui_mcp_oauth_cancelled', { 0: serverName }),
-        status: 'warning',
+          showToast({
+            message: localize('com_ui_mcp_oauth_cancelled', { 0: serverName }),
+            status: 'warning',
+          });
+        },
+        onError: (error) => {
+          console.error(`[MCP Manager] Failed to cancel OAuth for ${serverName}:`, error);
+          showToast({
+            message: localize('com_ui_mcp_init_failed', { 0: serverName }),
+            status: 'error',
+          });
+        },
       });
     },
     [queryClient, cleanupServerState, showToast, localize, cancelOAuthMutation],
@@ -303,6 +327,10 @@ export function useMCPServerManager() {
       const disconnectedServers: string[] = [];
 
       serverNames.forEach((serverName) => {
+        if (isInitializing(serverName)) {
+          return;
+        }
+
         const serverStatus = connectionStatus[serverName];
         if (serverStatus?.connectionState === 'connected') {
           connectedServers.push(serverName);
@@ -317,11 +345,15 @@ export function useMCPServerManager() {
         initializeServer(serverName);
       });
     },
-    [connectionStatus, setMCPValues, initializeServer],
+    [connectionStatus, setMCPValues, initializeServer, isInitializing],
   );
 
   const toggleServerSelection = useCallback(
     (serverName: string) => {
+      if (isInitializing(serverName)) {
+        return;
+      }
+
       const currentValues = mcpValues ?? [];
       const isCurrentlySelected = currentValues.includes(serverName);
 
@@ -337,7 +369,7 @@ export function useMCPServerManager() {
         }
       }
     },
-    [mcpValues, setMCPValues, connectionStatus, initializeServer],
+    [mcpValues, setMCPValues, connectionStatus, initializeServer, isInitializing],
   );
 
   const handleConfigSave = useCallback(
