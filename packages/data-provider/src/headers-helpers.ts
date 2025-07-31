@@ -10,7 +10,9 @@ export function setTokenHeader(token: string) {
 
 // TODO make this configurable
 function setConfigurableHeader(): void {
-  axios.defaults.headers.common['X-Requested-With'] = 'fetch';
+  if (axios.defaults && axios.defaults.headers && axios.defaults.headers.common) {
+    axios.defaults.headers.common['X-Requested-With'] = 'fetch';
+  }
 }
 
 // Initialize the configurable header
