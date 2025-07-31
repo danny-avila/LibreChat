@@ -182,6 +182,9 @@ export class MCPOAuthHandler {
           token_endpoint: config.token_url,
           issuer: serverUrl,
           scopes_supported: config.scope?.split(' '),
+          response_types_supported: ['code'],
+          code_challenge_methods_supported: ['S256'],
+          grant_types_supported: ['authorization_code', 'refresh_token'],
         };
 
         const clientInfo: OAuthClientInformation = {
