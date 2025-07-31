@@ -1,4 +1,5 @@
 import { EarthIcon } from 'lucide-react';
+import { ControlCombobox } from '@librechat/client';
 import { useCallback, useEffect, useRef } from 'react';
 import { useFormContext, Controller } from 'react-hook-form';
 import { AgentCapabilities, defaultAgentFormValues } from 'librechat-data-provider';
@@ -7,7 +8,6 @@ import type { Agent, AgentCreateParams } from 'librechat-data-provider';
 import type { TAgentCapabilities, AgentForm } from '~/common';
 import { cn, createProviderOption, processAgentOption, getDefaultAgentFormValues } from '~/utils';
 import { useListAgentsQuery, useGetStartupConfig } from '~/data-provider';
-import ControlCombobox from '~/components/ui/ControlCombobox';
 import { useLocalize } from '~/hooks';
 
 const keys = new Set(Object.keys(defaultAgentFormValues));

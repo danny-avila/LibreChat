@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import SquirclePlusIcon from '~/components/svg/SquirclePlusIcon';
+import { SquirclePlusIcon } from '@librechat/client';
 import { useLocalize } from '~/hooks';
 
 interface MCPIconProps {

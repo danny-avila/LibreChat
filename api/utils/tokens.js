@@ -196,6 +196,7 @@ const amazonModels = {
   'amazon.nova-micro-v1:0': 127000, // -1000 from max,
   'amazon.nova-lite-v1:0': 295000, // -5000 from max,
   'amazon.nova-pro-v1:0': 295000, // -5000 from max,
+  'amazon.nova-premier-v1:0': 995000, // -5000 from max,
 };
 
 const bedrockModels = {
