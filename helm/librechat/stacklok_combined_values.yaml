@@ -67,6 +67,12 @@ librechat:
       postgres-telemetry:
         type: sse
         url: http://mcp-stackloklens-postgres-mcp-headless.stackloklens.svc.cluster.local:8000/sse
+      plotting:
+        type: streamable-http
+        url: http://mcp-plotting-mcp-proxy.toolhive-system.svc.cluster.local:9090/mcp
+      github-issues:
+        type: sse
+        url: http://mcp-github-mcp-server-proxy.toolhive-system.svc.cluster.local:8000/sse
 
   # name of existing Yaml configmap, key must be librechat.yaml
   existingConfigYaml: ""
