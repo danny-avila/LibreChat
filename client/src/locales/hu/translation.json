@@ -832,7 +832,6 @@
   "com_ui_use_2fa_code": "2FA kód használata helyette",
   "com_ui_use_backup_code": "Biztonsági mentési kód használata helyette",
   "com_ui_use_micrphone": "Mikrofon használata",
-  "com_ui_use_prompt": "Prompt használata",
   "com_ui_used": "Használt",
   "com_ui_variables": "Változók",
   "com_ui_variables_info": "Használjon dupla kapcsos zárójeleket a szövegben változók létrehozásához, pl. `{{példa változó}}`, amelyeket később a prompt használatakor kitölthet.",

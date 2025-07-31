@@ -716,7 +716,6 @@
   "com_ui_upload_success": "Dosya başarıyla yüklendi",
   "com_ui_upload_type": "Yükleme Türünü Seç",
   "com_ui_use_micrphone": "Mikrofon kullan",
-  "com_ui_use_prompt": "İstemi kullan",
   "com_ui_variables": "Değişkenler",
   "com_ui_variables_info": "İstemi kullanırken daha sonra doldurmak üzere metninizde çift süslü parantez kullanın, örn. `{{example variable}}`.",
   "com_ui_version_var": "Sürüm {{0}}",

@@ -722,7 +722,6 @@
   "com_ui_upload_success": "تم تحميل الملف بنجاح",
   "com_ui_upload_type": "اختر نوع التحميل",
   "com_ui_use_micrphone": "استخدام الميكروفون",
-  "com_ui_use_prompt": "استخدم الأمر",
   "com_ui_variables": "متغيرات",
   "com_ui_variables_info": "استخدم أقواس مزدوجة في نصك لإنشاء متغيرات، مثل `{{متغير كمثال}}`، لملئها لاحقاً عند استخدام النص البرمجي.",
   "com_ui_version_var": "الإصدار {{0}}",
