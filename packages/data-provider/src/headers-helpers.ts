@@ -8,13 +8,9 @@ export function setTokenHeader(token: string) {
   axios.defaults.headers.common['Authorization'] = 'Bearer ' + token;
 }
 
-// Set configurable custom header globally for all requests
+// TODO make this configurable
 function setConfigurableHeader(): void {
-  const headerName = process.env.CUSTOM_HEADER_NAME;
-  const headerValue = process.env.CUSTOM_HEADER_VALUE;
-  if (headerName && headerValue) {
-    axios.defaults.headers.common[headerName] = headerValue;
-  }
+  axios.defaults.headers.common['X-Requested-With'] = 'fetch';
 }
 
 // Initialize the configurable header
