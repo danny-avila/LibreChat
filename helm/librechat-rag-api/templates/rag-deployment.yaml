@@ -45,6 +45,9 @@ spec:
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           envFrom:
+          {{- with .Values.rag.envFrom }} 
+          {{ toYaml . | nindent 10 }}
+          {{- end }}
           - configMapRef:
               name: {{ include "rag.fullname" $ }}-config
           {{- if .Values.rag.existingSecret }}
