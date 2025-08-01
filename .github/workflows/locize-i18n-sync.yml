@@ -48,7 +48,7 @@ jobs:
 
       # 2. Download translation files from locize.
       - name: Download Translations from locize
-        uses: locize/download@v1
+        uses: locize/download@v2
         with:
           project-id: ${{ secrets.LOCIZE_PROJECT_ID }}
           path: "client/src/locales"
