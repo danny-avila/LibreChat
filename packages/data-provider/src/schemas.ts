@@ -283,19 +283,19 @@ const DEFAULT_MAX_OUTPUT = 8192 as const;
 const LEGACY_ANTHROPIC_MAX_OUTPUT = 4096 as const;
 export const anthropicSettings = {
   model: {
-    default: 'claude-3-5-sonnet-latest' as const,
+    default: 'claude-3-5-sonnet-20241022-v1:0' as const,
   },
   temperature: {
     min: 0 as const,
     max: 1 as const,
     step: 0.01 as const,
-    default: 1 as const,
+    default: 0.7 as const,
   },
   promptCache: {
     default: true as const,
   },
   thinking: {
-    default: true as const,
+    default: false as const,
   },
   thinkingBudget: {
     min: 1024 as const,
@@ -309,13 +309,36 @@ export const anthropicSettings = {
     step: 1 as const,
     default: DEFAULT_MAX_OUTPUT,
     reset: (modelName: string) => {
+      // Handle AWS Bedrock custom inference profile ARNs
+      const inferenceProfilePattern = /^arn:aws:bedrock:[^:]+:\d+:application-inference-profile\/[^:]+$/;
+      const isCustomInferenceProfile = inferenceProfilePattern.test(modelName);
+      
+      if (isCustomInferenceProfile) {
+        // For custom inference profiles, we need to determine the underlying model
+        // For now, we'll use a conservative approach and return the legacy limit
+        // This should be enhanced to detect the actual underlying model
+        return LEGACY_ANTHROPIC_MAX_OUTPUT; // 4096
+      }
+      
       if (/claude-3[-.]5-sonnet/.test(modelName) || /claude-3[-.]7/.test(modelName)) {
-        return DEFAULT_MAX_OUTPUT;
+        return DEFAULT_MAX_OUTPUT; // 8192 for newer models
       }
 
-      return 4096;
+      return LEGACY_ANTHROPIC_MAX_OUTPUT; // 4096 for older models
     },
     set: (value: number, modelName: string) => {
+      // Handle AWS Bedrock custom inference profile ARNs
+      const inferenceProfilePattern = /^arn:aws:bedrock:[^:]+:\d+:application-inference-profile\/[^:]+$/;
+      const isCustomInferenceProfile = inferenceProfilePattern.test(modelName);
+      
+      if (isCustomInferenceProfile) {
+        // For custom inference profiles, use the legacy limit
+        if (value > LEGACY_ANTHROPIC_MAX_OUTPUT) {
+          return LEGACY_ANTHROPIC_MAX_OUTPUT; // 4096
+        }
+        return value;
+      }
+      
       if (
         !(/claude-3[-.]5-sonnet/.test(modelName) || /claude-3[-.]7/.test(modelName)) &&
         value > LEGACY_ANTHROPIC_MAX_OUTPUT

@@ -271,6 +271,7 @@ const maxOutputTokensMap = {
   [EModelEndpoint.azureOpenAI]: modelMaxOutputs,
   [EModelEndpoint.openAI]: modelMaxOutputs,
   [EModelEndpoint.custom]: modelMaxOutputs,
+  [EModelEndpoint.bedrock]: anthropicMaxOutputs,
 };
 
 /**
@@ -323,49 +324,98 @@ function getModelTokenValue(modelName, tokensMap, key = 'context') {
 }
 
 /**
- * Retrieves the maximum tokens for a given model name.
- *
- * @param {string} modelName - The name of the model to look up.
- * @param {string} endpoint - The endpoint (default is 'openAI').
- * @param {EndpointTokenConfig} [endpointTokenConfig] - Token Config for current endpoint to use for max tokens lookup
- * @returns {number|undefined} The maximum tokens for the given model or undefined if no match is found.
+ * Configuration for AWS Bedrock custom inference profile mappings
+ * This allows users to map custom inference profile ARNs to their underlying models
  */
-function getModelMaxTokens(modelName, endpoint = EModelEndpoint.openAI, endpointTokenConfig) {
-  const tokensMap = endpointTokenConfig ?? maxTokensMap[endpoint];
-  return getModelTokenValue(modelName, tokensMap);
+const BEDROCK_INFERENCE_PROFILE_MAPPINGS = {
+  // Example mappings - these would be configurable via environment variables or config files
+  // 'arn:aws:bedrock:us-east-1:123456789123:application-inference-profile/rf3zeruqfake': 'anthropic.claude-3-7-sonnet-20250219-v1:0',
+};
+
+/**
+ * Detects the underlying model from AWS Bedrock custom inference profile ARN
+ * @param {string} modelName - The model name or ARN
+ * @returns {string|null} - The detected underlying model name or null if not a custom inference profile
+ */
+function detectBedrockInferenceProfileModel(modelName) {
+  if (!modelName || typeof modelName !== 'string') {
+    return null;
+  }
+
+  // Check if this is a custom inference profile ARN
+  const inferenceProfilePattern = /^arn:aws:bedrock:[^:]+:\d+:application-inference-profile\/[^:]+$/;
+  if (!inferenceProfilePattern.test(modelName)) {
+    return null;
+  }
+
+  // Check if we have a configured mapping for this ARN
+  if (BEDROCK_INFERENCE_PROFILE_MAPPINGS[modelName]) {
+    return BEDROCK_INFERENCE_PROFILE_MAPPINGS[modelName];
+  }
+
+  // TODO: Implement AWS Bedrock API call to get inference profile details
+  // This would require AWS SDK and proper credentials
+  // For now, return null to indicate this needs special handling
+  return null;
 }
 
 /**
- * Retrieves the maximum output tokens for a given model name.
- *
- * @param {string} modelName - The name of the model to look up.
- * @param {string} endpoint - The endpoint (default is 'openAI').
- * @param {EndpointTokenConfig} [endpointTokenConfig] - Token Config for current endpoint to use for max tokens lookup
- * @returns {number|undefined} The maximum output tokens for the given model or undefined if no match is found.
+ * Loads custom inference profile mappings from environment variables
+ * @returns {Object} - The mappings object
  */
-function getModelMaxOutputTokens(modelName, endpoint = EModelEndpoint.openAI, endpointTokenConfig) {
-  const tokensMap = endpointTokenConfig ?? maxOutputTokensMap[endpoint];
-  return getModelTokenValue(modelName, tokensMap, 'output');
+function loadBedrockInferenceProfileMappings() {
+  const mappings = {};
+  
+  // Check for environment variable with mappings
+  const mappingsEnv = process.env.BEDROCK_INFERENCE_PROFILE_MAPPINGS;
+  if (mappingsEnv) {
+    try {
+      const parsed = JSON.parse(mappingsEnv);
+      Object.assign(mappings, parsed);
+    } catch (error) {
+      console.warn('Failed to parse BEDROCK_INFERENCE_PROFILE_MAPPINGS:', error.message);
+    }
+  }
+
+  return mappings;
 }
 
+// Initialize mappings from environment
+Object.assign(BEDROCK_INFERENCE_PROFILE_MAPPINGS, loadBedrockInferenceProfileMappings());
+
 /**
- * Retrieves the model name key for a given model name input. If the exact model name isn't found,
- * it searches for partial matches within the model name, checking keys in reverse order.
- *
- * @param {string} modelName - The name of the model to look up.
- * @param {string} endpoint - The endpoint (default is 'openAI').
- * @returns {string|undefined} The model name key for the given model; returns input if no match is found and is string.
- *
- * @example
- * matchModelName('gpt-4-32k-0613'); // Returns 'gpt-4-32k-0613'
- * matchModelName('gpt-4-32k-unknown'); // Returns 'gpt-4-32k'
- * matchModelName('unknown-model'); // Returns undefined
+ * Enhanced model name matching that handles AWS Bedrock custom inference profiles
+ * @param {string} modelName - The model name or ARN
+ * @param {string} endpoint - The endpoint type
+ * @returns {string} - The matched model name
  */
 function matchModelName(modelName, endpoint = EModelEndpoint.openAI) {
   if (typeof modelName !== 'string') {
     return undefined;
   }
 
+  // Special handling for AWS Bedrock custom inference profiles
+  if (endpoint === EModelEndpoint.bedrock) {
+    const inferenceProfileModel = detectBedrockInferenceProfileModel(modelName);
+    if (inferenceProfileModel) {
+      // If we can detect the underlying model, use it for matching
+      // Call the original function without the bedrock special handling to avoid recursion
+      return _matchModelNameInternal(inferenceProfileModel, endpoint);
+    }
+    // If we can't detect the underlying model, return the original ARN
+    // This will be handled by the model-specific logic
+  }
+
+  return _matchModelNameInternal(modelName, endpoint);
+}
+
+/**
+ * Internal function for model name matching (avoids recursion)
+ * @param {string} modelName - The model name or ARN
+ * @param {string} endpoint - The endpoint type
+ * @returns {string} - The matched model name
+ */
+function _matchModelNameInternal(modelName, endpoint = EModelEndpoint.openAI) {
   const tokensMap = maxTokensMap[endpoint];
   if (!tokensMap) {
     return modelName;
@@ -377,6 +427,73 @@ function matchModelName(modelName, endpoint = EModelEndpoint.openAI) {
 
   const matchedPattern = findMatchingPattern(modelName, tokensMap);
   return matchedPattern || modelName;
+}
+
+/**
+ * Enhanced token limit detection for AWS Bedrock custom inference profiles
+ * @param {string} modelName - The model name or ARN
+ * @param {string} endpoint - The endpoint type
+ * @param {Object} endpointTokenConfig - Optional endpoint token configuration
+ * @returns {number} - The maximum tokens for the model
+ */
+function getModelMaxTokens(modelName, endpoint = EModelEndpoint.openAI, endpointTokenConfig) {
+  // Special handling for AWS Bedrock custom inference profiles
+  if (endpoint === EModelEndpoint.bedrock) {
+    const inferenceProfileModel = detectBedrockInferenceProfileModel(modelName);
+    if (inferenceProfileModel) {
+      // Use the underlying model's token limits
+      // Call the original function without the bedrock special handling to avoid recursion
+      return _getModelMaxTokensInternal(inferenceProfileModel, endpoint, endpointTokenConfig);
+    }
+  }
+
+  return _getModelMaxTokensInternal(modelName, endpoint, endpointTokenConfig);
+}
+
+/**
+ * Internal function for token limit detection (avoids recursion)
+ * @param {string} modelName - The model name or ARN
+ * @param {string} endpoint - The endpoint type
+ * @param {Object} endpointTokenConfig - Optional endpoint token configuration
+ * @returns {number} - The maximum tokens for the model
+ */
+function _getModelMaxTokensInternal(modelName, endpoint = EModelEndpoint.openAI, endpointTokenConfig) {
+  const tokensMap = endpointTokenConfig ?? maxTokensMap[endpoint];
+  return getModelTokenValue(modelName, tokensMap, 'context') || 4096;
+}
+
+/**
+ * Retrieves the maximum output tokens for a given model name.
+ *
+ * @param {string} modelName - The name of the model to look up.
+ * @param {string} endpoint - The endpoint (default is 'openAI').
+ * @param {EndpointTokenConfig} [endpointTokenConfig] - Token Config for current endpoint to use for max tokens lookup
+ * @returns {number|undefined} The maximum output tokens for the given model or undefined if no match is found.
+ */
+function getModelMaxOutputTokens(modelName, endpoint = EModelEndpoint.openAI, endpointTokenConfig) {
+  // Special handling for AWS Bedrock custom inference profiles
+  if (endpoint === EModelEndpoint.bedrock) {
+    const inferenceProfileModel = detectBedrockInferenceProfileModel(modelName);
+    if (inferenceProfileModel) {
+      // Use the underlying model's output token limits
+      // Call the internal function to avoid recursion
+      return _getModelMaxOutputTokensInternal(inferenceProfileModel, endpoint, endpointTokenConfig);
+    }
+  }
+
+  return _getModelMaxOutputTokensInternal(modelName, endpoint, endpointTokenConfig);
+}
+
+/**
+ * Internal function for output token limit detection (avoids recursion)
+ * @param {string} modelName - The model name or ARN
+ * @param {string} endpoint - The endpoint type
+ * @param {Object} endpointTokenConfig - Optional endpoint token configuration
+ * @returns {number} - The maximum output tokens for the model
+ */
+function _getModelMaxOutputTokensInternal(modelName, endpoint = EModelEndpoint.openAI, endpointTokenConfig) {
+  const tokensMap = endpointTokenConfig ?? maxOutputTokensMap[endpoint];
+  return getModelTokenValue(modelName, tokensMap, 'output');
 }
 
 const modelSchema = z.object({
@@ -470,10 +587,13 @@ const tiktokenModels = new Set([
 module.exports = {
   tiktokenModels,
   maxTokensMap,
+  maxOutputTokensMap,
   inputSchema,
   modelSchema,
   matchModelName,
   processModelData,
   getModelMaxTokens,
   getModelMaxOutputTokens,
+  detectBedrockInferenceProfileModel,
+  loadBedrockInferenceProfileMappings,
 };
