@@ -10,7 +10,6 @@ import type t from 'librechat-data-provider';
 import { Constants, EModelEndpoint } from 'librechat-data-provider';
 
 import AgentDetail from '../AgentDetail';
-import { useToast } from '~/hooks';
 
 // Mock dependencies
 jest.mock('react-router-dom', () => ({
@@ -19,9 +18,13 @@ jest.mock('react-router-dom', () => ({
 }));
 
 jest.mock('~/hooks', () => ({
-  useToast: jest.fn(),
   useMediaQuery: jest.fn(() => false), // Mock as desktop by default
   useLocalize: jest.fn(),
+}));
+
+jest.mock('@librechat/client', () => ({
+  ...jest.requireActual('@librechat/client'),
+  useToastContext: jest.fn(),
 }));
 
 jest.mock('~/utils/agents', () => ({
@@ -101,7 +104,8 @@ describe('AgentDetail', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     (useNavigate as jest.Mock).mockReturnValue(mockNavigate);
-    (useToast as jest.Mock).mockReturnValue({ showToast: mockShowToast });
+    const { useToastContext } = require('@librechat/client');
+    (useToastContext as jest.Mock).mockReturnValue({ showToast: mockShowToast });
     const { useLocalize } = require('~/hooks');
     (useLocalize as jest.Mock).mockReturnValue(mockLocalize);
 

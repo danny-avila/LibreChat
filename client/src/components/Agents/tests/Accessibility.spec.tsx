@@ -96,14 +96,11 @@ jest.mock('~/hooks/useLocalize', () => ({
 jest.mock('~/hooks', () => ({
   useLocalize: () => mockLocalize,
   useDebounce: jest.fn(),
+  useAgentCategories: jest.fn(),
 }));
 
 jest.mock('~/data-provider/Agents', () => ({
   useMarketplaceAgentsInfiniteQuery: jest.fn(),
-}));
-
-jest.mock('~/hooks/Agents', () => ({
-  useAgentCategories: jest.fn(),
 }));
 
 // Mock utility functions
@@ -120,8 +117,7 @@ jest.mock('../SmartLoader', () => ({
 
 // Import the actual modules to get the mocked functions
 import { useMarketplaceAgentsInfiniteQuery } from '~/data-provider/Agents';
-import { useAgentCategories } from '~/hooks/Agents';
-import { useDebounce } from '~/hooks';
+import { useAgentCategories, useDebounce } from '~/hooks';
 
 // Get typed mock functions
 const mockUseMarketplaceAgentsInfiniteQuery = jest.mocked(useMarketplaceAgentsInfiniteQuery);

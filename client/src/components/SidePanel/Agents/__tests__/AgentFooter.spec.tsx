@@ -274,7 +274,7 @@ describe('AgentFooter', () => {
       expect(screen.getByTestId('delete-button')).toBeInTheDocument();
       expect(screen.queryByTestId('admin-settings')).not.toBeInTheDocument();
       expect(screen.getByTestId('grant-access-dialog')).toBeInTheDocument();
-      expect(screen.getByTestId('duplicate-agent')).toBeInTheDocument();
+      expect(screen.getByTestId('duplicate-button')).toBeInTheDocument();
       expect(document.querySelector('.spinner')).not.toBeInTheDocument();
     });
 
@@ -284,8 +284,11 @@ describe('AgentFooter', () => {
       );
       expect(document.querySelector('.spinner')).toBeInTheDocument();
       expect(screen.queryByText('Save')).not.toBeInTheDocument();
-      expect(screen.getByRole('button')).toBeDisabled();
-      expect(screen.getByRole('button')).toHaveAttribute('aria-busy', 'true');
+      // Find the submit button (the one with aria-busy attribute)
+      const buttons = screen.getAllByRole('button');
+      const submitButton = buttons.find((button) => button.getAttribute('type') === 'submit');
+      expect(submitButton).toBeDisabled();
+      expect(submitButton).toHaveAttribute('aria-busy', 'true');
       unmount();
     });
 
@@ -408,7 +411,7 @@ describe('AgentFooter', () => {
       expect(screen.queryByTestId('delete-button')).not.toBeInTheDocument();
       expect(screen.queryByTestId('grant-access-dialog')).not.toBeInTheDocument();
       // Duplicate button should still show as it doesn't depend on permissions loading
-      expect(screen.getByTestId('duplicate-agent')).toBeInTheDocument();
+      expect(screen.getByTestId('duplicate-button')).toBeInTheDocument();
     });
   });
 
