@@ -1,4 +1,4 @@
-import { PrincipalType } from 'librechat-data-provider';
+import { PrincipalType, PrincipalModel } from 'librechat-data-provider';
 import type { Model, Types, DeleteResult, ClientSession } from 'mongoose';
 import type { IAclEntry } from '~/types';
 
@@ -148,7 +148,8 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')) {
 
     if (principalType !== PrincipalType.PUBLIC) {
       query.principalId = principalId;
-      query.principalModel = principalType === PrincipalType.USER ? 'User' : 'Group';
+      query.principalModel =
+        principalType === PrincipalType.USER ? PrincipalModel.USER : PrincipalModel.GROUP;
     }
 
     const update = {

@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const { ResourceType, PrincipalType } = require('librechat-data-provider');
+const { ResourceType, PrincipalType, PrincipalModel } = require('librechat-data-provider');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const { canAccessAgentResource } = require('./canAccessAgentResource');
 const { User, Role, AclEntry } = require('~/db/models');
@@ -99,7 +99,7 @@ describe('canAccessAgentResource middleware', () => {
       await AclEntry.create({
         principalType: PrincipalType.USER,
         principalId: testUser._id,
-        principalModel: 'User',
+        principalModel: PrincipalModel.USER,
         resourceType: ResourceType.AGENT,
         resourceId: agent._id,
         permBits: 15, // All permissions (1+2+4+8)
@@ -136,7 +136,7 @@ describe('canAccessAgentResource middleware', () => {
       await AclEntry.create({
         principalType: PrincipalType.USER,
         principalId: otherUser._id,
-        principalModel: 'User',
+        principalModel: PrincipalModel.USER,
         resourceType: ResourceType.AGENT,
         resourceId: agent._id,
         permBits: 15, // All permissions
@@ -177,7 +177,7 @@ describe('canAccessAgentResource middleware', () => {
       await AclEntry.create({
         principalType: PrincipalType.USER,
         principalId: testUser._id,
-        principalModel: 'User',
+        principalModel: PrincipalModel.USER,
         resourceType: ResourceType.AGENT,
         resourceId: agent._id,
         permBits: 1, // VIEW permission
@@ -214,7 +214,7 @@ describe('canAccessAgentResource middleware', () => {
       await AclEntry.create({
         principalType: PrincipalType.USER,
         principalId: testUser._id,
-        principalModel: 'User',
+        principalModel: PrincipalModel.USER,
         resourceType: ResourceType.AGENT,
         resourceId: agent._id,
         permBits: 1, // VIEW permission only
@@ -261,7 +261,7 @@ describe('canAccessAgentResource middleware', () => {
       await AclEntry.create({
         principalType: PrincipalType.USER,
         principalId: testUser._id,
-        principalModel: 'User',
+        principalModel: PrincipalModel.USER,
         resourceType: ResourceType.AGENT,
         resourceId: agent._id,
         permBits: 15, // All permissions
@@ -297,7 +297,7 @@ describe('canAccessAgentResource middleware', () => {
       await AclEntry.create({
         principalType: PrincipalType.USER,
         principalId: testUser._id,
-        principalModel: 'User',
+        principalModel: PrincipalModel.USER,
         resourceType: ResourceType.AGENT,
         resourceId: agent._id,
         permBits: 15, // All permissions (1+2+4+8)
@@ -357,7 +357,7 @@ describe('canAccessAgentResource middleware', () => {
       await AclEntry.create({
         principalType: PrincipalType.USER,
         principalId: testUser._id,
-        principalModel: 'User',
+        principalModel: PrincipalModel.USER,
         resourceType: ResourceType.AGENT,
         resourceId: agent._id,
         permBits: 15, // All permissions

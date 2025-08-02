@@ -1,5 +1,5 @@
 import type { Document, Types } from 'mongoose';
-import { PrincipalType } from 'librechat-data-provider';
+import { PrincipalType, PrincipalModel, ResourceType } from 'librechat-data-provider';
 
 export type AclEntry = {
   /** The type of principal ('user', 'group', 'public') */
@@ -7,9 +7,9 @@ export type AclEntry = {
   /** The ID of the principal (null for 'public') */
   principalId?: Types.ObjectId;
   /** The model name for the principal ('User' or 'Group') */
-  principalModel?: 'User' | 'Group';
+  principalModel?: PrincipalModel;
   /** The type of resource ('agent', 'project', 'file', 'promptGroup') */
-  resourceType: 'agent' | 'project' | 'file' | 'promptGroup';
+  resourceType: ResourceType;
   /** The ID of the resource */
   resourceId: Types.ObjectId;
   /** Permission bits for this entry */
