@@ -968,7 +968,6 @@
   "com_ui_privacy_policy": "Privacy policy",
   "com_ui_privacy_policy_url": "Privacy Policy URL",
   "com_ui_prompt": "Prompt",
-  "com_ui_prompt_already_shared_to_all": "This prompt is already shared to all users",
   "com_ui_prompt_name": "Prompt Name",
   "com_ui_prompt_name_required": "Prompt Name is required",
   "com_ui_prompt_preview_not_shared": "The author has not allowed collaboration for this prompt.",
@@ -1037,9 +1036,7 @@
   "com_ui_share_create_message": "Your name and any messages you add after sharing stay private.",
   "com_ui_share_delete_error": "There was an error deleting the shared link",
   "com_ui_share_error": "There was an error sharing the chat link",
-  "com_ui_share_form_description": "something needs to go here. was empty",
   "com_ui_share_link_to_chat": "Share link to chat",
-  "com_ui_share_to_all_users": "Share to all users",
   "com_ui_share_update_message": "Your name, custom instructions, and any messages you add after sharing stay private.",
   "com_ui_share_var": "Share {{0}}",
   "com_ui_shared_link_bulk_delete_success": "Successfully deleted shared links",
@@ -1191,9 +1188,6 @@
   "com_ui_public_access_description": "Anyone can access this resource publicly",
   "com_ui_save_changes": "Save Changes",
   "com_ui_unsaved_changes": "You have unsaved changes",
-  "com_ui_share_with_everyone": "Share with everyone",
-  "com_ui_make_agent_available_all_users": "Make this agent available to all LibreChat users",
-  "com_ui_public_access_level": "Public access level",
   "com_ui_public_permission_level": "Public permission level",
   "com_ui_at_least_one_owner_required": "At least one owner is required",
   "com_agents_marketplace": "Agent Marketplace",
@@ -1252,4 +1246,3 @@
   "com_ui_agent_name_is_required": "Agent name is required",
   "com_agents_missing_name": "Please type in a name before creating an agent."
 }
-
