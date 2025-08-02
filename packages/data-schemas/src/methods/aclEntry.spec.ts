@@ -1,5 +1,10 @@
 import mongoose from 'mongoose';
-import { ResourceType, PermissionBits, PrincipalType } from 'librechat-data-provider';
+import {
+  ResourceType,
+  PrincipalType,
+  PrincipalModel,
+  PermissionBits,
+} from 'librechat-data-provider';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import type * as t from '~/types';
 import { createAclEntryMethods } from './aclEntry';
@@ -47,7 +52,7 @@ describe('AclEntry Model Tests', () => {
       expect(entry).toBeDefined();
       expect(entry?.principalType).toBe(PrincipalType.USER);
       expect(entry?.principalId?.toString()).toBe(userId.toString());
-      expect(entry?.principalModel).toBe('User');
+      expect(entry?.principalModel).toBe(PrincipalModel.USER);
       expect(entry?.resourceType).toBe(ResourceType.AGENT);
       expect(entry?.resourceId.toString()).toBe(resourceId.toString());
       expect(entry?.permBits).toBe(PermissionBits.VIEW);
@@ -68,7 +73,7 @@ describe('AclEntry Model Tests', () => {
       expect(entry).toBeDefined();
       expect(entry?.principalType).toBe(PrincipalType.GROUP);
       expect(entry?.principalId?.toString()).toBe(groupId.toString());
-      expect(entry?.principalModel).toBe('Group');
+      expect(entry?.principalModel).toBe(PrincipalModel.GROUP);
       expect(entry?.permBits).toBe(PermissionBits.VIEW | PermissionBits.EDIT);
     });
 
@@ -469,7 +474,7 @@ describe('AclEntry Model Tests', () => {
       await AclEntry.create({
         principalType: PrincipalType.USER,
         principalId: userId,
-        principalModel: 'User',
+        principalModel: PrincipalModel.USER,
         resourceType: ResourceType.AGENT,
         resourceId: childResourceId,
         permBits: PermissionBits.VIEW,
