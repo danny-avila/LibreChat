@@ -105,8 +105,6 @@ const createErrorHandler = ({ req, res, getContext, originPath = '/assistants/ch
         return res.end();
       }
       await cache.delete(cacheKey);
-      // const cancelledRun = await openai.beta.threads.runs.cancel(thread_id, run_id);
-      // logger.debug(`[${originPath}] Cancelled run:`, cancelledRun);
     } catch (error) {
       logger.error(`[${originPath}] Error cancelling run`, error);
     }
@@ -115,7 +113,6 @@ const createErrorHandler = ({ req, res, getContext, originPath = '/assistants/ch
 
     let run;
     try {
-      // run = await openai.beta.threads.runs.retrieve(thread_id, run_id);
       await recordUsage({
         ...run.usage,
         model: run.model,
@@ -128,18 +125,9 @@ const createErrorHandler = ({ req, res, getContext, originPath = '/assistants/ch
 
     let finalEvent;
     try {
-      // const errorContentPart = {
-      //   text: {
-      //     value:
-      //       error?.message ?? 'There was an error processing your request. Please try again later.',
-      //   },
-      //   type: ContentTypes.ERROR,
-      // };
-
       finalEvent = {
         final: true,
         conversation: await getConvo(req.user.id, conversationId),
-        // runMessages,
       };
     } catch (error) {
       logger.error(`[${originPath}] Error finalizing error process`, error);
