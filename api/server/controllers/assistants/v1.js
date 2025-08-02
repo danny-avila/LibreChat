@@ -365,7 +365,7 @@ const uploadAssistantAvatar = async (req, res) => {
     try {
       await fs.unlink(req.file.path);
       logger.debug('[/:agent_id/avatar] Temp. image upload file deleted');
-    } catch (error) {
+    } catch {
       logger.debug('[/:agent_id/avatar] Temp. image upload file already deleted');
     }
   }
