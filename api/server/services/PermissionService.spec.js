@@ -1,7 +1,12 @@
 const mongoose = require('mongoose');
 const { RoleBits, createModels } = require('@librechat/data-schemas');
 const { MongoMemoryServer } = require('mongodb-memory-server');
-const { AccessRoleIds, ResourceType, PrincipalType } = require('librechat-data-provider');
+const {
+  ResourceType,
+  AccessRoleIds,
+  PrincipalType,
+  PrincipalModel,
+} = require('librechat-data-provider');
 const {
   bulkUpdateResourcePermissions,
   getEffectivePermissions,
@@ -87,10 +92,10 @@ describe('PermissionService', () => {
       });
 
       expect(entry).toBeDefined();
-      expect(entry.principalType).toBe('user');
+      expect(entry.principalType).toBe(PrincipalType.USER);
       expect(entry.principalId.toString()).toBe(userId.toString());
-      expect(entry.principalModel).toBe('User');
-      expect(entry.resourceType).toBe('agent');
+      expect(entry.principalModel).toBe(PrincipalModel.USER);
+      expect(entry.resourceType).toBe(ResourceType.AGENT);
       expect(entry.resourceId.toString()).toBe(resourceId.toString());
 
       // Get the role to verify the permission bits are correctly set
@@ -114,7 +119,7 @@ describe('PermissionService', () => {
       expect(entry).toBeDefined();
       expect(entry.principalType).toBe(PrincipalType.GROUP);
       expect(entry.principalId.toString()).toBe(groupId.toString());
-      expect(entry.principalModel).toBe('Group');
+      expect(entry.principalModel).toBe(PrincipalModel.GROUP);
 
       // Get the role to verify the permission bits are correctly set
       const role = await findRoleByIdentifier(AccessRoleIds.AGENT_EDITOR);
@@ -433,7 +438,7 @@ describe('PermissionService', () => {
       await AclEntry.create({
         principalType: PrincipalType.USER,
         principalId: userId,
-        principalModel: 'User',
+        principalModel: PrincipalModel.USER,
         resourceType: ResourceType.AGENT,
         resourceId: childResourceId,
         permBits: RoleBits.VIEWER,

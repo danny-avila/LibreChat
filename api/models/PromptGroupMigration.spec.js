@@ -7,6 +7,7 @@ const {
   ResourceType,
   AccessRoleIds,
   PrincipalType,
+  PrincipalModel,
   PermissionBits,
 } = require('librechat-data-provider');
 
@@ -211,7 +212,7 @@ describe('PromptGroup Migration Script', () => {
     await AclEntry.create({
       principalType: PrincipalType.USER,
       principalId: testOwner._id,
-      principalModel: 'User',
+      principalModel: PrincipalModel.USER,
       resourceType: ResourceType.PROMPTGROUP,
       resourceId: promptGroup1._id,
       permBits: ownerRole.permBits,

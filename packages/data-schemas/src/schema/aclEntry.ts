@@ -1,5 +1,5 @@
 import { Schema } from 'mongoose';
-import { PrincipalType } from 'librechat-data-provider';
+import { PrincipalType, PrincipalModel, ResourceType } from 'librechat-data-provider';
 import type { IAclEntry } from '~/types';
 
 const aclEntrySchema = new Schema<IAclEntry>(
@@ -19,14 +19,14 @@ const aclEntrySchema = new Schema<IAclEntry>(
     },
     principalModel: {
       type: String,
-      enum: ['User', 'Group'],
+      enum: Object.values(PrincipalModel),
       required: function (this: IAclEntry) {
         return this.principalType !== PrincipalType.PUBLIC;
       },
     },
     resourceType: {
       type: String,
-      enum: ['agent', 'project', 'file', 'prompt', 'promptGroup'],
+      enum: Object.values(ResourceType),
       required: true,
     },
     resourceId: {

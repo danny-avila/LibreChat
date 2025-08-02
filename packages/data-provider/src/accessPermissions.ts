@@ -20,6 +20,14 @@ export enum PrincipalType {
 }
 
 /**
+ * Principal model types for MongoDB references
+ */
+export enum PrincipalModel {
+  USER = 'User',
+  GROUP = 'Group',
+}
+
+/**
  * Source of the principal (local LibreChat or external Entra ID)
  */
 export type TPrincipalSource = 'local' | 'entra';

@@ -22,6 +22,16 @@ jest.mock('librechat-data-provider', () => ({
     GROUP: 'group',
     PUBLIC: 'public',
   },
+  PrincipalModel: {
+    USER: 'User',
+    GROUP: 'Group',
+  },
+  ResourceType: {
+    AGENT: 'agent',
+    PROJECT: 'project',
+    FILE: 'file',
+    PROMPTGROUP: 'promptGroup',
+  },
   FileContext: { message_attachment: 'message_attachment' },
   FileSources: { local: 'local' },
   EModelEndpoint: { assistants: 'assistants' },

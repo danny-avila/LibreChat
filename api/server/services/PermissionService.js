@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 const { isEnabled } = require('@librechat/api');
-const { ResourceType, PrincipalType } = require('librechat-data-provider');
+const { ResourceType, PrincipalType, PrincipalModel } = require('librechat-data-provider');
 const { getTransactionSupport, logger } = require('@librechat/data-schemas');
 const {
   entraIdPrincipalFeatureEnabled,
@@ -627,9 +627,10 @@ const bulkUpdateResourcePermissions = async ({
             principalType: principal.type,
             resourceType,
             resourceId,
-            ...(principal.type !== 'public' && {
+            ...(principal.type !== PrincipalType.PUBLIC && {
               principalId: principal.id,
-              principalModel: principal.type === 'user' ? 'User' : 'Group',
+              principalModel:
+                principal.type === PrincipalType.USER ? PrincipalModel.USER : PrincipalModel.GROUP,
             }),
           },
         };
