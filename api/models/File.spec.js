@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 const { v4: uuidv4 } = require('uuid');
 const { createModels } = require('@librechat/data-schemas');
 const { MongoMemoryServer } = require('mongodb-memory-server');
-const { AccessRoleIds, ResourceType } = require('librechat-data-provider');
+const { AccessRoleIds, ResourceType, PrincipalType } = require('librechat-data-provider');
 const { grantPermission } = require('~/server/services/PermissionService');
 const { getFiles, createFile } = require('./File');
 const { seedDefaultRoles } = require('~/models');
@@ -115,7 +115,7 @@ describe('File Access Control', () => {
 
       // Grant EDIT permission to user on the agent
       await grantPermission({
-        principalType: 'user',
+        principalType: PrincipalType.USER,
         principalId: userId,
         resourceType: ResourceType.AGENT,
         resourceId: agent._id,
@@ -232,7 +232,7 @@ describe('File Access Control', () => {
 
       // Grant only VIEW permission to user on the agent
       await grantPermission({
-        principalType: 'user',
+        principalType: PrincipalType.USER,
         principalId: userId,
         resourceType: ResourceType.AGENT,
         resourceId: agent._id,
@@ -290,7 +290,7 @@ describe('File Access Control', () => {
 
       // Grant EDIT permission to user on the agent
       await grantPermission({
-        principalType: 'user',
+        principalType: PrincipalType.USER,
         principalId: userId,
         resourceType: ResourceType.AGENT,
         resourceId: agent._id,

@@ -9,9 +9,10 @@ const {
   FileSources,
   ResourceType,
   AccessRoleIds,
+  PrincipalType,
   EToolResources,
-  actionDelimiter,
   PermissionBits,
+  actionDelimiter,
   removeNullishValues,
 } = require('librechat-data-provider');
 const {
@@ -80,7 +81,7 @@ const createAgentHandler = async (req, res) => {
     // Automatically grant owner permissions to the creator
     try {
       await grantPermission({
-        principalType: 'user',
+        principalType: PrincipalType.USER,
         principalId: userId,
         resourceType: ResourceType.AGENT,
         resourceId: agent._id,
@@ -346,7 +347,7 @@ const duplicateAgentHandler = async (req, res) => {
     // Automatically grant owner permissions to the duplicator
     try {
       await grantPermission({
-        principalType: 'user',
+        principalType: PrincipalType.USER,
         principalId: userId,
         resourceType: ResourceType.AGENT,
         resourceId: newAgent._id,

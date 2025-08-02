@@ -14,7 +14,7 @@ const mongoose = require('mongoose');
 const { v4: uuidv4 } = require('uuid');
 const { agentSchema } = require('@librechat/data-schemas');
 const { MongoMemoryServer } = require('mongodb-memory-server');
-const { AccessRoleIds, ResourceType } = require('librechat-data-provider');
+const { AccessRoleIds, ResourceType, PrincipalType } = require('librechat-data-provider');
 const {
   getAgent,
   loadAgent,
@@ -500,7 +500,7 @@ describe('models/Agent', () => {
 
       // Grant permissions (simulating sharing)
       await permissionService.grantPermission({
-        principalType: 'user',
+        principalType: PrincipalType.USER,
         principalId: authorId,
         resourceType: ResourceType.AGENT,
         resourceId: agent._id,
