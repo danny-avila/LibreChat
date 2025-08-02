@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 const { isEnabled } = require('@librechat/api');
-const { ResourceType } = require('librechat-data-provider');
+const { ResourceType, PrincipalType } = require('librechat-data-provider');
 const { getTransactionSupport, logger } = require('@librechat/data-schemas');
 const {
   entraIdPrincipalFeatureEnabled,
@@ -65,11 +65,11 @@ const grantPermission = async ({
   session,
 }) => {
   try {
-    if (!['user', 'group', 'public'].includes(principalType)) {
+    if (!Object.values(PrincipalType).includes(principalType)) {
       throw new Error(`Invalid principal type: ${principalType}`);
     }
 
-    if (principalType !== 'public' && !principalId) {
+    if (principalType !== PrincipalType.PUBLIC && !principalId) {
       throw new Error('Principal ID is required for user and group principals');
     }
 
@@ -221,7 +221,7 @@ const findPubliclyAccessibleResources = async ({ resourceType, requiredPermissio
 
     // Find all public ACL entries where the public principal has at least the required permission bits
     const entries = await AclEntry.find({
-      principalType: 'public',
+      principalType: PrincipalType.PUBLIC,
       resourceType,
       permBits: { $bitsAllSet: requiredPermissions },
     }).distinct('resourceId');
@@ -505,7 +505,7 @@ const hasPublicPermission = async ({ resourceType, resourceId, requiredPermissio
     validateResourceType(resourceType);
 
     // Use public principal to check permissions
-    const publicPrincipal = [{ principalType: 'public' }];
+    const publicPrincipal = [{ principalType: PrincipalType.PUBLIC }];
 
     const entries = await findEntriesByPrincipalsAndResource(
       publicPrincipal,

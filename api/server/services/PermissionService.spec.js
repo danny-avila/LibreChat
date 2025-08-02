@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 const { RoleBits, createModels } = require('@librechat/data-schemas');
 const { MongoMemoryServer } = require('mongodb-memory-server');
-const { AccessRoleIds, ResourceType } = require('librechat-data-provider');
+const { AccessRoleIds, ResourceType, PrincipalType } = require('librechat-data-provider');
 const {
   bulkUpdateResourcePermissions,
   getEffectivePermissions,
@@ -78,7 +78,7 @@ describe('PermissionService', () => {
   describe('grantPermission', () => {
     test('should grant permission to a user with a role', async () => {
       const entry = await grantPermission({
-        principalType: 'user',
+        principalType: PrincipalType.USER,
         principalId: userId,
         resourceType: ResourceType.AGENT,
         resourceId,
@@ -103,7 +103,7 @@ describe('PermissionService', () => {
 
     test('should grant permission to a group with a role', async () => {
       const entry = await grantPermission({
-        principalType: 'group',
+        principalType: PrincipalType.GROUP,
         principalId: groupId,
         resourceType: ResourceType.AGENT,
         resourceId,
@@ -112,7 +112,7 @@ describe('PermissionService', () => {
       });
 
       expect(entry).toBeDefined();
-      expect(entry.principalType).toBe('group');
+      expect(entry.principalType).toBe(PrincipalType.GROUP);
       expect(entry.principalId.toString()).toBe(groupId.toString());
       expect(entry.principalModel).toBe('Group');
 
@@ -124,7 +124,7 @@ describe('PermissionService', () => {
 
     test('should grant public permission with a role', async () => {
       const entry = await grantPermission({
-        principalType: 'public',
+        principalType: PrincipalType.PUBLIC,
         principalId: null,
         resourceType: ResourceType.AGENT,
         resourceId,
@@ -133,7 +133,7 @@ describe('PermissionService', () => {
       });
 
       expect(entry).toBeDefined();
-      expect(entry.principalType).toBe('public');
+      expect(entry.principalType).toBe(PrincipalType.PUBLIC);
       expect(entry.principalId).toBeUndefined();
       expect(entry.principalModel).toBeUndefined();
 
@@ -159,7 +159,7 @@ describe('PermissionService', () => {
     test('should throw error for missing principalId with user type', async () => {
       await expect(
         grantPermission({
-          principalType: 'user',
+          principalType: PrincipalType.USER,
           principalId: null,
           resourceType: ResourceType.AGENT,
           resourceId,
@@ -172,7 +172,7 @@ describe('PermissionService', () => {
     test('should throw error for non-existent role', async () => {
       await expect(
         grantPermission({
-          principalType: 'user',
+          principalType: PrincipalType.USER,
           principalId: userId,
           resourceType: ResourceType.AGENT,
           resourceId,
@@ -185,7 +185,7 @@ describe('PermissionService', () => {
     test('should throw error for role-resource type mismatch', async () => {
       await expect(
         grantPermission({
-          principalType: 'user',
+          principalType: PrincipalType.USER,
           principalId: userId,
           resourceType: ResourceType.AGENT,
           resourceId,
@@ -198,7 +198,7 @@ describe('PermissionService', () => {
     test('should update existing permission when granting to same principal and resource', async () => {
       // First grant with viewer role
       await grantPermission({
-        principalType: 'user',
+        principalType: PrincipalType.USER,
         principalId: userId,
         resourceType: ResourceType.AGENT,
         resourceId,
@@ -208,7 +208,7 @@ describe('PermissionService', () => {
 
       // Then update to editor role
       const updated = await grantPermission({
-        principalType: 'user',
+        principalType: PrincipalType.USER,
         principalId: userId,
         resourceType: ResourceType.AGENT,
         resourceId,
@@ -222,7 +222,7 @@ describe('PermissionService', () => {
 
       // Verify there's only one entry
       const entries = await AclEntry.find({
-        principalType: 'user',
+        principalType: PrincipalType.USER,
         principalId: userId,
         resourceType: ResourceType.AGENT,
         resourceId,
@@ -240,7 +240,7 @@ describe('PermissionService', () => {
 
       // Setup test data
       await grantPermission({
-        principalType: 'user',
+        principalType: PrincipalType.USER,
         principalId: userId,
         resourceType: ResourceType.AGENT,
         resourceId,
@@ -250,7 +250,7 @@ describe('PermissionService', () => {
 
       otherResourceId = new mongoose.Types.ObjectId();
       await grantPermission({
-        principalType: 'group',
+        principalType: PrincipalType.GROUP,
         principalId: groupId,
         resourceType: ResourceType.AGENT,
         resourceId: otherResourceId,
@@ -261,7 +261,9 @@ describe('PermissionService', () => {
 
     test('should check permission for user principal', async () => {
       // Mock getUserPrincipals to return just the user principal
-      getUserPrincipals.mockResolvedValue([{ principalType: 'user', principalId: userId }]);
+      getUserPrincipals.mockResolvedValue([
+        { principalType: PrincipalType.USER, principalId: userId },
+      ]);
 
       const hasViewPermission = await checkPermission({
         userId,
@@ -286,8 +288,8 @@ describe('PermissionService', () => {
     test('should check permission for user and group principals', async () => {
       // Mock getUserPrincipals to return both user and group principals
       getUserPrincipals.mockResolvedValue([
-        { principalType: 'user', principalId: userId },
-        { principalType: 'group', principalId: groupId },
+        { principalType: PrincipalType.USER, principalId: userId },
+        { principalType: PrincipalType.GROUP, principalId: groupId },
       ]);
 
       // Check original resource (user has access)
@@ -317,7 +319,7 @@ describe('PermissionService', () => {
 
       // Grant public access to a resource
       await grantPermission({
-        principalType: 'public',
+        principalType: PrincipalType.PUBLIC,
         principalId: null,
         resourceType: ResourceType.AGENT,
         resourceId: publicResourceId,
@@ -327,9 +329,9 @@ describe('PermissionService', () => {
 
       // Mock getUserPrincipals to return user, group, and public principals
       getUserPrincipals.mockResolvedValue([
-        { principalType: 'user', principalId: userId },
-        { principalType: 'group', principalId: groupId },
-        { principalType: 'public' },
+        { principalType: PrincipalType.USER, principalId: userId },
+        { principalType: PrincipalType.GROUP, principalId: groupId },
+        { principalType: PrincipalType.PUBLIC },
       ]);
 
       const hasPublicAccess = await checkPermission({
@@ -343,7 +345,9 @@ describe('PermissionService', () => {
     });
 
     test('should return false for invalid permission bits', async () => {
-      getUserPrincipals.mockResolvedValue([{ principalType: 'user', principalId: userId }]);
+      getUserPrincipals.mockResolvedValue([
+        { principalType: PrincipalType.USER, principalId: userId },
+      ]);
 
       await expect(
         checkPermission({
@@ -385,7 +389,7 @@ describe('PermissionService', () => {
 
       // Setup test data with multiple permissions from different sources
       await grantPermission({
-        principalType: 'user',
+        principalType: PrincipalType.USER,
         principalId: userId,
         resourceType: ResourceType.AGENT,
         resourceId,
@@ -394,7 +398,7 @@ describe('PermissionService', () => {
       });
 
       await grantPermission({
-        principalType: 'group',
+        principalType: PrincipalType.GROUP,
         principalId: groupId,
         resourceType: ResourceType.AGENT,
         resourceId,
@@ -405,7 +409,7 @@ describe('PermissionService', () => {
       // Create another resource with public permission
       const publicResourceId = new mongoose.Types.ObjectId();
       await grantPermission({
-        principalType: 'public',
+        principalType: PrincipalType.PUBLIC,
         principalId: null,
         resourceType: ResourceType.AGENT,
         resourceId: publicResourceId,
@@ -418,7 +422,7 @@ describe('PermissionService', () => {
       const childResourceId = new mongoose.Types.ObjectId();
 
       await grantPermission({
-        principalType: 'user',
+        principalType: PrincipalType.USER,
         principalId: userId,
         resourceType: ResourceType.PROMPTGROUP,
         resourceId: parentResourceId,
@@ -427,7 +431,7 @@ describe('PermissionService', () => {
       });
 
       await AclEntry.create({
-        principalType: 'user',
+        principalType: PrincipalType.USER,
         principalId: userId,
         principalModel: 'User',
         resourceType: ResourceType.AGENT,
@@ -443,8 +447,8 @@ describe('PermissionService', () => {
     test('should get effective permissions from multiple sources', async () => {
       // Mock getUserPrincipals to return both user and group principals
       getUserPrincipals.mockResolvedValue([
-        { principalType: 'user', principalId: userId },
-        { principalType: 'group', principalId: groupId },
+        { principalType: PrincipalType.USER, principalId: userId },
+        { principalType: PrincipalType.GROUP, principalId: groupId },
       ]);
 
       const effective = await getEffectivePermissions({
@@ -464,7 +468,9 @@ describe('PermissionService', () => {
       const childResourceId = inheritedEntry.resourceId;
 
       // Mock getUserPrincipals to return user principal
-      getUserPrincipals.mockResolvedValue([{ principalType: 'user', principalId: userId }]);
+      getUserPrincipals.mockResolvedValue([
+        { principalType: PrincipalType.USER, principalId: userId },
+      ]);
 
       const effective = await getEffectivePermissions({
         userId,
@@ -516,7 +522,7 @@ describe('PermissionService', () => {
 
       // User can view resource 1
       await grantPermission({
-        principalType: 'user',
+        principalType: PrincipalType.USER,
         principalId: userId,
         resourceType: ResourceType.AGENT,
         resourceId: resource1,
@@ -526,7 +532,7 @@ describe('PermissionService', () => {
 
       // User can edit resource 2
       await grantPermission({
-        principalType: 'user',
+        principalType: PrincipalType.USER,
         principalId: userId,
         resourceType: ResourceType.AGENT,
         resourceId: resource2,
@@ -536,7 +542,7 @@ describe('PermissionService', () => {
 
       // Group can view resource 3
       await grantPermission({
-        principalType: 'group',
+        principalType: PrincipalType.GROUP,
         principalId: groupId,
         resourceType: ResourceType.AGENT,
         resourceId: resource3,
@@ -547,7 +553,9 @@ describe('PermissionService', () => {
 
     test('should find resources user can view', async () => {
       // Mock getUserPrincipals to return user principal
-      getUserPrincipals.mockResolvedValue([{ principalType: 'user', principalId: userId }]);
+      getUserPrincipals.mockResolvedValue([
+        { principalType: PrincipalType.USER, principalId: userId },
+      ]);
 
       const viewableResources = await findAccessibleResources({
         userId,
@@ -561,7 +569,9 @@ describe('PermissionService', () => {
 
     test('should find resources user can edit', async () => {
       // Mock getUserPrincipals to return user principal
-      getUserPrincipals.mockResolvedValue([{ principalType: 'user', principalId: userId }]);
+      getUserPrincipals.mockResolvedValue([
+        { principalType: PrincipalType.USER, principalId: userId },
+      ]);
 
       const editableResources = await findAccessibleResources({
         userId,
@@ -576,8 +586,8 @@ describe('PermissionService', () => {
     test('should find resources accessible via group membership', async () => {
       // Mock getUserPrincipals to return user and group principals
       getUserPrincipals.mockResolvedValue([
-        { principalType: 'user', principalId: userId },
-        { principalType: 'group', principalId: groupId },
+        { principalType: PrincipalType.USER, principalId: userId },
+        { principalType: PrincipalType.GROUP, principalId: groupId },
       ]);
 
       const viewableResources = await findAccessibleResources({
@@ -591,7 +601,9 @@ describe('PermissionService', () => {
     });
 
     test('should return empty array for invalid permissions', async () => {
-      getUserPrincipals.mockResolvedValue([{ principalType: 'user', principalId: userId }]);
+      getUserPrincipals.mockResolvedValue([
+        { principalType: PrincipalType.USER, principalId: userId },
+      ]);
 
       await expect(
         findAccessibleResources({
@@ -652,7 +664,7 @@ describe('PermissionService', () => {
       await seedDefaultRoles();
       // Setup existing permissions for testing
       await grantPermission({
-        principalType: 'user',
+        principalType: PrincipalType.USER,
         principalId: userId,
         resourceType: ResourceType.AGENT,
         resourceId,
@@ -661,7 +673,7 @@ describe('PermissionService', () => {
       });
 
       await grantPermission({
-        principalType: 'group',
+        principalType: PrincipalType.GROUP,
         principalId: groupId,
         resourceType: ResourceType.AGENT,
         resourceId,
@@ -670,7 +682,7 @@ describe('PermissionService', () => {
       });
 
       await grantPermission({
-        principalType: 'public',
+        principalType: PrincipalType.PUBLIC,
         principalId: null,
         resourceType: ResourceType.AGENT,
         resourceId,
@@ -683,17 +695,17 @@ describe('PermissionService', () => {
       const newResourceId = new mongoose.Types.ObjectId();
       const updatedPrincipals = [
         {
-          type: 'user',
+          type: PrincipalType.USER,
           id: userId,
           accessRoleId: AccessRoleIds.AGENT_VIEWER,
         },
         {
-          type: 'user',
+          type: PrincipalType.USER,
           id: otherUserId,
           accessRoleId: AccessRoleIds.AGENT_EDITOR,
         },
         {
-          type: 'group',
+          type: PrincipalType.GROUP,
           id: groupId,
           accessRoleId: AccessRoleIds.AGENT_OWNER,
         },
@@ -722,17 +734,17 @@ describe('PermissionService', () => {
     test('should update existing permissions in bulk', async () => {
       const updatedPrincipals = [
         {
-          type: 'user',
+          type: PrincipalType.USER,
           id: userId,
           accessRoleId: AccessRoleIds.AGENT_EDITOR, // Upgrade from viewer to editor
         },
         {
-          type: 'group',
+          type: PrincipalType.GROUP,
           id: groupId,
           accessRoleId: AccessRoleIds.AGENT_OWNER, // Upgrade from editor to owner
         },
         {
-          type: 'public',
+          type: PrincipalType.PUBLIC,
           accessRoleId: AccessRoleIds.AGENT_VIEWER, // Keep same role
         },
       ];
@@ -752,7 +764,7 @@ describe('PermissionService', () => {
 
       // Verify updates
       const userEntry = await AclEntry.findOne({
-        principalType: 'user',
+        principalType: PrincipalType.USER,
         principalId: userId,
         resourceType: ResourceType.AGENT,
         resourceId,
@@ -760,7 +772,7 @@ describe('PermissionService', () => {
       expect(userEntry.roleId.accessRoleId).toBe(AccessRoleIds.AGENT_EDITOR);
 
       const groupEntry = await AclEntry.findOne({
-        principalType: 'group',
+        principalType: PrincipalType.GROUP,
         principalId: groupId,
         resourceType: ResourceType.AGENT,
         resourceId,
@@ -771,11 +783,11 @@ describe('PermissionService', () => {
     test('should revoke specified permissions', async () => {
       const revokedPrincipals = [
         {
-          type: 'group',
+          type: PrincipalType.GROUP,
           id: groupId,
         },
         {
-          type: 'public',
+          type: PrincipalType.PUBLIC,
         },
       ];
 
@@ -797,19 +809,19 @@ describe('PermissionService', () => {
         resourceId,
       });
       expect(remainingEntries).toHaveLength(1);
-      expect(remainingEntries[0].principalType).toBe('user');
+      expect(remainingEntries[0].principalType).toBe(PrincipalType.USER);
       expect(remainingEntries[0].principalId.toString()).toBe(userId.toString());
     });
 
     test('should handle mixed operations (grant, update, revoke)', async () => {
       const updatedPrincipals = [
         {
-          type: 'user',
+          type: PrincipalType.USER,
           id: userId,
           accessRoleId: AccessRoleIds.AGENT_OWNER, // Update existing
         },
         {
-          type: 'user',
+          type: PrincipalType.USER,
           id: otherUserId,
           accessRoleId: AccessRoleIds.AGENT_VIEWER, // New permission
         },
@@ -817,11 +829,11 @@ describe('PermissionService', () => {
 
       const revokedPrincipals = [
         {
-          type: 'group',
+          type: PrincipalType.GROUP,
           id: groupId,
         },
         {
-          type: 'public',
+          type: PrincipalType.PUBLIC,
         },
       ];
 
@@ -858,17 +870,17 @@ describe('PermissionService', () => {
     test('should handle errors for invalid roles gracefully', async () => {
       const updatedPrincipals = [
         {
-          type: 'user',
+          type: PrincipalType.USER,
           id: userId,
           accessRoleId: AccessRoleIds.AGENT_VIEWER, // Valid
         },
         {
-          type: 'user',
+          type: PrincipalType.USER,
           id: otherUserId,
           accessRoleId: 'non_existent_role', // Invalid
         },
         {
-          type: 'group',
+          type: PrincipalType.GROUP,
           id: groupId,
           accessRoleId: AccessRoleIds.PROMPTGROUP_VIEWER, // Wrong resource type
         },
@@ -938,11 +950,11 @@ describe('PermissionService', () => {
     test('should handle public permissions correctly', async () => {
       const updatedPrincipals = [
         {
-          type: 'public',
+          type: PrincipalType.PUBLIC,
           accessRoleId: AccessRoleIds.AGENT_EDITOR, // Update public permission
         },
         {
-          type: 'user',
+          type: PrincipalType.USER,
           id: otherUserId,
           accessRoleId: AccessRoleIds.AGENT_VIEWER, // New user permission
         },
@@ -950,11 +962,11 @@ describe('PermissionService', () => {
 
       const revokedPrincipals = [
         {
-          type: 'user',
+          type: PrincipalType.USER,
           id: userId,
         },
         {
-          type: 'group',
+          type: PrincipalType.GROUP,
           id: groupId,
         },
       ];
@@ -974,7 +986,7 @@ describe('PermissionService', () => {
 
       // Verify public permission was updated
       const publicEntry = await AclEntry.findOne({
-        principalType: 'public',
+        principalType: PrincipalType.PUBLIC,
         resourceType: ResourceType.AGENT,
         resourceId,
       }).populate('roleId', 'accessRoleId');
@@ -988,12 +1000,12 @@ describe('PermissionService', () => {
       const promptGroupResourceId = new mongoose.Types.ObjectId();
       const updatedPrincipals = [
         {
-          type: 'user',
+          type: PrincipalType.USER,
           id: userId,
           accessRoleId: AccessRoleIds.PROMPTGROUP_VIEWER,
         },
         {
-          type: 'group',
+          type: PrincipalType.GROUP,
           id: groupId,
           accessRoleId: AccessRoleIds.PROMPTGROUP_EDITOR,
         },

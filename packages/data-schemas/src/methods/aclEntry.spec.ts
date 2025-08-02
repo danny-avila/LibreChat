@@ -1,5 +1,5 @@
 import mongoose from 'mongoose';
-import { ResourceType, PermissionBits } from 'librechat-data-provider';
+import { ResourceType, PermissionBits, PrincipalType } from 'librechat-data-provider';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import type * as t from '~/types';
 import { createAclEntryMethods } from './aclEntry';
@@ -36,7 +36,7 @@ describe('AclEntry Model Tests', () => {
   describe('Permission Grant and Query', () => {
     test('should grant permission to a user', async () => {
       const entry = await methods.grantPermission(
-        'user',
+        PrincipalType.USER,
         userId,
         ResourceType.AGENT,
         resourceId,
@@ -45,10 +45,10 @@ describe('AclEntry Model Tests', () => {
       );
 
       expect(entry).toBeDefined();
-      expect(entry?.principalType).toBe('user');
+      expect(entry?.principalType).toBe(PrincipalType.USER);
       expect(entry?.principalId?.toString()).toBe(userId.toString());
       expect(entry?.principalModel).toBe('User');
-      expect(entry?.resourceType).toBe('agent');
+      expect(entry?.resourceType).toBe(ResourceType.AGENT);
       expect(entry?.resourceId.toString()).toBe(resourceId.toString());
       expect(entry?.permBits).toBe(PermissionBits.VIEW);
       expect(entry?.grantedBy?.toString()).toBe(grantedById.toString());
@@ -57,7 +57,7 @@ describe('AclEntry Model Tests', () => {
 
     test('should grant permission to a group', async () => {
       const entry = await methods.grantPermission(
-        'group',
+        PrincipalType.GROUP,
         groupId,
         ResourceType.AGENT,
         resourceId,
@@ -66,7 +66,7 @@ describe('AclEntry Model Tests', () => {
       );
 
       expect(entry).toBeDefined();
-      expect(entry?.principalType).toBe('group');
+      expect(entry?.principalType).toBe(PrincipalType.GROUP);
       expect(entry?.principalId?.toString()).toBe(groupId.toString());
       expect(entry?.principalModel).toBe('Group');
       expect(entry?.permBits).toBe(PermissionBits.VIEW | PermissionBits.EDIT);
@@ -74,7 +74,7 @@ describe('AclEntry Model Tests', () => {
 
     test('should grant public permission', async () => {
       const entry = await methods.grantPermission(
-        'public',
+        PrincipalType.PUBLIC,
         null,
         ResourceType.AGENT,
         resourceId,
@@ -83,7 +83,7 @@ describe('AclEntry Model Tests', () => {
       );
 
       expect(entry).toBeDefined();
-      expect(entry?.principalType).toBe('public');
+      expect(entry?.principalType).toBe(PrincipalType.PUBLIC);
       expect(entry?.principalId).toBeUndefined();
       expect(entry?.principalModel).toBeUndefined();
     });
@@ -91,7 +91,7 @@ describe('AclEntry Model Tests', () => {
     test('should find entries by principal', async () => {
       /** Create two different permissions for the same user */
       await methods.grantPermission(
-        'user',
+        PrincipalType.USER,
         userId,
         ResourceType.AGENT,
         resourceId,
@@ -99,7 +99,7 @@ describe('AclEntry Model Tests', () => {
         grantedById,
       );
       await methods.grantPermission(
-        'user',
+        PrincipalType.USER,
         userId,
         'project',
         new mongoose.Types.ObjectId(),
@@ -108,19 +108,23 @@ describe('AclEntry Model Tests', () => {
       );
 
       /** Find all entries for the user */
-      const entries = await methods.findEntriesByPrincipal('user', userId);
+      const entries = await methods.findEntriesByPrincipal(PrincipalType.USER, userId);
       expect(entries).toHaveLength(2);
 
       /** Find entries filtered by resource type */
-      const agentEntries = await methods.findEntriesByPrincipal('user', userId, 'agent');
+      const agentEntries = await methods.findEntriesByPrincipal(
+        PrincipalType.USER,
+        userId,
+        ResourceType.AGENT,
+      );
       expect(agentEntries).toHaveLength(1);
-      expect(agentEntries[0].resourceType).toBe('agent');
+      expect(agentEntries[0].resourceType).toBe(ResourceType.AGENT);
     });
 
     test('should find entries by resource', async () => {
       /** Grant permissions to different principals for the same resource */
       await methods.grantPermission(
-        'user',
+        PrincipalType.USER,
         userId,
         ResourceType.AGENT,
         resourceId,
@@ -128,7 +132,7 @@ describe('AclEntry Model Tests', () => {
         grantedById,
       );
       await methods.grantPermission(
-        'group',
+        PrincipalType.GROUP,
         groupId,
         ResourceType.AGENT,
         resourceId,
@@ -136,7 +140,7 @@ describe('AclEntry Model Tests', () => {
         grantedById,
       );
       await methods.grantPermission(
-        'public',
+        PrincipalType.PUBLIC,
         null,
         ResourceType.AGENT,
         resourceId,
@@ -144,7 +148,7 @@ describe('AclEntry Model Tests', () => {
         grantedById,
       );
 
-      const entries = await methods.findEntriesByResource('agent', resourceId);
+      const entries = await methods.findEntriesByResource(ResourceType.AGENT, resourceId);
       expect(entries).toHaveLength(3);
     });
   });
@@ -153,7 +157,7 @@ describe('AclEntry Model Tests', () => {
     beforeEach(async () => {
       /** Setup test data with various permissions */
       await methods.grantPermission(
-        'user',
+        PrincipalType.USER,
         userId,
         ResourceType.AGENT,
         resourceId,
@@ -161,7 +165,7 @@ describe('AclEntry Model Tests', () => {
         grantedById,
       );
       await methods.grantPermission(
-        'group',
+        PrincipalType.GROUP,
         groupId,
         ResourceType.AGENT,
         resourceId,
@@ -171,7 +175,7 @@ describe('AclEntry Model Tests', () => {
 
       const otherResourceId = new mongoose.Types.ObjectId();
       await methods.grantPermission(
-        'public',
+        PrincipalType.PUBLIC,
         null,
         ResourceType.AGENT,
         otherResourceId,
@@ -182,8 +186,8 @@ describe('AclEntry Model Tests', () => {
 
     test('should find entries by principals and resource', async () => {
       const principalsList = [
-        { principalType: 'user', principalId: userId },
-        { principalType: 'group', principalId: groupId },
+        { principalType: PrincipalType.USER, principalId: userId },
+        { principalType: PrincipalType.GROUP, principalId: groupId },
       ];
 
       const entries = await methods.findEntriesByPrincipalsAndResource(
@@ -195,7 +199,7 @@ describe('AclEntry Model Tests', () => {
     });
 
     test('should check if user has permission', async () => {
-      const principalsList = [{ principalType: 'user', principalId: userId }];
+      const principalsList = [{ principalType: PrincipalType.USER, principalId: userId }];
 
       /** User has VIEW permission */
       const hasViewPermission = await methods.hasPermission(
@@ -217,7 +221,7 @@ describe('AclEntry Model Tests', () => {
     });
 
     test('should check if group has permission', async () => {
-      const principalsList = [{ principalType: 'group', principalId: groupId }];
+      const principalsList = [{ principalType: PrincipalType.GROUP, principalId: groupId }];
 
       /** Group has EDIT permission */
       const hasEditPermission = await methods.hasPermission(
@@ -231,8 +235,8 @@ describe('AclEntry Model Tests', () => {
 
     test('should check permission for multiple principals', async () => {
       const principalsList = [
-        { principalType: 'user', principalId: userId },
-        { principalType: 'group', principalId: groupId },
+        { principalType: PrincipalType.USER, principalId: userId },
+        { principalType: PrincipalType.GROUP, principalId: groupId },
       ];
 
       /** User has VIEW and group has EDIT, together they should have both */
@@ -264,11 +268,15 @@ describe('AclEntry Model Tests', () => {
 
     test('should get effective permissions', async () => {
       const principalsList = [
-        { principalType: 'user', principalId: userId },
-        { principalType: 'group', principalId: groupId },
+        { principalType: PrincipalType.USER, principalId: userId },
+        { principalType: PrincipalType.GROUP, principalId: groupId },
       ];
 
-      const effective = await methods.getEffectivePermissions(principalsList, 'agent', resourceId);
+      const effective = await methods.getEffectivePermissions(
+        principalsList,
+        ResourceType.AGENT,
+        resourceId,
+      );
 
       /** Combined permissions should be VIEW | EDIT */
       expect(effective).toBe(PermissionBits.VIEW | PermissionBits.EDIT);
@@ -279,7 +287,7 @@ describe('AclEntry Model Tests', () => {
     test('should revoke permission', async () => {
       /** Grant permission first */
       await methods.grantPermission(
-        'user',
+        PrincipalType.USER,
         userId,
         ResourceType.AGENT,
         resourceId,
@@ -288,22 +296,27 @@ describe('AclEntry Model Tests', () => {
       );
 
       /** Check it exists */
-      const entriesBefore = await methods.findEntriesByPrincipal('user', userId);
+      const entriesBefore = await methods.findEntriesByPrincipal(PrincipalType.USER, userId);
       expect(entriesBefore).toHaveLength(1);
 
       /** Revoke it */
-      const result = await methods.revokePermission('user', userId, ResourceType.AGENT, resourceId);
+      const result = await methods.revokePermission(
+        PrincipalType.USER,
+        userId,
+        ResourceType.AGENT,
+        resourceId,
+      );
       expect(result.deletedCount).toBe(1);
 
       /** Verify it's gone */
-      const entriesAfter = await methods.findEntriesByPrincipal('user', userId);
+      const entriesAfter = await methods.findEntriesByPrincipal(PrincipalType.USER, userId);
       expect(entriesAfter).toHaveLength(0);
     });
 
     test('should modify permission bits - add permissions', async () => {
       /** Start with VIEW permission */
       await methods.grantPermission(
-        'user',
+        PrincipalType.USER,
         userId,
         ResourceType.AGENT,
         resourceId,
@@ -313,7 +326,7 @@ describe('AclEntry Model Tests', () => {
 
       /** Add EDIT permission */
       const updated = await methods.modifyPermissionBits(
-        'user',
+        PrincipalType.USER,
         userId,
         ResourceType.AGENT,
         resourceId,
@@ -328,7 +341,7 @@ describe('AclEntry Model Tests', () => {
     test('should modify permission bits - remove permissions', async () => {
       /** Start with VIEW | EDIT permissions */
       await methods.grantPermission(
-        'user',
+        PrincipalType.USER,
         userId,
         ResourceType.AGENT,
         resourceId,
@@ -338,7 +351,7 @@ describe('AclEntry Model Tests', () => {
 
       /** Remove EDIT permission */
       const updated = await methods.modifyPermissionBits(
-        'user',
+        PrincipalType.USER,
         userId,
         ResourceType.AGENT,
         resourceId,
@@ -353,7 +366,7 @@ describe('AclEntry Model Tests', () => {
     test('should modify permission bits - add and remove at once', async () => {
       /** Start with VIEW permission */
       await methods.grantPermission(
-        'user',
+        PrincipalType.USER,
         userId,
         ResourceType.AGENT,
         resourceId,
@@ -363,9 +376,9 @@ describe('AclEntry Model Tests', () => {
 
       /** Add EDIT and remove VIEW in one operation */
       const updated = await methods.modifyPermissionBits(
-        'user',
+        PrincipalType.USER,
         userId,
-        'agent',
+        ResourceType.AGENT,
         resourceId,
         PermissionBits.EDIT,
         PermissionBits.VIEW,
@@ -385,7 +398,7 @@ describe('AclEntry Model Tests', () => {
 
       /** User can view resource 1 */
       await methods.grantPermission(
-        'user',
+        PrincipalType.USER,
         userId,
         ResourceType.AGENT,
         resourceId1,
@@ -395,7 +408,7 @@ describe('AclEntry Model Tests', () => {
 
       /** User can view and edit resource 2 */
       await methods.grantPermission(
-        'user',
+        PrincipalType.USER,
         userId,
         ResourceType.AGENT,
         resourceId2,
@@ -405,7 +418,7 @@ describe('AclEntry Model Tests', () => {
 
       /** Group can view resource 3 */
       await methods.grantPermission(
-        'group',
+        PrincipalType.GROUP,
         groupId,
         ResourceType.AGENT,
         resourceId3,
@@ -415,7 +428,7 @@ describe('AclEntry Model Tests', () => {
 
       /** Find resources with VIEW permission for user */
       const userViewableResources = await methods.findAccessibleResources(
-        [{ principalType: 'user', principalId: userId }],
+        [{ principalType: PrincipalType.USER, principalId: userId }],
         ResourceType.AGENT,
         PermissionBits.VIEW,
       );
@@ -428,8 +441,8 @@ describe('AclEntry Model Tests', () => {
       /** Find resources with VIEW permission for user or group */
       const allViewableResources = await methods.findAccessibleResources(
         [
-          { principalType: 'user', principalId: userId },
-          { principalType: 'group', principalId: groupId },
+          { principalType: PrincipalType.USER, principalId: userId },
+          { principalType: PrincipalType.GROUP, principalId: groupId },
         ],
         ResourceType.AGENT,
         PermissionBits.VIEW,
@@ -439,7 +452,7 @@ describe('AclEntry Model Tests', () => {
 
       /** Find resources with EDIT permission for user */
       const editableResources = await methods.findAccessibleResources(
-        [{ principalType: 'user', principalId: userId }],
+        [{ principalType: PrincipalType.USER, principalId: userId }],
         ResourceType.AGENT,
         PermissionBits.EDIT,
       );
@@ -452,19 +465,9 @@ describe('AclEntry Model Tests', () => {
       const projectId = new mongoose.Types.ObjectId();
       const childResourceId = new mongoose.Types.ObjectId();
 
-      /** Grant permission on project */
-      await methods.grantPermission(
-        'user',
-        userId,
-        'project',
-        projectId,
-        PermissionBits.VIEW,
-        grantedById,
-      );
-
       /** Grant inherited permission on child resource */
       await AclEntry.create({
-        principalType: 'user',
+        principalType: PrincipalType.USER,
         principalId: userId,
         principalModel: 'User',
         resourceType: ResourceType.AGENT,
@@ -476,7 +479,7 @@ describe('AclEntry Model Tests', () => {
 
       /** Get effective permissions */
       const effective = await methods.getEffectivePermissions(
-        [{ principalType: 'user', principalId: userId }],
+        [{ principalType: PrincipalType.USER, principalId: userId }],
         ResourceType.AGENT,
         childResourceId,
       );

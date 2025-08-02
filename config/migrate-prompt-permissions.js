@@ -2,7 +2,7 @@ const path = require('path');
 const { logger } = require('@librechat/data-schemas');
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
 
-const { AccessRoleIds, ResourceType } = require('librechat-data-provider');
+const { AccessRoleIds, ResourceType, PrincipalType } = require('librechat-data-provider');
 const { GLOBAL_PROJECT_NAME } = require('librechat-data-provider').Constants;
 const connect = require('./connect');
 
@@ -51,8 +51,8 @@ async function migrateToPromptGroupPermissions({ dryRun = true, batchSize = 100 
             as: 'aclEntry',
             cond: {
               $and: [
-                { $eq: ['$$aclEntry.resourceType', 'promptGroup'] },
-                { $eq: ['$$aclEntry.principalType', 'user'] },
+                { $eq: ['$$aclEntry.resourceType', ResourceType.PROMPTGROUP] },
+                { $eq: ['$$aclEntry.principalType', PrincipalType.USER] },
               ],
             },
           },
@@ -145,7 +145,7 @@ async function migrateToPromptGroupPermissions({ dryRun = true, batchSize = 100 
 
         // Always grant owner permission to author
         await grantPermission({
-          principalType: 'user',
+          principalType: PrincipalType.USER,
           principalId: group.author,
           resourceType: ResourceType.PROMPTGROUP,
           resourceId: group._id,
@@ -157,7 +157,7 @@ async function migrateToPromptGroupPermissions({ dryRun = true, batchSize = 100 
         // Grant public view permissions for promptGroups in global project
         if (isGlobalGroup) {
           await grantPermission({
-            principalType: 'public',
+            principalType: PrincipalType.PUBLIC,
             principalId: null,
             resourceType: ResourceType.PROMPTGROUP,
             resourceId: group._id,

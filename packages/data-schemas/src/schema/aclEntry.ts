@@ -1,18 +1,19 @@
 import { Schema } from 'mongoose';
+import { PrincipalType } from 'librechat-data-provider';
 import type { IAclEntry } from '~/types';
 
 const aclEntrySchema = new Schema<IAclEntry>(
   {
     principalType: {
       type: String,
-      enum: ['user', 'group', 'public'],
+      enum: Object.values(PrincipalType),
       required: true,
     },
     principalId: {
       type: Schema.Types.ObjectId,
       refPath: 'principalModel',
       required: function (this: IAclEntry) {
-        return this.principalType !== 'public';
+        return this.principalType !== PrincipalType.PUBLIC;
       },
       index: true,
     },
@@ -20,7 +21,7 @@ const aclEntrySchema = new Schema<IAclEntry>(
       type: String,
       enum: ['User', 'Group'],
       required: function (this: IAclEntry) {
-        return this.principalType !== 'public';
+        return this.principalType !== PrincipalType.PUBLIC;
       },
     },
     resourceType: {

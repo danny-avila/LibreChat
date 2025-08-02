@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const { ResourceType } = require('librechat-data-provider');
+const { ResourceType, PrincipalType } = require('librechat-data-provider');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const { canAccessAgentResource } = require('./canAccessAgentResource');
 const { User, Role, AclEntry } = require('~/db/models');
@@ -97,7 +97,7 @@ describe('canAccessAgentResource middleware', () => {
 
       // Create ACL entry for the author (owner permissions)
       await AclEntry.create({
-        principalType: 'user',
+        principalType: PrincipalType.USER,
         principalId: testUser._id,
         principalModel: 'User',
         resourceType: ResourceType.AGENT,
@@ -134,7 +134,7 @@ describe('canAccessAgentResource middleware', () => {
 
       // Create ACL entry for the other user (owner)
       await AclEntry.create({
-        principalType: 'user',
+        principalType: PrincipalType.USER,
         principalId: otherUser._id,
         principalModel: 'User',
         resourceType: ResourceType.AGENT,
@@ -175,7 +175,7 @@ describe('canAccessAgentResource middleware', () => {
 
       // Create ACL entry granting view permission to test user
       await AclEntry.create({
-        principalType: 'user',
+        principalType: PrincipalType.USER,
         principalId: testUser._id,
         principalModel: 'User',
         resourceType: ResourceType.AGENT,
@@ -212,7 +212,7 @@ describe('canAccessAgentResource middleware', () => {
 
       // Create ACL entry granting only view permission
       await AclEntry.create({
-        principalType: 'user',
+        principalType: PrincipalType.USER,
         principalId: testUser._id,
         principalModel: 'User',
         resourceType: ResourceType.AGENT,
@@ -259,7 +259,7 @@ describe('canAccessAgentResource middleware', () => {
 
       // Create ACL entry for the author
       await AclEntry.create({
-        principalType: 'user',
+        principalType: PrincipalType.USER,
         principalId: testUser._id,
         principalModel: 'User',
         resourceType: ResourceType.AGENT,
@@ -295,7 +295,7 @@ describe('canAccessAgentResource middleware', () => {
 
       // Create ACL entry with all permissions for the owner
       await AclEntry.create({
-        principalType: 'user',
+        principalType: PrincipalType.USER,
         principalId: testUser._id,
         principalModel: 'User',
         resourceType: ResourceType.AGENT,
@@ -355,7 +355,7 @@ describe('canAccessAgentResource middleware', () => {
 
       // Create ACL entry for the author
       await AclEntry.create({
-        principalType: 'user',
+        principalType: PrincipalType.USER,
         principalId: testUser._id,
         principalModel: 'User',
         resourceType: ResourceType.AGENT,

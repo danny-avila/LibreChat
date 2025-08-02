@@ -17,6 +17,11 @@ jest.mock('~/config', () => ({
 jest.mock('librechat-data-provider', () => ({
   isUUID: { parse: jest.fn() },
   megabyte: 1024 * 1024,
+  PrincipalType: {
+    USER: 'user',
+    GROUP: 'group',
+    PUBLIC: 'public',
+  },
   FileContext: { message_attachment: 'message_attachment' },
   FileSources: { local: 'local' },
   EModelEndpoint: { assistants: 'assistants' },

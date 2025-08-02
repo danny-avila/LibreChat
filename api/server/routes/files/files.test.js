@@ -4,7 +4,7 @@ const mongoose = require('mongoose');
 const { v4: uuidv4 } = require('uuid');
 const { createMethods } = require('@librechat/data-schemas');
 const { MongoMemoryServer } = require('mongodb-memory-server');
-const { AccessRoleIds, ResourceType } = require('librechat-data-provider');
+const { AccessRoleIds, ResourceType, PrincipalType } = require('librechat-data-provider');
 const { createAgent } = require('~/models/Agent');
 const { createFile } = require('~/models/File');
 
@@ -227,7 +227,7 @@ describe('File Routes - Delete with Agent Access', () => {
       // Grant EDIT permission to user on the agent
       const { grantPermission } = require('~/server/services/PermissionService');
       await grantPermission({
-        principalType: 'user',
+        principalType: PrincipalType.USER,
         principalId: otherUserId,
         resourceType: ResourceType.AGENT,
         resourceId: agent._id,
@@ -281,7 +281,7 @@ describe('File Routes - Delete with Agent Access', () => {
       // Grant EDIT permission to user on the agent
       const { grantPermission } = require('~/server/services/PermissionService');
       await grantPermission({
-        principalType: 'user',
+        principalType: PrincipalType.USER,
         principalId: otherUserId,
         resourceType: ResourceType.AGENT,
         resourceId: agent._id,
@@ -347,7 +347,7 @@ describe('File Routes - Delete with Agent Access', () => {
       // Grant EDIT permission to user on the agent
       const { grantPermission } = require('~/server/services/PermissionService');
       await grantPermission({
-        principalType: 'user',
+        principalType: PrincipalType.USER,
         principalId: otherUserId,
         resourceType: ResourceType.AGENT,
         resourceId: agent._id,
@@ -390,7 +390,7 @@ describe('File Routes - Delete with Agent Access', () => {
       // Grant only VIEW permission to user on the agent
       const { grantPermission } = require('~/server/services/PermissionService');
       await grantPermission({
-        principalType: 'user',
+        principalType: PrincipalType.USER,
         principalId: otherUserId,
         resourceType: ResourceType.AGENT,
         resourceId: agent._id,

@@ -1,3 +1,4 @@
+import { PrincipalType } from 'librechat-data-provider';
 import type { Model, Types, DeleteResult, ClientSession } from 'mongoose';
 import type { IAclEntry } from '~/types';
 
@@ -51,7 +52,7 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')) {
     const AclEntry = mongoose.models.AclEntry as Model<IAclEntry>;
     const principalsQuery = principalsList.map((p) => ({
       principalType: p.principalType,
-      ...(p.principalType !== 'public' && { principalId: p.principalId }),
+      ...(p.principalType !== PrincipalType.PUBLIC && { principalId: p.principalId }),
     }));
 
     return await AclEntry.find({
@@ -78,7 +79,7 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')) {
     const AclEntry = mongoose.models.AclEntry as Model<IAclEntry>;
     const principalsQuery = principalsList.map((p) => ({
       principalType: p.principalType,
-      ...(p.principalType !== 'public' && { principalId: p.principalId }),
+      ...(p.principalType !== PrincipalType.PUBLIC && { principalId: p.principalId }),
     }));
 
     const entry = await AclEntry.findOne({
@@ -145,9 +146,9 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')) {
       resourceId,
     };
 
-    if (principalType !== 'public') {
+    if (principalType !== PrincipalType.PUBLIC) {
       query.principalId = principalId;
-      query.principalModel = principalType === 'user' ? 'User' : 'Group';
+      query.principalModel = principalType === PrincipalType.USER ? 'User' : 'Group';
     }
 
     const update = {
@@ -191,7 +192,7 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')) {
       resourceId,
     };
 
-    if (principalType !== 'public') {
+    if (principalType !== PrincipalType.PUBLIC) {
       query.principalId = principalId;
     }
 
@@ -227,7 +228,7 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')) {
       resourceId,
     };
 
-    if (principalType !== 'public') {
+    if (principalType !== PrincipalType.PUBLIC) {
       query.principalId = principalId;
     }
 
@@ -266,7 +267,7 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')) {
     const AclEntry = mongoose.models.AclEntry as Model<IAclEntry>;
     const principalsQuery = principalsList.map((p) => ({
       principalType: p.principalType,
-      ...(p.principalType !== 'public' && { principalId: p.principalId }),
+      ...(p.principalType !== PrincipalType.PUBLIC && { principalId: p.principalId }),
     }));
 
     const entries = await AclEntry.find({
