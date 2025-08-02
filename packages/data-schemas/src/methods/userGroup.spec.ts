@@ -1,9 +1,10 @@
 import mongoose from 'mongoose';
+import { PrincipalType } from 'librechat-data-provider';
 import { MongoMemoryServer } from 'mongodb-memory-server';
+import type * as t from '~/types';
 import { createUserGroupMethods } from './userGroup';
 import groupSchema from '~/schema/group';
 import userSchema from '~/schema/user';
-import type * as t from '~/types';
 
 /** Mocking logger */
 jest.mock('~/config/winston', () => ({
@@ -330,9 +331,9 @@ describe('User Group Methods Tests', () => {
       expect(principals).toHaveLength(3);
 
       /** Check principal types */
-      const userPrincipal = principals.find((p) => p.principalType === 'user');
-      const groupPrincipal = principals.find((p) => p.principalType === 'group');
-      const publicPrincipal = principals.find((p) => p.principalType === 'public');
+      const userPrincipal = principals.find((p) => p.principalType === PrincipalType.USER);
+      const groupPrincipal = principals.find((p) => p.principalType === PrincipalType.GROUP);
+      const publicPrincipal = principals.find((p) => p.principalType === PrincipalType.PUBLIC);
 
       expect(userPrincipal).toBeDefined();
       expect(userPrincipal?.principalId?.toString()).toBe(
@@ -352,9 +353,9 @@ describe('User Group Methods Tests', () => {
 
       /** Should still return user and public principals even for non-existent user */
       expect(principals).toHaveLength(2);
-      expect(principals[0].principalType).toBe('user');
+      expect(principals[0].principalType).toBe(PrincipalType.USER);
       expect(principals[0].principalId?.toString()).toBe(nonExistentId.toString());
-      expect(principals[1].principalType).toBe('public');
+      expect(principals[1].principalType).toBe(PrincipalType.PUBLIC);
       expect(principals[1].principalId).toBeUndefined();
     });
   });

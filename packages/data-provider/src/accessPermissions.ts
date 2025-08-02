@@ -13,7 +13,11 @@ import { z } from 'zod';
 /**
  * Principal types for permission system
  */
-export type TPrincipalType = 'user' | 'group' | 'public';
+export enum PrincipalType {
+  USER = 'user',
+  GROUP = 'group',
+  PUBLIC = 'public',
+}
 
 /**
  * Source of the principal (local LibreChat or external Entra ID)
@@ -65,7 +69,7 @@ export enum AccessRoleIds {
  * Principal schema - represents a user, group, or public access
  */
 export const principalSchema = z.object({
-  type: z.enum(['user', 'group', 'public']),
+  type: z.nativeEnum(PrincipalType),
   id: z.string().optional(), // undefined for 'public' type
   name: z.string().optional(),
   email: z.string().optional(), // for user and group types
@@ -93,7 +97,7 @@ export const accessRoleSchema = z.object({
  */
 export const permissionEntrySchema = z.object({
   id: z.string(),
-  principalType: z.enum(['user', 'group', 'public']),
+  principalType: z.nativeEnum(PrincipalType),
   principalId: z.string().optional(), // undefined for 'public'
   principalName: z.string().optional(),
   role: accessRoleSchema,

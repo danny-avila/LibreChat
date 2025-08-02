@@ -6,8 +6,9 @@ const {
   SystemRoles,
   ResourceType,
   AccessRoleIds,
-  PermissionTypes,
+  PrincipalType,
   PermissionBits,
+  PermissionTypes,
 } = require('librechat-data-provider');
 const {
   makePromptProduction,
@@ -189,7 +190,7 @@ const createNewPromptGroup = async (req, res) => {
     if (result.prompt && result.prompt._id && result.prompt.groupId) {
       try {
         await grantPermission({
-          principalType: 'user',
+          principalType: PrincipalType.USER,
           principalId: req.user.id,
           resourceType: ResourceType.PROMPTGROUP,
           resourceId: result.prompt.groupId,
