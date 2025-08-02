@@ -4,7 +4,7 @@
 
 const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
-const { ResourceType } = require('librechat-data-provider');
+const { ResourceType, PrincipalType } = require('librechat-data-provider');
 const {
   bulkUpdateResourcePermissions,
   ensureGroupPrincipalExists,
@@ -235,14 +235,14 @@ const getResourcePermissions = async (req, res) => {
 
     // Process aggregation results
     for (const result of results) {
-      if (result.principalType === 'public') {
+      if (result.principalType === PrincipalType.PUBLIC) {
         publicPermission = {
           public: true,
           publicAccessRoleId: result.accessRoleId,
         };
-      } else if (result.principalType === 'user' && result.userInfo) {
+      } else if (result.principalType === PrincipalType.USER && result.userInfo) {
         principals.push({
-          type: 'user',
+          type: PrincipalType.USER,
           id: result.userInfo._id.toString(),
           name: result.userInfo.name || result.userInfo.username,
           email: result.userInfo.email,
@@ -251,9 +251,9 @@ const getResourcePermissions = async (req, res) => {
           idOnTheSource: result.userInfo.idOnTheSource || result.userInfo._id.toString(),
           accessRoleId: result.accessRoleId,
         });
-      } else if (result.principalType === 'group' && result.groupInfo) {
+      } else if (result.principalType === PrincipalType.GROUP && result.groupInfo) {
         principals.push({
-          type: 'group',
+          type: PrincipalType.GROUP,
           id: result.groupInfo._id.toString(),
           name: result.groupInfo.name,
           email: result.groupInfo.email,
