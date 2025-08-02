@@ -930,7 +930,6 @@
   "com_ui_use_2fa_code": "Kasuta hoopis 2FA koodi",
   "com_ui_use_backup_code": "Kasuta hoopis varukoodi",
   "com_ui_use_micrphone": "Kasuta mikrofoni",
-  "com_ui_use_prompt": "Kasuta sisendit",
   "com_ui_used": "Kasutatud",
   "com_ui_variables": "Muutujad",
   "com_ui_variables_info": "Kasuta oma tekstis topelt sulgusid, et luua muutujaid, nt `{{näidismuutuja}}`, et hiljem sisendi kasutamisel täita.",

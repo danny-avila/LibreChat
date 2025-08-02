@@ -832,7 +832,6 @@
   "com_ui_use_2fa_code": "به جای آن از کد 2FA استفاده کنید",
   "com_ui_use_backup_code": "به جای آن از کد پشتیبان استفاده کنید",
   "com_ui_use_micrphone": "از میکروفون استفاده کنید",
-  "com_ui_use_prompt": "از prompt استفاده کنید",
   "com_ui_used": "استفاده می شود",
   "com_ui_variables": "متغیرها",
   "com_ui_variables_info": "از پرانتزهای دوتایی در متن خود برای ایجاد متغیرها استفاده کنید، به عنوان مثال. `{{example variable}}`، تا بعداً هنگام استفاده از درخواست پر شود.",

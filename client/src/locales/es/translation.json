@@ -743,7 +743,6 @@
   "com_ui_upload_success": "Archivo subido con éxito",
   "com_ui_upload_type": "Seleccionar tipo de carga",
   "com_ui_use_micrphone": "Usar micrófono",
-  "com_ui_use_prompt": "Usar prompt",
   "com_ui_variables": "Variables",
   "com_ui_variables_info": "Utilice llaves dobles en su texto para crear variables, por ejemplo `{{variable de ejemplo}}`, para completarlas posteriormente al usar el prompt.",
   "com_ui_verify": "Verificar",
