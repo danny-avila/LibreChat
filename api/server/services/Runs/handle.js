@@ -179,7 +179,7 @@ async function waitForRun({
  * @return {Promise<RunStep[]>} A promise that resolves to an array of RunStep objects.
  */
 async function _retrieveRunSteps({ openai, thread_id, run_id }) {
-  const runSteps = await openai.beta.threads.runs.steps.list(thread_id, run_id);
+  const runSteps = await openai.beta.threads.runs.steps.list(run_id, { thread_id });
   return runSteps;
 }
 
