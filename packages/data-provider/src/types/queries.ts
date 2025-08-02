@@ -1,4 +1,5 @@
 import type { InfiniteData } from '@tanstack/react-query';
+import type { AccessRoleIds } from '../accessPermissions';
 import type * as a from '../types/agents';
 import type * as s from '../schemas';
 import type * as t from '../types';
@@ -125,6 +126,47 @@ export type MemoriesResponse = {
   usagePercentage: number | null;
 };
 
+export type PrincipalSearchParams = {
+  q: string;
+  limit?: number;
+  type?: 'user' | 'group';
+};
+
+export type PrincipalSearchResult = {
+  id?: string | null;
+  type: 'user' | 'group';
+  name: string;
+  email?: string;
+  username?: string;
+  avatar?: string;
+  provider?: string;
+  source: 'local' | 'entra';
+  memberCount?: number;
+  description?: string;
+  idOnTheSource?: string;
+};
+
+export type PrincipalSearchResponse = {
+  query: string;
+  limit: number;
+  type?: 'user' | 'group';
+  results: PrincipalSearchResult[];
+  count: number;
+  sources: {
+    local: number;
+    entra: number;
+  };
+};
+
+export type AccessRole = {
+  accessRoleId: AccessRoleIds;
+  name: string;
+  description: string;
+  permBits: number;
+};
+
+export type AccessRolesResponse = AccessRole[];
+
 export interface MCPServerStatus {
   requiresOAuth: boolean;
   connectionState: 'disconnected' | 'connecting' | 'connected' | 'error';
@@ -147,3 +189,15 @@ export interface MCPAuthValuesResponse {
   serverName: string;
   authValueFlags: Record<string, boolean>;
 }
+
+/* SharePoint Graph API Token */
+export type GraphTokenParams = {
+  scopes: string;
+};
+
+export type GraphTokenResponse = {
+  access_token: string;
+  token_type: string;
+  expires_in: number;
+  scope: string;
+};

@@ -9,6 +9,7 @@ export * from './balance';
 export * from './banner';
 export * from './message';
 export * from './agent';
+export * from './agentCategory';
 export * from './role';
 export * from './action';
 export * from './assistant';
@@ -17,3 +18,7 @@ export * from './share';
 export * from './pluginAuth';
 /* Memories */
 export * from './memory';
+/* Access Control */
+export * from './accessRole';
+export * from './aclEntry';
+export * from './group';

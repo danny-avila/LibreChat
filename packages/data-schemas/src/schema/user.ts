@@ -138,6 +138,11 @@ const userSchema = new Schema<IUser>(
       },
       default: {},
     },
+    /** Field for external source identification (for consistency with TPrincipal schema) */
+    idOnTheSource: {
+      type: String,
+      sparse: true,
+    },
   },
   { timestamps: true },
 );

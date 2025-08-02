@@ -810,7 +810,7 @@ class AgentClient extends BaseClient {
 
         if (noSystemMessages === true && systemContent?.length) {
           const latestMessageContent = _messages.pop().content;
-          if (typeof latestMessage !== 'string') {
+          if (typeof latestMessageContent !== 'string') {
             latestMessageContent[0].text = [systemContent, latestMessageContent[0].text].join('\n');
             _messages.push(new HumanMessage({ content: latestMessageContent }));
           } else {
@@ -1008,6 +1008,7 @@ class AgentClient extends BaseClient {
             this.artifactPromises.push(...attachments);
           }
         }
+
         await this.recordCollectedUsage({ context: 'message' });
       } catch (err) {
         logger.error(

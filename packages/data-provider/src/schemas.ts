@@ -168,11 +168,17 @@ export const defaultAgentFormValues = {
   provider: {},
   projectIds: [],
   artifacts: '',
+  /** @deprecated Use ACL permissions instead */
   isCollaborative: false,
   recursion_limit: undefined,
   [Tools.execute_code]: false,
   [Tools.file_search]: false,
   [Tools.web_search]: false,
+  category: 'general',
+  support_contact: {
+    name: '',
+    email: '',
+  },
 };
 
 export const ImageVisionTool: FunctionTool = {
@@ -542,6 +548,7 @@ export type TAttachmentMetadata = {
   messageId: string;
   toolCallId: string;
   [Tools.web_search]?: SearchResultData;
+  [Tools.file_search]?: SearchResultData;
   [Tools.memory]?: MemoryArtifact;
 };
 

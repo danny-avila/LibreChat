@@ -3,10 +3,9 @@ import * as Popover from '@radix-ui/react-popover';
 import { useToastContext } from '@librechat/client';
 import { useQueryClient } from '@tanstack/react-query';
 import {
-  fileConfig as defaultFileConfig,
   QueryKeys,
-  defaultOrderQuery,
   mergeFileConfig,
+  fileConfig as defaultFileConfig,
 } from 'librechat-data-provider';
 import type { UseMutationResult } from '@tanstack/react-query';
 import type {
@@ -15,7 +14,12 @@ import type {
   AgentCreateParams,
   AgentListResponse,
 } from 'librechat-data-provider';
-import { useUploadAgentAvatarMutation, useGetFileConfig } from '~/data-provider';
+import {
+  useUploadAgentAvatarMutation,
+  useGetFileConfig,
+  allAgentViewAndEditQueryKeys,
+  invalidateAgentMarketplaceQueries,
+} from '~/data-provider';
 import { AgentAvatarRender, NoImage, AvatarMenu } from './Images';
 import { useLocalize } from '~/hooks';
 import { formatBytes } from '~/utils';
@@ -46,41 +50,41 @@ function Avatar({
     onMutate: () => {
       setProgress(0.4);
     },
-    onSuccess: (data, vars) => {
-      if (vars.postCreation === false) {
-        showToast({ message: localize('com_ui_upload_success') });
-      } else if (lastSeenCreatedId.current !== createMutation.data?.id) {
+    onSuccess: (data) => {
+      if (lastSeenCreatedId.current !== createMutation.data?.id) {
         lastSeenCreatedId.current = createMutation.data?.id ?? '';
       }
+      showToast({ message: localize('com_ui_upload_agent_avatar') });
 
       setInput(null);
       const newUrl = data.avatar?.filepath ?? '';
       setPreviewUrl(newUrl);
 
-      const res = queryClient.getQueryData<AgentListResponse>([
-        QueryKeys.agents,
-        defaultOrderQuery,
-      ]);
+      ((keys) => {
+        keys.forEach((key) => {
+          const res = queryClient.getQueryData<AgentListResponse>([QueryKeys.agents, key]);
 
-      if (!res?.data) {
-        return;
-      }
+          if (!res?.data) {
+            return;
+          }
 
-      const agents = res.data.map((agent) => {
-        if (agent.id === agent_id) {
-          return {
-            ...agent,
-            ...data,
-          };
-        }
-        return agent;
-      });
+          const agents = res.data.map((agent) => {
+            if (agent.id === agent_id) {
+              return {
+                ...agent,
+                ...data,
+              };
+            }
+            return agent;
+          });
 
-      queryClient.setQueryData<AgentListResponse>([QueryKeys.agents, defaultOrderQuery], {
-        ...res,
-        data: agents,
-      });
-
+          queryClient.setQueryData<AgentListResponse>([QueryKeys.agents, key], {
+            ...res,
+            data: agents,
+          });
+        });
+      })(allAgentViewAndEditQueryKeys);
+      invalidateAgentMarketplaceQueries(queryClient);
       setProgress(1);
     },
     onError: (error) => {
@@ -137,7 +141,6 @@ function Avatar({
 
       uploadAvatar({
         agent_id: createMutation.data.id,
-        postCreation: true,
         formData,
       });
     }
