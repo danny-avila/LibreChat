@@ -573,9 +573,9 @@ class StreamRunManager {
     let toolRun;
     try {
       toolRun = this.openai.beta.threads.runs.submitToolOutputsStream(
-        run.thread_id,
         run.id,
         {
+          thread_id: run.thread_id,
           tool_outputs,
           stream: true,
         },

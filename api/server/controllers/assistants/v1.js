@@ -197,7 +197,7 @@ const deleteAssistant = async (req, res) => {
     await validateAuthor({ req, openai });
 
     const assistant_id = req.params.id;
-    const deletionStatus = await openai.beta.assistants.del(assistant_id);
+    const deletionStatus = await openai.beta.assistants.delete(assistant_id);
     if (deletionStatus?.deleted) {
       await deleteAssistantActions({ req, assistant_id });
     }
