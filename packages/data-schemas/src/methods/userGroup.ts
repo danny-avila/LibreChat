@@ -1,5 +1,6 @@
-import type { Model, Types, ClientSession } from 'mongoose';
+import { PrincipalType } from 'librechat-data-provider';
 import type { TUser, TPrincipalSearchResult } from 'librechat-data-provider';
+import type { Model, Types, ClientSession } from 'mongoose';
 import type { IGroup, IUser } from '~/types';
 
 export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
@@ -245,17 +246,17 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
     session?: ClientSession,
   ): Promise<Array<{ principalType: string; principalId?: string | Types.ObjectId }>> {
     const principals: Array<{ principalType: string; principalId?: string | Types.ObjectId }> = [
-      { principalType: 'user', principalId: userId },
+      { principalType: PrincipalType.USER, principalId: userId },
     ];
 
     const userGroups = await getUserGroups(userId, session);
     if (userGroups && userGroups.length > 0) {
       userGroups.forEach((group) => {
-        principals.push({ principalType: 'group', principalId: group._id.toString() });
+        principals.push({ principalType: PrincipalType.GROUP, principalId: group._id.toString() });
       });
     }
 
-    principals.push({ principalType: 'public' });
+    principals.push({ principalType: PrincipalType.PUBLIC });
 
     return principals;
   }
