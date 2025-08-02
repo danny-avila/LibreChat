@@ -21,3 +21,6 @@ services:
     # If running on Linux
     extra_hosts:
       - "host.docker.internal:host-gateway"
+  meilisearch:
+    ports:
+      - "7700:7700"
