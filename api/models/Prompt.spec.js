@@ -6,6 +6,7 @@ const {
   SystemRoles,
   ResourceType,
   AccessRoleIds,
+  PrincipalType,
   PermissionBits,
 } = require('librechat-data-provider');
 
@@ -151,7 +152,7 @@ describe('Prompt ACL Permissions', () => {
 
       // Manually grant permissions as would happen in the route
       await permissionService.grantPermission({
-        principalType: 'user',
+        principalType: PrincipalType.USER,
         principalId: testUsers.owner._id,
         resourceType: ResourceType.PROMPTGROUP,
         resourceId: testGroup._id,
@@ -163,7 +164,7 @@ describe('Prompt ACL Permissions', () => {
       const aclEntry = await AclEntry.findOne({
         resourceType: ResourceType.PROMPTGROUP,
         resourceId: testGroup._id,
-        principalType: 'user',
+        principalType: PrincipalType.USER,
         principalId: testUsers.owner._id,
       });
 
@@ -195,7 +196,7 @@ describe('Prompt ACL Permissions', () => {
 
       // Grant owner permissions
       await permissionService.grantPermission({
-        principalType: 'user',
+        principalType: PrincipalType.USER,
         principalId: testUsers.owner._id,
         resourceType: ResourceType.PROMPTGROUP,
         resourceId: testPromptGroup._id,
@@ -233,7 +234,7 @@ describe('Prompt ACL Permissions', () => {
     it('user with viewer role should only have view access', async () => {
       // Grant viewer permissions
       await permissionService.grantPermission({
-        principalType: 'user',
+        principalType: PrincipalType.USER,
         principalId: testUsers.viewer._id,
         resourceType: ResourceType.PROMPTGROUP,
         resourceId: testPromptGroup._id,
@@ -355,7 +356,7 @@ describe('Prompt ACL Permissions', () => {
 
       // Grant edit permissions to the group
       await permissionService.grantPermission({
-        principalType: 'group',
+        principalType: PrincipalType.GROUP,
         principalId: testGroups.editors._id,
         resourceType: ResourceType.PROMPTGROUP,
         resourceId: testPromptGroup._id,
@@ -423,7 +424,7 @@ describe('Prompt ACL Permissions', () => {
 
       // Grant public view access to publicPromptGroup
       await permissionService.grantPermission({
-        principalType: 'public',
+        principalType: PrincipalType.PUBLIC,
         principalId: null,
         resourceType: ResourceType.PROMPTGROUP,
         resourceId: publicPromptGroup._id,
@@ -433,7 +434,7 @@ describe('Prompt ACL Permissions', () => {
 
       // Grant only owner access to privatePromptGroup
       await permissionService.grantPermission({
-        principalType: 'user',
+        principalType: PrincipalType.USER,
         principalId: testUsers.owner._id,
         resourceType: ResourceType.PROMPTGROUP,
         resourceId: privatePromptGroup._id,
@@ -504,7 +505,7 @@ describe('Prompt ACL Permissions', () => {
 
       // Grant permission
       await permissionService.grantPermission({
-        principalType: 'user',
+        principalType: PrincipalType.USER,
         principalId: testUsers.owner._id,
         resourceType: ResourceType.PROMPTGROUP,
         resourceId: testPromptGroup._id,

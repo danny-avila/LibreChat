@@ -7,6 +7,7 @@ const {
   SystemRoles,
   ResourceType,
   AccessRoleIds,
+  PrincipalType,
   PermissionBits,
 } = require('librechat-data-provider');
 
@@ -223,7 +224,7 @@ describe('Prompt Routes - ACL Permissions', () => {
       const aclEntry = await AclEntry.findOne({
         resourceType: ResourceType.PROMPTGROUP,
         resourceId: response.body.prompt.groupId,
-        principalType: 'user',
+        principalType: PrincipalType.USER,
         principalId: testUsers.owner._id,
       });
 
@@ -253,7 +254,7 @@ describe('Prompt Routes - ACL Permissions', () => {
       const aclEntry = await AclEntry.findOne({
         resourceType: ResourceType.PROMPTGROUP,
         resourceId: response.body.group._id,
-        principalType: 'user',
+        principalType: PrincipalType.USER,
         principalId: testUsers.owner._id,
       });
 
@@ -294,7 +295,7 @@ describe('Prompt Routes - ACL Permissions', () => {
     it('should retrieve prompt when user has view permissions', async () => {
       // Grant view permissions on the promptGroup
       await grantPermission({
-        principalType: 'user',
+        principalType: PrincipalType.USER,
         principalId: testUsers.owner._id,
         resourceType: ResourceType.PROMPTGROUP,
         resourceId: testGroup._id,
@@ -379,7 +380,7 @@ describe('Prompt Routes - ACL Permissions', () => {
 
       // Grant owner permissions on the promptGroup
       await grantPermission({
-        principalType: 'user',
+        principalType: PrincipalType.USER,
         principalId: testUsers.owner._id,
         resourceType: ResourceType.PROMPTGROUP,
         resourceId: testGroup._id,
@@ -426,7 +427,7 @@ describe('Prompt Routes - ACL Permissions', () => {
 
       // Grant only viewer permissions to viewer user on the promptGroup
       await grantPermission({
-        principalType: 'user',
+        principalType: PrincipalType.USER,
         principalId: testUsers.viewer._id,
         resourceType: ResourceType.PROMPTGROUP,
         resourceId: testGroup._id,
@@ -493,7 +494,7 @@ describe('Prompt Routes - ACL Permissions', () => {
     it('should make prompt production when user has edit permissions', async () => {
       // Grant edit permissions on the promptGroup
       await grantPermission({
-        principalType: 'user',
+        principalType: PrincipalType.USER,
         principalId: testUsers.owner._id,
         resourceType: ResourceType.PROMPTGROUP,
         resourceId: testGroup._id,
@@ -531,7 +532,7 @@ describe('Prompt Routes - ACL Permissions', () => {
     it('should deny making production when user lacks edit permissions', async () => {
       // Grant only view permissions to viewer on the promptGroup
       await grantPermission({
-        principalType: 'user',
+        principalType: PrincipalType.USER,
         principalId: testUsers.viewer._id,
         resourceType: ResourceType.PROMPTGROUP,
         resourceId: testGroup._id,
@@ -588,7 +589,7 @@ describe('Prompt Routes - ACL Permissions', () => {
 
       // Grant public viewer access on the promptGroup
       await grantPermission({
-        principalType: 'public',
+        principalType: PrincipalType.PUBLIC,
         principalId: null,
         resourceType: ResourceType.PROMPTGROUP,
         resourceId: publicGroup._id,

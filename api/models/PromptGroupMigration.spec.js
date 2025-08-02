@@ -6,6 +6,7 @@ const {
   Constants,
   ResourceType,
   AccessRoleIds,
+  PrincipalType,
   PermissionBits,
 } = require('librechat-data-provider');
 
@@ -158,7 +159,7 @@ describe('PromptGroup Migration Script', () => {
     const globalOwnerEntry = await AclEntry.findOne({
       resourceType: ResourceType.PROMPTGROUP,
       resourceId: globalPromptGroup._id,
-      principalType: 'user',
+      principalType: PrincipalType.USER,
       principalId: testOwner._id,
     });
     expect(globalOwnerEntry).toBeTruthy();
@@ -167,7 +168,7 @@ describe('PromptGroup Migration Script', () => {
     const globalPublicEntry = await AclEntry.findOne({
       resourceType: ResourceType.PROMPTGROUP,
       resourceId: globalPromptGroup._id,
-      principalType: 'public',
+      principalType: PrincipalType.PUBLIC,
     });
     expect(globalPublicEntry).toBeTruthy();
     expect(globalPublicEntry.permBits).toBe(viewerRole.permBits);
@@ -176,7 +177,7 @@ describe('PromptGroup Migration Script', () => {
     const privateOwnerEntry = await AclEntry.findOne({
       resourceType: ResourceType.PROMPTGROUP,
       resourceId: privatePromptGroup._id,
-      principalType: 'user',
+      principalType: PrincipalType.USER,
       principalId: testOwner._id,
     });
     expect(privateOwnerEntry).toBeTruthy();
@@ -185,7 +186,7 @@ describe('PromptGroup Migration Script', () => {
     const privatePublicEntry = await AclEntry.findOne({
       resourceType: ResourceType.PROMPTGROUP,
       resourceId: privatePromptGroup._id,
-      principalType: 'public',
+      principalType: PrincipalType.PUBLIC,
     });
     expect(privatePublicEntry).toBeNull();
   });
@@ -208,7 +209,7 @@ describe('PromptGroup Migration Script', () => {
 
     // Grant permission to one promptGroup manually (simulating it already has ACL)
     await AclEntry.create({
-      principalType: 'user',
+      principalType: PrincipalType.USER,
       principalId: testOwner._id,
       principalModel: 'User',
       resourceType: ResourceType.PROMPTGROUP,
