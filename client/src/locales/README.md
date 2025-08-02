@@ -6,7 +6,12 @@ This guide explains how to add new languages to LibreChat's localization system.
 
 To add a new language to LibreChat, follow these steps:
 
-### 1. Update the Language Selector Component
+### 1. Add the Language to Locize Project
+
+- Navigate to the [LibreChat locize project](https://www.locize.app/cat/62uyy7c9), 
+- Click the "ADD LANGUAGE" button, typically found within the "..." menu of the "Start to translate" card on the project overview page.
+
+### 2. Update the Language Selector Component
 
 Edit `client/src/components/Nav/SettingsTabs/General/General.tsx` and add your new language option to the `languageOptions` array:
 
@@ -24,7 +29,7 @@ Example:
 - Use simple codes (e.g., `bo`) for languages without regional variants
 - Use region-specific codes (e.g., `uk-UA`) when needed
 
-### 2. Add Localization Keys
+### 3. Add Localization Keys
 
 In `client/src/locales/en/translation.json`, add the corresponding localization key for your language label:
 
@@ -40,7 +45,7 @@ Example:
 
 **Best Practice:** Use the native language name as the value.
 
-### 3. Create the Translation File
+### 4. Create the Translation File
 
 Create a new directory and translation file:
 
@@ -59,7 +64,7 @@ Example:
 - `client/src/locales/bo/translation.json`
 - `client/src/locales/uk/translation.json`
 
-### 4. Configure i18n
+### 5. Configure i18n
 
 Update `client/src/locales/i18n.ts`:
 
@@ -88,7 +93,7 @@ export const resources = {
 } as const;
 ```
 
-### 5. Handle Fallback Languages (Optional)
+### 6. Handle Fallback Languages (Optional)
 
 If your language should fall back to a specific language when translations are missing, update the `fallbackLng` configuration in `i18n.ts`:
 
