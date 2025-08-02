@@ -4,12 +4,10 @@ import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom';
 import SearchBar from '../SearchBar';
 
-// Mock useLocalize hook
-jest.mock('~/hooks/useLocalize', () => () => (key: string) => key);
-
-// Mock useDebounce hook
+// Mock hooks
 jest.mock('~/hooks', () => ({
   useDebounce: (value: string) => value, // Return value immediately for testing
+  useLocalize: () => (key: string) => key,
 }));
 
 describe('SearchBar', () => {

@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const { RoleBits } = require('@librechat/data-schemas');
+const { RoleBits, createModels } = require('@librechat/data-schemas');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const { AccessRoleIds, ResourceType } = require('librechat-data-provider');
 const {
@@ -10,13 +10,13 @@ const {
   grantPermission,
   checkPermission,
 } = require('./PermissionService');
-const { findRoleByIdentifier, getUserPrincipals } = require('~/models');
-const { AclEntry, AccessRole } = require('~/db/models');
+const { findRoleByIdentifier, getUserPrincipals, seedDefaultRoles } = require('~/models');
 
 // Mock the getTransactionSupport function for testing
 jest.mock('@librechat/data-schemas', () => ({
   ...jest.requireActual('@librechat/data-schemas'),
   getTransactionSupport: jest.fn().mockResolvedValue(false),
+  createModels: jest.requireActual('@librechat/data-schemas').createModels,
 }));
 
 // Mock GraphApiService to prevent config loading issues
@@ -32,11 +32,24 @@ jest.mock('~/config', () => ({
 }));
 
 let mongoServer;
+let AclEntry;
 
 beforeAll(async () => {
   mongoServer = await MongoMemoryServer.create();
   const mongoUri = mongoServer.getUri();
   await mongoose.connect(mongoUri);
+
+  // Initialize all models
+  createModels(mongoose);
+
+  // Register models on mongoose.models so methods can access them
+  const dbModels = require('~/db/models');
+  Object.assign(mongoose.models, dbModels);
+
+  AclEntry = dbModels.AclEntry;
+
+  // Seed default roles
+  await seedDefaultRoles();
 });
 
 afterAll(async () => {
@@ -45,59 +58,8 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
-  await mongoose.connection.dropDatabase();
-  // Seed some roles for testing
-  await AccessRole.create([
-    {
-      accessRoleId: AccessRoleIds.AGENT_VIEWER,
-      name: 'Agent Viewer',
-      description: 'Can view agents',
-      resourceType: ResourceType.AGENT,
-      permBits: RoleBits.VIEWER, // VIEW permission
-    },
-    {
-      accessRoleId: AccessRoleIds.AGENT_EDITOR,
-      name: 'Agent Editor',
-      description: 'Can edit agents',
-      resourceType: ResourceType.AGENT,
-      permBits: RoleBits.EDITOR, // VIEW + EDIT permissions
-    },
-    {
-      accessRoleId: AccessRoleIds.AGENT_OWNER,
-      name: 'Agent Owner',
-      description: 'Full control over agents',
-      resourceType: ResourceType.AGENT,
-      permBits: RoleBits.OWNER, // VIEW + EDIT + DELETE + SHARE permissions
-    },
-    {
-      accessRoleId: AccessRoleIds.PROJECT_VIEWER,
-      name: 'Project Viewer',
-      description: 'Can view projects',
-      resourceType: 'project',
-      permBits: RoleBits.VIEWER,
-    },
-    {
-      accessRoleId: AccessRoleIds.PROJECT_EDITOR,
-      name: 'Project Editor',
-      description: 'Can edit projects',
-      resourceType: 'project',
-      permBits: RoleBits.EDITOR,
-    },
-    {
-      accessRoleId: AccessRoleIds.PROJECT_MANAGER,
-      name: 'Project Manager',
-      description: 'Can manage projects',
-      resourceType: 'project',
-      permBits: RoleBits.MANAGER,
-    },
-    {
-      accessRoleId: AccessRoleIds.PROJECT_OWNER,
-      name: 'Project Owner',
-      description: 'Full control over projects',
-      resourceType: 'project',
-      permBits: RoleBits.OWNER,
-    },
-  ]);
+  // Clear test data but keep seeded roles
+  await AclEntry.deleteMany({});
 });
 
 // Mock getUserPrincipals to avoid depending on the actual implementation
@@ -227,10 +189,10 @@ describe('PermissionService', () => {
           principalId: userId,
           resourceType: ResourceType.AGENT,
           resourceId,
-          accessRoleId: AccessRoleIds.PROJECT_VIEWER, // Project role for agent resource
+          accessRoleId: AccessRoleIds.PROMPTGROUP_VIEWER, // PromptGroup role for agent resource
           grantedBy: grantedById,
         }),
-      ).rejects.toThrow('Role project_viewer is for project resources, not agent');
+      ).rejects.toThrow('Role promptGroup_viewer is for promptGroup resources, not agent');
     });
 
     test('should update existing permission when granting to same principal and resource', async () => {
@@ -452,15 +414,15 @@ describe('PermissionService', () => {
       });
 
       // Setup a resource with inherited permission
-      const projectId = new mongoose.Types.ObjectId();
+      const parentResourceId = new mongoose.Types.ObjectId();
       const childResourceId = new mongoose.Types.ObjectId();
 
       await grantPermission({
         principalType: 'user',
         principalId: userId,
-        resourceType: 'project',
-        resourceId: projectId,
-        accessRoleId: AccessRoleIds.PROJECT_VIEWER,
+        resourceType: ResourceType.PROMPTGROUP,
+        resourceId: parentResourceId,
+        accessRoleId: AccessRoleIds.PROMPTGROUP_VIEWER,
         grantedBy: grantedById,
       });
 
@@ -474,7 +436,7 @@ describe('PermissionService', () => {
         roleId: (await findRoleByIdentifier(AccessRoleIds.AGENT_VIEWER))._id,
         grantedBy: grantedById,
         grantedAt: new Date(),
-        inheritedFrom: projectId,
+        inheritedFrom: parentResourceId,
       });
     });
 
@@ -673,12 +635,12 @@ describe('PermissionService', () => {
       );
     });
 
-    test('should return empty array for non-existent resource type', async () => {
-      const roles = await getAvailableRoles({
-        resourceType: 'non_existent_type',
-      });
-
-      expect(roles).toEqual([]);
+    test('should throw error for non-existent resource type', async () => {
+      await expect(
+        getAvailableRoles({
+          resourceType: 'non_existent_type',
+        }),
+      ).rejects.toThrow('Invalid resourceType: non_existent_type. Valid types: agent, promptGroup');
     });
   });
 
@@ -686,6 +648,8 @@ describe('PermissionService', () => {
     const otherUserId = new mongoose.Types.ObjectId();
 
     beforeEach(async () => {
+      // Ensure roles are properly seeded
+      await seedDefaultRoles();
       // Setup existing permissions for testing
       await grantPermission({
         principalType: 'user',
@@ -906,7 +870,7 @@ describe('PermissionService', () => {
         {
           type: 'group',
           id: groupId,
-          accessRoleId: AccessRoleIds.PROJECT_VIEWER, // Wrong resource type
+          accessRoleId: AccessRoleIds.PROMPTGROUP_VIEWER, // Wrong resource type
         },
       ];
 
@@ -924,7 +888,7 @@ describe('PermissionService', () => {
 
       // Check error details
       expect(results.errors[0].error).toContain('Role non_existent_role not found');
-      expect(results.errors[1].error).toContain('Role project_viewer not found');
+      expect(results.errors[1].error).toContain('Role promptGroup_viewer not found');
     });
 
     test('should handle empty arrays (no operations)', async () => {
@@ -1020,24 +984,24 @@ describe('PermissionService', () => {
     });
 
     test('should work with different resource types', async () => {
-      // Test with project resources
-      const projectResourceId = new mongoose.Types.ObjectId();
+      // Test with promptGroup resources
+      const promptGroupResourceId = new mongoose.Types.ObjectId();
       const updatedPrincipals = [
         {
           type: 'user',
           id: userId,
-          accessRoleId: AccessRoleIds.PROJECT_VIEWER,
+          accessRoleId: AccessRoleIds.PROMPTGROUP_VIEWER,
         },
         {
           type: 'group',
           id: groupId,
-          accessRoleId: AccessRoleIds.PROJECT_EDITOR,
+          accessRoleId: AccessRoleIds.PROMPTGROUP_EDITOR,
         },
       ];
 
       const results = await bulkUpdateResourcePermissions({
-        resourceType: 'project',
-        resourceId: projectResourceId,
+        resourceType: ResourceType.PROMPTGROUP,
+        resourceId: promptGroupResourceId,
         updatedPrincipals,
         grantedBy: grantedById,
       });
@@ -1048,12 +1012,14 @@ describe('PermissionService', () => {
       expect(results.errors).toHaveLength(0);
 
       // Verify permissions were created with correct resource type
-      const projectEntries = await AclEntry.find({
-        resourceType: 'project',
-        resourceId: projectResourceId,
+      const promptGroupEntries = await AclEntry.find({
+        resourceType: ResourceType.PROMPTGROUP,
+        resourceId: promptGroupResourceId,
       });
-      expect(projectEntries).toHaveLength(2);
-      expect(projectEntries.every((e) => e.resourceType === 'project')).toBe(true);
+      expect(promptGroupEntries).toHaveLength(2);
+      expect(promptGroupEntries.every((e) => e.resourceType === ResourceType.PROMPTGROUP)).toBe(
+        true,
+      );
     });
   });
 });
