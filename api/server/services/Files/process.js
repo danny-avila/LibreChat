@@ -29,10 +29,11 @@ const { addAgentResourceFile, removeAgentResourceFiles } = require('~/models/Age
 const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
 const { createFile, updateFileUsage, deleteFiles } = require('~/models/File');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
+const { determineFileType, countTokens } = require('~/server/utils');
 const { checkCapability } = require('~/server/services/Config');
 const { LB_QueueAsyncCall } = require('~/server/utils/queue');
+const OpenAIClient = require('~/app/clients/OpenAIClient');
 const { getStrategyFunctions } = require('./strategies');
-const { determineFileType } = require('~/server/utils');
 const { logger } = require('~/config');
 
 /**
@@ -496,6 +497,28 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
     throw new Error('No tool resource provided for non-image agent file upload');
   }
 
+  const fileConfig = mergeFileConfig(req.app.locals.fileConfig);
+
+  const userTokenLimits = {
+    image: Number(req.body.imageTokenLimit) || 1000,
+    text: Number(req.body.textTokenLimit) || 500,
+    document: Number(req.body.documentTokenLimit) || 2000,
+  };
+
+  const openAIClient = new OpenAIClient();
+  const calculateImageTokenCost = openAIClient.calculateImageTokenCost.bind(openAIClient);
+
+  const getTokenLimit = (mimetype) => {
+    if (fileConfig.checkType(mimetype, [/^image\//])) {
+      return userTokenLimits.image;
+    } else if (fileConfig.checkType(mimetype, fileConfig.textParsing?.supportedMimeTypes || [])) {
+      return userTokenLimits.text;
+    } else if (fileConfig.checkType(mimetype, fileConfig.ocr?.supportedMimeTypes || [])) {
+      return userTokenLimits.document;
+    }
+    return 1000;
+  };
+
   let fileInfoMetadata;
   const entity_id = messageAttachment === true ? undefined : agent_id;
   const basePath = mime.getType(file.originalname)?.startsWith('image') ? 'images' : 'uploads';
@@ -526,7 +549,6 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
       throw new Error('OCR capability is not enabled for Agents');
     }
 
-    const fileConfig = mergeFileConfig(req.app.locals.fileConfig);
     const { file_id, temp_file_id } = metadata;
 
     const shouldUseOCR = fileConfig.checkType(
@@ -541,6 +563,15 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
     if (shouldUseTextParsing && !shouldUseOCR) {
       const text = fs.readFileSync(file.path, 'utf8');
       const bytes = Buffer.byteLength(text, 'utf8');
+
+      const tokens = await countTokens(text, req.body.model);
+      const tokenLimit = getTokenLimit(file.mimetype);
+
+      if (tokens > tokenLimit) {
+        throw new Error(
+          `Text file exceeds token limit. File contains ${tokens} tokens, but limit is ${tokenLimit} tokens.`,
+        );
+      }
 
       const fileInfo = removeNullishValues({
         text,
@@ -572,6 +603,22 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
       const { handleFileUpload: uploadOCR } = getStrategyFunctions(
         req.app.locals?.ocr?.strategy ?? FileSources.mistral_ocr,
       );
+
+      if (file.mimetype.startsWith('image')) {
+        const imageDetail = req.body.imageDetail || 'auto';
+        const imageTokens = calculateImageTokenCost({
+          width: req.body.width,
+          height: req.body.height,
+          detail: imageDetail,
+        });
+        const tokenLimit = getTokenLimit(file.mimetype);
+
+        if (imageTokens > tokenLimit) {
+          throw new Error(
+            `Image exceeds token limit. Image costs ${imageTokens} tokens, but limit is ${tokenLimit} tokens.`,
+          );
+        }
+      }
 
       const {
         text,

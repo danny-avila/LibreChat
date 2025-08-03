@@ -28,6 +28,18 @@ router.post('/', async (req, res) => {
   } catch (error) {
     // TODO: delete remote file if it exists
     logger.error('[/files/images] Error processing file:', error);
+
+    let message = 'Error processing file';
+
+    // Handle specific error types
+    if (
+      error.message?.includes('Invalid file format') ||
+      error.message?.includes('No OCR result') ||
+      error.message?.includes('exceeds token limit')
+    ) {
+      message = error.message;
+    }
+
     try {
       const filepath = path.join(
         req.app.locals.paths.imageOutput,
@@ -38,7 +50,7 @@ router.post('/', async (req, res) => {
     } catch (error) {
       logger.error('[/files/images] Error deleting file:', error);
     }
-    res.status(500).json({ message: 'Error processing file' });
+    res.status(500).json({ message });
   } finally {
     try {
       await fs.unlink(req.file.path);

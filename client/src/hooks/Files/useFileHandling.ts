@@ -135,10 +135,19 @@ const useFileHandling = (params?: UseFileHandling) => {
         const file_id = body.get('file_id');
         clearUploadTimer(file_id as string);
         deleteFileById(file_id as string);
-        const errorMessage =
-          error?.code === 'ERR_CANCELED'
-            ? 'com_error_files_upload_canceled'
-            : (error?.response?.data?.message ?? 'com_error_files_upload');
+
+        let errorMessage = 'com_error_files_upload';
+
+        if (error?.code === 'ERR_CANCELED') {
+          errorMessage = 'com_error_files_upload_canceled';
+        } else if (error?.response?.data?.message) {
+          const backendMessage = error.response.data.message;
+          if (backendMessage.includes('exceeds token limit')) {
+            errorMessage = 'com_error_files_token_limit';
+          } else {
+            errorMessage = backendMessage;
+          }
+        }
         setError(errorMessage);
       },
     },
@@ -174,6 +183,16 @@ const useFileHandling = (params?: UseFileHandling) => {
           formData.append(key, value);
         }
       }
+    }
+
+    if (conversation?.imageTokenLimit != null) {
+      formData.append('imageTokenLimit', conversation.imageTokenLimit.toString());
+    }
+    if (conversation?.textTokenLimit != null) {
+      formData.append('textTokenLimit', conversation.textTokenLimit.toString());
+    }
+    if (conversation?.documentTokenLimit != null) {
+      formData.append('documentTokenLimit', conversation.documentTokenLimit.toString());
     }
 
     if (isAgentsEndpoint(endpoint)) {
