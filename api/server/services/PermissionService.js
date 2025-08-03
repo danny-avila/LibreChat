@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 const { isEnabled } = require('@librechat/api');
-const { ResourceType, PrincipalType, PrincipalModel } = require('librechat-data-provider');
 const { getTransactionSupport, logger } = require('@librechat/data-schemas');
+const { ResourceType, PrincipalType, PrincipalModel } = require('librechat-data-provider');
 const {
   entraIdPrincipalFeatureEnabled,
   getUserOwnedEntraGroups,
@@ -70,10 +70,21 @@ const grantPermission = async ({
     }
 
     if (principalType !== PrincipalType.PUBLIC && !principalId) {
-      throw new Error('Principal ID is required for user and group principals');
+      throw new Error('Principal ID is required for user, group, and role principals');
     }
 
-    if (principalId && !mongoose.Types.ObjectId.isValid(principalId)) {
+    // Validate principalId based on type
+    if (principalId && principalType === PrincipalType.ROLE) {
+      // Role IDs are strings (role names)
+      if (typeof principalId !== 'string' || principalId.trim().length === 0) {
+        throw new Error(`Invalid role ID: ${principalId}`);
+      }
+    } else if (
+      principalType &&
+      principalType !== PrincipalType.PUBLIC &&
+      !mongoose.Types.ObjectId.isValid(principalId)
+    ) {
+      // User and Group IDs must be valid ObjectIds
       throw new Error(`Invalid principal ID: ${principalId}`);
     }
 
@@ -616,6 +627,12 @@ const bulkUpdateResourcePermissions = async ({
           query.principalId = principal.id;
         }
 
+        const principalModelMap = {
+          [PrincipalType.USER]: PrincipalModel.USER,
+          [PrincipalType.GROUP]: PrincipalModel.GROUP,
+          [PrincipalType.ROLE]: PrincipalModel.ROLE,
+        };
+
         const update = {
           $set: {
             permBits: role.permBits,
@@ -629,8 +646,7 @@ const bulkUpdateResourcePermissions = async ({
             resourceId,
             ...(principal.type !== PrincipalType.PUBLIC && {
               principalId: principal.id,
-              principalModel:
-                principal.type === PrincipalType.USER ? PrincipalModel.USER : PrincipalModel.GROUP,
+              principalModel: principalModelMap[principal.type],
             }),
           },
         };
