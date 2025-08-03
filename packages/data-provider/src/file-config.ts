@@ -122,6 +122,16 @@ export const applicationMimeTypes =
 
 export const imageMimeTypes = /^image\/(jpeg|gif|png|webp|heic|heif)$/;
 
+export const defaultOCRMimeTypes = [
+  imageMimeTypes,
+  /^application\/pdf$/,
+  /^application\/vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|presentationml\.presentation|spreadsheetml\.sheet)$/,
+  /^application\/vnd\.ms-(word|powerpoint|excel)$/,
+  /^application\/epub\+zip$/,
+];
+
+export const defaultTextParsingMimeTypes = [textMimeTypes];
+
 export const supportedMimeTypes = [
   textMimeTypes,
   excelMimeTypes,
@@ -198,6 +208,12 @@ export const fileConfig = {
     maxHeight: 1900,
     quality: 0.92,
   },
+  ocr: {
+    supportedMimeTypes: defaultOCRMimeTypes,
+  },
+  textParsing: {
+    supportedMimeTypes: defaultTextParsingMimeTypes,
+  },
   checkType: function (fileType: string, supportedTypes: RegExp[] = supportedMimeTypes) {
     return supportedTypes.some((regex) => regex.test(fileType));
   },
@@ -246,6 +262,16 @@ export const fileConfigSchema = z.object({
       quality: z.number().min(0).max(1).optional(),
     })
     .optional(),
+  ocr: z
+    .object({
+      supportedMimeTypes: supportedMimeTypesSchema.optional(),
+    })
+    .optional(),
+  textParsing: z
+    .object({
+      supportedMimeTypes: supportedMimeTypesSchema.optional(),
+    })
+    .optional(),
 });
 
 /** Helper function to safely convert string patterns to RegExp objects */
@@ -259,6 +285,55 @@ export const convertStringsToRegex = (patterns: string[]): RegExp[] =>
     }
     return acc;
   }, []);
+
+export const convertExtensionsToMimeRegex = (extensions: string[]): RegExp[] => {
+  const extensionToMimeMap: { [key: string]: RegExp } = {
+    jpg: /^image\/jpeg$/,
+    jpeg: /^image\/jpeg$/,
+    png: /^image\/png$/,
+    gif: /^image\/gif$/,
+    webp: /^image\/webp$/,
+    heic: /^image\/heic$/,
+    heif: /^image\/heif$/,
+    svg: /^image\/svg(\+xml)?$/,
+
+    pdf: /^application\/pdf$/,
+    doc: /^application\/vnd\.ms-word$/,
+    docx: /^application\/vnd\.openxmlformats-officedocument\.wordprocessingml\.document$/,
+    ppt: /^application\/vnd\.ms-powerpoint$/,
+    pptx: /^application\/vnd\.openxmlformats-officedocument\.presentationml\.presentation$/,
+    xls: /^application\/vnd\.ms-excel$/,
+    xlsx: /^application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet$/,
+    rtf: /^application\/rtf$/,
+    epub: /^application\/epub\+zip$/,
+
+    txt: /^text\/plain$/,
+    md: /^text\/markdown$/,
+    html: /^text\/html$/,
+    css: /^text\/css$/,
+    js: /^text\/javascript$/,
+    py: /^text\/x-python$/,
+    java: /^text\/x-java$/,
+    c: /^text\/x-c$/,
+    cpp: /^text\/x-c\+\+$/,
+    h: /^text\/x-h$/,
+    php: /^text\/x-php$/,
+    rb: /^text\/x-ruby$/,
+    tex: /^text\/x-tex$/,
+    csv: /^text\/csv$/,
+    vtt: /^text\/vtt$/,
+    xml: /^text\/xml$/,
+
+    json: /^application\/json$/,
+    zip: /^application\/zip$/,
+    tar: /^application\/x-tar$/,
+  };
+
+  return extensions
+    .map((ext) => ext.toLowerCase().replace(/^\./, ''))
+    .map((ext) => extensionToMimeMap[ext])
+    .filter(Boolean) as RegExp[];
+};
 
 export function mergeFileConfig(dynamic: z.infer<typeof fileConfigSchema> | undefined): FileConfig {
   const mergedConfig = fileConfig as FileConfig;
@@ -280,6 +355,34 @@ export function mergeFileConfig(dynamic: z.infer<typeof fileConfigSchema> | unde
       ...mergedConfig.clientImageResize,
       ...dynamic.clientImageResize,
     };
+  }
+
+  if (dynamic.ocr !== undefined) {
+    mergedConfig.ocr = {
+      ...mergedConfig.ocr,
+      ...dynamic.ocr,
+    };
+    if (dynamic.ocr.supportedMimeTypes) {
+      const mimeTypes = dynamic.ocr.supportedMimeTypes as unknown as string[];
+      const hasExtensions = mimeTypes.some((type) => !type.startsWith('^'));
+      mergedConfig.ocr.supportedMimeTypes = hasExtensions
+        ? convertExtensionsToMimeRegex(mimeTypes)
+        : convertStringsToRegex(mimeTypes);
+    }
+  }
+
+  if (dynamic.textParsing !== undefined) {
+    mergedConfig.textParsing = {
+      ...mergedConfig.textParsing,
+      ...dynamic.textParsing,
+    };
+    if (dynamic.textParsing.supportedMimeTypes) {
+      const mimeTypes = dynamic.textParsing.supportedMimeTypes as unknown as string[];
+      const hasExtensions = mimeTypes.some((type) => !type.startsWith('^'));
+      mergedConfig.textParsing.supportedMimeTypes = hasExtensions
+        ? convertExtensionsToMimeRegex(mimeTypes)
+        : convertStringsToRegex(mimeTypes);
+    }
   }
 
   if (!dynamic.endpoints) {

@@ -55,6 +55,12 @@ export type FileConfig = {
     maxHeight?: number;
     quality?: number;
   };
+  ocr?: {
+    supportedMimeTypes?: string[];
+  };
+  textParsing?: {
+    supportedMimeTypes?: string[];
+  };
   checkType?: (fileType: string, supportedTypes: RegExp[]) => boolean;
 };
 
