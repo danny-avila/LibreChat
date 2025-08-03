@@ -148,8 +148,13 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')) {
 
     if (principalType !== PrincipalType.PUBLIC) {
       query.principalId = principalId;
-      query.principalModel =
-        principalType === PrincipalType.USER ? PrincipalModel.USER : PrincipalModel.GROUP;
+      if (principalType === PrincipalType.USER) {
+        query.principalModel = PrincipalModel.USER;
+      } else if (principalType === PrincipalType.GROUP) {
+        query.principalModel = PrincipalModel.GROUP;
+      } else if (principalType === PrincipalType.ROLE) {
+        query.principalModel = PrincipalModel.ROLE;
+      }
     }
 
     const update = {

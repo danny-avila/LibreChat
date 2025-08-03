@@ -21,8 +21,8 @@ let methods: ReturnType<typeof createUserGroupMethods>;
 beforeAll(async () => {
   mongoServer = await MongoMemoryServer.create();
   const mongoUri = mongoServer.getUri();
-  Group = mongoose.models.Group || mongoose.model('Group', groupSchema);
-  User = mongoose.models.User || mongoose.model('User', userSchema);
+  Group = mongoose.models.Group || mongoose.model<t.IGroup>('Group', groupSchema);
+  User = mongoose.models.User || mongoose.model<t.IUser>('User', userSchema);
   methods = createUserGroupMethods(mongoose);
   await mongoose.connect(mongoUri);
 });
@@ -327,8 +327,8 @@ describe('User Group Methods Tests', () => {
       /** Get user principals */
       const principals = await methods.getUserPrincipals(testUser1._id as mongoose.Types.ObjectId);
 
-      /** Should include user, group, and public principals */
-      expect(principals).toHaveLength(3);
+      /** Should include user, role (default USER), group, and public principals */
+      expect(principals).toHaveLength(4);
 
       /** Check principal types */
       const userPrincipal = principals.find((p) => p.principalType === PrincipalType.USER);
