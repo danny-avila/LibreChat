@@ -4,8 +4,8 @@ import { PrincipalType, PrincipalModel, ResourceType } from 'librechat-data-prov
 export type AclEntry = {
   /** The type of principal ('user', 'group', 'public') */
   principalType: PrincipalType;
-  /** The ID of the principal (null for 'public') */
-  principalId?: Types.ObjectId;
+  /** The ID of the principal (null for 'public', string for 'role') */
+  principalId?: Types.ObjectId | string;
   /** The model name for the principal ('User' or 'Group') */
   principalModel?: PrincipalModel;
   /** The type of resource ('agent', 'project', 'file', 'promptGroup') */
