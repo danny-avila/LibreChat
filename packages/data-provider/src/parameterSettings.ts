@@ -138,6 +138,18 @@ export const librechat = {
     placeholderCode: true,
     optionType: 'model',
   } as const,
+  fileTokenLimit: {
+    key: 'fileTokenLimit',
+    label: 'com_ui_file_token_limit',
+    labelCode: true,
+    description: 'com_ui_file_token_limit_desc',
+    descriptionCode: true,
+    placeholder: 'com_nav_theme_system',
+    placeholderCode: true,
+    type: 'number',
+    component: 'input',
+    columnSpan: 2,
+  } as const,
 };
 
 const openAIParams: Record<string, SettingDefinition> = {
@@ -603,6 +615,7 @@ const googleConfig: SettingsConfiguration = [
   google.thinking,
   google.thinkingBudget,
   google.web_search,
+  librechat.fileTokenLimit,
 ];
 
 const googleCol1: SettingsConfiguration = [
@@ -621,6 +634,7 @@ const googleCol2: SettingsConfiguration = [
   google.thinking,
   google.thinkingBudget,
   google.web_search,
+  librechat.fileTokenLimit,
 ];
 
 const openAI: SettingsConfiguration = [
@@ -640,6 +654,7 @@ const openAI: SettingsConfiguration = [
   openAIParams.useResponsesApi,
   openAIParams.reasoning_summary,
   openAIParams.disableStreaming,
+  librechat.fileTokenLimit,
 ];
 
 const openAICol1: SettingsConfiguration = [
@@ -663,6 +678,7 @@ const openAICol2: SettingsConfiguration = [
   openAIParams.useResponsesApi,
   openAIParams.web_search,
   openAIParams.disableStreaming,
+  librechat.fileTokenLimit,
 ];
 
 const anthropicConfig: SettingsConfiguration = [
@@ -678,6 +694,7 @@ const anthropicConfig: SettingsConfiguration = [
   anthropic.thinking,
   anthropic.thinkingBudget,
   anthropic.web_search,
+  librechat.fileTokenLimit,
 ];
 
 const anthropicCol1: SettingsConfiguration = [
@@ -697,6 +714,7 @@ const anthropicCol2: SettingsConfiguration = [
   anthropic.thinking,
   anthropic.thinkingBudget,
   anthropic.web_search,
+  librechat.fileTokenLimit,
 ];
 
 const bedrockAnthropic: SettingsConfiguration = [
@@ -712,6 +730,7 @@ const bedrockAnthropic: SettingsConfiguration = [
   bedrock.region,
   anthropic.thinking,
   anthropic.thinkingBudget,
+  librechat.fileTokenLimit,
 ];
 
 const bedrockMistral: SettingsConfiguration = [
@@ -723,6 +742,7 @@ const bedrockMistral: SettingsConfiguration = [
   mistral.topP,
   librechat.resendFiles,
   bedrock.region,
+  librechat.fileTokenLimit,
 ];
 
 const bedrockCohere: SettingsConfiguration = [
@@ -734,6 +754,7 @@ const bedrockCohere: SettingsConfiguration = [
   cohere.topP,
   librechat.resendFiles,
   bedrock.region,
+  librechat.fileTokenLimit,
 ];
 
 const bedrockGeneral: SettingsConfiguration = [
@@ -744,6 +765,7 @@ const bedrockGeneral: SettingsConfiguration = [
   meta.topP,
   librechat.resendFiles,
   bedrock.region,
+  librechat.fileTokenLimit,
 ];
 
 const bedrockAnthropicCol1: SettingsConfiguration = [
@@ -763,6 +785,7 @@ const bedrockAnthropicCol2: SettingsConfiguration = [
   bedrock.region,
   anthropic.thinking,
   anthropic.thinkingBudget,
+  librechat.fileTokenLimit,
 ];
 
 const bedrockMistralCol1: SettingsConfiguration = [
@@ -778,6 +801,7 @@ const bedrockMistralCol2: SettingsConfiguration = [
   mistral.topP,
   librechat.resendFiles,
   bedrock.region,
+  librechat.fileTokenLimit,
 ];
 
 const bedrockCohereCol1: SettingsConfiguration = [
@@ -793,6 +817,7 @@ const bedrockCohereCol2: SettingsConfiguration = [
   cohere.topP,
   librechat.resendFiles,
   bedrock.region,
+  librechat.fileTokenLimit,
 ];
 
 const bedrockGeneralCol1: SettingsConfiguration = [
@@ -807,6 +832,7 @@ const bedrockGeneralCol2: SettingsConfiguration = [
   meta.topP,
   librechat.resendFiles,
   bedrock.region,
+  librechat.fileTokenLimit,
 ];
 
 export const paramSettings: Record<string, SettingsConfiguration | undefined> = {

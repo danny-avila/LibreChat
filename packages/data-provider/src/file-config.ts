@@ -122,6 +122,16 @@ export const applicationMimeTypes =
 
 export const imageMimeTypes = /^image\/(jpeg|gif|png|webp|heic|heif)$/;
 
+export const defaultOCRMimeTypes = [
+  imageMimeTypes,
+  /^application\/pdf$/,
+  /^application\/vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|presentationml\.presentation|spreadsheetml\.sheet)$/,
+  /^application\/vnd\.ms-(word|powerpoint|excel)$/,
+  /^application\/epub\+zip$/,
+];
+
+export const defaultTextParsingMimeTypes = [textMimeTypes];
+
 export const supportedMimeTypes = [
   textMimeTypes,
   excelMimeTypes,
@@ -198,6 +208,12 @@ export const fileConfig = {
     maxHeight: 1900,
     quality: 0.92,
   },
+  ocr: {
+    supportedMimeTypes: defaultOCRMimeTypes,
+  },
+  textParsing: {
+    supportedMimeTypes: defaultTextParsingMimeTypes,
+  },
   checkType: function (fileType: string, supportedTypes: RegExp[] = supportedMimeTypes) {
     return supportedTypes.some((regex) => regex.test(fileType));
   },
@@ -246,6 +262,16 @@ export const fileConfigSchema = z.object({
       quality: z.number().min(0).max(1).optional(),
     })
     .optional(),
+  ocr: z
+    .object({
+      supportedMimeTypes: supportedMimeTypesSchema.optional(),
+    })
+    .optional(),
+  textParsing: z
+    .object({
+      supportedMimeTypes: supportedMimeTypesSchema.optional(),
+    })
+    .optional(),
 });
 
 /** Helper function to safely convert string patterns to RegExp objects */
@@ -261,7 +287,17 @@ export const convertStringsToRegex = (patterns: string[]): RegExp[] =>
   }, []);
 
 export function mergeFileConfig(dynamic: z.infer<typeof fileConfigSchema> | undefined): FileConfig {
-  const mergedConfig = fileConfig as FileConfig;
+  const mergedConfig: FileConfig = {
+    ...fileConfig,
+    ocr: {
+      ...fileConfig.ocr,
+      supportedMimeTypes: fileConfig.ocr?.supportedMimeTypes || [],
+    },
+    textParsing: {
+      ...fileConfig.textParsing,
+      supportedMimeTypes: fileConfig.textParsing?.supportedMimeTypes || [],
+    },
+  };
   if (!dynamic) {
     return mergedConfig;
   }
@@ -280,6 +316,28 @@ export function mergeFileConfig(dynamic: z.infer<typeof fileConfigSchema> | unde
       ...mergedConfig.clientImageResize,
       ...dynamic.clientImageResize,
     };
+  }
+
+  if (dynamic.ocr !== undefined) {
+    mergedConfig.ocr = {
+      ...mergedConfig.ocr,
+      ...dynamic.ocr,
+    };
+    if (dynamic.ocr.supportedMimeTypes) {
+      mergedConfig.ocr.supportedMimeTypes = convertStringsToRegex(dynamic.ocr.supportedMimeTypes);
+    }
+  }
+
+  if (dynamic.textParsing !== undefined) {
+    mergedConfig.textParsing = {
+      ...mergedConfig.textParsing,
+      ...dynamic.textParsing,
+    };
+    if (dynamic.textParsing.supportedMimeTypes) {
+      mergedConfig.textParsing.supportedMimeTypes = convertStringsToRegex(
+        dynamic.textParsing.supportedMimeTypes,
+      );
+    }
   }
 
   if (!dynamic.endpoints) {
