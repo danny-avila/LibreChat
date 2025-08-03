@@ -1,5 +1,6 @@
+import { Types } from 'mongoose';
 import { PrincipalType, PrincipalModel } from 'librechat-data-provider';
-import type { Model, Types, DeleteResult, ClientSession } from 'mongoose';
+import type { Model, DeleteResult, ClientSession } from 'mongoose';
 import type { IAclEntry } from '~/types';
 
 export function createAclEntryMethods(mongoose: typeof import('mongoose')) {
@@ -147,9 +148,17 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')) {
     };
 
     if (principalType !== PrincipalType.PUBLIC) {
-      query.principalId = principalId;
-      query.principalModel =
-        principalType === PrincipalType.USER ? PrincipalModel.USER : PrincipalModel.GROUP;
+      query.principalId =
+        typeof principalId === 'string' && principalType !== PrincipalType.ROLE
+          ? new Types.ObjectId(principalId)
+          : principalId;
+      if (principalType === PrincipalType.USER) {
+        query.principalModel = PrincipalModel.USER;
+      } else if (principalType === PrincipalType.GROUP) {
+        query.principalModel = PrincipalModel.GROUP;
+      } else if (principalType === PrincipalType.ROLE) {
+        query.principalModel = PrincipalModel.ROLE;
+      }
     }
 
     const update = {
@@ -194,7 +203,10 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')) {
     };
 
     if (principalType !== PrincipalType.PUBLIC) {
-      query.principalId = principalId;
+      query.principalId =
+        typeof principalId === 'string' && principalType !== PrincipalType.ROLE
+          ? new Types.ObjectId(principalId)
+          : principalId;
     }
 
     const options = session ? { session } : {};
@@ -230,7 +242,10 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')) {
     };
 
     if (principalType !== PrincipalType.PUBLIC) {
-      query.principalId = principalId;
+      query.principalId =
+        typeof principalId === 'string' && principalType !== PrincipalType.ROLE
+          ? new Types.ObjectId(principalId)
+          : principalId;
     }
 
     const update: Record<string, unknown> = {};

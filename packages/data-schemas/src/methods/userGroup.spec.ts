@@ -21,8 +21,8 @@ let methods: ReturnType<typeof createUserGroupMethods>;
 beforeAll(async () => {
   mongoServer = await MongoMemoryServer.create();
   const mongoUri = mongoServer.getUri();
-  Group = mongoose.models.Group || mongoose.model('Group', groupSchema);
-  User = mongoose.models.User || mongoose.model('User', userSchema);
+  Group = mongoose.models.Group || mongoose.model<t.IGroup>('Group', groupSchema);
+  User = mongoose.models.User || mongoose.model<t.IUser>('User', userSchema);
   methods = createUserGroupMethods(mongoose);
   await mongoose.connect(mongoUri);
 });
@@ -325,10 +325,12 @@ describe('User Group Methods Tests', () => {
       );
 
       /** Get user principals */
-      const principals = await methods.getUserPrincipals(testUser1._id as mongoose.Types.ObjectId);
+      const principals = await methods.getUserPrincipals({
+        userId: testUser1._id as mongoose.Types.ObjectId,
+      });
 
-      /** Should include user, group, and public principals */
-      expect(principals).toHaveLength(3);
+      /** Should include user, role (default USER), group, and public principals */
+      expect(principals).toHaveLength(4);
 
       /** Check principal types */
       const userPrincipal = principals.find((p) => p.principalType === PrincipalType.USER);
@@ -349,7 +351,9 @@ describe('User Group Methods Tests', () => {
 
     test('should return user and public principals for non-existent user in getUserPrincipals', async () => {
       const nonExistentId = new mongoose.Types.ObjectId();
-      const principals = await methods.getUserPrincipals(nonExistentId);
+      const principals = await methods.getUserPrincipals({
+        userId: nonExistentId,
+      });
 
       /** Should still return user and public principals even for non-existent user */
       expect(principals).toHaveLength(2);
@@ -357,6 +361,61 @@ describe('User Group Methods Tests', () => {
       expect(principals[0].principalId?.toString()).toBe(nonExistentId.toString());
       expect(principals[1].principalType).toBe(PrincipalType.PUBLIC);
       expect(principals[1].principalId).toBeUndefined();
+    });
+
+    test('should convert string userId to ObjectId in getUserPrincipals', async () => {
+      /** Add user to a group */
+      await methods.addUserToGroup(
+        testUser1._id as mongoose.Types.ObjectId,
+        testGroup._id as mongoose.Types.ObjectId,
+      );
+
+      /** Get user principals with string userId */
+      const principals = await methods.getUserPrincipals({
+        userId: (testUser1._id as mongoose.Types.ObjectId).toString(),
+      });
+
+      /** Should include user, role (default USER), group, and public principals */
+      expect(principals).toHaveLength(4);
+
+      /** Check that USER principal has ObjectId */
+      const userPrincipal = principals.find((p) => p.principalType === PrincipalType.USER);
+      expect(userPrincipal).toBeDefined();
+      expect(userPrincipal?.principalId).toBeInstanceOf(mongoose.Types.ObjectId);
+      expect(userPrincipal?.principalId?.toString()).toBe(
+        (testUser1._id as mongoose.Types.ObjectId).toString(),
+      );
+
+      /** Check that GROUP principal has ObjectId */
+      const groupPrincipal = principals.find((p) => p.principalType === PrincipalType.GROUP);
+      expect(groupPrincipal).toBeDefined();
+      expect(groupPrincipal?.principalId).toBeInstanceOf(mongoose.Types.ObjectId);
+      expect(groupPrincipal?.principalId?.toString()).toBe(testGroup._id.toString());
+    });
+
+    test('should include role principal as string in getUserPrincipals', async () => {
+      /** Create user with specific role */
+      const userWithRole = await User.create({
+        name: 'Admin User',
+        email: 'admin@example.com',
+        password: 'password123',
+        provider: 'local',
+        role: 'ADMIN',
+      });
+
+      /** Get user principals */
+      const principals = await methods.getUserPrincipals({
+        userId: userWithRole._id as mongoose.Types.ObjectId,
+      });
+
+      /** Should include user, role, and public principals */
+      expect(principals).toHaveLength(3);
+
+      /** Check that ROLE principal has string ID */
+      const rolePrincipal = principals.find((p) => p.principalType === PrincipalType.ROLE);
+      expect(rolePrincipal).toBeDefined();
+      expect(typeof rolePrincipal?.principalId).toBe('string');
+      expect(rolePrincipal?.principalId).toBe('ADMIN');
     });
   });
 

@@ -3,8 +3,8 @@ import * as Menu from '@ariakit/react/menu';
 import { Button, DropdownPopup } from '@librechat/client';
 import { Users, X, ExternalLink, ChevronDown } from 'lucide-react';
 import type { TPrincipal, TAccessRole, AccessRoleIds } from 'librechat-data-provider';
+import PrincipalAvatar from '~/components/Sharing/PrincipalAvatar';
 import { getRoleLocalizationKeys } from '~/utils';
-import PrincipalAvatar from '../PrincipalAvatar';
 import { useLocalize } from '~/hooks';
 
 interface SelectedPrincipalsListProps {
@@ -36,7 +36,7 @@ export default function SelectedPrincipalsList({
       <div className={`space-y-3 ${className}`}>
         <div className="rounded-lg border border-dashed border-border py-8 text-center text-muted-foreground">
           <Users className="mx-auto mb-2 h-8 w-8 opacity-50" />
-          <p className="mt-1 text-xs">{localize('com_ui_search_above_to_add')}</p>
+          <p className="mt-1 text-xs">{localize('com_ui_search_above_to_add_all')}</p>
         </div>
       </div>
     );

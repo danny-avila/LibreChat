@@ -79,6 +79,7 @@ router.get('/agent/:agent_id', async (req, res) => {
     if (agent.author.toString() !== userId) {
       const hasEditPermission = await checkPermission({
         userId,
+        role: req.user.role,
         resourceType: ResourceType.AGENT,
         resourceId: agent._id,
         requiredPermission: PermissionBits.EDIT,
@@ -152,7 +153,7 @@ router.delete('/', async (req, res) => {
     const nonOwnedFiles = [];
 
     for (const file of dbFiles) {
-      if (file.user.toString() === req.user.id) {
+      if (file.user.toString() === req.user.id.toString()) {
         ownedFiles.push(file);
       } else {
         nonOwnedFiles.push(file);
@@ -176,11 +177,12 @@ router.delete('/', async (req, res) => {
 
     if (req.body.agent_id && nonOwnedFiles.length > 0) {
       const nonOwnedFileIds = nonOwnedFiles.map((f) => f.file_id);
-      const accessMap = await hasAccessToFilesViaAgent(
-        req.user.id,
-        nonOwnedFileIds,
-        req.body.agent_id,
-      );
+      const accessMap = await hasAccessToFilesViaAgent({
+        userId: req.user.id,
+        role: req.user.role,
+        fileIds: nonOwnedFileIds,
+        agentId: req.body.agent_id,
+      });
 
       for (const file of nonOwnedFiles) {
         if (accessMap.get(file.file_id)) {
