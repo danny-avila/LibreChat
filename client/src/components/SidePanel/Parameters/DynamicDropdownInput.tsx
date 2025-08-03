@@ -122,7 +122,7 @@ function DynamicDropdownInput({
           </HoverCardTrigger>
 
           {displayDescription && (
-            <HoverCardContent side="top" className="w-80">
+            <HoverCardContent side="right" className="w-80">
               <div className="space-y-2">
                 <p className="text-sm text-text-secondary">{displayDescription}</p>
               </div>
