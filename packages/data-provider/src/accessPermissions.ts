@@ -17,6 +17,7 @@ export enum PrincipalType {
   USER = 'user',
   GROUP = 'group',
   PUBLIC = 'public',
+  ROLE = 'role',
 }
 
 /**
@@ -25,6 +26,7 @@ export enum PrincipalType {
 export enum PrincipalModel {
   USER = 'User',
   GROUP = 'Group',
+  ROLE = 'Role',
 }
 
 /**
@@ -74,16 +76,16 @@ export enum AccessRoleIds {
 // ===== ZOD SCHEMAS =====
 
 /**
- * Principal schema - represents a user, group, or public access
+ * Principal schema - represents a user, group, role, or public access
  */
 export const principalSchema = z.object({
   type: z.nativeEnum(PrincipalType),
-  id: z.string().optional(), // undefined for 'public' type
+  id: z.string().optional(), // undefined for 'public' type, role name for 'role' type
   name: z.string().optional(),
   email: z.string().optional(), // for user and group types
   source: z.enum(['local', 'entra']).optional(),
   avatar: z.string().optional(), // for user and group types
-  description: z.string().optional(), // for group type
+  description: z.string().optional(), // for group and role types
   idOnTheSource: z.string().optional(), // Entra ID for users/groups
   accessRoleId: z.nativeEnum(AccessRoleIds).optional(), // Access role ID for permissions
   memberCount: z.number().optional(), // for group type
@@ -192,7 +194,7 @@ export type TUpdateResourcePermissionsResponse = z.infer<
 export type TPrincipalSearchParams = {
   q: string; // search query (required)
   limit?: number; // max results (1-50, default 10)
-  type?: 'user' | 'group'; // filter by type (optional)
+  type?: PrincipalType.USER | PrincipalType.GROUP | PrincipalType.ROLE; // filter by type (optional)
 };
 
 /**
@@ -200,7 +202,7 @@ export type TPrincipalSearchParams = {
  */
 export type TPrincipalSearchResult = {
   id?: string | null; // null for Entra ID principals that don't exist locally yet
-  type: 'user' | 'group';
+  type: PrincipalType.USER | PrincipalType.GROUP | PrincipalType.ROLE;
   name: string;
   email?: string; // for users and groups
   username?: string; // for users
@@ -218,7 +220,7 @@ export type TPrincipalSearchResult = {
 export type TPrincipalSearchResponse = {
   query: string;
   limit: number;
-  type?: 'user' | 'group';
+  type?: PrincipalType.USER | PrincipalType.GROUP | PrincipalType.ROLE;
   results: TPrincipalSearchResult[];
   count: number;
   sources: {

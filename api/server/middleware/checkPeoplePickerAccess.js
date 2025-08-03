@@ -1,4 +1,4 @@
-const { PermissionTypes, Permissions } = require('librechat-data-provider');
+const { PrincipalType, PermissionTypes, Permissions } = require('librechat-data-provider');
 const { getRoleByName } = require('~/models/Role');
 const { logger } = require('~/config');
 
@@ -7,7 +7,8 @@ const { logger } = require('~/config');
  * Checks specific permission based on the 'type' query parameter:
  * - type=user: requires VIEW_USERS permission
  * - type=group: requires VIEW_GROUPS permission
- * - no type (mixed search): requires either VIEW_USERS OR VIEW_GROUPS
+ * - type=role: requires VIEW_ROLES permission
+ * - no type (mixed search): requires either VIEW_USERS OR VIEW_GROUPS OR VIEW_ROLES
  */
 const checkPeoplePickerAccess = async (req, res, next) => {
   try {
@@ -31,29 +32,38 @@ const checkPeoplePickerAccess = async (req, res, next) => {
     const peoplePickerPerms = role.permissions[PermissionTypes.PEOPLE_PICKER] || {};
     const canViewUsers = peoplePickerPerms[Permissions.VIEW_USERS] === true;
     const canViewGroups = peoplePickerPerms[Permissions.VIEW_GROUPS] === true;
+    const canViewRoles = peoplePickerPerms[Permissions.VIEW_ROLES] === true;
 
-    if (type === 'user') {
-      if (!canViewUsers) {
-        return res.status(403).json({
-          error: 'Forbidden',
-          message: 'Insufficient permissions to search for users',
-        });
-      }
-    } else if (type === 'group') {
-      if (!canViewGroups) {
-        return res.status(403).json({
-          error: 'Forbidden',
-          message: 'Insufficient permissions to search for groups',
-        });
-      }
-    } else {
-      if (!canViewUsers || !canViewGroups) {
-        return res.status(403).json({
-          error: 'Forbidden',
-          message: 'Insufficient permissions to search for both users and groups',
-        });
-      }
+    const permissionChecks = {
+      [PrincipalType.USER]: {
+        hasPermission: canViewUsers,
+        message: 'Insufficient permissions to search for users',
+      },
+      [PrincipalType.GROUP]: {
+        hasPermission: canViewGroups,
+        message: 'Insufficient permissions to search for groups',
+      },
+      [PrincipalType.ROLE]: {
+        hasPermission: canViewRoles,
+        message: 'Insufficient permissions to search for roles',
+      },
+    };
+
+    const check = permissionChecks[type];
+    if (check && !check.hasPermission) {
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: check.message,
+      });
     }
+
+    if (!type && !canViewUsers && !canViewGroups && !canViewRoles) {
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'Insufficient permissions to search for users, groups, or roles',
+      });
+    }
+
     next();
   } catch (error) {
     logger.error(

@@ -14,7 +14,7 @@ export default function PublicSharingToggle({
   resourceType = ResourceType.AGENT,
 }: {
   isPublic: boolean;
-  publicRole: AccessRoleIds;
+  publicRole?: AccessRoleIds;
   onPublicToggle: (isPublic: boolean) => void;
   onPublicRoleChange: (role: AccessRoleIds) => void;
   resourceType?: ResourceType;

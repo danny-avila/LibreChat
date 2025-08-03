@@ -4,8 +4,8 @@ import {
   SystemRoles,
   Permissions,
   ResourceType,
-  PermissionTypes,
   PermissionBits,
+  PermissionTypes,
 } from 'librechat-data-provider';
 import type { AgentForm, AgentPanelProps } from '~/common';
 import { useLocalize, useAuthContext, useHasAccess, useResourcePermissions } from '~/hooks';
@@ -43,7 +43,7 @@ export default function AgentFooter({
     permission: Permissions.SHARED_GLOBAL,
   });
   const { hasPermission, isLoading: permissionsLoading } = useResourcePermissions(
-    'agent',
+    ResourceType.AGENT,
     agent?._id || '',
   );
 

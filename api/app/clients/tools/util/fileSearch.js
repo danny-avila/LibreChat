@@ -30,7 +30,12 @@ const primeFiles = async (options) => {
   // Filter by access if user and agent are provided
   let dbFiles;
   if (req?.user?.id && agentId) {
-    dbFiles = await filterFilesByAgentAccess(allFiles, req.user.id, agentId);
+    dbFiles = await filterFilesByAgentAccess({
+      files: allFiles,
+      userId: req.user.id,
+      role: req.user.role,
+      agentId,
+    });
   } else {
     dbFiles = allFiles;
   }
