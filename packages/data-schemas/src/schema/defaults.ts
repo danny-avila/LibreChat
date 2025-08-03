@@ -141,6 +141,19 @@ export const conversationPreset = {
   disableStreaming: {
     type: Boolean,
   },
+  /** File token limits */
+  fileTokenLimits: {
+    type: Schema.Types.Mixed,
+  },
+  imageTokenLimit: {
+    type: Number,
+  },
+  textTokenLimit: {
+    type: Number,
+  },
+  documentTokenLimit: {
+    type: Number,
+  },
   /** Reasoning models only */
   reasoning_effort: {
     type: String,

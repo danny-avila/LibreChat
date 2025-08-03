@@ -49,6 +49,10 @@ export interface IConversation extends Document {
   useResponsesApi?: boolean;
   web_search?: boolean;
   disableStreaming?: boolean;
+  fileTokenLimits?: Record<string, number>;
+  imageTokenLimit?: number;
+  textTokenLimit?: number;
+  documentTokenLimit?: number;
   // Additional fields
   files?: string[];
   expiredAt?: Date;

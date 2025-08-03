@@ -1,3 +1,4 @@
+export { default as DynamicDropdownInput } from './DynamicDropdownInput';
 export { default as DynamicCombobox } from './DynamicCombobox';
 export { default as DynamicDropdown } from './DynamicDropdown';
 export { default as DynamicCheckbox } from './DynamicCheckbox';

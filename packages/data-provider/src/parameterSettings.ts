@@ -80,6 +80,24 @@ const baseDefinitions: Record<string, SettingDefinition> = {
     optionType: 'conversation',
     columnSpan: 2,
   },
+  fileTokenLimits: {
+    key: 'fileTokenLimits',
+    label: 'com_ui_file_token_limits',
+    labelCode: true,
+    description: 'com_ui_file_token_limits_desc',
+    descriptionCode: true,
+    placeholder: 'com_nav_theme_system',
+    placeholderCode: true,
+    type: 'object',
+    component: 'dropdownInput',
+    optionType: 'model',
+    options: ['com_ui_image', 'com_ui_textfile', 'com_ui_document'],
+    defaultValues: {
+      image: 1000,
+      text: 500,
+      document: 2000,
+    },
+  },
 };
 
 const createDefinition = (
@@ -603,6 +621,7 @@ const googleConfig: SettingsConfiguration = [
   google.thinking,
   google.thinkingBudget,
   google.web_search,
+  baseDefinitions.fileTokenLimits,
 ];
 
 const googleCol1: SettingsConfiguration = [
@@ -621,6 +640,7 @@ const googleCol2: SettingsConfiguration = [
   google.thinking,
   google.thinkingBudget,
   google.web_search,
+  baseDefinitions.fileTokenLimits,
 ];
 
 const openAI: SettingsConfiguration = [
@@ -640,6 +660,7 @@ const openAI: SettingsConfiguration = [
   openAIParams.useResponsesApi,
   openAIParams.reasoning_summary,
   openAIParams.disableStreaming,
+  baseDefinitions.fileTokenLimits,
 ];
 
 const openAICol1: SettingsConfiguration = [
@@ -663,6 +684,7 @@ const openAICol2: SettingsConfiguration = [
   openAIParams.useResponsesApi,
   openAIParams.web_search,
   openAIParams.disableStreaming,
+  baseDefinitions.fileTokenLimits,
 ];
 
 const anthropicConfig: SettingsConfiguration = [

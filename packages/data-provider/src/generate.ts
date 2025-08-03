@@ -14,7 +14,8 @@ export type ComponentType =
   | 'switch'
   | 'dropdown'
   | 'combobox'
-  | 'tags';
+  | 'tags'
+  | 'dropdownInput';
 
 export type OptionType = 'conversation' | 'model' | 'custom';
 
@@ -34,6 +35,7 @@ export enum ComponentTypes {
   Dropdown = 'dropdown',
   Combobox = 'combobox',
   Tags = 'tags',
+  DropdownInput = 'dropdownInput',
 }
 
 export enum SettingTypes {
@@ -52,8 +54,8 @@ export enum OptionTypes {
 export interface SettingDefinition {
   key: string;
   description?: string;
-  type: 'number' | 'boolean' | 'string' | 'enum' | 'array';
-  default?: number | boolean | string | string[];
+  type: 'number' | 'boolean' | 'string' | 'enum' | 'array' | 'object';
+  default?: number | boolean | string | string[] | Record<string, unknown>;
   showLabel?: boolean;
   showDefault?: boolean;
   options?: string[];
@@ -79,6 +81,7 @@ export interface SettingDefinition {
   selectPlaceholder?: string; // Specific to combobox component
   searchPlaceholderCode?: boolean; // Specific to combobox component
   selectPlaceholderCode?: boolean; // Specific to combobox component
+  defaultValues?: Record<string, any>; // Specific to dropdownInput component
 }
 
 export type DynamicSettingProps = Partial<SettingDefinition> & {
