@@ -24,14 +24,12 @@ function DynamicDropdownInput({
 }: DynamicSettingProps) {
   const localize = useLocalize();
 
-  // Use the keys from defaultValues as the actual options
   const actualOptions = Object.keys(defaultValues);
   const [selectedOption, setSelectedOption] = useState(actualOptions[0]);
 
   const currentValues = useMemo(() => {
     const values = { ...defaultValues };
 
-    // For fileTokenLimits, prioritize individual URL parameters
     if (settingKey === 'fileTokenLimits') {
       const conv = conversation as any;
       if (conv?.imageTokenLimit !== undefined) values.image = conv.imageTokenLimit;
@@ -39,7 +37,6 @@ function DynamicDropdownInput({
       if (conv?.documentTokenLimit !== undefined) values.document = conv.documentTokenLimit;
     }
 
-    // Check for compound object value as fallback
     const compoundValue = conversation?.[settingKey];
     if (compoundValue && typeof compoundValue === 'object') {
       Object.assign(values, compoundValue);
@@ -82,7 +79,6 @@ function DynamicDropdownInput({
                     : selectedOption
                 }
                 setValue={(localizedValue) => {
-                  // Find which option index this localized value corresponds to
                   const optionIndex = options.findIndex(
                     (option) => (localize(option as TranslationKeys) || option) === localizedValue,
                   );
@@ -99,7 +95,6 @@ function DynamicDropdownInput({
               <DynamicInput
                 settingKey={`${settingKey}_${selectedOption}`}
                 setOption={(_key) => (value) => {
-                  // Only update individual URL params - no compound object
                   if (settingKey === 'fileTokenLimits') {
                     const paramMap = {
                       image: 'imageTokenLimit',
