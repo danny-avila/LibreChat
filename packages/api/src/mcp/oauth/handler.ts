@@ -602,7 +602,7 @@ export class MCPOAuthHandler {
       /** Auto-discover OAuth configuration for refresh */
       const oauthMetadata = await discoverAuthorizationServerMetadata(metadata.serverUrl);
 
-      if (!oauthMetadata.token_endpoint) {
+      if (!oauthMetadata?.token_endpoint) {
         throw new Error('No token endpoint found in OAuth metadata');
       }
 
