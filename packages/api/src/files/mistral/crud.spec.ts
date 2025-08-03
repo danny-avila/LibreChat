@@ -50,8 +50,9 @@ import type { MistralFileUploadResponse, MistralSignedUrlResponse, OCRResult } f
 import { logger as mockLogger } from '@librechat/data-schemas';
 import {
   uploadDocumentToMistral,
-  uploadMistralOCR,
   uploadAzureMistralOCR,
+  deleteMistralFile,
+  uploadMistralOCR,
   getSignedUrl,
   performOCR,
 } from './crud';
@@ -213,6 +214,56 @@ describe('MistralOCR Service', () => {
       ).rejects.toThrow();
 
       expect(mockLogger.error).toHaveBeenCalledWith('Error fetching signed URL:', errorMessage);
+    });
+  });
+
+  describe('deleteMistralFile', () => {
+    it('should delete a file from Mistral API', async () => {
+      mockAxios.delete!.mockResolvedValueOnce({ data: {} });
+
+      await deleteMistralFile({
+        fileId: 'file-123',
+        apiKey: 'test-api-key',
+        baseURL: 'https://api.mistral.ai/v1',
+      });
+
+      expect(mockAxios.delete).toHaveBeenCalledWith('https://api.mistral.ai/v1/files/file-123', {
+        headers: {
+          Authorization: 'Bearer test-api-key',
+        },
+      });
+    });
+
+    it('should use default baseURL when not provided', async () => {
+      mockAxios.delete!.mockResolvedValueOnce({ data: {} });
+
+      await deleteMistralFile({
+        fileId: 'file-456',
+        apiKey: 'test-api-key',
+      });
+
+      expect(mockAxios.delete).toHaveBeenCalledWith('https://api.mistral.ai/v1/files/file-456', {
+        headers: {
+          Authorization: 'Bearer test-api-key',
+        },
+      });
+    });
+
+    it('should not throw when deletion fails', async () => {
+      mockAxios.delete!.mockRejectedValueOnce(new Error('Delete failed'));
+
+      // Should not throw
+      await expect(
+        deleteMistralFile({
+          fileId: 'file-789',
+          apiKey: 'test-api-key',
+        }),
+      ).resolves.not.toThrow();
+
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        'Error deleting Mistral file file-789:',
+        expect.any(Error),
+      );
     });
   });
 
@@ -1343,6 +1394,340 @@ describe('MistralOCR Service', () => {
         const uploadCall = mockAxios.post!.mock.calls[0];
         const authHeader = uploadCall[2]?.headers?.Authorization;
         expect(authHeader).toBe('Bearer hardcoded-api-key-12345');
+      });
+    });
+
+    describe('File cleanup', () => {
+      beforeEach(() => {
+        const mockReadStream: MockReadStream = {
+          on: jest.fn().mockImplementation(function (
+            this: MockReadStream,
+            event: string,
+            handler: () => void,
+          ) {
+            if (event === 'end') {
+              handler();
+            }
+            return this;
+          }),
+          pipe: jest.fn().mockImplementation(function (this: MockReadStream) {
+            return this;
+          }),
+          pause: jest.fn(),
+          resume: jest.fn(),
+          emit: jest.fn(),
+          once: jest.fn(),
+          destroy: jest.fn(),
+          path: '/tmp/upload/file.pdf',
+          fd: 1,
+          flags: 'r',
+          mode: 0o666,
+          autoClose: true,
+          bytesRead: 0,
+          closed: false,
+          pending: false,
+        };
+
+        (jest.mocked(fs).createReadStream as jest.Mock).mockReturnValue(mockReadStream);
+        // Clear all mocks before each test
+        mockAxios.delete!.mockClear();
+      });
+
+      it('should delete the uploaded file after successful OCR processing', async () => {
+        mockLoadAuthValues.mockResolvedValue({
+          OCR_API_KEY: 'test-api-key',
+          OCR_BASEURL: 'https://api.mistral.ai/v1',
+        });
+
+        // Mock file upload response
+        mockAxios.post!.mockResolvedValueOnce({
+          data: {
+            id: 'file-cleanup-123',
+            object: 'file',
+            bytes: 1024,
+            created_at: Date.now(),
+            filename: 'document.pdf',
+            purpose: 'ocr',
+          } as MistralFileUploadResponse,
+        });
+
+        // Mock signed URL response
+        mockAxios.get!.mockResolvedValueOnce({
+          data: {
+            url: 'https://signed-url.com',
+            expires_at: Date.now() + 86400000,
+          } as MistralSignedUrlResponse,
+        });
+
+        // Mock OCR response
+        mockAxios.post!.mockResolvedValueOnce({
+          data: {
+            model: 'mistral-ocr-latest',
+            pages: [
+              {
+                index: 0,
+                markdown: 'OCR content',
+                images: [],
+                dimensions: { dpi: 300, height: 1100, width: 850 },
+              },
+            ],
+            document_annotation: '',
+            usage_info: {
+              pages_processed: 1,
+              doc_size_bytes: 1024,
+            },
+          },
+        });
+
+        // Mock delete file response
+        mockAxios.delete!.mockResolvedValueOnce({ data: {} });
+
+        const req = {
+          user: { id: 'user123' },
+          app: {
+            locals: {
+              ocr: {
+                apiKey: '${OCR_API_KEY}',
+                baseURL: '${OCR_BASEURL}',
+                mistralModel: 'mistral-ocr-latest',
+              },
+            },
+          },
+        } as unknown as ExpressRequest;
+
+        const file = {
+          path: '/tmp/upload/file.pdf',
+          originalname: 'document.pdf',
+          mimetype: 'application/pdf',
+        } as Express.Multer.File;
+
+        await uploadMistralOCR({
+          req,
+          file,
+          loadAuthValues: mockLoadAuthValues,
+        });
+
+        // Verify delete was called with correct parameters
+        expect(mockAxios.delete).toHaveBeenCalledWith(
+          'https://api.mistral.ai/v1/files/file-cleanup-123',
+          {
+            headers: {
+              Authorization: 'Bearer test-api-key',
+            },
+          },
+        );
+        expect(mockAxios.delete).toHaveBeenCalledTimes(1);
+      });
+
+      it('should delete the uploaded file even when OCR processing fails', async () => {
+        mockLoadAuthValues.mockResolvedValue({
+          OCR_API_KEY: 'test-api-key',
+          OCR_BASEURL: 'https://api.mistral.ai/v1',
+        });
+
+        // Mock file upload response
+        mockAxios.post!.mockResolvedValueOnce({
+          data: {
+            id: 'file-cleanup-456',
+            object: 'file',
+            bytes: 1024,
+            created_at: Date.now(),
+            filename: 'document.pdf',
+            purpose: 'ocr',
+          } as MistralFileUploadResponse,
+        });
+
+        // Mock signed URL response
+        mockAxios.get!.mockResolvedValueOnce({
+          data: {
+            url: 'https://signed-url.com',
+            expires_at: Date.now() + 86400000,
+          } as MistralSignedUrlResponse,
+        });
+
+        // Mock OCR to fail
+        mockAxios.post!.mockRejectedValueOnce(new Error('OCR processing failed'));
+
+        // Mock delete file response
+        mockAxios.delete!.mockResolvedValueOnce({ data: {} });
+
+        const req = {
+          user: { id: 'user123' },
+          app: {
+            locals: {
+              ocr: {
+                apiKey: '${OCR_API_KEY}',
+                baseURL: '${OCR_BASEURL}',
+                mistralModel: 'mistral-ocr-latest',
+              },
+            },
+          },
+        } as unknown as ExpressRequest;
+
+        const file = {
+          path: '/tmp/upload/file.pdf',
+          originalname: 'document.pdf',
+          mimetype: 'application/pdf',
+        } as Express.Multer.File;
+
+        await expect(
+          uploadMistralOCR({
+            req,
+            file,
+            loadAuthValues: mockLoadAuthValues,
+          }),
+        ).rejects.toThrow('Error uploading document to Mistral OCR API');
+
+        // Verify delete was still called despite the error
+        expect(mockAxios.delete).toHaveBeenCalledWith(
+          'https://api.mistral.ai/v1/files/file-cleanup-456',
+          {
+            headers: {
+              Authorization: 'Bearer test-api-key',
+            },
+          },
+        );
+        expect(mockAxios.delete).toHaveBeenCalledTimes(1);
+      });
+
+      it('should handle deletion errors gracefully without throwing', async () => {
+        mockLoadAuthValues.mockResolvedValue({
+          OCR_API_KEY: 'test-api-key',
+          OCR_BASEURL: 'https://api.mistral.ai/v1',
+        });
+
+        // Mock file upload response
+        mockAxios.post!.mockResolvedValueOnce({
+          data: {
+            id: 'file-cleanup-789',
+            object: 'file',
+            bytes: 1024,
+            created_at: Date.now(),
+            filename: 'document.pdf',
+            purpose: 'ocr',
+          } as MistralFileUploadResponse,
+        });
+
+        // Mock signed URL response
+        mockAxios.get!.mockResolvedValueOnce({
+          data: {
+            url: 'https://signed-url.com',
+            expires_at: Date.now() + 86400000,
+          } as MistralSignedUrlResponse,
+        });
+
+        // Mock OCR response
+        mockAxios.post!.mockResolvedValueOnce({
+          data: {
+            model: 'mistral-ocr-latest',
+            pages: [
+              {
+                index: 0,
+                markdown: 'OCR content',
+                images: [],
+                dimensions: { dpi: 300, height: 1100, width: 850 },
+              },
+            ],
+            document_annotation: '',
+            usage_info: {
+              pages_processed: 1,
+              doc_size_bytes: 1024,
+            },
+          },
+        });
+
+        // Mock delete to fail
+        mockAxios.delete!.mockRejectedValueOnce(new Error('Delete failed'));
+
+        const req = {
+          user: { id: 'user123' },
+          app: {
+            locals: {
+              ocr: {
+                apiKey: '${OCR_API_KEY}',
+                baseURL: '${OCR_BASEURL}',
+                mistralModel: 'mistral-ocr-latest',
+              },
+            },
+          },
+        } as unknown as ExpressRequest;
+
+        const file = {
+          path: '/tmp/upload/file.pdf',
+          originalname: 'document.pdf',
+          mimetype: 'application/pdf',
+        } as Express.Multer.File;
+
+        // Should not throw even if delete fails
+        const result = await uploadMistralOCR({
+          req,
+          file,
+          loadAuthValues: mockLoadAuthValues,
+        });
+
+        expect(result).toEqual({
+          filename: 'document.pdf',
+          bytes: expect.any(Number),
+          filepath: 'mistral_ocr',
+          text: 'OCR content\n\n',
+          images: [],
+        });
+
+        // Verify delete was attempted
+        expect(mockAxios.delete).toHaveBeenCalledWith(
+          'https://api.mistral.ai/v1/files/file-cleanup-789',
+          {
+            headers: {
+              Authorization: 'Bearer test-api-key',
+            },
+          },
+        );
+
+        // Verify error was logged
+        expect(mockLogger.error).toHaveBeenCalledWith(
+          'Error deleting Mistral file file-cleanup-789:',
+          expect.any(Error),
+        );
+      });
+
+      it('should not attempt cleanup if file upload fails', async () => {
+        mockLoadAuthValues.mockResolvedValue({
+          OCR_API_KEY: 'test-api-key',
+          OCR_BASEURL: 'https://api.mistral.ai/v1',
+        });
+
+        // Mock file upload to fail
+        mockAxios.post!.mockRejectedValueOnce(new Error('Upload failed'));
+
+        const req = {
+          user: { id: 'user123' },
+          app: {
+            locals: {
+              ocr: {
+                apiKey: '${OCR_API_KEY}',
+                baseURL: '${OCR_BASEURL}',
+                mistralModel: 'mistral-ocr-latest',
+              },
+            },
+          },
+        } as unknown as ExpressRequest;
+
+        const file = {
+          path: '/tmp/upload/file.pdf',
+          originalname: 'document.pdf',
+          mimetype: 'application/pdf',
+        } as Express.Multer.File;
+
+        await expect(
+          uploadMistralOCR({
+            req,
+            file,
+            loadAuthValues: mockLoadAuthValues,
+          }),
+        ).rejects.toThrow('Error uploading document to Mistral OCR API');
+
+        // Verify delete was NOT called since upload failed
+        expect(mockAxios.delete).not.toHaveBeenCalled();
       });
     });
   });
