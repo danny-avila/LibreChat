@@ -519,6 +519,57 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
     return 1000;
   };
 
+  const shouldUseTextParsing = fileConfig.checkType(
+    file.mimetype,
+    fileConfig.textParsing?.supportedMimeTypes || [],
+  );
+  const shouldUseOCR = fileConfig.checkType(
+    file.mimetype,
+    fileConfig.ocr?.supportedMimeTypes || [],
+  );
+
+  // TODO: add placeholder for RAG API which falls back to native text parsing
+  if (shouldUseTextParsing && !shouldUseOCR) {
+    const text = fs.readFileSync(file.path, 'utf8');
+    const bytes = Buffer.byteLength(text, 'utf8');
+
+    const tokens = await countTokens(text, req.body.model);
+    const tokenLimit = getTokenLimit(file.mimetype);
+
+    if (tokens > tokenLimit) {
+      throw new Error(
+        `Text file exceeds token limit. File contains ${tokens} tokens, but limit is ${tokenLimit} tokens.`,
+      );
+    }
+
+    const fileInfo = removeNullishValues({
+      text,
+      bytes,
+      file_id: metadata.file_id,
+      temp_file_id: metadata.temp_file_id,
+      user: req.user.id,
+      type: file.mimetype,
+      filepath: file.path,
+      source: FileSources.text,
+      filename: file.originalname,
+      model: messageAttachment ? undefined : req.body.model,
+      context: messageAttachment ? FileContext.message_attachment : FileContext.agents,
+    });
+
+    if (!messageAttachment && tool_resource) {
+      await addAgentResourceFile({
+        req,
+        file_id: metadata.file_id,
+        agent_id,
+        tool_resource,
+      });
+    }
+    const result = await createFile(fileInfo, true);
+    return res
+      .status(200)
+      .json({ message: 'Agent file uploaded and processed successfully', ...result });
+  }
+
   let fileInfoMetadata;
   const entity_id = messageAttachment === true ? undefined : agent_id;
   const basePath = mime.getType(file.originalname)?.startsWith('image') ? 'images' : 'uploads';
@@ -551,55 +602,7 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
 
     const { file_id, temp_file_id } = metadata;
 
-    const shouldUseOCR = fileConfig.checkType(
-      file.mimetype,
-      fileConfig.ocr?.supportedMimeTypes || [],
-    );
-    const shouldUseTextParsing = fileConfig.checkType(
-      file.mimetype,
-      fileConfig.textParsing?.supportedMimeTypes || [],
-    );
-
-    if (shouldUseTextParsing && !shouldUseOCR) {
-      const text = fs.readFileSync(file.path, 'utf8');
-      const bytes = Buffer.byteLength(text, 'utf8');
-
-      const tokens = await countTokens(text, req.body.model);
-      const tokenLimit = getTokenLimit(file.mimetype);
-
-      if (tokens > tokenLimit) {
-        throw new Error(
-          `Text file exceeds token limit. File contains ${tokens} tokens, but limit is ${tokenLimit} tokens.`,
-        );
-      }
-
-      const fileInfo = removeNullishValues({
-        text,
-        bytes,
-        file_id,
-        temp_file_id,
-        user: req.user.id,
-        type: file.mimetype,
-        filepath: file.path,
-        source: FileSources.text,
-        filename: file.originalname,
-        model: messageAttachment ? undefined : req.body.model,
-        context: messageAttachment ? FileContext.message_attachment : FileContext.agents,
-      });
-
-      if (!messageAttachment && tool_resource) {
-        await addAgentResourceFile({
-          req,
-          file_id,
-          agent_id,
-          tool_resource,
-        });
-      }
-      const result = await createFile(fileInfo, true);
-      return res
-        .status(200)
-        .json({ message: 'Agent file uploaded and processed successfully', ...result });
-    } else if (shouldUseOCR) {
+    if (shouldUseOCR) {
       const { handleFileUpload: uploadOCR } = getStrategyFunctions(
         req.app.locals?.ocr?.strategy ?? FileSources.mistral_ocr,
       );
