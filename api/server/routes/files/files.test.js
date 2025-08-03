@@ -4,7 +4,12 @@ const mongoose = require('mongoose');
 const { v4: uuidv4 } = require('uuid');
 const { createMethods } = require('@librechat/data-schemas');
 const { MongoMemoryServer } = require('mongodb-memory-server');
-const { AccessRoleIds, ResourceType, PrincipalType } = require('librechat-data-provider');
+const {
+  SystemRoles,
+  ResourceType,
+  AccessRoleIds,
+  PrincipalType,
+} = require('librechat-data-provider');
 const { createAgent } = require('~/models/Agent');
 const { createFile } = require('~/models/File');
 
@@ -95,9 +100,11 @@ describe('File Routes - Delete with Agent Access', () => {
     app = express();
     app.use(express.json());
 
-    // Mock authentication middleware
     app.use((req, res, next) => {
-      req.user = { id: otherUserId ? otherUserId.toString() : 'default-user' };
+      req.user = {
+        id: otherUserId || 'default-user',
+        role: SystemRoles.USER,
+      };
       req.app = { locals: {} };
       next();
     });

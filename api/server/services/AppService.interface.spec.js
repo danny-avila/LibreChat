@@ -89,4 +89,114 @@ describe('AppService interface configuration', () => {
     expect(app.locals.interfaceConfig.bookmarks).toBe(false);
     expect(loadDefaultInterface).toHaveBeenCalled();
   });
+
+  it('should correctly configure peoplePicker permissions including roles', async () => {
+    mockLoadCustomConfig.mockResolvedValue({
+      interface: {
+        peoplePicker: {
+          admin: {
+            users: true,
+            groups: true,
+            roles: true,
+          },
+          user: {
+            users: false,
+            groups: false,
+            roles: false,
+          },
+        },
+      },
+    });
+    loadDefaultInterface.mockResolvedValue({
+      peoplePicker: {
+        admin: {
+          users: true,
+          groups: true,
+          roles: true,
+        },
+        user: {
+          users: false,
+          groups: false,
+          roles: false,
+        },
+      },
+    });
+
+    await AppService(app);
+
+    expect(app.locals.interfaceConfig.peoplePicker).toBeDefined();
+    expect(app.locals.interfaceConfig.peoplePicker.admin).toMatchObject({
+      users: true,
+      groups: true,
+      roles: true,
+    });
+    expect(app.locals.interfaceConfig.peoplePicker.user).toMatchObject({
+      users: false,
+      groups: false,
+      roles: false,
+    });
+    expect(loadDefaultInterface).toHaveBeenCalled();
+  });
+
+  it('should handle mixed peoplePicker permissions for roles', async () => {
+    mockLoadCustomConfig.mockResolvedValue({
+      interface: {
+        peoplePicker: {
+          admin: {
+            users: true,
+            groups: true,
+            roles: false,
+          },
+          user: {
+            users: true,
+            groups: false,
+            roles: true,
+          },
+        },
+      },
+    });
+    loadDefaultInterface.mockResolvedValue({
+      peoplePicker: {
+        admin: {
+          users: true,
+          groups: true,
+          roles: false,
+        },
+        user: {
+          users: true,
+          groups: false,
+          roles: true,
+        },
+      },
+    });
+
+    await AppService(app);
+
+    expect(app.locals.interfaceConfig.peoplePicker.admin.roles).toBe(false);
+    expect(app.locals.interfaceConfig.peoplePicker.user.roles).toBe(true);
+  });
+
+  it('should set default peoplePicker roles permissions when not provided', async () => {
+    mockLoadCustomConfig.mockResolvedValue({});
+    loadDefaultInterface.mockResolvedValue({
+      peoplePicker: {
+        admin: {
+          users: true,
+          groups: true,
+          roles: true,
+        },
+        user: {
+          users: false,
+          groups: false,
+          roles: false,
+        },
+      },
+    });
+
+    await AppService(app);
+
+    expect(app.locals.interfaceConfig.peoplePicker).toBeDefined();
+    expect(app.locals.interfaceConfig.peoplePicker.admin.roles).toBe(true);
+    expect(app.locals.interfaceConfig.peoplePicker.user.roles).toBe(false);
+  });
 });

@@ -2,13 +2,13 @@ import type { Document, Types } from 'mongoose';
 import { PrincipalType, PrincipalModel, ResourceType } from 'librechat-data-provider';
 
 export type AclEntry = {
-  /** The type of principal ('user', 'group', 'public') */
+  /** The type of principal (PrincipalType.USER, PrincipalType.GROUP, PrincipalType.PUBLIC) */
   principalType: PrincipalType;
-  /** The ID of the principal (null for 'public') */
-  principalId?: Types.ObjectId;
-  /** The model name for the principal ('User' or 'Group') */
+  /** The ID of the principal (null for PrincipalType.PUBLIC, string for PrincipalType.ROLE) */
+  principalId?: Types.ObjectId | string;
+  /** The model name for the principal (`PrincipalModel`) */
   principalModel?: PrincipalModel;
-  /** The type of resource ('agent', 'project', 'file', 'promptGroup') */
+  /** The type of resource (`ResourceType`) */
   resourceType: ResourceType;
   /** The ID of the resource */
   resourceId: Types.ObjectId;

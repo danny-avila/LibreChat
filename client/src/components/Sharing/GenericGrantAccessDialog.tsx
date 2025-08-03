@@ -36,7 +36,7 @@ export default function GenericGrantAccessDialog({
   resourceId?: string | null;
   resourceName?: string;
   resourceType: ResourceType;
-  onGrantAccess?: (shares: TPrincipal[], isPublic: boolean, publicRole: AccessRoleIds) => void;
+  onGrantAccess?: (shares: TPrincipal[], isPublic: boolean, publicRole?: AccessRoleIds) => void;
   disabled?: boolean;
   children?: React.ReactNode;
 }) {

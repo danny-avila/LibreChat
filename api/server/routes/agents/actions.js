@@ -37,6 +37,7 @@ router.get('/', async (req, res) => {
     const userId = req.user.id;
     const editableAgentObjectIds = await findAccessibleResources({
       userId,
+      role: req.user.role,
       resourceType: ResourceType.AGENT,
       requiredPermissions: PermissionBits.EDIT,
     });

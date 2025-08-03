@@ -8,7 +8,7 @@ const { getFiles } = require('~/models/File');
  * Checks if user has access to a file through agent permissions
  * Files inherit permissions from agents - if you can view the agent, you can access its files
  */
-const checkAgentBasedFileAccess = async (userId, fileId) => {
+const checkAgentBasedFileAccess = async ({ userId, role, fileId }) => {
   try {
     // Find agents that have this file in their tool_resources
     const agentsWithFile = await getAgent({
@@ -35,6 +35,7 @@ const checkAgentBasedFileAccess = async (userId, fileId) => {
       try {
         const permissions = await getEffectivePermissions({
           userId,
+          role,
           resourceType: ResourceType.AGENT,
           resourceId: agent._id || agent.id,
         });
@@ -67,7 +68,7 @@ const fileAccess = async (req, res, next) => {
   try {
     const fileId = req.params.file_id;
     const userId = req.user?.id;
-
+    const userRole = req.user?.role;
     if (!fileId) {
       return res.status(400).json({
         error: 'Bad Request',
@@ -98,7 +99,7 @@ const fileAccess = async (req, res, next) => {
     }
 
     // Check agent-based access (file inherits agent permissions)
-    const hasAgentAccess = await checkAgentBasedFileAccess(userId, fileId);
+    const hasAgentAccess = await checkAgentBasedFileAccess({ userId, role: userRole, fileId });
     if (hasAgentAccess) {
       req.fileAccess = { file };
       return next();

@@ -1,16 +1,17 @@
 import React, { useState, useMemo } from 'react';
+import { PrincipalType } from 'librechat-data-provider';
 import type { TPrincipal, PrincipalSearchParams } from 'librechat-data-provider';
 import { useSearchPrincipalsQuery } from 'librechat-data-provider/react-query';
+import { useLocalize, usePeoplePickerPermissions } from '~/hooks';
 import PeoplePickerSearchItem from './PeoplePickerSearchItem';
 import SelectedPrincipalsList from './SelectedPrincipalsList';
 import { SearchPicker } from './SearchPicker';
-import { useLocalize } from '~/hooks';
 
 interface PeoplePickerProps {
   onSelectionChange: (principals: TPrincipal[]) => void;
   placeholder?: string;
   className?: string;
-  typeFilter?: 'user' | 'group' | null;
+  typeFilter?: PrincipalType.USER | PrincipalType.GROUP | PrincipalType.ROLE | null;
 }
 
 export default function PeoplePicker({
@@ -20,6 +21,7 @@ export default function PeoplePicker({
   typeFilter = null,
 }: PeoplePickerProps) {
   const localize = useLocalize();
+  const { canViewUsers, canViewGroups, canViewRoles } = usePeoplePickerPermissions();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedShares, setSelectedShares] = useState<TPrincipal[]>([]);
 
@@ -54,6 +56,28 @@ export default function PeoplePicker({
     console.error('Principal search error:', error);
   }
 
+  /** Get appropriate label based on permissions */
+  const getSearchLabel = () => {
+    const permissions = [canViewUsers, canViewGroups, canViewRoles];
+    const permissionCount = permissions.filter(Boolean).length;
+
+    if (permissionCount === 3) {
+      return localize('com_ui_search_users_groups_roles');
+    } else if (permissionCount === 2) {
+      if (canViewUsers && canViewGroups) {
+        return localize('com_ui_search_users_groups');
+      }
+    } else if (canViewUsers) {
+      return localize('com_ui_search_users');
+    } else if (canViewGroups) {
+      return localize('com_ui_search_groups');
+    } else if (canViewRoles) {
+      return localize('com_ui_search_roles');
+    }
+
+    return localize('com_ui_search_users_groups');
+  };
+
   return (
     <div className={`space-y-3 ${className}`}>
       <div className="relative">
@@ -83,7 +107,7 @@ export default function PeoplePicker({
             });
             setSearchQuery('');
           }}
-          label={localize('com_ui_search_users_groups')}
+          label={getSearchLabel()}
           isLoading={isLoading}
         />
       </div>

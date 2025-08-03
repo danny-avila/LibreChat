@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { PermissionTypes, Permissions } from 'librechat-data-provider';
+import { PermissionTypes, PrincipalType, Permissions } from 'librechat-data-provider';
 import { useHasAccess } from '~/hooks';
 
 /**
@@ -17,21 +17,33 @@ export const usePeoplePickerPermissions = () => {
     permission: Permissions.VIEW_GROUPS,
   });
 
-  const hasPeoplePickerAccess = canViewUsers || canViewGroups;
+  const canViewRoles = useHasAccess({
+    permissionType: PermissionTypes.PEOPLE_PICKER,
+    permission: Permissions.VIEW_ROLES,
+  });
 
-  const peoplePickerTypeFilter = useMemo(() => {
-    if (canViewUsers && canViewGroups) {
-      return null; // Both types allowed
+  const hasPeoplePickerAccess = canViewUsers || canViewGroups || canViewRoles;
+
+  const peoplePickerTypeFilter:
+    | PrincipalType.USER
+    | PrincipalType.GROUP
+    | PrincipalType.ROLE
+    | null = useMemo(() => {
+    if (canViewUsers && canViewGroups && canViewRoles) {
+      return null; // All types allowed
     } else if (canViewUsers) {
-      return 'user' as const;
+      return PrincipalType.USER;
     } else if (canViewGroups) {
-      return 'group' as const;
+      return PrincipalType.GROUP;
+    } else if (canViewRoles) {
+      return PrincipalType.ROLE;
     }
     return null;
-  }, [canViewUsers, canViewGroups]);
+  }, [canViewUsers, canViewGroups, canViewRoles]);
 
   return {
     canViewUsers,
+    canViewRoles,
     canViewGroups,
     hasPeoplePickerAccess,
     peoplePickerTypeFilter,

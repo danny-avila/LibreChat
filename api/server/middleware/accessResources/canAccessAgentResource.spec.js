@@ -43,7 +43,7 @@ describe('canAccessAgentResource middleware', () => {
     });
 
     req = {
-      user: { id: testUser._id.toString(), role: 'test-role' },
+      user: { id: testUser._id, role: testUser.role },
       params: {},
     };
     res = {

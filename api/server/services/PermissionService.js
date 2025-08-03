@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 const { isEnabled } = require('@librechat/api');
-const { ResourceType, PrincipalType, PrincipalModel } = require('librechat-data-provider');
 const { getTransactionSupport, logger } = require('@librechat/data-schemas');
+const { ResourceType, PrincipalType, PrincipalModel } = require('librechat-data-provider');
 const {
   entraIdPrincipalFeatureEnabled,
   getUserOwnedEntraGroups,
@@ -46,8 +46,8 @@ const validateResourceType = (resourceType) => {
 /**
  * Grant a permission to a principal for a resource using a role
  * @param {Object} params - Parameters for granting role-based permission
- * @param {string} params.principalType - 'user', 'group', or 'public'
- * @param {string|mongoose.Types.ObjectId|null} params.principalId - The ID of the principal (null for 'public')
+ * @param {string} params.principalType - PrincipalType.USER, PrincipalType.GROUP, or PrincipalType.PUBLIC
+ * @param {string|mongoose.Types.ObjectId|null} params.principalId - The ID of the principal (null for PrincipalType.PUBLIC)
  * @param {string} params.resourceType - Type of resource (e.g., 'agent')
  * @param {string|mongoose.Types.ObjectId} params.resourceId - The ID of the resource
  * @param {string} params.accessRoleId - The ID of the role (e.g., AccessRoleIds.AGENT_VIEWER, AccessRoleIds.AGENT_EDITOR)
@@ -70,10 +70,21 @@ const grantPermission = async ({
     }
 
     if (principalType !== PrincipalType.PUBLIC && !principalId) {
-      throw new Error('Principal ID is required for user and group principals');
+      throw new Error('Principal ID is required for user, group, and role principals');
     }
 
-    if (principalId && !mongoose.Types.ObjectId.isValid(principalId)) {
+    // Validate principalId based on type
+    if (principalId && principalType === PrincipalType.ROLE) {
+      // Role IDs are strings (role names)
+      if (typeof principalId !== 'string' || principalId.trim().length === 0) {
+        throw new Error(`Invalid role ID: ${principalId}`);
+      }
+    } else if (
+      principalType &&
+      principalType !== PrincipalType.PUBLIC &&
+      !mongoose.Types.ObjectId.isValid(principalId)
+    ) {
+      // User and Group IDs must be valid ObjectIds
       throw new Error(`Invalid principal ID: ${principalId}`);
     }
 
@@ -115,12 +126,13 @@ const grantPermission = async ({
  * Check if a user has specific permission bits on a resource
  * @param {Object} params - Parameters for checking permissions
  * @param {string|mongoose.Types.ObjectId} params.userId - The ID of the user
+ * @param {string} [params.role] - Optional user role (if not provided, will query from DB)
  * @param {string} params.resourceType - Type of resource (e.g., 'agent')
  * @param {string|mongoose.Types.ObjectId} params.resourceId - The ID of the resource
  * @param {number} params.requiredPermissions - The permission bits required (e.g., 1 for VIEW, 3 for VIEW+EDIT)
  * @returns {Promise<boolean>} Whether the user has the required permission bits
  */
-const checkPermission = async ({ userId, resourceType, resourceId, requiredPermission }) => {
+const checkPermission = async ({ userId, role, resourceType, resourceId, requiredPermission }) => {
   try {
     if (typeof requiredPermission !== 'number' || requiredPermission < 1) {
       throw new Error('requiredPermission must be a positive number');
@@ -129,7 +141,7 @@ const checkPermission = async ({ userId, resourceType, resourceId, requiredPermi
     validateResourceType(resourceType);
 
     // Get all principals for the user (user + groups + public)
-    const principals = await getUserPrincipals(userId);
+    const principals = await getUserPrincipals({ userId, role });
 
     if (principals.length === 0) {
       return false;
@@ -150,16 +162,17 @@ const checkPermission = async ({ userId, resourceType, resourceId, requiredPermi
  * Get effective permission bitmask for a user on a resource
  * @param {Object} params - Parameters for getting effective permissions
  * @param {string|mongoose.Types.ObjectId} params.userId - The ID of the user
+ * @param {string} [params.role] - Optional user role (if not provided, will query from DB)
  * @param {string} params.resourceType - Type of resource (e.g., 'agent')
  * @param {string|mongoose.Types.ObjectId} params.resourceId - The ID of the resource
  * @returns {Promise<number>} Effective permission bitmask
  */
-const getEffectivePermissions = async ({ userId, resourceType, resourceId }) => {
+const getEffectivePermissions = async ({ userId, role, resourceType, resourceId }) => {
   try {
     validateResourceType(resourceType);
 
     // Get all principals for the user (user + groups + public)
-    const principals = await getUserPrincipals(userId);
+    const principals = await getUserPrincipals({ userId, role });
 
     if (principals.length === 0) {
       return 0;
@@ -175,11 +188,12 @@ const getEffectivePermissions = async ({ userId, resourceType, resourceId }) => 
  * Find all resources of a specific type that a user has access to with specific permission bits
  * @param {Object} params - Parameters for finding accessible resources
  * @param {string|mongoose.Types.ObjectId} params.userId - The ID of the user
+ * @param {string} [params.role] - Optional user role (if not provided, will query from DB)
  * @param {string} params.resourceType - Type of resource (e.g., 'agent')
  * @param {number} params.requiredPermissions - The minimum permission bits required (e.g., 1 for VIEW, 3 for VIEW+EDIT)
  * @returns {Promise<Array>} Array of resource IDs
  */
-const findAccessibleResources = async ({ userId, resourceType, requiredPermissions }) => {
+const findAccessibleResources = async ({ userId, role, resourceType, requiredPermissions }) => {
   try {
     if (typeof requiredPermissions !== 'number' || requiredPermissions < 1) {
       throw new Error('requiredPermissions must be a positive number');
@@ -188,7 +202,7 @@ const findAccessibleResources = async ({ userId, resourceType, requiredPermissio
     validateResourceType(resourceType);
 
     // Get all principals for the user (user + groups + public)
-    const principalsList = await getUserPrincipals(userId);
+    const principalsList = await getUserPrincipals({ userId, role });
 
     if (principalsList.length === 0) {
       return [];
@@ -253,7 +267,7 @@ const getAvailableRoles = async ({ resourceType }) => {
  * Ensures a principal exists in the database based on TPrincipal data
  * Creates user if it doesn't exist locally (for Entra ID users)
  * @param {Object} principal - TPrincipal object from frontend
- * @param {string} principal.type - 'user', 'group', or 'public'
+ * @param {string} principal.type - PrincipalType.USER, PrincipalType.GROUP, or PrincipalType.PUBLIC
  * @param {string} [principal.id] - Local database ID (null for Entra ID principals not yet synced)
  * @param {string} principal.name - Display name
  * @param {string} [principal.email] - Email address
@@ -262,7 +276,7 @@ const getAvailableRoles = async ({ resourceType }) => {
  * @returns {Promise<string|null>} Returns the principalId for database operations, null for public
  */
 const ensurePrincipalExists = async function (principal) {
-  if (principal.type === 'public') {
+  if (principal.type === PrincipalType.PUBLIC) {
     return null;
   }
 
@@ -270,7 +284,7 @@ const ensurePrincipalExists = async function (principal) {
     return principal.id;
   }
 
-  if (principal.type === 'user' && principal.source === 'entra') {
+  if (principal.type === PrincipalType.USER && principal.source === 'entra') {
     if (!principal.email || !principal.idOnTheSource) {
       throw new Error('Entra ID user principals must have email and idOnTheSource');
     }
@@ -303,7 +317,7 @@ const ensurePrincipalExists = async function (principal) {
     return userId.toString();
   }
 
-  if (principal.type === 'group') {
+  if (principal.type === PrincipalType.GROUP) {
     throw new Error('Group principals should be handled by group-specific methods');
   }
 
@@ -315,7 +329,7 @@ const ensurePrincipalExists = async function (principal) {
  * Creates group if it doesn't exist locally (for Entra ID groups)
  * For Entra ID groups, always synchronizes member IDs when authentication context is provided
  * @param {Object} principal - TPrincipal object from frontend
- * @param {string} principal.type - Must be 'group'
+ * @param {string} principal.type - Must be PrincipalType.GROUP
  * @param {string} [principal.id] - Local database ID (null for Entra ID principals not yet synced)
  * @param {string} principal.name - Display name
  * @param {string} [principal.email] - Email address
@@ -328,8 +342,8 @@ const ensurePrincipalExists = async function (principal) {
  * @returns {Promise<string>} Returns the groupId for database operations
  */
 const ensureGroupPrincipalExists = async function (principal, authContext = null) {
-  if (principal.type !== 'group') {
-    throw new Error(`Invalid principal type: ${principal.type}. Expected 'group'`);
+  if (principal.type !== PrincipalType.GROUP) {
+    throw new Error(`Invalid principal type: ${principal.type}. Expected '${PrincipalType.GROUP}'`);
   }
 
   if (principal.source === 'entra') {
@@ -612,9 +626,18 @@ const bulkUpdateResourcePermissions = async ({
           resourceId,
         };
 
-        if (principal.type !== 'public') {
-          query.principalId = principal.id;
+        if (principal.type !== PrincipalType.PUBLIC) {
+          query.principalId =
+            principal.type === PrincipalType.ROLE
+              ? principal.id
+              : new mongoose.Types.ObjectId(principal.id);
         }
+
+        const principalModelMap = {
+          [PrincipalType.USER]: PrincipalModel.USER,
+          [PrincipalType.GROUP]: PrincipalModel.GROUP,
+          [PrincipalType.ROLE]: PrincipalModel.ROLE,
+        };
 
         const update = {
           $set: {
@@ -628,9 +651,11 @@ const bulkUpdateResourcePermissions = async ({
             resourceType,
             resourceId,
             ...(principal.type !== PrincipalType.PUBLIC && {
-              principalId: principal.id,
-              principalModel:
-                principal.type === PrincipalType.USER ? PrincipalModel.USER : PrincipalModel.GROUP,
+              principalId:
+                principal.type === PrincipalType.ROLE
+                  ? principal.id
+                  : new mongoose.Types.ObjectId(principal.id),
+              principalModel: principalModelMap[principal.type],
             }),
           },
         };
@@ -677,8 +702,11 @@ const bulkUpdateResourcePermissions = async ({
           resourceId,
         };
 
-        if (principal.type !== 'public') {
-          query.principalId = principal.id;
+        if (principal.type !== PrincipalType.PUBLIC) {
+          query.principalId =
+            principal.type === PrincipalType.ROLE
+              ? principal.id
+              : new mongoose.Types.ObjectId(principal.id);
         }
 
         deleteQueries.push(query);

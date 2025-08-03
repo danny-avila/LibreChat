@@ -1,5 +1,6 @@
 import React from 'react';
-import { Users, User } from 'lucide-react';
+import { Users, User, Shield } from 'lucide-react';
+import { PrincipalType } from 'librechat-data-provider';
 import type { TPrincipal } from 'librechat-data-provider';
 import { cn } from '~/utils';
 
@@ -17,7 +18,6 @@ export default function PrincipalAvatar({
   const { avatar, type, name } = principal;
   const displayName = name || 'Unknown';
 
-  // Size variants
   const sizeClasses = {
     sm: 'h-6 w-6',
     md: 'h-8 w-8',
@@ -33,7 +33,38 @@ export default function PrincipalAvatar({
   const avatarSizeClass = sizeClasses[size];
   const iconSizeClass = iconSizeClasses[size];
 
-  // Avatar or icon logic
+  /** Get icon component and styling based on type */
+  const getIconConfig = () => {
+    switch (type) {
+      case PrincipalType.USER:
+        return {
+          Icon: User,
+          containerClass: 'bg-blue-100 dark:bg-blue-900',
+          iconClass: 'text-blue-600 dark:text-blue-400',
+        };
+      case PrincipalType.GROUP:
+        return {
+          Icon: Users,
+          containerClass: 'bg-green-100 dark:bg-green-900',
+          iconClass: 'text-green-600 dark:text-green-400',
+        };
+      case PrincipalType.ROLE:
+        return {
+          Icon: Shield,
+          containerClass: 'bg-purple-100 dark:bg-purple-900',
+          iconClass: 'text-purple-600 dark:text-purple-400',
+        };
+      default:
+        return {
+          Icon: User,
+          containerClass: 'bg-gray-100 dark:bg-gray-900',
+          iconClass: 'text-gray-600 dark:text-gray-400',
+        };
+    }
+  };
+
+  const { Icon, containerClass, iconClass } = getIconConfig();
+
   if (avatar) {
     return (
       <div className={cn('flex-shrink-0', className)}>
@@ -50,52 +81,31 @@ export default function PrincipalAvatar({
         />
         {/* Hidden fallback icon that shows if image fails */}
         <div className={cn('hidden', avatarSizeClass)}>
-          {type === 'user' ? (
-            <div
-              className={cn(
-                avatarSizeClass,
-                'flex items-center justify-center rounded-full bg-blue-100 dark:bg-blue-900',
-              )}
-            >
-              <User className={cn(iconSizeClass, 'text-blue-600 dark:text-blue-400')} />
-            </div>
-          ) : (
-            <div
-              className={cn(
-                avatarSizeClass,
-                'flex items-center justify-center rounded-full bg-green-100 dark:bg-green-900',
-              )}
-            >
-              <Users className={cn(iconSizeClass, 'text-green-600 dark:text-green-400')} />
-            </div>
-          )}
+          <div
+            className={cn(
+              avatarSizeClass,
+              'flex items-center justify-center rounded-full',
+              containerClass,
+            )}
+          >
+            <Icon className={cn(iconSizeClass, iconClass)} />
+          </div>
         </div>
       </div>
     );
   }
 
-  // Fallback icon based on type
   return (
     <div className={cn('flex-shrink-0', className)}>
-      {type === 'user' ? (
-        <div
-          className={cn(
-            avatarSizeClass,
-            'flex items-center justify-center rounded-full bg-blue-100 dark:bg-blue-900',
-          )}
-        >
-          <User className={cn(iconSizeClass, 'text-blue-600 dark:text-blue-400')} />
-        </div>
-      ) : (
-        <div
-          className={cn(
-            avatarSizeClass,
-            'flex items-center justify-center rounded-full bg-green-100 dark:bg-green-900',
-          )}
-        >
-          <Users className={cn(iconSizeClass, 'text-green-600 dark:text-green-400')} />
-        </div>
-      )}
+      <div
+        className={cn(
+          avatarSizeClass,
+          'flex items-center justify-center rounded-full',
+          containerClass,
+        )}
+      >
+        <Icon className={cn(iconSizeClass, iconClass)} />
+      </div>
     </div>
   );
 }

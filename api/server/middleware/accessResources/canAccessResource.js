@@ -111,6 +111,7 @@ const canAccessResource = (options) => {
       // Check permissions using PermissionService with ObjectId
       const hasPermission = await checkPermission({
         userId,
+        role: req.user.role,
         resourceType,
         resourceId,
         requiredPermission,

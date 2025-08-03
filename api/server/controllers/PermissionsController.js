@@ -72,7 +72,7 @@ const updateResourcePermissions = async (req, res) => {
     // Add public permission if enabled
     if (isPublic && publicAccessRoleId) {
       updatedPrincipals.push({
-        type: 'public',
+        type: PrincipalType.PUBLIC,
         id: null,
         accessRoleId: publicAccessRoleId,
       });
@@ -97,11 +97,13 @@ const updateResourcePermissions = async (req, res) => {
       try {
         let principalId;
 
-        if (principal.type === 'public') {
+        if (principal.type === PrincipalType.PUBLIC) {
           principalId = null; // Public principals don't need database records
-        } else if (principal.type === 'user') {
+        } else if (principal.type === PrincipalType.ROLE) {
+          principalId = principal.id; // Role principals use role name as ID
+        } else if (principal.type === PrincipalType.USER) {
           principalId = await ensurePrincipalExists(principal);
-        } else if (principal.type === 'group') {
+        } else if (principal.type === PrincipalType.GROUP) {
           // Pass authContext to enable member fetching for Entra ID groups when available
           principalId = await ensureGroupPrincipalExists(principal, authContext);
         } else {
@@ -137,7 +139,7 @@ const updateResourcePermissions = async (req, res) => {
     // If public is disabled, add public to revoked list
     if (!isPublic) {
       revokedPrincipals.push({
-        type: 'public',
+        type: PrincipalType.PUBLIC,
         id: null,
       });
     }
@@ -263,6 +265,16 @@ const getResourcePermissions = async (req, res) => {
           idOnTheSource: result.groupInfo.idOnTheSource || result.groupInfo._id.toString(),
           accessRoleId: result.accessRoleId,
         });
+      } else if (result.principalType === PrincipalType.ROLE) {
+        principals.push({
+          type: PrincipalType.ROLE,
+          /** Role name as ID */
+          id: result.principalId,
+          /** Display the role name */
+          name: result.principalId,
+          description: `System role: ${result.principalId}`,
+          accessRoleId: result.accessRoleId,
+        });
       }
     }
 
@@ -328,6 +340,7 @@ const getUserEffectivePermissions = async (req, res) => {
 
     const permissionBits = await getEffectivePermissions({
       userId,
+      role: req.user.role,
       resourceType,
       resourceId,
     });
@@ -366,7 +379,9 @@ const searchPrincipals = async (req, res) => {
     }
 
     const searchLimit = Math.min(Math.max(1, parseInt(limit) || 10), 50);
-    const typeFilter = ['user', 'group'].includes(type) ? type : null;
+    const typeFilter = [PrincipalType.USER, PrincipalType.GROUP, PrincipalType.ROLE].includes(type)
+      ? type
+      : null;
 
     const localResults = await searchLocalPrincipals(query.trim(), searchLimit, typeFilter);
     let allPrincipals = [...localResults];

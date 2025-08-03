@@ -30,7 +30,6 @@ export enum SystemRoles {
   USER = 'USER',
 }
 
-// The role schema now only needs to reference the permissions schema.
 export const roleSchema = z.object({
   name: z.string(),
   permissions: permissionsSchema,
@@ -38,7 +37,6 @@ export const roleSchema = z.object({
 
 export type TRole = z.infer<typeof roleSchema>;
 
-// Define default roles using the new structure.
 const defaultRolesSchema = z.object({
   [SystemRoles.ADMIN]: roleSchema.extend({
     name: z.literal(SystemRoles.ADMIN),
@@ -80,6 +78,7 @@ const defaultRolesSchema = z.object({
       [PermissionTypes.PEOPLE_PICKER]: peoplePickerPermissionsSchema.extend({
         [Permissions.VIEW_USERS]: z.boolean().default(true),
         [Permissions.VIEW_GROUPS]: z.boolean().default(true),
+        [Permissions.VIEW_ROLES]: z.boolean().default(true),
       }),
       [PermissionTypes.MARKETPLACE]: z.object({
         [Permissions.USE]: z.boolean().default(false),
@@ -137,6 +136,7 @@ export const roleDefaults = defaultRolesSchema.parse({
       [PermissionTypes.PEOPLE_PICKER]: {
         [Permissions.VIEW_USERS]: true,
         [Permissions.VIEW_GROUPS]: true,
+        [Permissions.VIEW_ROLES]: true,
       },
       [PermissionTypes.MARKETPLACE]: {
         [Permissions.USE]: true,
@@ -163,6 +163,7 @@ export const roleDefaults = defaultRolesSchema.parse({
       [PermissionTypes.PEOPLE_PICKER]: {
         [Permissions.VIEW_USERS]: false,
         [Permissions.VIEW_GROUPS]: false,
+        [Permissions.VIEW_ROLES]: false,
       },
       [PermissionTypes.MARKETPLACE]: {
         [Permissions.USE]: false,

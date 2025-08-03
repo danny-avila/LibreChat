@@ -30,7 +30,7 @@ export default function GenericManagePermissionsDialog({
   onUpdatePermissions?: (
     shares: TPrincipal[],
     isPublic: boolean,
-    publicRole: AccessRoleIds,
+    publicRole?: AccessRoleIds,
   ) => void;
   children?: React.ReactNode;
 }) {
@@ -84,7 +84,7 @@ export default function GenericManagePermissionsDialog({
     setHasChanges(true);
   };
 
-  const handleRoleChange = (idOnTheSource: string, newRole: string) => {
+  const handleRoleChange = (idOnTheSource: string, newRole: AccessRoleIds) => {
     setManagedShares(
       managedShares.map((s) =>
         s.idOnTheSource === idOnTheSource ? { ...s, accessRoleId: newRole } : s,
@@ -162,7 +162,7 @@ export default function GenericManagePermissionsDialog({
       setManagedPublicRole(config?.defaultViewerRoleId);
     }
   };
-  const handlePublicRoleChange = (role: string) => {
+  const handlePublicRoleChange = (role: AccessRoleIds) => {
     setManagedPublicRole(role);
     setHasChanges(true);
   };

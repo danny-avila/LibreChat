@@ -969,4 +969,59 @@ describe('AppService updating app.locals and issuing warnings', () => {
     expect(app.locals.ocr.strategy).toEqual('mistral_ocr');
     expect(app.locals.ocr.mistralModel).toEqual('mistral-medium');
   });
+
+  it('should correctly configure peoplePicker with roles permission when specified', async () => {
+    const mockConfig = {
+      interface: {
+        peoplePicker: {
+          admin: {
+            users: true,
+            groups: true,
+            roles: true,
+          },
+          user: {
+            users: false,
+            groups: false,
+            roles: true,
+          },
+        },
+      },
+    };
+
+    require('./Config/loadCustomConfig').mockImplementationOnce(() => Promise.resolve(mockConfig));
+
+    const app = { locals: {} };
+    await AppService(app);
+
+    // Check that interface config includes the roles permission
+    expect(app.locals.interfaceConfig.peoplePicker).toBeDefined();
+    expect(app.locals.interfaceConfig.peoplePicker.admin).toMatchObject({
+      users: true,
+      groups: true,
+      roles: true,
+    });
+    expect(app.locals.interfaceConfig.peoplePicker.user).toMatchObject({
+      users: false,
+      groups: false,
+      roles: true,
+    });
+  });
+
+  it('should use default peoplePicker roles permissions when not specified', async () => {
+    const mockConfig = {
+      interface: {
+        // No peoplePicker configuration
+      },
+    };
+
+    require('./Config/loadCustomConfig').mockImplementationOnce(() => Promise.resolve(mockConfig));
+
+    const app = { locals: {} };
+    await AppService(app);
+
+    // Check that default roles permissions are applied
+    expect(app.locals.interfaceConfig.peoplePicker).toBeDefined();
+    expect(app.locals.interfaceConfig.peoplePicker.admin.roles).toBe(true);
+    expect(app.locals.interfaceConfig.peoplePicker.user.roles).toBe(false);
+  });
 });

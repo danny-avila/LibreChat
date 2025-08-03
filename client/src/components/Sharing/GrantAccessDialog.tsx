@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
+import { ResourceType, AccessRoleIds } from 'librechat-data-provider';
 import { Share2Icon, Users, Loader, Shield, Link, CopyCheck } from 'lucide-react';
-import { Permissions, ResourceType, PermissionTypes, AccessRoleIds } from 'librechat-data-provider';
 import {
   useGetResourcePermissionsQuery,
   useUpdateResourcePermissionsMutation,
@@ -15,7 +15,7 @@ import {
   useToastContext,
 } from '@librechat/client';
 import type { TPrincipal } from 'librechat-data-provider';
-import { useLocalize, useCopyToClipboard, useHasAccess } from '~/hooks';
+import { useLocalize, useCopyToClipboard, usePeoplePickerPermissions } from '~/hooks';
 import ManagePermissionsDialog from './ManagePermissionsDialog';
 import PublicSharingToggle from './PublicSharingToggle';
 import AccessRolesPicker from './AccessRolesPicker';
@@ -37,29 +37,7 @@ export default function GrantAccessDialog({
 }) {
   const localize = useLocalize();
   const { showToast } = useToastContext();
-
-  // Check if user has permission to access people picker
-  const canViewUsers = useHasAccess({
-    permissionType: PermissionTypes.PEOPLE_PICKER,
-    permission: Permissions.VIEW_USERS,
-  });
-  const canViewGroups = useHasAccess({
-    permissionType: PermissionTypes.PEOPLE_PICKER,
-    permission: Permissions.VIEW_GROUPS,
-  });
-  const hasPeoplePickerAccess = canViewUsers || canViewGroups;
-
-  /** Type filter based on permissions */
-  const peoplePickerTypeFilter = useMemo(() => {
-    if (canViewUsers && canViewGroups) {
-      return null; // Both types allowed
-    } else if (canViewUsers) {
-      return 'user' as const;
-    } else if (canViewGroups) {
-      return 'group' as const;
-    }
-    return null;
-  }, [canViewUsers, canViewGroups]);
+  const { hasPeoplePickerAccess, peoplePickerTypeFilter } = usePeoplePickerPermissions();
 
   const {
     data: permissionsData,
@@ -72,7 +50,7 @@ export default function GrantAccessDialog({
   const updatePermissionsMutation = useUpdateResourcePermissionsMutation();
 
   const [newShares, setNewShares] = useState<TPrincipal[]>([]);
-  const [defaultPermissionId, setDefaultPermissionId] = useState<string>(
+  const [defaultPermissionId, setDefaultPermissionId] = useState<AccessRoleIds>(
     AccessRoleIds.AGENT_VIEWER,
   );
   const [isModalOpen, setIsModalOpen] = useState(false);

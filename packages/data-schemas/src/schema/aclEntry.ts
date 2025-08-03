@@ -10,7 +10,7 @@ const aclEntrySchema = new Schema<IAclEntry>(
       required: true,
     },
     principalId: {
-      type: Schema.Types.ObjectId,
+      type: Schema.Types.Mixed, // Can be ObjectId for users/groups or String for roles
       refPath: 'principalModel',
       required: function (this: IAclEntry) {
         return this.principalType !== PrincipalType.PUBLIC;

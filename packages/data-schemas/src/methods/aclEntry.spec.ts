@@ -394,6 +394,192 @@ describe('AclEntry Model Tests', () => {
     });
   });
 
+  describe('String vs ObjectId Edge Cases', () => {
+    test('should handle string userId in grantPermission', async () => {
+      const userIdString = userId.toString();
+
+      const entry = await methods.grantPermission(
+        PrincipalType.USER,
+        userIdString, // Pass string instead of ObjectId
+        ResourceType.AGENT,
+        resourceId,
+        PermissionBits.VIEW,
+        grantedById,
+      );
+
+      expect(entry).toBeDefined();
+      expect(entry?.principalType).toBe(PrincipalType.USER);
+      // Should be stored as ObjectId
+      expect(entry?.principalId).toBeInstanceOf(mongoose.Types.ObjectId);
+      expect(entry?.principalId?.toString()).toBe(userIdString);
+    });
+
+    test('should handle string groupId in grantPermission', async () => {
+      const groupIdString = groupId.toString();
+
+      const entry = await methods.grantPermission(
+        PrincipalType.GROUP,
+        groupIdString, // Pass string instead of ObjectId
+        ResourceType.AGENT,
+        resourceId,
+        PermissionBits.VIEW,
+        grantedById,
+      );
+
+      expect(entry).toBeDefined();
+      expect(entry?.principalType).toBe(PrincipalType.GROUP);
+      // Should be stored as ObjectId
+      expect(entry?.principalId).toBeInstanceOf(mongoose.Types.ObjectId);
+      expect(entry?.principalId?.toString()).toBe(groupIdString);
+    });
+
+    test('should handle string roleId in grantPermission for ROLE type', async () => {
+      const roleString = 'admin';
+
+      const entry = await methods.grantPermission(
+        PrincipalType.ROLE,
+        roleString,
+        ResourceType.AGENT,
+        resourceId,
+        PermissionBits.VIEW,
+        grantedById,
+      );
+
+      expect(entry).toBeDefined();
+      expect(entry?.principalType).toBe(PrincipalType.ROLE);
+      // Should remain as string for ROLE type
+      expect(typeof entry?.principalId).toBe('string');
+      expect(entry?.principalId).toBe(roleString);
+      expect(entry?.principalModel).toBe(PrincipalModel.ROLE);
+    });
+
+    test('should handle string principalId in revokePermission', async () => {
+      // First grant permission with ObjectId
+      await methods.grantPermission(
+        PrincipalType.USER,
+        userId,
+        ResourceType.AGENT,
+        resourceId,
+        PermissionBits.VIEW,
+        grantedById,
+      );
+
+      // Then revoke with string ID
+      const result = await methods.revokePermission(
+        PrincipalType.USER,
+        userId.toString(), // Pass string
+        ResourceType.AGENT,
+        resourceId,
+      );
+
+      expect(result.deletedCount).toBe(1);
+
+      // Verify it's actually deleted
+      const entries = await methods.findEntriesByPrincipal(PrincipalType.USER, userId);
+      expect(entries).toHaveLength(0);
+    });
+
+    test('should handle string principalId in modifyPermissionBits', async () => {
+      // First grant permission with ObjectId
+      await methods.grantPermission(
+        PrincipalType.USER,
+        userId,
+        ResourceType.AGENT,
+        resourceId,
+        PermissionBits.VIEW,
+        grantedById,
+      );
+
+      // Then modify with string ID
+      const updated = await methods.modifyPermissionBits(
+        PrincipalType.USER,
+        userId.toString(), // Pass string
+        ResourceType.AGENT,
+        resourceId,
+        PermissionBits.EDIT,
+        null,
+      );
+
+      expect(updated).toBeDefined();
+      expect(updated?.permBits).toBe(PermissionBits.VIEW | PermissionBits.EDIT);
+    });
+
+    test('should handle mixed string and ObjectId in hasPermission', async () => {
+      // Grant permission with string ID
+      await methods.grantPermission(
+        PrincipalType.USER,
+        userId.toString(),
+        ResourceType.AGENT,
+        resourceId,
+        PermissionBits.VIEW,
+        grantedById,
+      );
+
+      // Check permission with ObjectId in principals list
+      const hasPermWithObjectId = await methods.hasPermission(
+        [{ principalType: PrincipalType.USER, principalId: userId }],
+        ResourceType.AGENT,
+        resourceId,
+        PermissionBits.VIEW,
+      );
+      expect(hasPermWithObjectId).toBe(true);
+
+      // Check permission with string in principals list
+      const hasPermWithString = await methods.hasPermission(
+        [{ principalType: PrincipalType.USER, principalId: userId.toString() }],
+        ResourceType.AGENT,
+        resourceId,
+        PermissionBits.VIEW,
+      );
+      expect(hasPermWithString).toBe(false); // This should fail because hasPermission doesn't convert
+
+      // Check with converted ObjectId
+      const hasPermWithConvertedId = await methods.hasPermission(
+        [
+          {
+            principalType: PrincipalType.USER,
+            principalId: new mongoose.Types.ObjectId(userId.toString()),
+          },
+        ],
+        ResourceType.AGENT,
+        resourceId,
+        PermissionBits.VIEW,
+      );
+      expect(hasPermWithConvertedId).toBe(true);
+    });
+
+    test('should update existing permission when granting with string ID', async () => {
+      // First grant with ObjectId
+      await methods.grantPermission(
+        PrincipalType.USER,
+        userId,
+        ResourceType.AGENT,
+        resourceId,
+        PermissionBits.VIEW,
+        grantedById,
+      );
+
+      // Grant again with string ID and different permissions
+      const updated = await methods.grantPermission(
+        PrincipalType.USER,
+        userId.toString(),
+        ResourceType.AGENT,
+        resourceId,
+        PermissionBits.VIEW | PermissionBits.EDIT | PermissionBits.DELETE,
+        grantedById,
+      );
+
+      expect(updated).toBeDefined();
+      expect(updated?.permBits).toBe(
+        PermissionBits.VIEW | PermissionBits.EDIT | PermissionBits.DELETE,
+      );
+
+      // Should still only be one entry
+      const entries = await methods.findEntriesByPrincipal(PrincipalType.USER, userId);
+      expect(entries).toHaveLength(1);
+    });
+  });
+
   describe('Resource Access Queries', () => {
     test('should find accessible resources', async () => {
       /** Create multiple resources with different permissions */

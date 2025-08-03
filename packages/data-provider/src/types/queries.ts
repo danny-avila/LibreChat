@@ -1,5 +1,5 @@
 import type { InfiniteData } from '@tanstack/react-query';
-import type { AccessRoleIds } from '../accessPermissions';
+import type * as p from '../accessPermissions';
 import type * as a from '../types/agents';
 import type * as s from '../schemas';
 import type * as t from '../types';
@@ -129,28 +129,14 @@ export type MemoriesResponse = {
 export type PrincipalSearchParams = {
   q: string;
   limit?: number;
-  type?: 'user' | 'group';
-};
-
-export type PrincipalSearchResult = {
-  id?: string | null;
-  type: 'user' | 'group';
-  name: string;
-  email?: string;
-  username?: string;
-  avatar?: string;
-  provider?: string;
-  source: 'local' | 'entra';
-  memberCount?: number;
-  description?: string;
-  idOnTheSource?: string;
+  type?: p.PrincipalType.USER | p.PrincipalType.GROUP | p.PrincipalType.ROLE;
 };
 
 export type PrincipalSearchResponse = {
   query: string;
   limit: number;
-  type?: 'user' | 'group';
-  results: PrincipalSearchResult[];
+  type?: p.PrincipalType.USER | p.PrincipalType.GROUP | p.PrincipalType.ROLE;
+  results: p.TPrincipalSearchResult[];
   count: number;
   sources: {
     local: number;
@@ -159,7 +145,7 @@ export type PrincipalSearchResponse = {
 };
 
 export type AccessRole = {
-  accessRoleId: AccessRoleIds;
+  accessRoleId: p.AccessRoleIds;
   name: string;
   description: string;
   permBits: number;

@@ -79,6 +79,7 @@ describe('PermissionService', () => {
   const groupId = new mongoose.Types.ObjectId();
   const resourceId = new mongoose.Types.ObjectId();
   const grantedById = new mongoose.Types.ObjectId();
+  const roleResourceId = new mongoose.Types.ObjectId();
 
   describe('grantPermission', () => {
     test('should grant permission to a user with a role', async () => {
@@ -171,7 +172,7 @@ describe('PermissionService', () => {
           accessRoleId: AccessRoleIds.AGENT_VIEWER,
           grantedBy: grantedById,
         }),
-      ).rejects.toThrow('Principal ID is required for user and group principals');
+      ).rejects.toThrow('Principal ID is required for user, group, and role principals');
     });
 
     test('should throw error for non-existent role', async () => {
@@ -1000,6 +1001,230 @@ describe('PermissionService', () => {
       expect(publicEntry.roleId.accessRoleId).toBe(AccessRoleIds.AGENT_EDITOR);
     });
 
+    test('should grant permission to a role', async () => {
+      const entry = await grantPermission({
+        principalType: PrincipalType.ROLE,
+        principalId: 'admin',
+        resourceType: ResourceType.AGENT,
+        resourceId: roleResourceId,
+        accessRoleId: AccessRoleIds.AGENT_EDITOR,
+        grantedBy: grantedById,
+      });
+
+      expect(entry).toBeDefined();
+      expect(entry.principalType).toBe(PrincipalType.ROLE);
+      expect(entry.principalId).toBe('admin');
+      expect(entry.principalModel).toBe(PrincipalModel.ROLE);
+      expect(entry.resourceType).toBe(ResourceType.AGENT);
+      expect(entry.resourceId.toString()).toBe(roleResourceId.toString());
+
+      // Get the role to verify the permission bits are correctly set
+      const role = await findRoleByIdentifier(AccessRoleIds.AGENT_EDITOR);
+      expect(entry.permBits).toBe(role.permBits);
+      expect(entry.roleId.toString()).toBe(role._id.toString());
+    });
+
+    test('should check permissions for user with role', async () => {
+      // Grant permission to admin role
+      await grantPermission({
+        principalType: PrincipalType.ROLE,
+        principalId: 'admin',
+        resourceType: ResourceType.AGENT,
+        resourceId: roleResourceId,
+        accessRoleId: AccessRoleIds.AGENT_EDITOR,
+        grantedBy: grantedById,
+      });
+
+      // Mock getUserPrincipals to return user with admin role
+      getUserPrincipals.mockResolvedValue([
+        { principalType: PrincipalType.USER, principalId: userId },
+        { principalType: PrincipalType.ROLE, principalId: 'admin' },
+        { principalType: PrincipalType.PUBLIC },
+      ]);
+
+      const hasPermission = await checkPermission({
+        userId,
+        resourceType: ResourceType.AGENT,
+        resourceId: roleResourceId,
+        requiredPermission: 1, // VIEW
+      });
+
+      expect(hasPermission).toBe(true);
+
+      // Check that user without admin role cannot access
+      getUserPrincipals.mockResolvedValue([
+        { principalType: PrincipalType.USER, principalId: userId },
+        { principalType: PrincipalType.PUBLIC },
+      ]);
+
+      const hasNoPermission = await checkPermission({
+        userId,
+        resourceType: ResourceType.AGENT,
+        resourceId: roleResourceId,
+        requiredPermission: 1, // VIEW
+      });
+
+      expect(hasNoPermission).toBe(false);
+    });
+
+    test('should optimize permission checks when role is provided', async () => {
+      const testUserId = new mongoose.Types.ObjectId();
+      const testResourceId = new mongoose.Types.ObjectId();
+
+      // Create a user with EDITOR role
+      const User = mongoose.models.User;
+      await User.create({
+        _id: testUserId,
+        email: 'editor@test.com',
+        emailVerified: true,
+        provider: 'local',
+        role: 'EDITOR',
+      });
+
+      // Grant permission to EDITOR role
+      await grantPermission({
+        principalType: PrincipalType.ROLE,
+        principalId: 'EDITOR',
+        resourceType: ResourceType.AGENT,
+        resourceId: testResourceId,
+        accessRoleId: AccessRoleIds.AGENT_EDITOR,
+        grantedBy: grantedById,
+      });
+
+      // Mock getUserPrincipals to return user with EDITOR role when called
+      getUserPrincipals.mockResolvedValue([
+        { principalType: PrincipalType.USER, principalId: testUserId },
+        { principalType: PrincipalType.ROLE, principalId: 'EDITOR' },
+        { principalType: PrincipalType.PUBLIC },
+      ]);
+
+      // Test 1: Check permission with role provided (optimization should be used)
+      const hasPermissionWithRole = await checkPermission({
+        userId: testUserId,
+        role: 'EDITOR',
+        resourceType: ResourceType.AGENT,
+        resourceId: testResourceId,
+        requiredPermission: 1, // VIEW
+      });
+
+      expect(hasPermissionWithRole).toBe(true);
+      expect(getUserPrincipals).toHaveBeenCalledWith({ userId: testUserId, role: 'EDITOR' });
+
+      // Test 2: Check permission without role (should call getUserPrincipals)
+      getUserPrincipals.mockResolvedValue([
+        { principalType: PrincipalType.USER, principalId: testUserId },
+        { principalType: PrincipalType.ROLE, principalId: 'EDITOR' },
+        { principalType: PrincipalType.PUBLIC },
+      ]);
+
+      const hasPermissionWithoutRole = await checkPermission({
+        userId: testUserId,
+        resourceType: ResourceType.AGENT,
+        resourceId: testResourceId,
+        requiredPermission: 1, // VIEW
+      });
+
+      expect(hasPermissionWithoutRole).toBe(true);
+      expect(getUserPrincipals).toHaveBeenCalledWith({ userId: testUserId, role: undefined });
+
+      // Test 3: Verify getEffectivePermissions also uses the optimization
+      getUserPrincipals.mockClear();
+
+      const effectiveWithRole = await getEffectivePermissions({
+        userId: testUserId,
+        role: 'EDITOR',
+        resourceType: ResourceType.AGENT,
+        resourceId: testResourceId,
+      });
+
+      expect(effectiveWithRole).toBe(3); // EDITOR = VIEW + EDIT
+      expect(getUserPrincipals).toHaveBeenCalledWith({ userId: testUserId, role: 'EDITOR' });
+
+      // Test 4: Verify findAccessibleResources also uses the optimization
+      getUserPrincipals.mockClear();
+
+      const accessibleWithRole = await findAccessibleResources({
+        userId: testUserId,
+        role: 'EDITOR',
+        resourceType: ResourceType.AGENT,
+        requiredPermissions: 1, // VIEW
+      });
+
+      expect(accessibleWithRole.map((id) => id.toString())).toContain(testResourceId.toString());
+      expect(getUserPrincipals).toHaveBeenCalledWith({ userId: testUserId, role: 'EDITOR' });
+    });
+
+    test('should handle role changes dynamically', async () => {
+      const testUserId = new mongoose.Types.ObjectId();
+      const testResourceId = new mongoose.Types.ObjectId();
+
+      // Grant permission to ADMIN role only
+      await grantPermission({
+        principalType: PrincipalType.ROLE,
+        principalId: 'ADMIN',
+        resourceType: ResourceType.AGENT,
+        resourceId: testResourceId,
+        accessRoleId: AccessRoleIds.AGENT_OWNER,
+        grantedBy: grantedById,
+      });
+
+      // Test with ADMIN role - should have access
+      getUserPrincipals.mockResolvedValue([
+        { principalType: PrincipalType.USER, principalId: testUserId },
+        { principalType: PrincipalType.ROLE, principalId: 'ADMIN' },
+        { principalType: PrincipalType.PUBLIC },
+      ]);
+
+      const hasAdminAccess = await checkPermission({
+        userId: testUserId,
+        role: 'ADMIN',
+        resourceType: ResourceType.AGENT,
+        resourceId: testResourceId,
+        requiredPermission: 7, // Full permissions
+      });
+
+      expect(hasAdminAccess).toBe(true);
+      expect(getUserPrincipals).toHaveBeenCalledWith({ userId: testUserId, role: 'ADMIN' });
+
+      // Test with USER role - should NOT have access
+      getUserPrincipals.mockClear();
+      getUserPrincipals.mockResolvedValue([
+        { principalType: PrincipalType.USER, principalId: testUserId },
+        { principalType: PrincipalType.ROLE, principalId: 'USER' },
+        { principalType: PrincipalType.PUBLIC },
+      ]);
+
+      const hasUserAccess = await checkPermission({
+        userId: testUserId,
+        role: 'USER',
+        resourceType: ResourceType.AGENT,
+        resourceId: testResourceId,
+        requiredPermission: 1, // Even VIEW
+      });
+
+      expect(hasUserAccess).toBe(false);
+      expect(getUserPrincipals).toHaveBeenCalledWith({ userId: testUserId, role: 'USER' });
+
+      // Test with EDITOR role - should NOT have access
+      getUserPrincipals.mockClear();
+      getUserPrincipals.mockResolvedValue([
+        { principalType: PrincipalType.USER, principalId: testUserId },
+        { principalType: PrincipalType.ROLE, principalId: 'EDITOR' },
+        { principalType: PrincipalType.PUBLIC },
+      ]);
+
+      const hasEditorAccess = await checkPermission({
+        userId: testUserId,
+        role: 'EDITOR',
+        resourceType: ResourceType.AGENT,
+        resourceId: testResourceId,
+        requiredPermission: 1, // VIEW
+      });
+
+      expect(hasEditorAccess).toBe(false);
+      expect(getUserPrincipals).toHaveBeenCalledWith({ userId: testUserId, role: 'EDITOR' });
+    });
+
     test('should work with different resource types', async () => {
       // Test with promptGroup resources
       const promptGroupResourceId = new mongoose.Types.ObjectId();
@@ -1037,6 +1262,346 @@ describe('PermissionService', () => {
       expect(promptGroupEntries.every((e) => e.resourceType === ResourceType.PROMPTGROUP)).toBe(
         true,
       );
+    });
+  });
+
+  describe('String vs ObjectId Edge Cases', () => {
+    const stringUserId = new mongoose.Types.ObjectId().toString();
+    const objectIdUserId = new mongoose.Types.ObjectId();
+    const stringGroupId = new mongoose.Types.ObjectId().toString();
+    const objectIdGroupId = new mongoose.Types.ObjectId();
+    const testResourceId = new mongoose.Types.ObjectId();
+
+    beforeEach(async () => {
+      // Clear any existing ACL entries
+      await AclEntry.deleteMany({});
+      getUserPrincipals.mockReset();
+    });
+
+    test('should handle string userId in grantPermission', async () => {
+      const entry = await grantPermission({
+        principalType: PrincipalType.USER,
+        principalId: stringUserId, // Pass string
+        resourceType: ResourceType.AGENT,
+        resourceId: testResourceId,
+        accessRoleId: AccessRoleIds.AGENT_VIEWER,
+        grantedBy: grantedById,
+      });
+
+      expect(entry).toBeDefined();
+      expect(entry.principalType).toBe(PrincipalType.USER);
+      // Should be stored as ObjectId
+      expect(entry.principalId).toBeInstanceOf(mongoose.Types.ObjectId);
+      expect(entry.principalId.toString()).toBe(stringUserId);
+    });
+
+    test('should handle string groupId in grantPermission', async () => {
+      const entry = await grantPermission({
+        principalType: PrincipalType.GROUP,
+        principalId: stringGroupId, // Pass string
+        resourceType: ResourceType.AGENT,
+        resourceId: testResourceId,
+        accessRoleId: AccessRoleIds.AGENT_EDITOR,
+        grantedBy: grantedById,
+      });
+
+      expect(entry).toBeDefined();
+      expect(entry.principalType).toBe(PrincipalType.GROUP);
+      // Should be stored as ObjectId
+      expect(entry.principalId).toBeInstanceOf(mongoose.Types.ObjectId);
+      expect(entry.principalId.toString()).toBe(stringGroupId);
+    });
+
+    test('should handle string roleId in grantPermission for ROLE type', async () => {
+      const roleString = 'moderator';
+
+      const entry = await grantPermission({
+        principalType: PrincipalType.ROLE,
+        principalId: roleString,
+        resourceType: ResourceType.AGENT,
+        resourceId: testResourceId,
+        accessRoleId: AccessRoleIds.AGENT_VIEWER,
+        grantedBy: grantedById,
+      });
+
+      expect(entry).toBeDefined();
+      expect(entry.principalType).toBe(PrincipalType.ROLE);
+      // Should remain as string for ROLE type
+      expect(typeof entry.principalId).toBe('string');
+      expect(entry.principalId).toBe(roleString);
+      expect(entry.principalModel).toBe(PrincipalModel.ROLE);
+    });
+
+    test('should check permissions correctly when permission granted with string userId', async () => {
+      // Grant permission with string userId
+      await grantPermission({
+        principalType: PrincipalType.USER,
+        principalId: stringUserId,
+        resourceType: ResourceType.AGENT,
+        resourceId: testResourceId,
+        accessRoleId: AccessRoleIds.AGENT_EDITOR,
+        grantedBy: grantedById,
+      });
+
+      // Mock getUserPrincipals to return ObjectId (as it should after our fix)
+      getUserPrincipals.mockResolvedValue([
+        {
+          principalType: PrincipalType.USER,
+          principalId: new mongoose.Types.ObjectId(stringUserId),
+        },
+        { principalType: PrincipalType.PUBLIC },
+      ]);
+
+      // Check permission with string userId
+      const hasPermission = await checkPermission({
+        userId: stringUserId,
+        resourceType: ResourceType.AGENT,
+        resourceId: testResourceId,
+        requiredPermission: 1, // VIEW
+      });
+
+      expect(hasPermission).toBe(true);
+      expect(getUserPrincipals).toHaveBeenCalledWith({ userId: stringUserId, role: undefined });
+    });
+
+    test('should check permissions correctly when permission granted with ObjectId', async () => {
+      // Grant permission with ObjectId
+      await grantPermission({
+        principalType: PrincipalType.USER,
+        principalId: objectIdUserId,
+        resourceType: ResourceType.AGENT,
+        resourceId: testResourceId,
+        accessRoleId: AccessRoleIds.AGENT_OWNER,
+        grantedBy: grantedById,
+      });
+
+      // Mock getUserPrincipals to return ObjectId
+      getUserPrincipals.mockResolvedValue([
+        { principalType: PrincipalType.USER, principalId: objectIdUserId },
+        { principalType: PrincipalType.PUBLIC },
+      ]);
+
+      // Check permission with ObjectId
+      const hasPermission = await checkPermission({
+        userId: objectIdUserId,
+        resourceType: ResourceType.AGENT,
+        resourceId: testResourceId,
+        requiredPermission: 7, // Full permissions
+      });
+
+      expect(hasPermission).toBe(true);
+      expect(getUserPrincipals).toHaveBeenCalledWith({ userId: objectIdUserId, role: undefined });
+    });
+
+    test('should handle bulkUpdateResourcePermissions with string IDs', async () => {
+      const updatedPrincipals = [
+        {
+          type: PrincipalType.USER,
+          id: stringUserId, // String ID
+          accessRoleId: AccessRoleIds.AGENT_VIEWER,
+        },
+        {
+          type: PrincipalType.GROUP,
+          id: stringGroupId, // String ID
+          accessRoleId: AccessRoleIds.AGENT_EDITOR,
+        },
+        {
+          type: PrincipalType.ROLE,
+          id: 'admin', // String ID (should remain string)
+          accessRoleId: AccessRoleIds.AGENT_OWNER,
+        },
+      ];
+
+      const results = await bulkUpdateResourcePermissions({
+        resourceType: ResourceType.AGENT,
+        resourceId: testResourceId,
+        updatedPrincipals,
+        grantedBy: grantedById,
+      });
+
+      expect(results.granted).toHaveLength(3);
+      expect(results.errors).toHaveLength(0);
+
+      // Verify USER entry has ObjectId
+      const userEntry = await AclEntry.findOne({
+        principalType: PrincipalType.USER,
+        resourceType: ResourceType.AGENT,
+        resourceId: testResourceId,
+      });
+      expect(userEntry.principalId).toBeInstanceOf(mongoose.Types.ObjectId);
+      expect(userEntry.principalId.toString()).toBe(stringUserId);
+
+      // Verify GROUP entry has ObjectId
+      const groupEntry = await AclEntry.findOne({
+        principalType: PrincipalType.GROUP,
+        resourceType: ResourceType.AGENT,
+        resourceId: testResourceId,
+      });
+      expect(groupEntry.principalId).toBeInstanceOf(mongoose.Types.ObjectId);
+      expect(groupEntry.principalId.toString()).toBe(stringGroupId);
+
+      // Verify ROLE entry has string
+      const roleEntry = await AclEntry.findOne({
+        principalType: PrincipalType.ROLE,
+        resourceType: ResourceType.AGENT,
+        resourceId: testResourceId,
+      });
+      expect(typeof roleEntry.principalId).toBe('string');
+      expect(roleEntry.principalId).toBe('admin');
+    });
+
+    test('should handle revoking permissions with string IDs in bulkUpdateResourcePermissions', async () => {
+      // First grant permissions with ObjectIds
+      await grantPermission({
+        principalType: PrincipalType.USER,
+        principalId: objectIdUserId,
+        resourceType: ResourceType.AGENT,
+        resourceId: testResourceId,
+        accessRoleId: AccessRoleIds.AGENT_OWNER,
+        grantedBy: grantedById,
+      });
+
+      await grantPermission({
+        principalType: PrincipalType.GROUP,
+        principalId: objectIdGroupId,
+        resourceType: ResourceType.AGENT,
+        resourceId: testResourceId,
+        accessRoleId: AccessRoleIds.AGENT_EDITOR,
+        grantedBy: grantedById,
+      });
+
+      // Revoke using string IDs
+      const revokedPrincipals = [
+        {
+          type: PrincipalType.USER,
+          id: objectIdUserId.toString(), // String version of ObjectId
+        },
+        {
+          type: PrincipalType.GROUP,
+          id: objectIdGroupId.toString(), // String version of ObjectId
+        },
+      ];
+
+      const results = await bulkUpdateResourcePermissions({
+        resourceType: ResourceType.AGENT,
+        resourceId: testResourceId,
+        revokedPrincipals,
+        grantedBy: grantedById,
+      });
+
+      expect(results.revoked).toHaveLength(2);
+      expect(results.errors).toHaveLength(0);
+
+      // Verify permissions were actually revoked
+      const remainingEntries = await AclEntry.find({
+        resourceType: ResourceType.AGENT,
+        resourceId: testResourceId,
+      });
+      expect(remainingEntries).toHaveLength(0);
+    });
+
+    test('should find accessible resources when permissions granted with mixed ID types', async () => {
+      const resource1 = new mongoose.Types.ObjectId();
+      const resource2 = new mongoose.Types.ObjectId();
+      const resource3 = new mongoose.Types.ObjectId();
+
+      // Grant with string userId
+      await grantPermission({
+        principalType: PrincipalType.USER,
+        principalId: stringUserId,
+        resourceType: ResourceType.AGENT,
+        resourceId: resource1,
+        accessRoleId: AccessRoleIds.AGENT_VIEWER,
+        grantedBy: grantedById,
+      });
+
+      // Grant with ObjectId userId (same user)
+      await grantPermission({
+        principalType: PrincipalType.USER,
+        principalId: new mongoose.Types.ObjectId(stringUserId),
+        resourceType: ResourceType.AGENT,
+        resourceId: resource2,
+        accessRoleId: AccessRoleIds.AGENT_EDITOR,
+        grantedBy: grantedById,
+      });
+
+      // Grant to role
+      await grantPermission({
+        principalType: PrincipalType.ROLE,
+        principalId: 'admin',
+        resourceType: ResourceType.AGENT,
+        resourceId: resource3,
+        accessRoleId: AccessRoleIds.AGENT_OWNER,
+        grantedBy: grantedById,
+      });
+
+      // Mock getUserPrincipals to return user with admin role
+      getUserPrincipals.mockResolvedValue([
+        {
+          principalType: PrincipalType.USER,
+          principalId: new mongoose.Types.ObjectId(stringUserId),
+        },
+        { principalType: PrincipalType.ROLE, principalId: 'admin' },
+        { principalType: PrincipalType.PUBLIC },
+      ]);
+
+      const accessibleResources = await findAccessibleResources({
+        userId: stringUserId,
+        role: 'admin',
+        resourceType: ResourceType.AGENT,
+        requiredPermissions: 1, // VIEW
+      });
+
+      // Should find all three resources
+      expect(accessibleResources).toHaveLength(3);
+      const resourceIds = accessibleResources.map((id) => id.toString());
+      expect(resourceIds).toContain(resource1.toString());
+      expect(resourceIds).toContain(resource2.toString());
+      expect(resourceIds).toContain(resource3.toString());
+    });
+
+    test('should get effective permissions with mixed ID types', async () => {
+      // Grant VIEW permission with string userId
+      await grantPermission({
+        principalType: PrincipalType.USER,
+        principalId: stringUserId,
+        resourceType: ResourceType.AGENT,
+        resourceId: testResourceId,
+        accessRoleId: AccessRoleIds.AGENT_VIEWER,
+        grantedBy: grantedById,
+      });
+
+      // Grant EDIT permission to a group with string groupId
+      await grantPermission({
+        principalType: PrincipalType.GROUP,
+        principalId: stringGroupId,
+        resourceType: ResourceType.AGENT,
+        resourceId: testResourceId,
+        accessRoleId: AccessRoleIds.AGENT_EDITOR,
+        grantedBy: grantedById,
+      });
+
+      // Mock getUserPrincipals to return ObjectIds (as it should after our fix)
+      getUserPrincipals.mockResolvedValue([
+        {
+          principalType: PrincipalType.USER,
+          principalId: new mongoose.Types.ObjectId(stringUserId),
+        },
+        {
+          principalType: PrincipalType.GROUP,
+          principalId: new mongoose.Types.ObjectId(stringGroupId),
+        },
+        { principalType: PrincipalType.PUBLIC },
+      ]);
+
+      const effectivePermissions = await getEffectivePermissions({
+        userId: stringUserId,
+        resourceType: ResourceType.AGENT,
+        resourceId: testResourceId,
+      });
+
+      // Should combine VIEW (1) and EDIT (3) permissions
+      expect(effectivePermissions).toBe(3); // EDITOR includes VIEW
     });
   });
 });

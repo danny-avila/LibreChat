@@ -57,10 +57,12 @@ async function loadDefaultInterface(config, configDefaults, roleName = SystemRol
       admin: {
         users: interfaceConfig?.peoplePicker?.admin?.users ?? defaults.peoplePicker?.admin.users,
         groups: interfaceConfig?.peoplePicker?.admin?.groups ?? defaults.peoplePicker?.admin.groups,
+        roles: interfaceConfig?.peoplePicker?.admin?.roles ?? defaults.peoplePicker?.admin.roles,
       },
       user: {
         users: interfaceConfig?.peoplePicker?.user?.users ?? defaults.peoplePicker?.user.users,
         groups: interfaceConfig?.peoplePicker?.user?.groups ?? defaults.peoplePicker?.user.groups,
+        roles: interfaceConfig?.peoplePicker?.user?.roles ?? defaults.peoplePicker?.user.roles,
       },
     },
     marketplace: {
@@ -88,6 +90,7 @@ async function loadDefaultInterface(config, configDefaults, roleName = SystemRol
     [PermissionTypes.PEOPLE_PICKER]: {
       [Permissions.VIEW_USERS]: loadedInterface.peoplePicker.user?.users,
       [Permissions.VIEW_GROUPS]: loadedInterface.peoplePicker.user?.groups,
+      [Permissions.VIEW_ROLES]: loadedInterface.peoplePicker.user?.roles,
     },
     [PermissionTypes.MARKETPLACE]: {
       [Permissions.USE]: loadedInterface.marketplace.user?.use,
@@ -110,6 +113,7 @@ async function loadDefaultInterface(config, configDefaults, roleName = SystemRol
     [PermissionTypes.PEOPLE_PICKER]: {
       [Permissions.VIEW_USERS]: loadedInterface.peoplePicker.admin?.users,
       [Permissions.VIEW_GROUPS]: loadedInterface.peoplePicker.admin?.groups,
+      [Permissions.VIEW_ROLES]: loadedInterface.peoplePicker.admin?.roles,
     },
     [PermissionTypes.MARKETPLACE]: {
       [Permissions.USE]: loadedInterface.marketplace.admin?.use,

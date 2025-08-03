@@ -214,8 +214,6 @@ describe('Prompt Routes - ACL Permissions', () => {
         console.log('Console errors:', consoleErrorSpy.mock.calls);
       }
 
-      console.log('POST response:', response.body);
-
       expect(response.status).toBe(200);
       expect(response.body.prompt).toBeDefined();
       expect(response.body.prompt.prompt).toBe(promptData.prompt.prompt);
@@ -303,8 +301,8 @@ describe('Prompt Routes - ACL Permissions', () => {
         grantedBy: testUsers.owner._id,
       });
 
-      const response = await request(app).get(`/api/prompts/${testPrompt._id}`).expect(200);
-
+      const response = await request(app).get(`/api/prompts/${testPrompt._id}`);
+      expect(response.status).toBe(200);
       expect(response.body._id).toBe(testPrompt._id.toString());
       expect(response.body.prompt).toBe(testPrompt.prompt);
     });
