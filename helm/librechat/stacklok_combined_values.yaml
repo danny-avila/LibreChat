@@ -207,6 +207,8 @@ mongodb:
     enabled: false
   databases:
    - LibreChat
+  persistence:
+    mountPath: /data/db
   image:
     registry: 781189302813.dkr.ecr.us-east-1.amazonaws.com
     repository: mongodb
@@ -219,6 +221,7 @@ mongodb:
     enabled: true
     fsGroup: 999
     runAsUser: 999
+
   extraEnvVars:
     - name: MONGODB_DATA_DIR
       value: /bitnami/mongodb
