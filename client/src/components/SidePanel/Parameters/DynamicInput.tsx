@@ -18,7 +18,6 @@ function DynamicInput({
   placeholder = '',
   readonly = false,
   showDefault = false,
-  showLabel = true,
   labelCode = false,
   descriptionCode = false,
   placeholderCode = false,
@@ -59,25 +58,23 @@ function DynamicInput({
     >
       <HoverCard openDelay={300}>
         <HoverCardTrigger className="grid w-full items-center gap-2">
-          {showLabel && (
-            <div className="flex w-full justify-between">
-              <Label
-                htmlFor={`${settingKey}-dynamic-input`}
-                className="text-left text-sm font-medium"
-              >
-                {labelCode ? localize(label as TranslationKeys) || label : label || settingKey}{' '}
-                {showDefault && (
-                  <small className="opacity-40">
-                    (
-                    {typeof defaultValue === 'undefined' || !(defaultValue as string).length
-                      ? localize('com_endpoint_default_blank')
-                      : `${localize('com_endpoint_default')}: ${defaultValue}`}
-                    )
-                  </small>
-                )}
-              </Label>
-            </div>
-          )}
+          <div className="flex w-full justify-between">
+            <Label
+              htmlFor={`${settingKey}-dynamic-input`}
+              className="text-left text-sm font-medium"
+            >
+              {labelCode ? localize(label as TranslationKeys) || label : label || settingKey}{' '}
+              {showDefault && (
+                <small className="opacity-40">
+                  (
+                  {typeof defaultValue === 'undefined' || !(defaultValue as string).length
+                    ? localize('com_endpoint_default_blank')
+                    : `${localize('com_endpoint_default')}: ${defaultValue}`}
+                  )
+                </small>
+              )}
+            </Label>
+          </div>
           <Input
             id={`${settingKey}-dynamic-input`}
             disabled={readonly}

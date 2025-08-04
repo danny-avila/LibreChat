@@ -141,7 +141,6 @@ export const conversationPreset = {
   disableStreaming: {
     type: Boolean,
   },
-  /** File token limit */
   fileTokenLimit: {
     type: Number,
   },

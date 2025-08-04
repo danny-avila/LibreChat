@@ -52,8 +52,8 @@ export enum OptionTypes {
 export interface SettingDefinition {
   key: string;
   description?: string;
-  type: 'number' | 'boolean' | 'string' | 'enum' | 'array' | 'object';
-  default?: number | boolean | string | string[] | Record<string, unknown>;
+  type: 'number' | 'boolean' | 'string' | 'enum' | 'array';
+  default?: number | boolean | string | string[];
   showLabel?: boolean;
   showDefault?: boolean;
   options?: string[];
