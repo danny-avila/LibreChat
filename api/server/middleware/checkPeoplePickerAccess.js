@@ -1,4 +1,4 @@
-const { PermissionTypes, Permissions } = require('librechat-data-provider');
+const { PrincipalType, PermissionTypes, Permissions } = require('librechat-data-provider');
 const { getRoleByName } = require('~/models/Role');
 const { logger } = require('~/config');
 
@@ -32,14 +32,14 @@ const checkPeoplePickerAccess = async (req, res, next) => {
     const canViewUsers = peoplePickerPerms[Permissions.VIEW_USERS] === true;
     const canViewGroups = peoplePickerPerms[Permissions.VIEW_GROUPS] === true;
 
-    if (type === 'user') {
+    if (type === PrincipalType.USER) {
       if (!canViewUsers) {
         return res.status(403).json({
           error: 'Forbidden',
           message: 'Insufficient permissions to search for users',
         });
       }
-    } else if (type === 'group') {
+    } else if (type === PrincipalType.GROUP) {
       if (!canViewGroups) {
         return res.status(403).json({
           error: 'Forbidden',
