@@ -1346,18 +1346,21 @@ describe('models/Agent', () => {
       expect(secondUpdate.versions).toHaveLength(3);
       expect(secondUpdate.support_contact.email).toBe('updated@support.com');
 
-      // Try to update with same support_contact - should be detected as duplicate
-      await expect(
-        updateAgent(
-          { id: agentId },
-          {
-            support_contact: {
-              name: 'Updated Support',
-              email: 'updated@support.com',
-            },
+      // Try to update with same support_contact - should be detected as duplicate but return successfully
+      const duplicateUpdate = await updateAgent(
+        { id: agentId },
+        {
+          support_contact: {
+            name: 'Updated Support',
+            email: 'updated@support.com',
           },
-        ),
-      ).rejects.toThrow('Duplicate version');
+        },
+      );
+
+      // Should not create a new version
+      expect(duplicateUpdate.versions).toHaveLength(3);
+      expect(duplicateUpdate.version).toBe(3);
+      expect(duplicateUpdate.support_contact.email).toBe('updated@support.com');
     });
 
     test('should handle support_contact from empty to populated', async () => {
@@ -1541,18 +1544,22 @@ describe('models/Agent', () => {
       expect(updated.support_contact.name).toBe('New Name');
       expect(updated.support_contact.email).toBe('');
 
-      // Verify isDuplicateVersion works with partial changes
-      await expect(
-        updateAgent(
-          { id: agentId },
-          {
-            support_contact: {
-              name: 'New Name',
-              email: '',
-            },
+      // Verify isDuplicateVersion works with partial changes - should return successfully without creating new version
+      const duplicateUpdate = await updateAgent(
+        { id: agentId },
+        {
+          support_contact: {
+            name: 'New Name',
+            email: '',
           },
-        ),
-      ).rejects.toThrow('Duplicate version');
+        },
+      );
+
+      // Should not create a new version since content is the same
+      expect(duplicateUpdate.versions).toHaveLength(2);
+      expect(duplicateUpdate.version).toBe(2);
+      expect(duplicateUpdate.support_contact.name).toBe('New Name');
+      expect(duplicateUpdate.support_contact.email).toBe('');
     });
 
     // Edge Cases

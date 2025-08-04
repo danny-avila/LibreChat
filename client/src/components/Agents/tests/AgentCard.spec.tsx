@@ -48,7 +48,7 @@ describe('AgentCard', () => {
 
     expect(screen.getByText('Test Agent')).toBeInTheDocument();
     expect(screen.getByText('A test agent for testing purposes')).toBeInTheDocument();
-    expect(screen.getByText('Created by')).toBeInTheDocument();
+    expect(screen.getByText('🔹')).toBeInTheDocument();
     expect(screen.getByText('Test Support')).toBeInTheDocument();
   });
 
@@ -152,7 +152,7 @@ describe('AgentCard', () => {
 
     render(<AgentCard agent={agentWithAuthorName} onClick={mockOnClick} />);
 
-    expect(screen.getByText('Created by')).toBeInTheDocument();
+    expect(screen.getByText('🔹')).toBeInTheDocument();
     expect(screen.getByText('John Doe')).toBeInTheDocument();
   });
 
@@ -165,7 +165,7 @@ describe('AgentCard', () => {
 
     render(<AgentCard agent={agentWithEmailOnly} onClick={mockOnClick} />);
 
-    expect(screen.getByText('Created by')).toBeInTheDocument();
+    expect(screen.getByText('🔹')).toBeInTheDocument();
     expect(screen.getByText('contact@example.com')).toBeInTheDocument();
   });
 
@@ -178,7 +178,7 @@ describe('AgentCard', () => {
 
     render(<AgentCard agent={agentWithBoth} onClick={mockOnClick} />);
 
-    expect(screen.getByText('Created by')).toBeInTheDocument();
+    expect(screen.getByText('🔹')).toBeInTheDocument();
     expect(screen.getByText('Support Team')).toBeInTheDocument();
     expect(screen.queryByText('John Doe')).not.toBeInTheDocument();
   });
@@ -195,7 +195,7 @@ describe('AgentCard', () => {
 
     render(<AgentCard agent={agentWithNameAndEmail} onClick={mockOnClick} />);
 
-    expect(screen.getByText('Created by')).toBeInTheDocument();
+    expect(screen.getByText('🔹')).toBeInTheDocument();
     expect(screen.getByText('Support Team')).toBeInTheDocument();
     expect(screen.queryByText('support@example.com')).not.toBeInTheDocument();
   });

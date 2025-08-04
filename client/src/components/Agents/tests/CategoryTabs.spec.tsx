@@ -83,7 +83,7 @@ describe('CategoryTabs', () => {
     );
 
     const generalTab = screen.getByText('General').closest('button');
-    expect(generalTab).toHaveClass('bg-surface-tertiary');
+    expect(generalTab).toHaveClass('bg-surface-hover');
 
     // Should have active underline
     const underline = generalTab?.querySelector('.absolute.bottom-0');

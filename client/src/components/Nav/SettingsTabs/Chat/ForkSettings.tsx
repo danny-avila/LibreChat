@@ -1,7 +1,6 @@
 import { useRecoilState } from 'recoil';
-import { Dropdown, Switch } from '@librechat/client';
 import { ForkOptions } from 'librechat-data-provider';
-import HoverCardSettings from '../HoverCardSettings';
+import { Dropdown, Switch, InfoHoverCard, ESide } from '@librechat/client';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
 
@@ -36,7 +35,10 @@ export const ForkSettings = () => {
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-2">
               <div>{localize('com_ui_fork_change_default')}</div>
-              <HoverCardSettings side="bottom" text="com_nav_info_fork_change_default" />
+              <InfoHoverCard
+                side={ESide.Bottom}
+                text={localize('com_nav_info_fork_change_default')}
+              />
             </div>
             <Dropdown
               value={forkSetting}
@@ -53,7 +55,10 @@ export const ForkSettings = () => {
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-2">
             <div>{localize('com_ui_fork_split_target_setting')}</div>
-            <HoverCardSettings side="bottom" text="com_nav_info_fork_split_target_setting" />
+            <InfoHoverCard
+              side={ESide.Bottom}
+              text={localize('com_nav_info_fork_split_target_setting')}
+            />
           </div>
           <Switch
             id="splitAtTarget"

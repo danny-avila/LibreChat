@@ -123,10 +123,10 @@ describe('Agent Utilities', () => {
       } as unknown as t.Agent;
 
       const { rerender } = render(<div>{renderAgentAvatar(agent, { showBorder: true })}</div>);
-      expect(screen.getByAltText('Test Agent avatar')).toHaveClass('border-2');
+      expect(screen.getByAltText('Test Agent avatar')).toHaveClass('border-1');
 
       rerender(<div>{renderAgentAvatar(agent, { showBorder: false })}</div>);
-      expect(screen.getByAltText('Test Agent avatar')).not.toHaveClass('border-2');
+      expect(screen.getByAltText('Test Agent avatar')).not.toHaveClass('border-1');
     });
   });
 
