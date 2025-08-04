@@ -43,8 +43,8 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
   const { navVisible, setNavVisible } = useOutletContext<ContextType>();
   const [hideSidePanel, setHideSidePanel] = useRecoilState(store.hideSidePanel);
 
-  // Get URL parameters (default to 'promoted' instead of 'all')
-  const activeTab = category || 'promoted';
+  // Get URL parameters (default to 'all' to ensure users see agents)
+  const activeTab = category || 'all';
   const searchQuery = searchParams.get('q') || '';
   const selectedAgentId = searchParams.get('agent_id') || '';
 
@@ -63,6 +63,15 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
     localStorage.setItem('hideSidePanel', 'false');
     localStorage.setItem('fullPanelCollapse', 'false');
   }, [setHideSidePanel, hideSidePanel]);
+
+  // Redirect base /agents route to /agents/all for consistency
+  useEffect(() => {
+    if (!category && window.location.pathname === '/agents') {
+      const currentSearchParams = searchParams.toString();
+      const searchParamsStr = currentSearchParams ? `?${currentSearchParams}` : '';
+      navigate(`/agents/all${searchParamsStr}`, { replace: true });
+    }
+  }, [category, navigate, searchParams]);
 
   // Ensure endpoints config is loaded first (required for agent queries)
   useGetEndpointsQuery();
