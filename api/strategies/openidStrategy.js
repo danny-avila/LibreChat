@@ -104,6 +104,14 @@ class CustomOpenIDStrategy extends OpenIDStrategy {
     if (options?.state && !params.has('state')) {
       params.set('state', options.state);
     }
+
+    if (process.env.OPENID_AUDIENCE) {
+      params.set('audience', process.env.OPENID_AUDIENCE);
+      logger.debug(
+        `[openidStrategy] Adding audience to authorization request: ${process.env.OPENID_AUDIENCE}`,
+      );
+    }
+
     return params;
   }
 }
