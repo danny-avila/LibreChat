@@ -2,6 +2,7 @@ import * as Ariakit from '@ariakit/react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { forwardRef, useMemo } from 'react';
 import { cn } from '~/utils';
+import './Tooltip.css';
 
 interface TooltipAnchorProps extends Ariakit.TooltipAnchorProps {
   description: string;
