@@ -99,6 +99,7 @@ router.get('/all', async (req, res) => {
     // Get promptGroup IDs the user has VIEW access to via ACL
     const accessibleIds = await findAccessibleResources({
       userId,
+      role: req.user.role,
       resourceType: ResourceType.PROMPTGROUP,
       requiredPermissions: PermissionBits.VIEW,
     });
@@ -130,6 +131,7 @@ router.get('/groups', async (req, res) => {
     // Get promptGroup IDs the user has VIEW access to via ACL
     const accessibleIds = await findAccessibleResources({
       userId,
+      role: req.user.role,
       resourceType: ResourceType.PROMPTGROUP,
       requiredPermissions: PermissionBits.VIEW,
     });
@@ -334,6 +336,7 @@ router.get('/', async (req, res) => {
     if (groupId) {
       const permissions = await getEffectivePermissions({
         userId: req.user.id,
+        role: req.user.role,
         resourceType: ResourceType.PROMPTGROUP,
         resourceId: groupId,
       });

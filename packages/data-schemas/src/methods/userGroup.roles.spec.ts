@@ -53,7 +53,9 @@ describe('Role-based Permissions Integration', () => {
         role: 'admin',
       });
 
-      const principals = await methods.getUserPrincipals(adminUser._id as mongoose.Types.ObjectId);
+      const principals = await methods.getUserPrincipals({
+        userId: adminUser._id as mongoose.Types.ObjectId,
+      });
 
       // Should have user, role, and public principals
       expect(principals).toHaveLength(3);
@@ -84,9 +86,9 @@ describe('Role-based Permissions Integration', () => {
         role: null, // Explicitly set to null to override default
       });
 
-      const principals = await methods.getUserPrincipals(
-        regularUser._id as mongoose.Types.ObjectId,
-      );
+      const principals = await methods.getUserPrincipals({
+        userId: regularUser._id as mongoose.Types.ObjectId,
+      });
 
       // Should only have user and public principals
       expect(principals).toHaveLength(2);
@@ -116,7 +118,9 @@ describe('Role-based Permissions Integration', () => {
         memberIds: [(user._id as mongoose.Types.ObjectId).toString()],
       });
 
-      const principals = await methods.getUserPrincipals(user._id as mongoose.Types.ObjectId);
+      const principals = await methods.getUserPrincipals({
+        userId: user._id as mongoose.Types.ObjectId,
+      });
 
       // Should have user, role, 2 groups, and public
       expect(principals).toHaveLength(5);
@@ -156,7 +160,9 @@ describe('Role-based Permissions Integration', () => {
           role: testCase.role,
         });
 
-        const principals = await methods.getUserPrincipals(user._id as mongoose.Types.ObjectId);
+        const principals = await methods.getUserPrincipals({
+          userId: user._id as mongoose.Types.ObjectId,
+        });
         const rolePrincipal = principals.find((p) => p.principalType === PrincipalType.ROLE);
 
         expect(rolePrincipal).toBeDefined();
@@ -292,7 +298,9 @@ describe('Role-based Permissions Integration', () => {
       });
 
       // Initial principals
-      let principals = await methods.getUserPrincipals(user._id as mongoose.Types.ObjectId);
+      let principals = await methods.getUserPrincipals({
+        userId: user._id as mongoose.Types.ObjectId,
+      });
       let rolePrincipal = principals.find((p) => p.principalType === PrincipalType.ROLE);
       expect(rolePrincipal?.principalId).toBe('viewer');
 
@@ -301,7 +309,9 @@ describe('Role-based Permissions Integration', () => {
       await user.save();
 
       // Get principals again
-      principals = await methods.getUserPrincipals(user._id as mongoose.Types.ObjectId);
+      principals = await methods.getUserPrincipals({
+        userId: user._id as mongoose.Types.ObjectId,
+      });
       rolePrincipal = principals.find((p) => p.principalType === PrincipalType.ROLE);
       expect(rolePrincipal?.principalId).toBe('editor');
     });
@@ -315,7 +325,9 @@ describe('Role-based Permissions Integration', () => {
       });
 
       // Initial check
-      let principals = await methods.getUserPrincipals(user._id as mongoose.Types.ObjectId);
+      let principals = await methods.getUserPrincipals({
+        userId: user._id as mongoose.Types.ObjectId,
+      });
       expect(principals).toHaveLength(3); // user, role, public
 
       // Remove role
@@ -323,7 +335,9 @@ describe('Role-based Permissions Integration', () => {
       await user.save();
 
       // Check again
-      principals = await methods.getUserPrincipals(user._id as mongoose.Types.ObjectId);
+      principals = await methods.getUserPrincipals({
+        userId: user._id as mongoose.Types.ObjectId,
+      });
       expect(principals).toHaveLength(2); // user, public
       const rolePrincipal = principals.find((p) => p.principalType === PrincipalType.ROLE);
       expect(rolePrincipal).toBeUndefined();
@@ -352,7 +366,9 @@ describe('Role-based Permissions Integration', () => {
 
         const user = await User.create(userData);
 
-        const principals = await methods.getUserPrincipals(user._id as mongoose.Types.ObjectId);
+        const principals = await methods.getUserPrincipals({
+          userId: user._id as mongoose.Types.ObjectId,
+        });
         const rolePrincipal = principals.find((p) => p.principalType === PrincipalType.ROLE);
 
         if (testCase.expected) {

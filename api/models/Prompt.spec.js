@@ -334,10 +334,8 @@ describe('Prompt ACL Permissions', () => {
         productionId: new ObjectId(),
       });
 
-      // Add editor to the editors group
-      await Group.findByIdAndUpdate(testGroups.editors._id, {
-        $push: { memberIds: testUsers.editor._id },
-      });
+      const { addUserToGroup } = require('~/models');
+      await addUserToGroup(testUsers.editor._id, testGroups.editors._id);
 
       const prompt = await promptFns.savePrompt({
         author: testUsers.owner._id,

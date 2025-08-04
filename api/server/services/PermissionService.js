@@ -126,12 +126,13 @@ const grantPermission = async ({
  * Check if a user has specific permission bits on a resource
  * @param {Object} params - Parameters for checking permissions
  * @param {string|mongoose.Types.ObjectId} params.userId - The ID of the user
+ * @param {string} [params.role] - Optional user role (if not provided, will query from DB)
  * @param {string} params.resourceType - Type of resource (e.g., 'agent')
  * @param {string|mongoose.Types.ObjectId} params.resourceId - The ID of the resource
  * @param {number} params.requiredPermissions - The permission bits required (e.g., 1 for VIEW, 3 for VIEW+EDIT)
  * @returns {Promise<boolean>} Whether the user has the required permission bits
  */
-const checkPermission = async ({ userId, resourceType, resourceId, requiredPermission }) => {
+const checkPermission = async ({ userId, role, resourceType, resourceId, requiredPermission }) => {
   try {
     if (typeof requiredPermission !== 'number' || requiredPermission < 1) {
       throw new Error('requiredPermission must be a positive number');
@@ -140,7 +141,7 @@ const checkPermission = async ({ userId, resourceType, resourceId, requiredPermi
     validateResourceType(resourceType);
 
     // Get all principals for the user (user + groups + public)
-    const principals = await getUserPrincipals(userId);
+    const principals = await getUserPrincipals({ userId, role });
 
     if (principals.length === 0) {
       return false;
@@ -161,16 +162,17 @@ const checkPermission = async ({ userId, resourceType, resourceId, requiredPermi
  * Get effective permission bitmask for a user on a resource
  * @param {Object} params - Parameters for getting effective permissions
  * @param {string|mongoose.Types.ObjectId} params.userId - The ID of the user
+ * @param {string} [params.role] - Optional user role (if not provided, will query from DB)
  * @param {string} params.resourceType - Type of resource (e.g., 'agent')
  * @param {string|mongoose.Types.ObjectId} params.resourceId - The ID of the resource
  * @returns {Promise<number>} Effective permission bitmask
  */
-const getEffectivePermissions = async ({ userId, resourceType, resourceId }) => {
+const getEffectivePermissions = async ({ userId, role, resourceType, resourceId }) => {
   try {
     validateResourceType(resourceType);
 
     // Get all principals for the user (user + groups + public)
-    const principals = await getUserPrincipals(userId);
+    const principals = await getUserPrincipals({ userId, role });
 
     if (principals.length === 0) {
       return 0;
@@ -186,11 +188,12 @@ const getEffectivePermissions = async ({ userId, resourceType, resourceId }) => 
  * Find all resources of a specific type that a user has access to with specific permission bits
  * @param {Object} params - Parameters for finding accessible resources
  * @param {string|mongoose.Types.ObjectId} params.userId - The ID of the user
+ * @param {string} [params.role] - Optional user role (if not provided, will query from DB)
  * @param {string} params.resourceType - Type of resource (e.g., 'agent')
  * @param {number} params.requiredPermissions - The minimum permission bits required (e.g., 1 for VIEW, 3 for VIEW+EDIT)
  * @returns {Promise<Array>} Array of resource IDs
  */
-const findAccessibleResources = async ({ userId, resourceType, requiredPermissions }) => {
+const findAccessibleResources = async ({ userId, role, resourceType, requiredPermissions }) => {
   try {
     if (typeof requiredPermissions !== 'number' || requiredPermissions < 1) {
       throw new Error('requiredPermissions must be a positive number');
@@ -199,7 +202,7 @@ const findAccessibleResources = async ({ userId, resourceType, requiredPermissio
     validateResourceType(resourceType);
 
     // Get all principals for the user (user + groups + public)
-    const principalsList = await getUserPrincipals(userId);
+    const principalsList = await getUserPrincipals({ userId, role });
 
     if (principalsList.length === 0) {
       return [];

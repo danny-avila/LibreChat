@@ -340,6 +340,7 @@ const getUserEffectivePermissions = async (req, res) => {
 
     const permissionBits = await getEffectivePermissions({
       userId,
+      role: req.user.role,
       resourceType,
       resourceId,
     });
