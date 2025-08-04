@@ -237,35 +237,45 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
   /**
    * Get a list of all principal identifiers for a user (user ID + group IDs + public)
    * For use in permission checks
-   * @param userId - The user ID
+   * @param params - Parameters object
+   * @param params.userId - The user ID
+   * @param params.role - Optional user role (if not provided, will query from DB)
    * @param session - Optional MongoDB session for transactions
    * @returns Array of principal objects with type and id
    */
   async function getUserPrincipals(
-    userId: string | Types.ObjectId,
+    params: {
+      userId: string | Types.ObjectId;
+      role?: string | null;
+    },
     session?: ClientSession,
   ): Promise<Array<{ principalType: string; principalId?: string | Types.ObjectId }>> {
+    const { userId, role } = params;
     const principals: Array<{ principalType: string; principalId?: string | Types.ObjectId }> = [
       { principalType: PrincipalType.USER, principalId: userId },
     ];
 
-    // Get user to check their role
-    const User = mongoose.models.User as Model<IUser>;
-    const query = User.findById(userId).select('role');
-    if (session) {
-      query.session(session);
+    // If role is not provided, query user to get it
+    let userRole = role;
+    if (userRole === undefined) {
+      const User = mongoose.models.User as Model<IUser>;
+      const query = User.findById(userId).select('role');
+      if (session) {
+        query.session(session);
+      }
+      const user = await query.lean();
+      userRole = user?.role;
     }
-    const user = await query.lean();
 
     // Add role as a principal if user has one
-    if (user?.role && user.role.trim()) {
-      principals.push({ principalType: PrincipalType.ROLE, principalId: user.role });
+    if (userRole && userRole.trim()) {
+      principals.push({ principalType: PrincipalType.ROLE, principalId: userRole });
     }
 
     const userGroups = await getUserGroups(userId, session);
     if (userGroups && userGroups.length > 0) {
       userGroups.forEach((group) => {
-        principals.push({ principalType: PrincipalType.GROUP, principalId: group._id.toString() });
+        principals.push({ principalType: PrincipalType.GROUP, principalId: group._id });
       });
     }
 

@@ -325,7 +325,9 @@ describe('User Group Methods Tests', () => {
       );
 
       /** Get user principals */
-      const principals = await methods.getUserPrincipals(testUser1._id as mongoose.Types.ObjectId);
+      const principals = await methods.getUserPrincipals({
+        userId: testUser1._id as mongoose.Types.ObjectId,
+      });
 
       /** Should include user, role (default USER), group, and public principals */
       expect(principals).toHaveLength(4);
@@ -349,7 +351,9 @@ describe('User Group Methods Tests', () => {
 
     test('should return user and public principals for non-existent user in getUserPrincipals', async () => {
       const nonExistentId = new mongoose.Types.ObjectId();
-      const principals = await methods.getUserPrincipals(nonExistentId);
+      const principals = await methods.getUserPrincipals({
+        userId: nonExistentId,
+      });
 
       /** Should still return user and public principals even for non-existent user */
       expect(principals).toHaveLength(2);

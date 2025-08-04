@@ -441,6 +441,7 @@ const getListAgentsHandler = async (req, res) => {
     // Get agent IDs the user has VIEW access to via ACL
     const accessibleIds = await findAccessibleResources({
       userId,
+      role: req.user.role,
       resourceType: ResourceType.AGENT,
       requiredPermissions: requiredPermission,
     });
@@ -496,7 +497,7 @@ const uploadAgentAvatarHandler = async (req, res) => {
       return res.status(404).json({ error: 'Agent not found' });
     }
 
-    const isAuthor = existingAgent.author.toString() === req.user.id;
+    const isAuthor = existingAgent.author.toString() === req.user.id.toString();
     const hasEditPermission = existingAgent.isCollaborative || isAdmin || isAuthor;
 
     if (!hasEditPermission) {
@@ -604,7 +605,7 @@ const revertAgentVersionHandler = async (req, res) => {
       return res.status(404).json({ error: 'Agent not found' });
     }
 
-    const isAuthor = existingAgent.author.toString() === req.user.id;
+    const isAuthor = existingAgent.author.toString() === req.user.id.toString();
     const hasEditPermission = existingAgent.isCollaborative || isAdmin || isAuthor;
 
     if (!hasEditPermission) {
