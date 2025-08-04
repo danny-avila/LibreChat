@@ -33,13 +33,11 @@ jest.mock('~/hooks/useLocalize', () => () => (key: string, options?: any) => {
     com_agents_see_more: 'See more',
     com_agents_error_loading: 'Error loading agents',
     com_agents_error_searching: 'Error searching agents',
-    com_agents_no_results: 'No agents found. Try another search term.',
-    com_agents_none_in_category: 'No agents found in this category',
     com_agents_search_empty_heading: 'No results found',
     com_agents_empty_state_heading: 'No agents available',
     com_agents_loading: 'Loading...',
     com_agents_grid_announcement: '{{count}} agents in {{category}}',
-    com_agents_load_more_label: 'Load more agents from {{category}}',
+    com_agents_no_more_results: "You've reached the end of the results",
   };
 
   let translation = mockTranslations[key] || key;
@@ -250,8 +248,9 @@ describe('AgentGrid Integration with useGetMarketplaceAgentsQuery', () => {
         </Wrapper>,
       );
 
-      // Should show skeleton loading state
-      expect(document.querySelector('.animate-pulse')).toBeInTheDocument();
+      // Should show loading spinner
+      const spinner = document.querySelector('.text-primary');
+      expect(spinner).toBeInTheDocument();
     });
 
     it('should show empty state when no agents are available', () => {
@@ -312,7 +311,8 @@ describe('AgentGrid Integration with useGetMarketplaceAgentsQuery', () => {
         </Wrapper>,
       );
 
-      expect(screen.getByText('Results for "automation"')).toBeInTheDocument();
+      // The component doesn't show search result titles, just displays the filtered agents
+      expect(screen.getByTestId('agent-card-1')).toBeInTheDocument();
     });
 
     it('should show empty search results message', () => {
@@ -338,29 +338,16 @@ describe('AgentGrid Integration with useGetMarketplaceAgentsQuery', () => {
         </Wrapper>,
       );
 
-      expect(screen.getByText('No results found')).toBeInTheDocument();
-      expect(screen.getByText('No agents found. Try another search term.')).toBeInTheDocument();
+      expect(screen.getByText('No agents available')).toBeInTheDocument();
     });
   });
 
-  describe('Load More Functionality', () => {
-    it('should show "See more" button when hasNextPage is true', () => {
-      const Wrapper = createWrapper();
-      render(
-        <Wrapper>
-          <AgentGrid category="finance" searchQuery="" onSelectAgent={mockOnSelectAgent} />
-        </Wrapper>,
-      );
-
-      expect(
-        screen.getByRole('button', { name: 'Load more agents from Finance' }),
-      ).toBeInTheDocument();
-    });
-
-    it('should not show "See more" button when hasNextPage is false', () => {
+  describe('Infinite Scroll Functionality', () => {
+    it('should show loading indicator when fetching next page', () => {
       mockUseMarketplaceAgentsInfiniteQuery.mockReturnValue({
         ...defaultMockQueryResult,
-        hasNextPage: false,
+        isFetchingNextPage: true,
+        hasNextPage: true,
       });
 
       const Wrapper = createWrapper();
@@ -370,7 +357,44 @@ describe('AgentGrid Integration with useGetMarketplaceAgentsQuery', () => {
         </Wrapper>,
       );
 
-      expect(screen.queryByRole('button', { name: /Load more agents/ })).not.toBeInTheDocument();
+      expect(screen.getByRole('status', { name: 'Loading...' })).toBeInTheDocument();
+      expect(screen.getByText('Loading...')).toHaveClass('sr-only');
+    });
+
+    it('should show end of results message when hasNextPage is false and agents exist', () => {
+      mockUseMarketplaceAgentsInfiniteQuery.mockReturnValue({
+        ...defaultMockQueryResult,
+        hasNextPage: false,
+        isFetchingNextPage: false,
+      });
+
+      const Wrapper = createWrapper();
+      render(
+        <Wrapper>
+          <AgentGrid category="finance" searchQuery="" onSelectAgent={mockOnSelectAgent} />
+        </Wrapper>,
+      );
+
+      expect(screen.getByText("You've reached the end of the results")).toBeInTheDocument();
+    });
+
+    it('should not show end of results message when no agents exist', () => {
+      mockUseMarketplaceAgentsInfiniteQuery.mockReturnValue({
+        ...defaultMockQueryResult,
+        hasNextPage: false,
+        data: {
+          pages: [{ data: [] }],
+        },
+      });
+
+      const Wrapper = createWrapper();
+      render(
+        <Wrapper>
+          <AgentGrid category="finance" searchQuery="" onSelectAgent={mockOnSelectAgent} />
+        </Wrapper>,
+      );
+
+      expect(screen.queryByText("You've reached the end of the results")).not.toBeInTheDocument();
     });
   });
 });

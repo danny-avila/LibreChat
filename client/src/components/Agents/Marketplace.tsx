@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useRecoilState } from 'recoil';
 import { useOutletContext } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
@@ -43,10 +43,23 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
   const { navVisible, setNavVisible } = useOutletContext<ContextType>();
   const [hideSidePanel, setHideSidePanel] = useRecoilState(store.hideSidePanel);
 
-  // Get URL parameters (default to 'promoted' instead of 'all')
-  const activeTab = category || 'promoted';
+  // Get URL parameters (default to 'all' to ensure users see agents)
+  const activeTab = category || 'all';
   const searchQuery = searchParams.get('q') || '';
   const selectedAgentId = searchParams.get('agent_id') || '';
+
+  // Animation state
+  type Direction = 'left' | 'right';
+  const [displayCategory, setDisplayCategory] = useState<string>(activeTab);
+  const [nextCategory, setNextCategory] = useState<string | null>(null);
+  const [isTransitioning, setIsTransitioning] = useState<boolean>(false);
+  const [animationDirection, setAnimationDirection] = useState<Direction>('right');
+
+  // Keep a ref of initial mount to avoid animating first sync
+  const didInitRef = useRef(false);
+
+  // Ref for the scrollable container to enable infinite scroll
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   // Local state
   const [isDetailOpen, setIsDetailOpen] = useState(false);
@@ -63,6 +76,15 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
     localStorage.setItem('hideSidePanel', 'false');
     localStorage.setItem('fullPanelCollapse', 'false');
   }, [setHideSidePanel, hideSidePanel]);
+
+  // Redirect base /agents route to /agents/all for consistency
+  useEffect(() => {
+    if (!category && window.location.pathname === '/agents') {
+      const currentSearchParams = searchParams.toString();
+      const searchParamsStr = currentSearchParams ? `?${currentSearchParams}` : '';
+      navigate(`/agents/all${searchParamsStr}`, { replace: true });
+    }
+  }, [category, navigate, searchParams]);
 
   // Ensure endpoints config is loaded first (required for agent queries)
   useGetEndpointsQuery();
@@ -101,21 +123,91 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
   };
 
   /**
-   * Handle category tab selection changes
-   *
-   * @param tabValue - The selected category value
+   * Determine ordered tabs to compute indices for direction
+   */
+  const orderedTabs = useMemo<string[]>(() => {
+    const dynamic = (categoriesQuery.data || []).map((c) => c.value);
+    // Ensure unique and stable order - 'all' should be last to match server response
+    const set = new Set<string>(['promoted', ...dynamic, 'all']);
+    return Array.from(set);
+  }, [categoriesQuery.data]);
+
+  const getTabIndex = useCallback(
+    (tab: string): number => {
+      const idx = orderedTabs.indexOf(tab);
+      return idx >= 0 ? idx : 0;
+    },
+    [orderedTabs],
+  );
+
+  /**
+   * Handle category tab selection changes with directional animation
    */
   const handleTabChange = (tabValue: string) => {
+    if (tabValue === activeTab || isTransitioning) {
+      // Ignore redundant or rapid clicks during transition
+      return;
+    }
+
+    const currentIndex = getTabIndex(displayCategory);
+    const newIndex = getTabIndex(tabValue);
+    const direction: Direction = newIndex > currentIndex ? 'right' : 'left';
+
+    setAnimationDirection(direction);
+    setNextCategory(tabValue);
+    setIsTransitioning(true);
+
+    // Update URL immediately, preserving current search params
     const currentSearchParams = searchParams.toString();
     const searchParamsStr = currentSearchParams ? `?${currentSearchParams}` : '';
-
-    // Navigate to the selected category
     if (tabValue === 'promoted') {
       navigate(`/agents${searchParamsStr}`);
     } else {
       navigate(`/agents/${tabValue}${searchParamsStr}`);
     }
+
+    // Complete transition after 300ms
+    window.setTimeout(() => {
+      setDisplayCategory(tabValue);
+      setNextCategory(null);
+      setIsTransitioning(false);
+    }, 300);
   };
+
+  /**
+   * Sync animation when URL changes externally (back/forward or deep links)
+   */
+  useEffect(() => {
+    if (!didInitRef.current) {
+      // First render: do not animate; just set display to current active tab
+      didInitRef.current = true;
+      setDisplayCategory(activeTab);
+      return;
+    }
+    if (isTransitioning || activeTab === displayCategory) {
+      return;
+    }
+    // Compute direction vs current displayCategory and animate
+    const currentIndex = getTabIndex(displayCategory);
+    const newIndex = getTabIndex(activeTab);
+    const direction: Direction = newIndex > currentIndex ? 'right' : 'left';
+
+    setAnimationDirection(direction);
+    setNextCategory(activeTab);
+    setIsTransitioning(true);
+
+    const timeoutId = window.setTimeout(() => {
+      setDisplayCategory(activeTab);
+      setNextCategory(null);
+      setIsTransitioning(false);
+    }, 300);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [activeTab, displayCategory, isTransitioning, getTabIndex]);
+
+  // No longer needed with keyframes
 
   /**
    * Handle search query changes
@@ -207,7 +299,10 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
           >
             <main className="flex h-full flex-col overflow-hidden" role="main">
               {/* Scrollable container */}
-              <div className="scrollbar-gutter-stable flex h-full flex-col overflow-y-auto overflow-x-hidden">
+              <div
+                ref={scrollContainerRef}
+                className="scrollbar-gutter-stable flex h-full flex-col overflow-y-auto overflow-x-hidden"
+              >
                 {/* Simplified header for agents marketplace - only show nav controls when needed */}
                 {!isSmallScreen && (
                   <div className="sticky top-0 z-20 flex items-center justify-between bg-surface-secondary p-2 font-semibold text-text-primary md:h-14">
@@ -276,63 +371,158 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
 
                 {/* Scrollable content area */}
                 <div className="container mx-auto max-w-4xl px-4 pb-8">
-                  {/* Category header - only show when not searching */}
-                  {!searchQuery && (
-                    <div className="mb-6 mt-6">
-                      {(() => {
-                        // Get category data for display
-                        const getCategoryData = () => {
-                          if (activeTab === 'promoted') {
-                            return {
-                              name: localize('com_agents_top_picks'),
-                              description: localize('com_agents_recommended'),
+                  {/* Two-pane animated container wrapping category header + grid */}
+                  <div className="relative overflow-hidden">
+                    {/* Current content pane */}
+                    <div
+                      className={cn(
+                        isTransitioning &&
+                          (animationDirection === 'right'
+                            ? 'motion-safe:animate-slide-out-left'
+                            : 'motion-safe:animate-slide-out-right'),
+                      )}
+                      key={`pane-current-${displayCategory}`}
+                    >
+                      {/* Category header - only show when not searching */}
+                      {!searchQuery && (
+                        <div className="mb-6 mt-6">
+                          {(() => {
+                            // Get category data for display
+                            const getCategoryData = () => {
+                              if (displayCategory === 'promoted') {
+                                return {
+                                  name: localize('com_agents_top_picks'),
+                                  description: localize('com_agents_recommended'),
+                                };
+                              }
+                              if (displayCategory === 'all') {
+                                return {
+                                  name: 'All Agents',
+                                  description: 'Browse all shared agents across all categories',
+                                };
+                              }
+
+                              // Find the category in the API data
+                              const categoryData = categoriesQuery.data?.find(
+                                (cat) => cat.value === displayCategory,
+                              );
+                              if (categoryData) {
+                                return {
+                                  name: categoryData.label,
+                                  description: categoryData.description || '',
+                                };
+                              }
+
+                              // Fallback for unknown categories
+                              return {
+                                name:
+                                  displayCategory.charAt(0).toUpperCase() +
+                                  displayCategory.slice(1),
+                                description: '',
+                              };
                             };
-                          }
-                          if (activeTab === 'all') {
-                            return {
-                              name: 'All Agents',
-                              description: 'Browse all shared agents across all categories',
-                            };
-                          }
 
-                          // Find the category in the API data
-                          const categoryData = categoriesQuery.data?.find(
-                            (cat) => cat.value === activeTab,
-                          );
-                          if (categoryData) {
-                            return {
-                              name: categoryData.label,
-                              description: categoryData.description || '',
-                            };
-                          }
+                            const { name, description } = getCategoryData();
 
-                          // Fallback for unknown categories
-                          return {
-                            name: activeTab.charAt(0).toUpperCase() + activeTab.slice(1),
-                            description: '',
-                          };
-                        };
+                            return (
+                              <div className="text-left">
+                                <h2 className="text-2xl font-bold text-text-primary">{name}</h2>
+                                {description && (
+                                  <p className="mt-2 text-text-secondary">{description}</p>
+                                )}
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      )}
 
-                        const { name, description } = getCategoryData();
-
-                        return (
-                          <div className="text-left">
-                            <h2 className="text-2xl font-bold text-text-primary">{name}</h2>
-                            {description && (
-                              <p className="mt-2 text-text-secondary">{description}</p>
-                            )}
-                          </div>
-                        );
-                      })()}
+                      {/* Agent grid */}
+                      <AgentGrid
+                        key={`grid-${displayCategory}`}
+                        category={displayCategory}
+                        searchQuery={searchQuery}
+                        onSelectAgent={handleAgentSelect}
+                        scrollElement={scrollContainerRef.current}
+                      />
                     </div>
-                  )}
 
-                  {/* Agent grid */}
-                  <AgentGrid
-                    category={activeTab}
-                    searchQuery={searchQuery}
-                    onSelectAgent={handleAgentSelect}
-                  />
+                    {/* Next content pane, only during transition */}
+                    {isTransitioning && nextCategory && (
+                      <div
+                        className={cn(
+                          'absolute inset-0',
+                          animationDirection === 'right'
+                            ? 'motion-safe:animate-slide-in-right'
+                            : 'motion-safe:animate-slide-in-left',
+                        )}
+                        key={`pane-next-${nextCategory}-${animationDirection}`}
+                      >
+                        {/* Category header - only show when not searching */}
+                        {!searchQuery && (
+                          <div className="mb-6 mt-6">
+                            {(() => {
+                              // Get category data for display
+                              const getCategoryData = () => {
+                                if (nextCategory === 'promoted') {
+                                  return {
+                                    name: localize('com_agents_top_picks'),
+                                    description: localize('com_agents_recommended'),
+                                  };
+                                }
+                                if (nextCategory === 'all') {
+                                  return {
+                                    name: 'All Agents',
+                                    description: 'Browse all shared agents across all categories',
+                                  };
+                                }
+
+                                // Find the category in the API data
+                                const categoryData = categoriesQuery.data?.find(
+                                  (cat) => cat.value === nextCategory,
+                                );
+                                if (categoryData) {
+                                  return {
+                                    name: categoryData.label,
+                                    description: categoryData.description || '',
+                                  };
+                                }
+
+                                // Fallback for unknown categories
+                                return {
+                                  name:
+                                    (nextCategory || '').charAt(0).toUpperCase() +
+                                    (nextCategory || '').slice(1),
+                                  description: '',
+                                };
+                              };
+
+                              const { name, description } = getCategoryData();
+
+                              return (
+                                <div className="text-left">
+                                  <h2 className="text-2xl font-bold text-text-primary">{name}</h2>
+                                  {description && (
+                                    <p className="mt-2 text-text-secondary">{description}</p>
+                                  )}
+                                </div>
+                              );
+                            })()}
+                          </div>
+                        )}
+
+                        {/* Agent grid */}
+                        <AgentGrid
+                          key={`grid-${nextCategory}`}
+                          category={nextCategory}
+                          searchQuery={searchQuery}
+                          onSelectAgent={handleAgentSelect}
+                          scrollElement={scrollContainerRef.current}
+                        />
+                      </div>
+                    )}
+
+                    {/* Note: Using Tailwind keyframes for slide in/out animations */}
+                  </div>
                 </div>
 
                 {/* Agent detail dialog */}

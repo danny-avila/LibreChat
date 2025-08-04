@@ -73,33 +73,33 @@ const SearchBar: React.FC<SearchBarProps> = ({ value, onSearch, className = '' }
         value={searchTerm}
         onChange={handleChange}
         placeholder={localize('com_agents_search_placeholder')}
-        className="h-14 rounded-2xl border-2 border-border-medium bg-transparent pl-12 pr-12 text-lg text-text-primary shadow-lg placeholder:text-text-tertiary focus:border-border-heavy focus:ring-0"
+        className="h-14 rounded-2xl border-border-medium bg-transparent pl-12 pr-12 text-lg text-text-primary shadow-md transition-[border-color,box-shadow] duration-200 placeholder:text-text-secondary focus:border-border-heavy focus:shadow-lg focus:ring-0"
         aria-label={localize('com_agents_search_aria')}
         aria-describedby="search-instructions search-results-count"
         autoComplete="off"
         spellCheck="false"
       />
 
-      {/* Search icon with proper accessibility */}
       <div className="absolute inset-y-0 left-0 flex items-center pl-4" aria-hidden="true">
-        <Search className="h-6 w-6 text-text-tertiary" />
+        <Search className="size-5 text-text-secondary" />
       </div>
-
       {/* Hidden instructions for screen readers */}
       <div id="search-instructions" className="sr-only">
         {localize('com_agents_search_instructions')}
       </div>
-
       {/* Show clear button only when search has value - Google style */}
       {searchTerm && (
         <button
           type="button"
           onClick={handleClear}
-          className="group absolute right-3 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full bg-text-tertiary transition-colors duration-150 hover:bg-text-secondary focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+          className="group absolute right-4 top-1/2 flex size-5 -translate-y-1/2 items-center justify-center rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
           aria-label={localize('com_agents_clear_search')}
           title={localize('com_agents_clear_search')}
         >
-          <X className="h-3 w-3 text-white group-hover:text-white" strokeWidth={2.5} />
+          <X
+            className="size-5 text-text-secondary transition-colors duration-200 group-hover:text-text-primary"
+            strokeWidth={2.5}
+          />
         </button>
       )}
     </div>

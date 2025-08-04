@@ -1,17 +1,17 @@
-import React, { useState, useId } from 'react';
-import * as Menu from '@ariakit/react/menu';
-import { Button, DropdownPopup } from '@librechat/client';
-import { Users, X, ExternalLink, ChevronDown } from 'lucide-react';
-import type { TPrincipal, TAccessRole, AccessRoleIds } from 'librechat-data-provider';
+import React from 'react';
+import { Button, useMediaQuery } from '@librechat/client';
+import { Users, X, ExternalLink } from 'lucide-react';
+import { ResourceType } from 'librechat-data-provider';
+import type { TPrincipal, AccessRoleIds } from 'librechat-data-provider';
+import AccessRolesPicker from '~/components/Sharing/AccessRolesPicker';
 import PrincipalAvatar from '~/components/Sharing/PrincipalAvatar';
-import { getRoleLocalizationKeys } from '~/utils';
 import { useLocalize } from '~/hooks';
 
 interface SelectedPrincipalsListProps {
   principles: TPrincipal[];
   onRemoveHandler: (idOnTheSource: string) => void;
   onRoleChange?: (idOnTheSource: string, newRoleId: AccessRoleIds) => void;
-  availableRoles?: Omit<TAccessRole, 'resourceType'>[];
+  resourceType?: ResourceType;
   className?: string;
 }
 
@@ -20,13 +20,16 @@ export default function SelectedPrincipalsList({
   onRemoveHandler,
   className = '',
   onRoleChange,
-  availableRoles,
+  resourceType = ResourceType.AGENT,
 }: SelectedPrincipalsListProps) {
   const localize = useLocalize();
+  const isMobile = useMediaQuery('(max-width: 768px)');
 
   const getPrincipalDisplayInfo = (principal: TPrincipal) => {
     const displayName = principal.name || localize('com_ui_unknown');
-    const subtitle = principal.email || `${principal.type} (${principal.source || 'local'})`;
+    const subtitle = isMobile
+      ? `${principal.type} (${principal.source || 'local'})`
+      : principal.email || `${principal.type} (${principal.source || 'local'})`;
 
     return { displayName, subtitle };
   };
@@ -34,7 +37,7 @@ export default function SelectedPrincipalsList({
   if (principles.length === 0) {
     return (
       <div className={`space-y-3 ${className}`}>
-        <div className="rounded-lg border border-dashed border-border py-8 text-center text-muted-foreground">
+        <div className="rounded-lg border border-dashed border-border-medium py-8 text-center text-muted-foreground">
           <Users className="mx-auto mb-2 h-8 w-8 opacity-50" />
           <p className="mt-1 text-xs">{localize('com_ui_search_above_to_add_all')}</p>
         </div>
@@ -50,7 +53,7 @@ export default function SelectedPrincipalsList({
           return (
             <div
               key={share.idOnTheSource + '-principalList'}
-              className="bg-surface flex items-center justify-between rounded-lg border border-border p-3"
+              className="bg-surface flex items-center justify-between rounded-2xl border border-border p-3"
             >
               <div className="flex min-w-0 flex-1 items-center gap-3">
                 <PrincipalAvatar principal={share} size="md" />
@@ -71,19 +74,19 @@ export default function SelectedPrincipalsList({
 
               <div className="flex flex-shrink-0 items-center gap-2">
                 {!!share.accessRoleId && !!onRoleChange && (
-                  <RoleSelector
-                    currentRole={share.accessRoleId}
+                  <AccessRolesPicker
+                    resourceType={resourceType}
+                    selectedRoleId={share.accessRoleId}
                     onRoleChange={(newRole) => {
                       onRoleChange?.(share.idOnTheSource!, newRole);
                     }}
-                    availableRoles={availableRoles ?? []}
+                    className="min-w-0"
                   />
                 )}
                 <Button
-                  variant="ghost"
-                  size="sm"
+                  variant="outline"
                   onClick={() => onRemoveHandler(share.idOnTheSource!)}
-                  className="h-8 w-8 p-0 hover:bg-destructive/10 hover:text-destructive"
+                  className="h-9 w-9 p-0 hover:border-destructive/10 hover:bg-destructive/10 hover:text-destructive"
                   aria-label={localize('com_ui_remove_user', { 0: displayName })}
                 >
                   <X className="h-4 w-4" />
@@ -94,46 +97,5 @@ export default function SelectedPrincipalsList({
         })}
       </div>
     </div>
-  );
-}
-
-interface RoleSelectorProps {
-  currentRole: AccessRoleIds;
-  onRoleChange: (newRole: AccessRoleIds) => void;
-  availableRoles: Omit<TAccessRole, 'resourceType'>[];
-}
-
-function RoleSelector({ currentRole, onRoleChange, availableRoles }: RoleSelectorProps) {
-  const menuId = useId();
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const localize = useLocalize();
-
-  const getLocalizedRoleName = (roleId: AccessRoleIds) => {
-    const keys = getRoleLocalizationKeys(roleId);
-    return localize(keys.name);
-  };
-
-  return (
-    <DropdownPopup
-      portal={true}
-      mountByState={true}
-      unmountOnHide={true}
-      preserveTabOrder={true}
-      isOpen={isMenuOpen}
-      setIsOpen={setIsMenuOpen}
-      trigger={
-        <Menu.MenuButton className="flex h-8 items-center gap-2 rounded-md border border-border-medium bg-surface-secondary px-2 py-1 text-sm font-medium transition-colors duration-200 hover:bg-surface-tertiary">
-          <span className="hidden sm:inline">{getLocalizedRoleName(currentRole)}</span>
-          <ChevronDown className="h-3 w-3" />
-        </Menu.MenuButton>
-      }
-      items={availableRoles?.map((role) => ({
-        id: role.accessRoleId,
-        label: getLocalizedRoleName(role.accessRoleId),
-        onClick: () => onRoleChange(role.accessRoleId),
-      }))}
-      menuId={menuId}
-      className="z-50 [pointer-events:auto]"
-    />
   );
 }

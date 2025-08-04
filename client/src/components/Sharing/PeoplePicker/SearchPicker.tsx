@@ -1,6 +1,6 @@
 import * as React from 'react';
+import { Search } from 'lucide-react';
 import debounce from 'lodash/debounce';
-import { Search, X } from 'lucide-react';
 import * as Ariakit from '@ariakit/react';
 import { Spinner, Skeleton } from '@librechat/client';
 import { useLocalize } from '~/hooks';
@@ -14,7 +14,7 @@ type SearchPickerProps<TOption extends { key: string }> = {
   onPick: (pickedOption: TOption) => void;
   placeholder?: string;
   inputClassName?: string;
-  label: string;
+  label?: string;
   resetValueOnHide?: boolean;
   isSmallScreen?: boolean;
   isLoading?: boolean;
@@ -69,29 +69,21 @@ export function SearchPicker<TOption extends { key: string; value: string }>({
       inputRef.current.focus();
     }
   };
-  const showClearIcon = localQuery.trim().length > 0;
-  const clearText = () => {
-    setLocalQuery('');
-    onQueryChange('');
-    debouncedOnQueryChange.cancel();
-    if (inputRef.current) {
-      inputRef.current.focus();
-    }
-  };
+
   return (
     <Ariakit.ComboboxProvider store={combobox}>
-      <Ariakit.ComboboxLabel className="text-token-text-primary mb-2 block font-medium">
+      <Ariakit.ComboboxLabel className="mb-2 block font-medium text-text-primary">
         {label}
       </Ariakit.ComboboxLabel>
-      <div className="py-1.5">
+      <>
         <div
           className={cn(
-            'group relative mt-1 flex h-10 cursor-pointer items-center gap-3 rounded-lg border-border-medium px-3 py-2 text-text-primary transition-colors duration-200 focus-within:bg-surface-hover hover:bg-surface-hover',
+            'group relative flex h-10 cursor-pointer items-center gap-2 rounded-lg border-border-medium text-text-primary transition-colors duration-200 focus-within:bg-surface-hover hover:bg-surface-hover',
             isSmallScreen === true ? 'mb-2 h-14 rounded-2xl' : '',
           )}
         >
           {isLoading ? (
-            <Spinner className="absolute left-3 h-4 w-4 text-text-primary" />
+            <Spinner className="absolute left-3 h-4 w-4" />
           ) : (
             <Search className="absolute left-3 h-4 w-4 text-text-secondary group-focus-within:text-text-primary group-hover:text-text-primary" />
           )}
@@ -118,28 +110,14 @@ export function SearchPicker<TOption extends { key: string; value: string }>({
             value={localQuery}
             // autoSelect
             placeholder={placeholder || localize('com_ui_select_options')}
-            className="m-0 mr-0 w-full rounded-md border-none bg-transparent p-0 py-2 pl-9 pr-3 text-sm leading-tight text-text-primary placeholder-text-secondary placeholder-opacity-100 focus:outline-none focus-visible:outline-none group-focus-within:placeholder-text-primary group-hover:placeholder-text-primary"
+            className="h-10 w-full rounded-lg bg-transparent pl-10 text-sm leading-tight text-text-primary placeholder-text-secondary placeholder-opacity-100 focus:outline-none focus-visible:outline-none group-focus-within:placeholder-text-primary group-hover:placeholder-text-primary"
           />
-          <button
-            type="button"
-            aria-label={`${localize('com_ui_clear')} ${localize('com_ui_search')}`}
-            className={cn(
-              'absolute right-[7px] flex h-5 w-5 items-center justify-center rounded-full border-none bg-transparent p-0 transition-opacity duration-200',
-              showClearIcon ? 'opacity-100' : 'opacity-0',
-              isSmallScreen === true ? 'right-[16px]' : '',
-            )}
-            onClick={clearText}
-            tabIndex={showClearIcon ? 0 : -1}
-            disabled={!showClearIcon}
-          >
-            <X className="h-5 w-5 cursor-pointer" />
-          </button>
         </div>
-      </div>
+      </>
       <Ariakit.ComboboxPopover
         portal={false} //todo fix focus when set to true
-        gutter={10}
-        // sameWidth
+        gutter={8}
+        sameWidth
         open={
           isLoading ||
           options.length > 0 ||
@@ -150,7 +128,7 @@ export function SearchPicker<TOption extends { key: string; value: string }>({
         autoFocusOnShow={false}
         modal={false}
         className={cn(
-          'animate-popover z-[9999] min-w-64 overflow-hidden rounded-xl border border-border-light bg-surface-secondary shadow-lg',
+          'animate-popover z-[9999] min-w-64 overflow-hidden rounded-2xl border border-border-light bg-surface-secondary shadow-lg',
           '[pointer-events:auto]', // Override body's pointer-events:none when in modal
         )}
       >

@@ -92,7 +92,26 @@ export default function NewChat({
           }
         />
         <div className="flex">
+          {showAgentMarketplace && (
+            <div className="flex">
+              <TooltipAnchor
+                description={localize('com_agents_marketplace')}
+                render={
+                  <Button
+                    variant="outline"
+                    data-testid="nav-agents-marketplace-button"
+                    aria-label={localize('com_agents_marketplace')}
+                    className="rounded-full border-none bg-transparent p-2 hover:bg-surface-hover md:rounded-xl"
+                    onClick={handleAgentMarketplace}
+                  >
+                    <LayoutGrid className="icon-md md:h-6 md:w-6" />
+                  </Button>
+                }
+              />
+            </div>
+          )}
           {headerButtons}
+
           <TooltipAnchor
             description={localize('com_ui_new_chat')}
             render={
@@ -110,29 +129,6 @@ export default function NewChat({
           />
         </div>
       </div>
-
-      {/* Agent Marketplace button - separate row like ChatGPT */}
-      {showAgentMarketplace && (
-        <div className="flex">
-          <TooltipAnchor
-            description={localize('com_agents_marketplace')}
-            render={
-              <Button
-                variant="outline"
-                data-testid="nav-agents-marketplace-button"
-                aria-label={localize('com_agents_marketplace')}
-                className="flex w-full items-center justify-start gap-3 rounded-xl border-none bg-transparent p-3 text-left hover:bg-surface-hover"
-                onClick={handleAgentMarketplace}
-              >
-                <LayoutGrid className="h-5 w-5 flex-shrink-0" />
-                <span className="truncate text-sm font-medium">
-                  {localize('com_agents_marketplace')}
-                </span>
-              </Button>
-            }
-          />
-        </div>
-      )}
       {subHeaders != null ? subHeaders : null}
     </>
   );

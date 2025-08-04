@@ -1,7 +1,7 @@
 import React from 'react';
 import * as Ariakit from '@ariakit/react';
 import { ChevronDown } from 'lucide-react';
-import { DropdownPopup } from '@librechat/client';
+import { DropdownPopup, Skeleton } from '@librechat/client';
 import { AccessRoleIds, ResourceType } from 'librechat-data-provider';
 import { useGetAccessRolesQuery } from 'librechat-data-provider/react-query';
 import type { AccessRole } from 'librechat-data-provider';
@@ -10,6 +10,7 @@ import { cn, getRoleLocalizationKeys } from '~/utils';
 import { useLocalize } from '~/hooks';
 
 interface AccessRolesPickerProps {
+  id?: string;
   resourceType?: ResourceType;
   selectedRoleId?: AccessRoleIds;
   onRoleChange: (roleId: AccessRoleIds) => void;
@@ -17,6 +18,7 @@ interface AccessRolesPickerProps {
 }
 
 export default function AccessRolesPicker({
+  id,
   resourceType = ResourceType.AGENT,
   selectedRoleId = AccessRoleIds.AGENT_VIEWER,
   onRoleChange,
@@ -39,14 +41,7 @@ export default function AccessRolesPicker({
   const selectedRoleInfo = selectedRole ? getLocalizedRoleInfo(selectedRole.accessRoleId) : null;
 
   if (rolesLoading || !accessRoles) {
-    return (
-      <div className={className}>
-        <div className="flex items-center justify-center py-2">
-          <div className="h-4 w-4 animate-spin rounded-full border-2 border-border-light border-t-blue-600"></div>
-          <span className="ml-2 text-sm text-text-secondary">{localize('com_ui_loading')}</span>
-        </div>
-      </div>
-    );
+    return <Skeleton className="h-10 w-24 rounded-lg" />;
   }
 
   const dropdownItems: t.MenuItemProps[] = accessRoles.map((role: AccessRole) => {
@@ -70,7 +65,7 @@ export default function AccessRolesPicker({
   });
 
   return (
-    <div className={className}>
+    <div className={className} id={id}>
       <DropdownPopup
         menuId="access-roles-menu"
         isOpen={isOpen}
@@ -79,8 +74,7 @@ export default function AccessRolesPicker({
           <Ariakit.MenuButton
             aria-label={selectedRoleInfo?.description || 'Select role'}
             className={cn(
-              'flex items-center justify-between gap-2 rounded-lg border border-border-light bg-surface-primary px-3 py-2 text-sm transition-colors hover:bg-surface-hover focus:outline-none focus:ring-2 focus:ring-ring-primary',
-              'min-w-[200px]',
+              'flex items-center justify-between gap-2 rounded-xl border border-border-light bg-transparent px-3 py-2 text-sm transition-colors hover:bg-surface-tertiary',
             )}
           >
             <span className="font-medium">

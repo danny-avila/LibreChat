@@ -60,7 +60,7 @@ export const renderAgentAvatar = (
     xl: 'h-20 w-20',
   };
 
-  const borderClasses = showBorder ? 'border-2 border-white dark:border-gray-800' : '';
+  const borderClasses = showBorder ? 'border-1 border-border-medium' : '';
 
   if (avatarUrl) {
     return (
@@ -79,14 +79,11 @@ export const renderAgentAvatar = (
   return (
     <div className={`relative flex items-center justify-center ${sizeClasses[size]} ${className}`}>
       {/* Subtle minimalistic placeholder */}
-      <div className="absolute inset-0 rounded-full border border-gray-300 bg-gray-200 dark:border-gray-600 dark:bg-gray-700"></div>
+      <div className="absolute inset-0 rounded-full border border-border-medium bg-surface-secondary"></div>
       <div
-        className={`relative flex items-center justify-center rounded-full bg-gray-300 dark:bg-gray-600 ${placeholderSizeClasses[size]}`}
+        className={`relative flex items-center justify-center rounded-full ${placeholderSizeClasses[size]}`}
       >
-        <Bot
-          className={`text-gray-500 dark:text-gray-400 ${iconSizeClasses[size]}`}
-          strokeWidth={1.5}
-        />
+        <Bot className={`text-text-primary ${iconSizeClasses[size]}`} strokeWidth={1.5} />
       </div>
     </div>
   );

@@ -1,14 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { AccessRoleIds, ResourceType } from 'librechat-data-provider';
-import { Settings, Users, Loader, UserCheck, Trash2, Shield } from 'lucide-react';
+import { Settings, Users, UserCheck, Trash2, Shield } from 'lucide-react';
 import {
-  useGetAccessRolesQuery,
   useGetResourcePermissionsQuery,
   useUpdateResourcePermissionsMutation,
 } from 'librechat-data-provider/react-query';
 import type { TPrincipal } from 'librechat-data-provider';
 import {
   Button,
+  Spinner,
   OGDialog,
   OGDialogTitle,
   OGDialogClose,
@@ -46,10 +46,6 @@ export default function ManagePermissionsDialog({
   } = useGetResourcePermissionsQuery(resourceType, agentDbId, {
     enabled: !!agentDbId,
   });
-  const {
-    data: accessRoles,
-    // isLoading,
-  } = useGetAccessRolesQuery(resourceType);
 
   const updatePermissionsMutation = useUpdateResourcePermissionsMutation();
 
@@ -267,7 +263,7 @@ export default function ManagePermissionsDialog({
             if (isLoadingPermissions) {
               return (
                 <div className="flex items-center justify-center p-8">
-                  <Loader className="h-6 w-6 animate-spin" />
+                  <Spinner className="h-6 w-6" />
                   <span className="ml-2 text-sm text-text-secondary">
                     {localize('com_ui_loading_permissions')}
                   </span>
@@ -285,7 +281,7 @@ export default function ManagePermissionsDialog({
                   <SelectedPrincipalsList
                     principles={managedShares}
                     onRemoveHandler={handleRemoveShare}
-                    availableRoles={accessRoles || []}
+                    resourceType={resourceType}
                     onRoleChange={(id, newRole) => handleRoleChange(id, newRole)}
                   />
                 </div>
@@ -302,17 +298,12 @@ export default function ManagePermissionsDialog({
             );
           })()}
 
-          <div>
-            <h3 className="mb-3 text-sm font-medium text-text-primary">
-              {localize('com_ui_public_access')}
-            </h3>
-            <PublicSharingToggle
-              isPublic={managedIsPublic}
-              publicRole={managedPublicRole}
-              onPublicToggle={handlePublicToggle}
-              onPublicRoleChange={handlePublicRoleChange}
-            />
-          </div>
+          <PublicSharingToggle
+            isPublic={managedIsPublic}
+            publicRole={managedPublicRole}
+            onPublicToggle={handlePublicToggle}
+            onPublicRoleChange={handlePublicRoleChange}
+          />
 
           <div className="flex justify-end gap-3 border-t pt-4">
             <OGDialogClose asChild>
@@ -332,7 +323,7 @@ export default function ManagePermissionsDialog({
             >
               {updatePermissionsMutation.isLoading ? (
                 <div className="flex items-center gap-2">
-                  <Loader className="h-4 w-4 animate-spin" />
+                  <Spinner className="h-4 w-4" />
                   {localize('com_ui_saving')}
                 </div>
               ) : (

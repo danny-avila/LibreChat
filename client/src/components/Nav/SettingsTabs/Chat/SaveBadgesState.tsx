@@ -1,6 +1,5 @@
 import { useRecoilState } from 'recoil';
-import { Switch } from '@librechat/client';
-import HoverCardSettings from '../HoverCardSettings';
+import { Switch, InfoHoverCard, ESide } from '@librechat/client';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
 
@@ -23,7 +22,7 @@ export default function SaveBadgesState({
     <div className="flex items-center justify-between">
       <div className="flex items-center space-x-2">
         <div>{localize('com_nav_save_badges_state')}</div>
-        <HoverCardSettings side="bottom" text="com_nav_info_save_badges_state" />
+        <InfoHoverCard side={ESide.Bottom} text={localize('com_nav_info_save_badges_state')} />
       </div>
       <Switch
         id="saveBadgesState"
