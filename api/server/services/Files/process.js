@@ -17,6 +17,7 @@ const {
   removeNullishValues,
   hostImageNamePrefix,
   isAssistantsEndpoint,
+  ImageDetailCost,
 } = require('librechat-data-provider');
 const { EnvVar } = require('@librechat/agents');
 const {
@@ -32,7 +33,6 @@ const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { determineFileType, countTokens } = require('~/server/utils');
 const { checkCapability } = require('~/server/services/Config');
 const { LB_QueueAsyncCall } = require('~/server/utils/queue');
-const OpenAIClient = require('~/app/clients/OpenAIClient');
 const { getStrategyFunctions } = require('./strategies');
 const { logger } = require('~/config');
 
@@ -505,9 +505,6 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
     document: Number(req.body.documentTokenLimit) || 2000,
   };
 
-  const openAIClient = new OpenAIClient();
-  const calculateImageTokenCost = openAIClient.calculateImageTokenCost.bind(openAIClient);
-
   const getTokenLimit = (mimetype) => {
     if (fileConfig.checkType(mimetype, [/^image\//])) {
       return userTokenLimits.image;
@@ -626,8 +623,6 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
       const {
         text,
         bytes,
-        // TODO: OCR images support?
-        images,
         filename,
         filepath: ocrFileURL,
       } = await uploadOCR({ req, file, loadAuthValues });
@@ -1047,6 +1042,24 @@ function filterFile({ req, image, isAvatar }) {
   if (!height) {
     throw new Error('No height provided');
   }
+}
+
+/**
+ * Calculate image token cost based on dimensions and detail level (this function orignally was in OpenAIClient, but was moved here to avoid circular dependency)
+ * @param {Object} image - The image object
+ * @param {number} image.width - The width of the image
+ * @param {number} image.height - The height of the image
+ * @param {'low'|'high'|string|undefined} [image.detail] - The detail level
+ * @returns {number} The calculated token cost
+ */
+function calculateImageTokenCost({ width, height, detail }) {
+  if (detail === 'low') {
+    return ImageDetailCost.LOW;
+  }
+
+  const numSquares = Math.ceil(width / 512) * Math.ceil(height / 512);
+
+  return numSquares * ImageDetailCost.HIGH + ImageDetailCost.ADDITIONAL;
 }
 
 module.exports = {
