@@ -9,7 +9,6 @@ import {
   DynamicSwitch,
   DynamicInput,
   DynamicTags,
-  DynamicDropdownInput,
 } from './';
 
 export const componentMapping: Record<
@@ -24,5 +23,4 @@ export const componentMapping: Record<
   [ComponentTypes.Checkbox]: DynamicCheckbox,
   [ComponentTypes.Tags]: DynamicTags,
   [ComponentTypes.Combobox]: DynamicCombobox,
-  [ComponentTypes.DropdownInput]: DynamicDropdownInput,
 };

@@ -141,12 +141,7 @@ const useFileHandling = (params?: UseFileHandling) => {
         if (error?.code === 'ERR_CANCELED') {
           errorMessage = 'com_error_files_upload_canceled';
         } else if (error?.response?.data?.message) {
-          const backendMessage = error.response.data.message;
-          if (backendMessage.includes('exceeds token limit')) {
-            errorMessage = 'com_error_files_token_limit';
-          } else {
-            errorMessage = backendMessage;
-          }
+          errorMessage = error.response.data.message;
         }
         setError(errorMessage);
       },
@@ -183,16 +178,6 @@ const useFileHandling = (params?: UseFileHandling) => {
           formData.append(key, value);
         }
       }
-    }
-
-    if (conversation?.imageTokenLimit != null) {
-      formData.append('imageTokenLimit', conversation.imageTokenLimit.toString());
-    }
-    if (conversation?.textTokenLimit != null) {
-      formData.append('textTokenLimit', conversation.textTokenLimit.toString());
-    }
-    if (conversation?.documentTokenLimit != null) {
-      formData.append('documentTokenLimit', conversation.documentTokenLimit.toString());
     }
 
     if (isAgentsEndpoint(endpoint)) {

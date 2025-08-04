@@ -17,7 +17,6 @@ const {
   removeNullishValues,
   hostImageNamePrefix,
   isAssistantsEndpoint,
-  ImageDetailCost,
 } = require('librechat-data-provider');
 const { EnvVar } = require('@librechat/agents');
 const {
@@ -30,7 +29,7 @@ const { addAgentResourceFile, removeAgentResourceFiles } = require('~/models/Age
 const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
 const { createFile, updateFileUsage, deleteFiles } = require('~/models/File');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
-const { determineFileType, countTokens } = require('~/server/utils');
+const { determineFileType } = require('~/server/utils');
 const { checkCapability } = require('~/server/services/Config');
 const { LB_QueueAsyncCall } = require('~/server/utils/queue');
 const { getStrategyFunctions } = require('./strategies');
@@ -499,23 +498,6 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
 
   const fileConfig = mergeFileConfig(req.app.locals.fileConfig);
 
-  const userTokenLimits = {
-    image: Number(req.body.imageTokenLimit) || 1000,
-    text: Number(req.body.textTokenLimit) || 500,
-    document: Number(req.body.documentTokenLimit) || 2000,
-  };
-
-  const getTokenLimit = (mimetype) => {
-    if (fileConfig.checkType(mimetype, [/^image\//])) {
-      return userTokenLimits.image;
-    } else if (fileConfig.checkType(mimetype, fileConfig.textParsing?.supportedMimeTypes || [])) {
-      return userTokenLimits.text;
-    } else if (fileConfig.checkType(mimetype, fileConfig.ocr?.supportedMimeTypes || [])) {
-      return userTokenLimits.document;
-    }
-    return 1000;
-  };
-
   const shouldUseTextParsing = fileConfig.checkType(
     file.mimetype,
     fileConfig.textParsing?.supportedMimeTypes || [],
@@ -529,15 +511,6 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
   if (shouldUseTextParsing && !shouldUseOCR) {
     const text = fs.readFileSync(file.path, 'utf8');
     const bytes = Buffer.byteLength(text, 'utf8');
-
-    const tokens = await countTokens(text, req.body.model);
-    const tokenLimit = getTokenLimit(file.mimetype);
-
-    if (tokens > tokenLimit) {
-      throw new Error(
-        `Text file exceeds token limit. File contains ${tokens} tokens, but limit is ${tokenLimit} tokens.`,
-      );
-    }
 
     const fileInfo = removeNullishValues({
       text,
@@ -603,22 +576,6 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
       const { handleFileUpload: uploadOCR } = getStrategyFunctions(
         req.app.locals?.ocr?.strategy ?? FileSources.mistral_ocr,
       );
-
-      if (file.mimetype.startsWith('image')) {
-        const imageDetail = req.body.imageDetail || 'auto';
-        const imageTokens = calculateImageTokenCost({
-          width: req.body.width,
-          height: req.body.height,
-          detail: imageDetail,
-        });
-        const tokenLimit = getTokenLimit(file.mimetype);
-
-        if (imageTokens > tokenLimit) {
-          throw new Error(
-            `Image exceeds token limit. Image costs ${imageTokens} tokens, but limit is ${tokenLimit} tokens.`,
-          );
-        }
-      }
 
       const {
         text,
@@ -1042,24 +999,6 @@ function filterFile({ req, image, isAvatar }) {
   if (!height) {
     throw new Error('No height provided');
   }
-}
-
-/**
- * Calculate image token cost based on dimensions and detail level (this function orignally was in OpenAIClient, but was moved here to avoid circular dependency)
- * @param {Object} image - The image object
- * @param {number} image.width - The width of the image
- * @param {number} image.height - The height of the image
- * @param {'low'|'high'|string|undefined} [image.detail] - The detail level
- * @returns {number} The calculated token cost
- */
-function calculateImageTokenCost({ width, height, detail }) {
-  if (detail === 'low') {
-    return ImageDetailCost.LOW;
-  }
-
-  const numSquares = Math.ceil(width / 512) * Math.ceil(height / 512);
-
-  return numSquares * ImageDetailCost.HIGH + ImageDetailCost.ADDITIONAL;
 }
 
 module.exports = {

@@ -80,24 +80,6 @@ const baseDefinitions: Record<string, SettingDefinition> = {
     optionType: 'conversation',
     columnSpan: 2,
   },
-  fileTokenLimits: {
-    key: 'fileTokenLimits',
-    label: 'com_ui_file_token_limits',
-    labelCode: true,
-    description: 'com_ui_file_token_limits_desc',
-    descriptionCode: true,
-    placeholder: 'com_nav_theme_system',
-    placeholderCode: true,
-    type: 'object',
-    component: 'dropdownInput',
-    optionType: 'model',
-    options: ['com_ui_image', 'com_ui_textfile', 'com_ui_document'],
-    defaultValues: {
-      imageTokenLimit: 1000,
-      textTokenLimit: 500,
-      documentTokenLimit: 2000,
-    },
-  },
 };
 
 const createDefinition = (
@@ -155,6 +137,20 @@ export const librechat = {
     placeholder: 'com_endpoint_openai_prompt_prefix_placeholder',
     placeholderCode: true,
     optionType: 'model',
+  } as const,
+  fileTokenLimit: {
+    key: 'fileTokenLimit',
+    label: 'com_ui_file_token_limit',
+    labelCode: true,
+    description: 'com_ui_file_token_limit_desc',
+    descriptionCode: true,
+    placeholder: 'com_nav_theme_system',
+    placeholderCode: true,
+    type: 'number',
+    component: 'input',
+    default: 1000,
+    showDefault: false,
+    columnSpan: 2,
   } as const,
 };
 
@@ -621,7 +617,7 @@ const googleConfig: SettingsConfiguration = [
   google.thinking,
   google.thinkingBudget,
   google.web_search,
-  baseDefinitions.fileTokenLimits,
+  librechat.fileTokenLimit,
 ];
 
 const googleCol1: SettingsConfiguration = [
@@ -640,7 +636,7 @@ const googleCol2: SettingsConfiguration = [
   google.thinking,
   google.thinkingBudget,
   google.web_search,
-  baseDefinitions.fileTokenLimits,
+  librechat.fileTokenLimit,
 ];
 
 const openAI: SettingsConfiguration = [
@@ -660,7 +656,7 @@ const openAI: SettingsConfiguration = [
   openAIParams.useResponsesApi,
   openAIParams.reasoning_summary,
   openAIParams.disableStreaming,
-  baseDefinitions.fileTokenLimits,
+  librechat.fileTokenLimit,
 ];
 
 const openAICol1: SettingsConfiguration = [
@@ -684,7 +680,7 @@ const openAICol2: SettingsConfiguration = [
   openAIParams.useResponsesApi,
   openAIParams.web_search,
   openAIParams.disableStreaming,
-  baseDefinitions.fileTokenLimits,
+  librechat.fileTokenLimit,
 ];
 
 const anthropicConfig: SettingsConfiguration = [
@@ -700,6 +696,7 @@ const anthropicConfig: SettingsConfiguration = [
   anthropic.thinking,
   anthropic.thinkingBudget,
   anthropic.web_search,
+  librechat.fileTokenLimit,
 ];
 
 const anthropicCol1: SettingsConfiguration = [
@@ -719,6 +716,7 @@ const anthropicCol2: SettingsConfiguration = [
   anthropic.thinking,
   anthropic.thinkingBudget,
   anthropic.web_search,
+  librechat.fileTokenLimit,
 ];
 
 const bedrockAnthropic: SettingsConfiguration = [
