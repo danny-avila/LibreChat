@@ -336,7 +336,17 @@ export const convertExtensionsToMimeRegex = (extensions: string[]): RegExp[] => 
 };
 
 export function mergeFileConfig(dynamic: z.infer<typeof fileConfigSchema> | undefined): FileConfig {
-  const mergedConfig = fileConfig as FileConfig;
+  const mergedConfig: FileConfig = {
+    ...fileConfig,
+    ocr: {
+      ...fileConfig.ocr,
+      supportedMimeTypes: fileConfig.ocr?.supportedMimeTypes || [],
+    },
+    textParsing: {
+      ...fileConfig.textParsing,
+      supportedMimeTypes: fileConfig.textParsing?.supportedMimeTypes || [],
+    },
+  };
   if (!dynamic) {
     return mergedConfig;
   }
@@ -363,7 +373,7 @@ export function mergeFileConfig(dynamic: z.infer<typeof fileConfigSchema> | unde
       ...dynamic.ocr,
     };
     if (dynamic.ocr.supportedMimeTypes) {
-      const mimeTypes = dynamic.ocr.supportedMimeTypes as unknown as string[];
+      const mimeTypes = dynamic.ocr.supportedMimeTypes;
       const hasExtensions = mimeTypes.some((type) => !type.startsWith('^'));
       mergedConfig.ocr.supportedMimeTypes = hasExtensions
         ? convertExtensionsToMimeRegex(mimeTypes)
@@ -377,7 +387,7 @@ export function mergeFileConfig(dynamic: z.infer<typeof fileConfigSchema> | unde
       ...dynamic.textParsing,
     };
     if (dynamic.textParsing.supportedMimeTypes) {
-      const mimeTypes = dynamic.textParsing.supportedMimeTypes as unknown as string[];
+      const mimeTypes = dynamic.textParsing.supportedMimeTypes;
       const hasExtensions = mimeTypes.some((type) => !type.startsWith('^'));
       mergedConfig.textParsing.supportedMimeTypes = hasExtensions
         ? convertExtensionsToMimeRegex(mimeTypes)

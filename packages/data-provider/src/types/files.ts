@@ -56,6 +56,27 @@ export type FileConfig = {
     quality?: number;
   };
   ocr?: {
+    supportedMimeTypes?: RegExp[];
+  };
+  textParsing?: {
+    supportedMimeTypes?: RegExp[];
+  };
+  checkType?: (fileType: string, supportedTypes: RegExp[]) => boolean;
+};
+
+export type FileConfigInput = {
+  endpoints?: {
+    [key: string]: EndpointFileConfig;
+  };
+  serverFileSizeLimit?: number;
+  avatarSizeLimit?: number;
+  clientImageResize?: {
+    enabled?: boolean;
+    maxWidth?: number;
+    maxHeight?: number;
+    quality?: number;
+  };
+  ocr?: {
     supportedMimeTypes?: string[];
   };
   textParsing?: {
