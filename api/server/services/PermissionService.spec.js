@@ -1067,6 +1067,164 @@ describe('PermissionService', () => {
       expect(hasNoPermission).toBe(false);
     });
 
+    test('should optimize permission checks when role is provided', async () => {
+      const testUserId = new mongoose.Types.ObjectId();
+      const testResourceId = new mongoose.Types.ObjectId();
+
+      // Create a user with EDITOR role
+      const User = mongoose.models.User;
+      await User.create({
+        _id: testUserId,
+        email: 'editor@test.com',
+        emailVerified: true,
+        provider: 'local',
+        role: 'EDITOR',
+      });
+
+      // Grant permission to EDITOR role
+      await grantPermission({
+        principalType: PrincipalType.ROLE,
+        principalId: 'EDITOR',
+        resourceType: ResourceType.AGENT,
+        resourceId: testResourceId,
+        accessRoleId: AccessRoleIds.AGENT_EDITOR,
+        grantedBy: grantedById,
+      });
+
+      // Mock getUserPrincipals to return user with EDITOR role when called
+      getUserPrincipals.mockResolvedValue([
+        { principalType: PrincipalType.USER, principalId: testUserId },
+        { principalType: PrincipalType.ROLE, principalId: 'EDITOR' },
+        { principalType: PrincipalType.PUBLIC },
+      ]);
+
+      // Test 1: Check permission with role provided (optimization should be used)
+      const hasPermissionWithRole = await checkPermission({
+        userId: testUserId,
+        role: 'EDITOR',
+        resourceType: ResourceType.AGENT,
+        resourceId: testResourceId,
+        requiredPermission: 1, // VIEW
+      });
+
+      expect(hasPermissionWithRole).toBe(true);
+      expect(getUserPrincipals).toHaveBeenCalledWith({ userId: testUserId, role: 'EDITOR' });
+
+      // Test 2: Check permission without role (should call getUserPrincipals)
+      getUserPrincipals.mockResolvedValue([
+        { principalType: PrincipalType.USER, principalId: testUserId },
+        { principalType: PrincipalType.ROLE, principalId: 'EDITOR' },
+        { principalType: PrincipalType.PUBLIC },
+      ]);
+
+      const hasPermissionWithoutRole = await checkPermission({
+        userId: testUserId,
+        resourceType: ResourceType.AGENT,
+        resourceId: testResourceId,
+        requiredPermission: 1, // VIEW
+      });
+
+      expect(hasPermissionWithoutRole).toBe(true);
+      expect(getUserPrincipals).toHaveBeenCalledWith({ userId: testUserId, role: undefined });
+
+      // Test 3: Verify getEffectivePermissions also uses the optimization
+      getUserPrincipals.mockClear();
+
+      const effectiveWithRole = await getEffectivePermissions({
+        userId: testUserId,
+        role: 'EDITOR',
+        resourceType: ResourceType.AGENT,
+        resourceId: testResourceId,
+      });
+
+      expect(effectiveWithRole).toBe(3); // EDITOR = VIEW + EDIT
+      expect(getUserPrincipals).toHaveBeenCalledWith({ userId: testUserId, role: 'EDITOR' });
+
+      // Test 4: Verify findAccessibleResources also uses the optimization
+      getUserPrincipals.mockClear();
+
+      const accessibleWithRole = await findAccessibleResources({
+        userId: testUserId,
+        role: 'EDITOR',
+        resourceType: ResourceType.AGENT,
+        requiredPermissions: 1, // VIEW
+      });
+
+      expect(accessibleWithRole.map((id) => id.toString())).toContain(testResourceId.toString());
+      expect(getUserPrincipals).toHaveBeenCalledWith({ userId: testUserId, role: 'EDITOR' });
+    });
+
+    test('should handle role changes dynamically', async () => {
+      const testUserId = new mongoose.Types.ObjectId();
+      const testResourceId = new mongoose.Types.ObjectId();
+
+      // Grant permission to ADMIN role only
+      await grantPermission({
+        principalType: PrincipalType.ROLE,
+        principalId: 'ADMIN',
+        resourceType: ResourceType.AGENT,
+        resourceId: testResourceId,
+        accessRoleId: AccessRoleIds.AGENT_OWNER,
+        grantedBy: grantedById,
+      });
+
+      // Test with ADMIN role - should have access
+      getUserPrincipals.mockResolvedValue([
+        { principalType: PrincipalType.USER, principalId: testUserId },
+        { principalType: PrincipalType.ROLE, principalId: 'ADMIN' },
+        { principalType: PrincipalType.PUBLIC },
+      ]);
+
+      const hasAdminAccess = await checkPermission({
+        userId: testUserId,
+        role: 'ADMIN',
+        resourceType: ResourceType.AGENT,
+        resourceId: testResourceId,
+        requiredPermission: 7, // Full permissions
+      });
+
+      expect(hasAdminAccess).toBe(true);
+      expect(getUserPrincipals).toHaveBeenCalledWith({ userId: testUserId, role: 'ADMIN' });
+
+      // Test with USER role - should NOT have access
+      getUserPrincipals.mockClear();
+      getUserPrincipals.mockResolvedValue([
+        { principalType: PrincipalType.USER, principalId: testUserId },
+        { principalType: PrincipalType.ROLE, principalId: 'USER' },
+        { principalType: PrincipalType.PUBLIC },
+      ]);
+
+      const hasUserAccess = await checkPermission({
+        userId: testUserId,
+        role: 'USER',
+        resourceType: ResourceType.AGENT,
+        resourceId: testResourceId,
+        requiredPermission: 1, // Even VIEW
+      });
+
+      expect(hasUserAccess).toBe(false);
+      expect(getUserPrincipals).toHaveBeenCalledWith({ userId: testUserId, role: 'USER' });
+
+      // Test with EDITOR role - should NOT have access
+      getUserPrincipals.mockClear();
+      getUserPrincipals.mockResolvedValue([
+        { principalType: PrincipalType.USER, principalId: testUserId },
+        { principalType: PrincipalType.ROLE, principalId: 'EDITOR' },
+        { principalType: PrincipalType.PUBLIC },
+      ]);
+
+      const hasEditorAccess = await checkPermission({
+        userId: testUserId,
+        role: 'EDITOR',
+        resourceType: ResourceType.AGENT,
+        resourceId: testResourceId,
+        requiredPermission: 1, // VIEW
+      });
+
+      expect(hasEditorAccess).toBe(false);
+      expect(getUserPrincipals).toHaveBeenCalledWith({ userId: testUserId, role: 'EDITOR' });
+    });
+
     test('should work with different resource types', async () => {
       // Test with promptGroup resources
       const promptGroupResourceId = new mongoose.Types.ObjectId();

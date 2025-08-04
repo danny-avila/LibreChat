@@ -5,12 +5,14 @@ const { getAgent } = require('~/models/Agent');
 
 /**
  * Checks if a user has access to multiple files through a shared agent (batch operation)
- * @param {string} userId - The user ID to check access for
- * @param {string[]} fileIds - Array of file IDs to check
- * @param {string} agentId - The agent ID that might grant access
+ * @param {Object} params - Parameters object
+ * @param {string} params.userId - The user ID to check access for
+ * @param {string} [params.role] - Optional user role to avoid DB query
+ * @param {string[]} params.fileIds - Array of file IDs to check
+ * @param {string} params.agentId - The agent ID that might grant access
  * @returns {Promise<Map<string, boolean>>} Map of fileId to access status
  */
-const hasAccessToFilesViaAgent = async (userId, fileIds, agentId) => {
+const hasAccessToFilesViaAgent = async ({ userId, role, fileIds, agentId }) => {
   const accessMap = new Map();
 
   // Initialize all files as no access
@@ -24,7 +26,7 @@ const hasAccessToFilesViaAgent = async (userId, fileIds, agentId) => {
     }
 
     // Check if user is the author - if so, grant access to all files
-    if (agent.author.toString() === userId) {
+    if (agent.author.toString() === userId.toString()) {
       fileIds.forEach((fileId) => accessMap.set(fileId, true));
       return accessMap;
     }
@@ -32,6 +34,7 @@ const hasAccessToFilesViaAgent = async (userId, fileIds, agentId) => {
     // Check if user has at least VIEW permission on the agent
     const hasViewPermission = await checkPermission({
       userId,
+      role,
       resourceType: ResourceType.AGENT,
       resourceId: agent._id,
       requiredPermission: PermissionBits.VIEW,
@@ -44,6 +47,7 @@ const hasAccessToFilesViaAgent = async (userId, fileIds, agentId) => {
     // Check if user has EDIT permission (which would indicate collaborative access)
     const hasEditPermission = await checkPermission({
       userId,
+      role,
       resourceType: ResourceType.AGENT,
       resourceId: agent._id,
       requiredPermission: PermissionBits.EDIT,
@@ -81,12 +85,14 @@ const hasAccessToFilesViaAgent = async (userId, fileIds, agentId) => {
 
 /**
  * Filter files based on user access through agents
- * @param {Array<MongoFile>} files - Array of file documents
- * @param {string} userId - User ID for access control
- * @param {string} agentId - Agent ID that might grant access to files
+ * @param {Object} params - Parameters object
+ * @param {Array<MongoFile>} params.files - Array of file documents
+ * @param {string} params.userId - User ID for access control
+ * @param {string} [params.role] - Optional user role to avoid DB query
+ * @param {string} params.agentId - Agent ID that might grant access to files
  * @returns {Promise<Array<MongoFile>>} Filtered array of accessible files
  */
-const filterFilesByAgentAccess = async (files, userId, agentId) => {
+const filterFilesByAgentAccess = async ({ files, userId, role, agentId }) => {
   if (!userId || !agentId || !files || files.length === 0) {
     return files;
   }
@@ -96,7 +102,7 @@ const filterFilesByAgentAccess = async (files, userId, agentId) => {
   const ownedFiles = [];
 
   for (const file of files) {
-    if (file.user && file.user.toString() === userId) {
+    if (file.user && file.user.toString() === userId.toString()) {
       ownedFiles.push(file);
     } else {
       filesToCheck.push(file);
@@ -109,7 +115,7 @@ const filterFilesByAgentAccess = async (files, userId, agentId) => {
 
   // Batch check access for all non-owned files
   const fileIds = filesToCheck.map((f) => f.file_id);
-  const accessMap = await hasAccessToFilesViaAgent(userId, fileIds, agentId);
+  const accessMap = await hasAccessToFilesViaAgent({ userId, role, fileIds, agentId });
 
   // Filter files based on access
   const accessibleFiles = filesToCheck.filter((file) => accessMap.get(file.file_id));
