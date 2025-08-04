@@ -507,39 +507,6 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
     fileConfig.ocr?.supportedMimeTypes || [],
   );
 
-  // TODO: add placeholder for RAG API which falls back to native text parsing
-  if (shouldUseTextParsing && !shouldUseOCR) {
-    const text = fs.readFileSync(file.path, 'utf8');
-    const bytes = Buffer.byteLength(text, 'utf8');
-
-    const fileInfo = removeNullishValues({
-      text,
-      bytes,
-      file_id: metadata.file_id,
-      temp_file_id: metadata.temp_file_id,
-      user: req.user.id,
-      type: file.mimetype,
-      filepath: file.path,
-      source: FileSources.text,
-      filename: file.originalname,
-      model: messageAttachment ? undefined : req.body.model,
-      context: messageAttachment ? FileContext.message_attachment : FileContext.agents,
-    });
-
-    if (!messageAttachment && tool_resource) {
-      await addAgentResourceFile({
-        req,
-        file_id: metadata.file_id,
-        agent_id,
-        tool_resource,
-      });
-    }
-    const result = await createFile(fileInfo, true);
-    return res
-      .status(200)
-      .json({ message: 'Agent file uploaded and processed successfully', ...result });
-  }
-
   let fileInfoMetadata;
   const entity_id = messageAttachment === true ? undefined : agent_id;
   const basePath = mime.getType(file.originalname)?.startsWith('image') ? 'images' : 'uploads';
@@ -594,6 +561,38 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
         filepath: ocrFileURL,
         source: FileSources.text,
         filename: filename ?? file.originalname,
+        model: messageAttachment ? undefined : req.body.model,
+        context: messageAttachment ? FileContext.message_attachment : FileContext.agents,
+      });
+
+      if (!messageAttachment && tool_resource) {
+        await addAgentResourceFile({
+          req,
+          file_id,
+          agent_id,
+          tool_resource,
+        });
+      }
+      const result = await createFile(fileInfo, true);
+      return res
+        .status(200)
+        .json({ message: 'Agent file uploaded and processed successfully', ...result });
+
+      // TODO: add placeholder for RAG API which falls back to native text parsing
+    } else if (shouldUseTextParsing) {
+      const text = fs.readFileSync(file.path, 'utf8');
+      const bytes = Buffer.byteLength(text, 'utf8');
+
+      const fileInfo = removeNullishValues({
+        text,
+        bytes,
+        file_id,
+        temp_file_id,
+        user: req.user.id,
+        type: file.mimetype,
+        filepath: file.path,
+        source: FileSources.text,
+        filename: file.originalname,
         model: messageAttachment ? undefined : req.body.model,
         context: messageAttachment ? FileContext.message_attachment : FileContext.agents,
       });
