@@ -38,6 +38,7 @@ export interface IRole extends Document {
     [PermissionTypes.PEOPLE_PICKER]?: {
       [Permissions.VIEW_USERS]?: boolean;
       [Permissions.VIEW_GROUPS]?: boolean;
+      [Permissions.VIEW_ROLES]?: boolean;
     };
     [PermissionTypes.MARKETPLACE]?: {
       [Permissions.USE]?: boolean;
