@@ -57,8 +57,8 @@ export default function PrincipalAvatar({
       default:
         return {
           Icon: User,
-          containerClass: 'bg-gray-100 dark:bg-gray-900',
-          iconClass: 'text-gray-600 dark:text-gray-400',
+          containerClass: 'bg-surface-tertiary',
+          iconClass: 'text-text-secondary',
         };
     }
   };
