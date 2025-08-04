@@ -730,6 +730,7 @@ const bedrockAnthropic: SettingsConfiguration = [
   bedrock.region,
   anthropic.thinking,
   anthropic.thinkingBudget,
+  librechat.fileTokenLimit,
 ];
 
 const bedrockMistral: SettingsConfiguration = [
@@ -741,6 +742,7 @@ const bedrockMistral: SettingsConfiguration = [
   mistral.topP,
   librechat.resendFiles,
   bedrock.region,
+  librechat.fileTokenLimit,
 ];
 
 const bedrockCohere: SettingsConfiguration = [
@@ -752,6 +754,7 @@ const bedrockCohere: SettingsConfiguration = [
   cohere.topP,
   librechat.resendFiles,
   bedrock.region,
+  librechat.fileTokenLimit,
 ];
 
 const bedrockGeneral: SettingsConfiguration = [
@@ -762,6 +765,7 @@ const bedrockGeneral: SettingsConfiguration = [
   meta.topP,
   librechat.resendFiles,
   bedrock.region,
+  librechat.fileTokenLimit,
 ];
 
 const bedrockAnthropicCol1: SettingsConfiguration = [
@@ -781,6 +785,7 @@ const bedrockAnthropicCol2: SettingsConfiguration = [
   bedrock.region,
   anthropic.thinking,
   anthropic.thinkingBudget,
+  librechat.fileTokenLimit,
 ];
 
 const bedrockMistralCol1: SettingsConfiguration = [
@@ -796,6 +801,7 @@ const bedrockMistralCol2: SettingsConfiguration = [
   mistral.topP,
   librechat.resendFiles,
   bedrock.region,
+  librechat.fileTokenLimit,
 ];
 
 const bedrockCohereCol1: SettingsConfiguration = [
@@ -811,6 +817,7 @@ const bedrockCohereCol2: SettingsConfiguration = [
   cohere.topP,
   librechat.resendFiles,
   bedrock.region,
+  librechat.fileTokenLimit,
 ];
 
 const bedrockGeneralCol1: SettingsConfiguration = [
@@ -825,6 +832,7 @@ const bedrockGeneralCol2: SettingsConfiguration = [
   meta.topP,
   librechat.resendFiles,
   bedrock.region,
+  librechat.fileTokenLimit,
 ];
 
 export const paramSettings: Record<string, SettingsConfiguration | undefined> = {
