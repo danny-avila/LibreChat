@@ -2,6 +2,7 @@ import React from 'react';
 import * as Ariakit from '@ariakit/react';
 import type * as t from '~/common';
 import { cn } from '~/utils';
+import './Dropdown.css';
 
 interface DropdownProps {
   keyPrefix?: string;

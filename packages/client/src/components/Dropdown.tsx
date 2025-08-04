@@ -2,6 +2,7 @@ import React from 'react';
 import * as Select from '@ariakit/react/select';
 import type { Option } from '~/common';
 import { cn } from '~/utils/';
+import './Dropdown.css';
 
 interface DropdownProps {
   value?: string;
