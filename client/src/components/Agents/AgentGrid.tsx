@@ -179,19 +179,6 @@ const AgentGrid: React.FC<AgentGridProps> = ({ category, searchQuery, onSelectAg
       aria-live="polite"
       aria-busy={isLoading && !hasData}
     >
-      {/* Grid title - only show for search results */}
-      {searchQuery && (
-        <div className="mb-4">
-          <h2
-            className="text-xl font-bold text-text-primary"
-            id={`category-heading-${category}`}
-            aria-label={`${getGridTitle()}, ${currentAgents.length || 0} agents available`}
-          >
-            {getGridTitle()}
-          </h2>
-        </div>
-      )}
-
       {/* Handle empty results with enhanced accessibility */}
       {(!currentAgents || currentAgents.length === 0) && !isLoading && !isFetching ? (
         <div
@@ -204,16 +191,7 @@ const AgentGrid: React.FC<AgentGridProps> = ({ category, searchQuery, onSelectAg
               : localize('com_agents_empty_state_heading')
           }
         >
-          <h3 className="mb-2 text-lg font-medium">
-            {searchQuery
-              ? localize('com_agents_search_empty_heading')
-              : localize('com_agents_empty_state_heading')}
-          </h3>
-          <p className="text-sm">
-            {searchQuery
-              ? localize('com_agents_no_results')
-              : localize('com_agents_none_in_category')}
-          </p>
+          <h3 className="mb-2 text-lg font-medium">{localize('com_agents_empty_state_heading')}</h3>
         </div>
       ) : (
         <>

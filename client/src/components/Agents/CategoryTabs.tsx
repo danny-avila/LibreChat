@@ -132,10 +132,10 @@ const CategoryTabs: React.FC<CategoryTabsProps> = ({
             onClick={() => onChange(category.value)}
             onKeyDown={(e) => handleKeyDown(e, category.value)}
             className={cn(
-              'relative cursor-pointer select-none whitespace-nowrap rounded-lg px-3 py-2 transition-colors',
+              'relative cursor-pointer select-none whitespace-nowrap px-3 py-2 transition-colors',
               activeTab === category.value
-                ? 'bg-surface-hover text-text-primary'
-                : 'bg-surface-secondary text-text-secondary hover:bg-surface-hover hover:text-text-primary',
+                ? 'rounded-t-lg bg-surface-hover text-text-primary'
+                : 'rounded-lg bg-surface-secondary text-text-secondary hover:bg-surface-hover hover:text-text-primary',
             )}
             role="tab"
             aria-selected={activeTab === category.value}
