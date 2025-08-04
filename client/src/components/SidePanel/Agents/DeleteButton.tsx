@@ -1,15 +1,16 @@
 import { useFormContext } from 'react-hook-form';
 import {
-  OGDialog,
-  OGDialogTrigger,
   Label,
-  OGDialogTemplate,
+  Button,
+  OGDialog,
   TrashIcon,
   useToastContext,
+  OGDialogTrigger,
+  OGDialogTemplate,
 } from '@librechat/client';
 import type { Agent, AgentCreateParams } from 'librechat-data-provider';
 import type { UseMutationResult } from '@tanstack/react-query';
-import { cn, logger, removeFocusOutlines, getDefaultAgentFormValues } from '~/utils';
+import { logger, getDefaultAgentFormValues } from '~/utils';
 import { useLocalize, useSetIndexOptions } from '~/hooks';
 import { useDeleteAgentMutation } from '~/data-provider';
 import { useChatContext } from '~/Providers';
@@ -82,18 +83,16 @@ export default function DeleteButton({
   return (
     <OGDialog>
       <OGDialogTrigger asChild>
-        <button
-          className={cn(
-            'btn btn-neutral border-token-border-light relative h-9 rounded-lg font-medium',
-            removeFocusOutlines,
-          )}
+        <Button
+          size="sm"
+          variant="outline"
           aria-label={localize('com_ui_delete') + ' ' + localize('com_ui_agent')}
           type="button"
         >
           <div className="flex w-full items-center justify-center gap-2 text-red-500">
             <TrashIcon />
           </div>
-        </button>
+        </Button>
       </OGDialogTrigger>
       <OGDialogTemplate
         title={localize('com_ui_delete') + ' ' + localize('com_ui_agent')}

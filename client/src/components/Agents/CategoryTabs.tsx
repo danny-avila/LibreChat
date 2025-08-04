@@ -24,6 +24,7 @@ interface CategoryTabsProps {
  * Renders a tabbed navigation interface showing agent categories.
  * Includes loading states, empty state handling, and displays counts for each category.
  * Uses database-driven category labels with no hardcoded values.
+ * Features multi-row wrapping for better responsive behavior.
  */
 const CategoryTabs: React.FC<CategoryTabsProps> = ({
   categories,
@@ -46,14 +47,13 @@ const CategoryTabs: React.FC<CategoryTabsProps> = ({
     return category.label || category.value.charAt(0).toUpperCase() + category.value.slice(1);
   };
 
-  // Loading skeleton component
   const loadingSkeleton = (
     <div className="w-full pb-2">
-      <div className="no-scrollbar flex gap-1.5 overflow-x-auto px-4">
+      <div className="flex flex-wrap justify-center gap-1.5 px-4">
         {[...Array(6)].map((_, i) => (
           <div
             key={i}
-            className="h-[36px] min-w-[80px] animate-pulse rounded-md bg-surface-tertiary"
+            className="h-[36px] min-w-[80px] animate-pulse rounded-lg bg-surface-tertiary"
           />
         ))}
       </div>
@@ -67,14 +67,22 @@ const CategoryTabs: React.FC<CategoryTabsProps> = ({
 
     switch (e.key) {
       case 'ArrowLeft':
-      case 'ArrowUp':
         e.preventDefault();
         newIndex = currentIndex > 0 ? currentIndex - 1 : categories.length - 1;
         break;
       case 'ArrowRight':
-      case 'ArrowDown':
         e.preventDefault();
         newIndex = currentIndex < categories.length - 1 ? currentIndex + 1 : 0;
+        break;
+      case 'ArrowUp':
+        e.preventDefault();
+        // Move up a row (approximate by moving back ~4-6 items)
+        newIndex = Math.max(0, currentIndex - 5);
+        break;
+      case 'ArrowDown':
+        e.preventDefault();
+        // Move down a row (approximate by moving forward ~4-6 items)
+        newIndex = Math.min(categories.length - 1, currentIndex + 5);
         break;
       case 'Home':
         e.preventDefault();
@@ -94,7 +102,9 @@ const CategoryTabs: React.FC<CategoryTabsProps> = ({
       // Focus the new tab
       setTimeout(() => {
         const newTab = document.getElementById(`category-tab-${newCategory.value}`);
-        newTab?.focus();
+        if (newTab) {
+          newTab.focus();
+        }
       }, 0);
     }
   };
@@ -108,16 +118,12 @@ const CategoryTabs: React.FC<CategoryTabsProps> = ({
 
   // Main tabs content
   const tabsContent = (
-    <div className="relative w-full pb-2">
+    <div className="w-full pb-2">
       <div
-        className="no-scrollbar flex gap-1.5 overflow-x-auto overscroll-x-contain px-4 [-webkit-overflow-scrolling:touch] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        className="flex flex-wrap justify-center gap-1.5 px-4"
         role="tablist"
         aria-label={localize('com_agents_category_tabs_label')}
         aria-orientation="horizontal"
-        style={{
-          scrollSnapType: 'x mandatory',
-          WebkitOverflowScrolling: 'touch',
-        }}
       >
         {categories.map((category, index) => (
           <button
@@ -126,14 +132,11 @@ const CategoryTabs: React.FC<CategoryTabsProps> = ({
             onClick={() => onChange(category.value)}
             onKeyDown={(e) => handleKeyDown(e, category.value)}
             className={cn(
-              'relative mt-1 cursor-pointer select-none whitespace-nowrap rounded-md px-3 py-2',
+              'relative cursor-pointer select-none whitespace-nowrap px-3 py-2 transition-colors',
               activeTab === category.value
-                ? 'bg-surface-tertiary text-text-primary'
-                : 'bg-surface-secondary text-text-secondary hover:bg-surface-hover hover:text-text-primary',
+                ? 'rounded-t-lg bg-surface-hover text-text-primary'
+                : 'rounded-lg bg-surface-secondary text-text-secondary hover:bg-surface-hover hover:text-text-primary',
             )}
-            style={{
-              scrollSnapAlign: 'start',
-            }}
             role="tab"
             aria-selected={activeTab === category.value}
             aria-controls={`tabpanel-${category.value}`}
