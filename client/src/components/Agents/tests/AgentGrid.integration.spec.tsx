@@ -33,8 +33,6 @@ jest.mock('~/hooks/useLocalize', () => () => (key: string, options?: any) => {
     com_agents_see_more: 'See more',
     com_agents_error_loading: 'Error loading agents',
     com_agents_error_searching: 'Error searching agents',
-    com_agents_no_results: 'No agents found. Try another search term.',
-    com_agents_none_in_category: 'No agents found in this category',
     com_agents_search_empty_heading: 'No results found',
     com_agents_empty_state_heading: 'No agents available',
     com_agents_loading: 'Loading...',
