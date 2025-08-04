@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { PrincipalType } from 'librechat-data-provider';
 import type { TPrincipal, PrincipalSearchParams } from 'librechat-data-provider';
 import { useSearchPrincipalsQuery } from 'librechat-data-provider/react-query';
 import PeoplePickerSearchItem from './PeoplePickerSearchItem';
@@ -10,7 +11,7 @@ interface PeoplePickerProps {
   onSelectionChange: (principals: TPrincipal[]) => void;
   placeholder?: string;
   className?: string;
-  typeFilter?: 'user' | 'group' | null;
+  typeFilter?: PrincipalType.USER | PrincipalType.GROUP | PrincipalType.ROLE | null;
 }
 
 export default function PeoplePicker({
