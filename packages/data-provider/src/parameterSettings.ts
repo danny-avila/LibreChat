@@ -148,8 +148,6 @@ export const librechat = {
     placeholderCode: true,
     type: 'number',
     component: 'input',
-    default: 1000,
-    showDefault: false,
     columnSpan: 2,
   } as const,
 };
