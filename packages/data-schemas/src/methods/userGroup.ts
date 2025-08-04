@@ -1,6 +1,7 @@
+import { Types } from 'mongoose';
 import { PrincipalType } from 'librechat-data-provider';
 import type { TUser, TPrincipalSearchResult } from 'librechat-data-provider';
-import type { Model, Types, ClientSession } from 'mongoose';
+import type { Model, ClientSession } from 'mongoose';
 import type { IGroup, IRole, IUser } from '~/types';
 
 export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
@@ -251,8 +252,10 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
     session?: ClientSession,
   ): Promise<Array<{ principalType: string; principalId?: string | Types.ObjectId }>> {
     const { userId, role } = params;
+    /** `userId` must be an `ObjectId` for USER principal since ACL entries store `ObjectId`s */
+    const userObjectId = typeof userId === 'string' ? new Types.ObjectId(userId) : userId;
     const principals: Array<{ principalType: string; principalId?: string | Types.ObjectId }> = [
-      { principalType: PrincipalType.USER, principalId: userId },
+      { principalType: PrincipalType.USER, principalId: userObjectId },
     ];
 
     // If role is not provided, query user to get it
