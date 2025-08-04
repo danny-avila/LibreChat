@@ -1,6 +1,8 @@
+const { z } = require('zod');
 const fs = require('fs').promises;
 const { nanoid } = require('nanoid');
 const { logger } = require('@librechat/data-schemas');
+const { agentCreateSchema, agentUpdateSchema } = require('@librechat/api');
 const {
   Tools,
   Constants,
@@ -8,6 +10,7 @@ const {
   SystemRoles,
   EToolResources,
   actionDelimiter,
+  removeNullishValues,
 } = require('librechat-data-provider');
 const {
   getAgent,
@@ -30,6 +33,7 @@ const { deleteFileByFilter } = require('~/models/File');
 const systemTools = {
   [Tools.execute_code]: true,
   [Tools.file_search]: true,
+  [Tools.web_search]: true,
 };
 
 /**
@@ -42,9 +46,13 @@ const systemTools = {
  */
 const createAgentHandler = async (req, res) => {
   try {
-    const { tools = [], provider, name, description, instructions, model, ...agentData } = req.body;
+    const validatedData = agentCreateSchema.parse(req.body);
+    const { tools = [], ...agentData } = removeNullishValues(validatedData);
+
     const { id: userId } = req.user;
 
+    agentData.id = `agent_${nanoid()}`;
+    agentData.author = userId;
     agentData.tools = [];
 
     const availableTools = await getCachedTools({ includeGlobal: true });
@@ -58,19 +66,13 @@ const createAgentHandler = async (req, res) => {
       }
     }
 
-    Object.assign(agentData, {
-      author: userId,
-      name,
-      description,
-      instructions,
-      provider,
-      model,
-    });
-
-    agentData.id = `agent_${nanoid()}`;
     const agent = await createAgent(agentData);
     res.status(201).json(agent);
   } catch (error) {
+    if (error instanceof z.ZodError) {
+      logger.error('[/Agents] Validation error', error.errors);
+      return res.status(400).json({ error: 'Invalid request data', details: error.errors });
+    }
     logger.error('[/Agents] Error creating agent', error);
     res.status(500).json({ error: error.message });
   }
@@ -154,14 +156,16 @@ const getAgentHandler = async (req, res) => {
 const updateAgentHandler = async (req, res) => {
   try {
     const id = req.params.id;
-    const { projectIds, removeProjectIds, ...updateData } = req.body;
+    const validatedData = agentUpdateSchema.parse(req.body);
+    const { projectIds, removeProjectIds, ...updateData } = removeNullishValues(validatedData);
     const isAdmin = req.user.role === SystemRoles.ADMIN;
     const existingAgent = await getAgent({ id });
-    const isAuthor = existingAgent.author.toString() === req.user.id;
 
     if (!existingAgent) {
       return res.status(404).json({ error: 'Agent not found' });
     }
+
+    const isAuthor = existingAgent.author.toString() === req.user.id;
     const hasEditPermission = existingAgent.isCollaborative || isAdmin || isAuthor;
 
     if (!hasEditPermission) {
@@ -200,6 +204,11 @@ const updateAgentHandler = async (req, res) => {
 
     return res.json(updatedAgent);
   } catch (error) {
+    if (error instanceof z.ZodError) {
+      logger.error('[/Agents/:id] Validation error', error.errors);
+      return res.status(400).json({ error: 'Invalid request data', details: error.errors });
+    }
+
     logger.error('[/Agents/:id] Error updating Agent', error);
 
     if (error.statusCode === 409) {
@@ -382,6 +391,22 @@ const uploadAgentAvatarHandler = async (req, res) => {
       return res.status(400).json({ message: 'Agent ID is required' });
     }
 
+    const isAdmin = req.user.role === SystemRoles.ADMIN;
+    const existingAgent = await getAgent({ id: agent_id });
+
+    if (!existingAgent) {
+      return res.status(404).json({ error: 'Agent not found' });
+    }
+
+    const isAuthor = existingAgent.author.toString() === req.user.id;
+    const hasEditPermission = existingAgent.isCollaborative || isAdmin || isAuthor;
+
+    if (!hasEditPermission) {
+      return res.status(403).json({
+        error: 'You do not have permission to modify this non-collaborative agent',
+      });
+    }
+
     const buffer = await fs.readFile(req.file.path);
 
     const fileStrategy = req.app.locals.fileStrategy;
@@ -404,14 +429,7 @@ const uploadAgentAvatarHandler = async (req, res) => {
       source: fileStrategy,
     };
 
-    let _avatar;
-    try {
-      const agent = await getAgent({ id: agent_id });
-      _avatar = agent.avatar;
-    } catch (error) {
-      logger.error('[/:agent_id/avatar] Error fetching agent', error);
-      _avatar = {};
-    }
+    let _avatar = existingAgent.avatar;
 
     if (_avatar && _avatar.source) {
       const { deleteFile } = getStrategyFunctions(_avatar.source);
@@ -433,7 +451,7 @@ const uploadAgentAvatarHandler = async (req, res) => {
     };
 
     promises.push(
-      await updateAgent({ id: agent_id, author: req.user.id }, data, {
+      await updateAgent({ id: agent_id }, data, {
         updatingUserId: req.user.id,
       }),
     );

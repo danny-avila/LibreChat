@@ -1,31 +1,30 @@
 import React, { useState, useRef } from 'react';
 import * as Tabs from '@radix-ui/react-tabs';
-import { MessageSquare, Command, DollarSign } from 'lucide-react';
 import { SettingsTabValues } from 'librechat-data-provider';
-import { useGetStartupConfig } from '~/data-provider';
-import type { TDialogProps } from '~/common';
+import { MessageSquare, Command, DollarSign } from 'lucide-react';
 import { Dialog, DialogPanel, DialogTitle, Transition, TransitionChild } from '@headlessui/react';
 import {
   GearIcon,
   DataIcon,
-  SpeechIcon,
   UserIcon,
-  ExperimentIcon,
+  SpeechIcon,
+  useMediaQuery,
   PersonalizationIcon,
-} from '~/components/svg';
+} from '@librechat/client';
+import type { TDialogProps } from '~/common';
 import {
   General,
   Chat,
-  Speech,
-  Beta,
   Commands,
-  Data,
-  Account,
-  Balance,
+  Speech,
   Personalization,
+  Data,
+  Balance,
+  Account,
 } from './SettingsTabs';
-import { useMediaQuery, useLocalize, TranslationKeys } from '~/hooks';
 import usePersonalizationAccess from '~/hooks/usePersonalizationAccess';
+import { useLocalize, TranslationKeys } from '~/hooks';
+import { useGetStartupConfig } from '~/data-provider';
 import { cn } from '~/utils';
 
 export default function Settings({ open, onOpenChange }: TDialogProps) {
@@ -40,7 +39,6 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
     const tabs: SettingsTabValues[] = [
       SettingsTabValues.GENERAL,
       SettingsTabValues.CHAT,
-      SettingsTabValues.BETA,
       SettingsTabValues.COMMANDS,
       SettingsTabValues.SPEECH,
       ...(hasAnyPersonalizationFeature ? [SettingsTabValues.PERSONALIZATION] : []),
@@ -84,11 +82,6 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
       value: SettingsTabValues.CHAT,
       icon: <MessageSquare className="icon-sm" />,
       label: 'com_nav_setting_chat',
-    },
-    {
-      value: SettingsTabValues.BETA,
-      icon: <ExperimentIcon />,
-      label: 'com_nav_setting_beta',
     },
     {
       value: SettingsTabValues.COMMANDS,
@@ -232,9 +225,6 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                     </Tabs.Content>
                     <Tabs.Content value={SettingsTabValues.CHAT}>
                       <Chat />
-                    </Tabs.Content>
-                    <Tabs.Content value={SettingsTabValues.BETA}>
-                      <Beta />
                     </Tabs.Content>
                     <Tabs.Content value={SettingsTabValues.COMMANDS}>
                       <Commands />

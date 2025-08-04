@@ -1,11 +1,9 @@
 export { default as AssistantsProvider } from './AssistantsContext';
 export { default as AgentsProvider } from './AgentsContext';
-export { default as ToastProvider } from './ToastContext';
 export * from './ActivePanelContext';
 export * from './AgentPanelContext';
 export * from './ChatContext';
 export * from './ShareContext';
-export * from './ToastContext';
 export * from './FileMapContext';
 export * from './AddedChatContext';
 export * from './EditorContext';
@@ -24,4 +22,5 @@ export * from './ToolCallsMapContext';
 export * from './SetConvoContext';
 export * from './SearchContext';
 export * from './BadgeRowContext';
+export * from './SidePanelContext';
 export { default as BadgeRowProvider } from './BadgeRowContext';

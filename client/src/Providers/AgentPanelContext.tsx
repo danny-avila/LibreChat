@@ -1,9 +1,9 @@
 import React, { createContext, useContext, useState } from 'react';
 import { Constants, EModelEndpoint } from 'librechat-data-provider';
-import type { TPlugin, AgentToolType, Action, MCP } from 'librechat-data-provider';
+import type { MCP, Action, TPlugin, AgentToolType } from 'librechat-data-provider';
 import type { AgentPanelContextType } from '~/common';
 import { useAvailableToolsQuery, useGetActionsQuery } from '~/data-provider';
-import { useLocalize } from '~/hooks';
+import { useLocalize, useGetAgentsConfig } from '~/hooks';
 import { Panel } from '~/common';
 
 const AgentPanelContext = createContext<AgentPanelContextType | undefined>(undefined);
@@ -75,21 +75,25 @@ export function AgentPanelProvider({ children }: { children: React.ReactNode }) 
     {} as Record<string, AgentToolType & { tools?: AgentToolType[] }>,
   );
 
-  const value = {
-    action,
-    setAction,
+  const { agentsConfig, endpointsConfig } = useGetAgentsConfig();
+
+  const value: AgentPanelContextType = {
     mcp,
-    setMcp,
     mcps,
-    setMcps,
-    activePanel,
-    setActivePanel,
-    setCurrentAgentId,
-    agent_id,
-    groupedTools,
     /** Query data for actions and tools */
-    actions,
     tools,
+    action,
+    setMcp,
+    actions,
+    setMcps,
+    agent_id,
+    setAction,
+    activePanel,
+    groupedTools,
+    agentsConfig,
+    setActivePanel,
+    endpointsConfig,
+    setCurrentAgentId,
   };
 
   return <AgentPanelContext.Provider value={value}>{children}</AgentPanelContext.Provider>;

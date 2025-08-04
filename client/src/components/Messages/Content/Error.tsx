@@ -3,7 +3,7 @@ import { ViolationTypes, ErrorTypes, alternateName } from 'librechat-data-provid
 import type { TOpenAIMessage } from 'librechat-data-provider';
 import type { LocalizeFunction } from '~/common';
 import { formatJSON, extractJson, isJson } from '~/utils/json';
-import useLocalize from '~/hooks/useLocalize';
+import { useLocalize } from '~/hooks';
 import CodeBlock from './CodeBlock';
 
 const localizedErrorPrefix = 'com_error';
@@ -62,6 +62,7 @@ const errorMessages = {
     const { info } = json;
     return info;
   },
+  [ErrorTypes.GOOGLE_TOOL_CONFLICT]: 'com_error_google_tool_conflict',
   [ViolationTypes.BAN]:
     'Your account has been temporarily banned due to violations of our service.',
   invalid_api_key:

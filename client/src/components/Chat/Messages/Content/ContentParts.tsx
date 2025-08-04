@@ -11,9 +11,9 @@ import { ThinkingButton } from '~/components/Artifacts/Thinking';
 import { MessageContext, SearchContext } from '~/Providers';
 import MemoryArtifacts from './MemoryArtifacts';
 import Sources from '~/components/Web/Sources';
-import useLocalize from '~/hooks/useLocalize';
 import { mapAttachments } from '~/utils/map';
 import { EditTextPart } from './Parts';
+import { useLocalize } from '~/hooks';
 import store from '~/store';
 import Part from './Part';
 
@@ -81,14 +81,23 @@ const ContentParts = memo(
       return (
         <>
           {content.map((part, idx) => {
-            if (part?.type !== ContentTypes.TEXT || typeof part.text !== 'string') {
+            if (!part) {
+              return null;
+            }
+            const isTextPart =
+              part?.type === ContentTypes.TEXT ||
+              typeof (part as unknown as Agents.MessageContentText)?.text !== 'string';
+            const isThinkPart =
+              part?.type === ContentTypes.THINK ||
+              typeof (part as unknown as Agents.ReasoningDeltaUpdate)?.think !== 'string';
+            if (!isTextPart && !isThinkPart) {
               return null;
             }
 
             return (
               <EditTextPart
                 index={idx}
-                text={part.text}
+                part={part as Agents.MessageContentText | Agents.ReasoningDeltaUpdate}
                 messageId={messageId}
                 isSubmitting={isSubmitting}
                 enterEdit={enterEdit}

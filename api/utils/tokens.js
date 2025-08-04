@@ -196,6 +196,7 @@ const amazonModels = {
   'amazon.nova-micro-v1:0': 127000, // -1000 from max,
   'amazon.nova-lite-v1:0': 295000, // -5000 from max,
   'amazon.nova-pro-v1:0': 295000, // -5000 from max,
+  'amazon.nova-premier-v1:0': 995000, // -5000 from max,
 };
 
 const bedrockModels = {
@@ -223,9 +224,17 @@ const xAIModels = {
   'grok-3-fast': 131072,
   'grok-3-mini': 131072,
   'grok-3-mini-fast': 131072,
+  'grok-4': 256000, // 256K context
 };
 
-const aggregateModels = { ...openAIModels, ...googleModels, ...bedrockModels, ...xAIModels };
+const aggregateModels = {
+  ...openAIModels,
+  ...googleModels,
+  ...bedrockModels,
+  ...xAIModels,
+  // misc.
+  kimi: 131000,
+};
 
 const maxTokensMap = {
   [EModelEndpoint.azureOpenAI]: openAIModels,

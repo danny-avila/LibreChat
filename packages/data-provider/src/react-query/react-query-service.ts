@@ -6,6 +6,7 @@ import type {
 } from '@tanstack/react-query';
 import { Constants, initialModelsConfig } from '../config';
 import { defaultOrderQuery } from '../types/assistants';
+import { MCPServerConnectionStatusResponse } from '../types/queries';
 import * as dataService from '../data-service';
 import * as m from '../types/mutations';
 import { QueryKeys } from '../keys';
@@ -316,6 +317,40 @@ export const useUpdateUserPluginsMutation = (
   });
 };
 
+export const useReinitializeMCPServerMutation = (): UseMutationResult<
+  {
+    success: boolean;
+    message: string;
+    serverName: string;
+    oauthRequired?: boolean;
+    oauthUrl?: string;
+  },
+  unknown,
+  string,
+  unknown
+> => {
+  const queryClient = useQueryClient();
+  return useMutation((serverName: string) => dataService.reinitializeMCPServer(serverName), {
+    onSuccess: () => {
+      queryClient.refetchQueries([QueryKeys.tools]);
+    },
+  });
+};
+
+export const useCancelMCPOAuthMutation = (): UseMutationResult<
+  m.CancelMCPOAuthResponse,
+  unknown,
+  string,
+  unknown
+> => {
+  const queryClient = useQueryClient();
+  return useMutation((serverName: string) => dataService.cancelMCPOAuth(serverName), {
+    onSuccess: () => {
+      queryClient.invalidateQueries([QueryKeys.mcpConnectionStatus]);
+    },
+  });
+};
+
 export const useGetCustomConfigSpeechQuery = (
   config?: UseQueryOptions<t.TCustomConfigSpeechResponse>,
 ): QueryObserverResult<t.TCustomConfigSpeechResponse> => {
@@ -343,6 +378,24 @@ export const useUpdateFeedbackMutation = (
       onSuccess: () => {
         queryClient.invalidateQueries([QueryKeys.messages, messageId]);
       },
+    },
+  );
+};
+
+export const useMCPServerConnectionStatusQuery = (
+  serverName: string,
+  config?: UseQueryOptions<MCPServerConnectionStatusResponse>,
+): QueryObserverResult<MCPServerConnectionStatusResponse> => {
+  return useQuery<MCPServerConnectionStatusResponse>(
+    [QueryKeys.mcpConnectionStatus, serverName],
+    () => dataService.getMCPServerConnectionStatus(serverName),
+    {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      staleTime: 10000, // 10 seconds
+      enabled: !!serverName,
+      ...config,
     },
   );
 };

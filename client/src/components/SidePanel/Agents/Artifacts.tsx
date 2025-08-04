@@ -7,9 +7,10 @@ import {
   HoverCardPortal,
   HoverCardContent,
   HoverCardTrigger,
-} from '~/components/ui';
+  CircleHelpIcon,
+} from '@librechat/client';
+import type { AgentForm } from '~/common';
 import { useLocalize } from '~/hooks';
-import { CircleHelpIcon } from '~/components/svg';
 import { ESide } from '~/common';
 
 export default function Artifacts() {
@@ -77,7 +78,7 @@ export default function Artifacts() {
         />
         <SwitchItem
           id="includeShadcnui"
-          label={localize('com_ui_include_shadcnui_agent')}
+          label={localize('com_ui_include_shadcnui')}
           checked={isShadcnEnabled}
           onCheckedChange={handleShadcnuiChange}
           hoverCardText={localize('com_nav_info_include_shadcnui')}

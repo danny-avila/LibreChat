@@ -7,10 +7,10 @@ import {
   QueryKeys,
   Constants,
   EndpointURLs,
+  ContentTypes,
   tPresetSchema,
   tMessageSchema,
   tConvoUpdateSchema,
-  ContentTypes,
   isAssistantsEndpoint,
 } from 'librechat-data-provider';
 import type { TMessage, TConversation, EventSubmission } from 'librechat-data-provider';
@@ -21,6 +21,7 @@ import type { SetterOrUpdater, Resetter } from 'recoil';
 import type { ConversationCursorData } from '~/utils';
 import {
   logger,
+  setDraft,
   scrollToEnd,
   getAllContentText,
   addConvoToAllQueries,
@@ -68,7 +69,7 @@ const createErrorMessage = ({
   errorMetadata?: Partial<TMessage>;
   submission: EventSubmission;
   error?: Error | unknown;
-}) => {
+}): TMessage => {
   const currentMessages = getMessages();
   const latestMessage = currentMessages?.[currentMessages.length - 1];
   let errorMessage: TMessage;
@@ -123,7 +124,7 @@ const createErrorMessage = ({
       error: true,
     };
   }
-  return tMessageSchema.parse(errorMessage);
+  return tMessageSchema.parse(errorMessage) as TMessage;
 };
 
 export const getConvoTitle = ({
@@ -374,9 +375,6 @@ export default function useEventHandlers({
       });
 
       let update = {} as TConversation;
-      if (conversationId) {
-        applyAgentTemplate(conversationId, submission.conversation.conversationId);
-      }
       if (setConversation && !isAddedRequest) {
         setConversation((prevState) => {
           const parentId = isRegenerate ? userMessage.overrideParentMessageId : parentMessageId;
@@ -409,6 +407,14 @@ export default function useEventHandlers({
           }) as TConversation;
           return update;
         });
+      }
+
+      if (conversationId) {
+        applyAgentTemplate(
+          conversationId,
+          submission.conversation.conversationId,
+          submission.ephemeralAgent,
+        );
       }
 
       if (resetLatestMessage) {
@@ -452,6 +458,38 @@ export default function useEventHandlers({
       announcePolite({ message: 'end', isStatus: true });
       announcePolite({ message: getAllContentText(responseMessage) });
 
+      const isNewConvo = conversation.conversationId !== submissionConvo.conversationId;
+
+      const setFinalMessages = (id: string | null, _messages: TMessage[]) => {
+        setMessages(_messages);
+        queryClient.setQueryData<TMessage[]>([QueryKeys.messages, id], _messages);
+      };
+
+      /** Handle edge case where stream is cancelled before any response, which creates a blank page */
+      if (
+        !conversation.conversationId &&
+        responseMessage?.content?.[0]?.['text']?.value ===
+          submission.initialResponse?.content?.[0]?.['text']?.value
+      ) {
+        const currentConvoId =
+          (submissionConvo.conversationId ?? conversation.conversationId) || Constants.NEW_CONVO;
+        if (isNewConvo && submissionConvo.conversationId) {
+          removeConvoFromAllQueries(queryClient, submissionConvo.conversationId);
+        }
+
+        const isNewChat =
+          location.pathname === `/c/${Constants.NEW_CONVO}` &&
+          currentConvoId === Constants.NEW_CONVO;
+
+        setFinalMessages(currentConvoId, isNewChat ? [] : [...messages]);
+        setDraft({ id: currentConvoId, value: requestMessage?.text });
+        setIsSubmitting(false);
+        if (isNewChat) {
+          navigate(`/c/${Constants.NEW_CONVO}`, { replace: true, state: { focusChat: true } });
+        }
+        return;
+      }
+
       /* Update messages; if assistants endpoint, client doesn't receive responseMessage */
       let finalMessages: TMessage[] = [];
       if (runMessages) {
@@ -462,11 +500,7 @@ export default function useEventHandlers({
         finalMessages = [...messages, requestMessage, responseMessage];
       }
       if (finalMessages.length > 0) {
-        setMessages(finalMessages);
-        queryClient.setQueryData<TMessage[]>(
-          [QueryKeys.messages, conversation.conversationId],
-          finalMessages,
-        );
+        setFinalMessages(conversation.conversationId, finalMessages);
       } else if (
         isAssistantsEndpoint(submissionConvo.endpoint) &&
         (!submissionConvo.conversationId || submissionConvo.conversationId === Constants.NEW_CONVO)
@@ -477,9 +511,8 @@ export default function useEventHandlers({
         );
       }
 
-      const isNewConvo = conversation.conversationId !== submissionConvo.conversationId;
-      if (isNewConvo) {
-        removeConvoFromAllQueries(queryClient, submissionConvo.conversationId as string);
+      if (isNewConvo && submissionConvo.conversationId) {
+        removeConvoFromAllQueries(queryClient, submissionConvo.conversationId);
       }
 
       /* Refresh title */
@@ -513,7 +546,16 @@ export default function useEventHandlers({
           }
           return update;
         });
-        if (location.pathname === '/c/new') {
+
+        if (conversation.conversationId && submission.ephemeralAgent) {
+          applyAgentTemplate(
+            conversation.conversationId,
+            submissionConvo.conversationId,
+            submission.ephemeralAgent,
+          );
+        }
+
+        if (location.pathname === `/c/${Constants.NEW_CONVO}`) {
           navigate(`/c/${conversation.conversationId}`, { replace: true });
         }
       }
@@ -521,18 +563,19 @@ export default function useEventHandlers({
       setIsSubmitting(false);
     },
     [
-      setShowStopButton,
-      setCompleted,
-      getMessages,
-      announcePolite,
+      navigate,
       genTitle,
-      setConversation,
-      isAddedRequest,
-      setIsSubmitting,
+      getMessages,
       setMessages,
       queryClient,
+      setCompleted,
+      isAddedRequest,
+      announcePolite,
+      setConversation,
+      setIsSubmitting,
+      setShowStopButton,
       location.pathname,
-      navigate,
+      applyAgentTemplate,
     ],
   );
 
@@ -550,7 +593,7 @@ export default function useEventHandlers({
         queryClient.setQueryData<TMessage[]>([QueryKeys.messages, convoId], finalMessages);
       };
 
-      const parseErrorResponse = (data: TResData | Partial<TMessage>) => {
+      const parseErrorResponse = (data: TResData | Partial<TMessage>): TMessage => {
         const metadata = data['responseMessage'] ?? data;
         const errorMessage: Partial<TMessage> = {
           ...initialResponse,
@@ -563,7 +606,7 @@ export default function useEventHandlers({
           errorMessage.messageId = v4();
         }
 
-        return tMessageSchema.parse(errorMessage);
+        return tMessageSchema.parse(errorMessage) as TMessage;
       };
 
       if (!data) {
@@ -613,7 +656,7 @@ export default function useEventHandlers({
         ...data,
         error: true,
         parentMessageId: userMessage.messageId,
-      });
+      }) as TMessage;
 
       setErrorMessages(receivedConvoId, errorResponse);
       if (receivedConvoId && paramId === Constants.NEW_CONVO && newConversation) {

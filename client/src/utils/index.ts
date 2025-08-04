@@ -4,8 +4,8 @@ export * from './map';
 export * from './json';
 export * from './files';
 export * from './latex';
-export * from './theme';
 export * from './forms';
+export * from './drafts';
 export * from './convos';
 export * from './presets';
 export * from './prompts';
@@ -24,6 +24,7 @@ export { default as cleanupPreset } from './cleanupPreset';
 export { default as buildDefaultConvo } from './buildDefaultConvo';
 export { default as getDefaultEndpoint } from './getDefaultEndpoint';
 export { default as createChatSearchParams } from './createChatSearchParams';
+export { getThemeFromEnv } from './getThemeFromEnv';
 
 export const languages = [
   'java',

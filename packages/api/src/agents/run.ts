@@ -1,6 +1,7 @@
 import { Run, Providers } from '@librechat/agents';
 import { providerEndpointMap, KnownEndpoints } from 'librechat-data-provider';
 import type {
+  OpenAIClientOptions,
   StandardGraphConfig,
   EventHandler,
   GenericTool,
@@ -16,6 +17,28 @@ const customProviders = new Set([
   Providers.DEEPSEEK,
   Providers.OPENROUTER,
 ]);
+
+export function getReasoningKey(
+  provider: Providers,
+  llmConfig: t.RunLLMConfig,
+  agentEndpoint?: string | null,
+): 'reasoning_content' | 'reasoning' {
+  let reasoningKey: 'reasoning_content' | 'reasoning' = 'reasoning_content';
+  if (provider === Providers.GOOGLE) {
+    reasoningKey = 'reasoning';
+  } else if (
+    llmConfig.configuration?.baseURL?.includes(KnownEndpoints.openrouter) ||
+    (agentEndpoint && agentEndpoint.toLowerCase().includes(KnownEndpoints.openrouter))
+  ) {
+    reasoningKey = 'reasoning';
+  } else if (
+    (llmConfig as OpenAIClientOptions).useResponsesApi === true &&
+    (provider === Providers.OPENAI || provider === Providers.AZURE)
+  ) {
+    reasoningKey = 'reasoning';
+  }
+  return reasoningKey;
+}
 
 /**
  * Creates a new Run instance with custom handlers and configuration.
@@ -68,16 +91,7 @@ export async function createRun({
     llmConfig.usage = true;
   }
 
-  let reasoningKey: 'reasoning_content' | 'reasoning' | undefined;
-  if (provider === Providers.GOOGLE) {
-    reasoningKey = 'reasoning';
-  } else if (
-    llmConfig.configuration?.baseURL?.includes(KnownEndpoints.openrouter) ||
-    (agent.endpoint && agent.endpoint.toLowerCase().includes(KnownEndpoints.openrouter))
-  ) {
-    reasoningKey = 'reasoning';
-  }
-
+  const reasoningKey = getReasoningKey(provider, llmConfig, agent.endpoint);
   const graphConfig: StandardGraphConfig = {
     signal,
     llmConfig,
