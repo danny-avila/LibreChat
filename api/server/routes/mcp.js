@@ -337,9 +337,7 @@ router.post('/:serverName/reinitialize', requireJwtAuth, async (req, res) => {
       for (const varName of Object.keys(serverConfig.customUserVars)) {
         try {
           const value = await getUserPluginAuthValue(user.id, varName, false);
-          if (value) {
-            customUserVars[varName] = value;
-          }
+          customUserVars[varName] = value;
         } catch (err) {
           logger.error(`[MCP Reinitialize] Error fetching ${varName} for user ${user.id}:`, err);
         }
@@ -502,10 +500,6 @@ router.get('/connection/status/:serverName', requireJwtAuth, async (req, res) =>
 
     if (!user?.id) {
       return res.status(401).json({ error: 'User not authenticated' });
-    }
-
-    if (!serverName) {
-      return res.status(400).json({ error: 'Server name is required' });
     }
 
     const { mcpConfig, appConnections, userConnections, oauthServers } = await getMCPSetupData(

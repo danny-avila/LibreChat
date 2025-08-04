@@ -72,7 +72,7 @@
     "@langchain/core": "^0.3.62",
     "@librechat/agents": "^2.4.69",
     "@librechat/data-schemas": "*",
-    "@modelcontextprotocol/sdk": "^1.17.0",
+    "@modelcontextprotocol/sdk": "^1.17.1",
     "axios": "^1.8.2",
     "diff": "^7.0.0",
     "eventsource": "^3.0.2",
