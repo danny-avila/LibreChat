@@ -105,7 +105,6 @@ class CustomOpenIDStrategy extends OpenIDStrategy {
       params.set('state', options.state);
     }
 
-    // Add audience parameter if specified
     if (process.env.OPENID_AUDIENCE) {
       params.set('audience', process.env.OPENID_AUDIENCE);
       logger.debug(
