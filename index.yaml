@@ -1,0 +1,28 @@
+apiVersion: v1
+entries:
+  librechat:
+  - apiVersion: v2
+    appVersion: v0.8.0-rc1
+    created: "2025-08-04T23:43:12.551019369Z"
+    dependencies:
+    - condition: mongodb.enabled
+      name: mongodb
+      repository: https://charts.bitnami.com/bitnami
+      version: 16.3.0
+    - condition: meilisearch.enabled
+      name: meilisearch
+      repository: https://meilisearch.github.io/meilisearch-kubernetes
+      version: 0.11.0
+    - condition: librechat-rag-api.enabled
+      name: librechat-rag-api
+      repository: file://../librechat-rag-api
+      version: 0.5.2
+    description: A Helm chart for LibreChat
+    digest: 8e3b43317118a201661ed8c649705c6a3e57c887173a79f497df842120e6e7ed
+    home: https://www.librechat.ai
+    name: librechat
+    type: application
+    urls:
+    - https://github.com/danny-avila/LibreChat/releases/download/librechat-1.8.9/librechat-1.8.9.tgz
+    version: 1.8.9
+generated: "2025-08-04T23:43:12.551028476Z"
