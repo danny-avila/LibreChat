@@ -1,5 +1,5 @@
 const dedent = require('dedent');
-const { ChartModes, EModelEndpoint } = require('librechat-data-provider');
+const { ChartModes } = require('librechat-data-provider');
 
 const chartsPrompt = dedent`
 You are a smart chart data generator for ECharts library with built-in data validation and user experience optimization.
@@ -173,7 +173,7 @@ When generating representative data:
 Current date: ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}
 `;
 
-const generateChartsPrompt = ({ charts, endpoint }) => {
+const generateChartsPrompt = ({ charts }) => {
   if (charts === ChartModes.ON) {
     return chartsPrompt;
   } else return '';

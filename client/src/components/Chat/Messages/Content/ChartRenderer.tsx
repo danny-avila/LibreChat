@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { BarChartIcon, ActivityLogIcon } from '@radix-ui/react-icons';
 import * as echarts from 'echarts';
 import { cn } from '~/utils';
+import { useLocalize } from '~/hooks';
 
 interface ChartData {
   type: 'bar' | 'line';
@@ -20,6 +21,7 @@ const ChartToggle = ({
   onToggle: (type: 'bar' | 'line') => void;
   activeChart: 'bar' | 'line';
 }) => {
+  const localize = useLocalize();
   return (
     <div className="mb-4 flex w-fit items-center rounded-lg bg-gray-100 p-1 dark:border dark:border-slate-700/50 dark:bg-slate-800/50">
       <button
@@ -33,7 +35,7 @@ const ChartToggle = ({
         )}
       >
         <BarChartIcon className="h-4 w-4" />
-        Bar Chart
+        {localize('com_ui_bar_chart')}
       </button>
       <button
         onClick={() => onToggle('line')}
@@ -46,7 +48,7 @@ const ChartToggle = ({
         )}
       >
         <ActivityLogIcon className="h-4 w-4" />
-        Line Chart
+        {localize('com_ui_line_chart')}
       </button>
     </div>
   );
@@ -207,7 +209,6 @@ const enhanceChartOptions = (data: any, isDark: boolean) => {
 
 const ChartWithCustomLegend = ({
   data,
-  complexity,
   identifier,
   xLabel,
   yLabel,
@@ -235,6 +236,7 @@ const ChartWithCustomLegend = ({
   const chartHeight = 350;
 
   const totalHeight = titleHeight + legendHeight + chartHeight + xLabelHeight;
+  const localize = useLocalize();
 
   useEffect(() => {
     if (!chartRef.current || hasError) return;
@@ -295,9 +297,11 @@ const ChartWithCustomLegend = ({
     return (
       <div className="flex items-center justify-center rounded-lg border border-red-200 bg-red-50 p-8 dark:border-red-800 dark:bg-red-900/20">
         <div className="text-center">
-          <p className="font-medium text-red-600 dark:text-red-400">Chart rendering failed</p>
+          <p className="font-medium text-red-600 dark:text-red-400">
+            {localize('com_ui_chart_render_failure')}
+          </p>
           <p className="mt-1 text-sm text-red-600 dark:text-red-400">
-            Unable to display this chart
+            {localize('com_ui_chart_render_failure_description')}
           </p>
         </div>
       </div>

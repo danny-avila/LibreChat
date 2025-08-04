@@ -1061,5 +1061,11 @@
   "com_ui_yes": "Yes",
   "com_ui_zoom": "Zoom",
   "com_user_message": "You",
-  "com_warning_resubmit_unsupported": "Resubmitting the AI message is not supported for this endpoint."
+  "com_warning_resubmit_unsupported": "Resubmitting the AI message is not supported for this endpoint.",
+  "com_ui_bar_chart": "Bar Chart",
+  "com_ui_line_chart": "Line Chart",
+  "com_ui_chart_render_failure": "Chart rendering failed",
+  "com_ui_chart_render_failure_description": "Unable to display this chart",
+  "com_ui_failed_to_render_chart": "Failed to render charts for the requested data",
+  "com_ui_chart_data_could_not_be_processed": "The chart data could not be processed. Please try rephrasing your request or check the data format."
 }

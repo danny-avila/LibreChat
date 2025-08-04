@@ -2,30 +2,34 @@
 import React from 'react';
 import ChartRenderer from '~/components/Chat/Messages/Content/ChartRenderer';
 import ChartSkeleton from '~/components/Chat/Messages/Content/ChartSkeleton';
+import { useLocalize } from '~/hooks';
 
 interface ProcessResult {
   processedText: string;
   enhancedElements: React.ReactNode;
 }
 
-const ChartErrorFallback = () => (
-  <div className="my-6 rounded-lg border border-red-200 bg-red-50 p-4 dark:border-red-800 dark:bg-red-900/20">
-    <div className="flex items-center gap-2 text-red-600 dark:text-red-400">
-      <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-        <path
-          fillRule="evenodd"
-          d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z"
-          clipRule="evenodd"
-        />
-      </svg>
-      <span className="font-medium">Failed to render charts for the requested data</span>
+const ChartErrorFallback = () => {
+  const localize = useLocalize();
+
+  return (
+    <div className="my-6 rounded-lg border border-red-200 bg-red-50 p-4 dark:border-red-800 dark:bg-red-900/20">
+      <div className="flex items-center gap-2 text-red-600 dark:text-red-400">
+        <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+          <path
+            fillRule="evenodd"
+            d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z"
+            clipRule="evenodd"
+          />
+        </svg>
+        <span className="font-medium">{localize('com_ui_failed_to_render_chart')}</span>
+      </div>
+      <p className="mt-2 text-sm text-red-600 dark:text-red-400">
+        {localize('com_ui_chart_data_could_not_be_processed')}
+      </p>
     </div>
-    <p className="mt-2 text-sm text-red-600 dark:text-red-400">
-      The chart data could not be processed. Please try rephrasing your request or check the data
-      format.
-    </p>
-  </div>
-);
+  );
+};
 
 // Fixed chart parsing with improved streaming detection
 const parseChartBlocks = (text: string) => {
