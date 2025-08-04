@@ -538,12 +538,14 @@ export const interfaceSchema = z
           .object({
             users: z.boolean().optional(),
             groups: z.boolean().optional(),
+            roles: z.boolean().optional(),
           })
           .optional(),
         user: z
           .object({
             users: z.boolean().optional(),
             groups: z.boolean().optional(),
+            roles: z.boolean().optional(),
           })
           .optional(),
       })
@@ -583,10 +585,12 @@ export const interfaceSchema = z
       admin: {
         users: true,
         groups: true,
+        roles: true,
       },
       user: {
         users: false,
         groups: false,
+        roles: false,
       },
     },
     marketplace: {

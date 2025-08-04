@@ -69,6 +69,7 @@ export enum Permissions {
   OPT_OUT = 'OPT_OUT',
   VIEW_USERS = 'VIEW_USERS',
   VIEW_GROUPS = 'VIEW_GROUPS',
+  VIEW_ROLES = 'VIEW_ROLES',
 }
 
 export const promptPermissionsSchema = z.object({
@@ -124,6 +125,7 @@ export type TWebSearchPermissions = z.infer<typeof webSearchPermissionsSchema>;
 export const peoplePickerPermissionsSchema = z.object({
   [Permissions.VIEW_USERS]: z.boolean().default(true),
   [Permissions.VIEW_GROUPS]: z.boolean().default(true),
+  [Permissions.VIEW_ROLES]: z.boolean().default(true),
 });
 export type TPeoplePickerPermissions = z.infer<typeof peoplePickerPermissionsSchema>;
 
