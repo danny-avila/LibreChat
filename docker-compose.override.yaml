@@ -1,0 +1,8 @@
+version: '3.4'
+ 
+services:
+  api:
+    volumes:
+      - type: bind
+        source: ./librechat.yaml
+        target: /app/librechat.yaml

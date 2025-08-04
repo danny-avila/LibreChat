@@ -78,12 +78,20 @@ function AuthLayout({
             </div>
           </BlinkAnimation>
           {!hasStartupConfigError && !isFetching && (
-            <h1
-              className="mb-4 text-center text-3xl font-semibold text-black dark:text-white"
-              style={{ userSelect: 'none' }}
-            >
-              {header}
-            </h1>
+            <>
+              <h1
+                className="mb-2 text-center text-3xl font-semibold text-black dark:text-white"
+                style={{ userSelect: 'none' }}
+              >
+                Parser AI
+              </h1>
+              <h6
+                className="mb-4 text-center text-xl text-black dark:text-white"
+                style={{ userSelect: 'none' }}
+              >
+                {header}
+              </h6>
+            </>
           )}
           {children}
           {(pathname.includes('login') || pathname.includes('register')) && (

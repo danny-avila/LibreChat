@@ -9,22 +9,8 @@ const { getOpenAIClient, fetchAssistants } = require('./helpers');
 const { manifestToolMap } = require('~/app/clients/tools');
 const { deleteFileByFilter } = require('~/models/File');
 const { logger } = require('~/config');
-const axios = require('axios');
-const crypto = require('crypto');
-const { SignatureV4 } = require("@aws-sdk/signature-v4");
-const { HttpRequest } = require("@aws-sdk/protocol-http");
-const { Sha256 } = require("@aws-crypto/sha256-browser");
-const { defaultProvider } = require("@aws-sdk/credential-provider-node");
 const jwt = require('jsonwebtoken');
 const https = require('https');
-
-// Load environment variables
-const API_URL = process.env.API_URL;
-const API_KEY = process.env.API_KEY;
-
-// Helper functions for SigV4 signing
-const hmac = (key, string) => crypto.createHmac('sha256', key).update(string).digest();
-const hash = (string) => crypto.createHash('sha256').update(string).digest('hex');
 
 /**
  * Create an assistant.
@@ -235,10 +221,8 @@ const listAssistants = async (req, res) => {
   try {
     const allAssistants = await fetchAssistants({ req, res });
 
-    const API_URL = process.env.API_URL
-    const API_KEY = process.env.API_KEY
-    const AWS_REGION = 'us-east-1';
-    const SERVICE = 'execute-api';
+    const API_URL = process.env.API_URL;
+    const API_KEY = process.env.API_KEY;
 
     const bearerToken = req.headers.authorization?.split(' ')[1];
 
@@ -255,27 +239,7 @@ const listAssistants = async (req, res) => {
 
     const url = new URL(`${API_URL}/user-agents`);
     url.searchParams.append('email', userEmail);
-
     const method = 'GET';
-    const now = new Date();
-    const amzdate = now.toISOString().replace(/[:\-]|\.\d{3}/g, '');
-    const datestamp = amzdate.slice(0, 8);
-
-    const canonical_uri = url.pathname;
-    const canonical_querystring = url.searchParams.toString();
-    const canonical_headers = `host:${url.hostname}\nx-api-key:${API_KEY}\nx-amz-date:${amzdate}\n`;
-    const signed_headers = 'host;x-api-key;x-amz-date';
-    const payload_hash = hash('');
-    const canonical_request = `${method}\n${canonical_uri}\n${canonical_querystring}\n${canonical_headers}\n${signed_headers}\n${payload_hash}`;
-
-    const algorithm = 'AWS4-HMAC-SHA256';
-    const credential_scope = `${datestamp}/${AWS_REGION}/${SERVICE}/aws4_request`;
-    const string_to_sign = `${algorithm}\n${amzdate}\n${credential_scope}\n${hash(canonical_request)}`;
-
-    const signing_key = hmac(hmac(hmac(hmac('AWS4' + API_KEY, datestamp), AWS_REGION), SERVICE), 'aws4_request');
-    const signature = hmac(signing_key, string_to_sign).toString('hex');
-
-    const authorization_header = `${algorithm} Credential=${API_KEY}/${credential_scope}, SignedHeaders=${signed_headers}, Signature=${signature}`;
 
     const fetchAvailableAgents = () => {
       return new Promise((resolve, reject) => {
@@ -287,9 +251,7 @@ const listAssistants = async (req, res) => {
             headers: {
               'Host': url.hostname,
               'X-API-Key': API_KEY,
-              'X-Amz-Date': amzdate,
-              'Authorization': authorization_header
-            }
+            },
           },
           (res) => {
             let data = '';
@@ -301,7 +263,7 @@ const listAssistants = async (req, res) => {
                 reject(new Error(`Request failed with status code ${res.statusCode}: ${data}`));
               }
             });
-          }
+          },
         );
         req.on('error', reject);
         req.end();
@@ -311,8 +273,8 @@ const listAssistants = async (req, res) => {
     const availableAgentsResponse = await fetchAvailableAgents();
     const availableAgents = availableAgentsResponse.available_agents || [];
 
-    const userAssitants = allAssistants.data.filter(assistant => 
-      availableAgents.some(agent => agent.agent_id === assistant.id)
+    const userAssitants = allAssistants.data.filter(assistant =>
+      availableAgents.some(agent => agent.agent_id === assistant.id),
     );
 
     const body = {

@@ -1,0 +1,7 @@
+version: 1.0.0
+
+cache: true
+
+endpoints:
+  assistants:
+    disableBuilder: true
