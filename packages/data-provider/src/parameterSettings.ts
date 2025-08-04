@@ -93,9 +93,9 @@ const baseDefinitions: Record<string, SettingDefinition> = {
     optionType: 'model',
     options: ['com_ui_image', 'com_ui_textfile', 'com_ui_document'],
     defaultValues: {
-      image: 1000,
-      text: 500,
-      document: 2000,
+      imageTokenLimit: 1000,
+      textTokenLimit: 500,
+      documentTokenLimit: 2000,
     },
   },
 };

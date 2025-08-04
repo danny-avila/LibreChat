@@ -30,12 +30,12 @@ function DynamicDropdownInput({
   const currentValues = useMemo(() => {
     const values = { ...defaultValues };
 
-    if (settingKey === 'fileTokenLimits') {
+    Object.keys(defaultValues).forEach((paramKey) => {
       const conv = conversation as any;
-      if (conv?.imageTokenLimit !== undefined) values.image = conv.imageTokenLimit;
-      if (conv?.textTokenLimit !== undefined) values.text = conv.textTokenLimit;
-      if (conv?.documentTokenLimit !== undefined) values.document = conv.documentTokenLimit;
-    }
+      if (conv?.[paramKey] !== undefined) {
+        values[paramKey] = conv[paramKey];
+      }
+    });
 
     const compoundValue = conversation?.[settingKey];
     if (compoundValue && typeof compoundValue === 'object') {
@@ -95,17 +95,7 @@ function DynamicDropdownInput({
               <DynamicInput
                 settingKey={`${settingKey}_${selectedOption}`}
                 setOption={(_key) => (value) => {
-                  if (settingKey === 'fileTokenLimits') {
-                    const paramMap = {
-                      image: 'imageTokenLimit',
-                      text: 'textTokenLimit',
-                      document: 'documentTokenLimit',
-                    };
-                    const urlParam = paramMap[selectedOption as keyof typeof paramMap];
-                    if (urlParam) {
-                      setOption(urlParam)(value);
-                    }
-                  }
+                  setOption(selectedOption)(value);
                 }}
                 conversation={{
                   [`${settingKey}_${selectedOption}`]: currentValues[selectedOption],
