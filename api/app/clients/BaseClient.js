@@ -11,6 +11,7 @@ const {
   Constants,
 } = require('librechat-data-provider');
 const { getMessages, saveMessage, updateMessage, saveConvo, getConvo } = require('~/models');
+const { getAppConfig } = require('~/server/services/Config');
 const { checkBalance } = require('~/models/balanceMethods');
 const { truncateToolCallOutputs } = require('./prompts');
 const { getFiles } = require('~/models/File');
@@ -112,13 +113,15 @@ class BaseClient {
    * If a correction to the token usage is needed, the method should return an object with the corrected token counts.
    * Should only be used if `recordCollectedUsage` was not used instead.
    * @param {string} [model]
+   * @param {AppConfig['balance']} [balance]
    * @param {number} promptTokens
    * @param {number} completionTokens
    * @returns {Promise<void>}
    */
-  async recordTokenUsage({ model, promptTokens, completionTokens }) {
+  async recordTokenUsage({ model, balance, promptTokens, completionTokens }) {
     logger.debug('[BaseClient] `recordTokenUsage` not implemented.', {
       model,
+      balance,
       promptTokens,
       completionTokens,
     });
@@ -571,6 +574,7 @@ class BaseClient {
   }
 
   async sendMessage(message, opts = {}) {
+    const appConfig = await getAppConfig({ role: this.options.req?.user?.role });
     /** @type {Promise<TMessage>} */
     let userMessagePromise;
     const { user, head, isEdited, conversationId, responseMessageId, saveOptions, userMessage } =
@@ -657,7 +661,7 @@ class BaseClient {
       }
     }
 
-    const balance = this.options.req?.app?.locals?.balance;
+    const balance = appConfig?.balance;
     if (
       balance?.enabled &&
       supportsBalanceCheck[this.options.endpointType ?? this.options.endpoint]
@@ -756,6 +760,7 @@ class BaseClient {
         completionTokens = responseMessage.tokenCount;
         await this.recordTokenUsage({
           usage,
+          balance,
           promptTokens,
           completionTokens,
           model: responseMessage.model,

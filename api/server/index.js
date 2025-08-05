@@ -14,12 +14,14 @@ const { isEnabled, ErrorController } = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
 const validateImageRequest = require('./middleware/validateImageRequest');
 const { jwtLogin, ldapLogin, passportLogin } = require('~/strategies');
+const { updateInterfacePermissions } = require('~/models/interface');
 const { checkMigrations } = require('./services/start/migration');
 const initializeMCPs = require('./services/initializeMCPs');
 const configureSocialLogins = require('./socialLogins');
-const AppService = require('./services/AppService');
+const { getAppConfig } = require('./services/Config');
 const staticCache = require('./utils/staticCache');
 const noIndex = require('./middleware/noIndex');
+const { seedDatabase } = require('~/models');
 const routes = require('./routes');
 
 const { PORT, HOST, ALLOW_SOCIAL_LOGIN, DISABLE_COMPRESSION, TRUST_PROXY } = process.env ?? {};
@@ -45,9 +47,11 @@ const startServer = async () => {
   app.disable('x-powered-by');
   app.set('trust proxy', trusted_proxy);
 
-  await AppService(app);
+  await seedDatabase();
 
-  const indexPath = path.join(app.locals.paths.dist, 'index.html');
+  const appConfig = await getAppConfig();
+  await updateInterfacePermissions(appConfig);
+  const indexPath = path.join(appConfig.paths.dist, 'index.html');
   const indexHTML = fs.readFileSync(indexPath, 'utf8');
 
   app.get('/health', (_req, res) => res.status(200).send('OK'));
@@ -66,10 +70,9 @@ const startServer = async () => {
     console.warn('Response compression has been disabled via DISABLE_COMPRESSION.');
   }
 
-  // Serve static assets with aggressive caching
-  app.use(staticCache(app.locals.paths.dist));
-  app.use(staticCache(app.locals.paths.fonts));
-  app.use(staticCache(app.locals.paths.assets));
+  app.use(staticCache(appConfig.paths.dist));
+  app.use(staticCache(appConfig.paths.fonts));
+  app.use(staticCache(appConfig.paths.assets));
 
   if (!ALLOW_SOCIAL_LOGIN) {
     console.warn('Social logins are disabled. Set ALLOW_SOCIAL_LOGIN=true to enable them.');
@@ -146,7 +149,7 @@ const startServer = async () => {
       logger.info(`Server listening at http://${host == '0.0.0.0' ? 'localhost' : host}:${port}`);
     }
 
-    initializeMCPs(app).then(() => checkMigrations());
+    initializeMCPs().then(() => checkMigrations());
   });
 };
 

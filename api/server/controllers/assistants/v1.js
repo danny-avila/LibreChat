@@ -5,9 +5,9 @@ const { uploadImageBuffer, filterFile } = require('~/server/services/Files/proce
 const validateAuthor = require('~/server/middleware/assistants/validateAuthor');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { deleteAssistantActions } = require('~/server/services/ActionService');
+const { getCachedTools, getAppConfig } = require('~/server/services/Config');
 const { updateAssistantDoc, getAssistants } = require('~/models/Assistant');
 const { getOpenAIClient, fetchAssistants } = require('./helpers');
-const { getCachedTools } = require('~/server/services/Config');
 const { manifestToolMap } = require('~/app/clients/tools');
 const { deleteFileByFilter } = require('~/models/File');
 
@@ -258,8 +258,9 @@ function filterAssistantDocs({ documents, userId, assistantsConfig = {} }) {
  */
 const getAssistantDocuments = async (req, res) => {
   try {
+    const appConfig = await getAppConfig({ role: req.user?.role });
     const endpoint = req.query;
-    const assistantsConfig = req.app.locals[endpoint];
+    const assistantsConfig = appConfig.endpoints?.[endpoint];
     const documents = await getAssistants(
       {},
       {
@@ -296,6 +297,7 @@ const getAssistantDocuments = async (req, res) => {
  */
 const uploadAssistantAvatar = async (req, res) => {
   try {
+    const appConfig = await getAppConfig({ role: req.user?.role });
     filterFile({ req, file: req.file, image: true, isAvatar: true });
     const { assistant_id } = req.params;
     if (!assistant_id) {
@@ -337,7 +339,7 @@ const uploadAssistantAvatar = async (req, res) => {
     const metadata = {
       ..._metadata,
       avatar: image.filepath,
-      avatar_source: req.app.locals.fileStrategy,
+      avatar_source: appConfig.fileStrategy,
     };
 
     const promises = [];
@@ -347,7 +349,7 @@ const uploadAssistantAvatar = async (req, res) => {
         {
           avatar: {
             filepath: image.filepath,
-            source: req.app.locals.fileStrategy,
+            source: appConfig.fileStrategy,
           },
           user: req.user.id,
         },

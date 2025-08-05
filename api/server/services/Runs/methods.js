@@ -1,6 +1,7 @@
 const axios = require('axios');
 const { logAxiosError } = require('@librechat/api');
 const { EModelEndpoint } = require('librechat-data-provider');
+const { getAppConfig } = require('~/server/services/Config');
 
 /**
  * @typedef {Object} RetrieveOptions
@@ -18,6 +19,7 @@ const { EModelEndpoint } = require('librechat-data-provider');
  * @returns {Promise<Object>} The data retrieved from the API.
  */
 async function retrieveRun({ thread_id, run_id, timeout, openai }) {
+  const appConfig = await getAppConfig({ role: openai.req.user?.role });
   const { apiKey, baseURL, httpAgent, organization } = openai;
   let url = `${baseURL}/threads/${thread_id}/runs/${run_id}`;
 
@@ -31,7 +33,7 @@ async function retrieveRun({ thread_id, run_id, timeout, openai }) {
   }
 
   /** @type {TAzureConfig | undefined} */
-  const azureConfig = openai.req.app.locals[EModelEndpoint.azureOpenAI];
+  const azureConfig = appConfig.endpoints?.[EModelEndpoint.azureOpenAI];
 
   if (azureConfig && azureConfig.assistants) {
     delete headers.Authorization;

@@ -1,13 +1,15 @@
 const { logger } = require('@librechat/data-schemas');
+const { getCachedTools, setCachedTools, getAppConfig } = require('./Config');
+const { CacheKeys } = require('librechat-data-provider');
 const { createMCPManager } = require('~/config');
 const { mergeAppTools } = require('./Config');
 
 /**
  * Initialize MCP servers
- * @param {import('express').Application} app - Express app instance
  */
-async function initializeMCPs(app) {
-  const mcpServers = app.locals.mcpConfig;
+async function initializeMCPs() {
+  const appConfig = await getAppConfig();
+  const mcpServers = appConfig.mcpConfig;
   if (!mcpServers) {
     return;
   }
@@ -15,7 +17,6 @@ async function initializeMCPs(app) {
   const mcpManager = await createMCPManager(mcpServers);
 
   try {
-    delete app.locals.mcpConfig;
     const mcpTools = mcpManager.getAppToolFunctions() || {};
     await mergeAppTools(mcpTools);
 

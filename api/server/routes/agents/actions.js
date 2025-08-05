@@ -16,6 +16,7 @@ const { getAgent, updateAgent, getListAgentsByAccess } = require('~/models/Agent
 const { updateAction, getActions, deleteAction } = require('~/models/Action');
 const { isActionDomainAllowed } = require('~/server/services/domains');
 const { canAccessAgentResource } = require('~/server/middleware');
+const { getAppConfig } = require('~/server/services/Config/app');
 const { getRoleByName } = require('~/models/Role');
 
 const router = express.Router();
@@ -83,7 +84,11 @@ router.post(
       }
 
       let metadata = await encryptMetadata(removeNullishValues(_metadata, true));
-      const isDomainAllowed = await isActionDomainAllowed(metadata.domain);
+      const appConfig = await getAppConfig({ role: req.user.role });
+      const isDomainAllowed = await isActionDomainAllowed(
+        metadata.domain,
+        appConfig?.actions?.allowedDomains,
+      );
       if (!isDomainAllowed) {
         return res.status(400).json({ message: 'Domain not allowed' });
       }

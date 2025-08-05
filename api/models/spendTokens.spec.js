@@ -5,17 +5,12 @@ const { createTransaction, createAutoRefillTransaction } = require('./Transactio
 
 require('~/db/models');
 
-// Mock the logger to prevent console output during tests
 jest.mock('~/config', () => ({
   logger: {
     debug: jest.fn(),
     error: jest.fn(),
   },
 }));
-
-// Mock the Config service
-const { getBalanceConfig } = require('~/server/services/Config');
-jest.mock('~/server/services/Config');
 
 describe('spendTokens', () => {
   let mongoServer;
@@ -44,8 +39,7 @@ describe('spendTokens', () => {
     // Create a new user ID for each test
     userId = new mongoose.Types.ObjectId();
 
-    // Mock the balance config to be enabled by default
-    getBalanceConfig.mockResolvedValue({ enabled: true });
+    // Balance config is now passed directly in txData
   });
 
   it('should create transactions for both prompt and completion tokens', async () => {
@@ -60,6 +54,7 @@ describe('spendTokens', () => {
       conversationId: 'test-convo',
       model: 'gpt-3.5-turbo',
       context: 'test',
+      balance: { enabled: true },
     };
     const tokenUsage = {
       promptTokens: 100,
@@ -98,6 +93,7 @@ describe('spendTokens', () => {
       conversationId: 'test-convo',
       model: 'gpt-3.5-turbo',
       context: 'test',
+      balance: { enabled: true },
     };
     const tokenUsage = {
       promptTokens: 100,
@@ -127,6 +123,7 @@ describe('spendTokens', () => {
       conversationId: 'test-convo',
       model: 'gpt-3.5-turbo',
       context: 'test',
+      balance: { enabled: true },
     };
     const tokenUsage = {};
 
@@ -138,8 +135,7 @@ describe('spendTokens', () => {
   });
 
   it('should not update balance when the balance feature is disabled', async () => {
-    // Override configuration: disable balance updates
-    getBalanceConfig.mockResolvedValue({ enabled: false });
+    // Balance is now passed directly in txData
     // Create a balance for the user
     await Balance.create({
       user: userId,
@@ -151,6 +147,7 @@ describe('spendTokens', () => {
       conversationId: 'test-convo',
       model: 'gpt-3.5-turbo',
       context: 'test',
+      balance: { enabled: false },
     };
     const tokenUsage = {
       promptTokens: 100,
@@ -180,6 +177,7 @@ describe('spendTokens', () => {
       conversationId: 'test-convo',
       model: 'gpt-4', // Using a more expensive model
       context: 'test',
+      balance: { enabled: true },
     };
 
     // Spending more tokens than the user has balance for
@@ -233,6 +231,7 @@ describe('spendTokens', () => {
       conversationId: 'test-convo-1',
       model: 'gpt-4',
       context: 'test',
+      balance: { enabled: true },
     };
 
     const tokenUsage1 = {
@@ -252,6 +251,7 @@ describe('spendTokens', () => {
       conversationId: 'test-convo-2',
       model: 'gpt-4',
       context: 'test',
+      balance: { enabled: true },
     };
 
     const tokenUsage2 = {
@@ -292,6 +292,7 @@ describe('spendTokens', () => {
       tokenType: 'completion',
       rawAmount: -100,
       context: 'test',
+      balance: { enabled: true },
     });
 
     console.log('Direct Transaction.create result:', directResult);
@@ -316,6 +317,7 @@ describe('spendTokens', () => {
         conversationId: `test-convo-${model}`,
         model,
         context: 'test',
+        balance: { enabled: true },
       };
 
       const tokenUsage = {
@@ -352,6 +354,7 @@ describe('spendTokens', () => {
       conversationId: 'test-convo-1',
       model: 'claude-3-5-sonnet',
       context: 'test',
+      balance: { enabled: true },
     };
 
     const tokenUsage1 = {
@@ -375,6 +378,7 @@ describe('spendTokens', () => {
       conversationId: 'test-convo-2',
       model: 'claude-3-5-sonnet',
       context: 'test',
+      balance: { enabled: true },
     };
 
     const tokenUsage2 = {
@@ -426,6 +430,7 @@ describe('spendTokens', () => {
       conversationId: 'test-convo',
       model: 'claude-3-5-sonnet', // Using a model that supports structured tokens
       context: 'test',
+      balance: { enabled: true },
     };
 
     // Spending more tokens than the user has balance for
@@ -505,6 +510,7 @@ describe('spendTokens', () => {
         conversationId,
         user: userId,
         model: usage.model,
+        balance: { enabled: true },
       };
 
       // Calculate expected spend for this transaction
@@ -617,6 +623,7 @@ describe('spendTokens', () => {
           tokenType: 'credits',
           context: 'concurrent-refill-test',
           rawAmount: refillAmount,
+          balance: { enabled: true },
         }),
       );
     }
@@ -683,6 +690,7 @@ describe('spendTokens', () => {
       conversationId: 'test-convo',
       model: 'claude-3-5-sonnet',
       context: 'test',
+      balance: { enabled: true },
     };
     const tokenUsage = {
       promptTokens: {

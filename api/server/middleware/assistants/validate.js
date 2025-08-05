@@ -1,5 +1,6 @@
 const { v4 } = require('uuid');
 const { handleAbortError } = require('~/server/middleware/abortMiddleware');
+const { getAppConfig } = require('~/server/services/Config/app');
 
 /**
  * Checks if the assistant is supported or excluded
@@ -12,8 +13,9 @@ const { handleAbortError } = require('~/server/middleware/abortMiddleware');
 const validateAssistant = async (req, res, next) => {
   const { endpoint, conversationId, assistant_id, messageId } = req.body;
 
+  const appConfig = await getAppConfig({ role: req.user?.role });
   /** @type {Partial<TAssistantEndpoint>} */
-  const assistantsConfig = req.app.locals?.[endpoint];
+  const assistantsConfig = appConfig.endpoints?.[endpoint];
   if (!assistantsConfig) {
     return next();
   }

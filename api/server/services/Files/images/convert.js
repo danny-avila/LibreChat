@@ -1,8 +1,9 @@
 const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');
-const { resizeImageBuffer } = require('./resize');
+const { getAppConfig } = require('~/server/services/Config');
 const { getStrategyFunctions } = require('../strategies');
+const { resizeImageBuffer } = require('./resize');
 const { logger } = require('~/config');
 
 /**
@@ -17,6 +18,7 @@ const { logger } = require('~/config');
  */
 async function convertImage(req, file, resolution = 'high', basename = '') {
   try {
+    const appConfig = await getAppConfig({ role: req.user?.role });
     let inputBuffer;
     let outputBuffer;
     let extension = path.extname(file.path ?? basename).toLowerCase();
@@ -39,11 +41,11 @@ async function convertImage(req, file, resolution = 'high', basename = '') {
     } = await resizeImageBuffer(inputBuffer, resolution);
 
     // Check if the file is already in target format; if it isn't, convert it:
-    const targetExtension = `.${req.app.locals.imageOutputType}`;
+    const targetExtension = `.${appConfig.imageOutputType}`;
     if (extension === targetExtension) {
       outputBuffer = resizedBuffer;
     } else {
-      outputBuffer = await sharp(resizedBuffer).toFormat(req.app.locals.imageOutputType).toBuffer();
+      outputBuffer = await sharp(resizedBuffer).toFormat(appConfig.imageOutputType).toBuffer();
       extension = targetExtension;
     }
 
@@ -51,7 +53,7 @@ async function convertImage(req, file, resolution = 'high', basename = '') {
     const newFileName =
       path.basename(file.path ?? basename, path.extname(file.path ?? basename)) + extension;
 
-    const { saveBuffer } = getStrategyFunctions(req.app.locals.fileStrategy);
+    const { saveBuffer } = getStrategyFunctions(appConfig.fileStrategy);
 
     const savedFilePath = await saveBuffer({
       userId: req.user.id,

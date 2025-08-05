@@ -1,8 +1,8 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { webcrypto } = require('node:crypto');
-const { isEnabled } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
+const { isEnabled, checkEmailConfig } = require('@librechat/api');
 const { SystemRoles, errorsToString } = require('librechat-data-provider');
 const {
   findUser,
@@ -21,9 +21,9 @@ const {
   generateRefreshToken,
 } = require('~/models');
 const { isEmailDomainAllowed } = require('~/server/services/domains');
-const { checkEmailConfig, sendEmail } = require('~/server/utils');
-const { getBalanceConfig } = require('~/server/services/Config');
 const { registerSchema } = require('~/strategies/validators');
+const { getAppConfig } = require('~/server/services/Config');
+const { sendEmail } = require('~/server/utils');
 
 const domains = {
   client: process.env.DOMAIN_CLIENT,
@@ -195,7 +195,8 @@ const registerUser = async (user, additionalData = {}) => {
       return { status: 200, message: genericVerificationMessage };
     }
 
-    if (!(await isEmailDomainAllowed(email))) {
+    const appConfig = await getAppConfig({ role: user.role });
+    if (!(await isEmailDomainAllowed(email, appConfig?.registration?.allowedDomains))) {
       const errorMessage =
         'The email address provided cannot be used. Please use a different email address.';
       logger.error(`[registerUser] [Registration not allowed] [Email: ${user.email}]`);
@@ -219,9 +220,8 @@ const registerUser = async (user, additionalData = {}) => {
 
     const emailEnabled = checkEmailConfig();
     const disableTTL = isEnabled(process.env.ALLOW_UNVERIFIED_EMAIL_LOGIN);
-    const balanceConfig = await getBalanceConfig();
 
-    const newUser = await createUser(newUserData, balanceConfig, disableTTL, true);
+    const newUser = await createUser(newUserData, appConfig.balance, disableTTL, true);
     newUserId = newUser._id;
     if (emailEnabled && !newUser.emailVerified) {
       await sendVerificationEmail({

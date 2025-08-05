@@ -43,8 +43,7 @@ async function getCodeOutputDownloadStream(fileIdentifier, apiKey) {
 /**
  * Uploads a file to the Code Environment server.
  * @param {Object} params - The params object.
- * @param {ServerRequest} params.req - The request object from Express. It should have a `user` property with an `id`
- *                       representing the user, and an `app.locals.paths` object with an `uploads` path.
+ * @param {ServerRequest} params.req - The request object from Express. It should have a `user` property with an `id` representing the user
  * @param {import('fs').ReadStream | import('stream').Readable} params.stream - The read stream for the file.
  * @param {string} params.filename - The name of the file.
  * @param {string} params.apiKey - The API key for authentication.

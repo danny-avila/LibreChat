@@ -5,7 +5,7 @@ import type { Model } from 'mongoose';
 import type { BalanceUpdateFields } from '~/types';
 
 export interface BalanceMiddlewareOptions {
-  getBalanceConfig: () => Promise<BalanceConfig | null>;
+  getBalanceConfig: ({ role }?: { role?: string }) => Promise<BalanceConfig | null>;
   Balance: Model<IBalance>;
 }
 
@@ -82,7 +82,8 @@ export function createSetBalanceConfig({
 ) => Promise<void> {
   return async (req: ServerRequest, res: ServerResponse, next: NextFunction): Promise<void> => {
     try {
-      const balanceConfig = await getBalanceConfig();
+      const user = req.user as IUser & { _id: string | ObjectId };
+      const balanceConfig = await getBalanceConfig({ role: user?.role });
       if (!balanceConfig?.enabled) {
         return next();
       }
@@ -90,7 +91,6 @@ export function createSetBalanceConfig({
         return next();
       }
 
-      const user = req.user as IUser & { _id: string | ObjectId };
       if (!user || !user._id) {
         return next();
       }

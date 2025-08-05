@@ -10,6 +10,7 @@ const azureAssistants = require('~/server/services/Endpoints/azureAssistants');
 const assistants = require('~/server/services/Endpoints/assistants');
 const { processFiles } = require('~/server/services/Files/process');
 const anthropic = require('~/server/services/Endpoints/anthropic');
+const { getAppConfig } = require('~/server/services/Config/app');
 const bedrock = require('~/server/services/Endpoints/bedrock');
 const openAI = require('~/server/services/Endpoints/openAI');
 const agents = require('~/server/services/Endpoints/agents');
@@ -40,9 +41,10 @@ async function buildEndpointOption(req, res, next) {
     return handleError(res, { text: 'Error parsing conversation' });
   }
 
-  if (req.app.locals.modelSpecs?.list && req.app.locals.modelSpecs?.enforce) {
+  const appConfig = await getAppConfig({ role: req.user?.role });
+  if (appConfig.modelSpecs?.list && appConfig.modelSpecs?.enforce) {
     /** @type {{ list: TModelSpec[] }}*/
-    const { list } = req.app.locals.modelSpecs;
+    const { list } = appConfig.modelSpecs;
     const { spec } = parsedBody;
 
     if (!spec) {

@@ -26,6 +26,7 @@ const validateAuthor = require('~/server/middleware/assistants/validateAuthor');
 const { createRun, StreamRunManager } = require('~/server/services/Runs');
 const { addTitle } = require('~/server/services/Endpoints/assistants');
 const { createRunBody } = require('~/server/services/createRunBody');
+const { getAppConfig } = require('~/server/services/Config');
 const { getTransactions } = require('~/models/Transaction');
 const { checkBalance } = require('~/models/balanceMethods');
 const { getConvo } = require('~/models/Conversation');
@@ -44,6 +45,7 @@ const { getOpenAIClient } = require('./helpers');
  */
 const chatV2 = async (req, res) => {
   logger.debug('[/assistants/chat/] req.body', req.body);
+  const appConfig = await getAppConfig({ role: req.user?.role });
 
   /** @type {{files: MongoFile[]}} */
   const {
@@ -126,7 +128,7 @@ const chatV2 = async (req, res) => {
     }
 
     const checkBalanceBeforeRun = async () => {
-      const balance = req.app?.locals?.balance;
+      const balance = appConfig?.balance;
       if (!balance?.enabled) {
         return;
       }
@@ -374,9 +376,9 @@ const chatV2 = async (req, res) => {
       };
 
       /** @type {undefined | TAssistantEndpoint} */
-      const config = req.app.locals[endpoint] ?? {};
+      const config = appConfig.endpoints?.[endpoint] ?? {};
       /** @type {undefined | TBaseEndpoint} */
-      const allConfig = req.app.locals.all;
+      const allConfig = appConfig.endpoints?.all;
 
       const streamRunManager = new StreamRunManager({
         req,

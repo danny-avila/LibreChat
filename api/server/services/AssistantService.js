@@ -16,6 +16,7 @@ const { retrieveAndProcessFile } = require('~/server/services/Files/process');
 const { processRequiredActions } = require('~/server/services/ToolService');
 const { RunManager, waitForRun } = require('~/server/services/Runs');
 const { processMessages } = require('~/server/services/Threads');
+const { getAppConfig } = require('~/server/services/Config');
 const { createOnProgress } = require('~/server/utils');
 const { TextStream } = require('~/app/clients');
 
@@ -350,6 +351,7 @@ async function runAssistant({
   accumulatedMessages = [],
   in_progress: inProgress,
 }) {
+  const appConfig = await getAppConfig({ role: openai.req.user?.role });
   let steps = accumulatedSteps;
   let messages = accumulatedMessages;
   const in_progress = inProgress ?? createInProgressHandler(openai, thread_id, messages);
@@ -396,8 +398,8 @@ async function runAssistant({
   });
 
   const { endpoint = EModelEndpoint.azureAssistants } = openai.req.body;
-  /** @type {TCustomConfig.endpoints.assistants} */
-  const assistantsEndpointConfig = openai.req.app.locals?.[endpoint] ?? {};
+  /** @type {AppConfig['endpoints']['assistants']} */
+  const assistantsEndpointConfig = appConfig.endpoints?.[endpoint] ?? {};
   const { pollIntervalMs, timeoutMs } = assistantsEndpointConfig;
 
   const run = await waitForRun({

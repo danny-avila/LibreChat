@@ -1,8 +1,7 @@
 const { Constants } = require('librechat-data-provider');
-const { getCustomConfig, getCachedTools } = require('~/server/services/Config');
+const { getCachedTools, getAppConfig } = require('~/server/services/Config');
 const { getLogStores } = require('~/cache');
 
-// Mock the dependencies
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
     debug: jest.fn(),
@@ -11,8 +10,8 @@ jest.mock('@librechat/data-schemas', () => ({
 }));
 
 jest.mock('~/server/services/Config', () => ({
-  getCustomConfig: jest.fn(),
   getCachedTools: jest.fn(),
+  getAppConfig: jest.fn(),
   setCachedTools: jest.fn(),
   mergeUserTools: jest.fn(),
 }));
@@ -67,7 +66,10 @@ describe('PluginController', () => {
 
   describe('getAvailablePluginsController', () => {
     beforeEach(() => {
-      mockReq.app = { locals: { filteredTools: [], includedTools: [] } };
+      getAppConfig.mockResolvedValue({
+        filteredTools: [],
+        includedTools: [],
+      });
     });
 
     it('should use filterUniquePlugins to remove duplicate plugins', async () => {
@@ -283,9 +285,8 @@ describe('PluginController', () => {
   });
 
   describe('plugin.icon behavior', () => {
-    const callGetAvailableToolsWithMCPServer = async (mcpServers) => {
+    const callGetAvailableToolsWithMCPServer = async (serverConfig) => {
       mockCache.get.mockResolvedValue(null);
-      getCustomConfig.mockResolvedValue({ mcpServers });
 
       const functionTools = {
         [`test-tool${Constants.mcp_delimiter}test-server`]: {
@@ -309,6 +310,13 @@ describe('PluginController', () => {
       // Mock loadAndFormatTools to return empty object since these are MCP tools
       loadAndFormatTools.mockReturnValue({});
 
+      // Mock the MCP manager to return the server config
+      const mockMCPManager = {
+        loadManifestTools: jest.fn().mockResolvedValue([]),
+        getRawConfig: jest.fn().mockReturnValue(serverConfig),
+      };
+      require('~/config').getMCPManager.mockReturnValue(mockMCPManager);
+
       getCachedTools.mockResolvedValueOnce(functionTools);
 
       await getAvailableTools(mockReq, mockRes);
@@ -319,28 +327,24 @@ describe('PluginController', () => {
     };
 
     it('should set plugin.icon when iconPath is defined', async () => {
-      const mcpServers = {
-        'test-server': {
-          iconPath: '/path/to/icon.png',
-        },
+      const serverConfig = {
+        iconPath: '/path/to/icon.png',
       };
-      const testTool = await callGetAvailableToolsWithMCPServer(mcpServers);
+      const testTool = await callGetAvailableToolsWithMCPServer(serverConfig);
       expect(testTool.icon).toBe('/path/to/icon.png');
     });
 
     it('should set plugin.icon to undefined when iconPath is not defined', async () => {
-      const mcpServers = {
-        'test-server': {},
-      };
-      const testTool = await callGetAvailableToolsWithMCPServer(mcpServers);
+      const serverConfig = {};
+      const testTool = await callGetAvailableToolsWithMCPServer(serverConfig);
       expect(testTool.icon).toBeUndefined();
     });
   });
 
   describe('helper function integration', () => {
     it('should properly handle MCP tools with custom user variables', async () => {
-      const customConfig = {
-        mcpServers: {
+      const appConfig = {
+        mcpConfig: {
           'test-server': {
             customUserVars: {
               API_KEY: { title: 'API Key', description: 'Your API key' },
@@ -368,7 +372,7 @@ describe('PluginController', () => {
       require('~/config').getMCPManager.mockReturnValue(mockMCPManager);
 
       mockCache.get.mockResolvedValue(null);
-      getCustomConfig.mockResolvedValue(customConfig);
+      getAppConfig.mockResolvedValue(appConfig);
 
       // First call returns user tools (empty in this case)
       getCachedTools.mockResolvedValueOnce({});
@@ -498,8 +502,19 @@ describe('PluginController', () => {
         },
       };
 
+      // Mock the MCP manager to return server config without customUserVars
+      const mockMCPManager = {
+        loadManifestTools: jest.fn().mockResolvedValue([]),
+        getRawConfig: jest.fn().mockReturnValue(customConfig.mcpServers['test-server']),
+      };
+      require('~/config').getMCPManager.mockReturnValue(mockMCPManager);
+
       mockCache.get.mockResolvedValue(null);
-      getCustomConfig.mockResolvedValue(customConfig);
+      getAppConfig.mockResolvedValue({
+        mcpConfig: customConfig.mcpServers,
+        filteredTools: [],
+        includedTools: [],
+      });
       getCachedTools.mockResolvedValueOnce(mockUserTools);
 
       getCachedTools.mockResolvedValueOnce({
@@ -514,8 +529,8 @@ describe('PluginController', () => {
       expect(responseData[0].authConfig).toEqual([]);
     });
 
-    it('should handle req.app.locals with undefined filteredTools and includedTools', async () => {
-      mockReq.app = { locals: {} };
+    it('should handle undefined filteredTools and includedTools', async () => {
+      getAppConfig.mockResolvedValue({});
       mockCache.get.mockResolvedValue(null);
 
       await getAvailablePluginsController(mockReq, mockRes);

@@ -8,21 +8,7 @@ const { createMulterInstance, storage, importFileFilter } = require('./multer');
 
 // Mock only the config service that requires external dependencies
 jest.mock('~/server/services/Config', () => ({
-  getCustomConfig: jest.fn(() =>
-    Promise.resolve({
-      fileConfig: {
-        endpoints: {
-          openAI: {
-            supportedMimeTypes: ['image/jpeg', 'image/png', 'application/pdf'],
-          },
-          default: {
-            supportedMimeTypes: ['image/jpeg', 'image/png', 'text/plain'],
-          },
-        },
-        serverFileSizeLimit: 10000000, // 10MB
-      },
-    }),
-  ),
+  getAppConfig: jest.fn(),
 }));
 
 describe('Multer Configuration', () => {
@@ -36,13 +22,6 @@ describe('Multer Configuration', () => {
 
     mockReq = {
       user: { id: 'test-user-123' },
-      app: {
-        locals: {
-          paths: {
-            uploads: tempDir,
-          },
-        },
-      },
       body: {},
       originalUrl: '/api/files/upload',
     };
@@ -52,6 +31,14 @@ describe('Multer Configuration', () => {
       mimetype: 'image/jpeg',
       size: 1024,
     };
+
+    // Mock getAppConfig to return paths
+    const { getAppConfig } = require('~/server/services/Config');
+    getAppConfig.mockResolvedValue({
+      paths: {
+        uploads: tempDir,
+      },
+    });
 
     // Clear mocks
     jest.clearAllMocks();
@@ -79,7 +66,12 @@ describe('Multer Configuration', () => {
 
       it("should create directory recursively if it doesn't exist", (done) => {
         const deepPath = path.join(tempDir, 'deep', 'nested', 'path');
-        mockReq.app.locals.paths.uploads = deepPath;
+        const { getAppConfig } = require('~/server/services/Config');
+        getAppConfig.mockResolvedValue({
+          paths: {
+            uploads: deepPath,
+          },
+        });
 
         const cb = jest.fn((err, destination) => {
           expect(err).toBeNull();
@@ -331,11 +323,11 @@ describe('Multer Configuration', () => {
     });
 
     it('should use real config merging', async () => {
-      const { getCustomConfig } = require('~/server/services/Config');
+      const { getAppConfig } = require('~/server/services/Config');
 
       const multerInstance = await createMulterInstance();
 
-      expect(getCustomConfig).toHaveBeenCalled();
+      expect(getAppConfig).toHaveBeenCalled();
       expect(multerInstance).toBeDefined();
     });
 
@@ -465,23 +457,24 @@ describe('Multer Configuration', () => {
     it('should handle file system errors when directory creation fails', (done) => {
       // Test with a non-existent parent directory to simulate fs issues
       const invalidPath = '/nonexistent/path/that/should/not/exist';
-      mockReq.app.locals.paths.uploads = invalidPath;
+      const { getAppConfig } = require('~/server/services/Config');
+      getAppConfig.mockResolvedValue({
+        paths: {
+          uploads: invalidPath,
+        },
+      });
 
-      try {
-        // Call getDestination which should fail due to permission/path issues
-        storage.getDestination(mockReq, mockFile, (err, destination) => {
-          // If callback is reached, we didn't get the expected error
-          done(new Error('Expected mkdirSync to throw an error but callback was called'));
-        });
-        // If we get here without throwing, something unexpected happened
-        done(new Error('Expected mkdirSync to throw an error but no error was thrown'));
-      } catch (error) {
+      // Call getDestination which should fail due to permission/path issues
+      storage.getDestination(mockReq, mockFile, (err, destination) => {
+        // Now we expect the error to be passed to the callback
+        expect(err).toBeDefined();
         // This is the expected behavior - mkdirSync throws synchronously for invalid paths
         // On Linux, this typically returns EACCES (permission denied)
         // On macOS/Darwin, this returns ENOENT (no such file or directory)
-        expect(['EACCES', 'ENOENT']).toContain(error.code);
+        expect(['EACCES', 'ENOENT']).toContain(err.code);
+        expect(destination).toBeUndefined();
         done();
-      }
+      });
     });
 
     it('should handle malformed filenames with real sanitization', (done) => {
@@ -538,10 +531,10 @@ describe('Multer Configuration', () => {
 
   describe('Real Configuration Testing', () => {
     it('should handle missing custom config gracefully with real mergeFileConfig', async () => {
-      const { getCustomConfig } = require('~/server/services/Config');
+      const { getAppConfig } = require('~/server/services/Config');
 
-      // Mock getCustomConfig to return undefined
-      getCustomConfig.mockResolvedValueOnce(undefined);
+      // Mock getAppConfig to return undefined
+      getAppConfig.mockResolvedValueOnce(undefined);
 
       const multerInstance = await createMulterInstance();
       expect(multerInstance).toBeDefined();
@@ -549,25 +542,28 @@ describe('Multer Configuration', () => {
     });
 
     it('should properly integrate real fileConfig with custom endpoints', async () => {
-      const { getCustomConfig } = require('~/server/services/Config');
+      const { getAppConfig } = require('~/server/services/Config');
 
-      // Mock a custom config with additional endpoints
-      getCustomConfig.mockResolvedValueOnce({
+      // Mock appConfig with fileConfig
+      getAppConfig.mockResolvedValueOnce({
+        paths: {
+          uploads: tempDir,
+        },
         fileConfig: {
           endpoints: {
             anthropic: {
               supportedMimeTypes: ['text/plain', 'image/png'],
             },
           },
-          serverFileSizeLimit: 20, // 20 MB
+          serverFileSizeLimit: 20971520, // 20 MB in bytes (mergeFileConfig converts)
         },
       });
 
       const multerInstance = await createMulterInstance();
       expect(multerInstance).toBeDefined();
 
-      // Verify that getCustomConfig was called (we can't spy on the actual merge function easily)
-      expect(getCustomConfig).toHaveBeenCalled();
+      // Verify that getAppConfig was called
+      expect(getAppConfig).toHaveBeenCalled();
     });
   });
 });

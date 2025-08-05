@@ -1,4 +1,5 @@
 const { SystemRoles } = require('librechat-data-provider');
+const { getAppConfig } = require('~/server/services/Config/app');
 const { getAssistant } = require('~/models/Assistant');
 
 /**
@@ -20,8 +21,9 @@ const validateAuthor = async ({ req, openai, overrideEndpoint, overrideAssistant
   const assistant_id =
     overrideAssistantId ?? req.params.id ?? req.body.assistant_id ?? req.query.assistant_id;
 
+  const appConfig = await getAppConfig({ role: req.user?.role });
   /** @type {Partial<TAssistantEndpoint>} */
-  const assistantsConfig = req.app.locals?.[endpoint];
+  const assistantsConfig = appConfig.endpoints?.[endpoint];
   if (!assistantsConfig) {
     return;
   }

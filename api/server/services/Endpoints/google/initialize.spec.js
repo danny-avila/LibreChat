@@ -8,6 +8,14 @@ jest.mock('~/server/services/UserService', () => ({
   getUserKey: jest.fn().mockImplementation(() => ({})),
 }));
 
+jest.mock('~/server/services/Config', () => ({
+  getAppConfig: jest.fn().mockResolvedValue({
+    google: {
+      apiKey: 'test-key',
+    },
+  }),
+}));
+
 const app = { locals: {} };
 
 describe('google/initializeClient', () => {

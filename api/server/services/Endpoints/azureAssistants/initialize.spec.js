@@ -12,6 +12,15 @@ jest.mock('~/server/services/UserService', () => ({
   checkUserKeyExpiry: jest.requireActual('~/server/services/UserService').checkUserKeyExpiry,
 }));
 
+jest.mock('~/server/services/Config', () => ({
+  getAppConfig: jest.fn().mockResolvedValue({
+    azureAssistants: {
+      apiKey: 'test-key',
+      baseURL: 'https://test.url',
+    },
+  }),
+}));
+
 const today = new Date();
 const tenDaysFromToday = new Date(today.setDate(today.getDate() + 10));
 const isoString = tenDaysFromToday.toISOString();

@@ -8,12 +8,12 @@ const {
   convertMCPToolsToPlugins,
 } = require('@librechat/api');
 const {
+  getAppConfig,
   getCachedTools,
   setCachedTools,
   mergeUserTools,
-  getCustomConfig,
 } = require('~/server/services/Config');
-const { loadAndFormatTools } = require('~/server/services/ToolService');
+const { loadAndFormatTools } = require('~/server/services/start/tools');
 const { availableTools, toolkits } = require('~/app/clients/tools');
 const { getMCPManager } = require('~/config');
 const { getLogStores } = require('~/cache');
@@ -27,8 +27,9 @@ const getAvailablePluginsController = async (req, res) => {
       return;
     }
 
+    const appConfig = await getAppConfig({ role: req.user?.role });
     /** @type {{ filteredTools: string[], includedTools: string[] }} */
-    const { filteredTools = [], includedTools = [] } = req.app.locals;
+    const { filteredTools = [], includedTools = [] } = appConfig;
     /** @type {import('@librechat/api').LCManifestTool[]} */
     const pluginManifest = availableTools;
 
@@ -74,13 +75,15 @@ const getAvailableTools = async (req, res) => {
       logger.warn('[getAvailableTools] User ID not found in request');
       return res.status(401).json({ message: 'Unauthorized' });
     }
-    const customConfig = await getCustomConfig();
+    const appConfig = await getAppConfig();
     const cache = getLogStores(CacheKeys.CONFIG_STORE);
     const cachedToolsArray = await cache.get(CacheKeys.TOOLS);
     const cachedUserTools = await getCachedTools({ userId });
+
+    const mcpManager = getMCPManager();
     const userPlugins =
       cachedUserTools != null
-        ? convertMCPToolsToPlugins({ functionTools: cachedUserTools, customConfig })
+        ? convertMCPToolsToPlugins({ functionTools: cachedUserTools, mcpManager })
         : undefined;
 
     if (cachedToolsArray != null && userPlugins != null) {
@@ -105,9 +108,8 @@ const getAvailableTools = async (req, res) => {
 
     /** @type {import('@librechat/api').LCManifestTool[]} */
     let pluginManifest = availableTools;
-    if (customConfig?.mcpServers != null) {
+    if (appConfig?.mcpConfig != null) {
       try {
-        const mcpManager = getMCPManager();
         const mcpTools = await mcpManager.getAllToolFunctions(userId);
         prelimCachedTools = prelimCachedTools ?? {};
         for (const [toolKey, toolData] of Object.entries(mcpTools)) {
@@ -161,7 +163,7 @@ const getAvailableTools = async (req, res) => {
       if (plugin.pluginKey.includes(Constants.mcp_delimiter)) {
         const parts = plugin.pluginKey.split(Constants.mcp_delimiter);
         const serverName = parts[parts.length - 1];
-        const serverConfig = customConfig?.mcpServers?.[serverName];
+        const serverConfig = appConfig?.mcpConfig?.[serverName];
 
         if (serverConfig?.customUserVars) {
           const customVarKeys = Object.keys(serverConfig.customUserVars);

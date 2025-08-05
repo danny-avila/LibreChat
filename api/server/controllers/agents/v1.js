@@ -31,12 +31,12 @@ const {
   grantPermission,
 } = require('~/server/services/PermissionService');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
+const { getCachedTools, getAppConfig } = require('~/server/services/Config');
 const { resizeAvatar } = require('~/server/services/Files/images/avatar');
 const { getFileStrategy } = require('~/server/utils/getFileStrategy');
 const { refreshS3Url } = require('~/server/services/Files/S3/crud');
 const { filterFile } = require('~/server/services/Files/process');
 const { updateAction, getActions } = require('~/models/Action');
-const { getCachedTools } = require('~/server/services/Config');
 const { deleteFileByFilter } = require('~/models/File');
 const { getCategoriesWithCounts } = require('~/models');
 
@@ -487,6 +487,7 @@ const getListAgentsHandler = async (req, res) => {
  */
 const uploadAgentAvatarHandler = async (req, res) => {
   try {
+    const appConfig = await getAppConfig({ role: req.user?.role });
     filterFile({ req, file: req.file, image: true, isAvatar: true });
     const { agent_id } = req.params;
     if (!agent_id) {
@@ -510,9 +511,7 @@ const uploadAgentAvatarHandler = async (req, res) => {
     }
 
     const buffer = await fs.readFile(req.file.path);
-
-    const fileStrategy = getFileStrategy(req.app.locals, { isAvatar: true });
-
+    const fileStrategy = getFileStrategy(appConfig, { isAvatar: true });
     const resizedBuffer = await resizeAvatar({
       userId: req.user.id,
       input: buffer,
