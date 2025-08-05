@@ -554,7 +554,6 @@
   "com_ui_agent_var": "{{0}} aģents",
   "com_ui_agent_version": "Versija",
   "com_ui_agent_version_active": "Aktīvā versija",
-  "com_ui_agent_version_duplicate": "Atrasta dublikāta versija. Šī darbība izveidotu versiju, kas ir identiska citai, jau esošai versijai. {{versionIndex}}.",
   "com_ui_agent_version_empty": "Nav pieejamu versiju",
   "com_ui_agent_version_error": "Kļūda, ielādējot versijas",
   "com_ui_agent_version_history": "Versiju vēsture",

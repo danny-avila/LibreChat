@@ -43,11 +43,7 @@ export const useCreateAgentMutation = (
  */
 export const useUpdateAgentMutation = (
   options?: t.UpdateAgentMutationOptions,
-): UseMutationResult<
-  t.Agent,
-  t.DuplicateVersionError,
-  { agent_id: string; data: t.AgentUpdateParams }
-> => {
+): UseMutationResult<t.Agent, Error, { agent_id: string; data: t.AgentUpdateParams }> => {
   const queryClient = useQueryClient();
   return useMutation(
     ({ agent_id, data }: { agent_id: string; data: t.AgentUpdateParams }) => {
@@ -59,8 +55,7 @@ export const useUpdateAgentMutation = (
     {
       onMutate: (variables) => options?.onMutate?.(variables),
       onError: (error, variables, context) => {
-        const typedError = error as t.DuplicateVersionError;
-        return options?.onError?.(typedError, variables, context);
+        return options?.onError?.(error, variables, context);
       },
       onSuccess: (updatedAgent, variables, context) => {
         const listRes = queryClient.getQueryData<t.AgentListResponse>([

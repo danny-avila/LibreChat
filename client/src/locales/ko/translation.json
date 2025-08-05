@@ -549,7 +549,6 @@
   "com_ui_agent_var": "{{0}} 에이전트",
   "com_ui_agent_version": "버전",
   "com_ui_agent_version_active": "활성 버전",
-  "com_ui_agent_version_duplicate": "중복 버전이 감지되었습니다. 이는 버전 {{versionIndex}}와 동일한 버전을 생성합니다.",
   "com_ui_agent_version_empty": "사용 가능한 버전이 없습니다",
   "com_ui_agent_version_error": "버전 정보 가져오기 오류",
   "com_ui_agent_version_history": "버전 기록",

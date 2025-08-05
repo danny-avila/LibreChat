@@ -554,7 +554,6 @@
   "com_ui_agent_var": "{{0}} agent",
   "com_ui_agent_version": "Version",
   "com_ui_agent_version_active": "Active Version",
-  "com_ui_agent_version_duplicate": "Duplicate version detected. This would create a version identical to Version {{versionIndex}}.",
   "com_ui_agent_version_empty": "No versions available",
   "com_ui_agent_version_error": "Error fetching versions",
   "com_ui_agent_version_history": "Version History",
