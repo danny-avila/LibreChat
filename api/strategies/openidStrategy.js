@@ -104,6 +104,14 @@ class CustomOpenIDStrategy extends OpenIDStrategy {
     if (options?.state && !params.has('state')) {
       params.set('state', options.state);
     }
+
+    if (process.env.OPENID_AUDIENCE) {
+      params.set('audience', process.env.OPENID_AUDIENCE);
+      logger.debug(
+        `[openidStrategy] Adding audience to authorization request: ${process.env.OPENID_AUDIENCE}`,
+      );
+    }
+
     return params;
   }
 }
@@ -353,7 +361,7 @@ async function setupOpenId() {
             username = userinfo[process.env.OPENID_USERNAME_CLAIM];
           } else {
             username = convertToUsername(
-              userinfo.username || userinfo.given_name || userinfo.email,
+              userinfo.preferred_username || userinfo.username || userinfo.email,
             );
           }
 

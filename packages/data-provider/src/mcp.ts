@@ -36,6 +36,14 @@ const BaseOptionsSchema = z.object({
       redirect_uri: z.string().url().optional(),
       /** Token exchange method */
       token_exchange_method: z.nativeEnum(TokenExchangeMethodEnum).optional(),
+      /** Supported grant types (defaults to ['authorization_code', 'refresh_token']) */
+      grant_types_supported: z.array(z.string()).optional(),
+      /** Supported token endpoint authentication methods (defaults to ['client_secret_basic', 'client_secret_post']) */
+      token_endpoint_auth_methods_supported: z.array(z.string()).optional(),
+      /** Supported response types (defaults to ['code']) */
+      response_types_supported: z.array(z.string()).optional(),
+      /** Supported code challenge methods (defaults to ['S256', 'plain']) */
+      code_challenge_methods_supported: z.array(z.string()).optional(),
     })
     .optional(),
   customUserVars: z

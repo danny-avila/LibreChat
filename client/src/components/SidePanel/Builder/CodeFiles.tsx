@@ -9,8 +9,8 @@ import type { ExtendedFile } from '~/common';
 import FileRow from '~/components/Chat/Input/Files/FileRow';
 import { useGetFileConfig } from '~/data-provider';
 import { useFileHandling } from '~/hooks/Files';
-import useLocalize from '~/hooks/useLocalize';
 import { useChatContext } from '~/Providers';
+import { useLocalize } from '~/hooks';
 
 const tool_resource = EToolResources.code_interpreter;
 

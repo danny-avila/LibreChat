@@ -173,6 +173,35 @@ export async function performOCR({
 }
 
 /**
+ * Deletes a file from Mistral API
+ * @param params Delete parameters
+ * @param params.fileId The file ID to delete
+ * @param params.apiKey Mistral API key
+ * @param params.baseURL Mistral API base URL
+ * @returns Promise that resolves when the file is deleted
+ */
+export async function deleteMistralFile({
+  fileId,
+  apiKey,
+  baseURL = DEFAULT_MISTRAL_BASE_URL,
+}: {
+  fileId: string;
+  apiKey: string;
+  baseURL?: string;
+}): Promise<void> {
+  try {
+    const result = await axios.delete(`${baseURL}/files/${fileId}`, {
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+      },
+    });
+    logger.debug(`Mistral file ${fileId} deleted successfully:`, result.data);
+  } catch (error) {
+    logger.error(`Error deleting Mistral file ${fileId}:`, error);
+  }
+}
+
+/**
  * Determines if a value needs to be loaded from environment
  */
 function needsEnvLoad(value: string): boolean {
@@ -335,8 +364,14 @@ function createOCRError(error: unknown, baseMessage: string): Error {
  *                       along with the `filename` and `bytes` properties.
  */
 export const uploadMistralOCR = async (context: OCRContext): Promise<MistralOCRUploadResult> => {
+  let mistralFileId: string | undefined;
+  let apiKey: string | undefined;
+  let baseURL: string | undefined;
+
   try {
-    const { apiKey, baseURL } = await loadAuthConfig(context);
+    const authConfig = await loadAuthConfig(context);
+    apiKey = authConfig.apiKey;
+    baseURL = authConfig.baseURL;
     const model = getModelConfig(context.req.app.locals?.ocr);
 
     const mistralFile = await uploadDocumentToMistral({
@@ -346,6 +381,8 @@ export const uploadMistralOCR = async (context: OCRContext): Promise<MistralOCRU
       baseURL,
     });
 
+    mistralFileId = mistralFile.id;
+
     const signedUrlResponse = await getSignedUrl({
       apiKey,
       baseURL,
@@ -354,11 +391,11 @@ export const uploadMistralOCR = async (context: OCRContext): Promise<MistralOCRU
 
     const documentType = getDocumentType(context.file);
     const ocrResult = await performOCR({
-      apiKey,
-      baseURL,
-      model,
       url: signedUrlResponse.url,
       documentType,
+      baseURL,
+      apiKey,
+      model,
     });
 
     if (!ocrResult || !ocrResult.pages || ocrResult.pages.length === 0) {
@@ -368,6 +405,10 @@ export const uploadMistralOCR = async (context: OCRContext): Promise<MistralOCRU
     }
     const { text, images } = processOCRResult(ocrResult);
 
+    if (mistralFileId && apiKey && baseURL) {
+      await deleteMistralFile({ fileId: mistralFileId, apiKey, baseURL });
+    }
+
     return {
       filename: context.file.originalname,
       bytes: text.length * 4,
@@ -376,6 +417,9 @@ export const uploadMistralOCR = async (context: OCRContext): Promise<MistralOCRU
       images,
     };
   } catch (error) {
+    if (mistralFileId && apiKey && baseURL) {
+      await deleteMistralFile({ fileId: mistralFileId, apiKey, baseURL });
+    }
     throw createOCRError(error, 'Error uploading document to Mistral OCR API:');
   }
 };

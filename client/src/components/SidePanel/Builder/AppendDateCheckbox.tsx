@@ -1,15 +1,15 @@
 import { Control, Controller, UseFormSetValue, UseFormGetValues } from 'react-hook-form';
-import { CircleHelpIcon } from '~/components/svg';
-import { useLocalize } from '~/hooks';
 import {
+  CircleHelpIcon,
   HoverCard,
   HoverCardContent,
   HoverCardPortal,
   HoverCardTrigger,
   Checkbox,
-} from '~/components/ui';
-import { ESide } from '~/common';
+} from '@librechat/client';
 import type { AssistantForm } from '~/common';
+import { useLocalize } from '~/hooks';
+import { ESide } from '~/common';
 
 interface AppendDateCheckboxProps {
   control: Control<AssistantForm>;

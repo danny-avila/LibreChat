@@ -1,10 +1,10 @@
 import { useState, useCallback, useMemo, memo } from 'react';
 import { useUserKeyQuery } from 'librechat-data-provider/react-query';
+import { ResizableHandleAlt, ResizablePanel, useMediaQuery } from '@librechat/client';
 import type { TEndpointsConfig, TInterfaceConfig } from 'librechat-data-provider';
 import type { ImperativePanelHandle } from 'react-resizable-panels';
-import { ResizableHandleAlt, ResizablePanel } from '~/components/ui/Resizable';
-import { useMediaQuery, useLocalStorage, useLocalize } from '~/hooks';
 import useSideNavLinks from '~/hooks/Nav/useSideNavLinks';
+import { useLocalStorage, useLocalize } from '~/hooks';
 import { useGetEndpointsQuery } from '~/data-provider';
 import NavToggle from '~/components/Nav/NavToggle';
 import { useSidePanelContext } from '~/Providers';

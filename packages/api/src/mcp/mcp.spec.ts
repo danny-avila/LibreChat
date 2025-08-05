@@ -655,6 +655,47 @@ describe('Environment Variable Extraction (MCP)', () => {
       );
     });
 
+    it('should process customUserVars in args field', () => {
+      const user = createTestUser({
+        id: 'user-123',
+        email: 'test@example.com',
+      });
+      const customUserVars = {
+        MY_API_KEY: 'user-provided-api-key-12345',
+        PROFILE_NAME: 'production-profile',
+      };
+      const obj: MCPOptions = {
+        command: 'npx',
+        args: [
+          '-y',
+          '@smithery/cli@latest',
+          'run',
+          '@upstash/context7-mcp',
+          '--key',
+          '{{MY_API_KEY}}',
+          '--profile',
+          '{{PROFILE_NAME}}',
+          '--user',
+          '{{LIBRECHAT_USER_EMAIL}}',
+        ],
+      };
+
+      const result = processMCPEnv(obj, user, customUserVars);
+
+      expect('args' in result && result.args).toEqual([
+        '-y',
+        '@smithery/cli@latest',
+        'run',
+        '@upstash/context7-mcp',
+        '--key',
+        'user-provided-api-key-12345',
+        '--profile',
+        'production-profile',
+        '--user',
+        'test@example.com',
+      ]);
+    });
+
     it('should prioritize customUserVars over user fields and system env vars if placeholders are the same (though not recommended)', () => {
       // This tests the order of operations: customUserVars -> userFields -> systemEnv
       // BUt it's generally not recommended to have overlapping placeholder names.

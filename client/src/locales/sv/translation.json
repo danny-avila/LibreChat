@@ -420,6 +420,5 @@
   "com_ui_terms_and_conditions": "Villkor för användning",
   "com_ui_unarchive": "Avarkivera",
   "com_ui_unarchive_error": "Kunde inte avarkivera chatt",
-  "com_ui_upload_success": "Uppladdningen av filen lyckades",
-  "com_ui_use_prompt": "Använd prompt"
+  "com_ui_upload_success": "Uppladdningen av filen lyckades"
 }

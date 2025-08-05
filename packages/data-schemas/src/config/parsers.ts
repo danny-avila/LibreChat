@@ -1,6 +1,7 @@
 import { klona } from 'klona';
 import winston from 'winston';
-import traverse from 'traverse';
+import traverse from '../utils/object-traverse';
+import type { TraverseContext } from '../utils/object-traverse';
 
 const SPLAT_SYMBOL = Symbol.for('splat');
 const MESSAGE_SYMBOL = Symbol.for('message');
@@ -123,15 +124,17 @@ const debugTraverse = winston.format.printf(
       return `${timestamp} ${level}: ${JSON.stringify(message)}`;
     }
 
-    let msg = `${timestamp} ${level}: ${truncateLongStrings(message.trim(), 150)}`;
+    const msgParts: string[] = [
+      `${timestamp} ${level}: ${truncateLongStrings(message.trim(), 150)}`,
+    ];
 
     try {
       if (level !== 'debug') {
-        return msg;
+        return msgParts[0];
       }
 
       if (!metadata) {
-        return msg;
+        return msgParts[0];
       }
 
       // Type-safe access to SPLAT_SYMBOL using bracket notation
@@ -140,59 +143,66 @@ const debugTraverse = winston.format.printf(
       const debugValue = Array.isArray(splatArray) ? splatArray[0] : undefined;
 
       if (!debugValue) {
-        return msg;
+        return msgParts[0];
       }
 
       if (debugValue && Array.isArray(debugValue)) {
-        msg += `\n${JSON.stringify(debugValue.map(condenseArray))}`;
-        return msg;
+        msgParts.push(`\n${JSON.stringify(debugValue.map(condenseArray))}`);
+        return msgParts.join('');
       }
 
       if (typeof debugValue !== 'object') {
-        return (msg += ` ${debugValue}`);
+        msgParts.push(` ${debugValue}`);
+        return msgParts.join('');
       }
 
-      msg += '\n{';
+      msgParts.push('\n{');
 
       const copy = klona(metadata);
+      try {
+        const traversal = traverse(copy);
+        traversal.forEach(function (this: TraverseContext, value: unknown) {
+          if (typeof this?.key === 'symbol') {
+            return;
+          }
 
-      traverse(copy).forEach(function (this: traverse.TraverseContext, value: unknown) {
-        if (typeof this?.key === 'symbol') {
-          return;
-        }
+          let _parentKey = '';
+          const parent = this.parent;
 
-        let _parentKey = '';
-        const parent = this.parent;
+          if (typeof parent?.key !== 'symbol' && parent?.key !== undefined) {
+            _parentKey = String(parent.key);
+          }
 
-        if (typeof parent?.key !== 'symbol' && parent?.key) {
-          _parentKey = parent.key;
-        }
+          const parentKey = `${parent && parent.notRoot ? _parentKey + '.' : ''}`;
+          const tabs = `${parent && parent.notRoot ? '    ' : '  '}`;
+          const currentKey = this?.key ?? 'unknown';
 
-        const parentKey = `${parent && parent.notRoot ? _parentKey + '.' : ''}`;
-        const tabs = `${parent && parent.notRoot ? '    ' : '  '}`;
-        const currentKey = this?.key ?? 'unknown';
+          if (this.isLeaf && typeof value === 'string') {
+            const truncatedText = truncateLongStrings(value);
+            msgParts.push(`\n${tabs}${parentKey}${currentKey}: ${JSON.stringify(truncatedText)},`);
+          } else if (this.notLeaf && Array.isArray(value) && value.length > 0) {
+            const currentMessage = `\n${tabs}// ${value.length} ${String(currentKey).replace(/s$/, '')}(s)`;
+            this.update(currentMessage);
+            msgParts.push(currentMessage);
+            const stringifiedArray = value.map(condenseArray);
+            msgParts.push(`\n${tabs}${parentKey}${currentKey}: [${stringifiedArray}],`);
+          } else if (this.isLeaf && typeof value === 'function') {
+            msgParts.push(`\n${tabs}${parentKey}${currentKey}: function,`);
+          } else if (this.isLeaf) {
+            msgParts.push(`\n${tabs}${parentKey}${currentKey}: ${value},`);
+          }
+        });
+      } catch (e: unknown) {
+        const errorMessage = e instanceof Error ? e.message : 'Unknown error';
+        msgParts.push(`\n[LOGGER TRAVERSAL ERROR] ${errorMessage}`);
+      }
 
-        if (this.isLeaf && typeof value === 'string') {
-          const truncatedText = truncateLongStrings(value);
-          msg += `\n${tabs}${parentKey}${currentKey}: ${JSON.stringify(truncatedText)},`;
-        } else if (this.notLeaf && Array.isArray(value) && value.length > 0) {
-          const currentMessage = `\n${tabs}// ${value.length} ${currentKey.replace(/s$/, '')}(s)`;
-          this.update(currentMessage, true);
-          msg += currentMessage;
-          const stringifiedArray = value.map(condenseArray);
-          msg += `\n${tabs}${parentKey}${currentKey}: [${stringifiedArray}],`;
-        } else if (this.isLeaf && typeof value === 'function') {
-          msg += `\n${tabs}${parentKey}${currentKey}: function,`;
-        } else if (this.isLeaf) {
-          msg += `\n${tabs}${parentKey}${currentKey}: ${value},`;
-        }
-      });
-
-      msg += '\n}';
-      return msg;
+      msgParts.push('\n}');
+      return msgParts.join('');
     } catch (e: unknown) {
       const errorMessage = e instanceof Error ? e.message : 'Unknown error';
-      return (msg += `\n[LOGGER PARSING ERROR] ${errorMessage}`);
+      msgParts.push(`\n[LOGGER PARSING ERROR] ${errorMessage}`);
+      return msgParts.join('');
     }
   },
 );

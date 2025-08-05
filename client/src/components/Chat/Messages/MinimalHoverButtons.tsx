@@ -1,7 +1,7 @@
 import { useState } from 'react';
+import { Clipboard, CheckMark } from '@librechat/client';
 import type { TMessage, TAttachment, SearchResultData } from 'librechat-data-provider';
 import { useLocalize, useCopyToClipboard } from '~/hooks';
-import { Clipboard, CheckMark } from '~/components/svg';
 
 type THoverButtons = {
   message: TMessage;

@@ -908,7 +908,6 @@
   "com_ui_use_2fa_code": "Brug 2FA-kode i stedet",
   "com_ui_use_backup_code": "Brug backup-koden i stedet",
   "com_ui_use_micrphone": "Brug mikrofon",
-  "com_ui_use_prompt": "Brug prompt",
   "com_ui_used": "Brugt",
   "com_ui_variables": "Variabler",
   "com_ui_variables_info": "Brug dobbelte parenteser i din tekst til at oprette variabler, f.eks.{{example variable}}`, som senere skal udfyldes ved brug af prompten.",

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Button, OGDialog, OGDialogTemplate } from '@librechat/client';
 import {
   AuthType,
   SearchCategories,
@@ -9,8 +10,6 @@ import {
 import type { SearchApiKeyFormData } from '~/hooks/Plugins/useAuthSearchTool';
 import type { UseFormRegister, UseFormHandleSubmit } from 'react-hook-form';
 import InputSection, { type DropdownOption } from './InputSection';
-import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
-import { Button, OGDialog } from '~/components/ui';
 import { useGetStartupConfig } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 
