@@ -7,11 +7,13 @@ const {
   processImageFile,
   processAgentFileUpload,
 } = require('~/server/services/Files/process');
+const { getAppConfig } = require('~/server/services/Config');
 const { logger } = require('~/config');
 
 const router = express.Router();
 
 router.post('/', async (req, res) => {
+  const appConfig = await getAppConfig({ role: req.user?.role });
   const metadata = req.body;
 
   try {
@@ -30,7 +32,7 @@ router.post('/', async (req, res) => {
     logger.error('[/files/images] Error processing file:', error);
     try {
       const filepath = path.join(
-        req.app.locals.paths.imageOutput,
+        appConfig.paths.imageOutput,
         req.user.id,
         path.basename(req.file.filename),
       );
@@ -43,7 +45,7 @@ router.post('/', async (req, res) => {
     try {
       await fs.unlink(req.file.path);
       logger.debug('[/files/images] Temp. image upload file deleted');
-    } catch (error) {
+    } catch {
       logger.debug('[/files/images] Temp. image upload file already deleted');
     }
   }

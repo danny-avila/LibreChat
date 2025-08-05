@@ -4,11 +4,12 @@ const crypto = require('crypto');
 const multer = require('multer');
 const { sanitizeFilename } = require('@librechat/api');
 const { fileConfig: defaultFileConfig, mergeFileConfig } = require('librechat-data-provider');
-const { getCustomConfig } = require('~/server/services/Config');
+const { getCustomConfig, getAppConfig } = require('~/server/services/Config');
 
 const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    const outputPath = path.join(req.app.locals.paths.uploads, 'temp', req.user.id);
+  destination: async function (req, file, cb) {
+    const appConfig = await getAppConfig({ role: req.user?.role });
+    const outputPath = path.join(appConfig.paths.uploads, 'temp', req.user.id);
     if (!fs.existsSync(outputPath)) {
       fs.mkdirSync(outputPath, { recursive: true });
     }

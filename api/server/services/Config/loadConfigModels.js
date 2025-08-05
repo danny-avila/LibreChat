@@ -2,6 +2,7 @@ const { EModelEndpoint, extractEnvVariable } = require('librechat-data-provider'
 const { isUserProvided, normalizeEndpointName } = require('~/server/utils');
 const { fetchModels } = require('~/server/services/ModelService');
 const { getCustomConfig } = require('./getCustomConfig');
+const { getAppConfig } = require('./getAppConfig');
 
 /**
  * Load config endpoints from the cached configuration object
@@ -15,10 +16,11 @@ async function loadConfigModels(req) {
     return {};
   }
 
+  const appConfig = await getAppConfig({ role: req.user?.role });
   const { endpoints = {} } = customConfig ?? {};
   const modelsConfig = {};
   const azureEndpoint = endpoints[EModelEndpoint.azureOpenAI];
-  const azureConfig = req.app.locals[EModelEndpoint.azureOpenAI];
+  const azureConfig = appConfig[EModelEndpoint.azureOpenAI];
   const { modelNames } = azureConfig ?? {};
 
   if (modelNames && azureEndpoint) {

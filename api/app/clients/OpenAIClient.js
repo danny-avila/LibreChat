@@ -34,6 +34,7 @@ const {
 const { extractBaseURL, getModelMaxTokens, getModelMaxOutputTokens } = require('~/utils');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const { addSpaceIfNeeded, sleep } = require('~/server/utils');
+const { getAppConfig } = require('~/server/services/Config');
 const { spendTokens } = require('~/models/spendTokens');
 const { handleOpenAIErrors } = require('./tools/util');
 const { createLLM, RunManager } = require('./llm');
@@ -702,6 +703,7 @@ class OpenAIClient extends BaseClient {
    *                            In case of failure, it will return the default title, "New Chat".
    */
   async titleConvo({ text, conversationId, responseText = '' }) {
+    const appConfig = await getAppConfig({ role: this.options.req?.user?.role });
     this.conversationId = conversationId;
 
     if (this.options.attachments) {
@@ -731,7 +733,7 @@ class OpenAIClient extends BaseClient {
     };
 
     /** @type {TAzureConfig | undefined} */
-    const azureConfig = this.options?.req?.app?.locals?.[EModelEndpoint.azureOpenAI];
+    const azureConfig = appConfig?.[EModelEndpoint.azureOpenAI];
 
     const resetTitleOptions = !!(
       (this.azure && azureConfig) ||
@@ -1120,6 +1122,7 @@ ${convo}
   }
 
   async chatCompletion({ payload, onProgress, abortController = null }) {
+    const appConfig = await getAppConfig({ role: this.options.req?.user?.role });
     let error = null;
     let intermediateReply = [];
     const errorCallback = (err) => (error = err);
@@ -1166,7 +1169,7 @@ ${convo}
       }
 
       /** @type {TAzureConfig | undefined} */
-      const azureConfig = this.options?.req?.app?.locals?.[EModelEndpoint.azureOpenAI];
+      const azureConfig = appConfig?.[EModelEndpoint.azureOpenAI];
 
       if (
         (this.azure && this.isVisionModel && azureConfig) ||

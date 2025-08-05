@@ -32,8 +32,8 @@ const {
   manifestToolMap,
   toolkits,
 } = require('~/app/clients/tools');
+const { getEndpointsConfig, getCachedTools, getAppConfig } = require('~/server/services/Config');
 const { processFileURL, uploadImageBuffer } = require('~/server/services/Files/process');
-const { getEndpointsConfig, getCachedTools } = require('~/server/services/Config');
 const { createOnSearchResults } = require('~/server/services/Tools/search');
 const { isActionDomainAllowed } = require('~/server/services/domains');
 const { recordUsage } = require('~/server/services/Threads');
@@ -202,6 +202,7 @@ async function processRequiredActions(client, requiredActions) {
     `[required actions] user: ${client.req.user.id} | thread_id: ${requiredActions[0].thread_id} | run_id: ${requiredActions[0].run_id}`,
     requiredActions,
   );
+  const appConfig = await getAppConfig({ role: client.req.user?.role });
   const toolDefinitions = await getCachedTools({ userId: client.req.user.id, includeGlobal: true });
   const seenToolkits = new Set();
   const tools = requiredActions
@@ -233,7 +234,7 @@ async function processRequiredActions(client, requiredActions) {
       req: client.req,
       uploadImageBuffer,
       openAIApiKey: client.apiKey,
-      fileStrategy: client.req.app.locals.fileStrategy,
+      fileStrategy: appConfig.fileStrategy,
       returnMetadata: true,
     },
   });
@@ -480,12 +481,13 @@ async function loadAgentTools({ req, res, agent, tool_resources, openAIApiKey })
     return {};
   }
 
+  const appConfig = await getAppConfig({ role: req.user?.role });
   const endpointsConfig = await getEndpointsConfig(req);
   let enabledCapabilities = new Set(endpointsConfig?.[EModelEndpoint.agents]?.capabilities ?? []);
   /** Edge case: use defined/fallback capabilities when the "agents" endpoint is not enabled */
   if (enabledCapabilities.size === 0 && agent.id === Constants.EPHEMERAL_AGENT_ID) {
     enabledCapabilities = new Set(
-      req.app?.locals?.[EModelEndpoint.agents]?.capabilities ?? defaultAgentCapabilities,
+      appConfig?.[EModelEndpoint.agents]?.capabilities ?? defaultAgentCapabilities,
     );
   }
   const checkCapability = (capability) => {
@@ -536,7 +538,7 @@ async function loadAgentTools({ req, res, agent, tool_resources, openAIApiKey })
       processFileURL,
       uploadImageBuffer,
       returnMetadata: true,
-      fileStrategy: req.app.locals.fileStrategy,
+      fileStrategy: appConfig.fileStrategy,
       [Tools.web_search]: webSearchCallbacks,
     },
   });

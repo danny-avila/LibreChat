@@ -24,8 +24,8 @@ const {
 const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
 const { createFileSearchTool, primeFiles: primeSearchFiles } = require('./fileSearch');
 const { getUserPluginAuthValue } = require('~/server/services/PluginService');
+const { getCachedTools, getAppConfig } = require('~/server/services/Config');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
-const { getCachedTools } = require('~/server/services/Config');
 const { createMCPTool } = require('~/server/services/MCP');
 
 /**
@@ -143,6 +143,7 @@ const loadTools = async ({
   functions = true,
   returnMap = false,
 }) => {
+  const appConfig = await getAppConfig({ role: options?.req?.user?.role });
   const toolConstructors = {
     flux: FluxAPI,
     calculator: Calculator,
@@ -272,7 +273,7 @@ const loadTools = async ({
       };
       continue;
     } else if (tool === Tools.web_search) {
-      const webSearchConfig = options?.req?.app?.locals?.webSearch;
+      const webSearchConfig = appConfig?.webSearch;
       const result = await loadWebSearchAuth({
         userId: user,
         loadAuthValues,

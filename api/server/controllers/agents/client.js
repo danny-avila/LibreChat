@@ -39,7 +39,12 @@ const {
   deleteMemory,
   setMemory,
 } = require('~/models');
-const { getMCPAuthMap, checkCapability, hasCustomUserVars } = require('~/server/services/Config');
+const {
+  hasCustomUserVars,
+  checkCapability,
+  getMCPAuthMap,
+  getAppConfig,
+} = require('~/server/services/Config');
 const { addCacheControl, createContextHandlers } = require('~/app/clients/prompts');
 const { initializeAgent } = require('~/server/services/Endpoints/agents/agent');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
@@ -451,17 +456,15 @@ class AgentClient extends BaseClient {
       );
       return;
     }
-    /** @type {TCustomConfig['memory']} */
-    const memoryConfig = this.options.req?.app?.locals?.memory;
+    const appConfig = await getAppConfig({ role: user.role });
+    const memoryConfig = appConfig.memory;
     if (!memoryConfig || memoryConfig.disabled === true) {
       return;
     }
 
     /** @type {Agent} */
     let prelimAgent;
-    const allowedProviders = new Set(
-      this.options.req?.app?.locals?.[EModelEndpoint.agents]?.allowedProviders,
-    );
+    const allowedProviders = new Set(appConfig?.[EModelEndpoint.agents]?.allowedProviders);
     try {
       if (memoryConfig.agent?.id != null && memoryConfig.agent.id !== this.options.agent.id) {
         prelimAgent = await loadAgent({
@@ -582,8 +585,8 @@ class AgentClient extends BaseClient {
       if (this.processMemory == null) {
         return;
       }
-      /** @type {TCustomConfig['memory']} */
-      const memoryConfig = this.options.req?.app?.locals?.memory;
+      const appConfig = await getAppConfig({ role: this.options.req.user?.role });
+      const memoryConfig = appConfig.memory;
       const messageWindowSize = memoryConfig?.messageWindowSize ?? 5;
 
       let messagesToProcess = [...messages];
@@ -759,8 +762,9 @@ class AgentClient extends BaseClient {
         abortController = new AbortController();
       }
 
+      const appConfig = await getAppConfig({ role: this.options.req.user?.role });
       /** @type {TCustomConfig['endpoints']['agents']} */
-      const agentsEConfig = this.options.req.app.locals[EModelEndpoint.agents];
+      const agentsEConfig = appConfig[EModelEndpoint.agents];
 
       config = {
         configurable: {
@@ -1081,6 +1085,7 @@ class AgentClient extends BaseClient {
     }
     const { handleLLMEnd, collected: collectedMetadata } = createMetadataAggregator();
     const { req, res, agent } = this.options;
+    const appConfig = await getAppConfig({ role: req.user?.role });
     let endpoint = agent.endpoint;
 
     /** @type {import('@librechat/agents').ClientOptions} */
@@ -1092,7 +1097,7 @@ class AgentClient extends BaseClient {
 
     /** @type {TEndpoint | undefined} */
     const endpointConfig =
-      req.app.locals.all ?? req.app.locals[endpoint] ?? titleProviderConfig.customEndpointConfig;
+      appConfig.all ?? appConfig[endpoint] ?? titleProviderConfig.customEndpointConfig;
     if (!endpointConfig) {
       logger.warn(
         '[api/server/controllers/agents/client.js #titleConvo] Error getting endpoint config',

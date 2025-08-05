@@ -26,6 +26,7 @@ const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { refreshS3FileUrls } = require('~/server/services/Files/S3/crud');
 const { hasAccessToFilesViaAgent } = require('~/server/services/Files');
 const { getFiles, batchUpdateFiles } = require('~/models/File');
+const { getAppConfig } = require('~/server/services/Config');
 const { cleanFileName } = require('~/server/utils/files');
 const { getAssistant } = require('~/models/Assistant');
 const { getAgent } = require('~/models/Agent');
@@ -36,8 +37,9 @@ const router = express.Router();
 
 router.get('/', async (req, res) => {
   try {
+    const appConfig = await getAppConfig({ role: req.user?.role });
     const files = await getFiles({ user: req.user.id });
-    if (req.app.locals.fileStrategy === FileSources.s3) {
+    if (appConfig.fileStrategy === FileSources.s3) {
       try {
         const cache = getLogStores(CacheKeys.S3_EXPIRY_INTERVAL);
         const alreadyChecked = await cache.get(req.user.id);
@@ -114,7 +116,8 @@ router.get('/agent/:agent_id', async (req, res) => {
 
 router.get('/config', async (req, res) => {
   try {
-    res.status(200).json(req.app.locals.fileConfig);
+    const appConfig = await getAppConfig({ role: req.user?.role });
+    res.status(200).json(appConfig.fileConfig);
   } catch (error) {
     logger.error('[/files] Error getting fileConfig', error);
     res.status(400).json({ message: 'Error in request', error: error.message });

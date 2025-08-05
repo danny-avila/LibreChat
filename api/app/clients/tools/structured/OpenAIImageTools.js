@@ -9,6 +9,7 @@ const { logAxiosError } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 const { ContentTypes, EImageOutputType } = require('librechat-data-provider');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
+const { getAppConfig } = require('~/server/services/Config');
 const { extractBaseURL } = require('~/utils');
 const { getFiles } = require('~/models/File');
 
@@ -123,7 +124,7 @@ function createAbortHandler() {
  * @param {MongoFile[]} [fields.imageFiles] - The images to be used for editing
  * @returns {Array} - Array of image tools
  */
-function createOpenAIImageTools(fields = {}) {
+async function createOpenAIImageTools(fields = {}) {
   /** @type {boolean} Used to initialize the Tool without necessary variables. */
   const override = fields.override ?? false;
   /** @type {boolean} */
@@ -131,8 +132,9 @@ function createOpenAIImageTools(fields = {}) {
     throw new Error('This tool is only available for agents.');
   }
   const { req } = fields;
-  const imageOutputType = req?.app.locals.imageOutputType || EImageOutputType.PNG;
-  const appFileStrategy = req?.app.locals.fileStrategy;
+  const appConfig = await getAppConfig({ role: req?.user?.role });
+  const imageOutputType = appConfig?.imageOutputType || EImageOutputType.PNG;
+  const appFileStrategy = appConfig?.fileStrategy;
 
   const getApiKey = () => {
     const apiKey = process.env.IMAGE_GEN_OAI_API_KEY ?? '';

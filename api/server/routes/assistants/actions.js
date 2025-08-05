@@ -6,6 +6,7 @@ const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
 const { updateAction, getActions, deleteAction } = require('~/models/Action');
 const { updateAssistantDoc, getAssistant } = require('~/models/Assistant');
 const { isActionDomainAllowed } = require('~/server/services/domains');
+const { getAppConfig } = require('~/server/services/Config');
 const { logger } = require('~/config');
 
 const router = express.Router();
@@ -20,6 +21,7 @@ const router = express.Router();
  * @returns {Object} 200 - success response - application/json
  */
 router.post('/:assistant_id', async (req, res) => {
+  const appConfig = await getAppConfig({ role: req.user?.role });
   try {
     const { assistant_id } = req.params;
 
@@ -125,7 +127,7 @@ router.post('/:assistant_id', async (req, res) => {
     }
 
     /* Map Azure OpenAI model to the assistant as defined by config */
-    if (req.app.locals[EModelEndpoint.azureOpenAI]?.assistants) {
+    if (appConfig[EModelEndpoint.azureOpenAI]?.assistants) {
       updatedAssistant = {
         ...updatedAssistant,
         model: req.body.model,

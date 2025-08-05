@@ -3,6 +3,7 @@ const path = require('path');
 const sharp = require('sharp');
 const { logger } = require('@librechat/data-schemas');
 const { resizeImageBuffer } = require('../images/resize');
+const { getAppConfig } = require('~/server/services/Config');
 const { updateUser, updateFile } = require('~/models');
 const { saveBufferToAzure } = require('./crud');
 
@@ -30,6 +31,7 @@ async function uploadImageToAzure({
   containerName,
 }) {
   try {
+    const appConfig = await getAppConfig({ role: req.user?.role });
     const inputFilePath = file.path;
     const inputBuffer = await fs.promises.readFile(inputFilePath);
     const {
@@ -41,12 +43,12 @@ async function uploadImageToAzure({
     const userId = req.user.id;
     let webPBuffer;
     let fileName = `${file_id}__${path.basename(inputFilePath)}`;
-    const targetExtension = `.${req.app.locals.imageOutputType}`;
+    const targetExtension = `.${appConfig.imageOutputType}`;
 
     if (extension.toLowerCase() === targetExtension) {
       webPBuffer = resizedBuffer;
     } else {
-      webPBuffer = await sharp(resizedBuffer).toFormat(req.app.locals.imageOutputType).toBuffer();
+      webPBuffer = await sharp(resizedBuffer).toFormat(appConfig.imageOutputType).toBuffer();
       const extRegExp = new RegExp(path.extname(fileName) + '$');
       fileName = fileName.replace(extRegExp, targetExtension);
       if (!path.extname(fileName)) {

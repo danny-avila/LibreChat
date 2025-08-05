@@ -1214,6 +1214,10 @@ export enum CacheKeys {
    */
   STATIC_CONFIG = 'STATIC_CONFIG',
   /**
+   * Key for the app config namespace.
+   */
+  APP_CONFIG = 'APP_CONFIG',
+  /**
    * Key for accessing Abort Keys
    */
   ABORT_KEYS = 'ABORT_KEYS',

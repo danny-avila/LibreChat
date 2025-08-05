@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');
 const { logger } = require('@librechat/data-schemas');
+const { getAppConfig } = require('~/server/services/Config');
 const { resizeImageBuffer } = require('../images/resize');
 const { updateUser, updateFile } = require('~/models');
 const { saveBufferToS3 } = require('./crud');
@@ -12,7 +13,7 @@ const defaultBasePath = 'images';
  * Resizes, converts, and uploads an image file to S3.
  *
  * @param {Object} params
- * @param {import('express').Request} params.req - Express request (expects user and app.locals.imageOutputType).
+ * @param {import('express').Request} params.req - Express request (expects `user` and `appConfig.imageOutputType`).
  * @param {Express.Multer.File} params.file - File object from Multer.
  * @param {string} params.file_id - Unique file identifier.
  * @param {any} params.endpoint - Endpoint identifier used in image processing.
@@ -29,6 +30,7 @@ async function uploadImageToS3({
   basePath = defaultBasePath,
 }) {
   try {
+    const appConfig = await getAppConfig({ role: req.user?.role });
     const inputFilePath = file.path;
     const inputBuffer = await fs.promises.readFile(inputFilePath);
     const {
@@ -41,14 +43,12 @@ async function uploadImageToS3({
 
     let processedBuffer;
     let fileName = `${file_id}__${path.basename(inputFilePath)}`;
-    const targetExtension = `.${req.app.locals.imageOutputType}`;
+    const targetExtension = `.${appConfig.imageOutputType}`;
 
     if (extension.toLowerCase() === targetExtension) {
       processedBuffer = resizedBuffer;
     } else {
-      processedBuffer = await sharp(resizedBuffer)
-        .toFormat(req.app.locals.imageOutputType)
-        .toBuffer();
+      processedBuffer = await sharp(resizedBuffer).toFormat(appConfig.imageOutputType).toBuffer();
       fileName = fileName.replace(new RegExp(path.extname(fileName) + '$'), targetExtension);
       if (!path.extname(fileName)) {
         fileName += targetExtension;

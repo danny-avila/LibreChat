@@ -8,7 +8,7 @@ const {
 const { Providers } = require('@librechat/agents');
 const { getOpenAIConfig, createHandleLLMNewToken, resolveHeaders } = require('@librechat/api');
 const { getUserKeyValues, checkUserKeyExpiry } = require('~/server/services/UserService');
-const { getCustomEndpointConfig } = require('~/server/services/Config');
+const { getCustomEndpointConfig, getAppConfig } = require('~/server/services/Config');
 const { fetchModels } = require('~/server/services/ModelService');
 const OpenAIClient = require('~/app/clients/OpenAIClient');
 const { isUserProvided } = require('~/server/utils');
@@ -17,6 +17,7 @@ const getLogStores = require('~/cache/getLogStores');
 const { PROXY } = process.env;
 
 const initializeClient = async ({ req, res, endpointOption, optionsOnly, overrideEndpoint }) => {
+  const appConfig = await getAppConfig({ role: req.user?.role });
   const { key: expiresAt } = req.body;
   const endpoint = overrideEndpoint ?? req.body.endpoint;
 
@@ -118,7 +119,7 @@ const initializeClient = async ({ req, res, endpointOption, optionsOnly, overrid
   };
 
   /** @type {undefined | TBaseEndpoint} */
-  const allConfig = req.app.locals.all;
+  const allConfig = appConfig.all;
   if (allConfig) {
     customOptions.streamRate = allConfig.streamRate;
   }

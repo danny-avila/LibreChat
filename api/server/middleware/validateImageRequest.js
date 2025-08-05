@@ -1,5 +1,6 @@
 const cookies = require('cookie');
 const jwt = require('jsonwebtoken');
+const { getAppConfig } = require('~/server/services/Config/getAppConfig');
 const { logger } = require('~/config');
 
 const OBJECT_ID_LENGTH = 24;
@@ -24,8 +25,9 @@ function isValidObjectId(id) {
  * Middleware to validate image request.
  * Must be set by `secureImageLinks` via custom config file.
  */
-function validateImageRequest(req, res, next) {
-  if (!req.app.locals.secureImageLinks) {
+async function validateImageRequest(req, res, next) {
+  const appConfig = await getAppConfig({ role: req.user?.role });
+  if (!appConfig.secureImageLinks) {
     return next();
   }
 

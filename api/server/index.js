@@ -17,6 +17,7 @@ const { jwtLogin, ldapLogin, passportLogin } = require('~/strategies');
 const { checkMigrations } = require('./services/start/migration');
 const initializeMCPs = require('./services/initializeMCPs');
 const configureSocialLogins = require('./socialLogins');
+const { getAppConfig } = require('./services/Config');
 const AppService = require('./services/AppService');
 const staticCache = require('./utils/staticCache');
 const noIndex = require('./middleware/noIndex');
@@ -46,8 +47,8 @@ const startServer = async () => {
   app.set('trust proxy', trusted_proxy);
 
   await AppService(app);
-
-  const indexPath = path.join(app.locals.paths.dist, 'index.html');
+  const appConfig = await getAppConfig();
+  const indexPath = path.join(appConfig.paths.dist, 'index.html');
   const indexHTML = fs.readFileSync(indexPath, 'utf8');
 
   app.get('/health', (_req, res) => res.status(200).send('OK'));
@@ -66,10 +67,9 @@ const startServer = async () => {
     console.warn('Response compression has been disabled via DISABLE_COMPRESSION.');
   }
 
-  // Serve static assets with aggressive caching
-  app.use(staticCache(app.locals.paths.dist));
-  app.use(staticCache(app.locals.paths.fonts));
-  app.use(staticCache(app.locals.paths.assets));
+  app.use(staticCache(appConfig.paths.dist));
+  app.use(staticCache(appConfig.paths.fonts));
+  app.use(staticCache(appConfig.paths.assets));
 
   if (!ALLOW_SOCIAL_LOGIN) {
     console.warn('Social logins are disabled. Set ALLOW_SOCIAL_LOGIN=true to enable them.');
@@ -146,7 +146,7 @@ const startServer = async () => {
       logger.info(`Server listening at http://${host == '0.0.0.0' ? 'localhost' : host}:${port}`);
     }
 
-    initializeMCPs(app).then(() => checkMigrations());
+    initializeMCPs().then(() => checkMigrations());
   });
 };
 

@@ -8,6 +8,7 @@ const {
 const loadDefaultEndpointsConfig = require('./loadDefaultEConfig');
 const loadConfigEndpoints = require('./loadConfigEndpoints');
 const getLogStores = require('~/cache/getLogStores');
+const { getAppConfig } = require('./getAppConfig');
 
 /**
  *
@@ -23,12 +24,13 @@ async function getEndpointsConfig(req) {
 
   const defaultEndpointsConfig = await loadDefaultEndpointsConfig(req);
   const customConfigEndpoints = await loadConfigEndpoints(req);
+  const appConfig = await getAppConfig({ role: req.user?.role });
 
   /** @type {TEndpointsConfig} */
   const mergedConfig = { ...defaultEndpointsConfig, ...customConfigEndpoints };
-  if (mergedConfig[EModelEndpoint.assistants] && req.app.locals?.[EModelEndpoint.assistants]) {
+  if (mergedConfig[EModelEndpoint.assistants] && appConfig?.[EModelEndpoint.assistants]) {
     const { disableBuilder, retrievalModels, capabilities, version, ..._rest } =
-      req.app.locals[EModelEndpoint.assistants];
+      appConfig[EModelEndpoint.assistants];
 
     mergedConfig[EModelEndpoint.assistants] = {
       ...mergedConfig[EModelEndpoint.assistants],
@@ -38,9 +40,9 @@ async function getEndpointsConfig(req) {
       capabilities,
     };
   }
-  if (mergedConfig[EModelEndpoint.agents] && req.app.locals?.[EModelEndpoint.agents]) {
+  if (mergedConfig[EModelEndpoint.agents] && appConfig?.[EModelEndpoint.agents]) {
     const { disableBuilder, capabilities, allowedProviders, ..._rest } =
-      req.app.locals[EModelEndpoint.agents];
+      appConfig[EModelEndpoint.agents];
 
     mergedConfig[EModelEndpoint.agents] = {
       ...mergedConfig[EModelEndpoint.agents],
@@ -50,12 +52,9 @@ async function getEndpointsConfig(req) {
     };
   }
 
-  if (
-    mergedConfig[EModelEndpoint.azureAssistants] &&
-    req.app.locals?.[EModelEndpoint.azureAssistants]
-  ) {
+  if (mergedConfig[EModelEndpoint.azureAssistants] && appConfig?.[EModelEndpoint.azureAssistants]) {
     const { disableBuilder, retrievalModels, capabilities, version, ..._rest } =
-      req.app.locals[EModelEndpoint.azureAssistants];
+      appConfig[EModelEndpoint.azureAssistants];
 
     mergedConfig[EModelEndpoint.azureAssistants] = {
       ...mergedConfig[EModelEndpoint.azureAssistants],
@@ -66,8 +65,8 @@ async function getEndpointsConfig(req) {
     };
   }
 
-  if (mergedConfig[EModelEndpoint.bedrock] && req.app.locals?.[EModelEndpoint.bedrock]) {
-    const { availableRegions } = req.app.locals[EModelEndpoint.bedrock];
+  if (mergedConfig[EModelEndpoint.bedrock] && appConfig?.[EModelEndpoint.bedrock]) {
+    const { availableRegions } = appConfig[EModelEndpoint.bedrock];
     mergedConfig[EModelEndpoint.bedrock] = {
       ...mergedConfig[EModelEndpoint.bedrock],
       availableRegions,

@@ -1,9 +1,10 @@
 import { primeResources } from './resources';
 import { logger } from '@librechat/data-schemas';
 import { EModelEndpoint, EToolResources, AgentCapabilities } from 'librechat-data-provider';
+import type { TAgentsEndpoint, TFile } from 'librechat-data-provider';
 import type { Request as ServerRequest } from 'express';
-import type { TFile } from 'librechat-data-provider';
 import type { TGetFiles } from './resources';
+import type { AppConfig } from '~/types';
 
 // Mock logger
 jest.mock('@librechat/data-schemas', () => ({
@@ -14,6 +15,7 @@ jest.mock('@librechat/data-schemas', () => ({
 
 describe('primeResources', () => {
   let mockReq: ServerRequest;
+  let mockAppConfig: AppConfig;
   let mockGetFiles: jest.MockedFunction<TGetFiles>;
   let requestFileSet: Set<string>;
 
@@ -31,6 +33,13 @@ describe('primeResources', () => {
         },
       },
     } as unknown as ServerRequest;
+
+    // Setup mock appConfig
+    mockAppConfig = {
+      [EModelEndpoint.agents]: {
+        capabilities: [AgentCapabilities.ocr],
+      } as TAgentsEndpoint,
+    } as AppConfig;
 
     // Setup mock getFiles function
     mockGetFiles = jest.fn();
@@ -65,6 +74,7 @@ describe('primeResources', () => {
 
       const result = await primeResources({
         req: mockReq,
+        appConfig: mockAppConfig,
         getFiles: mockGetFiles,
         requestFileSet,
         attachments: undefined,
@@ -85,6 +95,7 @@ describe('primeResources', () => {
   describe('when OCR is disabled', () => {
     it('should not fetch OCR files even if tool_resources has OCR file_ids', async () => {
       (mockReq.app as ServerRequest['app']).locals[EModelEndpoint.agents].capabilities = [];
+      (mockAppConfig[EModelEndpoint.agents] as TAgentsEndpoint).capabilities = [];
 
       const tool_resources = {
         [EToolResources.ocr]: {
@@ -94,6 +105,7 @@ describe('primeResources', () => {
 
       const result = await primeResources({
         req: mockReq,
+        appConfig: mockAppConfig,
         getFiles: mockGetFiles,
         requestFileSet,
         attachments: undefined,
@@ -129,6 +141,7 @@ describe('primeResources', () => {
 
       const result = await primeResources({
         req: mockReq,
+        appConfig: mockAppConfig,
         getFiles: mockGetFiles,
         requestFileSet,
         attachments,
@@ -158,6 +171,7 @@ describe('primeResources', () => {
 
       const result = await primeResources({
         req: mockReq,
+        appConfig: mockAppConfig,
         getFiles: mockGetFiles,
         requestFileSet,
         attachments,
@@ -189,6 +203,7 @@ describe('primeResources', () => {
 
       const result = await primeResources({
         req: mockReq,
+        appConfig: mockAppConfig,
         getFiles: mockGetFiles,
         requestFileSet,
         attachments,
@@ -220,6 +235,7 @@ describe('primeResources', () => {
 
       const result = await primeResources({
         req: mockReq,
+        appConfig: mockAppConfig,
         getFiles: mockGetFiles,
         requestFileSet,
         attachments,
@@ -250,6 +266,7 @@ describe('primeResources', () => {
 
       const result = await primeResources({
         req: mockReq,
+        appConfig: mockAppConfig,
         getFiles: mockGetFiles,
         requestFileSet,
         attachments,
@@ -291,6 +308,7 @@ describe('primeResources', () => {
 
       const result = await primeResources({
         req: mockReq,
+        appConfig: mockAppConfig,
         getFiles: mockGetFiles,
         requestFileSet,
         attachments,
@@ -342,6 +360,7 @@ describe('primeResources', () => {
 
       const result = await primeResources({
         req: mockReq,
+        appConfig: mockAppConfig,
         getFiles: mockGetFiles,
         requestFileSet,
         attachments,
@@ -399,6 +418,7 @@ describe('primeResources', () => {
 
       const result = await primeResources({
         req: mockReq,
+        appConfig: mockAppConfig,
         getFiles: mockGetFiles,
         requestFileSet,
         attachments,
@@ -450,6 +470,7 @@ describe('primeResources', () => {
 
       const result = await primeResources({
         req: mockReq,
+        appConfig: mockAppConfig,
         getFiles: mockGetFiles,
         requestFileSet,
         attachments,
@@ -492,6 +513,7 @@ describe('primeResources', () => {
 
       const result = await primeResources({
         req: mockReq,
+        appConfig: mockAppConfig,
         getFiles: mockGetFiles,
         requestFileSet,
         attachments,
@@ -560,6 +582,7 @@ describe('primeResources', () => {
 
       const result = await primeResources({
         req: mockReq,
+        appConfig: mockAppConfig,
         getFiles: mockGetFiles,
         requestFileSet,
         attachments,
@@ -618,6 +641,7 @@ describe('primeResources', () => {
 
       const result = await primeResources({
         req: mockReq,
+        appConfig: mockAppConfig,
         getFiles: mockGetFiles,
         requestFileSet,
         attachments,
@@ -671,6 +695,7 @@ describe('primeResources', () => {
 
       const result = await primeResources({
         req: mockReq,
+        appConfig: mockAppConfig,
         getFiles: mockGetFiles,
         requestFileSet,
         attachments,
@@ -724,6 +749,7 @@ describe('primeResources', () => {
 
       const result = await primeResources({
         req: mockReq,
+        appConfig: mockAppConfig,
         getFiles: mockGetFiles,
         requestFileSet,
         attachments,
@@ -764,6 +790,7 @@ describe('primeResources', () => {
 
       const result = await primeResources({
         req: mockReq,
+        appConfig: mockAppConfig,
         getFiles: mockGetFiles,
         requestFileSet,
         attachments,
@@ -838,6 +865,7 @@ describe('primeResources', () => {
 
       const result = await primeResources({
         req: mockReq,
+        appConfig: mockAppConfig,
         getFiles: mockGetFiles,
         requestFileSet,
         attachments,
@@ -888,6 +916,7 @@ describe('primeResources', () => {
 
       const result = await primeResources({
         req: mockReq,
+        appConfig: mockAppConfig,
         getFiles: mockGetFiles,
         requestFileSet,
         attachments,
@@ -906,6 +935,7 @@ describe('primeResources', () => {
       // The function should now handle rejected attachment promises gracefully
       const result = await primeResources({
         req: mockReq,
+        appConfig: mockAppConfig,
         getFiles: mockGetFiles,
         requestFileSet,
         attachments,
@@ -928,9 +958,11 @@ describe('primeResources', () => {
   describe('edge cases', () => {
     it('should handle missing app.locals gracefully', async () => {
       const reqWithoutLocals = {} as ServerRequest;
+      const emptyAppConfig = {} as AppConfig;
 
       const result = await primeResources({
         req: reqWithoutLocals,
+        appConfig: emptyAppConfig,
         getFiles: mockGetFiles,
         requestFileSet,
         attachments: undefined,
@@ -950,6 +982,7 @@ describe('primeResources', () => {
     it('should handle undefined tool_resources', async () => {
       const result = await primeResources({
         req: mockReq,
+        appConfig: mockAppConfig,
         getFiles: mockGetFiles,
         requestFileSet,
         attachments: undefined,
@@ -982,6 +1015,7 @@ describe('primeResources', () => {
 
       const result = await primeResources({
         req: mockReq,
+        appConfig: mockAppConfig,
         getFiles: mockGetFiles,
         requestFileSet: emptyRequestFileSet,
         attachments,

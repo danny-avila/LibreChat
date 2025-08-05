@@ -24,11 +24,11 @@ const { FileContext } = require('librechat-data-provider');
  *   { isAvatar: true }
  * ) // Returns 'local'
  */
-function getFileStrategy(appLocals, { isAvatar = false, isImage = false, context = null } = {}) {
-  // Handle both old (config object) and new (app.locals object) calling patterns
-  const isAppLocals = appLocals.fileStrategy !== undefined;
-  const config = isAppLocals ? appLocals.config : appLocals;
-  const fileStrategy = isAppLocals ? appLocals.fileStrategy : appLocals.fileStrategy;
+function getFileStrategy(appConfig, { isAvatar = false, isImage = false, context = null } = {}) {
+  // Handle both old (config object) and new (`appConfig` object) calling patterns
+  const isAppConfig = appConfig.fileStrategy !== undefined;
+  const config = isAppConfig ? appConfig.config : appConfig;
+  const fileStrategy = isAppConfig ? appConfig.fileStrategy : appConfig.fileStrategy;
 
   // Fallback to legacy single strategy if no granular config
   if (!config?.fileStrategies) {

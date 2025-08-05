@@ -6,7 +6,7 @@ const {
   filterUniquePlugins,
   convertMCPToolsToPlugins,
 } = require('@librechat/api');
-const { getCustomConfig, getCachedTools } = require('~/server/services/Config');
+const { getCustomConfig, getCachedTools, getAppConfig } = require('~/server/services/Config');
 const { availableTools, toolkits } = require('~/app/clients/tools');
 const { getMCPManager, getFlowStateManager } = require('~/config');
 const { getLogStores } = require('~/cache');
@@ -20,8 +20,9 @@ const getAvailablePluginsController = async (req, res) => {
       return;
     }
 
+    const appConfig = await getAppConfig({ role: req.user?.role });
     /** @type {{ filteredTools: string[], includedTools: string[] }} */
-    const { filteredTools = [], includedTools = [] } = req.app.locals;
+    const { filteredTools = [], includedTools = [] } = appConfig;
     const pluginManifest = availableTools;
 
     const uniquePlugins = filterUniquePlugins(pluginManifest);

@@ -11,6 +11,7 @@ const {
   Constants,
 } = require('librechat-data-provider');
 const { getMessages, saveMessage, updateMessage, saveConvo, getConvo } = require('~/models');
+const { getAppConfig } = require('~/server/services/Config');
 const { checkBalance } = require('~/models/balanceMethods');
 const { truncateToolCallOutputs } = require('./prompts');
 const { getFiles } = require('~/models/File');
@@ -567,6 +568,7 @@ class BaseClient {
   }
 
   async sendMessage(message, opts = {}) {
+    const appConfig = await getAppConfig({ role: this.options.req?.user?.role });
     /** @type {Promise<TMessage>} */
     let userMessagePromise;
     const { user, head, isEdited, conversationId, responseMessageId, saveOptions, userMessage } =
@@ -653,7 +655,7 @@ class BaseClient {
       }
     }
 
-    const balance = this.options.req?.app?.locals?.balance;
+    const balance = appConfig?.balance;
     if (
       balance?.enabled &&
       supportsBalanceCheck[this.options.endpointType ?? this.options.endpoint]

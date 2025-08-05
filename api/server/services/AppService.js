@@ -21,6 +21,7 @@ const { ensureDefaultCategories, seedDefaultRoles, initializeRoles } = require('
 const { azureAssistantsDefaults, assistantsConfigSetup } = require('./start/assistants');
 const { initializeAzureBlobService } = require('./Files/Azure/initialize');
 const { initializeFirebase } = require('./Files/Firebase/initialize');
+const { initializeAppConfig } = require('./Config/getAppConfig');
 const loadCustomConfig = require('./Config/loadCustomConfig');
 const handleRateLimits = require('./Config/handleRateLimits');
 const { loadDefaultInterface } = require('./start/interface');
@@ -35,9 +36,8 @@ const paths = require('~/config/paths');
 /**
  * Loads custom config and initializes app-wide variables.
  * @function AppService
- * @param {Express.Application} app - The Express application object.
  */
-const AppService = async (app) => {
+const AppService = async () => {
   await initializeRoles();
   await seedDefaultRoles();
   await ensureDefaultCategories();
@@ -109,10 +109,11 @@ const AppService = async (app) => {
   const agentsDefaults = agentsConfigSetup(config);
 
   if (!Object.keys(config).length) {
-    app.locals = {
+    const appConfig = {
       ...defaultLocals,
       [EModelEndpoint.agents]: agentsDefaults,
     };
+    await initializeAppConfig(appConfig);
     return;
   }
 
@@ -167,13 +168,15 @@ const AppService = async (app) => {
     endpointLocals.all = endpoints.all;
   }
 
-  app.locals = {
+  const appConfig = {
     ...defaultLocals,
     fileConfig: config?.fileConfig,
     secureImageLinks: config?.secureImageLinks,
     modelSpecs: processModelSpecs(endpoints, config.modelSpecs, interfaceConfig),
     ...endpointLocals,
   };
+
+  await initializeAppConfig(appConfig);
 };
 
 module.exports = AppService;
