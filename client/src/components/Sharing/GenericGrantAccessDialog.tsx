@@ -196,7 +196,6 @@ export default function GenericGrantAccessDialog({
       });
 
       setHasChanges(false);
-      setIsModalOpen(false);
     } catch (error) {
       console.error('Error updating permissions:', error);
       showToast({
