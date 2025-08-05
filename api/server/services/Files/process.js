@@ -28,12 +28,111 @@ const { addResourceFileId, deleteResourceFileId } = require('~/server/controller
 const { addAgentResourceFile, removeAgentResourceFiles } = require('~/models/Agent');
 const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
 const { createFile, updateFileUsage, deleteFiles } = require('~/models/File');
+const { generateShortLivedToken } = require('~/server/services/AuthService');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { checkCapability } = require('~/server/services/Config');
 const { LB_QueueAsyncCall } = require('~/server/utils/queue');
 const { getStrategyFunctions } = require('./strategies');
 const { determineFileType } = require('~/server/utils');
 const { logger } = require('~/config');
+const FormData = require('form-data');
+const axios = require('axios');
+
+/**
+ * Attempts to parse text using RAG API, falls back to native text parsing
+ * @param {Object} params - The parameters object
+ * @param {Express.Request} params.req - The Express request object
+ * @param {Express.Multer.File} params.file - The uploaded file
+ * @param {string} params.file_id - The file ID
+ * @returns {Promise<{text: string, bytes: number, source: string}>}
+ */
+async function parseText({ req, file, file_id }) {
+  if (!process.env.RAG_API_URL) {
+    logger.debug('[parseText] RAG_API_URL not defined, falling back to native text parsing');
+    return parseTextNative(file);
+  }
+
+  try {
+    const healthResponse = await axios.get(`${process.env.RAG_API_URL}/health`, {
+      timeout: 5000,
+    });
+    if (healthResponse?.statusText !== 'OK' && healthResponse?.status !== 200) {
+      logger.debug('[parseText] RAG API health check failed, falling back to native parsing');
+      return parseTextNative(file);
+    }
+  } catch (healthError) {
+    logger.debug(
+      `[parseText] RAG API health check failed: ${healthError.message}, falling back to native parsing`,
+    );
+    return parseTextNative(file);
+  }
+
+  try {
+    const jwtToken = generateShortLivedToken(req.user.id);
+    const formData = new FormData();
+    formData.append('file_id', file_id);
+    formData.append('file', fs.createReadStream(file.path));
+
+    const formHeaders = formData.getHeaders();
+
+    // TODO: Actually implement referenced RAG API endpoint /parse-text
+    const response = await axios.post(`${process.env.RAG_API_URL}/parse-text`, formData, {
+      headers: {
+        Authorization: `Bearer ${jwtToken}`,
+        accept: 'application/json',
+        ...formHeaders,
+      },
+      timeout: 30000,
+    });
+
+    const responseData = response.data;
+    logger.debug('[parseText] Response from RAG API', responseData);
+
+    if (!responseData.text) {
+      throw new Error('RAG API did not return parsed text');
+    }
+
+    return {
+      text: responseData.text,
+      bytes: Buffer.byteLength(responseData.text, 'utf8'),
+      source: 'rag_api',
+    };
+  } catch (error) {
+    logger.warn(
+      `[parseText] RAG API text parsing failed: ${error.message}, falling back to native parsing`,
+    );
+    return parseTextNative(file);
+  }
+}
+
+/**
+ * Native JavaScript text parsing fallback
+ * Simple text file reading - complex formats handled by RAG API
+ * @param {Express.Multer.File} file - The uploaded file
+ * @returns {{text: string, bytes: number, source: string}}
+ */
+function parseTextNative(file) {
+  try {
+    let text = '';
+
+    try {
+      text = fs.readFileSync(file.path, 'utf8');
+    } catch (readError) {
+      throw new Error(`Cannot read file as text: ${readError.message}`);
+    }
+
+    const bytes = Buffer.byteLength(text, 'utf8');
+
+    return {
+      text,
+      bytes,
+      source: 'native_js',
+    };
+  } catch (error) {
+    logger.error(`[parseTextNative] Error parsing file: ${error.message}`);
+    throw new Error(`Failed to parse file: ${error.message}`);
+  }
+}
 
 /**
  *
@@ -577,11 +676,8 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
       return res
         .status(200)
         .json({ message: 'Agent file uploaded and processed successfully', ...result });
-
-      // TODO: add placeholder for RAG API which falls back to native text parsing
     } else if (shouldUseTextParsing) {
-      const text = fs.readFileSync(file.path, 'utf8');
-      const bytes = Buffer.byteLength(text, 'utf8');
+      const { text, bytes } = await parseText({ req, file, file_id });
 
       const fileInfo = removeNullishValues({
         text,
