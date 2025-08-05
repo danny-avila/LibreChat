@@ -276,7 +276,7 @@ export default function GenericGrantAccessDialog({
             {/* Search Bar with Default Permission Setting */}
             {hasPeoplePickerAccess && (
               <div className="space-y-2">
-                <h4 className="flex items-center gap-2 text-sm font-medium text-text-primary">
+                <h4 className="mb-2 flex items-center gap-2 text-sm font-medium text-text-primary">
                   <UserCheck className="h-4 w-4" />
                   {localize('com_ui_user_group_permissions')} ( {allShares.length} )
                 </h4>

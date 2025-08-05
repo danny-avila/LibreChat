@@ -72,10 +72,10 @@ export function SearchPicker<TOption extends { key: string; value: string }>({
 
   return (
     <Ariakit.ComboboxProvider store={combobox}>
-      <Ariakit.ComboboxLabel className="text-token-text-primary mb-2 block font-medium">
+      <Ariakit.ComboboxLabel className="mb-2 block font-medium text-text-primary">
         {label}
       </Ariakit.ComboboxLabel>
-      <div className="py-1.5">
+      <>
         <div
           className={cn(
             'group relative flex h-10 cursor-pointer items-center gap-2 rounded-lg border-border-medium text-text-primary transition-colors duration-200 focus-within:bg-surface-hover hover:bg-surface-hover',
@@ -113,10 +113,10 @@ export function SearchPicker<TOption extends { key: string; value: string }>({
             className="h-10 w-full rounded-lg bg-transparent pl-10 text-sm leading-tight text-text-primary placeholder-text-secondary placeholder-opacity-100 focus:outline-none focus-visible:outline-none group-focus-within:placeholder-text-primary group-hover:placeholder-text-primary"
           />
         </div>
-      </div>
+      </>
       <Ariakit.ComboboxPopover
         portal={false} //todo fix focus when set to true
-        gutter={10}
+        gutter={8}
         sameWidth
         open={
           isLoading ||
@@ -128,7 +128,7 @@ export function SearchPicker<TOption extends { key: string; value: string }>({
         autoFocusOnShow={false}
         modal={false}
         className={cn(
-          'animate-popover z-[9999] min-w-64 overflow-hidden rounded-xl border border-border-light bg-surface-secondary shadow-lg',
+          'animate-popover z-[9999] min-w-64 overflow-hidden rounded-2xl border border-border-light bg-surface-secondary shadow-lg',
           '[pointer-events:auto]', // Override body's pointer-events:none when in modal
         )}
       >
