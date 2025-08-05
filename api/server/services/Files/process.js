@@ -676,8 +676,6 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
       return res
         .status(200)
         .json({ message: 'Agent file uploaded and processed successfully', ...result });
-
-      // TODO: add placeholder for RAG API which falls back to native text parsing
     } else if (shouldUseTextParsing) {
       const { text, bytes } = await parseText({ req, file, file_id });
 
