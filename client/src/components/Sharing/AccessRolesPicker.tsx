@@ -1,7 +1,7 @@
 import React from 'react';
 import * as Ariakit from '@ariakit/react';
 import { ChevronDown } from 'lucide-react';
-import { DropdownPopup } from '@librechat/client';
+import { DropdownPopup, Skeleton } from '@librechat/client';
 import { AccessRoleIds, ResourceType } from 'librechat-data-provider';
 import { useGetAccessRolesQuery } from 'librechat-data-provider/react-query';
 import type { AccessRole } from 'librechat-data-provider';
@@ -39,14 +39,7 @@ export default function AccessRolesPicker({
   const selectedRoleInfo = selectedRole ? getLocalizedRoleInfo(selectedRole.accessRoleId) : null;
 
   if (rolesLoading || !accessRoles) {
-    return (
-      <div className={className}>
-        <div className="flex items-center justify-center py-2">
-          <div className="h-4 w-4 animate-spin rounded-full border-2 border-border-light border-t-blue-600"></div>
-          <span className="ml-2 text-sm text-text-secondary">{localize('com_ui_loading')}</span>
-        </div>
-      </div>
-    );
+    return <Skeleton className="h-10 w-24 rounded-lg" />;
   }
 
   const dropdownItems: t.MenuItemProps[] = accessRoles.map((role: AccessRole) => {

@@ -1,8 +1,8 @@
 import React from 'react';
-import { Switch } from '@librechat/client';
 import { Globe, Shield } from 'lucide-react';
-import type { AccessRoleIds } from 'librechat-data-provider';
 import { ResourceType } from 'librechat-data-provider';
+import { Switch, InfoHoverCard, ESide, Label } from '@librechat/client';
+import type { AccessRoleIds } from 'librechat-data-provider';
 import AccessRolesPicker from './AccessRolesPicker';
 import { useLocalize } from '~/hooks';
 
@@ -22,17 +22,16 @@ export default function PublicSharingToggle({
   const localize = useLocalize();
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div className="flex items-start gap-3">
-          <Globe className="mt-0.5 h-5 w-5 text-blue-500" />
-          <div>
-            <h4 className="text-sm font-medium text-text-primary">
+    <div className="space-y-2">
+      {/* Main toggle section */}
+      <div className="flex items-center justify-between py-3">
+        <div className="flex items-center gap-3">
+          <Globe className="size-5 text-text-secondary" />
+          <div className="flex items-center gap-2">
+            <Label className="text-sm font-medium text-text-primary">
               {localize('com_ui_public_access')}
-            </h4>
-            <p className="text-xs text-text-secondary">
-              {localize('com_ui_public_access_description')}
-            </p>
+            </Label>
+            <InfoHoverCard side={ESide.Top} text={localize('com_ui_public_access_description')} />
           </div>
         </div>
         <Switch
@@ -42,19 +41,22 @@ export default function PublicSharingToggle({
         />
       </div>
 
+      {/* Permission level section */}
       {isPublic && (
-        <div className="ml-8 space-y-3">
-          <div className="flex items-center gap-2">
-            <Shield className="h-4 w-4 text-text-secondary" />
-            <label className="text-sm font-medium text-text-primary">
-              {localize('com_ui_public_permission_level')}
-            </label>
+        <div className="pt-2 duration-200 animate-in slide-in-from-top-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Shield className="size-5 text-text-secondary" />
+              <Label className="text-sm font-medium text-text-primary">
+                {localize('com_ui_public_permission_level')}
+              </Label>
+            </div>
+            <AccessRolesPicker
+              resourceType={resourceType}
+              selectedRoleId={publicRole}
+              onRoleChange={onPublicRoleChange}
+            />
           </div>
-          <AccessRolesPicker
-            resourceType={resourceType}
-            selectedRoleId={publicRole}
-            onRoleChange={onPublicRoleChange}
-          />
         </div>
       )}
     </div>

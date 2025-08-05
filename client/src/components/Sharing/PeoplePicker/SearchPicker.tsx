@@ -1,6 +1,6 @@
 import * as React from 'react';
+import { Search } from 'lucide-react';
 import debounce from 'lodash/debounce';
-import { Search, X } from 'lucide-react';
 import * as Ariakit from '@ariakit/react';
 import { Spinner, Skeleton } from '@librechat/client';
 import { useLocalize } from '~/hooks';
@@ -78,7 +78,7 @@ export function SearchPicker<TOption extends { key: string; value: string }>({
       <div className="py-1.5">
         <div
           className={cn(
-            'group relative mt-1 flex h-10 cursor-pointer items-center gap-3 rounded-lg border-border-medium px-3 py-2 text-text-primary transition-colors duration-200 focus-within:bg-surface-hover hover:bg-surface-hover',
+            'group relative flex h-10 cursor-pointer items-center gap-2 rounded-lg border-border-medium text-text-primary transition-colors duration-200 focus-within:bg-surface-hover hover:bg-surface-hover',
             isSmallScreen === true ? 'mb-2 h-14 rounded-2xl' : '',
           )}
         >
@@ -110,7 +110,7 @@ export function SearchPicker<TOption extends { key: string; value: string }>({
             value={localQuery}
             // autoSelect
             placeholder={placeholder || localize('com_ui_select_options')}
-            className="m-0 mr-0 w-full rounded-md border-none bg-transparent p-0 py-2 pl-9 pr-3 text-sm leading-tight text-text-primary placeholder-text-secondary placeholder-opacity-100 focus:outline-none focus-visible:outline-none group-focus-within:placeholder-text-primary group-hover:placeholder-text-primary"
+            className="h-10 w-full rounded-lg bg-transparent pl-10 text-sm leading-tight text-text-primary placeholder-text-secondary placeholder-opacity-100 focus:outline-none focus-visible:outline-none group-focus-within:placeholder-text-primary group-hover:placeholder-text-primary"
           />
         </div>
       </div>
