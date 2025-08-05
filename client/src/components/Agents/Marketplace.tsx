@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useRecoilState } from 'recoil';
 import { useOutletContext } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
@@ -124,15 +124,18 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
    */
   const orderedTabs = useMemo<string[]>(() => {
     const dynamic = (categoriesQuery.data || []).map((c) => c.value);
-    // Ensure unique and stable order
-    const set = new Set<string>(['promoted', 'all', ...dynamic]);
+    // Ensure unique and stable order - 'all' should be last to match server response
+    const set = new Set<string>(['promoted', ...dynamic, 'all']);
     return Array.from(set);
   }, [categoriesQuery.data]);
 
-  const getTabIndex = (tab: string): number => {
-    const idx = orderedTabs.indexOf(tab);
-    return idx >= 0 ? idx : 0;
-  };
+  const getTabIndex = useCallback(
+    (tab: string): number => {
+      const idx = orderedTabs.indexOf(tab);
+      return idx >= 0 ? idx : 0;
+    },
+    [orderedTabs],
+  );
 
   /**
    * Handle category tab selection changes with directional animation
@@ -199,7 +202,7 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [activeTab, displayCategory, isTransitioning, orderedTabs]);
+  }, [activeTab, displayCategory, isTransitioning, getTabIndex]);
 
   // No longer needed with keyframes
 

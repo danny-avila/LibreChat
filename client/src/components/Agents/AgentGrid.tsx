@@ -108,24 +108,9 @@ const AgentGrid: React.FC<AgentGridProps> = ({ category, searchQuery, onSelectAg
     }
   };
 
-  /**
-   * Get the appropriate title for the agents grid based on current state
-   */
-  const getGridTitle = () => {
-    if (searchQuery) {
-      return localize('com_agents_results_for', { query: searchQuery });
-    }
-
-    return getCategoryDisplayName(category);
-  };
-
   // Loading skeleton component
   const loadingSkeleton = (
     <div className="space-y-6">
-      <div className="mb-4">
-        <div className="mb-2 h-6 w-48 animate-pulse rounded-md bg-surface-tertiary"></div>
-        <div className="h-4 w-64 animate-pulse rounded-md bg-surface-tertiary"></div>
-      </div>
       <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
         {Array(6)
           .fill(0)
