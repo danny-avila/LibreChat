@@ -1,17 +1,17 @@
-import React, { useState, useId } from 'react';
-import * as Ariakit from '@ariakit/react/menu';
-import { Button, DropdownPopup } from '@librechat/client';
-import { Users, X, ExternalLink, ChevronDown } from 'lucide-react';
-import type { TPrincipal, TAccessRole, AccessRoleIds } from 'librechat-data-provider';
-import { getRoleLocalizationKeys } from '~/utils';
+import React from 'react';
+import { Button } from '@librechat/client';
+import { Users, X, ExternalLink } from 'lucide-react';
+import type { TPrincipal, AccessRoleIds } from 'librechat-data-provider';
+import { ResourceType } from 'librechat-data-provider';
 import PrincipalAvatar from '../PrincipalAvatar';
+import AccessRolesPicker from '../AccessRolesPicker';
 import { useLocalize } from '~/hooks';
 
 interface SelectedPrincipalsListProps {
   principles: TPrincipal[];
   onRemoveHandler: (idOnTheSource: string) => void;
   onRoleChange?: (idOnTheSource: string, newRoleId: AccessRoleIds) => void;
-  availableRoles?: Omit<TAccessRole, 'resourceType'>[];
+  resourceType?: ResourceType;
   className?: string;
 }
 
@@ -20,7 +20,7 @@ export default function SelectedPrincipalsList({
   onRemoveHandler,
   className = '',
   onRoleChange,
-  availableRoles,
+  resourceType = ResourceType.AGENT,
 }: SelectedPrincipalsListProps) {
   const localize = useLocalize();
 
@@ -71,12 +71,13 @@ export default function SelectedPrincipalsList({
 
               <div className="flex flex-shrink-0 items-center gap-2">
                 {!!share.accessRoleId && !!onRoleChange && (
-                  <RoleSelector
-                    currentRole={share.accessRoleId}
+                  <AccessRolesPicker
+                    resourceType={resourceType}
+                    selectedRoleId={share.accessRoleId}
                     onRoleChange={(newRole) => {
                       onRoleChange?.(share.idOnTheSource!, newRole);
                     }}
-                    availableRoles={availableRoles ?? []}
+                    className="min-w-0"
                   />
                 )}
                 <Button
@@ -94,46 +95,5 @@ export default function SelectedPrincipalsList({
         })}
       </div>
     </div>
-  );
-}
-
-interface RoleSelectorProps {
-  currentRole: AccessRoleIds;
-  onRoleChange: (newRole: AccessRoleIds) => void;
-  availableRoles: Omit<TAccessRole, 'resourceType'>[];
-}
-
-function RoleSelector({ currentRole, onRoleChange, availableRoles }: RoleSelectorProps) {
-  const menuId = useId();
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const localize = useLocalize();
-
-  const getLocalizedRoleName = (roleId: AccessRoleIds) => {
-    const keys = getRoleLocalizationKeys(roleId);
-    return localize(keys.name);
-  };
-
-  return (
-    <DropdownPopup
-      portal={true}
-      mountByState={true}
-      unmountOnHide={true}
-      preserveTabOrder={true}
-      isOpen={isMenuOpen}
-      setIsOpen={setIsMenuOpen}
-      trigger={
-        <Ariakit.MenuButton className="flex items-center justify-between gap-2 rounded-xl border border-border-light bg-transparent px-3 py-2 text-sm transition-colors hover:bg-surface-tertiary">
-          <span className="hidden sm:inline">{getLocalizedRoleName(currentRole)}</span>
-          <ChevronDown className="h-4 w-4 text-text-secondary" />
-        </Ariakit.MenuButton>
-      }
-      items={availableRoles?.map((role) => ({
-        id: role.accessRoleId,
-        label: getLocalizedRoleName(role.accessRoleId),
-        onClick: () => onRoleChange(role.accessRoleId),
-      }))}
-      menuId={menuId}
-      className="z-50 [pointer-events:auto]"
-    />
   );
 }

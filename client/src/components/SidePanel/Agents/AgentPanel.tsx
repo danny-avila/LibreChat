@@ -135,7 +135,7 @@ export default function AgentPanel() {
         } else {
           showToast({
             message: localize('com_ui_agent_version_duplicate', { versionIndex: versionIndex + 1 }),
-            status: 'error',
+            status: 'warning',
             duration: 10000,
           });
         }
