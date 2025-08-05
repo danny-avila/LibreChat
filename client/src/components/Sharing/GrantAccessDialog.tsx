@@ -210,7 +210,7 @@ export default function GrantAccessDialog({
             onPublicRoleChange={setPublicRole}
             resourceType={resourceType}
           />
-          <div className="flex justify-between border-t pt-4">
+          <div className="flex justify-between pt-4">
             <div className="flex gap-2">
               {hasPeoplePickerAccess && (
                 <ManagePermissionsDialog

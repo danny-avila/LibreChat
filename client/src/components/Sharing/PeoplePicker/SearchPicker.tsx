@@ -69,15 +69,7 @@ export function SearchPicker<TOption extends { key: string; value: string }>({
       inputRef.current.focus();
     }
   };
-  const showClearIcon = localQuery.trim().length > 0;
-  const clearText = () => {
-    setLocalQuery('');
-    onQueryChange('');
-    debouncedOnQueryChange.cancel();
-    if (inputRef.current) {
-      inputRef.current.focus();
-    }
-  };
+
   return (
     <Ariakit.ComboboxProvider store={combobox}>
       <Ariakit.ComboboxLabel className="text-token-text-primary mb-2 block font-medium">
@@ -91,7 +83,7 @@ export function SearchPicker<TOption extends { key: string; value: string }>({
           )}
         >
           {isLoading ? (
-            <Spinner className="absolute left-3 h-4 w-4 text-text-primary" />
+            <Spinner className="absolute left-3 h-4 w-4" />
           ) : (
             <Search className="absolute left-3 h-4 w-4 text-text-secondary group-focus-within:text-text-primary group-hover:text-text-primary" />
           )}
@@ -120,26 +112,12 @@ export function SearchPicker<TOption extends { key: string; value: string }>({
             placeholder={placeholder || localize('com_ui_select_options')}
             className="m-0 mr-0 w-full rounded-md border-none bg-transparent p-0 py-2 pl-9 pr-3 text-sm leading-tight text-text-primary placeholder-text-secondary placeholder-opacity-100 focus:outline-none focus-visible:outline-none group-focus-within:placeholder-text-primary group-hover:placeholder-text-primary"
           />
-          <button
-            type="button"
-            aria-label={`${localize('com_ui_clear')} ${localize('com_ui_search')}`}
-            className={cn(
-              'absolute right-[7px] flex h-5 w-5 items-center justify-center rounded-full border-none bg-transparent p-0 transition-opacity duration-200',
-              showClearIcon ? 'opacity-100' : 'opacity-0',
-              isSmallScreen === true ? 'right-[16px]' : '',
-            )}
-            onClick={clearText}
-            tabIndex={showClearIcon ? 0 : -1}
-            disabled={!showClearIcon}
-          >
-            <X className="h-5 w-5 cursor-pointer" />
-          </button>
         </div>
       </div>
       <Ariakit.ComboboxPopover
         portal={false} //todo fix focus when set to true
         gutter={10}
-        // sameWidth
+        sameWidth
         open={
           isLoading ||
           options.length > 0 ||

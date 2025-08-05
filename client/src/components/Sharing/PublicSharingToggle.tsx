@@ -23,7 +23,7 @@ export default function PublicSharingToggle({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between rounded-lg border p-4">
+      <div className="flex items-center justify-between">
         <div className="flex items-start gap-3">
           <Globe className="mt-0.5 h-5 w-5 text-blue-500" />
           <div>

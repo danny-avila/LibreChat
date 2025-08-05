@@ -107,7 +107,6 @@ export default function PeoplePicker({
             });
             setSearchQuery('');
           }}
-          label={getSearchLabel()}
           isLoading={isLoading}
         />
       </div>
