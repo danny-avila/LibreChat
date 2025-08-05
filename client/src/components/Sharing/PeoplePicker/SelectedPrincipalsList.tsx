@@ -1,5 +1,5 @@
 import React from 'react';
-import { Button } from '@librechat/client';
+import { Button, useMediaQuery } from '@librechat/client';
 import { Users, X, ExternalLink } from 'lucide-react';
 import type { TPrincipal, AccessRoleIds } from 'librechat-data-provider';
 import { ResourceType } from 'librechat-data-provider';
@@ -23,10 +23,13 @@ export default function SelectedPrincipalsList({
   resourceType = ResourceType.AGENT,
 }: SelectedPrincipalsListProps) {
   const localize = useLocalize();
+  const isMobile = useMediaQuery('(max-width: 768px)');
 
   const getPrincipalDisplayInfo = (principal: TPrincipal) => {
     const displayName = principal.name || localize('com_ui_unknown');
-    const subtitle = principal.email || `${principal.type} (${principal.source || 'local'})`;
+    const subtitle = isMobile
+      ? `${principal.type} (${principal.source || 'local'})`
+      : principal.email || `${principal.type} (${principal.source || 'local'})`;
 
     return { displayName, subtitle };
   };

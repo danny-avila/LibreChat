@@ -336,6 +336,8 @@ export default function GenericGrantAccessDialog({
             )}
           </div>
 
+          <div className="flex border-t border-border-light" />
+
           {/* Public Access Section */}
           <PublicSharingToggle
             isPublic={isPublic}
