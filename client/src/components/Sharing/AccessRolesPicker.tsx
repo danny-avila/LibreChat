@@ -79,8 +79,7 @@ export default function AccessRolesPicker({
           <Ariakit.MenuButton
             aria-label={selectedRoleInfo?.description || 'Select role'}
             className={cn(
-              'flex items-center justify-between gap-2 rounded-lg border border-border-light bg-surface-primary px-3 py-2 text-sm transition-colors hover:bg-surface-hover focus:outline-none focus:ring-2 focus:ring-ring-primary',
-              'min-w-[200px]',
+              'flex items-center justify-between gap-2 rounded-xl border border-border-light bg-transparent px-3 py-2 text-sm transition-colors hover:bg-surface-tertiary',
             )}
           >
             <span className="font-medium">

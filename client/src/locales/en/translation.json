@@ -693,7 +693,6 @@
   "com_ui_permission_level": "Permission Level",
   "com_ui_grant_access": "Grant Access",
   "com_ui_granting": "Granting...",
-  "com_ui_search_users_groups": "Search Users and Groups",
   "com_ui_search_default_placeholder": "Search by name or email (min 2 chars)",
   "com_ui_user": "User",
   "com_ui_group": "Group",

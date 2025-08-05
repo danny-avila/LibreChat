@@ -14,7 +14,6 @@ import type { TPrincipal, ResourceType, AccessRoleIds } from 'librechat-data-pro
 import { useResourcePermissionState } from '~/hooks/Sharing';
 import PublicSharingToggle from './PublicSharingToggle';
 import { SelectedPrincipalsList } from './PeoplePicker';
-import { cn, removeFocusOutlines } from '~/utils';
 import { useLocalize } from '~/hooks';
 
 export default function GenericManagePermissionsDialog({
@@ -190,20 +189,11 @@ export default function GenericManagePermissionsDialog({
   const TriggerComponent = children ? (
     children
   ) : (
-    <button
-      className={cn(
-        'btn btn-neutral border-token-border-light relative h-9 rounded-lg font-medium',
-        removeFocusOutlines,
-      )}
-      aria-label={buttonAriaLabel}
-      type="button"
-    >
-      <div className="flex items-center justify-center gap-2 text-blue-500">
-        <Settings className="icon-md h-4 w-4" />
-        <span className="hidden sm:inline">{localize('com_ui_manage')}</span>
-        {originalTotalShares > 0 && `(${originalTotalShares})`}
-      </div>
-    </button>
+    <Button variant="outline" aria-label={buttonAriaLabel} type="button">
+      <Settings className="icon-md h-4 w-4" />
+      <span className="hidden sm:inline">{localize('com_ui_manage')}</span>
+      {originalTotalShares > 0 && `( ${originalTotalShares} )`}
+    </Button>
   );
 
   return (

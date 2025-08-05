@@ -83,7 +83,6 @@ export default function PeoplePicker({
             });
             setSearchQuery('');
           }}
-          label={localize('com_ui_search_users_groups')}
           isLoading={isLoading}
         />
       </div>

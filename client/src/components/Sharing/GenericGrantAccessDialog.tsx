@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import { AccessRoleIds, ResourceType } from 'librechat-data-provider';
-import { Share2Icon, Users, Loader, Shield, Link, CopyCheck } from 'lucide-react';
+import { Share2Icon, Users, Shield, Link, CopyCheck } from 'lucide-react';
 import {
+  Label,
   Button,
+  Spinner,
   OGDialog,
   OGDialogTitle,
   OGDialogClose,
@@ -20,8 +22,8 @@ import {
 import GenericManagePermissionsDialog from './GenericManagePermissionsDialog';
 import PublicSharingToggle from './PublicSharingToggle';
 import AccessRolesPicker from './AccessRolesPicker';
-import { cn, removeFocusOutlines } from '~/utils';
 import { PeoplePicker } from './PeoplePicker';
+import { cn } from '~/utils';
 
 export default function GenericGrantAccessDialog({
   resourceName,
@@ -109,7 +111,6 @@ export default function GenericGrantAccessDialog({
       setDefaultPermissionId(config?.defaultViewerRoleId);
       setIsPublic(false);
       setPublicRole(config?.defaultViewerRoleId);
-      setIsModalOpen(false);
     } catch (error) {
       console.error('Error granting access:', error);
       showToast({
@@ -134,26 +135,24 @@ export default function GenericGrantAccessDialog({
   const TriggerComponent = children ? (
     children
   ) : (
-    <button
-      className={cn(
-        'btn btn-neutral border-token-border-light relative h-9 rounded-lg font-medium',
-        removeFocusOutlines,
-      )}
+    <Button
+      size="sm"
+      variant="outline"
       aria-label={localize('com_ui_share_var', {
         0: config?.getShareMessage(resourceName),
       })}
       type="button"
       disabled={disabled}
     >
-      <div className="flex items-center justify-center gap-2 text-blue-500">
-        <Share2Icon className="icon-md h-4 w-4" />
+      <div className="flex min-w-[32px] items-center justify-center gap-2 text-blue-500">
+        <span className="flex h-6 w-6 items-center justify-center">
+          <Share2Icon className="icon-md h-4 w-4" />
+        </span>
         {totalCurrentShares > 0 && (
-          <span className="rounded-full bg-blue-100 px-1.5 py-0.5 text-xs font-medium text-blue-800 dark:bg-blue-900 dark:text-blue-300">
-            {totalCurrentShares}
-          </span>
+          <Label className="text-sm font-medium text-text-secondary">{totalCurrentShares}</Label>
         )}
       </div>
-    </button>
+    </Button>
   );
 
   return (
@@ -203,7 +202,7 @@ export default function GenericGrantAccessDialog({
             onPublicRoleChange={setPublicRole}
             resourceType={resourceType}
           />
-          <div className="flex justify-between border-t pt-4">
+          <div className="flex justify-between pt-4">
             <div className="flex gap-2">
               {hasPeoplePickerAccess && (
                 <GenericManagePermissionsDialog
@@ -215,7 +214,6 @@ export default function GenericGrantAccessDialog({
               {resourceId && resourceUrl && (
                 <Button
                   variant="outline"
-                  size="sm"
                   onClick={() => {
                     if (isCopying) return;
                     copyResourceUrl(setIsCopying);
@@ -250,7 +248,7 @@ export default function GenericGrantAccessDialog({
               >
                 {updatePermissionsMutation.isLoading ? (
                   <div className="flex items-center gap-2">
-                    <Loader className="h-4 w-4 animate-spin" />
+                    <Spinner className="h-4 w-4" />
                     {localize('com_ui_granting')}
                   </div>
                 ) : (

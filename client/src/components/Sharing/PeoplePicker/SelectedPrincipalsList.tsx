@@ -1,5 +1,5 @@
 import React, { useState, useId } from 'react';
-import * as Menu from '@ariakit/react/menu';
+import * as Ariakit from '@ariakit/react/menu';
 import { Button, DropdownPopup } from '@librechat/client';
 import { Users, X, ExternalLink, ChevronDown } from 'lucide-react';
 import type { TPrincipal, TAccessRole, AccessRoleIds } from 'librechat-data-provider';
@@ -34,7 +34,7 @@ export default function SelectedPrincipalsList({
   if (principles.length === 0) {
     return (
       <div className={`space-y-3 ${className}`}>
-        <div className="rounded-lg border border-dashed border-border py-8 text-center text-muted-foreground">
+        <div className="rounded-lg border border-dashed border-border-medium py-8 text-center text-muted-foreground">
           <Users className="mx-auto mb-2 h-8 w-8 opacity-50" />
           <p className="mt-1 text-xs">{localize('com_ui_search_above_to_add')}</p>
         </div>
@@ -80,10 +80,10 @@ export default function SelectedPrincipalsList({
                   />
                 )}
                 <Button
-                  variant="ghost"
+                  variant="outline"
                   size="sm"
                   onClick={() => onRemoveHandler(share.idOnTheSource!)}
-                  className="h-8 w-8 p-0 hover:bg-destructive/10 hover:text-destructive"
+                  className="h-8 w-8 p-0 hover:border-destructive/10 hover:bg-destructive/10 hover:text-destructive"
                   aria-label={localize('com_ui_remove_user', { 0: displayName })}
                 >
                   <X className="h-4 w-4" />
@@ -122,10 +122,10 @@ function RoleSelector({ currentRole, onRoleChange, availableRoles }: RoleSelecto
       isOpen={isMenuOpen}
       setIsOpen={setIsMenuOpen}
       trigger={
-        <Menu.MenuButton className="flex h-8 items-center gap-2 rounded-md border border-border-medium bg-surface-secondary px-2 py-1 text-sm font-medium transition-colors duration-200 hover:bg-surface-tertiary">
+        <Ariakit.MenuButton className="flex items-center justify-between gap-2 rounded-xl border border-border-light bg-transparent px-3 py-2 text-sm transition-colors hover:bg-surface-tertiary">
           <span className="hidden sm:inline">{getLocalizedRoleName(currentRole)}</span>
-          <ChevronDown className="h-3 w-3" />
-        </Menu.MenuButton>
+          <ChevronDown className="h-4 w-4 text-text-secondary" />
+        </Ariakit.MenuButton>
       }
       items={availableRoles?.map((role) => ({
         id: role.accessRoleId,
