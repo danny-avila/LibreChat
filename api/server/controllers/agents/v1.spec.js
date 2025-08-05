@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const { v4: uuidv4 } = require('uuid');
+const { nanoid } = require('nanoid');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const { agentSchema } = require('@librechat/data-schemas');
 
@@ -41,7 +42,27 @@ jest.mock('~/models/File', () => ({
   deleteFileByFilter: jest.fn(),
 }));
 
-const { createAgent: createAgentHandler, updateAgent: updateAgentHandler } = require('./v1');
+jest.mock('~/server/services/PermissionService', () => ({
+  findAccessibleResources: jest.fn().mockResolvedValue([]),
+  findPubliclyAccessibleResources: jest.fn().mockResolvedValue([]),
+  grantPermission: jest.fn(),
+  hasPublicPermission: jest.fn().mockResolvedValue(false),
+}));
+
+jest.mock('~/models', () => ({
+  getCategoriesWithCounts: jest.fn(),
+}));
+
+const {
+  createAgent: createAgentHandler,
+  updateAgent: updateAgentHandler,
+  getListAgents: getListAgentsHandler,
+} = require('./v1');
+
+const {
+  findAccessibleResources,
+  findPubliclyAccessibleResources,
+} = require('~/server/services/PermissionService');
 
 /**
  * @type {import('mongoose').Model<import('@librechat/data-schemas').IAgent>}
@@ -79,6 +100,7 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       },
       body: {},
       params: {},
+      query: {},
       app: {
         locals: {
           fileStrategy: 'local',
@@ -666,6 +688,375 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(agentInDb.bypassAllChecks).toBeUndefined();
       expect(agentInDb.internalFlag).toBeUndefined();
       expect(agentInDb.futureFeature).toBeUndefined();
+    });
+  });
+
+  describe('getListAgentsHandler - Security Tests', () => {
+    let userA, userB;
+    let agentA1, agentA2, agentA3, agentB1;
+
+    beforeEach(async () => {
+      await Agent.deleteMany({});
+      jest.clearAllMocks();
+
+      // Create two test users
+      userA = new mongoose.Types.ObjectId();
+      userB = new mongoose.Types.ObjectId();
+
+      // Create agents for User A
+      agentA1 = await Agent.create({
+        id: `agent_${nanoid(12)}`,
+        name: 'Agent A1',
+        description: 'User A agent 1',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: userA,
+        versions: [
+          {
+            name: 'Agent A1',
+            description: 'User A agent 1',
+            provider: 'openai',
+            model: 'gpt-4',
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          },
+        ],
+      });
+
+      agentA2 = await Agent.create({
+        id: `agent_${nanoid(12)}`,
+        name: 'Agent A2',
+        description: 'User A agent 2',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: userA,
+        versions: [
+          {
+            name: 'Agent A2',
+            description: 'User A agent 2',
+            provider: 'openai',
+            model: 'gpt-4',
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          },
+        ],
+      });
+
+      agentA3 = await Agent.create({
+        id: `agent_${nanoid(12)}`,
+        name: 'Agent A3',
+        description: 'User A agent 3',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: userA,
+        category: 'productivity',
+        versions: [
+          {
+            name: 'Agent A3',
+            description: 'User A agent 3',
+            provider: 'openai',
+            model: 'gpt-4',
+            category: 'productivity',
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          },
+        ],
+      });
+
+      // Create an agent for User B
+      agentB1 = await Agent.create({
+        id: `agent_${nanoid(12)}`,
+        name: 'Agent B1',
+        description: 'User B agent 1',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: userB,
+        versions: [
+          {
+            name: 'Agent B1',
+            description: 'User B agent 1',
+            provider: 'openai',
+            model: 'gpt-4',
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          },
+        ],
+      });
+    });
+
+    test('should return empty list when user has no accessible agents', async () => {
+      // User B has no permissions and no owned agents
+      mockReq.user.id = userB.toString();
+      findAccessibleResources.mockResolvedValue([]);
+      findPubliclyAccessibleResources.mockResolvedValue([]);
+
+      await getListAgentsHandler(mockReq, mockRes);
+
+      expect(findAccessibleResources).toHaveBeenCalledWith({
+        userId: userB.toString(),
+        role: 'USER',
+        resourceType: 'agent',
+        requiredPermissions: 1, // VIEW permission
+      });
+
+      expect(mockRes.json).toHaveBeenCalledWith({
+        object: 'list',
+        data: [],
+        first_id: null,
+        last_id: null,
+        has_more: false,
+        after: null,
+      });
+    });
+
+    test('should not return other users agents when accessibleIds is empty', async () => {
+      // User B trying to see agents with no permissions
+      mockReq.user.id = userB.toString();
+      findAccessibleResources.mockResolvedValue([]);
+      findPubliclyAccessibleResources.mockResolvedValue([]);
+
+      await getListAgentsHandler(mockReq, mockRes);
+
+      const response = mockRes.json.mock.calls[0][0];
+      expect(response.data).toHaveLength(0);
+
+      // Verify User A's agents are not included
+      const agentIds = response.data.map((a) => a.id);
+      expect(agentIds).not.toContain(agentA1.id);
+      expect(agentIds).not.toContain(agentA2.id);
+      expect(agentIds).not.toContain(agentA3.id);
+    });
+
+    test('should only return agents user has access to', async () => {
+      // User B has access to one of User A's agents
+      mockReq.user.id = userB.toString();
+      findAccessibleResources.mockResolvedValue([agentA1._id]);
+      findPubliclyAccessibleResources.mockResolvedValue([]);
+
+      await getListAgentsHandler(mockReq, mockRes);
+
+      const response = mockRes.json.mock.calls[0][0];
+      expect(response.data).toHaveLength(1);
+      expect(response.data[0].id).toBe(agentA1.id);
+      expect(response.data[0].name).toBe('Agent A1');
+    });
+
+    test('should return multiple accessible agents', async () => {
+      // User B has access to multiple agents
+      mockReq.user.id = userB.toString();
+      findAccessibleResources.mockResolvedValue([agentA1._id, agentA3._id, agentB1._id]);
+      findPubliclyAccessibleResources.mockResolvedValue([]);
+
+      await getListAgentsHandler(mockReq, mockRes);
+
+      const response = mockRes.json.mock.calls[0][0];
+      expect(response.data).toHaveLength(3);
+
+      const agentIds = response.data.map((a) => a.id);
+      expect(agentIds).toContain(agentA1.id);
+      expect(agentIds).toContain(agentA3.id);
+      expect(agentIds).toContain(agentB1.id);
+      expect(agentIds).not.toContain(agentA2.id);
+    });
+
+    test('should apply category filter correctly with ACL', async () => {
+      // User has access to all agents but filters by category
+      mockReq.user.id = userB.toString();
+      mockReq.query.category = 'productivity';
+      findAccessibleResources.mockResolvedValue([agentA1._id, agentA2._id, agentA3._id]);
+      findPubliclyAccessibleResources.mockResolvedValue([]);
+
+      await getListAgentsHandler(mockReq, mockRes);
+
+      const response = mockRes.json.mock.calls[0][0];
+      expect(response.data).toHaveLength(1);
+      expect(response.data[0].id).toBe(agentA3.id);
+      expect(response.data[0].category).toBe('productivity');
+    });
+
+    test('should apply search filter correctly with ACL', async () => {
+      // User has access to multiple agents but searches for specific one
+      mockReq.user.id = userB.toString();
+      mockReq.query.search = 'A2';
+      findAccessibleResources.mockResolvedValue([agentA1._id, agentA2._id, agentA3._id]);
+      findPubliclyAccessibleResources.mockResolvedValue([]);
+
+      await getListAgentsHandler(mockReq, mockRes);
+
+      const response = mockRes.json.mock.calls[0][0];
+      expect(response.data).toHaveLength(1);
+      expect(response.data[0].id).toBe(agentA2.id);
+    });
+
+    test('should handle pagination with ACL filtering', async () => {
+      // Create more agents for pagination testing
+      const moreAgents = [];
+      for (let i = 4; i <= 10; i++) {
+        const agent = await Agent.create({
+          id: `agent_${nanoid(12)}`,
+          name: `Agent A${i}`,
+          description: `User A agent ${i}`,
+          provider: 'openai',
+          model: 'gpt-4',
+          author: userA,
+          versions: [
+            {
+              name: `Agent A${i}`,
+              description: `User A agent ${i}`,
+              provider: 'openai',
+              model: 'gpt-4',
+              createdAt: new Date(),
+              updatedAt: new Date(),
+            },
+          ],
+        });
+        moreAgents.push(agent);
+      }
+
+      // User has access to all agents
+      const allAgentIds = [agentA1, agentA2, agentA3, ...moreAgents].map((a) => a._id);
+      mockReq.user.id = userB.toString();
+      mockReq.query.limit = '5';
+      findAccessibleResources.mockResolvedValue(allAgentIds);
+      findPubliclyAccessibleResources.mockResolvedValue([]);
+
+      await getListAgentsHandler(mockReq, mockRes);
+
+      const response = mockRes.json.mock.calls[0][0];
+      expect(response.data).toHaveLength(5);
+      expect(response.has_more).toBe(true);
+      expect(response.after).toBeTruthy();
+    });
+
+    test('should mark publicly accessible agents', async () => {
+      // User has access to agents, some are public
+      mockReq.user.id = userB.toString();
+      findAccessibleResources.mockResolvedValue([agentA1._id, agentA2._id]);
+      findPubliclyAccessibleResources.mockResolvedValue([agentA2._id]);
+
+      await getListAgentsHandler(mockReq, mockRes);
+
+      const response = mockRes.json.mock.calls[0][0];
+      expect(response.data).toHaveLength(2);
+
+      const publicAgent = response.data.find((a) => a.id === agentA2.id);
+      const privateAgent = response.data.find((a) => a.id === agentA1.id);
+
+      expect(publicAgent.isPublic).toBe(true);
+      expect(privateAgent.isPublic).toBeUndefined();
+    });
+
+    test('should handle requiredPermission parameter', async () => {
+      // Test with different permission levels
+      mockReq.user.id = userB.toString();
+      mockReq.query.requiredPermission = '15'; // FULL_ACCESS
+      findAccessibleResources.mockResolvedValue([agentA1._id]);
+      findPubliclyAccessibleResources.mockResolvedValue([]);
+
+      await getListAgentsHandler(mockReq, mockRes);
+
+      expect(findAccessibleResources).toHaveBeenCalledWith({
+        userId: userB.toString(),
+        role: 'USER',
+        resourceType: 'agent',
+        requiredPermissions: 15,
+      });
+
+      const response = mockRes.json.mock.calls[0][0];
+      expect(response.data).toHaveLength(1);
+    });
+
+    test('should handle promoted filter with ACL', async () => {
+      // Create a promoted agent
+      const promotedAgent = await Agent.create({
+        id: `agent_${nanoid(12)}`,
+        name: 'Promoted Agent',
+        description: 'A promoted agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: userA,
+        is_promoted: true,
+        versions: [
+          {
+            name: 'Promoted Agent',
+            description: 'A promoted agent',
+            provider: 'openai',
+            model: 'gpt-4',
+            is_promoted: true,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          },
+        ],
+      });
+
+      mockReq.user.id = userB.toString();
+      mockReq.query.promoted = '1';
+      findAccessibleResources.mockResolvedValue([agentA1._id, agentA2._id, promotedAgent._id]);
+      findPubliclyAccessibleResources.mockResolvedValue([]);
+
+      await getListAgentsHandler(mockReq, mockRes);
+
+      const response = mockRes.json.mock.calls[0][0];
+      expect(response.data).toHaveLength(1);
+      expect(response.data[0].id).toBe(promotedAgent.id);
+      expect(response.data[0].is_promoted).toBe(true);
+    });
+
+    test('should handle errors gracefully', async () => {
+      mockReq.user.id = userB.toString();
+      findAccessibleResources.mockRejectedValue(new Error('Permission service error'));
+
+      await getListAgentsHandler(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(500);
+      expect(mockRes.json).toHaveBeenCalledWith({
+        error: 'Permission service error',
+      });
+    });
+
+    test('should respect combined filters with ACL', async () => {
+      // Create agents with specific attributes
+      const productivityPromoted = await Agent.create({
+        id: `agent_${nanoid(12)}`,
+        name: 'Productivity Pro',
+        description: 'A promoted productivity agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: userA,
+        category: 'productivity',
+        is_promoted: true,
+        versions: [
+          {
+            name: 'Productivity Pro',
+            description: 'A promoted productivity agent',
+            provider: 'openai',
+            model: 'gpt-4',
+            category: 'productivity',
+            is_promoted: true,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          },
+        ],
+      });
+
+      mockReq.user.id = userB.toString();
+      mockReq.query.category = 'productivity';
+      mockReq.query.promoted = '1';
+      findAccessibleResources.mockResolvedValue([
+        agentA1._id,
+        agentA2._id,
+        agentA3._id,
+        productivityPromoted._id,
+      ]);
+      findPubliclyAccessibleResources.mockResolvedValue([]);
+
+      await getListAgentsHandler(mockReq, mockRes);
+
+      const response = mockRes.json.mock.calls[0][0];
+      expect(response.data).toHaveLength(1);
+      expect(response.data[0].id).toBe(productivityPromoted.id);
+      expect(response.data[0].category).toBe('productivity');
+      expect(response.data[0].is_promoted).toBe(true);
     });
   });
 });
