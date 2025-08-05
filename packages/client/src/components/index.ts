@@ -44,6 +44,7 @@ export { default as MultiSelect } from './MultiSelect';
 export { default as DropdownPopup } from './DropdownPopup';
 export { default as DelayedRender } from './DelayedRender';
 export { default as ThemeSelector } from './ThemeSelector';
+export { default as InfoHoverCard } from './InfoHoverCard';
 export { default as CheckboxButton } from './CheckboxButton';
 export { default as DialogTemplate } from './DialogTemplate';
 export { default as SelectDropDown } from './SelectDropDown';
