@@ -81,7 +81,9 @@ export function useMCPServerManager() {
     return initialStates;
   });
 
-  const { data: connectionStatusData } = useMCPConnectionStatusQuery();
+  const { data: connectionStatusData } = useMCPConnectionStatusQuery({
+    enabled: !!startupConfig?.mcpServers && Object.keys(startupConfig.mcpServers).length > 0,
+  });
   const connectionStatus = useMemo(
     () => connectionStatusData?.connectionStatus || {},
     [connectionStatusData?.connectionStatus],
