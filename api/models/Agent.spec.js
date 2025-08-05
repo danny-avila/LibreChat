@@ -22,6 +22,7 @@ const {
   updateAgent,
   deleteAgent,
   getListAgents,
+  getListAgentsByAccess,
   revertAgentVersion,
   updateAgentProjects,
   addAgentResourceFile,
@@ -3033,6 +3034,212 @@ describe('Support Contact Field', () => {
 
     // Verify support_contact is undefined when not provided
     expect(agent.support_contact).toBeUndefined();
+  });
+
+  describe('getListAgentsByAccess - Security Tests', () => {
+    let userA, userB;
+    let agentA1, agentA2, agentA3;
+
+    beforeEach(async () => {
+      Agent = mongoose.models.Agent || mongoose.model('Agent', agentSchema);
+      await Agent.deleteMany({});
+      await AclEntry.deleteMany({});
+
+      // Create two users
+      userA = new mongoose.Types.ObjectId();
+      userB = new mongoose.Types.ObjectId();
+
+      // Create agents for user A
+      agentA1 = await createAgent({
+        id: `agent_${uuidv4().slice(0, 12)}`,
+        name: 'Agent A1',
+        description: 'User A agent 1',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: userA,
+      });
+
+      agentA2 = await createAgent({
+        id: `agent_${uuidv4().slice(0, 12)}`,
+        name: 'Agent A2',
+        description: 'User A agent 2',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: userA,
+      });
+
+      agentA3 = await createAgent({
+        id: `agent_${uuidv4().slice(0, 12)}`,
+        name: 'Agent A3',
+        description: 'User A agent 3',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: userA,
+      });
+    });
+
+    test('should return empty list when user has no accessible agents (empty accessibleIds)', async () => {
+      // User B has no agents and no shared agents
+      const result = await getListAgentsByAccess({
+        accessibleIds: [],
+        otherParams: {},
+      });
+
+      expect(result.data).toHaveLength(0);
+      expect(result.has_more).toBe(false);
+      expect(result.first_id).toBeNull();
+      expect(result.last_id).toBeNull();
+    });
+
+    test('should not return other users agents when accessibleIds is empty', async () => {
+      // User B trying to list agents with empty accessibleIds should not see User A's agents
+      const result = await getListAgentsByAccess({
+        accessibleIds: [],
+        otherParams: { author: userB },
+      });
+
+      expect(result.data).toHaveLength(0);
+      expect(result.has_more).toBe(false);
+    });
+
+    test('should only return agents in accessibleIds list', async () => {
+      // Give User B access to only one of User A's agents
+      const accessibleIds = [agentA1._id];
+
+      const result = await getListAgentsByAccess({
+        accessibleIds,
+        otherParams: {},
+      });
+
+      expect(result.data).toHaveLength(1);
+      expect(result.data[0].id).toBe(agentA1.id);
+      expect(result.data[0].name).toBe('Agent A1');
+    });
+
+    test('should return multiple accessible agents when provided', async () => {
+      // Give User B access to two of User A's agents
+      const accessibleIds = [agentA1._id, agentA3._id];
+
+      const result = await getListAgentsByAccess({
+        accessibleIds,
+        otherParams: {},
+      });
+
+      expect(result.data).toHaveLength(2);
+      const returnedIds = result.data.map((agent) => agent.id);
+      expect(returnedIds).toContain(agentA1.id);
+      expect(returnedIds).toContain(agentA3.id);
+      expect(returnedIds).not.toContain(agentA2.id);
+    });
+
+    test('should respect other query parameters while enforcing accessibleIds', async () => {
+      // Give access to all agents but filter by name
+      const accessibleIds = [agentA1._id, agentA2._id, agentA3._id];
+
+      const result = await getListAgentsByAccess({
+        accessibleIds,
+        otherParams: { name: 'Agent A2' },
+      });
+
+      expect(result.data).toHaveLength(1);
+      expect(result.data[0].id).toBe(agentA2.id);
+    });
+
+    test('should handle pagination correctly with accessibleIds filter', async () => {
+      // Create more agents
+      const moreAgents = [];
+      for (let i = 4; i <= 10; i++) {
+        const agent = await createAgent({
+          id: `agent_${uuidv4().slice(0, 12)}`,
+          name: `Agent A${i}`,
+          description: `User A agent ${i}`,
+          provider: 'openai',
+          model: 'gpt-4',
+          author: userA,
+        });
+        moreAgents.push(agent);
+      }
+
+      // Give access to all agents
+      const allAgentIds = [agentA1, agentA2, agentA3, ...moreAgents].map((a) => a._id);
+
+      // First page
+      const page1 = await getListAgentsByAccess({
+        accessibleIds: allAgentIds,
+        otherParams: {},
+        limit: 5,
+      });
+
+      expect(page1.data).toHaveLength(5);
+      expect(page1.has_more).toBe(true);
+      expect(page1.after).toBeTruthy();
+
+      // Second page
+      const page2 = await getListAgentsByAccess({
+        accessibleIds: allAgentIds,
+        otherParams: {},
+        limit: 5,
+        after: page1.after,
+      });
+
+      expect(page2.data).toHaveLength(5);
+      expect(page2.has_more).toBe(false);
+
+      // Verify no overlap between pages
+      const page1Ids = page1.data.map((a) => a.id);
+      const page2Ids = page2.data.map((a) => a.id);
+      const intersection = page1Ids.filter((id) => page2Ids.includes(id));
+      expect(intersection).toHaveLength(0);
+    });
+
+    test('should return empty list when accessibleIds contains non-existent IDs', async () => {
+      // Try with non-existent agent IDs
+      const fakeIds = [new mongoose.Types.ObjectId(), new mongoose.Types.ObjectId()];
+
+      const result = await getListAgentsByAccess({
+        accessibleIds: fakeIds,
+        otherParams: {},
+      });
+
+      expect(result.data).toHaveLength(0);
+      expect(result.has_more).toBe(false);
+    });
+
+    test('should handle undefined accessibleIds as empty array', async () => {
+      // When accessibleIds is undefined, it should be treated as empty array
+      const result = await getListAgentsByAccess({
+        accessibleIds: undefined,
+        otherParams: {},
+      });
+
+      expect(result.data).toHaveLength(0);
+      expect(result.has_more).toBe(false);
+    });
+
+    test('should combine accessibleIds with author filter correctly', async () => {
+      // Create an agent for User B
+      const agentB1 = await createAgent({
+        id: `agent_${uuidv4().slice(0, 12)}`,
+        name: 'Agent B1',
+        description: 'User B agent 1',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: userB,
+      });
+
+      // Give User B access to one of User A's agents
+      const accessibleIds = [agentA1._id, agentB1._id];
+
+      // Filter by author should further restrict the results
+      const result = await getListAgentsByAccess({
+        accessibleIds,
+        otherParams: { author: userB },
+      });
+
+      expect(result.data).toHaveLength(1);
+      expect(result.data[0].id).toBe(agentB1.id);
+      expect(result.data[0].author).toBe(userB.toString());
+    });
   });
 });
 
