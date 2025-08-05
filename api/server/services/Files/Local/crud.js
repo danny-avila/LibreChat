@@ -3,7 +3,7 @@ const path = require('path');
 const axios = require('axios');
 const { logger } = require('@librechat/data-schemas');
 const { EModelEndpoint } = require('librechat-data-provider');
-const { generateShortLivedToken } = require('~/server/services/AuthService');
+const { generateShortLivedToken } = require('@librechat/api');
 const { getBufferMetadata } = require('~/server/utils');
 const paths = require('~/config/paths');
 

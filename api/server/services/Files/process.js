@@ -19,6 +19,7 @@ const {
   isAssistantsEndpoint,
 } = require('librechat-data-provider');
 const { EnvVar } = require('@librechat/agents');
+const { generateShortLivedToken } = require('@librechat/api');
 const {
   convertImage,
   resizeAndConvert,
@@ -28,7 +29,6 @@ const { addResourceFileId, deleteResourceFileId } = require('~/server/controller
 const { addAgentResourceFile, removeAgentResourceFiles } = require('~/models/Agent');
 const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
 const { createFile, updateFileUsage, deleteFiles } = require('~/models/File');
-const { generateShortLivedToken } = require('~/server/services/AuthService');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { checkCapability } = require('~/server/services/Config');
 const { LB_QueueAsyncCall } = require('~/server/utils/queue');
