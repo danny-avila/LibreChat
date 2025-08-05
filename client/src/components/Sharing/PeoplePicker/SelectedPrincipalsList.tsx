@@ -53,7 +53,7 @@ export default function SelectedPrincipalsList({
           return (
             <div
               key={share.idOnTheSource + '-principalList'}
-              className="bg-surface flex items-center justify-between rounded-lg border border-border p-3"
+              className="bg-surface flex items-center justify-between rounded-2xl border border-border p-3"
             >
               <div className="flex min-w-0 flex-1 items-center gap-3">
                 <PrincipalAvatar principal={share} size="md" />
@@ -85,9 +85,8 @@ export default function SelectedPrincipalsList({
                 )}
                 <Button
                   variant="outline"
-                  size="sm"
                   onClick={() => onRemoveHandler(share.idOnTheSource!)}
-                  className="h-8 w-8 p-0 hover:border-destructive/10 hover:bg-destructive/10 hover:text-destructive"
+                  className="h-9 w-9 p-0 hover:border-destructive/10 hover:bg-destructive/10 hover:text-destructive"
                   aria-label={localize('com_ui_remove_user', { 0: displayName })}
                 >
                   <X className="h-4 w-4" />
