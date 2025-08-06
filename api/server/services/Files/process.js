@@ -17,8 +17,8 @@ const {
   isAssistantsEndpoint,
 } = require('librechat-data-provider');
 const { EnvVar } = require('@librechat/agents');
-const { parseText } = require('@librechat/api');
 const { sanitizeFilename } = require('@librechat/api');
+const { parseText, processAudioFile } = require('@librechat/api');
 const {
   convertImage,
   resizeAndConvert,
@@ -34,6 +34,7 @@ const { checkCapability } = require('~/server/services/Config');
 const { LB_QueueAsyncCall } = require('~/server/utils/queue');
 const { getStrategyFunctions } = require('./strategies');
 const { determineFileType } = require('~/server/utils');
+const { STTService } = require('./Audio/STTService');
 const { logger } = require('~/config');
 
 /**
@@ -537,11 +538,14 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
     file.mimetype,
     fileConfig.ocr?.supportedMimeTypes || [],
   );
+  const shouldUseSTT = fileConfig.checkType(
+    file.mimetype,
+    fileConfig.stt?.supportedMimeTypes || [],
+  );
 
   let fileInfoMetadata;
   const entity_id = messageAttachment === true ? undefined : agent_id;
   const basePath = mime.getType(file.originalname)?.startsWith('image') ? 'images' : 'uploads';
-
   if (tool_resource === EToolResources.execute_code) {
     const isCodeEnabled = await checkCapability(req, AgentCapabilities.execute_code);
     if (!isCodeEnabled) {
@@ -558,16 +562,13 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
       entity_id,
     });
     fileInfoMetadata = { fileIdentifier };
-  }
-
-  if (tool_resource === EToolResources.file_search) {
+  } else if (tool_resource === EToolResources.file_search) {
     const isFileSearchEnabled = await checkCapability(req, AgentCapabilities.file_search);
     if (!isFileSearchEnabled) {
       throw new Error('File search is not enabled for Agents');
     }
-  }
-  // Note: File search processing continues to dual storage logic below
-  if (tool_resource === EToolResources.ocr) {
+    // Note: File search processing continues to dual storage logic below
+  } else if (tool_resource === EToolResources.ocr) {
     const isOCREnabled = await checkCapability(req, AgentCapabilities.ocr);
     if (!isOCREnabled) {
       throw new Error('OCR capability is not enabled for Agents');
@@ -615,6 +616,12 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
     if (shouldUseTextParsing) {
       const { text, bytes } = await parseText({ req, file, file_id });
       return await createTextFile(text, bytes, file.path, file.mimetype);
+    }
+
+    if (shouldUseSTT) {
+      const sttService = await STTService.getInstance();
+      const { text, bytes } = await processAudioFile({ file, sttService });
+      return await createTextFile(text, bytes, file.path, 'text/plain');
     }
 
     throw new Error(`File type ${file.mimetype} is not supported for OCR or text parsing`);
