@@ -1237,6 +1237,7 @@
   "com_agents_no_description": "No description available",
   "com_agents_results_for": "Results for '{{query}}'",
   "com_agents_marketplace_subtitle": "Discover and use powerful AI agents to enhance your workflows and productivity",
+  "com_agents_no_more_results": "You've reached the end of the results",
   "com_ui_agent_name_is_required": "Agent name is required",
   "com_agents_missing_name": "Please type in a name before creating an agent."
 }
