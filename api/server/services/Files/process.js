@@ -19,7 +19,7 @@ const {
   isAssistantsEndpoint,
 } = require('librechat-data-provider');
 const { EnvVar } = require('@librechat/agents');
-const { parseText } = require('@librechat/api');
+const { parseText, processAudioFile } = require('@librechat/api');
 const {
   convertImage,
   resizeAndConvert,
@@ -593,7 +593,8 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
     }
 
     if (shouldUseSTT) {
-      const { text, bytes } = await processAudioFile({ file });
+      const sttService = await STTService.getInstance();
+      const { text, bytes } = await processAudioFile({ file, sttService });
       return await createTextFile(text, bytes, file.path, 'text/plain');
     }
 
@@ -986,35 +987,6 @@ function filterFile({ req, image, isAvatar }) {
   }
 }
 
-/**
- * Processes audio files using Speech-to-Text (STT) service.
- * @param {Object} params - The parameters object.
- * @param {Object} params.file - The audio file object.
- * @returns {Promise<Object>} A promise that resolves to an object containing text and bytes.
- */
-async function processAudioFile({ file }) {
-  try {
-    const sttService = await STTService.getInstance();
-    const audioBuffer = await fs.promises.readFile(file.path);
-    const audioFile = {
-      originalname: file.originalname,
-      mimetype: file.mimetype,
-      size: file.size,
-    };
-
-    const [provider, sttSchema] = await sttService.getProviderSchema();
-    const text = await sttService.sttRequest(provider, sttSchema, { audioBuffer, audioFile });
-
-    return {
-      text,
-      bytes: Buffer.byteLength(text, 'utf8'),
-    };
-  } catch (error) {
-    logger.error('Error processing audio file with STT:', error);
-    throw new Error(`Failed to process audio file: ${error.message}`);
-  }
-}
-
 module.exports = {
   filterFile,
   processFiles,
@@ -1026,5 +998,4 @@ module.exports = {
   processDeleteRequest,
   processAgentFileUpload,
   retrieveAndProcessFile,
-  processAudioFile,
 };
