@@ -17,6 +17,7 @@ const {
   isAssistantsEndpoint,
 } = require('librechat-data-provider');
 const { EnvVar } = require('@librechat/agents');
+const { parseText } = require('@librechat/api');
 const { sanitizeFilename } = require('@librechat/api');
 const {
   convertImage,
@@ -27,7 +28,6 @@ const { addResourceFileId, deleteResourceFileId } = require('~/server/controller
 const { addAgentResourceFile, removeAgentResourceFiles } = require('~/models/Agent');
 const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
 const { createFile, updateFileUsage, deleteFiles } = require('~/models/File');
-const { generateShortLivedToken } = require('~/server/services/AuthService');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { getFileStrategy } = require('~/server/utils/getFileStrategy');
 const { checkCapability } = require('~/server/services/Config');
@@ -35,104 +35,6 @@ const { LB_QueueAsyncCall } = require('~/server/utils/queue');
 const { getStrategyFunctions } = require('./strategies');
 const { determineFileType } = require('~/server/utils');
 const { logger } = require('~/config');
-const FormData = require('form-data');
-const axios = require('axios');
-
-/**
- * Attempts to parse text using RAG API, falls back to native text parsing
- * @param {Object} params - The parameters object
- * @param {Express.Request} params.req - The Express request object
- * @param {Express.Multer.File} params.file - The uploaded file
- * @param {string} params.file_id - The file ID
- * @returns {Promise<{text: string, bytes: number, source: string}>}
- */
-async function parseText({ req, file, file_id }) {
-  if (!process.env.RAG_API_URL) {
-    logger.debug('[parseText] RAG_API_URL not defined, falling back to native text parsing');
-    return parseTextNative(file);
-  }
-
-  try {
-    const healthResponse = await axios.get(`${process.env.RAG_API_URL}/health`, {
-      timeout: 5000,
-    });
-    if (healthResponse?.statusText !== 'OK' && healthResponse?.status !== 200) {
-      logger.debug('[parseText] RAG API health check failed, falling back to native parsing');
-      return parseTextNative(file);
-    }
-  } catch (healthError) {
-    logger.debug(
-      `[parseText] RAG API health check failed: ${healthError.message}, falling back to native parsing`,
-    );
-    return parseTextNative(file);
-  }
-
-  try {
-    const jwtToken = generateShortLivedToken(req.user.id);
-    const formData = new FormData();
-    formData.append('file_id', file_id);
-    formData.append('file', fs.createReadStream(file.path));
-
-    const formHeaders = formData.getHeaders();
-
-    // TODO: Actually implement referenced RAG API endpoint /parse-text
-    const response = await axios.post(`${process.env.RAG_API_URL}/parse-text`, formData, {
-      headers: {
-        Authorization: `Bearer ${jwtToken}`,
-        accept: 'application/json',
-        ...formHeaders,
-      },
-      timeout: 30000,
-    });
-
-    const responseData = response.data;
-    logger.debug('[parseText] Response from RAG API', responseData);
-
-    if (!responseData.text) {
-      throw new Error('RAG API did not return parsed text');
-    }
-
-    return {
-      text: responseData.text,
-      bytes: Buffer.byteLength(responseData.text, 'utf8'),
-      source: 'rag_api',
-    };
-  } catch (error) {
-    logger.warn(
-      `[parseText] RAG API text parsing failed: ${error.message}, falling back to native parsing`,
-    );
-    return parseTextNative(file);
-  }
-}
-
-/**
- * Native JavaScript text parsing fallback
- * Simple text file reading - complex formats handled by RAG API
- * @param {Express.Multer.File} file - The uploaded file
- * @returns {{text: string, bytes: number, source: string}}
- */
-function parseTextNative(file) {
-  try {
-    let text = '';
-
-    try {
-      text = fs.readFileSync(file.path, 'utf8');
-    } catch (readError) {
-      throw new Error(`Cannot read file as text: ${readError.message}`);
-    }
-
-    const bytes = Buffer.byteLength(text, 'utf8');
-
-    return {
-      text,
-      bytes,
-      source: 'native_js',
-    };
-  } catch (error) {
-    logger.error(`[parseTextNative] Error parsing file: ${error.message}`);
-    throw new Error(`Failed to parse file: ${error.message}`);
-  }
-}
 
 /**
  * Creates a modular file upload wrapper that ensures filename sanitization
@@ -625,7 +527,7 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
     throw new Error('No tool resource provided for non-image agent file upload');
   }
 
-  const fileConfig = mergeFileConfig(req.app.locals.fileConfig);
+  const fileConfig = mergeFileConfig(appConfig.fileConfig);
 
   const shouldUseTextParsing = fileConfig.checkType(
     file.mimetype,
@@ -639,6 +541,7 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
   let fileInfoMetadata;
   const entity_id = messageAttachment === true ? undefined : agent_id;
   const basePath = mime.getType(file.originalname)?.startsWith('image') ? 'images' : 'uploads';
+
   if (tool_resource === EToolResources.execute_code) {
     const isCodeEnabled = await checkCapability(req, AgentCapabilities.execute_code);
     if (!isCodeEnabled) {
@@ -655,13 +558,16 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
       entity_id,
     });
     fileInfoMetadata = { fileIdentifier };
-  } else if (tool_resource === EToolResources.file_search) {
+  }
+
+  if (tool_resource === EToolResources.file_search) {
     const isFileSearchEnabled = await checkCapability(req, AgentCapabilities.file_search);
     if (!isFileSearchEnabled) {
       throw new Error('File search is not enabled for Agents');
     }
-    // Note: File search processing continues to dual storage logic below
-  } else if (tool_resource === EToolResources.ocr) {
+  }
+  // Note: File search processing continues to dual storage logic below
+  if (tool_resource === EToolResources.ocr) {
     const isOCREnabled = await checkCapability(req, AgentCapabilities.ocr);
     if (!isOCREnabled) {
       throw new Error('OCR capability is not enabled for Agents');
@@ -669,56 +575,15 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
 
     const { file_id, temp_file_id = null } = metadata;
 
-    if (shouldUseOCR) {
-      const { handleFileUpload: uploadOCR } = getStrategyFunctions(
-        appConfig?.ocr?.strategy ?? FileSources.mistral_ocr,
-      );
-
-      const {
-        text,
-        bytes,
-        images: _i,
-        filename,
-        filepath: ocrFileURL,
-      } = await uploadOCR({ req, appConfig, file, loadAuthValues });
-
+    const createTextFile = async (text, bytes, filepath, type) => {
       const fileInfo = removeNullishValues({
         text,
         bytes,
         file_id,
         temp_file_id,
         user: req.user.id,
-        type: 'text/plain',
-        filepath: ocrFileURL,
-        source: FileSources.text,
-        filename: filename ?? file.originalname,
-        model: messageAttachment ? undefined : req.body.model,
-        context: messageAttachment ? FileContext.message_attachment : FileContext.agents,
-      });
-
-      if (!messageAttachment && tool_resource) {
-        await addAgentResourceFile({
-          req,
-          file_id,
-          agent_id,
-          tool_resource,
-        });
-      }
-      const result = await createFile(fileInfo, true);
-      return res
-        .status(200)
-        .json({ message: 'Agent file uploaded and processed successfully', ...result });
-    } else if (shouldUseTextParsing) {
-      const { text, bytes } = await parseText({ req, file, file_id });
-
-      const fileInfo = removeNullishValues({
-        text,
-        bytes,
-        file_id,
-        temp_file_id,
-        user: req.user.id,
-        type: file.mimetype,
-        filepath: file.path,
+        type,
+        filepath,
         source: FileSources.text,
         filename: file.originalname,
         model: messageAttachment ? undefined : req.body.model,
@@ -737,9 +602,22 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
       return res
         .status(200)
         .json({ message: 'Agent file uploaded and processed successfully', ...result });
-    } else {
-      throw new Error(`File type ${file.mimetype} is not supported for OCR or text parsing`);
+    };
+
+    if (shouldUseOCR) {
+      const { handleFileUpload: uploadOCR } = getStrategyFunctions(
+        appConfig?.ocr?.strategy ?? FileSources.mistral_ocr,
+      );
+      const { text, bytes, filepath: ocrFileURL } = await uploadOCR({ req, file, loadAuthValues });
+      return await createTextFile(text, bytes, ocrFileURL, 'text/plain');
     }
+
+    if (shouldUseTextParsing) {
+      const { text, bytes } = await parseText({ req, file, file_id });
+      return await createTextFile(text, bytes, file.path, file.mimetype);
+    }
+
+    throw new Error(`File type ${file.mimetype} is not supported for OCR or text parsing`);
   }
 
   // Dual storage pattern for RAG files: Storage + Vector DB
