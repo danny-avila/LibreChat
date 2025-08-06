@@ -1,6 +1,7 @@
 import fs from 'fs';
 import axios from 'axios';
 import FormData from 'form-data';
+import { FileSources } from 'librechat-data-provider';
 import type { Request as ServerRequest } from 'express';
 import { generateShortLivedToken } from '../crypto/jwt';
 
@@ -72,7 +73,7 @@ export async function parseText({
     return {
       text: responseData.text,
       bytes: Buffer.byteLength(responseData.text, 'utf8'),
-      source: 'rag_api',
+      source: FileSources.text,
     };
   } catch (error) {
     console.warn('[parseText] RAG API text parsing failed, falling back to native parsing', error);
@@ -105,7 +106,7 @@ export function parseTextNative(file: Express.Multer.File): {
     return {
       text,
       bytes,
-      source: 'native_js',
+      source: FileSources.text,
     };
   } catch (error) {
     console.error('[parseTextNative] Error parsing file:', error);
