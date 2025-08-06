@@ -1,4 +1,5 @@
 import { ProxyAgent } from 'undici';
+import { Providers } from '@librechat/agents';
 import { KnownEndpoints, removeNullishValues } from 'librechat-data-provider';
 import type { BindToolsInput } from '@langchain/core/language_models/chat_models';
 import type { AzureOpenAIInput } from '@langchain/openai';
@@ -222,9 +223,13 @@ export function getOpenAIConfig(
     });
   }
 
-  return {
+  const result: t.LLMConfigResult = {
     llmConfig,
     configOptions,
     tools,
   };
+  if (useOpenRouter) {
+    result.provider = Providers.OPENROUTER;
+  }
+  return result;
 }
