@@ -1,9 +1,10 @@
-import React, { useMemo } from 'react';
-import { Button, Spinner } from '@librechat/client';
+import React, { useMemo, useEffect } from 'react';
+import { Spinner } from '@librechat/client';
 import { PermissionBits } from 'librechat-data-provider';
 import type t from 'librechat-data-provider';
 import { useMarketplaceAgentsInfiniteQuery } from '~/data-provider/Agents';
 import { useAgentCategories, useLocalize } from '~/hooks';
+import { useInfiniteScroll } from '~/hooks/useInfiniteScroll';
 import { useHasData } from './SmartLoader';
 import ErrorDisplay from './ErrorDisplay';
 import AgentCard from './AgentCard';
@@ -13,12 +14,18 @@ interface AgentGridProps {
   category: string; // Currently selected category
   searchQuery: string; // Current search query
   onSelectAgent: (agent: t.Agent) => void; // Callback when agent is selected
+  scrollElement?: HTMLElement | null; // Parent scroll container for infinite scroll
 }
 
 /**
  * Component for displaying a grid of agent cards
  */
-const AgentGrid: React.FC<AgentGridProps> = ({ category, searchQuery, onSelectAgent }) => {
+const AgentGrid: React.FC<AgentGridProps> = ({
+  category,
+  searchQuery,
+  onSelectAgent,
+  scrollElement,
+}) => {
   const localize = useLocalize();
 
   // Get category data from API
@@ -78,6 +85,26 @@ const AgentGrid: React.FC<AgentGridProps> = ({ category, searchQuery, onSelectAg
   // Check if we have meaningful data to prevent unnecessary loading states
   const hasData = useHasData(data?.pages?.[0]);
 
+  // Set up infinite scroll
+  const { setScrollElement } = useInfiniteScroll({
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage: () => {
+      if (hasNextPage && !isFetching) {
+        fetchNextPage();
+      }
+    },
+    threshold: 0.8, // Trigger when 80% scrolled
+    throttleMs: 200,
+  });
+
+  // Connect the scroll element when it's provided
+  useEffect(() => {
+    if (scrollElement) {
+      setScrollElement(scrollElement);
+    }
+  }, [scrollElement, setScrollElement]);
+
   /**
    * Get category display name from API data or use fallback
    */
@@ -99,44 +126,10 @@ const AgentGrid: React.FC<AgentGridProps> = ({ category, searchQuery, onSelectAg
     return categoryValue.charAt(0).toUpperCase() + categoryValue.slice(1);
   };
 
-  /**
-   * Load more agents when "See More" button is clicked
-   */
-  const handleLoadMore = () => {
-    if (hasNextPage && !isFetching) {
-      fetchNextPage();
-    }
-  };
-
-  // Loading skeleton component
-  const loadingSkeleton = (
-    <div className="space-y-6">
-      <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-        {Array(6)
-          .fill(0)
-          .map((_, index) => (
-            <div
-              key={index}
-              className={cn(
-                'flex animate-pulse overflow-hidden rounded-2xl',
-                'aspect-[5/2.5] w-full',
-                'bg-surface-tertiary',
-              )}
-            >
-              <div className="flex h-full gap-2 px-3 py-2 sm:gap-3 sm:px-4 sm:py-3">
-                {/* Avatar skeleton */}
-                <div className="flex flex-shrink-0 items-center">
-                  <div className="h-10 w-10 rounded-full bg-surface-secondary sm:h-12 sm:w-12"></div>
-                </div>
-                {/* Content skeleton */}
-                <div className="flex flex-1 flex-col justify-center space-y-2">
-                  <div className="h-4 w-3/4 rounded bg-surface-secondary"></div>
-                  <div className="h-3 w-full rounded bg-surface-secondary"></div>
-                </div>
-              </div>
-            </div>
-          ))}
-      </div>
+  // Simple loading spinner
+  const loadingSpinner = (
+    <div className="flex justify-center py-12">
+      <Spinner className="h-8 w-8 text-primary" />
     </div>
   );
 
@@ -207,9 +200,9 @@ const AgentGrid: React.FC<AgentGridProps> = ({ category, searchQuery, onSelectAg
           )}
 
           {/* Loading indicator when fetching more with accessibility */}
-          {isFetching && hasNextPage && (
+          {isFetchingNextPage && (
             <div
-              className="flex justify-center py-4"
+              className="flex justify-center py-8"
               role="status"
               aria-live="polite"
               aria-label={localize('com_agents_loading')}
@@ -219,23 +212,12 @@ const AgentGrid: React.FC<AgentGridProps> = ({ category, searchQuery, onSelectAg
             </div>
           )}
 
-          {/* Load more button with enhanced accessibility */}
-          {hasNextPage && !isFetching && (
-            <div className="mt-8 flex justify-center">
-              <Button
-                variant="outline"
-                onClick={handleLoadMore}
-                className={cn(
-                  'min-w-[160px] border-2 border-border-medium bg-surface-primary px-6 py-3 font-medium text-text-primary',
-                  'shadow-sm transition-all duration-200 hover:border-border-heavy hover:bg-surface-hover',
-                  'hover:shadow-md focus:ring-2 focus:ring-ring focus:ring-offset-2',
-                )}
-                aria-label={localize('com_agents_load_more_label', {
-                  category: getCategoryDisplayName(category),
-                })}
-              >
-                {localize('com_agents_see_more')}
-              </Button>
+          {/* End of results indicator */}
+          {!hasNextPage && currentAgents && currentAgents.length > 0 && (
+            <div className="mt-8 text-center">
+              <p className="text-sm text-text-secondary">
+                {localize('com_agents_no_more_results')}
+              </p>
             </div>
           )}
         </>
@@ -244,7 +226,7 @@ const AgentGrid: React.FC<AgentGridProps> = ({ category, searchQuery, onSelectAg
   );
 
   if (isLoading || (isFetching && !isFetchingNextPage)) {
-    return loadingSkeleton;
+    return loadingSpinner;
   }
   return mainContent;
 };

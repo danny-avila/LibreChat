@@ -58,6 +58,9 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
   // Keep a ref of initial mount to avoid animating first sync
   const didInitRef = useRef(false);
 
+  // Ref for the scrollable container to enable infinite scroll
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+
   // Local state
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState<t.Agent | null>(null);
@@ -296,7 +299,10 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
           >
             <main className="flex h-full flex-col overflow-hidden" role="main">
               {/* Scrollable container */}
-              <div className="scrollbar-gutter-stable flex h-full flex-col overflow-y-auto overflow-x-hidden">
+              <div
+                ref={scrollContainerRef}
+                className="scrollbar-gutter-stable flex h-full flex-col overflow-y-auto overflow-x-hidden"
+              >
                 {/* Simplified header for agents marketplace - only show nav controls when needed */}
                 {!isSmallScreen && (
                   <div className="sticky top-0 z-20 flex items-center justify-between bg-surface-secondary p-2 font-semibold text-text-primary md:h-14">
@@ -436,6 +442,7 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
                         category={displayCategory}
                         searchQuery={searchQuery}
                         onSelectAgent={handleAgentSelect}
+                        scrollElement={scrollContainerRef.current}
                       />
                     </div>
 
@@ -509,6 +516,7 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
                           category={nextCategory}
                           searchQuery={searchQuery}
                           onSelectAgent={handleAgentSelect}
+                          scrollElement={scrollContainerRef.current}
                         />
                       </div>
                     )}
