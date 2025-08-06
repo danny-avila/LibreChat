@@ -29,6 +29,11 @@ export async function parseText({
     return parseTextNative(file);
   }
 
+  if (!req.user?.id) {
+    console.debug('[parseText] No user ID provided, falling back to native text parsing');
+    return parseTextNative(file);
+  }
+
   try {
     const healthResponse = await axios.get(`${process.env.RAG_API_URL}/health`, {
       timeout: 5000,
@@ -46,7 +51,7 @@ export async function parseText({
   }
 
   try {
-    const jwtToken = generateShortLivedToken(req.user?.id || '');
+    const jwtToken = generateShortLivedToken(req.user.id);
     const formData = new FormData();
     formData.append('file_id', file_id);
     formData.append('file', fs.createReadStream(file.path));
@@ -66,7 +71,7 @@ export async function parseText({
     const responseData = response.data;
     console.debug('[parseText] Response from RAG API', responseData);
 
-    if (!responseData.text) {
+    if (!('text' in responseData)) {
       throw new Error('RAG API did not return parsed text');
     }
 
@@ -93,14 +98,7 @@ export function parseTextNative(file: Express.Multer.File): {
   source: string;
 } {
   try {
-    let text = '';
-
-    try {
-      text = fs.readFileSync(file.path, 'utf8');
-    } catch (readError) {
-      throw new Error(`Cannot read file as text: ${readError}`);
-    }
-
+    const text = fs.readFileSync(file.path, 'utf8');
     const bytes = Buffer.byteLength(text, 'utf8');
 
     return {
@@ -109,7 +107,7 @@ export function parseTextNative(file: Express.Multer.File): {
       source: FileSources.text,
     };
   } catch (error) {
-    console.error('[parseTextNative] Error parsing file:', error);
-    throw new Error(`Failed to parse file: ${error}`);
+    console.error('[parseTextNative] Failed to parse file:', error);
+    throw new Error(`Failed to read file as text: ${error}`);
   }
 }
