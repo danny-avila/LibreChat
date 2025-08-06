@@ -61,6 +61,9 @@ export type FileConfig = {
   textParsing?: {
     supportedMimeTypes?: RegExp[];
   };
+  stt?: {
+    supportedMimeTypes?: RegExp[];
+  };
   checkType?: (fileType: string, supportedTypes: RegExp[]) => boolean;
 };
 
@@ -80,6 +83,9 @@ export type FileConfigInput = {
     supportedMimeTypes?: string[];
   };
   textParsing?: {
+    supportedMimeTypes?: string[];
+  };
+  stt?: {
     supportedMimeTypes?: string[];
   };
   checkType?: (fileType: string, supportedTypes: RegExp[]) => boolean;

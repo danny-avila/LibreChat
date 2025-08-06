@@ -122,6 +122,9 @@ export const applicationMimeTypes =
 
 export const imageMimeTypes = /^image\/(jpeg|gif|png|webp|heic|heif)$/;
 
+export const audioMimeTypes =
+  /^audio\/(mp3|mpeg|mpeg3|wav|wave|x-wav|ogg|vorbis|mp4|x-m4a|flac|x-flac|webm)$/;
+
 export const defaultOCRMimeTypes = [
   imageMimeTypes,
   /^application\/pdf$/,
@@ -132,11 +135,14 @@ export const defaultOCRMimeTypes = [
 
 export const defaultTextParsingMimeTypes = [textMimeTypes];
 
+export const defaultSTTMimeTypes = [audioMimeTypes];
+
 export const supportedMimeTypes = [
   textMimeTypes,
   excelMimeTypes,
   applicationMimeTypes,
   imageMimeTypes,
+  audioMimeTypes,
   /** Supported by LC Code Interpreter PAI */
   /^image\/(svg|svg\+xml)$/,
 ];
@@ -213,6 +219,9 @@ export const fileConfig = {
   },
   textParsing: {
     supportedMimeTypes: defaultTextParsingMimeTypes,
+  },
+  stt: {
+    supportedMimeTypes: defaultSTTMimeTypes,
   },
   checkType: function (fileType: string, supportedTypes: RegExp[] = supportedMimeTypes) {
     return supportedTypes.some((regex) => regex.test(fileType));

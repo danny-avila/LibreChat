@@ -34,6 +34,7 @@ const { checkCapability } = require('~/server/services/Config');
 const { LB_QueueAsyncCall } = require('~/server/utils/queue');
 const { getStrategyFunctions } = require('./strategies');
 const { determineFileType } = require('~/server/utils');
+const { STTService } = require('./Audio/STTService');
 const { logger } = require('~/config');
 
 /**
@@ -507,6 +508,10 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
     file.mimetype,
     fileConfig.ocr?.supportedMimeTypes || [],
   );
+  const shouldUseSTT = fileConfig.checkType(
+    file.mimetype,
+    fileConfig.stt?.supportedMimeTypes || [],
+  );
 
   let fileInfoMetadata;
   const entity_id = messageAttachment === true ? undefined : agent_id;
@@ -585,6 +590,11 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
     if (shouldUseTextParsing) {
       const { text, bytes } = await parseText({ req, file, file_id });
       return await createTextFile(text, bytes, file.path, file.mimetype);
+    }
+
+    if (shouldUseSTT) {
+      const { text, bytes } = await processAudioFile({ file });
+      return await createTextFile(text, bytes, file.path, 'text/plain');
     }
 
     throw new Error(`File type ${file.mimetype} is not supported for OCR or text parsing`);
@@ -976,6 +986,35 @@ function filterFile({ req, image, isAvatar }) {
   }
 }
 
+/**
+ * Processes audio files using Speech-to-Text (STT) service.
+ * @param {Object} params - The parameters object.
+ * @param {Object} params.file - The audio file object.
+ * @returns {Promise<Object>} A promise that resolves to an object containing text and bytes.
+ */
+async function processAudioFile({ file }) {
+  try {
+    const sttService = await STTService.getInstance();
+    const audioBuffer = await fs.promises.readFile(file.path);
+    const audioFile = {
+      originalname: file.originalname,
+      mimetype: file.mimetype,
+      size: file.size,
+    };
+
+    const [provider, sttSchema] = await sttService.getProviderSchema();
+    const text = await sttService.sttRequest(provider, sttSchema, { audioBuffer, audioFile });
+
+    return {
+      text,
+      bytes: Buffer.byteLength(text, 'utf8'),
+    };
+  } catch (error) {
+    logger.error('Error processing audio file with STT:', error);
+    throw new Error(`Failed to process audio file: ${error.message}`);
+  }
+}
+
 module.exports = {
   filterFile,
   processFiles,
@@ -987,4 +1026,5 @@ module.exports = {
   processDeleteRequest,
   processAgentFileUpload,
   retrieveAndProcessFile,
+  processAudioFile,
 };
