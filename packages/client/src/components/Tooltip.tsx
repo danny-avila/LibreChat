@@ -10,10 +10,11 @@ interface TooltipAnchorProps extends Ariakit.TooltipAnchorProps {
   className?: string;
   focusable?: boolean;
   role?: string;
+  enableHTML?: boolean;
 }
 
 export const TooltipAnchor = forwardRef<HTMLDivElement, TooltipAnchorProps>(function TooltipAnchor(
-  { description, side = 'top', className, role, ...props },
+  { description, side = 'top', className, role, enableHTML = false, ...props },
   ref,
 ) {
   const tooltip = Ariakit.useTooltipStore({ placement: side });
@@ -43,6 +44,25 @@ export const TooltipAnchor = forwardRef<HTMLDivElement, TooltipAnchorProps>(func
     }
   };
 
+  // Sanitize HTML content for basic formatting (links, bold, italic)
+  const sanitizeHTML = (html: string) => {
+    const allowedTags = ['a', 'strong', 'b', 'em', 'i', 'br', 'code'];
+    const tagRegex = /<(\/?)([\w]+)([^>]*)>/g;
+
+    return html.replace(tagRegex, (match, closing, tagName, attributes) => {
+      if (allowedTags.includes(tagName.toLowerCase())) {
+        if (tagName.toLowerCase() === 'a' && !closing) {
+          const hrefMatch = attributes.match(/href=["']([^"']+)["']/);
+          if (hrefMatch) {
+            return `<a href="${hrefMatch[1]}" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:text-blue-800 underline">`;
+          }
+        }
+        return match;
+      }
+      return '';
+    });
+  };
+
   return (
     <Ariakit.TooltipProvider store={tooltip} hideTimeout={0}>
       <Ariakit.TooltipAnchor
@@ -67,7 +87,15 @@ export const TooltipAnchor = forwardRef<HTMLDivElement, TooltipAnchorProps>(func
             }
           >
             <Ariakit.TooltipArrow />
-            {description}
+            {enableHTML ? (
+              <div
+                dangerouslySetInnerHTML={{
+                  __html: sanitizeHTML(description),
+                }}
+              />
+            ) : (
+              description
+            )}
           </Ariakit.Tooltip>
         )}
       </AnimatePresence>
