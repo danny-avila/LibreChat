@@ -35,28 +35,14 @@ if (cacheConfig.USE_REDIS) {
       logger.info(`ioredis reconnecting... attempt ${times}, delay ${delay}ms`);
       return delay;
     },
-    reconnectOnError: (err) => {
-      const targetErrors = ['READONLY', 'MOVED'];
-      if (targetErrors.some(error => err.message.includes(error))) {
-        if (err.message.includes('MOVED')) {
-          logger.warn('ioredis reconnecting due to MOVED error - cluster slot redirection');
-        } else if (err.message.includes('READONLY')) {
-          logger.warn('ioredis reconnecting due to READONLY error');
-        }
-        return true;
-      }
-      return false;
-    },
     enableOfflineQueue: cacheConfig.REDIS_ENABLE_OFFLINE_QUEUE,
     connectTimeout: cacheConfig.REDIS_CONNECT_TIMEOUT,
     maxRetriesPerRequest: 3,
   };
 
   // Use iovalkey for cluster, ioredis for single instance
-  if (urls.length === 1) {
-    ioredisClient = new IoRedis(cacheConfig.REDIS_URI, redisOptions);
-  } else {
-    // Use iovalkey for cluster instead of ioredis cluster
+  if (cacheConfig.USE_REDIS_CLUSTER || urls.length > 1) {
+    // Use iovalkey for cluster mode
     const valkeyOptions = {
       username,
       password,
@@ -76,18 +62,6 @@ if (cacheConfig.USE_REDIS) {
         const delay = Math.min(times * 100, cacheConfig.REDIS_RETRY_MAX_DELAY);
         logger.info(`iovalkey cluster reconnecting... attempt ${times}, delay ${delay}ms`);
         return delay;
-      },
-      reconnectOnError: (err) => {
-        const targetErrors = ['READONLY', 'MOVED'];
-        if (targetErrors.some(error => err.message.includes(error))) {
-          if (err.message.includes('MOVED')) {
-            logger.warn('iovalkey reconnecting due to MOVED error - cluster slot redirection');
-          } else if (err.message.includes('READONLY')) {
-            logger.warn('iovalkey reconnecting due to READONLY error');
-          }
-          return true;
-        }
-        return false;
       },
       enableOfflineQueue: cacheConfig.REDIS_ENABLE_OFFLINE_QUEUE,
       connectTimeout: cacheConfig.REDIS_CONNECT_TIMEOUT,
@@ -114,6 +88,9 @@ if (cacheConfig.USE_REDIS) {
       },
       enableOfflineQueue: cacheConfig.REDIS_ENABLE_OFFLINE_QUEUE,
     });
+  } else {
+    // Use ioredis for single instance
+    ioredisClient = new IoRedis(cacheConfig.REDIS_URI, redisOptions);
   }
 
   ioredisClient.on('error', (err) => {
@@ -202,14 +179,14 @@ if (cacheConfig.USE_REDIS) {
   };
 
   keyvRedisClient =
-    urls.length === 1
-      ? createClient({ url: cacheConfig.REDIS_URI, ...redisOptions })
-      : createCluster({
+    cacheConfig.USE_REDIS_CLUSTER || urls.length > 1
+      ? createCluster({
         rootNodes: cacheConfig.REDIS_URI.split(',').map((url) => ({ url })),
         defaults: redisOptions,
         useReplicas: true,
         maxRedirections: 16,
-      });
+      })
+      : createClient({ url: cacheConfig.REDIS_URI, ...redisOptions });
 
   keyvRedisClient.setMaxListeners(cacheConfig.REDIS_MAX_LISTENERS);
 
