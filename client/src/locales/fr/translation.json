@@ -547,7 +547,6 @@
   "com_ui_agent_var": "agent {{0}}",
   "com_ui_agent_version": "Version",
   "com_ui_agent_version_active": "Version active",
-  "com_ui_agent_version_duplicate": "Duplicata de version détecté. Cela créerait une version identique à la version {{versionIndex}}",
   "com_ui_agent_version_empty": "Aucune version disponible",
   "com_ui_agent_version_error": "Erreur lors de la collecte des versions",
   "com_ui_agent_version_history": "Historique des versions",

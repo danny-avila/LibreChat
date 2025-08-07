@@ -540,7 +540,6 @@
   "com_ui_agent_var": "{{0}} סוכנים",
   "com_ui_agent_version": "גרסה",
   "com_ui_agent_version_active": "גרסת הפעלה",
-  "com_ui_agent_version_duplicate": "זוהתה גרסה כפולה, פעולה זו תיצור גרסה זהה לגרסה {{versionIndex}}.",
   "com_ui_agent_version_empty": "אין גרסאות זמינות",
   "com_ui_agent_version_error": "שגיאה באחזור גרסאות",
   "com_ui_agent_version_history": "היסטוריית גרסאות",

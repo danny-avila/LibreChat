@@ -554,7 +554,6 @@
   "com_ui_agent_var": "{{0}} 智能体",
   "com_ui_agent_version": "版本",
   "com_ui_agent_version_active": "活动版本",
-  "com_ui_agent_version_duplicate": "检测到重复版本。这将创建与版本 {{versionIndex}} 完全相同的版本。",
   "com_ui_agent_version_empty": "无可用版本",
   "com_ui_agent_version_error": "获取版本时发生错误",
   "com_ui_agent_version_history": "版本历史",

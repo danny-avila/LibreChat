@@ -546,7 +546,6 @@
   "com_ui_agent_var": "{{0}}エージェント",
   "com_ui_agent_version": "バージョン",
   "com_ui_agent_version_active": "アクティブバージョン",
-  "com_ui_agent_version_duplicate": "重複バージョンが検出されました。これにより、バージョン{{versionIndex}}と同一のバージョンが作成されます。",
   "com_ui_agent_version_empty": "利用可能なバージョンはありません",
   "com_ui_agent_version_error": "バージョン取得エラー",
   "com_ui_agent_version_history": "バージョン履歴",
