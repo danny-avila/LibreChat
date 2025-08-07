@@ -326,6 +326,10 @@ export function mergeFileConfig(dynamic: z.infer<typeof fileConfigSchema> | unde
     mergedConfig.avatarSizeLimit = mbToBytes(dynamic.avatarSizeLimit);
   }
 
+  if (dynamic.fileTokenLimit !== undefined) {
+    mergedConfig.fileTokenLimit = dynamic.fileTokenLimit;
+  }
+
   // Merge clientImageResize configuration
   if (dynamic.clientImageResize !== undefined) {
     mergedConfig.clientImageResize = {
