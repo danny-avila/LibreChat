@@ -29,9 +29,12 @@ describe('getOpenAIConfig', () => {
     expect(result.llmConfig).toMatchObject({
       model: 'gpt-5',
       temperature: 0.7,
-      maxTokens: 1000, // max_tokens is converted to maxTokens
+      modelKwargs: {
+        max_completion_tokens: 1000,
+      },
     });
     expect((result.llmConfig as Record<string, unknown>).max_tokens).toBeUndefined();
+    expect((result.llmConfig as Record<string, unknown>).maxTokens).toBeUndefined();
   });
 
   it('should separate known and unknown params from addParams', () => {
@@ -295,6 +298,82 @@ describe('getOpenAIConfig', () => {
         verbosity: Verbosity.high, // Should be overridden by addParams
       },
       customParam: 'value',
+    });
+  });
+
+  it('should move maxTokens to modelKwargs.max_completion_tokens for GPT-5+ models', () => {
+    const modelOptions = {
+      model: 'gpt-5',
+      temperature: 0.7,
+      max_tokens: 2048,
+    };
+
+    const result = getOpenAIConfig(mockApiKey, { modelOptions });
+
+    expect(result.llmConfig).toMatchObject({
+      model: 'gpt-5',
+      temperature: 0.7,
+    });
+    expect(result.llmConfig.maxTokens).toBeUndefined();
+    expect(result.llmConfig.modelKwargs).toEqual({
+      max_completion_tokens: 2048,
+    });
+  });
+
+  it('should handle GPT-5+ models with existing modelKwargs', () => {
+    const modelOptions = {
+      model: 'gpt-6',
+      max_tokens: 1000,
+      verbosity: Verbosity.low,
+    };
+
+    const addParams = {
+      customParam: 'value',
+    };
+
+    const result = getOpenAIConfig(mockApiKey, { modelOptions, addParams });
+
+    expect(result.llmConfig.maxTokens).toBeUndefined();
+    expect(result.llmConfig.modelKwargs).toEqual({
+      verbosity: Verbosity.low,
+      customParam: 'value',
+      max_completion_tokens: 1000,
+    });
+  });
+
+  it('should not move maxTokens for non-GPT-5+ models', () => {
+    const modelOptions = {
+      model: 'gpt-4',
+      temperature: 0.7,
+      max_tokens: 2048,
+    };
+
+    const result = getOpenAIConfig(mockApiKey, { modelOptions });
+
+    expect(result.llmConfig).toMatchObject({
+      model: 'gpt-4',
+      temperature: 0.7,
+      maxTokens: 2048,
+    });
+    expect(result.llmConfig.modelKwargs).toBeUndefined();
+  });
+
+  it('should handle GPT-5+ models with verbosity and useResponsesApi', () => {
+    const modelOptions = {
+      model: 'gpt-5',
+      max_tokens: 1500,
+      verbosity: Verbosity.medium,
+      useResponsesApi: true,
+    };
+
+    const result = getOpenAIConfig(mockApiKey, { modelOptions });
+
+    expect(result.llmConfig.maxTokens).toBeUndefined();
+    expect(result.llmConfig.modelKwargs).toEqual({
+      text: {
+        verbosity: Verbosity.medium,
+      },
+      max_completion_tokens: 1500,
     });
   });
 

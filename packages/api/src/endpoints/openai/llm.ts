@@ -299,6 +299,12 @@ export function getOpenAIConfig(
     delete modelKwargs.verbosity;
   }
 
+  if (llmConfig.model && /\bgpt-[5-9]\b/i.test(llmConfig.model) && llmConfig.maxTokens != null) {
+    modelKwargs.max_completion_tokens = llmConfig.maxTokens;
+    delete llmConfig.maxTokens;
+    hasModelKwargs = true;
+  }
+
   if (hasModelKwargs) {
     llmConfig.modelKwargs = modelKwargs;
   }
