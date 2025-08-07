@@ -29,7 +29,7 @@ function parseTranscript(transcriptResponse) {
     .map((entry) => entry.text.trim())
     .filter((text) => text)
     .join(' ')
-    .replaceAll('&amp;#39;', '\'');
+    .replaceAll('&amp;#39;', "'");
 }
 
 function createYouTubeTools(fields = {}) {

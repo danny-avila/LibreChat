@@ -232,7 +232,7 @@ class OpenWeather extends Tool {
 
       if (['current_forecast', 'timestamp', 'daily_aggregation', 'overview'].includes(action)) {
         if (typeof finalLat !== 'number' || typeof finalLon !== 'number') {
-          return 'Error: lat and lon are required and must be numbers for this action (or specify \'city\').';
+          return "Error: lat and lon are required and must be numbers for this action (or specify 'city').";
         }
       }
 
@@ -243,7 +243,7 @@ class OpenWeather extends Tool {
       let dt;
       if (action === 'timestamp') {
         if (!date) {
-          return 'Error: For timestamp action, a \'date\' in YYYY-MM-DD format is required.';
+          return "Error: For timestamp action, a 'date' in YYYY-MM-DD format is required.";
         }
         dt = this.convertDateToUnix(date);
       }
