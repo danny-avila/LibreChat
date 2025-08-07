@@ -113,6 +113,7 @@ export enum ImageDetail {
 
 export enum ReasoningEffort {
   none = '',
+  minimal = 'minimal',
   low = 'low',
   medium = 'medium',
   high = 'high',
