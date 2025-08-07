@@ -1,13 +1,13 @@
 const OpenAI = require('openai');
-const { HttpsProxyAgent } = require('https-proxy-agent');
+const { ProxyAgent } = require('undici');
 const { constructAzureURL, isUserProvided, resolveHeaders } = require('@librechat/api');
 const { ErrorTypes, EModelEndpoint, mapModelToAzureConfig } = require('librechat-data-provider');
 const {
+  checkUserKeyExpiry,
   getUserKeyValues,
   getUserKeyExpiry,
-  checkUserKeyExpiry,
 } = require('~/server/services/UserService');
-const OpenAIClient = require('~/app/clients/OpenAIClient');
+const OAIClient = require('~/app/clients/OpenAIClient');
 
 class Files {
   constructor(client) {
@@ -158,7 +158,10 @@ const initializeClient = async ({ req, res, version, endpointOption, initAppClie
   }
 
   if (PROXY) {
-    opts.httpAgent = new HttpsProxyAgent(PROXY);
+    const proxyAgent = new ProxyAgent(PROXY);
+    opts.fetchOptions = {
+      dispatcher: proxyAgent,
+    };
   }
 
   if (OPENAI_ORGANIZATION) {
@@ -181,7 +184,7 @@ const initializeClient = async ({ req, res, version, endpointOption, initAppClie
   }
 
   if (endpointOption && initAppClient) {
-    const client = new OpenAIClient(apiKey, clientOptions);
+    const client = new OAIClient(apiKey, clientOptions);
     return {
       client,
       openai,

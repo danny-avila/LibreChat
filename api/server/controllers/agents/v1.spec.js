@@ -498,6 +498,28 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(mockRes.json).toHaveBeenCalledWith({ error: 'Agent not found' });
     });
 
+    test('should include version field in update response', async () => {
+      mockReq.user.id = existingAgentAuthorId.toString();
+      mockReq.params.id = existingAgentId;
+      mockReq.body = {
+        name: 'Updated with Version Check',
+      };
+
+      await updateAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.json).toHaveBeenCalled();
+      const updatedAgent = mockRes.json.mock.calls[0][0];
+
+      // Verify version field is included and is a number
+      expect(updatedAgent).toHaveProperty('version');
+      expect(typeof updatedAgent.version).toBe('number');
+      expect(updatedAgent.version).toBeGreaterThanOrEqual(1);
+
+      // Verify in database
+      const agentInDb = await Agent.findOne({ id: existingAgentId });
+      expect(updatedAgent.version).toBe(agentInDb.versions.length);
+    });
+
     test('should handle validation errors properly', async () => {
       mockReq.user.id = existingAgentAuthorId.toString();
       mockReq.params.id = existingAgentId;

@@ -1,14 +1,14 @@
 import { useState, useCallback, useMemo, memo } from 'react';
 import { useUserKeyQuery } from 'librechat-data-provider/react-query';
+import { ResizableHandleAlt, ResizablePanel, useMediaQuery } from '@librechat/client';
 import type { TEndpointsConfig, TInterfaceConfig } from 'librechat-data-provider';
 import type { ImperativePanelHandle } from 'react-resizable-panels';
-import { ResizableHandleAlt, ResizablePanel } from '~/components/ui/Resizable';
-import { useMediaQuery, useLocalStorage, useLocalize } from '~/hooks';
 import useSideNavLinks from '~/hooks/Nav/useSideNavLinks';
+import { useLocalStorage, useLocalize } from '~/hooks';
 import { useGetEndpointsQuery } from '~/data-provider';
 import NavToggle from '~/components/Nav/NavToggle';
+import { useSidePanelContext } from '~/Providers';
 import { cn, getEndpointField } from '~/utils';
-import { useChatContext } from '~/Providers';
 import Nav from './Nav';
 
 const defaultMinSize = 20;
@@ -43,13 +43,13 @@ const SidePanel = ({
   interfaceConfig: TInterfaceConfig;
 }) => {
   const localize = useLocalize();
+  const { endpoint } = useSidePanelContext();
   const [isHovering, setIsHovering] = useState(false);
   const [newUser, setNewUser] = useLocalStorage('newUser', true);
   const { data: endpointsConfig = {} as TEndpointsConfig } = useGetEndpointsQuery();
 
   const isSmallScreen = useMediaQuery('(max-width: 767px)');
-  const { conversation } = useChatContext();
-  const { endpoint } = conversation ?? {};
+
   const { data: keyExpiry = { expiresAt: undefined } } = useUserKeyQuery(endpoint ?? '');
 
   const defaultActive = useMemo(() => {

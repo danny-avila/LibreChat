@@ -55,9 +55,10 @@ export const useUpdateConversationMutation = (
   return useMutation(
     (payload: t.TUpdateConversationRequest) => dataService.updateConversation(payload),
     {
-      onSuccess: (updatedConvo) => {
-        queryClient.setQueryData([QueryKeys.conversation, id], updatedConvo);
-        updateConvoInAllQueries(queryClient, id, () => updatedConvo);
+      onSuccess: (updatedConvo, payload) => {
+        const targetId = payload.conversationId || id;
+        queryClient.setQueryData([QueryKeys.conversation, targetId], updatedConvo);
+        updateConvoInAllQueries(queryClient, targetId, () => updatedConvo);
       },
     },
   );

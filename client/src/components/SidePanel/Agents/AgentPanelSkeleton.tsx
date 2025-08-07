@@ -1,5 +1,5 @@
 import React from 'react';
-import { Skeleton } from '~/components/ui';
+import { Skeleton } from '@librechat/client';
 
 export default function AgentPanelSkeleton() {
   return (

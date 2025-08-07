@@ -1,6 +1,6 @@
+const { webSearchKeys } = require('@librechat/api');
 const {
   Constants,
-  webSearchKeys,
   deprecatedAzureVariables,
   conflictingAzureVariables,
   extractVariableName,

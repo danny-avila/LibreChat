@@ -136,12 +136,7 @@ export type DuplicateVersionError = Error & {
   };
 };
 
-export type UpdateAgentMutationOptions = MutationOptions<
-  Agent,
-  UpdateAgentVariables,
-  unknown,
-  DuplicateVersionError
->;
+export type UpdateAgentMutationOptions = MutationOptions<Agent, UpdateAgentVariables>;
 
 export type DuplicateAgentBody = {
   agent_id: string;
@@ -368,3 +363,13 @@ export type TLogoutResponse = {
 };
 
 export type LogoutOptions = MutationOptions<TLogoutResponse, undefined>;
+
+export interface AssistantInitialize {
+  message: string;
+  error?: string;
+}
+
+export interface CancelMCPOAuthResponse {
+  success: boolean;
+  message: string;
+}

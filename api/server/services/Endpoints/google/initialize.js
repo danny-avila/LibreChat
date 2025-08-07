@@ -25,7 +25,7 @@ const initializeClient = async ({ req, res, endpointOption, overrideModel, optio
     /** Only attempt to load service key if GOOGLE_KEY is not provided */
     try {
       const serviceKeyPath =
-        process.env.GOOGLE_SERVICE_KEY_FILE_PATH ||
+        process.env.GOOGLE_SERVICE_KEY_FILE ||
         path.join(__dirname, '../../../..', 'data', 'auth.json');
       serviceKey = await loadServiceKey(serviceKeyPath);
       if (!serviceKey) {

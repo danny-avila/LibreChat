@@ -61,7 +61,7 @@ const getAgent = async (searchParameter) => await Agent.findOne(searchParameter)
 const loadEphemeralAgent = async ({ req, agent_id, endpoint, model_parameters: _m }) => {
   const { model, ...model_parameters } = _m;
   /** @type {Record<string, FunctionTool>} */
-  const availableTools = await getCachedTools({ includeGlobal: true });
+  const availableTools = await getCachedTools({ userId: req.user.id, includeGlobal: true });
   /** @type {TEphemeralAgent | null} */
   const ephemeralAgent = req.body.ephemeralAgent;
   const mcpServers = new Set(ephemeralAgent?.mcp);
@@ -316,17 +316,10 @@ const updateAgent = async (searchParameter, updateData, options = {}) => {
     if (shouldCreateVersion) {
       const duplicateVersion = isDuplicateVersion(updateData, versionData, versions, actionsHash);
       if (duplicateVersion && !forceVersion) {
-        const error = new Error(
-          'Duplicate version: This would create a version identical to an existing one',
-        );
-        error.statusCode = 409;
-        error.details = {
-          duplicateVersion,
-          versionIndex: versions.findIndex(
-            (v) => JSON.stringify(duplicateVersion) === JSON.stringify(v),
-          ),
-        };
-        throw error;
+        // No changes detected, return the current agent without creating a new version
+        const agentObj = currentAgent.toObject();
+        agentObj.version = versions.length;
+        return agentObj;
       }
     }
 

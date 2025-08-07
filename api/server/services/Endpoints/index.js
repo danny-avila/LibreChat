@@ -34,13 +34,13 @@ const providerConfigMap = {
  * @param {string} provider - The provider string
  * @returns {Promise<{
  * getOptions: Function,
- * overrideProvider?: string,
+ * overrideProvider: string,
  * customEndpointConfig?: TEndpoint
  * }>}
  */
 async function getProviderConfig(provider) {
   let getOptions = providerConfigMap[provider];
-  let overrideProvider;
+  let overrideProvider = provider;
   /** @type {TEndpoint | undefined} */
   let customEndpointConfig;
 
@@ -56,7 +56,7 @@ async function getProviderConfig(provider) {
     overrideProvider = Providers.OPENAI;
   }
 
-  if (isKnownCustomProvider(overrideProvider || provider) && !customEndpointConfig) {
+  if (isKnownCustomProvider(overrideProvider) && !customEndpointConfig) {
     customEndpointConfig = await getCustomEndpointConfig(provider);
     if (!customEndpointConfig) {
       throw new Error(`Provider ${provider} not supported`);

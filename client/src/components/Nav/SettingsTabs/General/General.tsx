@@ -1,10 +1,10 @@
 import React, { useContext, useCallback } from 'react';
 import Cookies from 'js-cookie';
 import { useRecoilState } from 'recoil';
-import { ThemeContext, useLocalize } from '~/hooks';
+import { Dropdown, ThemeContext } from '@librechat/client';
 import ArchivedChats from './ArchivedChats';
 import ToggleSwitch from '../ToggleSwitch';
-import { Dropdown } from '~/components';
+import { useLocalize } from '~/hooks';
 import store from '~/store';
 
 const toggleSwitchConfigs = [
@@ -105,6 +105,8 @@ export const LangSelector = ({
     { value: 'nl-NL', label: localize('com_nav_lang_dutch') },
     { value: 'id-ID', label: localize('com_nav_lang_indonesia') },
     { value: 'fi-FI', label: localize('com_nav_lang_finnish') },
+    { value: 'bo', label: localize('com_nav_lang_tibetan') },
+    { value: 'uk-UA', label: localize('com_nav_lang_ukrainian') },
   ];
 
   return (
