@@ -64,26 +64,14 @@ describe('custom/initializeClient', () => {
     jest.clearAllMocks();
   });
 
-  it('calls resolveHeaders with conversation ID when provided', async () => {
-    const { resolveHeaders } = require('@librechat/api');
-    const requestWithConversationId = {
-      ...mockRequest,
-      body: { ...mockRequest.body, conversationId: 'existing-conversation-123' },
-    };
-    await initializeClient({ req: requestWithConversationId, res: mockResponse, optionsOnly: true });
-    expect(resolveHeaders).toHaveBeenCalledWith(
-      { 'x-user': '{{LIBRECHAT_USER_ID}}', 'x-email': '{{LIBRECHAT_USER_EMAIL}}' },
-      { id: 'user-123', email: 'test@example.com' },
-      { LIBRECHAT_CONVERSATION_ID: 'existing-conversation-123' },
-    );
-  });
-
-  it('calls resolveHeaders with headers and user', async () => {
+  it('calls resolveHeaders with headers, user, and body for body placeholder support', async () => {
     const { resolveHeaders } = require('@librechat/api');
     await initializeClient({ req: mockRequest, res: mockResponse, optionsOnly: true });
     expect(resolveHeaders).toHaveBeenCalledWith(
       { 'x-user': '{{LIBRECHAT_USER_ID}}', 'x-email': '{{LIBRECHAT_USER_EMAIL}}' },
       { id: 'user-123', email: 'test@example.com' },
+      undefined, // customUserVars
+      { endpoint: 'test-endpoint' }, // body - supports {{LIBRECHAT_BODY_*}} placeholders
     );
   });
 

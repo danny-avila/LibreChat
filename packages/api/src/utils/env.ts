@@ -26,6 +26,16 @@ const ALLOWED_USER_FIELDS = [
 ] as const;
 
 /**
+ * List of allowed request body fields that can be used in header placeholders.
+ * These are common fields from the request body that are safe to expose in headers.
+ */
+const ALLOWED_BODY_FIELDS = [
+  'conversationId',
+  'parentMessageId',
+  'messageId'
+] as const;
+
+/**
  * Processes a string value to replace user field placeholders
  * @param value - The string value to process
  * @param user - The user object
@@ -62,20 +72,45 @@ function processUserPlaceholders(value: string, user?: TUser): string {
 }
 
 /**
+ * Processes a string value to replace request body field placeholders
+ * @param value - The string value to process
+ * @param body - The request body object
+ * @returns The processed string with placeholders replaced
+ */
+function processBodyPlaceholders(value: string, body: Record<string, any>): string {
+
+  for (const field of ALLOWED_BODY_FIELDS) {
+    const placeholder = `{{LIBRECHAT_BODY_${field.toUpperCase()}}}`;
+    if (!value.includes(placeholder)) {
+      continue;
+    }
+
+    const fieldValue = body[field];
+    const replacementValue = fieldValue == null ? '' : String(fieldValue);
+    value = value.replace(new RegExp(placeholder, 'g'), replacementValue);
+  }
+
+  return value;
+}
+
+/**
  * Processes a single string value by replacing various types of placeholders
  * @param originalValue - The original string value to process
  * @param customUserVars - Optional custom user variables to replace placeholders
  * @param user - Optional user object for replacing user field placeholders
+ * @param body - Optional request body object for replacing body field placeholders
  * @returns The processed string with all placeholders replaced
  */
 function processSingleValue({
   originalValue,
   customUserVars,
   user,
+  body = undefined,
 }: {
   originalValue: string;
   customUserVars?: Record<string, string>;
   user?: TUser;
+  body?: Record<string, any>;
 }): string {
   let value = originalValue;
 
@@ -92,7 +127,12 @@ function processSingleValue({
   // 2. Replace user field placeholders (e.g., {{LIBRECHAT_USER_EMAIL}}, {{LIBRECHAT_USER_ID}})
   value = processUserPlaceholders(value, user);
 
-  // 3. Replace system environment variables
+  // 3. Replace body field placeholders (e.g., {{LIBRECHAT_BODY_CONVERSATIONID}}, {{LIBRECHAT_BODY_PARENTMESSAGEID}})
+  if (body) {
+    value = processBodyPlaceholders(value, body);
+  }
+
+  // 4. Replace system environment variables
   value = extractEnvVariable(value);
 
   return value;
@@ -151,16 +191,18 @@ export function processMCPEnv(
 }
 
 /**
- * Resolves header values by replacing user placeholders, custom variables, and environment variables
+ * Resolves header values by replacing user placeholders, custom variables, body variables, and environment variables
  * @param headers - The headers object to process
  * @param user - Optional user object for replacing user field placeholders (can be partial with just id)
  * @param customUserVars - Optional custom user variables to replace placeholders
+ * @param body - Optional request body object for replacing body field placeholders
  * @returns - The processed headers with all placeholders replaced
  */
 export function resolveHeaders(
   headers: Record<string, string> | undefined,
   user?: Partial<TUser> | { id: string },
   customUserVars?: Record<string, string>,
+  body?: Record<string, any>,
 ) {
   const resolvedHeaders = { ...(headers ?? {}) };
 
@@ -170,6 +212,7 @@ export function resolveHeaders(
         originalValue: headers[key],
         customUserVars,
         user: user as TUser,
+        body,
       });
     });
   }
