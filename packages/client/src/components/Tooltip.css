@@ -17,6 +17,12 @@
   text-align: left;
 }
 
+@media (max-width: 640px) {
+  .tooltip {
+    max-width: 200px;
+  }
+}
+
 .tooltip:where(.dark, .dark *) {
   background-color: var(--surface-primary);
   color: white;

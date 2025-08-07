@@ -1,6 +1,7 @@
+import DOMPurify from 'dompurify';
 import * as Ariakit from '@ariakit/react';
+import { forwardRef, useId, useMemo } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { forwardRef, useMemo } from 'react';
 import { cn } from '~/utils';
 import './Tooltip.css';
 
@@ -8,7 +9,6 @@ interface TooltipAnchorProps extends Ariakit.TooltipAnchorProps {
   description: string;
   side?: 'top' | 'bottom' | 'left' | 'right';
   className?: string;
-  focusable?: boolean;
   role?: string;
   enableHTML?: boolean;
 }
@@ -20,6 +20,35 @@ export const TooltipAnchor = forwardRef<HTMLDivElement, TooltipAnchorProps>(func
   const tooltip = Ariakit.useTooltipStore({ placement: side });
   const mounted = Ariakit.useStoreState(tooltip, (state) => state.mounted);
   const placement = Ariakit.useStoreState(tooltip, (state) => state.placement);
+
+  const id = useId();
+  const sanitizer = useMemo(() => {
+    const instance = DOMPurify();
+    instance.addHook('afterSanitizeAttributes', (node) => {
+      if (node.tagName && node.tagName === 'A') {
+        node.setAttribute('target', '_blank');
+        node.setAttribute('rel', 'noopener noreferrer');
+      }
+    });
+    return instance;
+  }, []);
+
+  const sanitizedHTML = useMemo(() => {
+    if (!enableHTML) {
+      return '';
+    }
+    try {
+      return sanitizer.sanitize(description, {
+        ALLOWED_TAGS: ['a', 'strong', 'b', 'em', 'i', 'br', 'code'],
+        ALLOWED_ATTR: ['href', 'class', 'target', 'rel'],
+        ALLOW_DATA_ATTR: false,
+        ALLOW_ARIA_ATTR: false,
+      });
+    } catch (error) {
+      console.error('Sanitization failed', error);
+      return description;
+    }
+  }, [enableHTML, description, sanitizer]);
 
   const { x, y } = useMemo(() => {
     const dir = placement.split('-')[0];
@@ -44,31 +73,13 @@ export const TooltipAnchor = forwardRef<HTMLDivElement, TooltipAnchorProps>(func
     }
   };
 
-  // Sanitize HTML content for basic formatting (links, bold, italic)
-  const sanitizeHTML = (html: string) => {
-    const allowedTags = ['a', 'strong', 'b', 'em', 'i', 'br', 'code'];
-    const tagRegex = /<(\/?)([\w]+)([^>]*)>/g;
-
-    return html.replace(tagRegex, (match, closing, tagName, attributes) => {
-      if (allowedTags.includes(tagName.toLowerCase())) {
-        if (tagName.toLowerCase() === 'a' && !closing) {
-          const hrefMatch = attributes.match(/href=["']([^"']+)["']/);
-          if (hrefMatch) {
-            return `<a href="${hrefMatch[1]}" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:text-blue-800 underline">`;
-          }
-        }
-        return match;
-      }
-      return '';
-    });
-  };
-
   return (
     <Ariakit.TooltipProvider store={tooltip} hideTimeout={0}>
       <Ariakit.TooltipAnchor
         {...props}
         ref={ref}
         role={role}
+        aria-describedby={id}
         onKeyDown={handleKeyDown}
         className={cn('cursor-pointer', className)}
       />
@@ -78,6 +89,7 @@ export const TooltipAnchor = forwardRef<HTMLDivElement, TooltipAnchorProps>(func
             gutter={4}
             alwaysVisible
             className="tooltip"
+            id={id}
             render={
               <motion.div
                 initial={{ opacity: 0, x, y }}
@@ -90,7 +102,7 @@ export const TooltipAnchor = forwardRef<HTMLDivElement, TooltipAnchorProps>(func
             {enableHTML ? (
               <div
                 dangerouslySetInnerHTML={{
-                  __html: sanitizeHTML(description),
+                  __html: sanitizedHTML,
                 }}
               />
             ) : (
