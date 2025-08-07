@@ -65,6 +65,9 @@ spec:
           {{- toYaml .Values.volumeMounts | nindent 10 }}
           {{- end }}
           envFrom:
+          {{- with .Values.librechat.envFrom }}
+          {{ toYaml . | nindent 10 }}
+          {{- end }}
           - configMapRef:
               name: {{ include "librechat.fullname" $ }}-configenv
           {{- if .Values.global.librechat.existingSecretName }}
