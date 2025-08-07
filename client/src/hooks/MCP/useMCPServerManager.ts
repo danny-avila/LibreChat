@@ -160,7 +160,7 @@ export function useMCPServerManager() {
               setMCPValues([...currentValues, serverName]);
             }
 
-            await queryClient.refetchQueries([QueryKeys.tools]);
+            await queryClient.invalidateQueries([QueryKeys.tools]);
 
             // This delay is to ensure UI has updated with new connection status before cleanup
             // Otherwise servers will show as disconnected for a second after OAuth flow completes
