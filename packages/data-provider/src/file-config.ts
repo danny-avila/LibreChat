@@ -309,6 +309,10 @@ export function mergeFileConfig(dynamic: z.infer<typeof fileConfigSchema> | unde
       ...fileConfig.textParsing,
       supportedMimeTypes: fileConfig.textParsing?.supportedMimeTypes || [],
     },
+    stt: {
+      ...fileConfig.stt,
+      supportedMimeTypes: fileConfig.stt?.supportedMimeTypes || [],
+    },
   };
   if (!dynamic) {
     return mergedConfig;
