@@ -516,7 +516,6 @@
   "com_ui_agent_var": "{{0}} agent",
   "com_ui_agent_version": "Version",
   "com_ui_agent_version_active": "Aktiv version",
-  "com_ui_agent_version_duplicate": "Duplikatversion fundet. Dette vil skabe en version, der er identisk med Version {{versionIndex}}.",
   "com_ui_agent_version_empty": "Ingen tilgængelige versioner",
   "com_ui_agent_version_error": "Fejl ved hentning af versioner",
   "com_ui_agent_version_history": "Versionshistorik",
