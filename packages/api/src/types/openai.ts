@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { openAISchema, EModelEndpoint } from 'librechat-data-provider';
 import type { TEndpointOption, TAzureConfig, TEndpoint } from 'librechat-data-provider';
 import type { BindToolsInput } from '@langchain/core/language_models/chat_models';
-import type { OpenAIClientOptions } from '@librechat/agents';
+import type { OpenAIClientOptions, Providers } from '@librechat/agents';
 import type { AzureOptions } from './azure';
 
 export type OpenAIParameters = z.infer<typeof openAISchema>;
@@ -35,6 +35,7 @@ export interface LLMConfigResult {
   llmConfig: ClientOptions;
   configOptions: OpenAIConfiguration;
   tools?: BindToolsInput[];
+  provider?: Providers;
 }
 
 /**
