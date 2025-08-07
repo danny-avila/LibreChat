@@ -47,6 +47,7 @@ export type FileConfig = {
   endpoints: {
     [key: string]: EndpointFileConfig;
   };
+  fileTokenLimit?: number;
   serverFileSizeLimit?: number;
   avatarSizeLimit?: number;
   clientImageResize?: {

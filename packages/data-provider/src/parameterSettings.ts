@@ -9,7 +9,6 @@ import {
   anthropicSettings,
 } from './types';
 import { SettingDefinition, SettingsConfiguration } from './generate';
-import { fileConfig } from './file-config';
 
 // Base definitions
 const baseDefinitions: Record<string, SettingDefinition> = {
@@ -150,7 +149,6 @@ export const librechat = {
     type: 'number',
     component: 'input',
     columnSpan: 2,
-    default: fileConfig.fileTokenLimit,
   } as const,
 };
 
