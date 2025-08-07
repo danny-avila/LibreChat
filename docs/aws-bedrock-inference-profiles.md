@@ -14,6 +14,8 @@ AWS Bedrock custom inference profiles allow you to create application-specific c
 
 ## Creating Custom Inference Profiles
 
+**Note**: Custom inference profiles can only be created via API calls (AWS CLI, SDK, etc.) and cannot be created from the AWS Console.
+
 ### Method 1: Using AWS CLI
 
 ```bash
@@ -69,17 +71,7 @@ except Exception as e:
     print(f"Error creating application inference profile: {e}")
 ```
 
-### Method 3: Using AWS Console
 
-1. Go to the AWS Bedrock console
-2. Navigate to "Inference profiles"
-3. Click "Create inference profile"
-4. Fill in the required fields:
-   - **Name**: Your profile name
-   - **Description**: Description of the profile
-   - **Model**: Select the foundation model to copy from
-   - **Tags**: Add relevant tags
-5. Click "Create inference profile"
 
 ## Configuration in LibreChat
 
