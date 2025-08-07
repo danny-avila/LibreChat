@@ -311,6 +311,18 @@ describe('getMultiplier', () => {
       defaultRate,
     );
   });
+
+  it('should return correct multipliers for GPT-OSS models', () => {
+    const models = ['gpt-oss-20b', 'gpt-oss-120b'];
+    models.forEach((key) => {
+      const expectedPrompt = tokenValues[key].prompt;
+      const expectedCompletion = tokenValues[key].completion;
+      expect(getMultiplier({ valueKey: key, tokenType: 'prompt' })).toBe(expectedPrompt);
+      expect(getMultiplier({ valueKey: key, tokenType: 'completion' })).toBe(expectedCompletion);
+      expect(getMultiplier({ model: key, tokenType: 'prompt' })).toBe(expectedPrompt);
+      expect(getMultiplier({ model: key, tokenType: 'completion' })).toBe(expectedCompletion);
+    });
+  });
 });
 
 describe('AWS Bedrock Model Tests', () => {

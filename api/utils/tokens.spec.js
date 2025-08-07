@@ -1,5 +1,11 @@
 const { EModelEndpoint } = require('librechat-data-provider');
-const { getModelMaxTokens, processModelData, matchModelName, maxTokensMap } = require('./tokens');
+const {
+  maxOutputTokensMap,
+  getModelMaxTokens,
+  processModelData,
+  matchModelName,
+  maxTokensMap,
+} = require('./tokens');
 
 describe('getModelMaxTokens', () => {
   test('should return correct tokens for exact match', () => {
@@ -348,6 +354,26 @@ describe('getModelMaxTokens', () => {
     expect(getModelMaxTokens('openai/o4-mini')).toBe(o4MiniTokens);
     expect(getModelMaxTokens('o3')).toBe(o3Tokens);
     expect(getModelMaxTokens('openai/o3')).toBe(o3Tokens);
+  });
+
+  test('should return correct tokens for GPT-OSS models', () => {
+    const expected = maxTokensMap[EModelEndpoint.openAI]['gpt-oss-20b'];
+    ['gpt-oss-20b', 'gpt-oss-120b', 'openai/gpt-oss-20b', 'openai/gpt-oss-120b'].forEach((name) => {
+      expect(getModelMaxTokens(name)).toBe(expected);
+    });
+  });
+
+  test('should return correct max output tokens for GPT-OSS models', () => {
+    const { getModelMaxOutputTokens } = require('./tokens');
+    ['gpt-oss-20b', 'gpt-oss-120b'].forEach((model) => {
+      expect(getModelMaxOutputTokens(model)).toBe(maxOutputTokensMap[EModelEndpoint.openAI][model]);
+      expect(getModelMaxOutputTokens(model, EModelEndpoint.openAI)).toBe(
+        maxOutputTokensMap[EModelEndpoint.openAI][model],
+      );
+      expect(getModelMaxOutputTokens(model, EModelEndpoint.azureOpenAI)).toBe(
+        maxOutputTokensMap[EModelEndpoint.azureOpenAI][model],
+      );
+    });
   });
 });
 
