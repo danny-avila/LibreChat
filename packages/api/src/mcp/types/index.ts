@@ -23,6 +23,9 @@ export type MCPOptions = z.infer<typeof MCPOptionsSchema> & {
       description: string;
     }
   >;
+  maxReconnectAttempts?: number;
+  maxBackoffMs?: number;
+  reconnectBackoffMs?: number;
 };
 export type MCPServers = z.infer<typeof MCPServersSchema>;
 export interface MCPResource {
