@@ -221,12 +221,14 @@ const openAIParams: Record<string, SettingDefinition> = {
     component: 'slider',
     options: [
       ReasoningEffort.none,
+      ReasoningEffort.minimal,
       ReasoningEffort.low,
       ReasoningEffort.medium,
       ReasoningEffort.high,
     ],
     enumMappings: {
       [ReasoningEffort.none]: 'com_ui_none',
+      [ReasoningEffort.minimal]: 'com_ui_minimal',
       [ReasoningEffort.low]: 'com_ui_low',
       [ReasoningEffort.medium]: 'com_ui_medium',
       [ReasoningEffort.high]: 'com_ui_high',
