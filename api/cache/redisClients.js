@@ -36,9 +36,13 @@ if (cacheConfig.USE_REDIS) {
       return delay;
     },
     reconnectOnError: (err) => {
-      const targetError = 'READONLY';
-      if (err.message.includes(targetError)) {
-        logger.warn('ioredis reconnecting due to READONLY error');
+      const targetErrors = ['READONLY', 'MOVED'];
+      if (targetErrors.some(error => err.message.includes(error))) {
+        if (err.message.includes('MOVED')) {
+          logger.warn('ioredis reconnecting due to MOVED error - cluster slot redirection');
+        } else if (err.message.includes('READONLY')) {
+          logger.warn('ioredis reconnecting due to READONLY error');
+        }
         return true;
       }
       return false;
@@ -74,9 +78,13 @@ if (cacheConfig.USE_REDIS) {
         return delay;
       },
       reconnectOnError: (err) => {
-        const targetError = 'READONLY';
-        if (err.message.includes(targetError)) {
-          logger.warn('iovalkey reconnecting due to READONLY error');
+        const targetErrors = ['READONLY', 'MOVED'];
+        if (targetErrors.some(error => err.message.includes(error))) {
+          if (err.message.includes('MOVED')) {
+            logger.warn('iovalkey reconnecting due to MOVED error - cluster slot redirection');
+          } else if (err.message.includes('READONLY')) {
+            logger.warn('iovalkey reconnecting due to READONLY error');
+          }
           return true;
         }
         return false;
@@ -88,6 +96,8 @@ if (cacheConfig.USE_REDIS) {
 
     ioredisClient = new IoValkey.Cluster(cacheConfig.REDIS_URI.split(','), {
       redisOptions: valkeyOptions,
+      enableReadyCheck: true,
+      maxRedirections: 16,
       clusterRetryStrategy: (times) => {
         if (
           cacheConfig.REDIS_RETRY_MAX_ATTEMPTS > 0 &&
@@ -107,7 +117,11 @@ if (cacheConfig.USE_REDIS) {
   }
 
   ioredisClient.on('error', (err) => {
-    logger.error('Redis client error:', err);
+    if (err.message && err.message.includes('MOVED')) {
+      logger.warn('Redis cluster slot moved, client will follow redirection:', err.message);
+    } else {
+      logger.error('Redis client error:', err);
+    }
   });
 
   ioredisClient.on('connect', () => {
@@ -193,12 +207,18 @@ if (cacheConfig.USE_REDIS) {
       : createCluster({
         rootNodes: cacheConfig.REDIS_URI.split(',').map((url) => ({ url })),
         defaults: redisOptions,
+        useReplicas: true,
+        maxRedirections: 16,
       });
 
   keyvRedisClient.setMaxListeners(cacheConfig.REDIS_MAX_LISTENERS);
 
   keyvRedisClient.on('error', (err) => {
-    logger.error('@keyv/redis client error:', err);
+    if (err.message && err.message.includes('MOVED')) {
+      logger.warn('@keyv/redis cluster slot moved, client will follow redirection:', err.message);
+    } else {
+      logger.error('@keyv/redis client error:', err);
+    }
   });
 
   keyvRedisClient.on('connect', () => {
