@@ -22,7 +22,14 @@ aws bedrock create-inference-profile \
   --inference-profile-name "MyLibreChatProfile" \
   --description "Custom inference profile for LibreChat application" \
   --model-source copyFrom="arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-3-sonnet-20240229-v1:0" \
-  --tags Key=Project,Value=LibreChat
+  --tags key=Project,value=LibreChat
+
+# For multiple tags, use a single --tags parameter with comma-separated values
+aws bedrock create-inference-profile \
+  --inference-profile-name "MyLibreChatProfile" \
+  --description "Custom inference profile for LibreChat application" \
+  --model-source copyFrom="arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-3-sonnet-20240229-v1:0" \
+  --tags key=Project,value=LibreChat,key=Environment,value=Production,key=Owner,value=your-team
 ```
 
 ### Method 2: Using Python Script
