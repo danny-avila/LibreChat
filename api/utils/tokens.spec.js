@@ -156,6 +156,35 @@ describe('getModelMaxTokens', () => {
     );
   });
 
+  test('should return correct tokens for gpt-5 matches', () => {
+    expect(getModelMaxTokens('gpt-5')).toBe(maxTokensMap[EModelEndpoint.openAI]['gpt-5']);
+    expect(getModelMaxTokens('gpt-5-preview')).toBe(maxTokensMap[EModelEndpoint.openAI]['gpt-5']);
+    expect(getModelMaxTokens('openai/gpt-5')).toBe(maxTokensMap[EModelEndpoint.openAI]['gpt-5']);
+    expect(getModelMaxTokens('gpt-5-2025-01-30')).toBe(
+      maxTokensMap[EModelEndpoint.openAI]['gpt-5'],
+    );
+  });
+
+  test('should return correct tokens for gpt-5-mini matches', () => {
+    expect(getModelMaxTokens('gpt-5-mini')).toBe(maxTokensMap[EModelEndpoint.openAI]['gpt-5-mini']);
+    expect(getModelMaxTokens('gpt-5-mini-preview')).toBe(
+      maxTokensMap[EModelEndpoint.openAI]['gpt-5-mini'],
+    );
+    expect(getModelMaxTokens('openai/gpt-5-mini')).toBe(
+      maxTokensMap[EModelEndpoint.openAI]['gpt-5-mini'],
+    );
+  });
+
+  test('should return correct tokens for gpt-5-nano matches', () => {
+    expect(getModelMaxTokens('gpt-5-nano')).toBe(maxTokensMap[EModelEndpoint.openAI]['gpt-5-nano']);
+    expect(getModelMaxTokens('gpt-5-nano-preview')).toBe(
+      maxTokensMap[EModelEndpoint.openAI]['gpt-5-nano'],
+    );
+    expect(getModelMaxTokens('openai/gpt-5-nano')).toBe(
+      maxTokensMap[EModelEndpoint.openAI]['gpt-5-nano'],
+    );
+  });
+
   test('should return correct tokens for Anthropic models', () => {
     const models = [
       'claude-2.1',
@@ -363,6 +392,19 @@ describe('getModelMaxTokens', () => {
     });
   });
 
+  test('should return correct max output tokens for GPT-5 models', () => {
+    const { getModelMaxOutputTokens } = require('./tokens');
+    ['gpt-5', 'gpt-5-mini', 'gpt-5-nano'].forEach((model) => {
+      expect(getModelMaxOutputTokens(model)).toBe(maxOutputTokensMap[EModelEndpoint.openAI][model]);
+      expect(getModelMaxOutputTokens(model, EModelEndpoint.openAI)).toBe(
+        maxOutputTokensMap[EModelEndpoint.openAI][model],
+      );
+      expect(getModelMaxOutputTokens(model, EModelEndpoint.azureOpenAI)).toBe(
+        maxOutputTokensMap[EModelEndpoint.azureOpenAI][model],
+      );
+    });
+  });
+
   test('should return correct max output tokens for GPT-OSS models', () => {
     const { getModelMaxOutputTokens } = require('./tokens');
     ['gpt-oss-20b', 'gpt-oss-120b'].forEach((model) => {
@@ -444,6 +486,25 @@ describe('matchModelName', () => {
     expect(matchModelName('openai/gpt-4.1-nano')).toBe('gpt-4.1-nano');
     expect(matchModelName('gpt-4.1-nano-preview')).toBe('gpt-4.1-nano');
     expect(matchModelName('gpt-4.1-nano-2024-08-06')).toBe('gpt-4.1-nano');
+  });
+
+  it('should return the closest matching key for gpt-5 matches', () => {
+    expect(matchModelName('openai/gpt-5')).toBe('gpt-5');
+    expect(matchModelName('gpt-5-preview')).toBe('gpt-5');
+    expect(matchModelName('gpt-5-2025-01-30')).toBe('gpt-5');
+    expect(matchModelName('gpt-5-2025-01-30-0130')).toBe('gpt-5');
+  });
+
+  it('should return the closest matching key for gpt-5-mini matches', () => {
+    expect(matchModelName('openai/gpt-5-mini')).toBe('gpt-5-mini');
+    expect(matchModelName('gpt-5-mini-preview')).toBe('gpt-5-mini');
+    expect(matchModelName('gpt-5-mini-2025-01-30')).toBe('gpt-5-mini');
+  });
+
+  it('should return the closest matching key for gpt-5-nano matches', () => {
+    expect(matchModelName('openai/gpt-5-nano')).toBe('gpt-5-nano');
+    expect(matchModelName('gpt-5-nano-preview')).toBe('gpt-5-nano');
+    expect(matchModelName('gpt-5-nano-2025-01-30')).toBe('gpt-5-nano');
   });
 
   // Tests for Google models
