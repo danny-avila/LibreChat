@@ -208,13 +208,13 @@ export const openAISettings = {
     default: 1 as const,
   },
   presence_penalty: {
-    min: 0 as const,
+    min: -2 as const,
     max: 2 as const,
     step: 0.01 as const,
     default: 0 as const,
   },
   frequency_penalty: {
-    min: 0 as const,
+    min: -2 as const,
     max: 2 as const,
     step: 0.01 as const,
     default: 0 as const,
@@ -374,13 +374,13 @@ export const agentsSettings = {
     default: 1 as const,
   },
   presence_penalty: {
-    min: 0 as const,
+    min: -2 as const,
     max: 2 as const,
     step: 0.01 as const,
     default: 0 as const,
   },
   frequency_penalty: {
-    min: 0 as const,
+    min: -2 as const,
     max: 2 as const,
     step: 0.01 as const,
     default: 0 as const,
