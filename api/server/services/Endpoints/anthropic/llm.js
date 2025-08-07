@@ -52,7 +52,8 @@ function getLLMConfig(apiKey, options = {}) {
   requestOptions = configureReasoning(requestOptions, systemOptions);
 
   // Handle AWS Bedrock custom inference profile ARNs
-  const inferenceProfilePattern = /^arn:aws:bedrock:[^:]+:\d+:application-inference-profile\/[^:]+$/;
+  const inferenceProfilePattern =
+    /^arn:aws:bedrock:[^:]+:\d+:application-inference-profile\/[^:]+$/;
   const isCustomInferenceProfile = inferenceProfilePattern.test(mergedOptions.model);
 
   if (!isCustomInferenceProfile && !/claude-3[-.]7/.test(mergedOptions.model)) {

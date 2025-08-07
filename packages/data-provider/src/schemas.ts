@@ -310,16 +310,17 @@ export const anthropicSettings = {
     default: DEFAULT_MAX_OUTPUT,
     reset: (modelName: string) => {
       // Handle AWS Bedrock custom inference profile ARNs
-      const inferenceProfilePattern = /^arn:aws:bedrock:[^:]+:\d+:application-inference-profile\/[^:]+$/;
+      const inferenceProfilePattern =
+        /^arn:aws:bedrock:[^:]+:\d+:application-inference-profile\/[^:]+$/;
       const isCustomInferenceProfile = inferenceProfilePattern.test(modelName);
-      
+
       if (isCustomInferenceProfile) {
         // For custom inference profiles, we need to determine the underlying model
         // For now, we'll use a conservative approach and return the legacy limit
         // This should be enhanced to detect the actual underlying model
         return LEGACY_ANTHROPIC_MAX_OUTPUT; // 4096
       }
-      
+
       if (/claude-3[-.]5-sonnet/.test(modelName) || /claude-3[-.]7/.test(modelName)) {
         return DEFAULT_MAX_OUTPUT; // 8192 for newer models
       }
@@ -328,9 +329,10 @@ export const anthropicSettings = {
     },
     set: (value: number, modelName: string) => {
       // Handle AWS Bedrock custom inference profile ARNs
-      const inferenceProfilePattern = /^arn:aws:bedrock:[^:]+:\d+:application-inference-profile\/[^:]+$/;
+      const inferenceProfilePattern =
+        /^arn:aws:bedrock:[^:]+:\d+:application-inference-profile\/[^:]+$/;
       const isCustomInferenceProfile = inferenceProfilePattern.test(modelName);
-      
+
       if (isCustomInferenceProfile) {
         // For custom inference profiles, use the legacy limit
         if (value > LEGACY_ANTHROPIC_MAX_OUTPUT) {
@@ -338,7 +340,7 @@ export const anthropicSettings = {
         }
         return value;
       }
-      
+
       if (
         !(/claude-3[-.]5-sonnet/.test(modelName) || /claude-3[-.]7/.test(modelName)) &&
         value > LEGACY_ANTHROPIC_MAX_OUTPUT

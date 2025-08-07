@@ -89,9 +89,9 @@ describe('replaceArtifactContent', () => {
   };
 
   test('should replace content within artifact boundaries', () => {
-    const original = 'console.log(\'hello\')';
+    const original = "console.log('hello')";
     const artifact = createTestArtifact(original);
-    const updated = 'console.log(\'updated\')';
+    const updated = "console.log('updated')";
 
     const result = replaceArtifactContent(artifact.text, artifact, original, updated);
     expect(result).toContain(updated);

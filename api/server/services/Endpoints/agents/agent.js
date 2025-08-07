@@ -92,7 +92,7 @@ const initializeAgent = async ({
 
   // Ensure the provider is set to the endpoint, not the model
   const provider = agent.endpoint || agent.provider;
-  
+
   const { tools: structuredTools, toolContextMap } =
     (await loadTools?.({
       req,

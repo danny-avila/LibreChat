@@ -9,7 +9,8 @@ const { logger } = require('~/config');
  */
 function isClaudeModelWithAdvancedFeatures(modelName) {
   // Handle AWS Bedrock custom inference profile ARNs
-  const inferenceProfilePattern = /^arn:aws:bedrock:[^:]+:\d+:application-inference-profile\/[^:]+$/;
+  const inferenceProfilePattern =
+    /^arn:aws:bedrock:[^:]+:\d+:application-inference-profile\/[^:]+$/;
   if (inferenceProfilePattern.test(modelName)) {
     // For custom inference profiles, we need to check the underlying model
     // This would ideally be done by querying the AWS Bedrock API
@@ -55,7 +56,8 @@ function getClaudeHeaders(model, supportsCacheControl) {
   }
 
   // Handle AWS Bedrock custom inference profile ARNs
-  const inferenceProfilePattern = /^arn:aws:bedrock:[^:]+:\d+:application-inference-profile\/[^:]+$/;
+  const inferenceProfilePattern =
+    /^arn:aws:bedrock:[^:]+:\d+:application-inference-profile\/[^:]+$/;
   if (inferenceProfilePattern.test(model)) {
     // For custom inference profiles, use default headers
     // The actual model capabilities would be determined by the underlying model
@@ -99,17 +101,18 @@ function getClaudeHeaders(model, supportsCacheControl) {
 function configureReasoning(anthropicInput, extendedOptions = {}) {
   const updatedOptions = { ...anthropicInput };
   const currentMaxTokens = updatedOptions.max_tokens ?? updatedOptions.maxTokens;
-  
+
   // Handle AWS Bedrock custom inference profile ARNs
-  const inferenceProfilePattern = /^arn:aws:bedrock:[^:]+:\d+:application-inference-profile\/[^:]+$/;
+  const inferenceProfilePattern =
+    /^arn:aws:bedrock:[^:]+:\d+:application-inference-profile\/[^:]+$/;
   const isCustomInferenceProfile = inferenceProfilePattern.test(updatedOptions?.model);
-  
+
   if (
     extendedOptions.thinking &&
     updatedOptions?.model &&
-    (isCustomInferenceProfile || 
-     /claude-3[-.]7/.test(updatedOptions.model) ||
-     /claude-(?:sonnet|opus|haiku)-[4-9]/.test(updatedOptions.model))
+    (isCustomInferenceProfile ||
+      /claude-3[-.]7/.test(updatedOptions.model) ||
+      /claude-(?:sonnet|opus|haiku)-[4-9]/.test(updatedOptions.model))
   ) {
     updatedOptions.thinking = {
       type: 'enabled',
@@ -145,4 +148,9 @@ function configureReasoning(anthropicInput, extendedOptions = {}) {
   return updatedOptions;
 }
 
-module.exports = { checkPromptCacheSupport, getClaudeHeaders, configureReasoning, isClaudeModelWithAdvancedFeatures };
+module.exports = {
+  checkPromptCacheSupport,
+  getClaudeHeaders,
+  configureReasoning,
+  isClaudeModelWithAdvancedFeatures,
+};
