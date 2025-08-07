@@ -185,6 +185,7 @@ export const megabyte = 1024 * 1024;
 export const mbToBytes = (mb: number): number => mb * megabyte;
 
 const defaultSizeLimit = mbToBytes(512);
+const defaultTokenLimit = 100000;
 const assistantsFileConfig = {
   fileLimit: 10,
   fileSizeLimit: defaultSizeLimit,
@@ -208,6 +209,7 @@ export const fileConfig = {
   },
   serverFileSizeLimit: defaultSizeLimit,
   avatarSizeLimit: mbToBytes(2),
+  fileTokenLimit: defaultTokenLimit,
   clientImageResize: {
     enabled: false,
     maxWidth: 1900,
@@ -257,6 +259,7 @@ export const fileConfigSchema = z.object({
   endpoints: z.record(endpointFileConfigSchema).optional(),
   serverFileSizeLimit: z.number().min(0).optional(),
   avatarSizeLimit: z.number().min(0).optional(),
+  fileTokenLimit: z.number().min(0).optional(),
   imageGeneration: z
     .object({
       percentage: z.number().min(0).max(100).optional(),
@@ -306,6 +309,10 @@ export function mergeFileConfig(dynamic: z.infer<typeof fileConfigSchema> | unde
       ...fileConfig.textParsing,
       supportedMimeTypes: fileConfig.textParsing?.supportedMimeTypes || [],
     },
+    stt: {
+      ...fileConfig.stt,
+      supportedMimeTypes: fileConfig.stt?.supportedMimeTypes || [],
+    },
   };
   if (!dynamic) {
     return mergedConfig;
@@ -317,6 +324,10 @@ export function mergeFileConfig(dynamic: z.infer<typeof fileConfigSchema> | unde
 
   if (dynamic.avatarSizeLimit !== undefined) {
     mergedConfig.avatarSizeLimit = mbToBytes(dynamic.avatarSizeLimit);
+  }
+
+  if (dynamic.fileTokenLimit !== undefined) {
+    mergedConfig.fileTokenLimit = dynamic.fileTokenLimit;
   }
 
   // Merge clientImageResize configuration

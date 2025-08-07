@@ -1,13 +1,15 @@
 const axios = require('axios');
-const { logAxiosError } = require('@librechat/api');
+const { logAxiosError, processTextWithTokenLimit } = require('@librechat/api');
 const {
   FileSources,
   VisionModes,
   ImageDetail,
   ContentTypes,
   EModelEndpoint,
+  mergeFileConfig,
 } = require('librechat-data-provider');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
+const countTokens = require('~/server/utils/countTokens');
 
 /**
  * Converts a readable stream to a base64 encoded string.
@@ -102,11 +104,28 @@ async function encodeAndFormat(req, files, endpoint, mode) {
     return result;
   }
 
+  const fileTokenLimit =
+    req.body?.fileTokenLimit ?? mergeFileConfig(req.app.locals.fileConfig).fileTokenLimit;
+
   for (let file of files) {
     /** @type {FileSources} */
     const source = file.source ?? FileSources.local;
     if (source === FileSources.text && file.text) {
-      result.text += `${!result.text ? 'Attached document(s):\n```md' : '\n\n---\n\n'}# "${file.filename}"\n${file.text}\n`;
+      let fileText = file.text;
+
+      const { text: limitedText, wasTruncated } = await processTextWithTokenLimit(
+        fileText,
+        fileTokenLimit,
+        (text) => countTokens(text),
+      );
+
+      if (wasTruncated) {
+        console.debug(
+          `[encodeAndFormat] Text content truncated for file: ${file.filename} due to token limits`,
+        );
+      }
+
+      result.text += `${!result.text ? 'Attached document(s):\n```md' : '\n\n---\n\n'}# "${file.filename}"\n${limitedText}\n`;
     }
 
     if (!file.height) {
