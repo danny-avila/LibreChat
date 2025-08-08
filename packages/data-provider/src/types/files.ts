@@ -59,7 +59,7 @@ export type FileConfig = {
   ocr?: {
     supportedMimeTypes?: RegExp[];
   };
-  textParsing?: {
+  text?: {
     supportedMimeTypes?: RegExp[];
   };
   stt?: {
@@ -83,7 +83,7 @@ export type FileConfigInput = {
   ocr?: {
     supportedMimeTypes?: string[];
   };
-  textParsing?: {
+  text?: {
     supportedMimeTypes?: string[];
   };
   stt?: {

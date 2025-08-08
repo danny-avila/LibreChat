@@ -1,5 +1,5 @@
 import { FileSources } from 'librechat-data-provider';
-import { parseTextNative, parseText } from './textParser';
+import { parseTextNative, parseText } from './text';
 import { Readable } from 'stream';
 
 jest.mock('fs', () => ({
@@ -39,7 +39,7 @@ const mockedGenerateShortLivedToken = generateShortLivedToken as jest.MockedFunc
   typeof generateShortLivedToken
 >;
 
-describe('textParser', () => {
+describe('text', () => {
   const mockFile: Express.Multer.File = {
     fieldname: 'file',
     originalname: 'test.txt',

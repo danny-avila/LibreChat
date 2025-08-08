@@ -133,7 +133,7 @@ export const defaultOCRMimeTypes = [
   /^application\/epub\+zip$/,
 ];
 
-export const defaultTextParsingMimeTypes = [textMimeTypes];
+export const defaultTextMimeTypes = [textMimeTypes];
 
 export const defaultSTTMimeTypes = [audioMimeTypes];
 
@@ -219,8 +219,8 @@ export const fileConfig = {
   ocr: {
     supportedMimeTypes: defaultOCRMimeTypes,
   },
-  textParsing: {
-    supportedMimeTypes: defaultTextParsingMimeTypes,
+  text: {
+    supportedMimeTypes: defaultTextMimeTypes,
   },
   stt: {
     supportedMimeTypes: defaultSTTMimeTypes,
@@ -279,7 +279,7 @@ export const fileConfigSchema = z.object({
       supportedMimeTypes: supportedMimeTypesSchema.optional(),
     })
     .optional(),
-  textParsing: z
+  text: z
     .object({
       supportedMimeTypes: supportedMimeTypesSchema.optional(),
     })
@@ -305,9 +305,9 @@ export function mergeFileConfig(dynamic: z.infer<typeof fileConfigSchema> | unde
       ...fileConfig.ocr,
       supportedMimeTypes: fileConfig.ocr?.supportedMimeTypes || [],
     },
-    textParsing: {
-      ...fileConfig.textParsing,
-      supportedMimeTypes: fileConfig.textParsing?.supportedMimeTypes || [],
+    text: {
+      ...fileConfig.text,
+      supportedMimeTypes: fileConfig.text?.supportedMimeTypes || [],
     },
     stt: {
       ...fileConfig.stt,
@@ -348,15 +348,13 @@ export function mergeFileConfig(dynamic: z.infer<typeof fileConfigSchema> | unde
     }
   }
 
-  if (dynamic.textParsing !== undefined) {
-    mergedConfig.textParsing = {
-      ...mergedConfig.textParsing,
-      ...dynamic.textParsing,
+  if (dynamic.text !== undefined) {
+    mergedConfig.text = {
+      ...mergedConfig.text,
+      ...dynamic.text,
     };
-    if (dynamic.textParsing.supportedMimeTypes) {
-      mergedConfig.textParsing.supportedMimeTypes = convertStringsToRegex(
-        dynamic.textParsing.supportedMimeTypes,
-      );
+    if (dynamic.text.supportedMimeTypes) {
+      mergedConfig.text.supportedMimeTypes = convertStringsToRegex(dynamic.text.supportedMimeTypes);
     }
   }
 

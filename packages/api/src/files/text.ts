@@ -3,7 +3,7 @@ import axios from 'axios';
 import FormData from 'form-data';
 import { FileSources } from 'librechat-data-provider';
 import type { Request as ServerRequest } from 'express';
-import { generateShortLivedToken } from '../crypto/jwt';
+import { generateShortLivedToken } from '~/crypto/jwt';
 
 /**
  * Attempts to parse text using RAG API, falls back to native text parsing
@@ -58,8 +58,7 @@ export async function parseText({
 
     const formHeaders = formData.getHeaders();
 
-    // TODO: Actually implement referenced RAG API endpoint /parse-text
-    const response = await axios.post(`${process.env.RAG_API_URL}/parse-text`, formData, {
+    const response = await axios.post(`${process.env.RAG_API_URL}/text`, formData, {
       headers: {
         Authorization: `Bearer ${jwtToken}`,
         accept: 'application/json',

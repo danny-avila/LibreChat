@@ -113,11 +113,11 @@ async function encodeAndFormat(req, files, endpoint, mode) {
     if (source === FileSources.text && file.text) {
       let fileText = file.text;
 
-      const { text: limitedText, wasTruncated } = await processTextWithTokenLimit(
-        fileText,
-        fileTokenLimit,
-        (text) => countTokens(text),
-      );
+      const { text: limitedText, wasTruncated } = await processTextWithTokenLimit({
+        text: fileText,
+        tokenLimit: fileTokenLimit,
+        tokenCountFn: (text) => countTokens(text),
+      });
 
       if (wasTruncated) {
         console.debug(
