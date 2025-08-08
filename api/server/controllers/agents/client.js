@@ -1129,6 +1129,12 @@ class AgentClient extends BaseClient {
       delete clientOptions.maxTokens;
     }
 
+    if (/\bgpt-[5-9]\b/i.test(clientOptions.model) && clientOptions.maxTokens != null) {
+      clientOptions.modelKwargs = clientOptions.modelKwargs ?? {};
+      clientOptions.modelKwargs.max_completion_tokens = clientOptions.maxTokens;
+      delete clientOptions.maxTokens;
+    }
+
     clientOptions = Object.assign(
       Object.fromEntries(
         Object.entries(clientOptions).filter(([key]) => !omitTitleOptions.has(key)),
