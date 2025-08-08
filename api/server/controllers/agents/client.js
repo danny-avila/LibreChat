@@ -1122,17 +1122,14 @@ class AgentClient extends BaseClient {
       clientOptions.configuration = options.configOptions;
     }
 
-    // Ensure maxTokens is set for non-o1 models
-    if (!/\b(o\d)\b/i.test(clientOptions.model) && !clientOptions.maxTokens) {
+    const shouldRemoveMaxTokens = /\b(o\d|gpt-[5-9])\b/i.test(clientOptions.model);
+    if (shouldRemoveMaxTokens && clientOptions.maxTokens != null) {
+      delete clientOptions.maxTokens;
+    } else if (!shouldRemoveMaxTokens && !clientOptions.maxTokens) {
       clientOptions.maxTokens = 75;
-    } else if (/\b(o\d)\b/i.test(clientOptions.model) && clientOptions.maxTokens != null) {
-      delete clientOptions.maxTokens;
     }
-
-    if (/\bgpt-[5-9]\b/i.test(clientOptions.model) && clientOptions.maxTokens != null) {
-      clientOptions.modelKwargs = clientOptions.modelKwargs ?? {};
-      clientOptions.modelKwargs.max_completion_tokens = clientOptions.maxTokens;
-      delete clientOptions.maxTokens;
+    if (shouldRemoveMaxTokens && clientOptions?.modelKwargs?.max_completion_tokens != null) {
+      delete clientOptions.modelKwargs.max_completion_tokens;
     }
 
     clientOptions = Object.assign(
