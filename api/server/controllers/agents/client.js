@@ -403,6 +403,34 @@ class AgentClient extends BaseClient {
   }
 
   /**
+   * Creates a promise that resolves with the memory promise result or undefined after a timeout
+   * @param {Promise<(TAttachment | null)[] | undefined>} memoryPromise - The memory promise to await
+   * @param {number} timeoutMs - Timeout in milliseconds (default: 3000)
+   * @returns {Promise<(TAttachment | null)[] | undefined>}
+   */
+  async awaitMemoryWithTimeout(memoryPromise, timeoutMs = 3000) {
+    if (!memoryPromise) {
+      return;
+    }
+
+    try {
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Memory processing timeout')), timeoutMs),
+      );
+
+      const attachments = await Promise.race([memoryPromise, timeoutPromise]);
+      return attachments;
+    } catch (error) {
+      if (error.message === 'Memory processing timeout') {
+        logger.warn('[AgentClient] Memory processing timed out after 3 seconds');
+      } else {
+        logger.error('[AgentClient] Error processing memory:', error);
+      }
+      return;
+    }
+  }
+
+  /**
    * @returns {Promise<string | undefined>}
    */
   async useMemory() {
@@ -1002,11 +1030,9 @@ class AgentClient extends BaseClient {
       });
 
       try {
-        if (memoryPromise) {
-          const attachments = await memoryPromise;
-          if (attachments && attachments.length > 0) {
-            this.artifactPromises.push(...attachments);
-          }
+        const attachments = await this.awaitMemoryWithTimeout(memoryPromise);
+        if (attachments && attachments.length > 0) {
+          this.artifactPromises.push(...attachments);
         }
         await this.recordCollectedUsage({ context: 'message' });
       } catch (err) {
@@ -1016,11 +1042,9 @@ class AgentClient extends BaseClient {
         );
       }
     } catch (err) {
-      if (memoryPromise) {
-        const attachments = await memoryPromise;
-        if (attachments && attachments.length > 0) {
-          this.artifactPromises.push(...attachments);
-        }
+      const attachments = await this.awaitMemoryWithTimeout(memoryPromise);
+      if (attachments && attachments.length > 0) {
+        this.artifactPromises.push(...attachments);
       }
       logger.error(
         '[api/server/controllers/agents/client.js #sendCompletion] Operation aborted',
