@@ -450,7 +450,7 @@
   "com_nav_maximize_chat_space": "Maximize chat space",
   "com_nav_mcp_configure_server": "Configure {{0}}",
   "com_nav_mcp_status_connecting": "{{0}} - Connecting",
-  "com_nav_mcp_vars_update_error": "Error updating MCP custom user variables: {{0}}",
+  "com_nav_mcp_vars_update_error": "Error updating MCP custom user variables",
   "com_nav_mcp_vars_updated": "MCP custom user variables updated successfully.",
   "com_nav_modular_chat": "Enable switching Endpoints mid-conversation",
   "com_nav_my_files": "My Files",
