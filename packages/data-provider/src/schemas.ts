@@ -126,6 +126,13 @@ export enum ReasoningSummary {
   detailed = 'detailed',
 }
 
+export enum Verbosity {
+  none = '',
+  low = 'low',
+  medium = 'medium',
+  high = 'high',
+}
+
 export const imageDetailNumeric = {
   [ImageDetail.low]: 0,
   [ImageDetail.auto]: 1,
@@ -141,6 +148,7 @@ export const imageDetailValue = {
 export const eImageDetailSchema = z.nativeEnum(ImageDetail);
 export const eReasoningEffortSchema = z.nativeEnum(ReasoningEffort);
 export const eReasoningSummarySchema = z.nativeEnum(ReasoningSummary);
+export const eVerbositySchema = z.nativeEnum(Verbosity);
 
 export const defaultAssistantFormValues = {
   assistant: '',
@@ -636,6 +644,8 @@ export const tConversationSchema = z.object({
   /* OpenAI: Reasoning models only */
   reasoning_effort: eReasoningEffortSchema.optional().nullable(),
   reasoning_summary: eReasoningSummarySchema.optional().nullable(),
+  /* OpenAI: Verbosity control */
+  verbosity: eVerbositySchema.optional().nullable(),
   /* OpenAI: use Responses API */
   useResponsesApi: z.boolean().optional(),
   /* OpenAI Responses API / Anthropic API / Google API */
@@ -742,6 +752,8 @@ export const tQueryParamsSchema = tConversationSchema
     reasoning_effort: true,
     /** @endpoints openAI, custom, azureOpenAI */
     reasoning_summary: true,
+    /** @endpoints openAI, custom, azureOpenAI */
+    verbosity: true,
     /** @endpoints openAI, custom, azureOpenAI */
     useResponsesApi: true,
     /** @endpoints openAI, anthropic, google */
@@ -1078,6 +1090,7 @@ export const openAIBaseSchema = tConversationSchema.pick({
   max_tokens: true,
   reasoning_effort: true,
   reasoning_summary: true,
+  verbosity: true,
   useResponsesApi: true,
   web_search: true,
   disableStreaming: true,

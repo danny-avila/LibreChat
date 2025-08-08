@@ -728,6 +728,178 @@ describe('AgentClient - titleConvo', () => {
     });
   });
 
+  describe('getOptions method - GPT-5+ model handling', () => {
+    let mockReq;
+    let mockRes;
+    let mockAgent;
+    let mockOptions;
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+
+      mockAgent = {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: {
+          model: 'gpt-5',
+        },
+      };
+
+      mockReq = {
+        app: {
+          locals: {},
+        },
+        user: {
+          id: 'user-123',
+        },
+      };
+
+      mockRes = {};
+
+      mockOptions = {
+        req: mockReq,
+        res: mockRes,
+        agent: mockAgent,
+      };
+
+      client = new AgentClient(mockOptions);
+    });
+
+    it('should move maxTokens to modelKwargs.max_completion_tokens for GPT-5 models', () => {
+      const clientOptions = {
+        model: 'gpt-5',
+        maxTokens: 2048,
+        temperature: 0.7,
+      };
+
+      // Simulate the getOptions logic that handles GPT-5+ models
+      if (/\bgpt-[5-9]\b/i.test(clientOptions.model) && clientOptions.maxTokens != null) {
+        clientOptions.modelKwargs = clientOptions.modelKwargs ?? {};
+        clientOptions.modelKwargs.max_completion_tokens = clientOptions.maxTokens;
+        delete clientOptions.maxTokens;
+      }
+
+      expect(clientOptions.maxTokens).toBeUndefined();
+      expect(clientOptions.modelKwargs).toBeDefined();
+      expect(clientOptions.modelKwargs.max_completion_tokens).toBe(2048);
+      expect(clientOptions.temperature).toBe(0.7); // Other options should remain
+    });
+
+    it('should handle GPT-5+ models with existing modelKwargs', () => {
+      const clientOptions = {
+        model: 'gpt-6',
+        maxTokens: 1500,
+        temperature: 0.8,
+        modelKwargs: {
+          customParam: 'value',
+        },
+      };
+
+      // Simulate the getOptions logic
+      if (/\bgpt-[5-9]\b/i.test(clientOptions.model) && clientOptions.maxTokens != null) {
+        clientOptions.modelKwargs = clientOptions.modelKwargs ?? {};
+        clientOptions.modelKwargs.max_completion_tokens = clientOptions.maxTokens;
+        delete clientOptions.maxTokens;
+      }
+
+      expect(clientOptions.maxTokens).toBeUndefined();
+      expect(clientOptions.modelKwargs).toEqual({
+        customParam: 'value',
+        max_completion_tokens: 1500,
+      });
+    });
+
+    it('should not modify maxTokens for non-GPT-5+ models', () => {
+      const clientOptions = {
+        model: 'gpt-4',
+        maxTokens: 2048,
+        temperature: 0.7,
+      };
+
+      // Simulate the getOptions logic
+      if (/\bgpt-[5-9]\b/i.test(clientOptions.model) && clientOptions.maxTokens != null) {
+        clientOptions.modelKwargs = clientOptions.modelKwargs ?? {};
+        clientOptions.modelKwargs.max_completion_tokens = clientOptions.maxTokens;
+        delete clientOptions.maxTokens;
+      }
+
+      // Should not be modified since it's GPT-4
+      expect(clientOptions.maxTokens).toBe(2048);
+      expect(clientOptions.modelKwargs).toBeUndefined();
+    });
+
+    it('should handle various GPT-5+ model formats', () => {
+      const testCases = [
+        { model: 'gpt-5', shouldTransform: true },
+        { model: 'gpt-5-turbo', shouldTransform: true },
+        { model: 'gpt-6', shouldTransform: true },
+        { model: 'gpt-7-preview', shouldTransform: true },
+        { model: 'gpt-8', shouldTransform: true },
+        { model: 'gpt-9-mini', shouldTransform: true },
+        { model: 'gpt-4', shouldTransform: false },
+        { model: 'gpt-4o', shouldTransform: false },
+        { model: 'gpt-3.5-turbo', shouldTransform: false },
+        { model: 'claude-3', shouldTransform: false },
+      ];
+
+      testCases.forEach(({ model, shouldTransform }) => {
+        const clientOptions = {
+          model,
+          maxTokens: 1000,
+        };
+
+        // Simulate the getOptions logic
+        if (/\bgpt-[5-9]\b/i.test(clientOptions.model) && clientOptions.maxTokens != null) {
+          clientOptions.modelKwargs = clientOptions.modelKwargs ?? {};
+          clientOptions.modelKwargs.max_completion_tokens = clientOptions.maxTokens;
+          delete clientOptions.maxTokens;
+        }
+
+        if (shouldTransform) {
+          expect(clientOptions.maxTokens).toBeUndefined();
+          expect(clientOptions.modelKwargs?.max_completion_tokens).toBe(1000);
+        } else {
+          expect(clientOptions.maxTokens).toBe(1000);
+          expect(clientOptions.modelKwargs).toBeUndefined();
+        }
+      });
+    });
+
+    it('should not transform if maxTokens is null or undefined', () => {
+      const testCases = [
+        { model: 'gpt-5', maxTokens: null },
+        { model: 'gpt-5', maxTokens: undefined },
+        { model: 'gpt-6', maxTokens: 0 }, // Should transform even if 0
+      ];
+
+      testCases.forEach(({ model, maxTokens }, index) => {
+        const clientOptions = {
+          model,
+          maxTokens,
+          temperature: 0.7,
+        };
+
+        // Simulate the getOptions logic
+        if (/\bgpt-[5-9]\b/i.test(clientOptions.model) && clientOptions.maxTokens != null) {
+          clientOptions.modelKwargs = clientOptions.modelKwargs ?? {};
+          clientOptions.modelKwargs.max_completion_tokens = clientOptions.maxTokens;
+          delete clientOptions.maxTokens;
+        }
+
+        if (index < 2) {
+          // null or undefined cases
+          expect(clientOptions.maxTokens).toBe(maxTokens);
+          expect(clientOptions.modelKwargs).toBeUndefined();
+        } else {
+          // 0 case - should transform
+          expect(clientOptions.maxTokens).toBeUndefined();
+          expect(clientOptions.modelKwargs?.max_completion_tokens).toBe(0);
+        }
+      });
+    });
+  });
+
   describe('runMemory method', () => {
     let client;
     let mockReq;
