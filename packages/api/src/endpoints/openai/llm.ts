@@ -8,6 +8,62 @@ import type * as t from '~/types';
 import { sanitizeModelName, constructAzureURL } from '~/utils/azure';
 import { isEnabled } from '~/utils/common';
 
+export const knownOpenAIParams = new Set([
+  // Constructor/Instance Parameters
+  'model',
+  'modelName',
+  'temperature',
+  'topP',
+  'frequencyPenalty',
+  'presencePenalty',
+  'n',
+  'logitBias',
+  'stop',
+  'stopSequences',
+  'user',
+  'timeout',
+  'stream',
+  'maxTokens',
+  'maxCompletionTokens',
+  'logprobs',
+  'topLogprobs',
+  'apiKey',
+  'organization',
+  'audio',
+  'modalities',
+  'reasoning',
+  'zdrEnabled',
+  'service_tier',
+  'supportsStrictToolCalling',
+  'useResponsesApi',
+  'configuration',
+  // Call-time Options
+  'tools',
+  'tool_choice',
+  'functions',
+  'function_call',
+  'response_format',
+  'seed',
+  'stream_options',
+  'parallel_tool_calls',
+  'strict',
+  'prediction',
+  'promptIndex',
+  // Responses API specific
+  'text',
+  'truncation',
+  'include',
+  'previous_response_id',
+  // LangChain specific
+  '__includeRawResponse',
+  'maxConcurrency',
+  'maxRetries',
+  'verbose',
+  'streaming',
+  'streamUsage',
+  'disableStreaming',
+]);
+
 function hasReasoningParams({
   reasoning_effort,
   reasoning_summary,
@@ -44,7 +100,7 @@ export function getOpenAIConfig(
     addParams,
     dropParams,
   } = options;
-  const { reasoning_effort, reasoning_summary, ...modelOptions } = _modelOptions;
+  const { reasoning_effort, reasoning_summary, verbosity, ...modelOptions } = _modelOptions;
   const llmConfig: Partial<t.ClientOptions> &
     Partial<t.OpenAIParameters> &
     Partial<AzureOpenAIInput> = Object.assign(
@@ -55,8 +111,23 @@ export function getOpenAIConfig(
     modelOptions,
   );
 
+  const modelKwargs: Record<string, unknown> = {};
+  let hasModelKwargs = false;
+
+  if (verbosity != null && verbosity !== '') {
+    modelKwargs.verbosity = verbosity;
+    hasModelKwargs = true;
+  }
+
   if (addParams && typeof addParams === 'object') {
-    Object.assign(llmConfig, addParams);
+    for (const [key, value] of Object.entries(addParams)) {
+      if (knownOpenAIParams.has(key)) {
+        (llmConfig as Record<string, unknown>)[key] = value;
+      } else {
+        hasModelKwargs = true;
+        modelKwargs[key] = value;
+      }
+    }
   }
 
   let useOpenRouter = false;
@@ -221,6 +292,21 @@ export function getOpenAIConfig(
         delete llmConfig[param as keyof t.ClientOptions];
       }
     });
+  }
+
+  if (modelKwargs.verbosity && llmConfig.useResponsesApi === true) {
+    modelKwargs.text = { verbosity: modelKwargs.verbosity };
+    delete modelKwargs.verbosity;
+  }
+
+  if (llmConfig.model && /\bgpt-[5-9]\b/i.test(llmConfig.model) && llmConfig.maxTokens != null) {
+    modelKwargs.max_completion_tokens = llmConfig.maxTokens;
+    delete llmConfig.maxTokens;
+    hasModelKwargs = true;
+  }
+
+  if (hasModelKwargs) {
+    llmConfig.modelKwargs = modelKwargs;
   }
 
   const result: t.LLMConfigResult = {

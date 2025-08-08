@@ -1,4 +1,5 @@
 import {
+  Verbosity,
   ImageDetail,
   EModelEndpoint,
   openAISettings,
@@ -282,6 +283,25 @@ const openAIParams: Record<string, SettingDefinition> = {
       [ReasoningSummary.auto]: 'com_ui_auto',
       [ReasoningSummary.concise]: 'com_ui_concise',
       [ReasoningSummary.detailed]: 'com_ui_detailed',
+    },
+    optionType: 'model',
+    columnSpan: 4,
+  },
+  verbosity: {
+    key: 'verbosity',
+    label: 'com_endpoint_verbosity',
+    labelCode: true,
+    description: 'com_endpoint_openai_verbosity',
+    descriptionCode: true,
+    type: 'enum',
+    default: Verbosity.none,
+    component: 'slider',
+    options: [Verbosity.none, Verbosity.low, Verbosity.medium, Verbosity.high],
+    enumMappings: {
+      [Verbosity.none]: 'com_ui_none',
+      [Verbosity.low]: 'com_ui_low',
+      [Verbosity.medium]: 'com_ui_medium',
+      [Verbosity.high]: 'com_ui_high',
     },
     optionType: 'model',
     columnSpan: 4,
@@ -641,6 +661,7 @@ const openAI: SettingsConfiguration = [
   openAIParams.reasoning_effort,
   openAIParams.useResponsesApi,
   openAIParams.reasoning_summary,
+  openAIParams.verbosity,
   openAIParams.disableStreaming,
 ];
 
@@ -662,6 +683,7 @@ const openAICol2: SettingsConfiguration = [
   baseDefinitions.imageDetail,
   openAIParams.reasoning_effort,
   openAIParams.reasoning_summary,
+  openAIParams.verbosity,
   openAIParams.useResponsesApi,
   openAIParams.web_search,
   openAIParams.disableStreaming,
