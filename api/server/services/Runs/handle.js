@@ -197,25 +197,12 @@ async function _handleRun({ openai, run_id, thread_id }) {
   let steps = [];
   let messages = [];
   const runManager = new RunManager({
-    // 'in_progress': async ({ step, final, isLast }) => {
-    //   // Define logic for handling steps with 'in_progress' status
-    // },
-    // 'queued': async ({ step, final, isLast }) => {
-    //   // Define logic for handling steps with 'queued' status
-    // },
     final: async ({ step, runStatus, stepsByStatus }) => {
       console.log(`Final step for ${run_id} with status ${runStatus}`);
       console.dir(step, { depth: null });
 
       const promises = [];
       promises.push(openai.beta.threads.messages.list(thread_id, defaultOrderQuery));
-
-      // const finalSteps = stepsByStatus[runStatus];
-      // for (const stepPromise of finalSteps) {
-      //   promises.push(stepPromise);
-      // }
-
-      // loop across all statuses
       for (const [_status, stepsPromises] of Object.entries(stepsByStatus)) {
         promises.push(...stepsPromises);
       }
@@ -259,6 +246,4 @@ module.exports = {
   sleep,
   createRun,
   waitForRun,
-  // _handleRun,
-  // retrieveRunSteps,
 };
