@@ -1,5 +1,5 @@
 const { logger } = require('@librechat/data-schemas');
-const { webSearchKeys, extractWebSearchEnvVars } = require('@librechat/api');
+const { webSearchKeys, extractWebSearchEnvVars, normalizeHttpError } = require('@librechat/api');
 const {
   getFiles,
   updateUser,
@@ -20,24 +20,6 @@ const { Transaction, Balance, User } = require('~/db/models');
 const { deleteToolCalls } = require('~/models/ToolCall');
 const { deleteAllSharedLinks } = require('~/models');
 const { getMCPManager } = require('~/config');
-
-/**
- * Normalizes an error-like object into an HTTP status and message.
- * Ensures we always respond with a valid numeric status to avoid UI hangs.
- */
-function normalizeHttpError(err, fallbackStatus = 400) {
-  let status = fallbackStatus;
-  if (typeof err?.status === 'number') {
-    status = err.status;
-  }
-
-  let message = 'An error occurred.';
-  if (typeof err?.message === 'string' && err.message.length > 0) {
-    message = err.message;
-  }
-
-  return { status, message };
-}
 
 const getUserController = async (req, res) => {
   /** @type {MongoUser} */
