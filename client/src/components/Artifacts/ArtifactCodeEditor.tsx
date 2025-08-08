@@ -1,5 +1,5 @@
 import debounce from 'lodash/debounce';
-import React, { memo, useEffect, useMemo, useCallback } from 'react';
+import React, { memo, useEffect, useMemo, useCallback, useState } from 'react';
 import {
   useSandpack,
   SandpackCodeEditor,
@@ -34,13 +34,16 @@ const CodeEditor = ({
   editorRef: React.MutableRefObject<CodeEditorRef>;
 }) => {
   const { sandpack } = useSandpack();
+  const [currentUpdate, setCurrentUpdate] = useState<string | null>(null);
   const { isMutating, setIsMutating, setCurrentCode } = useEditorContext();
   const editArtifact = useEditArtifact({
-    onMutate: () => {
+    onMutate: (vars) => {
       setIsMutating(true);
+      setCurrentUpdate(vars.updated);
     },
     onSuccess: () => {
       setIsMutating(false);
+      setCurrentUpdate(null);
     },
     onError: () => {
       setIsMutating(false);
@@ -71,8 +74,14 @@ const CodeEditor = ({
     }
 
     const currentCode = (sandpack.files['/' + fileKey] as SandpackBundlerFile | undefined)?.code;
+    const isNotOriginal =
+      currentCode && artifact.content != null && currentCode.trim() !== artifact.content.trim();
+    const isNotRepeated =
+      currentUpdate == null
+        ? true
+        : currentCode != null && currentCode.trim() !== currentUpdate.trim();
 
-    if (currentCode && artifact.content != null && currentCode.trim() !== artifact.content.trim()) {
+    if (artifact.content && isNotOriginal && isNotRepeated) {
       setCurrentCode(currentCode);
       debouncedMutation({
         index: artifact.index,
@@ -92,8 +101,9 @@ const CodeEditor = ({
     artifact.messageId,
     readOnly,
     isMutating,
-    sandpack.files,
+    currentUpdate,
     setIsMutating,
+    sandpack.files,
     setCurrentCode,
     debouncedMutation,
   ]);

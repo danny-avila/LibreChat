@@ -23,4 +23,5 @@ export * from './SetConvoContext';
 export * from './SearchContext';
 export * from './BadgeRowContext';
 export * from './SidePanelContext';
+export * from './ArtifactsContext';
 export { default as BadgeRowProvider } from './BadgeRowContext';
