@@ -1,4 +1,3 @@
-const { CacheKeys } = require('librechat-data-provider');
 const { loadDefaultModels, loadConfigModels } = require('~/server/services/Config');
 const { getLogStores } = require('~/cache');
 const { logger } = require('~/config');
@@ -7,13 +6,8 @@ const { logger } = require('~/config');
  * @param {ServerRequest} req
  */
 const getModelsConfig = async (req) => {
-  const cache = getLogStores(CacheKeys.CONFIG_STORE);
-  let modelsConfig = await cache.get(CacheKeys.MODELS_CONFIG);
-  if (!modelsConfig) {
-    modelsConfig = await loadModels(req);
-  }
-
-  return modelsConfig;
+  // never caching all models (caching per endpoint+key)
+  return await loadModels(req);
 };
 
 /**
@@ -22,17 +16,7 @@ const getModelsConfig = async (req) => {
  * @returns {Promise<TModelsConfig>} The models config.
  */
 async function loadModels(req) {
-  const cache = getLogStores(CacheKeys.CONFIG_STORE);
-  const cachedModelsConfig = await cache.get(CacheKeys.MODELS_CONFIG);
-  if (cachedModelsConfig) {
-    return cachedModelsConfig;
-  }
-  const defaultModelsConfig = await loadDefaultModels(req);
-  const customModelsConfig = await loadConfigModels(req);
-
-  const modelConfig = { ...defaultModelsConfig, ...customModelsConfig };
-
-  await cache.set(CacheKeys.MODELS_CONFIG, modelConfig);
+  const modelConfig = { ...(await loadDefaultModels(req)), ...(await loadConfigModels(req)) };
   return modelConfig;
 }
 
