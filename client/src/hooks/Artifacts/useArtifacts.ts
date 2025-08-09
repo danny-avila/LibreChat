@@ -135,7 +135,6 @@ export default function useArtifacts() {
     isMermaid,
     setActiveTab,
     currentIndex,
-    isSubmitting,
     cycleArtifact,
     currentArtifact,
     orderedArtifactIds,
