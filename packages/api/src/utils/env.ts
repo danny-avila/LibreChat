@@ -29,11 +29,7 @@ const ALLOWED_USER_FIELDS = [
  * List of allowed request body fields that can be used in header placeholders.
  * These are common fields from the request body that are safe to expose in headers.
  */
-const ALLOWED_BODY_FIELDS = [
-  'conversationId',
-  'parentMessageId',
-  'messageId'
-] as const;
+const ALLOWED_BODY_FIELDS = ['conversationId', 'parentMessageId', 'messageId'] as const;
 
 /**
  * Processes a string value to replace user field placeholders
@@ -81,7 +77,6 @@ function processUserPlaceholders(value: string, user?: TUser): string {
  * @returns The processed string with placeholders replaced
  */
 function processBodyPlaceholders(value: string, body: RequestBody): string {
-
   for (const field of ALLOWED_BODY_FIELDS) {
     const placeholder = `{{LIBRECHAT_BODY_${field.toUpperCase()}}}`;
     if (!value.includes(placeholder)) {
@@ -195,7 +190,7 @@ export function processMCPEnv(
 
 /**
  * Resolves header values by replacing user placeholders, body variables, custom variables, and environment variables.
- * 
+ *
  * @param options - Optional configuration object.
  * @param options.headers - The headers object to process.
  * @param options.user - Optional user object for replacing user field placeholders (can be partial with just id).
