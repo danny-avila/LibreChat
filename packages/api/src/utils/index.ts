@@ -12,3 +12,4 @@ export * from './openid';
 export * from './tempChatRetention';
 export { default as Tokenizer } from './tokenizer';
 export * from './yaml';
+export * from './http';
