@@ -21,6 +21,8 @@ export * from './agents';
 export * from './endpoints';
 /* Files */
 export * from './files';
+/* Tools */
+export * from './tools';
 /* web search */
 export * from './web';
 /* types */

@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { sleep } = require('@librechat/agents');
+const { getToolkitKey } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 const { zodToJsonSchema } = require('zod-to-json-schema');
 const { Calculator } = require('@langchain/community/tools/calculator');
@@ -11,7 +12,6 @@ const {
   ErrorTypes,
   ContentTypes,
   imageGenTools,
-  EToolResources,
   EModelEndpoint,
   actionDelimiter,
   ImageVisionTool,
@@ -39,30 +39,6 @@ const { isActionDomainAllowed } = require('~/server/services/domains');
 const { recordUsage } = require('~/server/services/Threads');
 const { loadTools } = require('~/app/clients/tools/util');
 const { redactMessage } = require('~/config/parsers');
-
-/**
- * @param {string} toolName
- * @returns {string | undefined} toolKey
- */
-function getToolkitKey(toolName) {
-  /** @type {string|undefined} */
-  let toolkitKey;
-  for (const toolkit of toolkits) {
-    if (toolName.startsWith(EToolResources.image_edit)) {
-      const splitMatches = toolkit.pluginKey.split('_');
-      const suffix = splitMatches[splitMatches.length - 1];
-      if (toolName.endsWith(suffix)) {
-        toolkitKey = toolkit.pluginKey;
-        break;
-      }
-    }
-    if (toolName.startsWith(toolkit.pluginKey)) {
-      toolkitKey = toolkit.pluginKey;
-      break;
-    }
-  }
-  return toolkitKey;
-}
 
 /**
  * Loads and formats tools from the specified tool directory.
@@ -145,7 +121,7 @@ function loadAndFormatTools({ directory, adminFilter = [], adminIncluded = [] })
   for (const toolInstance of basicToolInstances) {
     const formattedTool = formatToOpenAIAssistantTool(toolInstance);
     let toolName = formattedTool[Tools.function].name;
-    toolName = getToolkitKey(toolName) ?? toolName;
+    toolName = getToolkitKey({ toolkits, toolName }) ?? toolName;
     if (filter.has(toolName) && included.size === 0) {
       continue;
     }
