@@ -67,7 +67,7 @@ jobs:
         uses: appany/helm-oci-chart-releaser@v0.4.2
         with:
           name: librechat-rag-api
-          repository: ${{ github.actor }}/librechat-rag-api-chart
+          repository: ${{ github.actor }}/librechat-chart
           tag: ${{ steps.chart-version.outputs.CHART_VERSION }}
           path: helm/librechat-rag-api
           registry: ghcr.io
