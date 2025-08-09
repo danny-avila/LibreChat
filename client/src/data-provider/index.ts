@@ -1,5 +1,6 @@
 export * from './Auth';
 export * from './Agents';
+export * from './conversations';
 export * from './Endpoints';
 export * from './Files';
 /* Memories */
