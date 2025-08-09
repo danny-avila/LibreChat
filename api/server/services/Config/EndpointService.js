@@ -45,7 +45,9 @@ module.exports = {
       EModelEndpoint.azureAssistants,
     ),
     [EModelEndpoint.bedrock]: generateConfig(
-      process.env.BEDROCK_AWS_SECRET_ACCESS_KEY ?? process.env.BEDROCK_AWS_DEFAULT_REGION,
+      process.env.BEDROCK_AWS_SECRET_ACCESS_KEY ??
+        process.env.BEDROCK_AWS_BEARER_TOKEN ??
+        process.env.BEDROCK_AWS_DEFAULT_REGION,
     ),
     /* key will be part of separate config */
     [EModelEndpoint.agents]: generateConfig('true', undefined, EModelEndpoint.agents),
