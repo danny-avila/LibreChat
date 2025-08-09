@@ -36,7 +36,9 @@ describe('resolveHeaders', () => {
   });
 
   it('should return empty object when headers is null', () => {
-    const result = resolveHeaders({ headers: null as unknown as Record<string, string> | null });
+    const result = resolveHeaders({
+      headers: null as unknown as Record<string, string>,
+    });
     expect(result).toEqual({});
   });
 
