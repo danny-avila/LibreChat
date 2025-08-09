@@ -1,5 +1,5 @@
 import debounce from 'lodash/debounce';
-import React, { memo, useEffect, useMemo, useCallback, useState } from 'react';
+import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import {
   useSandpack,
   SandpackCodeEditor,
@@ -10,8 +10,8 @@ import type { SandpackBundlerFile } from '@codesandbox/sandpack-client';
 import type { CodeEditorRef } from '@codesandbox/sandpack-react';
 import type { ArtifactFiles, Artifact } from '~/common';
 import { useEditArtifact, useGetStartupConfig } from '~/data-provider';
+import { useEditorContext, useArtifactsContext } from '~/Providers';
 import { sharedFiles, sharedOptions } from '~/utils/artifacts';
-import { useEditorContext } from '~/Providers';
 
 const createDebouncedMutation = (
   callback: (params: {
@@ -29,7 +29,7 @@ const CodeEditor = ({
   editorRef,
 }: {
   fileKey: string;
-  readOnly: boolean;
+  readOnly?: boolean;
   artifact: Artifact;
   editorRef: React.MutableRefObject<CodeEditorRef>;
 }) => {
@@ -112,33 +112,32 @@ const CodeEditor = ({
     <SandpackCodeEditor
       ref={editorRef}
       showTabs={false}
-      readOnly={readOnly}
       showRunButton={false}
       showLineNumbers={true}
       showInlineErrors={true}
+      readOnly={readOnly === true}
       className="hljs language-javascript bg-black"
     />
   );
 };
 
-export const ArtifactCodeEditor = memo(function ({
+export const ArtifactCodeEditor = function ({
   files,
   fileKey,
   template,
   artifact,
   editorRef,
   sharedProps,
-  isSubmitting,
 }: {
   fileKey: string;
   artifact: Artifact;
   files: ArtifactFiles;
-  isSubmitting: boolean;
   template: SandpackProviderProps['template'];
   sharedProps: Partial<SandpackProviderProps>;
   editorRef: React.MutableRefObject<CodeEditorRef>;
 }) {
   const { data: config } = useGetStartupConfig();
+  const { isSubmitting } = useArtifactsContext();
   const options: typeof sharedOptions = useMemo(() => {
     if (!config) {
       return sharedOptions;
@@ -148,6 +147,10 @@ export const ArtifactCodeEditor = memo(function ({
       bundlerURL: template === 'static' ? config.staticBundlerURL : config.bundlerURL,
     };
   }, [config, template]);
+  const [readOnly, setReadOnly] = useState(isSubmitting ?? false);
+  useEffect(() => {
+    setReadOnly(isSubmitting ?? false);
+  }, [isSubmitting]);
 
   if (Object.keys(files).length === 0) {
     return null;
@@ -164,12 +167,7 @@ export const ArtifactCodeEditor = memo(function ({
       {...sharedProps}
       template={template}
     >
-      <CodeEditor
-        editorRef={editorRef}
-        fileKey={fileKey}
-        readOnly={isSubmitting}
-        artifact={artifact}
-      />
+      <CodeEditor fileKey={fileKey} artifact={artifact} editorRef={editorRef} readOnly={readOnly} />
     </StyledProvider>
   );
-});
+};
