@@ -27,10 +27,12 @@ jobs:
         uses: azure/setup-helm@v4
         env:
           GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
-
+      
       - name: Build Subchart Deps
         run: |
-          cd helm/librechat-rag-api
+          cd helm/librechat
+          helm dependency build  
+          cd ../librechat-rag-api
           helm dependency build      
 
       - name: Get Chart Version
