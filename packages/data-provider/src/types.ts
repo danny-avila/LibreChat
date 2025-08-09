@@ -653,3 +653,18 @@ export type TBalanceResponse = {
   lastRefill?: Date;
   refillAmount?: number;
 };
+
+export type TConversationCosts = {
+  conversationId: string;
+  totals: {
+    prompt: { usd: number; tokenCount: number };
+    completion: { usd: number; tokenCount: number };
+    total: { usd: number; tokenCount: number };
+  };
+  perMessage: Array<{
+    messageId: string;
+    tokenType: 'prompt' | 'completion';
+    tokenCount: number;
+    usd: number;
+  }>;
+};
