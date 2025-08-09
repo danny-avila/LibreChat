@@ -67,12 +67,11 @@ describe('custom/initializeClient', () => {
   it('calls resolveHeaders with headers, user, and body for body placeholder support', async () => {
     const { resolveHeaders } = require('@librechat/api');
     await initializeClient({ req: mockRequest, res: mockResponse, optionsOnly: true });
-    expect(resolveHeaders).toHaveBeenCalledWith(
-      { 'x-user': '{{LIBRECHAT_USER_ID}}', 'x-email': '{{LIBRECHAT_USER_EMAIL}}' },
-      { id: 'user-123', email: 'test@example.com' },
-      undefined, // customUserVars
-      { endpoint: 'test-endpoint' }, // body - supports {{LIBRECHAT_BODY_*}} placeholders
-    );
+    expect(resolveHeaders).toHaveBeenCalledWith({
+      headers: { 'x-user': '{{LIBRECHAT_USER_ID}}', 'x-email': '{{LIBRECHAT_USER_EMAIL}}' },
+      user: { id: 'user-123', email: 'test@example.com' },
+      body: { endpoint: 'test-endpoint' }, // body - supports {{LIBRECHAT_BODY_*}} placeholders
+    });
   });
 
   it('throws if endpoint config is missing', async () => {

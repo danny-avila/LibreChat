@@ -1,5 +1,5 @@
 import { extractEnvVariable } from 'librechat-data-provider';
-import type { TUser, MCPOptions } from 'librechat-data-provider';
+import type { TUser, MCPOptions, RequestBody } from 'librechat-data-provider';
 
 /**
  * List of allowed user fields that can be used in MCP environment variables.
@@ -72,12 +72,15 @@ function processUserPlaceholders(value: string, user?: TUser): string {
 }
 
 /**
- * Processes a string value to replace request body field placeholders
+ * Replaces request body field placeholders within a string.
+ * Recognized placeholders: `{{LIBRECHAT_BODY_<FIELD>}}` where `<FIELD>` ∈ ALLOWED_BODY_FIELDS.
+ * If a body field is absent or null/undefined, it is replaced with an empty string.
+ *
  * @param value - The string value to process
  * @param body - The request body object
  * @returns The processed string with placeholders replaced
  */
-function processBodyPlaceholders(value: string, body: Record<string, any>): string {
+function processBodyPlaceholders(value: string, body: RequestBody): string {
 
   for (const field of ALLOWED_BODY_FIELDS) {
     const placeholder = `{{LIBRECHAT_BODY_${field.toUpperCase()}}}`;
@@ -110,7 +113,7 @@ function processSingleValue({
   originalValue: string;
   customUserVars?: Record<string, string>;
   user?: TUser;
-  body?: Record<string, any>;
+  body?: RequestBody;
 }): string {
   let value = originalValue;
 
@@ -191,25 +194,30 @@ export function processMCPEnv(
 }
 
 /**
- * Resolves header values by replacing user placeholders, custom variables, body variables, and environment variables
- * @param headers - The headers object to process
- * @param user - Optional user object for replacing user field placeholders (can be partial with just id)
- * @param customUserVars - Optional custom user variables to replace placeholders
- * @param body - Optional request body object for replacing body field placeholders
- * @returns - The processed headers with all placeholders replaced
+ * Resolves header values by replacing user placeholders, body variables, custom variables, and environment variables.
+ * 
+ * @param options - Optional configuration object.
+ * @param options.headers - The headers object to process.
+ * @param options.user - Optional user object for replacing user field placeholders (can be partial with just id).
+ * @param options.body - Optional request body object for replacing body field placeholders.
+ * @param options.customUserVars - Optional custom user variables to replace placeholders.
+ * @returns The processed headers with all placeholders replaced.
  */
-export function resolveHeaders(
-  headers: Record<string, string> | undefined,
-  user?: Partial<TUser> | { id: string },
-  customUserVars?: Record<string, string>,
-  body?: Record<string, any>,
-) {
-  const resolvedHeaders = { ...(headers ?? {}) };
+export function resolveHeaders(options?: {
+  headers: Record<string, string> | undefined;
+  user?: Partial<TUser> | { id: string };
+  body?: RequestBody;
+  customUserVars?: Record<string, string>;
+}) {
+  const { headers, user, body, customUserVars } = options ?? {};
+  const inputHeaders = headers ?? {};
 
-  if (headers && typeof headers === 'object' && !Array.isArray(headers)) {
-    Object.keys(headers).forEach((key) => {
+  const resolvedHeaders: Record<string, string> = { ...inputHeaders };
+
+  if (inputHeaders && typeof inputHeaders === 'object' && !Array.isArray(inputHeaders)) {
+    Object.keys(inputHeaders).forEach((key) => {
       resolvedHeaders[key] = processSingleValue({
-        originalValue: headers[key],
+        originalValue: inputHeaders[key],
         customUserVars,
         user: user as TUser,
         body,
