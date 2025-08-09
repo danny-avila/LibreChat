@@ -1,5 +1,5 @@
 /* MCP */
-export * from './mcp/manager';
+export * from './mcp/MCPManager';
 export * from './mcp/oauth';
 export * from './mcp/auth';
 export * from './mcp/zod';
