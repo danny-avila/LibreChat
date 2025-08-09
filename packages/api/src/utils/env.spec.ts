@@ -428,7 +428,11 @@ describe('resolveHeaders', () => {
   });
 
   it('should process LIBRECHAT_BODY placeholders', () => {
-    const body = { conversationId: 'conv-123', parentMessageId: 'parent-456', messageId: 'msg-789' };
+    const body = {
+      conversationId: 'conv-123',
+      parentMessageId: 'parent-456',
+      messageId: 'msg-789',
+    };
     const headers = { 'X-Conversation': '{{LIBRECHAT_BODY_CONVERSATIONID}}' };
     const result = resolveHeaders({ headers, body });
     expect(result['X-Conversation']).toBe('conv-123');

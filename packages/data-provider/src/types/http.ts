@@ -4,4 +4,3 @@ export interface RequestBody {
   conversationId?: string;
   [key: string]: unknown;
 }
-
