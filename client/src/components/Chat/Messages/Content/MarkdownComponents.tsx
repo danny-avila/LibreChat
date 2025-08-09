@@ -3,6 +3,7 @@ import { useRecoilValue } from 'recoil';
 import { useToastContext } from '@librechat/client';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import CodeBlock from '~/components/Messages/Content/CodeBlock';
+import SandpackMermaidDiagram from './SandpackMermaidDiagram';
 import useHasAccess from '~/hooks/Roles/useHasAccess';
 import { useFileDownload } from '~/data-provider';
 import { useCodeBlockContext } from '~/Providers';
@@ -24,6 +25,7 @@ export const code: React.ElementType = memo(({ className, children }: TCodeProps
   const match = /language-(\w+)/.exec(className ?? '');
   const lang = match && match[1];
   const isMath = lang === 'math';
+  const isMermaid = lang === 'mermaid';
   const isSingleLine = typeof children === 'string' && children.split('\n').length === 1;
 
   const { getNextIndex, resetCounter } = useCodeBlockContext();
@@ -35,6 +37,8 @@ export const code: React.ElementType = memo(({ className, children }: TCodeProps
 
   if (isMath) {
     return <>{children}</>;
+  } else if (isMermaid && typeof children === 'string') {
+    return <SandpackMermaidDiagram content={children} fallbackToCodeBlock />;
   } else if (isSingleLine) {
     return (
       <code onDoubleClick={handleDoubleClick} className={className}>
@@ -56,9 +60,12 @@ export const code: React.ElementType = memo(({ className, children }: TCodeProps
 export const codeNoExecution: React.ElementType = memo(({ className, children }: TCodeProps) => {
   const match = /language-(\w+)/.exec(className ?? '');
   const lang = match && match[1];
+  const isMermaid = lang === 'mermaid';
 
   if (lang === 'math') {
     return children;
+  } else if (isMermaid && typeof children === 'string') {
+    return <SandpackMermaidDiagram content={children} fallbackToCodeBlock />;
   } else if (typeof children === 'string' && children.split('\n').length === 1) {
     return (
       <code onDoubleClick={handleDoubleClick} className={className}>
