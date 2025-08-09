@@ -395,8 +395,9 @@
   "com_nav_hide_panel": "隐藏最右侧面板",
   "com_nav_info_balance": "余额显示您剩余的词元额度。词元额度对应一定的货币价值（例如：1000 额度 = 0.001 美元）。",
   "com_nav_info_code_artifacts": "启用在对话旁显示实验性代码工件",
-  "com_nav_info_code_artifacts_agent": "使该智能体能够使用代码工件。默认情况下，除非启用“自定义提示词模式”，否则会添加与 Artifacts 使用相关的额外说明。",
-  "com_nav_info_custom_prompt_mode": "启用后，默认的 Artifacts 系统提示词将不会包含在内。在此模式下，必须手动提供所有生成工件的指令。",
+  "com_nav_info_code_artifacts_agent": "使该代理能够使用代码附件。默认情况下，除非启用“自定义提示模式”，否则会添加与附件使用相关的额外说明。",
+  "com_nav_info_code_charts_agent": "启用该代理的数据可视化功能，通过柱状图、折线图等图表形式呈现数据，实现直观且可交互的响应。",
+  "com_nav_info_custom_prompt_mode": "启用后，默认的工件系统提示将不会包含在内。在此模式下，必须手动提供所有生成工件的指令。",
   "com_nav_info_enter_to_send": "启用后，按下 `ENTER` 将发送您的消息。禁用后，按下 `ENTER` 将添加新行，您需要按下 `CTRL + ENTER` / `⌘ + ENTER` 来发送消息。",
   "com_nav_info_fork_change_default": "`仅可见消息` 仅包含到所选消息的直接路径，`包含相关分支` 添加路径上的分支，`包含所有目标` 包括所有连接的消息和分支。",
   "com_nav_info_fork_split_target_setting": "启用后，将根据选择的行为，从目标消息开始到对话中的最新消息进行分叉。",
@@ -579,9 +580,10 @@
   "com_ui_archive_error": "归档对话失败",
   "com_ui_artifact_click": "点击以打开",
   "com_ui_artifacts": "Artifacts",
+  "com_ui_artifacts_toggle": "切换至 Artifacts UI",
+  "com_ui_artifacts_toggle_agent": "启用附件",
+  "com_ui_charts_toggle_agent": "启用图表",
   "com_ui_artifacts_options": "Artifacts 选项",
-  "com_ui_artifacts_toggle": "切换 Artifacts UI",
-  "com_ui_artifacts_toggle_agent": "启用 Artifacts",
   "com_ui_ascending": "升序",
   "com_ui_assistant": "助手",
   "com_ui_assistant_delete_error": "删除助手时出现错误",
@@ -1102,5 +1104,6 @@
   "com_ui_x_selected": "{{0}} 已选择",
   "com_ui_yes": "是的",
   "com_ui_zoom": "缩放",
-  "com_user_message": "您"
+  "com_user_message": "您",
+  "com_warning_resubmit_unsupported": "此终端不支持重新提交AI消息"
 }
