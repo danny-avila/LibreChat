@@ -110,6 +110,7 @@ async function createMCPTool({ req, res, toolKey, provider: _provider }) {
     logger.error(`Tool ${toolKey} not found in available tools`);
     return null;
   }
+  logger.debug(`createMCPTools(${toolKey})`);
   /** @type {LCTool} */
   const { description, parameters } = toolDefinition;
   const isGoogle = _provider === Providers.VERTEXAI || _provider === Providers.GOOGLE;
@@ -178,6 +179,7 @@ async function createMCPTool({ req, res, toolKey, provider: _provider }) {
         toolArguments,
         options: {
           signal: derivedSignal,
+          tool_call_id: toolCall?.id,
         },
         user: config?.configurable?.user,
         customUserVars,

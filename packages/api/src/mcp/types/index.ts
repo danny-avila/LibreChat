@@ -10,6 +10,14 @@ import {
 import type * as t from '@modelcontextprotocol/sdk/types.js';
 import type { TPlugin } from 'librechat-data-provider';
 import type { JsonSchemaType } from '~/types/zod';
+import {
+  ElicitationActionSchema,
+  ElicitationPropertySchema,
+  ElicitationRequestSchemaSchema,
+  ElicitationCreateRequestSchema,
+  ElicitationResponseSchema,
+  ElicitationStateSchema,
+} from '../zod';
 
 export type StdioOptions = z.infer<typeof StdioOptionsSchema>;
 export type WebSocketOptions = z.infer<typeof WebSocketOptionsSchema>;
@@ -105,3 +113,64 @@ export type FormattedToolResponse = [
   string | FormattedContent[],
   { content: FormattedContent[] } | undefined,
 ];
+
+// Elicitation types
+export type ElicitationAction = 'accept' | 'decline' | 'cancel';
+
+export interface ElicitationPropertySchema {
+  type: 'string' | 'number' | 'integer' | 'boolean';
+  title?: string;
+  description?: string;
+  minLength?: number;
+  maxLength?: number;
+  minimum?: number;
+  maximum?: number;
+  format?: 'email' | 'uri' | 'date' | 'date-time';
+  default?: string | number | boolean;
+  enum?: string[];
+  enumNames?: string[];
+}
+
+export interface ElicitationRequestSchema {
+  type: 'object';
+  properties: Record<string, ElicitationPropertySchema>;
+  required?: string[];
+}
+
+// Zod inferred types
+export type ElicitationActionType = z.infer<typeof ElicitationActionSchema>;
+export type ElicitationPropertySchemaType = z.infer<typeof ElicitationPropertySchema>;
+export type ElicitationRequestSchemaType = z.infer<typeof ElicitationRequestSchemaSchema>;
+export type ElicitationCreateRequestType = z.infer<typeof ElicitationCreateRequestSchema>;
+export type ElicitationResponseType = z.infer<typeof ElicitationResponseSchema>;
+export type ElicitationStateType = z.infer<typeof ElicitationStateSchema>;
+
+export interface ElicitationCreateRequest {
+  message: string;
+  requestedSchema: ElicitationRequestSchema;
+  tool_call_id?: string;
+}
+
+export interface ElicitationResponse {
+  action: ElicitationAction;
+  content?: Record<string, unknown>;
+}
+
+export interface ElicitationState {
+  id: string;
+  serverName: string;
+  userId: string;
+  request: ElicitationCreateRequest;
+  tool_call_id?: string;
+  timestamp: number;
+}
+
+// Export Zod schemas
+export {
+  ElicitationActionSchema,
+  ElicitationPropertySchema,
+  ElicitationRequestSchemaSchema,
+  ElicitationCreateRequestSchema,
+  ElicitationResponseSchema,
+  ElicitationStateSchema,
+};
