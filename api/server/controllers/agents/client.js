@@ -10,6 +10,7 @@ const {
   memoryInstructions,
   formatContentStrings,
   createMemoryProcessor,
+  addBedrockCacheControl,
 } = require('@librechat/api');
 const {
   Callback,
@@ -857,6 +858,11 @@ class AgentClient extends BaseClient {
           )
         ) {
           messages = addCacheControl(messages);
+        } else if (
+          this.options.endpoint === EModelEndpoint.bedrock &&
+          agent.model_parameters?.promptCache === true
+        ) {
+          messages = addBedrockCacheControl(messages);
         }
 
         if (i === 0) {
