@@ -19,6 +19,7 @@ const {
   isAssistantsEndpoint,
 } = require('librechat-data-provider');
 const { EnvVar } = require('@librechat/agents');
+const { parseText, processAudioFile } = require('@librechat/api');
 const {
   convertImage,
   resizeAndConvert,
@@ -33,6 +34,7 @@ const { checkCapability } = require('~/server/services/Config');
 const { LB_QueueAsyncCall } = require('~/server/utils/queue');
 const { getStrategyFunctions } = require('./strategies');
 const { determineFileType } = require('~/server/utils');
+const { STTService } = require('./Audio/STTService');
 const { logger } = require('~/config');
 
 /**
@@ -496,9 +498,25 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
     throw new Error('No tool resource provided for non-image agent file upload');
   }
 
+  const fileConfig = mergeFileConfig(req.app.locals.fileConfig);
+
+  const shouldUseText = fileConfig.checkType(
+    file.mimetype,
+    fileConfig.text?.supportedMimeTypes || [],
+  );
+  const shouldUseOCR = fileConfig.checkType(
+    file.mimetype,
+    fileConfig.ocr?.supportedMimeTypes || [],
+  );
+  const shouldUseSTT = fileConfig.checkType(
+    file.mimetype,
+    fileConfig.stt?.supportedMimeTypes || [],
+  );
+
   let fileInfoMetadata;
   const entity_id = messageAttachment === true ? undefined : agent_id;
   const basePath = mime.getType(file.originalname)?.startsWith('image') ? 'images' : 'uploads';
+
   if (tool_resource === EToolResources.execute_code) {
     const isCodeEnabled = await checkCapability(req, AgentCapabilities.execute_code);
     if (!isCodeEnabled) {
@@ -515,57 +533,72 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
       entity_id,
     });
     fileInfoMetadata = { fileIdentifier };
-  } else if (tool_resource === EToolResources.file_search) {
+  }
+
+  if (tool_resource === EToolResources.file_search) {
     const isFileSearchEnabled = await checkCapability(req, AgentCapabilities.file_search);
     if (!isFileSearchEnabled) {
       throw new Error('File search is not enabled for Agents');
     }
-  } else if (tool_resource === EToolResources.ocr) {
+  }
+
+  if (tool_resource === EToolResources.ocr) {
     const isOCREnabled = await checkCapability(req, AgentCapabilities.ocr);
     if (!isOCREnabled) {
       throw new Error('OCR capability is not enabled for Agents');
     }
 
-    const { handleFileUpload: uploadOCR } = getStrategyFunctions(
-      req.app.locals?.ocr?.strategy ?? FileSources.mistral_ocr,
-    );
     const { file_id, temp_file_id } = metadata;
 
-    const {
-      text,
-      bytes,
-      // TODO: OCR images support?
-      images,
-      filename,
-      filepath: ocrFileURL,
-    } = await uploadOCR({ req, file, loadAuthValues });
-
-    const fileInfo = removeNullishValues({
-      text,
-      bytes,
-      file_id,
-      temp_file_id,
-      user: req.user.id,
-      type: 'text/plain',
-      filepath: ocrFileURL,
-      source: FileSources.text,
-      filename: filename ?? file.originalname,
-      model: messageAttachment ? undefined : req.body.model,
-      context: messageAttachment ? FileContext.message_attachment : FileContext.agents,
-    });
-
-    if (!messageAttachment && tool_resource) {
-      await addAgentResourceFile({
-        req,
+    const createTextFile = async (text, bytes, filepath, type) => {
+      const fileInfo = removeNullishValues({
+        text,
+        bytes,
         file_id,
-        agent_id,
-        tool_resource,
+        temp_file_id,
+        user: req.user.id,
+        type,
+        filepath,
+        source: FileSources.text,
+        filename: file.originalname,
+        model: messageAttachment ? undefined : req.body.model,
+        context: messageAttachment ? FileContext.message_attachment : FileContext.agents,
       });
+
+      if (!messageAttachment && tool_resource) {
+        await addAgentResourceFile({
+          req,
+          file_id,
+          agent_id,
+          tool_resource,
+        });
+      }
+      const result = await createFile(fileInfo, true);
+      return res
+        .status(200)
+        .json({ message: 'Agent file uploaded and processed successfully', ...result });
+    };
+
+    if (shouldUseOCR) {
+      const { handleFileUpload: uploadOCR } = getStrategyFunctions(
+        req.app.locals?.ocr?.strategy ?? FileSources.mistral_ocr,
+      );
+      const { text, bytes, filepath: ocrFileURL } = await uploadOCR({ req, file, loadAuthValues });
+      return await createTextFile(text, bytes, ocrFileURL, 'text/plain');
     }
-    const result = await createFile(fileInfo, true);
-    return res
-      .status(200)
-      .json({ message: 'Agent file uploaded and processed successfully', ...result });
+
+    if (shouldUseText) {
+      const { text, bytes } = await parseText({ req, file, file_id });
+      return await createTextFile(text, bytes, file.path, file.mimetype);
+    }
+
+    if (shouldUseSTT) {
+      const sttService = await STTService.getInstance();
+      const { text, bytes } = await processAudioFile({ file, sttService });
+      return await createTextFile(text, bytes, file.path, 'text/plain');
+    }
+
+    throw new Error(`File type ${file.mimetype} is not supported for OCR or text parsing`);
   }
 
   const source =
