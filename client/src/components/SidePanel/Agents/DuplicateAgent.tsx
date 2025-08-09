@@ -1,7 +1,6 @@
 import { CopyIcon } from 'lucide-react';
-import { useToastContext } from '@librechat/client';
+import { useToastContext, Button } from '@librechat/client';
 import { useDuplicateAgentMutation } from '~/data-provider';
-import { cn, removeFocusOutlines } from '~/utils';
 import { useLocalize } from '~/hooks';
 
 export default function DuplicateAgent({ agent_id }: { agent_id: string }) {
@@ -33,11 +32,9 @@ export default function DuplicateAgent({ agent_id }: { agent_id: string }) {
   };
 
   return (
-    <button
-      className={cn(
-        'btn btn-neutral border-token-border-light relative h-9 rounded-lg font-medium',
-        removeFocusOutlines,
-      )}
+    <Button
+      size="sm"
+      variant="outline"
       aria-label={localize('com_ui_duplicate') + ' ' + localize('com_ui_agent')}
       type="button"
       onClick={handleDuplicate}
@@ -45,6 +42,6 @@ export default function DuplicateAgent({ agent_id }: { agent_id: string }) {
       <div className="flex w-full items-center justify-center gap-2 text-primary">
         <CopyIcon className="size-4" />
       </div>
-    </button>
+    </Button>
   );
 }

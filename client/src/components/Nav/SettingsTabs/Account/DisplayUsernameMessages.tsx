@@ -1,7 +1,6 @@
 import React from 'react';
 import { useRecoilState } from 'recoil';
-import { Switch, Label } from '@librechat/client';
-import HoverCardSettings from '../HoverCardSettings';
+import { Switch, Label, InfoHoverCard, ESide } from '@librechat/client';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
 
@@ -17,7 +16,7 @@ export default function DisplayUsernameMessages() {
     <div className="flex items-center justify-between">
       <div className="flex items-center space-x-2">
         <Label className="font-light">{localize('com_nav_user_name_display')}</Label>
-        <HoverCardSettings side="bottom" text="com_nav_info_user_name_display" />
+        <InfoHoverCard side={ESide.Bottom} text={localize('com_nav_info_user_name_display')} />
       </div>
       <Switch
         id="UsernameDisplay"

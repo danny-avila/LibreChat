@@ -28,6 +28,7 @@ const refTypeMap: Record<string | SearchRefType, string> = {
   search: 'organic',
   ref: 'references',
   news: 'topStories',
+  file: 'references',
 };
 
 export function useCitation({
