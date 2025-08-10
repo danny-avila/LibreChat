@@ -800,6 +800,12 @@ export function updatePeoplePickerPermissions(
   );
 }
 
+export function updateMarketplacePermissions(
+  variables: m.UpdateMarketplacePermVars,
+): Promise<m.UpdatePermResponse> {
+  return request.put(endpoints.updateMarketplacePermissions(variables.roleName), variables.updates);
+}
+
 /* Tags */
 export function getConversationTags(): Promise<t.TConversationTagsResponse> {
   return request.get(endpoints.conversationTags());

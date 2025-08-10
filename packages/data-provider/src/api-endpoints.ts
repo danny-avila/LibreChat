@@ -278,6 +278,9 @@ export const updateAgentPermissions = (roleName: string) => `${getRole(roleName)
 export const updatePeoplePickerPermissions = (roleName: string) =>
   `${getRole(roleName)}/people-picker`;
 
+export const updateMarketplacePermissions = (roleName: string) =>
+  `${getRole(roleName)}/marketplace`;
+
 /* Conversation Tags */
 export const conversationTags = (tag?: string) =>
   `/api/tags${tag != null && tag ? `/${encodeURIComponent(tag)}` : ''}`;

@@ -9,6 +9,7 @@ import type t from 'librechat-data-provider';
 import type { ContextType } from '~/common';
 import { useGetEndpointsQuery, useGetAgentCategoriesQuery } from '~/data-provider';
 import { useDocumentTitle, useHasAccess, useLocalize } from '~/hooks';
+import MarketplaceAdminSettings from './MarketplaceAdminSettings';
 import { SidePanelProvider, useChatContext } from '~/Providers';
 import { MarketplaceProvider } from './MarketplaceContext';
 import { SidePanelGroup } from '~/components/SidePanel';
@@ -301,8 +302,12 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
               {/* Scrollable container */}
               <div
                 ref={scrollContainerRef}
-                className="scrollbar-gutter-stable flex h-full flex-col overflow-y-auto overflow-x-hidden"
+                className="scrollbar-gutter-stable relative flex h-full flex-col overflow-y-auto overflow-x-hidden"
               >
+                {/* Admin Settings */}
+                <div className="absolute right-4 top-4 z-30">
+                  <MarketplaceAdminSettings />
+                </div>
                 {/* Simplified header for agents marketplace - only show nav controls when needed */}
                 {!isSmallScreen && (
                   <div className="sticky top-0 z-20 flex items-center justify-between bg-surface-secondary p-2 font-semibold text-text-primary md:h-14">
