@@ -33,9 +33,7 @@ export default function ActionsAuth({ disableOAuth }: { disableOAuth?: boolean }
             </label>
           </div>
           <div className="border-token-border-medium flex rounded-lg border text-sm hover:cursor-pointer">
-            <div className="h-9 grow px-3 py-2">
-              {localize(getAuthLocalizationKey(type))}
-            </div>
+            <div className="h-9 grow px-3 py-2">{localize(getAuthLocalizationKey(type))}</div>
             <div className="bg-token-border-medium w-px"></div>
             <button type="button" color="neutral" className="flex items-center gap-2 px-3">
               <svg

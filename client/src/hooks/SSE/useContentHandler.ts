@@ -33,9 +33,8 @@ export default function useContentHandler({ setMessages, getMessages }: TUseCont
 
       const _messages = getMessages();
       const messages =
-        _messages
-          ?.filter((m) => m.messageId !== messageId)
-          .map((msg) => ({ ...msg, thread_id })) ?? [];
+        _messages?.filter((m) => m.messageId !== messageId).map((msg) => ({ ...msg, thread_id })) ??
+        [];
       const userMessage = messages[messages.length - 1] as TMessage | undefined;
 
       const { initialResponse } = submission;
