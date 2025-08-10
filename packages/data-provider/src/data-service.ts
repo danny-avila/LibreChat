@@ -791,6 +791,15 @@ export function updateMemoryPermissions(
   return request.put(endpoints.updateMemoryPermissions(variables.roleName), variables.updates);
 }
 
+export function updatePeoplePickerPermissions(
+  variables: m.UpdatePeoplePickerPermVars,
+): Promise<m.UpdatePermResponse> {
+  return request.put(
+    endpoints.updatePeoplePickerPermissions(variables.roleName),
+    variables.updates,
+  );
+}
+
 /* Tags */
 export function getConversationTags(): Promise<t.TConversationTagsResponse> {
   return request.get(endpoints.conversationTags());

@@ -14,14 +14,18 @@ import {
   useToastContext,
 } from '@librechat/client';
 import type { Control, UseFormSetValue, UseFormGetValues } from 'react-hook-form';
-import { useUpdateAgentPermissionsMutation } from '~/data-provider';
+import { useUpdatePeoplePickerPermissionsMutation } from '~/data-provider';
 import { useLocalize, useAuthContext } from '~/hooks';
 
-type FormValues = Record<Permissions, boolean>;
+type FormValues = {
+  [Permissions.VIEW_USERS]: boolean;
+  [Permissions.VIEW_GROUPS]: boolean;
+  [Permissions.VIEW_ROLES]: boolean;
+};
 
 type LabelControllerProps = {
   label: string;
-  agentPerm: Permissions;
+  peoplePickerPerm: Permissions.VIEW_USERS | Permissions.VIEW_GROUPS | Permissions.VIEW_ROLES;
   control: Control<FormValues, unknown, FormValues>;
   setValue: UseFormSetValue<FormValues>;
   getValues: UseFormGetValues<FormValues>;
@@ -29,7 +33,7 @@ type LabelControllerProps = {
 
 const LabelController: React.FC<LabelControllerProps> = ({
   control,
-  agentPerm,
+  peoplePickerPerm,
   label,
   getValues,
   setValue,
@@ -39,7 +43,7 @@ const LabelController: React.FC<LabelControllerProps> = ({
       className="cursor-pointer select-none"
       type="button"
       onClick={() =>
-        setValue(agentPerm, !getValues(agentPerm), {
+        setValue(peoplePickerPerm, !getValues(peoplePickerPerm), {
           shouldDirty: true,
         })
       }
@@ -48,7 +52,7 @@ const LabelController: React.FC<LabelControllerProps> = ({
       {label}
     </button>
     <Controller
-      name={agentPerm}
+      name={peoplePickerPerm}
       control={control}
       render={({ field }) => (
         <Switch
@@ -62,11 +66,11 @@ const LabelController: React.FC<LabelControllerProps> = ({
   </div>
 );
 
-const AdminSettings = () => {
+const PeoplePickerAdminSettings = () => {
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const { user, roles } = useAuthContext();
-  const { mutate, isLoading } = useUpdateAgentPermissionsMutation({
+  const { mutate, isLoading } = useUpdatePeoplePickerPermissionsMutation({
     onSuccess: () => {
       showToast({ status: 'success', message: localize('com_ui_saved') });
     },
@@ -81,9 +85,9 @@ const AdminSettings = () => {
   const defaultValues = useMemo(() => {
     const rolePerms = roles?.[selectedRole]?.permissions;
     if (rolePerms) {
-      return rolePerms[PermissionTypes.AGENTS];
+      return rolePerms[PermissionTypes.PEOPLE_PICKER];
     }
-    return roleDefaults[selectedRole].permissions[PermissionTypes.AGENTS];
+    return roleDefaults[selectedRole].permissions[PermissionTypes.PEOPLE_PICKER];
   }, [roles, selectedRole]);
 
   const {
@@ -99,11 +103,11 @@ const AdminSettings = () => {
   });
 
   useEffect(() => {
-    const value = roles?.[selectedRole]?.permissions?.[PermissionTypes.AGENTS];
+    const value = roles?.[selectedRole]?.permissions?.[PermissionTypes.PEOPLE_PICKER];
     if (value) {
       reset(value);
     } else {
-      reset(roleDefaults[selectedRole].permissions[PermissionTypes.AGENTS]);
+      reset(roleDefaults[selectedRole].permissions[PermissionTypes.PEOPLE_PICKER]);
     }
   }, [roles, selectedRole, reset]);
 
@@ -111,18 +115,21 @@ const AdminSettings = () => {
     return null;
   }
 
-  const labelControllerData = [
+  const labelControllerData: {
+    peoplePickerPerm: Permissions.VIEW_USERS | Permissions.VIEW_GROUPS | Permissions.VIEW_ROLES;
+    label: string;
+  }[] = [
     {
-      agentPerm: Permissions.SHARED_GLOBAL,
-      label: localize('com_ui_agents_allow_share_global'),
+      peoplePickerPerm: Permissions.VIEW_USERS,
+      label: localize('com_ui_people_picker_allow_view_users'),
     },
     {
-      agentPerm: Permissions.CREATE,
-      label: localize('com_ui_agents_allow_create'),
+      peoplePickerPerm: Permissions.VIEW_GROUPS,
+      label: localize('com_ui_people_picker_allow_view_groups'),
     },
     {
-      agentPerm: Permissions.USE,
-      label: localize('com_ui_agents_allow_use'),
+      peoplePickerPerm: Permissions.VIEW_ROLES,
+      label: localize('com_ui_people_picker_allow_view_roles'),
     },
   ];
 
@@ -149,17 +156,16 @@ const AdminSettings = () => {
     <OGDialog>
       <OGDialogTrigger asChild>
         <Button
-          size={'sm'}
           variant={'outline'}
-          className="btn btn-neutral border-token-border-light relative h-9 w-full gap-1 rounded-lg font-medium"
+          className="btn btn-neutral border-token-border-light relative gap-1 rounded-lg font-medium"
         >
           <ShieldEllipsis className="cursor-pointer" aria-hidden="true" />
           {localize('com_ui_admin_settings')}
         </Button>
       </OGDialogTrigger>
-      <OGDialogContent className="border-border-light bg-surface-primary text-text-primary md:w-1/4">
+      <OGDialogContent className="w-full border-border-light bg-surface-primary text-text-primary md:w-1/4">
         <OGDialogTitle>{`${localize('com_ui_admin_settings')} - ${localize(
-          'com_ui_agents',
+          'com_ui_people_picker',
         )}`}</OGDialogTitle>
         <div className="p-2">
           {/* Role selection dropdown */}
@@ -183,31 +189,15 @@ const AdminSettings = () => {
           {/* Permissions form */}
           <form onSubmit={handleSubmit(onSubmit)}>
             <div className="py-5">
-              {labelControllerData.map(({ agentPerm, label }) => (
-                <div key={agentPerm}>
+              {labelControllerData.map(({ peoplePickerPerm, label }) => (
+                <div key={peoplePickerPerm}>
                   <LabelController
                     control={control}
-                    agentPerm={agentPerm}
+                    peoplePickerPerm={peoplePickerPerm}
                     label={label}
                     getValues={getValues}
                     setValue={setValue}
                   />
-                  {selectedRole === SystemRoles.ADMIN && agentPerm === Permissions.USE && (
-                    <>
-                      <div className="mb-2 max-w-full whitespace-normal break-words text-sm text-red-600">
-                        <span>{localize('com_ui_admin_access_warning')}</span>
-                        {'\n'}
-                        <a
-                          href="https://www.librechat.ai/docs/configuration/librechat_yaml/object_structure/interface"
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-blue-500 underline"
-                        >
-                          {localize('com_ui_more_info')}
-                        </a>
-                      </div>
-                    </>
-                  )}
                 </div>
               ))}
             </div>
@@ -228,4 +218,4 @@ const AdminSettings = () => {
   );
 };
 
-export default AdminSettings;
+export default PeoplePickerAdminSettings;

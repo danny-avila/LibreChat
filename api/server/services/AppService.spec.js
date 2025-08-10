@@ -970,20 +970,13 @@ describe('AppService updating app.locals and issuing warnings', () => {
     expect(app.locals.ocr.mistralModel).toEqual('mistral-medium');
   });
 
-  it('should correctly configure peoplePicker with roles permission when specified', async () => {
+  it('should correctly configure peoplePicker permissions when specified', async () => {
     const mockConfig = {
       interface: {
         peoplePicker: {
-          admin: {
-            users: true,
-            groups: true,
-            roles: true,
-          },
-          user: {
-            users: false,
-            groups: false,
-            roles: true,
-          },
+          users: true,
+          groups: true,
+          roles: true,
         },
       },
     };
@@ -993,21 +986,16 @@ describe('AppService updating app.locals and issuing warnings', () => {
     const app = { locals: {} };
     await AppService(app);
 
-    // Check that interface config includes the roles permission
+    // Check that interface config includes the permissions
     expect(app.locals.interfaceConfig.peoplePicker).toBeDefined();
-    expect(app.locals.interfaceConfig.peoplePicker.admin).toMatchObject({
+    expect(app.locals.interfaceConfig.peoplePicker).toMatchObject({
       users: true,
       groups: true,
       roles: true,
     });
-    expect(app.locals.interfaceConfig.peoplePicker.user).toMatchObject({
-      users: false,
-      groups: false,
-      roles: true,
-    });
   });
 
-  it('should use default peoplePicker roles permissions when not specified', async () => {
+  it('should use default peoplePicker permissions when not specified', async () => {
     const mockConfig = {
       interface: {
         // No peoplePicker configuration
@@ -1019,9 +1007,10 @@ describe('AppService updating app.locals and issuing warnings', () => {
     const app = { locals: {} };
     await AppService(app);
 
-    // Check that default roles permissions are applied
+    // Check that default permissions are applied
     expect(app.locals.interfaceConfig.peoplePicker).toBeDefined();
-    expect(app.locals.interfaceConfig.peoplePicker.admin.roles).toBe(true);
-    expect(app.locals.interfaceConfig.peoplePicker.user.roles).toBe(false);
+    expect(app.locals.interfaceConfig.peoplePicker.users).toBe(true);
+    expect(app.locals.interfaceConfig.peoplePicker.groups).toBe(true);
+    expect(app.locals.interfaceConfig.peoplePicker.roles).toBe(true);
   });
 });

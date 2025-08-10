@@ -534,20 +534,9 @@ export const interfaceSchema = z
     webSearch: z.boolean().optional(),
     peoplePicker: z
       .object({
-        admin: z
-          .object({
-            users: z.boolean().optional(),
-            groups: z.boolean().optional(),
-            roles: z.boolean().optional(),
-          })
-          .optional(),
-        user: z
-          .object({
-            users: z.boolean().optional(),
-            groups: z.boolean().optional(),
-            roles: z.boolean().optional(),
-          })
-          .optional(),
+        users: z.boolean().optional(),
+        groups: z.boolean().optional(),
+        roles: z.boolean().optional(),
       })
       .optional(),
     marketplace: z
@@ -582,16 +571,9 @@ export const interfaceSchema = z
     runCode: true,
     webSearch: true,
     peoplePicker: {
-      admin: {
-        users: true,
-        groups: true,
-        roles: true,
-      },
-      user: {
-        users: false,
-        groups: false,
-        roles: false,
-      },
+      users: true,
+      groups: true,
+      roles: true,
     },
     marketplace: {
       admin: {
