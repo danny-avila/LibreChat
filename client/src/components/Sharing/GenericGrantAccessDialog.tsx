@@ -21,6 +21,7 @@ import {
   useLocalize,
 } from '~/hooks';
 import UnifiedPeopleSearch from './PeoplePicker/UnifiedPeopleSearch';
+import PeoplePickerAdminSettings from './PeoplePickerAdminSettings';
 import PublicSharingToggle from './PublicSharingToggle';
 import { SelectedPrincipalsList } from './PeoplePicker';
 import { cn } from '~/utils';
@@ -366,7 +367,8 @@ export default function GenericGrantAccessDialog({
                 </Button>
               )}
             </div>
-            <div className="flex gap-3">
+            <div className="flex gap-2">
+              <PeoplePickerAdminSettings />
               <OGDialogClose asChild>
                 <Button variant="outline" onClick={handleCancel}>
                   {localize('com_ui_cancel')}
