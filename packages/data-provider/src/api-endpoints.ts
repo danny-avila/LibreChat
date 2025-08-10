@@ -275,6 +275,8 @@ export const getRole = (roleName: string) => `${roles()}/${roleName.toLowerCase(
 export const updatePromptPermissions = (roleName: string) => `${getRole(roleName)}/prompts`;
 export const updateMemoryPermissions = (roleName: string) => `${getRole(roleName)}/memories`;
 export const updateAgentPermissions = (roleName: string) => `${getRole(roleName)}/agents`;
+export const updatePeoplePickerPermissions = (roleName: string) =>
+  `${getRole(roleName)}/people-picker`;
 
 /* Conversation Tags */
 export const conversationTags = (tag?: string) =>
