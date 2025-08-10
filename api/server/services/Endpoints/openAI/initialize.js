@@ -84,6 +84,7 @@ const initializeClient = async ({
     clientOptions.headers = resolveHeaders({
       headers: { ...headers, ...(clientOptions.headers ?? {}) },
       user: req.user,
+      body: req.body,
     });
 
     clientOptions.titleConvo = azureConfig.titleConvo;
