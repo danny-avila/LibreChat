@@ -1,7 +1,7 @@
 const { OllamaClient } = require('./OllamaClient');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const { SplitStreamHandler, CustomOpenAIClient: OpenAI } = require('@librechat/agents');
-const { gonkaFetch } = require('gonka-openai');
+const { gonkaFetch, resolveAndSelectEndpoint } = require('gonka-openai');
 const {
   isEnabled,
   Tokenizer,
@@ -1170,6 +1170,15 @@ ${convo}
         fetchOptions: {},
       };
 
+      // Gonka: override baseURL with selected endpoint URL
+      let selectedEndpoint;
+      if (this.options.endpoint === 'Gonka AI') {
+        const sourceUrl = process.env.GONKA_SOURCE_URL;
+        const result = await resolveAndSelectEndpoint({ sourceUrl });
+        selectedEndpoint = result.selected;
+        opts.baseURL = selectedEndpoint.url;
+      }
+
       if (this.useOpenRouter) {
         opts.defaultHeaders = {
           'HTTP-Referer': 'https://librechat.ai',
@@ -1284,7 +1293,8 @@ ${convo}
       */
       const fetch = (this.options.endpoint === 'Gonka AI')
           ? gonkaFetch({
-            gonkaPrivateKey: this.gonkaPrivateKey
+            gonkaPrivateKey: this.gonkaPrivateKey,
+            selectedEndpoint
           })
         : createFetch({
           directEndpoint: this.options.directEndpoint,
