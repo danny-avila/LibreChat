@@ -19,4 +19,14 @@ endpoints:
       summaryModel: "current_model"
       forcePrompt: false
       modelDisplayLabel: "Gonka AI"
-      iconURL: "https://gonka.ai/images/logo-small.png"
+      iconURL: "https://gonka.ai/images/01-favicon.png"
+modelSpecs:
+  prioritize: true
+  list:
+    - name: "gonka-qwen-default"
+      label: "Qwen/QwQ-32B"
+      default: true
+      preset:
+        endpoint: "Gonka AI"
+        model: "Qwen/QwQ-32B"
+        modelLabel: "Qwen/QwQ-32B"
