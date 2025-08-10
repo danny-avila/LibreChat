@@ -141,12 +141,14 @@ function processSingleValue({
  * @param obj - The object to process
  * @param user - The user object containing all user fields
  * @param customUserVars - vars that user set in settings
+ * @param body - the body of the request that is being processed
  * @returns - The processed object with environment variables replaced
  */
 export function processMCPEnv(
   obj: Readonly<MCPOptions>,
   user?: TUser,
   customUserVars?: Record<string, string>,
+  body?: RequestBody,
 ): MCPOptions {
   if (obj === null || obj === undefined) {
     return obj;
@@ -157,7 +159,7 @@ export function processMCPEnv(
   if ('env' in newObj && newObj.env) {
     const processedEnv: Record<string, string> = {};
     for (const [key, originalValue] of Object.entries(newObj.env)) {
-      processedEnv[key] = processSingleValue({ originalValue, customUserVars, user });
+      processedEnv[key] = processSingleValue({ originalValue, customUserVars, user, body });
     }
     newObj.env = processedEnv;
   }
@@ -165,7 +167,7 @@ export function processMCPEnv(
   if ('args' in newObj && newObj.args) {
     const processedArgs: string[] = [];
     for (const originalValue of newObj.args) {
-      processedArgs.push(processSingleValue({ originalValue, customUserVars, user }));
+      processedArgs.push(processSingleValue({ originalValue, customUserVars, user, body }));
     }
     newObj.args = processedArgs;
   }
@@ -175,14 +177,14 @@ export function processMCPEnv(
   if ('headers' in newObj && newObj.headers) {
     const processedHeaders: Record<string, string> = {};
     for (const [key, originalValue] of Object.entries(newObj.headers)) {
-      processedHeaders[key] = processSingleValue({ originalValue, customUserVars, user });
+      processedHeaders[key] = processSingleValue({ originalValue, customUserVars, user, body });
     }
     newObj.headers = processedHeaders;
   }
 
   // Process URL if it exists (for WebSocket, SSE, StreamableHTTP types)
   if ('url' in newObj && newObj.url) {
-    newObj.url = processSingleValue({ originalValue: newObj.url, customUserVars, user });
+    newObj.url = processSingleValue({ originalValue: newObj.url, customUserVars, user, body });
   }
 
   return newObj;
