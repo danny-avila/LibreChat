@@ -9,10 +9,11 @@ git checkout stable_version
 # Set our parameters
 cp .env.example .env
 sudo nano .env
-    OPENAI_API_KEY=
+    OPENAI_API_KEY= // Adds OpenAI in the Models List
     GONKA_PRIVATE_KEY=
-    GONKA_ENDPOINTS=
+    GONKA_SOURCE_URL=
     GONKA_ADDRESS=
+    RAG_OPENAI_API_KEY= // Use all default RAG settings and real OpenAI key while Gonka does not support /v1/embeddings endpoint
 
 cp librechat.example-gonka.yaml librechat.yaml
 sudo nano librechat.yaml
