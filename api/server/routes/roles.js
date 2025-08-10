@@ -1,12 +1,13 @@
 const express = require('express');
 const {
+  SystemRoles,
+  roleDefaults,
+  PermissionTypes,
+  agentPermissionsSchema,
   promptPermissionsSchema,
   memoryPermissionsSchema,
-  agentPermissionsSchema,
+  marketplacePermissionsSchema,
   peoplePickerPermissionsSchema,
-  PermissionTypes,
-  roleDefaults,
-  SystemRoles,
 } = require('librechat-data-provider');
 const { checkAdmin, requireJwtAuth } = require('~/server/middleware');
 const { updateRoleByName, getRoleByName } = require('~/models/Role');
@@ -38,6 +39,11 @@ const permissionConfigs = {
     schema: peoplePickerPermissionsSchema,
     permissionType: PermissionTypes.PEOPLE_PICKER,
     errorMessage: 'Invalid people picker permissions.',
+  },
+  marketplace: {
+    schema: marketplacePermissionsSchema,
+    permissionType: PermissionTypes.MARKETPLACE,
+    errorMessage: 'Invalid marketplace permissions.',
   },
 };
 
@@ -135,5 +141,11 @@ router.put('/:roleName/memories', checkAdmin, createPermissionUpdateHandler('mem
  * Update people picker permissions for a specific role
  */
 router.put('/:roleName/people-picker', checkAdmin, createPermissionUpdateHandler('people-picker'));
+
+/**
+ * PUT /api/roles/:roleName/marketplace
+ * Update marketplace permissions for a specific role
+ */
+router.put('/:roleName/marketplace', checkAdmin, createPermissionUpdateHandler('marketplace'));
 
 module.exports = router;

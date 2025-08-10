@@ -541,16 +541,7 @@ export const interfaceSchema = z
       .optional(),
     marketplace: z
       .object({
-        admin: z
-          .object({
-            use: z.boolean().optional(),
-          })
-          .optional(),
-        user: z
-          .object({
-            use: z.boolean().optional(),
-          })
-          .optional(),
+        use: z.boolean().optional(),
       })
       .optional(),
     fileSearch: z.boolean().optional(),
@@ -576,12 +567,7 @@ export const interfaceSchema = z
       roles: true,
     },
     marketplace: {
-      admin: {
-        use: false,
-      },
-      user: {
-        use: false,
-      },
+      use: false,
     },
     fileSearch: true,
     fileCitations: true,
