@@ -2,11 +2,11 @@ const {
   SystemRoles,
   Permissions,
   PermissionTypes,
-  isMemoryEnabled,
   removeNullishValues,
 } = require('librechat-data-provider');
+const { logger } = require('@librechat/data-schemas');
+const { isMemoryEnabled } = require('@librechat/api');
 const { updateAccessPermissions } = require('~/models/Role');
-const { logger } = require('~/config');
 
 /**
  * Loads the default interface object.
