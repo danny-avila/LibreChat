@@ -786,6 +786,28 @@ describe('AgentClient - titleConvo', () => {
       expect(clientOptions.temperature).toBe(0.7); // Other options should remain
     });
 
+    it('should move maxTokens to modelKwargs.max_output_tokens for GPT-5 models with useResponsesApi', () => {
+      const clientOptions = {
+        model: 'gpt-5',
+        maxTokens: 2048,
+        temperature: 0.7,
+        useResponsesApi: true,
+      };
+
+      if (/\bgpt-[5-9]\b/i.test(clientOptions.model) && clientOptions.maxTokens != null) {
+        clientOptions.modelKwargs = clientOptions.modelKwargs ?? {};
+        const paramName =
+          clientOptions.useResponsesApi === true ? 'max_output_tokens' : 'max_completion_tokens';
+        clientOptions.modelKwargs[paramName] = clientOptions.maxTokens;
+        delete clientOptions.maxTokens;
+      }
+
+      expect(clientOptions.maxTokens).toBeUndefined();
+      expect(clientOptions.modelKwargs).toBeDefined();
+      expect(clientOptions.modelKwargs.max_output_tokens).toBe(2048);
+      expect(clientOptions.temperature).toBe(0.7); // Other options should remain
+    });
+
     it('should handle GPT-5+ models with existing modelKwargs', () => {
       const clientOptions = {
         model: 'gpt-6',
@@ -859,6 +881,45 @@ describe('AgentClient - titleConvo', () => {
         if (shouldTransform) {
           expect(clientOptions.maxTokens).toBeUndefined();
           expect(clientOptions.modelKwargs?.max_completion_tokens).toBe(1000);
+        } else {
+          expect(clientOptions.maxTokens).toBe(1000);
+          expect(clientOptions.modelKwargs).toBeUndefined();
+        }
+      });
+    });
+
+    it('should not swap max token param for older models when using useResponsesApi', () => {
+      const testCases = [
+        { model: 'gpt-5', shouldTransform: true },
+        { model: 'gpt-5-turbo', shouldTransform: true },
+        { model: 'gpt-6', shouldTransform: true },
+        { model: 'gpt-7-preview', shouldTransform: true },
+        { model: 'gpt-8', shouldTransform: true },
+        { model: 'gpt-9-mini', shouldTransform: true },
+        { model: 'gpt-4', shouldTransform: false },
+        { model: 'gpt-4o', shouldTransform: false },
+        { model: 'gpt-3.5-turbo', shouldTransform: false },
+        { model: 'claude-3', shouldTransform: false },
+      ];
+
+      testCases.forEach(({ model, shouldTransform }) => {
+        const clientOptions = {
+          model,
+          maxTokens: 1000,
+          useResponsesApi: true,
+        };
+
+        if (/\bgpt-[5-9]\b/i.test(clientOptions.model) && clientOptions.maxTokens != null) {
+          clientOptions.modelKwargs = clientOptions.modelKwargs ?? {};
+          const paramName =
+            clientOptions.useResponsesApi === true ? 'max_output_tokens' : 'max_completion_tokens';
+          clientOptions.modelKwargs[paramName] = clientOptions.maxTokens;
+          delete clientOptions.maxTokens;
+        }
+
+        if (shouldTransform) {
+          expect(clientOptions.maxTokens).toBeUndefined();
+          expect(clientOptions.modelKwargs?.max_output_tokens).toBe(1000);
         } else {
           expect(clientOptions.maxTokens).toBe(1000);
           expect(clientOptions.modelKwargs).toBeUndefined();

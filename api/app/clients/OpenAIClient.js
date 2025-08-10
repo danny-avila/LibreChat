@@ -1222,7 +1222,9 @@ ${convo}
       }
 
       if (this.isOmni === true && modelOptions.max_tokens != null) {
-        modelOptions.max_completion_tokens = modelOptions.max_tokens;
+        const paramName =
+          modelOptions.useResponsesApi === true ? 'max_output_tokens' : 'max_completion_tokens';
+        modelOptions[paramName] = modelOptions.max_tokens;
         delete modelOptions.max_tokens;
       }
       if (this.isOmni === true && modelOptions.temperature != null) {
