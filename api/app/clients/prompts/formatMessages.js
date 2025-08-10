@@ -3,24 +3,61 @@ const { EModelEndpoint, ContentTypes } = require('librechat-data-provider');
 const { HumanMessage, AIMessage, SystemMessage } = require('@langchain/core/messages');
 
 /**
- * Formats a message to OpenAI Vision API payload format.
+ * Formats a message with document attachments for specific endpoints.
  *
  * @param {Object} params - The parameters for formatting.
  * @param {Object} params.message - The message object to format.
- * @param {string} [params.message.role] - The role of the message sender (must be 'user').
- * @param {string} [params.message.content] - The text content of the message.
+ * @param {Array<Object>} [params.documents] - The document attachments for the message.
  * @param {EModelEndpoint} [params.endpoint] - Identifier for specific endpoint handling
+ * @returns {(Object)} - The formatted message.
+ */
+const formatDocumentMessage = ({ message, documents, endpoint }) => {
+  const contentParts = [];
+
+  // Add documents first (for Anthropic PDFs)
+  if (documents && documents.length > 0) {
+    contentParts.push(...documents);
+  }
+
+  // Add text content
+  contentParts.push({ type: ContentTypes.TEXT, text: message.content });
+
+  if (endpoint === EModelEndpoint.anthropic) {
+    message.content = contentParts;
+    return message;
+  }
+
+  // For other endpoints, might need different handling
+  message.content = contentParts;
+  return message;
+};
+
+/**
+ * Formats a message with vision capabilities (image_urls) for specific endpoints.
+ *
+ * @param {Object} params - The parameters for formatting.
+ * @param {Object} params.message - The message object to format.
  * @param {Array<string>} [params.image_urls] - The image_urls to attach to the message.
+ * @param {EModelEndpoint} [params.endpoint] - Identifier for specific endpoint handling
  * @returns {(Object)} - The formatted message.
  */
 const formatVisionMessage = ({ message, image_urls, endpoint }) => {
+  const contentParts = [];
+
+  // Add images
+  if (image_urls && image_urls.length > 0) {
+    contentParts.push(...image_urls);
+  }
+
+  // Add text content
+  contentParts.push({ type: ContentTypes.TEXT, text: message.content });
+
   if (endpoint === EModelEndpoint.anthropic) {
-    message.content = [...image_urls, { type: ContentTypes.TEXT, text: message.content }];
+    message.content = contentParts;
     return message;
   }
 
   message.content = [{ type: ContentTypes.TEXT, text: message.content }, ...image_urls];
-
   return message;
 };
 
@@ -58,7 +95,18 @@ const formatMessage = ({ message, userName, assistantName, endpoint, langChain =
     content,
   };
 
-  const { image_urls } = message;
+  const { image_urls, documents } = message;
+
+  // Handle documents
+  if (Array.isArray(documents) && documents.length > 0 && role === 'user') {
+    return formatDocumentMessage({
+      message: formattedMessage,
+      documents: message.documents,
+      endpoint,
+    });
+  }
+
+  // Handle images
   if (Array.isArray(image_urls) && image_urls.length > 0 && role === 'user') {
     return formatVisionMessage({
       message: formattedMessage,
@@ -146,7 +194,21 @@ const formatAgentMessages = (payload) => {
       message.content = [{ type: ContentTypes.TEXT, [ContentTypes.TEXT]: message.content }];
     }
     if (message.role !== 'assistant') {
-      messages.push(formatMessage({ message, langChain: true }));
+      // Check if message has documents and preserve array structure
+      const hasDocuments =
+        Array.isArray(message.content) &&
+        message.content.some((part) => part && part.type === 'document');
+
+      if (hasDocuments && message.role === 'user') {
+        // For user messages with documents, create HumanMessage directly with array content
+        messages.push(new HumanMessage({ content: message.content }));
+      } else if (hasDocuments && message.role === 'system') {
+        // For system messages with documents, create SystemMessage directly with array content
+        messages.push(new SystemMessage({ content: message.content }));
+      } else {
+        // Use regular formatting for messages without documents
+        messages.push(formatMessage({ message, langChain: true }));
+      }
       continue;
     }
 
@@ -239,6 +301,8 @@ const formatAgentMessages = (payload) => {
 
 module.exports = {
   formatMessage,
+  formatDocumentMessage,
+  formatVisionMessage,
   formatFromLangChain,
   formatAgentMessages,
   formatLangChainMessages,

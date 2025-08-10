@@ -391,7 +391,17 @@ const processFileUpload = async ({ req, res, metadata }) => {
   const isAssistantUpload = isAssistantsEndpoint(metadata.endpoint);
   const assistantSource =
     metadata.endpoint === EModelEndpoint.azureAssistants ? FileSources.azure : FileSources.openai;
-  const source = isAssistantUpload ? assistantSource : FileSources.vectordb;
+
+  // Use local storage for Anthropic native PDF support, vectordb for others
+  const isAnthropicUpload = metadata.endpoint === EModelEndpoint.anthropic;
+  let source;
+  if (isAssistantUpload) {
+    source = assistantSource;
+  } else if (isAnthropicUpload) {
+    source = FileSources.local;
+  } else {
+    source = FileSources.vectordb;
+  }
   const { handleFileUpload } = getStrategyFunctions(source);
   const { file_id, temp_file_id } = metadata;
 

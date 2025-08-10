@@ -268,7 +268,7 @@ class GoogleClient extends BaseClient {
     const formattedMessages = [];
     const attachments = await this.options.attachments;
     const latestMessage = { ...messages[messages.length - 1] };
-    const files = await this.addImageURLs(latestMessage, attachments, VisionModes.generative);
+    const files = await this.processAttachments(latestMessage, attachments, VisionModes.generative);
     this.options.attachments = files;
     messages[messages.length - 1] = latestMessage;
 
@@ -312,6 +312,20 @@ class GoogleClient extends BaseClient {
     return files;
   }
 
+  // eslint-disable-next-line no-unused-vars
+  async addDocuments(message, attachments) {
+    // GoogleClient doesn't support document processing yet
+    // Return empty results for consistency
+    return [];
+  }
+
+  async processAttachments(message, attachments, mode = '') {
+    // For GoogleClient, only process images
+    const imageFiles = await this.addImageURLs(message, attachments, mode);
+    const documentFiles = await this.addDocuments(message, attachments);
+    return [...imageFiles, ...documentFiles];
+  }
+
   /**
    * Builds the augmented prompt for attachments
    * TODO: Add File API Support
@@ -345,7 +359,7 @@ class GoogleClient extends BaseClient {
 
     const { prompt } = await this.buildMessagesPrompt(messages, parentMessageId);
 
-    const files = await this.addImageURLs(latestMessage, attachments);
+    const files = await this.processAttachments(latestMessage, attachments);
 
     this.options.attachments = files;
 

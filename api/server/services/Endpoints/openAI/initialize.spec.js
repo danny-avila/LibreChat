@@ -112,11 +112,11 @@ describe('initializeClient', () => {
   test('should initialize client with Azure credentials when endpoint is azureOpenAI', async () => {
     process.env.AZURE_API_KEY = 'test-azure-api-key';
     (process.env.AZURE_OPENAI_API_INSTANCE_NAME = 'some-value'),
-    (process.env.AZURE_OPENAI_API_DEPLOYMENT_NAME = 'some-value'),
-    (process.env.AZURE_OPENAI_API_VERSION = 'some-value'),
-    (process.env.AZURE_OPENAI_API_COMPLETIONS_DEPLOYMENT_NAME = 'some-value'),
-    (process.env.AZURE_OPENAI_API_EMBEDDINGS_DEPLOYMENT_NAME = 'some-value'),
-    (process.env.OPENAI_API_KEY = 'test-openai-api-key');
+      (process.env.AZURE_OPENAI_API_DEPLOYMENT_NAME = 'some-value'),
+      (process.env.AZURE_OPENAI_API_VERSION = 'some-value'),
+      (process.env.AZURE_OPENAI_API_COMPLETIONS_DEPLOYMENT_NAME = 'some-value'),
+      (process.env.AZURE_OPENAI_API_EMBEDDINGS_DEPLOYMENT_NAME = 'some-value'),
+      (process.env.OPENAI_API_KEY = 'test-openai-api-key');
     process.env.DEBUG_OPENAI = 'false';
     process.env.OPENAI_SUMMARIZE = 'false';
 

@@ -226,6 +226,28 @@ class AgentClient extends BaseClient {
     return files;
   }
 
+  async addDocuments(message, attachments) {
+    const documentResult =
+      await require('~/server/services/Files/documents').encodeAndFormatDocuments(
+        this.options.req,
+        attachments,
+        this.options.agent.provider,
+      );
+    message.documents =
+      documentResult.documents && documentResult.documents.length
+        ? documentResult.documents
+        : undefined;
+    return documentResult.files;
+  }
+
+  async processAttachments(message, attachments) {
+    const [imageFiles, documentFiles] = await Promise.all([
+      this.addImageURLs(message, attachments),
+      this.addDocuments(message, attachments),
+    ]);
+    return [...imageFiles, ...documentFiles];
+  }
+
   async buildMessages(
     messages,
     parentMessageId,
@@ -259,7 +281,7 @@ class AgentClient extends BaseClient {
         };
       }
 
-      const files = await this.addImageURLs(
+      const files = await this.processAttachments(
         orderedMessages[orderedMessages.length - 1],
         attachments,
       );
@@ -281,6 +303,23 @@ class AgentClient extends BaseClient {
         userName: this.options?.name,
         assistantName: this.options?.modelLabel,
       });
+
+      if (
+        message.documents &&
+        message.documents.length > 0 &&
+        message.role === 'user' &&
+        this.options.agent.provider === EModelEndpoint.anthropic
+      ) {
+        const contentParts = [];
+        contentParts.push(...message.documents);
+        if (message.image_urls && message.image_urls.length > 0) {
+          contentParts.push(...message.image_urls);
+        }
+        const textContent =
+          typeof formattedMessage.content === 'string' ? formattedMessage.content : '';
+        contentParts.push({ type: 'text', text: textContent });
+        formattedMessage.content = contentParts;
+      }
 
       if (message.ocr && i !== orderedMessages.length - 1) {
         if (typeof formattedMessage.content === 'string') {
@@ -777,6 +816,51 @@ class AgentClient extends BaseClient {
       };
 
       const toolSet = new Set((this.options.agent.tools ?? []).map((tool) => tool && tool.name));
+
+      if (
+        this.options.agent.provider === EModelEndpoint.anthropic &&
+        payload &&
+        Array.isArray(payload)
+      ) {
+        let userMessageWithDocs = null;
+
+        if (this.userMessage?.documents) {
+          userMessageWithDocs = this.userMessage;
+        } else if (this.currentMessages?.length > 0) {
+          const lastMessage = this.currentMessages[this.currentMessages.length - 1];
+          if (lastMessage.documents?.length > 0) {
+            userMessageWithDocs = lastMessage;
+          }
+        } else if (this.messages?.length > 0) {
+          const lastMessage = this.messages[this.messages.length - 1];
+          if (lastMessage.documents?.length > 0) {
+            userMessageWithDocs = lastMessage;
+          }
+        }
+
+        if (userMessageWithDocs) {
+          for (const payloadMessage of payload) {
+            if (
+              payloadMessage.role === 'user' &&
+              userMessageWithDocs.text === payloadMessage.content
+            ) {
+              if (typeof payloadMessage.content === 'string') {
+                payloadMessage.content = [
+                  ...userMessageWithDocs.documents,
+                  { type: 'text', text: payloadMessage.content },
+                ];
+              } else if (Array.isArray(payloadMessage.content)) {
+                payloadMessage.content = [
+                  ...userMessageWithDocs.documents,
+                  ...payloadMessage.content,
+                ];
+              }
+              break;
+            }
+          }
+        }
+      }
+
       let { messages: initialMessages, indexTokenCountMap } = formatAgentMessages(
         payload,
         this.indexTokenCountMap,

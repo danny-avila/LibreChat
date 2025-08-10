@@ -1,7 +1,7 @@
 import React, { useRef, useState, useMemo } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { useSetRecoilState } from 'recoil';
-import { FileSearch, ImageUpIcon, TerminalSquareIcon, FileType2Icon } from 'lucide-react';
+import { FileSearch, ImageUpIcon, TerminalSquareIcon, FileType2Icon, FileText } from 'lucide-react';
 import { FileUpload, TooltipAnchor, DropdownPopup, AttachmentIcon } from '@librechat/client';
 import { EToolResources, EModelEndpoint, defaultAgentCapabilities } from 'librechat-data-provider';
 import type { EndpointFileConfig } from 'librechat-data-provider';
@@ -13,9 +13,15 @@ interface AttachFileMenuProps {
   conversationId: string;
   disabled?: boolean | null;
   endpointFileConfig?: EndpointFileConfig;
+  endpoint?: string | null;
 }
 
-const AttachFileMenu = ({ disabled, conversationId, endpointFileConfig }: AttachFileMenuProps) => {
+const AttachFileMenu = ({
+  disabled,
+  conversationId,
+  endpointFileConfig,
+  endpoint,
+}: AttachFileMenuProps) => {
   const localize = useLocalize();
   const isUploadDisabled = disabled ?? false;
   const inputRef = useRef<HTMLInputElement>(null);
@@ -23,7 +29,7 @@ const AttachFileMenu = ({ disabled, conversationId, endpointFileConfig }: Attach
   const setEphemeralAgent = useSetRecoilState(ephemeralAgentByConvoId(conversationId));
   const [toolResource, setToolResource] = useState<EToolResources | undefined>();
   const { handleFileChange } = useFileHandling({
-    overrideEndpoint: EModelEndpoint.agents,
+    overrideEndpoint: endpoint === EModelEndpoint.anthropic ? undefined : EModelEndpoint.agents,
     overrideEndpointFileConfig: endpointFileConfig,
   });
 
@@ -34,12 +40,18 @@ const AttachFileMenu = ({ disabled, conversationId, endpointFileConfig }: Attach
    * */
   const capabilities = useAgentCapabilities(agentsConfig?.capabilities ?? defaultAgentCapabilities);
 
-  const handleUploadClick = (isImage?: boolean) => {
+  const handleUploadClick = (fileType?: 'image' | 'document') => {
     if (!inputRef.current) {
       return;
     }
     inputRef.current.value = '';
-    inputRef.current.accept = isImage === true ? 'image/*' : '';
+    if (fileType === 'image') {
+      inputRef.current.accept = 'image/*';
+    } else if (fileType === 'document') {
+      inputRef.current.accept = '.pdf,application/pdf';
+    } else {
+      inputRef.current.accept = '';
+    }
     inputRef.current.click();
     inputRef.current.accept = '';
   };
@@ -50,13 +62,26 @@ const AttachFileMenu = ({ disabled, conversationId, endpointFileConfig }: Attach
         label: localize('com_ui_upload_image_input'),
         onClick: () => {
           setToolResource(undefined);
-          handleUploadClick(true);
+          handleUploadClick('image');
         },
         icon: <ImageUpIcon className="icon-md" />,
       },
     ];
 
-    if (capabilities.ocrEnabled) {
+    // Add document upload option for Anthropic endpoints
+    if (endpoint === EModelEndpoint.anthropic) {
+      items.push({
+        label: 'Upload Document',
+        onClick: () => {
+          setToolResource(undefined);
+          handleUploadClick('document');
+        },
+        icon: <FileText className="icon-md" />,
+      });
+    }
+
+    // Hide OCR and File Search for Anthropic endpoints (native PDF support makes these irrelevant)
+    if (capabilities.ocrEnabled && endpoint !== EModelEndpoint.anthropic) {
       items.push({
         label: localize('com_ui_upload_ocr_text'),
         onClick: () => {
@@ -67,7 +92,7 @@ const AttachFileMenu = ({ disabled, conversationId, endpointFileConfig }: Attach
       });
     }
 
-    if (capabilities.fileSearchEnabled) {
+    if (capabilities.fileSearchEnabled && endpoint !== EModelEndpoint.anthropic) {
       items.push({
         label: localize('com_ui_upload_file_search'),
         onClick: () => {
@@ -95,7 +120,7 @@ const AttachFileMenu = ({ disabled, conversationId, endpointFileConfig }: Attach
     }
 
     return items;
-  }, [capabilities, localize, setToolResource, setEphemeralAgent]);
+  }, [capabilities, localize, setToolResource, setEphemeralAgent, endpoint]);
 
   const menuTrigger = (
     <TooltipAnchor
