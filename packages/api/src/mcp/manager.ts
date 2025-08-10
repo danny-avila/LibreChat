@@ -3,7 +3,7 @@ import { CallToolResultSchema, ErrorCode, McpError } from '@modelcontextprotocol
 import type { OAuthClientInformation } from '@modelcontextprotocol/sdk/shared/auth.js';
 import type { RequestOptions } from '@modelcontextprotocol/sdk/shared/protocol.js';
 import type { TokenMethods } from '@librechat/data-schemas';
-import type { TUser } from 'librechat-data-provider';
+import type { TUser, RequestBody } from 'librechat-data-provider';
 import type { MCPOAuthTokens, MCPOAuthFlowMetadata } from './oauth/types';
 import type { FlowStateManager } from '~/flow/manager';
 import type { JsonSchemaType } from '~/types/zod';
@@ -373,6 +373,7 @@ export class MCPManager {
     oauthEnd,
     signal,
     returnOnOAuth = false,
+    body,
   }: {
     user: TUser;
     serverName: string;
@@ -383,6 +384,7 @@ export class MCPManager {
     oauthEnd?: () => Promise<void>;
     signal?: AbortSignal;
     returnOnOAuth?: boolean;
+    body?: RequestBody;
   }): Promise<MCPConnection> {
     const userId = user.id;
     if (!userId) {
@@ -432,7 +434,7 @@ export class MCPManager {
       );
     }
 
-    config = { ...(processMCPEnv(config, user, customUserVars) ?? {}) };
+    config = { ...(processMCPEnv(config, user, customUserVars, body) ?? {}) };
     /** If no in-memory tokens, tokens from persistent storage */
     let tokens: MCPOAuthTokens | null = null;
     if (tokenMethods?.findToken) {
@@ -859,6 +861,7 @@ export class MCPManager {
     oauthStart,
     oauthEnd,
     customUserVars,
+    body,
   }: {
     user?: TUser;
     serverName: string;
@@ -871,6 +874,7 @@ export class MCPManager {
     flowManager: FlowStateManager<MCPOAuthTokens | null>;
     oauthStart?: (authURL: string) => Promise<void>;
     oauthEnd?: () => Promise<void>;
+    body?: RequestBody;
   }): Promise<t.FormattedToolResponse> {
     /** User-specific connection */
     let connection: MCPConnection | undefined;
@@ -890,6 +894,7 @@ export class MCPManager {
           oauthEnd,
           signal: options?.signal,
           customUserVars,
+          body,
         });
       } else {
         /** App-level connection */
