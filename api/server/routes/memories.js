@@ -13,6 +13,8 @@ const { getRoleByName } = require('~/models/Role');
 
 const router = express.Router();
 
+const memoryPayloadLimit = express.json({ limit: '100kb' });
+
 const checkMemoryRead = generateCheckAccess({
   permissionType: PermissionTypes.MEMORIES,
   permissions: [Permissions.USE, Permissions.READ],
@@ -60,6 +62,7 @@ router.get('/', checkMemoryRead, async (req, res) => {
 
     const memoryConfig = req.app.locals?.memory;
     const tokenLimit = memoryConfig?.tokenLimit;
+    const charLimit = memoryConfig?.charLimit || 10000;
 
     let usagePercentage = null;
     if (tokenLimit && tokenLimit > 0) {
@@ -70,6 +73,7 @@ router.get('/', checkMemoryRead, async (req, res) => {
       memories: sortedMemories,
       totalTokens,
       tokenLimit: tokenLimit || null,
+      charLimit,
       usagePercentage,
     });
   } catch (error) {
@@ -83,7 +87,7 @@ router.get('/', checkMemoryRead, async (req, res) => {
  * Body: { key: string, value: string }
  * Returns 201 and { created: true, memory: <createdDoc> } when successful.
  */
-router.post('/', checkMemoryCreate, async (req, res) => {
+router.post('/', memoryPayloadLimit, checkMemoryCreate, async (req, res) => {
   const { key, value } = req.body;
 
   if (typeof key !== 'string' || key.trim() === '') {
@@ -94,13 +98,25 @@ router.post('/', checkMemoryCreate, async (req, res) => {
     return res.status(400).json({ error: 'Value is required and must be a non-empty string.' });
   }
 
+  const memoryConfig = req.app.locals?.memory;
+  const charLimit = memoryConfig?.charLimit || 10000;
+
+  if (key.length > 1000) {
+    return res.status(400).json({
+      error: `Key exceeds maximum length of 1000 characters. Current length: ${key.length} characters.`,
+    });
+  }
+
+  if (value.length > charLimit) {
+    return res.status(400).json({
+      error: `Value exceeds maximum length of ${charLimit} characters. Current length: ${value.length} characters.`,
+    });
+  }
+
   try {
     const tokenCount = Tokenizer.getTokenCount(value, 'o200k_base');
 
     const memories = await getAllUserMemories(req.user.id);
-
-    // Check token limit
-    const memoryConfig = req.app.locals?.memory;
     const tokenLimit = memoryConfig?.tokenLimit;
 
     if (tokenLimit) {
@@ -175,7 +191,7 @@ router.patch('/preferences', checkMemoryOptOut, async (req, res) => {
  * Body: { key?: string, value: string }
  * Returns 200 and { updated: true, memory: <updatedDoc> } when successful.
  */
-router.patch('/:key', checkMemoryUpdate, async (req, res) => {
+router.patch('/:key', memoryPayloadLimit, checkMemoryUpdate, async (req, res) => {
   const { key: urlKey } = req.params;
   const { key: bodyKey, value } = req.body || {};
 
@@ -183,8 +199,22 @@ router.patch('/:key', checkMemoryUpdate, async (req, res) => {
     return res.status(400).json({ error: 'Value is required and must be a non-empty string.' });
   }
 
-  // Use the key from the body if provided, otherwise use the key from the URL
   const newKey = bodyKey || urlKey;
+
+  const memoryConfig = req.app.locals?.memory;
+  const charLimit = memoryConfig?.charLimit || 10000;
+
+  if (newKey.length > 1000) {
+    return res.status(400).json({
+      error: `Key exceeds maximum length of 1000 characters. Current length: ${newKey.length} characters.`,
+    });
+  }
+
+  if (value.length > charLimit) {
+    return res.status(400).json({
+      error: `Value exceeds maximum length of ${charLimit} characters. Current length: ${value.length} characters.`,
+    });
+  }
 
   try {
     const tokenCount = Tokenizer.getTokenCount(value, 'o200k_base');
@@ -196,7 +226,6 @@ router.patch('/:key', checkMemoryUpdate, async (req, res) => {
       return res.status(404).json({ error: 'Memory not found.' });
     }
 
-    // If the key is changing, we need to handle it specially
     if (newKey !== urlKey) {
       const keyExists = memories.find((m) => m.key === newKey);
       if (keyExists) {
@@ -219,7 +248,6 @@ router.patch('/:key', checkMemoryUpdate, async (req, res) => {
         return res.status(500).json({ error: 'Failed to delete old memory.' });
       }
     } else {
-      // Key is not changing, just update the value
       const result = await setMemory({
         userId: req.user.id,
         key: newKey,

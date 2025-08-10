@@ -1,9 +1,8 @@
-const { agentsConfigSetup, loadWebSearchConfig } = require('@librechat/api');
+const { loadMemoryConfig, agentsConfigSetup, loadWebSearchConfig } = require('@librechat/api');
 const {
   FileSources,
   loadOCRConfig,
   EModelEndpoint,
-  loadMemoryConfig,
   getConfigDefaults,
 } = require('librechat-data-provider');
 const {

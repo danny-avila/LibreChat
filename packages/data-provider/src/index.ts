@@ -13,8 +13,6 @@ export * from './generate';
 export * from './models';
 /* mcp */
 export * from './mcp';
-/* memory */
-export * from './memory';
 /* RBAC */
 export * from './permissions';
 export * from './roles';
