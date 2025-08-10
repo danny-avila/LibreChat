@@ -305,6 +305,15 @@ export type UpdatePeoplePickerPermOptions = MutationOptions<
   types.TError | null | undefined
 >;
 
+export type UpdateMarketplacePermVars = UpdatePermVars<p.TMarketplacePermissions>;
+
+export type UpdateMarketplacePermOptions = MutationOptions<
+  UpdatePermResponse,
+  UpdateMarketplacePermVars,
+  unknown,
+  types.TError | null | undefined
+>;
+
 export type UpdateConversationTagOptions = MutationOptions<
   types.TConversationTag,
   types.TConversationTagRequest

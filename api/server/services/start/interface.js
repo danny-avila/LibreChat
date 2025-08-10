@@ -59,12 +59,7 @@ async function loadDefaultInterface(config, configDefaults, roleName = SystemRol
       roles: interfaceConfig?.peoplePicker?.roles ?? defaults.peoplePicker?.roles,
     },
     marketplace: {
-      admin: {
-        use: interfaceConfig?.marketplace?.admin?.use ?? defaults.marketplace?.admin.use,
-      },
-      user: {
-        use: interfaceConfig?.marketplace?.user?.use ?? defaults.marketplace?.user.use,
-      },
+      use: interfaceConfig?.marketplace?.use ?? defaults.marketplace?.use,
     },
   });
 
@@ -89,7 +84,7 @@ async function loadDefaultInterface(config, configDefaults, roleName = SystemRol
         roleName === SystemRoles.USER ? false : loadedInterface.peoplePicker?.roles,
     },
     [PermissionTypes.MARKETPLACE]: {
-      [Permissions.USE]: loadedInterface.marketplace.user?.use,
+      [Permissions.USE]: roleName === SystemRoles.USER ? false : loadedInterface.marketplace?.use,
     },
     [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: loadedInterface.fileSearch },
     [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: loadedInterface.fileCitations },
@@ -112,7 +107,7 @@ async function loadDefaultInterface(config, configDefaults, roleName = SystemRol
       [Permissions.VIEW_ROLES]: loadedInterface.peoplePicker?.roles,
     },
     [PermissionTypes.MARKETPLACE]: {
-      [Permissions.USE]: loadedInterface.marketplace.admin?.use,
+      [Permissions.USE]: loadedInterface.marketplace?.use,
     },
     [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: loadedInterface.fileSearch },
     [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: loadedInterface.fileCitations },
