@@ -6,16 +6,86 @@ const {
 } = require('librechat-data-provider');
 const { logger } = require('@librechat/data-schemas');
 const { isMemoryEnabled } = require('@librechat/api');
-const { updateAccessPermissions } = require('~/models/Role');
+const { updateAccessPermissions, getRoleByName } = require('~/models/Role');
+
+/**
+ * Updates role permissions intelligently - only updates permission types that:
+ * 1. Don't exist in the database (first time setup)
+ * 2. Are explicitly configured in the config file
+ * @param {object} params - The role name to update
+ * @param {string} params.roleName - The role name to update
+ * @param {object} params.allPermissions - All permissions to potentially update
+ * @param {object} params.interfaceConfig - The interface config from librechat.yaml
+ */
+async function updateRolePermissions({ roleName, allPermissions, interfaceConfig }) {
+  const existingRole = await getRoleByName(roleName);
+  const existingPermissions = existingRole?.permissions || {};
+  const permissionsToUpdate = {};
+
+  for (const [permType, perms] of Object.entries(allPermissions)) {
+    const permTypeExists = existingPermissions[permType];
+
+    const isExplicitlyConfigured = interfaceConfig && hasExplicitConfig(interfaceConfig, permType);
+
+    // Only update if: doesn't exist OR explicitly configured
+    if (!permTypeExists || isExplicitlyConfigured) {
+      permissionsToUpdate[permType] = perms;
+      if (!permTypeExists) {
+        logger.debug(`Role '${roleName}': Setting up default permissions for '${permType}'`);
+      } else if (isExplicitlyConfigured) {
+        logger.debug(`Role '${roleName}': Applying explicit config for '${permType}'`);
+      }
+    } else {
+      logger.debug(`Role '${roleName}': Preserving existing permissions for '${permType}'`);
+    }
+  }
+
+  if (Object.keys(permissionsToUpdate).length > 0) {
+    await updateAccessPermissions(roleName, permissionsToUpdate, existingRole);
+  }
+}
+
+/**
+ * Checks if a permission type has explicit configuration
+ */
+function hasExplicitConfig(interfaceConfig, permissionType) {
+  switch (permissionType) {
+    case PermissionTypes.PROMPTS:
+      return interfaceConfig.prompts !== undefined;
+    case PermissionTypes.BOOKMARKS:
+      return interfaceConfig.bookmarks !== undefined;
+    case PermissionTypes.MEMORIES:
+      return interfaceConfig.memories !== undefined;
+    case PermissionTypes.MULTI_CONVO:
+      return interfaceConfig.multiConvo !== undefined;
+    case PermissionTypes.AGENTS:
+      return interfaceConfig.agents !== undefined;
+    case PermissionTypes.TEMPORARY_CHAT:
+      return interfaceConfig.temporaryChat !== undefined;
+    case PermissionTypes.RUN_CODE:
+      return interfaceConfig.runCode !== undefined;
+    case PermissionTypes.WEB_SEARCH:
+      return interfaceConfig.webSearch !== undefined;
+    case PermissionTypes.PEOPLE_PICKER:
+      return interfaceConfig.peoplePicker !== undefined;
+    case PermissionTypes.MARKETPLACE:
+      return interfaceConfig.marketplace !== undefined;
+    case PermissionTypes.FILE_SEARCH:
+      return interfaceConfig.fileSearch !== undefined;
+    case PermissionTypes.FILE_CITATIONS:
+      return interfaceConfig.fileCitations !== undefined;
+    default:
+      return false;
+  }
+}
 
 /**
  * Loads the default interface object.
  * @param {TCustomConfig | undefined} config - The loaded custom configuration.
  * @param {TConfigDefaults} configDefaults - The custom configuration default values.
- * @param {SystemRoles} [roleName] - The role to load the default interface for, defaults to `'USER'`.
  * @returns {Promise<TCustomConfig['interface']>} The default interface object.
  */
-async function loadDefaultInterface(config, configDefaults, roleName = SystemRoles.USER) {
+async function loadDefaultInterface(config, configDefaults) {
   const { interface: interfaceConfig } = config ?? {};
   const { interface: defaults } = configDefaults;
   const hasModelSpecs = config?.modelSpecs?.list?.length > 0;
@@ -63,55 +133,35 @@ async function loadDefaultInterface(config, configDefaults, roleName = SystemRol
     },
   });
 
-  await updateAccessPermissions(roleName, {
-    [PermissionTypes.PROMPTS]: { [Permissions.USE]: loadedInterface.prompts },
-    [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: loadedInterface.bookmarks },
-    [PermissionTypes.MEMORIES]: {
-      [Permissions.USE]: loadedInterface.memories,
-      [Permissions.OPT_OUT]: isPersonalizationEnabled,
-    },
-    [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: loadedInterface.multiConvo },
-    [PermissionTypes.AGENTS]: { [Permissions.USE]: loadedInterface.agents },
-    [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: loadedInterface.temporaryChat },
-    [PermissionTypes.RUN_CODE]: { [Permissions.USE]: loadedInterface.runCode },
-    [PermissionTypes.WEB_SEARCH]: { [Permissions.USE]: loadedInterface.webSearch },
-    [PermissionTypes.PEOPLE_PICKER]: {
-      [Permissions.VIEW_USERS]:
-        roleName === SystemRoles.USER ? false : loadedInterface.peoplePicker?.users,
-      [Permissions.VIEW_GROUPS]:
-        roleName === SystemRoles.USER ? false : loadedInterface.peoplePicker?.groups,
-      [Permissions.VIEW_ROLES]:
-        roleName === SystemRoles.USER ? false : loadedInterface.peoplePicker?.roles,
-    },
-    [PermissionTypes.MARKETPLACE]: {
-      [Permissions.USE]: roleName === SystemRoles.USER ? false : loadedInterface.marketplace?.use,
-    },
-    [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: loadedInterface.fileSearch },
-    [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: loadedInterface.fileCitations },
-  });
-  await updateAccessPermissions(SystemRoles.ADMIN, {
-    [PermissionTypes.PROMPTS]: { [Permissions.USE]: loadedInterface.prompts },
-    [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: loadedInterface.bookmarks },
-    [PermissionTypes.MEMORIES]: {
-      [Permissions.USE]: loadedInterface.memories,
-      [Permissions.OPT_OUT]: isPersonalizationEnabled,
-    },
-    [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: loadedInterface.multiConvo },
-    [PermissionTypes.AGENTS]: { [Permissions.USE]: loadedInterface.agents },
-    [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: loadedInterface.temporaryChat },
-    [PermissionTypes.RUN_CODE]: { [Permissions.USE]: loadedInterface.runCode },
-    [PermissionTypes.WEB_SEARCH]: { [Permissions.USE]: loadedInterface.webSearch },
-    [PermissionTypes.PEOPLE_PICKER]: {
-      [Permissions.VIEW_USERS]: loadedInterface.peoplePicker?.users,
-      [Permissions.VIEW_GROUPS]: loadedInterface.peoplePicker?.groups,
-      [Permissions.VIEW_ROLES]: loadedInterface.peoplePicker?.roles,
-    },
-    [PermissionTypes.MARKETPLACE]: {
-      [Permissions.USE]: loadedInterface.marketplace?.use,
-    },
-    [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: loadedInterface.fileSearch },
-    [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: loadedInterface.fileCitations },
-  });
+  for (const roleName of [SystemRoles.USER, SystemRoles.ADMIN]) {
+    await updateRolePermissions({
+      roleName,
+      allPermissions: {
+        [PermissionTypes.PROMPTS]: { [Permissions.USE]: loadedInterface.prompts },
+        [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: loadedInterface.bookmarks },
+        [PermissionTypes.MEMORIES]: {
+          [Permissions.USE]: loadedInterface.memories,
+          [Permissions.OPT_OUT]: isPersonalizationEnabled,
+        },
+        [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: loadedInterface.multiConvo },
+        [PermissionTypes.AGENTS]: { [Permissions.USE]: loadedInterface.agents },
+        [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: loadedInterface.temporaryChat },
+        [PermissionTypes.RUN_CODE]: { [Permissions.USE]: loadedInterface.runCode },
+        [PermissionTypes.WEB_SEARCH]: { [Permissions.USE]: loadedInterface.webSearch },
+        [PermissionTypes.PEOPLE_PICKER]: {
+          [Permissions.VIEW_USERS]: loadedInterface.peoplePicker?.users,
+          [Permissions.VIEW_GROUPS]: loadedInterface.peoplePicker?.groups,
+          [Permissions.VIEW_ROLES]: loadedInterface.peoplePicker?.roles,
+        },
+        [PermissionTypes.MARKETPLACE]: {
+          [Permissions.USE]: loadedInterface.marketplace?.use,
+        },
+        [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: loadedInterface.fileSearch },
+        [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: loadedInterface.fileCitations },
+      },
+      interfaceConfig,
+    });
+  }
 
   let i = 0;
   const logSettings = () => {
