@@ -1,6 +1,6 @@
+const { isEnabled } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 const { createSocialUser, handleExistingUser } = require('./process');
-const { isEnabled } = require('~/server/utils');
 const { findUser } = require('~/models');
 
 const socialLogin =
@@ -11,12 +11,17 @@ const socialLogin =
         profile,
       });
 
-      const oldUser = await findUser({ email: email.trim() });
+      const existingUser = await findUser({ email: email.trim() });
       const ALLOW_SOCIAL_REGISTRATION = isEnabled(process.env.ALLOW_SOCIAL_REGISTRATION);
 
-      if (oldUser) {
-        await handleExistingUser(oldUser, avatarUrl);
-        return cb(null, oldUser);
+      if (existingUser?.provider === provider) {
+        await handleExistingUser(existingUser, avatarUrl);
+        return cb(null, existingUser);
+      } else if (existingUser) {
+        const error = new Error('auth_failed');
+        error.code = 'auth_failed';
+        error.provider = existingUser.provider;
+        return cb(error);
       }
 
       if (ALLOW_SOCIAL_REGISTRATION) {
