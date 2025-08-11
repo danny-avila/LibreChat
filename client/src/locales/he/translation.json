@@ -282,6 +282,7 @@
   "com_endpoint_top_k": "Top K",
   "com_endpoint_top_p": "Top P",
   "com_endpoint_use_active_assistant": "השתמש ב-סייען פעיל",
+  "com_endpoint_use_responses_api": "השתמש ב-API של תגובות",
   "com_endpoint_use_search_grounding": "התבססות על חיפוש גוגל",
   "com_error_expired_user_key": "המפתח שסופק עבור {{0}} פג ב-{{1}}. אנא ספק מפתח חדש ונסה שוב.",
   "com_error_files_dupe": "זוהה קובץ כפול",
