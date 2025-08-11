@@ -414,6 +414,14 @@ export type TVerify2FATempResponse = {
 };
 
 /**
+ * Request for disabling 2FA.
+ */
+export type TDisable2FARequest = {
+  token?: string;
+  backupCode?: string;
+};
+
+/**
  * Response from disabling 2FA.
  */
 export type TDisable2FAResponse = {

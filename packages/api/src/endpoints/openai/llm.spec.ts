@@ -373,7 +373,7 @@ describe('getOpenAIConfig', () => {
       text: {
         verbosity: Verbosity.medium,
       },
-      max_completion_tokens: 1500,
+      max_output_tokens: 1500,
     });
   });
 

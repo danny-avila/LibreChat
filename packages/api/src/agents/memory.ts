@@ -352,7 +352,11 @@ ${memory ?? 'No existing memories'}`;
       // Move maxTokens to modelKwargs for GPT-5+ models
       if ('maxTokens' in finalLLMConfig && finalLLMConfig.maxTokens != null) {
         const modelKwargs = (finalLLMConfig as OpenAIClientOptions).modelKwargs ?? {};
-        modelKwargs.max_completion_tokens = finalLLMConfig.maxTokens;
+        const paramName =
+          (finalLLMConfig as OpenAIClientOptions).useResponsesApi === true
+            ? 'max_output_tokens'
+            : 'max_completion_tokens';
+        modelKwargs[paramName] = finalLLMConfig.maxTokens;
         delete finalLLMConfig.maxTokens;
         (finalLLMConfig as OpenAIClientOptions).modelKwargs = modelKwargs;
       }
