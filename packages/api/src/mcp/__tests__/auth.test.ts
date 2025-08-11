@@ -1,7 +1,7 @@
 import type { PluginAuthMethods } from '@librechat/data-schemas';
 import type { GenericTool } from '@librechat/agents';
 import { getPluginAuthMap } from '~/agents/auth';
-import { getUserMCPAuthMap } from './auth';
+import { getUserMCPAuthMap } from '../auth';
 
 jest.mock('~/agents/auth', () => ({
   getPluginAuthMap: jest.fn(),

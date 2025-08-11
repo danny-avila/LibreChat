@@ -2,7 +2,7 @@
 // zod.spec.ts
 import { z } from 'zod';
 import type { JsonSchemaType } from '~/types';
-import { resolveJsonSchemaRefs, convertJsonSchemaToZod, convertWithResolvedRefs } from './zod';
+import { resolveJsonSchemaRefs, convertJsonSchemaToZod, convertWithResolvedRefs } from '../zod';
 
 describe('convertJsonSchemaToZod', () => {
   describe('primitive types', () => {

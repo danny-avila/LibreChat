@@ -1,5 +1,5 @@
-import { MCPOAuthHandler } from './handler';
 import type { MCPOptions } from 'librechat-data-provider';
+import { MCPOAuthHandler } from '~/mcp/oauth';
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: {

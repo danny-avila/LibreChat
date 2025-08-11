@@ -34,7 +34,7 @@ export class MCPServersRegistry {
   public oauthServers: Set<string> | null = null;
   public serverInstructions: Record<string, string> | null = null;
   public toolFunctions: t.LCAvailableTools | null = null;
-  public appServerConfigs: t.MCPServers = {};
+  public appServerConfigs: t.MCPServers | null = null;
 
   constructor(configs: t.MCPServers) {
     this.rawConfigs = configs;

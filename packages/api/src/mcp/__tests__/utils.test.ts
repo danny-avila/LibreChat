@@ -1,4 +1,4 @@
-import { normalizeServerName } from './utils';
+import { normalizeServerName } from '../utils';
 
 describe('normalizeServerName', () => {
   it('should not modify server names that already match the pattern', () => {

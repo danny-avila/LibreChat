@@ -38,13 +38,8 @@ export class MCPManager extends UserConnectionManager {
 
   /** Initializes the MCPManager by setting up server registry and app connections */
   public async initialize() {
-    if (this.appConnections) {
-      logger.warn('[MCP] MCPManager is already initialized.');
-      return;
-    }
-
     await this.serversRegistry.initialize();
-    this.appConnections = new ConnectionsRepository(this.serversRegistry.appServerConfigs);
+    this.appConnections = new ConnectionsRepository(this.serversRegistry.appServerConfigs!);
   }
 
   /** Returns all app-level connections */

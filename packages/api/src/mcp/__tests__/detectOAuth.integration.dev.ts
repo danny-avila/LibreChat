@@ -7,7 +7,7 @@
 // To run manually from packages/api directory:
 //   npx jest --testMatch="**/detectOAuth.integration.dev.ts"
 
-import { detectOAuthRequirement } from './detectOAuth';
+import { detectOAuthRequirement } from '~/mcp/oauth';
 
 describe('OAuth Detection Integration Tests', () => {
   const NETWORK_TIMEOUT = 10000;
