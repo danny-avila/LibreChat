@@ -889,6 +889,12 @@
  */
 
 /**
+ * @exports IRole
+ * @typedef {import('@librechat/data-schemas').IRole} IRole
+ * @memberof typedefs
+ */
+
+/**
  * @exports ObjectId
  * @typedef {import('mongoose').Types.ObjectId} ObjectId
  * @memberof typedefs

@@ -16,7 +16,7 @@ const { Role } = require('~/db/models');
  *
  * @param {string} roleName - The name of the role to find or create.
  * @param {string|string[]} [fieldsToSelect] - The fields to include or exclude in the returned document.
- * @returns {Promise<Object>} A plain object representing the role document.
+ * @returns {Promise<IRole>} Role document.
  */
 const getRoleByName = async function (roleName, fieldsToSelect = null) {
   const cache = getLogStores(CacheKeys.ROLES);
@@ -72,8 +72,9 @@ const updateRoleByName = async function (roleName, updates) {
  * Updates access permissions for a specific role and multiple permission types.
  * @param {string} roleName - The role to update.
  * @param {Object.<PermissionTypes, Object.<Permissions, boolean>>} permissionsUpdate - Permissions to update and their values.
+ * @param {IRole} [roleData] - Optional role data to use instead of fetching from the database.
  */
-async function updateAccessPermissions(roleName, permissionsUpdate) {
+async function updateAccessPermissions(roleName, permissionsUpdate, roleData) {
   // Filter and clean the permission updates based on our schema definition.
   const updates = {};
   for (const [permissionType, permissions] of Object.entries(permissionsUpdate)) {
@@ -86,7 +87,7 @@ async function updateAccessPermissions(roleName, permissionsUpdate) {
   }
 
   try {
-    const role = await getRoleByName(roleName);
+    const role = roleData ?? (await getRoleByName(roleName));
     if (!role) {
       return;
     }
@@ -113,7 +114,6 @@ async function updateAccessPermissions(roleName, permissionsUpdate) {
       }
     }
 
-    // Process the current updates
     for (const [permissionType, permissions] of Object.entries(updates)) {
       const currentTypePermissions = currentPermissions[permissionType] || {};
       updatedPermissions[permissionType] = { ...currentTypePermissions };
