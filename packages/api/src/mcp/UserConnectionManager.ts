@@ -1,13 +1,13 @@
-import { MCPConnection } from './connection';
-import { logger } from '@librechat/data-schemas';
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
+import { logger } from '@librechat/data-schemas';
 import type { TokenMethods } from '@librechat/data-schemas';
 import type { TUser } from 'librechat-data-provider';
-import type { MCPOAuthTokens } from '~/mcp/oauth';
 import type { FlowStateManager } from '~/flow/manager';
-import type * as t from './types';
+import type { MCPOAuthTokens } from '~/mcp/oauth';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
 import { MCPServersRegistry } from '~/mcp/MCPServersRegistry';
+import { MCPConnection } from './connection';
+import type * as t from './types';
 
 /**
  * Abstract base class for managing user-specific MCP connections with lifecycle management.

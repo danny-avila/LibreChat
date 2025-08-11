@@ -1,14 +1,14 @@
-import { ConnectionsRepository } from '~/mcp/ConnectionsRepository';
-import type * as t from '~/mcp/types';
-import { type MCPConnection } from './connection';
-import { CONSTANTS } from '~/mcp/enum';
-import { detectOAuthRequirement } from '~/mcp/oauth';
-import type { JsonSchemaType } from '~/types';
+import { logger } from '@librechat/data-schemas';
 import mapValues from 'lodash/mapValues';
 import pickBy from 'lodash/pickBy';
 import pick from 'lodash/pick';
+import type { JsonSchemaType } from '~/types';
+import type * as t from '~/mcp/types';
+import { ConnectionsRepository } from '~/mcp/ConnectionsRepository';
+import { detectOAuthRequirement } from '~/mcp/oauth';
+import { type MCPConnection } from './connection';
 import { processMCPEnv } from '~/utils';
-import { logger } from '@librechat/data-schemas';
+import { CONSTANTS } from '~/mcp/enum';
 
 type ParsedServerConfig = t.MCPOptions & {
   url?: string;
