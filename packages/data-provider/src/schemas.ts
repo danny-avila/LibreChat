@@ -201,7 +201,7 @@ export const openAISettings = {
   },
   temperature: {
     min: 0 as const,
-    max: 2 as const,
+    max: 1.5 as const,
     step: 0.01 as const,
     default: 1 as const,
   },
