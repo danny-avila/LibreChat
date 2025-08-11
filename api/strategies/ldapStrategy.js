@@ -1,10 +1,10 @@
 const fs = require('fs');
+const { isEnabled } = require('@librechat/api');
 const LdapStrategy = require('passport-ldapauth');
-const { SystemRoles } = require('librechat-data-provider');
 const { logger } = require('@librechat/data-schemas');
+const { SystemRoles, ErrorTypes } = require('librechat-data-provider');
 const { createUser, findUser, updateUser, countUsers } = require('~/models');
 const { getBalanceConfig } = require('~/server/services/Config');
-const { isEnabled } = require('~/server/utils');
 
 const {
   LDAP_URL,
@@ -90,6 +90,14 @@ const ldapLogin = new LdapStrategy(ldapOptions, async (userinfo, done) => {
       (LDAP_ID && userinfo[LDAP_ID]) || userinfo.uid || userinfo.sAMAccountName || userinfo.mail;
 
     let user = await findUser({ ldapId });
+    if (user && user.provider !== 'ldap') {
+      logger.info(
+        `[ldapStrategy] User ${user.email} already exists with provider ${user.provider}`,
+      );
+      return done(null, false, {
+        message: ErrorTypes.AUTH_FAILED,
+      });
+    }
 
     const fullNameAttributes = LDAP_FULL_NAME && LDAP_FULL_NAME.split(',');
     const fullName =
