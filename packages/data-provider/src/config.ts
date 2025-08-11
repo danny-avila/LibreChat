@@ -1359,6 +1359,10 @@ export enum ErrorTypes {
    * Endpoint models not loaded
    */
   ENDPOINT_MODELS_NOT_LOADED = 'endpoint_models_not_loaded',
+  /**
+   * Generic Authentication failure
+   */
+  AUTH_FAILED = 'auth_failed',
 }
 
 /**

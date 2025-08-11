@@ -1,7 +1,10 @@
 // file deepcode ignore NoRateLimitingForLogin: Rate limiting is handled by the `loginLimiter` middleware
 const express = require('express');
 const passport = require('passport');
+const { isEnabled } = require('@librechat/api');
 const { randomState } = require('openid-client');
+const { logger } = require('@librechat/data-schemas');
+const { ErrorTypes } = require('librechat-data-provider');
 const {
   checkBan,
   logHeaders,
@@ -10,8 +13,6 @@ const {
   checkDomainAllowed,
 } = require('~/server/middleware');
 const { setAuthTokens, setOpenIDAuthTokens } = require('~/server/services/AuthService');
-const { isEnabled } = require('~/server/utils');
-const { logger } = require('~/config');
 
 const router = express.Router();
 
@@ -46,13 +47,13 @@ const oauthHandler = async (req, res) => {
 };
 
 router.get('/error', (req, res) => {
-  // A single error message is pushed by passport when authentication fails.
+  /** A single error message is pushed by passport when authentication fails. */
+  const errorMessage = req.session?.messages?.pop() || 'Unknown error';
   logger.error('Error in OAuth authentication:', {
-    message: req.session?.messages?.pop() || 'Unknown error',
+    message: errorMessage,
   });
 
-  // Redirect to login page with auth_failed parameter to prevent infinite redirect loops
-  res.redirect(`${domains.client}/login?redirect=false`);
+  res.redirect(`${domains.client}/login?redirect=false&error=${ErrorTypes.AUTH_FAILED}`);
 });
 
 /**

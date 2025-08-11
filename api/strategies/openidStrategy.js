@@ -3,9 +3,9 @@ const fetch = require('node-fetch');
 const passport = require('passport');
 const client = require('openid-client');
 const jwtDecode = require('jsonwebtoken/decode');
-const { CacheKeys } = require('librechat-data-provider');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const { hashToken, logger } = require('@librechat/data-schemas');
+const { CacheKeys, ErrorTypes } = require('librechat-data-provider');
 const { Strategy: OpenIDStrategy } = require('openid-client/passport');
 const { isEnabled, safeStringify, logHeaders } = require('@librechat/api');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
@@ -319,6 +319,14 @@ async function setupOpenId() {
                 claims.email
               } for openidId: ${claims.sub}`,
             );
+          }
+          if (user != null && user.provider !== 'openid') {
+            logger.info(
+              `[openidStrategy] Attempted OpenID login by user ${user.email}, was registered with "${user.provider}" provider`,
+            );
+            return done(null, false, {
+              message: ErrorTypes.AUTH_FAILED,
+            });
           }
           const userinfo = {
             ...claims,
