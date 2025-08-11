@@ -1,11 +1,11 @@
-const { Router } = require('express');
 const { logger } = require('@librechat/data-schemas');
 const { MCPOAuthHandler } = require('@librechat/api');
-const { CacheKeys, Constants } = require('librechat-data-provider');
-const { findToken, updateToken, createToken, deleteTokens } = require('~/models');
-const { setCachedTools, getCachedTools, loadCustomConfig } = require('~/server/services/Config');
+const { Router } = require('express');
 const { getMCPSetupData, getServerConnectionStatus } = require('~/server/services/MCP');
+const { findToken, updateToken, createToken, deleteTokens } = require('~/models');
+const { setCachedTools, getCachedTools } = require('~/server/services/Config');
 const { getUserPluginAuthValue } = require('~/server/services/PluginService');
+const { CacheKeys, Constants } = require('librechat-data-provider');
 const { getMCPManager, getFlowStateManager } = require('~/config');
 const { requireJwtAuth } = require('~/server/middleware');
 const { getLogStores } = require('~/cache');
@@ -436,7 +436,7 @@ router.post('/:serverName/reinitialize', requireJwtAuth, async (req, res) => {
     };
 
     res.json({
-      success: (userConnection && !oauthRequired) || (oauthRequired && oauthUrl),
+      success: Boolean((userConnection && !oauthRequired) || (oauthRequired && oauthUrl)),
       message: getResponseMessage(),
       serverName,
       oauthRequired,
