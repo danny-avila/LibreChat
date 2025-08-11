@@ -1,6 +1,6 @@
+const { logger } = require('@librechat/data-schemas');
 const { isAgentsEndpoint, removeNullishValues, Constants } = require('librechat-data-provider');
 const { loadAgent } = require('~/models/Agent');
-const { logger } = require('~/config');
 
 const buildOptions = (req, endpoint, parsedBody, endpointType) => {
   const { spec, iconURL, agent_id, instructions, ...model_parameters } = parsedBody;
