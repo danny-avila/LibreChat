@@ -221,6 +221,7 @@
   "com_endpoint_prompt_prefix_assistants": "Ytterligare instruktioner",
   "com_endpoint_prompt_prefix_placeholder": "Ange anpassade instruktioner eller kontext. Ignoreras om tom.",
   "com_endpoint_save_as_preset": "Spara som förinställning",
+  "com_endpoint_search": "Sök slutpunkt efter namn",
   "com_endpoint_search_endpoint_models": "Sök {{0}} modeller...",
   "com_endpoint_search_models": "Sök modeller...",
   "com_endpoint_search_var": "Sök {{0}}...",
