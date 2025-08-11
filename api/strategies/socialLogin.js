@@ -1,5 +1,6 @@
 const { isEnabled } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
+const { ErrorTypes } = require('librechat-data-provider');
 const { createSocialUser, handleExistingUser } = require('./process');
 const { findUser } = require('~/models');
 
@@ -18,8 +19,8 @@ const socialLogin =
         await handleExistingUser(existingUser, avatarUrl);
         return cb(null, existingUser);
       } else if (existingUser) {
-        const error = new Error('auth_failed');
-        error.code = 'auth_failed';
+        const error = new Error(ErrorTypes.AUTH_FAILED);
+        error.code = ErrorTypes.AUTH_FAILED;
         error.provider = existingUser.provider;
         return cb(error);
       }

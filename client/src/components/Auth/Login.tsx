@@ -1,6 +1,7 @@
-import { useOutletContext, useSearchParams } from 'react-router-dom';
 import { useEffect, useState } from 'react';
+import { ErrorTypes } from 'librechat-data-provider';
 import { OpenIDIcon, useToastContext } from '@librechat/client';
+import { useOutletContext, useSearchParams } from 'react-router-dom';
 import type { TLoginLayoutContext } from '~/common';
 import { ErrorMessage } from '~/components/Auth/ErrorMessage';
 import SocialButton from '~/components/Auth/SocialButton';
@@ -24,7 +25,7 @@ function Login() {
 
   useEffect(() => {
     const oauthError = searchParams?.get('error');
-    if (oauthError && oauthError === 'auth_failed') {
+    if (oauthError && oauthError === ErrorTypes.AUTH_FAILED) {
       showToast({
         message: localize('com_auth_error_oauth_failed'),
         status: 'error',

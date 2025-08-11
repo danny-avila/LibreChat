@@ -3,6 +3,8 @@ const express = require('express');
 const passport = require('passport');
 const { isEnabled } = require('@librechat/api');
 const { randomState } = require('openid-client');
+const { logger } = require('@librechat/data-schemas');
+const { ErrorTypes } = require('librechat-data-provider');
 const {
   checkBan,
   logHeaders,
@@ -11,7 +13,6 @@ const {
   checkDomainAllowed,
 } = require('~/server/middleware');
 const { setAuthTokens, setOpenIDAuthTokens } = require('~/server/services/AuthService');
-const { logger } = require('~/config');
 
 const router = express.Router();
 
@@ -52,7 +53,7 @@ router.get('/error', (req, res) => {
     message: errorMessage,
   });
 
-  res.redirect(`${domains.client}/login?redirect=false&error=auth_failed`);
+  res.redirect(`${domains.client}/login?redirect=false&error=${ErrorTypes.AUTH_FAILED}`);
 });
 
 /**

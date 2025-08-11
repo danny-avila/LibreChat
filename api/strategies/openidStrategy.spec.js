@@ -1,7 +1,8 @@
 const fetch = require('node-fetch');
 const jwtDecode = require('jsonwebtoken/decode');
-const { setupOpenId } = require('./openidStrategy');
+const { ErrorTypes } = require('librechat-data-provider');
 const { findUser, createUser, updateUser } = require('~/models');
+const { setupOpenId } = require('./openidStrategy');
 
 // --- Mocks ---
 jest.mock('node-fetch');
@@ -50,7 +51,7 @@ jest.mock('openid-client', () => {
       issuer: 'https://fake-issuer.com',
       // Add any other properties needed by the implementation
     }),
-    fetchUserInfo: jest.fn().mockImplementation((config, accessToken, sub) => {
+    fetchUserInfo: jest.fn().mockImplementation(() => {
       // Only return additional properties, but don't override any claims
       return Promise.resolve({});
     }),
@@ -319,7 +320,7 @@ describe('setupOpenId', () => {
 
     // Assert – verify that the strategy rejects login
     expect(result.user).toBe(false);
-    expect(result.details.message).toBe('auth_failed');
+    expect(result.details.message).toBe(ErrorTypes.AUTH_FAILED);
     expect(createUser).not.toHaveBeenCalled();
     expect(updateUser).not.toHaveBeenCalled();
   });
@@ -329,7 +330,6 @@ describe('setupOpenId', () => {
     jwtDecode.mockReturnValue({
       roles: ['SomeOtherRole'],
     });
-    const userinfo = tokenset.claims();
 
     // Act
     const { user, details } = await validate(tokenset);
@@ -340,9 +340,6 @@ describe('setupOpenId', () => {
   });
 
   it('should attempt to download and save the avatar if picture is provided', async () => {
-    // Arrange – ensure userinfo contains a picture URL
-    const userinfo = tokenset.claims();
-
     // Act
     const { user } = await validate(tokenset);
 

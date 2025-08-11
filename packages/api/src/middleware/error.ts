@@ -1,4 +1,5 @@
 import { logger } from '@librechat/data-schemas';
+import { ErrorTypes } from 'librechat-data-provider';
 import type { NextFunction, Request, Response } from 'express';
 import type { MongoServerError, ValidationError, CustomError } from '~/types';
 
@@ -52,13 +53,13 @@ export const ErrorController = (
     const error = err as CustomError;
 
     if (
-      (error.message === 'auth_failed' || error.code === 'auth_failed') &&
+      (error.message === ErrorTypes.AUTH_FAILED || error.code === ErrorTypes.AUTH_FAILED) &&
       req.originalUrl &&
       req.originalUrl.includes('/oauth/') &&
       req.originalUrl.includes('/callback')
     ) {
       const domain = process.env.DOMAIN_CLIENT || 'http://localhost:3080';
-      return res.redirect(`${domain}/login?redirect=false&error=auth_failed`);
+      return res.redirect(`${domain}/login?redirect=false&error=${ErrorTypes.AUTH_FAILED}`);
     }
 
     if (isValidationError(error)) {
