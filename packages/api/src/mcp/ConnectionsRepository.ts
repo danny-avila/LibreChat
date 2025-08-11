@@ -25,7 +25,7 @@ export class ConnectionsRepository {
   /** Gets or creates a connection for the specified server with lazy loading */
   async get(serverName: string): Promise<MCPConnection> {
     const existingConnection = this.connections.get(serverName);
-    if (existingConnection?.isConnected()) return existingConnection;
+    if (existingConnection && (await existingConnection.isConnected())) return existingConnection;
     else await this.disconnect(serverName);
 
     const connection = await MCPConnectionFactory.create(
