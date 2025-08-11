@@ -8,6 +8,7 @@ import {
   SelectPopover,
   SelectProvider,
 } from '@ariakit/react';
+import './AnimatePopover.css';
 import { cn } from '~/utils';
 
 interface MultiSelectProps<T extends string> {

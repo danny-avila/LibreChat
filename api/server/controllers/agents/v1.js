@@ -194,6 +194,9 @@ const updateAgentHandler = async (req, res) => {
       });
     }
 
+    // Add version count to the response
+    updatedAgent.version = updatedAgent.versions ? updatedAgent.versions.length : 0;
+
     if (updatedAgent.author) {
       updatedAgent.author = updatedAgent.author.toString();
     }

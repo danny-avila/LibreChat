@@ -413,13 +413,15 @@ router.post('/', async (req, res) => {
       logger.error('[/files] Error deleting file:', error);
     }
     res.status(500).json({ message });
-  }
-
-  if (cleanup) {
-    try {
-      await fs.unlink(req.file.path);
-    } catch (error) {
-      logger.error('[/files] Error deleting file after file processing:', error);
+  } finally {
+    if (cleanup) {
+      try {
+        await fs.unlink(req.file.path);
+      } catch (error) {
+        logger.error('[/files] Error deleting file after file processing:', error);
+      }
+    } else {
+      logger.debug('[/files] File processing completed without cleanup');
     }
   }
 });

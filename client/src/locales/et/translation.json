@@ -517,7 +517,6 @@
   "com_ui_agent_var": "{{0}} agent",
   "com_ui_agent_version": "Versioon",
   "com_ui_agent_version_active": "Aktiivne versioon",
-  "com_ui_agent_version_duplicate": "Tuvastati duplikaatversioon. See looks versiooni, mis on identne versiooniga {{versionIndex}}.",
   "com_ui_agent_version_empty": "Versioone pole saadaval",
   "com_ui_agent_version_error": "Viga versioonide laadimisel",
   "com_ui_agent_version_history": "Versioonide ajalugu",

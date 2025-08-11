@@ -181,9 +181,22 @@ export class MCPOAuthHandler {
           authorization_endpoint: config.authorization_url,
           token_endpoint: config.token_url,
           issuer: serverUrl,
-          scopes_supported: config.scope?.split(' '),
+          scopes_supported: config.scope?.split(' ') ?? [],
+          grant_types_supported: config?.grant_types_supported ?? [
+            'authorization_code',
+            'refresh_token',
+          ],
+          token_endpoint_auth_methods_supported: config?.token_endpoint_auth_methods_supported ?? [
+            'client_secret_basic',
+            'client_secret_post',
+          ],
+          response_types_supported: config?.response_types_supported ?? ['code'],
+          code_challenge_methods_supported: config?.code_challenge_methods_supported ?? [
+            'S256',
+            'plain',
+          ],
         };
-
+        logger.debug(`[MCPOAuth] metadata for "${serverName}": ${JSON.stringify(metadata)}`);
         const clientInfo: OAuthClientInformation = {
           client_id: config.client_id,
           client_secret: config.client_secret,
@@ -589,7 +602,7 @@ export class MCPOAuthHandler {
       /** Auto-discover OAuth configuration for refresh */
       const oauthMetadata = await discoverAuthorizationServerMetadata(metadata.serverUrl);
 
-      if (!oauthMetadata.token_endpoint) {
+      if (!oauthMetadata?.token_endpoint) {
         throw new Error('No token endpoint found in OAuth metadata');
       }
 

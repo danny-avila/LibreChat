@@ -313,20 +313,30 @@
   background-color: transparent;  /* Color of the tracking area */
 }
 
-.sp-preview-container {
-  @apply flex h-full w-full grow flex-col justify-center;
-}
-
-.sp-preview {
-  @apply flex h-full w-full grow flex-col justify-center;
-}
-
-.sp-preview-iframe {
-  @apply grow;
-}
-
+/* Base wrapper for both preview and editor */
 .sp-wrapper {
-  @apply flex h-full w-full grow flex-col justify-center;
+  @apply flex h-full w-full grow flex-col;
+}
+
+/* Stack containers (sp-preview and sp-editor) */
+.sp-preview,
+.sp-editor {
+  @apply flex h-full w-full grow flex-col;
+}
+
+/* Inner containers */
+.sp-preview-container,
+.sp-code-editor {
+  @apply flex h-full w-full grow flex-col;
+}
+
+/* Content elements */
+.sp-preview-iframe {
+  @apply h-full w-full grow;
+}
+
+.sp-cm {
+  @apply h-full w-full grow;
 }
 
 @keyframes shake {

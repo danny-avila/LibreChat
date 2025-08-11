@@ -32,13 +32,14 @@ function AuthField({ name, config, hasValue, control, errors }: AuthFieldProps) 
     <div className="space-y-2">
       <div className="flex items-center justify-between">
         <TooltipAnchor
+          enableHTML={true}
           description={config.description || ''}
           render={
             <div className="flex items-center gap-2">
               <Label htmlFor={name} className="text-sm font-medium">
                 {config.title}
               </Label>
-              <CircleHelpIcon className="h-5 w-5 text-text-tertiary" />
+              <CircleHelpIcon className="h-6 w-6 cursor-help text-text-secondary transition-colors hover:text-text-primary" />
             </div>
           }
         />

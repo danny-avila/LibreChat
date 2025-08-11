@@ -316,17 +316,10 @@ const updateAgent = async (searchParameter, updateData, options = {}) => {
     if (shouldCreateVersion) {
       const duplicateVersion = isDuplicateVersion(updateData, versionData, versions, actionsHash);
       if (duplicateVersion && !forceVersion) {
-        const error = new Error(
-          'Duplicate version: This would create a version identical to an existing one',
-        );
-        error.statusCode = 409;
-        error.details = {
-          duplicateVersion,
-          versionIndex: versions.findIndex(
-            (v) => JSON.stringify(duplicateVersion) === JSON.stringify(v),
-          ),
-        };
-        throw error;
+        // No changes detected, return the current agent without creating a new version
+        const agentObj = currentAgent.toObject();
+        agentObj.version = versions.length;
+        return agentObj;
       }
     }
 

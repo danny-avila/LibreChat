@@ -63,13 +63,10 @@ export const checkAccess = async ({
   }
 
   const role = await getRoleByName(user.role);
-  if (role && role.permissions && role.permissions[permissionType]) {
+  const permissionValue = role?.permissions?.[permissionType as keyof typeof role.permissions];
+  if (role && role.permissions && permissionValue) {
     const hasAnyPermission = permissions.every((permission) => {
-      if (
-        role.permissions?.[permissionType as keyof typeof role.permissions]?.[
-          permission as keyof (typeof role.permissions)[typeof permissionType]
-        ]
-      ) {
+      if (permissionValue[permission as keyof typeof permissionValue]) {
         return true;
       }
 

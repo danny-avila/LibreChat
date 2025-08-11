@@ -136,12 +136,7 @@ export type DuplicateVersionError = Error & {
   };
 };
 
-export type UpdateAgentMutationOptions = MutationOptions<
-  Agent,
-  UpdateAgentVariables,
-  unknown,
-  DuplicateVersionError
->;
+export type UpdateAgentMutationOptions = MutationOptions<Agent, UpdateAgentVariables>;
 
 export type DuplicateAgentBody = {
   agent_id: string;
