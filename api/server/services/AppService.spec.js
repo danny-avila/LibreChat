@@ -33,6 +33,7 @@ jest.mock('~/models', () => ({
 }));
 jest.mock('~/models/Role', () => ({
   updateAccessPermissions: jest.fn(),
+  getRoleByName: jest.fn().mockResolvedValue(null),
 }));
 jest.mock('./Config', () => ({
   setCachedTools: jest.fn(),

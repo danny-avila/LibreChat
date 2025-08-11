@@ -5,7 +5,7 @@ jest.mock('~/models', () => ({
 }));
 jest.mock('~/models/Role', () => ({
   updateAccessPermissions: jest.fn(),
-  getRoleByName: jest.fn(),
+  getRoleByName: jest.fn().mockResolvedValue(null),
   updateRoleByName: jest.fn(),
 }));
 
