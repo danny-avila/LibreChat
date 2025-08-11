@@ -320,6 +320,11 @@ async function setupOpenId() {
               } for openidId: ${claims.sub}`,
             );
           }
+          if (user != null && user.provider !== 'openid') {
+            return done(null, false, {
+              message: 'auth_failed',
+            });
+          }
           const userinfo = {
             ...claims,
             ...(await getUserInfo(openidConfig, tokenset.access_token, claims.sub)),

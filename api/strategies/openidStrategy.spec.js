@@ -261,17 +261,20 @@ describe('setupOpenId', () => {
   });
 
   it('should update an existing user on login', async () => {
-    // Arrange – simulate that a user already exists
+    // Arrange – simulate that a user already exists with openid provider
     const existingUser = {
       _id: 'existingUserId',
-      provider: 'local',
+      provider: 'openid',
       email: tokenset.claims().email,
       openidId: '',
       username: '',
       name: '',
     };
     findUser.mockImplementation(async (query) => {
-      if (query.openidId === tokenset.claims().sub || query.email === tokenset.claims().email) {
+      if (
+        query.openidId === tokenset.claims().sub ||
+        (query.email === tokenset.claims().email && query.provider === 'openid')
+      ) {
         return existingUser;
       }
       return null;
@@ -292,6 +295,33 @@ describe('setupOpenId', () => {
         name: `${userinfo.given_name} ${userinfo.family_name}`,
       }),
     );
+  });
+
+  it('should block login when email exists with different provider', async () => {
+    // Arrange – simulate that a user exists with same email but different provider
+    const existingUser = {
+      _id: 'existingUserId',
+      provider: 'google',
+      email: tokenset.claims().email,
+      googleId: 'some-google-id',
+      username: 'existinguser',
+      name: 'Existing User',
+    };
+    findUser.mockImplementation(async (query) => {
+      if (query.email === tokenset.claims().email && !query.provider) {
+        return existingUser;
+      }
+      return null;
+    });
+
+    // Act
+    const result = await validate(tokenset);
+
+    // Assert – verify that the strategy rejects login
+    expect(result.user).toBe(false);
+    expect(result.details.message).toBe('auth_failed');
+    expect(createUser).not.toHaveBeenCalled();
+    expect(updateUser).not.toHaveBeenCalled();
   });
 
   it('should enforce the required role and reject login if missing', async () => {
