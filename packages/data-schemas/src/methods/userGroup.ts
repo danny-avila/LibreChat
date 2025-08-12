@@ -495,14 +495,14 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
    * Returns combined results in TPrincipalSearchResult format without sorting
    * @param searchPattern - The pattern to search for
    * @param limitPerType - Maximum number of results to return
-   * @param typeFilter - Optional filter: PrincipalType.USER, PrincipalType.GROUP, or null for all
+   * @param typeFilter - Optional array of types to filter by, or null for all types
    * @param session - Optional MongoDB session for transactions
    * @returns Array of principals in TPrincipalSearchResult format
    */
   async function searchPrincipals(
     searchPattern: string,
     limitPerType: number = 10,
-    typeFilter: PrincipalType.USER | PrincipalType.GROUP | PrincipalType.ROLE | null = null,
+    typeFilter: Array<PrincipalType.USER | PrincipalType.GROUP | PrincipalType.ROLE> | null = null,
     session?: ClientSession,
   ): Promise<TPrincipalSearchResult[]> {
     if (!searchPattern || searchPattern.trim().length === 0) {
@@ -512,7 +512,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
     const trimmedPattern = searchPattern.trim();
     const promises: Promise<TPrincipalSearchResult[]>[] = [];
 
-    if (!typeFilter || typeFilter === PrincipalType.USER) {
+    if (!typeFilter || typeFilter.includes(PrincipalType.USER)) {
       /** Note: searchUsers is imported from ~/models and needs to be passed in or implemented */
       const userFields = 'name email username avatar provider idOnTheSource';
       /** For now, we'll use a direct query instead of searchUsers */
@@ -547,7 +547,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
       promises.push(Promise.resolve([]));
     }
 
-    if (!typeFilter || typeFilter === PrincipalType.GROUP) {
+    if (!typeFilter || typeFilter.includes(PrincipalType.GROUP)) {
       promises.push(
         findGroupsByNamePattern(trimmedPattern, null, limitPerType, session).then((groups) =>
           groups.map(transformGroupToTPrincipalSearchResult),
@@ -557,7 +557,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
       promises.push(Promise.resolve([]));
     }
 
-    if (!typeFilter || typeFilter === PrincipalType.ROLE) {
+    if (!typeFilter || typeFilter.includes(PrincipalType.ROLE)) {
       const Role = mongoose.models.Role as Model<IRole>;
       if (Role) {
         const regex = new RegExp(trimmedPattern, 'i');
@@ -575,6 +575,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
               type: PrincipalType.ROLE,
               name: role.name,
               source: 'local' as const,
+              idOnTheSource: role.name,
             })),
           ),
         );

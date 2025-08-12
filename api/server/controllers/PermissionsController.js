@@ -364,7 +364,7 @@ const getUserEffectivePermissions = async (req, res) => {
  */
 const searchPrincipals = async (req, res) => {
   try {
-    const { q: query, limit = 20, type } = req.query;
+    const { q: query, limit = 20, types } = req.query;
 
     if (!query || query.trim().length === 0) {
       return res.status(400).json({
@@ -379,22 +379,34 @@ const searchPrincipals = async (req, res) => {
     }
 
     const searchLimit = Math.min(Math.max(1, parseInt(limit) || 10), 50);
-    const typeFilter = [PrincipalType.USER, PrincipalType.GROUP, PrincipalType.ROLE].includes(type)
-      ? type
-      : null;
 
-    const localResults = await searchLocalPrincipals(query.trim(), searchLimit, typeFilter);
+    let typeFilters = null;
+    if (types) {
+      const typesArray = Array.isArray(types) ? types : types.split(',');
+      const validTypes = typesArray.filter((t) =>
+        [PrincipalType.USER, PrincipalType.GROUP, PrincipalType.ROLE].includes(t),
+      );
+      typeFilters = validTypes.length > 0 ? validTypes : null;
+    }
+
+    const localResults = await searchLocalPrincipals(query.trim(), searchLimit, typeFilters);
     let allPrincipals = [...localResults];
 
     const useEntraId = entraIdPrincipalFeatureEnabled(req.user);
 
     if (useEntraId && localResults.length < searchLimit) {
       try {
-        const graphTypeMap = {
-          user: 'users',
-          group: 'groups',
-          null: 'all',
-        };
+        let graphType = 'all';
+        if (typeFilters && typeFilters.length === 1) {
+          const graphTypeMap = {
+            [PrincipalType.USER]: 'users',
+            [PrincipalType.GROUP]: 'groups',
+          };
+          const mappedType = graphTypeMap[typeFilters[0]];
+          if (mappedType) {
+            graphType = mappedType;
+          }
+        }
 
         const authHeader = req.headers.authorization;
         const accessToken =
@@ -405,7 +417,7 @@ const searchPrincipals = async (req, res) => {
             accessToken,
             req.user.openidId,
             query.trim(),
-            graphTypeMap[typeFilter],
+            graphType,
             searchLimit - localResults.length,
           );
 
@@ -436,21 +448,22 @@ const searchPrincipals = async (req, res) => {
       _searchScore: calculateRelevanceScore(item, query.trim()),
     }));
 
-    allPrincipals = sortPrincipalsByRelevance(scoredResults)
+    const finalResults = sortPrincipalsByRelevance(scoredResults)
       .slice(0, searchLimit)
       .map((result) => {
         const { _searchScore, ...resultWithoutScore } = result;
         return resultWithoutScore;
       });
+
     res.status(200).json({
       query: query.trim(),
       limit: searchLimit,
-      type: typeFilter,
-      results: allPrincipals,
-      count: allPrincipals.length,
+      types: typeFilters,
+      results: finalResults,
+      count: finalResults.length,
       sources: {
-        local: allPrincipals.filter((r) => r.source === 'local').length,
-        entra: allPrincipals.filter((r) => r.source === 'entra').length,
+        local: finalResults.filter((r) => r.source === 'local').length,
+        entra: finalResults.filter((r) => r.source === 'entra').length,
       },
     });
   } catch (error) {

@@ -315,15 +315,15 @@ export const memory = (key: string) => `${memories()}/${encodeURIComponent(key)}
 export const memoryPreferences = () => `${memories()}/preferences`;
 
 export const searchPrincipals = (params: q.PrincipalSearchParams) => {
-  const { q: query, limit, type } = params;
+  const { q: query, limit, types } = params;
   let url = `/api/permissions/search-principals?q=${encodeURIComponent(query)}`;
 
   if (limit !== undefined) {
     url += `&limit=${limit}`;
   }
 
-  if (type !== undefined) {
-    url += `&type=${type}`;
+  if (types && types.length > 0) {
+    url += `&types=${types.join(',')}`;
   }
 
   return url;
