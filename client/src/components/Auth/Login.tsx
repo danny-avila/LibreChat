@@ -1,6 +1,7 @@
-import { useOutletContext, useSearchParams } from 'react-router-dom';
 import { useEffect, useState } from 'react';
-import { OpenIDIcon } from '@librechat/client';
+import { ErrorTypes } from 'librechat-data-provider';
+import { OpenIDIcon, useToastContext } from '@librechat/client';
+import { useOutletContext, useSearchParams } from 'react-router-dom';
 import type { TLoginLayoutContext } from '~/common';
 import { ErrorMessage } from '~/components/Auth/ErrorMessage';
 import SocialButton from '~/components/Auth/SocialButton';
@@ -11,6 +12,7 @@ import LoginForm from './LoginForm';
 
 function Login() {
   const localize = useLocalize();
+  const { showToast } = useToastContext();
   const { error, setError, login } = useAuthContext();
   const { startupConfig } = useOutletContext<TLoginLayoutContext>();
 
@@ -20,6 +22,19 @@ function Login() {
 
   // Persist the disable flag locally so that once detected, auto-redirect stays disabled.
   const [isAutoRedirectDisabled, setIsAutoRedirectDisabled] = useState(disableAutoRedirect);
+
+  useEffect(() => {
+    const oauthError = searchParams?.get('error');
+    if (oauthError && oauthError === ErrorTypes.AUTH_FAILED) {
+      showToast({
+        message: localize('com_auth_error_oauth_failed'),
+        status: 'error',
+      });
+      const newParams = new URLSearchParams(searchParams);
+      newParams.delete('error');
+      setSearchParams(newParams, { replace: true });
+    }
+  }, [searchParams, setSearchParams, showToast, localize]);
 
   // Once the disable flag is detected, update local state and remove the parameter from the URL.
   useEffect(() => {

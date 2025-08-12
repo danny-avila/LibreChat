@@ -134,12 +134,12 @@ export const useConfirmTwoFactorMutation = (): UseMutationResult<
 export const useDisableTwoFactorMutation = (): UseMutationResult<
   t.TDisable2FAResponse,
   unknown,
-  void,
+  t.TDisable2FARequest | undefined,
   unknown
 > => {
   const queryClient = useQueryClient();
-  return useMutation(() => dataService.disableTwoFactor(), {
-    onSuccess: (data) => {
+  return useMutation((payload?: t.TDisable2FARequest) => dataService.disableTwoFactor(payload), {
+    onSuccess: () => {
       queryClient.setQueryData([QueryKeys.user, '2fa'], null);
     },
   });

@@ -81,7 +81,9 @@ export function useMCPServerManager() {
     return initialStates;
   });
 
-  const { data: connectionStatusData } = useMCPConnectionStatusQuery();
+  const { data: connectionStatusData } = useMCPConnectionStatusQuery({
+    enabled: !!startupConfig?.mcpServers && Object.keys(startupConfig.mcpServers).length > 0,
+  });
   const connectionStatus = useMemo(
     () => connectionStatusData?.connectionStatus || {},
     [connectionStatusData?.connectionStatus],
@@ -157,6 +159,8 @@ export function useMCPServerManager() {
             if (!currentValues.includes(serverName)) {
               setMCPValues([...currentValues, serverName]);
             }
+
+            await queryClient.invalidateQueries([QueryKeys.tools]);
 
             // This delay is to ensure UI has updated with new connection status before cleanup
             // Otherwise servers will show as disconnected for a second after OAuth flow completes
