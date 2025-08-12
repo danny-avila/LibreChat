@@ -17,7 +17,6 @@ import store from '~/store';
 export default function ChatRoute() {
   const { data: startupConfig } = useGetStartupConfig();
   const { isAuthenticated, user } = useAuthRedirect();
-  const publicMode = (window as any).__NO_AUTH_MODE__ === true || import.meta.env.VITE_NO_AUTH_MODE === 'true';
 
   const setIsTemporary = useRecoilCallback(
     ({ set }) =>
@@ -35,16 +34,14 @@ export default function ChatRoute() {
   const { newConversation } = useNewConvo();
 
   const modelsQuery = useGetModelsQuery({
-    enabled: publicMode ? true : isAuthenticated,
+    enabled: isAuthenticated,
     refetchOnMount: 'always',
   });
   const initialConvoQuery = useGetConvoIdQuery(conversationId, {
     enabled:
-      (publicMode ? true : isAuthenticated) &&
-      conversationId !== Constants.NEW_CONVO &&
-      !hasSetConversation.current,
+      isAuthenticated && conversationId !== Constants.NEW_CONVO && !hasSetConversation.current,
   });
-  const endpointsQuery = useGetEndpointsQuery({ enabled: publicMode ? true : isAuthenticated });
+  const endpointsQuery = useGetEndpointsQuery({ enabled: isAuthenticated });
   const assistantListMap = useAssistantListMap();
 
   const isTemporaryChat = conversation && conversation.expiredAt ? true : false;
@@ -132,7 +129,7 @@ export default function ChatRoute() {
     );
   }
 
-  if (!isAuthenticated && !publicMode) {
+  if (!isAuthenticated) {
     return null;
   }
 

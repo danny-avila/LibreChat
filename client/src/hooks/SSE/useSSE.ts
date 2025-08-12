@@ -48,7 +48,6 @@ export default function useSSE(
   const setActiveRunId = useSetRecoilState(store.activeRunFamily(runIndex));
 
   const { token, isAuthenticated } = useAuthContext();
-  const publicMode = (window as any).__NO_AUTH_MODE__ === true || import.meta.env.VITE_NO_AUTH_MODE === 'true';
   const [completed, setCompleted] = useState(new Set());
   const setAbortScroll = useSetRecoilState(store.abortScrollFamily(runIndex));
   const setShowStopButton = useSetRecoilState(store.showStopButtonByIndex(runIndex));
@@ -103,13 +102,9 @@ export default function useSSE(
 
     let textIndex = null;
 
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (!publicMode) {
-      headers.Authorization = `Bearer ${token}`;
-    }
     const sse = new SSE(payloadData.server, {
       payload: JSON.stringify(payload),
-      headers,
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     });
 
     sse.addEventListener('attachment', (e: MessageEvent) => {

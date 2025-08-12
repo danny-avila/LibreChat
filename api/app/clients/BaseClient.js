@@ -638,11 +638,7 @@ class BaseClient {
     }
 
     if (!isEdited && !this.skipSaveUserMessage) {
-      if (process.env.NO_AUTH_MODE === 'true') {
-        userMessagePromise = Promise.resolve(userMessage);
-      } else {
-        userMessagePromise = this.saveMessageToDatabase(userMessage, saveOptions, user);
-      }
+      userMessagePromise = this.saveMessageToDatabase(userMessage, saveOptions, user);
       this.savedMessageIds.add(userMessage.messageId);
       if (typeof opts?.getReqData === 'function') {
         opts.getReqData({
@@ -654,8 +650,7 @@ class BaseClient {
     const balance = this.options.req?.app?.locals?.balance;
     if (
       balance?.enabled &&
-      supportsBalanceCheck[this.options.endpointType ?? this.options.endpoint] &&
-      process.env.NO_AUTH_MODE !== 'true'
+      supportsBalanceCheck[this.options.endpointType ?? this.options.endpoint]
     ) {
       await checkBalance({
         req: this.options.req,
@@ -774,10 +769,11 @@ class BaseClient {
       }
     }
 
-    responseMessage.databasePromise =
-      process.env.NO_AUTH_MODE === 'true'
-        ? Promise.resolve({ message: responseMessage })
-        : this.saveMessageToDatabase(responseMessage, saveOptions, user);
+    responseMessage.databasePromise = this.saveMessageToDatabase(
+      responseMessage,
+      saveOptions,
+      user,
+    );
     this.savedMessageIds.add(responseMessage.messageId);
     delete responseMessage.tokenCount;
     return responseMessage;
