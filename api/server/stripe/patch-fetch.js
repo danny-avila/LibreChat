@@ -1,6 +1,7 @@
 const { logger } = require('@librechat/data-schemas');
 const nodeFetch = require('node-fetch');
 const secureRequestContext = require('./secure-request-context');
+const { ProxyAgent } = require('proxy-agent');
 
 /**
  * Patches the global fetch to use node-fetch instead of undici
@@ -8,14 +9,16 @@ const secureRequestContext = require('./secure-request-context');
  */
 function patchFetch() {
   try {
-    const enableNodeFetch = process.env.ENABLE_NODE_FETCH === 'true';
-
-    if (enableNodeFetch) {
+    if (process.env.ENABLE_NODE_FETCH === 'true') {
       global.fetch = fetchLike;
-      logger.info('[patchFetch] Successfully set global.fetch to node-fetch');
+      logger.info(
+        '[Stripe:patchFetch] Successfully set global.fetch to node-fetch (ENABLE_NODE_FETCH == true)',
+      );
+    } else {
+      logger.info('[Stripe:patchFetch] Not patching fetch (ENABLE_NODE_FETCH != true)');
     }
   } catch (error) {
-    logger.error(`[patchFetch] Failed to patch fetch: ${error.message}`);
+    logger.error(`[Stripe:patchFetch] Failed to patch fetch: ${error.message}`);
     return;
   }
 }
@@ -31,8 +34,18 @@ function patchFetch() {
  * @param {import("node-fetch").RequestInit} [options]
  * @returns {Promise<Response>}
  */
-function fetchLike(url, options) {
-  return nodeFetch(url, secureRequestContext.attach(options));
+function fetchLike(url, options = {}) {
+  // If HTTP_PROXY is set, use ProxyAgent to handle the request
+  if (process.env.HTTP_PROXY) {
+    logger.info(`[Stripe:patchFetch] Using HTTP_PROXY: ${process.env.HTTP_PROXY}`);
+    options = { ...options, agent: new ProxyAgent() };
+  }
+
+  // Attach the secure request context to the options
+  options = secureRequestContext.attach(options);
+
+  // Use node-fetch to perform the request
+  return nodeFetch(url, options);
 }
 
 module.exports = patchFetch;
