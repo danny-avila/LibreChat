@@ -3,10 +3,15 @@ import React from 'react';
 import debounce from 'lodash/debounce';
 import { useRecoilValue } from 'recoil';
 import { Menu, Rocket } from 'lucide-react';
+import { useParams } from 'react-router-dom';
 import { useForm, FormProvider } from 'react-hook-form';
-import { useParams, useOutletContext } from 'react-router-dom';
 import { Button, Skeleton, useToastContext } from '@librechat/client';
-import { Permissions, PermissionTypes, PermissionBits } from 'librechat-data-provider';
+import {
+  Permissions,
+  ResourceType,
+  PermissionBits,
+  PermissionTypes,
+} from 'librechat-data-provider';
 import type { TCreatePrompt, TPrompt, TPromptGroup } from 'librechat-data-provider';
 import {
   useGetPrompts,
@@ -15,8 +20,9 @@ import {
   useUpdatePromptGroup,
   useMakePromptProduction,
 } from '~/data-provider';
-import { useResourcePermissions, usePromptGroupsNav, useHasAccess, useLocalize } from '~/hooks';
+import { useResourcePermissions, useHasAccess, useLocalize } from '~/hooks';
 import CategorySelector from './Groups/CategorySelector';
+import { usePromptGroupsContext } from '~/Providers';
 import NoPromptGroup from './Groups/NoPromptGroup';
 import PromptVariables from './PromptVariables';
 import { cn, findPromptGroup } from '~/utils';
@@ -173,16 +179,14 @@ const PromptForm = () => {
   const [showSidePanel, setShowSidePanel] = useState(false);
   const sidePanelWidth = '320px';
 
-  // Fetch group early so it is available for later hooks.
   const { data: group, isLoading: isLoadingGroup } = useGetPromptGroup(promptId);
   const { data: prompts = [], isLoading: isLoadingPrompts } = useGetPrompts(
     { groupId: promptId },
     { enabled: !!promptId },
   );
 
-  // Check permissions for the promptGroup
   const { hasPermission, isLoading: permissionsLoading } = useResourcePermissions(
-    'promptGroup',
+    ResourceType.PROMPTGROUP,
     group?._id || '',
   );
 
@@ -206,7 +210,7 @@ const PromptForm = () => {
 
   const selectedPromptId = useMemo(() => selectedPrompt?._id, [selectedPrompt?._id]);
 
-  const { groupsQuery } = useOutletContext<ReturnType<typeof usePromptGroupsNav>>();
+  const { groupsQuery } = usePromptGroupsContext();
 
   const updateGroupMutation = useUpdatePromptGroup({
     onError: () => {
