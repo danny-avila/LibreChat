@@ -28,18 +28,18 @@ export default function Root() {
     return savedNavVisible !== null ? JSON.parse(savedNavVisible) : true;
   });
 
-  const { isAuthenticated, logout } = useAuthContext();
+  const { logout } = useAuthContext();
 
-  // Global health check - runs once per authenticated session
-  useHealthCheck(isAuthenticated);
+  // Global health check - runs once per session (public mode)
+  useHealthCheck(true);
 
-  const assistantsMap = useAssistantsMap({ isAuthenticated });
-  const agentsMap = useAgentsMap({ isAuthenticated });
-  const fileMap = useFileMap({ isAuthenticated });
+  const assistantsMap = useAssistantsMap({ isAuthenticated: true });
+  const agentsMap = useAgentsMap({ isAuthenticated: true });
+  const fileMap = useFileMap({ isAuthenticated: true });
 
   const { data: config } = useGetStartupConfig();
   const { data: termsData } = useUserTermsQuery({
-    enabled: isAuthenticated && config?.interface?.termsOfService?.modalAcceptance === true,
+    enabled: false,
   });
 
   useSearchEnabled(isAuthenticated);
@@ -59,9 +59,6 @@ export default function Root() {
     logout('/login?redirect=false');
   };
 
-  if (!isAuthenticated) {
-    return null;
-  }
 
   return (
     <SetConvoProvider>

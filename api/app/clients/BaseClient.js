@@ -190,14 +190,23 @@ class BaseClient {
     const userMessageId =
       overrideUserMessageId ?? opts.overrideParentMessageId ?? crypto.randomUUID();
     let responseMessageId = opts.responseMessageId ?? crypto.randomUUID();
-    let head = isEdited ? responseMessageId : parentMessageId;
-    this.currentMessages = (await this.loadHistory(conversationId, head)) ?? [];
-    this.conversationId = conversationId;
 
-    if (isEdited && !isContinued) {
-      responseMessageId = crypto.randomUUID();
-      head = responseMessageId;
-      this.currentMessages[this.currentMessages.length - 1].messageId = head;
+    const publicMode = this.options?.req?.app?.locals?.publicMode === true || process.env.PUBLIC_MODE === 'true';
+    const isTemporary = !!this.options?.req?.body?.isTemporary;
+
+    // In public/temporary mode, avoid DB history and persistence
+    if (publicMode || isTemporary) {
+      this.skipSaveConvo = true;
+      this.skipSaveUserMessage = true;
+      this.currentMessages = [];
+    } else {
+      let head = isEdited ? responseMessageId : parentMessageId;
+      this.currentMessages = (await this.loadHistory(conversationId, head)) ?? [];
+      if (isEdited && !isContinued) {
+        responseMessageId = crypto.randomUUID();
+        head = responseMessageId;
+        this.currentMessages[this.currentMessages.length - 1].messageId = head;
+      }
     }
 
     if (opts.isRegenerate && responseMessageId.endsWith('_')) {
@@ -209,7 +218,7 @@ class BaseClient {
     return {
       ...opts,
       user,
-      head,
+      head: isEdited ? this.responseMessageId : parentMessageId,
       conversationId,
       parentMessageId,
       userMessageId,
@@ -902,6 +911,23 @@ class BaseClient {
    * @param {string | null} user
    */
   async saveMessageToDatabase(message, endpointOptions, user = null) {
+    const publicMode = this.options?.req?.app?.locals?.publicMode === true || process.env.PUBLIC_MODE === 'true';
+    const isTemporary = !!this.options?.req?.body?.isTemporary;
+
+    if (publicMode || isTemporary) {
+      // Do not persist; just simulate a conversation record
+      return {
+        message: { ...message },
+        conversation: {
+          conversationId: message.conversationId,
+          endpoint: this.options.endpoint,
+          endpointType: this.options.endpointType,
+          title: 'New Chat',
+          ...endpointOptions,
+        },
+      };
+    }
+
     if (this.user && user !== this.user) {
       throw new Error('User mismatch.');
     }

@@ -19,7 +19,9 @@ const { LIMIT_CONCURRENT_MESSAGES, LIMIT_MESSAGE_IP, LIMIT_MESSAGE_USER } = proc
 
 const router = express.Router();
 
-router.use(requireJwtAuth);
+if (process.env.PUBLIC_MODE !== 'true') {
+  router.use(requireJwtAuth);
+}
 router.use(checkBan);
 router.use(uaParser);
 
