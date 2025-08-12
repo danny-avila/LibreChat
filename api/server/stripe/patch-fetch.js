@@ -24,7 +24,8 @@ function patchFetch() {
  * A wrapper around node-fetch that attaches the secure request context
  *
  * NOTE: Librechat uses several different fetch implementations (e.g. axios, node-fetch, etc.)
- * So we may need to patch each one separately.
+ * So we may need to patch each one separately. This will work for anything that
+ * uses @librechat/agents (e.g. tools)
  *
  * @param {string} url
  * @param {import("node-fetch").RequestInit} [options]

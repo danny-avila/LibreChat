@@ -16,7 +16,7 @@ function middleware(req, _, next) {
   const srcHeader = req.header(SECURE_REQUEST_CONTEXT_HEADER);
   if (srcHeader) {
     logger.info(
-      `[Stripe] Added 'X-Secure-Request-Context-bin: ${maskHeader(srcHeader)}' to the request context`,
+      `[Stripe] Added '${SECURE_REQUEST_CONTEXT_HEADER}: ${maskHeader(srcHeader)}' to the request context`,
     );
   } else {
     logger.warn(`[Stripe] No '${SECURE_REQUEST_CONTEXT_HEADER}' found in the request headers`);
