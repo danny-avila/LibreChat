@@ -4,8 +4,6 @@ const handleText = require('./handleText');
 const sendEmail = require('./sendEmail');
 const queue = require('./queue');
 const files = require('./files');
-const patchFetch = require('./patchFetch');
-
 
 /**
  * Check if email configuration is set
@@ -35,5 +33,4 @@ module.exports = {
   sendEmail,
   ...files,
   ...queue,
-  ...patchFetch,
 };
