@@ -3,30 +3,31 @@ import { useLocation } from 'react-router-dom';
 import { useMediaQuery } from '@librechat/client';
 import PanelNavigation from '~/components/Prompts/Groups/PanelNavigation';
 import ManagePrompts from '~/components/Prompts/ManagePrompts';
+import { usePromptGroupsContext } from '~/Providers';
 import List from '~/components/Prompts/Groups/List';
-import { usePromptGroupsNav } from '~/hooks';
 import { cn } from '~/utils';
 
 export default function GroupSidePanel({
   children,
   isDetailView,
   className = '',
-  /* usePromptGroupsNav */
-  nextPage,
-  prevPage,
-  isFetching,
-  hasNextPage,
-  groupsQuery,
-  promptGroups,
-  hasPreviousPage,
 }: {
   children?: React.ReactNode;
   isDetailView?: boolean;
   className?: string;
-} & ReturnType<typeof usePromptGroupsNav>) {
+}) {
   const location = useLocation();
   const isSmallerScreen = useMediaQuery('(max-width: 1024px)');
   const isChatRoute = useMemo(() => location.pathname?.startsWith('/c/'), [location.pathname]);
+  const {
+    nextPage,
+    prevPage,
+    isFetching,
+    hasNextPage,
+    groupsQuery,
+    promptGroups,
+    hasPreviousPage,
+  } = usePromptGroupsContext();
 
   return (
     <div

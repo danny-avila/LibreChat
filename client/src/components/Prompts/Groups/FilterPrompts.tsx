@@ -1,25 +1,21 @@
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
+import { useRecoilState } from 'recoil';
 import { ListFilter, User, Share2 } from 'lucide-react';
 import { SystemCategories } from 'librechat-data-provider';
-import { useRecoilValue, useSetRecoilState } from 'recoil';
 import { Dropdown, AnimatedSearchInput } from '@librechat/client';
 import type { Option } from '~/common';
-import { usePromptGroupsNav, useLocalize, useCategories } from '~/hooks';
+import { useLocalize, useCategories } from '~/hooks';
+import { usePromptGroupsContext } from '~/Providers';
 import { cn } from '~/utils';
 import store from '~/store';
 
-export default function FilterPrompts({
-  setName,
-  className = '',
-}: Pick<ReturnType<typeof usePromptGroupsNav>, 'setName'> & {
-  className?: string;
-}) {
+export default function FilterPrompts({ className = '' }: { className?: string }) {
   const localize = useLocalize();
-  const [displayName, setDisplayName] = useState('');
-  const setCategory = useSetRecoilState(store.promptsCategory);
-  const categoryFilter = useRecoilValue(store.promptsCategory);
+  const { setName } = usePromptGroupsContext();
   const { categories } = useCategories('h-4 w-4');
+  const [displayName, setDisplayName] = useState('');
   const [isSearching, setIsSearching] = useState(false);
+  const [categoryFilter, setCategory] = useRecoilState(store.promptsCategory);
 
   const filterOptions = useMemo(() => {
     const baseOptions: Option[] = [

@@ -1,6 +1,13 @@
 const express = require('express');
 const { logger } = require('@librechat/data-schemas');
-const { generateCheckAccess } = require('@librechat/api');
+const {
+  generateCheckAccess,
+  markPublicPromptGroups,
+  buildPromptGroupFilter,
+  formatPromptGroupsResponse,
+  createEmptyPromptGroupsResponse,
+  filterAccessibleIdsBySharedLogic,
+} = require('@librechat/api');
 const {
   Permissions,
   SystemRoles,
@@ -11,12 +18,11 @@ const {
   PermissionTypes,
 } = require('librechat-data-provider');
 const {
+  getListPromptGroupsByAccess,
   makePromptProduction,
-  getAllPromptGroups,
   updatePromptGroup,
   deletePromptGroup,
   createPromptGroup,
-  getPromptGroups,
   getPromptGroup,
   deletePrompt,
   getPrompts,
@@ -95,23 +101,48 @@ router.get(
 router.get('/all', async (req, res) => {
   try {
     const userId = req.user.id;
+    const { name, category, ...otherFilters } = req.query;
+    const { filter, searchShared, searchSharedOnly } = buildPromptGroupFilter({
+      name,
+      category,
+      ...otherFilters,
+    });
 
-    // Get promptGroup IDs the user has VIEW access to via ACL
-    const accessibleIds = await findAccessibleResources({
+    let accessibleIds = await findAccessibleResources({
       userId,
       role: req.user.role,
       resourceType: ResourceType.PROMPTGROUP,
       requiredPermissions: PermissionBits.VIEW,
     });
 
-    const groups = await getAllPromptGroups(req, {});
+    const publiclyAccessibleIds = await findPubliclyAccessibleResources({
+      resourceType: ResourceType.PROMPTGROUP,
+      requiredPermissions: PermissionBits.VIEW,
+    });
 
-    // Filter the results to only include accessible groups
-    const accessibleGroups = groups.filter((group) =>
-      accessibleIds.some((id) => id.toString() === group._id.toString()),
-    );
+    const filteredAccessibleIds = await filterAccessibleIdsBySharedLogic({
+      accessibleIds,
+      searchShared,
+      searchSharedOnly,
+      publicPromptGroupIds: publiclyAccessibleIds,
+    });
 
-    res.status(200).send(accessibleGroups);
+    const result = await getListPromptGroupsByAccess({
+      accessibleIds: filteredAccessibleIds,
+      otherParams: filter,
+    });
+
+    if (!result) {
+      return res.status(200).send([]);
+    }
+
+    const { data: promptGroups = [] } = result;
+    if (!promptGroups.length) {
+      return res.status(200).send([]);
+    }
+
+    const groupsWithPublicFlag = markPublicPromptGroups(promptGroups, publiclyAccessibleIds);
+    res.status(200).send(groupsWithPublicFlag);
   } catch (error) {
     logger.error(error);
     res.status(500).send({ error: 'Error getting prompt groups' });
@@ -125,40 +156,66 @@ router.get('/all', async (req, res) => {
 router.get('/groups', async (req, res) => {
   try {
     const userId = req.user.id;
-    const filter = { ...req.query };
-    delete filter.author; // Remove author filter as we'll use ACL
+    const { pageSize, pageNumber, limit, cursor, name, category, ...otherFilters } = req.query;
 
-    // Get promptGroup IDs the user has VIEW access to via ACL
-    const accessibleIds = await findAccessibleResources({
+    const { filter, searchShared, searchSharedOnly } = buildPromptGroupFilter({
+      name,
+      category,
+      ...otherFilters,
+    });
+
+    let actualLimit = limit;
+    let actualCursor = cursor;
+
+    if (pageSize && !limit) {
+      actualLimit = parseInt(pageSize, 10);
+    }
+
+    let accessibleIds = await findAccessibleResources({
       userId,
       role: req.user.role,
       resourceType: ResourceType.PROMPTGROUP,
       requiredPermissions: PermissionBits.VIEW,
     });
 
-    // Get publicly accessible promptGroups
     const publiclyAccessibleIds = await findPubliclyAccessibleResources({
       resourceType: ResourceType.PROMPTGROUP,
       requiredPermissions: PermissionBits.VIEW,
     });
 
-    const groups = await getPromptGroups(req, filter);
+    const filteredAccessibleIds = await filterAccessibleIdsBySharedLogic({
+      accessibleIds,
+      searchShared,
+      searchSharedOnly,
+      publicPromptGroupIds: publiclyAccessibleIds,
+    });
 
-    if (groups.promptGroups && groups.promptGroups.length > 0) {
-      groups.promptGroups = groups.promptGroups.filter((group) =>
-        accessibleIds.some((id) => id.toString() === group._id.toString()),
-      );
+    const result = await getListPromptGroupsByAccess({
+      accessibleIds: filteredAccessibleIds,
+      otherParams: filter,
+      limit: actualLimit,
+      after: actualCursor,
+    });
 
-      // Mark public groups
-      groups.promptGroups = groups.promptGroups.map((group) => {
-        if (publiclyAccessibleIds.some((id) => id.equals(group._id))) {
-          group.isPublic = true;
-        }
-        return group;
-      });
+    if (!result) {
+      const emptyResponse = createEmptyPromptGroupsResponse({ pageNumber, pageSize, actualLimit });
+      return res.status(200).send(emptyResponse);
     }
 
-    res.status(200).send(groups);
+    const { data: promptGroups = [], has_more = false, after = null } = result;
+
+    const groupsWithPublicFlag = markPublicPromptGroups(promptGroups, publiclyAccessibleIds);
+
+    const response = formatPromptGroupsResponse({
+      promptGroups: groupsWithPublicFlag,
+      pageNumber,
+      pageSize,
+      actualLimit,
+      hasMore: has_more,
+      after,
+    });
+
+    res.status(200).send(response);
   } catch (error) {
     logger.error(error);
     res.status(500).send({ error: 'Error getting prompt groups' });
@@ -188,7 +245,6 @@ const createNewPromptGroup = async (req, res) => {
 
     const result = await createPromptGroup(saveData);
 
-    // Grant owner permissions to the creator on the new promptGroup
     if (result.prompt && result.prompt._id && result.prompt.groupId) {
       try {
         await grantPermission({
