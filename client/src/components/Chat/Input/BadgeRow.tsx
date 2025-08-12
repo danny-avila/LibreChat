@@ -10,7 +10,6 @@ import React, {
 } from 'react';
 import { useRecoilValue, useRecoilCallback } from 'recoil';
 import type { LucideIcon } from 'lucide-react';
-import CodeInterpreter from './CodeInterpreter';
 import type { BadgeItem } from '~/common';
 import { useChatBadges } from '~/hooks';
 import { Badge } from '~/components/ui';
@@ -354,7 +353,7 @@ function BadgeRow({
       )}
       {showEphemeralBadges === true && (
         <>
-          <CodeInterpreter conversationId={conversationId} />
+          {/* <CodeInterpreter conversationId={conversationId} /> */}
           <MCPSelect conversationId={conversationId} />
         </>
       )}
