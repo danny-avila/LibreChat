@@ -8,9 +8,6 @@ import { VitePWA } from 'vite-plugin-pwa';
 
 // https://vitejs.dev/config/
 export default defineConfig(({ command }) => ({
-  define: {
-    'import.meta.env.VITE_NO_AUTH_MODE': JSON.stringify(process.env.NO_AUTH_MODE === 'true' ? 'true' : ''),
-  },
   server: {
     host: 'localhost',
     port: 3090,
