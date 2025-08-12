@@ -18,6 +18,8 @@ export * from './share';
 export * from './pluginAuth';
 /* Memories */
 export * from './memory';
+/* Prompts */
+export * from './prompts';
 /* Access Control */
 export * from './accessRole';
 export * from './aclEntry';
