@@ -60,7 +60,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
                 disabled={readonly}
                 value={temperature}
                 onChange={(value) => setTemperature(Number(value))}
-                max={2}
+                max={1.5}
                 min={0}
                 step={0.01}
                 controls={false}
@@ -78,7 +78,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
               value={[temperature ?? 0]}
               onValueChange={(value: number[]) => setTemperature(value[0])}
               onDoubleClick={() => setTemperature(1)}
-              max={2}
+              max={1.5}
               min={0}
               step={0.01}
               className="flex h-4 w-full"

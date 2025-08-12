@@ -129,7 +129,7 @@ export default function Settings({
                 disabled={readonly}
                 value={temperatureValue as number}
                 onChange={setTemperature as (value: ValueType | null) => void}
-                max={2}
+                max={1.5}
                 min={0}
                 step={0.01}
                 controls={false}
@@ -147,7 +147,7 @@ export default function Settings({
               value={[(temperatureValue as number) ?? 1]}
               onValueChange={(value) => setTemperature(value[0])}
               onDoubleClick={() => setTemperature(1)}
-              max={2}
+              max={1.5}
               min={0}
               step={0.01}
               className="flex h-4 w-full"
