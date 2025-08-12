@@ -34,12 +34,18 @@ const startServer = async () => {
   if (typeof Bun !== 'undefined') {
     axios.defaults.headers.common['Accept-Encoding'] = 'gzip';
   }
-  await connectDb();
-
-  logger.info('Connected to MongoDB');
-  indexSync().catch((err) => {
-    logger.error('[indexSync] Background sync failed:', err);
-  });
+  const PUBLIC_MODE = process.env.PUBLIC_MODE === 'true';
+  if (!PUBLIC_MODE) {
+    await connectDb();
+    
+    logger.info('Connected to MongoDB');
+    indexSync().catch((err) => {
+      logger.error('[indexSync] Background sync failed:', err);
+    });
+  } else {
+    // In public mode, disable DB-backed features and mark app as public
+    app.locals.publicMode = true;
+  }
 
   app.disable('x-powered-by');
   app.set('trust proxy', trusted_proxy);
@@ -75,16 +81,30 @@ const startServer = async () => {
   }
 
   /* OAUTH */
-  app.use(passport.initialize());
-  passport.use(jwtLogin());
-  passport.use(passportLogin());
+  if (!PUBLIC_MODE) {
+    app.use(passport.initialize());
+    passport.use(jwtLogin());
+    passport.use(passportLogin());
 
-  /* LDAP Auth */
-  if (process.env.LDAP_URL && process.env.LDAP_USER_SEARCH_BASE) {
-    passport.use(ldapLogin);
+    /* LDAP Auth */
+    if (process.env.LDAP_URL && process.env.LDAP_USER_SEARCH_BASE) {
+      passport.use(ldapLogin);
+    }
+
+    if (isEnabled(ALLOW_SOCIAL_LOGIN)) {
+      await configureSocialLogins(app);
+    }
+  } else {
+    // In public mode, ensure downstream code relying on req.user has a stub
+    app.use((req, _res, next) => {
+      if (!req.user) {
+        req.user = { id: req.ip || 'public' };
+      }
+      next();
+    });
   }
 
-  if (isEnabled(ALLOW_SOCIAL_LOGIN)) {
+  if (!PUBLIC_MODE && isEnabled(ALLOW_SOCIAL_LOGIN)) {
     await configureSocialLogins(app);
   }
 
