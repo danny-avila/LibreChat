@@ -5,6 +5,7 @@ const { logger } = require('~/config');
 
 /**
  * @param {ServerRequest} req
+ * @returns {Promise<TModelsConfig>} The models config.
  */
 const getModelsConfig = async (req) => {
   const cache = getLogStores(CacheKeys.CONFIG_STORE);

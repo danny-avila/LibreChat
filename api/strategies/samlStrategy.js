@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const fetch = require('node-fetch');
 const passport = require('passport');
+const { ErrorTypes } = require('librechat-data-provider');
 const { hashToken, logger } = require('@librechat/data-schemas');
 const { Strategy: SamlStrategy } = require('@node-saml/passport-saml');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
@@ -201,6 +202,15 @@ async function setupSaml() {
             logger.info(
               `[samlStrategy] User ${user ? 'found' : 'not found'} with email: ${profile.email}`,
             );
+          }
+
+          if (user && user.provider !== 'saml') {
+            logger.info(
+              `[samlStrategy] User ${user.email} already exists with provider ${user.provider}`,
+            );
+            return done(null, false, {
+              message: ErrorTypes.AUTH_FAILED,
+            });
           }
 
           const fullName = getFullName(profile);

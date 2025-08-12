@@ -4,12 +4,13 @@ name: Build Helm Charts on Tag
 on:
   push:
     tags:
-      - "*"
+      - "chart-*"
 
 jobs:
   release:
     permissions:
       contents: write
+      packages: write
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -26,15 +27,49 @@ jobs:
         uses: azure/setup-helm@v4
         env:
           GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+      
       - name: Build Subchart Deps
         run: |
-          cd helm/librechat-rag-api
-          helm dependency build 
+          cd helm/librechat
+          helm dependency build  
+          cd ../librechat-rag-api
+          helm dependency build      
 
-      - name: Run chart-releaser
-        uses: helm/chart-releaser-action@v1.6.0
+      - name: Get Chart Version
+        id: chart-version
+        run: |
+          CHART_VERSION=$(echo "${{ github.ref_name }}" | cut -d'-' -f2)
+          echo "CHART_VERSION=${CHART_VERSION}" >> "$GITHUB_OUTPUT"
+
+      # Log in to GitHub Container Registry
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
         with:
-          charts_dir: helm
-          skip_existing: true
-        env:
-          CR_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Run Helm OCI Charts Releaser
+      # This is for the librechat chart
+      - name: Release Helm OCI Charts for librechat
+        uses: appany/helm-oci-chart-releaser@v0.4.2
+        with:
+          name: librechat
+          repository: ${{ github.actor }}/librechat-chart
+          tag: ${{ steps.chart-version.outputs.CHART_VERSION }}
+          path: helm/librechat
+          registry: ghcr.io
+          registry_username: ${{ github.actor }}
+          registry_password: ${{ secrets.GITHUB_TOKEN }}
+      
+      # this is for the librechat-rag-api chart
+      - name: Release Helm OCI Charts for librechat-rag-api
+        uses: appany/helm-oci-chart-releaser@v0.4.2
+        with:
+          name: librechat-rag-api
+          repository: ${{ github.actor }}/librechat-chart
+          tag: ${{ steps.chart-version.outputs.CHART_VERSION }}
+          path: helm/librechat-rag-api
+          registry: ghcr.io
+          registry_username: ${{ github.actor }}
+          registry_password: ${{ secrets.GITHUB_TOKEN }}
