@@ -4,7 +4,7 @@ import { SystemCategories } from 'librechat-data-provider';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
 import { Dropdown, AnimatedSearchInput } from '@librechat/client';
 import type { Option } from '~/common';
-import { usePromptGroupsNav, useLocalize, useCategories } from '~/hooks';
+import { useLocalize, useCategories, usePromptGroupsNav } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
 

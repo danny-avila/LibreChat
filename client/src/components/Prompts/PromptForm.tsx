@@ -6,7 +6,12 @@ import { Menu, Rocket } from 'lucide-react';
 import { useForm, FormProvider } from 'react-hook-form';
 import { useParams, useOutletContext } from 'react-router-dom';
 import { Button, Skeleton, useToastContext } from '@librechat/client';
-import { Permissions, PermissionTypes, PermissionBits } from 'librechat-data-provider';
+import {
+  Permissions,
+  ResourceType,
+  PermissionBits,
+  PermissionTypes,
+} from 'librechat-data-provider';
 import type { TCreatePrompt, TPrompt, TPromptGroup } from 'librechat-data-provider';
 import {
   useGetPrompts,
@@ -173,16 +178,14 @@ const PromptForm = () => {
   const [showSidePanel, setShowSidePanel] = useState(false);
   const sidePanelWidth = '320px';
 
-  // Fetch group early so it is available for later hooks.
   const { data: group, isLoading: isLoadingGroup } = useGetPromptGroup(promptId);
   const { data: prompts = [], isLoading: isLoadingPrompts } = useGetPrompts(
     { groupId: promptId },
     { enabled: !!promptId },
   );
 
-  // Check permissions for the promptGroup
   const { hasPermission, isLoading: permissionsLoading } = useResourcePermissions(
-    'promptGroup',
+    ResourceType.PROMPTGROUP,
     group?._id || '',
   );
 

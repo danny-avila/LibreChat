@@ -3,14 +3,15 @@ import { Outlet, useParams, useNavigate } from 'react-router-dom';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import FilterPrompts from '~/components/Prompts/Groups/FilterPrompts';
 import DashBreadcrumb from '~/routes/Layouts/DashBreadcrumb';
-import { usePromptGroupsNav, useHasAccess } from '~/hooks';
 import GroupSidePanel from './Groups/GroupSidePanel';
+import { usePromptGroupsContext } from '~/Providers';
+import { useHasAccess } from '~/hooks';
 import { cn } from '~/utils';
 
 export default function PromptsView() {
   const params = useParams();
   const navigate = useNavigate();
-  const groupsNav = usePromptGroupsNav();
+  const groupsNav = usePromptGroupsContext();
   const isDetailView = useMemo(() => !!(params.promptId || params['*'] === 'new'), [params]);
   const hasAccess = useHasAccess({
     permissionType: PermissionTypes.PROMPTS,
