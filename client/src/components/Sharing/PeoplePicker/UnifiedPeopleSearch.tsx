@@ -9,7 +9,7 @@ interface UnifiedPeopleSearchProps {
   onAddPeople: (principals: TPrincipal[]) => void;
   placeholder?: string;
   className?: string;
-  typeFilter?: PrincipalType.USER | PrincipalType.GROUP | PrincipalType.ROLE | null;
+  typeFilter?: Array<PrincipalType.USER | PrincipalType.GROUP | PrincipalType.ROLE> | null;
   excludeIds?: (string | undefined)[];
 }
 
@@ -27,7 +27,7 @@ export default function UnifiedPeopleSearch({
     () => ({
       q: searchQuery,
       limit: 30,
-      ...(typeFilter && { type: typeFilter }),
+      ...(typeFilter && typeFilter.length > 0 && { types: typeFilter }),
     }),
     [searchQuery, typeFilter],
   );

@@ -24,21 +24,28 @@ export const usePeoplePickerPermissions = () => {
 
   const hasPeoplePickerAccess = canViewUsers || canViewGroups || canViewRoles;
 
-  const peoplePickerTypeFilter:
-    | PrincipalType.USER
-    | PrincipalType.GROUP
-    | PrincipalType.ROLE
-    | null = useMemo(() => {
-    if (canViewUsers && canViewGroups && canViewRoles) {
-      return null; // All types allowed
-    } else if (canViewUsers) {
-      return PrincipalType.USER;
-    } else if (canViewGroups) {
-      return PrincipalType.GROUP;
-    } else if (canViewRoles) {
-      return PrincipalType.ROLE;
+  const peoplePickerTypeFilter: Array<
+    PrincipalType.USER | PrincipalType.GROUP | PrincipalType.ROLE
+  > | null = useMemo(() => {
+    const allowedTypes: Array<PrincipalType.USER | PrincipalType.GROUP | PrincipalType.ROLE> = [];
+
+    if (canViewUsers) {
+      allowedTypes.push(PrincipalType.USER);
     }
-    return null;
+    if (canViewGroups) {
+      allowedTypes.push(PrincipalType.GROUP);
+    }
+    if (canViewRoles) {
+      allowedTypes.push(PrincipalType.ROLE);
+    }
+
+    // Return null if no types are allowed (will show no results)
+    // or if all types are allowed (no filtering needed)
+    if (allowedTypes.length === 0 || allowedTypes.length === 3) {
+      return null;
+    }
+
+    return allowedTypes;
   }, [canViewUsers, canViewGroups, canViewRoles]);
 
   return {

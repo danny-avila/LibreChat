@@ -234,7 +234,7 @@ describe('Role-based Permissions Integration', () => {
     });
 
     test('should filter search results by role type', async () => {
-      const results = await methods.searchPrincipals('mod', 10, PrincipalType.ROLE);
+      const results = await methods.searchPrincipals('mod', 10, [PrincipalType.ROLE]);
 
       expect(results.every((r) => r.type === PrincipalType.ROLE)).toBe(true);
       expect(results).toHaveLength(1);
@@ -247,7 +247,7 @@ describe('Role-based Permissions Integration', () => {
         await Role.create({ name: `testrole${i}` });
       }
 
-      const results = await methods.searchPrincipals('testrole', 5, PrincipalType.ROLE);
+      const results = await methods.searchPrincipals('testrole', 5, [PrincipalType.ROLE]);
 
       expect(results).toHaveLength(5);
       expect(results.every((r) => r.type === PrincipalType.ROLE)).toBe(true);
@@ -275,14 +275,14 @@ describe('Role-based Permissions Integration', () => {
     });
 
     test('should handle case-insensitive role search', async () => {
-      const results = await methods.searchPrincipals('ADMIN', 10, PrincipalType.ROLE);
+      const results = await methods.searchPrincipals('ADMIN', 10, [PrincipalType.ROLE]);
 
       expect(results).toHaveLength(1);
       expect(results[0].name).toBe('admin');
     });
 
     test('should return empty array for no role matches', async () => {
-      const results = await methods.searchPrincipals('nonexistentrole', 10, PrincipalType.ROLE);
+      const results = await methods.searchPrincipals('nonexistentrole', 10, [PrincipalType.ROLE]);
 
       expect(results).toEqual([]);
     });

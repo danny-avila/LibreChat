@@ -129,13 +129,13 @@ export type MemoriesResponse = {
 export type PrincipalSearchParams = {
   q: string;
   limit?: number;
-  type?: p.PrincipalType.USER | p.PrincipalType.GROUP | p.PrincipalType.ROLE;
+  types?: Array<p.PrincipalType.USER | p.PrincipalType.GROUP | p.PrincipalType.ROLE>;
 };
 
 export type PrincipalSearchResponse = {
   query: string;
   limit: number;
-  type?: p.PrincipalType.USER | p.PrincipalType.GROUP | p.PrincipalType.ROLE;
+  types?: Array<p.PrincipalType.USER | p.PrincipalType.GROUP | p.PrincipalType.ROLE>;
   results: p.TPrincipalSearchResult[];
   count: number;
   sources: {
