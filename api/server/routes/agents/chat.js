@@ -24,10 +24,14 @@ const checkAgentAccess = generateCheckAccess({
   getRoleByName,
 });
 
-router.use(checkAgentAccess);
-router.use(validateConvoAccess);
-router.use(buildEndpointOption);
-router.use(setHeaders);
+if (process.env.NO_AUTH_MODE === 'true') {
+  router.use(buildEndpointOption);
+} else {
+  router.use(checkAgentAccess);
+  router.use(validateConvoAccess);
+  router.use(buildEndpointOption);
+  router.use(setHeaders);
+}
 
 const controller = async (req, res, next) => {
   await AgentController(req, res, next, initializeClient, addTitle);

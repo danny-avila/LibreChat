@@ -209,3 +209,31 @@ We thank [Locize](https://locize.com) for their translation management tools tha
     <img src="https://github.com/user-attachments/assets/d6b70894-6064-475e-bb65-92a9e23e0077" alt="Locize Logo" height="50">
   </a>
 </p>
+
+## Public (No-Auth) Mode
+
+Set the following environment variables for a lightweight deployment without authentication and without a database:
+
+- `NO_AUTH_MODE=true`
+- `ENDPOINTS=google` (optional but recommended)
+
+Behavior in this mode:
+
+- Only Google endpoint is exposed in the UI and API
+- No login/registration pages are required; chat opens directly
+- Messages and user state are stored in the browser (no DB writes)
+- SSE requests do not include Authorization headers
+
+### Render.com
+
+On Render, create a Web Service and configure:
+
+- Build Command: `npm ci && npm run frontend`
+- Start Command: `npm run backend`
+- Environment Variables:
+  - `NO_AUTH_MODE=true`
+  - `ENDPOINTS=google`
+  - `HOST=0.0.0.0`
+  - `PORT=3080`
+  - `GOOGLE_KEY=your_google_api_key_or_set_user_provided`
+  - (optional) `GOOGLE_SERVICE_KEY_FILE` if using Vertex AI

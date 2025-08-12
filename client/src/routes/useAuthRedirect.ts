@@ -6,9 +6,11 @@ export default function useAuthRedirect() {
   const { user, isAuthenticated } = useAuthContext();
   const navigate = useNavigate();
 
+  const publicMode = (window as any).__NO_AUTH_MODE__ === true || import.meta.env.VITE_NO_AUTH_MODE === 'true';
+
   useEffect(() => {
     const timeout = setTimeout(() => {
-      if (!isAuthenticated) {
+      if (!isAuthenticated && !publicMode) {
         navigate('/login', { replace: true });
       }
     }, 300);
@@ -16,10 +18,10 @@ export default function useAuthRedirect() {
     return () => {
       clearTimeout(timeout);
     };
-  }, [isAuthenticated, navigate]);
+  }, [isAuthenticated, navigate, publicMode]);
 
   return {
     user,
-    isAuthenticated,
+    isAuthenticated: publicMode ? true : isAuthenticated,
   };
 }

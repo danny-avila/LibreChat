@@ -22,6 +22,7 @@ const noIndex = require('./middleware/noIndex');
 const routes = require('./routes');
 
 const { PORT, HOST, ALLOW_SOCIAL_LOGIN, DISABLE_COMPRESSION, TRUST_PROXY } = process.env ?? {};
+const NO_AUTH_MODE = process.env.NO_AUTH_MODE === 'true';
 
 // Allow PORT=0 to be used for automatic free port assignment
 const port = isNaN(Number(PORT)) ? 3080 : Number(PORT);
@@ -34,12 +35,15 @@ const startServer = async () => {
   if (typeof Bun !== 'undefined') {
     axios.defaults.headers.common['Accept-Encoding'] = 'gzip';
   }
-  await connectDb();
-
-  logger.info('Connected to MongoDB');
-  indexSync().catch((err) => {
-    logger.error('[indexSync] Background sync failed:', err);
-  });
+  if (!NO_AUTH_MODE) {
+    await connectDb();
+    logger.info('Connected to MongoDB');
+    indexSync().catch((err) => {
+      logger.error('[indexSync] Background sync failed:', err);
+    });
+  } else {
+    logger.warn('NO_AUTH_MODE enabled: skipping DB connection and index sync');
+  }
 
   app.disable('x-powered-by');
   app.set('trust proxy', trusted_proxy);
@@ -76,8 +80,10 @@ const startServer = async () => {
 
   /* OAUTH */
   app.use(passport.initialize());
-  passport.use(jwtLogin());
-  passport.use(passportLogin());
+  if (!NO_AUTH_MODE) {
+    passport.use(jwtLogin());
+    passport.use(passportLogin());
+  }
 
   /* LDAP Auth */
   if (process.env.LDAP_URL && process.env.LDAP_USER_SEARCH_BASE) {

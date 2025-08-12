@@ -17,7 +17,7 @@ function isKnownCustomProvider(provider) {
   );
 }
 
-const providerConfigMap = {
+const baseProviderConfigMap = {
   [Providers.XAI]: initCustom,
   [Providers.OLLAMA]: initCustom,
   [Providers.DEEPSEEK]: initCustom,
@@ -29,6 +29,13 @@ const providerConfigMap = {
   [EModelEndpoint.bedrock]: getBedrockOptions,
 };
 
+const providerConfigMap =
+  process.env.NO_AUTH_MODE === 'true'
+    ? {
+        [EModelEndpoint.google]: initGoogle,
+      }
+    : baseProviderConfigMap;
+
 /**
  * Get the provider configuration and override endpoint based on the provider string
  * @param {string} provider - The provider string
@@ -36,8 +43,7 @@ const providerConfigMap = {
  * getOptions: Function,
  * overrideProvider: string,
  * customEndpointConfig?: TEndpoint
- * }>}
- */
+ * }>}*/
 async function getProviderConfig(provider) {
   let getOptions = providerConfigMap[provider];
   let overrideProvider = provider;
