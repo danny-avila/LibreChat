@@ -841,6 +841,7 @@ class AgentClient extends BaseClient {
           runId: this.responseMessageId,
           signal: abortController.signal,
           customHandlers: this.options.eventHandlers,
+          streaming: !agent.model_parameters?.disableStreaming,
         });
 
         if (!run) {
