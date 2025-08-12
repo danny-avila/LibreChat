@@ -131,6 +131,7 @@
   "com_auth_submit_registration": "Lähetä rekisteröityminen",
   "com_auth_to_reset_your_password": "asettaaksesi uuden salasanan.",
   "com_auth_to_try_again": "kokeillaksesi uudestaan.",
+  "com_auth_two_factor": "Katso kertakäyttöinen koodi tunnistautumissovelluksestasi",
   "com_auth_username": "Käyttäjänimi (valinnainen)",
   "com_auth_username_max_length": "Käyttäjänimi voi olla enintään 20 merkkiä pitkä",
   "com_auth_username_min_length": "Käyttäjänimessä on oltava vähintään 2 merkkiä",

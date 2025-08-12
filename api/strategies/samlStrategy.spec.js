@@ -378,11 +378,11 @@ u7wlOSk+oFzDIO/UILIA
   });
 
   it('should update an existing user on login', async () => {
-    // Set up findUser to return an existing user
+    // Set up findUser to return an existing user with saml provider
     const { findUser } = require('~/models');
     const existingUser = {
       _id: 'existing-user-id',
-      provider: 'local',
+      provider: 'saml',
       email: baseProfile.email,
       samlId: '',
       username: 'oldusername',
@@ -398,6 +398,26 @@ u7wlOSk+oFzDIO/UILIA
     expect(user.username).toBe(baseProfile.username);
     expect(user.name).toBe(`${baseProfile.given_name} ${baseProfile.family_name}`);
     expect(user.email).toBe(baseProfile.email);
+  });
+
+  it('should block login when email exists with different provider', async () => {
+    // Set up findUser to return a user with different provider
+    const { findUser } = require('~/models');
+    const existingUser = {
+      _id: 'existing-user-id',
+      provider: 'google',
+      email: baseProfile.email,
+      googleId: 'some-google-id',
+      username: 'existinguser',
+      name: 'Existing User',
+    };
+    findUser.mockResolvedValue(existingUser);
+
+    const profile = { ...baseProfile };
+    const result = await validate(profile);
+
+    expect(result.user).toBe(false);
+    expect(result.details.message).toBe(require('librechat-data-provider').ErrorTypes.AUTH_FAILED);
   });
 
   it('should attempt to download and save the avatar if picture is provided', async () => {

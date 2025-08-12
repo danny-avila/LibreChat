@@ -1,6 +1,6 @@
 {
   "name": "@librechat/frontend",
-  "version": "v0.8.0-rc1",
+  "version": "v0.8.0-rc2",
   "description": "",
   "type": "module",
   "scripts": {

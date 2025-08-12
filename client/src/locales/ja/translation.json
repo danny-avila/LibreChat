@@ -328,6 +328,7 @@
   "com_nav_auto_transcribe_audio": "オーディオを自動で書き起こす",
   "com_nav_automatic_playback": "最新メッセージを自動再生",
   "com_nav_balance": "バランス",
+  "com_nav_balance_auto_refill_disabled": "自動補充は無効。",
   "com_nav_balance_auto_refill_error": "自動補充設定の読み込み中にエラーが発生しました。",
   "com_nav_balance_auto_refill_settings": "自動補充設定",
   "com_nav_balance_day": "日",

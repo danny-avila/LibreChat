@@ -92,7 +92,7 @@ async function healthCheckPoll(app, retries = 0) {
     if (response.status === 200) {
       return; // App is healthy
     }
-  } catch (error) {
+  } catch {
     // Ignore connection errors during polling
   }
 
