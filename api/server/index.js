@@ -3,9 +3,10 @@ const fs = require('fs');
 const path = require('path');
 require('module-alias')({ base: path.resolve(__dirname, '..') });
 
-// Patch fetch to allow specific ports
-const { patchFetchPorts } = require('./utils/patchFetch');
-patchFetchPorts();
+// <Stripe> Patch fetch to allow specific ports
+const patchFetch = require('./stripe/patch-fetch');
+patchFetch();
+// </Stripe>
 
 const cors = require('cors');
 const axios = require('axios');
@@ -26,6 +27,10 @@ const AppService = require('./services/AppService');
 const staticCache = require('./utils/staticCache');
 const noIndex = require('./middleware/noIndex');
 const routes = require('./routes');
+
+// <Stripe> Middleware to attach secure request context to each request
+const secureRequestContext = require('./stripe/secure-request-context');
+// </Stripe>
 
 const { PORT, HOST, ALLOW_SOCIAL_LOGIN, DISABLE_COMPRESSION, TRUST_PROXY } = process.env ?? {};
 
@@ -64,6 +69,10 @@ const startServer = async () => {
   app.use(mongoSanitize());
   app.use(cors());
   app.use(cookieParser());
+
+  // <Stripe> Middleware to attach secure request context to each request
+  app.use(secureRequestContext.middleware);
+  // </Stripe>
 
   if (!isEnabled(DISABLE_COMPRESSION)) {
     app.use(compression());
