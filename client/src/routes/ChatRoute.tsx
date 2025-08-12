@@ -16,7 +16,7 @@ import store from '~/store';
 
 export default function ChatRoute() {
   const { data: startupConfig } = useGetStartupConfig();
-  const { isAuthenticated, user } = useAuthRedirect();
+  const { user } = useAuthRedirect();
 
   const setIsTemporary = useRecoilCallback(
     ({ set }) =>
@@ -34,14 +34,13 @@ export default function ChatRoute() {
   const { newConversation } = useNewConvo();
 
   const modelsQuery = useGetModelsQuery({
-    enabled: isAuthenticated,
+    enabled: true,
     refetchOnMount: 'always',
   });
   const initialConvoQuery = useGetConvoIdQuery(conversationId, {
-    enabled:
-      isAuthenticated && conversationId !== Constants.NEW_CONVO && !hasSetConversation.current,
+    enabled: conversationId !== Constants.NEW_CONVO && !hasSetConversation.current,
   });
-  const endpointsQuery = useGetEndpointsQuery({ enabled: isAuthenticated });
+  const endpointsQuery = useGetEndpointsQuery({ enabled: true });
   const assistantListMap = useAssistantListMap();
 
   const isTemporaryChat = conversation && conversation.expiredAt ? true : false;
@@ -129,9 +128,6 @@ export default function ChatRoute() {
     );
   }
 
-  if (!isAuthenticated) {
-    return null;
-  }
 
   // if not a conversation
   if (conversation?.conversationId === Constants.SEARCH) {
