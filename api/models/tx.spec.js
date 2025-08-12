@@ -25,8 +25,14 @@ describe('getValueKey', () => {
     expect(getValueKey('gpt-4-some-other-info')).toBe('8k');
   });
 
-  it('should return undefined for model names that do not match any known patterns', () => {
-    expect(getValueKey('gpt-5-some-other-info')).toBeUndefined();
+  it('should return "gpt-5" for model name containing "gpt-5"', () => {
+    expect(getValueKey('gpt-5-some-other-info')).toBe('gpt-5');
+    expect(getValueKey('gpt-5-2025-01-30')).toBe('gpt-5');
+    expect(getValueKey('gpt-5-2025-01-30-0130')).toBe('gpt-5');
+    expect(getValueKey('openai/gpt-5')).toBe('gpt-5');
+    expect(getValueKey('openai/gpt-5-2025-01-30')).toBe('gpt-5');
+    expect(getValueKey('gpt-5-turbo')).toBe('gpt-5');
+    expect(getValueKey('gpt-5-0130')).toBe('gpt-5');
   });
 
   it('should return "gpt-3.5-turbo-1106" for model name containing "gpt-3.5-turbo-1106"', () => {
@@ -82,6 +88,29 @@ describe('getValueKey', () => {
     expect(getValueKey('gpt-4.1-nano-2024-08-06')).toBe('gpt-4.1-nano');
     expect(getValueKey('openai/gpt-4.1-nano')).toBe('gpt-4.1-nano');
     expect(getValueKey('gpt-4.1-nano-0125')).toBe('gpt-4.1-nano');
+  });
+
+  it('should return "gpt-5" for model type of "gpt-5"', () => {
+    expect(getValueKey('gpt-5-2025-01-30')).toBe('gpt-5');
+    expect(getValueKey('gpt-5-2025-01-30-0130')).toBe('gpt-5');
+    expect(getValueKey('openai/gpt-5')).toBe('gpt-5');
+    expect(getValueKey('openai/gpt-5-2025-01-30')).toBe('gpt-5');
+    expect(getValueKey('gpt-5-turbo')).toBe('gpt-5');
+    expect(getValueKey('gpt-5-0130')).toBe('gpt-5');
+  });
+
+  it('should return "gpt-5-mini" for model type of "gpt-5-mini"', () => {
+    expect(getValueKey('gpt-5-mini-2025-01-30')).toBe('gpt-5-mini');
+    expect(getValueKey('openai/gpt-5-mini')).toBe('gpt-5-mini');
+    expect(getValueKey('gpt-5-mini-0130')).toBe('gpt-5-mini');
+    expect(getValueKey('gpt-5-mini-2025-01-30-0130')).toBe('gpt-5-mini');
+  });
+
+  it('should return "gpt-5-nano" for model type of "gpt-5-nano"', () => {
+    expect(getValueKey('gpt-5-nano-2025-01-30')).toBe('gpt-5-nano');
+    expect(getValueKey('openai/gpt-5-nano')).toBe('gpt-5-nano');
+    expect(getValueKey('gpt-5-nano-0130')).toBe('gpt-5-nano');
+    expect(getValueKey('gpt-5-nano-2025-01-30-0130')).toBe('gpt-5-nano');
   });
 
   it('should return "gpt-4o" for model type of "gpt-4o"', () => {
@@ -207,6 +236,48 @@ describe('getMultiplier', () => {
     );
   });
 
+  it('should return the correct multiplier for gpt-5', () => {
+    const valueKey = getValueKey('gpt-5-2025-01-30');
+    expect(getMultiplier({ valueKey, tokenType: 'prompt' })).toBe(tokenValues['gpt-5'].prompt);
+    expect(getMultiplier({ valueKey, tokenType: 'completion' })).toBe(
+      tokenValues['gpt-5'].completion,
+    );
+    expect(getMultiplier({ model: 'gpt-5-preview', tokenType: 'prompt' })).toBe(
+      tokenValues['gpt-5'].prompt,
+    );
+    expect(getMultiplier({ model: 'openai/gpt-5', tokenType: 'completion' })).toBe(
+      tokenValues['gpt-5'].completion,
+    );
+  });
+
+  it('should return the correct multiplier for gpt-5-mini', () => {
+    const valueKey = getValueKey('gpt-5-mini-2025-01-30');
+    expect(getMultiplier({ valueKey, tokenType: 'prompt' })).toBe(tokenValues['gpt-5-mini'].prompt);
+    expect(getMultiplier({ valueKey, tokenType: 'completion' })).toBe(
+      tokenValues['gpt-5-mini'].completion,
+    );
+    expect(getMultiplier({ model: 'gpt-5-mini-preview', tokenType: 'prompt' })).toBe(
+      tokenValues['gpt-5-mini'].prompt,
+    );
+    expect(getMultiplier({ model: 'openai/gpt-5-mini', tokenType: 'completion' })).toBe(
+      tokenValues['gpt-5-mini'].completion,
+    );
+  });
+
+  it('should return the correct multiplier for gpt-5-nano', () => {
+    const valueKey = getValueKey('gpt-5-nano-2025-01-30');
+    expect(getMultiplier({ valueKey, tokenType: 'prompt' })).toBe(tokenValues['gpt-5-nano'].prompt);
+    expect(getMultiplier({ valueKey, tokenType: 'completion' })).toBe(
+      tokenValues['gpt-5-nano'].completion,
+    );
+    expect(getMultiplier({ model: 'gpt-5-nano-preview', tokenType: 'prompt' })).toBe(
+      tokenValues['gpt-5-nano'].prompt,
+    );
+    expect(getMultiplier({ model: 'openai/gpt-5-nano', tokenType: 'completion' })).toBe(
+      tokenValues['gpt-5-nano'].completion,
+    );
+  });
+
   it('should return the correct multiplier for gpt-4o', () => {
     const valueKey = getValueKey('gpt-4o-2024-08-06');
     expect(getMultiplier({ valueKey, tokenType: 'prompt' })).toBe(tokenValues['gpt-4o'].prompt);
@@ -307,9 +378,21 @@ describe('getMultiplier', () => {
   });
 
   it('should return defaultRate if derived valueKey does not match any known patterns', () => {
-    expect(getMultiplier({ tokenType: 'prompt', model: 'gpt-5-some-other-info' })).toBe(
+    expect(getMultiplier({ tokenType: 'prompt', model: 'gpt-10-some-other-info' })).toBe(
       defaultRate,
     );
+  });
+
+  it('should return correct multipliers for GPT-OSS models', () => {
+    const models = ['gpt-oss-20b', 'gpt-oss-120b'];
+    models.forEach((key) => {
+      const expectedPrompt = tokenValues[key].prompt;
+      const expectedCompletion = tokenValues[key].completion;
+      expect(getMultiplier({ valueKey: key, tokenType: 'prompt' })).toBe(expectedPrompt);
+      expect(getMultiplier({ valueKey: key, tokenType: 'completion' })).toBe(expectedCompletion);
+      expect(getMultiplier({ model: key, tokenType: 'prompt' })).toBe(expectedPrompt);
+      expect(getMultiplier({ model: key, tokenType: 'completion' })).toBe(expectedCompletion);
+    });
   });
 });
 

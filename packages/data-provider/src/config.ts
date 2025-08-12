@@ -727,6 +727,7 @@ export const memorySchema = z.object({
   disabled: z.boolean().optional(),
   validKeys: z.array(z.string()).optional(),
   tokenLimit: z.number().optional(),
+  charLimit: z.number().optional().default(10000),
   personalize: z.boolean().default(true),
   messageWindowSize: z.number().optional().default(5),
   agent: z
@@ -1346,6 +1347,22 @@ export enum ErrorTypes {
    * Invalid Agent Provider (excluded by Admin)
    */
   INVALID_AGENT_PROVIDER = 'invalid_agent_provider',
+  /**
+   * Missing model selection
+   */
+  MISSING_MODEL = 'missing_model',
+  /**
+   * Models configuration not loaded
+   */
+  MODELS_NOT_LOADED = 'models_not_loaded',
+  /**
+   * Endpoint models not loaded
+   */
+  ENDPOINT_MODELS_NOT_LOADED = 'endpoint_models_not_loaded',
+  /**
+   * Generic Authentication failure
+   */
+  AUTH_FAILED = 'auth_failed',
 }
 
 /**
@@ -1464,7 +1481,7 @@ export enum TTSProviders {
 /** Enum for app-wide constants */
 export enum Constants {
   /** Key for the app's version. */
-  VERSION = 'v0.8.0-rc1',
+  VERSION = 'v0.8.0-rc2',
   /** Key for the Custom Config's version (librechat.yaml). */
   CONFIG_VERSION = '1.2.8',
   /** Standard value for the first message's `parentMessageId` value, to indicate no parent exists. */

@@ -1,4 +1,4 @@
-const { matchModelName } = require('../utils');
+const { matchModelName } = require('../utils/tokens');
 const defaultRate = 6;
 
 /**
@@ -87,6 +87,9 @@ const tokenValues = Object.assign(
     'gpt-4.1': { prompt: 2, completion: 8 },
     'gpt-4.5': { prompt: 75, completion: 150 },
     'gpt-4o-mini': { prompt: 0.15, completion: 0.6 },
+    'gpt-5': { prompt: 1.25, completion: 10 },
+    'gpt-5-mini': { prompt: 0.25, completion: 2 },
+    'gpt-5-nano': { prompt: 0.05, completion: 0.4 },
     'gpt-4o': { prompt: 2.5, completion: 10 },
     'gpt-4o-2024-05-13': { prompt: 5, completion: 15 },
     'gpt-4-1106': { prompt: 10, completion: 30 },
@@ -147,6 +150,9 @@ const tokenValues = Object.assign(
     codestral: { prompt: 0.3, completion: 0.9 },
     'ministral-8b': { prompt: 0.1, completion: 0.1 },
     'ministral-3b': { prompt: 0.04, completion: 0.04 },
+    // GPT-OSS models
+    'gpt-oss-20b': { prompt: 0.05, completion: 0.2 },
+    'gpt-oss-120b': { prompt: 0.15, completion: 0.6 },
   },
   bedrockValues,
 );
@@ -214,6 +220,12 @@ const getValueKey = (model, endpoint) => {
     return 'gpt-4.1';
   } else if (modelName.includes('gpt-4o-2024-05-13')) {
     return 'gpt-4o-2024-05-13';
+  } else if (modelName.includes('gpt-5-nano')) {
+    return 'gpt-5-nano';
+  } else if (modelName.includes('gpt-5-mini')) {
+    return 'gpt-5-mini';
+  } else if (modelName.includes('gpt-5')) {
+    return 'gpt-5';
   } else if (modelName.includes('gpt-4o-mini')) {
     return 'gpt-4o-mini';
   } else if (modelName.includes('gpt-4o')) {

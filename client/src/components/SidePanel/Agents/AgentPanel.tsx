@@ -1,5 +1,5 @@
 import { Plus } from 'lucide-react';
-import React, { useMemo, useCallback } from 'react';
+import React, { useMemo, useCallback, useRef } from 'react';
 import { Button, useToastContext } from '@librechat/client';
 import { useWatch, useForm, FormProvider } from 'react-hook-form';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
@@ -54,6 +54,7 @@ export default function AgentPanel() {
 
   const { control, handleSubmit, reset } = methods;
   const agent_id = useWatch({ control, name: 'id' });
+  const previousVersionRef = useRef<number | undefined>();
 
   const allowedProviders = useMemo(
     () => new Set(agentsConfig?.allowedProviders),
@@ -77,50 +78,29 @@ export default function AgentPanel() {
 
   /* Mutations */
   const update = useUpdateAgentMutation({
+    onMutate: () => {
+      // Store the current version before mutation
+      previousVersionRef.current = agentQuery.data?.version;
+    },
     onSuccess: (data) => {
-      showToast({
-        message: `${localize('com_assistants_update_success')} ${
-          data.name ?? localize('com_ui_agent')
-        }`,
-      });
+      // Check if agent version is the same (no changes were made)
+      if (previousVersionRef.current !== undefined && data.version === previousVersionRef.current) {
+        showToast({
+          message: localize('com_ui_no_changes'),
+          status: 'info',
+        });
+      } else {
+        showToast({
+          message: `${localize('com_assistants_update_success')} ${
+            data.name ?? localize('com_ui_agent')
+          }`,
+        });
+      }
+      // Clear the ref after use
+      previousVersionRef.current = undefined;
     },
     onError: (err) => {
-      const error = err as Error & {
-        statusCode?: number;
-        details?: { duplicateVersion?: any; versionIndex?: number };
-        response?: { status?: number; data?: any };
-      };
-
-      const isDuplicateVersionError =
-        (error.statusCode === 409 && error.details?.duplicateVersion) ||
-        (error.response?.status === 409 && error.response?.data?.details?.duplicateVersion);
-
-      if (isDuplicateVersionError) {
-        let versionIndex: number | undefined = undefined;
-
-        if (error.details?.versionIndex !== undefined) {
-          versionIndex = error.details.versionIndex;
-        } else if (error.response?.data?.details?.versionIndex !== undefined) {
-          versionIndex = error.response.data.details.versionIndex;
-        }
-
-        if (versionIndex === undefined || versionIndex < 0) {
-          showToast({
-            message: localize('com_agents_update_error'),
-            status: 'error',
-            duration: 5000,
-          });
-        } else {
-          showToast({
-            message: localize('com_ui_agent_version_duplicate', { versionIndex: versionIndex + 1 }),
-            status: 'error',
-            duration: 10000,
-          });
-        }
-
-        return;
-      }
-
+      const error = err as Error;
       showToast({
         message: `${localize('com_agents_update_error')}${
           error.message ? ` ${localize('com_ui_error')}: ${error.message}` : ''

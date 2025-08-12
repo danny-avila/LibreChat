@@ -15,12 +15,16 @@ export * from './crypto';
 export * from './flow/manager';
 /* Middleware */
 export * from './middleware';
+/* Memory */
+export * from './memory';
 /* Agents */
 export * from './agents';
 /* Endpoints */
 export * from './endpoints';
 /* Files */
 export * from './files';
+/* Tools */
+export * from './tools';
 /* web search */
 export * from './web';
 /* types */

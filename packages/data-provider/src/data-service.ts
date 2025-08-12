@@ -815,8 +815,8 @@ export function confirmTwoFactor(payload: t.TVerify2FARequest): Promise<t.TVerif
   return request.post(endpoints.confirmTwoFactor(), payload);
 }
 
-export function disableTwoFactor(): Promise<t.TDisable2FAResponse> {
-  return request.post(endpoints.disableTwoFactor());
+export function disableTwoFactor(payload?: t.TDisable2FARequest): Promise<t.TDisable2FAResponse> {
+  return request.post(endpoints.disableTwoFactor(), payload);
 }
 
 export function regenerateBackupCodes(): Promise<t.TRegenerateBackupCodesResponse> {
