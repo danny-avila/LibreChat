@@ -1,7 +1,8 @@
 const fetch = require('node-fetch');
 const jwtDecode = require('jsonwebtoken/decode');
-const { setupOpenId } = require('./openidStrategy');
+const { ErrorTypes } = require('librechat-data-provider');
 const { findUser, createUser, updateUser } = require('~/models');
+const { setupOpenId } = require('./openidStrategy');
 
 // --- Mocks ---
 jest.mock('node-fetch');
@@ -50,7 +51,7 @@ jest.mock('openid-client', () => {
       issuer: 'https://fake-issuer.com',
       // Add any other properties needed by the implementation
     }),
-    fetchUserInfo: jest.fn().mockImplementation((config, accessToken, sub) => {
+    fetchUserInfo: jest.fn().mockImplementation(() => {
       // Only return additional properties, but don't override any claims
       return Promise.resolve({});
     }),
@@ -261,17 +262,20 @@ describe('setupOpenId', () => {
   });
 
   it('should update an existing user on login', async () => {
-    // Arrange – simulate that a user already exists
+    // Arrange – simulate that a user already exists with openid provider
     const existingUser = {
       _id: 'existingUserId',
-      provider: 'local',
+      provider: 'openid',
       email: tokenset.claims().email,
       openidId: '',
       username: '',
       name: '',
     };
     findUser.mockImplementation(async (query) => {
-      if (query.openidId === tokenset.claims().sub || query.email === tokenset.claims().email) {
+      if (
+        query.openidId === tokenset.claims().sub ||
+        (query.email === tokenset.claims().email && query.provider === 'openid')
+      ) {
         return existingUser;
       }
       return null;
@@ -294,12 +298,38 @@ describe('setupOpenId', () => {
     );
   });
 
+  it('should block login when email exists with different provider', async () => {
+    // Arrange – simulate that a user exists with same email but different provider
+    const existingUser = {
+      _id: 'existingUserId',
+      provider: 'google',
+      email: tokenset.claims().email,
+      googleId: 'some-google-id',
+      username: 'existinguser',
+      name: 'Existing User',
+    };
+    findUser.mockImplementation(async (query) => {
+      if (query.email === tokenset.claims().email && !query.provider) {
+        return existingUser;
+      }
+      return null;
+    });
+
+    // Act
+    const result = await validate(tokenset);
+
+    // Assert – verify that the strategy rejects login
+    expect(result.user).toBe(false);
+    expect(result.details.message).toBe(ErrorTypes.AUTH_FAILED);
+    expect(createUser).not.toHaveBeenCalled();
+    expect(updateUser).not.toHaveBeenCalled();
+  });
+
   it('should enforce the required role and reject login if missing', async () => {
     // Arrange – simulate a token without the required role.
     jwtDecode.mockReturnValue({
       roles: ['SomeOtherRole'],
     });
-    const userinfo = tokenset.claims();
 
     // Act
     const { user, details } = await validate(tokenset);
@@ -310,9 +340,6 @@ describe('setupOpenId', () => {
   });
 
   it('should attempt to download and save the avatar if picture is provided', async () => {
-    // Arrange – ensure userinfo contains a picture URL
-    const userinfo = tokenset.claims();
-
     // Act
     const { user } = await validate(tokenset);
 
