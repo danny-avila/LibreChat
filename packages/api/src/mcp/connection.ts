@@ -62,7 +62,6 @@ export class MCPConnection extends EventEmitter {
   private transport: Transport | null = null; // Make this nullable
   private connectionState: t.ConnectionState = 'disconnected';
   private connectPromise: Promise<void> | null = null;
-  private readonly MAX_RECONNECT_ATTEMPTS = 3;
   public readonly serverName: string;
   private shouldStopReconnecting = false;
   private isReconnecting = false;
@@ -108,6 +107,18 @@ export class MCPConnection extends EventEmitter {
   private getLogPrefix(): string {
     const userPart = this.userId ? `[User: ${this.userId}]` : '';
     return `[MCP]${userPart}[${this.serverName}]`;
+  }
+
+  private get maxReconnectAttempts(): number {
+    return this.options.maxReconnectAttempts ?? 3;
+  }
+
+  private get maxBackoffMs(): number {
+    return this.options.maxBackoffMs ?? 30000;
+  }
+
+  private get reconnectBackoffMs(): number {
+    return this.options.reconnectBackoffMs ?? 1000;
   }
 
   public static getInstance(
@@ -310,32 +321,49 @@ export class MCPConnection extends EventEmitter {
     }
 
     this.isReconnecting = true;
-    const backoffDelay = (attempt: number) => Math.min(1000 * Math.pow(2, attempt), 30000);
+    const backoffDelay = (attempt: number) =>
+      Math.min(this.reconnectBackoffMs * Math.pow(2, attempt), this.maxBackoffMs);
 
     try {
+      const maxAttempts = this.maxReconnectAttempts;
+      if (maxAttempts === 0) {
+        return;
+      }
+
       while (
-        this.reconnectAttempts < this.MAX_RECONNECT_ATTEMPTS &&
-        !(this.shouldStopReconnecting as boolean)
+        (maxAttempts === -1 || this.reconnectAttempts < maxAttempts) &&
+        !this.shouldStopReconnecting
       ) {
         this.reconnectAttempts++;
         const delay = backoffDelay(this.reconnectAttempts);
 
+        const maxAttemptsLabel = maxAttempts === -1 ? 'infinity' : maxAttempts;
         logger.info(
-          `${this.getLogPrefix()} Reconnecting ${this.reconnectAttempts}/${this.MAX_RECONNECT_ATTEMPTS} (delay: ${delay}ms)`,
+          `${this.getLogPrefix()} Reconnecting ${
+            this.reconnectAttempts
+          }/${maxAttemptsLabel} (delay: ${delay}ms)`,
         );
 
         await new Promise((resolve) => setTimeout(resolve, delay));
 
+        // Check if we should stop before attempting connection
+        if (this.shouldStopReconnecting) {
+          logger.info(`${this.getLogPrefix()} Reconnection cancelled during delay`);
+          return;
+        }
+
         try {
           await this.connect();
+          // Connection successful - reset attempts and exit
           this.reconnectAttempts = 0;
+          logger.info(`${this.getLogPrefix()} Reconnection successful`);
           return;
         } catch (error) {
           logger.error(`${this.getLogPrefix()} Reconnection attempt failed:`, error);
 
           if (
-            this.reconnectAttempts === this.MAX_RECONNECT_ATTEMPTS ||
-            (this.shouldStopReconnecting as boolean)
+            (maxAttempts !== -1 && this.reconnectAttempts >= maxAttempts) ||
+            this.shouldStopReconnecting
           ) {
             logger.error(`${this.getLogPrefix()} Stopping reconnection attempts`);
             return;
@@ -368,10 +396,16 @@ export class MCPConnection extends EventEmitter {
 
     this.emit('connectionChange', 'connecting');
 
+    // Reset reconnection flags when starting a new connection attempt
+    this.shouldStopReconnecting = false;
+
     this.connectPromise = (async () => {
       try {
+        logger.debug(`${this.getLogPrefix()} Starting connection process`);
+
         if (this.transport) {
           try {
+            logger.debug(`${this.getLogPrefix()} Closing existing transport`);
             await this.client.close();
             this.transport = null;
           } catch (error) {
@@ -379,10 +413,15 @@ export class MCPConnection extends EventEmitter {
           }
         }
 
+        logger.debug(`${this.getLogPrefix()} Constructing transport`);
         this.transport = this.constructTransport(this.options);
         this.setupTransportDebugHandlers();
 
         const connectTimeout = this.options.initTimeout ?? 120000;
+        logger.debug(
+          `${this.getLogPrefix()} Attempting client connection with timeout ${connectTimeout}ms`,
+        );
+
         await Promise.race([
           this.client.connect(this.transport),
           new Promise((_resolve, reject) =>
@@ -393,6 +432,9 @@ export class MCPConnection extends EventEmitter {
           ),
         ]);
 
+        logger.debug(
+          `${this.getLogPrefix()} Client connection successful, setting state to connected`,
+        );
         this.connectionState = 'connected';
         this.emit('connectionChange', 'connected');
         this.reconnectAttempts = 0;
@@ -509,7 +551,7 @@ export class MCPConnection extends EventEmitter {
 
   async connect(): Promise<void> {
     try {
-      await this.disconnect();
+      await this.disconnect(false); // Don't stop reconnection during connection setup
       await this.connectClient();
       if (!(await this.isConnected())) {
         throw new Error('Connection not established');
@@ -518,6 +560,12 @@ export class MCPConnection extends EventEmitter {
       logger.error(`${this.getLogPrefix()} Connection failed:`, error);
       throw error;
     }
+  }
+
+  /** Stop any ongoing reconnection attempts */
+  public stopReconnection(): void {
+    this.shouldStopReconnecting = true;
+    logger.info(`${this.getLogPrefix()} Reconnection attempts stopped`);
   }
 
   private setupTransportErrorHandlers(transport: Transport): void {
@@ -537,8 +585,13 @@ export class MCPConnection extends EventEmitter {
     };
   }
 
-  public async disconnect(): Promise<void> {
+  public async disconnect(stopReconnecting: boolean = true): Promise<void> {
     try {
+      // Only stop reconnection attempts if this is an intentional disconnect
+      if (stopReconnecting) {
+        this.shouldStopReconnecting = true;
+      }
+
       if (this.transport) {
         await this.client.close();
         this.transport = null;
@@ -586,12 +639,17 @@ export class MCPConnection extends EventEmitter {
   public async isConnected(): Promise<boolean> {
     // First check if we're in a connected state
     if (this.connectionState !== 'connected') {
+      logger.debug(
+        `${this.getLogPrefix()} Connection state is not 'connected': ${this.connectionState}`,
+      );
       return false;
     }
 
     try {
       // Try ping first as it's the lightest check
+      logger.debug(`${this.getLogPrefix()} Attempting ping to verify connection`);
       await this.client.ping();
+      logger.debug(`${this.getLogPrefix()} Ping successful`);
       return this.connectionState === 'connected';
     } catch (error) {
       // Check if the error is because ping is not supported (method not found)
@@ -614,10 +672,13 @@ export class MCPConnection extends EventEmitter {
       try {
         // Get server capabilities to verify connection is truly active
         const capabilities = this.client.getServerCapabilities();
+        logger.debug(`${this.getLogPrefix()} Server capabilities:`, capabilities);
 
         // If we have capabilities, try calling a supported method to verify connection
         if (capabilities?.tools) {
+          logger.debug(`${this.getLogPrefix()} Attempting listTools to verify connection`);
           await this.client.listTools();
+          logger.debug(`${this.getLogPrefix()} listTools successful`);
           return this.connectionState === 'connected';
         } else if (capabilities?.resources) {
           await this.client.listResources();
