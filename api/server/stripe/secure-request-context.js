@@ -1,7 +1,18 @@
 const { logger } = require('@librechat/data-schemas');
 const { AsyncLocalStorage } = require('async_hooks');
+
+/**
+ * AsyncLocalStorage is a new-ish Node feature (v13+) that allows you to attach
+ * arbitrary data to a request. This is conceptually similar to Context in React.
+ * This is an in-memory storage built-into node.js itself that's tied to the
+ * lifecycle of the request. This allows us not to need to make much deeper code
+ * modifications to LibreChat to pass request context through the layers.
+ */
 const asyncLocalStorage = new AsyncLocalStorage();
 
+/**
+ * The header name to use for the secure request context
+ */
 const SECURE_REQUEST_CONTEXT_HEADER = process.env.SECURE_REQUEST_CONTEXT_HEADER;
 
 /**
