@@ -67,21 +67,19 @@ librechat:
 
     endpoints:
       azureOpenAI:
-        titleModel: gpt-35-turbo
+        titleModel: gpt-4.1-mini
         groups:
           - group: nodeenergyopenAI
             apiKey: "${AZURE_API_KEY}"
             instanceName: nodeenergy
             version: 2024-12-01-preview
             models:
-              gpt-35-turbo:
-                deploymentName: gpt-35-turbo-deploy
               gpt-4.1-mini:
-                deploymentName: gpt-4.1-mini-deploy
+                deploymentName: gpt-4.1-mini-deployment
               gpt-4.1-nano:
-                deploymentName: gpt-4.1-nano-deploy
+                deploymentName: gpt-4.1-nano-deployment
               o4-mini:
-                deploymentName: o4-mini-deploy
+                deploymentName: o4-mini-deployment
 
 
   # name of existing Yaml configmap, key must be librechat.yaml
