@@ -1,0 +1,287 @@
+import { readFileSync } from 'fs';
+import { join } from 'path';
+import { logger } from '@librechat/data-schemas';
+import { load as yamlLoad } from 'js-yaml';
+import { ConnectionsRepository } from '../ConnectionsRepository';
+import { MCPServersRegistry } from '../MCPServersRegistry';
+import { detectOAuthRequirement } from '~/mcp/oauth';
+import { MCPConnection } from '../connection';
+import type * as t from '../types';
+
+// Mock external dependencies
+jest.mock('../oauth/detectOAuth');
+jest.mock('../ConnectionsRepository');
+jest.mock('../connection');
+jest.mock('@librechat/data-schemas', () => ({
+  logger: {
+    info: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn(),
+    debug: jest.fn(),
+  },
+}));
+
+// Mock processMCPEnv to verify it's called and adds a processed marker
+jest.mock('~/utils', () => ({
+  ...jest.requireActual('~/utils'),
+  processMCPEnv: jest.fn((config) => ({
+    ...config,
+    _processed: true, // Simple marker to verify processing occurred
+  })),
+}));
+
+const mockDetectOAuthRequirement = detectOAuthRequirement as jest.MockedFunction<
+  typeof detectOAuthRequirement
+>;
+const mockLogger = logger as jest.Mocked<typeof logger>;
+
+describe('MCPServersRegistry - Initialize Function', () => {
+  let rawConfigs: t.MCPServers;
+  let expectedParsedConfigs: Record<string, any>;
+  let mockConnectionsRepo: jest.Mocked<ConnectionsRepository>;
+  let mockConnections: Map<string, jest.Mocked<MCPConnection>>;
+
+  beforeEach(() => {
+    // Load fixtures
+    const rawConfigsPath = join(__dirname, 'fixtures', 'MCPServersRegistry.rawConfigs.yml');
+    const parsedConfigsPath = join(__dirname, 'fixtures', 'MCPServersRegistry.parsedConfigs.yml');
+
+    rawConfigs = yamlLoad(readFileSync(rawConfigsPath, 'utf8')) as t.MCPServers;
+    expectedParsedConfigs = yamlLoad(readFileSync(parsedConfigsPath, 'utf8')) as Record<
+      string,
+      any
+    >;
+
+    // Setup mock connections
+    mockConnections = new Map();
+    const serverNames = Object.keys(rawConfigs);
+
+    serverNames.forEach((serverName) => {
+      const mockConnection = {
+        client: {
+          listTools: jest.fn(),
+          getInstructions: jest.fn(),
+          getServerCapabilities: jest.fn(),
+        },
+      } as unknown as jest.Mocked<MCPConnection>;
+
+      // Setup mock responses based on expected configs
+      const expectedConfig = expectedParsedConfigs[serverName];
+
+      // Mock listTools response
+      if (expectedConfig.tools) {
+        const toolNames = expectedConfig.tools.split(', ');
+        const tools = toolNames.map((name: string) => ({
+          name,
+          description: `Description for ${name}`,
+          inputSchema: {
+            type: 'object',
+            properties: {
+              input: { type: 'string' },
+            },
+          },
+        }));
+        mockConnection.client.listTools.mockResolvedValue({ tools });
+      } else {
+        mockConnection.client.listTools.mockResolvedValue({ tools: [] });
+      }
+
+      // Mock getInstructions response
+      if (expectedConfig.serverInstructions) {
+        mockConnection.client.getInstructions.mockReturnValue(expectedConfig.serverInstructions);
+      } else {
+        mockConnection.client.getInstructions.mockReturnValue(null);
+      }
+
+      // Mock getServerCapabilities response
+      if (expectedConfig.capabilities) {
+        const capabilities = JSON.parse(expectedConfig.capabilities);
+        mockConnection.client.getServerCapabilities.mockReturnValue(capabilities);
+      } else {
+        mockConnection.client.getServerCapabilities.mockReturnValue(null);
+      }
+
+      mockConnections.set(serverName, mockConnection);
+    });
+
+    // Setup ConnectionsRepository mock
+    mockConnectionsRepo = {
+      get: jest.fn(),
+      getLoaded: jest.fn(),
+      disconnectAll: jest.fn(),
+    } as unknown as jest.Mocked<ConnectionsRepository>;
+
+    mockConnectionsRepo.get.mockImplementation((serverName: string) =>
+      Promise.resolve(mockConnections.get(serverName)!),
+    );
+
+    mockConnectionsRepo.getLoaded.mockResolvedValue(mockConnections);
+
+    (ConnectionsRepository as jest.Mock).mockImplementation(() => mockConnectionsRepo);
+
+    // Setup OAuth detection mock with deterministic results
+    mockDetectOAuthRequirement.mockImplementation((url: string) => {
+      const oauthResults: Record<string, any> = {
+        'https://api.github.com/mcp': {
+          requiresOAuth: true,
+          metadata: {
+            authorization_url: 'https://github.com/login/oauth/authorize',
+            token_url: 'https://github.com/login/oauth/access_token',
+          },
+        },
+        'https://api.disabled.com/mcp': {
+          requiresOAuth: false,
+          metadata: null,
+        },
+        'https://api.public.com/mcp': {
+          requiresOAuth: false,
+          metadata: null,
+        },
+      };
+
+      return Promise.resolve(oauthResults[url] || { requiresOAuth: false, metadata: null });
+    });
+
+    // Clear all mocks
+    jest.clearAllMocks();
+  });
+
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  describe('initialize() method', () => {
+    it('should only run initialization once', async () => {
+      const registry = new MCPServersRegistry(rawConfigs);
+
+      await registry.initialize();
+      await registry.initialize(); // Second call should not re-run
+
+      // Verify that connections are only requested for servers that need them
+      // (servers with serverInstructions=true or all servers for capabilities)
+      expect(mockConnectionsRepo.get).toHaveBeenCalled();
+    });
+
+    it('should set all public properties correctly after initialization', async () => {
+      const registry = new MCPServersRegistry(rawConfigs);
+
+      // Verify initial state
+      expect(registry.oauthServers).toBeNull();
+      expect(registry.serverInstructions).toBeNull();
+      expect(registry.toolFunctions).toBeNull();
+      expect(registry.appServerConfigs).toBeNull();
+
+      await registry.initialize();
+
+      // Test oauthServers Set
+      expect(registry.oauthServers).toBeInstanceOf(Set);
+      expect(registry.oauthServers).toEqual(
+        new Set(['oauth_server', 'oauth_predefined', 'oauth_startup_enabled']),
+      );
+
+      // Test serverInstructions
+      expect(registry.serverInstructions).toEqual({
+        oauth_server: 'GitHub MCP server instructions',
+        stdio_server: 'Follow these instructions for stdio server',
+        non_oauth_server: 'Public API instructions',
+      });
+
+      // Test appServerConfigs (startup enabled, non-OAuth servers only)
+      expect(registry.appServerConfigs).toEqual({
+        stdio_server: rawConfigs.stdio_server,
+        websocket_server: rawConfigs.websocket_server,
+        non_oauth_server: rawConfigs.non_oauth_server,
+      });
+
+      // Test toolFunctions (only 2 servers have tools: oauth_server has 1, stdio_server has 2)
+      const expectedToolFunctions = {
+        get_repository_mcp_oauth_server: {
+          type: 'function',
+          function: {
+            name: 'get_repository_mcp_oauth_server',
+            description: 'Description for get_repository',
+            parameters: { type: 'object', properties: { input: { type: 'string' } } },
+          },
+        },
+        file_read_mcp_stdio_server: {
+          type: 'function',
+          function: {
+            name: 'file_read_mcp_stdio_server',
+            description: 'Description for file_read',
+            parameters: { type: 'object', properties: { input: { type: 'string' } } },
+          },
+        },
+        file_write_mcp_stdio_server: {
+          type: 'function',
+          function: {
+            name: 'file_write_mcp_stdio_server',
+            description: 'Description for file_write',
+            parameters: { type: 'object', properties: { input: { type: 'string' } } },
+          },
+        },
+      };
+      expect(registry.toolFunctions).toEqual(expectedToolFunctions);
+    });
+
+    it('should handle errors gracefully and continue initialization', async () => {
+      const registry = new MCPServersRegistry(rawConfigs);
+
+      // Make one server throw an error
+      mockDetectOAuthRequirement.mockRejectedValueOnce(new Error('OAuth detection failed'));
+
+      await registry.initialize();
+
+      // Should still initialize successfully
+      expect(registry.oauthServers).toBeInstanceOf(Set);
+      expect(registry.toolFunctions).toBeDefined();
+
+      // Error should be logged
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        expect.stringContaining('[MCP][oauth_server] Failed to fetch OAuth requirement:'),
+        expect.any(Error),
+      );
+    });
+
+    it('should disconnect all connections after initialization', async () => {
+      const registry = new MCPServersRegistry(rawConfigs);
+
+      await registry.initialize();
+
+      expect(mockConnectionsRepo.disconnectAll).toHaveBeenCalledTimes(1);
+    });
+
+    it('should log configuration updates for each server', async () => {
+      const registry = new MCPServersRegistry(rawConfigs);
+
+      await registry.initialize();
+
+      const serverNames = Object.keys(rawConfigs);
+      serverNames.forEach((serverName) => {
+        expect(mockLogger.info).toHaveBeenCalledWith(
+          expect.stringContaining(`[MCP][${serverName}] URL:`),
+        );
+        expect(mockLogger.info).toHaveBeenCalledWith(
+          expect.stringContaining(`[MCP][${serverName}] OAuth Required:`),
+        );
+        expect(mockLogger.info).toHaveBeenCalledWith(
+          expect.stringContaining(`[MCP][${serverName}] Capabilities:`),
+        );
+        expect(mockLogger.info).toHaveBeenCalledWith(
+          expect.stringContaining(`[MCP][${serverName}] Tools:`),
+        );
+        expect(mockLogger.info).toHaveBeenCalledWith(
+          expect.stringContaining(`[MCP][${serverName}] Server Instructions:`),
+        );
+      });
+    });
+
+    it('should have parsedConfigs matching the expected fixture after initialization', async () => {
+      const registry = new MCPServersRegistry(rawConfigs);
+
+      await registry.initialize();
+
+      // Compare the actual parsedConfigs against the expected fixture
+      expect(registry.parsedConfigs).toEqual(expectedParsedConfigs);
+    });
+  });
+});
