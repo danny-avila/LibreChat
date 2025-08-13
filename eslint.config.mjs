@@ -2,11 +2,11 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import typescriptEslintEslintPlugin from '@typescript-eslint/eslint-plugin';
 import { fixupConfigRules, fixupPluginRules } from '@eslint/compat';
-// import perfectionist from 'eslint-plugin-perfectionist';
+import perfectionist from 'eslint-plugin-perfectionist';
 import reactHooks from 'eslint-plugin-react-hooks';
-import prettier from 'eslint-plugin-prettier';
 import tsParser from '@typescript-eslint/parser';
 import importPlugin from 'eslint-plugin-import';
+import prettier from 'eslint-plugin-prettier';
 import { FlatCompat } from '@eslint/eslintrc';
 import jsxA11Y from 'eslint-plugin-jsx-a11y';
 import i18next from 'eslint-plugin-i18next';
@@ -62,7 +62,7 @@ export default [
       'jsx-a11y': fixupPluginRules(jsxA11Y),
       'import/parsers': tsParser,
       i18next,
-      // perfectionist,
+      perfectionist,
       prettier: fixupPluginRules(prettier),
     },
 
@@ -140,32 +140,31 @@ export default [
       'react/prop-types': 'off',
       'react/display-name': 'off',
 
-      // 'perfectionist/sort-imports': [
-      //   'error',
-      //   {
-      //     type: 'line-length',
-      //     order: 'desc',
-      //     newlinesBetween: 'never',
-      //     customGroups: {
-      //       value: {
-      //         react: ['^react$'],
-      //         // react: ['^react$', '^fs', '^zod', '^path'],
-      //         local: ['^(\\.{1,2}|~)/', '^librechat-data-provider'],
-      //       },
-      //     },
-      //     groups: [
-      //       'react',
-      //       'builtin',
-      //       'external',
-      //       ['builtin-type', 'external-type'],
-      //       ['internal-type'],
-      //       'local',
-      //       ['parent', 'sibling', 'index'],
-      //       'object',
-      //       'unknown',
-      //     ],
-      //   },
-      // ],
+      'perfectionist/sort-imports': [
+        'error',
+        {
+          type: 'line-length',
+          order: 'desc',
+          newlinesBetween: 'never',
+          customGroups: {
+            value: {
+              react: ['^react$'],
+              local: ['^(\\.{1,2}|~)/', '^librechat-data-provider'],
+            },
+          },
+          groups: [
+            'react',
+            'builtin',
+            'external',
+            ['builtin-type', 'external-type'],
+            ['internal-type'],
+            'local',
+            ['parent', 'sibling', 'index'],
+            'object',
+            'unknown',
+          ],
+        },
+      ],
 
       // 'perfectionist/sort-named-imports': [
       //   'error',
