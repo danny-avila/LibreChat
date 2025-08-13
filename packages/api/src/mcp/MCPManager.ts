@@ -1,17 +1,17 @@
-import { CallToolResultSchema, ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
-import { logger } from '@librechat/data-schemas';
 import pick from 'lodash/pick';
+import { logger } from '@librechat/data-schemas';
+import { CallToolResultSchema, ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import type { RequestOptions } from '@modelcontextprotocol/sdk/shared/protocol.js';
 import type { TokenMethods } from '@librechat/data-schemas';
-import type { TUser } from 'librechat-data-provider';
 import type { FlowStateManager } from '~/flow/manager';
+import type { TUser } from 'librechat-data-provider';
 import type { MCPOAuthTokens } from '~/mcp/oauth';
+import type * as t from './types';
 import { UserConnectionManager } from '~/mcp/UserConnectionManager';
 import { ConnectionsRepository } from '~/mcp/ConnectionsRepository';
 import { formatToolContent } from './parsers';
 import { MCPConnection } from './connection';
 import { CONSTANTS } from './enum';
-import type * as t from './types';
 
 /**
  * Centralized manager for MCP server connections and tool execution.
@@ -43,17 +43,17 @@ export class MCPManager extends UserConnectionManager {
   }
 
   /** Returns all app-level connections */
-  public async getAllConnections(): Promise<Map<string, MCPConnection>> {
+  public async getAllConnections(): Promise<Map<string, MCPConnection> | null> {
     return this.appConnections!.getAll();
   }
 
   /** Get servers that require OAuth */
-  public getOAuthServers(): Set<string> {
+  public getOAuthServers(): Set<string> | null {
     return this.serversRegistry.oauthServers!;
   }
 
   /** Returns all available tool functions from app-level connections */
-  public getAppToolFunctions(): t.LCAvailableTools {
+  public getAppToolFunctions(): t.LCAvailableTools | null {
     return this.serversRegistry.toolFunctions!;
   }
 
