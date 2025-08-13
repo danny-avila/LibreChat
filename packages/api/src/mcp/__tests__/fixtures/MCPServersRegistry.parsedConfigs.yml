@@ -7,13 +7,11 @@ oauth_server:
   url: "https://api.github.com/mcp"
   headers:
     Authorization: "Bearer {{GITHUB_TOKEN}}"
-  serverInstructions: "GitHub MCP server instructions"
+  serverInstructions: true
   requiresOAuth: true
   oauthMetadata:
     authorization_url: "https://github.com/login/oauth/authorize"
     token_url: "https://github.com/login/oauth/access_token"
-  capabilities: '{"tools":{"listChanged":true},"resources":{},"prompts":{}}'
-  tools: "get_repository"
 
 oauth_predefined:
   _processed: true
@@ -23,8 +21,6 @@ oauth_predefined:
   oauthMetadata:
     authorization_url: "https://example.com/oauth/authorize"
     token_url: "https://example.com/oauth/token"
-  capabilities: '{"tools":{},"resources":{},"prompts":{}}'
-  tools: ""
 
 stdio_server:
   _processed: true
@@ -50,11 +46,10 @@ websocket_server:
 
 disabled_server:
   _processed: true
+  requiresOAuth: false
   type: "streamable-http"
   url: "https://api.disabled.com/mcp"
   startup: false
-  requiresOAuth: false
-  oauthMetadata: null
 
 non_oauth_server:
   _processed: true
@@ -70,5 +65,3 @@ oauth_startup_enabled:
   type: "sse"
   url: "https://api.oauth-startup.com/sse"
   requiresOAuth: true
-  capabilities: '{"tools":{},"resources":{},"prompts":{}}'
-  tools: ""
