@@ -23,12 +23,36 @@ function isValidObjectId(id) {
 /**
  * Middleware to validate image request.
  * Must be set by `secureImageLinks` via custom config file.
+ * When FORWARD_AUTH_ENABLED=true: Uses user from forwarded auth (skips JWT validation)
+ * When FORWARD_AUTH_ENABLED=false: Uses JWT refresh token validation
  */
 function validateImageRequest(req, res, next) {
   if (!req.app.locals.secureImageLinks) {
     return next();
   }
 
+  // <stripe>
+  // If forwarded auth is enabled and user is authenticated, validate using user ID
+  if (process.env.FORWARD_AUTH_ENABLED === 'true' && req.user) {
+    if (!isValidObjectId(req.user._id || req.user.id)) {
+      logger.warn('[validateImageRequest] Invalid User ID from forwarded auth');
+      return res.status(403).send('Access Denied');
+    }
+
+    const userId = req.user._id || req.user.id;
+    const fullPath = decodeURIComponent(req.originalUrl);
+    const pathPattern = new RegExp(`^/images/${userId}/[^/]+$`);
+
+    if (pathPattern.test(fullPath)) {
+      logger.debug('[validateImageRequest] Image request validated via forwarded auth');
+      next();
+    } else {
+      logger.warn('[validateImageRequest] Invalid image path for forwarded auth user');
+      res.status(403).send('Access Denied');
+    }
+    return;
+  }
+  // </stripe>
   const refreshToken = req.headers.cookie ? cookies.parse(req.headers.cookie).refreshToken : null;
   if (!refreshToken) {
     logger.warn('[validateImageRequest] Refresh token not provided');
@@ -58,7 +82,7 @@ function validateImageRequest(req, res, next) {
   const pathPattern = new RegExp(`^/images/${payload.id}/[^/]+$`);
 
   if (pathPattern.test(fullPath)) {
-    logger.debug('[validateImageRequest] Image request validated');
+    logger.debug('[validateImageRequest] Image request validated via JWT');
     next();
   } else {
     logger.warn('[validateImageRequest] Invalid image path');
