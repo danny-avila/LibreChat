@@ -25,8 +25,8 @@ librechat:
     ALLOW_SOCIAL_LOGIN: "true"
     ALLOW_SOCIAL_REGISTRATION: "false"
 
-    OPENAI_MODELS: gpt-4o,gpt-3.5-turbo-0125,o3-mini
-    ANTHROPIC_MODELS: claude-3-5-sonnet-20240620,claude-3-haiku-20240307
+#    OPENAI_MODELS: gpt-4o,gpt-3.5-turbo-0125,o3-mini
+#    ANTHROPIC_MODELS: claude-3-5-sonnet-20240620,claude-3-haiku-20240307
 
     OPENID_CLIENT_ID: ea52d0d0-0369-4f74-8db6-3902fb9f6c4e
     OPENID_ISSUER: https://login.microsoftonline.com/791cc635-dca1-4d39-8639-295d41cb4d6e/v2.0/
