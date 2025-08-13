@@ -7,12 +7,8 @@ import type { UseMutationResult, QueryObserverResult } from '@tanstack/react-que
 import type { Agent, AgentCreateParams } from 'librechat-data-provider';
 import type { TAgentCapabilities, AgentForm } from '~/common';
 import { cn, createProviderOption, processAgentOption, getDefaultAgentFormValues } from '~/utils';
-import {
-  useAgentListingDefaultPermissionLevel,
-  useGetStartupConfig,
-  useListAgentsQuery,
-} from '~/data-provider';
-import { useLocalize } from '~/hooks';
+import { useGetStartupConfig, useListAgentsQuery } from '~/data-provider';
+import { useLocalize, useAgentDefaultPermissionLevel } from '~/hooks';
 
 const keys = new Set(Object.keys(defaultAgentFormValues));
 
@@ -32,7 +28,7 @@ export default function AgentSelect({
   const { control, reset } = useFormContext();
 
   const { data: startupConfig } = useGetStartupConfig();
-  const permissionLevel = useAgentListingDefaultPermissionLevel();
+  const permissionLevel = useAgentDefaultPermissionLevel();
 
   const { data: agents = null } = useListAgentsQuery(
     { requiredPermission: permissionLevel },
