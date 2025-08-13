@@ -3,6 +3,13 @@ import { TokenExchangeMethodEnum } from './types/agents';
 import { extractEnvVariable } from './utils';
 
 const BaseOptionsSchema = z.object({
+  /**
+   * Controls whether the MCP server is initialized during application startup.
+   * - true (default): Server is initialized during app startup and included in app-level connections
+   * - false: Skips initialization at startup and excludes from app-level connections - useful for servers
+   *   requiring manual authentication (e.g., GitHub PAT tokens) that need to be configured through the UI after startup
+   */
+  startup: z.boolean().optional(),
   iconPath: z.string().optional(),
   timeout: z.number().optional(),
   initTimeout: z.number().optional(),
@@ -15,6 +22,11 @@ const BaseOptionsSchema = z.object({
    * - string: Use custom instructions (overrides server-provided)
    */
   serverInstructions: z.union([z.boolean(), z.string()]).optional(),
+  /**
+   * Whether this server requires OAuth authentication
+   * If not specified, will be auto-detected during construction
+   */
+  requiresOAuth: z.boolean().optional(),
   /**
    * OAuth configuration for SSE and Streamable HTTP transports
    * - Optional: OAuth can be auto-discovered on 401 responses

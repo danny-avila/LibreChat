@@ -1,17 +1,18 @@
 import { EventEmitter } from 'events';
-import { logger } from '@librechat/data-schemas';
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import {
   StdioClientTransport,
   getDefaultEnvironment,
 } from '@modelcontextprotocol/sdk/client/stdio.js';
-import { WebSocketClientTransport } from '@modelcontextprotocol/sdk/client/websocket.js';
-import { ResourceListChangedNotificationSchema } from '@modelcontextprotocol/sdk/types.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import { ResourceListChangedNotificationSchema } from '@modelcontextprotocol/sdk/types.js';
+import { WebSocketClientTransport } from '@modelcontextprotocol/sdk/client/websocket.js';
+import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { logger } from '@librechat/data-schemas';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js';
 import type { MCPOAuthTokens } from './oauth/types';
+import { mcpConfig } from './mcpConfig';
 import type * as t from './types';
 
 function isStdioOptions(options: t.MCPOptions): options is t.StdioOptions {
@@ -56,9 +57,17 @@ function isStreamableHTTPOptions(options: t.MCPOptions): options is t.Streamable
 }
 
 const FIVE_MINUTES = 5 * 60 * 1000;
+
+interface MCPConnectionParams {
+  serverName: string;
+  serverConfig: t.MCPOptions;
+  userId?: string;
+  oauthTokens?: MCPOAuthTokens | null;
+}
+
 export class MCPConnection extends EventEmitter {
-  private static instance: MCPConnection | null = null;
   public client: Client;
+  private options: t.MCPOptions;
   private transport: Transport | null = null; // Make this nullable
   private connectionState: t.ConnectionState = 'disconnected';
   private connectPromise: Promise<void> | null = null;
@@ -70,26 +79,23 @@ export class MCPConnection extends EventEmitter {
   private reconnectAttempts = 0;
   private readonly userId?: string;
   private lastPingTime: number;
+  private lastConnectionCheckAt: number = 0;
   private oauthTokens?: MCPOAuthTokens | null;
   private oauthRequired = false;
   iconPath?: string;
   timeout?: number;
   url?: string;
 
-  constructor(
-    serverName: string,
-    private readonly options: t.MCPOptions,
-    userId?: string,
-    oauthTokens?: MCPOAuthTokens | null,
-  ) {
+  constructor(params: MCPConnectionParams) {
     super();
-    this.serverName = serverName;
-    this.userId = userId;
-    this.iconPath = options.iconPath;
-    this.timeout = options.timeout;
+    this.options = params.serverConfig;
+    this.serverName = params.serverName;
+    this.userId = params.userId;
+    this.iconPath = params.serverConfig.iconPath;
+    this.timeout = params.serverConfig.timeout;
     this.lastPingTime = Date.now();
-    if (oauthTokens) {
-      this.oauthTokens = oauthTokens;
+    if (params.oauthTokens) {
+      this.oauthTokens = params.oauthTokens;
     }
     this.client = new Client(
       {
@@ -108,28 +114,6 @@ export class MCPConnection extends EventEmitter {
   private getLogPrefix(): string {
     const userPart = this.userId ? `[User: ${this.userId}]` : '';
     return `[MCP]${userPart}[${this.serverName}]`;
-  }
-
-  public static getInstance(
-    serverName: string,
-    options: t.MCPOptions,
-    userId?: string,
-  ): MCPConnection {
-    if (!MCPConnection.instance) {
-      MCPConnection.instance = new MCPConnection(serverName, options, userId);
-    }
-    return MCPConnection.instance;
-  }
-
-  public static getExistingInstance(): MCPConnection | null {
-    return MCPConnection.instance;
-  }
-
-  public static async destroyInstance(): Promise<void> {
-    if (MCPConnection.instance) {
-      await MCPConnection.instance.disconnect();
-      MCPConnection.instance = null;
-    }
   }
 
   private emitError(error: unknown, errorContext: string): void {
@@ -588,6 +572,13 @@ export class MCPConnection extends EventEmitter {
     if (this.connectionState !== 'connected') {
       return false;
     }
+
+    // If we recently checked, skip expensive verification
+    const now = Date.now();
+    if (now - this.lastConnectionCheckAt < mcpConfig.CONNECTION_CHECK_TTL) {
+      return true;
+    }
+    this.lastConnectionCheckAt = now;
 
     try {
       // Try ping first as it's the lightest check

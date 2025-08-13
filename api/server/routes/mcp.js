@@ -1,11 +1,11 @@
-const { Router } = require('express');
 const { logger } = require('@librechat/data-schemas');
 const { MCPOAuthHandler } = require('@librechat/api');
-const { CacheKeys, Constants } = require('librechat-data-provider');
-const { findToken, updateToken, createToken, deleteTokens } = require('~/models');
-const { setCachedTools, getCachedTools, loadCustomConfig } = require('~/server/services/Config');
+const { Router } = require('express');
 const { getMCPSetupData, getServerConnectionStatus } = require('~/server/services/MCP');
+const { findToken, updateToken, createToken, deleteTokens } = require('~/models');
+const { setCachedTools, getCachedTools } = require('~/server/services/Config');
 const { getUserPluginAuthValue } = require('~/server/services/PluginService');
+const { CacheKeys, Constants } = require('librechat-data-provider');
 const { getMCPManager, getFlowStateManager } = require('~/config');
 const { requireJwtAuth } = require('~/server/middleware');
 const { getLogStores } = require('~/cache');
@@ -315,9 +315,9 @@ router.post('/:serverName/reinitialize', requireJwtAuth, async (req, res) => {
 
     logger.info(`[MCP Reinitialize] Reinitializing server: ${serverName}`);
 
-    const printConfig = false;
-    const config = await loadCustomConfig(printConfig);
-    if (!config || !config.mcpServers || !config.mcpServers[serverName]) {
+    const mcpManager = getMCPManager();
+    const serverConfig = mcpManager.getRawConfig(serverName);
+    if (!serverConfig) {
       return res.status(404).json({
         error: `MCP server '${serverName}' not found in configuration`,
       });
@@ -325,13 +325,12 @@ router.post('/:serverName/reinitialize', requireJwtAuth, async (req, res) => {
 
     const flowsCache = getLogStores(CacheKeys.FLOWS);
     const flowManager = getFlowStateManager(flowsCache);
-    const mcpManager = getMCPManager();
 
-    await mcpManager.disconnectServer(serverName);
-    logger.info(`[MCP Reinitialize] Disconnected existing server: ${serverName}`);
+    await mcpManager.disconnectUserConnection(user.id, serverName);
+    logger.info(
+      `[MCP Reinitialize] Disconnected existing user connection for server: ${serverName}`,
+    );
 
-    const serverConfig = config.mcpServers[serverName];
-    mcpManager.mcpConfigs[serverName] = serverConfig;
     let customUserVars = {};
     if (serverConfig.customUserVars && typeof serverConfig.customUserVars === 'object') {
       for (const varName of Object.keys(serverConfig.customUserVars)) {
@@ -437,7 +436,7 @@ router.post('/:serverName/reinitialize', requireJwtAuth, async (req, res) => {
     };
 
     res.json({
-      success: (userConnection && !oauthRequired) || (oauthRequired && oauthUrl),
+      success: Boolean((userConnection && !oauthRequired) || (oauthRequired && oauthUrl)),
       message: getResponseMessage(),
       serverName,
       oauthRequired,
@@ -551,15 +550,14 @@ router.get('/:serverName/auth-values', requireJwtAuth, async (req, res) => {
       return res.status(401).json({ error: 'User not authenticated' });
     }
 
-    const printConfig = false;
-    const config = await loadCustomConfig(printConfig);
-    if (!config || !config.mcpServers || !config.mcpServers[serverName]) {
+    const mcpManager = getMCPManager();
+    const serverConfig = mcpManager.getRawConfig(serverName);
+    if (!serverConfig) {
       return res.status(404).json({
         error: `MCP server '${serverName}' not found in configuration`,
       });
     }
 
-    const serverConfig = config.mcpServers[serverName];
     const pluginKey = `${Constants.mcp_prefix}${serverName}`;
     const authValueFlags = {};
 
