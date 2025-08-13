@@ -39,7 +39,7 @@ async function authenticate(config: FullConfig, user: User) {
   console.log('🤖: using baseURL', baseURL);
   console.dir(user, { depth: null });
   const browser = await chromium.launch({
-    headless: false,
+    headless: process.env.CI ? true : false,
   });
   try {
     const page = await browser.newPage();
@@ -56,30 +56,51 @@ async function authenticate(config: FullConfig, user: User) {
     console.log('🤖: ✔️  localStorage: set Nav as Visible', storageState);
 
     await page.goto(baseURL, { timeout });
-    await register(page, user);
-    try {
-      await page.waitForURL(`${baseURL}/c/new`, { timeout });
-    } catch (error) {
-      console.error('Error:', error);
-      const userExists = page.getByTestId('registration-error');
-      if (userExists) {
-        console.log('🤖: 🚨  user already exists');
-        await cleanupUser(user);
-        await page.goto(baseURL, { timeout });
+
+    // Check if user is already authenticated
+    const isAlreadyAuthenticated = page.url().includes('/c/new') || page.url().includes('/chat');
+    if (isAlreadyAuthenticated) {
+      console.log('🤖: ✔️  user already authenticated, skipping registration');
+    } else {
+      // Check if we're on login page or home page
+      const signUpLink = page.getByRole('link', { name: 'Sign up' });
+      const isSignUpVisible = await signUpLink.isVisible({ timeout: 5000 }).catch(() => false);
+
+      if (isSignUpVisible) {
         await register(page, user);
+        try {
+          await page.waitForURL(`${baseURL}/c/new`, { timeout });
+        } catch (error) {
+          console.error('Registration error:', error);
+          const userExists = page.getByTestId('registration-error');
+          if (await userExists.isVisible().catch(() => false)) {
+            console.log('🤖: 🚨  user already exists, attempting cleanup');
+            await cleanupUser(user);
+            await page.goto(baseURL, { timeout });
+            await register(page, user);
+          } else {
+            // Maybe we need to login instead
+            console.log('🤖: 🚨  registration failed, trying to login instead');
+            await page.goto(`${baseURL}/login`, { timeout });
+            await login(page, user);
+          }
+        }
       } else {
-        throw new Error('🤖: 🚨  user failed to register');
+        console.log('🤖: Sign up link not found, trying to login directly');
+        await page.goto(`${baseURL}/login`, { timeout });
+        await login(page, user);
       }
     }
     console.log('🤖: ✔️  user successfully registered');
 
-    // Logout
-    // await logout(page);
-    // await page.waitForURL(`${baseURL}/login`, { timeout });
-    // console.log('🤖: ✔️  user successfully logged out');
+    // If not already authenticated, perform login
+    if (!page.url().includes('/c/new') && !page.url().includes('/chat')) {
+      console.log('🤖: 🗝  performing login');
+      await page.goto(`${baseURL}/login`, { timeout });
+      await login(page, user);
+      await page.waitForURL(`${baseURL}/c/new`, { timeout });
+    }
 
-    await login(page, user);
-    await page.waitForURL(`${baseURL}/c/new`, { timeout });
     console.log('🤖: ✔️  user successfully authenticated');
 
     await page.context().storageState({ path: storageState as string });
