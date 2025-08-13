@@ -1,0 +1,279 @@
+version: 1.2.1
+
+cache: true
+
+interface:
+  customWelcome: "Welcome to LibreChat powered by your Azure OpenAI models."
+  fileSearch: true
+  privacyPolicy:
+    externalUrl: 'https://azureaiapi.cloud.unc.edu/privacy-policy'
+    openNewTab: true
+  termsOfService:
+    externalUrl: 'https://azureaiapi.cloud.unc.edu/tos'
+    openNewTab: true
+    modalAcceptance: true
+    modalTitle: "Terms of Service for LibreChat"
+    modalContent: |
+      # Terms and Conditions for LibreChat
+      Please refer to https://azureaiapi.cloud.unc.edu/tos for the latest version.
+  endpointsMenu: true
+  modelSelect: true
+  parameters: true
+  sidePanel: true
+  presets: true
+  prompts: true
+  bookmarks: true
+  multiConvo: true
+  agents: true
+
+registration:
+  socialLogins: ['github', 'google', 'openid', 'discord', 'facebook', 'apple', 'saml']
+
+actions:
+  allowedDomains:
+    - "azureaiapi.cloud.unc.edu"
+
+rateLimits:
+  fileUploads:
+    ipMax: 100
+    ipWindowInMinutes: 60
+    userMax: 50
+    userWindowInMinutes: 60
+  conversationsImport:
+    ipMax: 100
+    ipWindowInMinutes: 60
+    userMax: 50
+    userWindowInMinutes: 60
+
+balance:
+  enabled: false
+  startBalance: 20000
+  autoRefillEnabled: false
+  refillIntervalValue: 30
+  refillIntervalUnit: 'days'
+  refillAmount: 10000
+
+fileConfig:
+  endpoints:
+    gpt-35-turbo:
+      fileLimit: 5
+      fileSizeLimit: 10
+      totalSizeLimit: 50
+      supportedMimeTypes:
+        - "image/.*"
+        - "application/pdf"
+    default:
+      totalSizeLimit: 20
+  serverFileSizeLimit: 100
+  avatarSizeLimit: 2
+  imageGeneration:
+    percentage: 100
+    px: 1024
+  clientImageResize:
+    enabled: false
+    maxWidth: 1900
+    maxHeight: 1900
+    quality: 0.92
+
+speech:
+  tts:
+    whisper:
+      url: 'https://azureaiapi.cloud.unc.edu/openai/deployments/whisper/tts?api-version=2023-12-01-preview'
+      apiKey: '${AZURE_OPENAI_API_KEY}'
+      model: 'whisper'
+      voices: ['en-US', 'en-GB']
+  stt:
+    whisper:
+      url: 'https://azureaiapi.cloud.unc.edu/openai/deployments/whisper/stt?api-version=2023-12-01-preview'
+      apiKey: '${AZURE_OPENAI_API_KEY}'
+      model: 'whisper'
+
+memory:
+  disabled: false
+  validKeys: ["preferences", "work_info", "personal_info", "skills", "interests", "context"]
+  tokenLimit: 10000
+  personalize: true
+  agent:
+    provider: "gpt-4o-mini"
+    model: "gpt-4o-mini"
+    instructions: "You are a memory management assistant. Store and manage user information accurately."
+    model_parameters:
+      temperature: 0.1
+
+endpoints:
+  custom:
+    - name: "gpt-35-turbo"
+      baseURL: "https://azureaiapi.cloud.unc.edu/openai"
+      apiKey: "${AZURE_OPENAI_API_KEY}"
+      models:
+        default: ["gpt-35-turbo"]
+        fetch: false
+      addParams:
+        api-version: "2023-12-01-preview"
+      titleModel: "gpt-35-turbo"
+      modelDisplayLabel: "GPT-3.5 Turbo"
+
+    - name: "text-embedding-ada-002"
+      baseURL: "https://azureaiapi.cloud.unc.edu/openai"
+      apiKey: "${AZURE_OPENAI_API_KEY}"
+      models:
+        embeddings: ["text-embedding-ada-002"]
+        fetch: false
+      addParams:
+        api-version: "2023-12-01-preview"
+      titleModel: "text-embedding-ada-002"
+      modelDisplayLabel: "Embedding Ada 002"
+
+    - name: "dall-e-3"
+      baseURL: "https://azureaiapi.cloud.unc.edu/openai"
+      apiKey: "${AZURE_OPENAI_API_KEY}"
+      models:
+        image: ["dall-e-3"]
+        fetch: false
+      addParams:
+        api-version: "2024-02-15-preview"
+      titleModel: "dall-e-3"
+      modelDisplayLabel: "DALL·E 3"
+
+    - name: "gpt-4o"
+      baseURL: "https://azureaiapi.cloud.unc.edu/openai"
+      apiKey: "${AZURE_OPENAI_API_KEY}"
+      models:
+        default: ["gpt-4o"]
+        fetch: false
+      addParams:
+        api-version: "2024-02-15-preview"
+      titleModel: "gpt-4o"
+      modelDisplayLabel: "GPT-4o"
+
+    - name: "gpt-4o-mini"
+      baseURL: "https://azureaiapi.cloud.unc.edu/openai"
+      apiKey: "${AZURE_OPENAI_API_KEY}"
+      models:
+        default: ["gpt-4o-mini"]
+        fetch: false
+      addParams:
+        api-version: "2024-02-15-preview"
+      titleModel: "gpt-4o-mini"
+      modelDisplayLabel: "GPT-4o Mini"
+
+    - name: "o1"
+      baseURL: "https://azureaiapi.cloud.unc.edu/openai"
+      apiKey: "${AZURE_OPENAI_API_KEY}"
+      models:
+        default: ["o1"]
+        fetch: false
+      addParams:
+        api-version: "2024-02-15-preview"
+      titleModel: "o1"
+      modelDisplayLabel: "O1"
+
+    - name: "o1-preview"
+      baseURL: "https://azureaiapi.cloud.unc.edu/openai"
+      apiKey: "${AZURE_OPENAI_API_KEY}"
+      models:
+        default: ["o1-preview"]
+        fetch: false
+      addParams:
+        api-version: "2024-02-15-preview"
+      titleModel: "o1-preview"
+      modelDisplayLabel: "O1 Preview"
+
+    - name: "o1-mini"
+      baseURL: "https://azureaiapi.cloud.unc.edu/openai"
+      apiKey: "${AZURE_OPENAI_API_KEY}"
+      models:
+        default: ["o1-mini"]
+        fetch: false
+      addParams:
+        api-version: "2024-02-15-preview"
+      titleModel: "o1-mini"
+      modelDisplayLabel: "O1 Mini"
+
+    - name: "o3-mini"
+      baseURL: "https://azureaiapi.cloud.unc.edu/openai"
+      apiKey: "${AZURE_OPENAI_API_KEY}"
+      models:
+        default: ["o3-mini"]
+        fetch: false
+      addParams:
+        api-version: "2024-02-15-preview"
+      titleModel: "o3-mini"
+      modelDisplayLabel: "O3 Mini"
+
+    - name: "gpt-4.1"
+      baseURL: "https://azureaiapi.cloud.unc.edu/openai"
+      apiKey: "${AZURE_OPENAI_API_KEY}"
+      models:
+        default: ["gpt-4.1"]
+        fetch: false
+      addParams:
+        api-version: "2024-02-15-preview"
+      titleModel: "gpt-4.1"
+      modelDisplayLabel: "GPT-4.1"
+
+    - name: "gpt-4.1-mini"
+      baseURL: "https://azureaiapi.cloud.unc.edu/openai"
+      apiKey: "${AZURE_OPENAI_API_KEY}"
+      models:
+        default: ["gpt-4.1-mini"]
+        fetch: false
+      addParams:
+        api-version: "2024-02-15-preview"
+      titleModel: "gpt-4.1-mini"
+      modelDisplayLabel: "GPT-4.1 Mini"
+
+    - name: "gpt-4.1-nano"
+      baseURL: "https://azureaiapi.cloud.unc.edu/openai"
+      apiKey: "${AZURE_OPENAI_API_KEY}"
+      models:
+        default: ["gpt-4.1-nano"]
+        fetch: false
+      addParams:
+        api-version: "2024-02-15-preview"
+      titleModel: "gpt-4.1-nano"
+      modelDisplayLabel: "GPT-4.1 Nano"
+
+    - name: "gpt-5"
+      baseURL: "https://azureaiapi.cloud.unc.edu/openai"
+      apiKey: "${AZURE_OPENAI_API_KEY}"
+      models:
+        default: ["gpt-5"]
+        fetch: false
+      addParams:
+        api-version: "2024-02-15-preview"
+      titleModel: "gpt-5"
+      modelDisplayLabel: "GPT-5"
+
+    - name: "gpt-5-mini"
+      baseURL: "https://azureaiapi.cloud.unc.edu/openai"
+      apiKey: "${AZURE_OPENAI_API_KEY}"
+      models:
+        default: ["gpt-5-mini"]
+        fetch: false
+      addParams:
+        api-version: "2024-02-15-preview"
+      titleModel: "gpt-5-mini"
+      modelDisplayLabel: "GPT-5 Mini"
+
+    - name: "gpt-5-nano"
+      baseURL: "https://azureaiapi.cloud.unc.edu/openai"
+      apiKey: "${AZURE_OPENAI_API_KEY}"
+      models:
+        default: ["gpt-5-nano"]
+        fetch: false
+      addParams:
+        api-version: "2024-02-15-preview"
+      titleModel: "gpt-5-nano"
+      modelDisplayLabel: "GPT-5 Nano"
+
+    - name: "whisper"
+      baseURL: "https://azureaiapi.cloud.unc.edu/openai"
+      apiKey: "${AZURE_OPENAI_API_KEY}"
+      models:
+        tts: ["whisper"]
+        fetch: false
+      addParams:
+        api-version: "2023-12-01-preview"
+      titleModel: "whisper"
+      modelDisplayLabel: "Whisper"
