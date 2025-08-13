@@ -175,7 +175,7 @@ export default function useChatFunctions({
       conversation: conversation ?? {},
     });
 
-    const { modelDisplayLabel } = endpointsConfig?.[endpoint ?? ''] ?? {};
+    const { modelDisplayLabel, ...endpointConfig } = endpointsConfig?.[endpoint ?? ''] ?? {};
     const endpointOption = Object.assign(
       {
         endpoint,
@@ -184,6 +184,7 @@ export default function useChatFunctions({
         overrideUserMessageId,
       },
       convo,
+      endpointConfig, // Include endpoint configuration like disableStreaming
     ) as TEndpointOption;
     if (endpoint !== EModelEndpoint.agents) {
       endpointOption.key = getExpiry();

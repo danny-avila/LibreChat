@@ -32,7 +32,17 @@ async function buildEndpointOption(req, res, next) {
   const { endpoint, endpointType } = req.body;
   let parsedBody;
   try {
-    parsedBody = parseCompactConvo({ endpoint, endpointType, conversation: req.body });
+    // Extract non-conversation fields that should be preserved
+    const { disableStreaming, ...conversationFields } = req.body;
+    
+    // Parse conversation fields only
+    const parsedConversation = parseCompactConvo({ endpoint, endpointType, conversation: conversationFields });
+    
+    // Merge back the preserved fields
+    parsedBody = {
+      ...parsedConversation,
+      ...(disableStreaming !== undefined && { disableStreaming })
+    };
   } catch (error) {
     logger.warn(
       `Error parsing conversation for endpoint ${endpoint}${error?.message ? `: ${error.message}` : ''}`,

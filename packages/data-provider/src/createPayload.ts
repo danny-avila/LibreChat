@@ -39,6 +39,10 @@ export default function createPayload(submission: t.TSubmission) {
     isContinued: !!(isEdited && isContinued),
     ephemeralAgent: s.isAssistantsEndpoint(endpoint) ? undefined : ephemeralAgent,
   };
-
+  
+  // Ensure disableStreaming is included for web search with custom endpoints
+  if (ephemeralAgent?.web_search && (endpointType === 'custom' || endpoint === 'custom')) {
+    payload.disableStreaming = true;
+  }
   return { server, payload };
 }
