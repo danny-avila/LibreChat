@@ -2,7 +2,7 @@ const { logger } = require('@librechat/data-schemas');
 const { AsyncLocalStorage } = require('async_hooks');
 const asyncLocalStorage = new AsyncLocalStorage();
 
-const SECURE_REQUEST_CONTEXT_HEADER = 'X-Secure-Request-Context-bin';
+const SECURE_REQUEST_CONTEXT_HEADER = process.env.SECURE_REQUEST_CONTEXT_HEADER;
 
 /**
  * Middleware to attach a secure request context to the request.
@@ -12,6 +12,14 @@ const SECURE_REQUEST_CONTEXT_HEADER = 'X-Secure-Request-Context-bin';
  * @returns {void}
  */
 function middleware(req, _, next) {
+  // Skip middleware if SECURE_REQUEST_CONTEXT_HEADER is not set
+  if (!SECURE_REQUEST_CONTEXT_HEADER) {
+    logger.warn(
+      '[Stripe] SECURE_REQUEST_CONTEXT_HEADER environment variable is not set. Skipping secure request context middleware.',
+    );
+    return next();
+  }
+
   // Get the header by name
   const srcHeader = req.header(SECURE_REQUEST_CONTEXT_HEADER);
   if (srcHeader) {
@@ -31,6 +39,14 @@ function middleware(req, _, next) {
  * @param {import("node-fetch").RequestInit} [options]
  */
 function attach(options = {}) {
+  // If we don't have the header name, just return the options unmodified
+  if (!SECURE_REQUEST_CONTEXT_HEADER) {
+    logger.warn(
+      '[Stripe] SECURE_REQUEST_CONTEXT_HEADER environment variable is not set. Nothing to attach.',
+    );
+    return options;
+  }
+
   // Retrieve the secure request context from request context
   const src = asyncLocalStorage.getStore();
   if (!src) {
@@ -51,7 +67,8 @@ function attach(options = {}) {
 }
 
 function maskHeader(header) {
-  return header.replace(/./g, '*');
+  if (!header) return '';
+  return '*'.repeat(header.length);
 }
 
 module.exports = {
