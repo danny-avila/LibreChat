@@ -350,15 +350,9 @@ export class MCPConnectionFactory {
         logger.info(`${this.logPrefix} OAuth flow started, issued authorization URL to user`);
         await this.oauthStart(authorizationUrl);
       } else {
-        logger.info(`
-═══════════════════════════════════════════════════════════════════════
-Please visit the following URL to authenticate:
-
-${authorizationUrl}
-
-${this.logPrefix} Flow ID: ${newFlowId}
-═══════════════════════════════════════════════════════════════════════
-`);
+        logger.info(
+          `${this.logPrefix} OAuth flow started, no \`oauthStart\` handler defined, relying on callback endpoint`,
+        );
       }
 
       /** Tokens from the new flow */

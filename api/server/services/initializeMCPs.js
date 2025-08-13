@@ -14,7 +14,7 @@ async function initializeMCPs(app) {
     return;
   }
 
-  // Filter out servers with startup: false
+  /** Servers filtered with `startup: false` */
   const filteredServers = {};
   for (const [name, config] of Object.entries(mcpServers)) {
     if (config.startup === false) {
@@ -41,7 +41,7 @@ async function initializeMCPs(app) {
       return;
     }
 
-    const mcpTools = mcpManager.getAppToolFunctions();
+    const mcpTools = mcpManager.getAppToolFunctions() ?? {};
     await setCachedTools({ ...cachedTools, ...mcpTools }, { isGlobal: true });
 
     const cache = getLogStores(CacheKeys.CONFIG_STORE);
