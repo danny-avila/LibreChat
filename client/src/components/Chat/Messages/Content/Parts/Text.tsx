@@ -5,6 +5,7 @@ import Markdown from '~/components/Chat/Messages/Content/Markdown';
 import { useChatContext, useMessageContext } from '~/Providers';
 import { cn } from '~/utils';
 import store from '~/store';
+import { ContentEnhancer } from '~/components/Chat/Messages/Content/ContentEnhancer';
 
 type TextPartProps = {
   text: string;
@@ -27,15 +28,20 @@ const TextPart = memo(({ text, isCreatedByUser, showCursor }: TextPartProps) => 
     [messageId, latestMessage?.messageId],
   );
 
+  // Process content through the enhancer - this is the only addition
+  const { processedText, enhancedElements } = useMemo(() => {
+    return ContentEnhancer.process(text, isCreatedByUser);
+  }, [text, isCreatedByUser]);
+
   const content: ContentType = useMemo(() => {
     if (!isCreatedByUser) {
-      return <Markdown content={text} isLatestMessage={isLatestMessage} />;
+      return <Markdown content={processedText} isLatestMessage={isLatestMessage} />;
     } else if (enableUserMsgMarkdown) {
-      return <MarkdownLite content={text} />;
+      return <MarkdownLite content={processedText} />;
     } else {
-      return <>{text}</>;
+      return <>{processedText}</>;
     }
-  }, [isCreatedByUser, enableUserMsgMarkdown, text, isLatestMessage]);
+  }, [isCreatedByUser, enableUserMsgMarkdown, processedText, isLatestMessage]);
 
   return (
     <div
@@ -48,6 +54,7 @@ const TextPart = memo(({ text, isCreatedByUser, showCursor }: TextPartProps) => 
       )}
     >
       {content}
+      {enhancedElements}
     </div>
   );
 });

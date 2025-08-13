@@ -4,6 +4,10 @@ export enum ArtifactModes {
   CUSTOM = 'custom',
 }
 
+export enum ChartModes {
+  ON = 'on',
+}
+
 export const utils = `
 import { type ClassValue, clsx } from "clsx"
 import { twMerge } from "tailwind-merge"
@@ -2855,6 +2859,7 @@ export { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider }
 export const useToast = `import * as React from "react"
 
 import type {
+import { ChartModes } from 'librechat-data-provider';
   ToastActionElement,
   ToastProps,
 } from "./toast"

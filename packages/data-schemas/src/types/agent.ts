@@ -13,6 +13,7 @@ export interface IAgent extends Omit<Document, 'model'> {
   model: string;
   model_parameters?: Record<string, unknown>;
   artifacts?: string;
+  charts?: string;
   access_level?: number;
   recursion_limit?: number;
   tools?: string[];

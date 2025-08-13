@@ -403,6 +403,7 @@
   "com_nav_info_balance": "Balance shows how many token credits you have left to use. Token credits translate to monetary value (e.g., 1000 credits = $0.001 USD)",
   "com_nav_info_code_artifacts": "Enables the display of experimental code artifacts next to the chat",
   "com_nav_info_code_artifacts_agent": "Enables the use of code artifacts for this agent. By default, additional instructions specific to the use of artifacts are added, unless \"Custom Prompt Mode\" is enabled.",
+  "com_nav_info_code_charts_agent": "Enables data visualization capabilities for this agent using charts such as bar charts, line charts, and more. This allows responses to include rich, interactive visual representations of information.",
   "com_nav_info_custom_prompt_mode": "When enabled, the default artifacts system prompt will not be included. All artifact-generating instructions must be provided manually in this mode.",
   "com_nav_info_enter_to_send": "When enabled, pressing `ENTER` will send your message. When disabled, pressing Enter will add a new line, and you'll need to press `CTRL + ENTER` / `⌘ + ENTER` to send your message.",
   "com_nav_info_fork_change_default": "`Visible messages only` includes just the direct path to the selected message. `Include related branches` adds branches along the path. `Include all to/from here` includes all connected messages and branches.",
@@ -589,6 +590,7 @@
   "com_ui_artifacts_options": "Artifacts Options",
   "com_ui_artifacts_toggle": "Toggle Artifacts UI",
   "com_ui_artifacts_toggle_agent": "Enable Artifacts",
+  "com_ui_charts_toggle_agent": "Enable Charts",
   "com_ui_ascending": "Asc",
   "com_ui_assistant": "Assistant",
   "com_ui_assistant_delete_error": "There was an error deleting the assistant",
@@ -1110,5 +1112,12 @@
   "com_ui_x_selected": "{{0}} selected",
   "com_ui_yes": "Yes",
   "com_ui_zoom": "Zoom",
-  "com_user_message": "You"
+  "com_user_message": "You",
+  "com_warning_resubmit_unsupported": "Resubmitting the AI message is not supported for this endpoint.",
+  "com_ui_bar_chart": "Bar Chart",
+  "com_ui_line_chart": "Line Chart",
+  "com_ui_chart_render_failure": "Chart rendering failed",
+  "com_ui_chart_render_failure_description": "Unable to display this chart",
+  "com_ui_failed_to_render_chart": "Failed to render charts for the requested data",
+  "com_ui_chart_data_could_not_be_processed": "The chart data could not be processed. Please try rephrasing your request or check the data format."
 }
