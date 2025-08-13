@@ -138,3 +138,6 @@ helm/**/.values.yaml
 /.tabnine/
 /.codeium
 *.local.md
+
+# stripe 
+docker-compose.stripe.*
