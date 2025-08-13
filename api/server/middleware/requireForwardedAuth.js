@@ -1,5 +1,4 @@
 const passport = require('passport');
-const { setAuthTokens } = require('~/server/services/AuthService');
 const { logger } = require('~/config');
 
 /**
@@ -31,16 +30,6 @@ const requireForwardedAuth = (req, res, next) => {
 
     // Set the authenticated user in the request
     req.user = user;
-
-    // Generate JWT and cookies for the authenticated user
-    try {
-      const token = await setAuthTokens(user._id, res);
-      // Store token in request for potential use by other middleware
-      req.authToken = token;
-    } catch (tokenErr) {
-      logger.error('[requireForwardedAuth] Error generating auth tokens:', tokenErr);
-      return next(tokenErr);
-    }
 
     logger.debug(`[requireForwardedAuth] User ${user.username}
       authenticated via forwarded headers`);
