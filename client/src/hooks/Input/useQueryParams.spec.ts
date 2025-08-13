@@ -60,6 +60,10 @@ jest.mock('~/hooks/Agents/useAgentsMap', () => ({
   __esModule: true,
   default: jest.fn(() => ({})),
 }));
+jest.mock('~/hooks/Agents/useAgentDefaultPermissionLevel', () => ({
+  __esModule: true,
+  default: jest.fn(() => ({})),
+}));
 
 jest.mock('~/utils', () => ({
   getConvoSwitchLogic: jest.fn(() => ({
@@ -101,7 +105,6 @@ jest.mock('~/data-provider', () => ({
     isLoading: false,
     error: null,
   })),
-  useAgentListingDefaultPermissionLevel: jest.fn(() => 'view'),
   useListAgentsQuery: jest.fn(() => ({
     data: null,
     isLoading: false,

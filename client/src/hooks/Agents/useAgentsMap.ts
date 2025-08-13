@@ -1,6 +1,7 @@
-import { TAgentsMap } from 'librechat-data-provider';
 import { useMemo } from 'react';
-import { useListAgentsQuery, useAgentListingDefaultPermissionLevel } from '~/data-provider';
+import { PermissionBits } from 'librechat-data-provider';
+import type { TAgentsMap } from 'librechat-data-provider';
+import { useListAgentsQuery } from '~/data-provider';
 import { mapAgents } from '~/utils';
 
 export default function useAgentsMap({
@@ -8,10 +9,8 @@ export default function useAgentsMap({
 }: {
   isAuthenticated: boolean;
 }): TAgentsMap | undefined {
-  const permissionLevel = useAgentListingDefaultPermissionLevel();
-
   const { data: agentsList = null } = useListAgentsQuery(
-    { requiredPermission: permissionLevel },
+    { requiredPermission: PermissionBits.VIEW },
     {
       select: (res) => mapAgents(res.data),
       enabled: isAuthenticated,
