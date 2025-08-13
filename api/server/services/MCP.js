@@ -195,7 +195,6 @@ async function createMCPTool({ req, res, toolKey, provider: _provider }) {
         },
         oauthStart,
         oauthEnd,
-        body: req.body,
       });
 
       if (isAssistantsEndpoint(provider) && Array.isArray(result)) {
