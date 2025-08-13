@@ -109,10 +109,10 @@ router.get('/', async function (req, res) {
       for (const serverName in config.mcpServers) {
         const serverConfig = config.mcpServers[serverName];
         payload.mcpServers[serverName] = {
-          customUserVars: serverConfig?.customUserVars || {},
-          chatMenu: serverConfig?.chatMenu,
-          isOAuth: oauthServers.has(serverName),
           startup: serverConfig?.startup,
+          chatMenu: serverConfig?.chatMenu,
+          isOAuth: oauthServers?.has(serverName),
+          customUserVars: serverConfig?.customUserVars || {},
         };
       }
     }
