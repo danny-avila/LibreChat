@@ -239,13 +239,13 @@ export function mapModelToAzureConfig({
   const { deploymentName = '', version = '' } =
     typeof modelDetails === 'object'
       ? {
-        deploymentName: modelDetails.deploymentName ?? groupConfig.deploymentName,
-        version: modelDetails.version ?? groupConfig.version,
-      }
+          deploymentName: modelDetails.deploymentName ?? groupConfig.deploymentName,
+          version: modelDetails.version ?? groupConfig.version,
+        }
       : {
-        deploymentName: groupConfig.deploymentName,
-        version: groupConfig.version,
-      };
+          deploymentName: groupConfig.deploymentName,
+          version: groupConfig.version,
+        };
 
   if (!deploymentName || !version) {
     throw new Error(
@@ -335,13 +335,13 @@ export function mapGroupToAzureConfig({
   const { deploymentName = '', version = '' } =
     typeof modelDetails === 'object'
       ? {
-        deploymentName: modelDetails.deploymentName ?? groupConfig.deploymentName,
-        version: modelDetails.version ?? groupConfig.version,
-      }
+          deploymentName: modelDetails.deploymentName ?? groupConfig.deploymentName,
+          version: modelDetails.version ?? groupConfig.version,
+        }
       : {
-        deploymentName: groupConfig.deploymentName,
-        version: groupConfig.version,
-      };
+          deploymentName: groupConfig.deploymentName,
+          version: groupConfig.version,
+        };
 
   if (!deploymentName || !version) {
     throw new Error(

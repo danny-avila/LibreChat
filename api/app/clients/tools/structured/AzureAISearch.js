@@ -18,7 +18,7 @@ class AzureAISearch extends Tool {
     super();
     this.name = 'azure-ai-search';
     this.description =
-      'Use the \'azure-ai-search\' tool to retrieve search results relevant to your input';
+      "Use the 'azure-ai-search' tool to retrieve search results relevant to your input";
     /* Used to initialize the Tool without necessary variables. */
     this.override = fields.override ?? false;
 
