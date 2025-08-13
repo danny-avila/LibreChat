@@ -132,7 +132,6 @@ describe('cacheConfig', () => {
       expect(cacheConfig.USE_REDIS).toBe(true);
       expect(cacheConfig.REDIS_URI).toBe('redis://localhost:6379');
     });
-
   });
 
   describe('REDIS_CA file reading', () => {
