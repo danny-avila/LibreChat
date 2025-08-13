@@ -15,6 +15,7 @@ COPY --from=ghcr.io/astral-sh/uv:0.6.13 /uv /uvx /bin/
 RUN uv --version
 
 RUN mkdir -p /app && chown node:node /app
+RUN mkdir -p /app/logs && chmod 777 /app/logs
 WORKDIR /app
 
 USER node
