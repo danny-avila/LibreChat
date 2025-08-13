@@ -137,3 +137,6 @@ helm/**/.values.yaml
 /.openai/
 /.tabnine/
 /.codeium
+
+# stripe 
+docker-compose.stripe.*
