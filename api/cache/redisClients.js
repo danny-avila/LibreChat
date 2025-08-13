@@ -38,7 +38,7 @@ if (cacheConfig.USE_REDIS) {
       const targetError = 'READONLY';
       if (err.message.includes(targetError)) {
         logger.warn('ioredis reconnecting due to READONLY error');
-        return true;
+        return 2; // Return retry delay instead of boolean
       }
       return false;
     },
@@ -50,24 +50,27 @@ if (cacheConfig.USE_REDIS) {
   ioredisClient =
     urls.length === 1
       ? new IoRedis(cacheConfig.REDIS_URI, redisOptions)
-      : new IoRedis.Cluster(cacheConfig.REDIS_URI, {
-          redisOptions,
-          clusterRetryStrategy: (times) => {
-            if (
-              cacheConfig.REDIS_RETRY_MAX_ATTEMPTS > 0 &&
-              times > cacheConfig.REDIS_RETRY_MAX_ATTEMPTS
-            ) {
-              logger.error(
-                `ioredis cluster giving up after ${cacheConfig.REDIS_RETRY_MAX_ATTEMPTS} reconnection attempts`,
-              );
-              return null;
-            }
-            const delay = Math.min(times * 100, cacheConfig.REDIS_RETRY_MAX_DELAY);
-            logger.info(`ioredis cluster reconnecting... attempt ${times}, delay ${delay}ms`);
-            return delay;
+      : new IoRedis.Cluster(
+          urls.map((url) => ({ host: url.hostname, port: parseInt(url.port, 10) || 6379 })),
+          {
+            redisOptions,
+            clusterRetryStrategy: (times) => {
+              if (
+                cacheConfig.REDIS_RETRY_MAX_ATTEMPTS > 0 &&
+                times > cacheConfig.REDIS_RETRY_MAX_ATTEMPTS
+              ) {
+                logger.error(
+                  `ioredis cluster giving up after ${cacheConfig.REDIS_RETRY_MAX_ATTEMPTS} reconnection attempts`,
+                );
+                return null;
+              }
+              const delay = Math.min(times * 100, cacheConfig.REDIS_RETRY_MAX_DELAY);
+              logger.info(`ioredis cluster reconnecting... attempt ${times}, delay ${delay}ms`);
+              return delay;
+            },
+            enableOfflineQueue: cacheConfig.REDIS_ENABLE_OFFLINE_QUEUE,
           },
-          enableOfflineQueue: cacheConfig.REDIS_ENABLE_OFFLINE_QUEUE,
-        });
+        );
 
   ioredisClient.on('error', (err) => {
     logger.error('ioredis client error:', err);
@@ -148,7 +151,7 @@ if (cacheConfig.USE_REDIS) {
     urls.length === 1
       ? createClient({ url: cacheConfig.REDIS_URI, ...redisOptions })
       : createCluster({
-          rootNodes: cacheConfig.REDIS_URI.split(',').map((url) => ({ url })),
+          rootNodes: urls.map((url) => ({ url: url.href })),
           defaults: redisOptions,
         });
 
