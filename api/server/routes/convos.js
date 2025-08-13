@@ -12,6 +12,10 @@ const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
 const { importConversations } = require('~/server/utils/import');
 const { deleteToolCalls } = require('~/models/ToolCall');
 const getLogStores = require('~/cache/getLogStores');
+const {
+  getConversationCostDisplayFromMessages,
+  getMultipleConversationCosts,
+} = require('~/server/services/ConversationCostDynamic');
 
 const assistantClients = {
   [EModelEndpoint.azureAssistants]: require('~/server/services/Endpoints/azureAssistants'),
@@ -226,6 +230,97 @@ router.post('/duplicate', async (req, res) => {
   } catch (error) {
     logger.error('Error duplicating conversation:', error);
     res.status(500).send('Error duplicating conversation');
+  }
+});
+
+/**
+ * GET /:conversationId/cost
+ * Get cost summary for a specific conversation
+ */
+router.get('/:conversationId/cost', async (req, res) => {
+  try {
+    const { conversationId } = req.params;
+    const { detailed: _detailed = false } = req.query;
+    const userId = req.user.id;
+
+    // Get the conversation
+    const conversation = await getConvo(userId, conversationId);
+
+    if (!conversation) {
+      return res.status(404).json({
+        error: 'Conversation not found',
+      });
+    }
+
+    // Get actual messages from the messages collection
+    const { getMessages } = require('~/models/Message');
+    const messages = await getMessages({
+      user: userId,
+      conversationId: conversationId,
+    });
+
+    if (messages.length === 0) {
+      return res.status(404).json({
+        error: 'No messages found in this conversation',
+      });
+    }
+
+    // Calculate cost from actual messages
+    const costDisplay = getConversationCostDisplayFromMessages(messages);
+
+    if (!costDisplay) {
+      return res.json({
+        conversationId,
+        totalCost: '$0.00',
+        totalCostRaw: 0,
+        primaryModel: 'Unknown',
+        totalTokens: 0,
+        lastUpdated: new Date(),
+        error: 'No cost data available',
+      });
+    }
+
+    // Add conversationId to response
+    costDisplay.conversationId = conversationId;
+
+    res.json(costDisplay);
+  } catch (error) {
+    logger.error('Error getting conversation cost:', error);
+    res.status(500).json({
+      error: 'Failed to calculate conversation cost',
+    });
+  }
+});
+
+/**
+ * POST /costs
+ * Get cost summaries for multiple conversations
+ * Body: { conversationIds: string[] }
+ */
+router.post('/costs', async (req, res) => {
+  try {
+    const { conversationIds } = req.body;
+    const userId = req.user.id;
+
+    if (!Array.isArray(conversationIds)) {
+      return res.status(400).json({
+        error: 'conversationIds must be an array',
+      });
+    }
+
+    if (conversationIds.length > 50) {
+      return res.status(400).json({
+        error: 'Maximum 50 conversations allowed per request',
+      });
+    }
+
+    const costs = await getMultipleConversationCosts(conversationIds, userId);
+    res.json(costs);
+  } catch (error) {
+    logger.error('Error getting multiple conversation costs:', error);
+    res.status(500).json({
+      error: 'Failed to calculate conversation costs',
+    });
   }
 });
 
