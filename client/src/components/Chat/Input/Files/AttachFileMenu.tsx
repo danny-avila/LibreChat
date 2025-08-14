@@ -75,13 +75,13 @@ const AttachFileMenu = ({
   };
 
   const dropdownItems = useMemo(() => {
-    const createMenuItems = (onAction: (isImage?: boolean) => void) => {
+    const createMenuItems = (onAction: (fileType?: 'image' | 'document') => void) => {
       const items: MenuItemProps[] = [
         {
           label: localize('com_ui_upload_image_input'),
           onClick: () => {
             setToolResource(undefined);
-            onAction(true);
+            onAction('image');
           },
           icon: <ImageUpIcon className="icon-md" />,
         },
@@ -92,7 +92,7 @@ const AttachFileMenu = ({
           label: localize('com_ui_upload_provider'),
           onClick: () => {
             setToolResource(undefined);
-            onAction();
+            onAction('document');
           },
           icon: <FileText className="icon-md" />,
         });
