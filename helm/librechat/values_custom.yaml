@@ -11,8 +11,7 @@ global:
    # - MEILI_MASTER_KEY
   librechat:
     existingSecretName: "librechat-credentials-env"
-    # Used for Setting the Right Key, can be something like AZURE_API_KEY, if Azure OpenAI is used
-    existingSecretApiKey: OPENAI_API_KEY
+    existingSecretApiKey: AZURE_OPENAI_API_KEY
 
 librechat:
   configEnv:

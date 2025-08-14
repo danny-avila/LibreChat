@@ -7,16 +7,20 @@ global:
   librechat:
     existingSecretName: "librechat-credentials-env"
     # Used for Setting the Right Key, can be something like AZURE_API_KEY, if Azure OpenAI is used
-    existingSecretApiKey: OPENAI_API_KEY
+    existingSecretApiKey: AZURE_OPENAI_API_KEY
 
 # Required as vectorDB for RAG
 # provide context-aware responses based on user-uploaded files
 rag:
   enabled: true
-  existingSecret: ''
+  existingSecret: 'librechat-credentials-env'
   configEnv:
     DB_PORT: '5432'
-    EMBEDDINGS_PROVIDER: openai
+    EMBEDDINGS_PROVIDER: "azure"
+    EMBEDDINGS_MODEL: "text-embedding-ada-002-deployment"
+    RAG_AZURE_OPENAI_ENDPOINT: "https://nodeenergy.openai.azure.com"
+    RAG_AZURE_OPENAI_API_VERSION: "2023-05-15"
+
 
 image:
   repository: danny-avila/librechat-rag-api-dev-lite # there is rag-api-dev and rag-api-dev-lite. currently only lite is docuimented
