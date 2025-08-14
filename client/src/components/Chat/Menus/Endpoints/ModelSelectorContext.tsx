@@ -27,6 +27,8 @@ type ModelSelectorContextType = {
   agentsMap: t.TAgentsMap | undefined;
   assistantsMap: t.TAssistantsMap | undefined;
   endpointsConfig: t.TEndpointsConfig;
+  externalLinks: Array<{ title: string; url: string }>;
+  externalLinksHeader: string | undefined;
 
   // Functions
   endpointRequiresUserKey: (endpoint: string) => boolean;
@@ -68,6 +70,19 @@ export function ModelSelectorProvider({ children, startupConfig }: ModelSelector
     },
   );
 
+
+  const { externalLinks, externalLinksHeader } = useMemo(() => {
+    const externalLinksConfig = startupConfig?.interface?.externalLinks;
+
+    if (!externalLinksConfig) {
+      return { externalLinks: [], externalLinksHeader: undefined };
+    }
+
+    return {
+      externalLinks: externalLinksConfig.links || [],
+      externalLinksHeader: externalLinksConfig.header,
+    };
+  }, [startupConfig]);
   const { mappedEndpoints, endpointRequiresUserKey } = useEndpoints({
     agents,
     assistantsMap,
@@ -194,6 +209,8 @@ export function ModelSelectorProvider({ children, startupConfig }: ModelSelector
     assistantsMap,
     mappedEndpoints,
     endpointsConfig,
+    externalLinks,
+    externalLinksHeader,
 
     // Functions
     handleSelectSpec,
