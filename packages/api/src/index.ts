@@ -19,6 +19,8 @@ export * from './middleware';
 export * from './memory';
 /* Agents */
 export * from './agents';
+/* Prompts */
+export * from './prompts';
 /* Endpoints */
 export * from './endpoints';
 /* Files */

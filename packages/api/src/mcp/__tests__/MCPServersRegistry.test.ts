@@ -1,12 +1,13 @@
-import { readFileSync } from 'fs';
 import { join } from 'path';
-import { logger } from '@librechat/data-schemas';
+import { readFileSync } from 'fs';
 import { load as yamlLoad } from 'js-yaml';
-import { ConnectionsRepository } from '../ConnectionsRepository';
-import { MCPServersRegistry } from '../MCPServersRegistry';
+import { logger } from '@librechat/data-schemas';
+import type { OAuthDetectionResult } from '~/mcp/oauth/detectOAuth';
+import type * as t from '~/mcp/types';
+import { ConnectionsRepository } from '~/mcp/ConnectionsRepository';
+import { MCPServersRegistry } from '~/mcp/MCPServersRegistry';
 import { detectOAuthRequirement } from '~/mcp/oauth';
-import { MCPConnection } from '../connection';
-import type * as t from '../types';
+import { MCPConnection } from '~/mcp/connection';
 
 // Mock external dependencies
 jest.mock('../oauth/detectOAuth');
@@ -37,7 +38,7 @@ const mockLogger = logger as jest.Mocked<typeof logger>;
 
 describe('MCPServersRegistry - Initialize Function', () => {
   let rawConfigs: t.MCPServers;
-  let expectedParsedConfigs: Record<string, any>;
+  let expectedParsedConfigs: Record<string, t.ParsedServerConfig>;
   let mockConnectionsRepo: jest.Mocked<ConnectionsRepository>;
   let mockConnections: Map<string, jest.Mocked<MCPConnection>>;
 
@@ -49,7 +50,7 @@ describe('MCPServersRegistry - Initialize Function', () => {
     rawConfigs = yamlLoad(readFileSync(rawConfigsPath, 'utf8')) as t.MCPServers;
     expectedParsedConfigs = yamlLoad(readFileSync(parsedConfigsPath, 'utf8')) as Record<
       string,
-      any
+      t.ParsedServerConfig
     >;
 
     // Setup mock connections
@@ -57,12 +58,13 @@ describe('MCPServersRegistry - Initialize Function', () => {
     const serverNames = Object.keys(rawConfigs);
 
     serverNames.forEach((serverName) => {
+      const mockClient = {
+        listTools: jest.fn(),
+        getInstructions: jest.fn(),
+        getServerCapabilities: jest.fn(),
+      };
       const mockConnection = {
-        client: {
-          listTools: jest.fn(),
-          getInstructions: jest.fn(),
-          getServerCapabilities: jest.fn(),
-        },
+        client: mockClient,
       } as unknown as jest.Mocked<MCPConnection>;
 
       // Setup mock responses based on expected configs
@@ -75,30 +77,32 @@ describe('MCPServersRegistry - Initialize Function', () => {
           name,
           description: `Description for ${name}`,
           inputSchema: {
-            type: 'object',
+            type: 'object' as const,
             properties: {
               input: { type: 'string' },
             },
           },
         }));
-        mockConnection.client.listTools.mockResolvedValue({ tools });
+        (mockClient.listTools as jest.Mock).mockResolvedValue({ tools });
       } else {
-        mockConnection.client.listTools.mockResolvedValue({ tools: [] });
+        (mockClient.listTools as jest.Mock).mockResolvedValue({ tools: [] });
       }
 
       // Mock getInstructions response
       if (expectedConfig.serverInstructions) {
-        mockConnection.client.getInstructions.mockReturnValue(expectedConfig.serverInstructions);
+        (mockClient.getInstructions as jest.Mock).mockReturnValue(
+          expectedConfig.serverInstructions as string,
+        );
       } else {
-        mockConnection.client.getInstructions.mockReturnValue(null);
+        (mockClient.getInstructions as jest.Mock).mockReturnValue(undefined);
       }
 
       // Mock getServerCapabilities response
       if (expectedConfig.capabilities) {
-        const capabilities = JSON.parse(expectedConfig.capabilities);
-        mockConnection.client.getServerCapabilities.mockReturnValue(capabilities);
+        const capabilities = JSON.parse(expectedConfig.capabilities) as Record<string, unknown>;
+        (mockClient.getServerCapabilities as jest.Mock).mockReturnValue(capabilities);
       } else {
-        mockConnection.client.getServerCapabilities.mockReturnValue(null);
+        (mockClient.getServerCapabilities as jest.Mock).mockReturnValue(undefined);
       }
 
       mockConnections.set(serverName, mockConnection);
@@ -111,9 +115,13 @@ describe('MCPServersRegistry - Initialize Function', () => {
       disconnectAll: jest.fn(),
     } as unknown as jest.Mocked<ConnectionsRepository>;
 
-    mockConnectionsRepo.get.mockImplementation((serverName: string) =>
-      Promise.resolve(mockConnections.get(serverName)!),
-    );
+    mockConnectionsRepo.get.mockImplementation((serverName: string) => {
+      const connection = mockConnections.get(serverName);
+      if (!connection) {
+        throw new Error(`Connection not found for server: ${serverName}`);
+      }
+      return Promise.resolve(connection);
+    });
 
     mockConnectionsRepo.getLoaded.mockResolvedValue(mockConnections);
 
@@ -121,9 +129,10 @@ describe('MCPServersRegistry - Initialize Function', () => {
 
     // Setup OAuth detection mock with deterministic results
     mockDetectOAuthRequirement.mockImplementation((url: string) => {
-      const oauthResults: Record<string, any> = {
+      const oauthResults: Record<string, OAuthDetectionResult> = {
         'https://api.github.com/mcp': {
           requiresOAuth: true,
+          method: 'protected-resource-metadata',
           metadata: {
             authorization_url: 'https://github.com/login/oauth/authorize',
             token_url: 'https://github.com/login/oauth/access_token',
@@ -131,15 +140,19 @@ describe('MCPServersRegistry - Initialize Function', () => {
         },
         'https://api.disabled.com/mcp': {
           requiresOAuth: false,
+          method: 'no-metadata-found',
           metadata: null,
         },
         'https://api.public.com/mcp': {
           requiresOAuth: false,
+          method: 'no-metadata-found',
           metadata: null,
         },
       };
 
-      return Promise.resolve(oauthResults[url] || { requiresOAuth: false, metadata: null });
+      return Promise.resolve(
+        oauthResults[url] || { requiresOAuth: false, method: 'no-metadata-found', metadata: null },
+      );
     });
 
     // Clear all mocks

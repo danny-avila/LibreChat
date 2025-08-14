@@ -105,3 +105,11 @@ export type FormattedToolResponse = [
   string | FormattedContent[],
   { content: FormattedContent[] } | undefined,
 ];
+
+export type ParsedServerConfig = MCPOptions & {
+  url?: string;
+  requiresOAuth?: boolean;
+  oauthMetadata?: Record<string, unknown> | null;
+  capabilities?: string;
+  tools?: string;
+};

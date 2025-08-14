@@ -1,22 +1,14 @@
-import { logger } from '@librechat/data-schemas';
-import mapValues from 'lodash/mapValues';
-import pickBy from 'lodash/pickBy';
 import pick from 'lodash/pick';
+import pickBy from 'lodash/pickBy';
+import mapValues from 'lodash/mapValues';
+import { logger } from '@librechat/data-schemas';
+import type { MCPConnection } from '~/mcp/connection';
 import type { JsonSchemaType } from '~/types';
 import type * as t from '~/mcp/types';
 import { ConnectionsRepository } from '~/mcp/ConnectionsRepository';
 import { detectOAuthRequirement } from '~/mcp/oauth';
-import { type MCPConnection } from './connection';
 import { processMCPEnv } from '~/utils';
 import { CONSTANTS } from '~/mcp/enum';
-
-type ParsedServerConfig = t.MCPOptions & {
-  url?: string;
-  requiresOAuth?: boolean;
-  oauthMetadata?: Record<string, unknown> | null;
-  capabilities?: string;
-  tools?: string;
-};
 
 /**
  * Manages MCP server configurations and metadata discovery.
@@ -29,7 +21,7 @@ export class MCPServersRegistry {
   private connections: ConnectionsRepository;
 
   public readonly rawConfigs: t.MCPServers;
-  public readonly parsedConfigs: Record<string, ParsedServerConfig>;
+  public readonly parsedConfigs: Record<string, t.ParsedServerConfig>;
 
   public oauthServers: Set<string> | null = null;
   public serverInstructions: Record<string, string> | null = null;
@@ -43,7 +35,7 @@ export class MCPServersRegistry {
   }
 
   /** Initializes all startup-enabled servers by gathering their metadata asynchronously */
-  public async initialize() {
+  public async initialize(): Promise<void> {
     if (this.initialized) return;
     this.initialized = true;
 
@@ -59,8 +51,8 @@ export class MCPServersRegistry {
     this.connections.disconnectAll();
   }
 
-  // Fetches all metadata for a single server in parallel
-  private async gatherServerInfo(serverName: string) {
+  /** Fetches all metadata for a single server in parallel */
+  private async gatherServerInfo(serverName: string): Promise<void> {
     try {
       await this.fetchOAuthRequirement(serverName);
       const config = this.parsedConfigs[serverName];
@@ -82,8 +74,8 @@ export class MCPServersRegistry {
     }
   }
 
-  // Sets app-level server configs (startup enabled, non-OAuth servers)
-  private setAppServerConfigs() {
+  /** Sets app-level server configs (startup enabled, non-OAuth servers) */
+  private setAppServerConfigs(): void {
     const appServers = Object.keys(
       pickBy(
         this.parsedConfigs,
@@ -93,8 +85,8 @@ export class MCPServersRegistry {
     this.appServerConfigs = pick(this.rawConfigs, appServers);
   }
 
-  // Creates set of server names that require OAuth authentication
-  private setOAuthServers() {
+  /** Creates set of server names that require OAuth authentication */
+  private setOAuthServers(): Set<string> {
     if (this.oauthServers) return this.oauthServers;
     this.oauthServers = new Set(
       Object.keys(pickBy(this.parsedConfigs, (config) => config.requiresOAuth)),
@@ -102,16 +94,16 @@ export class MCPServersRegistry {
     return this.oauthServers;
   }
 
-  // Collects server instructions from all configured servers
-  private setServerInstructions() {
+  /** Collects server instructions from all configured servers */
+  private setServerInstructions(): void {
     this.serverInstructions = mapValues(
       pickBy(this.parsedConfigs, (config) => config.serverInstructions),
       (config) => config.serverInstructions as string,
     );
   }
 
-  // Builds registry of all available tool functions from loaded connections
-  private async setAppToolFunctions() {
+  /** Builds registry of all available tool functions from loaded connections */
+  private async setAppToolFunctions(): Promise<void> {
     const connections = (await this.connections.getLoaded()).entries();
     const allToolFunctions: t.LCAvailableTools = {};
     for (const [serverName, conn] of connections) {
@@ -125,12 +117,12 @@ export class MCPServersRegistry {
     this.toolFunctions = allToolFunctions;
   }
 
-  // Converts server tools to LibreChat-compatible tool functions format
+  /** Converts server tools to LibreChat-compatible tool functions format */
   private async getToolFunctions(
     serverName: string,
     conn: MCPConnection,
   ): Promise<t.LCAvailableTools> {
-    const { tools } = await conn.client.listTools();
+    const { tools }: t.MCPToolListResponse = await conn.client.listTools();
 
     const toolFunctions: t.LCAvailableTools = {};
     tools.forEach((tool) => {
@@ -148,7 +140,7 @@ export class MCPServersRegistry {
     return toolFunctions;
   }
 
-  // Determines if server requires OAuth if not already specified in the config
+  /** Determines if server requires OAuth if not already specified in the config */
   private async fetchOAuthRequirement(serverName: string): Promise<boolean> {
     const config = this.parsedConfigs[serverName];
     if (config.requiresOAuth != null) return config.requiresOAuth;
@@ -161,8 +153,8 @@ export class MCPServersRegistry {
     return config.requiresOAuth;
   }
 
-  // Retrieves server instructions from MCP server if enabled in the config
-  private async fetchServerInstructions(serverName: string) {
+  /** Retrieves server instructions from MCP server if enabled in the config */
+  private async fetchServerInstructions(serverName: string): Promise<void> {
     const config = this.parsedConfigs[serverName];
     if (!config.serverInstructions) return;
     if (typeof config.serverInstructions === 'string') return;
@@ -174,8 +166,8 @@ export class MCPServersRegistry {
     }
   }
 
-  // Fetches server capabilities and available tools list
-  private async fetchServerCapabilities(serverName: string) {
+  /** Fetches server capabilities and available tools list */
+  private async fetchServerCapabilities(serverName: string): Promise<void> {
     const config = this.parsedConfigs[serverName];
     const conn = await this.connections.get(serverName);
     const capabilities = conn.client.getServerCapabilities();
@@ -187,7 +179,7 @@ export class MCPServersRegistry {
   }
 
   // Logs server configuration summary after initialization
-  private logUpdatedConfig(serverName: string) {
+  private logUpdatedConfig(serverName: string): void {
     const prefix = this.prefix(serverName);
     const config = this.parsedConfigs[serverName];
     logger.info(`${prefix} -------------------------------------------------┐`);

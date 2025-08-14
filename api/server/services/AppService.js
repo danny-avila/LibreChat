@@ -1,4 +1,9 @@
-const { loadMemoryConfig, agentsConfigSetup, loadWebSearchConfig } = require('@librechat/api');
+const {
+  isEnabled,
+  loadMemoryConfig,
+  agentsConfigSetup,
+  loadWebSearchConfig,
+} = require('@librechat/api');
 const {
   FileSources,
   loadOCRConfig,
@@ -6,16 +11,16 @@ const {
   getConfigDefaults,
 } = require('librechat-data-provider');
 const {
+  checkWebSearchConfig,
+  checkAzureVariables,
+  checkVariables,
   checkHealth,
   checkConfig,
-  checkVariables,
-  checkAzureVariables,
-  checkWebSearchConfig,
 } = require('./start/checks');
+const { ensureDefaultCategories, seedDefaultRoles, initializeRoles } = require('~/models');
 const { azureAssistantsDefaults, assistantsConfigSetup } = require('./start/assistants');
 const { initializeAzureBlobService } = require('./Files/Azure/initialize');
 const { initializeFirebase } = require('./Files/Firebase/initialize');
-const { seedDefaultRoles, initializeRoles, ensureDefaultCategories } = require('~/models');
 const loadCustomConfig = require('./Config/loadCustomConfig');
 const handleRateLimits = require('./Config/handleRateLimits');
 const { loadDefaultInterface } = require('./start/interface');
@@ -24,7 +29,6 @@ const { azureConfigSetup } = require('./start/azureOpenAI');
 const { processModelSpecs } = require('./start/modelSpecs');
 const { initializeS3 } = require('./Files/S3/initialize');
 const { loadAndFormatTools } = require('./ToolService');
-const { isEnabled } = require('~/server/utils');
 const { setCachedTools } = require('./Config');
 const paths = require('~/config/paths');
 
