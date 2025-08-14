@@ -245,7 +245,21 @@ class AgentClient extends BaseClient {
       this.addImageURLs(message, attachments),
       this.addDocuments(message, attachments),
     ]);
-    return [...imageFiles, ...documentFiles];
+
+    const allFiles = [...imageFiles, ...documentFiles];
+    const seenFileIds = new Set();
+    const uniqueFiles = [];
+
+    for (const file of allFiles) {
+      if (file.file_id && !seenFileIds.has(file.file_id)) {
+        seenFileIds.add(file.file_id);
+        uniqueFiles.push(file);
+      } else if (!file.file_id) {
+        uniqueFiles.push(file);
+      }
+    }
+
+    return uniqueFiles;
   }
 
   async buildMessages(
