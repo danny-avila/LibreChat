@@ -521,6 +521,19 @@ const mcpServersSchema = z.object({
 
 export type TMcpServersConfig = z.infer<typeof mcpServersSchema>;
 
+export const externalLinkSchema = z.object({
+  title: z.string(),
+  url: z.string().url(),
+});
+
+export const externalLinksSchema = z.object({
+  header: z.string().optional(),
+  links: z.array(externalLinkSchema).optional(),
+}).optional();
+
+export type TExternalLink = z.infer<typeof externalLinkSchema>;
+export type TExternalLinks = z.infer<typeof externalLinksSchema>;
+
 export const interfaceSchema = z
   .object({
     privacyPolicy: z
@@ -560,6 +573,7 @@ export const interfaceSchema = z
       .optional(),
     fileSearch: z.boolean().optional(),
     fileCitations: z.boolean().optional(),
+    externalLinks: externalLinksSchema,
   })
   .default({
     endpointsMenu: true,

@@ -7,6 +7,7 @@ import {
   renderEndpoints,
   renderSearchResults,
   renderCustomGroups,
+  renderExternalLinks,
 } from './components';
 import { getSelectedIcon, getDisplayValue } from './utils';
 import { CustomMenu as Menu } from './CustomMenu';
@@ -22,6 +23,8 @@ function ModelSelectorContent() {
     modelSpecs,
     mappedEndpoints,
     endpointsConfig,
+    externalLinks,
+    externalLinksHeader,
     // State
     searchValue,
     searchResults,
@@ -100,6 +103,7 @@ function ModelSelectorContent() {
             {renderEndpoints(mappedEndpoints ?? [])}
             {/* Render custom groups (specs with group field not matching any endpoint) */}
             {renderCustomGroups(modelSpecs || [], mappedEndpoints ?? [])}
+            {renderExternalLinks(externalLinks, externalLinksHeader)}
           </>
         )}
       </Menu>
