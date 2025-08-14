@@ -3,11 +3,16 @@ import React, { createContext, useContext, useState, useMemo } from 'react';
 import { isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
 import type { Endpoint, SelectedValues } from '~/common';
+import {
+  useAgentDefaultPermissionLevel,
+  useSelectorEffects,
+  useKeyDialog,
+  useEndpoints,
+} from '~/hooks';
 import { useAgentsMapContext, useAssistantsMapContext } from '~/Providers';
-import { useEndpoints, useSelectorEffects, useKeyDialog } from '~/hooks';
+import { useGetEndpointsQuery, useListAgentsQuery } from '~/data-provider';
 import { useModelSelectorChatContext } from './ModelSelectorChatContext';
 import useSelectMention from '~/hooks/Input/useSelectMention';
-import { useGetEndpointsQuery } from '~/data-provider';
 import { filterItems } from './utils';
 
 type ModelSelectorContextType = {
@@ -55,12 +60,21 @@ export function ModelSelectorProvider({ children, startupConfig }: ModelSelector
   const { endpoint, model, spec, agent_id, assistant_id, newConversation } =
     useModelSelectorChatContext();
   const modelSpecs = useMemo(() => startupConfig?.modelSpecs?.list ?? [], [startupConfig]);
+  const permissionLevel = useAgentDefaultPermissionLevel();
+  const { data: agents = null } = useListAgentsQuery(
+    { requiredPermission: permissionLevel },
+    {
+      select: (data) => data?.data,
+    },
+  );
+
   const { mappedEndpoints, endpointRequiresUserKey } = useEndpoints({
-    agentsMap,
+    agents,
     assistantsMap,
     startupConfig,
     endpointsConfig,
   });
+
   const { onSelectEndpoint, onSelectSpec } = useSelectMention({
     // presets,
     modelSpecs,
@@ -96,7 +110,7 @@ export function ModelSelectorProvider({ children, startupConfig }: ModelSelector
 
   const keyProps = useKeyDialog();
 
-  // Memoized search results
+  /** Memoized search results */
   const searchResults = useMemo(() => {
     if (!searchValue) {
       return null;
@@ -105,7 +119,6 @@ export function ModelSelectorProvider({ children, startupConfig }: ModelSelector
     return filterItems(allItems, searchValue, agentsMap, assistantsMap || {});
   }, [searchValue, modelSpecs, mappedEndpoints, agentsMap, assistantsMap]);
 
-  // Functions
   const setDebouncedSearchValue = useMemo(
     () =>
       debounce((value: string) => {

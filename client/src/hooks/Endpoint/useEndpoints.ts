@@ -1,18 +1,17 @@
 import React, { useMemo, useCallback } from 'react';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
 import {
-  EModelEndpoint,
-  PermissionTypes,
   Permissions,
   alternateName,
+  EModelEndpoint,
+  PermissionTypes,
 } from 'librechat-data-provider';
 import type {
-  Agent,
-  Assistant,
   TEndpointsConfig,
-  TAgentsMap,
   TAssistantsMap,
   TStartupConfig,
+  Assistant,
+  Agent,
 } from 'librechat-data-provider';
 import type { Endpoint } from '~/common';
 import { mapEndpoints, getIconKey, getEndpointField } from '~/utils';
@@ -21,12 +20,12 @@ import { useHasAccess } from '~/hooks';
 import { icons } from './Icons';
 
 export const useEndpoints = ({
-  agentsMap,
+  agents,
   assistantsMap,
   endpointsConfig,
   startupConfig,
 }: {
-  agentsMap?: TAgentsMap;
+  agents?: Agent[] | null;
   assistantsMap?: TAssistantsMap;
   endpointsConfig: TEndpointsConfig;
   startupConfig: TStartupConfig | undefined;
@@ -43,15 +42,6 @@ export const useEndpoints = ({
     permissionType: PermissionTypes.AGENTS,
     permission: Permissions.USE,
   });
-
-  const agents = useMemo(
-    () =>
-      Object.values(agentsMap ?? {}).filter(
-        (agent): agent is Agent & { name: string } =>
-          agent !== undefined && 'id' in agent && 'name' in agent && agent.name !== null,
-      ),
-    [agentsMap],
-  );
 
   const assistants: Assistant[] = useMemo(
     () => Object.values(assistantsMap?.[EModelEndpoint.assistants] ?? {}),
@@ -95,7 +85,7 @@ export const useEndpoints = ({
       const Icon = icons[iconKey];
       const endpointIconURL = getEndpointField(endpointsConfig, ep, 'iconURL');
       const hasModels =
-        (ep === EModelEndpoint.agents && agents?.length > 0) ||
+        (ep === EModelEndpoint.agents && (agents?.length ?? 0) > 0) ||
         (ep === EModelEndpoint.assistants && assistants?.length > 0) ||
         (ep !== EModelEndpoint.assistants &&
           ep !== EModelEndpoint.agents &&
@@ -117,16 +107,16 @@ export const useEndpoints = ({
       };
 
       // Handle agents case
-      if (ep === EModelEndpoint.agents && agents.length > 0) {
-        result.models = agents.map((agent) => ({
+      if (ep === EModelEndpoint.agents && (agents?.length ?? 0) > 0) {
+        result.models = agents?.map((agent) => ({
           name: agent.id,
           isGlobal: agent.isPublic ?? false,
         }));
-        result.agentNames = agents.reduce((acc, agent) => {
+        result.agentNames = agents?.reduce((acc, agent) => {
           acc[agent.id] = agent.name || '';
           return acc;
         }, {});
-        result.modelIcons = agents.reduce((acc, agent) => {
+        result.modelIcons = agents?.reduce((acc, agent) => {
           acc[agent.id] = agent?.avatar?.filepath;
           return acc;
         }, {});

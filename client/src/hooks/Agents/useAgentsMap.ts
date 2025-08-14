@@ -9,7 +9,7 @@ export default function useAgentsMap({
 }: {
   isAuthenticated: boolean;
 }): TAgentsMap | undefined {
-  const { data: agentsList = null } = useListAgentsQuery(
+  const { data: mappedAgents = null } = useListAgentsQuery(
     { requiredPermission: PermissionBits.VIEW },
     {
       select: (res) => mapAgents(res.data),
@@ -17,9 +17,9 @@ export default function useAgentsMap({
     },
   );
 
-  const agents = useMemo<TAgentsMap | undefined>(() => {
-    return agentsList !== null ? agentsList : undefined;
-  }, [agentsList]);
+  const agentsMap = useMemo<TAgentsMap | undefined>(() => {
+    return mappedAgents !== null ? mappedAgents : undefined;
+  }, [mappedAgents]);
 
-  return agents;
+  return agentsMap;
 }
