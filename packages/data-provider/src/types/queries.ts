@@ -1,4 +1,5 @@
 import type { InfiniteData } from '@tanstack/react-query';
+import type * as p from '../accessPermissions';
 import type * as a from '../types/agents';
 import type * as s from '../schemas';
 import type * as t from '../types';
@@ -125,6 +126,33 @@ export type MemoriesResponse = {
   usagePercentage: number | null;
 };
 
+export type PrincipalSearchParams = {
+  q: string;
+  limit?: number;
+  types?: Array<p.PrincipalType.USER | p.PrincipalType.GROUP | p.PrincipalType.ROLE>;
+};
+
+export type PrincipalSearchResponse = {
+  query: string;
+  limit: number;
+  types?: Array<p.PrincipalType.USER | p.PrincipalType.GROUP | p.PrincipalType.ROLE>;
+  results: p.TPrincipalSearchResult[];
+  count: number;
+  sources: {
+    local: number;
+    entra: number;
+  };
+};
+
+export type AccessRole = {
+  accessRoleId: p.AccessRoleIds;
+  name: string;
+  description: string;
+  permBits: number;
+};
+
+export type AccessRolesResponse = AccessRole[];
+
 export interface MCPServerStatus {
   requiresOAuth: boolean;
   connectionState: 'disconnected' | 'connecting' | 'connected' | 'error';
@@ -147,3 +175,15 @@ export interface MCPAuthValuesResponse {
   serverName: string;
   authValueFlags: Record<string, boolean>;
 }
+
+/* SharePoint Graph API Token */
+export type GraphTokenParams = {
+  scopes: string;
+};
+
+export type GraphTokenResponse = {
+  access_token: string;
+  token_type: string;
+  expires_in: number;
+  scope: string;
+};

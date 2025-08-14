@@ -7,8 +7,8 @@ import type { UseMutationResult, QueryObserverResult } from '@tanstack/react-que
 import type { Agent, AgentCreateParams } from 'librechat-data-provider';
 import type { TAgentCapabilities, AgentForm } from '~/common';
 import { cn, createProviderOption, processAgentOption, getDefaultAgentFormValues } from '~/utils';
-import { useListAgentsQuery, useGetStartupConfig } from '~/data-provider';
-import { useLocalize } from '~/hooks';
+import { useGetStartupConfig, useListAgentsQuery } from '~/data-provider';
+import { useLocalize, useAgentDefaultPermissionLevel } from '~/hooks';
 
 const keys = new Set(Object.keys(defaultAgentFormValues));
 
@@ -28,24 +28,27 @@ export default function AgentSelect({
   const { control, reset } = useFormContext();
 
   const { data: startupConfig } = useGetStartupConfig();
-  const { data: agents = null } = useListAgentsQuery(undefined, {
-    select: (res) =>
-      res.data.map((agent) =>
-        processAgentOption({
-          agent: {
-            ...agent,
-            name: agent.name || agent.id,
-          },
-          instanceProjectId: startupConfig?.instanceProjectId,
-        }),
-      ),
-  });
+  const permissionLevel = useAgentDefaultPermissionLevel();
+
+  const { data: agents = null } = useListAgentsQuery(
+    { requiredPermission: permissionLevel },
+    {
+      select: (res) =>
+        res.data.map((agent) =>
+          processAgentOption({
+            agent: {
+              ...agent,
+              name: agent.name || agent.id,
+            },
+            instanceProjectId: startupConfig?.instanceProjectId,
+          }),
+        ),
+    },
+  );
 
   const resetAgentForm = useCallback(
     (fullAgent: Agent) => {
-      const { instanceProjectId } = startupConfig ?? {};
-      const isGlobal =
-        (instanceProjectId != null && fullAgent.projectIds?.includes(instanceProjectId)) ?? false;
+      const isGlobal = fullAgent.isPublic ?? false;
       const update = {
         ...fullAgent,
         provider: createProviderOption(fullAgent.provider),
@@ -77,6 +80,10 @@ export default function AgentSelect({
         agent: update,
         model: update.model,
         tools: agentTools,
+        // Ensure the category is properly set for the form
+        category: fullAgent.category || 'general',
+        // Make sure support_contact is properly loaded
+        support_contact: fullAgent.support_contact,
       };
 
       Object.entries(fullAgent).forEach(([name, value]) => {

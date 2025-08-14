@@ -62,21 +62,23 @@ export class MCPServersRegistry {
   // Fetches all metadata for a single server in parallel
   private async gatherServerInfo(serverName: string) {
     try {
-      await Promise.allSettled([
-        this.fetchOAuthRequirement(serverName).catch((error) =>
-          logger.error(`${this.prefix(serverName)} Failed to fetch OAuth requirement:`, error),
-        ),
-        this.fetchServerInstructions(serverName).catch((error) =>
-          logger.error(`${this.prefix(serverName)} Failed to fetch server instructions:`, error),
-        ),
-        this.fetchServerCapabilities(serverName).catch((error) =>
-          logger.error(`${this.prefix(serverName)} Failed to fetch server capabilities:`, error),
-        ),
-      ]);
+      await this.fetchOAuthRequirement(serverName);
+      const config = this.parsedConfigs[serverName];
+
+      if (config.startup !== false && !config.requiresOAuth) {
+        await Promise.allSettled([
+          this.fetchServerInstructions(serverName).catch((error) =>
+            logger.warn(`${this.prefix(serverName)} Failed to fetch server instructions:`, error),
+          ),
+          this.fetchServerCapabilities(serverName).catch((error) =>
+            logger.warn(`${this.prefix(serverName)} Failed to fetch server capabilities:`, error),
+          ),
+        ]);
+      }
 
       this.logUpdatedConfig(serverName);
     } catch (error) {
-      logger.error(`${this.prefix(serverName)} Failed to initialize server:`, error);
+      logger.warn(`${this.prefix(serverName)} Failed to initialize server:`, error);
     }
   }
 
@@ -117,7 +119,7 @@ export class MCPServersRegistry {
         const toolFunctions = await this.getToolFunctions(serverName, conn);
         Object.assign(allToolFunctions, toolFunctions);
       } catch (error) {
-        logger.error(`${this.prefix(serverName)} Error fetching tool functions:`, error);
+        logger.warn(`${this.prefix(serverName)} Error fetching tool functions:`, error);
       }
     }
     this.toolFunctions = allToolFunctions;
@@ -147,14 +149,16 @@ export class MCPServersRegistry {
   }
 
   // Determines if server requires OAuth if not already specified in the config
-  private async fetchOAuthRequirement(serverName: string) {
+  private async fetchOAuthRequirement(serverName: string): Promise<boolean> {
     const config = this.parsedConfigs[serverName];
-    if (config.requiresOAuth != null) return;
+    if (config.requiresOAuth != null) return config.requiresOAuth;
     if (config.url == null) return (config.requiresOAuth = false);
+    if (config.startup === false) return (config.requiresOAuth = false);
 
     const result = await detectOAuthRequirement(config.url);
     config.requiresOAuth = result.requiresOAuth;
     config.oauthMetadata = result.metadata;
+    return config.requiresOAuth;
   }
 
   // Retrieves server instructions from MCP server if enabled in the config
@@ -186,11 +190,13 @@ export class MCPServersRegistry {
   private logUpdatedConfig(serverName: string) {
     const prefix = this.prefix(serverName);
     const config = this.parsedConfigs[serverName];
-    logger.info(`${prefix} URL: ${config.url ?? 'N/A'}`);
+    logger.info(`${prefix} -------------------------------------------------┐`);
+    logger.info(`${prefix} URL: ${config.url}`);
     logger.info(`${prefix} OAuth Required: ${config.requiresOAuth}`);
     logger.info(`${prefix} Capabilities: ${config.capabilities}`);
     logger.info(`${prefix} Tools: ${config.tools}`);
-    logger.info(`${prefix} Server Instructions: ${config.serverInstructions ?? 'None'}`);
+    logger.info(`${prefix} Server Instructions: ${config.serverInstructions}`);
+    logger.info(`${prefix} -------------------------------------------------┘`);
   }
 
   // Returns formatted log prefix for server messages

@@ -1,10 +1,10 @@
+import { useMemo, useRef, useEffect } from 'react';
 import { useRecoilState, useRecoilValue } from 'recoil';
-import { useMemo, useRef, useEffect, useCallback } from 'react';
 import { usePromptGroupsInfiniteQuery } from '~/data-provider';
-import debounce from 'lodash/debounce';
-import store from '~/store';
 import { useQueryClient } from '@tanstack/react-query';
 import { QueryKeys } from 'librechat-data-provider';
+import debounce from 'lodash/debounce';
+import store from '~/store';
 
 export default function usePromptGroupsNav() {
   const queryClient = useQueryClient();
@@ -14,6 +14,7 @@ export default function usePromptGroupsNav() {
   const [pageNumber, setPageNumber] = useRecoilState(store.promptsPageNumber);
 
   const maxPageNumberReached = useRef(1);
+  const prevFiltersRef = useRef({ name, category, pageSize });
 
   useEffect(() => {
     if (pageNumber > 1 && pageNumber > maxPageNumberReached.current) {
@@ -29,10 +30,25 @@ export default function usePromptGroupsNav() {
   });
 
   useEffect(() => {
+    const filtersChanged =
+      prevFiltersRef.current.name !== name ||
+      prevFiltersRef.current.category !== category ||
+      prevFiltersRef.current.pageSize !== pageSize;
+
+    if (!filtersChanged) {
+      return;
+    }
     maxPageNumberReached.current = 1;
     setPageNumber(1);
-    queryClient.resetQueries([QueryKeys.promptGroups, name, category, pageSize]);
-  }, [pageSize, name, category, setPageNumber]);
+
+    // Only reset queries if we're not already on page 1
+    // This prevents double queries when filters change
+    if (pageNumber !== 1) {
+      queryClient.invalidateQueries([QueryKeys.promptGroups, name, category, pageSize]);
+    }
+
+    prevFiltersRef.current = { name, category, pageSize };
+  }, [pageSize, name, category, setPageNumber, pageNumber, queryClient]);
 
   const promptGroups = useMemo(() => {
     return groupsQuery.data?.pages[pageNumber - 1 + '']?.promptGroups || [];
@@ -52,10 +68,11 @@ export default function usePromptGroupsNav() {
   const hasNextPage = !!groupsQuery.hasNextPage || maxPageNumberReached.current > pageNumber;
   const hasPreviousPage = !!groupsQuery.hasPreviousPage || pageNumber > 1;
 
-  const debouncedSetName = useCallback(
-    debounce((nextValue: string) => {
-      setName(nextValue);
-    }, 850),
+  const debouncedSetName = useMemo(
+    () =>
+      debounce((nextValue: string) => {
+        setName(nextValue);
+      }, 850),
     [setName],
   );
 

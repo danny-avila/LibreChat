@@ -28,9 +28,12 @@ jest.mock('./Files/Firebase/initialize', () => ({
 }));
 jest.mock('~/models', () => ({
   initializeRoles: jest.fn(),
+  seedDefaultRoles: jest.fn(),
+  ensureDefaultCategories: jest.fn(),
 }));
 jest.mock('~/models/Role', () => ({
   updateAccessPermissions: jest.fn(),
+  getRoleByName: jest.fn().mockResolvedValue(null),
 }));
 jest.mock('./Config', () => ({
   setCachedTools: jest.fn(),
@@ -131,6 +134,9 @@ describe('AppService', () => {
     expect(process.env.CDN_PROVIDER).toEqual('testStrategy');
 
     expect(app.locals).toEqual({
+      config: expect.objectContaining({
+        fileStrategy: 'testStrategy',
+      }),
       socialLogins: ['testLogin'],
       fileStrategy: 'testStrategy',
       interfaceConfig: expect.objectContaining({
@@ -165,6 +171,9 @@ describe('AppService', () => {
       agents: {
         disableBuilder: false,
         capabilities: expect.arrayContaining([...defaultAgentCapabilities]),
+        maxCitations: 30,
+        maxCitationsPerFile: 7,
+        minRelevanceScore: 0.45,
       },
     });
   });
@@ -770,6 +779,7 @@ describe('AppService updating app.locals and issuing warnings', () => {
 
     expect(app.locals).toBeDefined();
     expect(app.locals.paths).toBeDefined();
+    expect(app.locals.config).toEqual({});
     expect(app.locals.fileStrategy).toEqual(FileSources.local);
     expect(app.locals.socialLogins).toEqual(defaultSocialLogins);
     expect(app.locals.balance).toEqual(
@@ -802,6 +812,7 @@ describe('AppService updating app.locals and issuing warnings', () => {
 
     expect(app.locals).toBeDefined();
     expect(app.locals.paths).toBeDefined();
+    expect(app.locals.config).toEqual(customConfig);
     expect(app.locals.fileStrategy).toEqual(customConfig.fileStrategy);
     expect(app.locals.socialLogins).toEqual(customConfig.registration.socialLogins);
     expect(app.locals.balance).toEqual(customConfig.balance);
@@ -958,5 +969,30 @@ describe('AppService updating app.locals and issuing warnings', () => {
     expect(app.locals.ocr.baseURL).toEqual('${OCR_BASEURL_CUSTOM_VAR_NAME}');
     expect(app.locals.ocr.strategy).toEqual('mistral_ocr');
     expect(app.locals.ocr.mistralModel).toEqual('mistral-medium');
+  });
+
+  it('should correctly configure peoplePicker permissions when specified', async () => {
+    const mockConfig = {
+      interface: {
+        peoplePicker: {
+          users: true,
+          groups: true,
+          roles: true,
+        },
+      },
+    };
+
+    require('./Config/loadCustomConfig').mockImplementationOnce(() => Promise.resolve(mockConfig));
+
+    const app = { locals: {} };
+    await AppService(app);
+
+    // Check that interface config includes the permissions
+    expect(app.locals.interfaceConfig.peoplePicker).toBeDefined();
+    expect(app.locals.interfaceConfig.peoplePicker).toMatchObject({
+      users: true,
+      groups: true,
+      roles: true,
+    });
   });
 });

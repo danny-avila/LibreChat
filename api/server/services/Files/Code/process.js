@@ -11,6 +11,7 @@ const {
   imageExtRegex,
   EToolResources,
 } = require('librechat-data-provider');
+const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { convertImage } = require('~/server/services/Files/images/convert');
 const { createFile, getFiles, updateFile } = require('~/models/File');
@@ -164,14 +165,24 @@ const primeFiles = async (options, apiKey) => {
   const file_ids = tool_resources?.[EToolResources.execute_code]?.file_ids ?? [];
   const agentResourceIds = new Set(file_ids);
   const resourceFiles = tool_resources?.[EToolResources.execute_code]?.files ?? [];
-  const dbFiles = (
-    (await getFiles(
-      { file_id: { $in: file_ids } },
-      null,
-      { text: 0 },
-      { userId: req?.user?.id, agentId },
-    )) ?? []
-  ).concat(resourceFiles);
+
+  // Get all files first
+  const allFiles = (await getFiles({ file_id: { $in: file_ids } }, null, { text: 0 })) ?? [];
+
+  // Filter by access if user and agent are provided
+  let dbFiles;
+  if (req?.user?.id && agentId) {
+    dbFiles = await filterFilesByAgentAccess({
+      files: allFiles,
+      userId: req.user.id,
+      role: req.user.role,
+      agentId,
+    });
+  } else {
+    dbFiles = allFiles;
+  }
+
+  dbFiles = dbFiles.concat(resourceFiles);
 
   const files = [];
   const sessions = new Map();
@@ -225,7 +236,17 @@ const primeFiles = async (options, apiKey) => {
             entity_id: queryParams.entity_id,
             apiKey,
           });
-          await updateFile({ file_id: file.file_id, metadata: { fileIdentifier } });
+
+          // Preserve existing metadata when adding fileIdentifier
+          const updatedMetadata = {
+            ...file.metadata, // Preserve existing metadata (like S3 storage info)
+            fileIdentifier, // Add fileIdentifier
+          };
+
+          await updateFile({
+            file_id: file.file_id,
+            metadata: updatedMetadata,
+          });
           sessions.set(session_id, true);
           pushFile();
         } catch (error) {

@@ -1,7 +1,7 @@
 const express = require('express');
 const { generateCheckAccess } = require('@librechat/api');
-const { PermissionTypes, Permissions } = require('librechat-data-provider');
-const { requireJwtAuth } = require('~/server/middleware');
+const { PermissionTypes, Permissions, PermissionBits } = require('librechat-data-provider');
+const { requireJwtAuth, canAccessAgentResource } = require('~/server/middleware');
 const v1 = require('~/server/controllers/agents/v1');
 const { getRoleByName } = require('~/models/Role');
 const actions = require('./actions');
@@ -45,6 +45,11 @@ router.use('/actions', actions);
 router.use('/tools', tools);
 
 /**
+ * Get all agent categories with counts
+ * @route GET /agents/marketplace/categories
+ */
+router.get('/categories', v1.getAgentCategories);
+/**
  * Creates an agent.
  * @route POST /agents
  * @param {AgentCreateParams} req.body - The agent creation parameters.
@@ -53,13 +58,38 @@ router.use('/tools', tools);
 router.post('/', checkAgentCreate, v1.createAgent);
 
 /**
- * Retrieves an agent.
+ * Retrieves basic agent information (VIEW permission required).
+ * Returns safe, non-sensitive agent data for viewing purposes.
  * @route GET /agents/:id
  * @param {string} req.params.id - Agent identifier.
- * @returns {Agent} 200 - Success response - application/json
+ * @returns {Agent} 200 - Basic agent info - application/json
  */
-router.get('/:id', checkAgentAccess, v1.getAgent);
+router.get(
+  '/:id',
+  checkAgentAccess,
+  canAccessAgentResource({
+    requiredPermission: PermissionBits.VIEW,
+    resourceIdParam: 'id',
+  }),
+  v1.getAgent,
+);
 
+/**
+ * Retrieves full agent details including sensitive configuration (EDIT permission required).
+ * Returns complete agent data for editing/configuration purposes.
+ * @route GET /agents/:id/expanded
+ * @param {string} req.params.id - Agent identifier.
+ * @returns {Agent} 200 - Full agent details - application/json
+ */
+router.get(
+  '/:id/expanded',
+  checkAgentAccess,
+  canAccessAgentResource({
+    requiredPermission: PermissionBits.EDIT,
+    resourceIdParam: 'id',
+  }),
+  (req, res) => v1.getAgent(req, res, true), // Expanded version
+);
 /**
  * Updates an agent.
  * @route PATCH /agents/:id
@@ -67,7 +97,15 @@ router.get('/:id', checkAgentAccess, v1.getAgent);
  * @param {AgentUpdateParams} req.body - The agent update parameters.
  * @returns {Agent} 200 - Success response - application/json
  */
-router.patch('/:id', checkGlobalAgentShare, v1.updateAgent);
+router.patch(
+  '/:id',
+  checkGlobalAgentShare,
+  canAccessAgentResource({
+    requiredPermission: PermissionBits.EDIT,
+    resourceIdParam: 'id',
+  }),
+  v1.updateAgent,
+);
 
 /**
  * Duplicates an agent.
@@ -75,7 +113,15 @@ router.patch('/:id', checkGlobalAgentShare, v1.updateAgent);
  * @param {string} req.params.id - Agent identifier.
  * @returns {Agent} 201 - Success response - application/json
  */
-router.post('/:id/duplicate', checkAgentCreate, v1.duplicateAgent);
+router.post(
+  '/:id/duplicate',
+  checkAgentCreate,
+  canAccessAgentResource({
+    requiredPermission: PermissionBits.VIEW,
+    resourceIdParam: 'id',
+  }),
+  v1.duplicateAgent,
+);
 
 /**
  * Deletes an agent.
@@ -83,7 +129,15 @@ router.post('/:id/duplicate', checkAgentCreate, v1.duplicateAgent);
  * @param {string} req.params.id - Agent identifier.
  * @returns {Agent} 200 - success response - application/json
  */
-router.delete('/:id', checkAgentCreate, v1.deleteAgent);
+router.delete(
+  '/:id',
+  checkAgentCreate,
+  canAccessAgentResource({
+    requiredPermission: PermissionBits.DELETE,
+    resourceIdParam: 'id',
+  }),
+  v1.deleteAgent,
+);
 
 /**
  * Reverts an agent to a previous version.
@@ -110,6 +164,14 @@ router.get('/', checkAgentAccess, v1.getListAgents);
  * @param {string} [req.body.metadata] - Optional metadata for the agent's avatar.
  * @returns {Object} 200 - success response - application/json
  */
-avatar.post('/:agent_id/avatar/', checkAgentAccess, v1.uploadAgentAvatar);
+avatar.post(
+  '/:agent_id/avatar/',
+  checkAgentAccess,
+  canAccessAgentResource({
+    requiredPermission: PermissionBits.EDIT,
+    resourceIdParam: 'agent_id',
+  }),
+  v1.uploadAgentAvatar,
+);
 
 module.exports = { v1: router, avatar };

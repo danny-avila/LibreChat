@@ -179,10 +179,10 @@ describe('MCPServersRegistry - Initialize Function', () => {
         new Set(['oauth_server', 'oauth_predefined', 'oauth_startup_enabled']),
       );
 
-      // Test serverInstructions
+      // Test serverInstructions - OAuth servers keep their original boolean value, non-OAuth fetch actual strings
       expect(registry.serverInstructions).toEqual({
-        oauth_server: 'GitHub MCP server instructions',
         stdio_server: 'Follow these instructions for stdio server',
+        oauth_server: true,
         non_oauth_server: 'Public API instructions',
       });
 
@@ -193,16 +193,8 @@ describe('MCPServersRegistry - Initialize Function', () => {
         non_oauth_server: rawConfigs.non_oauth_server,
       });
 
-      // Test toolFunctions (only 2 servers have tools: oauth_server has 1, stdio_server has 2)
+      // Test toolFunctions (only non-OAuth servers get their tools fetched during initialization)
       const expectedToolFunctions = {
-        get_repository_mcp_oauth_server: {
-          type: 'function',
-          function: {
-            name: 'get_repository_mcp_oauth_server',
-            description: 'Description for get_repository',
-            parameters: { type: 'object', properties: { input: { type: 'string' } } },
-          },
-        },
         file_read_mcp_stdio_server: {
           type: 'function',
           function: {
@@ -235,9 +227,9 @@ describe('MCPServersRegistry - Initialize Function', () => {
       expect(registry.oauthServers).toBeInstanceOf(Set);
       expect(registry.toolFunctions).toBeDefined();
 
-      // Error should be logged
-      expect(mockLogger.error).toHaveBeenCalledWith(
-        expect.stringContaining('[MCP][oauth_server] Failed to fetch OAuth requirement:'),
+      // Error should be logged as a warning at the higher level
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('[MCP][oauth_server] Failed to initialize server:'),
         expect.any(Error),
       );
     });
@@ -250,7 +242,7 @@ describe('MCPServersRegistry - Initialize Function', () => {
       expect(mockConnectionsRepo.disconnectAll).toHaveBeenCalledTimes(1);
     });
 
-    it('should log configuration updates for each server', async () => {
+    it('should log configuration updates for each startup-enabled server', async () => {
       const registry = new MCPServersRegistry(rawConfigs);
 
       await registry.initialize();
