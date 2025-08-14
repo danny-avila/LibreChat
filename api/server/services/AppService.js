@@ -28,7 +28,6 @@ const { loadTurnstileConfig } = require('./start/turnstile');
 const { azureConfigSetup } = require('./start/azureOpenAI');
 const { processModelSpecs } = require('./start/modelSpecs');
 const { initializeS3 } = require('./Files/S3/initialize');
-const { checkMigrations } = require('./start/migration');
 const { loadAndFormatTools } = require('./ToolService');
 const { setCachedTools } = require('./Config');
 const paths = require('~/config/paths');
@@ -114,8 +113,6 @@ const AppService = async (app) => {
       ...defaultLocals,
       [EModelEndpoint.agents]: agentsDefaults,
     };
-
-    await checkMigrations();
     return;
   }
 
@@ -177,8 +174,6 @@ const AppService = async (app) => {
     modelSpecs: processModelSpecs(endpoints, config.modelSpecs, interfaceConfig),
     ...endpointLocals,
   };
-
-  await checkMigrations();
 };
 
 module.exports = AppService;
