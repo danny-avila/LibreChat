@@ -14,6 +14,7 @@ describe('cacheConfig', () => {
     delete process.env.REDIS_KEY_PREFIX_VAR;
     delete process.env.REDIS_KEY_PREFIX;
     delete process.env.USE_REDIS;
+    delete process.env.USE_REDIS_CLUSTER;
     delete process.env.REDIS_PING_INTERVAL;
     delete process.env.FORCED_IN_MEMORY_CACHE_NAMESPACES;
 
@@ -119,6 +120,43 @@ describe('cacheConfig', () => {
 
       const { cacheConfig } = require('./cacheConfig');
       expect(cacheConfig.REDIS_PING_INTERVAL).toBe(300);
+    });
+  });
+
+  describe('USE_REDIS_CLUSTER configuration', () => {
+    test('should use explicit USE_REDIS_CLUSTER=true regardless of REDIS_URI', () => {
+      process.env.USE_REDIS_CLUSTER = 'true';
+      process.env.REDIS_URI = 'redis://localhost:6379';
+
+      const { cacheConfig } = require('./cacheConfig');
+      expect(cacheConfig.USE_REDIS_CLUSTER).toBe(true);
+    });
+
+    test('should use explicit USE_REDIS_CLUSTER=false regardless of REDIS_URI', () => {
+      process.env.USE_REDIS_CLUSTER = 'false';
+      process.env.REDIS_URI = 'redis://node1:6379,redis://node2:6379';
+
+      const { cacheConfig } = require('./cacheConfig');
+      expect(cacheConfig.USE_REDIS_CLUSTER).toBe(false);
+    });
+
+    test('should detect cluster from REDIS_URI with comma when USE_REDIS_CLUSTER not set', () => {
+      process.env.REDIS_URI = 'redis://node1:6379,redis://node2:6379';
+
+      const { cacheConfig } = require('./cacheConfig');
+      expect(cacheConfig.USE_REDIS_CLUSTER).toBe(true);
+    });
+
+    test('should not detect cluster from REDIS_URI without comma when USE_REDIS_CLUSTER not set', () => {
+      process.env.REDIS_URI = 'redis://localhost:6379';
+
+      const { cacheConfig } = require('./cacheConfig');
+      expect(cacheConfig.USE_REDIS_CLUSTER).toBe(false);
+    });
+
+    test('should be undefined when neither USE_REDIS_CLUSTER nor REDIS_URI is set', () => {
+      const { cacheConfig } = require('./cacheConfig');
+      expect(cacheConfig.USE_REDIS_CLUSTER).toBe(undefined);
     });
   });
 
