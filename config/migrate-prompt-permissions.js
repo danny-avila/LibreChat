@@ -1,9 +1,9 @@
 const path = require('path');
 const { logger } = require('@librechat/data-schemas');
-require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
-
 const { AccessRoleIds, ResourceType, PrincipalType } = require('librechat-data-provider');
 const { GLOBAL_PROJECT_NAME } = require('librechat-data-provider').Constants;
+
+require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
 const connect = require('./connect');
 
 const { grantPermission } = require('~/server/services/PermissionService');
@@ -17,9 +17,9 @@ async function migrateToPromptGroupPermissions({ dryRun = true, batchSize = 100 
   logger.info('Starting PromptGroup Permissions Migration', { dryRun, batchSize });
 
   // Verify required roles exist
-  const ownerRole = await findRoleByIdentifier('promptGroup_owner');
-  const viewerRole = await findRoleByIdentifier('promptGroup_viewer');
-  const editorRole = await findRoleByIdentifier('promptGroup_editor');
+  const ownerRole = await findRoleByIdentifier(AccessRoleIds.PROMPTGROUP_OWNER);
+  const viewerRole = await findRoleByIdentifier(AccessRoleIds.PROMPTGROUP_VIEWER);
+  const editorRole = await findRoleByIdentifier(AccessRoleIds.PROMPTGROUP_EDITOR);
 
   if (!ownerRole || !viewerRole || !editorRole) {
     throw new Error('Required promptGroup roles not found. Run role seeding first.');
