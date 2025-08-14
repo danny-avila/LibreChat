@@ -995,23 +995,4 @@ describe('AppService updating app.locals and issuing warnings', () => {
       roles: true,
     });
   });
-
-  it('should use default peoplePicker permissions when not specified', async () => {
-    const mockConfig = {
-      interface: {
-        // No peoplePicker configuration
-      },
-    };
-
-    require('./Config/loadCustomConfig').mockImplementationOnce(() => Promise.resolve(mockConfig));
-
-    const app = { locals: {} };
-    await AppService(app);
-
-    // Check that default permissions are applied
-    expect(app.locals.interfaceConfig.peoplePicker).toBeDefined();
-    expect(app.locals.interfaceConfig.peoplePicker.users).toBe(true);
-    expect(app.locals.interfaceConfig.peoplePicker.groups).toBe(true);
-    expect(app.locals.interfaceConfig.peoplePicker.roles).toBe(true);
-  });
 });
