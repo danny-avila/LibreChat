@@ -1,5 +1,6 @@
 import { extractEnvVariable } from 'librechat-data-provider';
-import type { TUser, MCPOptions, RequestBody } from 'librechat-data-provider';
+import type { TUser, MCPOptions } from 'librechat-data-provider';
+import type { RequestBody } from '~/types';
 
 /**
  * List of allowed user fields that can be used in MCP environment variables.
