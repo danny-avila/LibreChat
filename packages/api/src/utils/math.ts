@@ -1,45 +1,41 @@
 /**
- * Evaluates a mathematical expression provided as a string and returns the result.
+ * Parses a number from a string with a fallback value.
+ * Used primarily for parsing environment variables that should be numbers.
  *
  * If the input is already a number, it returns the number as is.
- * If the input is not a string or contains invalid characters, an error is thrown.
- * If the evaluated result is not a number, an error is thrown.
+ * If the input is not a string or cannot be parsed as a number, returns the fallback value.
  *
- * @param str - The mathematical expression to evaluate, or a number.
- * @param fallbackValue - The default value to return if the input is not a string or number, or if the evaluated result is not a number.
+ * @param str - The string to parse as a number, or a number.
+ * @param fallbackValue - The default value to return if parsing fails.
  *
- * @returns The result of the evaluated expression or the input number.
- *
- * @throws Throws an error if the input is not a string or number, contains invalid characters, or does not evaluate to a number.
+ * @returns The parsed number or the fallback value.
  */
 export function math(str: string | number, fallbackValue?: number): number {
   const fallback = typeof fallbackValue !== 'undefined' && typeof fallbackValue === 'number';
-  if (typeof str !== 'string' && typeof str === 'number') {
+  
+  // If it's already a number, return it
+  if (typeof str === 'number') {
     return str;
-  } else if (typeof str !== 'string') {
+  }
+  
+  // If it's not a string, return fallback
+  if (typeof str !== 'string') {
     if (fallback) {
       return fallbackValue;
     }
     throw new Error(`str is ${typeof str}, but should be a string`);
   }
 
-  const validStr = /^[+\-\d.\s*/%()]+$/.test(str);
-
-  if (!validStr) {
+  // Try to parse the string as a number
+  const parsed = parseFloat(str.trim());
+  
+  // If parsing failed or result is NaN, return fallback
+  if (isNaN(parsed)) {
     if (fallback) {
       return fallbackValue;
     }
-    throw new Error('Invalid characters in string');
+    throw new Error(`[math] str "${str}" could not be parsed as a number`);
   }
 
-  const value = eval(str);
-
-  if (typeof value !== 'number') {
-    if (fallback) {
-      return fallbackValue;
-    }
-    throw new Error(`[math] str did not evaluate to a number but to a ${typeof value}`);
-  }
-
-  return value;
+  return parsed;
 }
