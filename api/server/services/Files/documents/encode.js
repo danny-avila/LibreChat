@@ -151,6 +151,7 @@ async function encodeAndFormatDocuments(req, files, endpoint) {
           media_type: 'application/pdf',
           data: content,
         },
+        cache_control: { type: 'ephemeral' },
       };
 
       result.documents.push(documentPart);
