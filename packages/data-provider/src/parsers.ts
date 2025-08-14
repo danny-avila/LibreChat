@@ -212,18 +212,21 @@ const extractGPTVersion = (modelStr: string): string => {
   }
   */
   // CHAT-94: Return the full name of the model, e.g. GPT-4o-mini
-  if (modelStr.startsWith("gpt-")) {
-    return "GPT-" + modelStr.slice(4);
+  if (modelStr.startsWith('gpt-')) {
+    return 'GPT-' + modelStr.slice(4);
   }
-  return modelStr;
+  return '';
 };
 
 /** Match omni models (o1, o3, etc.), "o" followed by a digit, possibly with decimal */
 const extractOmniVersion = (modelStr: string): string => {
   const omniMatch = modelStr.match(/\bo(\d+(?:\.\d+)?)\b/i);
   if (omniMatch) {
+    /*
     const version = omniMatch[1];
     return `o${version}`;
+    */
+    return modelStr;
   }
   return '';
 };
