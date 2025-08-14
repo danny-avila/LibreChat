@@ -71,7 +71,7 @@ const AttachFileMenu = ({
     // Add document upload option for Anthropic endpoints
     if (endpoint === EModelEndpoint.anthropic) {
       items.push({
-        label: 'Upload Document',
+        label: 'Upload to Provider',
         onClick: () => {
           setToolResource(undefined);
           handleUploadClick('document');
@@ -80,8 +80,7 @@ const AttachFileMenu = ({
       });
     }
 
-    // Hide OCR and File Search for Anthropic endpoints (native PDF support makes these irrelevant)
-    if (capabilities.ocrEnabled && endpoint !== EModelEndpoint.anthropic) {
+    if (capabilities.ocrEnabled) {
       items.push({
         label: localize('com_ui_upload_ocr_text'),
         onClick: () => {
@@ -92,7 +91,7 @@ const AttachFileMenu = ({
       });
     }
 
-    if (capabilities.fileSearchEnabled && endpoint !== EModelEndpoint.anthropic) {
+    if (capabilities.fileSearchEnabled) {
       items.push({
         label: localize('com_ui_upload_file_search'),
         onClick: () => {
