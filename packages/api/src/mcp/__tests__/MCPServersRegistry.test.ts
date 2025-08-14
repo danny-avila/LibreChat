@@ -81,24 +81,26 @@ describe('MCPServersRegistry - Initialize Function', () => {
             },
           },
         }));
-        mockConnection.client.listTools.mockResolvedValue({ tools });
+        (mockConnection.client.listTools as jest.Mock).mockResolvedValue({ tools });
       } else {
-        mockConnection.client.listTools.mockResolvedValue({ tools: [] });
+        (mockConnection.client.listTools as jest.Mock).mockResolvedValue({ tools: [] });
       }
 
       // Mock getInstructions response
       if (expectedConfig.serverInstructions) {
-        mockConnection.client.getInstructions.mockReturnValue(expectedConfig.serverInstructions);
+        (mockConnection.client.getInstructions as jest.Mock).mockReturnValue(
+          expectedConfig.serverInstructions,
+        );
       } else {
-        mockConnection.client.getInstructions.mockReturnValue(null);
+        (mockConnection.client.getInstructions as jest.Mock).mockReturnValue(null);
       }
 
       // Mock getServerCapabilities response
       if (expectedConfig.capabilities) {
         const capabilities = JSON.parse(expectedConfig.capabilities);
-        mockConnection.client.getServerCapabilities.mockReturnValue(capabilities);
+        (mockConnection.client.getServerCapabilities as jest.Mock).mockReturnValue(capabilities);
       } else {
-        mockConnection.client.getServerCapabilities.mockReturnValue(null);
+        (mockConnection.client.getServerCapabilities as jest.Mock).mockReturnValue(null);
       }
 
       mockConnections.set(serverName, mockConnection);
