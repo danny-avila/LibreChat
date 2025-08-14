@@ -1,5 +1,6 @@
 import type { AssistantsEndpoint } from './schemas';
 import * as q from './types/queries';
+import { ResourceType } from './accessPermissions';
 
 // Testing this buildQuery function
 const buildQuery = (params: Record<string, unknown>): string => {
@@ -148,6 +149,8 @@ export const config = () => '/api/config';
 
 export const prompts = () => '/api/prompts';
 
+export const addPromptToGroup = (groupId: string) => `/api/prompts/groups/${groupId}/prompts`;
+
 export const assistants = ({
   path = '',
   options,
@@ -272,6 +275,11 @@ export const getRole = (roleName: string) => `${roles()}/${roleName.toLowerCase(
 export const updatePromptPermissions = (roleName: string) => `${getRole(roleName)}/prompts`;
 export const updateMemoryPermissions = (roleName: string) => `${getRole(roleName)}/memories`;
 export const updateAgentPermissions = (roleName: string) => `${getRole(roleName)}/agents`;
+export const updatePeoplePickerPermissions = (roleName: string) =>
+  `${getRole(roleName)}/people-picker`;
+
+export const updateMarketplacePermissions = (roleName: string) =>
+  `${getRole(roleName)}/marketplace`;
 
 /* Conversation Tags */
 export const conversationTags = (tag?: string) =>
@@ -305,3 +313,34 @@ export const verifyTwoFactorTemp = () => '/api/auth/2fa/verify-temp';
 export const memories = () => '/api/memories';
 export const memory = (key: string) => `${memories()}/${encodeURIComponent(key)}`;
 export const memoryPreferences = () => `${memories()}/preferences`;
+
+export const searchPrincipals = (params: q.PrincipalSearchParams) => {
+  const { q: query, limit, types } = params;
+  let url = `/api/permissions/search-principals?q=${encodeURIComponent(query)}`;
+
+  if (limit !== undefined) {
+    url += `&limit=${limit}`;
+  }
+
+  if (types && types.length > 0) {
+    url += `&types=${types.join(',')}`;
+  }
+
+  return url;
+};
+
+export const getAccessRoles = (resourceType: ResourceType) =>
+  `/api/permissions/${resourceType}/roles`;
+
+export const getResourcePermissions = (resourceType: ResourceType, resourceId: string) =>
+  `/api/permissions/${resourceType}/${resourceId}`;
+
+export const updateResourcePermissions = (resourceType: ResourceType, resourceId: string) =>
+  `/api/permissions/${resourceType}/${resourceId}`;
+
+export const getEffectivePermissions = (resourceType: ResourceType, resourceId: string) =>
+  `/api/permissions/${resourceType}/${resourceId}/effective`;
+
+// SharePoint Graph API Token
+export const graphToken = (scopes: string) =>
+  `/api/auth/graph-token?scopes=${encodeURIComponent(scopes)}`;

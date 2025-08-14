@@ -7,7 +7,6 @@ import { Controller, useFormContext } from 'react-hook-form';
 import type { TSpecialVarLabel } from 'librechat-data-provider';
 import type { AgentForm } from '~/common';
 import { cn, defaultTextProps, removeFocusOutlines } from '~/utils';
-// import { ControlCombobox } from '@librechat/client';
 import { useLocalize } from '~/hooks';
 
 const inputClass = cn(
@@ -49,26 +48,6 @@ export default function Instructions() {
           {localize('com_ui_instructions')}
         </label>
         <div className="ml-auto" title="Add variables to instructions">
-          {/* ControlCombobox implementation
-          <ControlCombobox
-            selectedValue=""
-            displayValue="Add variables"
-            items={variableOptions.map((option) => ({
-              label: option.label,
-              value: option.value,
-            }))}
-            setValue={handleAddVariable}
-            ariaLabel="Add variable to instructions"
-            searchPlaceholder="Search variables"
-            selectPlaceholder="Add"
-            isCollapsed={false}
-            SelectIcon={<PlusCircle className="h-3 w-3 text-text-secondary" />}
-            containerClassName="w-fit"
-            className="h-7 gap-1 rounded-md border border-border-medium bg-surface-secondary px-2 py-0 text-sm text-text-primary transition-colors duration-200 hover:bg-surface-tertiary"
-            iconSide="left"
-            showCarat={false}
-          />
-          */}
           <DropdownPopup
             portal={true}
             mountByState={true}
