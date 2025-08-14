@@ -1,7 +1,12 @@
 import React, { useMemo } from 'react';
 import type { ModelSelectorProps } from '~/common';
 import { ModelSelectorProvider, useModelSelectorContext } from './ModelSelectorContext';
-import { renderModelSpecs, renderEndpoints, renderSearchResults } from './components';
+import {
+  renderModelSpecs,
+  renderEndpoints,
+  renderSearchResults,
+  renderExternalLinks,
+} from './components';
 import { getSelectedIcon, getDisplayValue } from './utils';
 import { CustomMenu as Menu } from './CustomMenu';
 import DialogManager from './DialogManager';
@@ -15,6 +20,8 @@ function ModelSelectorContent() {
     modelSpecs,
     mappedEndpoints,
     endpointsConfig,
+    externalLinks,
+    externalLinksHeader,
     // State
     searchValue,
     searchResults,
@@ -85,6 +92,7 @@ function ModelSelectorContent() {
           <>
             {renderModelSpecs(modelSpecs, selectedValues.modelSpec || '')}
             {renderEndpoints(mappedEndpoints ?? [])}
+            {renderExternalLinks(externalLinks, externalLinksHeader)}
           </>
         )}
       </Menu>
