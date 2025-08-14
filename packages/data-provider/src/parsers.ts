@@ -203,13 +203,19 @@ export const parseConvo = ({
  *
  * Examples: gpt-4, gpt-4o, gpt-4.5, gpt-5a, etc. */
 const extractGPTVersion = (modelStr: string): string => {
+  /*
   const gptMatch = modelStr.match(/gpt-(\d+(?:\.\d+)?)([a-z])?/i);
   if (gptMatch) {
     const version = gptMatch[1];
     const suffix = gptMatch[2] || '';
     return `GPT-${version}${suffix}`;
   }
-  return '';
+  */
+  // CHAT-94: Return the full name of the model, e.g. GPT-4o-mini
+  if (modelStr.startsWith("gpt-")) {
+    return "GPT-" + modelStr.slice(4);
+  }
+  return modelStr;
 };
 
 /** Match omni models (o1, o3, etc.), "o" followed by a digit, possibly with decimal */
