@@ -1,11 +1,9 @@
-//TODO: needs testing and validation before running in production
-console.log('needs testing and validation before running in production...');
 const path = require('path');
 const { logger } = require('@librechat/data-schemas');
-require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
-
 const { AccessRoleIds, ResourceType, PrincipalType } = require('librechat-data-provider');
 const { GLOBAL_PROJECT_NAME } = require('librechat-data-provider').Constants;
+
+require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
 const connect = require('./connect');
 
 const { grantPermission } = require('~/server/services/PermissionService');
@@ -19,9 +17,9 @@ async function migrateAgentPermissionsEnhanced({ dryRun = true, batchSize = 100 
   logger.info('Starting Enhanced Agent Permissions Migration', { dryRun, batchSize });
 
   // Verify required roles exist
-  const ownerRole = await findRoleByIdentifier('agent_owner');
-  const viewerRole = await findRoleByIdentifier('agent_viewer');
-  const editorRole = await findRoleByIdentifier('agent_editor');
+  const ownerRole = await findRoleByIdentifier(AccessRoleIds.AGENT_OWNER);
+  const viewerRole = await findRoleByIdentifier(AccessRoleIds.AGENT_VIEWER);
+  const editorRole = await findRoleByIdentifier(AccessRoleIds.AGENT_EDITOR);
 
   if (!ownerRole || !viewerRole || !editorRole) {
     throw new Error('Required roles not found. Run role seeding first.');
