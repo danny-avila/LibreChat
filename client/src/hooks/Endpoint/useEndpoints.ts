@@ -17,7 +17,6 @@ import type {
 import type { Endpoint } from '~/common';
 import { mapEndpoints, getIconKey, getEndpointField } from '~/utils';
 import { useGetEndpointsQuery } from '~/data-provider';
-import { useChatContext } from '~/Providers';
 import { useHasAccess } from '~/hooks';
 import { icons } from './Icons';
 
@@ -33,16 +32,12 @@ export const useEndpoints = ({
   startupConfig: TStartupConfig | undefined;
 }) => {
   const modelsQuery = useGetModelsQuery();
-  const { conversation } = useChatContext();
   const { data: endpoints = [] } = useGetEndpointsQuery({ select: mapEndpoints });
-  const { instanceProjectId } = startupConfig ?? {};
   const interfaceConfig = startupConfig?.interface ?? {};
   const includedEndpoints = useMemo(
     () => new Set(startupConfig?.modelSpecs?.addedEndpoints ?? []),
     [startupConfig?.modelSpecs?.addedEndpoints],
   );
-
-  const { endpoint } = conversation ?? {};
 
   const hasAgentAccess = useHasAccess({
     permissionType: PermissionTypes.AGENTS,
@@ -60,12 +55,12 @@ export const useEndpoints = ({
 
   const assistants: Assistant[] = useMemo(
     () => Object.values(assistantsMap?.[EModelEndpoint.assistants] ?? {}),
-    [endpoint, assistantsMap],
+    [assistantsMap],
   );
 
   const azureAssistants: Assistant[] = useMemo(
     () => Object.values(assistantsMap?.[EModelEndpoint.azureAssistants] ?? {}),
-    [endpoint, assistantsMap],
+    [assistantsMap],
   );
 
   const filteredEndpoints = useMemo(() => {
@@ -84,7 +79,7 @@ export const useEndpoints = ({
     }
 
     return result;
-  }, [endpoints, hasAgentAccess, includedEndpoints]);
+  }, [endpoints, hasAgentAccess, includedEndpoints, interfaceConfig.modelSelect]);
 
   const endpointRequiresUserKey = useCallback(
     (ep: string) => {
@@ -192,7 +187,7 @@ export const useEndpoints = ({
 
       return result;
     });
-  }, [filteredEndpoints, endpointsConfig, modelsQuery.data, agents, assistants]);
+  }, [filteredEndpoints, endpointsConfig, modelsQuery.data, agents, assistants, azureAssistants]);
 
   return {
     mappedEndpoints,
