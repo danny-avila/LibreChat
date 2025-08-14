@@ -28,7 +28,10 @@ export function ExternalLinkItem({ title, url }: ExternalLinkItemProps) {
   );
 }
 
-export function renderExternalLinks(externalLinks: Array<{ title: string; url: string }>, headerText?: string) {
+export function renderExternalLinks(
+  externalLinks: Array<{ title: string; url: string }>,
+  headerText?: string,
+) {
   if (!externalLinks || externalLinks.length === 0) {
     return null;
   }
@@ -40,16 +43,10 @@ export function renderExternalLinks(externalLinks: Array<{ title: string; url: s
       {/* Separator */}
       <div className="mx-2 my-1 border-t border-border-light" />
       {/* Links Header */}
-      <div className="px-3 py-1 text-xs font-medium text-text-secondary">
-        {displayHeader}
-      </div>
+      <div className="px-3 py-1 text-xs font-medium text-text-secondary">{displayHeader}</div>
       {/* External Links */}
       {externalLinks.map((link, index) => (
-        <ExternalLinkItem
-          key={`external-link-${index}`}
-          title={link.title}
-          url={link.url}
-        />
+        <ExternalLinkItem key={`external-link-${index}`} title={link.title} url={link.url} />
       ))}
     </>
   );

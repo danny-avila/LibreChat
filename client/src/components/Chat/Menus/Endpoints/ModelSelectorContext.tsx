@@ -65,7 +65,7 @@ export function ModelSelectorProvider({ children, startupConfig }: ModelSelector
 
     return {
       externalLinks: externalLinksConfig.links || [],
-      externalLinksHeader: externalLinksConfig.header
+      externalLinksHeader: externalLinksConfig.header,
     };
   }, [startupConfig]);
   const { mappedEndpoints, endpointRequiresUserKey } = useEndpoints({
