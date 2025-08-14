@@ -87,10 +87,9 @@ const AttachFileMenu = ({
         },
       ];
 
-      // Add document upload option for Anthropic endpoints
       if (endpoint === EModelEndpoint.anthropic) {
         items.push({
-          label: 'Upload Document',
+          label: localize('com_ui_upload_provider'),
           onClick: () => {
             setToolResource(undefined);
             onAction();
