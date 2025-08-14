@@ -99,8 +99,7 @@ const AttachFileMenu = ({
         });
       }
 
-      // Hide OCR and File Search for Anthropic endpoints (native PDF support makes these irrelevant)
-      if (capabilities.ocrEnabled && endpoint !== EModelEndpoint.anthropic) {
+      if (capabilities.ocrEnabled) {
         items.push({
           label: localize('com_ui_upload_ocr_text'),
           onClick: () => {
@@ -111,7 +110,7 @@ const AttachFileMenu = ({
         });
       }
 
-      if (capabilities.fileSearchEnabled && endpoint !== EModelEndpoint.anthropic) {
+      if (capabilities.fileSearchEnabled) {
         items.push({
           label: localize('com_ui_upload_file_search'),
           onClick: () => {
