@@ -1,19 +1,12 @@
 import { logger } from '@librechat/data-schemas';
 import { AccessRoleIds, ResourceType, PrincipalType, Constants } from 'librechat-data-provider';
-import type { IAgent } from '@librechat/data-schemas';
+import type { AccessRoleMethods, IAgent } from '@librechat/data-schemas';
 import type { Model } from 'mongoose';
 
 const { GLOBAL_PROJECT_NAME } = Constants;
 
 export interface MigrationCheckDbMethods {
-  findRoleByIdentifier: (accessRoleId: string) => Promise<{
-    _id: string;
-    accessRoleId: string;
-    name: string;
-    description?: string;
-    resourceType: string;
-    permBits: number;
-  } | null>;
+  findRoleByIdentifier: AccessRoleMethods['findRoleByIdentifier'];
   getProjectByName: (
     projectName: string,
     fieldsToSelect?: string[] | null,

@@ -1,5 +1,3 @@
-//TODO: needs testing and validation before running in production
-console.log('needs testing and validation before running in production...');
 const path = require('path');
 const { logger } = require('@librechat/data-schemas');
 const { AccessRoleIds, ResourceType, PrincipalType } = require('librechat-data-provider');
