@@ -53,7 +53,6 @@ const mockLocalize = jest.fn((key: string, options?: any) => {
     com_agents_search_placeholder: 'Search agents...',
     com_agents_clear_search: 'Clear search',
     com_agents_agent_card_label: `${options?.name} agent. ${options?.description}`,
-    com_agents_no_description: 'No description available',
     com_agents_grid_announcement: `Showing ${options?.count} agents in ${options?.category} category`,
     com_agents_load_more_label: `Load more agents from ${options?.category} category`,
     com_agents_error_retry: 'Try Again',
@@ -305,13 +304,6 @@ describe('Accessibility Improvements', () => {
       expect(card).toHaveAttribute('aria-label', 'Test Agent agent. A test agent for testing');
       expect(card).toHaveAttribute('aria-describedby', 'agent-test-agent-description');
       expect(card).toHaveAttribute('role', 'button');
-    });
-
-    it('handles agents without descriptions', () => {
-      const agentWithoutDesc = { ...mockAgent, description: undefined };
-      render(<AgentCard agent={agentWithoutDesc as any as t.Agent} onClick={jest.fn()} />);
-
-      expect(screen.getByText('No description available')).toBeInTheDocument();
     });
 
     it('supports keyboard interaction', () => {

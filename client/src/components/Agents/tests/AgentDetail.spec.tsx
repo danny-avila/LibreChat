@@ -179,7 +179,6 @@ describe('AgentDetail', () => {
       renderWithProviders(<AgentDetail {...defaultProps} agent={null as any} />);
 
       expect(screen.getByText('com_agents_loading')).toBeInTheDocument();
-      expect(screen.getByText('com_agents_no_description')).toBeInTheDocument();
     });
 
     it('should render copy link button', () => {

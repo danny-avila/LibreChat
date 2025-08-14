@@ -58,7 +58,7 @@ export default function AgentMarketplaceButton({
           className="rounded-full border-none bg-transparent p-2 hover:bg-surface-hover md:rounded-xl"
           onClick={handleAgentMarketplace}
         >
-          <LayoutGrid className="icon-md md:h-6 md:w-6" />
+          <LayoutGrid className="icon-lg text-text-primary" />
         </Button>
       }
     />

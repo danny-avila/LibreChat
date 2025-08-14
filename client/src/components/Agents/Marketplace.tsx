@@ -285,10 +285,6 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
                 ref={scrollContainerRef}
                 className="scrollbar-gutter-stable relative flex h-full flex-col overflow-y-auto overflow-x-hidden"
               >
-                {/* Admin Settings */}
-                <div className="absolute right-4 top-4 z-30">
-                  <MarketplaceAdminSettings />
-                </div>
                 {/* Simplified header for agents marketplace - only show nav controls when needed */}
                 {!isSmallScreen && (
                   <div className="sticky top-0 z-20 flex items-center justify-between bg-surface-secondary p-2 font-semibold text-text-primary md:h-14">
@@ -319,19 +315,19 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
                     </div>
                   </div>
                 )}
-
                 {/* Hero Section - scrolls away */}
-                <div className="container mx-auto max-w-4xl">
-                  <div className={cn('mb-8 text-center', isSmallScreen ? 'mt-6' : 'mt-12')}>
-                    <h1 className="mb-3 text-3xl font-bold tracking-tight text-text-primary md:text-5xl">
-                      {localize('com_agents_marketplace')}
-                    </h1>
-                    <p className="mx-auto mb-6 max-w-2xl text-lg text-text-secondary">
-                      {localize('com_agents_marketplace_subtitle')}
-                    </p>
+                {!isSmallScreen && (
+                  <div className="container mx-auto max-w-4xl">
+                    <div className={cn('mb-8 text-center', 'mt-12')}>
+                      <h1 className="mb-3 text-3xl font-bold tracking-tight text-text-primary md:text-5xl">
+                        {localize('com_agents_marketplace')}
+                      </h1>
+                      <p className="mx-auto mb-6 max-w-2xl text-lg text-text-secondary">
+                        {localize('com_agents_marketplace_subtitle')}
+                      </p>
+                    </div>
                   </div>
-                </div>
-
+                )}
                 {/* Sticky wrapper for search bar and categories */}
                 <div
                   className={cn(
@@ -341,8 +337,11 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
                 >
                   <div className="container mx-auto max-w-4xl px-4">
                     {/* Search bar */}
-                    <div className="mx-auto max-w-2xl pb-6">
+                    <div className="mx-auto flex max-w-2xl gap-2 pb-6">
                       <SearchBar value={searchQuery} onSearch={handleSearch} />
+                      {/* TODO: Remove this once we have a better way to handle admin settings */}
+                      {/* Admin Settings */}
+                      <MarketplaceAdminSettings />
                     </div>
 
                     {/* Category tabs */}
@@ -354,7 +353,6 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
                     />
                   </div>
                 </div>
-
                 {/* Scrollable content area */}
                 <div className="container mx-auto max-w-4xl px-4 pb-8">
                   {/* Two-pane animated container wrapping category header + grid */}
@@ -510,7 +508,6 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
                     {/* Note: Using Tailwind keyframes for slide in/out animations */}
                   </div>
                 </div>
-
                 {/* Agent detail dialog */}
                 {isDetailOpen && selectedAgent && (
                   <AgentDetail

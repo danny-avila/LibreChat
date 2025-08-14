@@ -66,7 +66,7 @@ export default function NewChat({
             </Button>
           }
         />
-        <div className="flex">
+        <div className="flex gap-0.5">
           {headerButtons}
 
           <TooltipAnchor
@@ -80,7 +80,7 @@ export default function NewChat({
                 className="rounded-full border-none bg-transparent p-2 hover:bg-surface-hover md:rounded-xl"
                 onClick={clickHandler}
               >
-                <NewChatIcon className="icon-md md:h-6 md:w-6" />
+                <NewChatIcon className="icon-lg text-text-primary" />
               </Button>
             }
           />
