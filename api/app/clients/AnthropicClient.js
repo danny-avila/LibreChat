@@ -27,7 +27,6 @@ const {
 const { getModelMaxTokens, getModelMaxOutputTokens, matchModelName } = require('~/utils');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
-const { encodeAndFormatDocuments } = require('~/server/services/Files/documents');
 const { sleep } = require('~/server/utils');
 const BaseClient = require('./BaseClient');
 const { logger } = require('~/config');
@@ -313,33 +312,6 @@ class AnthropicClient extends BaseClient {
     return files;
   }
 
-  async addDocuments(message, attachments) {
-    // Only process documents
-    const documentResult = await encodeAndFormatDocuments(
-      this.options.req,
-      attachments,
-      EModelEndpoint.anthropic,
-    );
-
-    message.documents =
-      documentResult.documents && documentResult.documents.length
-        ? documentResult.documents
-        : undefined;
-
-    return documentResult.files;
-  }
-
-  async processAttachments(message, attachments) {
-    // Process both images and documents
-    const [imageFiles, documentFiles] = await Promise.all([
-      this.addImageURLs(message, attachments),
-      this.addDocuments(message, attachments),
-    ]);
-
-    // Combine files from both processors
-    return [...imageFiles, ...documentFiles];
-  }
-
   /**
    * @param {object} params
    * @param {number} params.promptTokens
@@ -410,7 +382,7 @@ class AnthropicClient extends BaseClient {
         };
       }
 
-      const files = await this.processAttachments(latestMessage, attachments);
+      const files = await this.addImageURLs(latestMessage, attachments);
 
       this.options.attachments = files;
     }
@@ -969,7 +941,7 @@ class AnthropicClient extends BaseClient {
       const content = `<conversation_context>
   ${convo}
   </conversation_context>
-
+  
   Please generate a title for this conversation.`;
 
       const titleMessage = { role: 'user', content };

@@ -372,19 +372,6 @@ class OpenAIClient extends BaseClient {
     return files;
   }
 
-  async addDocuments(message, attachments) {
-    // OpenAI doesn't support native document processing yet
-    // Return empty results for consistency
-    return [];
-  }
-
-  async processAttachments(message, attachments) {
-    // For OpenAI, only process images
-    const imageFiles = await this.addImageURLs(message, attachments);
-    const documentFiles = await this.addDocuments(message, attachments);
-    return [...imageFiles, ...documentFiles];
-  }
-
   async buildMessages(messages, parentMessageId, { promptPrefix = null }, opts) {
     let orderedMessages = this.constructor.getMessagesForConversation({
       messages,
@@ -413,7 +400,7 @@ class OpenAIClient extends BaseClient {
         };
       }
 
-      const files = await this.processAttachments(
+      const files = await this.addImageURLs(
         orderedMessages[orderedMessages.length - 1],
         attachments,
       );
