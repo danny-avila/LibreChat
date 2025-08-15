@@ -152,6 +152,7 @@ async function encodeAndFormatDocuments(req, files, endpoint) {
           data: content,
         },
         cache_control: { type: 'ephemeral' },
+        citations: { enabled: true },
       };
 
       result.documents.push(documentPart);
