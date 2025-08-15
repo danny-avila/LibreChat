@@ -831,50 +831,6 @@ class AgentClient extends BaseClient {
 
       const toolSet = new Set((this.options.agent.tools ?? []).map((tool) => tool && tool.name));
 
-      if (
-        this.options.agent.provider === EModelEndpoint.anthropic &&
-        payload &&
-        Array.isArray(payload)
-      ) {
-        let userMessageWithDocs = null;
-
-        if (this.userMessage?.documents) {
-          userMessageWithDocs = this.userMessage;
-        } else if (this.currentMessages?.length > 0) {
-          const lastMessage = this.currentMessages[this.currentMessages.length - 1];
-          if (lastMessage.documents?.length > 0) {
-            userMessageWithDocs = lastMessage;
-          }
-        } else if (this.messages?.length > 0) {
-          const lastMessage = this.messages[this.messages.length - 1];
-          if (lastMessage.documents?.length > 0) {
-            userMessageWithDocs = lastMessage;
-          }
-        }
-
-        if (userMessageWithDocs) {
-          for (const payloadMessage of payload) {
-            if (
-              payloadMessage.role === 'user' &&
-              userMessageWithDocs.text === payloadMessage.content
-            ) {
-              if (typeof payloadMessage.content === 'string') {
-                payloadMessage.content = [
-                  ...userMessageWithDocs.documents,
-                  { type: 'text', text: payloadMessage.content },
-                ];
-              } else if (Array.isArray(payloadMessage.content)) {
-                payloadMessage.content = [
-                  ...userMessageWithDocs.documents,
-                  ...payloadMessage.content,
-                ];
-              }
-              break;
-            }
-          }
-        }
-      }
-
       let { messages: initialMessages, indexTokenCountMap } = formatAgentMessages(
         payload,
         this.indexTokenCountMap,
