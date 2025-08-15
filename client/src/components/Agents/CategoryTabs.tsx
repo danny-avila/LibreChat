@@ -1,7 +1,8 @@
 import React from 'react';
 import type t from 'librechat-data-provider';
-import useLocalize from '~/hooks/useLocalize';
+import { useMediaQuery } from '@librechat/client';
 import { SmartLoader } from './SmartLoader';
+import { useLocalize } from '~/hooks/';
 import { cn } from '~/utils';
 
 /**
@@ -33,6 +34,7 @@ const CategoryTabs: React.FC<CategoryTabsProps> = ({
   onChange,
 }) => {
   const localize = useLocalize();
+  const isSmallScreen = useMediaQuery('(max-width: 768px)');
 
   // Helper function to get category display name from database data
   const getCategoryDisplayName = (category: t.TCategory) => {
@@ -120,10 +122,24 @@ const CategoryTabs: React.FC<CategoryTabsProps> = ({
   const tabsContent = (
     <div className="w-full pb-2">
       <div
-        className="flex flex-wrap justify-center gap-1.5 px-4"
+        className={cn(
+          'px-4',
+          isSmallScreen
+            ? 'scrollbar-hide flex gap-2 overflow-x-auto scroll-smooth'
+            : 'flex flex-wrap justify-center gap-1.5',
+        )}
         role="tablist"
         aria-label={localize('com_agents_category_tabs_label')}
         aria-orientation="horizontal"
+        style={
+          isSmallScreen
+            ? {
+                scrollbarWidth: 'none',
+                msOverflowStyle: 'none',
+                WebkitOverflowScrolling: 'touch',
+              }
+            : undefined
+        }
       >
         {categories.map((category, index) => (
           <button
@@ -132,10 +148,11 @@ const CategoryTabs: React.FC<CategoryTabsProps> = ({
             onClick={() => onChange(category.value)}
             onKeyDown={(e) => handleKeyDown(e, category.value)}
             className={cn(
-              'relative cursor-pointer select-none whitespace-nowrap px-3 py-2 transition-colors',
+              'relative cursor-pointer select-none whitespace-nowrap px-3 py-2 transition-all duration-200',
+              isSmallScreen ? 'min-w-fit flex-shrink-0' : '',
               activeTab === category.value
                 ? 'rounded-t-lg bg-surface-hover text-text-primary'
-                : 'rounded-lg bg-surface-secondary text-text-secondary hover:bg-surface-hover hover:text-text-primary',
+                : 'rounded-lg bg-surface-secondary text-text-secondary hover:bg-surface-hover hover:text-text-primary active:scale-95',
             )}
             role="tab"
             aria-selected={activeTab === category.value}
