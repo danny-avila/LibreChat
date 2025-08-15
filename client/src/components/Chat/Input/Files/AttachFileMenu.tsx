@@ -45,7 +45,7 @@ const AttachFileMenu = ({
   const setEphemeralAgent = useSetRecoilState(ephemeralAgentByConvoId(conversationId));
   const [toolResource, setToolResource] = useState<EToolResources | undefined>();
   const { handleFileChange } = useFileHandling({
-    overrideEndpoint: endpoint === EModelEndpoint.anthropic ? undefined : EModelEndpoint.agents,
+    overrideEndpoint: EModelEndpoint.agents,
     overrideEndpointFileConfig: endpointFileConfig,
   });
   const { handleSharePointFiles, isProcessing, downloadProgress } = useSharePointFileHandling({
@@ -103,7 +103,7 @@ const AttachFileMenu = ({
         items.push({
           label: localize('com_ui_upload_provider'),
           onClick: () => {
-            setToolResource(undefined);
+            setToolResource(EToolResources.direct_provider);
             onAction('anthropic_multimodal');
           },
           icon: <FileImageIcon className="icon-md" />,
