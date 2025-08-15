@@ -44,20 +44,17 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
   const { navVisible, setNavVisible } = useOutletContext<ContextType>();
   const [hideSidePanel, setHideSidePanel] = useRecoilState(store.hideSidePanel);
 
-  // Get URL parameters (default to 'all' to ensure users see agents)
-  const activeTab = category || 'all';
+  // Get URL parameters
   const searchQuery = searchParams.get('q') || '';
   const selectedAgentId = searchParams.get('agent_id') || '';
 
   // Animation state
   type Direction = 'left' | 'right';
-  const [displayCategory, setDisplayCategory] = useState<string>(activeTab);
+  // Initialize with a default value to prevent rendering issues
+  const [displayCategory, setDisplayCategory] = useState<string>(category || 'all');
   const [nextCategory, setNextCategory] = useState<string | null>(null);
   const [isTransitioning, setIsTransitioning] = useState<boolean>(false);
   const [animationDirection, setAnimationDirection] = useState<Direction>('right');
-
-  // Keep a ref of initial mount to avoid animating first sync
-  const didInitRef = useRef(false);
 
   // Ref for the scrollable container to enable infinite scroll
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -78,15 +75,6 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
     localStorage.setItem('fullPanelCollapse', 'false');
   }, [setHideSidePanel, hideSidePanel]);
 
-  // Redirect base /agents route to /agents/all for consistency
-  useEffect(() => {
-    if (!category && window.location.pathname === '/agents') {
-      const currentSearchParams = searchParams.toString();
-      const searchParamsStr = currentSearchParams ? `?${currentSearchParams}` : '';
-      navigate(`/agents/all${searchParamsStr}`, { replace: true });
-    }
-  }, [category, navigate, searchParams]);
-
   // Ensure endpoints config is loaded first (required for agent queries)
   useGetEndpointsQuery();
 
@@ -97,6 +85,22 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
     refetchOnReconnect: false,
     refetchOnMount: false,
   });
+
+  // Handle initial category when on /agents without a category
+  useEffect(() => {
+    if (
+      !category &&
+      window.location.pathname === '/agents' &&
+      categoriesQuery.data &&
+      displayCategory === 'all'
+    ) {
+      const hasPromoted = categoriesQuery.data.some((cat) => cat.value === 'promoted');
+      if (hasPromoted) {
+        // If promoted exists, update display to show it
+        setDisplayCategory('promoted');
+      }
+    }
+  }, [category, categoriesQuery.data, displayCategory]);
 
   /**
    * Handle agent card selection
@@ -128,8 +132,8 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
    */
   const orderedTabs = useMemo<string[]>(() => {
     const dynamic = (categoriesQuery.data || []).map((c) => c.value);
-    // Ensure unique and stable order - 'all' should be last to match server response
-    const set = new Set<string>(['promoted', ...dynamic, 'all']);
+    // Only include values that actually exist in the categories
+    const set = new Set<string>(dynamic);
     return Array.from(set);
   }, [categoriesQuery.data]);
 
@@ -145,7 +149,7 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
    * Handle category tab selection changes with directional animation
    */
   const handleTabChange = (tabValue: string) => {
-    if (tabValue === activeTab || isTransitioning) {
+    if (tabValue === displayCategory || isTransitioning) {
       // Ignore redundant or rapid clicks during transition
       return;
     }
@@ -176,37 +180,14 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
   };
 
   /**
-   * Sync animation when URL changes externally (back/forward or deep links)
+   * Sync display when URL changes externally (back/forward)
    */
   useEffect(() => {
-    if (!didInitRef.current) {
-      // First render: do not animate; just set display to current active tab
-      didInitRef.current = true;
-      setDisplayCategory(activeTab);
-      return;
+    if (category && category !== displayCategory && !isTransitioning) {
+      // URL changed externally, update display without animation
+      setDisplayCategory(category);
     }
-    if (isTransitioning || activeTab === displayCategory) {
-      return;
-    }
-    // Compute direction vs current displayCategory and animate
-    const currentIndex = getTabIndex(displayCategory);
-    const newIndex = getTabIndex(activeTab);
-    const direction: Direction = newIndex > currentIndex ? 'right' : 'left';
-
-    setAnimationDirection(direction);
-    setNextCategory(activeTab);
-    setIsTransitioning(true);
-
-    const timeoutId = window.setTimeout(() => {
-      setDisplayCategory(activeTab);
-      setNextCategory(null);
-      setIsTransitioning(false);
-    }, 300);
-
-    return () => {
-      window.clearTimeout(timeoutId);
-    };
-  }, [activeTab, displayCategory, isTransitioning, getTabIndex]);
+  }, [category, displayCategory, isTransitioning]);
 
   // No longer needed with keyframes
 
@@ -224,7 +205,7 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
     } else {
       newParams.delete('q');
       // Preserve current category when clearing search
-      const currentCategory = activeTab;
+      const currentCategory = displayCategory;
       if (currentCategory === 'promoted') {
         navigate(`/agents${newParams.toString() ? `?${newParams.toString()}` : ''}`);
       } else {
@@ -367,7 +348,7 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
                     {/* Category tabs */}
                     <CategoryTabs
                       categories={categoriesQuery.data || []}
-                      activeTab={activeTab}
+                      activeTab={displayCategory}
                       isLoading={categoriesQuery.isLoading}
                       onChange={handleTabChange}
                     />
