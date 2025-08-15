@@ -7,7 +7,6 @@ import {
   Button,
   Switch,
   OGDialog,
-  useMediaQuery,
   DropdownPopup,
   OGDialogTitle,
   OGDialogContent,
@@ -17,7 +16,6 @@ import {
 import type { Control, UseFormSetValue, UseFormGetValues } from 'react-hook-form';
 import { useUpdateMarketplacePermissionsMutation } from '~/data-provider';
 import { useLocalize, useAuthContext } from '~/hooks';
-import { cn } from '~/utils';
 
 type FormValues = {
   [Permissions.USE]: boolean;
@@ -70,7 +68,6 @@ const MarketplaceAdminSettings = () => {
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const { user, roles } = useAuthContext();
-  const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const { mutate, isLoading } = useUpdateMarketplacePermissionsMutation({
     onSuccess: () => {
       showToast({ status: 'success', message: localize('com_ui_saved') });

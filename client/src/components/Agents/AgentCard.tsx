@@ -28,7 +28,7 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, onClick, className = '' })
       onClick={onClick}
       aria-label={localize('com_agents_agent_card_label', {
         name: agent.name,
-        description: agent.description,
+        description: agent.description ?? '',
       })}
       aria-describedby={`agent-${agent.id}-description`}
       tabIndex={0}
@@ -68,9 +68,9 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, onClick, className = '' })
             <p
               id={`agent-${agent.id}-description`}
               className="line-clamp-3 text-sm leading-relaxed text-text-primary"
-              aria-label={`Description: ${agent.description}`}
+              {...(agent.description ? { 'aria-label': `Description: ${agent.description}` } : {})}
             >
-              {agent.description}
+              {agent.description ?? ''}
             </p>
           </div>
 
