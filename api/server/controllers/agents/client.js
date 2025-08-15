@@ -321,7 +321,8 @@ class AgentClient extends BaseClient {
       if (
         message.documents &&
         message.documents.length > 0 &&
-        this.options.agent.provider === EModelEndpoint.anthropic
+        this.options.agent.provider === EModelEndpoint.anthropic &&
+        message.role === 'user'
       ) {
         if (typeof formattedMessage.content === 'string') {
           formattedMessage.content = [
