@@ -109,7 +109,7 @@ const AdminSettings = () => {
   const labelControllerData = [
     {
       promptPerm: Permissions.SHARED_GLOBAL,
-      label: localize('com_ui_prompts_allow_share_global'),
+      label: localize('com_ui_prompts_allow_share'),
     },
     {
       promptPerm: Permissions.CREATE,

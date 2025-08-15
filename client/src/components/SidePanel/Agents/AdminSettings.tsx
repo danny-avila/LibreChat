@@ -114,7 +114,7 @@ const AdminSettings = () => {
   const labelControllerData = [
     {
       agentPerm: Permissions.SHARED_GLOBAL,
-      label: localize('com_ui_agents_allow_share_global'),
+      label: localize('com_ui_agents_allow_share'),
     },
     {
       agentPerm: Permissions.CREATE,

@@ -16,6 +16,11 @@ interface PublicSharingToggleProps {
   className?: string;
 }
 
+const accessDescriptions: Record<ResourceType, 'com_ui_agent' | 'com_ui_prompt'> = {
+  [ResourceType.AGENT]: 'com_ui_agent',
+  [ResourceType.PROMPTGROUP]: 'com_ui_prompt',
+};
+
 export default function PublicSharingToggle({
   isPublic,
   publicRole,
@@ -49,19 +54,25 @@ export default function PublicSharingToggle({
             </div>
             <div className="flex items-center gap-2">
               <Label
-                htmlFor="public-access-toggle"
+                htmlFor="share-everyone-toggle"
                 className="cursor-pointer text-sm font-medium text-text-primary"
               >
-                {localize('com_ui_public_access')}
+                {localize('com_ui_share_everyone')}
               </Label>
-              <InfoHoverCard side={ESide.Top} text={localize('com_ui_public_access_description')} />
+              <InfoHoverCard
+                side={ESide.Top}
+                text={localize('com_ui_share_everyone_description_var', {
+                  resource:
+                    localize(accessDescriptions[resourceType]) || localize('com_ui_resource'),
+                })}
+              />
             </div>
           </div>
           <Switch
-            id="public-access-toggle"
+            id="share-everyone-toggle"
             checked={isPublic}
             onCheckedChange={handleToggle}
-            aria-label={localize('com_ui_public_access')}
+            aria-label={localize('com_ui_share_everyone')}
           />
         </div>
       </div>
@@ -94,7 +105,7 @@ export default function PublicSharingToggle({
               </div>
               <div className="flex flex-col gap-0.5">
                 <Label htmlFor="permission-level" className="text-sm font-medium text-text-primary">
-                  {localize('com_ui_public_permission_level')}
+                  {localize('com_ui_everyone_permission_level')}
                 </Label>
               </div>
             </div>
