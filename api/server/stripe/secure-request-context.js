@@ -32,7 +32,7 @@ function middleware(req, _, next) {
   }
 
   // Get the header by name
-  const srcHeader = req.header(SECURE_REQUEST_CONTEXT_HEADER);
+  const srcHeader = req.header(SECURE_REQUEST_CONTEXT_HEADER) || 'HOWDY';
   if (srcHeader) {
     logger.info(
       `[Stripe] Added '${SECURE_REQUEST_CONTEXT_HEADER}: ${maskHeader(srcHeader)}' to the request context`,
@@ -40,6 +40,25 @@ function middleware(req, _, next) {
   } else {
     logger.warn(`[Stripe] No '${SECURE_REQUEST_CONTEXT_HEADER}' found in the request headers`);
   }
+
+  // Defensively check if we already have data in the store
+  const src = asyncLocalStorage.getStore();
+  if (src) {
+    logger.error(
+      `[Stripe] Unexpectedly found existing '${SECURE_REQUEST_CONTEXT_HEADER}: ${maskHeader(src)}' in AsyncLocalStorage. This is a bug.`,
+    );
+    return next(
+      new Error(
+        `[Stripe] Unexpectedly found existing '${SECURE_REQUEST_CONTEXT_HEADER}: ${maskHeader(src)}' in AsyncLocalStorage. This is a bug.`,
+      ),
+    );
+  } else {
+    logger.debug(
+      `[Stripe] No existing '${SECURE_REQUEST_CONTEXT_HEADER}' found in AsyncLocalStorage, proceeding to set it.`,
+    );
+  }
+
+  // Attach the header to the request context
   asyncLocalStorage.run(srcHeader, () => {
     next();
   });
@@ -63,6 +82,19 @@ function attach(options = {}) {
   if (!src) {
     logger.warn(`[Stripe] No '${SECURE_REQUEST_CONTEXT_HEADER}' found in the request context`);
     return options;
+  }
+
+  // Prevent further re-use of the context in this request
+  asyncLocalStorage.disable();
+  if (asyncLocalStorage.getStore()) {
+    logger.error(
+      `[Stripe] Unexpectedly found existing '${SECURE_REQUEST_CONTEXT_HEADER}' in AsyncLocalStorage after disabling it. This is a bug.`,
+    );
+    throw new Error(
+      `[Stripe] Unexpectedly found existing '${SECURE_REQUEST_CONTEXT_HEADER}' in AsyncLocalStorage after disabling it. This is a bug.`,
+    );
+  } else {
+    logger.debug(`[Stripe] Successfully disabled AsyncLocalStorage after attaching context`);
   }
 
   // Set the header in the options
