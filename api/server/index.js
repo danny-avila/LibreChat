@@ -1,5 +1,6 @@
 // <Stripe> Patch to allow different paths to the .env file
-require('dotenv').config({ path: process.env.ENV_FILE || '.env' });
+// If process.env.ENV_FILE is unset, fallback to default behavior.
+require('dotenv').config({ path: process.env.ENV_FILE || undefined });
 // </Stripe>
 
 const fs = require('fs');

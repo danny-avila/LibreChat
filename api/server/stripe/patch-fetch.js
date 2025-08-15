@@ -15,7 +15,7 @@ function patchFetch() {
         '[Stripe:patchFetch] Successfully set global.fetch to node-fetch (ENABLE_NODE_FETCH == true)',
       );
     } else {
-      logger.info('[Stripe:patchFetch] Not patching fetch (ENABLE_NODE_FETCH != true)');
+      logger.warn('[Stripe:patchFetch] Not patching fetch (ENABLE_NODE_FETCH != true)');
     }
   } catch (error) {
     logger.error(`[Stripe:patchFetch] Failed to patch fetch: ${error.message}`);
