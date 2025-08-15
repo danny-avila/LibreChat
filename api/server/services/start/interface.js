@@ -52,6 +52,7 @@ async function loadDefaultInterface(config, configDefaults, roleName = SystemRol
     webSearch: interfaceConfig?.webSearch ?? defaults.webSearch,
     fileSearch: interfaceConfig?.fileSearch ?? defaults.fileSearch,
     customWelcome: interfaceConfig?.customWelcome ?? defaults.customWelcome,
+    customErrorMessage: interfaceConfig?.customErrorMessage ?? defaults.customErrorMessage,
   });
 
   await updateAccessPermissions(roleName, {

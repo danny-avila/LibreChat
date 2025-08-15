@@ -77,6 +77,7 @@ interface:
   bookmarks: true
   multiConvo: true
   agents: true
+  customErrorMessage: 'Custom Error Message'
   # Temporary chat retention period in hours (default: 720, min: 1, max: 8760)
   # temporaryChatRetention: 1
 

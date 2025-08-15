@@ -518,6 +518,7 @@ export const intefaceSchema = z
     runCode: z.boolean().optional(),
     webSearch: z.boolean().optional(),
     fileSearch: z.boolean().optional(),
+    customErrorMessage: z.string().optional(),
   })
   .default({
     endpointsMenu: true,
