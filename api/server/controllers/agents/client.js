@@ -1080,7 +1080,6 @@ class AgentClient extends BaseClient {
 
     /** @type {import('@librechat/agents').ClientOptions} */
     let clientOptions = {
-      maxTokens: 75,
       model: agent.model || agent.model_parameters.model,
     };
 
@@ -1147,15 +1146,13 @@ class AgentClient extends BaseClient {
       clientOptions.configuration = options.configOptions;
     }
 
-    const shouldRemoveMaxTokens = /\b(o\d|gpt-[5-9])\b/i.test(clientOptions.model);
-    if (shouldRemoveMaxTokens && clientOptions.maxTokens != null) {
+    if (clientOptions.maxTokens != null) {
       delete clientOptions.maxTokens;
-    } else if (!shouldRemoveMaxTokens && !clientOptions.maxTokens) {
-      clientOptions.maxTokens = 75;
     }
-    if (shouldRemoveMaxTokens && clientOptions?.modelKwargs?.max_completion_tokens != null) {
+    if (clientOptions?.modelKwargs?.max_completion_tokens != null) {
       delete clientOptions.modelKwargs.max_completion_tokens;
-    } else if (shouldRemoveMaxTokens && clientOptions?.modelKwargs?.max_output_tokens != null) {
+    }
+    if (clientOptions?.modelKwargs?.max_output_tokens != null) {
       delete clientOptions.modelKwargs.max_output_tokens;
     }
 
