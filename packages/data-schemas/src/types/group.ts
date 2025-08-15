@@ -1,6 +1,6 @@
-import type { Document, Types } from 'mongoose';
+import { Document } from 'mongoose';
 
-export type Group = {
+export interface IGroup extends Document {
   /** The name of the group */
   name: string;
   /** Optional description of the group */
@@ -15,9 +15,7 @@ export type Group = {
   source: 'local' | 'entra';
   /** External ID (e.g., Entra ID) - required for non-local sources */
   idOnTheSource?: string;
-};
-
-export type IGroup = Group &
-  Document & {
-    _id: Types.ObjectId;
-  };
+  /** Timestamps */
+  createdAt?: Date;
+  updatedAt?: Date;
+}

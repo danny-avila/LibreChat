@@ -51,6 +51,7 @@ const userSchema = new Schema<IUser>(
       trim: true,
       minlength: 8,
       maxlength: 128,
+      select: false,
     },
     avatar: {
       type: String,
@@ -114,6 +115,7 @@ const userSchema = new Schema<IUser>(
     },
     totpSecret: {
       type: String,
+      select: false,
     },
     backupCodes: {
       type: [BackupCodeSchema],
