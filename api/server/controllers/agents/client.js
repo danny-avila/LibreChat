@@ -321,18 +321,16 @@ class AgentClient extends BaseClient {
       if (
         message.documents &&
         message.documents.length > 0 &&
-        message.role === 'user' &&
         this.options.agent.provider === EModelEndpoint.anthropic
       ) {
-        const contentParts = [];
-        contentParts.push(...message.documents);
-        if (message.image_urls && message.image_urls.length > 0) {
-          contentParts.push(...message.image_urls);
+        if (typeof formattedMessage.content === 'string') {
+          formattedMessage.content = [
+            { type: 'text', text: formattedMessage.content },
+            ...message.documents,
+          ];
+        } else {
+          formattedMessage.content.push(...message.documents);
         }
-        const textContent =
-          typeof formattedMessage.content === 'string' ? formattedMessage.content : '';
-        contentParts.push({ type: 'text', text: textContent });
-        formattedMessage.content = contentParts;
       }
 
       if (message.ocr && i !== orderedMessages.length - 1) {
