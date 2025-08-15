@@ -9,7 +9,6 @@ const { anthropicPdfSizeLimit } = require('librechat-data-provider');
  */
 async function validateAnthropicPdf(pdfBuffer, fileSize) {
   try {
-    // Check file size (32MB limit)
     if (fileSize > anthropicPdfSizeLimit) {
       return {
         isValid: false,
@@ -17,7 +16,6 @@ async function validateAnthropicPdf(pdfBuffer, fileSize) {
       };
     }
 
-    // Basic PDF header validation
     if (!pdfBuffer || pdfBuffer.length < 5) {
       return {
         isValid: false,
@@ -25,7 +23,6 @@ async function validateAnthropicPdf(pdfBuffer, fileSize) {
       };
     }
 
-    // Check PDF magic bytes
     const pdfHeader = pdfBuffer.subarray(0, 5).toString();
     if (!pdfHeader.startsWith('%PDF-')) {
       return {
@@ -34,7 +31,6 @@ async function validateAnthropicPdf(pdfBuffer, fileSize) {
       };
     }
 
-    // Check for password protection/encryption
     const pdfContent = pdfBuffer.toString('binary');
     if (
       pdfContent.includes('/Encrypt ') ||
@@ -47,7 +43,6 @@ async function validateAnthropicPdf(pdfBuffer, fileSize) {
       };
     }
 
-    // Estimate page count (this is a rough estimation)
     const pageMatches = pdfContent.match(/\/Type[\s]*\/Page[^s]/g);
     const estimatedPages = pageMatches ? pageMatches.length : 1;
 

@@ -19,7 +19,7 @@ async function streamToBuffer(stream) {
     stream.on('end', () => {
       try {
         const buffer = Buffer.concat(chunks);
-        chunks.length = 0; // Clear the array
+        chunks.length = 0;
         resolve(buffer);
       } catch (err) {
         reject(err);
@@ -31,7 +31,6 @@ async function streamToBuffer(stream) {
       reject(error);
     });
   }).finally(() => {
-    // Clean up the stream if required
     if (stream.destroy && typeof stream.destroy === 'function') {
       stream.destroy();
     }
@@ -60,7 +59,6 @@ async function encodeAndFormatDocuments(req, files, endpoint) {
     return result;
   }
 
-  // Filter for document files only
   const documentFiles = files.filter(
     (file) => file.type === 'application/pdf' || file.type?.startsWith('application/'), // Future: support for other document types
   );
@@ -73,7 +71,6 @@ async function encodeAndFormatDocuments(req, files, endpoint) {
     /** @type {FileSources} */
     const source = file.source ?? 'local';
 
-    // Only process PDFs for Anthropic for now
     if (file.type !== 'application/pdf' || endpoint !== EModelEndpoint.anthropic) {
       continue;
     }
@@ -82,7 +79,6 @@ async function encodeAndFormatDocuments(req, files, endpoint) {
       encodingMethods[source] = getStrategyFunctions(source);
     }
 
-    // Prepare file metadata
     const fileMetadata = {
       file_id: file.file_id || file._id,
       temp_file_id: file.temp_file_id,
