@@ -47,7 +47,7 @@ const verify2FA = async (req, res) => {
   try {
     const userId = req.user.id;
     const { token, backupCode } = req.body;
-    const user = await getUserById(userId);
+    const user = await getUserById(userId, '_id totpSecret backupCodes');
 
     if (!user || !user.totpSecret) {
       return res.status(400).json({ message: '2FA not initiated' });
@@ -79,7 +79,7 @@ const confirm2FA = async (req, res) => {
   try {
     const userId = req.user.id;
     const { token } = req.body;
-    const user = await getUserById(userId);
+    const user = await getUserById(userId, '_id totpSecret');
 
     if (!user || !user.totpSecret) {
       return res.status(400).json({ message: '2FA not initiated' });
@@ -105,7 +105,7 @@ const disable2FA = async (req, res) => {
   try {
     const userId = req.user.id;
     const { token, backupCode } = req.body;
-    const user = await getUserById(userId);
+    const user = await getUserById(userId, '_id totpSecret backupCodes');
 
     if (!user || !user.totpSecret) {
       return res.status(400).json({ message: '2FA is not setup for this user' });
