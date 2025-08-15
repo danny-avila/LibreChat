@@ -119,6 +119,7 @@ const userSchema = new Schema<IUser>(
     },
     backupCodes: {
       type: [BackupCodeSchema],
+      select: false,
     },
     refreshToken: {
       type: [SessionSchema],
