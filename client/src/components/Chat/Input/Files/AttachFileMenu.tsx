@@ -20,8 +20,9 @@ import type { EndpointFileConfig } from 'librechat-data-provider';
 import { useLocalize, useGetAgentsConfig, useFileHandling, useAgentCapabilities } from '~/hooks';
 import useSharePointFileHandling from '~/hooks/Files/useSharePointFileHandling';
 import { SharePointPickerDialog } from '~/components/SharePoint';
-import { useGetStartupConfig } from '~/data-provider';
+import { useGetStartupConfig, useGetAgentByIdQuery } from '~/data-provider';
 import { ephemeralAgentByConvoId } from '~/store';
+import { useChatContext } from '~/Providers/ChatContext';
 import { MenuItemProps } from '~/common';
 import { cn } from '~/utils';
 
@@ -58,6 +59,13 @@ const AttachFileMenu = ({
 
   const [isSharePointDialogOpen, setIsSharePointDialogOpen] = useState(false);
   const { agentsConfig } = useGetAgentsConfig();
+  const { conversation } = useChatContext();
+
+  // Get agent details if using an agent
+  const { data: agent } = useGetAgentByIdQuery(conversation?.agent_id ?? '', {
+    enabled: !!conversation?.agent_id && conversation?.agent_id !== 'ephemeral',
+  });
+
   /** TODO: Ephemeral Agent Capabilities
    * Allow defining agent capabilities on a per-endpoint basis
    * Use definition for agents endpoint for ephemeral agents
@@ -88,7 +96,11 @@ const AttachFileMenu = ({
     ) => {
       const items: MenuItemProps[] = [];
 
-      if (endpoint !== EModelEndpoint.anthropic) {
+      // this is temporary until i add direct upload support for the other providers and can make a more robust solution
+      const isAnthropicAgent = agent?.provider === 'anthropic';
+      const shouldShowDirectUpload = endpoint === EModelEndpoint.anthropic || isAnthropicAgent;
+
+      if (!shouldShowDirectUpload) {
         items.push({
           label: localize('com_ui_upload_image_input'),
           onClick: () => {
@@ -99,11 +111,11 @@ const AttachFileMenu = ({
         });
       }
 
-      if (endpoint === EModelEndpoint.anthropic) {
+      if (shouldShowDirectUpload) {
         items.push({
           label: localize('com_ui_upload_provider'),
           onClick: () => {
-            setToolResource(EToolResources.direct_provider);
+            setToolResource(EToolResources.direct_upload);
             onAction('anthropic_multimodal');
           },
           icon: <FileImageIcon className="icon-md" />,
