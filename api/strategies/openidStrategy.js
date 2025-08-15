@@ -58,7 +58,6 @@ async function customFetch(url, options) {
     if (debugOpenId) {
       logger.debug(`[openidStrategy] Response status: ${response.status} ${response.statusText}`);
       logger.debug(`[openidStrategy] Response headers: ${logHeaders(response.headers)}`);
-      
     }
 
     if (response.status === 200 && response.headers.has('www-authenticate')) {
@@ -100,7 +99,7 @@ class CustomOpenIDStrategy extends OpenIDStrategy {
     const hostAndProtocol = process.env.DOMAIN_SERVER;
     return new URL(`${hostAndProtocol}${req.originalUrl ?? req.url}`);
   }
-  
+
   authorizationRequestParams(req, options) {
     const params = super.authorizationRequestParams(req, options);
     if (options?.state && !params.has('state')) {
@@ -113,7 +112,7 @@ class CustomOpenIDStrategy extends OpenIDStrategy {
         `[openidStrategy] Adding audience to authorization request: ${process.env.OPENID_AUDIENCE}`,
       );
     }
-    
+
     // Generate nonce for federated providers that require it
     const shouldGenerateNonce = isEnabled(process.env.OPENID_GENERATE_NONCE);
     if (shouldGenerateNonce && !params.has('nonce') && this._sessionKey) {
@@ -125,8 +124,6 @@ class CustomOpenIDStrategy extends OpenIDStrategy {
 
     return params;
   }
-
-
 }
 
 /**
@@ -290,13 +287,13 @@ function convertToUsername(input, defaultValue = '') {
 async function setupOpenId() {
   try {
     const shouldGenerateNonce = isEnabled(process.env.OPENID_GENERATE_NONCE);
-    
+
     /** @type {ClientMetadata} */
     const clientMetadata = {
       client_id: process.env.OPENID_CLIENT_ID,
       client_secret: process.env.OPENID_CLIENT_SECRET,
     };
-    
+
     // Add explicit validation settings for federated providers that need them
     if (shouldGenerateNonce) {
       clientMetadata.response_types = ['code'];
@@ -321,11 +318,11 @@ async function setupOpenId() {
     const usePKCE = isEnabled(process.env.OPENID_USE_PKCE);
     logger.info(`[openidStrategy] OpenID authentication configuration`, {
       generateNonce: shouldGenerateNonce,
-      reason: shouldGenerateNonce 
+      reason: shouldGenerateNonce
         ? 'OPENID_GENERATE_NONCE=true - Will generate nonce and use explicit metadata for federated providers'
-        : 'OPENID_GENERATE_NONCE=false - Standard flow without explicit nonce or metadata'
+        : 'OPENID_GENERATE_NONCE=false - Standard flow without explicit nonce or metadata',
     });
-    
+
     const openidLogin = new CustomOpenIDStrategy(
       {
         config: openidConfig,
