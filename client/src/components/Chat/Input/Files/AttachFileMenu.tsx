@@ -1,7 +1,13 @@
 import React, { useRef, useState, useMemo } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { useSetRecoilState } from 'recoil';
-import { FileSearch, ImageUpIcon, TerminalSquareIcon, FileType2Icon, FileText } from 'lucide-react';
+import {
+  FileSearch,
+  ImageUpIcon,
+  TerminalSquareIcon,
+  FileType2Icon,
+  FileImageIcon,
+} from 'lucide-react';
 import { EToolResources, EModelEndpoint, defaultAgentCapabilities } from 'librechat-data-provider';
 import {
   FileUpload,
@@ -58,7 +64,7 @@ const AttachFileMenu = ({
    * */
   const capabilities = useAgentCapabilities(agentsConfig?.capabilities ?? defaultAgentCapabilities);
 
-  const handleUploadClick = (fileType?: 'image' | 'document') => {
+  const handleUploadClick = (fileType?: 'image' | 'document' | 'anthropic_multimodal') => {
     if (!inputRef.current) {
       return;
     }
@@ -67,6 +73,8 @@ const AttachFileMenu = ({
       inputRef.current.accept = 'image/*';
     } else if (fileType === 'document') {
       inputRef.current.accept = '.pdf,application/pdf';
+    } else if (fileType === 'anthropic_multimodal') {
+      inputRef.current.accept = 'image/*,.pdf,application/pdf';
     } else {
       inputRef.current.accept = '';
     }
@@ -75,26 +83,30 @@ const AttachFileMenu = ({
   };
 
   const dropdownItems = useMemo(() => {
-    const createMenuItems = (onAction: (fileType?: 'image' | 'document') => void) => {
-      const items: MenuItemProps[] = [
-        {
+    const createMenuItems = (
+      onAction: (fileType?: 'image' | 'document' | 'anthropic_multimodal') => void,
+    ) => {
+      const items: MenuItemProps[] = [];
+
+      if (endpoint !== EModelEndpoint.anthropic) {
+        items.push({
           label: localize('com_ui_upload_image_input'),
           onClick: () => {
             setToolResource(undefined);
             onAction('image');
           },
           icon: <ImageUpIcon className="icon-md" />,
-        },
-      ];
+        });
+      }
 
       if (endpoint === EModelEndpoint.anthropic) {
         items.push({
           label: localize('com_ui_upload_provider'),
           onClick: () => {
             setToolResource(undefined);
-            onAction('document');
+            onAction('anthropic_multimodal');
           },
-          icon: <FileText className="icon-md" />,
+          icon: <FileImageIcon className="icon-md" />,
         });
       }
 
