@@ -146,14 +146,13 @@ const MarketplaceAdminSettings = () => {
     <OGDialog>
       <OGDialogTrigger asChild>
         <Button
-          variant={'outline'}
-          className="btn btn-neutral border-token-border-light relative gap-1 rounded-lg font-medium"
+          variant="outline"
+          className="relative h-12 rounded-xl border-border-medium font-medium"
         >
           <ShieldEllipsis className="cursor-pointer" aria-hidden="true" />
-          {localize('com_ui_admin_settings')}
         </Button>
       </OGDialogTrigger>
-      <OGDialogContent className="w-full border-border-light bg-surface-primary text-text-primary md:w-1/4">
+      <OGDialogContent className="w-11/12 max-w-md border-border-light bg-surface-primary text-text-primary">
         <OGDialogTitle>{`${localize('com_ui_admin_settings')} - ${localize(
           'com_ui_marketplace',
         )}`}</OGDialogTitle>

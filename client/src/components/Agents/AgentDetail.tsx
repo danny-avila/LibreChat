@@ -126,10 +126,7 @@ const AgentDetail: React.FC<AgentDetailProps> = ({ agent, isOpen, onClose }) => 
 
   return (
     <OGDialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <OGDialogContent
-        ref={dialogRef}
-        className="max-h-[90vh] overflow-y-auto py-8 sm:max-w-[450px]"
-      >
+      <OGDialogContent ref={dialogRef} className="max-h-[90vh] w-11/12 max-w-lg overflow-y-auto">
         {/* Copy link button - positioned next to close button */}
         <Button
           variant="ghost"
@@ -161,11 +158,7 @@ const AgentDetail: React.FC<AgentDetailProps> = ({ agent, isOpen, onClose }) => 
 
         {/* Agent description - below contact */}
         <div className="mt-4 whitespace-pre-wrap px-6 text-center text-base text-text-primary">
-          {agent?.description || (
-            <span className="italic text-text-tertiary">
-              {localize('com_agents_no_description')}
-            </span>
-          )}
+          {agent?.description}
         </div>
 
         {/* Action button */}

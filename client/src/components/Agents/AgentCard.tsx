@@ -28,7 +28,7 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, onClick, className = '' })
       onClick={onClick}
       aria-label={localize('com_agents_agent_card_label', {
         name: agent.name,
-        description: agent.description || localize('com_agents_no_description'),
+        description: agent.description ?? '',
       })}
       aria-describedby={`agent-${agent.id}-description`}
       tabIndex={0}
@@ -47,50 +47,47 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, onClick, className = '' })
           <div className="flex-shrink-0">{renderAgentAvatar(agent, { size: 'sm' })}</div>
 
           {/* Category tag */}
-          <div className="inline-flex items-center rounded-md border-border-xheavy bg-surface-active-alt px-2 py-1 text-xs font-medium">
-            {agent.category && (
+          {agent.category && (
+            <div className="inline-flex items-center rounded-md border-border-xheavy bg-surface-active-alt px-2 py-1 text-xs font-medium">
               <Label className="line-clamp-1 font-normal">
                 {agent.category.charAt(0).toUpperCase() + agent.category.slice(1)}
               </Label>
-            )}
-          </div>
+            </div>
+          )}
         </div>
 
         {/* Right column: Name, description, and other content */}
-        <div className="min-w-0 flex-1 space-y-1">
-          <div className="flex items-center justify-between">
+        <div className="flex h-full min-w-0 flex-1 flex-col justify-between space-y-1">
+          <div className="space-y-1">
             {/* Agent name */}
             <Label className="mb-1 line-clamp-1 text-xl font-semibold text-text-primary">
               {agent.name}
             </Label>
 
-            {/* Owner info */}
-            {(() => {
-              const displayName = getContactDisplayName(agent);
-              if (displayName) {
-                return (
-                  <div className="flex items-center text-sm text-text-secondary">
-                    <Label className="mr-1">🔹</Label>
-                    <Label>{displayName}</Label>
-                  </div>
-                );
-              }
-              return null;
-            })()}
+            {/* Agent description */}
+            <p
+              id={`agent-${agent.id}-description`}
+              className="line-clamp-3 text-sm leading-relaxed text-text-primary"
+              {...(agent.description ? { 'aria-label': `Description: ${agent.description}` } : {})}
+            >
+              {agent.description ?? ''}
+            </p>
           </div>
 
-          {/* Agent description */}
-          <p
-            id={`agent-${agent.id}-description`}
-            className="line-clamp-3 text-sm leading-relaxed text-text-primary"
-            aria-label={`Description: ${agent.description || localize('com_agents_no_description')}`}
-          >
-            {agent.description || (
-              <Label className="font-normal italic text-text-primary">
-                {localize('com_agents_no_description')}
-              </Label>
-            )}
-          </p>
+          {/* Owner info - moved to bottom right */}
+          {(() => {
+            const displayName = getContactDisplayName(agent);
+            if (displayName) {
+              return (
+                <div className="flex justify-end">
+                  <div className="flex items-center text-sm text-text-secondary">
+                    <Label>{displayName}</Label>
+                  </div>
+                </div>
+              );
+            }
+            return null;
+          })()}
         </div>
       </div>
     </div>
