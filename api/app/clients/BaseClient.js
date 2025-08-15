@@ -1233,7 +1233,7 @@ class BaseClient {
         {},
       );
 
-      await this.processAttachments(message, files, this.visionMode);
+      await this.addImageURLs(message, files, this.visionMode);
 
       this.message_file_map[message.messageId] = files;
       return message;
