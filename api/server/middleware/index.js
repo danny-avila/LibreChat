@@ -9,7 +9,6 @@ const validateEndpoint = require('./validateEndpoint');
 const requireLocalAuth = require('./requireLocalAuth');
 const canDeleteAccount = require('./canDeleteAccount');
 const accessResources = require('./accessResources');
-const setBalanceConfig = require('./setBalanceConfig');
 const requireLdapAuth = require('./requireLdapAuth');
 const abortMiddleware = require('./abortMiddleware');
 const checkInviteUser = require('./checkInviteUser');
@@ -44,7 +43,6 @@ module.exports = {
   requireLocalAuth,
   canDeleteAccount,
   validateEndpoint,
-  setBalanceConfig,
   concurrentLimiter,
   checkDomainAllowed,
   validateMessageReq,
