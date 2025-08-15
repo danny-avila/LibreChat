@@ -84,7 +84,7 @@ const refreshController = async (req, res) => {
   }
   try {
     const payload = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
-    const user = await getUserById(payload.id, '-password -__v -totpSecret');
+    const user = await getUserById(payload.id, '-password -__v -totpSecret -backupCodes');
     if (!user) {
       return res.status(401).redirect('/login');
     }
