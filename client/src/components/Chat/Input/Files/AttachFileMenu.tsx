@@ -98,9 +98,9 @@ const AttachFileMenu = ({
 
       // this is temporary until i add direct upload support for the other providers and can make a more robust solution
       const isAnthropicAgent = agent?.provider === 'anthropic';
-      const shouldShowDirectUpload = endpoint === EModelEndpoint.anthropic || isAnthropicAgent;
+      const shouldShowDirectAttach = endpoint === EModelEndpoint.anthropic || isAnthropicAgent;
 
-      if (!shouldShowDirectUpload) {
+      if (!shouldShowDirectAttach) {
         items.push({
           label: localize('com_ui_upload_image_input'),
           onClick: () => {
@@ -111,11 +111,11 @@ const AttachFileMenu = ({
         });
       }
 
-      if (shouldShowDirectUpload) {
+      if (shouldShowDirectAttach) {
         items.push({
           label: localize('com_ui_upload_provider'),
           onClick: () => {
-            setToolResource(EToolResources.direct_upload);
+            setToolResource(EToolResources.direct_attach);
             onAction('anthropic_multimodal');
           },
           icon: <FileImageIcon className="icon-md" />,
