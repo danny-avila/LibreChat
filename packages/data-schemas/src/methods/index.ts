@@ -12,13 +12,24 @@ import { createPluginAuthMethods, type PluginAuthMethods } from './pluginAuth';
 import { createAccessRoleMethods, type AccessRoleMethods } from './accessRole';
 import { createUserGroupMethods, type UserGroupMethods } from './userGroup';
 import { createAclEntryMethods, type AclEntryMethods } from './aclEntry';
-import { createGroupMethods, type GroupMethods } from './group';
 import { createShareMethods, type ShareMethods } from './share';
+
+export type AllMethods = UserMethods &
+  SessionMethods &
+  TokenMethods &
+  RoleMethods &
+  MemoryMethods &
+  AgentCategoryMethods &
+  UserGroupMethods &
+  AclEntryMethods &
+  ShareMethods &
+  AccessRoleMethods &
+  PluginAuthMethods;
 
 /**
  * Creates all database methods for all collections
  */
-export function createMethods(mongoose: typeof import('mongoose')) {
+export function createMethods(mongoose: typeof import('mongoose')): AllMethods {
   return {
     ...createUserMethods(mongoose),
     ...createSessionMethods(mongoose),
@@ -29,7 +40,6 @@ export function createMethods(mongoose: typeof import('mongoose')) {
     ...createAccessRoleMethods(mongoose),
     ...createUserGroupMethods(mongoose),
     ...createAclEntryMethods(mongoose),
-    ...createGroupMethods(mongoose),
     ...createShareMethods(mongoose),
     ...createPluginAuthMethods(mongoose),
   };
@@ -44,20 +54,7 @@ export type {
   AgentCategoryMethods,
   UserGroupMethods,
   AclEntryMethods,
-  GroupMethods,
   ShareMethods,
   AccessRoleMethods,
   PluginAuthMethods,
 };
-export type AllMethods = UserMethods &
-  SessionMethods &
-  TokenMethods &
-  RoleMethods &
-  MemoryMethods &
-  AgentCategoryMethods &
-  UserGroupMethods &
-  AclEntryMethods &
-  GroupMethods &
-  ShareMethods &
-  AccessRoleMethods &
-  PluginAuthMethods;

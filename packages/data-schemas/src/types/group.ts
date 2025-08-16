@@ -1,6 +1,7 @@
-import { Document } from 'mongoose';
+import type { Document, Types } from 'mongoose';
 
 export interface IGroup extends Document {
+  _id: Types.ObjectId;
   /** The name of the group */
   name: string;
   /** Optional description of the group */
