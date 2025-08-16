@@ -21,7 +21,7 @@ export type TAgentCapabilities = {
   [AgentCapabilities.execute_code]: boolean;
   [AgentCapabilities.end_after_tools]?: boolean;
   [AgentCapabilities.hide_sequential_outputs]?: boolean;
-  [AgentCapabilities.direct_upload]?: boolean;
+  [AgentCapabilities.direct_attach]?: boolean;
 };
 
 export type AgentForm = {
