@@ -113,7 +113,7 @@ class CustomOpenIDStrategy extends OpenIDStrategy {
       );
     }
 
-    // Generate nonce for federated providers that require it
+    /** Generate nonce for federated providers that require it */
     const shouldGenerateNonce = isEnabled(process.env.OPENID_GENERATE_NONCE);
     if (shouldGenerateNonce && !params.has('nonce') && this._sessionKey) {
       const crypto = require('crypto');
@@ -294,7 +294,6 @@ async function setupOpenId() {
       client_secret: process.env.OPENID_CLIENT_SECRET,
     };
 
-    // Add explicit validation settings for federated providers that need them
     if (shouldGenerateNonce) {
       clientMetadata.response_types = ['code'];
       clientMetadata.grant_types = ['authorization_code'];
