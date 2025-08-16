@@ -248,6 +248,7 @@ export const assistantEndpointSchema = baseEndpointSchema.merge(
 export type TAssistantEndpoint = z.infer<typeof assistantEndpointSchema>;
 
 export const defaultAgentCapabilities = [
+  AgentCapabilities.direct_attach,
   AgentCapabilities.execute_code,
   AgentCapabilities.file_search,
   AgentCapabilities.web_search,
@@ -256,7 +257,6 @@ export const defaultAgentCapabilities = [
   AgentCapabilities.tools,
   AgentCapabilities.chain,
   AgentCapabilities.ocr,
-  AgentCapabilities.direct_upload,
 ];
 
 export const agentsEndpointSchema = baseEndpointSchema
