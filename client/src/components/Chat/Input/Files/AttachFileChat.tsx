@@ -37,6 +37,7 @@ function AttachFileChat({
   } else if (isAgents || (endpointSupportsFiles && !isUploadDisabled)) {
     return (
       <AttachFileMenu
+        endpoint={endpoint}
         disabled={disableInputs}
         conversationId={conversationId}
         agentId={conversation?.agent_id}

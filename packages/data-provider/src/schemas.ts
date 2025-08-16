@@ -31,6 +31,20 @@ export enum EModelEndpoint {
   gptPlugins = 'gptPlugins',
 }
 
+/**
+ * Endpoints that support direct PDF processing in the agent system
+ */
+export const documentSupportedEndpoints = new Set<EModelEndpoint | string>([
+  EModelEndpoint.anthropic,
+  EModelEndpoint.openAI,
+  EModelEndpoint.azureOpenAI,
+  EModelEndpoint.google,
+]);
+
+export const isDocumentSupportedEndpoint = (endpoint?: string | null): boolean => {
+  return documentSupportedEndpoints.has(endpoint ?? '');
+};
+
 export const paramEndpoints = new Set<EModelEndpoint | string>([
   EModelEndpoint.agents,
   EModelEndpoint.openAI,
