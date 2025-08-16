@@ -1,19 +1,19 @@
 const passport = require('passport');
 const session = require('express-session');
+const { isEnabled } = require('@librechat/api');
+const { logger } = require('@librechat/data-schemas');
+const { CacheKeys } = require('librechat-data-provider');
 const {
+  openIdJwtLogin,
+  facebookLogin,
+  discordLogin,
   setupOpenId,
   googleLogin,
   githubLogin,
-  discordLogin,
-  facebookLogin,
   appleLogin,
   setupSaml,
-  openIdJwtLogin,
 } = require('~/strategies');
-const { isEnabled } = require('~/server/utils');
-const { logger } = require('~/config');
 const { getLogStores } = require('~/cache');
-const { CacheKeys } = require('librechat-data-provider');
 
 /**
  *
@@ -54,9 +54,9 @@ const configureSocialLogins = async (app) => {
     app.use(session(sessionOptions));
     app.use(passport.session());
     const config = await setupOpenId();
-    if (config) {      
+    if (config) {
       // Only register the strategy if setupOpenId succeeded
-      if (isEnabled(process.env.OPENID_REUSE_TOKENS)) {        
+      if (isEnabled(process.env.OPENID_REUSE_TOKENS)) {
         logger.info('OpenID token reuse is enabled.');
         passport.use('openidJwt', openIdJwtLogin(config));
       }
