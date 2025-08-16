@@ -1,6 +1,6 @@
 const { EModelEndpoint } = require('librechat-data-provider');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
-const { validateAnthropicPdf } = require('../validation/pdfValidator');
+const { validateAnthropicPdf } = require('@librechat/api');
 
 /**
  * Converts a readable stream to a buffer.

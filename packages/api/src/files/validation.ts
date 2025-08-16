@@ -1,13 +1,20 @@
-const { logger } = require('~/config');
-const { anthropicPdfSizeLimit } = require('librechat-data-provider');
+import { anthropicPdfSizeLimit } from 'librechat-data-provider';
+
+export interface PDFValidationResult {
+  isValid: boolean;
+  error?: string;
+}
 
 /**
  * Validates if a PDF meets Anthropic's requirements
- * @param {Buffer} pdfBuffer - The PDF file as a buffer
- * @param {number} fileSize - The file size in bytes
- * @returns {Promise<{isValid: boolean, error?: string}>}
+ * @param pdfBuffer - The PDF file as a buffer
+ * @param fileSize - The file size in bytes
+ * @returns Promise that resolves to validation result
  */
-async function validateAnthropicPdf(pdfBuffer, fileSize) {
+export async function validateAnthropicPdf(
+  pdfBuffer: Buffer,
+  fileSize: number,
+): Promise<PDFValidationResult> {
   try {
     if (fileSize > anthropicPdfSizeLimit) {
       return {
@@ -53,20 +60,12 @@ async function validateAnthropicPdf(pdfBuffer, fileSize) {
       };
     }
 
-    logger.debug(
-      `PDF validation passed: ${Math.round(fileSize / 1024)}KB, ~${estimatedPages} pages`,
-    );
-
     return { isValid: true };
   } catch (error) {
-    logger.error('PDF validation error:', error);
+    console.error('PDF validation error:', error);
     return {
       isValid: false,
       error: 'Failed to validate PDF file',
     };
   }
 }
-
-module.exports = {
-  validateAnthropicPdf,
-};
