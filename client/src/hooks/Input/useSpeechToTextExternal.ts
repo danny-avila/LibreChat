@@ -16,6 +16,7 @@ const useSpeechToTextExternal = (
   const animationFrameIdRef = useRef<number | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const accumulatedText = useRef<string>('');
 
   const [permission, setPermission] = useState(false);
   const [isListening, setIsListening] = useState(false);
@@ -27,16 +28,22 @@ const useSpeechToTextExternal = (
   const [autoSendText] = useRecoilState(store.autoSendText);
   const [speechToText] = useRecoilState<boolean>(store.speechToText);
   const [autoTranscribeAudio] = useRecoilState<boolean>(store.autoTranscribeAudio);
+  const [silenceTimeoutMs] = useRecoilState<number>(store.silenceTimeoutMs);
 
   const { mutate: processAudio, isLoading: isProcessing } = useSpeechToTextMutation({
     onSuccess: (data) => {
       const extractedText = data.text;
-      setText(extractedText);
+      // Accumulate text from multiple recordings
+      const newText = accumulatedText.current + (accumulatedText.current ? ' ' : '') + extractedText;
+      accumulatedText.current = newText;
+      setText(newText);
       setIsRequestBeingMade(false);
 
-      if (autoSendText > -1 && speechToText && extractedText.length > 0) {
+      if (autoSendText > -1 && speechToText && newText.length > 0) {
         setTimeout(() => {
-          onTranscriptionComplete(extractedText);
+          onTranscriptionComplete(newText);
+          // Clear accumulated text after successful submission
+          accumulatedText.current = '';
         }, autoSendText * 1000);
       }
     },
@@ -149,7 +156,7 @@ const useSpeechToTextExternal = (
       }
 
       const timeSinceLastSound = Date.now() - lastSoundTime;
-      const isOverSilenceThreshold = timeSinceLastSound > 3000;
+      const isOverSilenceThreshold = timeSinceLastSound > silenceTimeoutMs;
 
       if (isOverSilenceThreshold) {
         stopRecording();
@@ -229,6 +236,11 @@ const useSpeechToTextExternal = (
     startRecording();
   };
 
+  const clearAccumulatedText = () => {
+    accumulatedText.current = '';
+    setText('');
+  };
+
   const externalStopRecording = () => {
     if (!isListening) {
       showToast({
@@ -276,6 +288,7 @@ const useSpeechToTextExternal = (
     externalStopRecording,
     externalStartRecording,
     isLoading: isProcessing,
+    clearAccumulatedText,
   };
 };
 

@@ -53,7 +53,7 @@ export default function AudioRecorder({
     [setValue],
   );
 
-  const { isListening, isLoading, startRecording, stopRecording } = useSpeechToText(
+  const { isListening, isLoading, startRecording, stopRecording, clearAccumulatedText } = useSpeechToText(
     setText,
     onTranscriptionComplete,
   );
@@ -65,6 +65,16 @@ export default function AudioRecorder({
   const handleStartRecording = async () => startRecording();
 
   const handleStopRecording = async () => stopRecording();
+
+  const handleDoubleClick = () => {
+    if (clearAccumulatedText) {
+      clearAccumulatedText();
+      showToast({
+        message: localize('com_ui_speech_text_cleared'),
+        status: 'success',
+      });
+    }
+  };
 
   const renderIcon = () => {
     if (isListening === true) {
@@ -85,6 +95,7 @@ export default function AudioRecorder({
           type="button"
           aria-label={localize('com_ui_use_micrphone')}
           onClick={isListening === true ? handleStopRecording : handleStartRecording}
+          onDoubleClick={handleDoubleClick}
           disabled={disabled}
           className={cn(
             'flex size-9 items-center justify-center rounded-full p-1 transition-colors hover:bg-surface-hover',

@@ -20,6 +20,7 @@ import {
   AutoSendTextSelector,
   EngineSTTDropdown,
   DecibelSelector,
+  SilenceTimeoutSelector,
 } from './STT';
 import ConversationModeSwitch from './ConversationModeSwitch';
 import { useLocalize } from '~/hooks';
@@ -45,6 +46,7 @@ function Speech() {
   const [languageSTT, setLanguageSTT] = useRecoilState<string>(store.languageSTT);
   const [decibelValue, setDecibelValue] = useRecoilState(store.decibelValue);
   const [autoSendText, setAutoSendText] = useRecoilState(store.autoSendText);
+  const [silenceTimeoutMs, setSilenceTimeoutMs] = useRecoilState(store.silenceTimeoutMs);
   const [engineTTS, setEngineTTS] = useRecoilState<string>(store.engineTTS);
   const [voice, setVoice] = useRecoilState(store.voice);
   const [cloudBrowserVoices, setCloudBrowserVoices] = useRecoilState<boolean>(
@@ -69,6 +71,7 @@ function Speech() {
         autoTranscribeAudio: { value: autoTranscribeAudio, setFunc: setAutoTranscribeAudio },
         decibelValue: { value: decibelValue, setFunc: setDecibelValue },
         autoSendText: { value: autoSendText, setFunc: setAutoSendText },
+        silenceTimeoutMs: { value: silenceTimeoutMs, setFunc: setSilenceTimeoutMs },
         engineTTS: { value: engineTTS, setFunc: setEngineTTS },
         voice: { value: voice, setFunc: setVoice },
         cloudBrowserVoices: { value: cloudBrowserVoices, setFunc: setCloudBrowserVoices },
@@ -95,6 +98,7 @@ function Speech() {
       autoTranscribeAudio,
       decibelValue,
       autoSendText,
+      silenceTimeoutMs,
       engineTTS,
       voice,
       cloudBrowserVoices,
@@ -113,6 +117,7 @@ function Speech() {
       setAutoTranscribeAudio,
       setDecibelValue,
       setAutoSendText,
+      setSilenceTimeoutMs,
       setEngineTTS,
       setVoice,
       setCloudBrowserVoices,
@@ -213,6 +218,11 @@ function Speech() {
           {autoTranscribeAudio && (
             <div className="pb-2">
               <DecibelSelector />
+            </div>
+          )}
+          {autoTranscribeAudio && (
+            <div className="pb-2">
+              <SilenceTimeoutSelector />
             </div>
           )}
           <div className="pb-2">
