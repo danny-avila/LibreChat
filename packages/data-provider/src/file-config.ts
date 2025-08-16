@@ -169,6 +169,10 @@ export const megabyte = 1024 * 1024;
 export const mbToBytes = (mb: number): number => mb * megabyte;
 
 const defaultSizeLimit = mbToBytes(512);
+
+// Anthropic PDF limits: 32MB max, 100 pages max
+export const anthropicPdfSizeLimit = mbToBytes(32);
+
 const assistantsFileConfig = {
   fileLimit: 10,
   fileSizeLimit: defaultSizeLimit,
@@ -182,6 +186,14 @@ export const fileConfig = {
     [EModelEndpoint.assistants]: assistantsFileConfig,
     [EModelEndpoint.azureAssistants]: assistantsFileConfig,
     [EModelEndpoint.agents]: assistantsFileConfig,
+    [EModelEndpoint.anthropic]: {
+      fileLimit: 10,
+      fileSizeLimit: defaultSizeLimit,
+      totalSizeLimit: defaultSizeLimit,
+      supportedMimeTypes,
+      disabled: false,
+      pdfSizeLimit: anthropicPdfSizeLimit,
+    },
     default: {
       fileLimit: 10,
       fileSizeLimit: defaultSizeLimit,
