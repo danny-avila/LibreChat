@@ -7,9 +7,12 @@ import {
   WebSocketOptionsSchema,
   StreamableHTTPOptionsSchema,
 } from 'librechat-data-provider';
+import type { TPlugin, TUser } from 'librechat-data-provider';
 import type * as t from '@modelcontextprotocol/sdk/types.js';
-import type { TPlugin } from 'librechat-data-provider';
+import type { TokenMethods } from '@librechat/data-schemas';
+import type { FlowStateManager } from '~/flow/manager';
 import type { JsonSchemaType } from '~/types/zod';
+import type * as o from '~/mcp/oauth/types';
 
 export type StdioOptions = z.infer<typeof StdioOptionsSchema>;
 export type WebSocketOptions = z.infer<typeof WebSocketOptionsSchema>;
@@ -113,3 +116,20 @@ export type ParsedServerConfig = MCPOptions & {
   capabilities?: string;
   tools?: string;
 };
+
+export interface BasicConnectionOptions {
+  serverName: string;
+  serverConfig: MCPOptions;
+}
+
+export interface OAuthConnectionOptions {
+  useOAuth: true;
+  user: TUser;
+  customUserVars?: Record<string, string>;
+  flowManager: FlowStateManager<o.MCPOAuthTokens | null>;
+  tokenMethods?: TokenMethods;
+  signal?: AbortSignal;
+  oauthStart?: (authURL: string) => Promise<void>;
+  oauthEnd?: () => Promise<void>;
+  returnOnOAuth?: boolean;
+}

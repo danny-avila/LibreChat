@@ -140,25 +140,25 @@ function processSingleValue({
 /**
  * Recursively processes an object to replace environment variables in string values
  * @param params - Processing parameters
- * @param params.obj - The object to process
+ * @param params.options - The MCP options to process
  * @param params.user - The user object containing all user fields
  * @param params.customUserVars - vars that user set in settings
  * @param params.body - the body of the request that is being processed
  * @returns - The processed object with environment variables replaced
  */
 export function processMCPEnv(params: {
-  obj: Readonly<MCPOptions>;
+  options: Readonly<MCPOptions>;
   user?: TUser;
   customUserVars?: Record<string, string>;
   body?: RequestBody;
 }): MCPOptions {
-  const { obj, user, customUserVars, body } = params;
+  const { options, user, customUserVars, body } = params;
 
-  if (obj === null || obj === undefined) {
-    return obj;
+  if (options === null || options === undefined) {
+    return options;
   }
 
-  const newObj: MCPOptions = structuredClone(obj);
+  const newObj: MCPOptions = structuredClone(options);
 
   if ('env' in newObj && newObj.env) {
     const processedEnv: Record<string, string> = {};
