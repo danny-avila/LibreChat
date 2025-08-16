@@ -222,6 +222,42 @@ class AgentClient extends BaseClient {
     return files;
   }
 
+  async addDocuments(message, attachments) {
+    const documentResult =
+      await require('~/server/services/Files/documents').encodeAndFormatDocuments(
+        this.options.req,
+        attachments,
+        this.options.agent.provider,
+      );
+    message.documents =
+      documentResult.documents && documentResult.documents.length
+        ? documentResult.documents
+        : undefined;
+    return documentResult.files;
+  }
+
+  async processAttachments(message, attachments) {
+    const [imageFiles, documentFiles] = await Promise.all([
+      this.addImageURLs(message, attachments),
+      this.addDocuments(message, attachments),
+    ]);
+
+    const allFiles = [...imageFiles, ...documentFiles];
+    const seenFileIds = new Set();
+    const uniqueFiles = [];
+
+    for (const file of allFiles) {
+      if (file.file_id && !seenFileIds.has(file.file_id)) {
+        seenFileIds.add(file.file_id);
+        uniqueFiles.push(file);
+      } else if (!file.file_id) {
+        uniqueFiles.push(file);
+      }
+    }
+
+    return uniqueFiles;
+  }
+
   async buildMessages(
     messages,
     parentMessageId,
@@ -255,7 +291,7 @@ class AgentClient extends BaseClient {
         };
       }
 
-      const files = await this.addImageURLs(
+      const files = await this.processAttachments(
         orderedMessages[orderedMessages.length - 1],
         attachments,
       );
@@ -277,6 +313,27 @@ class AgentClient extends BaseClient {
         userName: this.options?.name,
         assistantName: this.options?.modelLabel,
       });
+
+      if (
+        message.documents &&
+        message.documents.length > 0 &&
+        message.isCreatedByUser &&
+        this.options.agent.provider === EModelEndpoint.anthropic
+      ) {
+        const contentParts = [];
+        contentParts.push(...message.documents);
+        if (message.image_urls && message.image_urls.length > 0) {
+          contentParts.push(...message.image_urls);
+        }
+
+        if (typeof formattedMessage.content === 'string') {
+          contentParts.push({ type: 'text', text: formattedMessage.content });
+        } else {
+          const textPart = formattedMessage.content.find((part) => part.type === 'text');
+          contentParts.push(textPart);
+        }
+        formattedMessage.content = contentParts;
+      }
 
       if (message.ocr && i !== orderedMessages.length - 1) {
         if (typeof formattedMessage.content === 'string') {
@@ -793,6 +850,7 @@ class AgentClient extends BaseClient {
       };
 
       const toolSet = new Set((this.options.agent.tools ?? []).map((tool) => tool && tool.name));
+
       let { messages: initialMessages, indexTokenCountMap } = formatAgentMessages(
         payload,
         this.indexTokenCountMap,

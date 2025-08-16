@@ -175,6 +175,7 @@ export enum Capabilities {
 export enum AgentCapabilities {
   hide_sequential_outputs = 'hide_sequential_outputs',
   end_after_tools = 'end_after_tools',
+  direct_upload = 'direct_upload',
   execute_code = 'execute_code',
   file_search = 'file_search',
   web_search = 'web_search',
@@ -256,6 +257,7 @@ export const defaultAgentCapabilities = [
   AgentCapabilities.tools,
   AgentCapabilities.chain,
   AgentCapabilities.ocr,
+  AgentCapabilities.direct_upload,
 ];
 
 export const agentsEndpointSchema = baseEndpointSchema

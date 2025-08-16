@@ -27,6 +27,7 @@ export enum Tools {
 
 export enum EToolResources {
   code_interpreter = 'code_interpreter',
+  direct_upload = 'direct_upload',
   execute_code = 'execute_code',
   file_search = 'file_search',
   image_edit = 'image_edit',
