@@ -69,3 +69,17 @@ export async function validateAnthropicPdf(
     };
   }
 }
+
+export async function validateOpenAIPdf(
+  pdfBuffer: Buffer,
+  fileSize: number,
+): Promise<PDFValidationResult> {
+  if (fileSize > 10 * 1024 * 1024) {
+    return {
+      isValid: false,
+      error: "PDF file size exceeds OpenAI's 10MB limit",
+    };
+  }
+
+  return { isValid: true };
+}
