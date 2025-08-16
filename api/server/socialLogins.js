@@ -16,6 +16,35 @@ const {
 const { getLogStores } = require('~/cache');
 
 /**
+ * Configures OpenID Connect for the application.
+ * @param {Express.Application} app - The Express application instance.
+ * @returns {Promise<void>}
+ */
+async function configureOpenId(app) {
+  logger.info('Configuring OpenID Connect...');
+  const sessionOptions = {
+    secret: process.env.OPENID_SESSION_SECRET,
+    resave: false,
+    saveUninitialized: false,
+    store: getLogStores(CacheKeys.OPENID_SESSION),
+  };
+  app.use(session(sessionOptions));
+  app.use(passport.session());
+
+  const config = await setupOpenId();
+  if (!config) {
+    logger.error('OpenID Connect configuration failed - strategy not registered.');
+    return;
+  }
+
+  if (isEnabled(process.env.OPENID_REUSE_TOKENS)) {
+    logger.info('OpenID token reuse is enabled.');
+    passport.use('openidJwt', openIdJwtLogin(config));
+  }
+  logger.info('OpenID Connect configured successfully.');
+}
+
+/**
  *
  * @param {Express.Application} app
  */
@@ -44,27 +73,7 @@ const configureSocialLogins = async (app) => {
     process.env.OPENID_SCOPE &&
     process.env.OPENID_SESSION_SECRET
   ) {
-    logger.info('Configuring OpenID Connect...');
-    const sessionOptions = {
-      secret: process.env.OPENID_SESSION_SECRET,
-      resave: false,
-      saveUninitialized: false,
-      store: getLogStores(CacheKeys.OPENID_SESSION),
-    };
-    app.use(session(sessionOptions));
-    app.use(passport.session());
-    const config = await setupOpenId();
-    if (config) {
-      // Only register the strategy if setupOpenId succeeded
-      if (isEnabled(process.env.OPENID_REUSE_TOKENS)) {
-        logger.info('OpenID token reuse is enabled.');
-        passport.use('openidJwt', openIdJwtLogin(config));
-      }
-      logger.info('OpenID Connect configured successfully.');
-    } else {
-      logger.error('OpenID Connect configuration failed - strategy not registered.');
-    }
-    logger.info('OpenID Connect configured.');
+    await configureOpenId(app);
   }
   if (
     process.env.SAML_ENTRY_POINT &&
