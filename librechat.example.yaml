@@ -290,6 +290,8 @@ endpoints:
       # recommended environment variables:
       apiKey: '${OPENROUTER_KEY}'
       baseURL: 'https://openrouter.ai/api/v1'
+      headers:
+          x-librechat-body-parentmessageid: '{{LIBRECHAT_BODY_PARENTMESSAGEID}}'
       models:
         default: ['meta-llama/llama-3-70b-instruct']
         fetch: true
