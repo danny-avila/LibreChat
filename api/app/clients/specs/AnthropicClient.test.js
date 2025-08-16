@@ -267,7 +267,7 @@ describe('AnthropicClient', () => {
           'anthropic/claude-sonnet-4-20250514',
         ];
 
-        modelVariations.forEach(model => {
+        modelVariations.forEach((model) => {
           const modelOptions = { model };
           client.setOptions({ modelOptions, promptCache: true });
           const anthropicClient = client.getClient(modelOptions);
@@ -277,7 +277,7 @@ describe('AnthropicClient', () => {
             'prompt-caching-2024-07-31,context-1m-2025-08-07',
           );
         });
-      });	    
+      });
 
       it('should add "prompt-caching" beta header for claude-opus-4 model', () => {
         const client = new AnthropicClient('test-api-key');
