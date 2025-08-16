@@ -57,7 +57,11 @@ export class MCPConnectionFactory {
   }
 
   protected constructor(basic: BasicConnectionOptions, oauth?: OAuthConnectionOptions) {
-    this.serverConfig = processMCPEnv(basic.serverConfig, oauth?.user, oauth?.customUserVars);
+    this.serverConfig = processMCPEnv({
+      obj: basic.serverConfig,
+      user: oauth?.user,
+      customUserVars: oauth?.customUserVars,
+    });
     this.serverName = basic.serverName;
     this.useOAuth = !!oauth?.useOAuth;
     this.logPrefix = oauth?.user

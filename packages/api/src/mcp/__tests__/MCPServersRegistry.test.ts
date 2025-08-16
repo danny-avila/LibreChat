@@ -24,7 +24,7 @@ jest.mock('@librechat/data-schemas', () => ({
 // Mock processMCPEnv to verify it's called and adds a processed marker
 jest.mock('~/utils', () => ({
   ...jest.requireActual('~/utils'),
-  processMCPEnv: jest.fn((config) => ({
+  processMCPEnv: jest.fn(({ obj: config }) => ({
     ...config,
     _processed: true, // Simple marker to verify processing occurred
   })),

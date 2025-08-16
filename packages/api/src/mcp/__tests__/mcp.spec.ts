@@ -178,7 +178,7 @@ describe('Environment Variable Extraction (MCP)', () => {
         },
       };
 
-      const result = processMCPEnv(originalObj);
+      const result = processMCPEnv({ obj: originalObj });
 
       // Verify it's not the same object reference
       expect(result).not.toBe(originalObj);
@@ -203,7 +203,7 @@ describe('Environment Variable Extraction (MCP)', () => {
         },
       };
 
-      const result = processMCPEnv(obj);
+      const result = processMCPEnv({ obj });
 
       expect('env' in result && result.env).toEqual({
         API_KEY: 'test-api-key-value',
@@ -225,7 +225,7 @@ describe('Environment Variable Extraction (MCP)', () => {
         },
       };
 
-      const result = processMCPEnv(obj, user);
+      const result = processMCPEnv({ obj, user });
 
       expect('headers' in result && result.headers).toEqual({
         Authorization: 'test-api-key-value',
@@ -236,9 +236,9 @@ describe('Environment Variable Extraction (MCP)', () => {
 
     it('should handle null or undefined input', () => {
       // @ts-ignore - Testing null/undefined handling
-      expect(processMCPEnv(null)).toBeNull();
+      expect(processMCPEnv({ obj: null })).toBeNull();
       // @ts-ignore - Testing null/undefined handling
-      expect(processMCPEnv(undefined)).toBeUndefined();
+      expect(processMCPEnv({ obj: undefined })).toBeUndefined();
     });
 
     it('should not modify objects without env or headers', () => {
@@ -248,7 +248,7 @@ describe('Environment Variable Extraction (MCP)', () => {
         timeout: 5000,
       };
 
-      const result = processMCPEnv(obj);
+      const result = processMCPEnv({ obj });
 
       expect(result).toEqual(obj);
       expect(result).not.toBe(obj); // Still a different object (deep clone)
@@ -269,8 +269,8 @@ describe('Environment Variable Extraction (MCP)', () => {
       const user1 = createTestUser({ id: 'user-123' });
       const user2 = createTestUser({ id: 'user-456' });
 
-      const resultUser1 = processMCPEnv(baseConfig, user1);
-      const resultUser2 = processMCPEnv(baseConfig, user2);
+      const resultUser1 = processMCPEnv({ obj: baseConfig, user: user1 });
+      const resultUser2 = processMCPEnv({ obj: baseConfig, user: user2 });
 
       // Verify each has the correct user ID
       expect('headers' in resultUser1 && resultUser1.headers?.['User-Id']).toBe('user-123');
@@ -303,7 +303,7 @@ describe('Environment Variable Extraction (MCP)', () => {
         },
       };
 
-      const result = processMCPEnv(obj, user);
+      const result = processMCPEnv({ obj, user });
 
       expect('headers' in result && result.headers).toEqual({
         Authorization: 'test-api-key-value',
@@ -318,7 +318,7 @@ describe('Environment Variable Extraction (MCP)', () => {
         url: 'https://example.com/api',
       };
 
-      const result = processMCPEnv(obj);
+      const result = processMCPEnv({ obj });
 
       expect(result.type).toBe('streamable-http');
     });
@@ -329,7 +329,7 @@ describe('Environment Variable Extraction (MCP)', () => {
         url: 'https://example.com/api',
       };
 
-      const result = processMCPEnv(obj as unknown as MCPOptions);
+      const result = processMCPEnv({ obj: obj as unknown as MCPOptions });
 
       expect(result.type).toBe('http');
     });
@@ -346,7 +346,7 @@ describe('Environment Variable Extraction (MCP)', () => {
         },
       };
 
-      const result = processMCPEnv(obj as unknown as MCPOptions, user);
+      const result = processMCPEnv({ obj: obj as unknown as MCPOptions, user });
 
       expect('headers' in result && result.headers).toEqual({
         Authorization: 'test-api-key-value',
@@ -379,7 +379,7 @@ describe('Environment Variable Extraction (MCP)', () => {
         },
       };
 
-      const result = processMCPEnv(obj, user);
+      const result = processMCPEnv({ obj, user });
 
       expect('headers' in result && result.headers).toEqual({
         'User-Email': 'test@example.com',
@@ -408,7 +408,7 @@ describe('Environment Variable Extraction (MCP)', () => {
         },
       };
 
-      const result = processMCPEnv(obj, user);
+      const result = processMCPEnv({ obj, user });
 
       expect('headers' in result && result.headers).toEqual({
         'User-Email': 'test@example.com',
@@ -433,7 +433,7 @@ describe('Environment Variable Extraction (MCP)', () => {
         },
       };
 
-      const result = processMCPEnv(obj, user);
+      const result = processMCPEnv({ obj, user });
 
       expect('env' in result && result.env).toEqual({
         USER_EMAIL: 'test@example.com',
@@ -452,7 +452,7 @@ describe('Environment Variable Extraction (MCP)', () => {
         url: 'https://example.com/api/{{LIBRECHAT_USER_USERNAME}}/stream',
       };
 
-      const result = processMCPEnv(obj, user);
+      const result = processMCPEnv({ obj, user });
 
       expect('url' in result && result.url).toBe('https://example.com/api/testuser/stream');
     });
@@ -474,7 +474,7 @@ describe('Environment Variable Extraction (MCP)', () => {
         },
       };
 
-      const result = processMCPEnv(obj, user);
+      const result = processMCPEnv({ obj, user });
 
       expect('headers' in result && result.headers).toEqual({
         'Email-Verified': 'true',
@@ -498,7 +498,7 @@ describe('Environment Variable Extraction (MCP)', () => {
         },
       };
 
-      const result = processMCPEnv(obj, user);
+      const result = processMCPEnv({ obj, user });
 
       expect('headers' in result && result.headers).toEqual({
         'User-Email': 'test@example.com',
@@ -521,7 +521,7 @@ describe('Environment Variable Extraction (MCP)', () => {
         },
       };
 
-      const result = processMCPEnv(obj, user);
+      const result = processMCPEnv({ obj, user });
 
       expect('headers' in result && result.headers).toEqual({
         'Primary-Email': 'test@example.com',
@@ -544,7 +544,7 @@ describe('Environment Variable Extraction (MCP)', () => {
         },
       };
 
-      const result1 = processMCPEnv(obj1, userWithId);
+      const result1 = processMCPEnv({ obj: obj1, user: userWithId });
       expect('headers' in result1 && result1.headers?.['User-Id']).toBe('user-123');
 
       // Test with '_id' property only (should not work since we only check 'id')
@@ -561,7 +561,7 @@ describe('Environment Variable Extraction (MCP)', () => {
         },
       };
 
-      const result2 = processMCPEnv(obj2, userWithUnderscore);
+      const result2 = processMCPEnv({ obj: obj2, user: userWithUnderscore });
       // Since we don't check _id, the placeholder should remain unchanged
       expect('headers' in result2 && result2.headers?.['User-Id']).toBe('{{LIBRECHAT_USER_ID}}');
 
@@ -579,7 +579,7 @@ describe('Environment Variable Extraction (MCP)', () => {
         },
       };
 
-      const result3 = processMCPEnv(obj3, userWithBoth);
+      const result3 = processMCPEnv({ obj: obj3, user: userWithBoth });
       expect('headers' in result3 && result3.headers?.['User-Id']).toBe('user-789');
     });
 
@@ -600,7 +600,7 @@ describe('Environment Variable Extraction (MCP)', () => {
         },
       };
 
-      const result = processMCPEnv(obj, user, customUserVars);
+      const result = processMCPEnv({ obj, user, customUserVars });
 
       expect('env' in result && result.env).toEqual({
         VAR_A: 'custom-value-1',
@@ -627,7 +627,7 @@ describe('Environment Variable Extraction (MCP)', () => {
         },
       };
 
-      const result = processMCPEnv(obj, user, customUserVars);
+      const result = processMCPEnv({ obj, user, customUserVars });
 
       expect('headers' in result && result.headers).toEqual({
         Authorization: 'Bearer user-specific-token',
@@ -648,7 +648,7 @@ describe('Environment Variable Extraction (MCP)', () => {
         url: 'wss://example.com/{{TENANT_ID}}/api/{{API_VERSION}}?user={{LIBRECHAT_USER_ID}}&key=${TEST_API_KEY}',
       };
 
-      const result = processMCPEnv(obj, user, customUserVars);
+      const result = processMCPEnv({ obj, user, customUserVars });
 
       expect('url' in result && result.url).toBe(
         'wss://example.com/tenant123/api/v2?user=test-user-id&key=test-api-key-value',
@@ -680,7 +680,7 @@ describe('Environment Variable Extraction (MCP)', () => {
         ],
       };
 
-      const result = processMCPEnv(obj, user, customUserVars);
+      const result = processMCPEnv({ obj, user, customUserVars });
 
       expect('args' in result && result.args).toEqual([
         '-y',
@@ -712,7 +712,7 @@ describe('Environment Variable Extraction (MCP)', () => {
         },
       };
 
-      const result = processMCPEnv(obj, user, customUserVars);
+      const result = processMCPEnv({ obj, user, customUserVars });
       expect('headers' in result && result.headers?.['Test-Email']).toBe('custom-email-wins');
 
       // Clean up env var
@@ -732,7 +732,7 @@ describe('Environment Variable Extraction (MCP)', () => {
         },
       };
 
-      const result = processMCPEnv(obj, user, customUserVars);
+      const result = processMCPEnv({ obj, user, customUserVars });
       expect('env' in result && result.env).toEqual({
         API_KEY: 'test-api-key-value',
       });
@@ -752,7 +752,7 @@ describe('Environment Variable Extraction (MCP)', () => {
         },
       };
 
-      const result = processMCPEnv(obj, user, customUserVars);
+      const result = processMCPEnv({ obj, user, customUserVars });
       expect('headers' in result && result.headers).toEqual({
         'User-Email-Header': 'user-provided-email@example.com',
         'System-Key-Header': 'test-api-key-value',
@@ -792,7 +792,11 @@ describe('Environment Variable Extraction (MCP)', () => {
       // Cast obj to MCPOptions when calling processMCPEnv.
       // This acknowledges the object might not strictly conform to one schema in the union,
       // but we are testing the function's ability to handle these properties if present.
-      const result = processMCPEnv(obj as MCPOptions, user, allCustomVarsForCall);
+      const result = processMCPEnv({
+        obj: obj as MCPOptions,
+        user,
+        customUserVars: allCustomVarsForCall,
+      });
 
       expect('url' in result && result.url).toBe('https://ep123.example.com/users/john.doe');
       expect('headers' in result && result.headers).toEqual({
@@ -824,7 +828,7 @@ describe('Environment Variable Extraction (MCP)', () => {
         },
       };
 
-      const result = processMCPEnv(obj, user, customUserVars);
+      const result = processMCPEnv({ obj, user, customUserVars });
 
       expect('headers' in result && result.headers).toEqual({
         Authorization: 'ghp_1234567890abcdef1234567890abcdef12345678',
@@ -847,7 +851,7 @@ describe('Environment Variable Extraction (MCP)', () => {
         },
       };
 
-      const result = processMCPEnv(obj, user);
+      const result = processMCPEnv({ obj, user });
 
       expect('headers' in result && result.headers).toEqual({
         Authorization: '{{PAT_TOKEN}}', // Should remain unchanged since no customUserVars provided
