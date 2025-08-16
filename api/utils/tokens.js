@@ -487,5 +487,7 @@ module.exports = {
   matchModelName,
   processModelData,
   getModelMaxTokens,
+  getModelTokenValue,
+  findMatchingPattern,
   getModelMaxOutputTokens,
 };
