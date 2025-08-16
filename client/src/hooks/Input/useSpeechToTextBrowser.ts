@@ -16,6 +16,7 @@ const useSpeechToTextBrowser = (
   const lastTranscript = useRef<string | null>(null);
   const lastInterim = useRef<string | null>(null);
   const timeoutRef = useRef<NodeJS.Timeout | null>();
+  const accumulatedText = useRef<string>('');
   const [autoSendText] = useRecoilState(store.autoSendText);
   const [languageSTT] = useRecoilState<string>(store.languageSTT);
   const [autoTranscribeAudio] = useRecoilState<boolean>(store.autoTranscribeAudio);
@@ -39,7 +40,8 @@ const useSpeechToTextBrowser = (
       return;
     }
 
-    setText(interimTranscript);
+    const combinedText = accumulatedText.current + (accumulatedText.current ? ' ' : '') + interimTranscript;
+    setText(combinedText);
     lastInterim.current = interimTranscript;
   }, [setText, interimTranscript]);
 
@@ -52,11 +54,19 @@ const useSpeechToTextBrowser = (
       return;
     }
 
-    setText(finalTranscript);
+    // Accumulate text instead of replacing it
+    if (finalTranscript.trim() !== accumulatedText.current.trim()) {
+      accumulatedText.current = finalTranscript;
+      setText(finalTranscript);
+    }
+    
     lastTranscript.current = finalTranscript;
+    
     if (autoSendText > -1 && finalTranscript.length > 0) {
       timeoutRef.current = setTimeout(() => {
-        onTranscriptionComplete(finalTranscript);
+        onTranscriptionComplete(accumulatedText.current);
+        // Clear accumulated text only after successful submission
+        accumulatedText.current = '';
         resetTranscript();
       }, autoSendText * 1000);
     }
@@ -88,11 +98,19 @@ const useSpeechToTextBrowser = (
     if (isListening === true) {
       SpeechRecognition.stopListening();
     } else {
+      // Clear accumulated text when starting fresh
+      accumulatedText.current = '';
       SpeechRecognition.startListening({
         language: languageSTT,
         continuous: autoTranscribeAudio,
       });
     }
+  };
+
+  const clearAccumulatedText = () => {
+    accumulatedText.current = '';
+    resetTranscript();
+    setText('');
   };
 
   useEffect(() => {
@@ -111,6 +129,7 @@ const useSpeechToTextBrowser = (
     isLoading: false,
     startRecording: toggleListening,
     stopRecording: toggleListening,
+    clearAccumulatedText,
   };
 };
 
