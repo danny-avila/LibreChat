@@ -11,6 +11,7 @@ All notable changes to this project will be documented in this file.
 
 ### ✨ New Features
 
+- 🎤 feat: Improve speech-to-text with configurable silence timeout and text accumulation - Configurable silence detection (1-15s), text accumulation across sessions, double-click microphone to clear text
 - ✨ feat: implement search parameter updates by **@mawburn** in [#7151](https://github.com/danny-avila/LibreChat/pull/7151)
 - 🎏 feat: Add MCP support for Streamable HTTP Transport by **@benverhees** in [#7353](https://github.com/danny-avila/LibreChat/pull/7353)
 - 🔒 feat: Add Content Security Policy using Helmet middleware by **@rubentalstra** in [#7377](https://github.com/danny-avila/LibreChat/pull/7377)
