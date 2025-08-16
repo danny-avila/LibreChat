@@ -55,16 +55,6 @@ const cjsBuild = {
      * Always include sources in sourcemap for better debugging
      */
     sourcemapExcludeSources: false,
-    /**
-     * Use absolute paths in sourcemaps for better IDE support
-     */
-    sourcemapPathTransform: (relativeSourcePath) => {
-      /**
-       * Convert to absolute path for better debugger support
-       */
-      const path = require('path');
-      return path.resolve(relativeSourcePath);
-    },
   },
   external: [...Object.keys(pkg.dependencies || {}), ...Object.keys(pkg.devDependencies || {})],
   preserveSymlinks: true,
