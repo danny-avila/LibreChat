@@ -71,7 +71,10 @@ async function encodeAndFormatDocuments(req, files, endpoint) {
     /** @type {FileSources} */
     const source = file.source ?? 'local';
 
-    if (file.type !== 'application/pdf' || endpoint !== EModelEndpoint.anthropic) {
+    if (
+      file.type !== 'application/pdf' ||
+      (endpoint !== EModelEndpoint.anthropic && endpoint !== EModelEndpoint.openAI)
+    ) {
       continue;
     }
 

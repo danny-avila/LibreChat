@@ -322,7 +322,8 @@ class AgentClient extends BaseClient {
         message.documents &&
         message.documents.length > 0 &&
         message.isCreatedByUser &&
-        this.options.agent.provider === EModelEndpoint.anthropic
+        (this.options.agent.provider === EModelEndpoint.anthropic ||
+          this.options.agent.provider === EModelEndpoint.openAI)
       ) {
         const contentParts = [];
         contentParts.push(...message.documents);
