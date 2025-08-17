@@ -12,6 +12,7 @@ import type * as t from '@modelcontextprotocol/sdk/types.js';
 import type { TokenMethods } from '@librechat/data-schemas';
 import type { FlowStateManager } from '~/flow/manager';
 import type { JsonSchemaType } from '~/types/zod';
+import type { RequestBody } from '~/types/http';
 import type * as o from '~/mcp/oauth/types';
 
 export type StdioOptions = z.infer<typeof StdioOptionsSchema>;
@@ -123,8 +124,9 @@ export interface BasicConnectionOptions {
 }
 
 export interface OAuthConnectionOptions {
-  useOAuth: true;
   user: TUser;
+  useOAuth: true;
+  requestBody?: RequestBody;
   customUserVars?: Record<string, string>;
   flowManager: FlowStateManager<o.MCPOAuthTokens | null>;
   tokenMethods?: TokenMethods;

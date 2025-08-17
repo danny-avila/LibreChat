@@ -43,6 +43,7 @@ export class MCPConnectionFactory {
       options: basic.serverConfig,
       user: oauth?.user,
       customUserVars: oauth?.customUserVars,
+      body: oauth?.requestBody,
     });
     this.serverName = basic.serverName;
     this.useOAuth = !!oauth?.useOAuth;

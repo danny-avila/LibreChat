@@ -186,6 +186,7 @@ async function createMCPTool({ req, res, toolKey, provider: _provider }) {
           signal: derivedSignal,
         },
         user: config?.configurable?.user,
+        requestBody: config?.configurable?.requestBody,
         customUserVars,
         flowManager,
         tokenMethods: {
