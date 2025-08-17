@@ -1,14 +1,15 @@
 import { logger } from '@librechat/data-schemas';
+import type { TokenMethods } from '@librechat/data-schemas';
 import type { TUser } from 'librechat-data-provider';
 import type { FlowStateManager } from '~/flow/manager';
 import type { MCPOAuthTokens } from '~/mcp/oauth';
-import { MCPConnectionFactory } from '../MCPConnectionFactory';
+import type * as t from '~/mcp/types';
+import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
+import { MCPConnection } from '~/mcp/connection';
 import { MCPOAuthHandler } from '~/mcp/oauth';
-import { MCPConnection } from '../connection';
 import { processMCPEnv } from '~/utils';
-import type * as t from '../types';
 
-jest.mock('../connection');
+jest.mock('~/mcp/connection');
 jest.mock('~/mcp/oauth');
 jest.mock('~/utils');
 jest.mock('@librechat/data-schemas', () => ({
@@ -74,7 +75,7 @@ describe('MCPConnectionFactory', () => {
       const connection = await MCPConnectionFactory.create(basicOptions);
 
       expect(connection).toBe(mockConnectionInstance);
-      expect(mockProcessMCPEnv).toHaveBeenCalledWith(mockServerConfig, undefined, undefined);
+      expect(mockProcessMCPEnv).toHaveBeenCalledWith({ options: mockServerConfig });
       expect(mockMCPConnection).toHaveBeenCalledWith({
         serverName: 'test-server',
         serverConfig: mockServerConfig,
@@ -115,7 +116,7 @@ describe('MCPConnectionFactory', () => {
       const connection = await MCPConnectionFactory.create(basicOptions, oauthOptions);
 
       expect(connection).toBe(mockConnectionInstance);
-      expect(mockProcessMCPEnv).toHaveBeenCalledWith(mockServerConfig, mockUser, undefined);
+      expect(mockProcessMCPEnv).toHaveBeenCalledWith({ options: mockServerConfig, user: mockUser });
       expect(mockMCPConnection).toHaveBeenCalledWith({
         serverName: 'test-server',
         serverConfig: mockServerConfig,
@@ -132,12 +133,12 @@ describe('MCPConnectionFactory', () => {
         serverConfig: mockServerConfig,
       };
 
-      const oauthOptions = {
+      const oauthOptions: t.OAuthConnectionOptions = {
         useOAuth: true as const,
         user: mockUser,
         flowManager: mockFlowManager,
         tokenMethods: {
-          findToken: undefined as unknown as () => Promise<any>,
+          findToken: undefined as unknown as TokenMethods['findToken'],
           createToken: jest.fn(),
           updateToken: jest.fn(),
           deleteTokens: jest.fn(),

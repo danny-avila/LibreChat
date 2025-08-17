@@ -30,7 +30,7 @@ export class MCPServersRegistry {
 
   constructor(configs: t.MCPServers) {
     this.rawConfigs = configs;
-    this.parsedConfigs = mapValues(configs, (con) => processMCPEnv(con));
+    this.parsedConfigs = mapValues(configs, (con) => processMCPEnv({ options: con }));
     this.connections = new ConnectionsRepository(configs);
   }
 

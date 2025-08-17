@@ -81,10 +81,20 @@ export class MCPConnection extends EventEmitter {
   private lastPingTime: number;
   private lastConnectionCheckAt: number = 0;
   private oauthTokens?: MCPOAuthTokens | null;
+  private requestHeaders?: Record<string, string> | null;
   private oauthRequired = false;
   iconPath?: string;
   timeout?: number;
   url?: string;
+
+  setRequestHeaders(headers: Record<string, string> | null): void {
+    logger.debug(`${this.getLogPrefix()} Setting request headers: ${JSON.stringify(headers)}`);
+    this.requestHeaders = headers;
+  }
+
+  getRequestHeaders(): Record<string, string> | null | undefined {
+    return this.requestHeaders;
+  }
 
   constructor(params: MCPConnectionParams) {
     super();
@@ -114,6 +124,43 @@ export class MCPConnection extends EventEmitter {
   private getLogPrefix(): string {
     const userPart = this.userId ? `[User: ${this.userId}]` : '';
     return `[MCP]${userPart}[${this.serverName}]`;
+  }
+
+  /**
+   * Factory function to create fetch functions without capturing the entire `this` context.
+   * This helps prevent memory leaks by only passing necessary dependencies.
+   *
+   * @param getHeaders Function to retrieve request headers
+   * @returns A fetch function that merges headers appropriately
+   */
+  private createFetchFunction(
+    getHeaders: () => Record<string, string> | null | undefined,
+  ): (input: RequestInfo | URL, init?: RequestInit) => Promise<Response> {
+    return function customFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+      const requestHeaders = getHeaders();
+      if (!requestHeaders) {
+        return fetch(input, init);
+      }
+
+      let initHeaders: Record<string, string> = {};
+      if (init?.headers) {
+        if (init.headers instanceof Headers) {
+          initHeaders = Object.fromEntries(init.headers.entries());
+        } else if (Array.isArray(init.headers)) {
+          initHeaders = Object.fromEntries(init.headers);
+        } else {
+          initHeaders = init.headers as Record<string, string>;
+        }
+      }
+
+      return fetch(input, {
+        ...init,
+        headers: {
+          ...initHeaders,
+          ...requestHeaders,
+        },
+      });
+    };
   }
 
   private emitError(error: unknown, errorContext: string): void {
@@ -188,6 +235,7 @@ export class MCPConnection extends EventEmitter {
                 });
               },
             },
+            fetch: this.createFetchFunction(this.getRequestHeaders.bind(this)),
           });
 
           transport.onclose = () => {
@@ -214,7 +262,7 @@ export class MCPConnection extends EventEmitter {
           );
           const abortController = new AbortController();
 
-          // Add OAuth token to headers if available
+          /** Add OAuth token to headers if available */
           const headers = { ...options.headers };
           if (this.oauthTokens?.access_token) {
             headers['Authorization'] = `Bearer ${this.oauthTokens.access_token}`;
@@ -225,6 +273,7 @@ export class MCPConnection extends EventEmitter {
               headers,
               signal: abortController.signal,
             },
+            fetch: this.createFetchFunction(this.getRequestHeaders.bind(this)),
           });
 
           transport.onclose = () => {

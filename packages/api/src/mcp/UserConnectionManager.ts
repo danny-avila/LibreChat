@@ -7,6 +7,7 @@ import type { MCPOAuthTokens } from '~/mcp/oauth';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
 import { MCPServersRegistry } from '~/mcp/MCPServersRegistry';
 import { MCPConnection } from './connection';
+import type { RequestBody } from '~/types';
 import type * as t from './types';
 
 /**
@@ -47,6 +48,7 @@ export abstract class UserConnectionManager {
     serverName,
     flowManager,
     customUserVars,
+    requestBody,
     tokenMethods,
     oauthStart,
     oauthEnd,
@@ -57,6 +59,7 @@ export abstract class UserConnectionManager {
     serverName: string;
     flowManager: FlowStateManager<MCPOAuthTokens | null>;
     customUserVars?: Record<string, string>;
+    requestBody?: RequestBody;
     tokenMethods?: TokenMethods;
     oauthStart?: (authURL: string) => Promise<void>;
     oauthEnd?: () => Promise<void>;
@@ -127,6 +130,7 @@ export abstract class UserConnectionManager {
           oauthStart: oauthStart,
           oauthEnd: oauthEnd,
           returnOnOAuth: returnOnOAuth,
+          requestBody: requestBody,
         },
       );
 
