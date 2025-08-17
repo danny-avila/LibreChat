@@ -1,5 +1,5 @@
 const { Constants } = require('librechat-data-provider');
-const { getCustomConfig, getCachedTools } = require('~/server/services/Config');
+const { getCustomConfig, getCachedTools, getAppConfig } = require('~/server/services/Config');
 const { getLogStores } = require('~/cache');
 
 // Mock the dependencies
@@ -13,6 +13,7 @@ jest.mock('@librechat/data-schemas', () => ({
 jest.mock('~/server/services/Config', () => ({
   getCustomConfig: jest.fn(),
   getCachedTools: jest.fn(),
+  getAppConfig: jest.fn(),
 }));
 
 jest.mock('~/server/services/ToolService', () => ({
@@ -64,7 +65,10 @@ describe('PluginController', () => {
 
   describe('getAvailablePluginsController', () => {
     beforeEach(() => {
-      mockReq.app = { locals: { filteredTools: [], includedTools: [] } };
+      getAppConfig.mockResolvedValue({
+        filteredTools: [],
+        includedTools: [],
+      });
     });
 
     it('should use filterUniquePlugins to remove duplicate plugins', async () => {
@@ -122,7 +126,10 @@ describe('PluginController', () => {
         { name: 'Plugin2', pluginKey: 'key2', description: 'Second' },
       ];
 
-      mockReq.app.locals.includedTools = ['key1'];
+      getAppConfig.mockResolvedValue({
+        filteredTools: [],
+        includedTools: ['key1'],
+      });
       mockCache.get.mockResolvedValue(null);
       filterUniquePlugins.mockReturnValue(mockPlugins);
       checkPluginAuth.mockReturnValue(false);
@@ -480,8 +487,8 @@ describe('PluginController', () => {
       expect(responseData[0].authConfig).toEqual([]);
     });
 
-    it('should handle req.app.locals with undefined filteredTools and includedTools', async () => {
-      mockReq.app = { locals: {} };
+    it('should handle undefined filteredTools and includedTools', async () => {
+      getAppConfig.mockResolvedValue({});
       mockCache.get.mockResolvedValue(null);
       filterUniquePlugins.mockReturnValue([]);
       checkPluginAuth.mockReturnValue(false);

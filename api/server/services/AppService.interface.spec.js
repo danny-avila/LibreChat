@@ -32,15 +32,19 @@ jest.mock('./start/checks', () => ({
   checkWebSearchConfig: jest.fn(),
 }));
 
+jest.mock('./Config/getAppConfig', () => ({
+  initializeAppConfig: jest.fn(),
+  getAppConfig: jest.fn(),
+}));
+
 const AppService = require('./AppService');
 const { loadDefaultInterface } = require('./start/interface');
 
 describe('AppService interface configuration', () => {
-  let app;
   let mockLoadCustomConfig;
+  const { initializeAppConfig } = require('./Config/getAppConfig');
 
   beforeEach(() => {
-    app = { locals: {} };
     jest.resetModules();
     jest.clearAllMocks();
     mockLoadCustomConfig = require('./Config/loadCustomConfig');
@@ -50,10 +54,16 @@ describe('AppService interface configuration', () => {
     mockLoadCustomConfig.mockResolvedValue({});
     loadDefaultInterface.mockResolvedValue({ prompts: true, bookmarks: true });
 
-    await AppService(app);
+    await AppService();
 
-    expect(app.locals.interfaceConfig.prompts).toBe(true);
-    expect(app.locals.interfaceConfig.bookmarks).toBe(true);
+    expect(initializeAppConfig).toHaveBeenCalledWith(
+      expect.objectContaining({
+        interfaceConfig: expect.objectContaining({
+          prompts: true,
+          bookmarks: true,
+        }),
+      }),
+    );
     expect(loadDefaultInterface).toHaveBeenCalled();
   });
 
@@ -61,10 +71,16 @@ describe('AppService interface configuration', () => {
     mockLoadCustomConfig.mockResolvedValue({ interface: { prompts: false, bookmarks: false } });
     loadDefaultInterface.mockResolvedValue({ prompts: false, bookmarks: false });
 
-    await AppService(app);
+    await AppService();
 
-    expect(app.locals.interfaceConfig.prompts).toBe(false);
-    expect(app.locals.interfaceConfig.bookmarks).toBe(false);
+    expect(initializeAppConfig).toHaveBeenCalledWith(
+      expect.objectContaining({
+        interfaceConfig: expect.objectContaining({
+          prompts: false,
+          bookmarks: false,
+        }),
+      }),
+    );
     expect(loadDefaultInterface).toHaveBeenCalled();
   });
 
@@ -72,10 +88,18 @@ describe('AppService interface configuration', () => {
     mockLoadCustomConfig.mockResolvedValue({});
     loadDefaultInterface.mockResolvedValue({});
 
-    await AppService(app);
+    await AppService();
 
-    expect(app.locals.interfaceConfig.prompts).toBeUndefined();
-    expect(app.locals.interfaceConfig.bookmarks).toBeUndefined();
+    expect(initializeAppConfig).toHaveBeenCalledWith(
+      expect.objectContaining({
+        interfaceConfig: expect.anything(),
+      }),
+    );
+
+    // Verify that prompts and bookmarks are undefined when not provided
+    const initCall = initializeAppConfig.mock.calls[0][0];
+    expect(initCall.interfaceConfig.prompts).toBeUndefined();
+    expect(initCall.interfaceConfig.bookmarks).toBeUndefined();
     expect(loadDefaultInterface).toHaveBeenCalled();
   });
 
@@ -83,10 +107,16 @@ describe('AppService interface configuration', () => {
     mockLoadCustomConfig.mockResolvedValue({ interface: { prompts: true, bookmarks: false } });
     loadDefaultInterface.mockResolvedValue({ prompts: true, bookmarks: false });
 
-    await AppService(app);
+    await AppService();
 
-    expect(app.locals.interfaceConfig.prompts).toBe(true);
-    expect(app.locals.interfaceConfig.bookmarks).toBe(false);
+    expect(initializeAppConfig).toHaveBeenCalledWith(
+      expect.objectContaining({
+        interfaceConfig: expect.objectContaining({
+          prompts: true,
+          bookmarks: false,
+        }),
+      }),
+    );
     expect(loadDefaultInterface).toHaveBeenCalled();
   });
 
@@ -108,14 +138,19 @@ describe('AppService interface configuration', () => {
       },
     });
 
-    await AppService(app);
+    await AppService();
 
-    expect(app.locals.interfaceConfig.peoplePicker).toBeDefined();
-    expect(app.locals.interfaceConfig.peoplePicker).toMatchObject({
-      users: true,
-      groups: true,
-      roles: true,
-    });
+    expect(initializeAppConfig).toHaveBeenCalledWith(
+      expect.objectContaining({
+        interfaceConfig: expect.objectContaining({
+          peoplePicker: expect.objectContaining({
+            users: true,
+            groups: true,
+            roles: true,
+          }),
+        }),
+      }),
+    );
     expect(loadDefaultInterface).toHaveBeenCalled();
   });
 
@@ -137,11 +172,19 @@ describe('AppService interface configuration', () => {
       },
     });
 
-    await AppService(app);
+    await AppService();
 
-    expect(app.locals.interfaceConfig.peoplePicker.users).toBe(true);
-    expect(app.locals.interfaceConfig.peoplePicker.groups).toBe(false);
-    expect(app.locals.interfaceConfig.peoplePicker.roles).toBe(true);
+    expect(initializeAppConfig).toHaveBeenCalledWith(
+      expect.objectContaining({
+        interfaceConfig: expect.objectContaining({
+          peoplePicker: expect.objectContaining({
+            users: true,
+            groups: false,
+            roles: true,
+          }),
+        }),
+      }),
+    );
   });
 
   it('should set default peoplePicker permissions when not provided', async () => {
@@ -154,11 +197,18 @@ describe('AppService interface configuration', () => {
       },
     });
 
-    await AppService(app);
+    await AppService();
 
-    expect(app.locals.interfaceConfig.peoplePicker).toBeDefined();
-    expect(app.locals.interfaceConfig.peoplePicker.users).toBe(true);
-    expect(app.locals.interfaceConfig.peoplePicker.groups).toBe(true);
-    expect(app.locals.interfaceConfig.peoplePicker.roles).toBe(true);
+    expect(initializeAppConfig).toHaveBeenCalledWith(
+      expect.objectContaining({
+        interfaceConfig: expect.objectContaining({
+          peoplePicker: expect.objectContaining({
+            users: true,
+            groups: true,
+            roles: true,
+          }),
+        }),
+      }),
+    );
   });
 });

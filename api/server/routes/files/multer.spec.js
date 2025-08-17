@@ -23,6 +23,7 @@ jest.mock('~/server/services/Config', () => ({
       },
     }),
   ),
+  getAppConfig: jest.fn(),
 }));
 
 describe('Multer Configuration', () => {
@@ -36,13 +37,6 @@ describe('Multer Configuration', () => {
 
     mockReq = {
       user: { id: 'test-user-123' },
-      app: {
-        locals: {
-          paths: {
-            uploads: tempDir,
-          },
-        },
-      },
       body: {},
       originalUrl: '/api/files/upload',
     };
@@ -52,6 +46,14 @@ describe('Multer Configuration', () => {
       mimetype: 'image/jpeg',
       size: 1024,
     };
+
+    // Mock getAppConfig to return paths
+    const { getAppConfig } = require('~/server/services/Config');
+    getAppConfig.mockResolvedValue({
+      paths: {
+        uploads: tempDir,
+      },
+    });
 
     // Clear mocks
     jest.clearAllMocks();
@@ -79,7 +81,12 @@ describe('Multer Configuration', () => {
 
       it("should create directory recursively if it doesn't exist", (done) => {
         const deepPath = path.join(tempDir, 'deep', 'nested', 'path');
-        mockReq.app.locals.paths.uploads = deepPath;
+        const { getAppConfig } = require('~/server/services/Config');
+        getAppConfig.mockResolvedValue({
+          paths: {
+            uploads: deepPath,
+          },
+        });
 
         const cb = jest.fn((err, destination) => {
           expect(err).toBeNull();
@@ -465,7 +472,12 @@ describe('Multer Configuration', () => {
     it('should handle file system errors when directory creation fails', (done) => {
       // Test with a non-existent parent directory to simulate fs issues
       const invalidPath = '/nonexistent/path/that/should/not/exist';
-      mockReq.app.locals.paths.uploads = invalidPath;
+      const { getAppConfig } = require('~/server/services/Config');
+      getAppConfig.mockResolvedValue({
+        paths: {
+          uploads: invalidPath,
+        },
+      });
 
       try {
         // Call getDestination which should fail due to permission/path issues

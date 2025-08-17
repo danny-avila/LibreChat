@@ -1,9 +1,11 @@
 const { fetchModels } = require('~/server/services/ModelService');
 const { getCustomConfig } = require('./getCustomConfig');
+const { getAppConfig } = require('./getAppConfig');
 const loadConfigModels = require('./loadConfigModels');
 
 jest.mock('~/server/services/ModelService');
 jest.mock('./getCustomConfig');
+jest.mock('./getAppConfig');
 
 const exampleConfig = {
   endpoints: {
@@ -60,7 +62,7 @@ const exampleConfig = {
 };
 
 describe('loadConfigModels', () => {
-  const mockRequest = { app: { locals: {} }, user: { id: 'testUserId' } };
+  const mockRequest = { user: { id: 'testUserId' } };
 
   const originalEnv = process.env;
 
@@ -68,6 +70,9 @@ describe('loadConfigModels', () => {
     jest.resetAllMocks();
     jest.resetModules();
     process.env = { ...originalEnv };
+
+    // Default mock for getAppConfig
+    getAppConfig.mockResolvedValue({});
   });
 
   afterEach(() => {
@@ -81,7 +86,9 @@ describe('loadConfigModels', () => {
   });
 
   it('handles azure models and endpoint correctly', async () => {
-    mockRequest.app.locals.azureOpenAI = { modelNames: ['model1', 'model2'] };
+    getAppConfig.mockResolvedValue({
+      azureOpenAI: { modelNames: ['model1', 'model2'] },
+    });
     getCustomConfig.mockResolvedValue({
       endpoints: {
         azureOpenAI: {

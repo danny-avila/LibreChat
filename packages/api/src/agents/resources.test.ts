@@ -3,6 +3,7 @@ import { logger } from '@librechat/data-schemas';
 import { EModelEndpoint, EToolResources, AgentCapabilities } from 'librechat-data-provider';
 import type { TAgentsEndpoint, TFile } from 'librechat-data-provider';
 import type { Request as ServerRequest } from 'express';
+import type { IUser } from '@librechat/data-schemas';
 import type { TGetFiles } from './resources';
 import type { AppConfig } from '~/types';
 
@@ -14,7 +15,7 @@ jest.mock('@librechat/data-schemas', () => ({
 }));
 
 describe('primeResources', () => {
-  let mockReq: ServerRequest;
+  let mockReq: ServerRequest & { user?: IUser };
   let mockAppConfig: AppConfig;
   let mockGetFiles: jest.MockedFunction<TGetFiles>;
   let requestFileSet: Set<string>;
@@ -24,15 +25,7 @@ describe('primeResources', () => {
     jest.clearAllMocks();
 
     // Setup mock request
-    mockReq = {
-      app: {
-        locals: {
-          [EModelEndpoint.agents]: {
-            capabilities: [AgentCapabilities.ocr],
-          },
-        },
-      },
-    } as unknown as ServerRequest;
+    mockReq = {} as unknown as ServerRequest & { user?: IUser };
 
     // Setup mock appConfig
     mockAppConfig = {
@@ -94,7 +87,6 @@ describe('primeResources', () => {
 
   describe('when OCR is disabled', () => {
     it('should not fetch OCR files even if tool_resources has OCR file_ids', async () => {
-      (mockReq.app as ServerRequest['app']).locals[EModelEndpoint.agents].capabilities = [];
       (mockAppConfig[EModelEndpoint.agents] as TAgentsEndpoint).capabilities = [];
 
       const tool_resources = {
@@ -956,8 +948,8 @@ describe('primeResources', () => {
   });
 
   describe('edge cases', () => {
-    it('should handle missing app.locals gracefully', async () => {
-      const reqWithoutLocals = {} as ServerRequest;
+    it('should handle missing appConfig agents endpoint gracefully', async () => {
+      const reqWithoutLocals = {} as ServerRequest & { user?: IUser };
       const emptyAppConfig = {} as AppConfig;
 
       const result = await primeResources({
@@ -974,9 +966,9 @@ describe('primeResources', () => {
       });
 
       expect(mockGetFiles).not.toHaveBeenCalled();
-      // When app.locals is missing and there's an error accessing properties,
-      // the function falls back to the catch block which returns an empty array
-      expect(result.attachments).toEqual([]);
+      // When appConfig agents endpoint is missing, OCR is disabled
+      // and no attachments are provided, the function returns undefined
+      expect(result.attachments).toBeUndefined();
     });
 
     it('should handle undefined tool_resources', async () => {
