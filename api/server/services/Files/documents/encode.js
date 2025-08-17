@@ -143,18 +143,27 @@ async function encodeAndFormatDocuments(req, files, endpoint) {
         throw new Error(`PDF validation failed: ${validation.error}`);
       }
 
-      const documentPart = {
-        type: 'document',
-        source: {
-          type: 'base64',
-          media_type: 'application/pdf',
-          data: content,
-        },
-        cache_control: { type: 'ephemeral' },
-        citations: { enabled: true },
-      };
+      if (endpoint === EModelEndpoint.anthropic) {
+        const documentPart = {
+          type: 'document',
+          source: {
+            type: 'base64',
+            media_type: 'application/pdf',
+            data: content,
+          },
+          cache_control: { type: 'ephemeral' },
+          citations: { enabled: true },
+        };
+        result.documents.push(documentPart);
+      } else if (endpoint === EModelEndpoint.openAI) {
+        const documentPart = {
+          type: 'input_file',
+          filename: file.filename,
+          file_data: `data:application/pdf;base64,${content}`,
+        };
+        result.documents.push(documentPart);
+      }
 
-      result.documents.push(documentPart);
       result.files.push(metadata);
     }
   }
