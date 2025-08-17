@@ -1,13 +1,36 @@
-const { logger } = require('~/config');
-const { anthropicPdfSizeLimit } = require('librechat-data-provider');
+import { anthropicPdfSizeLimit, EModelEndpoint } from 'librechat-data-provider';
+
+export interface PDFValidationResult {
+  isValid: boolean;
+  error?: string;
+}
+
+export async function validatePdf(
+  pdfBuffer: Buffer,
+  fileSize: number,
+  endpoint: EModelEndpoint,
+): Promise<PDFValidationResult> {
+  if (endpoint === EModelEndpoint.anthropic) {
+    return validateAnthropicPdf(pdfBuffer, fileSize);
+  }
+
+  if (endpoint === EModelEndpoint.openAI || endpoint === EModelEndpoint.azureOpenAI) {
+    return validateOpenAIPdf(fileSize);
+  }
+
+  return { isValid: true };
+}
 
 /**
  * Validates if a PDF meets Anthropic's requirements
- * @param {Buffer} pdfBuffer - The PDF file as a buffer
- * @param {number} fileSize - The file size in bytes
- * @returns {Promise<{isValid: boolean, error?: string}>}
+ * @param pdfBuffer - The PDF file as a buffer
+ * @param fileSize - The file size in bytes
+ * @returns Promise that resolves to validation result
  */
-async function validateAnthropicPdf(pdfBuffer, fileSize) {
+async function validateAnthropicPdf(
+  pdfBuffer: Buffer,
+  fileSize: number,
+): Promise<PDFValidationResult> {
   try {
     if (fileSize > anthropicPdfSizeLimit) {
       return {
@@ -53,13 +76,9 @@ async function validateAnthropicPdf(pdfBuffer, fileSize) {
       };
     }
 
-    logger.debug(
-      `PDF validation passed: ${Math.round(fileSize / 1024)}KB, ~${estimatedPages} pages`,
-    );
-
     return { isValid: true };
   } catch (error) {
-    logger.error('PDF validation error:', error);
+    console.error('PDF validation error:', error);
     return {
       isValid: false,
       error: 'Failed to validate PDF file',
@@ -67,6 +86,13 @@ async function validateAnthropicPdf(pdfBuffer, fileSize) {
   }
 }
 
-module.exports = {
-  validateAnthropicPdf,
-};
+async function validateOpenAIPdf(fileSize: number): Promise<PDFValidationResult> {
+  if (fileSize > 10 * 1024 * 1024) {
+    return {
+      isValid: false,
+      error: "PDF file size exceeds OpenAI's 10MB limit",
+    };
+  }
+
+  return { isValid: true };
+}
