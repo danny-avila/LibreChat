@@ -8,7 +8,12 @@ import {
   FileType2Icon,
   FileImageIcon,
 } from 'lucide-react';
-import { EToolResources, EModelEndpoint, defaultAgentCapabilities } from 'librechat-data-provider';
+import {
+  EToolResources,
+  EModelEndpoint,
+  defaultAgentCapabilities,
+  isDocumentSupportedEndpoint,
+} from 'librechat-data-provider';
 import {
   FileUpload,
   TooltipAnchor,
@@ -72,7 +77,7 @@ const AttachFileMenu = ({
    * */
   const capabilities = useAgentCapabilities(agentsConfig?.capabilities ?? defaultAgentCapabilities);
 
-  const handleUploadClick = (fileType?: 'image' | 'document' | 'anthropic_multimodal') => {
+  const handleUploadClick = (fileType?: 'image' | 'document' | 'multimodal') => {
     if (!inputRef.current) {
       return;
     }
@@ -81,7 +86,7 @@ const AttachFileMenu = ({
       inputRef.current.accept = 'image/*';
     } else if (fileType === 'document') {
       inputRef.current.accept = '.pdf,application/pdf';
-    } else if (fileType === 'anthropic_multimodal') {
+    } else if (fileType === 'multimodal') {
       inputRef.current.accept = 'image/*,.pdf,application/pdf';
     } else {
       inputRef.current.accept = '';
@@ -92,15 +97,22 @@ const AttachFileMenu = ({
 
   const dropdownItems = useMemo(() => {
     const createMenuItems = (
-      onAction: (fileType?: 'image' | 'document' | 'anthropic_multimodal') => void,
+      onAction: (fileType?: 'image' | 'document' | 'multimodal') => void,
     ) => {
       const items: MenuItemProps[] = [];
 
-      // this is temporary until i add direct upload support for the other providers and can make a more robust solution
-      const isAnthropicAgent = agent?.provider === 'anthropic';
-      const shouldShowDirectUpload = endpoint === EModelEndpoint.anthropic || isAnthropicAgent;
+      const shouldShowDirectAttach = isDocumentSupportedEndpoint(agent?.provider ?? endpoint);
 
-      if (!shouldShowDirectUpload) {
+      if (shouldShowDirectAttach) {
+        items.push({
+          label: localize('com_ui_upload_provider'),
+          onClick: () => {
+            setToolResource(EToolResources.direct_attach);
+            onAction('multimodal');
+          },
+          icon: <FileImageIcon className="icon-md" />,
+        });
+      } else {
         items.push({
           label: localize('com_ui_upload_image_input'),
           onClick: () => {
@@ -108,17 +120,6 @@ const AttachFileMenu = ({
             onAction('image');
           },
           icon: <ImageUpIcon className="icon-md" />,
-        });
-      }
-
-      if (shouldShowDirectUpload) {
-        items.push({
-          label: localize('com_ui_upload_provider'),
-          onClick: () => {
-            setToolResource(EToolResources.direct_upload);
-            onAction('anthropic_multimodal');
-          },
-          icon: <FileImageIcon className="icon-md" />,
         });
       }
 
