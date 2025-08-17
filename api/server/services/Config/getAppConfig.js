@@ -71,17 +71,6 @@ async function getAppConfig(options = {}) {
 }
 
 /**
- * Cache the app configuration
- * @param {AppConfig} config - The configuration to cache
- * @returns {Promise<void>}
- */
-async function cacheAppConfig(config) {
-  const cache = getLogStores(CacheKeys.CONFIG_STORE);
-  await cache.set(CacheKeys.APP_CONFIG, config);
-  logger.debug('[getAppConfig] App configuration cached');
-}
-
-/**
  * Clear the app configuration cache
  * @returns {Promise<boolean>}
  */
@@ -96,7 +85,7 @@ async function clearAppConfigCache() {
  * @param {AppConfig} config - The initial configuration to store
  * @returns {Promise<void>}
  */
-async function initializeAppConfig(config) {
+async function setAppConfig(config) {
   const cache = getLogStores(CacheKeys.CONFIG_STORE);
   await cache.set(CacheKeys.APP_CONFIG, config);
   logger.debug('[getAppConfig] App configuration initialized');
@@ -104,7 +93,6 @@ async function initializeAppConfig(config) {
 
 module.exports = {
   getAppConfig,
-  cacheAppConfig,
+  setAppConfig,
   clearAppConfigCache,
-  initializeAppConfig,
 };

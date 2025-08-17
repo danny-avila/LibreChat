@@ -17,7 +17,6 @@ jest.mock('~/config', () => ({
   },
 }));
 
-jest.mock('./Config/loadCustomConfig', () => jest.fn());
 jest.mock('./start/interface', () => ({
   loadDefaultInterface: jest.fn(),
 }));
@@ -32,9 +31,11 @@ jest.mock('./start/checks', () => ({
   checkWebSearchConfig: jest.fn(),
 }));
 
-jest.mock('./Config/getAppConfig', () => ({
-  initializeAppConfig: jest.fn(),
+jest.mock('./Config', () => ({
+  setAppConfig: jest.fn(),
   getAppConfig: jest.fn(),
+  setCachedTools: jest.fn(),
+  loadCustomConfig: jest.fn(),
 }));
 
 const AppService = require('./AppService');
@@ -42,12 +43,12 @@ const { loadDefaultInterface } = require('./start/interface');
 
 describe('AppService interface configuration', () => {
   let mockLoadCustomConfig;
-  const { initializeAppConfig } = require('./Config/getAppConfig');
+  const { setAppConfig } = require('./Config');
 
   beforeEach(() => {
     jest.resetModules();
     jest.clearAllMocks();
-    mockLoadCustomConfig = require('./Config/loadCustomConfig');
+    ({ loadCustomConfig: mockLoadCustomConfig } = require('./Config'));
   });
 
   it('should set prompts and bookmarks to true when loadDefaultInterface returns true for both', async () => {
@@ -56,7 +57,7 @@ describe('AppService interface configuration', () => {
 
     await AppService();
 
-    expect(initializeAppConfig).toHaveBeenCalledWith(
+    expect(setAppConfig).toHaveBeenCalledWith(
       expect.objectContaining({
         interfaceConfig: expect.objectContaining({
           prompts: true,
@@ -73,7 +74,7 @@ describe('AppService interface configuration', () => {
 
     await AppService();
 
-    expect(initializeAppConfig).toHaveBeenCalledWith(
+    expect(setAppConfig).toHaveBeenCalledWith(
       expect.objectContaining({
         interfaceConfig: expect.objectContaining({
           prompts: false,
@@ -90,14 +91,14 @@ describe('AppService interface configuration', () => {
 
     await AppService();
 
-    expect(initializeAppConfig).toHaveBeenCalledWith(
+    expect(setAppConfig).toHaveBeenCalledWith(
       expect.objectContaining({
         interfaceConfig: expect.anything(),
       }),
     );
 
     // Verify that prompts and bookmarks are undefined when not provided
-    const initCall = initializeAppConfig.mock.calls[0][0];
+    const initCall = setAppConfig.mock.calls[0][0];
     expect(initCall.interfaceConfig.prompts).toBeUndefined();
     expect(initCall.interfaceConfig.bookmarks).toBeUndefined();
     expect(loadDefaultInterface).toHaveBeenCalled();
@@ -109,7 +110,7 @@ describe('AppService interface configuration', () => {
 
     await AppService();
 
-    expect(initializeAppConfig).toHaveBeenCalledWith(
+    expect(setAppConfig).toHaveBeenCalledWith(
       expect.objectContaining({
         interfaceConfig: expect.objectContaining({
           prompts: true,
@@ -140,7 +141,7 @@ describe('AppService interface configuration', () => {
 
     await AppService();
 
-    expect(initializeAppConfig).toHaveBeenCalledWith(
+    expect(setAppConfig).toHaveBeenCalledWith(
       expect.objectContaining({
         interfaceConfig: expect.objectContaining({
           peoplePicker: expect.objectContaining({
@@ -174,7 +175,7 @@ describe('AppService interface configuration', () => {
 
     await AppService();
 
-    expect(initializeAppConfig).toHaveBeenCalledWith(
+    expect(setAppConfig).toHaveBeenCalledWith(
       expect.objectContaining({
         interfaceConfig: expect.objectContaining({
           peoplePicker: expect.objectContaining({
@@ -199,7 +200,7 @@ describe('AppService interface configuration', () => {
 
     await AppService();
 
-    expect(initializeAppConfig).toHaveBeenCalledWith(
+    expect(setAppConfig).toHaveBeenCalledWith(
       expect.objectContaining({
         interfaceConfig: expect.objectContaining({
           peoplePicker: expect.objectContaining({

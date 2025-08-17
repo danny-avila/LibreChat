@@ -12,17 +12,6 @@ const {
 
 const AppService = require('./AppService');
 
-jest.mock('./Config/loadCustomConfig', () => {
-  return jest.fn(() =>
-    Promise.resolve({
-      registration: { socialLogins: ['testLogin'] },
-      fileStrategy: 'testStrategy',
-      balance: {
-        enabled: true,
-      },
-    }),
-  );
-});
 jest.mock('./Files/Firebase/initialize', () => ({
   initializeFirebase: jest.fn(),
 }));
@@ -36,7 +25,18 @@ jest.mock('~/models/Role', () => ({
   getRoleByName: jest.fn().mockResolvedValue(null),
 }));
 jest.mock('./Config', () => ({
+  setAppConfig: jest.fn(),
+  getAppConfig: jest.fn(),
   setCachedTools: jest.fn(),
+  loadCustomConfig: jest.fn(() =>
+    Promise.resolve({
+      registration: { socialLogins: ['testLogin'] },
+      fileStrategy: 'testStrategy',
+      balance: {
+        enabled: true,
+      },
+    }),
+  ),
   getCachedTools: jest.fn().mockResolvedValue({
     ExampleTool: {
       type: 'function',
@@ -55,10 +55,6 @@ jest.mock('./Config', () => ({
   }),
 }));
 
-jest.mock('./Config/getAppConfig', () => ({
-  initializeAppConfig: jest.fn(),
-  getAppConfig: jest.fn(),
-}));
 jest.mock('./ToolService', () => ({
   loadAndFormatTools: jest.fn().mockReturnValue({
     ExampleTool: {
@@ -126,7 +122,7 @@ describe('AppService', () => {
     siteKey: 'default-site-key',
     options: {},
   };
-  const { initializeAppConfig } = require('./Config/getAppConfig');
+  const { setAppConfig, loadCustomConfig } = require('./Config');
 
   beforeEach(() => {
     process.env.CDN_PROVIDER = undefined;
@@ -138,7 +134,7 @@ describe('AppService', () => {
 
     expect(process.env.CDN_PROVIDER).toEqual('testStrategy');
 
-    expect(initializeAppConfig).toHaveBeenCalledWith({
+    expect(setAppConfig).toHaveBeenCalledWith({
       config: expect.objectContaining({
         fileStrategy: 'testStrategy',
       }),
@@ -184,7 +180,7 @@ describe('AppService', () => {
   });
 
   it('should log a warning if the config version is outdated', async () => {
-    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
+    loadCustomConfig.mockImplementationOnce(() =>
       Promise.resolve({
         version: '0.9.0', // An outdated version for this test
         registration: { socialLogins: ['testLogin'] },
@@ -199,7 +195,7 @@ describe('AppService', () => {
   });
 
   it('should change the `imageOutputType` based on config value', async () => {
-    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
+    loadCustomConfig.mockImplementationOnce(() =>
       Promise.resolve({
         version: '0.10.0',
         imageOutputType: EImageOutputType.WEBP,
@@ -207,7 +203,7 @@ describe('AppService', () => {
     );
 
     await AppService();
-    expect(initializeAppConfig).toHaveBeenCalledWith(
+    expect(setAppConfig).toHaveBeenCalledWith(
       expect.objectContaining({
         imageOutputType: EImageOutputType.WEBP,
       }),
@@ -215,14 +211,14 @@ describe('AppService', () => {
   });
 
   it('should default to `PNG` `imageOutputType` with no provided type', async () => {
-    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
+    loadCustomConfig.mockImplementationOnce(() =>
       Promise.resolve({
         version: '0.10.0',
       }),
     );
 
     await AppService();
-    expect(initializeAppConfig).toHaveBeenCalledWith(
+    expect(setAppConfig).toHaveBeenCalledWith(
       expect.objectContaining({
         imageOutputType: EImageOutputType.PNG,
       }),
@@ -230,10 +226,10 @@ describe('AppService', () => {
   });
 
   it('should default to `PNG` `imageOutputType` with no provided config', async () => {
-    require('./Config/loadCustomConfig').mockImplementationOnce(() => Promise.resolve(undefined));
+    loadCustomConfig.mockImplementationOnce(() => Promise.resolve(undefined));
 
     await AppService();
-    expect(initializeAppConfig).toHaveBeenCalledWith(
+    expect(setAppConfig).toHaveBeenCalledWith(
       expect.objectContaining({
         imageOutputType: EImageOutputType.PNG,
       }),
@@ -241,7 +237,7 @@ describe('AppService', () => {
   });
 
   it('should initialize Firebase when fileStrategy is firebase', async () => {
-    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
+    loadCustomConfig.mockImplementationOnce(() =>
       Promise.resolve({
         fileStrategy: FileSources.firebase,
       }),
@@ -308,7 +304,7 @@ describe('AppService', () => {
   });
 
   it('should correctly configure Assistants endpoint based on custom config', async () => {
-    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
+    loadCustomConfig.mockImplementationOnce(() =>
       Promise.resolve({
         endpoints: {
           [EModelEndpoint.assistants]: {
@@ -324,7 +320,7 @@ describe('AppService', () => {
 
     await AppService();
 
-    expect(initializeAppConfig).toHaveBeenCalledWith(
+    expect(setAppConfig).toHaveBeenCalledWith(
       expect.objectContaining({
         [EModelEndpoint.assistants]: expect.objectContaining({
           disableBuilder: true,
@@ -338,7 +334,7 @@ describe('AppService', () => {
   });
 
   it('should correctly configure Agents endpoint based on custom config', async () => {
-    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
+    loadCustomConfig.mockImplementationOnce(() =>
       Promise.resolve({
         endpoints: {
           [EModelEndpoint.agents]: {
@@ -354,7 +350,7 @@ describe('AppService', () => {
 
     await AppService();
 
-    expect(initializeAppConfig).toHaveBeenCalledWith(
+    expect(setAppConfig).toHaveBeenCalledWith(
       expect.objectContaining({
         [EModelEndpoint.agents]: expect.objectContaining({
           disableBuilder: true,
@@ -371,11 +367,11 @@ describe('AppService', () => {
   });
 
   it('should configure Agents endpoint with defaults when no config is provided', async () => {
-    require('./Config/loadCustomConfig').mockImplementationOnce(() => Promise.resolve({}));
+    loadCustomConfig.mockImplementationOnce(() => Promise.resolve({}));
 
     await AppService();
 
-    expect(initializeAppConfig).toHaveBeenCalledWith(
+    expect(setAppConfig).toHaveBeenCalledWith(
       expect.objectContaining({
         [EModelEndpoint.agents]: expect.objectContaining({
           disableBuilder: false,
@@ -386,7 +382,7 @@ describe('AppService', () => {
   });
 
   it('should configure Agents endpoint with defaults when endpoints exist but agents is not defined', async () => {
-    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
+    loadCustomConfig.mockImplementationOnce(() =>
       Promise.resolve({
         endpoints: {
           [EModelEndpoint.openAI]: {
@@ -398,7 +394,7 @@ describe('AppService', () => {
 
     await AppService();
 
-    expect(initializeAppConfig).toHaveBeenCalledWith(
+    expect(setAppConfig).toHaveBeenCalledWith(
       expect.objectContaining({
         [EModelEndpoint.agents]: expect.objectContaining({
           disableBuilder: false,
@@ -413,7 +409,7 @@ describe('AppService', () => {
 
   it('should correctly configure minimum Azure OpenAI Assistant values', async () => {
     const assistantGroups = [azureGroups[0], { ...azureGroups[1], assistants: true }];
-    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
+    loadCustomConfig.mockImplementationOnce(() =>
       Promise.resolve({
         endpoints: {
           [EModelEndpoint.azureOpenAI]: {
@@ -428,7 +424,7 @@ describe('AppService', () => {
     process.env.EASTUS_API_KEY = 'eastus-key';
 
     await AppService();
-    expect(initializeAppConfig).toHaveBeenCalledWith(
+    expect(setAppConfig).toHaveBeenCalledWith(
       expect.objectContaining({
         [EModelEndpoint.azureAssistants]: expect.objectContaining({
           capabilities: expect.arrayContaining([
@@ -442,7 +438,7 @@ describe('AppService', () => {
   });
 
   it('should correctly configure Azure OpenAI endpoint based on custom config', async () => {
-    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
+    loadCustomConfig.mockImplementationOnce(() =>
       Promise.resolve({
         endpoints: {
           [EModelEndpoint.azureOpenAI]: {
@@ -458,7 +454,7 @@ describe('AppService', () => {
     await AppService();
 
     const { modelNames, modelGroupMap, groupMap } = validateAzureGroups(azureGroups);
-    expect(initializeAppConfig).toHaveBeenCalledWith(
+    expect(setAppConfig).toHaveBeenCalledWith(
       expect.objectContaining({
         [EModelEndpoint.azureOpenAI]: expect.objectContaining({
           modelNames,
@@ -500,9 +496,7 @@ describe('AppService', () => {
       },
     };
 
-    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
-      Promise.resolve(rateLimitsConfig),
-    );
+    loadCustomConfig.mockImplementationOnce(() => Promise.resolve(rateLimitsConfig));
 
     await AppService();
 
@@ -560,9 +554,7 @@ describe('AppService', () => {
       },
     };
 
-    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
-      Promise.resolve(importLimitsConfig),
-    );
+    loadCustomConfig.mockImplementationOnce(() => Promise.resolve(importLimitsConfig));
 
     await AppService();
 
@@ -590,7 +582,7 @@ describe('AppService', () => {
   });
 
   it('should correctly configure endpoint with titlePrompt, titleMethod, and titlePromptTemplate', async () => {
-    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
+    loadCustomConfig.mockImplementationOnce(() =>
       Promise.resolve({
         endpoints: {
           [EModelEndpoint.openAI]: {
@@ -619,7 +611,7 @@ describe('AppService', () => {
 
     await AppService();
 
-    expect(initializeAppConfig).toHaveBeenCalledWith(
+    expect(setAppConfig).toHaveBeenCalledWith(
       expect.objectContaining({
         // Check OpenAI endpoint configuration
         [EModelEndpoint.openAI]: expect.objectContaining({
@@ -648,7 +640,7 @@ describe('AppService', () => {
   });
 
   it('should configure Agent endpoint with title generation settings', async () => {
-    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
+    loadCustomConfig.mockImplementationOnce(() =>
       Promise.resolve({
         endpoints: {
           [EModelEndpoint.agents]: {
@@ -667,7 +659,7 @@ describe('AppService', () => {
 
     await AppService();
 
-    expect(initializeAppConfig).toHaveBeenCalledWith(
+    expect(setAppConfig).toHaveBeenCalledWith(
       expect.objectContaining({
         [EModelEndpoint.agents]: expect.objectContaining({
           disableBuilder: false,
@@ -687,7 +679,7 @@ describe('AppService', () => {
   });
 
   it('should handle missing title configuration options with defaults', async () => {
-    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
+    loadCustomConfig.mockImplementationOnce(() =>
       Promise.resolve({
         endpoints: {
           [EModelEndpoint.openAI]: {
@@ -700,7 +692,7 @@ describe('AppService', () => {
 
     await AppService();
 
-    expect(initializeAppConfig).toHaveBeenCalledWith(
+    expect(setAppConfig).toHaveBeenCalledWith(
       expect.objectContaining({
         [EModelEndpoint.openAI]: expect.objectContaining({
           titleConvo: true,
@@ -709,14 +701,14 @@ describe('AppService', () => {
     );
 
     // Verify that optional fields are not set when not provided
-    const initCall = initializeAppConfig.mock.calls[0][0];
+    const initCall = setAppConfig.mock.calls[0][0];
     expect(initCall[EModelEndpoint.openAI].titlePrompt).toBeUndefined();
     expect(initCall[EModelEndpoint.openAI].titlePromptTemplate).toBeUndefined();
     expect(initCall[EModelEndpoint.openAI].titleMethod).toBeUndefined();
   });
 
   it('should correctly configure titleEndpoint when specified', async () => {
-    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
+    loadCustomConfig.mockImplementationOnce(() =>
       Promise.resolve({
         endpoints: {
           [EModelEndpoint.openAI]: {
@@ -735,7 +727,7 @@ describe('AppService', () => {
 
     await AppService();
 
-    expect(initializeAppConfig).toHaveBeenCalledWith(
+    expect(setAppConfig).toHaveBeenCalledWith(
       expect.objectContaining({
         // Check OpenAI endpoint has titleEndpoint
         [EModelEndpoint.openAI]: expect.objectContaining({
@@ -754,7 +746,7 @@ describe('AppService', () => {
   });
 
   it('should correctly configure all endpoint when specified', async () => {
-    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
+    loadCustomConfig.mockImplementationOnce(() =>
       Promise.resolve({
         endpoints: {
           all: {
@@ -776,7 +768,7 @@ describe('AppService', () => {
 
     await AppService();
 
-    expect(initializeAppConfig).toHaveBeenCalledWith(
+    expect(setAppConfig).toHaveBeenCalledWith(
       expect.objectContaining({
         // Check that 'all' endpoint config is loaded
         all: expect.objectContaining({
@@ -800,7 +792,7 @@ describe('AppService', () => {
 
 describe('AppService updating app config and issuing warnings', () => {
   let initialEnv;
-  const { initializeAppConfig } = require('./Config/getAppConfig');
+  const { setAppConfig, loadCustomConfig } = require('./Config');
 
   beforeEach(() => {
     // Store initial environment variables to restore them after each test
@@ -817,11 +809,11 @@ describe('AppService updating app config and issuing warnings', () => {
 
   it('should initialize app config with default values if loadCustomConfig returns undefined', async () => {
     // Mock loadCustomConfig to return undefined
-    require('./Config/loadCustomConfig').mockImplementationOnce(() => Promise.resolve(undefined));
+    loadCustomConfig.mockImplementationOnce(() => Promise.resolve(undefined));
 
     await AppService();
 
-    expect(initializeAppConfig).toHaveBeenCalledWith(
+    expect(setAppConfig).toHaveBeenCalledWith(
       expect.objectContaining({
         paths: expect.anything(),
         config: {},
@@ -849,13 +841,11 @@ describe('AppService updating app config and issuing warnings', () => {
         refillAmount: 5000,
       },
     };
-    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
-      Promise.resolve(customConfig),
-    );
+    loadCustomConfig.mockImplementationOnce(() => Promise.resolve(customConfig));
 
     await AppService();
 
-    expect(initializeAppConfig).toHaveBeenCalledWith(
+    expect(setAppConfig).toHaveBeenCalledWith(
       expect.objectContaining({
         paths: expect.anything(),
         config: customConfig,
@@ -877,11 +867,11 @@ describe('AppService updating app config and issuing warnings', () => {
         },
       },
     };
-    require('./Config/loadCustomConfig').mockImplementationOnce(() => Promise.resolve(mockConfig));
+    loadCustomConfig.mockImplementationOnce(() => Promise.resolve(mockConfig));
 
     await AppService();
 
-    expect(initializeAppConfig).toHaveBeenCalledWith(
+    expect(setAppConfig).toHaveBeenCalledWith(
       expect.objectContaining({
         assistants: expect.objectContaining({
           disableBuilder: true,
@@ -893,7 +883,7 @@ describe('AppService updating app config and issuing warnings', () => {
     );
 
     // Verify excludedIds is undefined when not provided
-    const initCall = initializeAppConfig.mock.calls[0][0];
+    const initCall = setAppConfig.mock.calls[0][0];
     expect(initCall.assistants.excludedIds).toBeUndefined();
   });
 
@@ -909,9 +899,9 @@ describe('AppService updating app config and issuing warnings', () => {
         },
       },
     };
-    require('./Config/loadCustomConfig').mockImplementationOnce(() => Promise.resolve(mockConfig));
+    loadCustomConfig.mockImplementationOnce(() => Promise.resolve(mockConfig));
 
-    await require('./AppService')();
+    await AppService();
 
     const { logger } = require('~/config');
     expect(logger.warn).toHaveBeenCalledWith(
@@ -930,9 +920,9 @@ describe('AppService updating app config and issuing warnings', () => {
         },
       },
     };
-    require('./Config/loadCustomConfig').mockImplementationOnce(() => Promise.resolve(mockConfig));
+    loadCustomConfig.mockImplementationOnce(() => Promise.resolve(mockConfig));
 
-    await require('./AppService')();
+    await AppService();
 
     const { logger } = require('~/config');
     expect(logger.warn).toHaveBeenCalledWith(
@@ -943,7 +933,7 @@ describe('AppService updating app config and issuing warnings', () => {
   });
 
   it('should issue expected warnings when loading Azure Groups with deprecated Environment Variables', async () => {
-    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
+    loadCustomConfig.mockImplementationOnce(() =>
       Promise.resolve({
         endpoints: {
           [EModelEndpoint.azureOpenAI]: {
@@ -957,7 +947,7 @@ describe('AppService updating app config and issuing warnings', () => {
       process.env[varInfo.key] = 'test';
     });
 
-    await require('./AppService')();
+    await AppService();
 
     const { logger } = require('~/config');
     deprecatedAzureVariables.forEach(({ key, description }) => {
@@ -968,7 +958,7 @@ describe('AppService updating app config and issuing warnings', () => {
   });
 
   it('should issue expected warnings when loading conflicting Azure Envrionment Variables', async () => {
-    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
+    loadCustomConfig.mockImplementationOnce(() =>
       Promise.resolve({
         endpoints: {
           [EModelEndpoint.azureOpenAI]: {
@@ -982,7 +972,7 @@ describe('AppService updating app config and issuing warnings', () => {
       process.env[varInfo.key] = 'test';
     });
 
-    await require('./AppService')();
+    await AppService();
 
     const { logger } = require('~/config');
     conflictingAzureVariables.forEach(({ key }) => {
@@ -1003,7 +993,7 @@ describe('AppService updating app config and issuing warnings', () => {
       },
     };
 
-    require('./Config/loadCustomConfig').mockImplementationOnce(() => Promise.resolve(mockConfig));
+    loadCustomConfig.mockImplementationOnce(() => Promise.resolve(mockConfig));
 
     // Set actual environment variables with different values
     process.env.OCR_API_KEY_CUSTOM_VAR_NAME = 'actual-api-key';
@@ -1012,7 +1002,7 @@ describe('AppService updating app config and issuing warnings', () => {
     await AppService();
 
     // Verify that the raw string references were preserved and not interpolated
-    expect(initializeAppConfig).toHaveBeenCalledWith(
+    expect(setAppConfig).toHaveBeenCalledWith(
       expect.objectContaining({
         ocr: expect.objectContaining({
           apiKey: '${OCR_API_KEY_CUSTOM_VAR_NAME}',
@@ -1035,12 +1025,12 @@ describe('AppService updating app config and issuing warnings', () => {
       },
     };
 
-    require('./Config/loadCustomConfig').mockImplementationOnce(() => Promise.resolve(mockConfig));
+    loadCustomConfig.mockImplementationOnce(() => Promise.resolve(mockConfig));
 
     await AppService();
 
     // Check that interface config includes the permissions
-    expect(initializeAppConfig).toHaveBeenCalledWith(
+    expect(setAppConfig).toHaveBeenCalledWith(
       expect.objectContaining({
         interfaceConfig: expect.objectContaining({
           peoplePicker: expect.objectContaining({

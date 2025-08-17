@@ -19,10 +19,9 @@ const {
 } = require('./start/checks');
 const { ensureDefaultCategories, seedDefaultRoles, initializeRoles } = require('~/models');
 const { azureAssistantsDefaults, assistantsConfigSetup } = require('./start/assistants');
+const { setCachedTools, setAppConfig, loadCustomConfig } = require('./Config');
 const { initializeAzureBlobService } = require('./Files/Azure/initialize');
 const { initializeFirebase } = require('./Files/Firebase/initialize');
-const { initializeAppConfig } = require('./Config/getAppConfig');
-const loadCustomConfig = require('./Config/loadCustomConfig');
 const handleRateLimits = require('./Config/handleRateLimits');
 const { loadDefaultInterface } = require('./start/interface');
 const { loadTurnstileConfig } = require('./start/turnstile');
@@ -30,7 +29,6 @@ const { azureConfigSetup } = require('./start/azureOpenAI');
 const { processModelSpecs } = require('./start/modelSpecs');
 const { initializeS3 } = require('./Files/S3/initialize');
 const { loadAndFormatTools } = require('./ToolService');
-const { setCachedTools } = require('./Config');
 const paths = require('~/config/paths');
 
 /**
@@ -113,7 +111,7 @@ const AppService = async () => {
       ...defaultLocals,
       [EModelEndpoint.agents]: agentsDefaults,
     };
-    await initializeAppConfig(appConfig);
+    await setAppConfig(appConfig);
     return;
   }
 
@@ -176,7 +174,7 @@ const AppService = async () => {
     ...endpointLocals,
   };
 
-  await initializeAppConfig(appConfig);
+  await setAppConfig(appConfig);
 };
 
 module.exports = AppService;
