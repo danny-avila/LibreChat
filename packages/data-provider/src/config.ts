@@ -836,7 +836,6 @@ export const webSearchSchema = z.object({
   jinaApiKey: z.string().optional().default('${JINA_API_KEY}'),
   jinaApiUrl: z.string().optional().default('${JINA_API_URL}'),
   cohereApiKey: z.string().optional().default('${COHERE_API_KEY}'),
-  cohereBaseUrl: z.string().optional().default('${COHERE_BASE_URL}'),
   searchProvider: z.nativeEnum(SearchProviders).optional(),
   scraperProvider: z.nativeEnum(ScraperProviders).optional(),
   rerankerType: z.nativeEnum(RerankerTypes).optional(),
@@ -1820,30 +1819,33 @@ export enum ForkOptions {
 }
 
 /**
- * Enum for Cohere related constants
+ * Cohere related constants
  */
-export enum CohereConstants {
+export const CohereConstants = {
   /**
    * Cohere API Endpoint, for special handling
+   * Uses COHERE_BASE_URL environment variable if set, otherwise defaults to official API
    */
-  API_URL = 'https://api.cohere.ai/v1',
+  get API_URL(): string {
+    return process.env.COHERE_BASE_URL || 'https://api.cohere.ai/v1';
+  },
   /**
    * Role for "USER" messages
    */
-  ROLE_USER = 'USER',
+  ROLE_USER: 'USER' as const,
   /**
    * Role for "SYSTEM" messages
    */
-  ROLE_SYSTEM = 'SYSTEM',
+  ROLE_SYSTEM: 'SYSTEM' as const,
   /**
    * Role for "CHATBOT" messages
    */
-  ROLE_CHATBOT = 'CHATBOT',
+  ROLE_CHATBOT: 'CHATBOT' as const,
   /**
    * Title message as required by Cohere
    */
-  TITLE_MESSAGE = 'TITLE:',
-}
+  TITLE_MESSAGE: 'TITLE:' as const,
+} as const;
 
 export enum SystemCategories {
   ALL = 'sys__all__sys',
