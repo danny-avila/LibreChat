@@ -366,20 +366,37 @@ class AgentClient extends BaseClient {
     }
 
     const formattedMessages = orderedMessages.map((message, i) => {
-      let formattedMessage = formatMessage({
+      const formattedMessage = formatMessage({
         message,
         userName: this.options?.name,
         assistantName: this.options?.modelLabel,
       });
 
+      const hasFiles =
+        (message.documents && message.documents.length > 0) ||
+        (message.videos && message.videos.length > 0) ||
+        (message.audios && message.audios.length > 0) ||
+        (message.image_urls && message.image_urls.length > 0);
+
       if (
-        message.documents &&
-        message.documents.length > 0 &&
+        hasFiles &&
         message.isCreatedByUser &&
         isDocumentSupportedEndpoint(this.options.agent.provider)
       ) {
         const contentParts = [];
-        contentParts.push(...message.documents);
+
+        if (message.documents && message.documents.length > 0) {
+          contentParts.push(...message.documents);
+        }
+
+        if (message.videos && message.videos.length > 0) {
+          contentParts.push(...message.videos);
+        }
+
+        if (message.audios && message.audios.length > 0) {
+          contentParts.push(...message.audios);
+        }
+
         if (message.image_urls && message.image_urls.length > 0) {
           contentParts.push(...message.image_urls);
         }
@@ -388,44 +405,11 @@ class AgentClient extends BaseClient {
           contentParts.push({ type: 'text', text: formattedMessage.content });
         } else {
           const textPart = formattedMessage.content.find((part) => part.type === 'text');
-          contentParts.push(textPart);
+          if (textPart) {
+            contentParts.push(textPart);
+          }
         }
-        formattedMessage.content = contentParts;
-      }
 
-      if (
-        message.videos &&
-        message.videos.length > 0 &&
-        message.isCreatedByUser &&
-        isDocumentSupportedEndpoint(this.options.agent.provider)
-      ) {
-        const contentParts = [];
-        contentParts.push(...message.videos);
-
-        if (typeof formattedMessage.content === 'string') {
-          contentParts.push({ type: 'text', text: formattedMessage.content });
-        } else {
-          const textPart = formattedMessage.content.find((part) => part.type === 'text');
-          contentParts.push(textPart);
-        }
-        formattedMessage.content = contentParts;
-      }
-
-      if (
-        message.audios &&
-        message.audios.length > 0 &&
-        message.isCreatedByUser &&
-        isDocumentSupportedEndpoint(this.options.agent.provider)
-      ) {
-        const contentParts = [];
-        contentParts.push(...message.audios);
-
-        if (typeof formattedMessage.content === 'string') {
-          contentParts.push({ type: 'text', text: formattedMessage.content });
-        } else {
-          const textPart = formattedMessage.content.find((part) => part.type === 'text');
-          contentParts.push(textPart);
-        }
         formattedMessage.content = contentParts;
       }
 
