@@ -71,4 +71,5 @@ export { default as FileIcon } from './FileIcon';
 export { default as FilePaths } from './FilePaths';
 export { default as SheetPaths } from './SheetPaths';
 export { default as TextPaths } from './TextPaths';
+export { default as VideoPaths } from './VideoPaths';
 export { default as SharePointIcon } from './SharePointIcon';
