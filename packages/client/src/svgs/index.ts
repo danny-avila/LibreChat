@@ -65,6 +65,7 @@ export { default as PersonalizationIcon } from './PersonalizationIcon';
 export { default as MCPIcon } from './MCPIcon';
 export { default as VectorIcon } from './VectorIcon';
 export { default as SquirclePlusIcon } from './SquirclePlusIcon';
+export { default as AudioPaths } from './AudioPaths';
 export { default as CodePaths } from './CodePaths';
 export { default as FileIcon } from './FileIcon';
 export { default as FilePaths } from './FilePaths';
