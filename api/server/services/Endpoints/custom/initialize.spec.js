@@ -30,6 +30,12 @@ jest.mock('~/server/services/Config', () => ({
     headers: { 'x-user': '{{LIBRECHAT_USER_ID}}', 'x-email': '{{LIBRECHAT_USER_EMAIL}}' },
     models: { default: ['test-model'] },
   }),
+  getAppConfig: jest.fn().mockResolvedValue({
+    'test-endpoint': {
+      apiKey: 'test-key',
+      baseURL: 'https://test.com',
+    },
+  }),
 }));
 
 jest.mock('~/server/services/ModelService', () => ({
