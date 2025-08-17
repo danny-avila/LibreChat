@@ -836,6 +836,7 @@ export const webSearchSchema = z.object({
   jinaApiKey: z.string().optional().default('${JINA_API_KEY}'),
   jinaApiUrl: z.string().optional().default('${JINA_API_URL}'),
   cohereApiKey: z.string().optional().default('${COHERE_API_KEY}'),
+  cohereBaseUrl: z.string().optional().default('${COHERE_BASE_URL}'),
   searchProvider: z.nativeEnum(SearchProviders).optional(),
   scraperProvider: z.nativeEnum(ScraperProviders).optional(),
   rerankerType: z.nativeEnum(RerankerTypes).optional(),
