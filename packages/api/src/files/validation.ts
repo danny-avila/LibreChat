@@ -1,8 +1,24 @@
-import { anthropicPdfSizeLimit } from 'librechat-data-provider';
+import { anthropicPdfSizeLimit, EModelEndpoint } from 'librechat-data-provider';
 
 export interface PDFValidationResult {
   isValid: boolean;
   error?: string;
+}
+
+export async function validatePdf(
+  pdfBuffer: Buffer,
+  fileSize: number,
+  endpoint: EModelEndpoint,
+): Promise<PDFValidationResult> {
+  if (endpoint === EModelEndpoint.anthropic) {
+    return validateAnthropicPdf(pdfBuffer, fileSize);
+  }
+
+  if (endpoint === EModelEndpoint.openAI) {
+    return validateOpenAIPdf(fileSize);
+  }
+
+  return { isValid: true };
 }
 
 /**
@@ -11,7 +27,7 @@ export interface PDFValidationResult {
  * @param fileSize - The file size in bytes
  * @returns Promise that resolves to validation result
  */
-export async function validateAnthropicPdf(
+async function validateAnthropicPdf(
   pdfBuffer: Buffer,
   fileSize: number,
 ): Promise<PDFValidationResult> {
@@ -70,10 +86,7 @@ export async function validateAnthropicPdf(
   }
 }
 
-export async function validateOpenAIPdf(
-  pdfBuffer: Buffer,
-  fileSize: number,
-): Promise<PDFValidationResult> {
+async function validateOpenAIPdf(fileSize: number): Promise<PDFValidationResult> {
   if (fileSize > 10 * 1024 * 1024) {
     return {
       isValid: false,

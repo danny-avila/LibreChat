@@ -1,6 +1,6 @@
 const { EModelEndpoint } = require('librechat-data-provider');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
-const { validateAnthropicPdf } = require('@librechat/api');
+const { validatePdf } = require('@librechat/api');
 
 /**
  * Converts a readable stream to a buffer.
@@ -132,9 +132,12 @@ async function encodeAndFormatDocuments(req, files, endpoint) {
       continue;
     }
 
-    if (file.type === 'application/pdf' && endpoint === EModelEndpoint.anthropic) {
+    if (
+      file.type === 'application/pdf' &&
+      (endpoint === EModelEndpoint.anthropic || endpoint === EModelEndpoint.openAI)
+    ) {
       const pdfBuffer = Buffer.from(content, 'base64');
-      const validation = await validateAnthropicPdf(pdfBuffer, pdfBuffer.length);
+      const validation = await validatePdf(pdfBuffer, pdfBuffer.length, endpoint);
 
       if (!validation.isValid) {
         throw new Error(`PDF validation failed: ${validation.error}`);
