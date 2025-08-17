@@ -99,11 +99,14 @@ const AttachFileMenu = ({
       // this is temporary until i add direct upload support for the other providers and can make a more robust solution
       const isAnthropicAgent = agent?.provider === 'anthropic';
       const isOpenAIAgent = agent?.provider === 'openai';
+      const isAzureOpenAIAgent = agent?.provider === 'azureOpenAI';
       const shouldShowDirectAttach =
         endpoint === EModelEndpoint.anthropic ||
         endpoint === EModelEndpoint.openAI ||
+        endpoint === EModelEndpoint.azureOpenAI ||
         isAnthropicAgent ||
-        isOpenAIAgent;
+        isOpenAIAgent ||
+        isAzureOpenAIAgent;
 
       if (!shouldShowDirectAttach) {
         items.push({

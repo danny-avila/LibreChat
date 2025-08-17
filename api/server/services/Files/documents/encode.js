@@ -73,7 +73,9 @@ async function encodeAndFormatDocuments(req, files, endpoint) {
 
     if (
       file.type !== 'application/pdf' ||
-      (endpoint !== EModelEndpoint.anthropic && endpoint !== EModelEndpoint.openAI)
+      (endpoint !== EModelEndpoint.anthropic &&
+        endpoint !== EModelEndpoint.openAI &&
+        endpoint !== EModelEndpoint.azureOpenAI)
     ) {
       continue;
     }
