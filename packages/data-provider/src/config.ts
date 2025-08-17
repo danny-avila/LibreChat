@@ -662,6 +662,7 @@ export const webSearchSchema = z.object({
   firecrawlApiUrl: z.string().optional().default('${FIRECRAWL_API_URL}'),
   jinaApiKey: z.string().optional().default('${JINA_API_KEY}'),
   cohereApiKey: z.string().optional().default('${COHERE_API_KEY}'),
+  cohereBaseUrl: z.string().optional().default('${COHERE_BASE_URL}'),
   searchProvider: z.nativeEnum(SearchProviders).optional(),
   scraperType: z.nativeEnum(ScraperTypes).optional(),
   rerankerType: z.nativeEnum(RerankerTypes).optional(),
