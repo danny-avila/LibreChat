@@ -88,8 +88,17 @@ export class MCPConnection extends EventEmitter {
   url?: string;
 
   setRequestHeaders(headers: Record<string, string> | null): void {
-    logger.debug(`${this.getLogPrefix()} Setting request headers: ${JSON.stringify(headers)}`);
-    this.requestHeaders = headers;
+    if (!headers) {
+      return;
+    }
+    const normalizedHeaders: Record<string, string> = {};
+    for (const [key, value] of Object.entries(headers)) {
+      normalizedHeaders[key.toLowerCase()] = value;
+    }
+    logger.debug(
+      `${this.getLogPrefix()} Setting request headers: ${JSON.stringify(normalizedHeaders)}`,
+    );
+    this.requestHeaders = normalizedHeaders;
   }
 
   getRequestHeaders(): Record<string, string> | null | undefined {
