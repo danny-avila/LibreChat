@@ -177,4 +177,5 @@ async function encodeAndFormatDocuments(req, files, endpoint) {
 
 module.exports = {
   encodeAndFormatDocuments,
+  streamToBuffer,
 };

@@ -1,5 +1,6 @@
-const { encodeAndFormatDocuments } = require('./encode');
+const { encodeAndFormatDocuments, streamToBuffer } = require('./encode');
 
 module.exports = {
   encodeAndFormatDocuments,
+  streamToBuffer,
 };

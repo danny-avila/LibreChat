@@ -41,8 +41,10 @@ const {
   setMemory,
 } = require('~/models');
 const { getMCPAuthMap, checkCapability, hasCustomUserVars } = require('~/server/services/Config');
-const { encodeAndFormatDocuments } = require('~/server/services/Files/documents/encode');
+const { encodeAndFormatDocuments } = require('~/server/services/Files/Documents/encode');
 const { addCacheControl, createContextHandlers } = require('~/app/clients/prompts');
+const { encodeAndFormatVideos } = require('~/server/services/Files/Video/encode');
+const { encodeAndFormatAudios } = require('~/server/services/Files/Audio/encode');
 const { initializeAgent } = require('~/server/services/Endpoints/agents/agent');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
@@ -241,13 +243,64 @@ class AgentClient extends BaseClient {
     return documentResult.files;
   }
 
+  async addVideos(message, attachments) {
+    const videoResult = await encodeAndFormatVideos(
+      this.options.req,
+      attachments,
+      this.options.agent.provider,
+    );
+    message.videos =
+      videoResult.videos && videoResult.videos.length ? videoResult.videos : undefined;
+    return videoResult.files;
+  }
+
+  async addAudios(message, attachments) {
+    const audioResult = await encodeAndFormatAudios(
+      this.options.req,
+      attachments,
+      this.options.agent.provider,
+    );
+    message.audios =
+      audioResult.audios && audioResult.audios.length ? audioResult.audios : undefined;
+    return audioResult.files;
+  }
+
   async processAttachments(message, attachments) {
-    const [imageFiles, documentFiles] = await Promise.all([
-      this.addImageURLs(message, attachments),
-      this.addDocuments(message, attachments),
+    const categorizedAttachments = {
+      images: [],
+      documents: [],
+      videos: [],
+      audios: [],
+    };
+
+    for (const file of attachments) {
+      if (file.type.startsWith('image/')) {
+        categorizedAttachments.images.push(file);
+      } else if (file.type === 'application/pdf') {
+        categorizedAttachments.documents.push(file);
+      } else if (file.type.startsWith('video/')) {
+        categorizedAttachments.videos.push(file);
+      } else if (file.type.startsWith('audio/')) {
+        categorizedAttachments.audios.push(file);
+      }
+    }
+
+    const [imageFiles, documentFiles, videoFiles, audioFiles] = await Promise.all([
+      categorizedAttachments.images.length > 0
+        ? this.addImageURLs(message, categorizedAttachments.images)
+        : Promise.resolve([]),
+      categorizedAttachments.documents.length > 0
+        ? this.addDocuments(message, categorizedAttachments.documents)
+        : Promise.resolve([]),
+      categorizedAttachments.videos.length > 0
+        ? this.addVideos(message, categorizedAttachments.videos)
+        : Promise.resolve([]),
+      categorizedAttachments.audios.length > 0
+        ? this.addAudios(message, categorizedAttachments.audios)
+        : Promise.resolve([]),
     ]);
 
-    const allFiles = [...imageFiles, ...documentFiles];
+    const allFiles = [...imageFiles, ...documentFiles, ...videoFiles, ...audioFiles];
     const seenFileIds = new Set();
     const uniqueFiles = [];
 
@@ -313,7 +366,7 @@ class AgentClient extends BaseClient {
     }
 
     const formattedMessages = orderedMessages.map((message, i) => {
-      const formattedMessage = formatMessage({
+      let formattedMessage = formatMessage({
         message,
         userName: this.options?.name,
         assistantName: this.options?.modelLabel,
@@ -330,6 +383,42 @@ class AgentClient extends BaseClient {
         if (message.image_urls && message.image_urls.length > 0) {
           contentParts.push(...message.image_urls);
         }
+
+        if (typeof formattedMessage.content === 'string') {
+          contentParts.push({ type: 'text', text: formattedMessage.content });
+        } else {
+          const textPart = formattedMessage.content.find((part) => part.type === 'text');
+          contentParts.push(textPart);
+        }
+        formattedMessage.content = contentParts;
+      }
+
+      if (
+        message.videos &&
+        message.videos.length > 0 &&
+        message.isCreatedByUser &&
+        isDocumentSupportedEndpoint(this.options.agent.provider)
+      ) {
+        const contentParts = [];
+        contentParts.push(...message.videos);
+
+        if (typeof formattedMessage.content === 'string') {
+          contentParts.push({ type: 'text', text: formattedMessage.content });
+        } else {
+          const textPart = formattedMessage.content.find((part) => part.type === 'text');
+          contentParts.push(textPart);
+        }
+        formattedMessage.content = contentParts;
+      }
+
+      if (
+        message.audios &&
+        message.audios.length > 0 &&
+        message.isCreatedByUser &&
+        isDocumentSupportedEndpoint(this.options.agent.provider)
+      ) {
+        const contentParts = [];
+        contentParts.push(...message.audios);
 
         if (typeof formattedMessage.content === 'string') {
           contentParts.push({ type: 'text', text: formattedMessage.content });

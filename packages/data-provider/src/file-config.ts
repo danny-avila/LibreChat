@@ -57,6 +57,27 @@ export const fullMimeTypesList = [
   'application/zip',
   'image/svg',
   'image/svg+xml',
+  // Video formats
+  'video/mp4',
+  'video/avi',
+  'video/mov',
+  'video/wmv',
+  'video/flv',
+  'video/webm',
+  'video/mkv',
+  'video/m4v',
+  'video/3gp',
+  'video/ogv',
+  // Audio formats
+  'audio/mp3',
+  'audio/wav',
+  'audio/ogg',
+  'audio/m4a',
+  'audio/aac',
+  'audio/flac',
+  'audio/wma',
+  'audio/opus',
+  'audio/mpeg',
   ...excelFileTypes,
 ];
 
@@ -122,12 +143,18 @@ export const applicationMimeTypes =
 
 export const imageMimeTypes = /^image\/(jpeg|gif|png|webp|heic|heif)$/;
 
+export const videoMimeTypes = /^video\/(mp4|avi|mov|wmv|flv|webm|mkv|m4v|3gp|ogv)$/;
+
+export const audioMimeTypes = /^audio\/(mp3|wav|ogg|m4a|aac|flac|wma|opus|mpeg)$/;
+
 export const supportedMimeTypes = [
   textMimeTypes,
   excelMimeTypes,
   applicationMimeTypes,
   imageMimeTypes,
-  /** Supported by LC Code Interpreter PAI */
+  videoMimeTypes,
+  audioMimeTypes,
+  /** Supported by LC Code Interpreter API */
   /^image\/(svg|svg\+xml)$/,
 ];
 
