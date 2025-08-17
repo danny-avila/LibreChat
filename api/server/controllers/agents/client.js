@@ -45,6 +45,7 @@ const { encodeAndFormatDocuments } = require('~/server/services/Files/Documents/
 const { addCacheControl, createContextHandlers } = require('~/app/clients/prompts');
 const { encodeAndFormatVideos } = require('~/server/services/Files/Video/encode');
 const { encodeAndFormatAudios } = require('~/server/services/Files/Audio/encode');
+const { getFiles } = require('~/models');
 const { initializeAgent } = require('~/server/services/Endpoints/agents/agent');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
@@ -265,6 +266,79 @@ class AgentClient extends BaseClient {
     return audioResult.files;
   }
 
+  /**
+   * Override addPreviousAttachments to handle all file types, not just images
+   * @param {TMessage[]} _messages
+   * @returns {Promise<TMessage[]>}
+   */
+  async addPreviousAttachments(_messages) {
+    if (!this.options.resendFiles) {
+      return _messages;
+    }
+
+    const seen = new Set();
+    const attachmentsProcessed =
+      this.options.attachments && !(this.options.attachments instanceof Promise);
+    if (attachmentsProcessed) {
+      for (const attachment of this.options.attachments) {
+        seen.add(attachment.file_id);
+      }
+    }
+
+    /**
+     *
+     * @param {TMessage} message
+     */
+    const processMessage = async (message) => {
+      if (!this.message_file_map) {
+        /** @type {Record<string, MongoFile[]> */
+        this.message_file_map = {};
+      }
+
+      const fileIds = [];
+      for (const file of message.files) {
+        if (seen.has(file.file_id)) {
+          continue;
+        }
+        fileIds.push(file.file_id);
+        seen.add(file.file_id);
+      }
+
+      if (fileIds.length === 0) {
+        return message;
+      }
+
+      const files = await getFiles(
+        {
+          file_id: { $in: fileIds },
+        },
+        {},
+        {},
+      );
+
+      await this.processAttachments(message, files);
+
+      this.message_file_map[message.messageId] = files;
+      return message;
+    };
+
+    const promises = [];
+
+    for (const message of _messages) {
+      if (!message.files) {
+        promises.push(message);
+        continue;
+      }
+
+      promises.push(processMessage(message));
+    }
+
+    const messages = await Promise.all(promises);
+
+    this.checkVisionRequest(Object.values(this.message_file_map ?? {}).flat());
+    return messages;
+  }
+
   async processAttachments(message, attachments) {
     const categorizedAttachments = {
       images: [],
@@ -411,6 +485,10 @@ class AgentClient extends BaseClient {
         }
 
         formattedMessage.content = contentParts;
+
+        if (message === orderedMessages[orderedMessages.length - 1]) {
+          message.content = contentParts;
+        }
       }
 
       if (message.ocr && i !== orderedMessages.length - 1) {
