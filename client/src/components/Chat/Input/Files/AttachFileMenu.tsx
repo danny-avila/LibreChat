@@ -103,17 +103,6 @@ const AttachFileMenu = ({
 
       const shouldShowDirectAttach = isDocumentSupportedEndpoint(agent?.provider ?? endpoint);
 
-      if (!shouldShowDirectAttach) {
-        items.push({
-          label: localize('com_ui_upload_image_input'),
-          onClick: () => {
-            setToolResource(undefined);
-            onAction('image');
-          },
-          icon: <ImageUpIcon className="icon-md" />,
-        });
-      }
-
       if (shouldShowDirectAttach) {
         items.push({
           label: localize('com_ui_upload_provider'),
@@ -122,6 +111,15 @@ const AttachFileMenu = ({
             onAction('anthropic_multimodal');
           },
           icon: <FileImageIcon className="icon-md" />,
+        });
+      } else {
+        items.push({
+          label: localize('com_ui_upload_image_input'),
+          onClick: () => {
+            setToolResource(undefined);
+            onAction('image');
+          },
+          icon: <ImageUpIcon className="icon-md" />,
         });
       }
 
