@@ -40,6 +40,7 @@ const {
   setMemory,
 } = require('~/models');
 const { getMCPAuthMap, checkCapability, hasCustomUserVars } = require('~/server/services/Config');
+const { encodeAndFormatDocuments } = require('~/server/services/Files/documents/encode');
 const { addCacheControl, createContextHandlers } = require('~/app/clients/prompts');
 const { initializeAgent } = require('~/server/services/Endpoints/agents/agent');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
@@ -227,12 +228,11 @@ class AgentClient extends BaseClient {
   }
 
   async addDocuments(message, attachments) {
-    const documentResult =
-      await require('~/server/services/Files/documents').encodeAndFormatDocuments(
-        this.options.req,
-        attachments,
-        this.options.agent.provider,
-      );
+    const documentResult = await encodeAndFormatDocuments(
+      this.options.req,
+      attachments,
+      this.options.agent.provider,
+    );
     message.documents =
       documentResult.documents && documentResult.documents.length
         ? documentResult.documents
