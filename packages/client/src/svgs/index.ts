@@ -65,3 +65,4 @@ export { default as PersonalizationIcon } from './PersonalizationIcon';
 export { default as MCPIcon } from './MCPIcon';
 export { default as VectorIcon } from './VectorIcon';
 export { default as SquirclePlusIcon } from './SquirclePlusIcon';
+export { default as InfoIcon } from './InfoIcon';
