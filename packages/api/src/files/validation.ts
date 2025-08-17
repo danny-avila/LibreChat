@@ -18,6 +18,10 @@ export async function validatePdf(
     return validateOpenAIPdf(fileSize);
   }
 
+  if (endpoint === EModelEndpoint.google) {
+    return validateGooglePdf(fileSize);
+  }
+
   return { isValid: true };
 }
 
@@ -91,6 +95,17 @@ async function validateOpenAIPdf(fileSize: number): Promise<PDFValidationResult>
     return {
       isValid: false,
       error: "PDF file size exceeds OpenAI's 10MB limit",
+    };
+  }
+
+  return { isValid: true };
+}
+
+async function validateGooglePdf(fileSize: number): Promise<PDFValidationResult> {
+  if (fileSize > 20 * 1024 * 1024) {
+    return {
+      isValid: false,
+      error: "PDF file size exceeds Google's 20MB limit",
     };
   }
 
