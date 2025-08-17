@@ -1,5 +1,5 @@
 import { logger } from '@librechat/data-schemas';
-import { MCPConnectionFactory, OAuthConnectionOptions } from '~/mcp/MCPConnectionFactory';
+import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
 import { MCPConnection } from './connection';
 import type * as t from './types';
 
@@ -10,9 +10,9 @@ import type * as t from './types';
 export class ConnectionsRepository {
   protected readonly serverConfigs: Record<string, t.MCPOptions>;
   protected connections: Map<string, MCPConnection> = new Map();
-  protected oauthOpts: OAuthConnectionOptions | undefined;
+  protected oauthOpts: t.OAuthConnectionOptions | undefined;
 
-  constructor(serverConfigs: t.MCPServers, oauthOpts?: OAuthConnectionOptions) {
+  constructor(serverConfigs: t.MCPServers, oauthOpts?: t.OAuthConnectionOptions) {
     this.serverConfigs = serverConfigs;
     this.oauthOpts = oauthOpts;
   }

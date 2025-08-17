@@ -1,7 +1,6 @@
 import { logger } from '@librechat/data-schemas';
 import type { OAuthClientInformation } from '@modelcontextprotocol/sdk/shared/auth.js';
 import type { TokenMethods } from '@librechat/data-schemas';
-import type { TUser } from 'librechat-data-provider';
 import type { MCPOAuthTokens, MCPOAuthFlowMetadata } from '~/mcp/oauth';
 import type { FlowStateManager } from '~/flow/manager';
 import type { FlowMetadata } from '~/flow/types';
@@ -9,23 +8,6 @@ import type * as t from './types';
 import { MCPTokenStorage, MCPOAuthHandler } from '~/mcp/oauth';
 import { MCPConnection } from './connection';
 import { processMCPEnv } from '~/utils';
-
-export interface BasicConnectionOptions {
-  serverName: string;
-  serverConfig: t.MCPOptions;
-}
-
-export interface OAuthConnectionOptions {
-  useOAuth: true;
-  user: TUser;
-  customUserVars?: Record<string, string>;
-  flowManager: FlowStateManager<MCPOAuthTokens | null>;
-  tokenMethods?: TokenMethods;
-  signal?: AbortSignal;
-  oauthStart?: (authURL: string) => Promise<void>;
-  oauthEnd?: () => Promise<void>;
-  returnOnOAuth?: boolean;
-}
 
 /**
  * Factory for creating MCP connections with optional OAuth authentication.
@@ -49,15 +31,20 @@ export class MCPConnectionFactory {
 
   /** Creates a new MCP connection with optional OAuth support */
   static async create(
-    basic: BasicConnectionOptions,
-    oauth?: OAuthConnectionOptions,
+    basic: t.BasicConnectionOptions,
+    oauth?: t.OAuthConnectionOptions,
   ): Promise<MCPConnection> {
     const factory = new this(basic, oauth);
     return factory.createConnection();
   }
 
-  protected constructor(basic: BasicConnectionOptions, oauth?: OAuthConnectionOptions) {
-    this.serverConfig = processMCPEnv(basic.serverConfig, oauth?.user, oauth?.customUserVars);
+  protected constructor(basic: t.BasicConnectionOptions, oauth?: t.OAuthConnectionOptions) {
+    this.serverConfig = processMCPEnv({
+      options: basic.serverConfig,
+      user: oauth?.user,
+      customUserVars: oauth?.customUserVars,
+      body: oauth?.requestBody,
+    });
     this.serverName = basic.serverName;
     this.useOAuth = !!oauth?.useOAuth;
     this.logPrefix = oauth?.user

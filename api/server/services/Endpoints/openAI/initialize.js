@@ -81,10 +81,10 @@ const initializeClient = async ({
     serverless = _serverless;
 
     clientOptions.reverseProxyUrl = baseURL ?? clientOptions.reverseProxyUrl;
-    clientOptions.headers = resolveHeaders(
-      { ...headers, ...(clientOptions.headers ?? {}) },
-      req.user,
-    );
+    clientOptions.headers = resolveHeaders({
+      headers: { ...headers, ...(clientOptions.headers ?? {}) },
+      user: req.user,
+    });
 
     clientOptions.titleConvo = azureConfig.titleConvo;
     clientOptions.titleModel = azureConfig.titleModel;

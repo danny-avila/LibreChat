@@ -6,11 +6,13 @@ import type { TokenMethods } from '@librechat/data-schemas';
 import type { FlowStateManager } from '~/flow/manager';
 import type { TUser } from 'librechat-data-provider';
 import type { MCPOAuthTokens } from '~/mcp/oauth';
+import type { RequestBody } from '~/types';
 import type * as t from './types';
 import { UserConnectionManager } from '~/mcp/UserConnectionManager';
 import { ConnectionsRepository } from '~/mcp/ConnectionsRepository';
 import { formatToolContent } from './parsers';
 import { MCPConnection } from './connection';
+import { processMCPEnv } from '~/utils/env';
 import { CONSTANTS } from './enum';
 
 /**
@@ -179,6 +181,7 @@ Please follow these instructions when using tools from the respective MCP server
     toolArguments,
     options,
     tokenMethods,
+    requestBody,
     flowManager,
     oauthStart,
     oauthEnd,
@@ -190,6 +193,7 @@ Please follow these instructions when using tools from the respective MCP server
     provider: t.Provider;
     toolArguments?: Record<string, unknown>;
     options?: RequestOptions;
+    requestBody?: RequestBody;
     tokenMethods?: TokenMethods;
     customUserVars?: Record<string, string>;
     flowManager: FlowStateManager<MCPOAuthTokens | null>;
@@ -214,6 +218,7 @@ Please follow these instructions when using tools from the respective MCP server
           oauthEnd,
           signal: options?.signal,
           customUserVars,
+          requestBody,
         });
       } else {
         /** App-level connection */
@@ -232,6 +237,17 @@ Please follow these instructions when using tools from the respective MCP server
           ErrorCode.InternalError, // Use InternalError for connection issues
           `${logPrefix} Connection is not active. Cannot execute tool ${toolName}.`,
         );
+      }
+
+      const rawConfig = this.getRawConfig(serverName) as t.MCPOptions;
+      const currentOptions = processMCPEnv({
+        user,
+        options: rawConfig,
+        customUserVars: customUserVars,
+        body: requestBody,
+      });
+      if ('headers' in currentOptions) {
+        connection.setRequestHeaders(currentOptions.headers || {});
       }
 
       const result = await connection.client.request(

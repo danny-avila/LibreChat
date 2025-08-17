@@ -3,6 +3,7 @@ export * from './balance';
 export * from './events';
 export * from './error';
 export * from './google';
+export * from './http';
 export * from './mistral';
 export * from './openai';
 export * from './prompts';
