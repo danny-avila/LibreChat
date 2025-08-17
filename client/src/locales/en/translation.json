@@ -1242,4 +1242,9 @@
   "com_ui_yes": "Yes",
   "com_ui_zoom": "Zoom",
   "com_user_message": "You"
+  ,
+  "com_ui_conversation_cost": "Conversation cost",
+  "com_ui_last_updated": "Last updated",
+  "com_ui_primary_model": "Model",
+  "com_ui_total_tokens": "Tokens"
 }
