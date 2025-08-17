@@ -479,21 +479,17 @@ describe('Multer Configuration', () => {
         },
       });
 
-      try {
-        // Call getDestination which should fail due to permission/path issues
-        storage.getDestination(mockReq, mockFile, (err, destination) => {
-          // If callback is reached, we didn't get the expected error
-          done(new Error('Expected mkdirSync to throw an error but callback was called'));
-        });
-        // If we get here without throwing, something unexpected happened
-        done(new Error('Expected mkdirSync to throw an error but no error was thrown'));
-      } catch (error) {
+      // Call getDestination which should fail due to permission/path issues
+      storage.getDestination(mockReq, mockFile, (err, destination) => {
+        // Now we expect the error to be passed to the callback
+        expect(err).toBeDefined();
         // This is the expected behavior - mkdirSync throws synchronously for invalid paths
         // On Linux, this typically returns EACCES (permission denied)
         // On macOS/Darwin, this returns ENOENT (no such file or directory)
-        expect(['EACCES', 'ENOENT']).toContain(error.code);
+        expect(['EACCES', 'ENOENT']).toContain(err.code);
+        expect(destination).toBeUndefined();
         done();
-      }
+      });
     });
 
     it('should handle malformed filenames with real sanitization', (done) => {
