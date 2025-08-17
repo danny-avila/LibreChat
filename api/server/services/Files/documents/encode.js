@@ -1,6 +1,6 @@
-const { EModelEndpoint } = require('librechat-data-provider');
+const { EModelEndpoint, isDocumentSupportedEndpoint } = require('librechat-data-provider');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
-const { validateAnthropicPdf } = require('../validation/pdfValidator');
+const { validatePdf } = require('@librechat/api');
 
 /**
  * Converts a readable stream to a buffer.
@@ -71,7 +71,7 @@ async function encodeAndFormatDocuments(req, files, endpoint) {
     /** @type {FileSources} */
     const source = file.source ?? 'local';
 
-    if (file.type !== 'application/pdf' || endpoint !== EModelEndpoint.anthropic) {
+    if (file.type !== 'application/pdf' || !isDocumentSupportedEndpoint(endpoint)) {
       continue;
     }
 
@@ -132,26 +132,35 @@ async function encodeAndFormatDocuments(req, files, endpoint) {
       continue;
     }
 
-    if (file.type === 'application/pdf' && endpoint === EModelEndpoint.anthropic) {
+    if (file.type === 'application/pdf' && isDocumentSupportedEndpoint(endpoint)) {
       const pdfBuffer = Buffer.from(content, 'base64');
-      const validation = await validateAnthropicPdf(pdfBuffer, pdfBuffer.length);
+      const validation = await validatePdf(pdfBuffer, pdfBuffer.length, endpoint);
 
       if (!validation.isValid) {
         throw new Error(`PDF validation failed: ${validation.error}`);
       }
 
-      const documentPart = {
-        type: 'document',
-        source: {
-          type: 'base64',
-          media_type: 'application/pdf',
-          data: content,
-        },
-        cache_control: { type: 'ephemeral' },
-        citations: { enabled: true },
-      };
+      if (endpoint === EModelEndpoint.anthropic) {
+        const documentPart = {
+          type: 'document',
+          source: {
+            type: 'base64',
+            media_type: 'application/pdf',
+            data: content,
+          },
+          cache_control: { type: 'ephemeral' },
+          citations: { enabled: true },
+        };
+        result.documents.push(documentPart);
+      } else if (endpoint === EModelEndpoint.openAI) {
+        const documentPart = {
+          type: 'input_file',
+          filename: file.filename,
+          file_data: `data:application/pdf;base64,${content}`,
+        };
+        result.documents.push(documentPart);
+      }
 
-      result.documents.push(documentPart);
       result.files.push(metadata);
     }
   }

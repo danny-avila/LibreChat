@@ -9,7 +9,7 @@ interface AgentCapabilitiesResult {
   fileSearchEnabled: boolean;
   webSearchEnabled: boolean;
   codeEnabled: boolean;
-  directUploadEnabled: boolean;
+  directAttachEnabled: boolean;
 }
 
 export default function useAgentCapabilities(
@@ -50,8 +50,8 @@ export default function useAgentCapabilities(
     [capabilities],
   );
 
-  const directUploadEnabled = useMemo(
-    () => capabilities?.includes(AgentCapabilities.direct_upload) ?? false,
+  const directAttachEnabled = useMemo(
+    () => capabilities?.includes(AgentCapabilities.direct_attach) ?? false,
     [capabilities],
   );
 
@@ -63,6 +63,6 @@ export default function useAgentCapabilities(
     artifactsEnabled,
     webSearchEnabled,
     fileSearchEnabled,
-    directUploadEnabled,
+    directAttachEnabled,
   };
 }

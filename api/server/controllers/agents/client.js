@@ -33,7 +33,16 @@ const {
   AgentCapabilities,
   bedrockInputSchema,
   removeNullishValues,
+  isDocumentSupportedEndpoint,
 } = require('librechat-data-provider');
+const {
+  findPluginAuthsByKeys,
+  getFormattedMemories,
+  deleteMemory,
+  setMemory,
+} = require('~/models');
+const { getMCPAuthMap, checkCapability, hasCustomUserVars } = require('~/server/services/Config');
+const { encodeAndFormatDocuments } = require('~/server/services/Files/documents/encode');
 const { addCacheControl, createContextHandlers } = require('~/app/clients/prompts');
 const { initializeAgent } = require('~/server/services/Endpoints/agents/agent');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
@@ -223,12 +232,11 @@ class AgentClient extends BaseClient {
   }
 
   async addDocuments(message, attachments) {
-    const documentResult =
-      await require('~/server/services/Files/documents').encodeAndFormatDocuments(
-        this.options.req,
-        attachments,
-        this.options.agent.provider,
-      );
+    const documentResult = await encodeAndFormatDocuments(
+      this.options.req,
+      attachments,
+      this.options.agent.provider,
+    );
     message.documents =
       documentResult.documents && documentResult.documents.length
         ? documentResult.documents
@@ -318,7 +326,7 @@ class AgentClient extends BaseClient {
         message.documents &&
         message.documents.length > 0 &&
         message.isCreatedByUser &&
-        this.options.agent.provider === EModelEndpoint.anthropic
+        isDocumentSupportedEndpoint(this.options.agent.provider)
       ) {
         const contentParts = [];
         contentParts.push(...message.documents);
