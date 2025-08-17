@@ -8,7 +8,12 @@ import {
   FileType2Icon,
   FileImageIcon,
 } from 'lucide-react';
-import { EToolResources, EModelEndpoint, defaultAgentCapabilities } from 'librechat-data-provider';
+import {
+  EToolResources,
+  EModelEndpoint,
+  defaultAgentCapabilities,
+  isDocumentSupportedEndpoint,
+} from 'librechat-data-provider';
 import {
   FileUpload,
   TooltipAnchor,
@@ -96,17 +101,7 @@ const AttachFileMenu = ({
     ) => {
       const items: MenuItemProps[] = [];
 
-      // this is temporary until i add direct upload support for the other providers and can make a more robust solution
-      const isAnthropicAgent = agent?.provider === 'anthropic';
-      const isOpenAIAgent = agent?.provider === 'openai';
-      const isAzureOpenAIAgent = agent?.provider === 'azureOpenAI';
-      const shouldShowDirectAttach =
-        endpoint === EModelEndpoint.anthropic ||
-        endpoint === EModelEndpoint.openAI ||
-        endpoint === EModelEndpoint.azureOpenAI ||
-        isAnthropicAgent ||
-        isOpenAIAgent ||
-        isAzureOpenAIAgent;
+      const shouldShowDirectAttach = isDocumentSupportedEndpoint(agent?.provider ?? endpoint);
 
       if (!shouldShowDirectAttach) {
         items.push({

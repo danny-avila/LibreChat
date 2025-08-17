@@ -32,6 +32,7 @@ const {
   AgentCapabilities,
   bedrockInputSchema,
   removeNullishValues,
+  isDocumentSupportedEndpoint,
 } = require('librechat-data-provider');
 const {
   findPluginAuthsByKeys,
@@ -322,9 +323,7 @@ class AgentClient extends BaseClient {
         message.documents &&
         message.documents.length > 0 &&
         message.isCreatedByUser &&
-        (this.options.agent.provider === EModelEndpoint.anthropic ||
-          this.options.agent.provider === EModelEndpoint.openAI ||
-          this.options.agent.provider === EModelEndpoint.azureOpenAI)
+        isDocumentSupportedEndpoint(this.options.agent.provider)
       ) {
         const contentParts = [];
         contentParts.push(...message.documents);

@@ -1,4 +1,4 @@
-const { EModelEndpoint } = require('librechat-data-provider');
+const { EModelEndpoint, isDocumentSupportedEndpoint } = require('librechat-data-provider');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { validatePdf } = require('@librechat/api');
 
@@ -71,12 +71,7 @@ async function encodeAndFormatDocuments(req, files, endpoint) {
     /** @type {FileSources} */
     const source = file.source ?? 'local';
 
-    if (
-      file.type !== 'application/pdf' ||
-      (endpoint !== EModelEndpoint.anthropic &&
-        endpoint !== EModelEndpoint.openAI &&
-        endpoint !== EModelEndpoint.azureOpenAI)
-    ) {
+    if (file.type !== 'application/pdf' || !isDocumentSupportedEndpoint(endpoint)) {
       continue;
     }
 
@@ -137,10 +132,7 @@ async function encodeAndFormatDocuments(req, files, endpoint) {
       continue;
     }
 
-    if (
-      file.type === 'application/pdf' &&
-      (endpoint === EModelEndpoint.anthropic || endpoint === EModelEndpoint.openAI)
-    ) {
+    if (file.type === 'application/pdf' && isDocumentSupportedEndpoint(endpoint)) {
       const pdfBuffer = Buffer.from(content, 'base64');
       const validation = await validatePdf(pdfBuffer, pdfBuffer.length, endpoint);
 
