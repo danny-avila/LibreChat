@@ -14,7 +14,7 @@ export async function validatePdf(
     return validateAnthropicPdf(pdfBuffer, fileSize);
   }
 
-  if (endpoint === EModelEndpoint.openAI) {
+  if (endpoint === EModelEndpoint.openAI || endpoint === EModelEndpoint.azureOpenAI) {
     return validateOpenAIPdf(fileSize);
   }
 
