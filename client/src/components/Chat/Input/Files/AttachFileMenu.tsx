@@ -77,7 +77,7 @@ const AttachFileMenu = ({
    * */
   const capabilities = useAgentCapabilities(agentsConfig?.capabilities ?? defaultAgentCapabilities);
 
-  const handleUploadClick = (fileType?: 'image' | 'document' | 'anthropic_multimodal') => {
+  const handleUploadClick = (fileType?: 'image' | 'document' | 'multimodal') => {
     if (!inputRef.current) {
       return;
     }
@@ -86,7 +86,7 @@ const AttachFileMenu = ({
       inputRef.current.accept = 'image/*';
     } else if (fileType === 'document') {
       inputRef.current.accept = '.pdf,application/pdf';
-    } else if (fileType === 'anthropic_multimodal') {
+    } else if (fileType === 'multimodal') {
       inputRef.current.accept = 'image/*,.pdf,application/pdf';
     } else {
       inputRef.current.accept = '';
@@ -97,7 +97,7 @@ const AttachFileMenu = ({
 
   const dropdownItems = useMemo(() => {
     const createMenuItems = (
-      onAction: (fileType?: 'image' | 'document' | 'anthropic_multimodal') => void,
+      onAction: (fileType?: 'image' | 'document' | 'multimodal') => void,
     ) => {
       const items: MenuItemProps[] = [];
 
@@ -108,7 +108,7 @@ const AttachFileMenu = ({
           label: localize('com_ui_upload_provider'),
           onClick: () => {
             setToolResource(EToolResources.direct_attach);
-            onAction('anthropic_multimodal');
+            onAction('multimodal');
           },
           icon: <FileImageIcon className="icon-md" />,
         });
