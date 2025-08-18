@@ -26,6 +26,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Echo GitHub ref and commit SHA
+        run: |
+          echo "GitHub ref: ${{ github.ref }}"
+          echo "GitHub commit SHA: ${{ github.sha }}"
+          echo "GitHub ref name: ${{ github.ref_name }}"
+          echo "GitHub head ref: ${{ github.head_ref }}"
+
       - name: Fetch tags and set the latest tag
         run: |
           git fetch --tags
@@ -60,6 +67,7 @@ jobs:
           push: true
           tags: |
             stripe/librechat:${{ github.sha }}
+            stripe/librechat:${{ github.ref_name }}-${{ github.sha }}
             stripe/librechat:latest
           platforms: linux/amd64,linux/arm64
           target: ${{ matrix.target }}
