@@ -8,21 +8,6 @@ const { createMulterInstance, storage, importFileFilter } = require('./multer');
 
 // Mock only the config service that requires external dependencies
 jest.mock('~/server/services/Config', () => ({
-  getCustomConfig: jest.fn(() =>
-    Promise.resolve({
-      fileConfig: {
-        endpoints: {
-          openAI: {
-            supportedMimeTypes: ['image/jpeg', 'image/png', 'application/pdf'],
-          },
-          default: {
-            supportedMimeTypes: ['image/jpeg', 'image/png', 'text/plain'],
-          },
-        },
-        serverFileSizeLimit: 10000000, // 10MB
-      },
-    }),
-  ),
   getAppConfig: jest.fn(),
 }));
 
@@ -546,10 +531,10 @@ describe('Multer Configuration', () => {
 
   describe('Real Configuration Testing', () => {
     it('should handle missing custom config gracefully with real mergeFileConfig', async () => {
-      const { getCustomConfig } = require('~/server/services/Config');
+      const { getAppConfig } = require('~/server/services/Config');
 
-      // Mock getCustomConfig to return undefined
-      getCustomConfig.mockResolvedValueOnce(undefined);
+      // Mock getAppConfig to return undefined
+      getAppConfig.mockResolvedValueOnce(undefined);
 
       const multerInstance = await createMulterInstance();
       expect(multerInstance).toBeDefined();

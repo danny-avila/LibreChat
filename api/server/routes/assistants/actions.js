@@ -34,7 +34,7 @@ router.post('/:assistant_id', async (req, res) => {
     let metadata = await encryptMetadata(removeNullishValues(_metadata, true));
     const isDomainAllowed = await isActionDomainAllowed(
       metadata.domain,
-      appConfig?.registration?.allowedDomains,
+      appConfig?.actions?.allowedDomains,
     );
     if (!isDomainAllowed) {
       return res.status(400).json({ message: 'Domain not allowed' });

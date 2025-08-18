@@ -87,7 +87,7 @@ router.post(
       const appConfig = await getAppConfig({ role: req.user.role });
       const isDomainAllowed = await isActionDomainAllowed(
         metadata.domain,
-        appConfig?.registration?.allowedDomains,
+        appConfig?.actions?.allowedDomains,
       );
       if (!isDomainAllowed) {
         return res.status(400).json({ message: 'Domain not allowed' });

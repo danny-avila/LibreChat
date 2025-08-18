@@ -33,6 +33,8 @@ export interface AppConfig {
   fileStrategy: FileSources.local | FileSources.s3 | FileSources.firebase | FileSources.azure_blob;
   /** Registration configurations */
   registration?: TCustomConfig['registration'];
+  /** Actions configurations */
+  actions?: TCustomConfig['actions'];
   /** Admin-filtered tools */
   filteredTools?: string[];
   /** Admin-included tools */
