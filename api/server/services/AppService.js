@@ -105,6 +105,7 @@ const AppService = async () => {
     imageOutputType,
     interfaceConfig,
     turnstileConfig,
+    fileStrategies: config.fileStrategies,
   };
 
   const agentsDefaults = agentsConfigSetup(config);

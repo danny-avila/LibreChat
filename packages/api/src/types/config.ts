@@ -31,6 +31,8 @@ export interface AppConfig {
   webSearch?: TCustomConfig['webSearch'];
   /** File storage strategy ('local', 's3', 'firebase', 'azure_blob') */
   fileStrategy: FileSources.local | FileSources.s3 | FileSources.firebase | FileSources.azure_blob;
+  /** File strategies configuration */
+  fileStrategies: TCustomConfig['fileStrategies'];
   /** Registration configurations */
   registration?: TCustomConfig['registration'];
   /** Actions configurations */
