@@ -43,9 +43,9 @@ const loadEndpoints = (config, agentsDefaults) => {
   const endpointKeys = [
     EModelEndpoint.openAI,
     EModelEndpoint.google,
+    EModelEndpoint.custom,
     EModelEndpoint.bedrock,
     EModelEndpoint.anthropic,
-    EModelEndpoint.gptPlugins,
   ];
 
   endpointKeys.forEach((key) => {

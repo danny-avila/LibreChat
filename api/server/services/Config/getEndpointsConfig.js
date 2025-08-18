@@ -1,3 +1,4 @@
+const { loadCustomEndpointsConfig } = require('@librechat/api');
 const {
   CacheKeys,
   EModelEndpoint,
@@ -6,7 +7,6 @@ const {
   defaultAgentCapabilities,
 } = require('librechat-data-provider');
 const loadDefaultEndpointsConfig = require('./loadDefaultEConfig');
-const loadConfigEndpoints = require('./loadConfigEndpoints');
 const getLogStores = require('~/cache/getLogStores');
 const { getAppConfig } = require('./app');
 
@@ -22,12 +22,30 @@ async function getEndpointsConfig(req) {
     return cachedEndpointsConfig;
   }
 
-  const defaultEndpointsConfig = await loadDefaultEndpointsConfig(req);
-  const customConfigEndpoints = await loadConfigEndpoints(req);
   const appConfig = await getAppConfig({ role: req.user?.role });
+  const defaultEndpointsConfig = await loadDefaultEndpointsConfig(appConfig);
+  const customEndpointsConfig = loadCustomEndpointsConfig(appConfig?.endpoints?.custom);
 
   /** @type {TEndpointsConfig} */
-  const mergedConfig = { ...defaultEndpointsConfig, ...customConfigEndpoints };
+  const mergedConfig = {
+    ...defaultEndpointsConfig,
+    ...customEndpointsConfig,
+  };
+
+  if (appConfig.endpoints?.[EModelEndpoint.azureOpenAI]) {
+    /** @type {Omit<TConfig, 'order'>} */
+    mergedConfig[EModelEndpoint.azureOpenAI] = {
+      userProvide: false,
+    };
+  }
+
+  if (appConfig.endpoints?.[EModelEndpoint.azureOpenAI]?.assistants) {
+    /** @type {Omit<TConfig, 'order'>} */
+    mergedConfig[EModelEndpoint.azureAssistants] = {
+      userProvide: false,
+    };
+  }
+
   if (
     mergedConfig[EModelEndpoint.assistants] &&
     appConfig?.endpoints?.[EModelEndpoint.assistants]

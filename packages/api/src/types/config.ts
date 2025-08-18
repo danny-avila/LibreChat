@@ -6,6 +6,7 @@ import type {
   TMemoryConfig,
   EModelEndpoint,
   TAgentsEndpoint,
+  TCustomEndpoints,
   TAssistantEndpoint,
 } from 'librechat-data-provider';
 
@@ -78,9 +79,9 @@ export interface AppConfig {
     azureAssistants?: TAssistantEndpoint;
     /** Agents endpoint configuration */
     [EModelEndpoint.agents]?: TAgentsEndpoint;
+    /** Custom endpoints configuration */
+    [EModelEndpoint.custom]?: TCustomEndpoints;
     /** Global endpoint configuration */
     all?: TEndpoint;
-    /** Any additional endpoint configurations */
-    [key: string]: unknown;
   };
 }

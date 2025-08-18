@@ -1,6 +1,7 @@
 export * from './config';
 export * from './azure';
 export * from './balance';
+export * from './endpoints';
 export * from './events';
 export * from './error';
 export * from './google';
