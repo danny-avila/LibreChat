@@ -1,6 +1,6 @@
 const { EModelEndpoint, extractEnvVariable, CacheKeys, ErrorTypes } = require('librechat-data-provider');
 const { fetchModels } = require('~/server/services/ModelService');
-const Key = require('~/models/Key');
+const { Key } = require('~/db/models');
 const { decrypt, isUserProvided, normalizeEndpointName } = require('~/server/utils');
 const { getCustomConfig } = require('./getCustomConfig');
 const getLogStores = require('~/cache/getLogStores');
