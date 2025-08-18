@@ -1,6 +1,7 @@
 const passport = require('passport');
 const cookies = require('cookie');
 const { isEnabled } = require('~/server/utils');
+const { handleForwardedAuth, isForwardedAuthEnabled } = require('~/server/stripe/forwardedAuth');
 
 /**
  * Custom Middleware to handle authentication
@@ -9,26 +10,8 @@ const { isEnabled } = require('~/server/utils');
  */
 const requireJwtAuth = (req, res, next) => {
   // <stripe>
-  if (process.env.FORWARD_AUTH_ENABLED === 'true') {
-    if (req.user) {
-      return next();
-    }
-    
-    // Use only Passport's forwardedAuth strategy - no JWT/OpenID
-    return passport.authenticate('forwardedAuth', { session: false }, (err, user) => {
-      if (err) {
-        return next(err);
-      }
-      
-      if (!user) {
-        return res.status(401).json({ 
-          error: 'Authentication required via forwarded headers' 
-        });
-      }
-      
-      req.user = user;
-      next();
-    })(req, res, next);
+  if (isForwardedAuthEnabled()) {
+    return handleForwardedAuth(req, res, next, { required: true });
   }
   // </stripe>
   // Check if token provider is specified in cookies
