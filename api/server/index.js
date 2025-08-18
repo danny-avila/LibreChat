@@ -1,4 +1,15 @@
 require('dotenv').config();
+
+// Set domain fallbacks from CONTAINER_APP_HOSTNAME if not already set
+if (process.env.CONTAINER_APP_HOSTNAME && !process.env.DOMAIN_CLIENT) {
+  process.env.DOMAIN_CLIENT = process.env.CONTAINER_APP_HOSTNAME.startsWith('http') 
+    ? process.env.CONTAINER_APP_HOSTNAME 
+    : `https://${process.env.CONTAINER_APP_HOSTNAME}`;
+}
+if (process.env.CONTAINER_APP_HOSTNAME && !process.env.DOMAIN_SERVER) {
+  process.env.DOMAIN_SERVER = process.env.DOMAIN_CLIENT;
+}
+
 const path = require('path');
 require('module-alias')({ base: path.resolve(__dirname, '..') });
 const cors = require('cors');
