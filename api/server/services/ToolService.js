@@ -50,8 +50,8 @@ const { redactMessage } = require('~/config/parsers');
  *
  * @param {object} params - The parameters for the function.
  * @param {string} params.directory - The directory path where the tools are located.
- * @param {string} [params.imageOutputType] - The image output type configuration.
  * @param {string} [params.fileStrategy] - The file storage strategy.
+ * @param {string} [params.imageOutputType] - The image output type configuration.
  * @param {Array<string>} [params.adminFilter=[]] - Array of admin-defined tool keys to exclude from loading.
  * @param {Array<string>} [params.adminIncluded=[]] - Array of admin-defined tool keys to include from loading.
  * @returns {Record<string, FunctionTool>} An object mapping each tool's plugin key to its instance.
