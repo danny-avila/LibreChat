@@ -58,6 +58,12 @@ jobs:
         run: |
           cp .env.example .env
 
+      # Sanitize branch name for Docker tag (replace '/' with '-')
+      - name: Sanitize branch name
+        run: |
+          SANITIZED_REF_NAME=$(echo "${{ github.ref_name }}" | sed 's/\//-/g')
+          echo "SANITIZED_REF_NAME=${SANITIZED_REF_NAME}" >> $GITHUB_ENV
+
       # Build and push Docker images for each target
       - name: Build and push Docker images
         uses: docker/build-push-action@v5
@@ -67,7 +73,7 @@ jobs:
           push: true
           tags: |
             stripe/librechat:${{ github.sha }}
-            stripe/librechat:${{ github.ref_name }}-${{ github.sha }}
+            stripe/librechat:${{ env.SANITIZED_REF_NAME }}-${{ github.sha }}
             stripe/librechat:latest
           platforms: linux/amd64,linux/arm64
           target: ${{ matrix.target }}
