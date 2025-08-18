@@ -464,7 +464,9 @@ class AgentClient extends BaseClient {
 
     /** @type {Agent} */
     let prelimAgent;
-    const allowedProviders = new Set(appConfig?.[EModelEndpoint.agents]?.allowedProviders);
+    const allowedProviders = new Set(
+      appConfig?.endpoints?.[EModelEndpoint.agents]?.allowedProviders,
+    );
     try {
       if (memoryConfig.agent?.id != null && memoryConfig.agent.id !== this.options.agent.id) {
         prelimAgent = await loadAgent({
@@ -770,8 +772,8 @@ class AgentClient extends BaseClient {
       }
 
       const appConfig = await getAppConfig({ role: this.options.req.user?.role });
-      /** @type {TCustomConfig['endpoints']['agents']} */
-      const agentsEConfig = appConfig[EModelEndpoint.agents];
+      /** @type {AppConfig['endpoints']['agents']} */
+      const agentsEConfig = appConfig.endpoints?.[EModelEndpoint.agents];
 
       config = {
         configurable: {
@@ -1104,7 +1106,9 @@ class AgentClient extends BaseClient {
 
     /** @type {TEndpoint | undefined} */
     const endpointConfig =
-      appConfig.all ?? appConfig[endpoint] ?? titleProviderConfig.customEndpointConfig;
+      appConfig.endpoints?.all ??
+      appConfig.endpoints?.[endpoint] ??
+      titleProviderConfig.customEndpointConfig;
     if (!endpointConfig) {
       logger.warn(
         '[api/server/controllers/agents/client.js #titleConvo] Error getting endpoint config',

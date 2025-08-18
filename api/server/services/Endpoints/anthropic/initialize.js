@@ -25,15 +25,14 @@ const initializeClient = async ({ req, res, endpointOption, overrideModel, optio
   let clientOptions = {};
 
   /** @type {undefined | TBaseEndpoint} */
-  const anthropicConfig = appConfig[EModelEndpoint.anthropic];
+  const anthropicConfig = appConfig.endpoints?.[EModelEndpoint.anthropic];
 
   if (anthropicConfig) {
     clientOptions.streamRate = anthropicConfig.streamRate;
     clientOptions.titleModel = anthropicConfig.titleModel;
   }
 
-  /** @type {undefined | TBaseEndpoint} */
-  const allConfig = appConfig.all;
+  const allConfig = appConfig.endpoints?.all;
   if (allConfig) {
     clientOptions.streamRate = allConfig.streamRate;
   }

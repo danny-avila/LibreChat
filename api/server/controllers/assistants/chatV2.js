@@ -376,9 +376,9 @@ const chatV2 = async (req, res) => {
       };
 
       /** @type {undefined | TAssistantEndpoint} */
-      const config = appConfig[endpoint] ?? {};
+      const config = appConfig.endpoints?.[endpoint] ?? {};
       /** @type {undefined | TBaseEndpoint} */
-      const allConfig = appConfig.all;
+      const allConfig = appConfig.endpoints?.all;
 
       const streamRunManager = new StreamRunManager({
         req,

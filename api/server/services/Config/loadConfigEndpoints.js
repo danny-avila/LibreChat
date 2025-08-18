@@ -15,8 +15,8 @@ async function loadConfigEndpoints(req) {
 
   const endpointsConfig = {};
 
-  if (Array.isArray(appConfig[EModelEndpoint.custom])) {
-    const customEndpoints = appConfig[EModelEndpoint.custom].filter(
+  if (Array.isArray(appConfig.endpoints?.[EModelEndpoint.custom])) {
+    const customEndpoints = appConfig.endpoints[EModelEndpoint.custom].filter(
       (endpoint) =>
         endpoint.baseURL &&
         endpoint.apiKey &&
@@ -51,14 +51,14 @@ async function loadConfigEndpoints(req) {
     }
   }
 
-  if (appConfig[EModelEndpoint.azureOpenAI]) {
+  if (appConfig.endpoints?.[EModelEndpoint.azureOpenAI]) {
     /** @type {Omit<TConfig, 'order'>} */
     endpointsConfig[EModelEndpoint.azureOpenAI] = {
       userProvide: false,
     };
   }
 
-  if (appConfig[EModelEndpoint.azureOpenAI]?.assistants) {
+  if (appConfig.endpoints?.[EModelEndpoint.azureOpenAI]?.assistants) {
     /** @type {Omit<TConfig, 'order'>} */
     endpointsConfig[EModelEndpoint.azureAssistants] = {
       userProvide: false,

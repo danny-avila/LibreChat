@@ -15,7 +15,7 @@ const validateAssistant = async (req, res, next) => {
 
   const appConfig = await getAppConfig({ role: req.user?.role });
   /** @type {Partial<TAssistantEndpoint>} */
-  const assistantsConfig = appConfig?.[endpoint];
+  const assistantsConfig = appConfig.endpoints?.[endpoint];
   if (!assistantsConfig) {
     return next();
   }

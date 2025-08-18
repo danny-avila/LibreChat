@@ -111,7 +111,9 @@ const AppService = async () => {
   if (!Object.keys(config).length) {
     const appConfig = {
       ...defaultConfig,
-      [EModelEndpoint.agents]: agentsDefaults,
+      endpoints: {
+        [EModelEndpoint.agents]: agentsDefaults,
+      },
     };
     await setAppConfig(appConfig);
     return;
@@ -126,7 +128,7 @@ const AppService = async () => {
     fileConfig: config?.fileConfig,
     secureImageLinks: config?.secureImageLinks,
     modelSpecs: processModelSpecs(config?.endpoints, config.modelSpecs, interfaceConfig),
-    ...loadedEndpoints,
+    endpoints: loadedEndpoints,
   };
 
   await setAppConfig(appConfig);

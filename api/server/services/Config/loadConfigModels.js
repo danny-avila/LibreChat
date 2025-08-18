@@ -14,7 +14,7 @@ async function loadConfigModels(req) {
     return {};
   }
   const modelsConfig = {};
-  const azureConfig = appConfig[EModelEndpoint.azureOpenAI];
+  const azureConfig = appConfig.endpoints?.[EModelEndpoint.azureOpenAI];
   const { modelNames } = azureConfig ?? {};
 
   if (modelNames && azureConfig) {
@@ -29,11 +29,11 @@ async function loadConfigModels(req) {
     modelsConfig[EModelEndpoint.azureAssistants] = azureConfig.assistantModels;
   }
 
-  if (!Array.isArray(appConfig[EModelEndpoint.custom])) {
+  if (!Array.isArray(appConfig.endpoints?.[EModelEndpoint.custom])) {
     return modelsConfig;
   }
 
-  const customEndpoints = appConfig[EModelEndpoint.custom].filter(
+  const customEndpoints = appConfig.endpoints[EModelEndpoint.custom].filter(
     (endpoint) =>
       endpoint.baseURL &&
       endpoint.apiKey &&

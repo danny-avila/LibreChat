@@ -172,12 +172,14 @@ describe('AppService', () => {
           searxngInstanceUrl: '${SEARXNG_INSTANCE_URL}',
         }),
         memory: undefined,
-        agents: expect.objectContaining({
-          disableBuilder: false,
-          capabilities: expect.arrayContaining([...defaultAgentCapabilities]),
-          maxCitations: 30,
-          maxCitationsPerFile: 7,
-          minRelevanceScore: 0.45,
+        endpoints: expect.objectContaining({
+          agents: expect.objectContaining({
+            disableBuilder: false,
+            capabilities: expect.arrayContaining([...defaultAgentCapabilities]),
+            maxCitations: 30,
+            maxCitationsPerFile: 7,
+            minRelevanceScore: 0.45,
+          }),
         }),
       }),
     );
@@ -328,12 +330,14 @@ describe('AppService', () => {
 
     expect(setAppConfig).toHaveBeenCalledWith(
       expect.objectContaining({
-        [EModelEndpoint.assistants]: expect.objectContaining({
-          disableBuilder: true,
-          pollIntervalMs: 5000,
-          timeoutMs: 30000,
-          supportedIds: expect.arrayContaining(['id1', 'id2']),
-          privateAssistants: false,
+        endpoints: expect.objectContaining({
+          [EModelEndpoint.assistants]: expect.objectContaining({
+            disableBuilder: true,
+            pollIntervalMs: 5000,
+            timeoutMs: 30000,
+            supportedIds: expect.arrayContaining(['id1', 'id2']),
+            privateAssistants: false,
+          }),
         }),
       }),
     );
@@ -358,15 +362,17 @@ describe('AppService', () => {
 
     expect(setAppConfig).toHaveBeenCalledWith(
       expect.objectContaining({
-        [EModelEndpoint.agents]: expect.objectContaining({
-          disableBuilder: true,
-          recursionLimit: 10,
-          maxRecursionLimit: 20,
-          allowedProviders: expect.arrayContaining(['openai', 'anthropic']),
-          capabilities: expect.arrayContaining([
-            AgentCapabilities.tools,
-            AgentCapabilities.actions,
-          ]),
+        endpoints: expect.objectContaining({
+          [EModelEndpoint.agents]: expect.objectContaining({
+            disableBuilder: true,
+            recursionLimit: 10,
+            maxRecursionLimit: 20,
+            allowedProviders: expect.arrayContaining(['openai', 'anthropic']),
+            capabilities: expect.arrayContaining([
+              AgentCapabilities.tools,
+              AgentCapabilities.actions,
+            ]),
+          }),
         }),
       }),
     );
@@ -379,9 +385,11 @@ describe('AppService', () => {
 
     expect(setAppConfig).toHaveBeenCalledWith(
       expect.objectContaining({
-        [EModelEndpoint.agents]: expect.objectContaining({
-          disableBuilder: false,
-          capabilities: expect.arrayContaining([...defaultAgentCapabilities]),
+        endpoints: expect.objectContaining({
+          [EModelEndpoint.agents]: expect.objectContaining({
+            disableBuilder: false,
+            capabilities: expect.arrayContaining([...defaultAgentCapabilities]),
+          }),
         }),
       }),
     );
@@ -402,12 +410,14 @@ describe('AppService', () => {
 
     expect(setAppConfig).toHaveBeenCalledWith(
       expect.objectContaining({
-        [EModelEndpoint.agents]: expect.objectContaining({
-          disableBuilder: false,
-          capabilities: expect.arrayContaining([...defaultAgentCapabilities]),
-        }),
-        [EModelEndpoint.openAI]: expect.objectContaining({
-          titleConvo: true,
+        endpoints: expect.objectContaining({
+          [EModelEndpoint.agents]: expect.objectContaining({
+            disableBuilder: false,
+            capabilities: expect.arrayContaining([...defaultAgentCapabilities]),
+          }),
+          [EModelEndpoint.openAI]: expect.objectContaining({
+            titleConvo: true,
+          }),
         }),
       }),
     );
@@ -432,12 +442,14 @@ describe('AppService', () => {
     await AppService();
     expect(setAppConfig).toHaveBeenCalledWith(
       expect.objectContaining({
-        [EModelEndpoint.azureAssistants]: expect.objectContaining({
-          capabilities: expect.arrayContaining([
-            expect.any(String),
-            expect.any(String),
-            expect.any(String),
-          ]),
+        endpoints: expect.objectContaining({
+          [EModelEndpoint.azureAssistants]: expect.objectContaining({
+            capabilities: expect.arrayContaining([
+              expect.any(String),
+              expect.any(String),
+              expect.any(String),
+            ]),
+          }),
         }),
       }),
     );
@@ -462,10 +474,12 @@ describe('AppService', () => {
     const { modelNames, modelGroupMap, groupMap } = validateAzureGroups(azureGroups);
     expect(setAppConfig).toHaveBeenCalledWith(
       expect.objectContaining({
-        [EModelEndpoint.azureOpenAI]: expect.objectContaining({
-          modelNames,
-          modelGroupMap,
-          groupMap,
+        endpoints: expect.objectContaining({
+          [EModelEndpoint.azureOpenAI]: expect.objectContaining({
+            modelNames,
+            modelGroupMap,
+            groupMap,
+          }),
         }),
       }),
     );
@@ -619,27 +633,29 @@ describe('AppService', () => {
 
     expect(setAppConfig).toHaveBeenCalledWith(
       expect.objectContaining({
-        // Check OpenAI endpoint configuration
-        [EModelEndpoint.openAI]: expect.objectContaining({
-          titleConvo: true,
-          titleModel: 'gpt-3.5-turbo',
-          titleMethod: 'structured',
-          titlePrompt: 'Custom title prompt for conversation',
-          titlePromptTemplate: 'Summarize this conversation: {{conversation}}',
-        }),
-        // Check Assistants endpoint configuration
-        [EModelEndpoint.assistants]: expect.objectContaining({
-          titleMethod: 'functions',
-          titlePrompt: 'Generate a title for this assistant conversation',
-          titlePromptTemplate: 'Assistant conversation template: {{messages}}',
-        }),
-        // Check Azure OpenAI endpoint configuration
-        [EModelEndpoint.azureOpenAI]: expect.objectContaining({
-          titleConvo: true,
-          titleMethod: 'completion',
-          titleModel: 'gpt-4',
-          titlePrompt: 'Azure title prompt',
-          titlePromptTemplate: 'Azure conversation: {{context}}',
+        endpoints: expect.objectContaining({
+          // Check OpenAI endpoint configuration
+          [EModelEndpoint.openAI]: expect.objectContaining({
+            titleConvo: true,
+            titleModel: 'gpt-3.5-turbo',
+            titleMethod: 'structured',
+            titlePrompt: 'Custom title prompt for conversation',
+            titlePromptTemplate: 'Summarize this conversation: {{conversation}}',
+          }),
+          // Check Assistants endpoint configuration
+          [EModelEndpoint.assistants]: expect.objectContaining({
+            titleMethod: 'functions',
+            titlePrompt: 'Generate a title for this assistant conversation',
+            titlePromptTemplate: 'Assistant conversation template: {{messages}}',
+          }),
+          // Check Azure OpenAI endpoint configuration
+          [EModelEndpoint.azureOpenAI]: expect.objectContaining({
+            titleConvo: true,
+            titleMethod: 'completion',
+            titleModel: 'gpt-4',
+            titlePrompt: 'Azure title prompt',
+            titlePromptTemplate: 'Azure conversation: {{context}}',
+          }),
         }),
       }),
     );
@@ -667,18 +683,20 @@ describe('AppService', () => {
 
     expect(setAppConfig).toHaveBeenCalledWith(
       expect.objectContaining({
-        [EModelEndpoint.agents]: expect.objectContaining({
-          disableBuilder: false,
-          titleConvo: true,
-          titleModel: 'gpt-4',
-          titleMethod: 'structured',
-          titlePrompt: 'Generate a descriptive title for this agent conversation',
-          titlePromptTemplate: 'Agent conversation summary: {{content}}',
-          recursionLimit: 15,
-          capabilities: expect.arrayContaining([
-            AgentCapabilities.tools,
-            AgentCapabilities.actions,
-          ]),
+        endpoints: expect.objectContaining({
+          [EModelEndpoint.agents]: expect.objectContaining({
+            disableBuilder: false,
+            titleConvo: true,
+            titleModel: 'gpt-4',
+            titleMethod: 'structured',
+            titlePrompt: 'Generate a descriptive title for this agent conversation',
+            titlePromptTemplate: 'Agent conversation summary: {{content}}',
+            recursionLimit: 15,
+            capabilities: expect.arrayContaining([
+              AgentCapabilities.tools,
+              AgentCapabilities.actions,
+            ]),
+          }),
         }),
       }),
     );
@@ -700,17 +718,19 @@ describe('AppService', () => {
 
     expect(setAppConfig).toHaveBeenCalledWith(
       expect.objectContaining({
-        [EModelEndpoint.openAI]: expect.objectContaining({
-          titleConvo: true,
+        endpoints: expect.objectContaining({
+          [EModelEndpoint.openAI]: expect.objectContaining({
+            titleConvo: true,
+          }),
         }),
       }),
     );
 
     // Verify that optional fields are not set when not provided
     const initCall = setAppConfig.mock.calls[0][0];
-    expect(initCall[EModelEndpoint.openAI].titlePrompt).toBeUndefined();
-    expect(initCall[EModelEndpoint.openAI].titlePromptTemplate).toBeUndefined();
-    expect(initCall[EModelEndpoint.openAI].titleMethod).toBeUndefined();
+    expect(initCall.endpoints[EModelEndpoint.openAI].titlePrompt).toBeUndefined();
+    expect(initCall.endpoints[EModelEndpoint.openAI].titlePromptTemplate).toBeUndefined();
+    expect(initCall.endpoints[EModelEndpoint.openAI].titleMethod).toBeUndefined();
   });
 
   it('should correctly configure titleEndpoint when specified', async () => {
@@ -735,17 +755,19 @@ describe('AppService', () => {
 
     expect(setAppConfig).toHaveBeenCalledWith(
       expect.objectContaining({
-        // Check OpenAI endpoint has titleEndpoint
-        [EModelEndpoint.openAI]: expect.objectContaining({
-          titleConvo: true,
-          titleModel: 'gpt-3.5-turbo',
-          titleEndpoint: EModelEndpoint.anthropic,
-          titlePrompt: 'Generate a concise title',
-        }),
-        // Check Agents endpoint has titleEndpoint
-        [EModelEndpoint.agents]: expect.objectContaining({
-          titleEndpoint: 'custom-provider',
-          titleMethod: 'structured',
+        endpoints: expect.objectContaining({
+          // Check OpenAI endpoint has titleEndpoint
+          [EModelEndpoint.openAI]: expect.objectContaining({
+            titleConvo: true,
+            titleModel: 'gpt-3.5-turbo',
+            titleEndpoint: EModelEndpoint.anthropic,
+            titlePrompt: 'Generate a concise title',
+          }),
+          // Check Agents endpoint has titleEndpoint
+          [EModelEndpoint.agents]: expect.objectContaining({
+            titleEndpoint: 'custom-provider',
+            titleMethod: 'structured',
+          }),
         }),
       }),
     );
@@ -777,19 +799,21 @@ describe('AppService', () => {
     expect(setAppConfig).toHaveBeenCalledWith(
       expect.objectContaining({
         // Check that 'all' endpoint config is loaded
-        all: expect.objectContaining({
-          titleConvo: true,
-          titleModel: 'gpt-4o-mini',
-          titleMethod: 'structured',
-          titlePrompt: 'Default title prompt for all endpoints',
-          titlePromptTemplate: 'Default template: {{conversation}}',
-          titleEndpoint: EModelEndpoint.anthropic,
-          streamRate: 50,
-        }),
-        // Check that OpenAI endpoint has its own config
-        [EModelEndpoint.openAI]: expect.objectContaining({
-          titleConvo: true,
-          titleModel: 'gpt-3.5-turbo',
+        endpoints: expect.objectContaining({
+          all: expect.objectContaining({
+            titleConvo: true,
+            titleModel: 'gpt-4o-mini',
+            titleMethod: 'structured',
+            titlePrompt: 'Default title prompt for all endpoints',
+            titlePromptTemplate: 'Default template: {{conversation}}',
+            titleEndpoint: EModelEndpoint.anthropic,
+            streamRate: 50,
+          }),
+          // Check that OpenAI endpoint has its own config
+          [EModelEndpoint.openAI]: expect.objectContaining({
+            titleConvo: true,
+            titleModel: 'gpt-3.5-turbo',
+          }),
         }),
       }),
     );
@@ -883,18 +907,20 @@ describe('AppService updating app config and issuing warnings', () => {
 
     expect(setAppConfig).toHaveBeenCalledWith(
       expect.objectContaining({
-        assistants: expect.objectContaining({
-          disableBuilder: true,
-          pollIntervalMs: 5000,
-          timeoutMs: 30000,
-          supportedIds: ['id1', 'id2'],
+        endpoints: expect.objectContaining({
+          assistants: expect.objectContaining({
+            disableBuilder: true,
+            pollIntervalMs: 5000,
+            timeoutMs: 30000,
+            supportedIds: ['id1', 'id2'],
+          }),
         }),
       }),
     );
 
     // Verify excludedIds is undefined when not provided
     const initCall = setAppConfig.mock.calls[0][0];
-    expect(initCall.assistants.excludedIds).toBeUndefined();
+    expect(initCall.endpoints.assistants.excludedIds).toBeUndefined();
   });
 
   it('should log a warning when both supportedIds and excludedIds are provided', async () => {

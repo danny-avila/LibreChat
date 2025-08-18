@@ -72,7 +72,7 @@ export const initializeOpenAI = async ({
   };
 
   const isAzureOpenAI = endpoint === EModelEndpoint.azureOpenAI;
-  const azureConfig = isAzureOpenAI && appConfig[EModelEndpoint.azureOpenAI];
+  const azureConfig = isAzureOpenAI && appConfig.endpoints?.[EModelEndpoint.azureOpenAI];
 
   if (isAzureOpenAI && azureConfig) {
     const { modelGroupMap, groupMap } = azureConfig;
@@ -143,8 +143,8 @@ export const initializeOpenAI = async ({
 
   const options = getOpenAIConfig(apiKey, finalClientOptions, endpoint);
 
-  const openAIConfig = appConfig[EModelEndpoint.openAI];
-  const allConfig = appConfig.all;
+  const openAIConfig = appConfig.endpoints?.[EModelEndpoint.openAI];
+  const allConfig = appConfig.endpoints?.all;
   const azureRate = modelName?.includes('gpt-4') ? 30 : 17;
 
   let streamRate: number | undefined;

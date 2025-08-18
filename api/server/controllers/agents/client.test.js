@@ -46,12 +46,14 @@ describe('AgentClient - titleConvo', () => {
 
     // Mock getAppConfig to return endpoint configurations
     getAppConfig.mockResolvedValue({
-      [EModelEndpoint.openAI]: {
-        // Match the agent endpoint
-        titleModel: 'gpt-3.5-turbo',
-        titlePrompt: 'Custom title prompt',
-        titleMethod: 'structured',
-        titlePromptTemplate: 'Template: {{content}}',
+      endpoints: {
+        [EModelEndpoint.openAI]: {
+          // Match the agent endpoint
+          titleModel: 'gpt-3.5-turbo',
+          titlePrompt: 'Custom title prompt',
+          titleMethod: 'structured',
+          titlePromptTemplate: 'Template: {{content}}',
+        },
       },
     });
 
@@ -148,7 +150,7 @@ describe('AgentClient - titleConvo', () => {
 
     it('should handle missing endpoint config gracefully', async () => {
       // Remove endpoint config
-      getAppConfig.mockResolvedValue({});
+      getAppConfig.mockResolvedValue({ endpoints: {} });
 
       const text = 'Test conversation text';
       const abortController = new AbortController();
@@ -167,11 +169,13 @@ describe('AgentClient - titleConvo', () => {
     it('should use agent model when titleModel is not provided', async () => {
       // Remove titleModel from config
       getAppConfig.mockResolvedValue({
-        [EModelEndpoint.openAI]: {
-          titlePrompt: 'Custom title prompt',
-          titleMethod: 'structured',
-          titlePromptTemplate: 'Template: {{content}}',
-          // titleModel is omitted
+        endpoints: {
+          [EModelEndpoint.openAI]: {
+            titlePrompt: 'Custom title prompt',
+            titleMethod: 'structured',
+            titlePromptTemplate: 'Template: {{content}}',
+            // titleModel is omitted
+          },
         },
       });
 
@@ -186,11 +190,13 @@ describe('AgentClient - titleConvo', () => {
 
     it('should not use titleModel when it equals CURRENT_MODEL constant', async () => {
       getAppConfig.mockResolvedValue({
-        [EModelEndpoint.openAI]: {
-          titleModel: Constants.CURRENT_MODEL,
-          titlePrompt: 'Custom title prompt',
-          titleMethod: 'structured',
-          titlePromptTemplate: 'Template: {{content}}',
+        endpoints: {
+          [EModelEndpoint.openAI]: {
+            titleModel: Constants.CURRENT_MODEL,
+            titlePrompt: 'Custom title prompt',
+            titleMethod: 'structured',
+            titlePromptTemplate: 'Template: {{content}}',
+          },
         },
       });
 
@@ -265,12 +271,14 @@ describe('AgentClient - titleConvo', () => {
 
       // Add titleEndpoint to the config
       getAppConfig.mockResolvedValue({
-        [EModelEndpoint.openAI]: {
-          titleModel: 'gpt-3.5-turbo',
-          titleEndpoint: EModelEndpoint.anthropic,
-          titleMethod: 'structured',
-          titlePrompt: 'Custom title prompt',
-          titlePromptTemplate: 'Custom template',
+        endpoints: {
+          [EModelEndpoint.openAI]: {
+            titleModel: 'gpt-3.5-turbo',
+            titleEndpoint: EModelEndpoint.anthropic,
+            titleMethod: 'structured',
+            titlePrompt: 'Custom title prompt',
+            titlePromptTemplate: 'Custom template',
+          },
         },
       });
 
@@ -300,11 +308,13 @@ describe('AgentClient - titleConvo', () => {
     it('should use all config when endpoint config is missing', async () => {
       // Set 'all' config without endpoint-specific config
       getAppConfig.mockResolvedValue({
-        all: {
-          titleModel: 'gpt-4o-mini',
-          titlePrompt: 'All config title prompt',
-          titleMethod: 'completion',
-          titlePromptTemplate: 'All config template: {{content}}',
+        endpoints: {
+          all: {
+            titleModel: 'gpt-4o-mini',
+            titlePrompt: 'All config title prompt',
+            titleMethod: 'completion',
+            titlePromptTemplate: 'All config template: {{content}}',
+          },
         },
       });
 
@@ -330,17 +340,19 @@ describe('AgentClient - titleConvo', () => {
     it('should prioritize all config over endpoint config for title settings', async () => {
       // Set both endpoint and 'all' config
       getAppConfig.mockResolvedValue({
-        [EModelEndpoint.openAI]: {
-          titleModel: 'gpt-3.5-turbo',
-          titlePrompt: 'Endpoint title prompt',
-          titleMethod: 'structured',
-          // titlePromptTemplate is omitted to test fallback
-        },
-        all: {
-          titleModel: 'gpt-4o-mini',
-          titlePrompt: 'All config title prompt',
-          titleMethod: 'completion',
-          titlePromptTemplate: 'All config template',
+        endpoints: {
+          [EModelEndpoint.openAI]: {
+            titleModel: 'gpt-3.5-turbo',
+            titlePrompt: 'Endpoint title prompt',
+            titleMethod: 'structured',
+            // titlePromptTemplate is omitted to test fallback
+          },
+          all: {
+            titleModel: 'gpt-4o-mini',
+            titlePrompt: 'All config title prompt',
+            titleMethod: 'completion',
+            titlePromptTemplate: 'All config template',
+          },
         },
       });
 
@@ -370,13 +382,15 @@ describe('AgentClient - titleConvo', () => {
 
       // Set comprehensive 'all' config with all new title options
       getAppConfig.mockResolvedValue({
-        all: {
-          titleConvo: true,
-          titleModel: 'claude-3-haiku-20240307',
-          titleMethod: 'completion', // Testing the new default method
-          titlePrompt: 'Generate a concise, descriptive title for this conversation',
-          titlePromptTemplate: 'Conversation summary: {{content}}',
-          titleEndpoint: EModelEndpoint.anthropic, // Should switch provider to Anthropic
+        endpoints: {
+          all: {
+            titleConvo: true,
+            titleModel: 'claude-3-haiku-20240307',
+            titleMethod: 'completion', // Testing the new default method
+            titlePrompt: 'Generate a concise, descriptive title for this conversation',
+            titlePromptTemplate: 'Conversation summary: {{content}}',
+            titleEndpoint: EModelEndpoint.anthropic, // Should switch provider to Anthropic
+          },
         },
       });
 
@@ -425,11 +439,13 @@ describe('AgentClient - titleConvo', () => {
 
         // Set 'all' config with specific titleMethod
         getAppConfig.mockResolvedValue({
-          all: {
-            titleModel: 'gpt-4o-mini',
-            titleMethod: method,
-            titlePrompt: `Testing ${method} method`,
-            titlePromptTemplate: `Template for ${method}: {{content}}`,
+          endpoints: {
+            all: {
+              titleModel: 'gpt-4o-mini',
+              titleMethod: method,
+              titlePrompt: `Testing ${method} method`,
+              titlePromptTemplate: `Template for ${method}: {{content}}`,
+            },
           },
         });
 
@@ -476,27 +492,29 @@ describe('AgentClient - titleConvo', () => {
         mockAgent.endpoint = EModelEndpoint.azureOpenAI;
         mockAgent.provider = EModelEndpoint.azureOpenAI;
         getAppConfig.mockResolvedValue({
-          [EModelEndpoint.azureOpenAI]: {
-            titleConvo: true,
-            titleModel: 'grok-3',
-            titleMethod: 'completion',
-            titlePrompt: 'Azure serverless title prompt',
-            streamRate: 35,
-            modelGroupMap: {
-              'grok-3': {
-                group: 'Azure AI Foundry',
-                deploymentName: 'grok-3',
+          endpoints: {
+            [EModelEndpoint.azureOpenAI]: {
+              titleConvo: true,
+              titleModel: 'grok-3',
+              titleMethod: 'completion',
+              titlePrompt: 'Azure serverless title prompt',
+              streamRate: 35,
+              modelGroupMap: {
+                'grok-3': {
+                  group: 'Azure AI Foundry',
+                  deploymentName: 'grok-3',
+                },
               },
-            },
-            groupMap: {
-              'Azure AI Foundry': {
-                apiKey: '${AZURE_API_KEY}',
-                baseURL: 'https://test.services.ai.azure.com/models',
-                version: '2024-05-01-preview',
-                serverless: true,
-                models: {
-                  'grok-3': {
-                    deploymentName: 'grok-3',
+              groupMap: {
+                'Azure AI Foundry': {
+                  apiKey: '${AZURE_API_KEY}',
+                  baseURL: 'https://test.services.ai.azure.com/models',
+                  version: '2024-05-01-preview',
+                  serverless: true,
+                  models: {
+                    'grok-3': {
+                      deploymentName: 'grok-3',
+                    },
                   },
                 },
               },
@@ -526,26 +544,28 @@ describe('AgentClient - titleConvo', () => {
         mockAgent.endpoint = EModelEndpoint.azureOpenAI;
         mockAgent.provider = EModelEndpoint.azureOpenAI;
         getAppConfig.mockResolvedValue({
-          [EModelEndpoint.azureOpenAI]: {
-            titleConvo: true,
-            titleModel: 'gpt-4o',
-            titleMethod: 'structured',
-            titlePrompt: 'Azure instance title prompt',
-            streamRate: 35,
-            modelGroupMap: {
-              'gpt-4o': {
-                group: 'eastus',
-                deploymentName: 'gpt-4o',
+          endpoints: {
+            [EModelEndpoint.azureOpenAI]: {
+              titleConvo: true,
+              titleModel: 'gpt-4o',
+              titleMethod: 'structured',
+              titlePrompt: 'Azure instance title prompt',
+              streamRate: 35,
+              modelGroupMap: {
+                'gpt-4o': {
+                  group: 'eastus',
+                  deploymentName: 'gpt-4o',
+                },
               },
-            },
-            groupMap: {
-              eastus: {
-                apiKey: '${EASTUS_API_KEY}',
-                instanceName: 'region-instance',
-                version: '2024-02-15-preview',
-                models: {
-                  'gpt-4o': {
-                    deploymentName: 'gpt-4o',
+              groupMap: {
+                eastus: {
+                  apiKey: '${EASTUS_API_KEY}',
+                  instanceName: 'region-instance',
+                  version: '2024-02-15-preview',
+                  models: {
+                    'gpt-4o': {
+                      deploymentName: 'gpt-4o',
+                    },
                   },
                 },
               },
@@ -576,27 +596,29 @@ describe('AgentClient - titleConvo', () => {
         mockAgent.provider = EModelEndpoint.azureOpenAI;
         mockAgent.model_parameters.model = 'gpt-4o-latest';
         getAppConfig.mockResolvedValue({
-          [EModelEndpoint.azureOpenAI]: {
-            titleConvo: true,
-            titleModel: Constants.CURRENT_MODEL,
-            titleMethod: 'functions',
-            streamRate: 35,
-            modelGroupMap: {
-              'gpt-4o-latest': {
-                group: 'region-eastus',
-                deploymentName: 'gpt-4o-mini',
-                version: '2024-02-15-preview',
+          endpoints: {
+            [EModelEndpoint.azureOpenAI]: {
+              titleConvo: true,
+              titleModel: Constants.CURRENT_MODEL,
+              titleMethod: 'functions',
+              streamRate: 35,
+              modelGroupMap: {
+                'gpt-4o-latest': {
+                  group: 'region-eastus',
+                  deploymentName: 'gpt-4o-mini',
+                  version: '2024-02-15-preview',
+                },
               },
-            },
-            groupMap: {
-              'region-eastus': {
-                apiKey: '${EASTUS2_API_KEY}',
-                instanceName: 'test-instance',
-                version: '2024-12-01-preview',
-                models: {
-                  'gpt-4o-latest': {
-                    deploymentName: 'gpt-4o-mini',
-                    version: '2024-02-15-preview',
+              groupMap: {
+                'region-eastus': {
+                  apiKey: '${EASTUS2_API_KEY}',
+                  instanceName: 'test-instance',
+                  version: '2024-12-01-preview',
+                  models: {
+                    'gpt-4o-latest': {
+                      deploymentName: 'gpt-4o-mini',
+                      version: '2024-02-15-preview',
+                    },
                   },
                 },
               },
@@ -625,54 +647,56 @@ describe('AgentClient - titleConvo', () => {
         mockAgent.endpoint = EModelEndpoint.azureOpenAI;
         mockAgent.provider = EModelEndpoint.azureOpenAI;
         getAppConfig.mockResolvedValue({
-          [EModelEndpoint.azureOpenAI]: {
-            titleConvo: true,
-            titleModel: 'o1-mini',
-            titleMethod: 'completion',
-            streamRate: 35,
-            modelGroupMap: {
-              'gpt-4o': {
-                group: 'eastus',
-                deploymentName: 'gpt-4o',
-              },
-              'o1-mini': {
-                group: 'region-eastus',
-                deploymentName: 'o1-mini',
-              },
-              'codex-mini': {
-                group: 'codex-mini',
-                deploymentName: 'codex-mini',
-              },
-            },
-            groupMap: {
-              eastus: {
-                apiKey: '${EASTUS_API_KEY}',
-                instanceName: 'region-eastus',
-                version: '2024-02-15-preview',
-                models: {
-                  'gpt-4o': {
-                    deploymentName: 'gpt-4o',
-                  },
+          endpoints: {
+            [EModelEndpoint.azureOpenAI]: {
+              titleConvo: true,
+              titleModel: 'o1-mini',
+              titleMethod: 'completion',
+              streamRate: 35,
+              modelGroupMap: {
+                'gpt-4o': {
+                  group: 'eastus',
+                  deploymentName: 'gpt-4o',
+                },
+                'o1-mini': {
+                  group: 'region-eastus',
+                  deploymentName: 'o1-mini',
+                },
+                'codex-mini': {
+                  group: 'codex-mini',
+                  deploymentName: 'codex-mini',
                 },
               },
-              'region-eastus': {
-                apiKey: '${EASTUS2_API_KEY}',
-                instanceName: 'region-eastus2',
-                version: '2024-12-01-preview',
-                models: {
-                  'o1-mini': {
-                    deploymentName: 'o1-mini',
+              groupMap: {
+                eastus: {
+                  apiKey: '${EASTUS_API_KEY}',
+                  instanceName: 'region-eastus',
+                  version: '2024-02-15-preview',
+                  models: {
+                    'gpt-4o': {
+                      deploymentName: 'gpt-4o',
+                    },
                   },
                 },
-              },
-              'codex-mini': {
-                apiKey: '${AZURE_API_KEY}',
-                baseURL: 'https://example.cognitiveservices.azure.com/openai/',
-                version: '2025-04-01-preview',
-                serverless: true,
-                models: {
-                  'codex-mini': {
-                    deploymentName: 'codex-mini',
+                'region-eastus': {
+                  apiKey: '${EASTUS2_API_KEY}',
+                  instanceName: 'region-eastus2',
+                  version: '2024-12-01-preview',
+                  models: {
+                    'o1-mini': {
+                      deploymentName: 'o1-mini',
+                    },
+                  },
+                },
+                'codex-mini': {
+                  apiKey: '${AZURE_API_KEY}',
+                  baseURL: 'https://example.cognitiveservices.azure.com/openai/',
+                  version: '2025-04-01-preview',
+                  serverless: true,
+                  models: {
+                    'codex-mini': {
+                      deploymentName: 'codex-mini',
+                    },
                   },
                 },
               },
@@ -709,27 +733,29 @@ describe('AgentClient - titleConvo', () => {
 
         // Set 'all' config as fallback with a serverless Azure config
         getAppConfig.mockResolvedValue({
-          all: {
-            titleConvo: true,
-            titleModel: 'gpt-4',
-            titleMethod: 'structured',
-            titlePrompt: 'Fallback title prompt from all config',
-            titlePromptTemplate: 'Template: {{content}}',
-            modelGroupMap: {
-              'gpt-4': {
-                group: 'default-group',
-                deploymentName: 'gpt-4',
+          endpoints: {
+            all: {
+              titleConvo: true,
+              titleModel: 'gpt-4',
+              titleMethod: 'structured',
+              titlePrompt: 'Fallback title prompt from all config',
+              titlePromptTemplate: 'Template: {{content}}',
+              modelGroupMap: {
+                'gpt-4': {
+                  group: 'default-group',
+                  deploymentName: 'gpt-4',
+                },
               },
-            },
-            groupMap: {
-              'default-group': {
-                apiKey: '${AZURE_API_KEY}',
-                baseURL: 'https://default.openai.azure.com/',
-                version: '2024-02-15-preview',
-                serverless: true,
-                models: {
-                  'gpt-4': {
-                    deploymentName: 'gpt-4',
+              groupMap: {
+                'default-group': {
+                  apiKey: '${AZURE_API_KEY}',
+                  baseURL: 'https://default.openai.azure.com/',
+                  version: '2024-02-15-preview',
+                  serverless: true,
+                  models: {
+                    'gpt-4': {
+                      deploymentName: 'gpt-4',
+                    },
                   },
                 },
               },

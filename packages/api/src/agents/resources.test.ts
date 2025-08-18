@@ -29,9 +29,11 @@ describe('primeResources', () => {
 
     // Setup mock appConfig
     mockAppConfig = {
-      [EModelEndpoint.agents]: {
-        capabilities: [AgentCapabilities.ocr],
-      } as TAgentsEndpoint,
+      endpoints: {
+        [EModelEndpoint.agents]: {
+          capabilities: [AgentCapabilities.ocr],
+        } as TAgentsEndpoint,
+      },
     } as AppConfig;
 
     // Setup mock getFiles function
@@ -87,7 +89,7 @@ describe('primeResources', () => {
 
   describe('when OCR is disabled', () => {
     it('should not fetch OCR files even if tool_resources has OCR file_ids', async () => {
-      (mockAppConfig[EModelEndpoint.agents] as TAgentsEndpoint).capabilities = [];
+      (mockAppConfig.endpoints![EModelEndpoint.agents] as TAgentsEndpoint).capabilities = [];
 
       const tool_resources = {
         [EToolResources.ocr]: {

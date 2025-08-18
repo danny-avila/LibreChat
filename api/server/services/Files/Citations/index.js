@@ -51,9 +51,11 @@ async function processFileCitations({ user, toolArtifact, toolCallId, metadata }
     }
 
     const appConfig = await getAppConfig({ role: user?.role });
-    const maxCitations = appConfig?.[EModelEndpoint.agents]?.maxCitations ?? 30;
-    const maxCitationsPerFile = appConfig?.[EModelEndpoint.agents]?.maxCitationsPerFile ?? 5;
-    const minRelevanceScore = appConfig?.[EModelEndpoint.agents]?.minRelevanceScore ?? 0.45;
+    const maxCitations = appConfig.endpoints?.[EModelEndpoint.agents]?.maxCitations ?? 30;
+    const maxCitationsPerFile =
+      appConfig.endpoints?.[EModelEndpoint.agents]?.maxCitationsPerFile ?? 5;
+    const minRelevanceScore =
+      appConfig.endpoints?.[EModelEndpoint.agents]?.minRelevanceScore ?? 0.45;
 
     const sources = toolArtifact[Tools.file_search].sources || [];
     const filteredSources = sources.filter((source) => source.relevance >= minRelevanceScore);

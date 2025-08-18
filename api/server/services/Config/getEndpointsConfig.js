@@ -28,9 +28,12 @@ async function getEndpointsConfig(req) {
 
   /** @type {TEndpointsConfig} */
   const mergedConfig = { ...defaultEndpointsConfig, ...customConfigEndpoints };
-  if (mergedConfig[EModelEndpoint.assistants] && appConfig?.[EModelEndpoint.assistants]) {
+  if (
+    mergedConfig[EModelEndpoint.assistants] &&
+    appConfig?.endpoints?.[EModelEndpoint.assistants]
+  ) {
     const { disableBuilder, retrievalModels, capabilities, version, ..._rest } =
-      appConfig[EModelEndpoint.assistants];
+      appConfig.endpoints[EModelEndpoint.assistants];
 
     mergedConfig[EModelEndpoint.assistants] = {
       ...mergedConfig[EModelEndpoint.assistants],
@@ -40,9 +43,9 @@ async function getEndpointsConfig(req) {
       capabilities,
     };
   }
-  if (mergedConfig[EModelEndpoint.agents] && appConfig?.[EModelEndpoint.agents]) {
+  if (mergedConfig[EModelEndpoint.agents] && appConfig?.endpoints?.[EModelEndpoint.agents]) {
     const { disableBuilder, capabilities, allowedProviders, ..._rest } =
-      appConfig[EModelEndpoint.agents];
+      appConfig.endpoints[EModelEndpoint.agents];
 
     mergedConfig[EModelEndpoint.agents] = {
       ...mergedConfig[EModelEndpoint.agents],
@@ -52,9 +55,12 @@ async function getEndpointsConfig(req) {
     };
   }
 
-  if (mergedConfig[EModelEndpoint.azureAssistants] && appConfig?.[EModelEndpoint.azureAssistants]) {
+  if (
+    mergedConfig[EModelEndpoint.azureAssistants] &&
+    appConfig?.endpoints?.[EModelEndpoint.azureAssistants]
+  ) {
     const { disableBuilder, retrievalModels, capabilities, version, ..._rest } =
-      appConfig[EModelEndpoint.azureAssistants];
+      appConfig.endpoints[EModelEndpoint.azureAssistants];
 
     mergedConfig[EModelEndpoint.azureAssistants] = {
       ...mergedConfig[EModelEndpoint.azureAssistants],
@@ -65,8 +71,8 @@ async function getEndpointsConfig(req) {
     };
   }
 
-  if (mergedConfig[EModelEndpoint.bedrock] && appConfig?.[EModelEndpoint.bedrock]) {
-    const { availableRegions } = appConfig[EModelEndpoint.bedrock];
+  if (mergedConfig[EModelEndpoint.bedrock] && appConfig?.endpoints?.[EModelEndpoint.bedrock]) {
+    const { availableRegions } = appConfig.endpoints[EModelEndpoint.bedrock];
     mergedConfig[EModelEndpoint.bedrock] = {
       ...mergedConfig[EModelEndpoint.bedrock],
       availableRegions,

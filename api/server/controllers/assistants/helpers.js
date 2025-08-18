@@ -231,20 +231,20 @@ const fetchAssistants = async ({ req, res, overrideEndpoint }) => {
   if (endpoint === EModelEndpoint.assistants) {
     ({ body } = await listAllAssistants({ req, res, version, query }));
   } else if (endpoint === EModelEndpoint.azureAssistants) {
-    const azureConfig = appConfig[EModelEndpoint.azureOpenAI];
+    const azureConfig = appConfig.endpoints?.[EModelEndpoint.azureOpenAI];
     body = await listAssistantsForAzure({ req, res, version, azureConfig, query });
   }
 
   if (req.user.role === SystemRoles.ADMIN) {
     return body;
-  } else if (!appConfig[endpoint]) {
+  } else if (!appConfig.endpoints?.[endpoint]) {
     return body;
   }
 
   body.data = filterAssistants({
     userId: req.user.id,
     assistants: body.data,
-    assistantsConfig: appConfig[endpoint],
+    assistantsConfig: appConfig.endpoints?.[endpoint],
   });
   return body;
 };

@@ -260,7 +260,7 @@ const getAssistantDocuments = async (req, res) => {
   try {
     const appConfig = await getAppConfig({ role: req.user?.role });
     const endpoint = req.query;
-    const assistantsConfig = appConfig[endpoint];
+    const assistantsConfig = appConfig.endpoints?.[endpoint];
     const documents = await getAssistants(
       {},
       {

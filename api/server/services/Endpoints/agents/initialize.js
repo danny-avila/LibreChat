@@ -90,8 +90,7 @@ const initializeClient = async ({ req, res, endpointOption }) => {
   }
 
   const agentConfigs = new Map();
-  /** @type {Set<string>} */
-  const allowedProviders = new Set(appConfig?.[EModelEndpoint.agents]?.allowedProviders);
+  const allowedProviders = new Set(appConfig?.endpoints?.[EModelEndpoint.agents]?.allowedProviders);
 
   const loadTools = createToolLoader();
   /** @type {Array<MongoFile>} */
@@ -145,7 +144,7 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     }
   }
 
-  let endpointConfig = appConfig[primaryConfig.endpoint];
+  let endpointConfig = appConfig.endpoints?.[primaryConfig.endpoint];
   if (!isAgentsEndpoint(primaryConfig.endpoint) && !endpointConfig) {
     try {
       endpointConfig = await getCustomEndpointConfig(primaryConfig.endpoint);

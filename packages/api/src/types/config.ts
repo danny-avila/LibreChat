@@ -59,26 +59,28 @@ export interface AppConfig {
   secureImageLinks?: TCustomConfig['secureImageLinks'];
   /** Processed model specifications */
   modelSpecs?: TCustomConfig['modelSpecs'];
-  /** OpenAI endpoint configuration */
-  openAI?: TEndpoint;
-  /** Google endpoint configuration */
-  google?: TEndpoint;
-  /** Bedrock endpoint configuration */
-  bedrock?: TEndpoint;
-  /** Anthropic endpoint configuration */
-  anthropic?: TEndpoint;
-  /** GPT plugins endpoint configuration */
-  gptPlugins?: TEndpoint;
-  /** Azure OpenAI endpoint configuration */
-  azureOpenAI?: TAzureConfig;
-  /** Assistants endpoint configuration */
-  assistants?: TAssistantEndpoint;
-  /** Azure assistants endpoint configuration */
-  azureAssistants?: TAssistantEndpoint;
-  /** Agents endpoint configuration */
-  [EModelEndpoint.agents]?: TAgentsEndpoint;
-  /** Global endpoint configuration */
-  all?: TEndpoint;
-  /** Any additional endpoint configurations */
-  [key: string]: unknown;
+  endpoints?: {
+    /** OpenAI endpoint configuration */
+    openAI?: TEndpoint;
+    /** Google endpoint configuration */
+    google?: TEndpoint;
+    /** Bedrock endpoint configuration */
+    bedrock?: TEndpoint;
+    /** Anthropic endpoint configuration */
+    anthropic?: TEndpoint;
+    /** GPT plugins endpoint configuration */
+    gptPlugins?: TEndpoint;
+    /** Azure OpenAI endpoint configuration */
+    azureOpenAI?: TAzureConfig;
+    /** Assistants endpoint configuration */
+    assistants?: TAssistantEndpoint;
+    /** Azure assistants endpoint configuration */
+    azureAssistants?: TAssistantEndpoint;
+    /** Agents endpoint configuration */
+    [EModelEndpoint.agents]?: TAgentsEndpoint;
+    /** Global endpoint configuration */
+    all?: TEndpoint;
+    /** Any additional endpoint configurations */
+    [key: string]: unknown;
+  };
 }

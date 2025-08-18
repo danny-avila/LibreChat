@@ -718,8 +718,7 @@ class OpenAIClient extends BaseClient {
       max_tokens: 16,
     };
 
-    /** @type {TAzureConfig | undefined} */
-    const azureConfig = appConfig?.[EModelEndpoint.azureOpenAI];
+    const azureConfig = appConfig?.endpoints?.[EModelEndpoint.azureOpenAI];
 
     const resetTitleOptions = !!(
       (this.azure && azureConfig) ||
@@ -1154,8 +1153,7 @@ ${convo}
         opts.fetchOptions.agent = new HttpsProxyAgent(this.options.proxy);
       }
 
-      /** @type {TAzureConfig | undefined} */
-      const azureConfig = appConfig?.[EModelEndpoint.azureOpenAI];
+      const azureConfig = appConfig?.endpoints?.[EModelEndpoint.azureOpenAI];
 
       if (
         (this.azure && this.isVisionModel && azureConfig) ||

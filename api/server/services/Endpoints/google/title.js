@@ -16,7 +16,7 @@ const addTitle = async (req, { text, response, client }) => {
   }
   const { GOOGLE_TITLE_MODEL } = process.env ?? {};
   const appConfig = await getAppConfig({ role: req.user?.role });
-  const providerConfig = appConfig[EModelEndpoint.google];
+  const providerConfig = appConfig.endpoints?.[EModelEndpoint.google];
   let model =
     providerConfig?.titleModel ??
     GOOGLE_TITLE_MODEL ??

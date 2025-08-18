@@ -130,7 +130,7 @@ router.post('/:assistant_id', async (req, res) => {
     }
 
     /* Map Azure OpenAI model to the assistant as defined by config */
-    if (appConfig[EModelEndpoint.azureOpenAI]?.assistants) {
+    if (appConfig.endpoints?.[EModelEndpoint.azureOpenAI]?.assistants) {
       updatedAssistant = {
         ...updatedAssistant,
         model: req.body.model,

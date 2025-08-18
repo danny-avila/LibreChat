@@ -52,14 +52,13 @@ const getOptions = async ({ req, overrideModel, endpointOption }) => {
   let streamRate = Constants.DEFAULT_STREAM_RATE;
 
   /** @type {undefined | TBaseEndpoint} */
-  const bedrockConfig = appConfig[EModelEndpoint.bedrock];
+  const bedrockConfig = appConfig.endpoints?.[EModelEndpoint.bedrock];
 
   if (bedrockConfig && bedrockConfig.streamRate) {
     streamRate = bedrockConfig.streamRate;
   }
 
-  /** @type {undefined | TBaseEndpoint} */
-  const allConfig = appConfig.all;
+  const allConfig = appConfig.endpoints?.all;
   if (allConfig && allConfig.streamRate) {
     streamRate = allConfig.streamRate;
   }

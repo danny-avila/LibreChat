@@ -202,9 +202,9 @@ export const primeResources = async ({
       }
     }
 
-    const isOCREnabled = (appConfig?.[EModelEndpoint.agents]?.capabilities ?? []).includes(
-      AgentCapabilities.ocr,
-    );
+    const isOCREnabled = (
+      appConfig?.endpoints?.[EModelEndpoint.agents]?.capabilities ?? []
+    ).includes(AgentCapabilities.ocr);
 
     if (tool_resources[EToolResources.ocr]?.file_ids && isOCREnabled) {
       const context = await getFiles(

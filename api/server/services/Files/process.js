@@ -165,7 +165,7 @@ const processDeleteRequest = async ({ req, files }) => {
   /** @type {Record<string, OpenAI | undefined>} */
   const client = { [FileSources.openai]: undefined, [FileSources.azure]: undefined };
   const initializeClients = async () => {
-    if (appConfig[EModelEndpoint.assistants]) {
+    if (appConfig.endpoints?.[EModelEndpoint.assistants]) {
       const openAIClient = await getOpenAIClient({
         req,
         overrideEndpoint: EModelEndpoint.assistants,
@@ -173,7 +173,7 @@ const processDeleteRequest = async ({ req, files }) => {
       client[FileSources.openai] = openAIClient.openai;
     }
 
-    if (!appConfig[EModelEndpoint.azureOpenAI]?.assistants) {
+    if (!appConfig.endpoints?.[EModelEndpoint.azureOpenAI]?.assistants) {
       return;
     }
 

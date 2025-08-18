@@ -118,8 +118,7 @@ const initializeClient = async ({ req, res, endpointOption, optionsOnly, overrid
     endpointTokenConfig,
   };
 
-  /** @type {undefined | TBaseEndpoint} */
-  const allConfig = appConfig.all;
+  const allConfig = appConfig.endpoints?.all;
   if (allConfig) {
     customOptions.streamRate = allConfig.streamRate;
   }

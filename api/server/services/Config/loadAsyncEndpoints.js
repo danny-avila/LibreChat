@@ -36,7 +36,7 @@ async function loadAsyncEndpoints(req) {
 
   const google = serviceKey || isGoogleKeyProvided ? { userProvide: googleUserProvides } : false;
 
-  const useAzure = appConfig[EModelEndpoint.azureOpenAI]?.plugins;
+  const useAzure = appConfig.endpoints?.[EModelEndpoint.azureOpenAI]?.plugins;
   const gptPlugins =
     useAzure || openAIApiKey || azureOpenAIApiKey
       ? {

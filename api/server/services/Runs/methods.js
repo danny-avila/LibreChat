@@ -33,7 +33,7 @@ async function retrieveRun({ thread_id, run_id, timeout, openai }) {
   }
 
   /** @type {TAzureConfig | undefined} */
-  const azureConfig = appConfig[EModelEndpoint.azureOpenAI];
+  const azureConfig = appConfig.endpoints?.[EModelEndpoint.azureOpenAI];
 
   if (azureConfig && azureConfig.assistants) {
     delete headers.Authorization;

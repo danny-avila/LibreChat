@@ -22,28 +22,30 @@ jest.mock('~/server/services/UserService', () => ({
 
 jest.mock('~/server/services/Config', () => ({
   getAppConfig: jest.fn().mockResolvedValue({
-    openAI: {
-      apiKey: 'test-key',
-    },
-    azureOpenAI: {
-      apiKey: 'test-azure-key',
-      modelNames: ['gpt-4-vision-preview', 'gpt-3.5-turbo', 'gpt-4'],
-      modelGroupMap: {
-        'gpt-4-vision-preview': {
-          group: 'librechat-westus',
-          deploymentName: 'gpt-4-vision-preview',
-          version: '2024-02-15-preview',
-        },
+    endpoints: {
+      openAI: {
+        apiKey: 'test-key',
       },
-      groupMap: {
-        'librechat-westus': {
-          apiKey: 'WESTUS_API_KEY',
-          instanceName: 'librechat-westus',
-          version: '2023-12-01-preview',
-          models: {
-            'gpt-4-vision-preview': {
-              deploymentName: 'gpt-4-vision-preview',
-              version: '2024-02-15-preview',
+      azureOpenAI: {
+        apiKey: 'test-azure-key',
+        modelNames: ['gpt-4-vision-preview', 'gpt-3.5-turbo', 'gpt-4'],
+        modelGroupMap: {
+          'gpt-4-vision-preview': {
+            group: 'librechat-westus',
+            deploymentName: 'gpt-4-vision-preview',
+            version: '2024-02-15-preview',
+          },
+        },
+        groupMap: {
+          'librechat-westus': {
+            apiKey: 'WESTUS_API_KEY',
+            instanceName: 'librechat-westus',
+            version: '2023-12-01-preview',
+            models: {
+              'gpt-4-vision-preview': {
+                deploymentName: 'gpt-4-vision-preview',
+                version: '2024-02-15-preview',
+              },
             },
           },
         },

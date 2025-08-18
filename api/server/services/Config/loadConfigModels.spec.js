@@ -6,55 +6,57 @@ jest.mock('~/server/services/ModelService');
 jest.mock('./app');
 
 const exampleConfig = {
-  custom: [
-    {
-      name: 'Mistral',
-      apiKey: '${MY_PRECIOUS_MISTRAL_KEY}',
-      baseURL: 'https://api.mistral.ai/v1',
-      models: {
-        default: ['mistral-tiny', 'mistral-small', 'mistral-medium', 'mistral-large-latest'],
-        fetch: true,
+  endpoints: {
+    custom: [
+      {
+        name: 'Mistral',
+        apiKey: '${MY_PRECIOUS_MISTRAL_KEY}',
+        baseURL: 'https://api.mistral.ai/v1',
+        models: {
+          default: ['mistral-tiny', 'mistral-small', 'mistral-medium', 'mistral-large-latest'],
+          fetch: true,
+        },
+        dropParams: ['stop', 'user', 'frequency_penalty', 'presence_penalty'],
       },
-      dropParams: ['stop', 'user', 'frequency_penalty', 'presence_penalty'],
-    },
-    {
-      name: 'OpenRouter',
-      apiKey: '${MY_OPENROUTER_API_KEY}',
-      baseURL: 'https://openrouter.ai/api/v1',
-      models: {
-        default: ['gpt-3.5-turbo'],
-        fetch: true,
+      {
+        name: 'OpenRouter',
+        apiKey: '${MY_OPENROUTER_API_KEY}',
+        baseURL: 'https://openrouter.ai/api/v1',
+        models: {
+          default: ['gpt-3.5-turbo'],
+          fetch: true,
+        },
+        dropParams: ['stop'],
       },
-      dropParams: ['stop'],
-    },
-    {
-      name: 'groq',
-      apiKey: 'user_provided',
-      baseURL: 'https://api.groq.com/openai/v1/',
-      models: {
-        default: ['llama2-70b-4096', 'mixtral-8x7b-32768'],
-        fetch: false,
+      {
+        name: 'groq',
+        apiKey: 'user_provided',
+        baseURL: 'https://api.groq.com/openai/v1/',
+        models: {
+          default: ['llama2-70b-4096', 'mixtral-8x7b-32768'],
+          fetch: false,
+        },
       },
-    },
-    {
-      name: 'Ollama',
-      apiKey: 'user_provided',
-      baseURL: 'http://localhost:11434/v1/',
-      models: {
-        default: ['mistral', 'llama2:13b'],
-        fetch: false,
+      {
+        name: 'Ollama',
+        apiKey: 'user_provided',
+        baseURL: 'http://localhost:11434/v1/',
+        models: {
+          default: ['mistral', 'llama2:13b'],
+          fetch: false,
+        },
       },
-    },
-    {
-      name: 'MLX',
-      apiKey: 'user_provided',
-      baseURL: 'http://localhost:8080/v1/',
-      models: {
-        default: ['Meta-Llama-3-8B-Instruct-4bit'],
-        fetch: false,
+      {
+        name: 'MLX',
+        apiKey: 'user_provided',
+        baseURL: 'http://localhost:8080/v1/',
+        models: {
+          default: ['Meta-Llama-3-8B-Instruct-4bit'],
+          fetch: false,
+        },
       },
-    },
-  ],
+    ],
+  },
 };
 
 describe('loadConfigModels', () => {
@@ -83,7 +85,9 @@ describe('loadConfigModels', () => {
 
   it('handles azure models and endpoint correctly', async () => {
     getAppConfig.mockResolvedValue({
-      azureOpenAI: { modelNames: ['model1', 'model2'] },
+      endpoints: {
+        azureOpenAI: { modelNames: ['model1', 'model2'] },
+      },
     });
 
     const result = await loadConfigModels(mockRequest);
@@ -102,7 +106,7 @@ describe('loadConfigModels', () => {
       },
     ];
 
-    getAppConfig.mockResolvedValue({ custom: customEndpoints });
+    getAppConfig.mockResolvedValue({ endpoints: { custom: customEndpoints } });
     fetchModels.mockResolvedValue(['customModel1', 'customModel2']);
 
     const result = await loadConfigModels(mockRequest);
@@ -112,20 +116,22 @@ describe('loadConfigModels', () => {
 
   it('correctly associates models to names using unique keys', async () => {
     getAppConfig.mockResolvedValue({
-      custom: [
-        {
-          baseURL: 'http://example.com',
-          apiKey: 'API_KEY1',
-          name: 'Model1',
-          models: { fetch: true },
-        },
-        {
-          baseURL: 'http://example.com',
-          apiKey: 'API_KEY2',
-          name: 'Model2',
-          models: { fetch: true },
-        },
-      ],
+      endpoints: {
+        custom: [
+          {
+            baseURL: 'http://example.com',
+            apiKey: 'API_KEY1',
+            name: 'Model1',
+            models: { fetch: true },
+          },
+          {
+            baseURL: 'http://example.com',
+            apiKey: 'API_KEY2',
+            name: 'Model2',
+            models: { fetch: true },
+          },
+        ],
+      },
     });
     fetchModels.mockImplementation(({ apiKey }) =>
       Promise.resolve(apiKey === 'API_KEY1' ? ['model1Data'] : ['model2Data']),
@@ -139,26 +145,28 @@ describe('loadConfigModels', () => {
   it('correctly handles multiple endpoints with the same baseURL but different apiKeys', async () => {
     // Mock the custom configuration to simulate the user's scenario
     getAppConfig.mockResolvedValue({
-      custom: [
-        {
-          name: 'LiteLLM',
-          apiKey: '${LITELLM_ALL_MODELS}',
-          baseURL: '${LITELLM_HOST}',
-          models: { fetch: true },
-        },
-        {
-          name: 'OpenAI',
-          apiKey: '${LITELLM_OPENAI_MODELS}',
-          baseURL: '${LITELLM_SECOND_HOST}',
-          models: { fetch: true },
-        },
-        {
-          name: 'Google',
-          apiKey: '${LITELLM_GOOGLE_MODELS}',
-          baseURL: '${LITELLM_SECOND_HOST}',
-          models: { fetch: true },
-        },
-      ],
+      endpoints: {
+        custom: [
+          {
+            name: 'LiteLLM',
+            apiKey: '${LITELLM_ALL_MODELS}',
+            baseURL: '${LITELLM_HOST}',
+            models: { fetch: true },
+          },
+          {
+            name: 'OpenAI',
+            apiKey: '${LITELLM_OPENAI_MODELS}',
+            baseURL: '${LITELLM_SECOND_HOST}',
+            models: { fetch: true },
+          },
+          {
+            name: 'Google',
+            apiKey: '${LITELLM_GOOGLE_MODELS}',
+            baseURL: '${LITELLM_SECOND_HOST}',
+            models: { fetch: true },
+          },
+        ],
+      },
     });
 
     // Mock `fetchModels` to return different models based on the apiKey
@@ -246,8 +254,8 @@ describe('loadConfigModels', () => {
     // For groq and ollama, since the apiKey is "user_provided", models should not be fetched
     // Depending on your implementation's behavior regarding "default" models without fetching,
     // you may need to adjust the following assertions:
-    expect(result.groq).toBe(exampleConfig.custom[2].models.default);
-    expect(result.ollama).toBe(exampleConfig.custom[3].models.default);
+    expect(result.groq).toBe(exampleConfig.endpoints.custom[2].models.default);
+    expect(result.ollama).toBe(exampleConfig.endpoints.custom[3].models.default);
 
     // Verifying fetchModels was not called for groq and ollama
     expect(fetchModels).not.toHaveBeenCalledWith(
@@ -264,26 +272,28 @@ describe('loadConfigModels', () => {
 
   it('falls back to default models if fetching returns an empty array', async () => {
     getAppConfig.mockResolvedValue({
-      custom: [
-        {
-          name: 'EndpointWithSameFetchKey',
-          apiKey: 'API_KEY',
-          baseURL: 'http://example.com',
-          models: {
-            fetch: true,
-            default: ['defaultModel1'],
+      endpoints: {
+        custom: [
+          {
+            name: 'EndpointWithSameFetchKey',
+            apiKey: 'API_KEY',
+            baseURL: 'http://example.com',
+            models: {
+              fetch: true,
+              default: ['defaultModel1'],
+            },
           },
-        },
-        {
-          name: 'EmptyFetchModel',
-          apiKey: 'API_KEY',
-          baseURL: 'http://example.com',
-          models: {
-            fetch: true,
-            default: ['defaultModel1', 'defaultModel2'],
+          {
+            name: 'EmptyFetchModel',
+            apiKey: 'API_KEY',
+            baseURL: 'http://example.com',
+            models: {
+              fetch: true,
+              default: ['defaultModel1', 'defaultModel2'],
+            },
           },
-        },
-      ],
+        ],
+      },
     });
 
     fetchModels.mockResolvedValue([]);
@@ -295,17 +305,19 @@ describe('loadConfigModels', () => {
 
   it('falls back to default models if fetching returns a falsy value', async () => {
     getAppConfig.mockResolvedValue({
-      custom: [
-        {
-          name: 'FalsyFetchModel',
-          apiKey: 'API_KEY',
-          baseURL: 'http://example.com',
-          models: {
-            fetch: true,
-            default: ['defaultModel1', 'defaultModel2'],
+      endpoints: {
+        custom: [
+          {
+            name: 'FalsyFetchModel',
+            apiKey: 'API_KEY',
+            baseURL: 'http://example.com',
+            models: {
+              fetch: true,
+              default: ['defaultModel1', 'defaultModel2'],
+            },
           },
-        },
-      ],
+        ],
+      },
     });
 
     fetchModels.mockResolvedValue(false);
@@ -354,7 +366,9 @@ describe('loadConfigModels', () => {
     ];
 
     getAppConfig.mockResolvedValue({
-      custom: testCases,
+      endpoints: {
+        custom: testCases,
+      },
     });
 
     const result = await loadConfigModels(mockRequest);

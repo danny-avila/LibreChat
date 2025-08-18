@@ -504,7 +504,7 @@ async function loadAgentTools({ req, res, agent, tool_resources, openAIApiKey })
   /** Edge case: use defined/fallback capabilities when the "agents" endpoint is not enabled */
   if (enabledCapabilities.size === 0 && agent.id === Constants.EPHEMERAL_AGENT_ID) {
     enabledCapabilities = new Set(
-      appConfig?.[EModelEndpoint.agents]?.capabilities ?? defaultAgentCapabilities,
+      appConfig.endpoints?.[EModelEndpoint.agents]?.capabilities ?? defaultAgentCapabilities,
     );
   }
   const checkCapability = (capability) => {

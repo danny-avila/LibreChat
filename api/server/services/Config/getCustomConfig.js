@@ -36,7 +36,7 @@ const getCustomEndpointConfig = async (endpoint) => {
     throw new Error(`Config not found for the ${endpoint} custom endpoint.`);
   }
 
-  const customEndpoints = appConfig[EModelEndpoint.custom] ?? [];
+  const customEndpoints = appConfig.endpoints?.[EModelEndpoint.custom] ?? [];
   return customEndpoints.find(
     (endpointConfig) => normalizeEndpointName(endpointConfig.name) === endpoint,
   );

@@ -83,7 +83,7 @@ const initializeClient = async ({ req, res, version, endpointOption, initAppClie
   };
 
   /** @type {TAzureConfig | undefined} */
-  const azureConfig = appConfig[EModelEndpoint.azureOpenAI];
+  const azureConfig = appConfig.endpoints?.[EModelEndpoint.azureOpenAI];
 
   /** @type {AzureOptions | undefined} */
   let azureOptions;

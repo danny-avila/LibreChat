@@ -398,8 +398,8 @@ async function runAssistant({
   });
 
   const { endpoint = EModelEndpoint.azureAssistants } = openai.req.body;
-  /** @type {TCustomConfig.endpoints.assistants} */
-  const assistantsEndpointConfig = appConfig?.[endpoint] ?? {};
+  /** @type {AppConfig['endpoints']['assistants']} */
+  const assistantsEndpointConfig = appConfig.endpoints?.[endpoint] ?? {};
   const { pollIntervalMs, timeoutMs } = assistantsEndpointConfig;
 
   const run = await waitForRun({

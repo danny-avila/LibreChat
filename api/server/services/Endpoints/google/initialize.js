@@ -49,9 +49,9 @@ const initializeClient = async ({ req, res, endpointOption, overrideModel, optio
 
   const appConfig = await getAppConfig({ role: req.user?.role });
   /** @type {undefined | TBaseEndpoint} */
-  const allConfig = appConfig.all;
+  const allConfig = appConfig.endpoints?.all;
   /** @type {undefined | TBaseEndpoint} */
-  const googleConfig = appConfig[EModelEndpoint.google];
+  const googleConfig = appConfig.endpoints?.[EModelEndpoint.google];
 
   if (googleConfig) {
     clientOptions.streamRate = googleConfig.streamRate;
