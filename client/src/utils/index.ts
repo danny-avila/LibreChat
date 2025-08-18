@@ -18,6 +18,7 @@ export * from './resources';
 export * from './roles';
 export * from './localStorage';
 export * from './promptGroups';
+export * from './emailValidation';
 export { default as cn } from './cn';
 export { default as logger } from './logger';
 export { default as buildTree } from './buildTree';
