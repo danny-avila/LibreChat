@@ -1,7 +1,7 @@
 const cookies = require('cookie');
 const jwt = require('jsonwebtoken');
-const { getAppConfig } = require('~/server/services/Config/getAppConfig');
-const { logger } = require('~/config');
+const { logger } = require('@librechat/data-schemas');
+const { getAppConfig } = require('~/server/services/Config/app');
 
 const OBJECT_ID_LENGTH = 24;
 const OBJECT_ID_PATTERN = /^[0-9a-f]{24}$/i;

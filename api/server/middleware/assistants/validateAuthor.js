@@ -1,5 +1,5 @@
 const { SystemRoles } = require('librechat-data-provider');
-const { getAppConfig } = require('~/server/services/Config/getAppConfig');
+const { getAppConfig } = require('~/server/services/Config/app');
 const { getAssistant } = require('~/models/Assistant');
 
 /**

@@ -1,7 +1,7 @@
 const { fetchModels } = require('~/server/services/ModelService');
 const { getCustomConfig } = require('./getCustomConfig');
-const { getAppConfig } = require('./getAppConfig');
 const loadConfigModels = require('./loadConfigModels');
+const { getAppConfig } = require('./app');
 
 jest.mock('~/server/services/ModelService');
 jest.mock('./getCustomConfig');

@@ -1,14 +1,14 @@
 const jwt = require('jsonwebtoken');
 const validateImageRequest = require('~/server/middleware/validateImageRequest');
 
-jest.mock('~/server/services/Config/getAppConfig', () => ({
+jest.mock('~/server/services/Config/app', () => ({
   getAppConfig: jest.fn(),
 }));
 
 describe('validateImageRequest middleware', () => {
   let req, res, next;
   const validObjectId = '65cfb246f7ecadb8b1e8036b';
-  const { getAppConfig } = require('~/server/services/Config/getAppConfig');
+  const { getAppConfig } = require('~/server/services/Config/app');
 
   beforeEach(() => {
     jest.clearAllMocks();

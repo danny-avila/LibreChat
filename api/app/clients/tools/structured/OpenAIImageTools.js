@@ -9,8 +9,8 @@ const { logAxiosError } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 const { ContentTypes, EImageOutputType } = require('librechat-data-provider');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
-const { getAppConfig } = require('~/server/services/Config');
-const { extractBaseURL } = require('~/utils');
+const { getAppConfig } = require('~/server/services/Config/app');
+const extractBaseURL = require('~/utils/extractBaseURL');
 const { getFiles } = require('~/models/File');
 
 /** Default descriptions for image generation tool  */
@@ -122,7 +122,7 @@ function createAbortHandler() {
  * @param {string} fields.IMAGE_GEN_OAI_API_KEY - The OpenAI API key
  * @param {boolean} [fields.override] - Whether to override the API key check, necessary for app initialization
  * @param {MongoFile[]} [fields.imageFiles] - The images to be used for editing
- * @returns {Array} - Array of image tools
+ * @returns {Promise<StructuredTool[]>} - Array of image tools
  */
 async function createOpenAIImageTools(fields = {}) {
   /** @type {boolean} Used to initialize the Tool without necessary variables. */

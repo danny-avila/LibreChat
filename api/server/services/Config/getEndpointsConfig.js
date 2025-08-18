@@ -8,7 +8,7 @@ const {
 const loadDefaultEndpointsConfig = require('./loadDefaultEConfig');
 const loadConfigEndpoints = require('./loadConfigEndpoints');
 const getLogStores = require('~/cache/getLogStores');
-const { getAppConfig } = require('./getAppConfig');
+const { getAppConfig } = require('./app');
 
 /**
  *

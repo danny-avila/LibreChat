@@ -7,10 +7,10 @@ const {
   parseCompactConvo,
 } = require('librechat-data-provider');
 const azureAssistants = require('~/server/services/Endpoints/azureAssistants');
-const { getAppConfig } = require('~/server/services/Config/getAppConfig');
 const assistants = require('~/server/services/Endpoints/assistants');
 const { processFiles } = require('~/server/services/Files/process');
 const anthropic = require('~/server/services/Endpoints/anthropic');
+const { getAppConfig } = require('~/server/services/Config/app');
 const bedrock = require('~/server/services/Endpoints/bedrock');
 const openAI = require('~/server/services/Endpoints/openAI');
 const agents = require('~/server/services/Endpoints/agents');

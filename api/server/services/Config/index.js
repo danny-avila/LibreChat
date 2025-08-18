@@ -1,4 +1,4 @@
-const getAppConfig = require('./getAppConfig');
+const appConfig = require('./app');
 const { config } = require('./EndpointService');
 const getCachedTools = require('./getCachedTools');
 const getCustomConfig = require('./getCustomConfig');
@@ -16,7 +16,7 @@ module.exports = {
   loadDefaultModels,
   loadOverrideConfig,
   loadAsyncEndpoints,
-  ...getAppConfig,
+  ...appConfig,
   ...getCachedTools,
   ...getCustomConfig,
   ...getEndpointsConfig,
