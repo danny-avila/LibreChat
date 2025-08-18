@@ -57,7 +57,9 @@ async function saveMessage(req, params, metadata) {
 
     if (req?.body?.isTemporary) {
       try {
-        const appConfig = await getAppConfig();
+        const appConfig = await getAppConfig({
+          role: req.user.role,
+        });
         update.expiredAt = createTempChatExpirationDate(appConfig?.interfaceConfig);
       } catch (err) {
         logger.error('Error creating temporary chat expiration date:', err);
