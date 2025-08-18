@@ -1,8 +1,7 @@
 const { Constants } = require('librechat-data-provider');
-const { getCustomConfig, getCachedTools, getAppConfig } = require('~/server/services/Config');
+const { getCachedTools, getAppConfig } = require('~/server/services/Config');
 const { getLogStores } = require('~/cache');
 
-// Mock the dependencies
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
     debug: jest.fn(),
@@ -11,7 +10,6 @@ jest.mock('@librechat/data-schemas', () => ({
 }));
 
 jest.mock('~/server/services/Config', () => ({
-  getCustomConfig: jest.fn(),
   getCachedTools: jest.fn(),
   getAppConfig: jest.fn(),
 }));
@@ -162,7 +160,6 @@ describe('PluginController', () => {
       getCachedTools.mockResolvedValueOnce(mockUserTools);
       convertMCPToolsToPlugins.mockReturnValue(mockConvertedPlugins);
       filterUniquePlugins.mockImplementation((plugins) => plugins);
-      getCustomConfig.mockResolvedValue(null);
 
       await getAvailableTools(mockReq, mockRes);
 
@@ -184,7 +181,6 @@ describe('PluginController', () => {
       getCachedTools.mockResolvedValueOnce({});
       convertMCPToolsToPlugins.mockReturnValue(mockUserPlugins);
       filterUniquePlugins.mockReturnValue([...mockUserPlugins, ...mockManifestPlugins]);
-      getCustomConfig.mockResolvedValue(null);
 
       await getAvailableTools(mockReq, mockRes);
 
@@ -203,7 +199,6 @@ describe('PluginController', () => {
       convertMCPToolsToPlugins.mockReturnValue([]);
       filterUniquePlugins.mockReturnValue([mockPlugin]);
       checkPluginAuth.mockReturnValue(true);
-      getCustomConfig.mockResolvedValue(null);
 
       // Mock getCachedTools second call to return tool definitions
       getCachedTools.mockResolvedValueOnce({}).mockResolvedValueOnce({ tool1: true });
@@ -227,7 +222,6 @@ describe('PluginController', () => {
       filterUniquePlugins.mockReturnValue([mockToolkit]);
       checkPluginAuth.mockReturnValue(false);
       getToolkitKey.mockReturnValue('toolkit1');
-      getCustomConfig.mockResolvedValue(null);
 
       // Mock getCachedTools second call to return tool definitions
       getCachedTools.mockResolvedValueOnce({}).mockResolvedValueOnce({
@@ -243,7 +237,6 @@ describe('PluginController', () => {
   describe('plugin.icon behavior', () => {
     const callGetAvailableToolsWithMCPServer = async (serverConfig) => {
       mockCache.get.mockResolvedValue(null);
-      getCustomConfig.mockResolvedValue(null);
 
       const functionTools = {
         [`test-tool${Constants.mcp_delimiter}test-server`]: {
@@ -299,8 +292,8 @@ describe('PluginController', () => {
 
   describe('helper function integration', () => {
     it('should properly handle MCP tools with custom user variables', async () => {
-      const customConfig = {
-        mcpServers: {
+      const appConfig = {
+        mcpConfig: {
           'test-server': {
             customUserVars: {
               API_KEY: { title: 'API Key', description: 'Your API key' },
@@ -327,7 +320,7 @@ describe('PluginController', () => {
       require('~/config').getMCPManager.mockReturnValue(mockMCPManager);
 
       mockCache.get.mockResolvedValue(null);
-      getCustomConfig.mockResolvedValue(customConfig);
+      getAppConfig.mockResolvedValue(appConfig);
 
       // First call returns user tools (empty in this case)
       getCachedTools.mockResolvedValueOnce({});
@@ -387,7 +380,6 @@ describe('PluginController', () => {
       getCachedTools.mockResolvedValue(null);
       convertMCPToolsToPlugins.mockReturnValue(undefined);
       filterUniquePlugins.mockImplementation((plugins) => plugins || []);
-      getCustomConfig.mockResolvedValue(null);
 
       await getAvailableTools(mockReq, mockRes);
 
@@ -402,7 +394,6 @@ describe('PluginController', () => {
       getCachedTools.mockResolvedValue(undefined);
       convertMCPToolsToPlugins.mockReturnValue(undefined);
       filterUniquePlugins.mockImplementation((plugins) => plugins || []);
-      getCustomConfig.mockResolvedValue(null);
       checkPluginAuth.mockReturnValue(false);
 
       // Mock getCachedTools to return undefined for both calls
@@ -440,7 +431,6 @@ describe('PluginController', () => {
       getCachedTools.mockResolvedValueOnce({}).mockResolvedValueOnce({});
       convertMCPToolsToPlugins.mockReturnValue([]);
       filterUniquePlugins.mockImplementation((plugins) => plugins || []);
-      getCustomConfig.mockResolvedValue(null);
       checkPluginAuth.mockReturnValue(true);
 
       await getAvailableTools(mockReq, mockRes);
@@ -467,12 +457,16 @@ describe('PluginController', () => {
       // Mock the MCP manager to return server config without customUserVars
       const mockMCPManager = {
         loadManifestTools: jest.fn().mockResolvedValue([]),
-        getRawConfig: jest.fn(),
+        getRawConfig: jest.fn().mockReturnValue(customConfig.mcpServers['test-server']),
       };
       require('~/config').getMCPManager.mockReturnValue(mockMCPManager);
 
       mockCache.get.mockResolvedValue(null);
-      getCustomConfig.mockResolvedValue(customConfig);
+      getAppConfig.mockResolvedValue({
+        mcpConfig: customConfig.mcpServers,
+        filteredTools: [],
+        includedTools: [],
+      });
       getCachedTools.mockResolvedValueOnce(mockUserTools);
 
       const mockPlugin = {
@@ -525,7 +519,6 @@ describe('PluginController', () => {
       filterUniquePlugins.mockReturnValue([mockToolkit]);
       checkPluginAuth.mockReturnValue(false);
       getToolkitKey.mockReturnValue(undefined);
-      getCustomConfig.mockResolvedValue(null);
 
       // Mock getCachedTools second call to return null
       getCachedTools.mockResolvedValueOnce({}).mockResolvedValueOnce(null);

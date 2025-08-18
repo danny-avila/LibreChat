@@ -5,7 +5,7 @@ const { getAppConfig } = require('./app');
 
 jest.mock('~/server/services/ModelService');
 jest.mock('./getCustomConfig');
-jest.mock('./getAppConfig');
+jest.mock('./app');
 
 const exampleConfig = {
   endpoints: {

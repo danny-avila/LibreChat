@@ -134,49 +134,53 @@ describe('AppService', () => {
 
     expect(process.env.CDN_PROVIDER).toEqual('testStrategy');
 
-    expect(setAppConfig).toHaveBeenCalledWith({
-      config: expect.objectContaining({
+    expect(setAppConfig).toHaveBeenCalledWith(
+      expect.objectContaining({
+        config: expect.objectContaining({
+          fileStrategy: 'testStrategy',
+        }),
+        registration: expect.objectContaining({
+          socialLogins: ['testLogin'],
+        }),
         fileStrategy: 'testStrategy',
+        interfaceConfig: expect.objectContaining({
+          endpointsMenu: true,
+          modelSelect: true,
+          parameters: true,
+          sidePanel: true,
+          presets: true,
+        }),
+        mcpConfig: null,
+        turnstileConfig: mockedTurnstileConfig,
+        modelSpecs: undefined,
+        paths: expect.anything(),
+        ocr: expect.anything(),
+        imageOutputType: expect.any(String),
+        fileConfig: undefined,
+        secureImageLinks: undefined,
+        balance: { enabled: true },
+        filteredTools: undefined,
+        includedTools: undefined,
+        webSearch: expect.objectContaining({
+          safeSearch: 1,
+          jinaApiKey: '${JINA_API_KEY}',
+          cohereApiKey: '${COHERE_API_KEY}',
+          serperApiKey: '${SERPER_API_KEY}',
+          searxngApiKey: '${SEARXNG_API_KEY}',
+          firecrawlApiKey: '${FIRECRAWL_API_KEY}',
+          firecrawlApiUrl: '${FIRECRAWL_API_URL}',
+          searxngInstanceUrl: '${SEARXNG_INSTANCE_URL}',
+        }),
+        memory: undefined,
+        agents: expect.objectContaining({
+          disableBuilder: false,
+          capabilities: expect.arrayContaining([...defaultAgentCapabilities]),
+          maxCitations: 30,
+          maxCitationsPerFile: 7,
+          minRelevanceScore: 0.45,
+        }),
       }),
-      socialLogins: ['testLogin'],
-      fileStrategy: 'testStrategy',
-      interfaceConfig: expect.objectContaining({
-        endpointsMenu: true,
-        modelSelect: true,
-        parameters: true,
-        sidePanel: true,
-        presets: true,
-      }),
-      mcpConfig: null,
-      turnstileConfig: mockedTurnstileConfig,
-      modelSpecs: undefined,
-      paths: expect.anything(),
-      ocr: expect.anything(),
-      imageOutputType: expect.any(String),
-      fileConfig: undefined,
-      secureImageLinks: undefined,
-      balance: { enabled: true },
-      filteredTools: undefined,
-      includedTools: undefined,
-      webSearch: {
-        safeSearch: 1,
-        jinaApiKey: '${JINA_API_KEY}',
-        cohereApiKey: '${COHERE_API_KEY}',
-        serperApiKey: '${SERPER_API_KEY}',
-        searxngApiKey: '${SEARXNG_API_KEY}',
-        firecrawlApiKey: '${FIRECRAWL_API_KEY}',
-        firecrawlApiUrl: '${FIRECRAWL_API_URL}',
-        searxngInstanceUrl: '${SEARXNG_INSTANCE_URL}',
-      },
-      memory: undefined,
-      agents: {
-        disableBuilder: false,
-        capabilities: expect.arrayContaining([...defaultAgentCapabilities]),
-        maxCitations: 30,
-        maxCitationsPerFile: 7,
-        minRelevanceScore: 0.45,
-      },
-    });
+    );
   });
 
   it('should log a warning if the config version is outdated', async () => {
@@ -261,6 +265,8 @@ describe('AppService', () => {
       adminFilter: undefined,
       adminIncluded: undefined,
       directory: expect.anything(),
+      imageOutputType: expect.any(String),
+      fileStrategy: expect.any(String),
     });
 
     // Verify setCachedTools was called with the tools
@@ -818,7 +824,9 @@ describe('AppService updating app config and issuing warnings', () => {
         paths: expect.anything(),
         config: {},
         fileStrategy: FileSources.local,
-        socialLogins: defaultSocialLogins,
+        registration: expect.objectContaining({
+          socialLogins: defaultSocialLogins,
+        }),
         balance: expect.objectContaining({
           enabled: false,
           startBalance: undefined,
@@ -850,7 +858,9 @@ describe('AppService updating app config and issuing warnings', () => {
         paths: expect.anything(),
         config: customConfig,
         fileStrategy: customConfig.fileStrategy,
-        socialLogins: customConfig.registration.socialLogins,
+        registration: expect.objectContaining({
+          socialLogins: customConfig.registration.socialLogins,
+        }),
         balance: customConfig.balance,
       }),
     );

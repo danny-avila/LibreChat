@@ -338,11 +338,11 @@ describe('Multer Configuration', () => {
     });
 
     it('should use real config merging', async () => {
-      const { getCustomConfig } = require('~/server/services/Config');
+      const { getAppConfig } = require('~/server/services/Config');
 
       const multerInstance = await createMulterInstance();
 
-      expect(getCustomConfig).toHaveBeenCalled();
+      expect(getAppConfig).toHaveBeenCalled();
       expect(multerInstance).toBeDefined();
     });
 
@@ -557,25 +557,28 @@ describe('Multer Configuration', () => {
     });
 
     it('should properly integrate real fileConfig with custom endpoints', async () => {
-      const { getCustomConfig } = require('~/server/services/Config');
+      const { getAppConfig } = require('~/server/services/Config');
 
-      // Mock a custom config with additional endpoints
-      getCustomConfig.mockResolvedValueOnce({
+      // Mock appConfig with fileConfig
+      getAppConfig.mockResolvedValueOnce({
+        paths: {
+          uploads: tempDir,
+        },
         fileConfig: {
           endpoints: {
             anthropic: {
               supportedMimeTypes: ['text/plain', 'image/png'],
             },
           },
-          serverFileSizeLimit: 20, // 20 MB
+          serverFileSizeLimit: 20971520, // 20 MB in bytes (mergeFileConfig converts)
         },
       });
 
       const multerInstance = await createMulterInstance();
       expect(multerInstance).toBeDefined();
 
-      // Verify that getCustomConfig was called (we can't spy on the actual merge function easily)
-      expect(getCustomConfig).toHaveBeenCalled();
+      // Verify that getAppConfig was called
+      expect(getAppConfig).toHaveBeenCalled();
     });
   });
 });

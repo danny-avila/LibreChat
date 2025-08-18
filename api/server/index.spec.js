@@ -5,7 +5,6 @@ const mongoose = require('mongoose');
 
 jest.mock('~/server/services/Config', () => ({
   loadCustomConfig: jest.fn(() => Promise.resolve({})),
-  getCustomConfig: jest.fn(() => Promise.resolve({})),
   setAppConfig: jest.fn(),
   getAppConfig: jest.fn().mockResolvedValue({
     paths: {
