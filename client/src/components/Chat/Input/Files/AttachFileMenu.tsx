@@ -110,7 +110,11 @@ const AttachFileMenu = ({
           label: localize('com_ui_upload_provider'),
           onClick: () => {
             setToolResource(EToolResources.direct_attach);
-            onAction(endpoint === EModelEndpoint.google ? 'google_multimodal' : 'multimodal');
+            onAction(
+              (agent?.provider ?? endpoint) === EModelEndpoint.google
+                ? 'google_multimodal'
+                : 'multimodal',
+            );
           },
           icon: <FileImageIcon className="icon-md" />,
         });
