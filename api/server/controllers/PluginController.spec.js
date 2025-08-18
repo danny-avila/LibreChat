@@ -23,6 +23,7 @@ jest.mock('~/server/services/ToolService', () => ({
 jest.mock('~/config', () => ({
   getMCPManager: jest.fn(() => ({
     loadManifestTools: jest.fn().mockResolvedValue([]),
+    getRawConfig: jest.fn(),
   })),
   getFlowStateManager: jest.fn(),
 }));
@@ -167,7 +168,7 @@ describe('PluginController', () => {
 
       expect(convertMCPToolsToPlugins).toHaveBeenCalledWith({
         functionTools: mockUserTools,
-        customConfig: null,
+        mcpManager: expect.any(Object),
       });
     });
 
@@ -240,9 +241,9 @@ describe('PluginController', () => {
   });
 
   describe('plugin.icon behavior', () => {
-    const callGetAvailableToolsWithMCPServer = async (mcpServers) => {
+    const callGetAvailableToolsWithMCPServer = async (serverConfig) => {
       mockCache.get.mockResolvedValue(null);
-      getCustomConfig.mockResolvedValue({ mcpServers });
+      getCustomConfig.mockResolvedValue(null);
 
       const functionTools = {
         [`test-tool${Constants.mcp_delimiter}test-server`]: {
@@ -254,10 +255,17 @@ describe('PluginController', () => {
         name: 'test-tool',
         pluginKey: `test-tool${Constants.mcp_delimiter}test-server`,
         description: 'A test tool',
-        icon: mcpServers['test-server']?.iconPath,
+        icon: serverConfig?.iconPath,
         authenticated: true,
         authConfig: [],
       };
+
+      // Mock the MCP manager to return the server config
+      const mockMCPManager = {
+        loadManifestTools: jest.fn().mockResolvedValue([]),
+        getRawConfig: jest.fn().mockReturnValue(serverConfig),
+      };
+      require('~/config').getMCPManager.mockReturnValue(mockMCPManager);
 
       getCachedTools.mockResolvedValueOnce(functionTools);
       convertMCPToolsToPlugins.mockReturnValue([mockConvertedPlugin]);
@@ -275,20 +283,16 @@ describe('PluginController', () => {
     };
 
     it('should set plugin.icon when iconPath is defined', async () => {
-      const mcpServers = {
-        'test-server': {
-          iconPath: '/path/to/icon.png',
-        },
+      const serverConfig = {
+        iconPath: '/path/to/icon.png',
       };
-      const testTool = await callGetAvailableToolsWithMCPServer(mcpServers);
+      const testTool = await callGetAvailableToolsWithMCPServer(serverConfig);
       expect(testTool.icon).toBe('/path/to/icon.png');
     });
 
     it('should set plugin.icon to undefined when iconPath is not defined', async () => {
-      const mcpServers = {
-        'test-server': {},
-      };
-      const testTool = await callGetAvailableToolsWithMCPServer(mcpServers);
+      const serverConfig = {};
+      const testTool = await callGetAvailableToolsWithMCPServer(serverConfig);
       expect(testTool.icon).toBeUndefined();
     });
   });
@@ -318,6 +322,7 @@ describe('PluginController', () => {
       // Mock the MCP manager to return tools
       const mockMCPManager = {
         loadManifestTools: jest.fn().mockResolvedValue(mcpManagerTools),
+        getRawConfig: jest.fn(),
       };
       require('~/config').getMCPManager.mockReturnValue(mockMCPManager);
 
@@ -388,7 +393,7 @@ describe('PluginController', () => {
 
       expect(convertMCPToolsToPlugins).toHaveBeenCalledWith({
         functionTools: null,
-        customConfig: null,
+        mcpManager: expect.any(Object),
       });
     });
 
@@ -408,7 +413,7 @@ describe('PluginController', () => {
 
       expect(convertMCPToolsToPlugins).toHaveBeenCalledWith({
         functionTools: undefined,
-        customConfig: null,
+        mcpManager: expect.any(Object),
       });
     });
 
@@ -458,6 +463,13 @@ describe('PluginController', () => {
           function: { name: 'tool1', description: 'Tool 1' },
         },
       };
+
+      // Mock the MCP manager to return server config without customUserVars
+      const mockMCPManager = {
+        loadManifestTools: jest.fn().mockResolvedValue([]),
+        getRawConfig: jest.fn(),
+      };
+      require('~/config').getMCPManager.mockReturnValue(mockMCPManager);
 
       mockCache.get.mockResolvedValue(null);
       getCustomConfig.mockResolvedValue(customConfig);

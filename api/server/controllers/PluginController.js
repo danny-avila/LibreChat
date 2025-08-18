@@ -106,7 +106,9 @@ const getAvailableTools = async (req, res) => {
     const cache = getLogStores(CacheKeys.CONFIG_STORE);
     const cachedToolsArray = await cache.get(CacheKeys.TOOLS);
     const cachedUserTools = await getCachedTools({ userId });
-    const userPlugins = convertMCPToolsToPlugins({ functionTools: cachedUserTools, customConfig });
+
+    const mcpManager = getMCPManager();
+    const userPlugins = convertMCPToolsToPlugins({ functionTools: cachedUserTools, mcpManager });
 
     if (cachedToolsArray != null && userPlugins != null) {
       const dedupedTools = filterUniquePlugins([...userPlugins, ...cachedToolsArray]);
@@ -117,7 +119,6 @@ const getAvailableTools = async (req, res) => {
     let pluginManifest = availableTools;
     if (customConfig?.mcpServers != null) {
       try {
-        const mcpManager = getMCPManager();
         const flowsCache = getLogStores(CacheKeys.FLOWS);
         const flowManager = flowsCache ? getFlowStateManager(flowsCache) : null;
         const serverToolsCallback = createServerToolsCallback();
