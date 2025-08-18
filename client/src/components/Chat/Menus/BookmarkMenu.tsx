@@ -5,17 +5,15 @@ import { BookmarkPlusIcon } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Constants, QueryKeys } from 'librechat-data-provider';
 import { BookmarkFilledIcon, BookmarkIcon } from '@radix-ui/react-icons';
+import { DropdownPopup, TooltipAnchor, Spinner, useToastContext } from '@librechat/client';
 import type { TConversationTag } from 'librechat-data-provider';
 import type { FC } from 'react';
 import type * as t from '~/common';
 import { useConversationTagsQuery, useTagConversationMutation } from '~/data-provider';
-import { DropdownPopup, TooltipAnchor } from '~/components/ui';
 import { BookmarkContext } from '~/Providers/BookmarkContext';
 import { BookmarkEditDialog } from '~/components/Bookmarks';
 import { useBookmarkSuccess, useLocalize } from '~/hooks';
 import { NotificationSeverity } from '~/common';
-import { useToastContext } from '~/Providers';
-import { Spinner } from '~/components';
 import { cn, logger } from '~/utils';
 import store from '~/store';
 
@@ -157,8 +155,9 @@ const BookmarkMenu: FC = () => {
   return (
     <BookmarkContext.Provider value={{ bookmarks: data || [] }}>
       <DropdownPopup
-        focusLoop={true}
+        portal={true}
         menuId={menuId}
+        focusLoop={true}
         isOpen={isMenuOpen}
         unmountOnHide={true}
         setIsOpen={setIsMenuOpen}

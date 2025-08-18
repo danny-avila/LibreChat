@@ -1,10 +1,10 @@
-import { ListFilter, User, Share2 } from 'lucide-react';
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
-import { useRecoilValue, useSetRecoilState } from 'recoil';
+import { ListFilter, User, Share2 } from 'lucide-react';
 import { SystemCategories } from 'librechat-data-provider';
-import { usePromptGroupsNav, useLocalize, useCategories } from '~/hooks';
-import { Dropdown, AnimatedSearchInput } from '~/components/ui';
+import { useRecoilValue, useSetRecoilState } from 'recoil';
+import { Dropdown, AnimatedSearchInput } from '@librechat/client';
 import type { Option } from '~/common';
+import { usePromptGroupsNav, useLocalize, useCategories } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
 
@@ -44,11 +44,11 @@ export default function FilterPrompts({
     const categoryOptions = categories
       ? [...categories]
       : [
-        {
-          value: SystemCategories.NO_CATEGORY,
-          label: localize('com_ui_no_category'),
-        },
-      ];
+          {
+            value: SystemCategories.NO_CATEGORY,
+            label: localize('com_ui_no_category'),
+          },
+        ];
 
     return [...baseOptions, ...categoryOptions];
   }, [categories, localize]);

@@ -8,6 +8,7 @@ jest.mock('winston', () => {
   mockFormatFunction.printf = jest.fn();
   mockFormatFunction.errors = jest.fn();
   mockFormatFunction.splat = jest.fn();
+  mockFormatFunction.json = jest.fn();
   return {
     format: mockFormatFunction,
     createLogger: jest.fn().mockReturnValue({
@@ -19,6 +20,7 @@ jest.mock('winston', () => {
     transports: {
       Console: jest.fn(),
       DailyRotateFile: jest.fn(),
+      File: jest.fn(),
     },
     addColors: jest.fn(),
   };
@@ -39,10 +41,7 @@ jest.mock('winston-daily-rotate-file', () => {
 });
 
 jest.mock('~/config', () => {
-  const actualModule = jest.requireActual('~/config');
   return {
-    sendEvent: actualModule.sendEvent,
-    createAxiosInstance: actualModule.createAxiosInstance,
     logger: {
       info: jest.fn(),
       warn: jest.fn(),

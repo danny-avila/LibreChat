@@ -1,11 +1,11 @@
 import { useMemo } from 'react';
 import { SettingsIcon } from 'lucide-react';
+import { TooltipAnchor, Spinner } from '@librechat/client';
 import { EModelEndpoint, isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
 import type { Endpoint } from '~/common';
 import { CustomMenu as Menu, CustomMenuItem as MenuItem } from '../CustomMenu';
 import { useModelSelectorContext } from '../ModelSelectorContext';
 import { renderEndpointModels } from './EndpointModelItem';
-import { TooltipAnchor, Spinner } from '~/components';
 import { filterModels } from '../utils';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
@@ -102,12 +102,12 @@ export function EndpointItem({ endpoint }: EndpointItemProps) {
   if (endpoint.hasModels) {
     const filteredModels = searchValue
       ? filterModels(
-        endpoint,
-        (endpoint.models || []).map((model) => model.name),
-        searchValue,
-        agentsMap,
-        assistantsMap,
-      )
+          endpoint,
+          (endpoint.models || []).map((model) => model.name),
+          searchValue,
+          agentsMap,
+          assistantsMap,
+        )
       : null;
     const placeholder =
       isAgentsEndpoint(endpoint.value) || isAssistantsEndpoint(endpoint.value)

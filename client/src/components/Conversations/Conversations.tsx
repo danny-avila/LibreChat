@@ -1,11 +1,11 @@
 import { useMemo, memo, type FC, useCallback } from 'react';
 import throttle from 'lodash/throttle';
 import { parseISO, isToday } from 'date-fns';
+import { Spinner, useMediaQuery } from '@librechat/client';
 import { List, AutoSizer, CellMeasurer, CellMeasurerCache } from 'react-virtualized';
-import { useLocalize, TranslationKeys, useMediaQuery } from '~/hooks';
 import { TConversation } from 'librechat-data-provider';
+import { useLocalize, TranslationKeys } from '~/hooks';
 import { groupConversationsByDate } from '~/utils';
-import { Spinner } from '~/components/svg';
 import Convo from './Convo';
 
 interface ConversationsProps {
@@ -23,7 +23,7 @@ const LoadingSpinner = memo(() => {
 
   return (
     <div className="mx-auto mt-2 flex items-center justify-center gap-2">
-      <Spinner className="h-4 w-4 text-text-primary" />
+      <Spinner className="text-text-primary" />
       <span className="animate-pulse text-text-primary">{localize('com_ui_loading')}</span>
     </div>
   );

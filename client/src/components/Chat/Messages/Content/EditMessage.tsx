@@ -1,10 +1,10 @@
 import { useRef, useEffect, useCallback } from 'react';
-import { useRecoilState, useRecoilValue } from 'recoil';
 import { useForm } from 'react-hook-form';
+import { useRecoilState, useRecoilValue } from 'recoil';
+import { TextareaAutosize, TooltipAnchor } from '@librechat/client';
 import { useUpdateMessageMutation } from 'librechat-data-provider/react-query';
 import type { TEditProps } from '~/common';
 import { useChatContext, useAddedChatContext } from '~/Providers';
-import { TextareaAutosize, TooltipAnchor } from '~/components/ui';
 import { cn, removeFocusRings } from '~/utils';
 import { useLocalize } from '~/hooks';
 import Container from './Container';
@@ -60,7 +60,6 @@ const EditMessage = ({
           conversationId,
         },
         {
-          isResubmission: true,
           overrideFiles: message.files,
         },
       );

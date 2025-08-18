@@ -322,7 +322,6 @@
   "com_nav_delete_cache_storage": "TTS gyorsítótár tárolásának törlése",
   "com_nav_delete_data_info": "Minden adata törlésre kerül.",
   "com_nav_delete_warning": "FIGYELEM: Ez véglegesen törli fiókját.",
-  "com_nav_edit_chat_badges": "Csevegőjelvények szerkesztése",
   "com_nav_enable_cache_tts": "TTS gyorsítótár engedélyezése",
   "com_nav_enable_cloud_browser_voice": "Felhőalapú hangok használata",
   "com_nav_enabled": "Engedélyezve",
@@ -409,7 +408,6 @@
   "com_nav_search_placeholder": "Üzenetek keresése",
   "com_nav_send_message": "Üzenet küldése",
   "com_nav_setting_account": "Fiók",
-  "com_nav_setting_beta": "Béta funkciók",
   "com_nav_setting_chat": "Csevegés",
   "com_nav_setting_data": "Adatvezérlők",
   "com_nav_setting_general": "Általános",
@@ -627,7 +625,6 @@
   "com_ui_enter": "Enter",
   "com_ui_enter_api_key": "API kulcs megadása",
   "com_ui_enter_openapi_schema": "Adja meg itt az OpenAPI sémáját",
-  "com_ui_enter_var": "{{0}} megadása",
   "com_ui_error": "Hiba",
   "com_ui_error_connection": "Hiba a szerverhez való csatlakozáskor, próbálja meg frissíteni az oldalt.",
   "com_ui_error_save_admin_settings": "Hiba történt az adminisztrátori beállítások mentése során.",
@@ -680,7 +677,6 @@
   "com_ui_import_conversation_info": "Beszélgetések importálása JSON fájlból",
   "com_ui_import_conversation_success": "Beszélgetések sikeresen importálva",
   "com_ui_include_shadcnui": "shadcn/ui komponensek utasításainak belefoglalása",
-  "com_ui_include_shadcnui_agent": "shadcn/ui utasítások belefoglalása",
   "com_ui_input": "Bevitel",
   "com_ui_instructions": "Utasítások",
   "com_ui_late_night": "Kellemes éjszakát",
@@ -836,7 +832,6 @@
   "com_ui_use_2fa_code": "2FA kód használata helyette",
   "com_ui_use_backup_code": "Biztonsági mentési kód használata helyette",
   "com_ui_use_micrphone": "Mikrofon használata",
-  "com_ui_use_prompt": "Prompt használata",
   "com_ui_used": "Használt",
   "com_ui_variables": "Változók",
   "com_ui_variables_info": "Használjon dupla kapcsos zárójeleket a szövegben változók létrehozásához, pl. `{{példa változó}}`, amelyeket később a prompt használatakor kitölthet.",
@@ -848,6 +843,5 @@
   "com_ui_write": "Írás",
   "com_ui_yes": "Igen",
   "com_ui_zoom": "Zoom",
-  "com_user_message": "Ön",
-  "com_warning_resubmit_unsupported": "Az AI üzenet újraküldése nem támogatott ennél a végpontnál."
+  "com_user_message": "Ön"
 }

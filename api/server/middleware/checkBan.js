@@ -1,12 +1,12 @@
 const { Keyv } = require('keyv');
 const uap = require('ua-parser-js');
+const { logger } = require('@librechat/data-schemas');
 const { ViolationTypes } = require('librechat-data-provider');
 const { isEnabled, removePorts } = require('~/server/utils');
 const keyvMongo = require('~/cache/keyvMongo');
 const denyRequest = require('./denyRequest');
 const { getLogStores } = require('~/cache');
 const { findUser } = require('~/models');
-const { logger } = require('~/config');
 
 const banCache = new Keyv({ store: keyvMongo, namespace: ViolationTypes.BAN, ttl: 0 });
 const message = 'Your account has been temporarily banned due to violations of our service.';
@@ -18,7 +18,6 @@ const message = 'Your account has been temporarily banned due to violations of o
  * @function
  * @param {Object} req - Express Request object.
  * @param {Object} res - Express Response object.
- * @param {String} errorMessage - Error message to be displayed in case of /api/ask or /api/edit request.
  *
  * @returns {Promise<Object>} - Returns a Promise which when resolved sends a response status of 403 with a specific message if request is not of api/ask or api/edit types. If it is, calls `denyRequest()` function.
  */
@@ -135,6 +134,7 @@ const checkBan = async (req, res, next = () => {}) => {
     return await banResponse(req, res);
   } catch (error) {
     logger.error('Error in checkBan middleware:', error);
+    return next(error);
   }
 };
 

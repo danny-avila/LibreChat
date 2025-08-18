@@ -1,8 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { OptionTypes } from 'librechat-data-provider';
 import type { DynamicSettingProps } from 'librechat-data-provider';
-import { Label, Checkbox, HoverCard, HoverCardTrigger } from '~/components/ui';
-import { TranslationKeys, useLocalize, useParameterEffects } from '~/hooks';
+import { Label, Checkbox, HoverCard, HoverCardTrigger } from '@librechat/client';
+import { TranslationKeys, useLocalize, useDebouncedInput, useParameterEffects } from '~/hooks';
 import { useChatContext } from '~/Providers';
 import OptionHover from './OptionHover';
 import { ESide } from '~/common';
@@ -23,23 +23,20 @@ function DynamicCheckbox({
 }: DynamicSettingProps) {
   const localize = useLocalize();
   const { preset } = useChatContext();
-  const [inputValue, setInputValue] = useState<boolean>(!!(defaultValue as boolean | undefined));
+
+  const [setInputValue, inputValue, setLocalValue] = useDebouncedInput<boolean>({
+    optionKey: settingKey,
+    initialValue: optionType !== OptionTypes.Custom ? conversation?.[settingKey] : defaultValue,
+    setter: () => ({}),
+    setOption,
+  });
 
   const selectedValue = useMemo(() => {
-    if (optionType === OptionTypes.Custom) {
-      // TODO: custom logic, add to payload but not to conversation
-      return inputValue;
-    }
-
     return conversation?.[settingKey] ?? defaultValue;
-  }, [conversation, defaultValue, optionType, settingKey, inputValue]);
+  }, [conversation, defaultValue, settingKey]);
 
   const handleCheckedChange = (checked: boolean) => {
-    if (optionType === OptionTypes.Custom) {
-      // TODO: custom logic, add to payload but not to conversation
-      setInputValue(checked);
-      return;
-    }
+    setInputValue(checked);
     setOption(settingKey)(checked);
   };
 
@@ -49,8 +46,7 @@ function DynamicCheckbox({
     defaultValue,
     conversation,
     inputValue,
-    setInputValue,
-    preventDelayedUpdate: true,
+    setInputValue: setLocalValue,
   });
 
   return (
@@ -66,7 +62,7 @@ function DynamicCheckbox({
               htmlFor={`${settingKey}-dynamic-checkbox`}
               className="text-left text-sm font-medium"
             >
-              {labelCode ? localize(label as TranslationKeys) ?? label : label || settingKey}{' '}
+              {labelCode ? (localize(label as TranslationKeys) ?? label) : label || settingKey}{' '}
               {showDefault && (
                 <small className="opacity-40">
                   ({localize('com_endpoint_default')}:{' '}
@@ -85,7 +81,11 @@ function DynamicCheckbox({
         </HoverCardTrigger>
         {description && (
           <OptionHover
-            description={descriptionCode ? localize(description as TranslationKeys) ?? description : description}
+            description={
+              descriptionCode
+                ? (localize(description as TranslationKeys) ?? description)
+                : description
+            }
             side={ESide.Left}
           />
         )}

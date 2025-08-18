@@ -1,12 +1,54 @@
 jest.mock('axios');
 jest.mock('~/cache/getLogStores');
-jest.mock('~/utils/loadYaml');
+jest.mock('@librechat/api', () => ({
+  ...jest.requireActual('@librechat/api'),
+  loadYaml: jest.fn(),
+}));
+jest.mock('librechat-data-provider', () => {
+  const actual = jest.requireActual('librechat-data-provider');
+  return {
+    ...actual,
+    paramSettings: { foo: {}, bar: {}, custom: {} },
+    agentParamSettings: {
+      custom: [],
+      google: [
+        {
+          key: 'pressure',
+          type: 'string',
+          component: 'input',
+        },
+        {
+          key: 'temperature',
+          type: 'number',
+          component: 'slider',
+          default: 0.5,
+          range: {
+            min: 0,
+            max: 2,
+            step: 0.01,
+          },
+        },
+      ],
+    },
+  };
+});
+
+jest.mock('@librechat/data-schemas', () => {
+  return {
+    logger: {
+      info: jest.fn(),
+      warn: jest.fn(),
+      debug: jest.fn(),
+      error: jest.fn(),
+    },
+  };
+});
 
 const axios = require('axios');
+const { loadYaml } = require('@librechat/api');
+const { logger } = require('@librechat/data-schemas');
 const loadCustomConfig = require('./loadCustomConfig');
 const getLogStores = require('~/cache/getLogStores');
-const loadYaml = require('~/utils/loadYaml');
-const { logger } = require('~/config');
 
 describe('loadCustomConfig', () => {
   const mockSet = jest.fn();
@@ -149,5 +191,127 @@ describe('loadCustomConfig', () => {
     expect(logger.info).toHaveBeenCalledWith('Custom config file loaded:');
     expect(logger.info).toHaveBeenCalledWith(JSON.stringify(mockConfig, null, 2));
     expect(logger.debug).toHaveBeenCalledWith('Custom config:', mockConfig);
+  });
+
+  describe('parseCustomParams', () => {
+    const mockConfig = {
+      version: '1.0',
+      cache: false,
+      endpoints: {
+        custom: [
+          {
+            name: 'Google',
+            apiKey: 'user_provided',
+            customParams: {},
+          },
+        ],
+      },
+    };
+
+    async function loadCustomParams(customParams) {
+      mockConfig.endpoints.custom[0].customParams = customParams;
+      loadYaml.mockReturnValue(mockConfig);
+      return await loadCustomConfig();
+    }
+
+    beforeEach(() => {
+      jest.resetAllMocks();
+      process.env.CONFIG_PATH = 'validConfig.yaml';
+    });
+
+    it('returns no error when customParams is undefined', async () => {
+      const result = await loadCustomParams(undefined);
+      expect(result).toEqual(mockConfig);
+    });
+
+    it('returns no error when customParams is valid', async () => {
+      const result = await loadCustomParams({
+        defaultParamsEndpoint: 'google',
+        paramDefinitions: [
+          {
+            key: 'temperature',
+            default: 0.5,
+          },
+        ],
+      });
+      expect(result).toEqual(mockConfig);
+    });
+
+    it('throws an error when paramDefinitions contain unsupported keys', async () => {
+      const malformedCustomParams = {
+        defaultParamsEndpoint: 'google',
+        paramDefinitions: [
+          { key: 'temperature', default: 0.5 },
+          { key: 'unsupportedKey', range: 0.5 },
+        ],
+      };
+      await expect(loadCustomParams(malformedCustomParams)).rejects.toThrow(
+        'paramDefinitions of "Google" endpoint contains invalid key(s). Valid parameter keys are pressure, temperature',
+      );
+    });
+
+    it('throws an error when paramDefinitions is malformed', async () => {
+      const malformedCustomParams = {
+        defaultParamsEndpoint: 'google',
+        paramDefinitions: [
+          {
+            key: 'temperature',
+            type: 'noomba',
+            component: 'inpoot',
+            optionType: 'custom',
+          },
+        ],
+      };
+      await expect(loadCustomParams(malformedCustomParams)).rejects.toThrow(
+        /Custom parameter definitions for "Google" endpoint is malformed:/,
+      );
+    });
+
+    it('throws an error when defaultParamsEndpoint is not provided', async () => {
+      const malformedCustomParams = { defaultParamsEndpoint: undefined };
+      await expect(loadCustomParams(malformedCustomParams)).rejects.toThrow(
+        'defaultParamsEndpoint of "Google" endpoint is invalid. Valid options are foo, bar, custom, google',
+      );
+    });
+
+    it('fills the paramDefinitions with missing values', async () => {
+      const customParams = {
+        defaultParamsEndpoint: 'google',
+        paramDefinitions: [
+          { key: 'temperature', default: 0.7, range: { min: 0.1, max: 0.9, step: 0.1 } },
+          { key: 'pressure', component: 'textarea' },
+        ],
+      };
+
+      const parsedConfig = await loadCustomParams(customParams);
+      const paramDefinitions = parsedConfig.endpoints.custom[0].customParams.paramDefinitions;
+      expect(paramDefinitions).toEqual([
+        {
+          columnSpan: 1,
+          component: 'slider',
+          default: 0.7, // overridden
+          includeInput: true,
+          key: 'temperature',
+          label: 'temperature',
+          optionType: 'custom',
+          range: {
+            // overridden
+            max: 0.9,
+            min: 0.1,
+            step: 0.1,
+          },
+          type: 'number',
+        },
+        {
+          columnSpan: 1,
+          component: 'textarea', // overridden
+          key: 'pressure',
+          label: 'pressure',
+          optionType: 'custom',
+          placeholder: '',
+          type: 'string',
+        },
+      ]);
+    });
   });
 });

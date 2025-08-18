@@ -1,13 +1,13 @@
 import { useState, useMemo, memo } from 'react';
 import { Menu as MenuIcon, Edit as EditIcon, EarthIcon, TextSearch } from 'lucide-react';
-import type { TPromptGroup } from 'librechat-data-provider';
 import {
   DropdownMenu,
   DropdownMenuItem,
   DropdownMenuGroup,
   DropdownMenuContent,
   DropdownMenuTrigger,
-} from '~/components/ui';
+} from '@librechat/client';
+import type { TPromptGroup } from 'librechat-data-provider';
 import { useLocalize, useSubmitMessage, useCustomLink, useAuthContext } from '~/hooks';
 import VariableDialog from '~/components/Prompts/Groups/VariableDialog';
 import PreviewPrompt from '~/components/Prompts/PreviewPrompt';

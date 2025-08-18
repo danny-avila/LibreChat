@@ -1,6 +1,10 @@
 // file deepcode ignore NoRateLimitingForLogin: Rate limiting is handled by the `loginLimiter` middleware
 const express = require('express');
 const passport = require('passport');
+const { isEnabled } = require('@librechat/api');
+const { randomState } = require('openid-client');
+const { logger } = require('@librechat/data-schemas');
+const { ErrorTypes } = require('librechat-data-provider');
 const {
   checkBan,
   logHeaders,
@@ -8,8 +12,7 @@ const {
   setBalanceConfig,
   checkDomainAllowed,
 } = require('~/server/middleware');
-const { setAuthTokens } = require('~/server/services/AuthService');
-const { logger } = require('~/config');
+const { setAuthTokens, setOpenIDAuthTokens } = require('~/server/services/AuthService');
 
 const router = express.Router();
 
@@ -28,7 +31,15 @@ const oauthHandler = async (req, res) => {
     if (req.banned) {
       return;
     }
-    await setAuthTokens(req.user._id, res);
+    if (
+      req.user &&
+      req.user.provider == 'openid' &&
+      isEnabled(process.env.OPENID_REUSE_TOKENS) === true
+    ) {
+      setOpenIDAuthTokens(req.user.tokenset, res);
+    } else {
+      await setAuthTokens(req.user._id, res);
+    }
     res.redirect(domains.client);
   } catch (err) {
     logger.error('Error in setting authentication tokens:', err);
@@ -36,11 +47,13 @@ const oauthHandler = async (req, res) => {
 };
 
 router.get('/error', (req, res) => {
-  // A single error message is pushed by passport when authentication fails.
-  logger.error('Error in OAuth authentication:', { message: req.session.messages.pop() });
+  /** A single error message is pushed by passport when authentication fails. */
+  const errorMessage = req.session?.messages?.pop() || 'Unknown error';
+  logger.error('Error in OAuth authentication:', {
+    message: errorMessage,
+  });
 
-  // Redirect to login page with auth_failed parameter to prevent infinite redirect loops
-  res.redirect(`${domains.client}/login?redirect=false`);
+  res.redirect(`${domains.client}/login?redirect=false&error=${ErrorTypes.AUTH_FAILED}`);
 });
 
 /**
@@ -94,12 +107,12 @@ router.get(
 /**
  * OpenID Routes
  */
-router.get(
-  '/openid',
-  passport.authenticate('openid', {
+router.get('/openid', (req, res, next) => {
+  return passport.authenticate('openid', {
     session: false,
-  }),
-);
+    state: randomState(),
+  })(req, res, next);
+});
 
 router.get(
   '/openid/callback',
@@ -176,6 +189,26 @@ router.post(
     session: false,
   }),
   setBalanceConfig,
+  oauthHandler,
+);
+
+/**
+ * SAML Routes
+ */
+router.get(
+  '/saml',
+  passport.authenticate('saml', {
+    session: false,
+  }),
+);
+
+router.post(
+  '/saml/callback',
+  passport.authenticate('saml', {
+    failureRedirect: `${domains.client}/oauth/error`,
+    failureMessage: true,
+    session: false,
+  }),
   oauthHandler,
 );
 

@@ -4,6 +4,7 @@ const { logger } = require('~/config');
 
 /**
  * @param {ServerRequest} req
+ * @returns {Promise<TModelsConfig>} The models config.
  */
 const getModelsConfig = async (req) => {
   // never caching all models (caching per endpoint+key)

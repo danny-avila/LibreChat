@@ -377,7 +377,6 @@
   "com_nav_search_placeholder": "Mesajları ara",
   "com_nav_send_message": "Mesajı gönder",
   "com_nav_setting_account": "Hesap",
-  "com_nav_setting_beta": "Beta özellikleri",
   "com_nav_setting_chat": "Sohbet",
   "com_nav_setting_data": "Veri kontrolleri",
   "com_nav_setting_general": "Genel",
@@ -552,7 +551,6 @@
   "com_ui_enter": "Gir",
   "com_ui_enter_api_key": "API Anahtarı Girin",
   "com_ui_enter_openapi_schema": "OpenAPI şemanızı buraya girin",
-  "com_ui_enter_var": "{{0}} girin",
   "com_ui_error": "Hata",
   "com_ui_error_connection": "Sunucuya bağlanırken hata oluştu, sayfayı yenilemeyi deneyin.",
   "com_ui_error_save_admin_settings": "Yönetici ayarlarınız kaydedilirken bir hata oluştu.",
@@ -718,7 +716,6 @@
   "com_ui_upload_success": "Dosya başarıyla yüklendi",
   "com_ui_upload_type": "Yükleme Türünü Seç",
   "com_ui_use_micrphone": "Mikrofon kullan",
-  "com_ui_use_prompt": "İstemi kullan",
   "com_ui_variables": "Değişkenler",
   "com_ui_variables_info": "İstemi kullanırken daha sonra doldurmak üzere metninizde çift süslü parantez kullanın, örn. `{{example variable}}`.",
   "com_ui_version_var": "Sürüm {{0}}",
@@ -726,6 +723,5 @@
   "com_ui_view_source": "Kaynak sohbeti görüntüle",
   "com_ui_yes": "Evet",
   "com_ui_zoom": "Yakınlaştır",
-  "com_user_message": "Sen",
-  "com_warning_resubmit_unsupported": "Bu uç nokta için yapay zeka mesajını yeniden gönderme desteklenmiyor."
+  "com_user_message": "Sen"
 }

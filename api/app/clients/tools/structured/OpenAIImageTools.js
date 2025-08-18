@@ -3,13 +3,14 @@ const axios = require('axios');
 const { v4 } = require('uuid');
 const OpenAI = require('openai');
 const FormData = require('form-data');
+const { ProxyAgent } = require('undici');
 const { tool } = require('@langchain/core/tools');
-const { HttpsProxyAgent } = require('https-proxy-agent');
+const { logAxiosError } = require('@librechat/api');
+const { logger } = require('@librechat/data-schemas');
 const { ContentTypes, EImageOutputType } = require('librechat-data-provider');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
-const { logAxiosError, extractBaseURL } = require('~/utils');
+const { extractBaseURL } = require('~/utils');
 const { getFiles } = require('~/models/File');
-const { logger } = require('~/config');
 
 /** Default descriptions for image generation tool  */
 const DEFAULT_IMAGE_GEN_DESCRIPTION = `
@@ -30,7 +31,7 @@ const DEFAULT_IMAGE_EDIT_DESCRIPTION =
 
 When to use \`image_edit_oai\`:
 - The user wants to modify, extend, or remix one **or more** uploaded images, either:
-  - Previously generated, or in the current request (both to be included in the \`image_ids\` array).
+- Previously generated, or in the current request (both to be included in the \`image_ids\` array).
 - Always when the user refers to uploaded images for editing, enhancement, remixing, style transfer, or combining elements.
 - Any current or existing images are to be used as visual guides.
 - If there are any files in the current request, they are more likely than not expected as references for image edit requests.
@@ -64,7 +65,7 @@ const DEFAULT_IMAGE_EDIT_PROMPT_DESCRIPTION = `Describe the changes, enhancement
       Always base this prompt on the most recently uploaded reference images.`;
 
 const displayMessage =
-  'The tool displayed an image. All generated images are already plainly visible, so don\'t repeat the descriptions in detail. Do not list download links as they are available in the UI already. The user may download the images by clicking on them, but do not mention anything about downloading to the user.';
+  "The tool displayed an image. All generated images are already plainly visible, so don't repeat the descriptions in detail. Do not list download links as they are available in the UI already. The user may download the images by clicking on them, but do not mention anything about downloading to the user.";
 
 /**
  * Replaces unwanted characters from the input string
@@ -105,6 +106,12 @@ const getImageGenPromptDescription = () => {
 const getImageEditPromptDescription = () => {
   return process.env.IMAGE_EDIT_OAI_PROMPT_DESCRIPTION || DEFAULT_IMAGE_EDIT_PROMPT_DESCRIPTION;
 };
+
+function createAbortHandler() {
+  return function () {
+    logger.debug('[ImageGenOAI] Image generation aborted');
+  };
+}
 
 /**
  * Creates OpenAI Image tools (generation and editing)
@@ -182,7 +189,10 @@ function createOpenAIImageTools(fields = {}) {
       }
       const clientConfig = { ...closureConfig };
       if (process.env.PROXY) {
-        clientConfig.httpAgent = new HttpsProxyAgent(process.env.PROXY);
+        const proxyAgent = new ProxyAgent(process.env.PROXY);
+        clientConfig.fetchOptions = {
+          dispatcher: proxyAgent,
+        };
       }
 
       /** @type {OpenAI} */
@@ -200,10 +210,18 @@ function createOpenAIImageTools(fields = {}) {
       }
 
       let resp;
+      /** @type {AbortSignal} */
+      let derivedSignal = null;
+      /** @type {() => void} */
+      let abortHandler = null;
+
       try {
-        const derivedSignal = runnableConfig?.signal
-          ? AbortSignal.any([runnableConfig.signal])
-          : undefined;
+        if (runnableConfig?.signal) {
+          derivedSignal = AbortSignal.any([runnableConfig.signal]);
+          abortHandler = createAbortHandler();
+          derivedSignal.addEventListener('abort', abortHandler, { once: true });
+        }
+
         resp = await openai.images.generate(
           {
             model: 'gpt-image-1',
@@ -227,6 +245,10 @@ function createOpenAIImageTools(fields = {}) {
         logAxiosError({ error, message });
         return returnValue(`Something went wrong when trying to generate the image. The OpenAI API may be unavailable:
 Error Message: ${error.message}`);
+      } finally {
+        if (abortHandler && derivedSignal) {
+          derivedSignal.removeEventListener('abort', abortHandler);
+        }
       }
 
       if (!resp) {
@@ -316,7 +338,10 @@ Error Message: ${error.message}`);
 
       const clientConfig = { ...closureConfig };
       if (process.env.PROXY) {
-        clientConfig.httpAgent = new HttpsProxyAgent(process.env.PROXY);
+        const proxyAgent = new ProxyAgent(process.env.PROXY);
+        clientConfig.fetchOptions = {
+          dispatcher: proxyAgent,
+        };
       }
 
       const formData = new FormData();
@@ -408,10 +433,17 @@ Error Message: ${error.message}`);
         headers['Authorization'] = `Bearer ${apiKey}`;
       }
 
+      /** @type {AbortSignal} */
+      let derivedSignal = null;
+      /** @type {() => void} */
+      let abortHandler = null;
+
       try {
-        const derivedSignal = runnableConfig?.signal
-          ? AbortSignal.any([runnableConfig.signal])
-          : undefined;
+        if (runnableConfig?.signal) {
+          derivedSignal = AbortSignal.any([runnableConfig.signal]);
+          abortHandler = createAbortHandler();
+          derivedSignal.addEventListener('abort', abortHandler, { once: true });
+        }
 
         /** @type {import('axios').AxiosRequestConfig} */
         const axiosConfig = {
@@ -420,6 +452,19 @@ Error Message: ${error.message}`);
           signal: derivedSignal,
           baseURL,
         };
+
+        if (process.env.PROXY) {
+          try {
+            const url = new URL(process.env.PROXY);
+            axiosConfig.proxy = {
+              host: url.hostname.replace(/^\[|\]$/g, ''),
+              port: url.port ? parseInt(url.port, 10) : undefined,
+              protocol: url.protocol.replace(':', ''),
+            };
+          } catch (error) {
+            logger.error('Error parsing proxy URL:', error);
+          }
+        }
 
         if (process.env.IMAGE_GEN_OAI_AZURE_API_VERSION && process.env.IMAGE_GEN_OAI_BASEURL) {
           axiosConfig.params = {
@@ -466,6 +511,10 @@ Error Message: ${error.message}`);
         logAxiosError({ error, message });
         return returnValue(`Something went wrong when trying to edit the image. The OpenAI API may be unavailable:
 Error Message: ${error.message || 'Unknown error'}`);
+      } finally {
+        if (abortHandler && derivedSignal) {
+          derivedSignal.removeEventListener('abort', abortHandler);
+        }
       }
     },
     {

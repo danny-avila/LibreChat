@@ -2,20 +2,20 @@ import { useMemo } from 'react';
 import { ChevronLeft } from 'lucide-react';
 import { AgentCapabilities } from 'librechat-data-provider';
 import { useFormContext, Controller } from 'react-hook-form';
-import type { AgentForm, AgentPanelProps } from '~/common';
+import type { AgentForm } from '~/common';
+import { useAgentPanelContext } from '~/Providers';
 import MaxAgentSteps from './MaxAgentSteps';
-import AgentChain from './AgentChain';
 import { useLocalize } from '~/hooks';
+import AgentChain from './AgentChain';
 import { Panel } from '~/common';
 
-export default function AdvancedPanel({
-  agentsConfig,
-  setActivePanel,
-}: Pick<AgentPanelProps, 'setActivePanel' | 'agentsConfig'>) {
+export default function AdvancedPanel() {
   const localize = useLocalize();
   const methods = useFormContext<AgentForm>();
   const { control, watch } = methods;
   const currentAgentId = watch('id');
+
+  const { agentsConfig, setActivePanel } = useAgentPanelContext();
   const chainEnabled = useMemo(
     () => agentsConfig?.capabilities.includes(AgentCapabilities.chain) ?? false,
     [agentsConfig],

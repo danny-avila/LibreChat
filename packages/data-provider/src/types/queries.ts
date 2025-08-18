@@ -101,7 +101,49 @@ export type AllPromptGroupsResponse = t.TPromptGroup[];
 export type ConversationTagsResponse = s.TConversationTag[];
 
 export type VerifyToolAuthParams = { toolId: string };
-export type VerifyToolAuthResponse = { authenticated: boolean; message?: string | s.AuthType };
+export type VerifyToolAuthResponse = {
+  authenticated: boolean;
+  message?: string | s.AuthType;
+  authTypes?: [string, s.AuthType][];
+};
 
 export type GetToolCallParams = { conversationId: string };
 export type ToolCallResults = a.ToolCallResult[];
+
+/* Memories */
+export type TUserMemory = {
+  key: string;
+  value: string;
+  updated_at: string;
+  tokenCount?: number;
+};
+
+export type MemoriesResponse = {
+  memories: TUserMemory[];
+  totalTokens: number;
+  tokenLimit: number | null;
+  usagePercentage: number | null;
+};
+
+export interface MCPServerStatus {
+  requiresOAuth: boolean;
+  connectionState: 'disconnected' | 'connecting' | 'connected' | 'error';
+}
+
+export interface MCPConnectionStatusResponse {
+  success: boolean;
+  connectionStatus: Record<string, MCPServerStatus>;
+}
+
+export interface MCPServerConnectionStatusResponse {
+  success: boolean;
+  serverName: string;
+  connectionStatus: string;
+  requiresOAuth: boolean;
+}
+
+export interface MCPAuthValuesResponse {
+  success: boolean;
+  serverName: string;
+  authValueFlags: Record<string, boolean>;
+}

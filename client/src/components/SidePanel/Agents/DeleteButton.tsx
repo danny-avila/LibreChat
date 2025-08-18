@@ -1,14 +1,18 @@
 import { useFormContext } from 'react-hook-form';
-import { defaultAgentFormValues } from 'librechat-data-provider';
+import {
+  OGDialog,
+  OGDialogTrigger,
+  Label,
+  OGDialogTemplate,
+  TrashIcon,
+  useToastContext,
+} from '@librechat/client';
 import type { Agent, AgentCreateParams } from 'librechat-data-provider';
 import type { UseMutationResult } from '@tanstack/react-query';
-import { OGDialog, OGDialogTrigger, Label } from '~/components/ui';
-import { useChatContext, useToastContext } from '~/Providers';
-import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
+import { cn, logger, removeFocusOutlines, getDefaultAgentFormValues } from '~/utils';
 import { useLocalize, useSetIndexOptions } from '~/hooks';
-import { cn, removeFocusOutlines, logger } from '~/utils';
 import { useDeleteAgentMutation } from '~/data-provider';
-import { TrashIcon } from '~/components/svg';
+import { useChatContext } from '~/Providers';
 
 export default function DeleteButton({
   agent_id,
@@ -45,9 +49,7 @@ export default function DeleteButton({
       const firstAgent = updatedList[0] as Agent | undefined;
       if (!firstAgent) {
         setCurrentAgentId(undefined);
-        reset({
-          ...defaultAgentFormValues,
-        });
+        reset(getDefaultAgentFormValues());
         return setOption('agent_id')('');
       }
 

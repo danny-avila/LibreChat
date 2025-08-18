@@ -358,7 +358,7 @@ export function validateSettingDefinitions(settings: SettingsConfiguration): voi
         // continue;
       }
       setting.includeInput =
-        setting.type === SettingTypes.Number ? setting.includeInput ?? true : false; // Default to true if type is number
+        setting.type === SettingTypes.Number ? (setting.includeInput ?? true) : false; // Default to true if type is number
     }
 
     if (setting.component === ComponentTypes.Slider && setting.type === SettingTypes.Number) {
@@ -445,7 +445,8 @@ export function validateSettingDefinitions(settings: SettingsConfiguration): voi
 
     // Validate optionType and conversation schema
     if (setting.optionType !== OptionTypes.Custom) {
-      const conversationSchema = tConversationSchema.shape[setting.key as keyof TConversation];
+      const conversationSchema =
+        tConversationSchema.shape[setting.key as keyof Omit<TConversation, 'disableParams'>];
       if (!conversationSchema) {
         errors.push({
           code: ZodIssueCode.custom,
@@ -466,7 +467,11 @@ export function validateSettingDefinitions(settings: SettingsConfiguration): voi
     }
 
     /* Default value checks */
-    if (setting.type === SettingTypes.Number && isNaN(setting.default as number)) {
+    if (
+      setting.type === SettingTypes.Number &&
+      isNaN(setting.default as number) &&
+      setting.default != null
+    ) {
       errors.push({
         code: ZodIssueCode.custom,
         message: `Invalid default value for setting ${setting.key}. Must be a number.`,
@@ -474,7 +479,11 @@ export function validateSettingDefinitions(settings: SettingsConfiguration): voi
       });
     }
 
-    if (setting.type === SettingTypes.Boolean && typeof setting.default !== 'boolean') {
+    if (
+      setting.type === SettingTypes.Boolean &&
+      typeof setting.default !== 'boolean' &&
+      setting.default != null
+    ) {
       errors.push({
         code: ZodIssueCode.custom,
         message: `Invalid default value for setting ${setting.key}. Must be a boolean.`,
@@ -484,7 +493,8 @@ export function validateSettingDefinitions(settings: SettingsConfiguration): voi
 
     if (
       (setting.type === SettingTypes.String || setting.type === SettingTypes.Enum) &&
-      typeof setting.default !== 'string'
+      typeof setting.default !== 'string' &&
+      setting.default != null
     ) {
       errors.push({
         code: ZodIssueCode.custom,
@@ -518,6 +528,19 @@ export function validateSettingDefinitions(settings: SettingsConfiguration): voi
         message: `Invalid default value for setting ${setting.key}. Must be within the range [${setting.range.min}, ${setting.range.max}].`,
         path: ['default'],
       });
+    }
+
+    // Validate enumMappings
+    if (setting.enumMappings && setting.type === SettingTypes.Enum && setting.options) {
+      for (const option of setting.options) {
+        if (!(option in setting.enumMappings)) {
+          errors.push({
+            code: ZodIssueCode.custom,
+            message: `Missing enumMapping for option "${option}" in setting ${setting.key}.`,
+            path: ['enumMappings'],
+          });
+        }
+      }
     }
   }
 

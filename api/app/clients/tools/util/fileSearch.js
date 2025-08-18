@@ -1,26 +1,35 @@
 const { z } = require('zod');
 const axios = require('axios');
 const { tool } = require('@langchain/core/tools');
+const { logger } = require('@librechat/data-schemas');
 const { Tools, EToolResources } = require('librechat-data-provider');
+const { generateShortLivedToken } = require('~/server/services/AuthService');
 const { getFiles } = require('~/models/File');
-const { logger } = require('~/config');
 
 /**
  *
  * @param {Object} options
  * @param {ServerRequest} options.req
  * @param {Agent['tool_resources']} options.tool_resources
+ * @param {string} [options.agentId] - The agent ID for file access control
  * @returns {Promise<{
  *   files: Array<{ file_id: string; filename: string }>,
  *   toolContext: string
  * }>}
  */
 const primeFiles = async (options) => {
-  const { tool_resources } = options;
+  const { tool_resources, req, agentId } = options;
   const file_ids = tool_resources?.[EToolResources.file_search]?.file_ids ?? [];
   const agentResourceIds = new Set(file_ids);
   const resourceFiles = tool_resources?.[EToolResources.file_search]?.files ?? [];
-  const dbFiles = ((await getFiles({ file_id: { $in: file_ids } })) ?? []).concat(resourceFiles);
+  const dbFiles = (
+    (await getFiles(
+      { file_id: { $in: file_ids } },
+      null,
+      { text: 0 },
+      { userId: req?.user?.id, agentId },
+    )) ?? []
+  ).concat(resourceFiles);
 
   let toolContext = `- Note: Semantic search is available through the ${Tools.file_search} tool but no files are currently loaded. Request the user to upload documents to search through.`;
 
@@ -59,7 +68,7 @@ const createFileSearchTool = async ({ req, files, entity_id }) => {
       if (files.length === 0) {
         return 'No files to search. Instruct the user to add files for the search.';
       }
-      const jwtToken = req.headers.authorization.split(' ')[1];
+      const jwtToken = generateShortLivedToken(req.user.id);
       if (!jwtToken) {
         return 'There was an error authenticating the file search request.';
       }
@@ -135,7 +144,7 @@ const createFileSearchTool = async ({ req, files, entity_id }) => {
         query: z
           .string()
           .describe(
-            'A natural language query to search for relevant information in the files. Be specific and use keywords related to the information you\'re looking for. The query will be used for semantic similarity matching against the file contents.',
+            "A natural language query to search for relevant information in the files. Be specific and use keywords related to the information you're looking for. The query will be used for semantic similarity matching against the file contents.",
           ),
       }),
     },
