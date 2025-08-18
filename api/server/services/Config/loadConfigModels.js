@@ -1,7 +1,6 @@
 const { isUserProvided, normalizeEndpointName } = require('@librechat/api');
 const { EModelEndpoint, extractEnvVariable } = require('librechat-data-provider');
 const { fetchModels } = require('~/server/services/ModelService');
-const { getCustomConfig } = require('./getCustomConfig');
 const { getAppConfig } = require('./app');
 
 /**
@@ -10,36 +9,31 @@ const { getAppConfig } = require('./app');
  * @param {Express.Request} req - The Express request object.
  */
 async function loadConfigModels(req) {
-  const customConfig = await getCustomConfig();
-
-  if (!customConfig) {
+  const appConfig = await getAppConfig({ role: req.user?.role });
+  if (!appConfig) {
     return {};
   }
-
-  const appConfig = await getAppConfig({ role: req.user?.role });
-  const { endpoints = {} } = customConfig ?? {};
   const modelsConfig = {};
-  const azureEndpoint = endpoints[EModelEndpoint.azureOpenAI];
   const azureConfig = appConfig[EModelEndpoint.azureOpenAI];
   const { modelNames } = azureConfig ?? {};
 
-  if (modelNames && azureEndpoint) {
+  if (modelNames && azureConfig) {
     modelsConfig[EModelEndpoint.azureOpenAI] = modelNames;
   }
 
-  if (modelNames && azureEndpoint && azureEndpoint.plugins) {
+  if (modelNames && azureConfig && azureConfig.plugins) {
     modelsConfig[EModelEndpoint.gptPlugins] = modelNames;
   }
 
-  if (azureEndpoint?.assistants && azureConfig.assistantModels) {
+  if (azureConfig?.assistants && azureConfig.assistantModels) {
     modelsConfig[EModelEndpoint.azureAssistants] = azureConfig.assistantModels;
   }
 
-  if (!Array.isArray(endpoints[EModelEndpoint.custom])) {
+  if (!Array.isArray(appConfig[EModelEndpoint.custom])) {
     return modelsConfig;
   }
 
-  const customEndpoints = endpoints[EModelEndpoint.custom].filter(
+  const customEndpoints = appConfig[EModelEndpoint.custom].filter(
     (endpoint) =>
       endpoint.baseURL &&
       endpoint.apiKey &&
