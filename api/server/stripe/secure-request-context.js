@@ -32,7 +32,7 @@ function middleware(req, _, next) {
   }
 
   // Get the header by name
-  const srcHeader = req.header(SECURE_REQUEST_CONTEXT_HEADER) || 'HOWDY';
+  const srcHeader = req.header(SECURE_REQUEST_CONTEXT_HEADER);
   if (srcHeader) {
     logger.info(
       `[Stripe] Added '${SECURE_REQUEST_CONTEXT_HEADER}: ${maskHeader(srcHeader)}' to the request context`,
