@@ -12,23 +12,21 @@ const {
 } = require('librechat-data-provider');
 const {
   checkWebSearchConfig,
-  checkAzureVariables,
   checkVariables,
   checkHealth,
   checkConfig,
 } = require('./start/checks');
 const { ensureDefaultCategories, seedDefaultRoles, initializeRoles } = require('~/models');
-const { azureAssistantsDefaults, assistantsConfigSetup } = require('./start/assistants');
 const { setCachedTools, setAppConfig, loadCustomConfig } = require('./Config');
 const { initializeAzureBlobService } = require('./Files/Azure/initialize');
 const { initializeFirebase } = require('./Files/Firebase/initialize');
 const handleRateLimits = require('./Config/handleRateLimits');
 const { loadDefaultInterface } = require('./start/interface');
 const { loadTurnstileConfig } = require('./start/turnstile');
-const { azureConfigSetup } = require('./start/azureOpenAI');
 const { processModelSpecs } = require('./start/modelSpecs');
 const { initializeS3 } = require('./Files/S3/initialize');
 const { loadAndFormatTools } = require('./ToolService');
+const { loadEndpoints } = require('./start/endpoints');
 const paths = require('~/config/paths');
 
 /**
@@ -121,61 +119,14 @@ const AppService = async () => {
 
   checkConfig(config);
   handleRateLimits(config?.rateLimits);
-
-  const endpointLocals = {};
-  const endpoints = config?.endpoints;
-
-  if (endpoints?.[EModelEndpoint.azureOpenAI]) {
-    endpointLocals[EModelEndpoint.azureOpenAI] = azureConfigSetup(config);
-    checkAzureVariables();
-  }
-
-  if (endpoints?.[EModelEndpoint.azureOpenAI]?.assistants) {
-    endpointLocals[EModelEndpoint.azureAssistants] = azureAssistantsDefaults();
-  }
-
-  if (endpoints?.[EModelEndpoint.azureAssistants]) {
-    endpointLocals[EModelEndpoint.azureAssistants] = assistantsConfigSetup(
-      config,
-      EModelEndpoint.azureAssistants,
-      endpointLocals[EModelEndpoint.azureAssistants],
-    );
-  }
-
-  if (endpoints?.[EModelEndpoint.assistants]) {
-    endpointLocals[EModelEndpoint.assistants] = assistantsConfigSetup(
-      config,
-      EModelEndpoint.assistants,
-      endpointLocals[EModelEndpoint.assistants],
-    );
-  }
-
-  endpointLocals[EModelEndpoint.agents] = agentsConfigSetup(config, agentsDefaults);
-
-  const endpointKeys = [
-    EModelEndpoint.openAI,
-    EModelEndpoint.google,
-    EModelEndpoint.bedrock,
-    EModelEndpoint.anthropic,
-    EModelEndpoint.gptPlugins,
-  ];
-
-  endpointKeys.forEach((key) => {
-    if (endpoints?.[key]) {
-      endpointLocals[key] = endpoints[key];
-    }
-  });
-
-  if (endpoints?.all) {
-    endpointLocals.all = endpoints.all;
-  }
+  const loadedEndpoints = loadEndpoints(config, agentsDefaults);
 
   const appConfig = {
     ...defaultConfig,
     fileConfig: config?.fileConfig,
     secureImageLinks: config?.secureImageLinks,
-    modelSpecs: processModelSpecs(endpoints, config.modelSpecs, interfaceConfig),
-    ...endpointLocals,
+    modelSpecs: processModelSpecs(config?.endpoints, config.modelSpecs, interfaceConfig),
+    ...loadedEndpoints,
   };
 
   await setAppConfig(appConfig);
