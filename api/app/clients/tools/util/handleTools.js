@@ -24,8 +24,8 @@ const {
 const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
 const { createFileSearchTool, primeFiles: primeSearchFiles } = require('./fileSearch');
 const { getUserPluginAuthValue } = require('~/server/services/PluginService');
-const { getCachedTools, getAppConfig } = require('~/server/services/Config');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
+const { getCachedTools } = require('~/server/services/Config');
 const { createMCPTool } = require('~/server/services/MCP');
 
 /**
@@ -121,16 +121,19 @@ const getAuthFields = (toolKey) => {
 
 /**
  *
- * @param {object} object
- * @param {string} object.user
- * @param {Pick<Agent, 'id' | 'provider' | 'model'>} [object.agent]
- * @param {string} [object.model]
- * @param {EModelEndpoint} [object.endpoint]
- * @param {LoadToolOptions} [object.options]
- * @param {boolean} [object.useSpecs]
- * @param {Array<string>} object.tools
- * @param {boolean} [object.functions]
- * @param {boolean} [object.returnMap]
+ * @param {object} params
+ * @param {string} params.user
+ * @param {Pick<Agent, 'id' | 'provider' | 'model'>} [params.agent]
+ * @param {string} [params.model]
+ * @param {EModelEndpoint} [params.endpoint]
+ * @param {LoadToolOptions} [params.options]
+ * @param {boolean} [params.useSpecs]
+ * @param {Array<string>} params.tools
+ * @param {boolean} [params.functions]
+ * @param {boolean} [params.returnMap]
+ * @param {AppConfig['webSearch']} [params.webSearch]
+ * @param {AppConfig['fileStrategy']} [params.fileStrategy]
+ * @param {AppConfig['imageOutputType']} [params.imageOutputType]
  * @returns {Promise<{ loadedTools: Tool[], toolContextMap: Object<string, any> } | Record<string,Tool>>}
  */
 const loadTools = async ({
@@ -142,8 +145,10 @@ const loadTools = async ({
   options = {},
   functions = true,
   returnMap = false,
+  webSearch,
+  fileStrategy,
+  imageOutputType,
 }) => {
-  const appConfig = await getAppConfig({ role: options?.req?.user?.role });
   const toolConstructors = {
     flux: FluxAPI,
     calculator: Calculator,
@@ -201,6 +206,8 @@ const loadTools = async ({
         ...authValues,
         isAgent: !!agent,
         req: options.req,
+        imageOutputType,
+        fileStrategy,
         imageFiles,
       });
     },
@@ -216,7 +223,7 @@ const loadTools = async ({
   const imageGenOptions = {
     isAgent: !!agent,
     req: options.req,
-    fileStrategy: options.fileStrategy,
+    fileStrategy,
     processFileURL: options.processFileURL,
     returnMetadata: options.returnMetadata,
     uploadImageBuffer: options.uploadImageBuffer,
@@ -273,11 +280,10 @@ const loadTools = async ({
       };
       continue;
     } else if (tool === Tools.web_search) {
-      const webSearchConfig = appConfig?.webSearch;
       const result = await loadWebSearchAuth({
         userId: user,
         loadAuthValues,
-        webSearchConfig,
+        webSearchConfig: webSearch,
       });
       const { onSearchResults, onGetHighlights } = options?.[Tools.web_search] ?? {};
       requestedTools[tool] = async () => {

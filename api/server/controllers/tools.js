@@ -158,8 +158,10 @@ const callTool = async (req, res) => {
         returnMetadata: true,
         processFileURL,
         uploadImageBuffer,
-        fileStrategy: appConfig.fileStrategy,
       },
+      webSearch: appConfig.webSearch,
+      fileStrategy: appConfig.fileStrategy,
+      imageOutputType: appConfig.imageOutputType,
     });
 
     const tool = loadedTools[0];

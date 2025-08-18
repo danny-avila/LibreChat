@@ -917,7 +917,6 @@
  * @typedef {Object} ImageGenOptions
  * @property {ServerRequest} req - The request object.
  * @property {boolean} isAgent - Whether the request is from an agent.
- * @property {FileSources} fileStrategy - The file strategy to use.
  * @property {processFileURL} processFileURL - The function to process a file URL.
  * @property {boolean} returnMetadata - Whether to return metadata.
  * @property {uploadImageBuffer} uploadImageBuffer - The function to upload an image buffer.
@@ -930,6 +929,7 @@
  *   signal?: AbortSignal,
  *   memory?: ConversationSummaryBufferMemory,
  *   tool_resources?: AgentToolResources,
+ *   web_search?: ReturnType<typeof import('~/server/services/Tools/search').createOnSearchResults>,
  * }} LoadToolOptions
  * @memberof typedefs
  */
@@ -1088,6 +1088,12 @@
 /**
  * @exports TUpdateResourcePermissionsResponse
  * @typedef {import('librechat-data-provider').TUpdateResourcePermissionsResponse} TUpdateResourcePermissionsResponse
+ * @memberof typedefs
+ */
+
+/**
+ * @exports AppConfig
+ * @typedef {import('@librechat/api').AppConfig} AppConfig
  * @memberof typedefs
  */
 

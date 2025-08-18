@@ -50,11 +50,19 @@ const { redactMessage } = require('~/config/parsers');
  *
  * @param {object} params - The parameters for the function.
  * @param {string} params.directory - The directory path where the tools are located.
+ * @param {string} [params.imageOutputType] - The image output type configuration.
+ * @param {string} [params.fileStrategy] - The file storage strategy.
  * @param {Array<string>} [params.adminFilter=[]] - Array of admin-defined tool keys to exclude from loading.
  * @param {Array<string>} [params.adminIncluded=[]] - Array of admin-defined tool keys to include from loading.
  * @returns {Record<string, FunctionTool>} An object mapping each tool's plugin key to its instance.
  */
-function loadAndFormatTools({ directory, adminFilter = [], adminIncluded = [] }) {
+function loadAndFormatTools({
+  directory,
+  fileStrategy,
+  imageOutputType,
+  adminFilter = [],
+  adminIncluded = [],
+}) {
   const filter = new Set([...adminFilter]);
   const included = new Set(adminIncluded);
   const tools = [];
@@ -113,9 +121,14 @@ function loadAndFormatTools({ directory, adminFilter = [], adminIncluded = [] })
   }
 
   /** Basic Tools & Toolkits; schema: { input: string } */
+  const openAIImageTools = createOpenAIImageTools({
+    override: true,
+    imageOutputType,
+    fileStrategy,
+  });
   const basicToolInstances = [
     new Calculator(),
-    ...createOpenAIImageTools({ override: true }),
+    ...openAIImageTools,
     ...createYouTubeTools({ override: true }),
   ];
   for (const toolInstance of basicToolInstances) {
@@ -234,9 +247,11 @@ async function processRequiredActions(client, requiredActions) {
       req: client.req,
       uploadImageBuffer,
       openAIApiKey: client.apiKey,
-      fileStrategy: appConfig.fileStrategy,
       returnMetadata: true,
     },
+    webSearch: appConfig.webSearch,
+    fileStrategy: appConfig.fileStrategy,
+    imageOutputType: appConfig.imageOutputType,
   });
 
   const ToolMap = loadedTools.reduce((map, tool) => {
@@ -519,7 +534,7 @@ async function loadAgentTools({ req, res, agent, tool_resources, openAIApiKey })
   if (!_agentTools || _agentTools.length === 0) {
     return {};
   }
-  /** @type {ReturnType<createOnSearchResults>} */
+  /** @type {ReturnType<typeof createOnSearchResults>} */
   let webSearchCallbacks;
   if (includesWebSearch) {
     webSearchCallbacks = createOnSearchResults(res);
@@ -538,9 +553,11 @@ async function loadAgentTools({ req, res, agent, tool_resources, openAIApiKey })
       processFileURL,
       uploadImageBuffer,
       returnMetadata: true,
-      fileStrategy: appConfig.fileStrategy,
       [Tools.web_search]: webSearchCallbacks,
     },
+    webSearch: appConfig.webSearch,
+    fileStrategy: appConfig.fileStrategy,
+    imageOutputType: appConfig.imageOutputType,
   });
 
   const agentTools = [];

@@ -9,7 +9,6 @@ const { logAxiosError } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 const { ContentTypes, EImageOutputType } = require('librechat-data-provider');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
-const { getAppConfig } = require('~/server/services/Config/app');
 const extractBaseURL = require('~/utils/extractBaseURL');
 const { getFiles } = require('~/models/File');
 
@@ -122,9 +121,11 @@ function createAbortHandler() {
  * @param {string} fields.IMAGE_GEN_OAI_API_KEY - The OpenAI API key
  * @param {boolean} [fields.override] - Whether to override the API key check, necessary for app initialization
  * @param {MongoFile[]} [fields.imageFiles] - The images to be used for editing
- * @returns {Promise<StructuredTool[]>} - Array of image tools
+ * @param {string} [fields.imageOutputType] - The image output type configuration
+ * @param {string} [fields.fileStrategy] - The file storage strategy
+ * @returns {Array<ReturnType<tool>>} - Array of image tools
  */
-async function createOpenAIImageTools(fields = {}) {
+function createOpenAIImageTools(fields = {}) {
   /** @type {boolean} Used to initialize the Tool without necessary variables. */
   const override = fields.override ?? false;
   /** @type {boolean} */
@@ -132,9 +133,8 @@ async function createOpenAIImageTools(fields = {}) {
     throw new Error('This tool is only available for agents.');
   }
   const { req } = fields;
-  const appConfig = await getAppConfig({ role: req?.user?.role });
-  const imageOutputType = appConfig?.imageOutputType || EImageOutputType.PNG;
-  const appFileStrategy = appConfig?.fileStrategy;
+  const imageOutputType = fields.imageOutputType || EImageOutputType.PNG;
+  const appFileStrategy = fields.fileStrategy;
 
   const getApiKey = () => {
     const apiKey = process.env.IMAGE_GEN_OAI_API_KEY ?? '';

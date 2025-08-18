@@ -75,6 +75,8 @@ const AppService = async () => {
     adminFilter: filteredTools,
     adminIncluded: includedTools,
     directory: paths.structuredTools,
+    imageOutputType,
+    fileStrategy,
   });
 
   await setCachedTools(availableTools, { isGlobal: true });
