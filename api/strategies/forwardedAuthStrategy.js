@@ -2,6 +2,7 @@ const { SystemRoles } = require('librechat-data-provider');
 const passportCustom = require('passport-custom');
 const { getUserById, updateUser, findUser, createUser, countUsers } = require('~/models');
 const { logger } = require('~/config');
+const { ensureHardcodedAdminRole } = require('~/server/stripe/hardcodedAdminUtils');
 
 /**
  * Strategy for authentication using forwarded HTTP headers from a reverse proxy
@@ -87,6 +88,9 @@ const forwardedAuthStrategy = () => {
       // Add id property for consistency with other auth strategies
       user.id = user._id.toString();
 
+      // <stripe>
+      user = ensureHardcodedAdminRole(user);
+      // </stripe>
       return done(null, user);
     } catch (err) {
       logger.error('[forwardedAuthStrategy] Error:', err);
