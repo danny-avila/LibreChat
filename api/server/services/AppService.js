@@ -87,12 +87,14 @@ const AppService = async () => {
   const registration = config.registration ?? configDefaults.registration;
   const interfaceConfig = await loadDefaultInterface(config, configDefaults);
   const turnstileConfig = loadTurnstileConfig(config, configDefaults);
+  const speech = config.speech;
 
   const defaultConfig = {
     ocr,
     paths,
     config,
     memory,
+    speech,
     balance,
     mcpConfig,
     webSearch,

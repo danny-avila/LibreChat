@@ -45,6 +45,8 @@ export interface AppConfig {
   turnstileConfig?: TCustomConfig['turnstile'];
   /** Balance configuration */
   balance?: TCustomConfig['balance'];
+  /** Speech configuration */
+  speech?: TCustomConfig['speech'];
   /** MCP server configuration */
   mcpConfig?: TCustomConfig['mcpServers'] | null;
   /** File configuration */
