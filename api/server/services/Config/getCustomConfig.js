@@ -1,7 +1,6 @@
 const { logger } = require('@librechat/data-schemas');
-const { isEnabled, getUserMCPAuthMap } = require('@librechat/api');
+const { isEnabled, getUserMCPAuthMap, normalizeEndpointName } = require('@librechat/api');
 const { CacheKeys, EModelEndpoint } = require('librechat-data-provider');
-const { normalizeEndpointName } = require('~/server/utils');
 const loadCustomConfig = require('./loadCustomConfig');
 const getLogStores = require('~/cache/getLogStores');
 
