@@ -1,6 +1,5 @@
 const { isUserProvided, normalizeEndpointName } = require('@librechat/api');
 const { EModelEndpoint, extractEnvVariable } = require('librechat-data-provider');
-const { getCustomConfig } = require('./getCustomConfig');
 const { getAppConfig } = require('./app');
 
 /**
@@ -9,19 +8,15 @@ const { getAppConfig } = require('./app');
  * @returns {Promise<TEndpointsConfig>} A promise that resolves to an object containing the endpoints configuration
  */
 async function loadConfigEndpoints(req) {
-  const customConfig = await getCustomConfig();
-
-  if (!customConfig) {
+  const appConfig = await getAppConfig({ role: req.user?.role });
+  if (!appConfig) {
     return {};
   }
 
-  const appConfig = await getAppConfig({ role: req.user?.role });
-
-  const { endpoints = {} } = customConfig ?? {};
   const endpointsConfig = {};
 
-  if (Array.isArray(endpoints[EModelEndpoint.custom])) {
-    const customEndpoints = endpoints[EModelEndpoint.custom].filter(
+  if (Array.isArray(appConfig[EModelEndpoint.custom])) {
+    const customEndpoints = appConfig[EModelEndpoint.custom].filter(
       (endpoint) =>
         endpoint.baseURL &&
         endpoint.apiKey &&

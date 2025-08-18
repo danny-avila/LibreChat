@@ -20,17 +20,17 @@ jest.mock('@librechat/api', () => ({
   checkAccess: jest.fn().mockResolvedValue(true),
 }));
 
-jest.mock('~/server/services/Config/getCustomConfig', () => ({
-  getCustomConfig: jest.fn().mockResolvedValue({
-    endpoints: {
-      agents: {
-        maxCitations: 30,
-        maxCitationsPerFile: 5,
-        minRelevanceScore: 0.45,
-      },
+jest.mock('~/cache/getLogStores', () => () => ({
+  get: jest.fn().mockResolvedValue({
+    agents: {
+      maxCitations: 30,
+      maxCitationsPerFile: 5,
+      minRelevanceScore: 0.45,
     },
     fileStrategy: 'local',
   }),
+  set: jest.fn(),
+  delete: jest.fn(),
 }));
 
 jest.mock('~/config', () => ({
