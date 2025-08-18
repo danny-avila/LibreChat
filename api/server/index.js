@@ -46,7 +46,7 @@ const startServer = async () => {
   app.disable('x-powered-by');
   app.set('trust proxy', trusted_proxy);
 
-  await AppService(app);
+  await AppService();
   const appConfig = await getAppConfig();
   const indexPath = path.join(appConfig.paths.dist, 'index.html');
   const indexHTML = fs.readFileSync(indexPath, 'utf8');
