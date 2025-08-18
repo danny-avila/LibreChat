@@ -31,8 +31,8 @@ export interface AppConfig {
   webSearch?: TCustomConfig['webSearch'];
   /** File storage strategy ('local', 's3', 'firebase', 'azure_blob') */
   fileStrategy: FileSources.local | FileSources.s3 | FileSources.firebase | FileSources.azure_blob;
-  /** Social login configurations */
-  socialLogins: Array<unknown>;
+  /** Registration configurations */
+  registration?: TCustomConfig['registration'];
   /** Admin-filtered tools */
   filteredTools?: string[];
   /** Admin-included tools */
@@ -42,7 +42,7 @@ export interface AppConfig {
   /** Interface configuration */
   interfaceConfig?: TCustomConfig['interface'];
   /** Turnstile configuration */
-  turnstileConfig?: TCustomConfig['registration'];
+  turnstileConfig?: TCustomConfig['turnstile'];
   /** Balance configuration */
   balance?: TCustomConfig['balance'];
   /** MCP server configuration */
