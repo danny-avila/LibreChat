@@ -446,7 +446,7 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
                 control={control}
                 rules={{
                   pattern: {
-                    value: /^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/,
+                    value: /\S+@\S+\.\S+/,
                     message: localize('com_ui_support_contact_email_invalid'),
                   },
                 }}
