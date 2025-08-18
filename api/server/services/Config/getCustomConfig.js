@@ -1,25 +1,16 @@
 const { logger } = require('@librechat/data-schemas');
+const { EModelEndpoint } = require('librechat-data-provider');
 const { isEnabled, getUserMCPAuthMap, normalizeEndpointName } = require('@librechat/api');
-const { CacheKeys, EModelEndpoint } = require('librechat-data-provider');
-const loadCustomConfig = require('./loadCustomConfig');
-const getLogStores = require('~/cache/getLogStores');
-
-/**
- * Retrieves the configuration object
- * @function getCustomConfig
- * @returns {Promise<TCustomConfig | null>}
- * */
-async function getCustomConfig() {
-  const cache = getLogStores(CacheKeys.STATIC_CONFIG);
-  return (await cache.get(CacheKeys.LIBRECHAT_YAML_CONFIG)) || (await loadCustomConfig());
-}
+const { getAppConfig } = require('./app');
 
 /**
  * Retrieves the configuration object
  * @function getBalanceConfig
+ * @param {Object} params
+ * @param {string} [params.role]
  * @returns {Promise<TCustomConfig['balance'] | null>}
  * */
-async function getBalanceConfig() {
+async function getBalanceConfig({ role }) {
   const isLegacyEnabled = isEnabled(process.env.CHECK_BALANCE);
   const startBalance = process.env.START_BALANCE;
   /** @type {TCustomConfig['balance']} */
@@ -27,11 +18,11 @@ async function getBalanceConfig() {
     enabled: isLegacyEnabled,
     startBalance: startBalance != null && startBalance ? parseInt(startBalance, 10) : undefined,
   };
-  const customConfig = await getCustomConfig();
-  if (!customConfig) {
+  const appConfig = await getAppConfig({ role });
+  if (!appConfig) {
     return config;
   }
-  return { ...config, ...(customConfig?.['balance'] ?? {}) };
+  return { ...config, ...(appConfig?.['balance'] ?? {}) };
 }
 
 /**
@@ -40,13 +31,12 @@ async function getBalanceConfig() {
  * @returns {Promise<TEndpoint | undefined>}
  */
 const getCustomEndpointConfig = async (endpoint) => {
-  const customConfig = await getCustomConfig();
-  if (!customConfig) {
+  const appConfig = await getAppConfig();
+  if (!appConfig) {
     throw new Error(`Config not found for the ${endpoint} custom endpoint.`);
   }
 
-  const { endpoints = {} } = customConfig;
-  const customEndpoints = endpoints[EModelEndpoint.custom] ?? [];
+  const customEndpoints = appConfig[EModelEndpoint.custom] ?? [];
   return customEndpoints.find(
     (endpointConfig) => normalizeEndpointName(endpointConfig.name) === endpoint,
   );
@@ -81,14 +71,13 @@ async function getMCPAuthMap({ userId, tools, findPluginAuthsByKeys }) {
  * @returns {Promise<boolean>}
  */
 async function hasCustomUserVars() {
-  const customConfig = await getCustomConfig();
-  const mcpServers = customConfig?.mcpServers;
+  const customConfig = await getAppConfig();
+  const mcpServers = customConfig?.mcpConfig;
   return Object.values(mcpServers ?? {}).some((server) => server.customUserVars);
 }
 
 module.exports = {
   getMCPAuthMap,
-  getCustomConfig,
   getBalanceConfig,
   hasCustomUserVars,
   getCustomEndpointConfig,

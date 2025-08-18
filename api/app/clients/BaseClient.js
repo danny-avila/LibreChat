@@ -113,13 +113,15 @@ class BaseClient {
    * If a correction to the token usage is needed, the method should return an object with the corrected token counts.
    * Should only be used if `recordCollectedUsage` was not used instead.
    * @param {string} [model]
+   * @param {AppConfig['balance']} [balance]
    * @param {number} promptTokens
    * @param {number} completionTokens
    * @returns {Promise<void>}
    */
-  async recordTokenUsage({ model, promptTokens, completionTokens }) {
+  async recordTokenUsage({ model, balance, promptTokens, completionTokens }) {
     logger.debug('[BaseClient] `recordTokenUsage` not implemented.', {
       model,
+      balance,
       promptTokens,
       completionTokens,
     });
@@ -754,6 +756,7 @@ class BaseClient {
         completionTokens = responseMessage.tokenCount;
         await this.recordTokenUsage({
           usage,
+          balance,
           promptTokens,
           completionTokens,
           model: responseMessage.model,

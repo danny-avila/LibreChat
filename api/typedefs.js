@@ -1783,8 +1783,8 @@
  * @property {String} conversationId - The ID of the conversation.
  * @property {String} model - The model name.
  * @property {String} context - The context in which the transaction is made.
+ * @property {AppConfig['balance']} [balance] - The balance config
  * @property {EndpointTokenConfig} [endpointTokenConfig] - The current endpoint token config.
- * @property {object} [cacheUsage] - Cache usage, if any.
  * @property {String} [valueKey] - The value key (optional).
  * @memberof typedefs
  */
@@ -1829,6 +1829,7 @@
  * @callback sendCompletion
  * @param {Array<ChatCompletionMessage> | string} payload - The messages or prompt to send to the model
  * @param {object} opts - Options for the completion
+ * @param {AppConfig} opts.appConfig - Callback function to handle token progress
  * @param {onTokenProgress} opts.onProgress - Callback function to handle token progress
  * @param {AbortController} opts.abortController - AbortController instance
  * @returns {Promise<string>}

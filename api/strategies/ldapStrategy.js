@@ -123,6 +123,7 @@ const ldapLogin = new LdapStrategy(ldapOptions, async (userinfo, done) => {
 
     if (!user) {
       const isFirstRegisteredUser = (await countUsers()) === 0;
+      const role = isFirstRegisteredUser ? SystemRoles.ADMIN : SystemRoles.USER;
       user = {
         provider: 'ldap',
         ldapId,
@@ -130,9 +131,9 @@ const ldapLogin = new LdapStrategy(ldapOptions, async (userinfo, done) => {
         email: mail,
         emailVerified: true, // The ldap server administrator should verify the email
         name: fullName,
-        role: isFirstRegisteredUser ? SystemRoles.ADMIN : SystemRoles.USER,
+        role,
       };
-      const balanceConfig = await getBalanceConfig();
+      const balanceConfig = await getBalanceConfig({ role });
       const userId = await createUser(user, balanceConfig);
       user._id = userId;
     } else {

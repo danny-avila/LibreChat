@@ -20,10 +20,10 @@ const {
   deleteUserById,
   generateRefreshToken,
 } = require('~/models');
-const { getBalanceConfig, getAppConfig } = require('~/server/services/Config');
 const { isEmailDomainAllowed } = require('~/server/services/domains');
 const { checkEmailConfig, sendEmail } = require('~/server/utils');
 const { registerSchema } = require('~/strategies/validators');
+const { getAppConfig } = require('~/server/services/Config');
 
 const domains = {
   client: process.env.DOMAIN_CLIENT,
@@ -220,9 +220,8 @@ const registerUser = async (user, additionalData = {}) => {
 
     const emailEnabled = checkEmailConfig();
     const disableTTL = isEnabled(process.env.ALLOW_UNVERIFIED_EMAIL_LOGIN);
-    const balanceConfig = await getBalanceConfig();
 
-    const newUser = await createUser(newUserData, balanceConfig, disableTTL, true);
+    const newUser = await createUser(newUserData, appConfig.balance, disableTTL, true);
     newUserId = newUser._id;
     if (emailEnabled && !newUser.emailVerified) {
       await sendVerificationEmail({

@@ -627,9 +627,15 @@ class AgentClient extends BaseClient {
    * @param {Object} params
    * @param {string} [params.model]
    * @param {string} [params.context='message']
+   * @param {AppConfig['balance']} [params.balance]
    * @param {UsageMetadata[]} [params.collectedUsage=this.collectedUsage]
    */
-  async recordCollectedUsage({ model, context = 'message', collectedUsage = this.collectedUsage }) {
+  async recordCollectedUsage({
+    model,
+    balance,
+    context = 'message',
+    collectedUsage = this.collectedUsage,
+  }) {
     if (!collectedUsage || !collectedUsage.length) {
       return;
     }
@@ -651,6 +657,7 @@ class AgentClient extends BaseClient {
 
       const txMetadata = {
         context,
+        balance,
         conversationId: this.conversationId,
         user: this.user ?? this.options.req.user?.id,
         endpointTokenConfig: this.options.endpointTokenConfig,
@@ -1044,7 +1051,7 @@ class AgentClient extends BaseClient {
           this.artifactPromises.push(...attachments);
         }
 
-        await this.recordCollectedUsage({ context: 'message' });
+        await this.recordCollectedUsage({ context: 'message', balance: appConfig?.balance });
       } catch (err) {
         logger.error(
           '[api/server/controllers/agents/client.js #chatCompletion] Error recording collected usage',
@@ -1219,9 +1226,10 @@ class AgentClient extends BaseClient {
       });
 
       await this.recordCollectedUsage({
-        model: clientOptions.model,
-        context: 'title',
         collectedUsage,
+        context: 'title',
+        model: clientOptions.model,
+        balance: appConfig?.balance,
       }).catch((err) => {
         logger.error(
           '[api/server/controllers/agents/client.js #titleConvo] Error recording collected usage',
@@ -1240,17 +1248,26 @@ class AgentClient extends BaseClient {
    * @param {object} params
    * @param {number} params.promptTokens
    * @param {number} params.completionTokens
-   * @param {OpenAIUsageMetadata} [params.usage]
    * @param {string} [params.model]
+   * @param {OpenAIUsageMetadata} [params.usage]
+   * @param {AppConfig['balance']} [params.balance]
    * @param {string} [params.context='message']
    * @returns {Promise<void>}
    */
-  async recordTokenUsage({ model, promptTokens, completionTokens, usage, context = 'message' }) {
+  async recordTokenUsage({
+    model,
+    usage,
+    balance,
+    promptTokens,
+    completionTokens,
+    context = 'message',
+  }) {
     try {
       await spendTokens(
         {
           model,
           context,
+          balance,
           conversationId: this.conversationId,
           user: this.user ?? this.options.req.user?.id,
           endpointTokenConfig: this.options.endpointTokenConfig,
@@ -1267,6 +1284,7 @@ class AgentClient extends BaseClient {
         await spendTokens(
           {
             model,
+            balance,
             context: 'reasoning',
             conversationId: this.conversationId,
             user: this.user ?? this.options.req.user?.id,
