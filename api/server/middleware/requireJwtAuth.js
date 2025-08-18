@@ -1,12 +1,19 @@
 const passport = require('passport');
 const cookies = require('cookie');
 const { isEnabled } = require('~/server/utils');
+const { handleForwardedAuth, isForwardedAuthEnabled } = require('~/server/stripe/forwardedAuth');
 
 /**
- * Custom Middleware to handle JWT authentication, with support for OpenID token reuse
- * Switches between JWT and OpenID authentication based on cookies and environment settings
+ * Custom Middleware to handle authentication
+ * When FORWARD_AUTH_ENABLED=true: Uses ONLY forwarded headers (skips JWT/OpenID entirely)
+ * When FORWARD_AUTH_ENABLED=false: Uses JWT/OpenID authentication
  */
 const requireJwtAuth = (req, res, next) => {
+  // <stripe>
+  if (isForwardedAuthEnabled()) {
+    return handleForwardedAuth(req, res, next, { required: true });
+  }
+  // </stripe>
   // Check if token provider is specified in cookies
   const cookieHeader = req.headers.cookie;
   const tokenProvider = cookieHeader ? cookies.parse(cookieHeader).token_provider : null;
