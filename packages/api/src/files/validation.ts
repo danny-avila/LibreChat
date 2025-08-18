@@ -5,6 +5,16 @@ export interface PDFValidationResult {
   error?: string;
 }
 
+export interface VideoValidationResult {
+  isValid: boolean;
+  error?: string;
+}
+
+export interface AudioValidationResult {
+  isValid: boolean;
+  error?: string;
+}
+
 export async function validatePdf(
   pdfBuffer: Buffer,
   fileSize: number,
@@ -16,6 +26,10 @@ export async function validatePdf(
 
   if (endpoint === EModelEndpoint.openAI || endpoint === EModelEndpoint.azureOpenAI) {
     return validateOpenAIPdf(fileSize);
+  }
+
+  if (endpoint === EModelEndpoint.google) {
+    return validateGooglePdf(fileSize);
   }
 
   return { isValid: true };
@@ -91,6 +105,79 @@ async function validateOpenAIPdf(fileSize: number): Promise<PDFValidationResult>
     return {
       isValid: false,
       error: "PDF file size exceeds OpenAI's 10MB limit",
+    };
+  }
+
+  return { isValid: true };
+}
+
+async function validateGooglePdf(fileSize: number): Promise<PDFValidationResult> {
+  if (fileSize > 20 * 1024 * 1024) {
+    return {
+      isValid: false,
+      error: "PDF file size exceeds Google's 20MB limit",
+    };
+  }
+
+  return { isValid: true };
+}
+
+/**
+ * Validates video files for different endpoints
+ * @param videoBuffer - The video file as a buffer
+ * @param fileSize - The file size in bytes
+ * @param endpoint - The endpoint to validate for
+ * @returns Promise that resolves to validation result
+ */
+export async function validateVideo(
+  videoBuffer: Buffer,
+  fileSize: number,
+  endpoint: EModelEndpoint,
+): Promise<VideoValidationResult> {
+  if (endpoint === EModelEndpoint.google) {
+    if (fileSize > 20 * 1024 * 1024) {
+      return {
+        isValid: false,
+        error: `Video file size (${Math.round(fileSize / (1024 * 1024))}MB) exceeds Google's 20MB limit`,
+      };
+    }
+  }
+
+  if (!videoBuffer || videoBuffer.length < 10) {
+    return {
+      isValid: false,
+      error: 'Invalid video file: too small or corrupted',
+    };
+  }
+
+  return { isValid: true };
+}
+
+/**
+ * Validates audio files for different endpoints
+ * @param audioBuffer - The audio file as a buffer
+ * @param fileSize - The file size in bytes
+ * @param endpoint - The endpoint to validate for
+ * @returns Promise that resolves to validation result
+ */
+export async function validateAudio(
+  audioBuffer: Buffer,
+  fileSize: number,
+  endpoint: EModelEndpoint,
+): Promise<AudioValidationResult> {
+  if (endpoint === EModelEndpoint.google) {
+    if (fileSize > 20 * 1024 * 1024) {
+      return {
+        isValid: false,
+        error: `Audio file size (${Math.round(fileSize / (1024 * 1024))}MB) exceeds Google's 20MB limit`,
+      };
+    }
+  }
+
+  if (!audioBuffer || audioBuffer.length < 10) {
+    return {
+      isValid: false,
+      error: 'Invalid audio file: too small or corrupted',
     };
   }
 

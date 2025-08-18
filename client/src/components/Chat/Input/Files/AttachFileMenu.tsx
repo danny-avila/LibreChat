@@ -88,6 +88,8 @@ const AttachFileMenu = ({
       inputRef.current.accept = '.pdf,application/pdf';
     } else if (fileType === 'multimodal') {
       inputRef.current.accept = 'image/*,.pdf,application/pdf';
+    } else if (fileType === 'google_multimodal') {
+      inputRef.current.accept = 'image/*,.pdf,application/pdf,video/*,audio/*';
     } else {
       inputRef.current.accept = '';
     }
@@ -97,7 +99,7 @@ const AttachFileMenu = ({
 
   const dropdownItems = useMemo(() => {
     const createMenuItems = (
-      onAction: (fileType?: 'image' | 'document' | 'multimodal') => void,
+      onAction: (fileType?: 'image' | 'document' | 'multimodal' | 'google_multimodal') => void,
     ) => {
       const items: MenuItemProps[] = [];
 
@@ -108,7 +110,7 @@ const AttachFileMenu = ({
           label: localize('com_ui_upload_provider'),
           onClick: () => {
             setToolResource(EToolResources.direct_attach);
-            onAction('multimodal');
+            onAction(endpoint === EModelEndpoint.google ? 'google_multimodal' : 'multimodal');
           },
           icon: <FileImageIcon className="icon-md" />,
         });

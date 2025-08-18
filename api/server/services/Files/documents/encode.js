@@ -159,6 +159,13 @@ async function encodeAndFormatDocuments(req, files, endpoint) {
           file_data: `data:application/pdf;base64,${content}`,
         };
         result.documents.push(documentPart);
+      } else if (endpoint === EModelEndpoint.google) {
+        const documentPart = {
+          type: 'document',
+          mimeType: 'application/pdf',
+          data: content,
+        };
+        result.documents.push(documentPart);
       }
 
       result.files.push(metadata);
@@ -170,4 +177,5 @@ async function encodeAndFormatDocuments(req, files, endpoint) {
 
 module.exports = {
   encodeAndFormatDocuments,
+  streamToBuffer,
 };

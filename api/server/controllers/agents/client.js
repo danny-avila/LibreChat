@@ -42,8 +42,11 @@ const {
   setMemory,
 } = require('~/models');
 const { getMCPAuthMap, checkCapability, hasCustomUserVars } = require('~/server/services/Config');
-const { encodeAndFormatDocuments } = require('~/server/services/Files/documents/encode');
+const { encodeAndFormatDocuments } = require('~/server/services/Files/Documents/encode');
 const { addCacheControl, createContextHandlers } = require('~/app/clients/prompts');
+const { encodeAndFormatVideos } = require('~/server/services/Files/Video/encode');
+const { encodeAndFormatAudios } = require('~/server/services/Files/Audio/encode');
+const { getFiles } = require('~/models');
 const { initializeAgent } = require('~/server/services/Endpoints/agents/agent');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
 const { getFormattedMemories, deleteMemory, setMemory } = require('~/models');
@@ -244,13 +247,137 @@ class AgentClient extends BaseClient {
     return documentResult.files;
   }
 
+  async addVideos(message, attachments) {
+    const videoResult = await encodeAndFormatVideos(
+      this.options.req,
+      attachments,
+      this.options.agent.provider,
+    );
+    message.videos =
+      videoResult.videos && videoResult.videos.length ? videoResult.videos : undefined;
+    return videoResult.files;
+  }
+
+  async addAudios(message, attachments) {
+    const audioResult = await encodeAndFormatAudios(
+      this.options.req,
+      attachments,
+      this.options.agent.provider,
+    );
+    message.audios =
+      audioResult.audios && audioResult.audios.length ? audioResult.audios : undefined;
+    return audioResult.files;
+  }
+
+  /**
+   * Override addPreviousAttachments to handle all file types, not just images
+   * @param {TMessage[]} _messages
+   * @returns {Promise<TMessage[]>}
+   */
+  async addPreviousAttachments(_messages) {
+    if (!this.options.resendFiles) {
+      return _messages;
+    }
+
+    const seen = new Set();
+    const attachmentsProcessed =
+      this.options.attachments && !(this.options.attachments instanceof Promise);
+    if (attachmentsProcessed) {
+      for (const attachment of this.options.attachments) {
+        seen.add(attachment.file_id);
+      }
+    }
+
+    /**
+     *
+     * @param {TMessage} message
+     */
+    const processMessage = async (message) => {
+      if (!this.message_file_map) {
+        /** @type {Record<string, MongoFile[]> */
+        this.message_file_map = {};
+      }
+
+      const fileIds = [];
+      for (const file of message.files) {
+        if (seen.has(file.file_id)) {
+          continue;
+        }
+        fileIds.push(file.file_id);
+        seen.add(file.file_id);
+      }
+
+      if (fileIds.length === 0) {
+        return message;
+      }
+
+      const files = await getFiles(
+        {
+          file_id: { $in: fileIds },
+        },
+        {},
+        {},
+      );
+
+      await this.processAttachments(message, files);
+
+      this.message_file_map[message.messageId] = files;
+      return message;
+    };
+
+    const promises = [];
+
+    for (const message of _messages) {
+      if (!message.files) {
+        promises.push(message);
+        continue;
+      }
+
+      promises.push(processMessage(message));
+    }
+
+    const messages = await Promise.all(promises);
+
+    this.checkVisionRequest(Object.values(this.message_file_map ?? {}).flat());
+    return messages;
+  }
+
   async processAttachments(message, attachments) {
-    const [imageFiles, documentFiles] = await Promise.all([
-      this.addImageURLs(message, attachments),
-      this.addDocuments(message, attachments),
+    const categorizedAttachments = {
+      images: [],
+      documents: [],
+      videos: [],
+      audios: [],
+    };
+
+    for (const file of attachments) {
+      if (file.type.startsWith('image/')) {
+        categorizedAttachments.images.push(file);
+      } else if (file.type === 'application/pdf') {
+        categorizedAttachments.documents.push(file);
+      } else if (file.type.startsWith('video/')) {
+        categorizedAttachments.videos.push(file);
+      } else if (file.type.startsWith('audio/')) {
+        categorizedAttachments.audios.push(file);
+      }
+    }
+
+    const [imageFiles, documentFiles, videoFiles, audioFiles] = await Promise.all([
+      categorizedAttachments.images.length > 0
+        ? this.addImageURLs(message, categorizedAttachments.images)
+        : Promise.resolve([]),
+      categorizedAttachments.documents.length > 0
+        ? this.addDocuments(message, categorizedAttachments.documents)
+        : Promise.resolve([]),
+      categorizedAttachments.videos.length > 0
+        ? this.addVideos(message, categorizedAttachments.videos)
+        : Promise.resolve([]),
+      categorizedAttachments.audios.length > 0
+        ? this.addAudios(message, categorizedAttachments.audios)
+        : Promise.resolve([]),
     ]);
 
-    const allFiles = [...imageFiles, ...documentFiles];
+    const allFiles = [...imageFiles, ...documentFiles, ...videoFiles, ...audioFiles];
     const seenFileIds = new Set();
     const uniqueFiles = [];
 
@@ -322,14 +449,31 @@ class AgentClient extends BaseClient {
         assistantName: this.options?.modelLabel,
       });
 
+      const hasFiles =
+        (message.documents && message.documents.length > 0) ||
+        (message.videos && message.videos.length > 0) ||
+        (message.audios && message.audios.length > 0) ||
+        (message.image_urls && message.image_urls.length > 0);
+
       if (
-        message.documents &&
-        message.documents.length > 0 &&
+        hasFiles &&
         message.isCreatedByUser &&
         isDocumentSupportedEndpoint(this.options.agent.provider)
       ) {
         const contentParts = [];
-        contentParts.push(...message.documents);
+
+        if (message.documents && message.documents.length > 0) {
+          contentParts.push(...message.documents);
+        }
+
+        if (message.videos && message.videos.length > 0) {
+          contentParts.push(...message.videos);
+        }
+
+        if (message.audios && message.audios.length > 0) {
+          contentParts.push(...message.audios);
+        }
+
         if (message.image_urls && message.image_urls.length > 0) {
           contentParts.push(...message.image_urls);
         }
@@ -338,8 +482,11 @@ class AgentClient extends BaseClient {
           contentParts.push({ type: 'text', text: formattedMessage.content });
         } else {
           const textPart = formattedMessage.content.find((part) => part.type === 'text');
-          contentParts.push(textPart);
+          if (textPart) {
+            contentParts.push(textPart);
+          }
         }
+
         formattedMessage.content = contentParts;
       }
 

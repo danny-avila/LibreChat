@@ -38,6 +38,7 @@ export const documentSupportedEndpoints = new Set<EModelEndpoint>([
   EModelEndpoint.anthropic,
   EModelEndpoint.openAI,
   EModelEndpoint.azureOpenAI,
+  EModelEndpoint.google,
 ]);
 
 export const isDocumentSupportedEndpoint = (endpoint: EModelEndpoint): boolean => {
