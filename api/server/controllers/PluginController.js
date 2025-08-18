@@ -6,7 +6,7 @@ const {
   filterUniquePlugins,
   convertMCPToolsToPlugins,
 } = require('@librechat/api');
-const { getCustomConfig, getCachedTools, getAppConfig } = require('~/server/services/Config');
+const { getCachedTools, getAppConfig } = require('~/server/services/Config');
 const { availableTools, toolkits } = require('~/app/clients/tools');
 const { getMCPManager, getFlowStateManager } = require('~/config');
 const { getLogStores } = require('~/cache');
@@ -102,7 +102,7 @@ function createGetServerTools() {
 const getAvailableTools = async (req, res) => {
   try {
     const userId = req.user?.id;
-    const customConfig = await getCustomConfig();
+    const appConfig = await getAppConfig();
     const cache = getLogStores(CacheKeys.CONFIG_STORE);
     const cachedToolsArray = await cache.get(CacheKeys.TOOLS);
     const cachedUserTools = await getCachedTools({ userId });
@@ -117,7 +117,7 @@ const getAvailableTools = async (req, res) => {
     }
 
     let pluginManifest = availableTools;
-    if (customConfig?.mcpServers != null) {
+    if (appConfig?.mcpConfig != null) {
       try {
         const flowsCache = getLogStores(CacheKeys.FLOWS);
         const flowManager = flowsCache ? getFlowStateManager(flowsCache) : null;
@@ -172,7 +172,7 @@ const getAvailableTools = async (req, res) => {
 
       const parts = plugin.pluginKey.split(Constants.mcp_delimiter);
       const serverName = parts[parts.length - 1];
-      const serverConfig = customConfig?.mcpServers?.[serverName];
+      const serverConfig = appConfig?.mcpConfig?.[serverName];
 
       if (!serverConfig?.customUserVars) {
         toolsOutput.push(toolToAdd);

@@ -18,7 +18,7 @@ const {
 } = require('librechat-data-provider');
 const { findToken, createToken, updateToken } = require('~/models');
 const { getMCPManager, getFlowStateManager } = require('~/config');
-const { getCachedTools, loadCustomConfig } = require('./Config');
+const { getCachedTools, getAppConfig } = require('./Config');
 const { getLogStores } = require('~/cache');
 
 /**
@@ -252,9 +252,8 @@ async function createMCPTool({ req, res, toolKey, provider: _provider }) {
  * @returns {Object} Object containing mcpConfig, appConnections, userConnections, and oauthServers
  */
 async function getMCPSetupData(userId) {
-  const printConfig = false;
-  const config = await loadCustomConfig(printConfig);
-  const mcpConfig = config?.mcpServers;
+  const config = await getAppConfig();
+  const mcpConfig = config?.mcpConfig;
 
   if (!mcpConfig) {
     throw new Error('MCP config not found');
