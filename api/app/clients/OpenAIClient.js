@@ -37,11 +37,11 @@ const { addSpaceIfNeeded, sleep } = require('~/server/utils');
 const { getAppConfig } = require('~/server/services/Config');
 const { spendTokens } = require('~/models/spendTokens');
 const { handleOpenAIErrors } = require('./tools/util');
-const { createLLM, RunManager } = require('./llm');
 const { summaryBuffer } = require('./memory');
 const { runTitleChain } = require('./chains');
 const { tokenSplit } = require('./document');
 const BaseClient = require('./BaseClient');
+const { createLLM } = require('./llm');
 const { logger } = require('~/config');
 
 class OpenAIClient extends BaseClient {
@@ -619,10 +619,6 @@ class OpenAIClient extends BaseClient {
     temperature = 0.2,
     max_tokens,
     streaming,
-    context,
-    tokenBuffer,
-    initialMessageCount,
-    conversationId,
   }) {
     const modelOptions = {
       modelName: modelName ?? model,
@@ -667,22 +663,12 @@ class OpenAIClient extends BaseClient {
       configOptions.httpsAgent = new HttpsProxyAgent(this.options.proxy);
     }
 
-    const { req, res, debug } = this.options;
-    const runManager = new RunManager({ req, res, debug, abortController: this.abortController });
-    this.runManager = runManager;
-
     const llm = createLLM({
       modelOptions,
       configOptions,
       openAIApiKey: this.apiKey,
       azure: this.azure,
       streaming,
-      callbacks: runManager.createCallbacks({
-        context,
-        tokenBuffer,
-        conversationId: this.conversationId ?? conversationId,
-        initialMessageCount,
-      }),
     });
 
     return llm;
