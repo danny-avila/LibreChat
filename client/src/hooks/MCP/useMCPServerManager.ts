@@ -10,8 +10,8 @@ import {
 import type { TUpdateUserPlugins, TPlugin } from 'librechat-data-provider';
 import type { ConfigFieldDetail } from '~/components/MCP/MCPConfigDialog';
 import { useMCPConnectionStatusQuery } from '~/data-provider/Tools/queries';
+import { useGetStartupConfig } from '~/data-provider';
 import { useLocalize, useMCPSelect } from '~/hooks';
-import { useGetStartupConfig } from '../../data-provider';
 
 interface ServerState {
   isInitializing: boolean;

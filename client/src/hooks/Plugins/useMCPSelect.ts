@@ -5,7 +5,7 @@ import type { TPlugin } from 'librechat-data-provider';
 import { useAvailableToolsQuery, useGetStartupConfig } from '~/data-provider';
 import useLocalStorage from '~/hooks/useLocalStorageAlt';
 import { ephemeralAgentByConvoId } from '~/store';
-import { useChatContext } from '../../Providers';
+import { useChatContext } from '~/Providers';
 
 const storageCondition = (value: unknown, rawCurrentValue?: string | null) => {
   if (rawCurrentValue) {
