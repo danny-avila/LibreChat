@@ -364,8 +364,10 @@ async function processRequiredActions(client, requiredActions) {
           const domain = await domainParser(action.metadata.domain, true);
           domainMap.set(domain, action);
 
-          // Check if domain is allowed
-          const isDomainAllowed = await isActionDomainAllowed(action.metadata.domain);
+          const isDomainAllowed = await isActionDomainAllowed(
+            action.metadata.domain,
+            appConfig?.registration?.allowedDomains,
+          );
           if (!isDomainAllowed) {
             continue;
           }
@@ -631,7 +633,10 @@ async function loadAgentTools({ req, res, agent, tool_resources, openAIApiKey })
     domainMap.set(domain, action);
 
     // Check if domain is allowed (do this once per action set)
-    const isDomainAllowed = await isActionDomainAllowed(action.metadata.domain);
+    const isDomainAllowed = await isActionDomainAllowed(
+      action.metadata.domain,
+      appConfig?.registration?.allowedDomains,
+    );
     if (!isDomainAllowed) {
       continue;
     }

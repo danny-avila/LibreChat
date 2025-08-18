@@ -21,8 +21,8 @@ const router = express.Router();
  * @returns {Object} 200 - success response - application/json
  */
 router.post('/:assistant_id', async (req, res) => {
-  const appConfig = await getAppConfig({ role: req.user?.role });
   try {
+    const appConfig = await getAppConfig({ role: req.user?.role });
     const { assistant_id } = req.params;
 
     /** @type {{ functions: FunctionTool[], action_id: string, metadata: ActionMetadata }} */
@@ -32,7 +32,10 @@ router.post('/:assistant_id', async (req, res) => {
     }
 
     let metadata = await encryptMetadata(removeNullishValues(_metadata, true));
-    const isDomainAllowed = await isActionDomainAllowed(metadata.domain);
+    const isDomainAllowed = await isActionDomainAllowed(
+      metadata.domain,
+      appConfig?.registration?.allowedDomains,
+    );
     if (!isDomainAllowed) {
       return res.status(400).json({ message: 'Domain not allowed' });
     }

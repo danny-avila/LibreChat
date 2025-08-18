@@ -20,9 +20,9 @@ const {
   deleteUserById,
   generateRefreshToken,
 } = require('~/models');
+const { getBalanceConfig, getAppConfig } = require('~/server/services/Config');
 const { isEmailDomainAllowed } = require('~/server/services/domains');
 const { checkEmailConfig, sendEmail } = require('~/server/utils');
-const { getBalanceConfig } = require('~/server/services/Config');
 const { registerSchema } = require('~/strategies/validators');
 
 const domains = {
@@ -195,7 +195,8 @@ const registerUser = async (user, additionalData = {}) => {
       return { status: 200, message: genericVerificationMessage };
     }
 
-    if (!(await isEmailDomainAllowed(email))) {
+    const appConfig = await getAppConfig({ role: user.role });
+    if (!(await isEmailDomainAllowed(email, appConfig?.registration?.allowedDomains))) {
       const errorMessage =
         'The email address provided cannot be used. Please use a different email address.';
       logger.error(`[registerUser] [Registration not allowed] [Email: ${user.email}]`);

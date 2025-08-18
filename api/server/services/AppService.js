@@ -84,33 +84,32 @@ const AppService = async () => {
   // Store MCP config for later initialization
   const mcpConfig = config.mcpServers || null;
 
-  const socialLogins =
-    config?.registration?.socialLogins ?? configDefaults?.registration?.socialLogins;
+  const registration = config.registration ?? configDefaults.registration;
   const interfaceConfig = await loadDefaultInterface(config, configDefaults);
   const turnstileConfig = loadTurnstileConfig(config, configDefaults);
 
-  const defaultLocals = {
-    config,
+  const defaultConfig = {
     ocr,
     paths,
+    config,
     memory,
+    balance,
+    mcpConfig,
     webSearch,
     fileStrategy,
-    socialLogins,
+    registration,
     filteredTools,
     includedTools,
     imageOutputType,
     interfaceConfig,
     turnstileConfig,
-    balance,
-    mcpConfig,
   };
 
   const agentsDefaults = agentsConfigSetup(config);
 
   if (!Object.keys(config).length) {
     const appConfig = {
-      ...defaultLocals,
+      ...defaultConfig,
       [EModelEndpoint.agents]: agentsDefaults,
     };
     await setAppConfig(appConfig);
@@ -169,7 +168,7 @@ const AppService = async () => {
   }
 
   const appConfig = {
-    ...defaultLocals,
+    ...defaultConfig,
     fileConfig: config?.fileConfig,
     secureImageLinks: config?.secureImageLinks,
     modelSpecs: processModelSpecs(endpoints, config.modelSpecs, interfaceConfig),
