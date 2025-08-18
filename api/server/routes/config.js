@@ -1,10 +1,14 @@
 const express = require('express');
 const { isEnabled } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
-const { CacheKeys, defaultSocialLogins, Constants } = require('librechat-data-provider');
-const { getCustomConfig } = require('~/server/services/Config/getCustomConfig');
-const { getAppConfig } = require('~/server/services/Config/getAppConfig');
+const {
+  Constants,
+  CacheKeys,
+  removeNullishValues,
+  defaultSocialLogins,
+} = require('librechat-data-provider');
 const { getLdapConfig } = require('~/server/services/Config/ldap');
+const { getAppConfig } = require('~/server/services/Config/app');
 const { getProjectByName } = require('~/models/Project');
 const { getMCPManager } = require('~/config');
 const { getLogStores } = require('~/cache');
@@ -112,25 +116,30 @@ router.get('/', async function (req, res) {
     };
 
     payload.mcpServers = {};
-    const config = await getCustomConfig();
-    if (config?.mcpServers != null) {
+    const getMCPServers = () => {
       try {
         const mcpManager = getMCPManager();
+        if (!mcpManager) {
+          return;
+        }
+        const mcpServers = mcpManager.getAllServers();
+        if (!mcpServers) return;
         const oauthServers = mcpManager.getOAuthServers();
-        for (const serverName in config.mcpServers) {
-          const serverConfig = config.mcpServers[serverName];
-          payload.mcpServers[serverName] = {
+        for (const serverName in mcpServers) {
+          const serverConfig = mcpServers[serverName];
+          payload.mcpServers[serverName] = removeNullishValues({
             startup: serverConfig?.startup,
             chatMenu: serverConfig?.chatMenu,
             isOAuth: oauthServers?.has(serverName),
-            customUserVars: serverConfig?.customUserVars || {},
-          };
+            customUserVars: serverConfig?.customUserVars,
+          });
         }
-      } catch (err) {
-        logger.error('Error loading MCP servers', err);
+      } catch (error) {
+        logger.error('Error loading MCP servers', error);
       }
-    }
+    };
 
+    getMCPServers();
     const webSearchConfig = appConfig.webSearch;
     if (
       webSearchConfig != null &&
