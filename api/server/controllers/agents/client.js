@@ -485,10 +485,6 @@ class AgentClient extends BaseClient {
         }
 
         formattedMessage.content = contentParts;
-
-        if (message === orderedMessages[orderedMessages.length - 1]) {
-          message.content = contentParts;
-        }
       }
 
       if (message.ocr && i !== orderedMessages.length - 1) {
