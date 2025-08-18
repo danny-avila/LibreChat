@@ -73,13 +73,18 @@ librechat:
             instanceName: nodeenergy
             version: 2024-12-01-preview
             models:
+              gpt-4.1:
+                deploymentName: gpt-4.1-deploy
               gpt-4.1-mini:
                 deploymentName: gpt-4.1-mini-deployment
               gpt-4.1-nano:
                 deploymentName: gpt-4.1-nano-deployment
               o4-mini:
                 deploymentName: o4-mini-deployment
-
+              gpt-5-mini:
+                deploymentName: gpt-5-mini-deploy
+              gpt-5-nano:
+                deploymentName: gpt-5-nano-deploy
 
   # name of existing Yaml configmap, key must be librechat.yaml
   existingConfigYaml: ""
