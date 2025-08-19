@@ -8,6 +8,7 @@ const {
   Tokenizer,
   checkAccess,
   hasCustomUserVars,
+  getUserMCPAuthMap,
   memoryInstructions,
   formatContentStrings,
   createMemoryProcessor,
@@ -40,10 +41,10 @@ const {
   deleteMemory,
   setMemory,
 } = require('~/models');
-const { checkCapability, getMCPAuthMap, getAppConfig } = require('~/server/services/Config');
 const { addCacheControl, createContextHandlers } = require('~/app/clients/prompts');
 const { initializeAgent } = require('~/server/services/Endpoints/agents/agent');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
+const { checkCapability, getAppConfig } = require('~/server/services/Config');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const { getProviderConfig } = require('~/server/services/Endpoints');
 const BaseClient = require('~/app/clients/BaseClient');
@@ -913,10 +914,10 @@ class AgentClient extends BaseClient {
         }
 
         try {
-          if (hasCustomUserVars(appConfig)) {
-            config.configurable.userMCPAuthMap = await getMCPAuthMap({
-              tools: agent.tools,
+          if (agent.tools?.length && hasCustomUserVars(appConfig)) {
+            config.configurable.userMCPAuthMap = await getUserMCPAuthMap({
               userId: this.options.req.user.id,
+              tools: agent.tools,
               findPluginAuthsByKeys,
             });
           }
