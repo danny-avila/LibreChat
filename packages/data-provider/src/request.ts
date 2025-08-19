@@ -99,6 +99,11 @@ axios.interceptors.response.use(
     }
 
     if (error.response.status === 401 && !originalRequest._retry) {
+      // For forwarded auth, don't try to refresh tokens - auth is handled by proxy
+      console.warn('[stripe] 401 error in forwarded auth mode - authentication handled by reverse proxy');
+      return Promise.reject(error);
+      
+
       console.warn('401 error, refreshing token');
       originalRequest._retry = true;
 
