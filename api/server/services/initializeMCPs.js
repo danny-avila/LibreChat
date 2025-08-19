@@ -14,22 +14,6 @@ async function initializeMCPs(app) {
     return;
   }
 
-  /** Servers filtered with `startup: false` */
-  const filteredServers = {};
-  for (const [name, config] of Object.entries(mcpServers)) {
-    if (config.startup === false) {
-      logger.info(`Skipping MCP server '${name}' due to startup: false`);
-      continue;
-    }
-    filteredServers[name] = config;
-  }
-
-  if (Object.keys(filteredServers).length === 0) {
-    logger.info('[MCP] No MCP servers to initialize (all skipped or none configured)');
-    return;
-  }
-
-  logger.info('Initializing MCP servers...');
   const mcpManager = await createMCPManager(mcpServers);
 
   try {

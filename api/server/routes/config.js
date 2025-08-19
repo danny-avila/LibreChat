@@ -111,17 +111,20 @@ router.get('/', async function (req, res) {
     payload.mcpServers = {};
     const config = await getCustomConfig();
     if (config?.mcpServers != null) {
-      const mcpManager = getMCPManager();
-      const oauthServers = mcpManager.getOAuthServers();
-
-      for (const serverName in config.mcpServers) {
-        const serverConfig = config.mcpServers[serverName];
-        payload.mcpServers[serverName] = {
-          startup: serverConfig?.startup,
-          chatMenu: serverConfig?.chatMenu,
-          isOAuth: oauthServers?.has(serverName),
-          customUserVars: serverConfig?.customUserVars || {},
-        };
+      try {
+        const mcpManager = getMCPManager();
+        const oauthServers = mcpManager.getOAuthServers();
+        for (const serverName in config.mcpServers) {
+          const serverConfig = config.mcpServers[serverName];
+          payload.mcpServers[serverName] = {
+            startup: serverConfig?.startup,
+            chatMenu: serverConfig?.chatMenu,
+            isOAuth: oauthServers?.has(serverName),
+            customUserVars: serverConfig?.customUserVars || {},
+          };
+        }
+      } catch (err) {
+        logger.error('Error loading MCP servers', err);
       }
     }
 
