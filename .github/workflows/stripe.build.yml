@@ -26,12 +26,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Echo GitHub ref and commit SHA
+      - name: Echo sanitized GitHub ref and commit SHA
         run: |
-          echo "GitHub ref: ${{ github.ref }}"
           echo "GitHub commit SHA: ${{ github.sha }}"
           echo "GitHub ref name: ${{ github.ref_name }}"
-          echo "GitHub head ref: ${{ github.head_ref }}"
+          SANITIZED_REF_NAME=$(echo "${{ github.ref_name }}" | sed 's/\//-/g')
+          echo "SANITIZED_REF_NAME=${SANITIZED_REF_NAME}" >> $GITHUB_ENV
+          echo "SANITIZED_REF_NAME=${SANITIZED_REF_NAME}"
 
       - name: Fetch tags and set the latest tag
         run: |
@@ -58,11 +59,7 @@ jobs:
         run: |
           cp .env.example .env
 
-      # Sanitize branch name for Docker tag (replace '/' with '-')
-      - name: Sanitize branch name
-        run: |
-          SANITIZED_REF_NAME=$(echo "${{ github.ref_name }}" | sed 's/\//-/g')
-          echo "SANITIZED_REF_NAME=${SANITIZED_REF_NAME}" >> $GITHUB_ENV
+
 
       # Build and push Docker images for each target
       - name: Build and push Docker images
