@@ -27,6 +27,9 @@ const AuthLayout = () => (
   </AuthContextProvider>
 );
 
+const baseEl = document.querySelector("base");
+const baseHref = baseEl?.getAttribute("href") || "/";
+
 export const router = createBrowserRouter([
   {
     path: 'share/:shareId',
@@ -118,4 +121,4 @@ export const router = createBrowserRouter([
       },
     ],
   },
-]);
+], { basename: baseHref });
