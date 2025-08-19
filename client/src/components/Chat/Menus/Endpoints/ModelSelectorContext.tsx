@@ -70,7 +70,6 @@ export function ModelSelectorProvider({ children, startupConfig }: ModelSelector
     },
   );
 
-
   const { externalLinks, externalLinksHeader } = useMemo(() => {
     const externalLinksConfig = startupConfig?.interface?.externalLinks;
 
