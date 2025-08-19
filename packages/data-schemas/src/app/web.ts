@@ -33,7 +33,7 @@ export const webSearchAuth = {
     cohere: {
       cohereApiKey: 1 as const,
       /** Optional (0) */
-      cohereBaseUrl: 0 as const,
+      cohereApiUrl: 0 as const,
     },
   },
 };
@@ -76,7 +76,7 @@ export function loadWebSearchConfig(
   const jinaApiKey = config?.jinaApiKey ?? '${JINA_API_KEY}';
   const jinaApiUrl = config?.jinaApiUrl ?? '${JINA_API_URL}';
   const cohereApiKey = config?.cohereApiKey ?? '${COHERE_API_KEY}';
-  const cohereBaseUrl = config?.cohereBaseUrl ?? '${COHERE_BASE_URL}';
+  const cohereApiUrl = config?.cohereApiUrl ?? '${COHERE_API_URL}';
   const safeSearch = config?.safeSearch ?? SafeSearchTypes.MODERATE;
 
   return {
@@ -85,7 +85,7 @@ export function loadWebSearchConfig(
     jinaApiKey,
     jinaApiUrl,
     cohereApiKey,
-    cohereBaseUrl,
+    cohereApiUrl,
     serperApiKey,
     searxngApiKey,
     firecrawlApiKey,

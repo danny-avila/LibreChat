@@ -10,7 +10,7 @@ export type TWebSearchKeys =
   | 'jinaApiKey'
   | 'jinaApiUrl'
   | 'cohereApiKey'
-  | 'cohereBaseUrl';
+  | 'cohereApiUrl';
 
 export type TWebSearchCategories =
   | SearchCategories.PROVIDERS
