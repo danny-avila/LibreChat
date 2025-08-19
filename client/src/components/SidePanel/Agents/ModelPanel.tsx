@@ -79,9 +79,9 @@ export default function ModelPanel({
       agentParamSettings[combinedKey] ?? agentParamSettings[overriddenEndpointKey] ?? [];
     const overriddenParams = endpointsConfig[provider]?.customParams?.paramDefinitions ?? [];
     const overriddenParamsMap = keyBy(overriddenParams, 'key');
-    return defaultParams.map(
-      (param) => (overriddenParamsMap[param.key] as SettingDefinition) ?? param,
-    );
+    return defaultParams
+      .filter((param) => param != null)
+      .map((param) => (overriddenParamsMap[param.key] as SettingDefinition) ?? param);
   }, [endpointType, endpointsConfig, model, provider]);
 
   const setOption = (optionKey: keyof t.AgentModelParameters) => (value: t.AgentParameterValue) => {
