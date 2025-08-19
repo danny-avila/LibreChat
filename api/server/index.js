@@ -10,6 +10,10 @@ if (process.env.CONTAINER_APP_HOSTNAME && !process.env.DOMAIN_SERVER) {
   process.env.DOMAIN_SERVER = process.env.DOMAIN_CLIENT;
 }
 
+console.log("DEBUG: CONTAINER_APP_HOSTNAME =", process.env.CONTAINER_APP_HOSTNAME);
+console.log("DEBUG: DOMAIN_CLIENT =", process.env.DOMAIN_CLIENT);
+console.log("DEBUG: DOMAIN_SERVER =", process.env.DOMAIN_SERVER);
+
 const path = require('path');
 require('module-alias')({ base: path.resolve(__dirname, '..') });
 const cors = require('cors');
