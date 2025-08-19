@@ -1,3 +1,6 @@
+const { Providers } = require('@librechat/agents');
+const { isUserProvided, getCustomEndpointConfig } = require('@librechat/api');
+const { getOpenAIConfig, createHandleLLMNewToken, resolveHeaders } = require('@librechat/api');
 const {
   CacheKeys,
   ErrorTypes,
@@ -5,13 +8,10 @@ const {
   FetchTokenConfig,
   extractEnvVariable,
 } = require('librechat-data-provider');
-const { Providers } = require('@librechat/agents');
-const { getOpenAIConfig, createHandleLLMNewToken, resolveHeaders } = require('@librechat/api');
 const { getUserKeyValues, checkUserKeyExpiry } = require('~/server/services/UserService');
-const { getCustomEndpointConfig, getAppConfig } = require('~/server/services/Config');
 const { fetchModels } = require('~/server/services/ModelService');
+const { getAppConfig } = require('~/server/services/Config');
 const OpenAIClient = require('~/app/clients/OpenAIClient');
-const { isUserProvided } = require('~/server/utils');
 const getLogStores = require('~/cache/getLogStores');
 
 const { PROXY } = process.env;
@@ -21,7 +21,10 @@ const initializeClient = async ({ req, res, endpointOption, optionsOnly, overrid
   const { key: expiresAt } = req.body;
   const endpoint = overrideEndpoint ?? req.body.endpoint;
 
-  const endpointConfig = await getCustomEndpointConfig(endpoint);
+  const endpointConfig = getCustomEndpointConfig({
+    endpoint,
+    appConfig,
+  });
   if (!endpointConfig) {
     throw new Error(`Config not found for the ${endpoint} custom endpoint.`);
   }

@@ -7,6 +7,7 @@ const {
   createRun,
   Tokenizer,
   checkAccess,
+  hasCustomUserVars,
   memoryInstructions,
   formatContentStrings,
   createMemoryProcessor,
@@ -39,12 +40,7 @@ const {
   deleteMemory,
   setMemory,
 } = require('~/models');
-const {
-  hasCustomUserVars,
-  checkCapability,
-  getMCPAuthMap,
-  getAppConfig,
-} = require('~/server/services/Config');
+const { checkCapability, getMCPAuthMap, getAppConfig } = require('~/server/services/Config');
 const { addCacheControl, createContextHandlers } = require('~/app/clients/prompts');
 const { initializeAgent } = require('~/server/services/Endpoints/agents/agent');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
@@ -917,7 +913,7 @@ class AgentClient extends BaseClient {
         }
 
         try {
-          if (await hasCustomUserVars()) {
+          if (hasCustomUserVars(appConfig)) {
             config.configurable.userMCPAuthMap = await getMCPAuthMap({
               tools: agent.tools,
               userId: this.options.req.user.id,
@@ -1102,7 +1098,7 @@ class AgentClient extends BaseClient {
       model: agent.model || agent.model_parameters.model,
     };
 
-    let titleProviderConfig = await getProviderConfig(endpoint);
+    let titleProviderConfig = getProviderConfig({ provider: endpoint, appConfig });
 
     /** @type {TEndpoint | undefined} */
     const endpointConfig =
@@ -1117,7 +1113,10 @@ class AgentClient extends BaseClient {
 
     if (endpointConfig?.titleEndpoint && endpointConfig.titleEndpoint !== endpoint) {
       try {
-        titleProviderConfig = await getProviderConfig(endpointConfig.titleEndpoint);
+        titleProviderConfig = getProviderConfig({
+          provider: endpointConfig.titleEndpoint,
+          appConfig,
+        });
         endpoint = endpointConfig.titleEndpoint;
       } catch (error) {
         logger.warn(
@@ -1126,7 +1125,7 @@ class AgentClient extends BaseClient {
         );
         // Fall back to original provider config
         endpoint = agent.endpoint;
-        titleProviderConfig = await getProviderConfig(endpoint);
+        titleProviderConfig = getProviderConfig({ provider: endpoint, appConfig });
       }
     }
 

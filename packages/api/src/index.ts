@@ -1,3 +1,4 @@
+export * from './app';
 /* MCP */
 export * from './mcp/MCPManager';
 export * from './mcp/oauth';

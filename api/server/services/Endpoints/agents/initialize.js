@@ -1,6 +1,6 @@
 const { logger } = require('@librechat/data-schemas');
-const { validateAgentModel } = require('@librechat/api');
 const { createContentAggregator } = require('@librechat/agents');
+const { validateAgentModel, getCustomEndpointConfig } = require('@librechat/api');
 const {
   Constants,
   EModelEndpoint,
@@ -11,11 +11,11 @@ const {
   createToolEndCallback,
   getDefaultHandlers,
 } = require('~/server/controllers/agents/callbacks');
-const { getCustomEndpointConfig, getAppConfig } = require('~/server/services/Config');
 const { initializeAgent } = require('~/server/services/Endpoints/agents/agent');
 const { getModelsConfig } = require('~/server/controllers/ModelController');
 const { loadAgentTools } = require('~/server/services/ToolService');
 const AgentClient = require('~/server/controllers/agents/client');
+const { getAppConfig } = require('~/server/services/Config');
 const { getAgent } = require('~/models/Agent');
 const { logViolation } = require('~/cache');
 
@@ -147,7 +147,10 @@ const initializeClient = async ({ req, res, endpointOption }) => {
   let endpointConfig = appConfig.endpoints?.[primaryConfig.endpoint];
   if (!isAgentsEndpoint(primaryConfig.endpoint) && !endpointConfig) {
     try {
-      endpointConfig = await getCustomEndpointConfig(primaryConfig.endpoint);
+      endpointConfig = getCustomEndpointConfig({
+        endpoint: primaryConfig.endpoint,
+        appConfig,
+      });
     } catch (err) {
       logger.error(
         '[api/server/controllers/agents/client.js #titleConvo] Error getting custom endpoint config',

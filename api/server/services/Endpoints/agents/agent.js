@@ -106,7 +106,7 @@ const initializeAgent = async ({
     })) ?? {};
 
   agent.endpoint = provider;
-  const { getOptions, overrideProvider } = await getProviderConfig(provider);
+  const { getOptions, overrideProvider } = getProviderConfig({ provider, appConfig });
   if (overrideProvider !== agent.provider) {
     agent.provider = overrideProvider;
   }
