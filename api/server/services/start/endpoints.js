@@ -10,6 +10,7 @@ const { checkAzureVariables } = require('./checks');
  * @param {TCustomConfig['endpoints']['agents']} [agentsDefaults]
  */
 const loadEndpoints = (config, agentsDefaults) => {
+  /** @type {AppConfig['endpoints']} */
   const loadedEndpoints = {};
   const endpoints = config?.endpoints;
 
