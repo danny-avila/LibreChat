@@ -1,15 +1,21 @@
 import { useState, useCallback } from 'react';
 import { QrCode, RotateCw, Trash2 } from 'lucide-react';
+import {
+  Button,
+  OGDialog,
+  Spinner,
+  TooltipAnchor,
+  Label,
+  OGDialogTemplate,
+  useToastContext,
+} from '@librechat/client';
 import type { TSharedLinkGetResponse } from 'librechat-data-provider';
 import {
   useCreateSharedLinkMutation,
   useUpdateSharedLinkMutation,
   useDeleteSharedLinkMutation,
 } from '~/data-provider';
-import { Button, OGDialog, Spinner, TooltipAnchor, Label } from '~/components';
-import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
 import { NotificationSeverity } from '~/common';
-import { useToastContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
 
 export default function SharedLinkButton({

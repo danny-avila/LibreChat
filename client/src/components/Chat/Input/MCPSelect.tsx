@@ -1,9 +1,8 @@
 import React, { memo, useCallback } from 'react';
-import MCPConfigDialog from '~/components/ui/MCP/MCPConfigDialog';
-import MCPServerStatusIcon from '~/components/ui/MCP/MCPServerStatusIcon';
-import MultiSelect from '~/components/ui/MultiSelect';
-import { MCPIcon } from '~/components/svg';
+import { MultiSelect, MCPIcon } from '@librechat/client';
+import MCPServerStatusIcon from '~/components/MCP/MCPServerStatusIcon';
 import { useMCPServerManager } from '~/hooks/MCP/useMCPServerManager';
+import MCPConfigDialog from '~/components/MCP/MCPConfigDialog';
 
 function MCPSelect() {
   const {
@@ -14,6 +13,7 @@ function MCPSelect() {
     batchToggleServers,
     getServerStatusIconProps,
     getConfigDialogProps,
+    isInitializing,
     localize,
   } = useMCPServerManager();
 
@@ -33,14 +33,20 @@ function MCPSelect() {
   const renderItemContent = useCallback(
     (serverName: string, defaultContent: React.ReactNode) => {
       const statusIconProps = getServerStatusIconProps(serverName);
+      const isServerInitializing = isInitializing(serverName);
 
-      // Common wrapper for the main content (check mark + text)
-      // Ensures Check & Text are adjacent and the group takes available space.
+      /**
+       Common wrapper for the main content (check mark + text).
+       Ensures Check & Text are adjacent and the group takes available space.
+        */
       const mainContentWrapper = (
         <button
           type="button"
-          className="flex flex-grow items-center rounded bg-transparent p-0 text-left transition-colors focus:outline-none"
+          className={`flex flex-grow items-center rounded bg-transparent p-0 text-left transition-colors focus:outline-none ${
+            isServerInitializing ? 'opacity-50' : ''
+          }`}
           tabIndex={0}
+          disabled={isServerInitializing}
         >
           {defaultContent}
         </button>
@@ -59,15 +65,13 @@ function MCPSelect() {
 
       return mainContentWrapper;
     },
-    [getServerStatusIconProps],
+    [getServerStatusIconProps, isInitializing],
   );
 
-  // Don't render if no servers are selected and not pinned
   if ((!mcpValues || mcpValues.length === 0) && !isPinned) {
     return null;
   }
 
-  // Don't render if no MCP servers are configured
   if (!configuredServers || configuredServers.length === 0) {
     return null;
   }
@@ -80,7 +84,6 @@ function MCPSelect() {
         items={configuredServers}
         selectedValues={mcpValues ?? []}
         setSelectedValues={batchToggleServers}
-        defaultSelectedValues={mcpValues ?? []}
         renderSelectedValues={renderSelectedValues}
         renderItemContent={renderItemContent}
         placeholder={placeholderText}

@@ -1,23 +1,30 @@
 import React, { useState, useRef } from 'react';
 import * as Tabs from '@radix-ui/react-tabs';
-import { MessageSquare, Command, DollarSign } from 'lucide-react';
 import { SettingsTabValues } from 'librechat-data-provider';
-import { useGetStartupConfig } from '~/data-provider';
-import type { TDialogProps } from '~/common';
+import { MessageSquare, Command, DollarSign } from 'lucide-react';
 import { Dialog, DialogPanel, DialogTitle, Transition, TransitionChild } from '@headlessui/react';
 import {
-  Personalization,
-  Commands,
+  GearIcon,
+  DataIcon,
+  UserIcon,
+  SpeechIcon,
+  useMediaQuery,
+  PersonalizationIcon,
+} from '@librechat/client';
+import type { TDialogProps } from '~/common';
+import {
   General,
-  Account,
-  Balance,
-  Speech,
-  Data,
   Chat,
+  Commands,
+  Speech,
+  Personalization,
+  Data,
+  Balance,
+  Account,
 } from './SettingsTabs';
-import { GearIcon, DataIcon, SpeechIcon, UserIcon, PersonalizationIcon } from '~/components/svg';
 import usePersonalizationAccess from '~/hooks/usePersonalizationAccess';
-import { useMediaQuery, useLocalize, TranslationKeys } from '~/hooks';
+import { useLocalize, TranslationKeys } from '~/hooks';
+import { useGetStartupConfig } from '~/data-provider';
 import { cn } from '~/utils';
 
 export default function Settings({ open, onOpenChange }: TDialogProps) {

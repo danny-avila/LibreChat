@@ -18,7 +18,6 @@ import {
   compactAssistantSchema,
 } from './schemas';
 import { bedrockInputSchema } from './bedrock';
-import { extractEnvVariable } from './utils';
 import { alternateName } from './config';
 
 type EndpointSchema =

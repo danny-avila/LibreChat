@@ -889,6 +889,12 @@
  */
 
 /**
+ * @exports IRole
+ * @typedef {import('@librechat/data-schemas').IRole} IRole
+ * @memberof typedefs
+ */
+
+/**
  * @exports ObjectId
  * @typedef {import('mongoose').Types.ObjectId} ObjectId
  * @memberof typedefs
@@ -1069,6 +1075,19 @@
 /**
  * @exports AgentListResponse
  * @typedef {import('librechat-data-provider').AgentListResponse} AgentListResponse
+ * @memberof typedefs
+ */
+
+/** Permissions */
+/**
+ * @exports TUpdateResourcePermissionsRequest
+ * @typedef {import('librechat-data-provider').TUpdateResourcePermissionsRequest} TUpdateResourcePermissionsRequest
+ * @memberof typedefs
+ */
+
+/**
+ * @exports TUpdateResourcePermissionsResponse
+ * @typedef {import('librechat-data-provider').TUpdateResourcePermissionsResponse} TUpdateResourcePermissionsResponse
  * @memberof typedefs
  */
 
@@ -1370,7 +1389,7 @@
  * @property {string} [model] - The model that the assistant used for this run.
  * @property {string} [instructions] - The instructions that the assistant used for this run.
  * @property {string} [additional_instructions] - Optional. Appends additional instructions
- * at theend of the instructions for the run. This is useful for modifying
+ * at the end of the instructions for the run. This is useful for modifying
  * @property {Tool[]} [tools] - The list of tools used for this run.
  * @property {string[]} [file_ids] - The list of File IDs used for this run.
  * @property {Object} [metadata] - Metadata associated with this run.

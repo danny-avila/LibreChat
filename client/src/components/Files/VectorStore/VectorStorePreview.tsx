@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import DeleteIconButton from '../DeleteIconButton';
-import { Button } from '~/components/ui';
-import { TrashIcon } from '~/components/svg';
+import { TrashIcon, Button } from '@librechat/client';
 import { TFile } from 'librechat-data-provider/dist/types';
 import UploadFileButton from '../FileList/UploadFileButton';
 import UploadFileModal from '../FileList/UploadFileModal';
@@ -99,7 +98,7 @@ export default function VectorStorePreview() {
   const params = useParams();
 
   return (
-    <div className="m-3 ml-1 mr-7 bg-white p-2 sm:p-4 md:p-6  lg:p-10">
+    <div className="m-3 ml-1 mr-7 bg-white p-2 sm:p-4 md:p-6 lg:p-10">
       <div className="flex flex-col justify-between md:flex-row">
         <div className="flex flex-col">
           <b className="hidden text-base md:text-lg lg:block lg:text-xl">VECTOR STORE</b>

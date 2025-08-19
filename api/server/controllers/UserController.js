@@ -1,5 +1,5 @@
 const { logger } = require('@librechat/data-schemas');
-const { webSearchKeys, extractWebSearchEnvVars } = require('@librechat/api');
+const { webSearchKeys, extractWebSearchEnvVars, normalizeHttpError } = require('@librechat/api');
 const {
   getFiles,
   updateUser,
@@ -24,7 +24,13 @@ const { getMCPManager } = require('~/config');
 const getUserController = async (req, res) => {
   /** @type {MongoUser} */
   const userData = req.user.toObject != null ? req.user.toObject() : { ...req.user };
+  /**
+   * These fields should not exist due to secure field selection, but deletion
+   * is done in case of alternate database incompatibility with Mongo API
+   * */
+  delete userData.password;
   delete userData.totpSecret;
+  delete userData.backupCodes;
   if (req.app.locals.fileStrategy === FileSources.s3 && userData.avatar) {
     const avatarNeedsRefresh = needsRefresh(userData.avatar, 3600);
     if (!avatarNeedsRefresh) {
@@ -89,8 +95,8 @@ const updateUserPluginsController = async (req, res) => {
 
       if (userPluginsService instanceof Error) {
         logger.error('[userPluginsService]', userPluginsService);
-        const { status, message } = userPluginsService;
-        res.status(status).send({ message });
+        const { status, message } = normalizeHttpError(userPluginsService);
+        return res.status(status).send({ message });
       }
     }
 
@@ -137,7 +143,7 @@ const updateUserPluginsController = async (req, res) => {
         authService = await updateUserPluginAuth(user.id, keys[i], pluginKey, values[i]);
         if (authService instanceof Error) {
           logger.error('[authService]', authService);
-          ({ status, message } = authService);
+          ({ status, message } = normalizeHttpError(authService));
         }
       }
     } else if (action === 'uninstall') {
@@ -151,7 +157,7 @@ const updateUserPluginsController = async (req, res) => {
             `[authService] Error deleting all auth for MCP tool ${pluginKey}:`,
             authService,
           );
-          ({ status, message } = authService);
+          ({ status, message } = normalizeHttpError(authService));
         }
       } else {
         // This handles:
@@ -163,7 +169,7 @@ const updateUserPluginsController = async (req, res) => {
           authService = await deleteUserPluginAuth(user.id, keys[i]); // Deletes by authField name
           if (authService instanceof Error) {
             logger.error('[authService] Error deleting specific auth key:', authService);
-            ({ status, message } = authService);
+            ({ status, message } = normalizeHttpError(authService));
           }
         }
       }
@@ -193,7 +199,8 @@ const updateUserPluginsController = async (req, res) => {
       return res.status(status).send();
     }
 
-    res.status(status).send({ message });
+    const normalized = normalizeHttpError({ status, message });
+    return res.status(normalized.status).send({ message: normalized.message });
   } catch (err) {
     logger.error('[updateUserPluginsController]', err);
     return res.status(500).json({ message: 'Something went wrong.' });

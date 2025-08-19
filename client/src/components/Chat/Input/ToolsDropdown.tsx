@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { Globe, Settings, Settings2, TerminalSquareIcon } from 'lucide-react';
+import { TooltipAnchor, DropdownPopup, PinIcon, VectorIcon } from '@librechat/client';
 import type { MenuItemProps } from '~/common';
 import {
   AuthType,
@@ -9,13 +10,12 @@ import {
   PermissionTypes,
   defaultAgentCapabilities,
 } from 'librechat-data-provider';
-import { TooltipAnchor, DropdownPopup } from '~/components';
-import { useLocalize, useHasAccess, useAgentCapabilities } from '~/hooks';
+import { useLocalize, useHasAccess, useAgentCapabilities, useMCPSelect } from '~/hooks';
 import ArtifactsSubMenu from '~/components/Chat/Input/ArtifactsSubMenu';
 import MCPSubMenu from '~/components/Chat/Input/MCPSubMenu';
-import { PinIcon, VectorIcon } from '~/components/svg';
 import { useBadgeRowContext } from '~/Providers';
 import { cn } from '~/utils';
+import { useGetStartupConfig } from '~/data-provider';
 
 interface ToolsDropdownProps {
   disabled?: boolean;
@@ -27,15 +27,16 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
   const [isPopoverActive, setIsPopoverActive] = useState(false);
   const {
     webSearch,
-    mcpSelect,
     artifacts,
     fileSearch,
     agentsConfig,
-    startupConfig,
     codeApiKeyForm,
     codeInterpreter,
     searchApiKeyForm,
   } = useBadgeRowContext();
+  const mcpSelect = useMCPSelect();
+  const { data: startupConfig } = useGetStartupConfig();
+
   const { codeEnabled, webSearchEnabled, artifactsEnabled, fileSearchEnabled } =
     useAgentCapabilities(agentsConfig?.capabilities ?? defaultAgentCapabilities);
 
@@ -317,7 +318,7 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
 
   return (
     <DropdownPopup
-      itemClassName="flex w-full cursor-pointer items-center justify-between hover:bg-surface-hover gap-5"
+      itemClassName="flex w-full cursor-pointer rounded-lg items-center justify-between hover:bg-surface-hover gap-5"
       menuId="tools-dropdown-menu"
       isOpen={isPopoverActive}
       setIsOpen={setIsPopoverActive}

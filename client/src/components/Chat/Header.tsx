@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { useMediaQuery } from '@librechat/client';
 import { useOutletContext } from 'react-router-dom';
 import { getConfigDefaults, PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { ContextType } from '~/common';
@@ -6,16 +7,17 @@ import ModelSelector from './Menus/Endpoints/ModelSelector';
 import { PresetsMenu, HeaderNewChat, OpenSidebar } from './Menus';
 import { useGetStartupConfig } from '~/data-provider';
 import ExportAndShareMenu from './ExportAndShareMenu';
-import { useMediaQuery, useHasAccess } from '~/hooks';
 import BookmarkMenu from './Menus/BookmarkMenu';
 import { TemporaryChat } from './TemporaryChat';
 import AddMultiConvo from './AddMultiConvo';
+import { useHasAccess } from '~/hooks';
 
 const defaultInterface = getConfigDefaults().interface;
 
 export default function Header() {
   const { data: startupConfig } = useGetStartupConfig();
   const { navVisible, setNavVisible } = useOutletContext<ContextType>();
+
   const interfaceConfig = useMemo(
     () => startupConfig?.interface ?? defaultInterface,
     [startupConfig],
@@ -46,7 +48,7 @@ export default function Header() {
                 : 'pointer-events-none translate-x-[-100px] opacity-0'
             }`}
           >
-            <OpenSidebar setNavVisible={setNavVisible} />
+            <OpenSidebar setNavVisible={setNavVisible} className="max-md:hidden" />
             <HeaderNewChat />
           </div>
           <div

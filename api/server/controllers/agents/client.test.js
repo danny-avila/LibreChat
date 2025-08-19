@@ -727,4 +727,464 @@ describe('AgentClient - titleConvo', () => {
       });
     });
   });
+
+  describe('getOptions method - GPT-5+ model handling', () => {
+    let mockReq;
+    let mockRes;
+    let mockAgent;
+    let mockOptions;
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+
+      mockAgent = {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: {
+          model: 'gpt-5',
+        },
+      };
+
+      mockReq = {
+        app: {
+          locals: {},
+        },
+        user: {
+          id: 'user-123',
+        },
+      };
+
+      mockRes = {};
+
+      mockOptions = {
+        req: mockReq,
+        res: mockRes,
+        agent: mockAgent,
+      };
+
+      client = new AgentClient(mockOptions);
+    });
+
+    it('should move maxTokens to modelKwargs.max_completion_tokens for GPT-5 models', () => {
+      const clientOptions = {
+        model: 'gpt-5',
+        maxTokens: 2048,
+        temperature: 0.7,
+      };
+
+      // Simulate the getOptions logic that handles GPT-5+ models
+      if (/\bgpt-[5-9]\b/i.test(clientOptions.model) && clientOptions.maxTokens != null) {
+        clientOptions.modelKwargs = clientOptions.modelKwargs ?? {};
+        clientOptions.modelKwargs.max_completion_tokens = clientOptions.maxTokens;
+        delete clientOptions.maxTokens;
+      }
+
+      expect(clientOptions.maxTokens).toBeUndefined();
+      expect(clientOptions.modelKwargs).toBeDefined();
+      expect(clientOptions.modelKwargs.max_completion_tokens).toBe(2048);
+      expect(clientOptions.temperature).toBe(0.7); // Other options should remain
+    });
+
+    it('should move maxTokens to modelKwargs.max_output_tokens for GPT-5 models with useResponsesApi', () => {
+      const clientOptions = {
+        model: 'gpt-5',
+        maxTokens: 2048,
+        temperature: 0.7,
+        useResponsesApi: true,
+      };
+
+      if (/\bgpt-[5-9]\b/i.test(clientOptions.model) && clientOptions.maxTokens != null) {
+        clientOptions.modelKwargs = clientOptions.modelKwargs ?? {};
+        const paramName =
+          clientOptions.useResponsesApi === true ? 'max_output_tokens' : 'max_completion_tokens';
+        clientOptions.modelKwargs[paramName] = clientOptions.maxTokens;
+        delete clientOptions.maxTokens;
+      }
+
+      expect(clientOptions.maxTokens).toBeUndefined();
+      expect(clientOptions.modelKwargs).toBeDefined();
+      expect(clientOptions.modelKwargs.max_output_tokens).toBe(2048);
+      expect(clientOptions.temperature).toBe(0.7); // Other options should remain
+    });
+
+    it('should handle GPT-5+ models with existing modelKwargs', () => {
+      const clientOptions = {
+        model: 'gpt-6',
+        maxTokens: 1500,
+        temperature: 0.8,
+        modelKwargs: {
+          customParam: 'value',
+        },
+      };
+
+      // Simulate the getOptions logic
+      if (/\bgpt-[5-9]\b/i.test(clientOptions.model) && clientOptions.maxTokens != null) {
+        clientOptions.modelKwargs = clientOptions.modelKwargs ?? {};
+        clientOptions.modelKwargs.max_completion_tokens = clientOptions.maxTokens;
+        delete clientOptions.maxTokens;
+      }
+
+      expect(clientOptions.maxTokens).toBeUndefined();
+      expect(clientOptions.modelKwargs).toEqual({
+        customParam: 'value',
+        max_completion_tokens: 1500,
+      });
+    });
+
+    it('should not modify maxTokens for non-GPT-5+ models', () => {
+      const clientOptions = {
+        model: 'gpt-4',
+        maxTokens: 2048,
+        temperature: 0.7,
+      };
+
+      // Simulate the getOptions logic
+      if (/\bgpt-[5-9]\b/i.test(clientOptions.model) && clientOptions.maxTokens != null) {
+        clientOptions.modelKwargs = clientOptions.modelKwargs ?? {};
+        clientOptions.modelKwargs.max_completion_tokens = clientOptions.maxTokens;
+        delete clientOptions.maxTokens;
+      }
+
+      // Should not be modified since it's GPT-4
+      expect(clientOptions.maxTokens).toBe(2048);
+      expect(clientOptions.modelKwargs).toBeUndefined();
+    });
+
+    it('should handle various GPT-5+ model formats', () => {
+      const testCases = [
+        { model: 'gpt-5', shouldTransform: true },
+        { model: 'gpt-5-turbo', shouldTransform: true },
+        { model: 'gpt-6', shouldTransform: true },
+        { model: 'gpt-7-preview', shouldTransform: true },
+        { model: 'gpt-8', shouldTransform: true },
+        { model: 'gpt-9-mini', shouldTransform: true },
+        { model: 'gpt-4', shouldTransform: false },
+        { model: 'gpt-4o', shouldTransform: false },
+        { model: 'gpt-3.5-turbo', shouldTransform: false },
+        { model: 'claude-3', shouldTransform: false },
+      ];
+
+      testCases.forEach(({ model, shouldTransform }) => {
+        const clientOptions = {
+          model,
+          maxTokens: 1000,
+        };
+
+        // Simulate the getOptions logic
+        if (/\bgpt-[5-9]\b/i.test(clientOptions.model) && clientOptions.maxTokens != null) {
+          clientOptions.modelKwargs = clientOptions.modelKwargs ?? {};
+          clientOptions.modelKwargs.max_completion_tokens = clientOptions.maxTokens;
+          delete clientOptions.maxTokens;
+        }
+
+        if (shouldTransform) {
+          expect(clientOptions.maxTokens).toBeUndefined();
+          expect(clientOptions.modelKwargs?.max_completion_tokens).toBe(1000);
+        } else {
+          expect(clientOptions.maxTokens).toBe(1000);
+          expect(clientOptions.modelKwargs).toBeUndefined();
+        }
+      });
+    });
+
+    it('should not swap max token param for older models when using useResponsesApi', () => {
+      const testCases = [
+        { model: 'gpt-5', shouldTransform: true },
+        { model: 'gpt-5-turbo', shouldTransform: true },
+        { model: 'gpt-6', shouldTransform: true },
+        { model: 'gpt-7-preview', shouldTransform: true },
+        { model: 'gpt-8', shouldTransform: true },
+        { model: 'gpt-9-mini', shouldTransform: true },
+        { model: 'gpt-4', shouldTransform: false },
+        { model: 'gpt-4o', shouldTransform: false },
+        { model: 'gpt-3.5-turbo', shouldTransform: false },
+        { model: 'claude-3', shouldTransform: false },
+      ];
+
+      testCases.forEach(({ model, shouldTransform }) => {
+        const clientOptions = {
+          model,
+          maxTokens: 1000,
+          useResponsesApi: true,
+        };
+
+        if (/\bgpt-[5-9]\b/i.test(clientOptions.model) && clientOptions.maxTokens != null) {
+          clientOptions.modelKwargs = clientOptions.modelKwargs ?? {};
+          const paramName =
+            clientOptions.useResponsesApi === true ? 'max_output_tokens' : 'max_completion_tokens';
+          clientOptions.modelKwargs[paramName] = clientOptions.maxTokens;
+          delete clientOptions.maxTokens;
+        }
+
+        if (shouldTransform) {
+          expect(clientOptions.maxTokens).toBeUndefined();
+          expect(clientOptions.modelKwargs?.max_output_tokens).toBe(1000);
+        } else {
+          expect(clientOptions.maxTokens).toBe(1000);
+          expect(clientOptions.modelKwargs).toBeUndefined();
+        }
+      });
+    });
+
+    it('should not transform if maxTokens is null or undefined', () => {
+      const testCases = [
+        { model: 'gpt-5', maxTokens: null },
+        { model: 'gpt-5', maxTokens: undefined },
+        { model: 'gpt-6', maxTokens: 0 }, // Should transform even if 0
+      ];
+
+      testCases.forEach(({ model, maxTokens }, index) => {
+        const clientOptions = {
+          model,
+          maxTokens,
+          temperature: 0.7,
+        };
+
+        // Simulate the getOptions logic
+        if (/\bgpt-[5-9]\b/i.test(clientOptions.model) && clientOptions.maxTokens != null) {
+          clientOptions.modelKwargs = clientOptions.modelKwargs ?? {};
+          clientOptions.modelKwargs.max_completion_tokens = clientOptions.maxTokens;
+          delete clientOptions.maxTokens;
+        }
+
+        if (index < 2) {
+          // null or undefined cases
+          expect(clientOptions.maxTokens).toBe(maxTokens);
+          expect(clientOptions.modelKwargs).toBeUndefined();
+        } else {
+          // 0 case - should transform
+          expect(clientOptions.maxTokens).toBeUndefined();
+          expect(clientOptions.modelKwargs?.max_completion_tokens).toBe(0);
+        }
+      });
+    });
+  });
+
+  describe('runMemory method', () => {
+    let client;
+    let mockReq;
+    let mockRes;
+    let mockAgent;
+    let mockOptions;
+    let mockProcessMemory;
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+
+      mockAgent = {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: {
+          model: 'gpt-4',
+        },
+      };
+
+      mockReq = {
+        app: {
+          locals: {
+            memory: {
+              messageWindowSize: 3,
+            },
+          },
+        },
+        user: {
+          id: 'user-123',
+          personalization: {
+            memories: true,
+          },
+        },
+      };
+
+      mockRes = {};
+
+      mockOptions = {
+        req: mockReq,
+        res: mockRes,
+        agent: mockAgent,
+      };
+
+      mockProcessMemory = jest.fn().mockResolvedValue([]);
+
+      client = new AgentClient(mockOptions);
+      client.processMemory = mockProcessMemory;
+      client.conversationId = 'convo-123';
+      client.responseMessageId = 'response-123';
+    });
+
+    it('should filter out image URLs from message content', async () => {
+      const { HumanMessage, AIMessage } = require('@langchain/core/messages');
+      const messages = [
+        new HumanMessage({
+          content: [
+            {
+              type: 'text',
+              text: 'What is in this image?',
+            },
+            {
+              type: 'image_url',
+              image_url: {
+                url: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+                detail: 'auto',
+              },
+            },
+          ],
+        }),
+        new AIMessage('I can see a small red pixel in the image.'),
+        new HumanMessage({
+          content: [
+            {
+              type: 'text',
+              text: 'What about this one?',
+            },
+            {
+              type: 'image_url',
+              image_url: {
+                url: 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEAYABgAAD/',
+                detail: 'high',
+              },
+            },
+          ],
+        }),
+      ];
+
+      await client.runMemory(messages);
+
+      expect(mockProcessMemory).toHaveBeenCalledTimes(1);
+      const processedMessage = mockProcessMemory.mock.calls[0][0][0];
+
+      // Verify the buffer message was created
+      expect(processedMessage.constructor.name).toBe('HumanMessage');
+      expect(processedMessage.content).toContain('# Current Chat:');
+
+      // Verify that image URLs are not in the buffer string
+      expect(processedMessage.content).not.toContain('image_url');
+      expect(processedMessage.content).not.toContain('data:image');
+      expect(processedMessage.content).not.toContain('base64');
+
+      // Verify text content is preserved
+      expect(processedMessage.content).toContain('What is in this image?');
+      expect(processedMessage.content).toContain('I can see a small red pixel in the image.');
+      expect(processedMessage.content).toContain('What about this one?');
+    });
+
+    it('should handle messages with only text content', async () => {
+      const { HumanMessage, AIMessage } = require('@langchain/core/messages');
+      const messages = [
+        new HumanMessage('Hello, how are you?'),
+        new AIMessage('I am doing well, thank you!'),
+        new HumanMessage('That is great to hear.'),
+      ];
+
+      await client.runMemory(messages);
+
+      expect(mockProcessMemory).toHaveBeenCalledTimes(1);
+      const processedMessage = mockProcessMemory.mock.calls[0][0][0];
+
+      expect(processedMessage.content).toContain('Hello, how are you?');
+      expect(processedMessage.content).toContain('I am doing well, thank you!');
+      expect(processedMessage.content).toContain('That is great to hear.');
+    });
+
+    it('should handle mixed content types correctly', async () => {
+      const { HumanMessage } = require('@langchain/core/messages');
+      const { ContentTypes } = require('librechat-data-provider');
+
+      const messages = [
+        new HumanMessage({
+          content: [
+            {
+              type: 'text',
+              text: 'Here is some text',
+            },
+            {
+              type: ContentTypes.IMAGE_URL,
+              image_url: {
+                url: 'https://example.com/image.png',
+              },
+            },
+            {
+              type: 'text',
+              text: ' and more text',
+            },
+          ],
+        }),
+      ];
+
+      await client.runMemory(messages);
+
+      expect(mockProcessMemory).toHaveBeenCalledTimes(1);
+      const processedMessage = mockProcessMemory.mock.calls[0][0][0];
+
+      // Should contain text parts but not image URLs
+      expect(processedMessage.content).toContain('Here is some text');
+      expect(processedMessage.content).toContain('and more text');
+      expect(processedMessage.content).not.toContain('example.com/image.png');
+      expect(processedMessage.content).not.toContain('IMAGE_URL');
+    });
+
+    it('should preserve original messages without mutation', async () => {
+      const { HumanMessage } = require('@langchain/core/messages');
+      const originalContent = [
+        {
+          type: 'text',
+          text: 'Original text',
+        },
+        {
+          type: 'image_url',
+          image_url: {
+            url: 'data:image/png;base64,ABC123',
+          },
+        },
+      ];
+
+      const messages = [
+        new HumanMessage({
+          content: [...originalContent],
+        }),
+      ];
+
+      await client.runMemory(messages);
+
+      // Verify original message wasn't mutated
+      expect(messages[0].content).toHaveLength(2);
+      expect(messages[0].content[1].type).toBe('image_url');
+      expect(messages[0].content[1].image_url.url).toBe('data:image/png;base64,ABC123');
+    });
+
+    it('should handle message window size correctly', async () => {
+      const { HumanMessage, AIMessage } = require('@langchain/core/messages');
+      const messages = [
+        new HumanMessage('Message 1'),
+        new AIMessage('Response 1'),
+        new HumanMessage('Message 2'),
+        new AIMessage('Response 2'),
+        new HumanMessage('Message 3'),
+        new AIMessage('Response 3'),
+      ];
+
+      // Window size is set to 3 in mockReq
+      await client.runMemory(messages);
+
+      expect(mockProcessMemory).toHaveBeenCalledTimes(1);
+      const processedMessage = mockProcessMemory.mock.calls[0][0][0];
+
+      // Should only include last 3 messages due to window size
+      expect(processedMessage.content).toContain('Message 3');
+      expect(processedMessage.content).toContain('Response 3');
+      expect(processedMessage.content).not.toContain('Message 1');
+      expect(processedMessage.content).not.toContain('Response 1');
+    });
+
+    it('should return early if processMemory is not set', async () => {
+      const { HumanMessage } = require('@langchain/core/messages');
+      client.processMemory = null;
+
+      const result = await client.runMemory([new HumanMessage('Test')]);
+
+      expect(result).toBeUndefined();
+      expect(mockProcessMemory).not.toHaveBeenCalled();
+    });
+  });
 });

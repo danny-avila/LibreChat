@@ -1,6 +1,7 @@
 apiVersion: v2
 name: librechat
 description: A Helm chart for LibreChat
+icon: https://www.librechat.ai/librechat_alt.svg
 
 # A chart can be either an 'application' or a 'library' chart.
 #
@@ -14,7 +15,7 @@ type: application
 # This is the chart version. This version number should be incremented each time you make changes
 # to the chart and its templates, including the app version.
 # Versions are expected to follow Semantic Versioning (https://semver.org/)
-version: 1.8.9
+version: 1.8.10
 
 # This is the version number of the application being deployed. This version number should be
 # incremented each time you make changes to the application. Versions are not expected to
@@ -22,7 +23,7 @@ version: 1.8.9
 # It is recommended to use it with quotes.
 
 # renovate: image=ghcr.io/danny-avila/librechat
-appVersion: "v0.7.9"
+appVersion: "v0.8.0-rc2"
 
 home: https://www.librechat.ai
 

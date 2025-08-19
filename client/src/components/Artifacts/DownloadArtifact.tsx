@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { Download } from 'lucide-react';
 import type { Artifact } from '~/common';
+import { CheckMark } from '@librechat/client';
 import useArtifactProps from '~/hooks/Artifacts/useArtifactProps';
 import { useEditorContext } from '~/Providers';
-import { CheckMark } from '~/components/svg';
 import { useLocalize } from '~/hooks';
 
 const DownloadArtifact = ({

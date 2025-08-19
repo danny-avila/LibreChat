@@ -40,6 +40,7 @@ export type TEndpointOption = Pick<
   | 'resendFiles'
   | 'imageDetail'
   | 'reasoning_effort'
+  | 'verbosity'
   | 'instructions'
   | 'additional_instructions'
   | 'append_current_datetime'
@@ -158,6 +159,11 @@ export type TCategory = {
   id?: string;
   value: string;
   label: string;
+};
+
+export type TMarketplaceCategory = TCategory & {
+  count: number;
+  description?: string;
 };
 
 export type TError = {
@@ -410,6 +416,14 @@ export type TVerify2FATempResponse = {
   token?: string;
   user?: TUser;
   message?: string;
+};
+
+/**
+ * Request for disabling 2FA.
+ */
+export type TDisable2FARequest = {
+  token?: string;
+  backupCode?: string;
 };
 
 /**

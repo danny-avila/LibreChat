@@ -1,19 +1,19 @@
+import React, { useState, useMemo, useCallback } from 'react';
 import { ChevronLeft } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
-import React, { useState, useMemo, useCallback } from 'react';
+import { Button, useToastContext } from '@librechat/client';
 import { Constants, QueryKeys } from 'librechat-data-provider';
-import type { TUpdateUserPlugins } from 'librechat-data-provider';
 import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
-import ServerInitializationSection from '~/components/ui/MCP/ServerInitializationSection';
-import CustomUserVarsSection from '~/components/ui/MCP/CustomUserVarsSection';
+import type { TUpdateUserPlugins } from 'librechat-data-provider';
+import ServerInitializationSection from '~/components/MCP/ServerInitializationSection';
 import { useMCPConnectionStatusQuery } from '~/data-provider/Tools/queries';
+import CustomUserVarsSection from '~/components/MCP/CustomUserVarsSection';
+import BadgeRowProvider from '~/Providers/BadgeRowContext';
 import { useGetStartupConfig } from '~/data-provider';
 import MCPPanelSkeleton from './MCPPanelSkeleton';
-import { useToastContext } from '~/Providers';
-import { Button } from '~/components/ui';
 import { useLocalize } from '~/hooks';
 
-export default function MCPPanel() {
+function MCPPanelContent() {
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const queryClient = useQueryClient();
@@ -127,50 +127,45 @@ export default function MCPPanel() {
     const serverStatus = connectionStatus[selectedServerNameForEditing];
 
     return (
-      <div className="h-auto max-w-full overflow-x-hidden p-3">
-        <Button
-          variant="outline"
-          onClick={handleGoBackToList}
-          className="mb-3 flex items-center px-3 py-2 text-sm"
-        >
+      <div className="h-auto max-w-full space-y-4 overflow-x-hidden py-2">
+        <Button variant="outline" onClick={handleGoBackToList} size="sm">
           <ChevronLeft className="mr-1 h-4 w-4" />
           {localize('com_ui_back')}
         </Button>
 
-        <h3 className="mb-3 text-lg font-medium">
-          {localize('com_sidepanel_mcp_variables_for', { '0': serverBeingEdited.serverName })}
-        </h3>
-
-        {/* Server Initialization Section */}
         <div className="mb-4">
-          <ServerInitializationSection
+          <CustomUserVarsSection
             serverName={selectedServerNameForEditing}
-            requiresOAuth={serverStatus?.requiresOAuth || false}
+            fields={serverBeingEdited.config.customUserVars}
+            onSave={(authData) => {
+              if (selectedServerNameForEditing) {
+                handleConfigSave(selectedServerNameForEditing, authData);
+              }
+            }}
+            onRevoke={() => {
+              if (selectedServerNameForEditing) {
+                handleConfigRevoke(selectedServerNameForEditing);
+              }
+            }}
+            isSubmitting={updateUserPluginsMutation.isLoading}
           />
         </div>
 
-        {/* Custom User Variables Section */}
-        <CustomUserVarsSection
+        <ServerInitializationSection
+          sidePanel={true}
           serverName={selectedServerNameForEditing}
-          fields={serverBeingEdited.config.customUserVars}
-          onSave={(authData) => {
-            if (selectedServerNameForEditing) {
-              handleConfigSave(selectedServerNameForEditing, authData);
-            }
-          }}
-          onRevoke={() => {
-            if (selectedServerNameForEditing) {
-              handleConfigRevoke(selectedServerNameForEditing);
-            }
-          }}
-          isSubmitting={updateUserPluginsMutation.isLoading}
+          requiresOAuth={serverStatus?.requiresOAuth || false}
+          hasCustomUserVars={
+            serverBeingEdited.config.customUserVars &&
+            Object.keys(serverBeingEdited.config.customUserVars).length > 0
+          }
         />
       </div>
     );
   } else {
     // Server List View
     return (
-      <div className="h-auto max-w-full overflow-x-hidden p-3">
+      <div className="h-auto max-w-full overflow-x-hidden py-2">
         <div className="space-y-2">
           {mcpServerDefinitions.map((server) => {
             const serverStatus = connectionStatus[server.serverName];
@@ -187,7 +182,7 @@ export default function MCPPanel() {
                     <span>{server.serverName}</span>
                     {serverStatus && (
                       <span
-                        className={`rounded px-2 py-0.5 text-xs ${
+                        className={`rounded-xl px-2 py-0.5 text-xs ${
                           isConnected
                             ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300'
                             : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'
@@ -205,4 +200,12 @@ export default function MCPPanel() {
       </div>
     );
   }
+}
+
+export default function MCPPanel() {
+  return (
+    <BadgeRowProvider>
+      <MCPPanelContent />
+    </BadgeRowProvider>
+  );
 }

@@ -1,10 +1,8 @@
 import React, { useRef, Dispatch, SetStateAction } from 'react';
 import { TConversationTag } from 'librechat-data-provider';
-import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
+import { OGDialogTemplate, OGDialog, Button, Spinner, useToastContext } from '@librechat/client';
 import { useConversationTagMutation } from '~/data-provider';
-import { OGDialog, Button, Spinner } from '~/components';
 import { NotificationSeverity } from '~/common';
-import { useToastContext } from '~/Providers';
 import BookmarkForm from './BookmarkForm';
 import { useLocalize } from '~/hooks';
 import { logger } from '~/utils';

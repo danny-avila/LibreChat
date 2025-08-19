@@ -5,6 +5,7 @@ import type { TPlugin } from 'librechat-data-provider';
 import { useAvailableToolsQuery, useGetStartupConfig } from '~/data-provider';
 import useLocalStorage from '~/hooks/useLocalStorageAlt';
 import { ephemeralAgentByConvoId } from '~/store';
+import { useChatContext } from '~/Providers';
 
 const storageCondition = (value: unknown, rawCurrentValue?: string | null) => {
   if (rawCurrentValue) {
@@ -20,12 +21,14 @@ const storageCondition = (value: unknown, rawCurrentValue?: string | null) => {
   return Array.isArray(value) && value.length > 0;
 };
 
-interface UseMCPSelectOptions {
-  conversationId?: string | null;
-}
+export function useMCPSelect() {
+  const { conversation } = useChatContext();
 
-export function useMCPSelect({ conversationId }: UseMCPSelectOptions) {
-  const key = conversationId ?? Constants.NEW_CONVO;
+  const key = useMemo(
+    () => conversation?.conversationId ?? Constants.NEW_CONVO,
+    [conversation?.conversationId],
+  );
+
   const hasSetFetched = useRef<string | null>(null);
   const [ephemeralAgent, setEphemeralAgent] = useRecoilState(ephemeralAgentByConvoId(key));
   const { data: startupConfig } = useGetStartupConfig();
@@ -81,12 +84,20 @@ export function useMCPSelect({ conversationId }: UseMCPSelectOptions) {
     [setEphemeralAgent],
   );
 
-  const [mcpValues, setMCPValues] = useLocalStorage<string[]>(
+  const [mcpValues, setMCPValuesRaw] = useLocalStorage<string[]>(
     `${LocalStorageKeys.LAST_MCP_}${key}`,
     mcpState,
     setSelectedValues,
     storageCondition,
   );
+
+  const setMCPValuesRawRef = useRef(setMCPValuesRaw);
+  setMCPValuesRawRef.current = setMCPValuesRaw;
+
+  // Create a stable memoized setter to avoid re-creating it on every render and causing an infinite render loop
+  const setMCPValues = useCallback((value: string[]) => {
+    setMCPValuesRawRef.current(value);
+  }, []);
 
   const [isPinned, setIsPinned] = useLocalStorage<boolean>(
     `${LocalStorageKeys.PIN_MCP_}${key}`,

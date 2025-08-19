@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { BookmarkPlusIcon } from 'lucide-react';
-import type { ConversationTagsResponse, TConversationTag } from 'librechat-data-provider';
 import {
   Table,
   Input,
@@ -11,7 +10,8 @@ import {
   TableCell,
   TableHeader,
   OGDialogTrigger,
-} from '~/components/ui';
+} from '@librechat/client';
+import type { ConversationTagsResponse, TConversationTag } from 'librechat-data-provider';
 import { BookmarkContext, useBookmarkContext } from '~/Providers/BookmarkContext';
 import { BookmarkEditDialog } from '~/components/Bookmarks';
 import BookmarkTableRow from './BookmarkTableRow';
