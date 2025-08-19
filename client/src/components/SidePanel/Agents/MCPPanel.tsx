@@ -65,6 +65,7 @@ export default function MCPPanel() {
 
   const methods = useForm<MCPForm>({
     defaultValues: defaultMCPFormValues,
+    mode: 'onChange',
   });
 
   const { reset } = methods;

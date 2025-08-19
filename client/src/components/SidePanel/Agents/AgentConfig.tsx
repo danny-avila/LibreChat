@@ -8,6 +8,7 @@ import {
   processAgentOption,
   getEndpointField,
   defaultTextProps,
+  validateEmail,
   getIconKey,
   cn,
 } from '~/utils';
@@ -445,10 +446,8 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
                 name="support_contact.email"
                 control={control}
                 rules={{
-                  pattern: {
-                    value: /^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/,
-                    message: localize('com_ui_support_contact_email_invalid'),
-                  },
+                  validate: (value) =>
+                    validateEmail(value ?? '', localize('com_ui_support_contact_email_invalid')),
                 }}
                 render={({ field, fieldState: { error } }) => (
                   <>
