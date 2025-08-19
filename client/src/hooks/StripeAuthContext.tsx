@@ -11,22 +11,20 @@ import {
 import { debounce } from 'lodash';
 import { useRecoilState } from 'recoil';
 import { useNavigate } from 'react-router-dom';
-import { setTokenHeader, SystemRoles } from 'librechat-data-provider';
+import { SystemRoles } from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
 import {
   useGetRole,
   useGetUserQuery,
-  useLoginUserMutation,
   useLogoutUserMutation,
-  useRefreshTokenMutation,
 } from '~/data-provider';
 import { TAuthConfig, TUserContext, TAuthContext, TResError } from '~/common';
 import useTimeout from './useTimeout';
 import store from '~/store';
 
-const AuthContext = createContext<TAuthContext | undefined>(undefined);
+const StripeAuthContext = createContext<TAuthContext | undefined>(undefined);
 
-const AuthContextProvider = ({
+const StripeAuthContextProvider = ({
   authConfig,
   children,
 }: {
@@ -53,10 +51,10 @@ const AuthContextProvider = ({
       debounce((userContext: TUserContext) => {
         const { token, isAuthenticated, user, redirect } = userContext;
         setUser(user);
-        setToken(token);
-        //@ts-ignore - ok for token to be undefined initially
-        setTokenHeader(token);
         setIsAuthenticated(isAuthenticated);
+
+        // JWT token logic disabled for forwarded auth - always keep token undefined
+        setToken(undefined);
 
         // Use a custom redirect if set
         const finalRedirect = logoutRedirectRef.current || redirect;
@@ -77,23 +75,6 @@ const AuthContextProvider = ({
   );
   const doSetError = useTimeout({ callback: (error) => setError(error as string | undefined) });
 
-  const loginUser = useLoginUserMutation({
-    onSuccess: (data: t.TLoginResponse) => {
-      const { user, token, twoFAPending, tempToken } = data;
-      if (twoFAPending) {
-        // Redirect to the two-factor authentication route.
-        navigate(`/login/2fa?tempToken=${tempToken}`, { replace: true });
-        return;
-      }
-      setError(undefined);
-      setUserContext({ token, isAuthenticated: true, user, redirect: '/c/new' });
-    },
-    onError: (error: TResError | unknown) => {
-      const resError = error as TResError;
-      doSetError(resError.message);
-      navigate('/login', { replace: true });
-    },
-  });
   const logoutUser = useLogoutUserMutation({
     onSuccess: (data) => {
       setUserContext({
@@ -113,7 +94,6 @@ const AuthContextProvider = ({
       });
     },
   });
-  const refreshToken = useRefreshTokenMutation();
 
   const logout = useCallback(
     (redirect?: string) => {
@@ -125,89 +105,59 @@ const AuthContextProvider = ({
     [logoutUser],
   );
 
-  const userQuery = useGetUserQuery({ enabled: !!(token ?? '') });
+  // For forwarded auth - always try to get user data, auth is handled by proxy
+  const userQuery = useGetUserQuery({ 
+    enabled: true
+  });
 
-  const login = (data: t.TLoginUser) => {
-    loginUser.mutate(data);
+  const login = (data?: t.TLoginUser) => {
+    // For forwarded auth - redirect to main app, authentication is handled by reverse proxy
+    navigate('/c/new', { replace: true });
   };
 
   const silentRefresh = useCallback(() => {
-    if (authConfig?.test === true) {
-      console.log('Test mode. Skipping silent refresh.');
-      return;
-    }
-    refreshToken.mutate(undefined, {
-      onSuccess: (data: t.TRefreshTokenResponse | undefined) => {
-        const { user, token = '' } = data ?? {};
-        if (token) {
-          setUserContext({ token, isAuthenticated: true, user });
-        } else {
-          console.log('Token is not present. User is not authenticated.');
-          if (authConfig?.test === true) {
-            return;
-          }
-          navigate('/login');
-        }
-      },
-      onError: (error) => {
-        console.log('refreshToken mutation error:', error);
-        if (authConfig?.test === true) {
-          return;
-        }
-        navigate('/login');
-      },
-    });
+    // No token refresh needed for forwarded auth
+    return;
   }, []);
 
   useEffect(() => {
     if (userQuery.data) {
+      // Log successful user data fetch
+      console.log('[StripeAuthContext] User data fetched successfully:', {
+        userData: {
+          email: userQuery.data.email,
+          username: userQuery.data.username,
+        },
+      });
+      
       setUser(userQuery.data);
+      setIsAuthenticated(true);
+      if (error) {
+        setError(undefined);
+      }
     } else if (userQuery.isError) {
-      doSetError((userQuery.error as Error).message);
-      navigate('/login', { replace: true });
-    }
-    if (error != null && error && isAuthenticated) {
-      doSetError(undefined);
-    }
-    if (token == null || !token || !isAuthenticated) {
-      silentRefresh();
+      // Log authentication failure
+      console.log('[StripeAuthContext] User authentication failed:', {
+        error: userQuery.error,
+      });
+      
+      setIsAuthenticated(false);
+      setUser(undefined);
     }
   }, [
-    token,
-    isAuthenticated,
     userQuery.data,
     userQuery.isError,
     userQuery.error,
     error,
     setUser,
-    navigate,
-    silentRefresh,
-    setUserContext,
+    doSetError,
   ]);
-
-  useEffect(() => {
-    const handleTokenUpdate = (event) => {
-      console.log('tokenUpdated event received event');
-      const newToken = event.detail;
-      setUserContext({
-        token: newToken,
-        isAuthenticated: true,
-        user: user,
-      });
-    };
-
-    window.addEventListener('tokenUpdated', handleTokenUpdate);
-
-    return () => {
-      window.removeEventListener('tokenUpdated', handleTokenUpdate);
-    };
-  }, [setUserContext, user]);
 
   // Make the provider update only when it should
   const memoedValue = useMemo(
     () => ({
       user,
-      token,
+      token, // Will be undefined for forwarded auth
       error,
       login,
       logout,
@@ -222,22 +172,17 @@ const AuthContextProvider = ({
     [user, error, isAuthenticated, token, userRole, adminRole],
   );
 
-  return <AuthContext.Provider value={memoedValue}>{children}</AuthContext.Provider>;
+  return <StripeAuthContext.Provider value={memoedValue}>{children}</StripeAuthContext.Provider>;
 };
 
-const useAuthContext = () => {
-  const context = useContext(AuthContext);
+const useStripeAuthContext = () => {
+  const context = useContext(StripeAuthContext);
 
   if (context === undefined) {
-    throw new Error('useAuthContext should be used inside AuthProvider');
+    throw new Error('useStripeAuthContext should be used inside StripeAuthContextProvider');
   }
 
   return context;
 };
 
-// Re-export StripeAuthContext components with original names
-export {
-  StripeAuthContextProvider as AuthContextProvider,
-  useStripeAuthContext as useAuthContext,
-  StripeAuthContext as AuthContext,
-} from './StripeAuthContext';
+export { StripeAuthContextProvider, useStripeAuthContext, StripeAuthContext };
