@@ -149,6 +149,8 @@ jobs:
           - name: Build and push Docker image
             run: |
               docker build . -t creuwbfcommonsp.azurecr.io/sharedservices/librechat:${{ github.sha }}
+              docker push creuwbfcommonsp.azurecr.io/sharedservices/librechat:${{ github.sha }}
+
 
           - name: Generate Token
             id: create_token
