@@ -139,7 +139,11 @@ export const a: React.ElementType = memo(({ href, children }: TAnchorProps) => {
 
   return (
     <a
-      href={filepath?.startsWith('files/') ? `${domainServerBaseUrl}/${filepath}` : `${domainServerBaseUrl}/files/${filepath}`}
+      href={
+        filepath?.startsWith('files/')
+          ? `${domainServerBaseUrl}/${filepath}`
+          : `${domainServerBaseUrl}/files/${filepath}`
+      }
       {...props}
     >
       {children}

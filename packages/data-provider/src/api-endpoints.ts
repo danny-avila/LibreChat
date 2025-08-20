@@ -3,17 +3,19 @@ import * as q from './types/queries';
 import { ResourceType } from './accessPermissions';
 
 let BASE_URL = '';
-if (import.meta.env) {
-  // Import meta is only defined when running in Vite, and not in NodeJS
-  const baseEl = document.querySelector("base");
-  BASE_URL = baseEl?.getAttribute("href") || "/";
+if (typeof process === 'undefined') {
+  // process is only available in node context, so we check if it's undefined
+  // This is to ensure that the BASE_URL is set correctly based on the <base>
+  // element in the HTML document, if it exists.
+  const baseEl = document.querySelector('base');
+  BASE_URL = baseEl?.getAttribute('href') || '/';
 }
 
 if (BASE_URL && BASE_URL.endsWith('/')) {
   BASE_URL = BASE_URL.slice(0, -1);
 }
 
-export const apiBaseUrl = ()  => BASE_URL;
+export const apiBaseUrl = () => BASE_URL;
 
 // Testing this buildQuery function
 const buildQuery = (params: Record<string, unknown>): string => {
@@ -150,8 +152,9 @@ export const resendVerificationEmail = () => `${BASE_URL}/api/user/verify/resend
 
 export const plugins = () => `${BASE_URL}/api/plugins`;
 
-export const mcpReinitialize = (serverName: string) => `${BASE_URL}/api/mcp/${serverName}/reinitialize`;
-export const mcpConnectionStatus = () => `${BASE_URL}/api/mcp/connection/status`;;
+export const mcpReinitialize = (serverName: string) =>
+  `${BASE_URL}/api/mcp/${serverName}/reinitialize`;
+export const mcpConnectionStatus = () => `${BASE_URL}/api/mcp/connection/status`;
 export const mcpServerConnectionStatus = (serverName: string) =>
   `${BASE_URL}/api/mcp/connection/status/${serverName}`;
 export const mcpAuthValues = (serverName: string) => {
@@ -166,7 +169,8 @@ export const config = () => `${BASE_URL}/api/config`;
 
 export const prompts = () => `${BASE_URL}/api/prompts`;
 
-export const addPromptToGroup = (groupId: string) => `${BASE_URL}/api/prompts/groups/${groupId}/prompts`;
+export const addPromptToGroup = (groupId: string) =>
+  `${BASE_URL}/api/prompts/groups/${groupId}/prompts`;
 
 export const assistants = ({
   path = '',

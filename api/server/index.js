@@ -54,7 +54,9 @@ const startServer = async () => {
   // We need to update the base href if the DOMAIN_CLIENT is specified and not the root path
   if (process.env.DOMAIN_CLIENT) {
     const clientUrl = new URL(process.env.DOMAIN_CLIENT);
-    const baseHref = clientUrl.pathname.endsWith('/') ? clientUrl.pathname : `${clientUrl.pathname}/`;
+    const baseHref = clientUrl.pathname.endsWith('/')
+      ? clientUrl.pathname
+      : `${clientUrl.pathname}/`;
     if (baseHref !== '/') {
       logger.info(`Setting base href to ${baseHref}`);
       indexHTML = indexHTML.replace(/base href="\/"/, `base href="${baseHref}"`);
