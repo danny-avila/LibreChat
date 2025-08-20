@@ -13,15 +13,18 @@ jest.mock('@librechat/data-schemas', () => ({
 jest.mock('~/server/services/Config', () => ({
   getCustomConfig: jest.fn(),
   getCachedTools: jest.fn(),
+  setCachedTools: jest.fn(),
+  mergeUserTools: jest.fn(),
 }));
 
 jest.mock('~/server/services/ToolService', () => ({
   getToolkitKey: jest.fn(),
+  loadAndFormatTools: jest.fn(),
 }));
 
 jest.mock('~/config', () => ({
   getMCPManager: jest.fn(() => ({
-    loadManifestTools: jest.fn().mockResolvedValue([]),
+    loadAllManifestTools: jest.fn().mockResolvedValue([]),
   })),
   getFlowStateManager: jest.fn(),
 }));
@@ -50,6 +53,7 @@ const {
   convertMCPToolsToPlugins,
   getToolkitKey,
 } = require('@librechat/api');
+const { loadAndFormatTools } = require('~/server/services/ToolService');
 
 describe('PluginController', () => {
   let mockReq, mockRes, mockCache;
@@ -310,7 +314,7 @@ describe('PluginController', () => {
 
       // Mock the MCP manager to return tools
       const mockMCPManager = {
-        loadManifestTools: jest.fn().mockResolvedValue(mcpManagerTools),
+        loadAllManifestTools: jest.fn().mockResolvedValue(mcpManagerTools),
       };
       require('~/config').getMCPManager.mockReturnValue(mockMCPManager);
 
@@ -379,10 +383,8 @@ describe('PluginController', () => {
 
       await getAvailableTools(mockReq, mockRes);
 
-      expect(convertMCPToolsToPlugins).toHaveBeenCalledWith({
-        functionTools: null,
-        customConfig: null,
-      });
+      // When cachedUserTools is null, convertMCPToolsToPlugins is not called
+      expect(convertMCPToolsToPlugins).not.toHaveBeenCalled();
     });
 
     it('should handle when getCachedTools returns undefined', async () => {
@@ -399,10 +401,8 @@ describe('PluginController', () => {
 
       await getAvailableTools(mockReq, mockRes);
 
-      expect(convertMCPToolsToPlugins).toHaveBeenCalledWith({
-        functionTools: undefined,
-        customConfig: null,
-      });
+      // When cachedUserTools is undefined, convertMCPToolsToPlugins is not called
+      expect(convertMCPToolsToPlugins).not.toHaveBeenCalled();
     });
 
     it('should handle cachedToolsArray and userPlugins both being defined', async () => {
@@ -500,6 +500,15 @@ describe('PluginController', () => {
         toolkit: true,
       };
 
+      // Ensure req.app.locals is properly mocked
+      mockReq.app = {
+        locals: {
+          filteredTools: [],
+          includedTools: [],
+          paths: { structuredTools: '/mock/path' },
+        },
+      };
+
       mockCache.get.mockResolvedValue(null);
       getCachedTools.mockResolvedValue({});
       convertMCPToolsToPlugins.mockReturnValue([]);
@@ -507,6 +516,9 @@ describe('PluginController', () => {
       checkPluginAuth.mockReturnValue(false);
       getToolkitKey.mockReturnValue(undefined);
       getCustomConfig.mockResolvedValue(null);
+
+      // Mock loadAndFormatTools to return an empty object when toolDefinitions is null
+      loadAndFormatTools.mockReturnValue({});
 
       // Mock getCachedTools second call to return null
       getCachedTools.mockResolvedValueOnce({}).mockResolvedValueOnce(null);

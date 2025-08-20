@@ -3,7 +3,7 @@ const { MCPOAuthHandler } = require('@librechat/api');
 const { Router } = require('express');
 const { getMCPSetupData, getServerConnectionStatus } = require('~/server/services/MCP');
 const { findToken, updateToken, createToken, deleteTokens } = require('~/models');
-const { setCachedTools, getCachedTools } = require('~/server/services/Config');
+const { updateMCPUserTools } = require('~/server/services/Config/mcpToolsCache');
 const { getUserPluginAuthValue } = require('~/server/services/PluginService');
 const { CacheKeys, Constants } = require('librechat-data-provider');
 const { getMCPManager, getFlowStateManager } = require('~/config');
@@ -142,33 +142,12 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
           `[MCP OAuth] Successfully reconnected ${serverName} for user ${flowState.userId}`,
         );
 
-        const userTools = (await getCachedTools({ userId: flowState.userId })) || {};
-
-        const mcpDelimiter = Constants.mcp_delimiter;
-        for (const key of Object.keys(userTools)) {
-          if (key.endsWith(`${mcpDelimiter}${serverName}`)) {
-            delete userTools[key];
-          }
-        }
-
         const tools = await userConnection.fetchTools();
-        for (const tool of tools) {
-          const name = `${tool.name}${Constants.mcp_delimiter}${serverName}`;
-          userTools[name] = {
-            type: 'function',
-            ['function']: {
-              name,
-              description: tool.description,
-              parameters: tool.inputSchema,
-            },
-          };
-        }
-
-        await setCachedTools(userTools, { userId: flowState.userId });
-
-        logger.debug(
-          `[MCP OAuth] Cached ${tools.length} tools for ${serverName} user ${flowState.userId}`,
-        );
+        await updateMCPUserTools({
+          userId: flowState.userId,
+          serverName,
+          tools,
+        });
       } else {
         logger.debug(`[MCP OAuth] System-level OAuth completed for ${serverName}`);
       }
@@ -396,29 +375,12 @@ router.post('/:serverName/reinitialize', requireJwtAuth, async (req, res) => {
     }
 
     if (userConnection && !oauthRequired) {
-      const userTools = (await getCachedTools({ userId: user.id })) || {};
-
-      const mcpDelimiter = Constants.mcp_delimiter;
-      for (const key of Object.keys(userTools)) {
-        if (key.endsWith(`${mcpDelimiter}${serverName}`)) {
-          delete userTools[key];
-        }
-      }
-
       const tools = await userConnection.fetchTools();
-      for (const tool of tools) {
-        const name = `${tool.name}${Constants.mcp_delimiter}${serverName}`;
-        userTools[name] = {
-          type: 'function',
-          ['function']: {
-            name,
-            description: tool.description,
-            parameters: tool.inputSchema,
-          },
-        };
-      }
-
-      await setCachedTools(userTools, { userId: user.id });
+      await updateMCPUserTools({
+        userId: user.id,
+        serverName,
+        tools,
+      });
     }
 
     logger.debug(
