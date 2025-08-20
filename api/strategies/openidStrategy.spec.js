@@ -411,6 +411,7 @@ describe('setupOpenId', () => {
     // Assert
     expect(user).toBeTruthy();
   });
+
   it('should default to usePKCE false when OPENID_USE_PKCE is not defined', async () => {
     const OpenIDStrategy = require('openid-client/passport').Strategy;
 
