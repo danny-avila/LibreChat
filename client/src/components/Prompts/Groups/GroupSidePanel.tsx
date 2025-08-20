@@ -1,7 +1,9 @@
 import { useMemo } from 'react';
 import { useLocation } from 'react-router-dom';
+import { useMediaQuery } from '@librechat/client';
 import PanelNavigation from '~/components/Prompts/Groups/PanelNavigation';
-import { useMediaQuery, usePromptGroupsNav } from '~/hooks';
+import ManagePrompts from '~/components/Prompts/ManagePrompts';
+import { usePromptGroupsContext } from '~/Providers';
 import List from '~/components/Prompts/Groups/List';
 import { cn } from '~/utils';
 
@@ -9,22 +11,23 @@ export default function GroupSidePanel({
   children,
   isDetailView,
   className = '',
-  /* usePromptGroupsNav */
-  nextPage,
-  prevPage,
-  isFetching,
-  hasNextPage,
-  groupsQuery,
-  promptGroups,
-  hasPreviousPage,
 }: {
   children?: React.ReactNode;
   isDetailView?: boolean;
   className?: string;
-} & ReturnType<typeof usePromptGroupsNav>) {
+}) {
   const location = useLocation();
   const isSmallerScreen = useMediaQuery('(max-width: 1024px)');
   const isChatRoute = useMemo(() => location.pathname?.startsWith('/c/'), [location.pathname]);
+  const {
+    nextPage,
+    prevPage,
+    isFetching,
+    hasNextPage,
+    groupsQuery,
+    promptGroups,
+    hasPreviousPage,
+  } = usePromptGroupsContext();
 
   return (
     <div
@@ -38,14 +41,17 @@ export default function GroupSidePanel({
       <div className="flex-grow overflow-y-auto">
         <List groups={promptGroups} isChatRoute={isChatRoute} isLoading={!!groupsQuery.isLoading} />
       </div>
-      <PanelNavigation
-        nextPage={nextPage}
-        prevPage={prevPage}
-        isFetching={isFetching}
-        hasNextPage={hasNextPage}
-        isChatRoute={isChatRoute}
-        hasPreviousPage={hasPreviousPage}
-      />
+      <div className="flex items-center justify-between">
+        {isChatRoute && <ManagePrompts className="select-none" />}
+        <PanelNavigation
+          nextPage={nextPage}
+          prevPage={prevPage}
+          isFetching={isFetching}
+          hasNextPage={hasNextPage}
+          isChatRoute={isChatRoute}
+          hasPreviousPage={hasPreviousPage}
+        />
+      </div>
     </div>
   );
 }

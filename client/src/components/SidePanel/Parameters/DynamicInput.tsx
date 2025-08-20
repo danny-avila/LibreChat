@@ -1,7 +1,7 @@
 import { OptionTypes } from 'librechat-data-provider';
+import { Label, Input, HoverCard, HoverCardTrigger } from '@librechat/client';
 import type { DynamicSettingProps } from 'librechat-data-provider';
 import { useLocalize, useDebouncedInput, useParameterEffects, TranslationKeys } from '~/hooks';
-import { Label, Input, HoverCard, HoverCardTrigger } from '~/components/ui';
 import { useChatContext } from '~/Providers';
 import OptionHover from './OptionHover';
 import { ESide } from '~/common';
@@ -46,6 +46,10 @@ function DynamicInput({
     setInputValue(e, !isNaN(Number(e.target.value)));
   };
 
+  const placeholderText = placeholderCode
+    ? localize(placeholder as TranslationKeys) || placeholder
+    : placeholder;
+
   return (
     <div
       className={`flex flex-col items-center justify-start gap-6 ${
@@ -76,11 +80,7 @@ function DynamicInput({
             disabled={readonly}
             value={inputValue ?? defaultValue ?? ''}
             onChange={handleInputChange}
-            placeholder={
-              placeholderCode
-                ? localize(placeholder as TranslationKeys) || placeholder
-                : placeholder
-            }
+            placeholder={placeholderText}
             className={cn(
               'flex h-10 max-h-10 w-full resize-none border-none bg-surface-secondary px-3 py-2',
             )}

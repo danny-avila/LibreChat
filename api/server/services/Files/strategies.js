@@ -1,5 +1,10 @@
 const { FileSources } = require('librechat-data-provider');
 const {
+  uploadMistralOCR,
+  uploadAzureMistralOCR,
+  uploadGoogleVertexMistralOCR,
+} = require('@librechat/api');
+const {
   getFirebaseURL,
   prepareImageURL,
   saveURLToFirebase,
@@ -46,7 +51,6 @@ const {
 const { uploadOpenAIFile, deleteOpenAIFile, getOpenAIFileStream } = require('./OpenAI');
 const { getCodeOutputDownloadStream, uploadCodeEnvFile } = require('./Code');
 const { uploadVectors, deleteVectors } = require('./VectorDB');
-const { uploadMistralOCR } = require('./MistralOCR');
 
 /**
  * Firebase Storage Strategy Functions
@@ -202,6 +206,46 @@ const mistralOCRStrategy = () => ({
   handleFileUpload: uploadMistralOCR,
 });
 
+const azureMistralOCRStrategy = () => ({
+  /** @type {typeof saveFileFromURL | null} */
+  saveURL: null,
+  /** @type {typeof getLocalFileURL | null} */
+  getFileURL: null,
+  /** @type {typeof saveLocalBuffer | null} */
+  saveBuffer: null,
+  /** @type {typeof processLocalAvatar | null} */
+  processAvatar: null,
+  /** @type {typeof uploadLocalImage | null} */
+  handleImageUpload: null,
+  /** @type {typeof prepareImagesLocal | null} */
+  prepareImagePayload: null,
+  /** @type {typeof deleteLocalFile | null} */
+  deleteFile: null,
+  /** @type {typeof getLocalFileStream | null} */
+  getDownloadStream: null,
+  handleFileUpload: uploadAzureMistralOCR,
+});
+
+const vertexMistralOCRStrategy = () => ({
+  /** @type {typeof saveFileFromURL | null} */
+  saveURL: null,
+  /** @type {typeof getLocalFileURL | null} */
+  getFileURL: null,
+  /** @type {typeof saveLocalBuffer | null} */
+  saveBuffer: null,
+  /** @type {typeof processLocalAvatar | null} */
+  processAvatar: null,
+  /** @type {typeof uploadLocalImage | null} */
+  handleImageUpload: null,
+  /** @type {typeof prepareImagesLocal | null} */
+  prepareImagePayload: null,
+  /** @type {typeof deleteLocalFile | null} */
+  deleteFile: null,
+  /** @type {typeof getLocalFileStream | null} */
+  getDownloadStream: null,
+  handleFileUpload: uploadGoogleVertexMistralOCR,
+});
+
 // Strategy Selector
 const getStrategyFunctions = (fileSource) => {
   if (fileSource === FileSources.firebase) {
@@ -222,8 +266,16 @@ const getStrategyFunctions = (fileSource) => {
     return codeOutputStrategy();
   } else if (fileSource === FileSources.mistral_ocr) {
     return mistralOCRStrategy();
+  } else if (fileSource === FileSources.azure_mistral_ocr) {
+    return azureMistralOCRStrategy();
+  } else if (fileSource === FileSources.vertexai_mistral_ocr) {
+    return vertexMistralOCRStrategy();
+  } else if (fileSource === FileSources.text) {
+    return localStrategy(); // Text files use local strategy
   } else {
-    throw new Error('Invalid file source');
+    throw new Error(
+      `Invalid file source: ${fileSource}. Available sources: ${Object.values(FileSources).join(', ')}`,
+    );
   }
 };
 

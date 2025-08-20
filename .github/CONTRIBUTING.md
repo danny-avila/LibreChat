@@ -30,8 +30,8 @@ Project maintainers have the right and responsibility to remove, edit, or reject
 2. Install typescript globally: `npm i -g typescript`.
 3. Run `npm ci` to install dependencies.
 4. Build the data provider: `npm run build:data-provider`.
-5. Build MCP: `npm run build:mcp`.
-6. Build data schemas: `npm run build:data-schemas`.
+5. Build data schemas: `npm run build:data-schemas`.
+6. Build API methods: `npm run build:api`.
 7. Setup and run unit tests:
     - Copy `.env.test`: `cp api/test/.env.test.example api/test/.env.test`.
     - Run backend unit tests: `npm run test:api`.
@@ -147,7 +147,7 @@ Apply the following naming conventions to branches, labels, and other Git-relate
 ## 8. Module Import Conventions
 
 - `npm` packages first, 
-     - from shortest line (top) to longest (bottom)
+     - from longest line (top) to shortest (bottom)
 
 - Followed by typescript types (pertains to data-provider and client workspaces)
      - longest line (top) to shortest (bottom)
@@ -156,6 +156,8 @@ Apply the following naming conventions to branches, labels, and other Git-relate
 - Lastly, local imports
      - longest line (top) to shortest (bottom)
      - imports with alias `~` treated the same as relative import with respect to line length
+
+**Note:** ESLint will automatically enforce these import conventions when you run `npm run lint --fix` or through pre-commit hooks.
 
 ---
 

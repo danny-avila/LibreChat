@@ -2,12 +2,11 @@ import { useState, memo } from 'react';
 import { useRecoilState } from 'recoil';
 import * as Select from '@ariakit/react/select';
 import { FileText, LogOut } from 'lucide-react';
-import { LinkIcon, GearIcon, DropdownMenuSeparator } from '~/components';
+import { LinkIcon, GearIcon, DropdownMenuSeparator, UserIcon } from '@librechat/client';
 import { useGetStartupConfig, useGetUserBalance } from '~/data-provider';
 import FilesView from '~/components/Chat/Input/Files/FilesView';
 import { useAuthContext } from '~/hooks/AuthContext';
 import useAvatar from '~/hooks/Messages/useAvatar';
-import { UserIcon } from '~/components/svg';
 import { useLocalize } from '~/hooks';
 import Settings from './Settings';
 import store from '~/store';
@@ -75,12 +74,11 @@ function AccountSettings() {
           {user?.email ?? localize('com_nav_user')}
         </div>
         <DropdownMenuSeparator />
-        {startupConfig?.balance?.enabled === true &&
-          balanceQuery.data != null &&
-          !isNaN(parseFloat(balanceQuery.data)) && (
+        {startupConfig?.balance?.enabled === true && balanceQuery.data != null && (
           <>
             <div className="text-token-text-secondary ml-3 mr-2 py-2 text-sm" role="note">
-              {localize('com_nav_balance')}: {parseFloat(balanceQuery.data).toFixed(2)}
+              {localize('com_nav_balance')}:{' '}
+              {new Intl.NumberFormat().format(Math.round(balanceQuery.data.tokenCredits))}
             </div>
             <DropdownMenuSeparator />
           </>

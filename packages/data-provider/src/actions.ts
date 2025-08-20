@@ -3,15 +3,11 @@ import _axios from 'axios';
 import { URL } from 'url';
 import crypto from 'crypto';
 import { load } from 'js-yaml';
-import type {
-  FunctionTool,
-  Schema,
-  Reference,
-  ActionMetadata,
-  ActionMetadataRuntime,
-} from './types/assistants';
+import type { ActionMetadata, ActionMetadataRuntime } from './types/agents';
+import type { FunctionTool, Schema, Reference } from './types/assistants';
+import { AuthTypeEnum, AuthorizationTypeEnum } from './types/agents';
 import type { OpenAPIV3 } from 'openapi-types';
-import { Tools, AuthTypeEnum, AuthorizationTypeEnum } from './types/assistants';
+import { Tools } from './types/assistants';
 
 export type ParametersSchema = {
   type: string;
@@ -303,7 +299,8 @@ class RequestExecutor {
     if (this.config.parameterLocations && this.params) {
       for (const key of Object.keys(this.params)) {
         // Determine parameter placement; default to "query" for GET and "body" for others.
-        const loc: 'query' | 'path' | 'header' | 'body' = this.config.parameterLocations[key] || (method === 'get' ? 'query' : 'body');
+        const loc: 'query' | 'path' | 'header' | 'body' =
+          this.config.parameterLocations[key] || (method === 'get' ? 'query' : 'body');
 
         const val = this.params[key];
         if (loc === 'query') {
@@ -351,7 +348,15 @@ export class ActionRequest {
     contentType: string,
     parameterLocations?: Record<string, 'query' | 'path' | 'header' | 'body'>,
   ) {
-    this.config = new RequestConfig(domain, path, method, operation, isConsequential, contentType, parameterLocations);
+    this.config = new RequestConfig(
+      domain,
+      path,
+      method,
+      operation,
+      isConsequential,
+      contentType,
+      parameterLocations,
+    );
   }
 
   // Add getters to maintain backward compatibility
@@ -486,12 +491,12 @@ export function openapiToFunction(
           }
           // Record the parameter location from the OpenAPI "in" field.
           paramLocations[paramName] =
-          (resolvedParam.in === 'query' ||
-           resolvedParam.in === 'path' ||
-           resolvedParam.in === 'header' ||
-           resolvedParam.in === 'body')
-            ? resolvedParam.in
-            : 'query';
+            resolvedParam.in === 'query' ||
+            resolvedParam.in === 'path' ||
+            resolvedParam.in === 'header' ||
+            resolvedParam.in === 'body'
+              ? resolvedParam.in
+              : 'query';
         }
       }
 

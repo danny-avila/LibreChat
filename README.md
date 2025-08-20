@@ -52,7 +52,7 @@
 - 🖥️ **UI & Experience** inspired by ChatGPT with enhanced design and features
 
 - 🤖 **AI Model Selection**:  
-  - Anthropic (Claude), AWS Bedrock, OpenAI, Azure OpenAI, Google, Vertex AI, OpenAI Assistants API (incl. Azure)
+  - Anthropic (Claude), AWS Bedrock, OpenAI, Azure OpenAI, Google, Vertex AI, OpenAI Responses API (incl. Azure)
   - [Custom Endpoints](https://www.librechat.ai/docs/quick_start/custom_endpoints): Use any OpenAI-compatible API with LibreChat, no proxy required
   - Compatible with [Local & Remote AI Providers](https://www.librechat.ai/docs/configuration/librechat_yaml/ai_endpoints):
     - Ollama, groq, Cohere, Mistral AI, Apple MLX, koboldcpp, together.ai,
@@ -66,10 +66,14 @@
 - 🔦 **Agents & Tools Integration**:  
   - **[LibreChat Agents](https://www.librechat.ai/docs/features/agents)**:
     - No-Code Custom Assistants: Build specialized, AI-driven helpers without coding  
-    - Flexible & Extensible: Attach tools like DALL-E-3, file search, code execution, and more  
-    - Compatible with Custom Endpoints, OpenAI, Azure, Anthropic, AWS Bedrock, and more
+    - Flexible & Extensible: Use MCP Servers, tools, file search, code execution, and more  
+    - Compatible with Custom Endpoints, OpenAI, Azure, Anthropic, AWS Bedrock, Google, Vertex AI, Responses API, and more
     - [Model Context Protocol (MCP) Support](https://modelcontextprotocol.io/clients#librechat) for Tools
-  - Use LibreChat Agents and OpenAI Assistants with Files, Code Interpreter, Tools, and API Actions
+
+- 🔍 **Web Search**:  
+  - Search the internet and retrieve relevant information to enhance your AI context
+  - Combines search providers, content scrapers, and result rerankers for optimal results
+  - **[Learn More →](https://www.librechat.ai/docs/features/web_search)**
 
 - 🪄 **Generative UI with Code Artifacts**:  
   - [Code Artifacts](https://youtu.be/GfTj7O4gmd0?si=WJbdnemZpJzBrJo3) allow creation of React, HTML, and Mermaid diagrams directly in chat
@@ -145,8 +149,8 @@ Click on the thumbnail to open the video☝️
 
 **Other:**
   - **Website:** [librechat.ai](https://librechat.ai)
-  - **Documentation:** [docs.librechat.ai](https://docs.librechat.ai)
-  - **Blog:** [blog.librechat.ai](https://blog.librechat.ai)
+  - **Documentation:** [librechat.ai/docs](https://librechat.ai/docs)
+  - **Blog:** [librechat.ai/blog](https://librechat.ai/blog)
 
 ---
 

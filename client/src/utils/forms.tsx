@@ -4,6 +4,8 @@ import {
   alternateName,
   EModelEndpoint,
   EToolResources,
+  LocalStorageKeys,
+  defaultAgentFormValues,
 } from 'librechat-data-provider';
 import type { Agent, TFile } from 'librechat-data-provider';
 import type { DropdownValueSetter, TAgentOption, ExtendedFile } from '~/common';
@@ -42,17 +44,24 @@ export const createProviderOption = (provider: string) => ({
   value: provider,
 });
 
+/**
+ * Gets default agent form values with localStorage values for model and provider.
+ * This is used to initialize agent forms with the last used model and provider.
+ **/
+export const getDefaultAgentFormValues = () => ({
+  ...defaultAgentFormValues,
+  model: localStorage.getItem(LocalStorageKeys.LAST_AGENT_MODEL) ?? '',
+  provider: createProviderOption(localStorage.getItem(LocalStorageKeys.LAST_AGENT_PROVIDER) ?? ''),
+});
+
 export const processAgentOption = ({
   agent: _agent,
   fileMap,
-  instanceProjectId,
 }: {
   agent?: Agent;
   fileMap?: Record<string, TFile | undefined>;
-  instanceProjectId?: string;
 }): TAgentOption => {
-  const isGlobal =
-    (instanceProjectId != null && _agent?.projectIds?.includes(instanceProjectId)) ?? false;
+  const isGlobal = _agent?.isPublic ?? false;
   const agent: TAgentOption = {
     ...(_agent ?? ({} as Agent)),
     label: _agent?.name ?? '',

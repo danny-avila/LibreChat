@@ -1,9 +1,6 @@
-const mongoose = require('mongoose');
-const { EToolResources } = require('librechat-data-provider');
-const { fileSchema } = require('@librechat/data-schemas');
-const { logger } = require('~/config');
-
-const File = mongoose.model('File', fileSchema);
+const { logger } = require('@librechat/data-schemas');
+const { EToolResources, FileContext } = require('librechat-data-provider');
+const { File } = require('~/db/models');
 
 /**
  * Finds a file by its file_id with additional query options.
@@ -35,19 +32,19 @@ const getFiles = async (filter, _sortOptions, selectFields = { text: 0 }) => {
  * @returns {Promise<Array<MongoFile>>} Files that match the criteria
  */
 const getToolFilesByIds = async (fileIds, toolResourceSet) => {
-  if (!fileIds || !fileIds.length) {
+  if (!fileIds || !fileIds.length || !toolResourceSet?.size) {
     return [];
   }
 
   try {
     const filter = {
       file_id: { $in: fileIds },
+      $or: [],
     };
 
-    if (toolResourceSet.size) {
-      filter.$or = [];
+    if (toolResourceSet.has(EToolResources.ocr)) {
+      filter.$or.push({ text: { $exists: true, $ne: null }, context: FileContext.agents });
     }
-
     if (toolResourceSet.has(EToolResources.file_search)) {
       filter.$or.push({ embedded: true });
     }
@@ -169,7 +166,6 @@ async function batchUpdateFiles(updates) {
 }
 
 module.exports = {
-  File,
   findFileById,
   getFiles,
   getToolFilesByIds,

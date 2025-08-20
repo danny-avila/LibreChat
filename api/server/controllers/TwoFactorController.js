@@ -1,13 +1,13 @@
+const { encryptV3 } = require('@librechat/api');
+const { logger } = require('@librechat/data-schemas');
 const {
+  verifyTOTP,
+  getTOTPSecret,
+  verifyBackupCode,
   generateTOTPSecret,
   generateBackupCodes,
-  verifyTOTP,
-  verifyBackupCode,
-  getTOTPSecret,
 } = require('~/server/services/twoFactorService');
-const { updateUser, getUserById } = require('~/models');
-const { logger } = require('~/config');
-const { encryptV3 } = require('~/server/utils/crypto');
+const { getUserById, updateUser } = require('~/models');
 
 const safeAppTitle = (process.env.APP_TITLE || 'LibreChat').replace(/\s+/g, '');
 
@@ -47,7 +47,7 @@ const verify2FA = async (req, res) => {
   try {
     const userId = req.user.id;
     const { token, backupCode } = req.body;
-    const user = await getUserById(userId);
+    const user = await getUserById(userId, '_id totpSecret backupCodes');
 
     if (!user || !user.totpSecret) {
       return res.status(400).json({ message: '2FA not initiated' });
@@ -79,7 +79,7 @@ const confirm2FA = async (req, res) => {
   try {
     const userId = req.user.id;
     const { token } = req.body;
-    const user = await getUserById(userId);
+    const user = await getUserById(userId, '_id totpSecret');
 
     if (!user || !user.totpSecret) {
       return res.status(400).json({ message: '2FA not initiated' });
@@ -99,10 +99,36 @@ const confirm2FA = async (req, res) => {
 
 /**
  * Disable 2FA by clearing the stored secret and backup codes.
+ * Requires verification with either TOTP token or backup code if 2FA is fully enabled.
  */
 const disable2FA = async (req, res) => {
   try {
     const userId = req.user.id;
+    const { token, backupCode } = req.body;
+    const user = await getUserById(userId, '_id totpSecret backupCodes');
+
+    if (!user || !user.totpSecret) {
+      return res.status(400).json({ message: '2FA is not setup for this user' });
+    }
+
+    if (user.twoFactorEnabled) {
+      const secret = await getTOTPSecret(user.totpSecret);
+      let isVerified = false;
+
+      if (token) {
+        isVerified = await verifyTOTP(secret, token);
+      } else if (backupCode) {
+        isVerified = await verifyBackupCode({ user, backupCode });
+      } else {
+        return res
+          .status(400)
+          .json({ message: 'Either token or backup code is required to disable 2FA' });
+      }
+
+      if (!isVerified) {
+        return res.status(401).json({ message: 'Invalid token or backup code' });
+      }
+    }
     await updateUser(userId, { totpSecret: null, backupCodes: [], twoFactorEnabled: false });
     return res.status(200).json();
   } catch (err) {

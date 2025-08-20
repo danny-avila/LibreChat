@@ -1,21 +1,6 @@
-import { Schema, Document, Types } from 'mongoose';
+import { Schema } from 'mongoose';
 import { Constants } from 'librechat-data-provider';
-
-export interface IPromptGroup {
-  name: string;
-  numberOfGenerations: number;
-  oneliner: string;
-  category: string;
-  projectIds: Types.ObjectId[];
-  productionId: Types.ObjectId;
-  author: Types.ObjectId;
-  authorName: string;
-  command?: string;
-  createdAt?: Date;
-  updatedAt?: Date;
-}
-
-export interface IPromptGroupDocument extends IPromptGroup, Document {}
+import type { IPromptGroupDocument } from '~/types';
 
 const promptGroupSchema = new Schema<IPromptGroupDocument>(
   {
@@ -63,11 +48,11 @@ const promptGroupSchema = new Schema<IPromptGroupDocument>(
       type: String,
       index: true,
       validate: {
-        validator: function (v: unknown): boolean {
+        validator: function (v: string | undefined | null): boolean {
           return v === undefined || v === null || v === '' || /^[a-z0-9-]+$/.test(v);
         },
-        message: (props: unknown) =>
-          `${props.value} is not a valid command. Only lowercase alphanumeric characters and hyphens are allowed.`,
+        message: (props: { value?: string } | undefined) =>
+          `${props?.value ?? 'Value'} is not a valid command. Only lowercase alphanumeric characters and hyphens are allowed.`,
       },
       maxlength: [
         Constants.COMMANDS_MAX_LENGTH as number,

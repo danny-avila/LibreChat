@@ -56,6 +56,12 @@
  */
 
 /**
+ * @exports MessageContentComplex
+ * @typedef {import('@librechat/agents').MessageContentComplex} MessageContentComplex
+ * @memberof typedefs
+ */
+
+/**
  * @exports EventHandler
  * @typedef {import('@librechat/agents').EventHandler} EventHandler
  * @memberof typedefs
@@ -186,6 +192,8 @@
  * agent_index: number;
  * last_agent_index: number;
  * hide_sequential_outputs: boolean;
+ * version?: 'v1' | 'v2';
+ * streamMode?: string
  * }> & {
  * toolCall?: LangChainToolCall & { stepId?: string };
  * }} GraphRunnableConfig
@@ -469,8 +477,34 @@
  */
 
 /**
+ * @exports ToolCallChunk
+ * @typedef {import('librechat-data-provider').Agents.ToolCallChunk} ToolCallChunk
+ * @memberof typedefs
+ */
+
+/**
  * @exports MessageContentImageUrl
  * @typedef {import('librechat-data-provider').Agents.MessageContentImageUrl} MessageContentImageUrl
+ * @memberof typedefs
+ */
+
+/** Web Search */
+
+/**
+ * @exports SearchResult
+ * @typedef {import('@librechat/agents').SearchResult} SearchResult
+ * @memberof typedefs
+ */
+
+/**
+ * @exports SearchResultData
+ * @typedef {import('@librechat/agents').SearchResultData} SearchResultData
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ValidSource
+ * @typedef {import('librechat-data-provider').ValidSource} ValidSource
  * @memberof typedefs
  */
 
@@ -849,6 +883,18 @@
  */
 
 /**
+ * @exports IPluginAuth
+ * @typedef {import('@librechat/data-schemas').IPluginAuth} IPluginAuth
+ * @memberof typedefs
+ */
+
+/**
+ * @exports IRole
+ * @typedef {import('@librechat/data-schemas').IRole} IRole
+ * @memberof typedefs
+ */
+
+/**
  * @exports ObjectId
  * @typedef {import('mongoose').Types.ObjectId} ObjectId
  * @memberof typedefs
@@ -991,6 +1037,18 @@
  */
 
 /**
+ * @exports TEphemeralAgent
+ * @typedef {import('librechat-data-provider').TEphemeralAgent} TEphemeralAgent
+ * @memberof typedefs
+ */
+
+/**
+ * @exports TWebSearchKeys
+ * @typedef {import('librechat-data-provider').TWebSearchKeys} TWebSearchKeys
+ * @memberof typedefs
+ */
+
+/**
  * @exports AgentToolResources
  * @typedef {import('librechat-data-provider').AgentToolResources} AgentToolResources
  * @memberof typedefs
@@ -1020,15 +1078,28 @@
  * @memberof typedefs
  */
 
+/** Permissions */
+/**
+ * @exports TUpdateResourcePermissionsRequest
+ * @typedef {import('librechat-data-provider').TUpdateResourcePermissionsRequest} TUpdateResourcePermissionsRequest
+ * @memberof typedefs
+ */
+
+/**
+ * @exports TUpdateResourcePermissionsResponse
+ * @typedef {import('librechat-data-provider').TUpdateResourcePermissionsResponse} TUpdateResourcePermissionsResponse
+ * @memberof typedefs
+ */
+
 /**
  * @exports JsonSchemaType
- * @typedef {import('librechat-data-provider').JsonSchemaType} JsonSchemaType
+ * @typedef {import('@librechat/api').JsonSchemaType} JsonSchemaType
  * @memberof typedefs
  */
 
 /**
  * @exports MCPServers
- * @typedef {import('librechat-mcp').MCPServers} MCPServers
+ * @typedef {import('@librechat/api').MCPServers} MCPServers
  * @memberof typedefs
  */
 
@@ -1040,31 +1111,31 @@
 
 /**
  * @exports MCPManager
- * @typedef {import('librechat-mcp').MCPManager} MCPManager
+ * @typedef {import('@librechat/api').MCPManager} MCPManager
  * @memberof typedefs
  */
 
 /**
  * @exports FlowStateManager
- * @typedef {import('librechat-mcp').FlowStateManager} FlowStateManager
+ * @typedef {import('@librechat/api').FlowStateManager} FlowStateManager
  * @memberof typedefs
  */
 
 /**
  * @exports LCAvailableTools
- * @typedef {import('librechat-mcp').LCAvailableTools} LCAvailableTools
+ * @typedef {import('@librechat/api').LCAvailableTools} LCAvailableTools
  * @memberof typedefs
  */
 
 /**
  * @exports LCTool
- * @typedef {import('librechat-mcp').LCTool} LCTool
+ * @typedef {import('@librechat/api').LCTool} LCTool
  * @memberof typedefs
  */
 
 /**
  * @exports FormattedContent
- * @typedef {import('librechat-mcp').FormattedContent} FormattedContent
+ * @typedef {import('@librechat/api').FormattedContent} FormattedContent
  * @memberof typedefs
  */
 
@@ -1187,7 +1258,7 @@
  * @typedef {Object} AgentClientOptions
  * @property {Agent} agent - The agent configuration object
  * @property {string} endpoint - The endpoint identifier for the agent
- * @property {Object} req - The request object
+ * @property {ServerRequest} req - The request object
  * @property {string} [name] - The username
  * @property {string} [modelLabel] - The label for the model being used
  * @property {number} [maxContextTokens] - Maximum number of tokens allowed in context
@@ -1318,7 +1389,7 @@
  * @property {string} [model] - The model that the assistant used for this run.
  * @property {string} [instructions] - The instructions that the assistant used for this run.
  * @property {string} [additional_instructions] - Optional. Appends additional instructions
- * at theend of the instructions for the run. This is useful for modifying
+ * at the end of the instructions for the run. This is useful for modifying
  * @property {Tool[]} [tools] - The list of tools used for this run.
  * @property {string[]} [file_ids] - The list of File IDs used for this run.
  * @property {Object} [metadata] - Metadata associated with this run.
@@ -1451,7 +1522,6 @@
  * @property {boolean|{userProvide: boolean}} [anthropic] - Flag to indicate if Anthropic endpoint is user provided, or its configuration.
  * @property {boolean|{userProvide: boolean}} [google] - Flag to indicate if Google endpoint is user provided, or its configuration.
  * @property {boolean|{userProvide: boolean, userProvideURL: boolean, name: string}} [custom] - Custom Endpoint configuration.
- * @property {boolean|GptPlugins} [gptPlugins] - Configuration for GPT plugins.
  * @memberof typedefs
  */
 

@@ -1,19 +1,18 @@
 import { useMemo, memo } from 'react';
+import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
+import supersub from 'remark-supersub';
 import { useRecoilValue } from 'recoil';
 import { EditIcon } from 'lucide-react';
-import type { PluggableList } from 'unified';
-import rehypeHighlight from 'rehype-highlight';
-import { Controller, useFormContext, useFormState } from 'react-hook-form';
-import remarkGfm from 'remark-gfm';
-import rehypeKatex from 'rehype-katex';
-import remarkMath from 'remark-math';
-import supersub from 'remark-supersub';
 import ReactMarkdown from 'react-markdown';
-import { codeNoExecution } from '~/components/Chat/Messages/Content/Markdown';
+import rehypeHighlight from 'rehype-highlight';
+import { SaveIcon, CrossIcon, TextareaAutosize } from '@librechat/client';
+import { Controller, useFormContext, useFormState } from 'react-hook-form';
+import type { PluggableList } from 'unified';
+import { codeNoExecution } from '~/components/Chat/Messages/Content/MarkdownComponents';
 import AlwaysMakeProd from '~/components/Prompts/Groups/AlwaysMakeProd';
-import { SaveIcon, CrossIcon } from '~/components/svg';
 import VariablesDropdown from './VariablesDropdown';
-import { TextareaAutosize } from '~/components/ui';
 import { PromptVariableGfm } from './Markdown';
 import { PromptsEditorMode } from '~/common';
 import { cn, langSubset } from '~/utils';
@@ -130,7 +129,7 @@ const PromptEditor: React.FC<Props> = ({ name, isEditing, setIsEditing }) => {
                     /** @ts-ignore */
                     supersub,
                     remarkGfm,
-                    [remarkMath, { singleDollarTextMath: true }],
+                    [remarkMath, { singleDollarTextMath: false }],
                   ]}
                   /** @ts-ignore */
                   rehypePlugins={rehypePlugins}

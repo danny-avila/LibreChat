@@ -139,6 +139,37 @@ export const useCreatePrompt = (
   });
 };
 
+export const useAddPromptToGroup = (
+  options?: t.CreatePromptOptions,
+): UseMutationResult<
+  t.TCreatePromptResponse,
+  unknown,
+  t.TCreatePrompt & { groupId: string },
+  unknown
+> => {
+  const queryClient = useQueryClient();
+  const { onSuccess, ...rest } = options || {};
+
+  return useMutation({
+    mutationFn: ({ groupId, ...payload }: t.TCreatePrompt & { groupId: string }) =>
+      dataService.addPromptToGroup(groupId, payload),
+    ...rest,
+    onSuccess: (response, variables, context) => {
+      const { prompt } = response;
+      queryClient.setQueryData(
+        [QueryKeys.prompts, variables.prompt.groupId],
+        (oldData: t.TPrompt[] | undefined) => {
+          return [prompt, ...(oldData ?? [])];
+        },
+      );
+
+      if (onSuccess) {
+        onSuccess(response, variables, context);
+      }
+    },
+  });
+};
+
 export const useDeletePrompt = (
   options?: t.DeletePromptOptions,
 ): UseMutationResult<t.TDeletePromptResponse, unknown, t.TDeletePromptVariables, unknown> => {

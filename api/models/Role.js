@@ -1,17 +1,13 @@
-const mongoose = require('mongoose');
 const {
   CacheKeys,
   SystemRoles,
   roleDefaults,
-  PermissionTypes,
   permissionsSchema,
   removeNullishValues,
 } = require('librechat-data-provider');
+const { logger } = require('@librechat/data-schemas');
 const getLogStores = require('~/cache/getLogStores');
-const { roleSchema } = require('@librechat/data-schemas');
-const { logger } = require('~/config');
-
-const Role = mongoose.model('Role', roleSchema);
+const { Role } = require('~/db/models');
 
 /**
  * Retrieve a role by name and convert the found role document to a plain object.
@@ -20,7 +16,7 @@ const Role = mongoose.model('Role', roleSchema);
  *
  * @param {string} roleName - The name of the role to find or create.
  * @param {string|string[]} [fieldsToSelect] - The fields to include or exclude in the returned document.
- * @returns {Promise<Object>} A plain object representing the role document.
+ * @returns {Promise<IRole>} Role document.
  */
 const getRoleByName = async function (roleName, fieldsToSelect = null) {
   const cache = getLogStores(CacheKeys.ROLES);
@@ -76,8 +72,9 @@ const updateRoleByName = async function (roleName, updates) {
  * Updates access permissions for a specific role and multiple permission types.
  * @param {string} roleName - The role to update.
  * @param {Object.<PermissionTypes, Object.<Permissions, boolean>>} permissionsUpdate - Permissions to update and their values.
+ * @param {IRole} [roleData] - Optional role data to use instead of fetching from the database.
  */
-async function updateAccessPermissions(roleName, permissionsUpdate) {
+async function updateAccessPermissions(roleName, permissionsUpdate, roleData) {
   // Filter and clean the permission updates based on our schema definition.
   const updates = {};
   for (const [permissionType, permissions] of Object.entries(permissionsUpdate)) {
@@ -90,7 +87,7 @@ async function updateAccessPermissions(roleName, permissionsUpdate) {
   }
 
   try {
-    const role = await getRoleByName(roleName);
+    const role = roleData ?? (await getRoleByName(roleName));
     if (!role) {
       return;
     }
@@ -117,7 +114,6 @@ async function updateAccessPermissions(roleName, permissionsUpdate) {
       }
     }
 
-    // Process the current updates
     for (const [permissionType, permissions] of Object.entries(updates)) {
       const currentTypePermissions = currentPermissions[permissionType] || {};
       updatedPermissions[permissionType] = { ...currentTypePermissions };
@@ -172,35 +168,6 @@ async function updateAccessPermissions(roleName, permissionsUpdate) {
     logger.error(`Failed to update ${roleName} role permissions:`, error);
   }
 }
-
-/**
- * Initialize default roles in the system.
- * Creates the default roles (ADMIN, USER) if they don't exist in the database.
- * Updates existing roles with new permission types if they're missing.
- *
- * @returns {Promise<void>}
- */
-const initializeRoles = async function () {
-  for (const roleName of [SystemRoles.ADMIN, SystemRoles.USER]) {
-    let role = await Role.findOne({ name: roleName });
-    const defaultPerms = roleDefaults[roleName].permissions;
-
-    if (!role) {
-      // Create new role if it doesn't exist.
-      role = new Role(roleDefaults[roleName]);
-    } else {
-      // Ensure role.permissions is defined.
-      role.permissions = role.permissions || {};
-      // For each permission type in defaults, add it if missing.
-      for (const permType of Object.keys(defaultPerms)) {
-        if (role.permissions[permType] == null) {
-          role.permissions[permType] = defaultPerms[permType];
-        }
-      }
-    }
-    await role.save();
-  }
-};
 
 /**
  * Migrates roles from old schema to new schema structure.
@@ -282,10 +249,8 @@ const migrateRoleSchema = async function (roleName) {
 };
 
 module.exports = {
-  Role,
   getRoleByName,
-  initializeRoles,
   updateRoleByName,
-  updateAccessPermissions,
   migrateRoleSchema,
+  updateAccessPermissions,
 };

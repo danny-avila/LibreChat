@@ -17,6 +17,10 @@ export enum PermissionTypes {
    */
   AGENTS = 'AGENTS',
   /**
+   * Type for Memory Permissions
+   */
+  MEMORIES = 'MEMORIES',
+  /**
    * Type for Multi-Conversation Permissions
    */
   MULTI_CONVO = 'MULTI_CONVO',
@@ -28,6 +32,26 @@ export enum PermissionTypes {
    * Type for using the "Run Code" LC Code Interpreter API feature
    */
   RUN_CODE = 'RUN_CODE',
+  /**
+   * Type for using the "Web Search" feature
+   */
+  WEB_SEARCH = 'WEB_SEARCH',
+  /**
+   * Type for People Picker Permissions
+   */
+  PEOPLE_PICKER = 'PEOPLE_PICKER',
+  /**
+   * Type for Marketplace Permissions
+   */
+  MARKETPLACE = 'MARKETPLACE',
+  /**
+   * Type for using the "File Search" feature
+   */
+  FILE_SEARCH = 'FILE_SEARCH',
+  /**
+   * Type for using the "File Citations" feature in agents
+   */
+  FILE_CITATIONS = 'FILE_CITATIONS',
 }
 
 /**
@@ -41,6 +65,11 @@ export enum Permissions {
   READ = 'READ',
   READ_AUTHOR = 'READ_AUTHOR',
   SHARE = 'SHARE',
+  /** Can disable if desired */
+  OPT_OUT = 'OPT_OUT',
+  VIEW_USERS = 'VIEW_USERS',
+  VIEW_GROUPS = 'VIEW_GROUPS',
+  VIEW_ROLES = 'VIEW_ROLES',
 }
 
 export const promptPermissionsSchema = z.object({
@@ -55,6 +84,15 @@ export const bookmarkPermissionsSchema = z.object({
   [Permissions.USE]: z.boolean().default(true),
 });
 export type TBookmarkPermissions = z.infer<typeof bookmarkPermissionsSchema>;
+
+export const memoryPermissionsSchema = z.object({
+  [Permissions.USE]: z.boolean().default(true),
+  [Permissions.CREATE]: z.boolean().default(true),
+  [Permissions.UPDATE]: z.boolean().default(true),
+  [Permissions.READ]: z.boolean().default(true),
+  [Permissions.OPT_OUT]: z.boolean().default(true),
+});
+export type TMemoryPermissions = z.infer<typeof memoryPermissionsSchema>;
 
 export const agentPermissionsSchema = z.object({
   [Permissions.SHARED_GLOBAL]: z.boolean().default(false),
@@ -79,12 +117,45 @@ export const runCodePermissionsSchema = z.object({
 });
 export type TRunCodePermissions = z.infer<typeof runCodePermissionsSchema>;
 
+export const webSearchPermissionsSchema = z.object({
+  [Permissions.USE]: z.boolean().default(true),
+});
+export type TWebSearchPermissions = z.infer<typeof webSearchPermissionsSchema>;
+
+export const peoplePickerPermissionsSchema = z.object({
+  [Permissions.VIEW_USERS]: z.boolean().default(true),
+  [Permissions.VIEW_GROUPS]: z.boolean().default(true),
+  [Permissions.VIEW_ROLES]: z.boolean().default(true),
+});
+export type TPeoplePickerPermissions = z.infer<typeof peoplePickerPermissionsSchema>;
+
+export const marketplacePermissionsSchema = z.object({
+  [Permissions.USE]: z.boolean().default(false),
+});
+export type TMarketplacePermissions = z.infer<typeof marketplacePermissionsSchema>;
+
+export const fileSearchPermissionsSchema = z.object({
+  [Permissions.USE]: z.boolean().default(true),
+});
+export type TFileSearchPermissions = z.infer<typeof fileSearchPermissionsSchema>;
+
+export const fileCitationsPermissionsSchema = z.object({
+  [Permissions.USE]: z.boolean().default(true),
+});
+export type TFileCitationsPermissions = z.infer<typeof fileCitationsPermissionsSchema>;
+
 // Define a single permissions schema that holds all permission types.
 export const permissionsSchema = z.object({
   [PermissionTypes.PROMPTS]: promptPermissionsSchema,
   [PermissionTypes.BOOKMARKS]: bookmarkPermissionsSchema,
+  [PermissionTypes.MEMORIES]: memoryPermissionsSchema,
   [PermissionTypes.AGENTS]: agentPermissionsSchema,
   [PermissionTypes.MULTI_CONVO]: multiConvoPermissionsSchema,
   [PermissionTypes.TEMPORARY_CHAT]: temporaryChatPermissionsSchema,
   [PermissionTypes.RUN_CODE]: runCodePermissionsSchema,
+  [PermissionTypes.WEB_SEARCH]: webSearchPermissionsSchema,
+  [PermissionTypes.PEOPLE_PICKER]: peoplePickerPermissionsSchema,
+  [PermissionTypes.MARKETPLACE]: marketplacePermissionsSchema,
+  [PermissionTypes.FILE_SEARCH]: fileSearchPermissionsSchema,
+  [PermissionTypes.FILE_CITATIONS]: fileCitationsPermissionsSchema,
 });

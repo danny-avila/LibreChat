@@ -1,5 +1,6 @@
 import type { AssistantsEndpoint } from './schemas';
 import * as q from './types/queries';
+import { ResourceType } from './accessPermissions';
 
 // Testing this buildQuery function
 const buildQuery = (params: Record<string, unknown>): string => {
@@ -70,8 +71,6 @@ export const revokeUserKey = (name: string) => `${keysEndpoint}/${name}`;
 
 export const revokeAllUserKeys = () => `${keysEndpoint}?all=true`;
 
-export const abortRequest = (endpoint: string) => `/api/ask/${endpoint}/abort`;
-
 export const conversationsRoot = '/api/convos';
 
 export const conversations = (params: q.ConversationListParams) => {
@@ -134,9 +133,23 @@ export const resendVerificationEmail = () => '/api/user/verify/resend';
 
 export const plugins = () => '/api/plugins';
 
+export const mcpReinitialize = (serverName: string) => `/api/mcp/${serverName}/reinitialize`;
+export const mcpConnectionStatus = () => '/api/mcp/connection/status';
+export const mcpServerConnectionStatus = (serverName: string) =>
+  `/api/mcp/connection/status/${serverName}`;
+export const mcpAuthValues = (serverName: string) => {
+  return `/api/mcp/${serverName}/auth-values`;
+};
+
+export const cancelMCPOAuth = (serverName: string) => {
+  return `/api/mcp/oauth/cancel/${serverName}`;
+};
+
 export const config = () => '/api/config';
 
 export const prompts = () => '/api/prompts';
+
+export const addPromptToGroup = (groupId: string) => `/api/prompts/groups/${groupId}/prompts`;
 
 export const assistants = ({
   path = '',
@@ -187,7 +200,15 @@ export const agents = ({ path = '', options }: { path?: string; options?: object
   return url;
 };
 
+export const revertAgentVersion = (agent_id: string) => `${agents({ path: `${agent_id}/revert` })}`;
+
 export const files = () => '/api/files';
+export const fileUpload = () => '/api/files';
+export const fileDelete = () => '/api/files';
+export const fileDownload = (userId: string, fileId: string) =>
+  `/api/files/download/${userId}/${fileId}`;
+export const fileConfig = () => '/api/files/config';
+export const agentFiles = (agentId: string) => `/api/files/agent/${agentId}`;
 
 export const images = () => `${files()}/images`;
 
@@ -252,7 +273,13 @@ export const getAllPromptGroups = () => `${prompts()}/all`;
 export const roles = () => '/api/roles';
 export const getRole = (roleName: string) => `${roles()}/${roleName.toLowerCase()}`;
 export const updatePromptPermissions = (roleName: string) => `${getRole(roleName)}/prompts`;
+export const updateMemoryPermissions = (roleName: string) => `${getRole(roleName)}/memories`;
 export const updateAgentPermissions = (roleName: string) => `${getRole(roleName)}/agents`;
+export const updatePeoplePickerPermissions = (roleName: string) =>
+  `${getRole(roleName)}/people-picker`;
+
+export const updateMarketplacePermissions = (roleName: string) =>
+  `${getRole(roleName)}/marketplace`;
 
 /* Conversation Tags */
 export const conversationTags = (tag?: string) =>
@@ -270,6 +297,10 @@ export const userTerms = () => '/api/user/terms';
 export const acceptUserTerms = () => '/api/user/terms/accept';
 export const banner = () => '/api/banner';
 
+// Message Feedback
+export const feedback = (conversationId: string, messageId: string) =>
+  `/api/messages/${conversationId}/${messageId}/feedback`;
+
 // Two-Factor Endpoints
 export const enableTwoFactor = () => '/api/auth/2fa/enable';
 export const verifyTwoFactor = () => '/api/auth/2fa/verify';
@@ -277,3 +308,39 @@ export const confirmTwoFactor = () => '/api/auth/2fa/confirm';
 export const disableTwoFactor = () => '/api/auth/2fa/disable';
 export const regenerateBackupCodes = () => '/api/auth/2fa/backup/regenerate';
 export const verifyTwoFactorTemp = () => '/api/auth/2fa/verify-temp';
+
+/* Memories */
+export const memories = () => '/api/memories';
+export const memory = (key: string) => `${memories()}/${encodeURIComponent(key)}`;
+export const memoryPreferences = () => `${memories()}/preferences`;
+
+export const searchPrincipals = (params: q.PrincipalSearchParams) => {
+  const { q: query, limit, types } = params;
+  let url = `/api/permissions/search-principals?q=${encodeURIComponent(query)}`;
+
+  if (limit !== undefined) {
+    url += `&limit=${limit}`;
+  }
+
+  if (types && types.length > 0) {
+    url += `&types=${types.join(',')}`;
+  }
+
+  return url;
+};
+
+export const getAccessRoles = (resourceType: ResourceType) =>
+  `/api/permissions/${resourceType}/roles`;
+
+export const getResourcePermissions = (resourceType: ResourceType, resourceId: string) =>
+  `/api/permissions/${resourceType}/${resourceId}`;
+
+export const updateResourcePermissions = (resourceType: ResourceType, resourceId: string) =>
+  `/api/permissions/${resourceType}/${resourceId}`;
+
+export const getEffectivePermissions = (resourceType: ResourceType, resourceId: string) =>
+  `/api/permissions/${resourceType}/${resourceId}/effective`;
+
+// SharePoint Graph API Token
+export const graphToken = (scopes: string) =>
+  `/api/auth/graph-token?scopes=${encodeURIComponent(scopes)}`;

@@ -173,6 +173,16 @@ const listAssistantsForAzure = async ({ req, res, version, azureConfig = {}, que
   };
 };
 
+/**
+ * Initializes the OpenAI client.
+ * @param {object} params - The parameters object.
+ * @param {ServerRequest} params.req - The request object.
+ * @param {ServerResponse} params.res - The response object.
+ * @param {TEndpointOption} params.endpointOption - The endpoint options.
+ * @param {boolean} params.initAppClient - Whether to initialize the app client.
+ * @param {string} params.overrideEndpoint - The endpoint to override.
+ * @returns {Promise<{ openai: OpenAIClient, openAIApiKey: string; client: import('~/app/clients/OpenAIClient') }>} - The initialized OpenAI client.
+ */
 async function getOpenAIClient({ req, res, endpointOption, initAppClient, overrideEndpoint }) {
   let endpoint = overrideEndpoint ?? req.body.endpoint ?? req.query.endpoint;
   const version = await getCurrentVersion(req, endpoint);

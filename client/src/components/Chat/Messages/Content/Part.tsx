@@ -12,6 +12,7 @@ import { ErrorMessage } from './MessageContent';
 import RetrievalCall from './RetrievalCall';
 import CodeAnalyze from './CodeAnalyze';
 import Container from './Container';
+import WebSearch from './WebSearch';
 import ToolCall from './ToolCall';
 import ImageGen from './ImageGen';
 import Image from './Image';
@@ -84,7 +85,7 @@ const Part = memo(
 
       const isToolCall =
         'args' in toolCall && (!toolCall.type || toolCall.type === ToolCallTypes.TOOL_CALL);
-      if (isToolCall && toolCall.name === Tools.execute_code) {
+      if (isToolCall && toolCall.name === Tools.execute_code && toolCall.args) {
         return (
           <ExecuteCode
             args={typeof toolCall.args === 'string' ? toolCall.args : ''}
@@ -105,6 +106,16 @@ const Part = memo(
             args={typeof toolCall.args === 'string' ? toolCall.args : ''}
             output={toolCall.output ?? ''}
             attachments={attachments}
+          />
+        );
+      } else if (isToolCall && toolCall.name === Tools.web_search) {
+        return (
+          <WebSearch
+            output={toolCall.output ?? ''}
+            initialProgress={toolCall.progress ?? 0.1}
+            isSubmitting={isSubmitting}
+            attachments={attachments}
+            isLast={isLast}
           />
         );
       } else if (isToolCall) {

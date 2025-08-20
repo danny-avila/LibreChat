@@ -37,4 +37,6 @@ if (isEnabled(LIMIT_MESSAGE_USER)) {
 chatRouter.use('/', chat);
 router.use('/chat', chatRouter);
 
+// Add marketplace routes
+
 module.exports = router;

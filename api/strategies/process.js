@@ -1,7 +1,8 @@
 const { FileSources } = require('librechat-data-provider');
-const { createUser, updateUser, getUserById } = require('~/models/userMethods');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { resizeAvatar } = require('~/server/services/Files/images/avatar');
+const { updateUser, createUser, getUserById } = require('~/models');
+const { getBalanceConfig } = require('~/server/services/Config');
 
 /**
  * Updates the avatar URL of an existing user. If the user's avatar URL does not include the query parameter
@@ -21,16 +22,19 @@ const handleExistingUser = async (oldUser, avatarUrl) => {
   const isLocal = fileStrategy === FileSources.local;
 
   let updatedAvatar = false;
-  if (isLocal && (oldUser.avatar === null || !oldUser.avatar.includes('?manual=true'))) {
+  const hasManualFlag =
+    typeof oldUser?.avatar === 'string' && oldUser.avatar.includes('?manual=true');
+
+  if (isLocal && (!oldUser?.avatar || !hasManualFlag)) {
     updatedAvatar = avatarUrl;
-  } else if (!isLocal && (oldUser.avatar === null || !oldUser.avatar.includes('?manual=true'))) {
+  } else if (!isLocal && (!oldUser?.avatar || !hasManualFlag)) {
     const userId = oldUser._id;
     const resizedBuffer = await resizeAvatar({
       userId,
       input: avatarUrl,
     });
     const { processAvatar } = getStrategyFunctions(fileStrategy);
-    updatedAvatar = await processAvatar({ buffer: resizedBuffer, userId });
+    updatedAvatar = await processAvatar({ buffer: resizedBuffer, userId, manual: 'false' });
   }
 
   if (updatedAvatar) {
@@ -78,7 +82,8 @@ const createSocialUser = async ({
     emailVerified,
   };
 
-  const newUserId = await createUser(update);
+  const balanceConfig = await getBalanceConfig();
+  const newUserId = await createUser(update, balanceConfig);
   const fileStrategy = process.env.CDN_PROVIDER;
   const isLocal = fileStrategy === FileSources.local;
 
@@ -88,7 +93,11 @@ const createSocialUser = async ({
       input: avatarUrl,
     });
     const { processAvatar } = getStrategyFunctions(fileStrategy);
-    const avatar = await processAvatar({ buffer: resizedBuffer, userId: newUserId });
+    const avatar = await processAvatar({
+      buffer: resizedBuffer,
+      userId: newUserId,
+      manual: 'false',
+    });
     await updateUser(newUserId, { avatar });
   }
 

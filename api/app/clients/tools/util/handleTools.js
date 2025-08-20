@@ -1,8 +1,9 @@
+const { logger } = require('@librechat/data-schemas');
 const { SerpAPI } = require('@langchain/community/tools/serpapi');
 const { Calculator } = require('@langchain/community/tools/calculator');
-const { createCodeExecutionTool, EnvVar } = require('@librechat/agents');
-const { Tools, Constants, EToolResources } = require('librechat-data-provider');
-const { getUserPluginAuthValue } = require('~/server/services/PluginService');
+const { mcpToolPattern, loadWebSearchAuth } = require('@librechat/api');
+const { EnvVar, createCodeExecutionTool, createSearchTool } = require('@librechat/agents');
+const { Tools, EToolResources, replaceSpecialVars } = require('librechat-data-provider');
 const {
   availableTools,
   manifestToolMap,
@@ -22,11 +23,10 @@ const {
 } = require('../');
 const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
 const { createFileSearchTool, primeFiles: primeSearchFiles } = require('./fileSearch');
+const { getUserPluginAuthValue } = require('~/server/services/PluginService');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
+const { getCachedTools } = require('~/server/services/Config');
 const { createMCPTool } = require('~/server/services/MCP');
-const { logger } = require('~/config');
-
-const mcpToolPattern = new RegExp(`^.+${Constants.mcp_delimiter}.+$`);
 
 /**
  * Validates the availability and authentication of tools for a user based on environment variables or user-specific plugin authentication values.
@@ -87,7 +87,7 @@ const validateTools = async (user, tools = []) => {
     return Array.from(validToolsSet.values());
   } catch (err) {
     logger.error('[validateTools] There was a problem validating tools', err);
-    throw new Error('There was a problem validating tools');
+    throw new Error(err);
   }
 };
 
@@ -138,7 +138,6 @@ const loadTools = async ({
   agent,
   model,
   endpoint,
-  useSpecs,
   tools = [],
   options = {},
   functions = true,
@@ -231,7 +230,7 @@ const loadTools = async ({
 
   /** @type {Record<string, string>} */
   const toolContextMap = {};
-  const appTools = options.req?.app?.locals?.availableTools ?? {};
+  const cachedTools = (await getCachedTools({ userId: user, includeGlobal: true })) ?? {};
 
   for (const tool of tools) {
     if (tool === Tools.execute_code) {
@@ -241,7 +240,13 @@ const loadTools = async ({
           authFields: [EnvVar.CODE_API_KEY],
         });
         const codeApiKey = authValues[EnvVar.CODE_API_KEY];
-        const { files, toolContext } = await primeCodeFiles(options, codeApiKey);
+        const { files, toolContext } = await primeCodeFiles(
+          {
+            ...options,
+            agentId: agent?.id,
+          },
+          codeApiKey,
+        );
         if (toolContext) {
           toolContextMap[tool] = toolContext;
         }
@@ -256,17 +261,48 @@ const loadTools = async ({
       continue;
     } else if (tool === Tools.file_search) {
       requestedTools[tool] = async () => {
-        const { files, toolContext } = await primeSearchFiles(options);
+        const { files, toolContext } = await primeSearchFiles({
+          ...options,
+          agentId: agent?.id,
+        });
         if (toolContext) {
           toolContextMap[tool] = toolContext;
         }
         return createFileSearchTool({ req: options.req, files, entity_id: agent?.id });
       };
       continue;
-    } else if (tool && appTools[tool] && mcpToolPattern.test(tool)) {
+    } else if (tool === Tools.web_search) {
+      const webSearchConfig = options?.req?.app?.locals?.webSearch;
+      const result = await loadWebSearchAuth({
+        userId: user,
+        loadAuthValues,
+        webSearchConfig,
+      });
+      const { onSearchResults, onGetHighlights } = options?.[Tools.web_search] ?? {};
+      requestedTools[tool] = async () => {
+        toolContextMap[tool] = `# \`${tool}\`:
+Current Date & Time: ${replaceSpecialVars({ text: '{{iso_datetime}}' })}
+1. **Execute immediately without preface** when using \`${tool}\`.
+2. **After the search, begin with a brief summary** that directly addresses the query without headers or explaining your process.
+3. **Structure your response clearly** using Markdown formatting (Level 2 headers for sections, lists for multiple points, tables for comparisons).
+4. **Cite sources properly** according to the citation anchor format, utilizing group anchors when appropriate.
+5. **Tailor your approach to the query type** (academic, news, coding, etc.) while maintaining an expert, journalistic, unbiased tone.
+6. **Provide comprehensive information** with specific details, examples, and as much relevant context as possible from search results.
+7. **Avoid moralizing language.**
+`.trim();
+        return createSearchTool({
+          ...result.authResult,
+          onSearchResults,
+          onGetHighlights,
+          logger,
+        });
+      };
+      continue;
+    } else if (tool && cachedTools && mcpToolPattern.test(tool)) {
       requestedTools[tool] = async () =>
         createMCPTool({
           req: options.req,
+          res: options.res,
           toolKey: tool,
           model: agent?.model ?? model,
           provider: agent?.provider ?? endpoint,

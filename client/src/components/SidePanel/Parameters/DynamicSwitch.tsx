@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { DynamicSettingProps } from 'librechat-data-provider';
-import { Label, Switch, HoverCard, HoverCardTrigger } from '~/components/ui';
+import { Label, Switch, HoverCard, HoverCardTrigger } from '@librechat/client';
 import { TranslationKeys, useLocalize, useParameterEffects } from '~/hooks';
 import { useChatContext } from '~/Providers';
 import OptionHover from './OptionHover';
@@ -50,7 +50,7 @@ function DynamicSwitch({
           <div className="flex justify-between">
             <Label
               htmlFor={`${settingKey}-dynamic-switch`}
-              className="text-left text-sm font-medium"
+              className="break-words text-left text-sm font-medium"
             >
               {labelCode ? (localize(label as TranslationKeys) ?? label) : label || settingKey}{' '}
               {showDefault && (

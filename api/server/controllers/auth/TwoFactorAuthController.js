@@ -1,12 +1,12 @@
 const jwt = require('jsonwebtoken');
+const { logger } = require('@librechat/data-schemas');
 const {
   verifyTOTP,
-  verifyBackupCode,
   getTOTPSecret,
+  verifyBackupCode,
 } = require('~/server/services/twoFactorService');
 const { setAuthTokens } = require('~/server/services/AuthService');
-const { getUserById } = require('~/models/userMethods');
-const { logger } = require('~/config');
+const { getUserById } = require('~/models');
 
 /**
  * Verifies the 2FA code during login using a temporary token.
@@ -22,10 +22,11 @@ const verify2FAWithTempToken = async (req, res) => {
     try {
       payload = jwt.verify(tempToken, process.env.JWT_SECRET);
     } catch (err) {
+      logger.error('Failed to verify temporary token:', err);
       return res.status(401).json({ message: 'Invalid or expired temporary token' });
     }
 
-    const user = await getUserById(payload.userId);
+    const user = await getUserById(payload.userId, '+totpSecret +backupCodes');
     if (!user || !user.twoFactorEnabled) {
       return res.status(400).json({ message: '2FA is not enabled for this user' });
     }
@@ -42,11 +43,11 @@ const verify2FAWithTempToken = async (req, res) => {
       return res.status(401).json({ message: 'Invalid 2FA code or backup code' });
     }
 
-    // Prepare user data to return (omit sensitive fields).
     const userData = user.toObject ? user.toObject() : { ...user };
-    delete userData.password;
     delete userData.__v;
+    delete userData.password;
     delete userData.totpSecret;
+    delete userData.backupCodes;
     userData.id = user._id.toString();
 
     const authToken = await setAuthTokens(user._id, res);

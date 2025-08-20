@@ -1,9 +1,10 @@
 const fs = require('fs');
 const axios = require('axios');
 const FormData = require('form-data');
+const { logAxiosError } = require('@librechat/api');
+const { logger } = require('@librechat/data-schemas');
 const { FileSources } = require('librechat-data-provider');
-const { logAxiosError } = require('~/utils');
-const { logger } = require('~/config');
+const { generateShortLivedToken } = require('~/server/services/AuthService');
 
 /**
  * Deletes a file from the vector database. This function takes a file object, constructs the full path, and
@@ -23,7 +24,8 @@ const deleteVectors = async (req, file) => {
     return;
   }
   try {
-    const jwtToken = req.headers.authorization.split(' ')[1];
+    const jwtToken = generateShortLivedToken(req.user.id);
+
     return await axios.delete(`${process.env.RAG_API_URL}/documents`, {
       headers: {
         Authorization: `Bearer ${jwtToken}`,
@@ -58,24 +60,30 @@ const deleteVectors = async (req, file) => {
  *                                     have a `path` property that points to the location of the uploaded file.
  * @param {string} params.file_id - The file ID.
  * @param {string} [params.entity_id] - The entity ID for shared resources.
+ * @param {Object} [params.storageMetadata] - Storage metadata for dual storage pattern.
  *
  * @returns {Promise<{ filepath: string, bytes: number }>}
  *          A promise that resolves to an object containing:
  *            - filepath: The path where the file is saved.
  *            - bytes: The size of the file in bytes.
  */
-async function uploadVectors({ req, file, file_id, entity_id }) {
+async function uploadVectors({ req, file, file_id, entity_id, storageMetadata }) {
   if (!process.env.RAG_API_URL) {
     throw new Error('RAG_API_URL not defined');
   }
 
   try {
-    const jwtToken = req.headers.authorization.split(' ')[1];
+    const jwtToken = generateShortLivedToken(req.user.id);
     const formData = new FormData();
     formData.append('file_id', file_id);
     formData.append('file', fs.createReadStream(file.path));
     if (entity_id != null && entity_id) {
       formData.append('entity_id', entity_id);
+    }
+
+    // Include storage metadata for RAG API to store with embeddings
+    if (storageMetadata) {
+      formData.append('storage_metadata', JSON.stringify(storageMetadata));
     }
 
     const formHeaders = formData.getHeaders();

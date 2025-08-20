@@ -8,6 +8,7 @@ import {
   isAgentsEndpoint,
   getConfigDefaults,
   isAssistantsEndpoint,
+  PermissionBits,
 } from 'librechat-data-provider';
 import type { TAssistantsMap, TEndpointsConfig } from 'librechat-data-provider';
 import type { MentionOption } from '~/common';
@@ -34,20 +35,20 @@ const assistantMapFn =
     assistantMap: TAssistantsMap;
     endpointsConfig: TEndpointsConfig;
   }) =>
-    ({ id, name, description }) => ({
-      type: endpoint,
-      label: name ?? '',
-      value: id,
-      description: description ?? '',
-      icon: EndpointIcon({
-        conversation: { assistant_id: id, endpoint },
-        containerClassName: 'shadow-stroke overflow-hidden rounded-full',
-        endpointsConfig: endpointsConfig,
-        context: 'menu-item',
-        assistantMap,
-        size: 20,
-      }),
-    });
+  ({ id, name, description }) => ({
+    type: endpoint,
+    label: name ?? '',
+    value: id,
+    description: description ?? '',
+    icon: EndpointIcon({
+      conversation: { assistant_id: id, endpoint },
+      containerClassName: 'shadow-stroke overflow-hidden rounded-full',
+      endpointsConfig: endpointsConfig,
+      context: 'menu-item',
+      assistantMap,
+      size: 20,
+    }),
+  });
 
 export default function useMentions({
   assistantMap,
@@ -79,28 +80,31 @@ export default function useMentions({
     () => startupConfig?.interface ?? defaultInterface,
     [startupConfig?.interface],
   );
-  const { data: agentsList = null } = useListAgentsQuery(undefined, {
-    enabled: hasAgentAccess && interfaceConfig.modelSelect === true,
-    select: (res) => {
-      const { data } = res;
-      return data.map(({ id, name, avatar }) => ({
-        value: id,
-        label: name ?? '',
-        type: EModelEndpoint.agents,
-        icon: EndpointIcon({
-          conversation: {
-            agent_id: id,
-            endpoint: EModelEndpoint.agents,
-            iconURL: avatar?.filepath,
-          },
-          containerClassName: 'shadow-stroke overflow-hidden rounded-full',
-          endpointsConfig: endpointsConfig,
-          context: 'menu-item',
-          size: 20,
-        }),
-      }));
+  const { data: agentsList = null } = useListAgentsQuery(
+    { requiredPermission: PermissionBits.VIEW },
+    {
+      enabled: hasAgentAccess && interfaceConfig.modelSelect === true,
+      select: (res) => {
+        const { data } = res;
+        return data.map(({ id, name, avatar }) => ({
+          value: id,
+          label: name ?? '',
+          type: EModelEndpoint.agents,
+          icon: EndpointIcon({
+            conversation: {
+              agent_id: id,
+              endpoint: EModelEndpoint.agents,
+              iconURL: avatar?.filepath,
+            },
+            containerClassName: 'shadow-stroke overflow-hidden rounded-full',
+            endpointsConfig: endpointsConfig,
+            context: 'menu-item',
+            size: 20,
+          }),
+        }));
+      },
     },
-  });
+  );
   const assistantListMap = useMemo(
     () => ({
       [EModelEndpoint.assistants]: listMap[EModelEndpoint.assistants]
@@ -226,7 +230,7 @@ export default function useMentions({
     assistantListMap,
     includeAssistants,
     interfaceConfig.presets,
-    interfaceConfig.endpointsMenu,
+    interfaceConfig.modelSelect,
   ]);
 
   return {

@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { PixelCard } from '@librechat/client';
 import type { TAttachment, TFile, TAttachmentMetadata } from 'librechat-data-provider';
 import Image from '~/components/Chat/Messages/Content/Image';
 import ProgressText from './ProgressText';
-import { PixelCard } from '~/components';
 import { scaleImage } from '~/utils';
 
 export default function OpenAIImageGen({
@@ -32,8 +32,17 @@ export default function OpenAIImageGen({
   let height: number | undefined;
   let quality: 'low' | 'medium' | 'high' = 'high';
 
+  // Parse args if it's a string
+  let parsedArgs;
   try {
-    const argsObj = typeof _args === 'string' ? JSON.parse(_args) : _args;
+    parsedArgs = typeof _args === 'string' ? JSON.parse(_args) : _args;
+  } catch (error) {
+    console.error('Error parsing args:', error);
+    parsedArgs = {};
+  }
+
+  try {
+    const argsObj = parsedArgs;
 
     if (argsObj && typeof argsObj.size === 'string') {
       const [w, h] = argsObj.size.split('x').map((v: string) => parseInt(v, 10));
@@ -169,17 +178,6 @@ export default function OpenAIImageGen({
       <div className="relative my-2.5 flex size-5 shrink-0 items-center gap-2.5">
         <ProgressText progress={progress} error={cancelled} toolName={toolName} />
       </div>
-
-      {/* {showInfo && hasInfo && (
-              <ToolCallInfo
-                key="tool-call-info"
-                input={args ?? ''}
-                output={output}
-                function_name={function_name}
-                pendingAuth={authDomain.length > 0 && !cancelled && initialProgress < 1}
-              />
-            )} */}
-
       <div className="relative mb-2 flex w-full justify-start">
         <div ref={containerRef} className="w-full max-w-lg">
           {dimensions.width !== 'auto' && progress < 1 && (
@@ -197,6 +195,7 @@ export default function OpenAIImageGen({
             width={Number(dimensions.width?.split('px')[0])}
             height={Number(dimensions.height?.split('px')[0])}
             placeholderDimensions={{ width: dimensions.width, height: dimensions.height }}
+            args={parsedArgs}
           />
         </div>
       </div>

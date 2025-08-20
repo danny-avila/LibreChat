@@ -83,7 +83,7 @@ export function filterModels(
     let modelName = modelId;
 
     if (isAgentsEndpoint(endpoint.value) && agentsMap && agentsMap[modelId]) {
-      modelName = agentsMap[modelId].name || modelId;
+      modelName = agentsMap[modelId]?.name || modelId;
     } else if (
       isAssistantsEndpoint(endpoint.value) &&
       assistantsMap &&
@@ -167,11 +167,13 @@ export const getDisplayValue = ({
   mappedEndpoints,
   selectedValues,
   modelSpecs,
+  agentsMap,
 }: {
   localize: ReturnType<typeof useLocalize>;
   selectedValues: SelectedValues;
   mappedEndpoints: Endpoint[];
   modelSpecs: TModelSpec[];
+  agentsMap?: TAgentsMap;
 }) => {
   if (selectedValues.modelSpec) {
     const spec = modelSpecs.find((s) => s.name === selectedValues.modelSpec);
@@ -190,6 +192,9 @@ export const getDisplayValue = ({
       endpoint.agentNames[selectedValues.model]
     ) {
       return endpoint.agentNames[selectedValues.model];
+    } else if (isAgentsEndpoint(endpoint.value) && agentsMap) {
+      const agent = agentsMap[selectedValues.model];
+      return agent?.name || selectedValues.model;
     }
 
     if (

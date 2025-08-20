@@ -1,8 +1,11 @@
 const fs = require('fs');
-const path = require('path');
 const request = require('supertest');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const mongoose = require('mongoose');
+
+jest.mock('~/server/services/Config/loadCustomConfig', () => {
+  return jest.fn(() => Promise.resolve({}));
+});
 
 describe('Server Configuration', () => {
   // Increase the default timeout to allow for Mongo cleanup
@@ -55,6 +58,30 @@ describe('Server Configuration', () => {
     expect(response.headers['pragma']).toBe('no-cache');
     expect(response.headers['expires']).toBe('0');
   });
+
+  it('should return 500 for unknown errors via ErrorController', async () => {
+    // Testing the error handling here on top of unit tests to ensure the middleware is correctly integrated
+
+    // Mock MongoDB operations to fail
+    const originalFindOne = mongoose.models.User.findOne;
+    const mockError = new Error('MongoDB operation failed');
+    mongoose.models.User.findOne = jest.fn().mockImplementation(() => {
+      throw mockError;
+    });
+
+    try {
+      const response = await request(app).post('/api/auth/login').send({
+        email: 'test@example.com',
+        password: 'password123',
+      });
+
+      expect(response.status).toBe(500);
+      expect(response.text).toBe('An unknown error occurred.');
+    } finally {
+      // Restore original function
+      mongoose.models.User.findOne = originalFindOne;
+    }
+  });
 });
 
 // Polls the /health endpoint every 30ms for up to 10 seconds to wait for the server to start completely
@@ -65,7 +92,7 @@ async function healthCheckPoll(app, retries = 0) {
     if (response.status === 200) {
       return; // App is healthy
     }
-  } catch (error) {
+  } catch {
     // Ignore connection errors during polling
   }
 

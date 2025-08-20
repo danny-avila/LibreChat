@@ -1,10 +1,12 @@
 const express = require('express');
+const { isEnabled } = require('@librechat/api');
+const { logger } = require('@librechat/data-schemas');
 const { CacheKeys, defaultSocialLogins, Constants } = require('librechat-data-provider');
+const { getCustomConfig } = require('~/server/services/Config/getCustomConfig');
 const { getLdapConfig } = require('~/server/services/Config/ldap');
 const { getProjectByName } = require('~/models/Project');
-const { isEnabled } = require('~/server/utils');
+const { getMCPManager } = require('~/config');
 const { getLogStores } = require('~/cache');
-const { logger } = require('~/config');
 
 const router = express.Router();
 const emailLoginEnabled =
@@ -19,8 +21,12 @@ const publicSharedLinksEnabled =
   (process.env.ALLOW_SHARED_LINKS_PUBLIC === undefined ||
     isEnabled(process.env.ALLOW_SHARED_LINKS_PUBLIC));
 
+const sharePointFilePickerEnabled = isEnabled(process.env.ENABLE_SHAREPOINT_FILEPICKER);
+const openidReuseTokens = isEnabled(process.env.OPENID_REUSE_TOKENS);
+
 router.get('/', async function (req, res) {
   const cache = getLogStores(CacheKeys.CONFIG_STORE);
+
   const cachedStartupConfig = await cache.get(CacheKeys.STARTUP_CONFIG);
   if (cachedStartupConfig) {
     res.send(cachedStartupConfig);
@@ -37,6 +43,18 @@ router.get('/', async function (req, res) {
   const ldap = getLdapConfig();
 
   try {
+    const isOpenIdEnabled =
+      !!process.env.OPENID_CLIENT_ID &&
+      !!process.env.OPENID_CLIENT_SECRET &&
+      !!process.env.OPENID_ISSUER &&
+      !!process.env.OPENID_SESSION_SECRET;
+
+    const isSamlEnabled =
+      !!process.env.SAML_ENTRY_POINT &&
+      !!process.env.SAML_ISSUER &&
+      !!process.env.SAML_CERT &&
+      !!process.env.SAML_SESSION_SECRET;
+
     /** @type {TStartupConfig} */
     const payload = {
       appTitle: process.env.APP_TITLE || 'LibreChat',
@@ -51,14 +69,13 @@ router.get('/', async function (req, res) {
         !!process.env.APPLE_TEAM_ID &&
         !!process.env.APPLE_KEY_ID &&
         !!process.env.APPLE_PRIVATE_KEY_PATH,
-      openidLoginEnabled:
-        !!process.env.OPENID_CLIENT_ID &&
-        !!process.env.OPENID_CLIENT_SECRET &&
-        !!process.env.OPENID_ISSUER &&
-        !!process.env.OPENID_SESSION_SECRET,
+      openidLoginEnabled: isOpenIdEnabled,
       openidLabel: process.env.OPENID_BUTTON_LABEL || 'Continue with OpenID',
       openidImageUrl: process.env.OPENID_IMAGE_URL,
       openidAutoRedirect: isEnabled(process.env.OPENID_AUTO_REDIRECT),
+      samlLoginEnabled: !isOpenIdEnabled && isSamlEnabled,
+      samlLabel: process.env.SAML_BUTTON_LABEL,
+      samlImageUrl: process.env.SAML_IMAGE_URL,
       serverDomain: process.env.DOMAIN_SERVER || 'http://localhost:3080',
       emailLoginEnabled,
       registrationEnabled: !ldap?.enabled && isEnabled(process.env.ALLOW_REGISTRATION),
@@ -84,7 +101,53 @@ router.get('/', async function (req, res) {
       instanceProjectId: instanceProject._id.toString(),
       bundlerURL: process.env.SANDPACK_BUNDLER_URL,
       staticBundlerURL: process.env.SANDPACK_STATIC_BUNDLER_URL,
+      sharePointFilePickerEnabled,
+      sharePointBaseUrl: process.env.SHAREPOINT_BASE_URL,
+      sharePointPickerGraphScope: process.env.SHAREPOINT_PICKER_GRAPH_SCOPE,
+      sharePointPickerSharePointScope: process.env.SHAREPOINT_PICKER_SHAREPOINT_SCOPE,
+      openidReuseTokens,
     };
+
+    payload.mcpServers = {};
+    const config = await getCustomConfig();
+    if (config?.mcpServers != null) {
+      try {
+        const mcpManager = getMCPManager();
+        const oauthServers = mcpManager.getOAuthServers();
+        for (const serverName in config.mcpServers) {
+          const serverConfig = config.mcpServers[serverName];
+          payload.mcpServers[serverName] = {
+            startup: serverConfig?.startup,
+            chatMenu: serverConfig?.chatMenu,
+            isOAuth: oauthServers?.has(serverName),
+            customUserVars: serverConfig?.customUserVars || {},
+          };
+        }
+      } catch (err) {
+        logger.error('Error loading MCP servers', err);
+      }
+    }
+
+    /** @type {TCustomConfig['webSearch']} */
+    const webSearchConfig = req.app.locals.webSearch;
+    if (
+      webSearchConfig != null &&
+      (webSearchConfig.searchProvider ||
+        webSearchConfig.scraperType ||
+        webSearchConfig.rerankerType)
+    ) {
+      payload.webSearch = {};
+    }
+
+    if (webSearchConfig?.searchProvider) {
+      payload.webSearch.searchProvider = webSearchConfig.searchProvider;
+    }
+    if (webSearchConfig?.scraperType) {
+      payload.webSearch.scraperType = webSearchConfig.scraperType;
+    }
+    if (webSearchConfig?.rerankerType) {
+      payload.webSearch.rerankerType = webSearchConfig.rerankerType;
+    }
 
     if (ldap) {
       payload.ldap = ldap;

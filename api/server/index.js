@@ -1,21 +1,21 @@
 require('dotenv').config();
+const fs = require('fs');
 const path = require('path');
 require('module-alias')({ base: path.resolve(__dirname, '..') });
 const cors = require('cors');
 const axios = require('axios');
 const express = require('express');
-const compression = require('compression');
 const passport = require('passport');
-const mongoSanitize = require('express-mongo-sanitize');
-const fs = require('fs');
+const compression = require('compression');
 const cookieParser = require('cookie-parser');
-const { jwtLogin, passportLogin } = require('~/strategies');
-const { connectDb, indexSync } = require('~/lib/db');
-const { isEnabled } = require('~/server/utils');
-const { ldapLogin } = require('~/strategies');
-const { logger } = require('~/config');
+const { logger } = require('@librechat/data-schemas');
+const mongoSanitize = require('express-mongo-sanitize');
+const { isEnabled, ErrorController } = require('@librechat/api');
+const { connectDb, indexSync } = require('~/db');
 const validateImageRequest = require('./middleware/validateImageRequest');
-const errorController = require('./controllers/ErrorController');
+const { jwtLogin, ldapLogin, passportLogin } = require('~/strategies');
+const { checkMigrations } = require('./services/start/migration');
+const initializeMCPs = require('./services/initializeMCPs');
 const configureSocialLogins = require('./socialLogins');
 const AppService = require('./services/AppService');
 const staticCache = require('./utils/staticCache');
@@ -36,8 +36,11 @@ const startServer = async () => {
     axios.defaults.headers.common['Accept-Encoding'] = 'gzip';
   }
   await connectDb();
+
   logger.info('Connected to MongoDB');
-  await indexSync();
+  indexSync().catch((err) => {
+    logger.error('[indexSync] Background sync failed:', err);
+  });
 
   app.disable('x-powered-by');
   app.set('trust proxy', trusted_proxy);
@@ -51,7 +54,6 @@ const startServer = async () => {
 
   /* Middleware */
   app.use(noIndex);
-  app.use(errorController);
   app.use(express.json({ limit: '3mb' }));
   app.use(express.urlencoded({ extended: true, limit: '3mb' }));
   app.use(mongoSanitize());
@@ -75,7 +77,7 @@ const startServer = async () => {
 
   /* OAUTH */
   app.use(passport.initialize());
-  passport.use(await jwtLogin());
+  passport.use(jwtLogin());
   passport.use(passportLogin());
 
   /* LDAP Auth */
@@ -84,7 +86,7 @@ const startServer = async () => {
   }
 
   if (isEnabled(ALLOW_SOCIAL_LOGIN)) {
-    configureSocialLogins(app);
+    await configureSocialLogins(app);
   }
 
   app.use('/oauth', routes.oauth);
@@ -93,7 +95,6 @@ const startServer = async () => {
   app.use('/api/actions', routes.actions);
   app.use('/api/keys', routes.keys);
   app.use('/api/user', routes.user);
-  app.use('/api/ask', routes.ask);
   app.use('/api/search', routes.search);
   app.use('/api/edit', routes.edit);
   app.use('/api/messages', routes.messages);
@@ -114,9 +115,13 @@ const startServer = async () => {
   app.use('/api/roles', routes.roles);
   app.use('/api/agents', routes.agents);
   app.use('/api/banner', routes.banner);
-  app.use('/api/bedrock', routes.bedrock);
+  app.use('/api/memories', routes.memories);
+  app.use('/api/permissions', routes.accessPermissions);
 
   app.use('/api/tags', routes.tags);
+  app.use('/api/mcp', routes.mcp);
+
+  app.use(ErrorController);
 
   app.use((req, res) => {
     res.set({
@@ -140,6 +145,8 @@ const startServer = async () => {
     } else {
       logger.info(`Server listening at http://${host == '0.0.0.0' ? 'localhost' : host}:${port}`);
     }
+
+    initializeMCPs(app).then(() => checkMigrations());
   });
 };
 
@@ -182,5 +189,5 @@ process.on('uncaughtException', (err) => {
   process.exit(1);
 });
 
-// export app for easier testing purposes
+/** Export app for easier testing purposes */
 module.exports = app;
