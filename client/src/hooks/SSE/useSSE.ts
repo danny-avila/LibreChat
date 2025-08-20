@@ -198,33 +198,32 @@ export default function useSSE(
     });
 
     sse.addEventListener('error', async (e: MessageEvent) => {
-      /* @ts-ignore */
-      if (e.responseCode === 401) {
-        /* For forwarded auth, don't try to refresh tokens */
-        console.log('[stripe]401 error in forwarded auth mode - authentication handled by reverse proxy');
 
-        
-          /* JWT auth: token expired, refresh and retry */
-          // try {
-          //   const refreshResponse = await request.refreshToken();
-          // const token = refreshResponse?.token ?? '';
-          // if (!token) {
-          //     throw new Error('Token refresh failed.');
-          //   }
-          //   sse.headers = {
-          //     'Content-Type': 'application/json',
-          //   Authorization: `Bearer ${token}`,
-          //   };
+      // <stripe
+      // Removing refresh token logic
+      // /* @ts-ignore */
+      // if (e.responseCode === 401) {
+      //   /* token expired, refresh and retry */
+      //   try {
+      //     const refreshResponse = await request.refreshToken();
+      //     const token = refreshResponse?.token ?? '';
+      //     if (!token) {
+      //       throw new Error('Token refresh failed.');
+      //     }
+      //     sse.headers = {
+      //       'Content-Type': 'application/json',
+      //       Authorization: `Bearer ${token}`,
+      //     };
 
-          // request.dispatchTokenUpdatedEvent(token);
-          //   sse.stream();
-          //   return;
-          // } catch (error) {
-          //   /* token refresh failed, continue handling the original 401 */
-          //   console.log(error);
-          // }
-        
-      }
+      //     request.dispatchTokenUpdatedEvent(token);
+      //     sse.stream();
+      //     return;
+      //   } catch (error) {
+      //     /* token refresh failed, continue handling the original 401 */
+      //     console.log(error);
+      //   }
+      // }
+      // </stripe>
 
       console.log('error in server stream.');
       (startupConfig?.balance?.enabled ?? false) && balanceQuery.refetch();
