@@ -284,23 +284,16 @@ function convertToUsername(input, defaultValue = '') {
 /**
  * Retrieves a property from an object using a dot-separated path.
  * If the property does not exist, it returns undefined.
+ * 
  * @param {Object} obj - The object from which to retrieve the property.
  * @param {string} path - The dot-separated path to the property.
  * @returns {*} The value of the property at the specified path, or undefined if it does not exist.
- * @example
- * const obj = { a: { b: { c: 42 } } };
- * const value = getPropFromObject(obj, 'a.b.c'); // returns 42
- * const missingValue = getPropFromObject(obj, 'a.b.x'); // returns undefined
- * const undefinedValue = getPropFromObject(obj, 'a.b'); // returns { c: 42 }
- * const emptyValue = getPropFromObject(obj, ''); // returns undefined
- * const nullValue = getPropFromObject(null, 'a.b.c'); // returns undefined
- * const undefinedValue = getPropFromObject(undefined, 'a.b.c'); // returns undefined
  */
 function getPropertyFromObject(obj, path) {
   if (!obj || !path) {
     return undefined;
   }
-  
+
   const pathParts = path.split('.');
   return pathParts.reduce((o, key) => {
     if (o === null || o === undefined || !(key in o)) {
@@ -309,6 +302,7 @@ function getPropertyFromObject(obj, path) {
     return o[key];
   }, obj);
 }
+
 /**
  * Sets up the OpenID strategy for authentication.
  * This function configures the OpenID client, handles proxy settings,
@@ -490,24 +484,22 @@ async function setupOpenId() {
                   `[openidStrategy] Invalid admin role token kind: ${adminRoleTokenKind}. Must be one of 'access', 'id', or 'userinfo'.`,
                 );
                 return done(new Error('Invalid admin role token kind'));
-              }
+            }
 
-            const adminRoles = getPropertyFromObject(
-              adminRoleObject,
-              adminRoleParameterPath,
-            );
+            const adminRoles = getPropertyFromObject(adminRoleObject, adminRoleParameterPath);
 
             // Accept 3 types of values for the object extracted from adminRoleParameterPath:
             // 1. A boolean value indicating if the user is an admin
             // 2. A string with a single role name
             // 3. An array of role names
 
-            if (adminRoles && (
-              adminRoles === true || 
-              adminRoles === adminRole ||
-              (Array.isArray(adminRoles) && adminRoles.includes(adminRole))
-            )) {
-              user.role = "ADMIN";
+            if (
+              adminRoles &&
+              (adminRoles === true ||
+                adminRoles === adminRole ||
+                (Array.isArray(adminRoles) && adminRoles.includes(adminRole)))
+            ) {
+              user.role = 'ADMIN';
               logger.info(
                 `[openidStrategy] User ${username} is an admin based on role: ${adminRole}`,
               );
