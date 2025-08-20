@@ -366,7 +366,7 @@ describe('setupOpenId', () => {
     // Arrange
     process.env.OPENID_REQUIRED_ROLE = 'someRole,anotherRole,admin';
     await setupOpenId(); // Re-initialize the strategy
-    verifyCallback = require('openid-client/passport').__getVerifyCallback(); // Update the verify callback
+    verifyCallback = require('openid-client/passport').__getVerifyCallback();
     jwtDecode.mockReturnValue({
       roles: ['anotherRole', 'aThirdRole'],
     });
@@ -383,7 +383,7 @@ describe('setupOpenId', () => {
     // Arrange
     process.env.OPENID_REQUIRED_ROLE = 'someRole,anotherRole,admin';
     await setupOpenId(); // Re-initialize the strategy
-    verifyCallback = require('openid-client/passport').__getVerifyCallback(); // Update the verify callback
+    verifyCallback = require('openid-client/passport').__getVerifyCallback();
     jwtDecode.mockReturnValue({
       roles: ['aThirdRole', 'aFourthRole'],
     });
@@ -393,14 +393,16 @@ describe('setupOpenId', () => {
 
     // Assert
     expect(user).toBe(false);
-    expect(details.message).toBe('You must have one of: "someRole", "anotherRole", "admin" role to log in.');
+    expect(details.message).toBe(
+      'You must have one of: "someRole", "anotherRole", "admin" role to log in.',
+    );
   });
 
   it('should handle spaces in comma-separated roles', async () => {
     // Arrange
     process.env.OPENID_REQUIRED_ROLE = ' someRole , anotherRole , admin ';
     await setupOpenId(); // Re-initialize the strategy
-    verifyCallback = require('openid-client/passport').__getVerifyCallback(); // Update the verify callback
+    verifyCallback = require('openid-client/passport').__getVerifyCallback();
     jwtDecode.mockReturnValue({
       roles: ['someRole'],
     });
