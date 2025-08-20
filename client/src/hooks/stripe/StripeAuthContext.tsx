@@ -19,7 +19,7 @@ import {
   useLogoutUserMutation,
 } from '~/data-provider';
 import { TAuthConfig, TUserContext, TAuthContext, TResError } from '~/common';
-import useTimeout from './useTimeout';
+import useTimeout from '../useTimeout';
 import store from '~/store';
 
 const StripeAuthContext = createContext<TAuthContext | undefined>(undefined);

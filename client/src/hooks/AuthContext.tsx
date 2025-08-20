@@ -240,4 +240,4 @@ export {
   StripeAuthContextProvider as AuthContextProvider,
   useStripeAuthContext as useAuthContext,
   StripeAuthContext as AuthContext,
-} from './StripeAuthContext';
+} from './stripe/StripeAuthContext';
