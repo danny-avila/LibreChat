@@ -109,11 +109,7 @@ export type TPayload = Partial<TMessage> &
     messages?: TMessages;
     isTemporary: boolean;
     ephemeralAgent?: TEphemeralAgent | null;
-    editedContent?: {
-      index: number;
-      text: string;
-      type: 'text' | 'think';
-    } | null;
+    editedContent?: TEditedContent | null;
   };
 
 export type TEditedContent =
