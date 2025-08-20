@@ -3,6 +3,7 @@ const {
   loadMemoryConfig,
   agentsConfigSetup,
   loadWebSearchConfig,
+  loadDefaultInterface,
 } = require('@librechat/api');
 const {
   FileSources,
@@ -16,16 +17,14 @@ const {
   checkHealth,
   checkConfig,
 } = require('./start/checks');
-const { ensureDefaultCategories, seedDefaultRoles, initializeRoles } = require('~/models');
-const { setCachedTools, setAppConfig, loadCustomConfig } = require('./Config');
 const { initializeAzureBlobService } = require('./Files/Azure/initialize');
 const { initializeFirebase } = require('./Files/Firebase/initialize');
 const handleRateLimits = require('./Config/handleRateLimits');
-const { loadDefaultInterface } = require('./start/interface');
+const loadCustomConfig = require('./Config/loadCustomConfig');
 const { loadTurnstileConfig } = require('./start/turnstile');
 const { processModelSpecs } = require('./start/modelSpecs');
 const { initializeS3 } = require('./Files/S3/initialize');
-const { loadAndFormatTools } = require('./ToolService');
+const { loadAndFormatTools } = require('./start/tools');
 const { loadEndpoints } = require('./start/endpoints');
 const paths = require('~/config/paths');
 
@@ -34,9 +33,6 @@ const paths = require('~/config/paths');
  * @function AppService
  */
 const AppService = async () => {
-  await initializeRoles();
-  await seedDefaultRoles();
-  await ensureDefaultCategories();
   /** @type {TCustomConfig} */
   const config = (await loadCustomConfig()) ?? {};
   const configDefaults = getConfigDefaults();
@@ -73,17 +69,11 @@ const AppService = async () => {
     adminFilter: filteredTools,
     adminIncluded: includedTools,
     directory: paths.structuredTools,
-    imageOutputType,
-    fileStrategy,
   });
 
-  await setCachedTools(availableTools, { isGlobal: true });
-
-  // Store MCP config for later initialization
   const mcpConfig = config.mcpServers || null;
-
   const registration = config.registration ?? configDefaults.registration;
-  const interfaceConfig = await loadDefaultInterface(config, configDefaults);
+  const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
   const turnstileConfig = loadTurnstileConfig(config, configDefaults);
   const speech = config.speech;
 
@@ -100,6 +90,7 @@ const AppService = async () => {
     registration,
     filteredTools,
     includedTools,
+    availableTools,
     imageOutputType,
     interfaceConfig,
     turnstileConfig,
@@ -115,8 +106,7 @@ const AppService = async () => {
         [EModelEndpoint.agents]: agentsDefaults,
       },
     };
-    await setAppConfig(appConfig);
-    return;
+    return appConfig;
   }
 
   checkConfig(config);
@@ -131,7 +121,7 @@ const AppService = async () => {
     endpoints: loadedEndpoints,
   };
 
-  await setAppConfig(appConfig);
+  return appConfig;
 };
 
 module.exports = AppService;

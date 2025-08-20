@@ -1,5 +1,7 @@
 const { logger } = require('@librechat/data-schemas');
 const { CacheKeys } = require('librechat-data-provider');
+const AppService = require('~/server/services/AppService');
+const { setCachedTools } = require('./getCachedTools');
 const getLogStores = require('~/cache/getLogStores');
 
 /**
@@ -22,9 +24,20 @@ async function getAppConfig(options = {}) {
     }
   }
 
-  const baseConfig = await cache.get(CacheKeys.APP_CONFIG);
+  let baseConfig = await cache.get(CacheKeys.APP_CONFIG);
   if (!baseConfig) {
-    throw new Error('App configuration not initialized. Please ensure AppService has been called.');
+    logger.info('[getAppConfig] App configuration not initialized. Initializing AppService...');
+    baseConfig = await AppService();
+
+    if (!baseConfig) {
+      throw new Error('Failed to initialize app configuration through AppService.');
+    }
+
+    if (baseConfig.availableTools) {
+      await setCachedTools(baseConfig.availableTools, { isGlobal: true });
+    }
+
+    await cache.set(CacheKeys.APP_CONFIG, baseConfig);
   }
 
   // For now, return the base config
@@ -49,19 +62,7 @@ async function clearAppConfigCache() {
   return await cache.delete(cacheKey);
 }
 
-/**
- * Initialize the app configuration during startup
- * @param {AppConfig} config - The initial configuration to store
- * @returns {Promise<void>}
- */
-async function setAppConfig(config) {
-  const cache = getLogStores(CacheKeys.CONFIG_STORE);
-  await cache.set(CacheKeys.APP_CONFIG, config);
-  logger.debug('[getAppConfig] App configuration initialized');
-}
-
 module.exports = {
   getAppConfig,
-  setAppConfig,
   clearAppConfigCache,
 };
