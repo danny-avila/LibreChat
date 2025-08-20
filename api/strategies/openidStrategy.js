@@ -361,7 +361,10 @@ async function setupOpenId() {
           const fullName = getFullName(userinfo);
 
           if (requiredRole) {
-            const requiredRoles = requiredRole.split(',').map((role) => role.trim()).filter(Boolean);
+            const requiredRoles = requiredRole
+              .split(',')
+              .map((role) => role.trim())
+              .filter(Boolean);
             let decodedToken = '';
             if (requiredRoleTokenKind === 'access') {
               decodedToken = jwtDecode(tokenset.access_token);
