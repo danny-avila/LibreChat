@@ -308,6 +308,19 @@ class OpenAIClient extends BaseClient {
     }
   }
 
+  // common helper — adds opening tag <think> when missed (for QwQ)
+  prependQwQThinkIfNeeded(text, modelId) {
+    try {
+      const id = modelId ?? this.modelOptions?.model ?? '';
+      if (typeof text !== 'string') return text;
+      if (!/qwq/i.test(id)) return text; // for QwQ-models only
+      if (/^\s*<think>/.test(text)) return text; // already starts with <think>
+      return '<think>\n' + text;
+    } catch {
+      return text;
+    }
+  }
+
   getEncoding() {
     return this.modelOptions?.model && /gpt-4[^-\s]/.test(this.modelOptions.model)
       ? 'o200k_base'
@@ -619,7 +632,8 @@ class OpenAIClient extends BaseClient {
       );
 
       if (result && typeof result === 'string') {
-        return result.trim();
+        // non-stream: check and add <think>
+        return this.prependQwQThinkIfNeeded(result.trim(), this.modelOptions?.model);
       }
 
       logger.debug('[OpenAIClient] sendCompletion: result', { ...result });
@@ -1433,6 +1447,9 @@ ${convo}
 
       intermediateReply = this.streamHandler.tokens;
 
+      // Init state for <think> tag in stream
+      let qwqThinkPrefixed = false;
+
       if (modelOptions.stream) {
         streamPromise = new Promise((resolve) => {
           streamResolve = resolve;
@@ -1498,6 +1515,23 @@ ${convo}
               }
             });
           }
+
+          // QwQ stream prefix — add <think>\n before the first real chunk
+          try {
+            if (!qwqThinkPrefixed) {
+              const delta = chunk?.choices?.[0]?.delta?.content;
+              if (typeof delta === 'string' && delta.length > 0) {
+                const maybePrefixed = this.prependQwQThinkIfNeeded(delta, modelOptions?.model);
+                if (maybePrefixed !== delta) {
+                  this.streamHandler.handle({
+                    choices: [{ delta: { content: '<think>\n' } }],
+                  });
+                }
+                qwqThinkPrefixed = true;
+              }
+            }
+          } catch { /* no-op */ }
+
           this.streamHandler.handle(chunk);
           if (abortController.signal.aborted) {
             stream.controller.abort();
