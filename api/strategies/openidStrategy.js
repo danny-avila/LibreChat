@@ -284,7 +284,7 @@ function convertToUsername(input, defaultValue = '') {
 /**
  * Retrieves a property from an object using a dot-separated path.
  * If the property does not exist, it returns undefined.
- * 
+ *
  * @param {Object} obj - The object from which to retrieve the property.
  * @param {string} path - The dot-separated path to the property.
  * @returns {*} The value of the property at the specified path, or undefined if it does not exist.
