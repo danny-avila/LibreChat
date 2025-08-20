@@ -352,4 +352,54 @@ describe('setupOpenId', () => {
     expect(fetch).not.toHaveBeenCalled();
     // Depending on your implementation, user.avatar may be undefined or an empty string.
   });
+
+  it('should support comma-separated multiple roles', async () => {
+    // Arrange
+    process.env.OPENID_REQUIRED_ROLE = 'someRole,anotherRole,admin';
+    await setupOpenId(); // Re-initialize the strategy
+    jwtDecode.mockReturnValue({
+      roles: ['anotherRole', 'aThirdRole'],
+    });
+    const userinfo = { ...baseUserinfo };
+
+    // Act
+    const { user } = await validate(tokenset, userinfo);
+
+    // Assert
+    expect(user).toBeTruthy();
+    expect(user.email).toBe(baseUserinfo.email);
+  });
+
+  it('should reject login when user has none of the required multiple roles', async () => {
+    // Arrange
+    process.env.OPENID_REQUIRED_ROLE = 'someRole,anotherRole,admin';
+    await setupOpenId(); // Re-initialize the strategy
+    jwtDecode.mockReturnValue({
+      roles: ['aThirdRole', 'aFourthRole'],
+    });
+    const userinfo = { ...baseUserinfo };
+
+    // Act
+    const { user, details } = await validate(tokenset, userinfo);
+
+    // Assert
+    expect(user).toBe(false);
+    expect(details.message).toBe('You must have one of: "someRole", "anotherRole", "admin" role to log in.');
+  });
+
+  it('should handle spaces in comma-separated roles', async () => {
+    // Arrange
+    process.env.OPENID_REQUIRED_ROLE = ' someRole , anotherRole , admin ';
+    await setupOpenId(); // Re-initialize the strategy
+    jwtDecode.mockReturnValue({
+      roles: ['someRole'],
+    });
+    const userinfo = { ...baseUserinfo };
+
+    // Act
+    const { user } = await validate(tokenset, userinfo);
+
+    // Assert
+    expect(user).toBeTruthy();
+  });
 });
