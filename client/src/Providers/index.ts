@@ -24,4 +24,5 @@ export * from './SearchContext';
 export * from './BadgeRowContext';
 export * from './SidePanelContext';
 export * from './ArtifactsContext';
+export * from './PromptGroupsContext';
 export { default as BadgeRowProvider } from './BadgeRowContext';

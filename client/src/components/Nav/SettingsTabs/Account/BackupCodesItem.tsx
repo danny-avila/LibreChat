@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { RefreshCcw, ShieldX } from 'lucide-react';
+import { RefreshCcw } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { TBackupCode, TRegenerateBackupCodesResponse, type TUser } from 'librechat-data-provider';
 import {
@@ -73,8 +73,8 @@ const BackupCodesItem: React.FC = () => {
           <Label className="font-light">{localize('com_ui_backup_codes')}</Label>
         </div>
         <OGDialogTrigger asChild>
-          <Button aria-label="Show Backup Codes" variant="outline">
-            {localize('com_ui_show')}
+          <Button aria-label="Manage Backup Codes" variant="outline">
+            {localize('com_ui_manage')}
           </Button>
         </OGDialogTrigger>
       </div>
@@ -93,6 +93,16 @@ const BackupCodesItem: React.FC = () => {
           >
             {Array.isArray(user?.backupCodes) && user?.backupCodes.length > 0 ? (
               <>
+                <div className="border-warning-300 bg-warning-50 dark:border-warning-700 dark:bg-warning-900/20 mb-6 rounded-lg border p-4">
+                  <p className="text-sm text-text-secondary">
+                    {localize('com_ui_backup_codes_security_info')}
+                  </p>
+                </div>
+
+                <h3 className="mb-4 text-lg font-medium">
+                  {localize('com_ui_backup_codes_status')}
+                </h3>
+
                 <div className="grid grid-cols-2 gap-4">
                   {user?.backupCodes.map((code, index) => {
                     const isUsed = code.used;
@@ -125,7 +135,7 @@ const BackupCodesItem: React.FC = () => {
                       >
                         <div className="flex items-center justify-between" aria-hidden="true">
                           <span className="text-sm font-medium text-text-secondary">
-                            #{index + 1}
+                            {localize('com_ui_backup_code_number', { number: index + 1 })}
                           </span>
                           <TooltipAnchor
                             description={
@@ -171,8 +181,6 @@ const BackupCodesItem: React.FC = () => {
               </>
             ) : (
               <div className="flex flex-col items-center gap-4 p-6 text-center">
-                <ShieldX className="h-12 w-12 text-text-primary" />
-                <p className="text-lg text-text-secondary">{localize('com_ui_no_backup_codes')}</p>
                 <Button
                   onClick={handleRegenerate}
                   disabled={isLoading}
@@ -180,7 +188,7 @@ const BackupCodesItem: React.FC = () => {
                   className="px-8 py-3 transition-all disabled:opacity-50"
                 >
                   {isLoading && <Spinner className="mr-2" />}
-                  {localize('com_ui_generate_backup')}
+                  {localize('com_ui_regenerate_backup')}
                 </Button>
               </div>
             )}

@@ -3,13 +3,14 @@ const RECOGNIZED_PROVIDERS = new Set([
   'google',
   'anthropic',
   'openai',
+  'azureopenai',
   'openrouter',
   'xai',
   'deepseek',
   'ollama',
   'bedrock',
 ]);
-const CONTENT_ARRAY_PROVIDERS = new Set(['google', 'anthropic', 'openai']);
+const CONTENT_ARRAY_PROVIDERS = new Set(['google', 'anthropic', 'azureopenai', 'openai']);
 
 const imageFormatters: Record<string, undefined | t.ImageFormatter> = {
   // google: (item) => ({

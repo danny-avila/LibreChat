@@ -73,6 +73,11 @@ jest.mock('@librechat/client', () => ({
 // Mock other dependencies
 jest.mock('librechat-data-provider/react-query', () => ({
   useGetModelsQuery: () => ({ data: {} }),
+  useGetEffectivePermissionsQuery: () => ({
+    data: { permissionBits: 0xffffffff }, // All permissions
+    isLoading: false,
+  }),
+  hasPermissions: (_bits: number, _required: number) => true, // Always return true for tests
 }));
 
 jest.mock('~/utils', () => ({

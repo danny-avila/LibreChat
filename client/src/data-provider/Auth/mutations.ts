@@ -87,8 +87,6 @@ export const useDeleteUserMutation = (
   });
 };
 
-// Array.isArray(user?.backupCodes) && user?.backupCodes.length > 0
-
 export const useEnableTwoFactorMutation = (): UseMutationResult<
   t.TEnable2FAResponse,
   unknown,

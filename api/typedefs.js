@@ -889,6 +889,12 @@
  */
 
 /**
+ * @exports IRole
+ * @typedef {import('@librechat/data-schemas').IRole} IRole
+ * @memberof typedefs
+ */
+
+/**
  * @exports ObjectId
  * @typedef {import('mongoose').Types.ObjectId} ObjectId
  * @memberof typedefs
@@ -1069,6 +1075,19 @@
 /**
  * @exports AgentListResponse
  * @typedef {import('librechat-data-provider').AgentListResponse} AgentListResponse
+ * @memberof typedefs
+ */
+
+/** Permissions */
+/**
+ * @exports TUpdateResourcePermissionsRequest
+ * @typedef {import('librechat-data-provider').TUpdateResourcePermissionsRequest} TUpdateResourcePermissionsRequest
+ * @memberof typedefs
+ */
+
+/**
+ * @exports TUpdateResourcePermissionsResponse
+ * @typedef {import('librechat-data-provider').TUpdateResourcePermissionsResponse} TUpdateResourcePermissionsResponse
  * @memberof typedefs
  */
 

@@ -45,16 +45,9 @@ const BookmarkNav: FC<BookmarkNavProps> = ({ tags, setTags, isSmallScreen }: Boo
                 data-testid="bookmark-menu"
               >
                 {tags.length > 0 ? (
-                  <BookmarkFilledIcon
-                    /** `isSmallScreen` is used because lazy loading is not influencing `md:` prefix for some reason */
-                    className={cn('text-text-primary', isSmallScreen ? 'icon-md-heavy' : 'icon-lg')}
-                    aria-hidden="true"
-                  />
+                  <BookmarkFilledIcon className="icon-lg text-text-primary" aria-hidden="true" />
                 ) : (
-                  <BookmarkIcon
-                    className={cn('text-text-primary', isSmallScreen ? 'icon-md-heavy' : 'icon-lg')}
-                    aria-hidden="true"
-                  />
+                  <BookmarkIcon className="icon-lg text-text-primary" aria-hidden="true" />
                 )}
               </MenuButton>
             }

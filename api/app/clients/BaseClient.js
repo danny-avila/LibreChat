@@ -37,6 +37,8 @@ class BaseClient {
     this.conversationId;
     /** @type {string} */
     this.responseMessageId;
+    /** @type {string} */
+    this.parentMessageId;
     /** @type {TAttachment[]} */
     this.attachments;
     /** The key for the usage object's input tokens
@@ -614,15 +616,19 @@ class BaseClient {
       this.currentMessages.push(userMessage);
     }
 
+    /**
+     * When the userMessage is pushed to currentMessages, the parentMessage is the userMessageId.
+     * this only matters when buildMessages is utilizing the parentMessageId, and may vary on implementation
+     */
+    const parentMessageId = isEdited ? head : userMessage.messageId;
+    this.parentMessageId = parentMessageId;
     let {
       prompt: payload,
       tokenCountMap,
       promptTokens,
     } = await this.buildMessages(
       this.currentMessages,
-      // When the userMessage is pushed to currentMessages, the parentMessage is the userMessageId.
-      // this only matters when buildMessages is utilizing the parentMessageId, and may vary on implementation
-      isEdited ? head : userMessage.messageId,
+      parentMessageId,
       this.getBuildMessagesOptions(opts),
       opts,
     );

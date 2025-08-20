@@ -28,7 +28,11 @@ const initializeClient = async ({ req, res, endpointOption, optionsOnly, overrid
   const CUSTOM_API_KEY = extractEnvVariable(endpointConfig.apiKey);
   const CUSTOM_BASE_URL = extractEnvVariable(endpointConfig.baseURL);
 
-  let resolvedHeaders = resolveHeaders(endpointConfig.headers, req.user);
+  let resolvedHeaders = resolveHeaders({
+    headers: endpointConfig.headers,
+    user: req.user,
+    body: req.body,
+  });
 
   if (CUSTOM_API_KEY.match(envVarRegex)) {
     throw new Error(`Missing API Key for ${endpoint}.`);

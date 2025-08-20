@@ -1,7 +1,6 @@
-import { Spinner } from '@librechat/client';
+import { Spinner, FileIcon } from '@librechat/client';
 import type { TFile } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
-import { FileIcon } from '~/components/svg';
 import SourceIcon from './SourceIcon';
 import { cn } from '~/utils';
 

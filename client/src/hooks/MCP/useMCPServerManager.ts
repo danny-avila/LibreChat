@@ -10,8 +10,8 @@ import {
 import type { TUpdateUserPlugins, TPlugin } from 'librechat-data-provider';
 import type { ConfigFieldDetail } from '~/components/MCP/MCPConfigDialog';
 import { useMCPConnectionStatusQuery } from '~/data-provider/Tools/queries';
-import { useBadgeRowContext } from '~/Providers';
-import { useLocalize } from '~/hooks';
+import { useGetStartupConfig } from '~/data-provider';
+import { useLocalize, useMCPSelect } from '~/hooks';
 
 interface ServerState {
   isInitializing: boolean;
@@ -24,7 +24,8 @@ interface ServerState {
 export function useMCPServerManager() {
   const localize = useLocalize();
   const { showToast } = useToastContext();
-  const { mcpSelect, startupConfig } = useBadgeRowContext();
+  const mcpSelect = useMCPSelect();
+  const { data: startupConfig } = useGetStartupConfig();
   const { mcpValues, setMCPValues, mcpToolDetails, isPinned, setIsPinned } = mcpSelect;
   const queryClient = useQueryClient();
 

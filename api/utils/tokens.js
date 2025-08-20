@@ -108,7 +108,7 @@ const anthropicModels = {
   'claude-3.7-sonnet': 200000,
   'claude-3-5-sonnet-latest': 200000,
   'claude-3.5-sonnet-latest': 200000,
-  'claude-sonnet-4': 200000,
+  'claude-sonnet-4': 1000000,
   'claude-opus-4': 200000,
   'claude-4': 200000,
 };
@@ -487,5 +487,7 @@ module.exports = {
   matchModelName,
   processModelData,
   getModelMaxTokens,
+  getModelTokenValue,
+  findMatchingPattern,
   getModelMaxOutputTokens,
 };

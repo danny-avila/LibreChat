@@ -1,50 +1,19 @@
-const { anthropicSettings, removeNullishValues } = require('librechat-data-provider');
 const { getLLMConfig } = require('~/server/services/Endpoints/anthropic/llm');
-const { checkPromptCacheSupport, getClaudeHeaders, configureReasoning } = require('./helpers');
 
 jest.mock('https-proxy-agent', () => ({
   HttpsProxyAgent: jest.fn().mockImplementation((proxy) => ({ proxy })),
 }));
 
-jest.mock('./helpers', () => ({
-  checkPromptCacheSupport: jest.fn(),
-  getClaudeHeaders: jest.fn(),
-  configureReasoning: jest.fn((requestOptions) => requestOptions),
-}));
-
-jest.mock('librechat-data-provider', () => ({
-  anthropicSettings: {
-    model: { default: 'claude-3-opus-20240229' },
-    maxOutputTokens: { default: 4096, reset: jest.fn(() => 4096) },
-    thinking: { default: false },
-    promptCache: { default: false },
-    thinkingBudget: { default: null },
-  },
-  removeNullishValues: jest.fn((obj) => {
-    const result = {};
-    for (const key in obj) {
-      if (obj[key] !== null && obj[key] !== undefined) {
-        result[key] = obj[key];
-      }
-    }
-    return result;
-  }),
-}));
-
 describe('getLLMConfig', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    checkPromptCacheSupport.mockReturnValue(false);
-    getClaudeHeaders.mockReturnValue(undefined);
-    configureReasoning.mockImplementation((requestOptions) => requestOptions);
-    anthropicSettings.maxOutputTokens.reset.mockReturnValue(4096);
   });
 
   it('should create a basic configuration with default values', () => {
     const result = getLLMConfig('test-api-key', { modelOptions: {} });
 
     expect(result.llmConfig).toHaveProperty('apiKey', 'test-api-key');
-    expect(result.llmConfig).toHaveProperty('model', anthropicSettings.model.default);
+    expect(result.llmConfig).toHaveProperty('model', 'claude-3-5-sonnet-latest');
     expect(result.llmConfig).toHaveProperty('stream', true);
     expect(result.llmConfig).toHaveProperty('maxTokens');
   });
@@ -99,40 +68,73 @@ describe('getLLMConfig', () => {
     expect(result.llmConfig).toHaveProperty('topP', 0.9);
   });
 
-  it('should NOT include topK and topP for Claude-3-7 models (hyphen notation)', () => {
-    configureReasoning.mockImplementation((requestOptions) => {
-      requestOptions.thinking = { type: 'enabled' };
-      return requestOptions;
-    });
-
+  it('should NOT include topK and topP for Claude-3-7 models with thinking enabled (hyphen notation)', () => {
     const result = getLLMConfig('test-api-key', {
       modelOptions: {
         model: 'claude-3-7-sonnet',
         topK: 10,
         topP: 0.9,
+        thinking: true,
       },
     });
 
     expect(result.llmConfig).not.toHaveProperty('topK');
     expect(result.llmConfig).not.toHaveProperty('topP');
+    expect(result.llmConfig).toHaveProperty('thinking');
+    expect(result.llmConfig.thinking).toHaveProperty('type', 'enabled');
+    // When thinking is enabled, it uses the default thinkingBudget of 2000
+    expect(result.llmConfig.thinking).toHaveProperty('budget_tokens', 2000);
   });
 
-  it('should NOT include topK and topP for Claude-3.7 models (decimal notation)', () => {
-    configureReasoning.mockImplementation((requestOptions) => {
-      requestOptions.thinking = { type: 'enabled' };
-      return requestOptions;
-    });
+  it('should add "prompt-caching" and "context-1m" beta headers for claude-sonnet-4 model', () => {
+    const modelOptions = {
+      model: 'claude-sonnet-4-20250514',
+      promptCache: true,
+    };
+    const result = getLLMConfig('test-key', { modelOptions });
+    const clientOptions = result.llmConfig.clientOptions;
+    expect(clientOptions.defaultHeaders).toBeDefined();
+    expect(clientOptions.defaultHeaders).toHaveProperty('anthropic-beta');
+    expect(clientOptions.defaultHeaders['anthropic-beta']).toBe(
+      'prompt-caching-2024-07-31,context-1m-2025-08-07',
+    );
+  });
 
+  it('should add "prompt-caching" and "context-1m" beta headers for claude-sonnet-4 model formats', () => {
+    const modelVariations = [
+      'claude-sonnet-4-20250514',
+      'claude-sonnet-4-latest',
+      'anthropic/claude-sonnet-4-20250514',
+    ];
+
+    modelVariations.forEach((model) => {
+      const modelOptions = { model, promptCache: true };
+      const result = getLLMConfig('test-key', { modelOptions });
+      const clientOptions = result.llmConfig.clientOptions;
+      expect(clientOptions.defaultHeaders).toBeDefined();
+      expect(clientOptions.defaultHeaders).toHaveProperty('anthropic-beta');
+      expect(clientOptions.defaultHeaders['anthropic-beta']).toBe(
+        'prompt-caching-2024-07-31,context-1m-2025-08-07',
+      );
+    });
+  });
+
+  it('should NOT include topK and topP for Claude-3.7 models with thinking enabled (decimal notation)', () => {
     const result = getLLMConfig('test-api-key', {
       modelOptions: {
         model: 'claude-3.7-sonnet',
         topK: 10,
         topP: 0.9,
+        thinking: true,
       },
     });
 
     expect(result.llmConfig).not.toHaveProperty('topK');
     expect(result.llmConfig).not.toHaveProperty('topP');
+    expect(result.llmConfig).toHaveProperty('thinking');
+    expect(result.llmConfig.thinking).toHaveProperty('type', 'enabled');
+    // When thinking is enabled, it uses the default thinkingBudget of 2000
+    expect(result.llmConfig.thinking).toHaveProperty('budget_tokens', 2000);
   });
 
   it('should handle custom maxOutputTokens', () => {
@@ -233,7 +235,6 @@ describe('getLLMConfig', () => {
     });
 
     it('should handle maxOutputTokens when explicitly set to falsy value', () => {
-      anthropicSettings.maxOutputTokens.reset.mockReturnValue(8192);
       const result = getLLMConfig('test-api-key', {
         modelOptions: {
           model: 'claude-3-opus',
@@ -241,8 +242,8 @@ describe('getLLMConfig', () => {
         },
       });
 
-      expect(anthropicSettings.maxOutputTokens.reset).toHaveBeenCalledWith('claude-3-opus');
-      expect(result.llmConfig).toHaveProperty('maxTokens', 8192);
+      // The actual anthropicSettings.maxOutputTokens.reset('claude-3-opus') returns 4096
+      expect(result.llmConfig).toHaveProperty('maxTokens', 4096);
     });
 
     it('should handle both proxy and reverseProxyUrl', () => {
@@ -263,9 +264,6 @@ describe('getLLMConfig', () => {
     });
 
     it('should handle prompt cache with supported model', () => {
-      checkPromptCacheSupport.mockReturnValue(true);
-      getClaudeHeaders.mockReturnValue({ 'anthropic-beta': 'prompt-caching-2024-07-31' });
-
       const result = getLLMConfig('test-api-key', {
         modelOptions: {
           model: 'claude-3-5-sonnet',
@@ -273,43 +271,38 @@ describe('getLLMConfig', () => {
         },
       });
 
-      expect(checkPromptCacheSupport).toHaveBeenCalledWith('claude-3-5-sonnet');
-      expect(getClaudeHeaders).toHaveBeenCalledWith('claude-3-5-sonnet', true);
+      // claude-3-5-sonnet supports prompt caching and should get the appropriate headers
       expect(result.llmConfig.clientOptions.defaultHeaders).toEqual({
-        'anthropic-beta': 'prompt-caching-2024-07-31',
+        'anthropic-beta': 'max-tokens-3-5-sonnet-2024-07-15,prompt-caching-2024-07-31',
       });
     });
 
     it('should handle thinking and thinkingBudget options', () => {
-      configureReasoning.mockImplementation((requestOptions, systemOptions) => {
-        if (systemOptions.thinking) {
-          requestOptions.thinking = { type: 'enabled' };
-        }
-        if (systemOptions.thinkingBudget) {
-          requestOptions.thinking = {
-            ...requestOptions.thinking,
-            budget_tokens: systemOptions.thinkingBudget,
-          };
-        }
-        return requestOptions;
-      });
-
-      getLLMConfig('test-api-key', {
+      const result = getLLMConfig('test-api-key', {
         modelOptions: {
           model: 'claude-3-7-sonnet',
           thinking: true,
-          thinkingBudget: 5000,
+          thinkingBudget: 10000, // This exceeds the default max_tokens of 8192
         },
       });
 
-      expect(configureReasoning).toHaveBeenCalledWith(
-        expect.any(Object),
-        expect.objectContaining({
+      // The function should add thinking configuration for claude-3-7 models
+      expect(result.llmConfig).toHaveProperty('thinking');
+      expect(result.llmConfig.thinking).toHaveProperty('type', 'enabled');
+      // With claude-3-7-sonnet, the max_tokens default is 8192
+      // Budget tokens gets adjusted to 90% of max_tokens (8192 * 0.9 = 7372) when it exceeds max_tokens
+      expect(result.llmConfig.thinking).toHaveProperty('budget_tokens', 7372);
+
+      // Test with budget_tokens within max_tokens limit
+      const result2 = getLLMConfig('test-api-key', {
+        modelOptions: {
+          model: 'claude-3-7-sonnet',
           thinking: true,
-          promptCache: false,
-          thinkingBudget: 5000,
-        }),
-      );
+          thinkingBudget: 2000,
+        },
+      });
+
+      expect(result2.llmConfig.thinking).toHaveProperty('budget_tokens', 2000);
     });
 
     it('should remove system options from modelOptions', () => {
@@ -330,16 +323,6 @@ describe('getLLMConfig', () => {
     });
 
     it('should handle all nullish values removal', () => {
-      removeNullishValues.mockImplementation((obj) => {
-        const cleaned = {};
-        Object.entries(obj).forEach(([key, value]) => {
-          if (value !== null && value !== undefined) {
-            cleaned[key] = value;
-          }
-        });
-        return cleaned;
-      });
-
       const result = getLLMConfig('test-api-key', {
         modelOptions: {
           temperature: null,

@@ -1,15 +1,21 @@
 const { z } = require('zod');
 const { tool } = require('@langchain/core/tools');
 const { logger } = require('@librechat/data-schemas');
-const { Time, CacheKeys, StepTypes } = require('librechat-data-provider');
 const { Constants: AgentConstants, Providers, GraphEvents } = require('@librechat/agents');
-const { Constants, ContentTypes, isAssistantsEndpoint } = require('librechat-data-provider');
 const {
   sendEvent,
   MCPOAuthHandler,
   normalizeServerName,
   convertWithResolvedRefs,
 } = require('@librechat/api');
+const {
+  Time,
+  CacheKeys,
+  StepTypes,
+  Constants,
+  ContentTypes,
+  isAssistantsEndpoint,
+} = require('librechat-data-provider');
 const { findToken, createToken, updateToken } = require('~/models');
 const { getMCPManager, getFlowStateManager } = require('~/config');
 const { getCachedTools, loadCustomConfig } = require('./Config');
@@ -180,6 +186,7 @@ async function createMCPTool({ req, res, toolKey, provider: _provider }) {
           signal: derivedSignal,
         },
         user: config?.configurable?.user,
+        requestBody: config?.configurable?.requestBody,
         customUserVars,
         flowManager,
         tokenMethods: {
@@ -254,15 +261,21 @@ async function getMCPSetupData(userId) {
   }
 
   const mcpManager = getMCPManager(userId);
-  const appConnections = mcpManager.getAllConnections() || new Map();
+  /** @type {ReturnType<MCPManager['getAllConnections']>} */
+  let appConnections = new Map();
+  try {
+    appConnections = (await mcpManager.getAllConnections()) || new Map();
+  } catch (error) {
+    logger.error(`[MCP][User: ${userId}] Error getting app connections:`, error);
+  }
   const userConnections = mcpManager.getUserConnections(userId) || new Map();
   const oauthServers = mcpManager.getOAuthServers() || new Set();
 
   return {
     mcpConfig,
+    oauthServers,
     appConnections,
     userConnections,
-    oauthServers,
   };
 }
 

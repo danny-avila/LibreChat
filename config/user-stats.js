@@ -1,5 +1,5 @@
 const path = require('path');
-const mongoose = require(path.resolve(__dirname, '..', 'api', 'node_modules', 'mongoose'));
+const mongoose = require('mongoose');
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
 const { silentExit } = require('./helpers');
 const { User, Conversation, Message } = require('@librechat/data-schemas').createModels(mongoose);

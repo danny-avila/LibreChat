@@ -1,8 +1,8 @@
 import { memo } from 'react';
+import { InfoHoverCard, ESide } from '@librechat/client';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
-import HoverCardSettings from '~/components/Nav/SettingsTabs/HoverCardSettings';
-import { useLocalize, useHasAccess } from '~/hooks';
 import SlashCommandSwitch from './SlashCommandSwitch';
+import { useLocalize, useHasAccess } from '~/hooks';
 import PlusCommandSwitch from './PlusCommandSwitch';
 import AtCommandSwitch from './AtCommandSwitch';
 
@@ -25,7 +25,7 @@ function Commands() {
         <h3 className="text-lg font-medium text-text-primary">
           {localize('com_nav_chat_commands')}
         </h3>
-        <HoverCardSettings side="bottom" text="com_nav_chat_commands_info" />
+        <InfoHoverCard side={ESide.Bottom} text={localize('com_nav_chat_commands_info')} />
       </div>
       <div className="flex flex-col gap-3 text-sm text-text-primary">
         <div className="pb-3">
