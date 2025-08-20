@@ -47,6 +47,62 @@ export const checkPluginAuth = (plugin?: TPlugin): boolean => {
 };
 
 /**
+ * Converts MCP function format tool to plugin format
+ * @param params
+ * @param params.toolKey
+ * @param params.toolData
+ * @param params.customConfig
+ * @returns
+ */
+export function convertMCPToolToPlugin({
+  toolKey,
+  toolData,
+  customConfig,
+}: {
+  toolKey: string;
+  toolData: FunctionTool;
+  customConfig?: Partial<TCustomConfig> | null;
+}): TPlugin | undefined {
+  if (!toolData.function || !toolKey.includes(Constants.mcp_delimiter)) {
+    return;
+  }
+
+  const functionData = toolData.function;
+  const parts = toolKey.split(Constants.mcp_delimiter);
+  const serverName = parts[parts.length - 1];
+
+  const serverConfig = customConfig?.mcpServers?.[serverName];
+
+  const plugin: TPlugin = {
+    /** Tool name without server suffix */
+    name: parts[0],
+    pluginKey: toolKey,
+    description: functionData.description || '',
+    authenticated: true,
+    icon: serverConfig?.iconPath,
+  };
+
+  if (!serverConfig?.customUserVars) {
+    /** `authConfig` for MCP tools */
+    plugin.authConfig = [];
+    return plugin;
+  }
+
+  const customVarKeys = Object.keys(serverConfig.customUserVars);
+  if (customVarKeys.length === 0) {
+    plugin.authConfig = [];
+  } else {
+    plugin.authConfig = Object.entries(serverConfig.customUserVars).map(([key, value]) => ({
+      authField: key,
+      label: value.title || key,
+      description: value.description || '',
+    }));
+  }
+
+  return plugin;
+}
+
+/**
  * Converts MCP function format tools to plugin format
  * @param functionTools - Object with function format tools
  * @param customConfig - Custom configuration for MCP servers
@@ -65,44 +121,10 @@ export function convertMCPToolsToPlugins({
 
   const plugins: TPlugin[] = [];
   for (const [toolKey, toolData] of Object.entries(functionTools)) {
-    if (!toolData.function || !toolKey.includes(Constants.mcp_delimiter)) {
-      continue;
-    }
-
-    const functionData = toolData.function;
-    const parts = toolKey.split(Constants.mcp_delimiter);
-    const serverName = parts[parts.length - 1];
-
-    const serverConfig = customConfig?.mcpServers?.[serverName];
-
-    const plugin: TPlugin = {
-      /** Tool name without server suffix */
-      name: parts[0],
-      pluginKey: toolKey,
-      description: functionData.description || '',
-      authenticated: true,
-      icon: serverConfig?.iconPath,
-    };
-
-    if (!serverConfig?.customUserVars) {
-      /** `authConfig` for MCP tools */
-      plugin.authConfig = [];
+    const plugin = convertMCPToolToPlugin({ toolKey, toolData, customConfig });
+    if (plugin) {
       plugins.push(plugin);
-      continue;
     }
-
-    const customVarKeys = Object.keys(serverConfig.customUserVars);
-    if (customVarKeys.length === 0) {
-      plugin.authConfig = [];
-    } else {
-      plugin.authConfig = Object.entries(serverConfig.customUserVars).map(([key, value]) => ({
-        authField: key,
-        label: value.title || key,
-        description: value.description || '',
-      }));
-    }
-
-    plugins.push(plugin);
   }
 
   return plugins;
