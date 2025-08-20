@@ -336,6 +336,7 @@ export type TAskProps = {
 
 export type TOptions = {
   editedMessageId?: string | null;
+  editedContent?: t.TEditedContent;
   editedText?: string | null;
   isRegenerate?: boolean;
   isContinued?: boolean;
