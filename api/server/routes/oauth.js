@@ -1,18 +1,20 @@
 // file deepcode ignore NoRateLimitingForLogin: Rate limiting is handled by the `loginLimiter` middleware
 const express = require('express');
 const passport = require('passport');
-const { isEnabled } = require('@librechat/api');
 const { randomState } = require('openid-client');
 const { logger } = require('@librechat/data-schemas');
 const { ErrorTypes } = require('librechat-data-provider');
-const {
-  checkBan,
-  logHeaders,
-  loginLimiter,
-  setBalanceConfig,
-  checkDomainAllowed,
-} = require('~/server/middleware');
+const { isEnabled, createSetBalanceConfig } = require('@librechat/api');
+const { checkDomainAllowed, loginLimiter, logHeaders, checkBan } = require('~/server/middleware');
+const { syncUserEntraGroupMemberships } = require('~/server/services/PermissionService');
 const { setAuthTokens, setOpenIDAuthTokens } = require('~/server/services/AuthService');
+const { getBalanceConfig } = require('~/server/services/Config');
+const { Balance } = require('~/db/models');
+
+const setBalanceConfig = createSetBalanceConfig({
+  getBalanceConfig,
+  Balance,
+});
 
 const router = express.Router();
 
@@ -36,6 +38,7 @@ const oauthHandler = async (req, res) => {
       req.user.provider == 'openid' &&
       isEnabled(process.env.OPENID_REUSE_TOKENS) === true
     ) {
+      await syncUserEntraGroupMemberships(req.user, req.user.tokenset.access_token);
       setOpenIDAuthTokens(req.user.tokenset, res);
     } else {
       await setAuthTokens(req.user._id, res);

@@ -21,6 +21,9 @@ const publicSharedLinksEnabled =
   (process.env.ALLOW_SHARED_LINKS_PUBLIC === undefined ||
     isEnabled(process.env.ALLOW_SHARED_LINKS_PUBLIC));
 
+const sharePointFilePickerEnabled = isEnabled(process.env.ENABLE_SHAREPOINT_FILEPICKER);
+const openidReuseTokens = isEnabled(process.env.OPENID_REUSE_TOKENS);
+
 router.get('/', async function (req, res) {
   const cache = getLogStores(CacheKeys.CONFIG_STORE);
 
@@ -98,22 +101,30 @@ router.get('/', async function (req, res) {
       instanceProjectId: instanceProject._id.toString(),
       bundlerURL: process.env.SANDPACK_BUNDLER_URL,
       staticBundlerURL: process.env.SANDPACK_STATIC_BUNDLER_URL,
+      sharePointFilePickerEnabled,
+      sharePointBaseUrl: process.env.SHAREPOINT_BASE_URL,
+      sharePointPickerGraphScope: process.env.SHAREPOINT_PICKER_GRAPH_SCOPE,
+      sharePointPickerSharePointScope: process.env.SHAREPOINT_PICKER_SHAREPOINT_SCOPE,
+      openidReuseTokens,
     };
 
     payload.mcpServers = {};
     const config = await getCustomConfig();
     if (config?.mcpServers != null) {
-      const mcpManager = getMCPManager();
-      const oauthServers = mcpManager.getOAuthServers();
-
-      for (const serverName in config.mcpServers) {
-        const serverConfig = config.mcpServers[serverName];
-        payload.mcpServers[serverName] = {
-          customUserVars: serverConfig?.customUserVars || {},
-          chatMenu: serverConfig?.chatMenu,
-          isOAuth: oauthServers.has(serverName),
-          startup: serverConfig?.startup,
-        };
+      try {
+        const mcpManager = getMCPManager();
+        const oauthServers = mcpManager.getOAuthServers();
+        for (const serverName in config.mcpServers) {
+          const serverConfig = config.mcpServers[serverName];
+          payload.mcpServers[serverName] = {
+            startup: serverConfig?.startup,
+            chatMenu: serverConfig?.chatMenu,
+            isOAuth: oauthServers?.has(serverName),
+            customUserVars: serverConfig?.customUserVars || {},
+          };
+        }
+      } catch (err) {
+        logger.error('Error loading MCP servers', err);
       }
     }
 

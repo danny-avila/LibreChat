@@ -18,3 +18,27 @@ export const useGetUserQuery = (
     enabled: (config?.enabled ?? true) === true && queriesEnabled,
   });
 };
+
+export interface UseGraphTokenQueryOptions {
+  scopes?: string;
+  enabled?: boolean;
+}
+
+export const useGraphTokenQuery = (
+  options: UseGraphTokenQueryOptions = {},
+  config?: UseQueryOptions<any>,
+): QueryObserverResult<any> => {
+  const { scopes, enabled = false } = options;
+
+  return useQuery({
+    queryKey: [QueryKeys.graphToken, scopes],
+    queryFn: () => dataService.getGraphApiToken({ scopes }),
+    enabled,
+    staleTime: 50 * 60 * 1000, // 50 minutes (tokens expire in 60 minutes)
+    retry: 1,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+    ...config,
+  });
+};

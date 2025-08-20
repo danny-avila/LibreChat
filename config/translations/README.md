@@ -7,7 +7,7 @@
 
 ### ⚠️ Warning:
 
-This script can be expensive, several dollars worth, even with prompt caching. It can also be slow if has not been ran in a while, with translations contributed.
+This script can be expensive, several dollars worth, even with prompt caching. It can also be slow if it has not been run in a while, with translations contributed.
 
 ### Instructions:
 

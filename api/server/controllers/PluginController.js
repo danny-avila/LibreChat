@@ -113,20 +113,26 @@ const getAvailableTools = async (req, res) => {
       return;
     }
 
-    // If not in cache, build from manifest
     let pluginManifest = availableTools;
     if (customConfig?.mcpServers != null) {
-      const mcpManager = getMCPManager();
-      const flowsCache = getLogStores(CacheKeys.FLOWS);
-      const flowManager = flowsCache ? getFlowStateManager(flowsCache) : null;
-      const serverToolsCallback = createServerToolsCallback();
-      const getServerTools = createGetServerTools();
-      const mcpTools = await mcpManager.loadManifestTools({
-        flowManager,
-        serverToolsCallback,
-        getServerTools,
-      });
-      pluginManifest = [...mcpTools, ...pluginManifest];
+      try {
+        const mcpManager = getMCPManager();
+        const flowsCache = getLogStores(CacheKeys.FLOWS);
+        const flowManager = flowsCache ? getFlowStateManager(flowsCache) : null;
+        const serverToolsCallback = createServerToolsCallback();
+        const getServerTools = createGetServerTools();
+        const mcpTools = await mcpManager.loadManifestTools({
+          flowManager,
+          serverToolsCallback,
+          getServerTools,
+        });
+        pluginManifest = [...mcpTools, ...pluginManifest];
+      } catch (error) {
+        logger.error(
+          '[getAvailableTools] Error loading MCP Tools, servers may still be initializing:',
+          error,
+        );
+      }
     }
 
     /** @type {TPlugin[]} */

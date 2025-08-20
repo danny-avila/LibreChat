@@ -1,4 +1,4 @@
-import { SheetPaths, TextPaths, FilePaths, CodePaths } from '~/components/svg';
+import { SheetPaths, TextPaths, FilePaths, CodePaths } from '@librechat/client';
 import {
   megabyte,
   QueryKeys,

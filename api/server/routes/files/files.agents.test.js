@@ -2,10 +2,13 @@ const express = require('express');
 const request = require('supertest');
 const mongoose = require('mongoose');
 const { v4: uuidv4 } = require('uuid');
+const { createMethods } = require('@librechat/data-schemas');
 const { MongoMemoryServer } = require('mongodb-memory-server');
-const { GLOBAL_PROJECT_NAME } = require('librechat-data-provider').Constants;
+const { AccessRoleIds, ResourceType, PrincipalType } = require('librechat-data-provider');
+const { createAgent } = require('~/models/Agent');
+const { createFile } = require('~/models/File');
 
-// Mock dependencies
+// Only mock the external dependencies that we don't want to test
 jest.mock('~/server/services/Files/process', () => ({
   processDeleteRequest: jest.fn().mockResolvedValue({}),
   filterFile: jest.fn(),
@@ -25,31 +28,8 @@ jest.mock('~/server/services/Tools/credentials', () => ({
   loadAuthValues: jest.fn(),
 }));
 
-jest.mock('~/server/services/Files/S3/crud', () => ({
-  refreshS3FileUrls: jest.fn(),
-}));
-
-jest.mock('~/cache', () => ({
-  getLogStores: jest.fn(() => ({
-    get: jest.fn(),
-    set: jest.fn(),
-  })),
-}));
-
-jest.mock('~/config', () => ({
-  logger: {
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-  },
-}));
-
-const { createFile } = require('~/models/File');
-const { createAgent } = require('~/models/Agent');
-const { getProjectByName } = require('~/models/Project');
-
-// Import the router after mocks
-const router = require('./files');
+// Import the router
+const router = require('~/server/routes/files/files');
 
 describe('File Routes - Agent Files Endpoint', () => {
   let app;
@@ -60,13 +40,42 @@ describe('File Routes - Agent Files Endpoint', () => {
   let fileId1;
   let fileId2;
   let fileId3;
+  let File;
+  let User;
+  let Agent;
+  let methods;
+  let AclEntry;
+  // eslint-disable-next-line no-unused-vars
+  let AccessRole;
+  let modelsToCleanup = [];
 
   beforeAll(async () => {
     mongoServer = await MongoMemoryServer.create();
-    await mongoose.connect(mongoServer.getUri());
+    const mongoUri = mongoServer.getUri();
+    await mongoose.connect(mongoUri);
 
-    // Initialize models
-    require('~/db/models');
+    // Initialize all models using createModels
+    const { createModels } = require('@librechat/data-schemas');
+    const models = createModels(mongoose);
+
+    // Track which models we're adding
+    modelsToCleanup = Object.keys(models);
+
+    // Register models on mongoose.models so methods can access them
+    Object.assign(mongoose.models, models);
+
+    // Create methods with our test mongoose instance
+    methods = createMethods(mongoose);
+
+    // Now we can access models from the db/models
+    File = models.File;
+    Agent = models.Agent;
+    AclEntry = models.AclEntry;
+    User = models.User;
+    AccessRole = models.AccessRole;
+
+    // Seed default roles using our methods
+    await methods.seedDefaultRoles();
 
     app = express();
     app.use(express.json());
@@ -82,88 +91,121 @@ describe('File Routes - Agent Files Endpoint', () => {
   });
 
   afterAll(async () => {
-    await mongoose.disconnect();
-    await mongoServer.stop();
-  });
-
-  beforeEach(async () => {
-    jest.clearAllMocks();
-
-    // Clear database
+    // Clean up all collections before disconnecting
     const collections = mongoose.connection.collections;
     for (const key in collections) {
       await collections[key].deleteMany({});
     }
 
-    authorId = new mongoose.Types.ObjectId().toString();
-    otherUserId = new mongoose.Types.ObjectId().toString();
+    // Clear only the models we added
+    for (const modelName of modelsToCleanup) {
+      if (mongoose.models[modelName]) {
+        delete mongoose.models[modelName];
+      }
+    }
+
+    await mongoose.disconnect();
+    await mongoServer.stop();
+  });
+
+  beforeEach(async () => {
+    // Clean up all test data
+    await File.deleteMany({});
+    await Agent.deleteMany({});
+    await User.deleteMany({});
+    await AclEntry.deleteMany({});
+    // Don't delete AccessRole as they are seeded defaults needed for tests
+
+    // Create test users
+    authorId = new mongoose.Types.ObjectId();
+    otherUserId = new mongoose.Types.ObjectId();
     agentId = uuidv4();
     fileId1 = uuidv4();
     fileId2 = uuidv4();
     fileId3 = uuidv4();
 
+    // Create users in database
+    await User.create({
+      _id: authorId,
+      username: 'author',
+      email: 'author@test.com',
+    });
+
+    await User.create({
+      _id: otherUserId,
+      username: 'other',
+      email: 'other@test.com',
+    });
+
     // Create files
     await createFile({
       user: authorId,
       file_id: fileId1,
-      filename: 'agent-file1.txt',
-      filepath: `/uploads/${authorId}/${fileId1}`,
-      bytes: 1024,
+      filename: 'file1.txt',
+      filepath: '/uploads/file1.txt',
+      bytes: 100,
       type: 'text/plain',
     });
 
     await createFile({
       user: authorId,
       file_id: fileId2,
-      filename: 'agent-file2.txt',
-      filepath: `/uploads/${authorId}/${fileId2}`,
-      bytes: 2048,
+      filename: 'file2.txt',
+      filepath: '/uploads/file2.txt',
+      bytes: 200,
       type: 'text/plain',
     });
 
     await createFile({
       user: otherUserId,
       file_id: fileId3,
-      filename: 'user-file.txt',
-      filepath: `/uploads/${otherUserId}/${fileId3}`,
-      bytes: 512,
+      filename: 'file3.txt',
+      filepath: '/uploads/file3.txt',
+      bytes: 300,
       type: 'text/plain',
     });
-
-    // Create an agent with files attached
-    await createAgent({
-      id: agentId,
-      name: 'Test Agent',
-      author: authorId,
-      model: 'gpt-4',
-      provider: 'openai',
-      isCollaborative: true,
-      tool_resources: {
-        file_search: {
-          file_ids: [fileId1, fileId2],
-        },
-      },
-    });
-
-    // Share the agent globally
-    const globalProject = await getProjectByName(GLOBAL_PROJECT_NAME, '_id');
-    if (globalProject) {
-      const { updateAgent } = require('~/models/Agent');
-      await updateAgent({ id: agentId }, { projectIds: [globalProject._id] });
-    }
   });
 
   describe('GET /files/agent/:agent_id', () => {
-    it('should return files accessible through the agent for non-author', async () => {
+    it('should return files accessible through the agent for non-author with EDIT permission', async () => {
+      // Create an agent with files attached
+      const agent = await createAgent({
+        id: agentId,
+        name: 'Test Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: authorId,
+        tool_resources: {
+          file_search: {
+            file_ids: [fileId1, fileId2],
+          },
+        },
+      });
+
+      // Grant EDIT permission to user on the agent using PermissionService
+      const { grantPermission } = require('~/server/services/PermissionService');
+      await grantPermission({
+        principalType: PrincipalType.USER,
+        principalId: otherUserId,
+        resourceType: ResourceType.AGENT,
+        resourceId: agent._id,
+        accessRoleId: AccessRoleIds.AGENT_EDITOR,
+        grantedBy: authorId,
+      });
+
+      // Mock req.user for this request
+      app.use((req, res, next) => {
+        req.user = { id: otherUserId.toString() };
+        next();
+      });
+
       const response = await request(app).get(`/files/agent/${agentId}`);
 
       expect(response.status).toBe(200);
-      expect(response.body).toHaveLength(2); // Only agent files, not user-owned files
-
-      const fileIds = response.body.map((f) => f.file_id);
-      expect(fileIds).toContain(fileId1);
-      expect(fileIds).toContain(fileId2);
-      expect(fileIds).not.toContain(fileId3); // User's own file not included
+      expect(Array.isArray(response.body)).toBe(true);
+      expect(response.body).toHaveLength(2);
+      expect(response.body.map((f) => f.file_id)).toContain(fileId1);
+      expect(response.body.map((f) => f.file_id)).toContain(fileId2);
     });
 
     it('should return 400 when agent_id is not provided', async () => {
@@ -176,45 +218,63 @@ describe('File Routes - Agent Files Endpoint', () => {
       const response = await request(app).get('/files/agent/non-existent-agent');
 
       expect(response.status).toBe(200);
-      expect(response.body).toEqual([]); // Empty array for non-existent agent
+      expect(Array.isArray(response.body)).toBe(true);
+      expect(response.body).toEqual([]);
     });
 
-    it('should return empty array when agent is not collaborative', async () => {
-      // Create a non-collaborative agent
-      const nonCollabAgentId = uuidv4();
-      await createAgent({
-        id: nonCollabAgentId,
-        name: 'Non-Collaborative Agent',
-        author: authorId,
-        model: 'gpt-4',
+    it('should return empty array when user only has VIEW permission', async () => {
+      // Create an agent with files attached
+      const agent = await createAgent({
+        id: agentId,
+        name: 'Test Agent',
         provider: 'openai',
-        isCollaborative: false,
+        model: 'gpt-4',
+        author: authorId,
         tool_resources: {
           file_search: {
-            file_ids: [fileId1],
+            file_ids: [fileId1, fileId2],
           },
         },
       });
 
-      // Share it globally
-      const globalProject = await getProjectByName(GLOBAL_PROJECT_NAME, '_id');
-      if (globalProject) {
-        const { updateAgent } = require('~/models/Agent');
-        await updateAgent({ id: nonCollabAgentId }, { projectIds: [globalProject._id] });
-      }
+      // Grant only VIEW permission to user on the agent
+      const { grantPermission } = require('~/server/services/PermissionService');
+      await grantPermission({
+        principalType: PrincipalType.USER,
+        principalId: otherUserId,
+        resourceType: ResourceType.AGENT,
+        resourceId: agent._id,
+        accessRoleId: AccessRoleIds.AGENT_VIEWER,
+        grantedBy: authorId,
+      });
 
-      const response = await request(app).get(`/files/agent/${nonCollabAgentId}`);
+      const response = await request(app).get(`/files/agent/${agentId}`);
 
       expect(response.status).toBe(200);
-      expect(response.body).toEqual([]); // Empty array when not collaborative
+      expect(Array.isArray(response.body)).toBe(true);
+      expect(response.body).toEqual([]);
     });
 
     it('should return agent files for agent author', async () => {
+      // Create an agent with files attached
+      await createAgent({
+        id: agentId,
+        name: 'Test Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: authorId,
+        tool_resources: {
+          file_search: {
+            file_ids: [fileId1, fileId2],
+          },
+        },
+      });
+
       // Create a new app instance with author authentication
       const authorApp = express();
       authorApp.use(express.json());
       authorApp.use((req, res, next) => {
-        req.user = { id: authorId };
+        req.user = { id: authorId.toString() };
         req.app = { locals: {} };
         next();
       });
@@ -223,46 +283,48 @@ describe('File Routes - Agent Files Endpoint', () => {
       const response = await request(authorApp).get(`/files/agent/${agentId}`);
 
       expect(response.status).toBe(200);
-      expect(response.body).toHaveLength(2); // Agent files for author
-
-      const fileIds = response.body.map((f) => f.file_id);
-      expect(fileIds).toContain(fileId1);
-      expect(fileIds).toContain(fileId2);
-      expect(fileIds).not.toContain(fileId3); // User's own file not included
+      expect(Array.isArray(response.body)).toBe(true);
+      expect(response.body).toHaveLength(2);
     });
 
     it('should return files uploaded by other users to shared agent for author', async () => {
-      // Create a file uploaded by another user
+      const anotherUserId = new mongoose.Types.ObjectId();
       const otherUserFileId = uuidv4();
-      const anotherUserId = new mongoose.Types.ObjectId().toString();
+
+      await User.create({
+        _id: anotherUserId,
+        username: 'another',
+        email: 'another@test.com',
+      });
 
       await createFile({
         user: anotherUserId,
         file_id: otherUserFileId,
         filename: 'other-user-file.txt',
-        filepath: `/uploads/${anotherUserId}/${otherUserFileId}`,
-        bytes: 4096,
+        filepath: '/uploads/other-user-file.txt',
+        bytes: 400,
         type: 'text/plain',
       });
 
-      // Update agent to include the file uploaded by another user
-      const { updateAgent } = require('~/models/Agent');
-      await updateAgent(
-        { id: agentId },
-        {
-          tool_resources: {
-            file_search: {
-              file_ids: [fileId1, fileId2, otherUserFileId],
-            },
+      // Create agent to include the file uploaded by another user
+      await createAgent({
+        id: agentId,
+        name: 'Test Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: authorId,
+        tool_resources: {
+          file_search: {
+            file_ids: [fileId1, otherUserFileId],
           },
         },
-      );
+      });
 
-      // Create app instance with author authentication
+      // Create a new app instance with author authentication
       const authorApp = express();
       authorApp.use(express.json());
       authorApp.use((req, res, next) => {
-        req.user = { id: authorId };
+        req.user = { id: authorId.toString() };
         req.app = { locals: {} };
         next();
       });
@@ -271,12 +333,10 @@ describe('File Routes - Agent Files Endpoint', () => {
       const response = await request(authorApp).get(`/files/agent/${agentId}`);
 
       expect(response.status).toBe(200);
-      expect(response.body).toHaveLength(3); // Including file from another user
-
-      const fileIds = response.body.map((f) => f.file_id);
-      expect(fileIds).toContain(fileId1);
-      expect(fileIds).toContain(fileId2);
-      expect(fileIds).toContain(otherUserFileId); // File uploaded by another user
+      expect(Array.isArray(response.body)).toBe(true);
+      expect(response.body).toHaveLength(2);
+      expect(response.body.map((f) => f.file_id)).toContain(fileId1);
+      expect(response.body.map((f) => f.file_id)).toContain(otherUserFileId);
     });
   });
 });

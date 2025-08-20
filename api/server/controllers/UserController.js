@@ -24,7 +24,13 @@ const { getMCPManager } = require('~/config');
 const getUserController = async (req, res) => {
   /** @type {MongoUser} */
   const userData = req.user.toObject != null ? req.user.toObject() : { ...req.user };
+  /**
+   * These fields should not exist due to secure field selection, but deletion
+   * is done in case of alternate database incompatibility with Mongo API
+   * */
+  delete userData.password;
   delete userData.totpSecret;
+  delete userData.backupCodes;
   if (req.app.locals.fileStrategy === FileSources.s3 && userData.avatar) {
     const avatarNeedsRefresh = needsRefresh(userData.avatar, 3600);
     if (!avatarNeedsRefresh) {

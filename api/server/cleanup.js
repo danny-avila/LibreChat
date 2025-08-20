@@ -1,6 +1,6 @@
-const { logger } = require('~/config');
+const { logger } = require('@librechat/data-schemas');
 
-// WeakMap to hold temporary data associated with requests
+/** WeakMap to hold temporary data associated with requests */
 const requestDataMap = new WeakMap();
 
 const FinalizationRegistry = global.FinalizationRegistry || null;
@@ -23,7 +23,7 @@ const clientRegistry = FinalizationRegistry
         } else {
           logger.debug('[FinalizationRegistry] Cleaning up client');
         }
-      } catch (e) {
+      } catch {
         // Ignore errors
       }
     })
@@ -54,6 +54,9 @@ function disposeClient(client) {
     }
     if (client.responseMessageId) {
       client.responseMessageId = null;
+    }
+    if (client.parentMessageId) {
+      client.parentMessageId = null;
     }
     if (client.message_file_map) {
       client.message_file_map = null;
@@ -334,7 +337,7 @@ function disposeClient(client) {
       }
     }
     client.options = null;
-  } catch (e) {
+  } catch {
     // Ignore errors during disposal
   }
 }

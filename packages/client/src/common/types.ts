@@ -1,9 +1,4 @@
-export enum NotificationSeverity {
-  INFO = 'info',
-  SUCCESS = 'success',
-  WARNING = 'warning',
-  ERROR = 'error',
-}
+import { NotificationSeverity } from './enum';
 
 export type TShowToast = {
   message: string;

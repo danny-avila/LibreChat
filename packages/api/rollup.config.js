@@ -1,7 +1,6 @@
 // rollup.config.js
 import { readFileSync } from 'fs';
 import json from '@rollup/plugin-json';
-import terser from '@rollup/plugin-terser';
 import replace from '@rollup/plugin-replace';
 import commonjs from '@rollup/plugin-commonjs';
 import resolve from '@rollup/plugin-node-resolve';
@@ -10,13 +9,18 @@ import peerDepsExternal from 'rollup-plugin-peer-deps-external';
 
 const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'));
 
+/**
+ * Check if we're in development mode
+ */
+const isDevelopment = process.env.NODE_ENV === 'development';
+
 const plugins = [
   peerDepsExternal(),
   resolve({
     preferBuiltins: true,
   }),
   replace({
-    __IS_DEV__: process.env.NODE_ENV === 'development',
+    __IS_DEV__: isDevelopment,
     preventAssignment: true,
   }),
   commonjs({
@@ -24,12 +28,18 @@ const plugins = [
     requireReturnsDefault: 'auto',
   }),
   typescript({
-    tsconfig: './tsconfig.json',
+    tsconfig: './tsconfig.build.json',
     outDir: './dist',
     sourceMap: true,
-    inlineSourceMap: true,
+    /**
+     * Remove inline sourcemaps - they conflict with external sourcemaps
+     */
+    inlineSourceMap: false,
+    /**
+     * Always include source content in sourcemaps for better debugging
+     */
+    inlineSources: true,
   }),
-  terser(),
   json(),
 ];
 
@@ -41,6 +51,10 @@ const cjsBuild = {
     sourcemap: true,
     exports: 'named',
     entryFileNames: '[name].js',
+    /**
+     * Always include sources in sourcemap for better debugging
+     */
+    sourcemapExcludeSources: false,
   },
   external: [...Object.keys(pkg.dependencies || {}), ...Object.keys(pkg.devDependencies || {})],
   preserveSymlinks: true,
