@@ -369,14 +369,13 @@ describe('setupOpenId', () => {
     jwtDecode.mockReturnValue({
       roles: ['anotherRole', 'aThirdRole'],
     });
-    const userinfo = { ...baseUserinfo };
 
     // Act
-    const { user } = await validate(tokenset, userinfo);
+    const { user } = await validate(tokenset);
 
     // Assert
     expect(user).toBeTruthy();
-    expect(user.email).toBe(baseUserinfo.email);
+    expect(user.email).toBe(tokenset.claims().email);
   });
 
   it('should reject login when user has none of the required multiple roles', async () => {
@@ -386,10 +385,9 @@ describe('setupOpenId', () => {
     jwtDecode.mockReturnValue({
       roles: ['aThirdRole', 'aFourthRole'],
     });
-    const userinfo = { ...baseUserinfo };
 
     // Act
-    const { user, details } = await validate(tokenset, userinfo);
+    const { user, details } = await validate(tokenset);
 
     // Assert
     expect(user).toBe(false);
@@ -403,10 +401,9 @@ describe('setupOpenId', () => {
     jwtDecode.mockReturnValue({
       roles: ['someRole'],
     });
-    const userinfo = { ...baseUserinfo };
 
     // Act
-    const { user } = await validate(tokenset, userinfo);
+    const { user } = await validate(tokenset);
 
     // Assert
     expect(user).toBeTruthy();
