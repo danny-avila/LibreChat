@@ -271,7 +271,60 @@ describe('setupOpenId', () => {
 
     // Assert – verify that the strategy rejects login
     expect(user).toBe(false);
-    expect(details.message).toBe('You must have the "requiredRole" role to log in.');
+    expect(details.message).toBe('You must have "requiredRole" role to log in.');
+  });
+
+  it('should support comma-separated multiple roles', async () => {
+    // Arrange
+    process.env.OPENID_REQUIRED_ROLE = 'someRole,anotherRole,admin';
+    await setupOpenId(); // Re-initialize the strategy
+    jwtDecode.mockReturnValue({
+      roles: ['anotherRole', 'aThirdRole'],
+    });
+    const userinfo = { ...baseUserinfo };
+
+    // Act
+    const { user } = await validate(tokenset, userinfo);
+
+    // Assert
+    expect(user).toBeTruthy();
+    expect(user.email).toBe(baseUserinfo.email);
+  });
+
+  it('should reject login when user has none of the required multiple roles', async () => {
+    // Arrange
+    process.env.OPENID_REQUIRED_ROLE = 'someRole,anotherRole,admin';
+    await setupOpenId(); // Re-initialize the strategy
+    jwtDecode.mockReturnValue({
+      roles: ['aThirdRole', 'aFourthRole'],
+    });
+    const userinfo = { ...baseUserinfo };
+
+    // Act
+    const { user, details } = await validate(tokenset, userinfo);
+
+    // Assert
+    expect(user).toBe(false);
+    expect(details.message).toContain('You must have one of:');
+    expect(details.message).toContain('"someRole"');
+    expect(details.message).toContain('"anotherRole"');
+    expect(details.message).toContain('"admin"');
+  });
+
+  it('should handle spaces in comma-separated roles', async () => {
+    // Arrange
+    process.env.OPENID_REQUIRED_ROLE = ' someRole , anotherRole , admin ';
+    await setupOpenId(); // Re-initialize the strategy
+    jwtDecode.mockReturnValue({
+      roles: ['someRole'],
+    });
+    const userinfo = { ...baseUserinfo };
+
+    // Act
+    const { user } = await validate(tokenset, userinfo);
+
+    // Assert
+    expect(user).toBeTruthy();
   });
 
   it('should attempt to download and save the avatar if picture is provided', async () => {
