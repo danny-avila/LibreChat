@@ -10,25 +10,24 @@ const {
   conflictingAzureVariables,
 } = require('librechat-data-provider');
 
+jest.mock('@librechat/data-schemas', () => ({
+  ...jest.requireActual('@librechat/data-schemas'),
+  logger: {
+    info: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn(),
+    debug: jest.fn(),
+  },
+}));
+
 const AppService = require('./AppService');
 
 jest.mock('./Files/Firebase/initialize', () => ({
   initializeFirebase: jest.fn(),
 }));
-jest.mock('~/models', () => ({
-  initializeRoles: jest.fn(),
-  seedDefaultRoles: jest.fn(),
-  ensureDefaultCategories: jest.fn(),
-}));
-jest.mock('~/models/Role', () => ({
-  updateAccessPermissions: jest.fn(),
-  getRoleByName: jest.fn().mockResolvedValue(null),
-}));
-jest.mock('./Config', () => ({
-  setAppConfig: jest.fn(),
-  getAppConfig: jest.fn(),
-  setCachedTools: jest.fn(),
-  loadCustomConfig: jest.fn(() =>
+
+jest.mock('./Config/loadCustomConfig', () =>
+  jest.fn(() =>
     Promise.resolve({
       registration: { socialLogins: ['testLogin'] },
       fileStrategy: 'testStrategy',
@@ -37,25 +36,9 @@ jest.mock('./Config', () => ({
       },
     }),
   ),
-  getCachedTools: jest.fn().mockResolvedValue({
-    ExampleTool: {
-      type: 'function',
-      function: {
-        description: 'Example tool function',
-        name: 'exampleFunction',
-        parameters: {
-          type: 'object',
-          properties: {
-            param1: { type: 'string', description: 'An example parameter' },
-          },
-          required: ['param1'],
-        },
-      },
-    },
-  }),
-}));
+);
 
-jest.mock('./ToolService', () => ({
+jest.mock('./start/tools', () => ({
   loadAndFormatTools: jest.fn().mockReturnValue({
     ExampleTool: {
       type: 'function',
@@ -117,12 +100,17 @@ const azureGroups = [
   },
 ];
 
+jest.mock('./start/checks', () => ({
+  ...jest.requireActual('./start/checks'),
+  checkHealth: jest.fn(),
+}));
+
 describe('AppService', () => {
   const mockedTurnstileConfig = {
     siteKey: 'default-site-key',
     options: {},
   };
-  const { setAppConfig, loadCustomConfig } = require('./Config');
+  const loadCustomConfig = require('./Config/loadCustomConfig');
 
   beforeEach(() => {
     process.env.CDN_PROVIDER = undefined;
@@ -130,11 +118,11 @@ describe('AppService', () => {
   });
 
   it('should correctly assign process.env and initialize app config based on custom config', async () => {
-    await AppService();
+    const result = await AppService();
 
     expect(process.env.CDN_PROVIDER).toEqual('testStrategy');
 
-    expect(setAppConfig).toHaveBeenCalledWith(
+    expect(result).toEqual(
       expect.objectContaining({
         config: expect.objectContaining({
           fileStrategy: 'testStrategy',
@@ -196,7 +184,7 @@ describe('AppService', () => {
 
     await AppService();
 
-    const { logger } = require('~/config');
+    const { logger } = require('@librechat/data-schemas');
     expect(logger.info).toHaveBeenCalledWith(expect.stringContaining('Outdated Config version'));
   });
 
@@ -208,8 +196,8 @@ describe('AppService', () => {
       }),
     );
 
-    await AppService();
-    expect(setAppConfig).toHaveBeenCalledWith(
+    const result = await AppService();
+    expect(result).toEqual(
       expect.objectContaining({
         imageOutputType: EImageOutputType.WEBP,
       }),
@@ -223,8 +211,8 @@ describe('AppService', () => {
       }),
     );
 
-    await AppService();
-    expect(setAppConfig).toHaveBeenCalledWith(
+    const result = await AppService();
+    expect(result).toEqual(
       expect.objectContaining({
         imageOutputType: EImageOutputType.PNG,
       }),
@@ -234,8 +222,8 @@ describe('AppService', () => {
   it('should default to `PNG` `imageOutputType` with no provided config', async () => {
     loadCustomConfig.mockImplementationOnce(() => Promise.resolve(undefined));
 
-    await AppService();
-    expect(setAppConfig).toHaveBeenCalledWith(
+    const result = await AppService();
+    expect(result).toEqual(
       expect.objectContaining({
         imageOutputType: EImageOutputType.PNG,
       }),
@@ -259,9 +247,8 @@ describe('AppService', () => {
 
   it('should load and format tools accurately with defined structure', async () => {
     const { loadAndFormatTools } = require('./ToolService');
-    const { setCachedTools, getCachedTools } = require('./Config');
 
-    await AppService();
+    const result = await AppService();
 
     expect(loadAndFormatTools).toHaveBeenCalledWith({
       adminFilter: undefined,
@@ -271,31 +258,9 @@ describe('AppService', () => {
       fileStrategy: expect.any(String),
     });
 
-    // Verify setCachedTools was called with the tools
-    expect(setCachedTools).toHaveBeenCalledWith(
-      {
-        ExampleTool: {
-          type: 'function',
-          function: {
-            description: 'Example tool function',
-            name: 'exampleFunction',
-            parameters: {
-              type: 'object',
-              properties: {
-                param1: { type: 'string', description: 'An example parameter' },
-              },
-              required: ['param1'],
-            },
-          },
-        },
-      },
-      { isGlobal: true },
-    );
-
-    // Verify we can retrieve the tools from cache
-    const cachedTools = await getCachedTools({ includeGlobal: true });
-    expect(cachedTools.ExampleTool).toBeDefined();
-    expect(cachedTools.ExampleTool).toEqual({
+    // Verify tools are included in the returned config
+    expect(result.availableTools).toBeDefined();
+    expect(result.availableTools.ExampleTool).toEqual({
       type: 'function',
       function: {
         description: 'Example tool function',
@@ -326,9 +291,9 @@ describe('AppService', () => {
       }),
     );
 
-    await AppService();
+    const result = await AppService();
 
-    expect(setAppConfig).toHaveBeenCalledWith(
+    expect(result).toEqual(
       expect.objectContaining({
         endpoints: expect.objectContaining({
           [EModelEndpoint.assistants]: expect.objectContaining({
@@ -358,9 +323,9 @@ describe('AppService', () => {
       }),
     );
 
-    await AppService();
+    const result = await AppService();
 
-    expect(setAppConfig).toHaveBeenCalledWith(
+    expect(result).toEqual(
       expect.objectContaining({
         endpoints: expect.objectContaining({
           [EModelEndpoint.agents]: expect.objectContaining({
@@ -381,9 +346,9 @@ describe('AppService', () => {
   it('should configure Agents endpoint with defaults when no config is provided', async () => {
     loadCustomConfig.mockImplementationOnce(() => Promise.resolve({}));
 
-    await AppService();
+    const result = await AppService();
 
-    expect(setAppConfig).toHaveBeenCalledWith(
+    expect(result).toEqual(
       expect.objectContaining({
         endpoints: expect.objectContaining({
           [EModelEndpoint.agents]: expect.objectContaining({
@@ -406,9 +371,9 @@ describe('AppService', () => {
       }),
     );
 
-    await AppService();
+    const result = await AppService();
 
-    expect(setAppConfig).toHaveBeenCalledWith(
+    expect(result).toEqual(
       expect.objectContaining({
         endpoints: expect.objectContaining({
           [EModelEndpoint.agents]: expect.objectContaining({
@@ -439,8 +404,8 @@ describe('AppService', () => {
     process.env.WESTUS_API_KEY = 'westus-key';
     process.env.EASTUS_API_KEY = 'eastus-key';
 
-    await AppService();
-    expect(setAppConfig).toHaveBeenCalledWith(
+    const result = await AppService();
+    expect(result).toEqual(
       expect.objectContaining({
         endpoints: expect.objectContaining({
           [EModelEndpoint.azureAssistants]: expect.objectContaining({
@@ -469,10 +434,10 @@ describe('AppService', () => {
     process.env.WESTUS_API_KEY = 'westus-key';
     process.env.EASTUS_API_KEY = 'eastus-key';
 
-    await AppService();
+    const result = await AppService();
 
     const { modelNames, modelGroupMap, groupMap } = validateAzureGroups(azureGroups);
-    expect(setAppConfig).toHaveBeenCalledWith(
+    expect(result).toEqual(
       expect.objectContaining({
         endpoints: expect.objectContaining({
           [EModelEndpoint.azureOpenAI]: expect.objectContaining({
@@ -629,9 +594,9 @@ describe('AppService', () => {
       }),
     );
 
-    await AppService();
+    const result = await AppService();
 
-    expect(setAppConfig).toHaveBeenCalledWith(
+    expect(result).toEqual(
       expect.objectContaining({
         endpoints: expect.objectContaining({
           // Check OpenAI endpoint configuration
@@ -679,9 +644,9 @@ describe('AppService', () => {
       }),
     );
 
-    await AppService();
+    const result = await AppService();
 
-    expect(setAppConfig).toHaveBeenCalledWith(
+    expect(result).toEqual(
       expect.objectContaining({
         endpoints: expect.objectContaining({
           [EModelEndpoint.agents]: expect.objectContaining({
@@ -714,9 +679,9 @@ describe('AppService', () => {
       }),
     );
 
-    await AppService();
+    const result = await AppService();
 
-    expect(setAppConfig).toHaveBeenCalledWith(
+    expect(result).toEqual(
       expect.objectContaining({
         endpoints: expect.objectContaining({
           [EModelEndpoint.openAI]: expect.objectContaining({
@@ -727,10 +692,9 @@ describe('AppService', () => {
     );
 
     // Verify that optional fields are not set when not provided
-    const initCall = setAppConfig.mock.calls[0][0];
-    expect(initCall.endpoints[EModelEndpoint.openAI].titlePrompt).toBeUndefined();
-    expect(initCall.endpoints[EModelEndpoint.openAI].titlePromptTemplate).toBeUndefined();
-    expect(initCall.endpoints[EModelEndpoint.openAI].titleMethod).toBeUndefined();
+    expect(result.endpoints[EModelEndpoint.openAI].titlePrompt).toBeUndefined();
+    expect(result.endpoints[EModelEndpoint.openAI].titlePromptTemplate).toBeUndefined();
+    expect(result.endpoints[EModelEndpoint.openAI].titleMethod).toBeUndefined();
   });
 
   it('should correctly configure titleEndpoint when specified', async () => {
@@ -751,9 +715,9 @@ describe('AppService', () => {
       }),
     );
 
-    await AppService();
+    const result = await AppService();
 
-    expect(setAppConfig).toHaveBeenCalledWith(
+    expect(result).toEqual(
       expect.objectContaining({
         endpoints: expect.objectContaining({
           // Check OpenAI endpoint has titleEndpoint
@@ -794,9 +758,9 @@ describe('AppService', () => {
       }),
     );
 
-    await AppService();
+    const result = await AppService();
 
-    expect(setAppConfig).toHaveBeenCalledWith(
+    expect(result).toEqual(
       expect.objectContaining({
         // Check that 'all' endpoint config is loaded
         endpoints: expect.objectContaining({
@@ -822,7 +786,7 @@ describe('AppService', () => {
 
 describe('AppService updating app config and issuing warnings', () => {
   let initialEnv;
-  const { setAppConfig, loadCustomConfig } = require('./Config');
+  const loadCustomConfig = require('./Config/loadCustomConfig');
 
   beforeEach(() => {
     // Store initial environment variables to restore them after each test
@@ -841,9 +805,9 @@ describe('AppService updating app config and issuing warnings', () => {
     // Mock loadCustomConfig to return undefined
     loadCustomConfig.mockImplementationOnce(() => Promise.resolve(undefined));
 
-    await AppService();
+    const result = await AppService();
 
-    expect(setAppConfig).toHaveBeenCalledWith(
+    expect(result).toEqual(
       expect.objectContaining({
         paths: expect.anything(),
         config: {},
@@ -875,9 +839,9 @@ describe('AppService updating app config and issuing warnings', () => {
     };
     loadCustomConfig.mockImplementationOnce(() => Promise.resolve(customConfig));
 
-    await AppService();
+    const result = await AppService();
 
-    expect(setAppConfig).toHaveBeenCalledWith(
+    expect(result).toEqual(
       expect.objectContaining({
         paths: expect.anything(),
         config: customConfig,
@@ -903,9 +867,9 @@ describe('AppService updating app config and issuing warnings', () => {
     };
     loadCustomConfig.mockImplementationOnce(() => Promise.resolve(mockConfig));
 
-    await AppService();
+    const result = await AppService();
 
-    expect(setAppConfig).toHaveBeenCalledWith(
+    expect(result).toEqual(
       expect.objectContaining({
         endpoints: expect.objectContaining({
           assistants: expect.objectContaining({
@@ -919,8 +883,7 @@ describe('AppService updating app config and issuing warnings', () => {
     );
 
     // Verify excludedIds is undefined when not provided
-    const initCall = setAppConfig.mock.calls[0][0];
-    expect(initCall.endpoints.assistants.excludedIds).toBeUndefined();
+    expect(result.endpoints.assistants.excludedIds).toBeUndefined();
   });
 
   it('should log a warning when both supportedIds and excludedIds are provided', async () => {
@@ -939,7 +902,7 @@ describe('AppService updating app config and issuing warnings', () => {
 
     await AppService();
 
-    const { logger } = require('~/config');
+    const { logger } = require('@librechat/data-schemas');
     expect(logger.warn).toHaveBeenCalledWith(
       expect.stringContaining(
         "The 'assistants' endpoint has both 'supportedIds' and 'excludedIds' defined.",
@@ -960,7 +923,7 @@ describe('AppService updating app config and issuing warnings', () => {
 
     await AppService();
 
-    const { logger } = require('~/config');
+    const { logger } = require('@librechat/data-schemas');
     expect(logger.warn).toHaveBeenCalledWith(
       expect.stringContaining(
         "The 'assistants' endpoint has both 'privateAssistants' and 'supportedIds' or 'excludedIds' defined.",
@@ -985,7 +948,7 @@ describe('AppService updating app config and issuing warnings', () => {
 
     await AppService();
 
-    const { logger } = require('~/config');
+    const { logger } = require('@librechat/data-schemas');
     deprecatedAzureVariables.forEach(({ key, description }) => {
       expect(logger.warn).toHaveBeenCalledWith(
         `The \`${key}\` environment variable (related to ${description}) should not be used in combination with the \`azureOpenAI\` endpoint configuration, as you will experience conflicts and errors.`,
@@ -1010,7 +973,7 @@ describe('AppService updating app config and issuing warnings', () => {
 
     await AppService();
 
-    const { logger } = require('~/config');
+    const { logger } = require('@librechat/data-schemas');
     conflictingAzureVariables.forEach(({ key }) => {
       expect(logger.warn).toHaveBeenCalledWith(
         `The \`${key}\` environment variable should not be used in combination with the \`azureOpenAI\` endpoint configuration, as you may experience with the defined placeholders for mapping to the current model grouping using the same name.`,
@@ -1035,10 +998,10 @@ describe('AppService updating app config and issuing warnings', () => {
     process.env.OCR_API_KEY_CUSTOM_VAR_NAME = 'actual-api-key';
     process.env.OCR_BASEURL_CUSTOM_VAR_NAME = 'https://actual-ocr-url.com';
 
-    await AppService();
+    const result = await AppService();
 
     // Verify that the raw string references were preserved and not interpolated
-    expect(setAppConfig).toHaveBeenCalledWith(
+    expect(result).toEqual(
       expect.objectContaining({
         ocr: expect.objectContaining({
           apiKey: '${OCR_API_KEY_CUSTOM_VAR_NAME}',
@@ -1063,10 +1026,10 @@ describe('AppService updating app config and issuing warnings', () => {
 
     loadCustomConfig.mockImplementationOnce(() => Promise.resolve(mockConfig));
 
-    await AppService();
+    const result = await AppService();
 
     // Check that interface config includes the permissions
-    expect(setAppConfig).toHaveBeenCalledWith(
+    expect(result).toEqual(
       expect.objectContaining({
         interfaceConfig: expect.objectContaining({
           peoplePicker: expect.objectContaining({
