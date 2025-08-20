@@ -43,6 +43,7 @@ jest.mock('@librechat/api', () => ({
   checkPluginAuth: jest.fn(),
   filterUniquePlugins: jest.fn(),
   convertMCPToolsToPlugins: jest.fn(),
+  convertMCPToolToPlugin: jest.fn(),
 }));
 
 // Import the actual module with the function we want to test
@@ -51,6 +52,7 @@ const {
   filterUniquePlugins,
   checkPluginAuth,
   convertMCPToolsToPlugins,
+  convertMCPToolToPlugin,
   getToolkitKey,
 } = require('@librechat/api');
 const { loadAndFormatTools } = require('~/server/services/ToolService');
@@ -302,21 +304,31 @@ describe('PluginController', () => {
         },
       };
 
-      // We need to test the actual flow where MCP manager tools are included
-      const mcpManagerTools = [
-        {
-          name: 'tool1',
-          pluginKey: `tool1${Constants.mcp_delimiter}test-server`,
-          description: 'Tool 1',
-          authenticated: true,
+      // Mock MCP tools returned by getAllToolFunctions
+      const mcpToolFunctions = {
+        [`tool1${Constants.mcp_delimiter}test-server`]: {
+          type: 'function',
+          function: {
+            name: `tool1${Constants.mcp_delimiter}test-server`,
+            description: 'Tool 1',
+            parameters: {},
+          },
         },
-      ];
+      };
 
       // Mock the MCP manager to return tools
       const mockMCPManager = {
-        loadAllManifestTools: jest.fn().mockResolvedValue(mcpManagerTools),
+        getAllToolFunctions: jest.fn().mockResolvedValue(mcpToolFunctions),
       };
       require('~/config').getMCPManager.mockReturnValue(mockMCPManager);
+
+      // Mock convertMCPToolToPlugin to return a plugin with the expected structure
+      convertMCPToolToPlugin.mockReturnValue({
+        name: 'tool1',
+        pluginKey: `tool1${Constants.mcp_delimiter}test-server`,
+        description: 'Tool 1',
+        authenticated: true,
+      });
 
       mockCache.get.mockResolvedValue(null);
       getCustomConfig.mockResolvedValue(customConfig);
@@ -327,16 +339,14 @@ describe('PluginController', () => {
       // Mock convertMCPToolsToPlugins to return empty array for user tools
       convertMCPToolsToPlugins.mockReturnValue([]);
 
-      // Mock filterUniquePlugins to pass through
+      // Mock filterUniquePlugins to pass through the MCP tool
       filterUniquePlugins.mockImplementation((plugins) => plugins || []);
 
       // Mock checkPluginAuth
       checkPluginAuth.mockReturnValue(true);
 
-      // Second call returns tool definitions
-      getCachedTools.mockResolvedValueOnce({
-        [`tool1${Constants.mcp_delimiter}test-server`]: true,
-      });
+      // Second call returns tool definitions including our MCP tool
+      getCachedTools.mockResolvedValueOnce(mcpToolFunctions);
 
       await getAvailableTools(mockReq, mockRes);
 
