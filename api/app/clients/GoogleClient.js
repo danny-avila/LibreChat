@@ -681,10 +681,27 @@ class GoogleClient extends BaseClient {
           { once: true },
         );
 
+        // Add timeout protection
+        const timeoutMs = this.options.timeoutMs || process.env.GOOGLE_REQUEST_TIMEOUT || 300000; // 5 minutes default
+        const timeoutId = setTimeout(() => {
+          if (!abortController.signal.aborted) {
+            logger.warn('[GoogleClient] Request timed out after', timeoutMs, 'ms');
+            abortController.abort('Request timeout');
+          }
+        }, timeoutMs);
+
         const result = await client.generateContentStream(requestOptions, {
           signal: abortController.signal,
         });
+        
+        let chunkCount = 0;
         for await (const chunk of result.stream) {
+          // Clear timeout on first chunk
+          if (chunkCount === 0) {
+            clearTimeout(timeoutId);
+          }
+          chunkCount++;
+          
           usageMetadata = !usageMetadata
             ? chunk?.usageMetadata
             : Object.assign(usageMetadata, chunk?.usageMetadata);
@@ -695,6 +712,8 @@ class GoogleClient extends BaseClient {
           reply += chunkText;
           await sleep(streamRate);
         }
+
+        clearTimeout(timeoutId);
 
         if (usageMetadata) {
           this.usage = {
@@ -717,6 +736,16 @@ class GoogleClient extends BaseClient {
       let usageMetadata;
       /** @type {ChatVertexAI} */
       const client = this.client;
+      
+      // Add timeout protection for VertexAI
+      const timeoutMs = this.options.timeoutMs || process.env.GOOGLE_REQUEST_TIMEOUT || 300000; // 5 minutes default
+      const timeoutId = setTimeout(() => {
+        if (!abortController.signal.aborted) {
+          logger.warn('[GoogleClient] VertexAI request timed out after', timeoutMs, 'ms');
+          abortController.abort('Request timeout');
+        }
+      }, timeoutMs);
+      
       const stream = await client.stream(messages, {
         signal: abortController.signal,
         streamUsage: true,
@@ -734,7 +763,14 @@ class GoogleClient extends BaseClient {
         }
       }
 
+      let chunkCount = 0;
       for await (const chunk of stream) {
+        // Clear timeout on first chunk
+        if (chunkCount === 0) {
+          clearTimeout(timeoutId);
+        }
+        chunkCount++;
+        
         if (chunk?.usage_metadata) {
           const metadata = chunk.usage_metadata;
           for (const key in metadata) {
@@ -753,12 +789,23 @@ class GoogleClient extends BaseClient {
         reply += chunkText;
       }
 
+      clearTimeout(timeoutId);
+
       if (usageMetadata) {
         this.usage = usageMetadata;
       }
     } catch (e) {
       error = e;
       logger.error('[GoogleClient] There was an issue generating the completion', e);
+      
+      // Better error handling for different types of errors
+      if (e.message && e.message.includes('aborted')) {
+        logger.warn('[GoogleClient] Request was aborted by user or timeout');
+      } else if (e.message && e.message.includes('timeout')) {
+        logger.warn('[GoogleClient] Request timed out');
+      } else if (e.message && e.message.includes('stream')) {
+        logger.warn('[GoogleClient] Stream error occurred, this may be due to network issues or long content');
+      }
     }
 
     if (error != null && reply === '') {

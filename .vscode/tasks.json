@@ -1,0 +1,46 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "LibreChat Development Server",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"backend:dev"
+			],
+			"group": "build",
+			"isBackground": true,
+			"problemMatcher": [],
+			"options": {
+				"cwd": "${workspaceFolder}"
+			}
+		},
+		{
+			"label": "LibreChat Frontend Dev Server",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"frontend:dev"
+			],
+			"group": "build",
+			"isBackground": true,
+			"problemMatcher": [],
+			"options": {
+				"cwd": "${workspaceFolder}"
+			}
+		},
+		{
+			"label": "Start LibreChat Dev (Full Stack)",
+			"dependsOrder": "parallel",
+			"dependsOn": [
+				"LibreChat Development Server",
+				"LibreChat Frontend Dev Server"
+			],
+			"group": "build",
+			"isBackground": true,
+			"problemMatcher": []
+		}
+	]
+}

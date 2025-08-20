@@ -49,7 +49,19 @@ const startServer = async () => {
   await AppService(app);
 
   const indexPath = path.join(app.locals.paths.dist, 'index.html');
-  const indexHTML = fs.readFileSync(indexPath, 'utf8');
+  let indexHTML = '';
+  
+  // In development mode, the frontend runs separately, so we don't need the built files
+  try {
+    indexHTML = fs.readFileSync(indexPath, 'utf8');
+  } catch (error) {
+    if (process.env.NODE_ENV === 'development') {
+      logger.info('Running in development mode - frontend files not needed (frontend runs separately)');
+      indexHTML = '<!DOCTYPE html><html><head><title>LibreChat API</title></head><body><h1>LibreChat API is running</h1><p>Frontend is running separately in development mode.</p></body></html>';
+    } else {
+      throw error;
+    }
+  }
 
   app.get('/health', (_req, res) => res.status(200).send('OK'));
 
