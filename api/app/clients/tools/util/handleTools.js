@@ -3,7 +3,7 @@ const { SerpAPI } = require('@langchain/community/tools/serpapi');
 const { Calculator } = require('@langchain/community/tools/calculator');
 const { mcpToolPattern, loadWebSearchAuth } = require('@librechat/api');
 const { EnvVar, createCodeExecutionTool, createSearchTool } = require('@librechat/agents');
-const { Tools, EToolResources, replaceSpecialVars } = require('librechat-data-provider');
+const { Tools, Constants, EToolResources, replaceSpecialVars } = require('librechat-data-provider');
 const {
   availableTools,
   manifestToolMap,
@@ -123,6 +123,7 @@ const getAuthFields = (toolKey) => {
  *
  * @param {object} object
  * @param {string} object.user
+ * @param {Record<string, Record<string, string>>} [object.userMCPAuthMap]
  * @param {Pick<Agent, 'id' | 'provider' | 'model'>} [object.agent]
  * @param {string} [object.model]
  * @param {EModelEndpoint} [object.endpoint]
@@ -138,6 +139,7 @@ const loadTools = async ({
   agent,
   model,
   endpoint,
+  userMCPAuthMap,
   tools = [],
   options = {},
   functions = true,
@@ -231,6 +233,7 @@ const loadTools = async ({
   /** @type {Record<string, string>} */
   const toolContextMap = {};
   const cachedTools = (await getCachedTools({ userId: user, includeGlobal: true })) ?? {};
+  const requestedMCPTools = {};
 
   for (const tool of tools) {
     if (tool === Tools.execute_code) {
@@ -299,14 +302,18 @@ Current Date & Time: ${replaceSpecialVars({ text: '{{iso_datetime}}' })}
       };
       continue;
     } else if (tool && cachedTools && mcpToolPattern.test(tool)) {
-      requestedTools[tool] = async () =>
+      const serverName = tool.split(Constants.mcp_delimiter)[1];
+      const currentMCPGenerator = async () =>
         createMCPTool({
           req: options.req,
           res: options.res,
           toolKey: tool,
+          userMCPAuthMap,
           model: agent?.model ?? model,
           provider: agent?.provider ?? endpoint,
         });
+      requestedMCPTools[serverName] = requestedMCPTools[serverName] || [];
+      requestedMCPTools[serverName].push(currentMCPGenerator);
       continue;
     }
 
@@ -346,6 +353,18 @@ Current Date & Time: ${replaceSpecialVars({ text: '{{iso_datetime}}' })}
   }
 
   const loadedTools = (await Promise.all(toolPromises)).flatMap((plugin) => plugin || []);
+  for (const [_serverName, generators] of Object.entries(requestedMCPTools)) {
+    for (const generator of generators) {
+      try {
+        const mcpTool = await generator();
+        if (mcpTool) {
+          loadedTools.push(mcpTool);
+        }
+      } catch (error) {
+        logger.error(`Error loading MCP tool for server ${_serverName}:`, error);
+      }
+    }
+  }
   return { loadedTools, toolContextMap };
 };
 

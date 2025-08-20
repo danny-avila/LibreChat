@@ -16,9 +16,9 @@ const {
   ContentTypes,
   isAssistantsEndpoint,
 } = require('librechat-data-provider');
-const { findToken, createToken, updateToken } = require('~/models');
+const { getCachedTools, loadCustomConfig, updateMCPUserTools } = require('./Config');
+const { findToken, createToken, updateToken, deleteTokens } = require('~/models');
 const { getMCPManager, getFlowStateManager } = require('~/config');
-const { getCachedTools, loadCustomConfig } = require('./Config');
 const { getLogStores } = require('~/cache');
 
 /**
@@ -107,15 +107,118 @@ function createAbortHandler({ userId, serverName, toolName, flowManager }) {
  * @param {string} params.toolKey - The toolKey for the tool.
  * @param {import('@librechat/agents').Providers | EModelEndpoint} params.provider - The provider for the tool.
  * @param {string} params.model - The model for the tool.
+ * @param {Record<string, Record<string, string>>} params.userMCPAuthMap
  * @returns { Promise<typeof tool | { _call: (toolInput: Object | string) => unknown}> } An object with `_call` method to execute the tool input.
  */
-async function createMCPTool({ req, res, toolKey, provider: _provider }) {
+async function createMCPTool({ req, res, toolKey, provider: _provider, userMCPAuthMap }) {
   const availableTools = await getCachedTools({ userId: req.user?.id, includeGlobal: true });
-  const toolDefinition = availableTools?.[toolKey]?.function;
+  /** @type {LCTool | undefined} */
+  let toolDefinition = availableTools?.[toolKey]?.function;
+  const [toolName, serverName] = toolKey.split(Constants.mcp_delimiter);
   if (!toolDefinition) {
-    logger.error(`Tool ${toolKey} not found in available tools`);
-    return null;
+    logger.warn(`Tool ${toolKey} not found in available tools, re-initializing available tools.`);
+    try {
+      const customUserVars = userMCPAuthMap?.[`${Constants.mcp_prefix}${serverName}`];
+      /** @type {import('@librechat/api').MCPConnection | null} */
+      let userConnection = null;
+      let oauthRequired = false;
+      let oauthUrl = null;
+
+      try {
+        const flowsCache = getLogStores(CacheKeys.FLOWS);
+        const flowManager = getFlowStateManager(flowsCache);
+        const mcpManager = getMCPManager();
+        userConnection = await mcpManager.getUserConnection({
+          user: req.user,
+          serverName,
+          flowManager,
+          customUserVars,
+          tokenMethods: {
+            findToken,
+            updateToken,
+            createToken,
+            deleteTokens,
+          },
+          returnOnOAuth: true,
+          oauthStart: async (authURL) => {
+            logger.info(`[createMCPTool] OAuth URL received: ${authURL}`);
+            oauthUrl = authURL;
+            oauthRequired = true;
+          },
+        });
+
+        logger.info(`[createMCPTool] Successfully established connection for ${serverName}`);
+      } catch (err) {
+        logger.info(`[createMCPTool] getUserConnection threw error: ${err.message}`);
+        logger.info(
+          `[createMCPTool] OAuth state - oauthRequired: ${oauthRequired}, oauthUrl: ${oauthUrl ? 'present' : 'null'}`,
+        );
+
+        const isOAuthError =
+          err.message?.includes('OAuth') ||
+          err.message?.includes('authentication') ||
+          err.message?.includes('401');
+
+        const isOAuthFlowInitiated = err.message === 'OAuth flow initiated - return early';
+
+        if (isOAuthError || oauthRequired || isOAuthFlowInitiated) {
+          logger.info(
+            `[createMCPTool] OAuth required for ${serverName} (isOAuthError: ${isOAuthError}, oauthRequired: ${oauthRequired}, isOAuthFlowInitiated: ${isOAuthFlowInitiated})`,
+          );
+          oauthRequired = true;
+        } else {
+          logger.error(
+            `[createMCPTool] Error initializing MCP server ${serverName} for user:`,
+            err,
+          );
+        }
+      }
+
+      if (userConnection && !oauthRequired) {
+        const tools = await userConnection.fetchTools();
+        const availableTools = await updateMCPUserTools({
+          userId: req.user.id,
+          serverName,
+          tools,
+        });
+        toolDefinition = availableTools?.[toolKey]?.function;
+      }
+
+      logger.debug(
+        `[createMCPTool] Sending response for ${serverName} - oauthRequired: ${oauthRequired}, oauthUrl: ${oauthUrl ? 'present' : 'null'}`,
+      );
+
+      const getResponseMessage = () => {
+        if (oauthRequired) {
+          return `MCP server '${serverName}' ready for OAuth authentication`;
+        }
+        if (userConnection) {
+          return `MCP server '${serverName}' reinitialized successfully`;
+        }
+        return `Failed to reinitialize MCP server '${serverName}'`;
+      };
+
+      const result = {
+        success: Boolean((userConnection && !oauthRequired) || (oauthRequired && oauthUrl)),
+        message: getResponseMessage(),
+        serverName,
+        oauthRequired,
+        oauthUrl,
+      };
+      logger.debug(`[createMCPTool] Response for ${serverName}:`, result);
+    } catch (error) {
+      logger.error(
+        '[createMCPTool] Error loading MCP Tools, servers may still be initializing:',
+        error,
+      );
+    }
   }
+
+  if (!toolDefinition) {
+    logger.error(`[createMCPTool] Tool definition not found for ${serverName}`);
+    return;
+  }
+
   /** @type {LCTool} */
   const { description, parameters } = toolDefinition;
   const isGoogle = _provider === Providers.VERTEXAI || _provider === Providers.GOOGLE;
@@ -128,7 +231,6 @@ async function createMCPTool({ req, res, toolKey, provider: _provider }) {
     schema = z.object({ input: z.string().optional() });
   }
 
-  const [toolName, serverName] = toolKey.split(Constants.mcp_delimiter);
   const normalizedToolKey = `${toolName}${Constants.mcp_delimiter}${normalizeServerName(serverName)}`;
 
   if (!req.user?.id) {

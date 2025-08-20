@@ -33,12 +33,18 @@ const {
   toolkits,
 } = require('~/app/clients/tools');
 const { processFileURL, uploadImageBuffer } = require('~/server/services/Files/process');
-const { getEndpointsConfig, getCachedTools } = require('~/server/services/Config');
+const {
+  getEndpointsConfig,
+  hasCustomUserVars,
+  getCachedTools,
+  getMCPAuthMap,
+} = require('~/server/services/Config');
 const { createOnSearchResults } = require('~/server/services/Tools/search');
 const { isActionDomainAllowed } = require('~/server/services/domains');
 const { recordUsage } = require('~/server/services/Threads');
 const { loadTools } = require('~/app/clients/tools/util');
 const { redactMessage } = require('~/config/parsers');
+const { findPluginAuthsByKeys } = require('~/models');
 
 /**
  * Loads and formats tools from the specified tool directory.
@@ -523,8 +529,19 @@ async function loadAgentTools({ req, res, agent, tool_resources, openAIApiKey })
     webSearchCallbacks = createOnSearchResults(res);
   }
 
+  /** @type {Record<string, Record<string, string>>} */
+  let userMCPAuthMap;
+  if (await hasCustomUserVars()) {
+    userMCPAuthMap = await getMCPAuthMap({
+      tools: agent.tools,
+      userId: this.options.req.user.id,
+      findPluginAuthsByKeys,
+    });
+  }
+
   const { loadedTools, toolContextMap } = await loadTools({
     agent,
+    userMCPAuthMap,
     functions: true,
     user: req.user.id,
     tools: _agentTools,
