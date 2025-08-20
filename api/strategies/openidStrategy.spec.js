@@ -366,6 +366,7 @@ describe('setupOpenId', () => {
     // Arrange
     process.env.OPENID_REQUIRED_ROLE = 'someRole,anotherRole,admin';
     await setupOpenId(); // Re-initialize the strategy
+    verifyCallback = require('openid-client/passport').__getVerifyCallback(); // Update the verify callback
     jwtDecode.mockReturnValue({
       roles: ['anotherRole', 'aThirdRole'],
     });
@@ -382,6 +383,7 @@ describe('setupOpenId', () => {
     // Arrange
     process.env.OPENID_REQUIRED_ROLE = 'someRole,anotherRole,admin';
     await setupOpenId(); // Re-initialize the strategy
+    verifyCallback = require('openid-client/passport').__getVerifyCallback(); // Update the verify callback
     jwtDecode.mockReturnValue({
       roles: ['aThirdRole', 'aFourthRole'],
     });
@@ -398,6 +400,7 @@ describe('setupOpenId', () => {
     // Arrange
     process.env.OPENID_REQUIRED_ROLE = ' someRole , anotherRole , admin ';
     await setupOpenId(); // Re-initialize the strategy
+    verifyCallback = require('openid-client/passport').__getVerifyCallback(); // Update the verify callback
     jwtDecode.mockReturnValue({
       roles: ['someRole'],
     });
