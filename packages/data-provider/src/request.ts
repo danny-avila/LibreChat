@@ -99,6 +99,12 @@ axios.interceptors.response.use(
     }
 
     if (error.response.status === 401 && !originalRequest._retry) {
+      // <stripe>
+      // do not refresh on 401 error
+      console.error('[stripe] 401 error in data provider request');
+      return Promise.reject(error);
+      // </stripe>
+
       console.warn('401 error, refreshing token');
       originalRequest._retry = true;
 
