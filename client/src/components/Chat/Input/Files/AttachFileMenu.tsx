@@ -77,7 +77,9 @@ const AttachFileMenu = ({
    * */
   const capabilities = useAgentCapabilities(agentsConfig?.capabilities ?? defaultAgentCapabilities);
 
-  const handleUploadClick = (fileType?: 'image' | 'document' | 'multimodal') => {
+  const handleUploadClick = (
+    fileType?: 'image' | 'document' | 'multimodal' | 'google_multimodal',
+  ) => {
     if (!inputRef.current) {
       return;
     }
@@ -194,6 +196,7 @@ const AttachFileMenu = ({
     sharePointEnabled,
     setIsSharePointDialogOpen,
     endpoint,
+    agent?.provider,
   ]);
 
   const menuTrigger = (
