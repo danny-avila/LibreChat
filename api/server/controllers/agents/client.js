@@ -11,6 +11,7 @@ const {
   formatContentStrings,
   createMemoryProcessor,
   encodeAndFormatAudios,
+  encodeAndFormatVideos,
 } = require('@librechat/api');
 const {
   Callback,
@@ -44,7 +45,6 @@ const {
 const { getMCPAuthMap, checkCapability, hasCustomUserVars } = require('~/server/services/Config');
 const { encodeAndFormatDocuments } = require('~/server/services/Files/Documents/encode');
 const { addCacheControl, createContextHandlers } = require('~/app/clients/prompts');
-const { encodeAndFormatVideos } = require('~/server/services/Files/Video/encode');
 const { initializeAgent } = require('~/server/services/Endpoints/agents/agent');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
@@ -250,6 +250,7 @@ class AgentClient extends BaseClient {
       this.options.req,
       attachments,
       this.options.agent.provider,
+      getStrategyFunctions,
     );
     message.videos =
       videoResult.videos && videoResult.videos.length ? videoResult.videos : undefined;

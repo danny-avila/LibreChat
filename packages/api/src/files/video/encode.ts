@@ -1,71 +1,78 @@
-const { EModelEndpoint, isDocumentSupportedEndpoint } = require('librechat-data-provider');
-const { getStrategyFunctions } = require('~/server/services/Files/strategies');
-const { validateVideo } = require('@librechat/api');
-const { streamToBuffer } = require('~/server/services/Files/Documents/encode');
+import { EModelEndpoint, isDocumentSupportedEndpoint } from 'librechat-data-provider';
+import { validateVideo } from '@librechat/api';
+import getStream from 'get-stream';
+import type { Request } from 'express';
+import type { IMongoFile } from '@librechat/data-schemas';
+import { Readable } from 'stream';
+
+interface StrategyFunctions {
+  getDownloadStream: (req: Request, filepath: string) => Promise<Readable>;
+}
+
+interface VideoResult {
+  videos: Array<{
+    type: string;
+    mimeType: string;
+    data: string;
+  }>;
+  files: Array<{
+    file_id?: string;
+    temp_file_id?: string;
+    filepath: string;
+    source?: string;
+    filename: string;
+    type: string;
+  }>;
+}
 
 /**
  * Encodes and formats video files for different endpoints
- * @param {Express.Request} req - The request object
- * @param {Array<MongoFile>} files - Array of video files
- * @param {EModelEndpoint} endpoint - The endpoint to format for
- * @returns {Promise<{ videos: Array, files: Array<MongoFile> }>}
+ * @param req - The request object
+ * @param files - Array of video files
+ * @param endpoint - The endpoint to format for
+ * @param getStrategyFunctions - Function to get strategy functions
+ * @returns Promise that resolves to videos and file metadata
  */
-async function encodeAndFormatVideos(req, files, endpoint) {
-  const promises = [];
-  const encodingMethods = {};
-  /** @type {{ videos: any[]; files: MongoFile[] }} */
-  const result = {
-    videos: [],
-    files: [],
-  };
+export async function encodeAndFormatVideos(
+  req: Request,
+  files: IMongoFile[],
+  endpoint: EModelEndpoint,
+  getStrategyFunctions: (source: string) => StrategyFunctions,
+): Promise<VideoResult> {
+  if (!files?.length) {
+    return { videos: [], files: [] };
+  }
 
-  for (const file of files) {
-    if (!file || !file.filepath) {
-      continue;
-    }
+  const encodingMethods: Record<string, StrategyFunctions> = {};
+  const result: VideoResult = { videos: [], files: [] };
+
+  const processFile = async (file: IMongoFile) => {
+    if (!file?.filepath) return null;
 
     const source = file.source ?? 'local';
     if (!encodingMethods[source]) {
       encodingMethods[source] = getStrategyFunctions(source);
     }
 
-    const fileMetadata = {
-      file_id: file.file_id || file._id,
-      temp_file_id: file.temp_file_id,
-      filepath: file.filepath,
-      source: file.source,
-      filename: file.filename,
-      type: file.type,
+    const { getDownloadStream } = encodingMethods[source];
+    const stream = await getDownloadStream(req, file.filepath);
+    const buffer = await getStream.buffer(stream);
+
+    return {
+      file,
+      content: buffer.toString('base64'),
+      metadata: {
+        file_id: file.file_id,
+        temp_file_id: file.temp_file_id,
+        filepath: file.filepath,
+        source: file.source,
+        filename: file.filename,
+        type: file.type,
+      },
     };
+  };
 
-    promises.push([file, fileMetadata]);
-  }
-
-  const results = await Promise.allSettled(
-    promises.map(async ([file, fileMetadata]) => {
-      if (!file || !fileMetadata) {
-        return { file: null, content: null, metadata: fileMetadata };
-      }
-
-      try {
-        const source = file.source ?? 'local';
-        const { getDownloadStream } = encodingMethods[source];
-
-        const stream = await getDownloadStream(req, file.filepath);
-        const buffer = await streamToBuffer(stream);
-        const videoContent = buffer.toString('base64');
-
-        return {
-          file,
-          content: videoContent,
-          metadata: fileMetadata,
-        };
-      } catch (error) {
-        console.error(`Error processing video ${file.filename}:`, error);
-        return { file, content: null, metadata: fileMetadata };
-      }
-    }),
-  );
+  const results = await Promise.allSettled(files.map(processFile));
 
   for (const settledResult of results) {
     if (settledResult.status === 'rejected') {
@@ -73,39 +80,38 @@ async function encodeAndFormatVideos(req, files, endpoint) {
       continue;
     }
 
-    const { file, content, metadata } = settledResult.value;
+    const processed = settledResult.value;
+    if (!processed) continue;
+
+    const { file, content, metadata } = processed;
 
     if (!content || !file) {
-      if (metadata) {
-        result.files.push(metadata);
-      }
+      if (metadata) result.files.push(metadata);
       continue;
     }
 
-    if (file.type.startsWith('video/') && isDocumentSupportedEndpoint(endpoint)) {
-      const videoBuffer = Buffer.from(content, 'base64');
-
-      const validation = await validateVideo(videoBuffer, videoBuffer.length, endpoint);
-      if (!validation.isValid) {
-        throw new Error(`Video validation failed: ${validation.error}`);
-      }
-
-      if (endpoint === EModelEndpoint.google) {
-        const videoPart = {
-          type: 'video',
-          mimeType: file.type,
-          data: content,
-        };
-        result.videos.push(videoPart);
-      }
-
+    if (!file.type.startsWith('video/') || !isDocumentSupportedEndpoint(endpoint)) {
       result.files.push(metadata);
+      continue;
     }
+
+    const videoBuffer = Buffer.from(content, 'base64');
+    const validation = await validateVideo(videoBuffer, videoBuffer.length, endpoint);
+
+    if (!validation.isValid) {
+      throw new Error(`Video validation failed: ${validation.error}`);
+    }
+
+    if (endpoint === EModelEndpoint.google) {
+      result.videos.push({
+        type: 'video',
+        mimeType: file.type,
+        data: content,
+      });
+    }
+
+    result.files.push(metadata);
   }
 
   return result;
 }
-
-module.exports = {
-  encodeAndFormatVideos,
-};
