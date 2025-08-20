@@ -2,7 +2,7 @@ import { addBedrockCacheControl } from './addBedrockCacheControl';
 import { ContentTypes, Agents } from 'librechat-data-provider';
 
 type TestMsg = {
-  role?: 'user' | 'assistant';
+  role?: 'user' | 'assistant' | 'system';
   content?: string | Agents.MessageContentComplex[];
 };
 
@@ -104,5 +104,62 @@ describe('addBedrockCacheControl (Bedrock cache checkpoints)', () => {
     const first = result[0].content as Agents.MessageContentComplex[];
     expect(first[0]).toEqual({ type: ContentTypes.TEXT, text: 'Will be modified' });
     expect(first[1]).toEqual({ cachePoint: { type: 'default' } });
+  });
+
+  it('works with the example from the langchain pr', () => {
+    const messages: TestMsg[] = [
+      {
+        role: 'system',
+        content: [{ type: ContentTypes.TEXT, text: "You're an advanced AI assistant." }],
+      },
+      {
+        role: 'user',
+        content: [{ type: ContentTypes.TEXT, text: 'What is the capital of France?' }],
+      },
+    ];
+
+    const result = addBedrockCacheControl(messages);
+
+    let system = result[0].content as Agents.MessageContentComplex[];
+    let user = result[1].content as Agents.MessageContentComplex[];
+
+    expect(system[0]).toEqual({
+      type: ContentTypes.TEXT,
+      text: "You're an advanced AI assistant.",
+    });
+    expect(system[1]).toEqual({ cachePoint: { type: 'default' } });
+    expect(user[0]).toEqual({
+      type: ContentTypes.TEXT,
+      text: 'What is the capital of France?',
+    });
+    expect(user[1]).toEqual({ cachePoint: { type: 'default' } });
+
+    result.push({
+      role: 'assistant',
+      content: [{ type: ContentTypes.TEXT, text: 'Sure! The capital of France is Paris.' }],
+    });
+
+    const result2 = addBedrockCacheControl(result);
+
+    system = result2[0].content as Agents.MessageContentComplex[];
+    user = result2[1].content as Agents.MessageContentComplex[];
+    const assistant = result2[2].content as Agents.MessageContentComplex[];
+
+    expect(system[0]).toEqual({
+      type: ContentTypes.TEXT,
+      text: "You're an advanced AI assistant.",
+    });
+    expect(system[1]).toEqual({ cachePoint: { type: 'default' } });
+    expect(user[0]).toEqual({
+      type: ContentTypes.TEXT,
+      text: 'What is the capital of France?',
+    });
+    expect(user[1]).toEqual({ cachePoint: { type: 'default' } });
+
+    expect(assistant[0]).toEqual({
+      type: ContentTypes.TEXT,
+      text: 'Sure! The capital of France is Paris.',
+    });
+    expect(assistant[1]).toEqual({ cachePoint: { type: 'default' } });
   });
 });
