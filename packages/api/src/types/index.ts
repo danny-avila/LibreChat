@@ -10,4 +10,5 @@ export * from './mistral';
 export * from './openai';
 export * from './prompts';
 export * from './run';
+export * from './tools';
 export * from './zod';

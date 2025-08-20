@@ -9,6 +9,7 @@ import type {
   TCustomEndpoints,
   TAssistantEndpoint,
 } from 'librechat-data-provider';
+import type { FunctionTool } from './tools';
 
 /**
  * Application configuration object
@@ -60,6 +61,8 @@ export interface AppConfig {
   secureImageLinks?: TCustomConfig['secureImageLinks'];
   /** Processed model specifications */
   modelSpecs?: TCustomConfig['modelSpecs'];
+  /** Available tools */
+  availableTools?: Record<string, FunctionTool>;
   endpoints?: {
     /** OpenAI endpoint configuration */
     openAI?: TEndpoint;
