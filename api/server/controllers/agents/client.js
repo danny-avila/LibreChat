@@ -12,6 +12,7 @@ const {
   createMemoryProcessor,
   encodeAndFormatAudios,
   encodeAndFormatVideos,
+  encodeAndFormatDocuments,
 } = require('@librechat/api');
 const {
   Callback,
@@ -43,7 +44,6 @@ const {
   setMemory,
 } = require('~/models');
 const { getMCPAuthMap, checkCapability, hasCustomUserVars } = require('~/server/services/Config');
-const { encodeAndFormatDocuments } = require('~/server/services/Files/Documents/encode');
 const { addCacheControl, createContextHandlers } = require('~/app/clients/prompts');
 const { initializeAgent } = require('~/server/services/Endpoints/agents/agent');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
@@ -237,6 +237,7 @@ class AgentClient extends BaseClient {
       this.options.req,
       attachments,
       this.options.agent.provider,
+      getStrategyFunctions,
     );
     message.documents =
       documentResult.documents && documentResult.documents.length

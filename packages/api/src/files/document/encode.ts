@@ -1,121 +1,97 @@
-const { EModelEndpoint, isDocumentSupportedEndpoint } = require('librechat-data-provider');
-const { getStrategyFunctions } = require('~/server/services/Files/strategies');
-const { validatePdf } = require('@librechat/api');
+import { EModelEndpoint, isDocumentSupportedEndpoint } from 'librechat-data-provider';
+import { validatePdf } from '@librechat/api';
+import getStream from 'get-stream';
+import type { Request } from 'express';
+import type { IMongoFile } from '@librechat/data-schemas';
+import { Readable } from 'stream';
 
-/**
- * Converts a readable stream to a buffer.
- *
- * @param {NodeJS.ReadableStream} stream - The readable stream to convert.
- * @returns {Promise<Buffer>} - Promise resolving to the buffer.
- */
-async function streamToBuffer(stream) {
-  return new Promise((resolve, reject) => {
-    const chunks = [];
+interface StrategyFunctions {
+  getDownloadStream: (req: Request, filepath: string) => Promise<Readable>;
+}
 
-    stream.on('data', (chunk) => {
-      chunks.push(chunk);
-    });
-
-    stream.on('end', () => {
-      try {
-        const buffer = Buffer.concat(chunks);
-        chunks.length = 0;
-        resolve(buffer);
-      } catch (err) {
-        reject(err);
-      }
-    });
-
-    stream.on('error', (error) => {
-      chunks.length = 0;
-      reject(error);
-    });
-  }).finally(() => {
-    if (stream.destroy && typeof stream.destroy === 'function') {
-      stream.destroy();
-    }
-  });
+interface DocumentResult {
+  documents: Array<{
+    type: string;
+    source?: {
+      type: string;
+      media_type: string;
+      data: string;
+    };
+    cache_control?: { type: string };
+    citations?: { enabled: boolean };
+    filename?: string;
+    file_data?: string;
+    mimeType?: string;
+    data?: string;
+  }>;
+  files: Array<{
+    file_id?: string;
+    temp_file_id?: string;
+    filepath: string;
+    source?: string;
+    filename: string;
+    type: string;
+  }>;
 }
 
 /**
  * Processes and encodes document files for various endpoints
- *
- * @param {Express.Request} req - Express request object
- * @param {MongoFile[]} files - Array of file objects to process
- * @param {string} endpoint - The endpoint identifier (e.g., EModelEndpoint.anthropic)
- * @returns {Promise<{documents: MessageContentDocument[], files: MongoFile[]}>}
+ * @param req - Express request object
+ * @param files - Array of file objects to process
+ * @param endpoint - The endpoint identifier (e.g., EModelEndpoint.anthropic)
+ * @param getStrategyFunctions - Function to get strategy functions
+ * @returns Promise that resolves to documents and file metadata
  */
-async function encodeAndFormatDocuments(req, files, endpoint) {
-  const promises = [];
-  /** @type {Record<FileSources, Pick<ReturnType<typeof getStrategyFunctions>, 'prepareDocumentPayload' | 'getDownloadStream'>>} */
-  const encodingMethods = {};
-  /** @type {{ documents: MessageContentDocument[]; files: MongoFile[] }} */
-  const result = {
-    documents: [],
-    files: [],
-  };
-
-  if (!files || !files.length) {
-    return result;
+export async function encodeAndFormatDocuments(
+  req: Request,
+  files: IMongoFile[],
+  endpoint: EModelEndpoint,
+  getStrategyFunctions: (source: string) => StrategyFunctions,
+): Promise<DocumentResult> {
+  if (!files?.length) {
+    return { documents: [], files: [] };
   }
 
+  const encodingMethods: Record<string, StrategyFunctions> = {};
+  const result: DocumentResult = { documents: [], files: [] };
+
   const documentFiles = files.filter(
-    (file) => file.type === 'application/pdf' || file.type?.startsWith('application/'), // Future: support for other document types
+    (file) => file.type === 'application/pdf' || file.type?.startsWith('application/'),
   );
 
   if (!documentFiles.length) {
     return result;
   }
 
-  for (let file of documentFiles) {
-    /** @type {FileSources} */
-    const source = file.source ?? 'local';
-
+  const processFile = async (file: IMongoFile) => {
     if (file.type !== 'application/pdf' || !isDocumentSupportedEndpoint(endpoint)) {
-      continue;
+      return null;
     }
 
+    const source = file.source ?? 'local';
     if (!encodingMethods[source]) {
       encodingMethods[source] = getStrategyFunctions(source);
     }
 
-    const fileMetadata = {
-      file_id: file.file_id || file._id,
-      temp_file_id: file.temp_file_id,
-      filepath: file.filepath,
-      source: file.source,
-      filename: file.filename,
-      type: file.type,
+    const { getDownloadStream } = encodingMethods[source];
+    const stream = await getDownloadStream(req, file.filepath);
+    const buffer = await getStream.buffer(stream);
+
+    return {
+      file,
+      content: buffer.toString('base64'),
+      metadata: {
+        file_id: file.file_id,
+        temp_file_id: file.temp_file_id,
+        filepath: file.filepath,
+        source: file.source,
+        filename: file.filename,
+        type: file.type,
+      },
     };
+  };
 
-    promises.push([file, fileMetadata]);
-  }
-
-  const results = await Promise.allSettled(
-    promises.map(async ([file, fileMetadata]) => {
-      if (!file || !fileMetadata) {
-        return { file: null, content: null, metadata: fileMetadata };
-      }
-
-      try {
-        const source = file.source ?? 'local';
-        const { getDownloadStream } = encodingMethods[source];
-
-        const stream = await getDownloadStream(req, file.filepath);
-        const buffer = await streamToBuffer(stream);
-        const documentContent = buffer.toString('base64');
-
-        return {
-          file,
-          content: documentContent,
-          metadata: fileMetadata,
-        };
-      } catch (error) {
-        console.error(`Error processing document ${file.filename}:`, error);
-        return { file, content: null, metadata: fileMetadata };
-      }
-    }),
-  );
+  const results = await Promise.allSettled(documentFiles.map(processFile));
 
   for (const settledResult of results) {
     if (settledResult.status === 'rejected') {
@@ -123,12 +99,13 @@ async function encodeAndFormatDocuments(req, files, endpoint) {
       continue;
     }
 
-    const { file, content, metadata } = settledResult.value;
+    const processed = settledResult.value;
+    if (!processed) continue;
+
+    const { file, content, metadata } = processed;
 
     if (!content || !file) {
-      if (metadata) {
-        result.files.push(metadata);
-      }
+      if (metadata) result.files.push(metadata);
       continue;
     }
 
@@ -141,7 +118,7 @@ async function encodeAndFormatDocuments(req, files, endpoint) {
       }
 
       if (endpoint === EModelEndpoint.anthropic) {
-        const documentPart = {
+        result.documents.push({
           type: 'document',
           source: {
             type: 'base64',
@@ -150,22 +127,19 @@ async function encodeAndFormatDocuments(req, files, endpoint) {
           },
           cache_control: { type: 'ephemeral' },
           citations: { enabled: true },
-        };
-        result.documents.push(documentPart);
+        });
       } else if (endpoint === EModelEndpoint.openAI) {
-        const documentPart = {
+        result.documents.push({
           type: 'input_file',
           filename: file.filename,
           file_data: `data:application/pdf;base64,${content}`,
-        };
-        result.documents.push(documentPart);
+        });
       } else if (endpoint === EModelEndpoint.google) {
-        const documentPart = {
+        result.documents.push({
           type: 'document',
           mimeType: 'application/pdf',
           data: content,
-        };
-        result.documents.push(documentPart);
+        });
       }
 
       result.files.push(metadata);
@@ -174,8 +148,3 @@ async function encodeAndFormatDocuments(req, files, endpoint) {
 
   return result;
 }
-
-module.exports = {
-  encodeAndFormatDocuments,
-  streamToBuffer,
-};
