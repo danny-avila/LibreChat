@@ -4,6 +4,7 @@ const {
   getToolkitKey,
   checkPluginAuth,
   filterUniquePlugins,
+  convertMCPToolToPlugin,
   convertMCPToolsToPlugins,
 } = require('@librechat/api');
 const {
@@ -107,16 +108,20 @@ const getAvailableTools = async (req, res) => {
     if (customConfig?.mcpServers != null) {
       try {
         const mcpManager = getMCPManager();
-        const mcpTools = await mcpManager.loadAllManifestTools(userId);
-        const mcpToolsRecord = mcpTools.reduce((acc, tool) => {
-          pluginManifest.push(tool);
-          acc[tool.pluginKey] = tool;
-          if (!toolDefinitions[tool.pluginKey]) {
-            toolDefinitions[tool.pluginKey] = tool;
+        const mcpTools = await mcpManager.getAllToolFunctions(userId);
+        prelimCachedTools = prelimCachedTools ?? {};
+        for (const [toolKey, toolData] of Object.entries(mcpTools)) {
+          const plugin = convertMCPToolToPlugin({
+            toolKey,
+            toolData,
+            customConfig,
+          });
+          if (plugin) {
+            pluginManifest.push(plugin);
           }
-          return acc;
-        }, prelimCachedTools ?? {});
-        await mergeUserTools({ userId, cachedUserTools, userTools: mcpToolsRecord });
+          prelimCachedTools[toolKey] = toolData;
+        }
+        await mergeUserTools({ userId, cachedUserTools, userTools: prelimCachedTools });
       } catch (error) {
         logger.error(
           '[getAvailableTools] Error loading MCP Tools, servers may still be initializing:',
