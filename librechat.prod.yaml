@@ -7,8 +7,8 @@ endpoints:
   # Google/Gemini endpoint configuration
   google:
     streamRate: 15  # Slower stream rate for better stability in K8s
-    timeoutMs: 600000  # 10 minute timeout for long requests
-    streamingTimeoutMs: 300000  # 5 minute streaming timeout
+    timeoutMs: 6000000  # 100 minute timeout for long requests
+    streamingTimeoutMs: 3000000  # 50 minute streaming timeout
     maxRetries: 3  # Retry failed requests
     retryDelay: 1000  # 1 second delay between retries
 
