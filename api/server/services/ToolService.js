@@ -534,7 +534,7 @@ async function loadAgentTools({ req, res, agent, tool_resources, openAIApiKey })
   if (await hasCustomUserVars()) {
     userMCPAuthMap = await getMCPAuthMap({
       tools: agent.tools,
-      userId: this.options.req.user.id,
+      userId: req.user.id,
       findPluginAuthsByKeys,
     });
   }
