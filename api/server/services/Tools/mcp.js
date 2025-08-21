@@ -13,10 +13,12 @@ const { getLogStores } = require('~/cache');
  * @param {Record<string, Record<string, string>>} [params.userMCPAuthMap]
  */
 async function reinitMCPServer({ req, toolKey, serverName, userMCPAuthMap }) {
-  /** @type {import('@librechat/api').MCPConnection | null} */
+  /** @type {MCPConnection | null} */
   let userConnection = null;
-  /** @type {import('@librechat/api').LCFunctionTool | null} */
+  /** @type {LCFunctionTool | null} */
   let toolDefinition = null;
+  /** @type {ReturnType<MCPConnection['fetchTools']> | null} */
+  let tools = null;
   let oauthRequired = false;
   let oauthUrl = null;
   try {
@@ -73,7 +75,7 @@ async function reinitMCPServer({ req, toolKey, serverName, userMCPAuthMap }) {
     }
 
     if (userConnection && !oauthRequired) {
-      const tools = await userConnection.fetchTools();
+      tools = await userConnection.fetchTools();
       const availableTools = await updateMCPUserTools({
         userId: req.user.id,
         serverName,
@@ -103,6 +105,7 @@ async function reinitMCPServer({ req, toolKey, serverName, userMCPAuthMap }) {
       oauthRequired,
       serverName,
       oauthUrl,
+      tools,
     };
     logger.debug(`[MCP Reinitialize] Response for ${serverName}:`, result);
     return result;

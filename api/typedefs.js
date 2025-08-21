@@ -1116,6 +1116,18 @@
  */
 
 /**
+ * @exports MCPConnection
+ * @typedef {import('@librechat/api').MCPConnection} MCPConnection
+ * @memberof typedefs
+ */
+
+/**
+ * @exports LCFunctionTool
+ * @typedef {import('@librechat/api').LCFunctionTool} LCFunctionTool
+ * @memberof typedefs
+ */
+
+/**
  * @exports FlowStateManager
  * @typedef {import('@librechat/api').FlowStateManager} FlowStateManager
  * @memberof typedefs
