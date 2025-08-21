@@ -59,7 +59,7 @@ function addTraceContext(logObject = {}) {
       },
     };
   }
-  
+
   return logObject;
 }
 
