@@ -1,3 +1,6 @@
+// Initialize OpenTelemetry tracing FIRST, before any other imports
+require('../tracing/index');
+
 require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
@@ -60,6 +63,11 @@ const startServer = async () => {
   app.use(cors());
   app.use(cookieParser());
 
+  // Add OpenTelemetry tracing middleware
+  const { tracingMiddleware, llmTracingMiddleware } = require('../tracing/middleware').default;
+  app.use(tracingMiddleware);
+  app.use(llmTracingMiddleware);
+
   if (!isEnabled(DISABLE_COMPRESSION)) {
     app.use(compression());
   } else {
@@ -120,6 +128,10 @@ const startServer = async () => {
 
   app.use('/api/tags', routes.tags);
   app.use('/api/mcp', routes.mcp);
+
+  // Add OpenTelemetry error tracking middleware before ErrorController
+  const { errorTracingMiddleware } = require('../tracing/middleware').default;
+  app.use(errorTracingMiddleware);
 
   app.use(ErrorController);
 
