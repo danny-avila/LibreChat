@@ -1,5 +1,5 @@
 # Production LibreChat Configuration
-version: 1.0.9
+version: 1.2.1
 cache: true
 
 # Definition of custom endpoints
@@ -14,8 +14,8 @@ fileConfig:
   endpoints:
     google:
       fileLimit: 20
-      fileSizeLimit: "100MB"
-      totalSizeLimit: "1GB"
+      fileSizeLimit: 100  # Maximum size for an individual file in MB
+      totalSizeLimit: 1000  # Maximum total size for all files in a single request in MB
       supportedMimeTypes:
         - "image/jpeg"
         - "image/png"
@@ -26,11 +26,8 @@ fileConfig:
         - "text/csv"
         - "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         - "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-
-# RAG API Configuration
-ragConfig:
-  enabled: true
-  endpoint: "http://rag-api:8000"
+  serverFileSizeLimit: 500  # Global server file size limit in MB
+  avatarSizeLimit: 2  # Limit for user avatar image size in MB
 
 # Interface configuration
 interface:
