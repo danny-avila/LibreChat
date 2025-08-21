@@ -13,6 +13,7 @@ function isHardcodedAdmin(username) {
     return false;
   }
 
+  // example: HARDCODED_ADMIN_USERNAMES=username1,username2,username3
   const hardcodedAdminUsernames = process.env.HARDCODED_ADMIN_USERNAMES;
   if (hardcodedAdminUsernames) {
     const adminUsernames = hardcodedAdminUsernames.split(',').map(username => username.trim().toLowerCase());
