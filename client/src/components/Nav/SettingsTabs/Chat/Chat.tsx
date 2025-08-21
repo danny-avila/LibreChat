@@ -76,6 +76,13 @@ const toggleSwitchConfigs = [
     hoverCardText: undefined,
     key: 'modularChat',
   },
+  {
+    stateAtom: store.showCostTracking,
+    localizationKey: 'com_nav_show_cost_tracking',
+    switchId: 'showCostTracking',
+    hoverCardText: 'com_nav_info_show_cost_tracking',
+    key: 'showCostTracking',
+  },
 ];
 
 function Chat() {

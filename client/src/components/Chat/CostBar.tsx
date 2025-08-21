@@ -1,7 +1,9 @@
+import { useRecoilValue } from 'recoil';
 import { ArrowIcon } from '@librechat/client';
 import type { TConversationCosts } from 'librechat-data-provider';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
+import store from '~/store';
 
 interface CostBarProps {
   conversationCosts: TConversationCosts;
@@ -10,7 +12,9 @@ interface CostBarProps {
 
 export default function CostBar({ conversationCosts, showCostBar }: CostBarProps) {
   const localize = useLocalize();
-  if (!conversationCosts || !conversationCosts.totals) {
+  const showCostTracking = useRecoilValue(store.showCostTracking);
+
+  if (!showCostTracking || !conversationCosts || !conversationCosts.totals) {
     return null;
   }
 

@@ -64,10 +64,10 @@ const MessageRender = memo(
     });
     const maximizeChatSpace = useRecoilValue(store.maximizeChatSpace);
     const fontSize = useRecoilValue(store.fontSize);
-    const convoId = conversation?.conversationId ?? '';
+    const showCostTracking = useRecoilValue(store.showCostTracking);
 
     const perMessageCost = useMemo(() => {
-      if (!costs || !costs.perMessage || !msg?.messageId) {
+      if (!showCostTracking || !costs || !costs.perMessage || !msg?.messageId) {
         return null;
       }
       const entry = costs.perMessage.find((p) => p.messageId === msg.messageId);
@@ -75,7 +75,7 @@ const MessageRender = memo(
         return null;
       }
       return entry;
-    }, [costs, msg?.messageId]);
+    }, [showCostTracking, costs, msg?.messageId]);
 
     const handleRegenerateMessage = useCallback(() => regenerateMessage(), [regenerateMessage]);
     const hasNoChildren = !(msg?.children?.length ?? 0);

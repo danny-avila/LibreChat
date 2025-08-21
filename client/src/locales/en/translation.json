@@ -568,6 +568,8 @@
   "com_nav_settings": "Settings",
   "com_nav_shared_links": "Shared links",
   "com_nav_show_code": "Always show code when using code interpreter",
+  "com_nav_show_cost_tracking": "Show cost tracking",
+  "com_nav_info_show_cost_tracking": "Display conversation costs and per-message cost breakdowns",
   "com_nav_show_thinking": "Open Thinking Dropdowns by Default",
   "com_nav_slash_command": "/-Command",
   "com_nav_slash_command_description": "Toggle command \"/\" for selecting a prompt via keyboard",
