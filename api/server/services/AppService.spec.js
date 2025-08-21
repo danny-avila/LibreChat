@@ -246,7 +246,7 @@ describe('AppService', () => {
   });
 
   it('should load and format tools accurately with defined structure', async () => {
-    const { loadAndFormatTools } = require('./ToolService');
+    const { loadAndFormatTools } = require('./start/tools');
 
     const result = await AppService();
 
@@ -254,8 +254,6 @@ describe('AppService', () => {
       adminFilter: undefined,
       adminIncluded: undefined,
       directory: expect.anything(),
-      imageOutputType: expect.any(String),
-      fileStrategy: expect.any(String),
     });
 
     // Verify tools are included in the returned config

@@ -34,7 +34,7 @@ describe('tempChatRetention', () => {
 
     it('should use config value when set', () => {
       const config: Partial<AppConfig> = {
-        interface: {
+        interfaceConfig: {
           temporaryChatRetention: 12,
         },
       };
@@ -45,7 +45,7 @@ describe('tempChatRetention', () => {
     it('should prioritize config over environment variable', () => {
       process.env.TEMP_CHAT_RETENTION_HOURS = '48';
       const config: Partial<AppConfig> = {
-        interface: {
+        interfaceConfig: {
           temporaryChatRetention: 12,
         },
       };
@@ -55,7 +55,7 @@ describe('tempChatRetention', () => {
 
     it('should enforce minimum retention period', () => {
       const config: Partial<AppConfig> = {
-        interface: {
+        interfaceConfig: {
           temporaryChatRetention: 0,
         },
       };
@@ -65,7 +65,7 @@ describe('tempChatRetention', () => {
 
     it('should enforce maximum retention period', () => {
       const config: Partial<AppConfig> = {
-        interface: {
+        interfaceConfig: {
           temporaryChatRetention: 10000,
         },
       };
@@ -81,7 +81,7 @@ describe('tempChatRetention', () => {
 
     it('should handle invalid config value', () => {
       const config: Partial<AppConfig> = {
-        interface: {
+        interfaceConfig: {
           temporaryChatRetention: 'invalid' as unknown as number,
         },
       };
@@ -104,7 +104,7 @@ describe('tempChatRetention', () => {
 
     it('should create expiration date with custom retention period', () => {
       const config: Partial<AppConfig> = {
-        interface: {
+        interfaceConfig: {
           temporaryChatRetention: 12,
         },
       };

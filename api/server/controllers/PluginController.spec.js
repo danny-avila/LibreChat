@@ -6,6 +6,7 @@ jest.mock('@librechat/data-schemas', () => ({
   logger: {
     debug: jest.fn(),
     error: jest.fn(),
+    warn: jest.fn(),
   },
 }));
 
@@ -16,14 +17,14 @@ jest.mock('~/server/services/Config', () => ({
   mergeUserTools: jest.fn(),
 }));
 
-jest.mock('~/server/services/ToolService', () => ({
-  getToolkitKey: jest.fn(),
+jest.mock('~/server/services/start/tools', () => ({
   loadAndFormatTools: jest.fn(),
 }));
 
 jest.mock('~/config', () => ({
   getMCPManager: jest.fn(() => ({
-    loadAllManifestTools: jest.fn().mockResolvedValue([]),
+    getAllToolFunctions: jest.fn().mockResolvedValue({}),
+    getRawConfig: jest.fn().mockReturnValue({}),
   })),
   getFlowStateManager: jest.fn(),
 }));
@@ -38,7 +39,7 @@ jest.mock('~/cache', () => ({
 }));
 
 const { getAvailableTools, getAvailablePluginsController } = require('./PluginController');
-const { loadAndFormatTools } = require('~/server/services/ToolService');
+const { loadAndFormatTools } = require('~/server/services/start/tools');
 
 describe('PluginController', () => {
   let mockReq, mockRes, mockCache;
@@ -88,6 +89,7 @@ describe('PluginController', () => {
 
       expect(mockRes.status).toHaveBeenCalledWith(200);
       const responseData = mockRes.json.mock.calls[0][0];
+      // The real filterUniquePlugins should have removed the duplicate
       expect(responseData).toHaveLength(2);
       expect(responseData[0].pluginKey).toBe('key1');
       expect(responseData[1].pluginKey).toBe('key2');
@@ -104,7 +106,7 @@ describe('PluginController', () => {
       await getAvailablePluginsController(mockReq, mockRes);
 
       const responseData = mockRes.json.mock.calls[0][0];
-      // checkPluginAuth returns false, so authenticated property is not added
+      // The real checkPluginAuth returns false for plugins without authConfig, so authenticated property is not added
       expect(responseData[0].authenticated).toBeUndefined();
     });
 
@@ -128,8 +130,13 @@ describe('PluginController', () => {
       ];
 
       require('~/app/clients/tools').availableTools.push(...mockPlugins);
-      mockReq.app.locals.includedTools = ['key1'];
       mockCache.get.mockResolvedValue(null);
+
+      // Update getAppConfig to return includedTools
+      getAppConfig.mockResolvedValue({
+        filteredTools: [],
+        includedTools: ['key1'],
+      });
 
       await getAvailablePluginsController(mockReq, mockRes);
 
@@ -154,20 +161,26 @@ describe('PluginController', () => {
 
       mockCache.get.mockResolvedValue(null);
       getCachedTools.mockResolvedValueOnce(mockUserTools);
-      getCustomConfig.mockResolvedValue(null);
+      getAppConfig.mockResolvedValue({ mcpConfig: null });
 
       // Mock second call to return tool definitions
       getCachedTools.mockResolvedValueOnce(mockUserTools);
 
+      // Mock loadAndFormatTools to ensure tools are available
+      loadAndFormatTools.mockReturnValue(mockUserTools);
+
       await getAvailableTools(mockReq, mockRes);
 
+      expect(mockRes.status).toHaveBeenCalledWith(200);
       const responseData = mockRes.json.mock.calls[0][0];
-      // convertMCPToolsToPlugins should have converted the tool
+      expect(responseData).toBeDefined();
+      expect(Array.isArray(responseData)).toBe(true);
       expect(responseData.length).toBeGreaterThan(0);
       const convertedTool = responseData.find(
         (tool) => tool.pluginKey === `tool1${Constants.mcp_delimiter}server1`,
       );
       expect(convertedTool).toBeDefined();
+      // The real convertMCPToolsToPlugins extracts the name from the delimiter
       expect(convertedTool.name).toBe('tool1');
     });
 
@@ -190,15 +203,17 @@ describe('PluginController', () => {
 
       mockCache.get.mockResolvedValue(mockCachedPlugins);
       getCachedTools.mockResolvedValueOnce(mockUserTools);
-      getCustomConfig.mockResolvedValue(null);
+      getAppConfig.mockResolvedValue({ mcpConfig: null });
 
       // Mock second call to return tool definitions
       getCachedTools.mockResolvedValueOnce(mockUserTools);
 
       await getAvailableTools(mockReq, mockRes);
 
+      expect(mockRes.status).toHaveBeenCalledWith(200);
       const responseData = mockRes.json.mock.calls[0][0];
-      // Should have deduplicated tools with same pluginKey
+      expect(Array.isArray(responseData)).toBe(true);
+      // The real filterUniquePlugins should have deduplicated tools with same pluginKey
       const userToolCount = responseData.filter((tool) => tool.pluginKey === 'user-tool').length;
       expect(userToolCount).toBe(1);
     });
@@ -216,10 +231,22 @@ describe('PluginController', () => {
 
       mockCache.get.mockResolvedValue(null);
       getCachedTools.mockResolvedValue(null);
-      getCustomConfig.mockResolvedValue(null);
+      getAppConfig.mockResolvedValue({ mcpConfig: null });
 
       // Mock loadAndFormatTools to return tool definitions including our tool
       loadAndFormatTools.mockReturnValue({
+        tool1: {
+          type: 'function',
+          function: {
+            name: 'tool1',
+            description: 'Tool 1',
+            parameters: {},
+          },
+        },
+      });
+
+      // Mock second getCachedTools call to return the tool definitions
+      getCachedTools.mockResolvedValueOnce(null).mockResolvedValueOnce({
         tool1: {
           type: 'function',
           function: {
@@ -237,7 +264,7 @@ describe('PluginController', () => {
       expect(Array.isArray(responseData)).toBe(true);
       const tool = responseData.find((t) => t.pluginKey === 'tool1');
       expect(tool).toBeDefined();
-      // checkPluginAuth returns false, so authenticated property is not added
+      // The real checkPluginAuth returns false for plugins without authConfig, so authenticated property is not added
       expect(tool.authenticated).toBeUndefined();
     });
 
@@ -260,7 +287,7 @@ describe('PluginController', () => {
 
       mockCache.get.mockResolvedValue(null);
       getCachedTools.mockResolvedValue(null);
-      getCustomConfig.mockResolvedValue(null);
+      getAppConfig.mockResolvedValue({ mcpConfig: null });
 
       // Mock loadAndFormatTools to return tool definitions
       loadAndFormatTools.mockReturnValue({
@@ -299,23 +326,24 @@ describe('PluginController', () => {
         },
       };
 
-      // Mock the MCP manager to return tools
+      // Mock the MCP manager to return tools and server config
       const mockMCPManager = {
         getAllToolFunctions: jest.fn().mockResolvedValue(functionTools),
+        getRawConfig: jest.fn().mockReturnValue(serverConfig),
       };
       require('~/config').getMCPManager.mockReturnValue(mockMCPManager);
 
       getCachedTools.mockResolvedValueOnce({});
 
-      // Mock loadAndFormatTools to return empty object since these are MCP tools
-      loadAndFormatTools.mockReturnValue({});
+      // Mock loadAndFormatTools to return the MCP tools as tool definitions
+      loadAndFormatTools.mockReturnValue(functionTools);
 
-      // Mock the MCP manager to return the server config
-      const mockMCPManager = {
-        loadManifestTools: jest.fn().mockResolvedValue([]),
-        getRawConfig: jest.fn().mockReturnValue(serverConfig),
-      };
-      require('~/config').getMCPManager.mockReturnValue(mockMCPManager);
+      // Mock getAppConfig to return the mcpConfig
+      getAppConfig.mockResolvedValue({
+        mcpConfig: {
+          'test-server': serverConfig,
+        },
+      });
 
       getCachedTools.mockResolvedValueOnce(functionTools);
 
@@ -368,6 +396,11 @@ describe('PluginController', () => {
       // Mock the MCP manager to return tools
       const mockMCPManager = {
         getAllToolFunctions: jest.fn().mockResolvedValue(mcpToolFunctions),
+        getRawConfig: jest.fn().mockReturnValue({
+          customUserVars: {
+            API_KEY: { title: 'API Key', description: 'Your API key' },
+          },
+        }),
       };
       require('~/config').getMCPManager.mockReturnValue(mockMCPManager);
 
@@ -377,15 +410,17 @@ describe('PluginController', () => {
       // First call returns user tools (empty in this case)
       getCachedTools.mockResolvedValueOnce({});
 
-      // Mock loadAndFormatTools to return empty object for MCP tools
-      loadAndFormatTools.mockReturnValue({});
+      // Mock loadAndFormatTools to return the MCP tool definitions
+      loadAndFormatTools.mockReturnValue(mcpToolFunctions);
 
       // Second call returns tool definitions including our MCP tool
       getCachedTools.mockResolvedValueOnce(mcpToolFunctions);
 
       await getAvailableTools(mockReq, mockRes);
 
+      expect(mockRes.status).toHaveBeenCalledWith(200);
       const responseData = mockRes.json.mock.calls[0][0];
+      expect(Array.isArray(responseData)).toBe(true);
 
       // Find the MCP tool in the response
       const mcpTool = responseData.find(
@@ -422,7 +457,7 @@ describe('PluginController', () => {
     it('should handle null cachedTools and cachedUserTools', async () => {
       mockCache.get.mockResolvedValue(null);
       getCachedTools.mockResolvedValue(null);
-      getCustomConfig.mockResolvedValue(null);
+      getAppConfig.mockResolvedValue({ mcpConfig: null });
 
       // Mock loadAndFormatTools to return empty object when getCachedTools returns null
       loadAndFormatTools.mockReturnValue({});
@@ -431,11 +466,12 @@ describe('PluginController', () => {
 
       // Should handle null values gracefully
       expect(mockRes.status).toHaveBeenCalledWith(200);
+      expect(mockRes.json).toHaveBeenCalledWith([]);
     });
 
     it('should handle when getCachedTools returns undefined', async () => {
       mockCache.get.mockResolvedValue(null);
-      getCustomConfig.mockResolvedValue(null);
+      getAppConfig.mockResolvedValue({ mcpConfig: null });
 
       // Mock loadAndFormatTools to return empty object when getCachedTools returns undefined
       loadAndFormatTools.mockReturnValue({});
@@ -448,6 +484,7 @@ describe('PluginController', () => {
 
       // Should handle undefined values gracefully
       expect(mockRes.status).toHaveBeenCalledWith(200);
+      expect(mockRes.json).toHaveBeenCalledWith([]);
     });
 
     it('should handle cachedToolsArray and userPlugins both being defined', async () => {
@@ -465,8 +502,15 @@ describe('PluginController', () => {
       };
 
       mockCache.get.mockResolvedValue(cachedTools);
-      getCachedTools.mockResolvedValue(userTools);
-      getCustomConfig.mockResolvedValue(null);
+      getCachedTools.mockResolvedValueOnce(userTools);
+      getAppConfig.mockResolvedValue({ mcpConfig: null });
+
+      // The controller expects a second call to getCachedTools
+      getCachedTools.mockResolvedValueOnce({
+        'cached-tool': { type: 'function', function: { name: 'cached-tool' } },
+        [`user-tool${Constants.mcp_delimiter}server1`]:
+          userTools[`user-tool${Constants.mcp_delimiter}server1`],
+      });
 
       await getAvailableTools(mockReq, mockRes);
 
@@ -478,8 +522,20 @@ describe('PluginController', () => {
 
     it('should handle empty toolDefinitions object', async () => {
       mockCache.get.mockResolvedValue(null);
-      getCachedTools.mockResolvedValueOnce({}).mockResolvedValueOnce({});
-      getCustomConfig.mockResolvedValue(null);
+      // Reset getCachedTools to ensure clean state
+      getCachedTools.mockReset();
+      getCachedTools.mockResolvedValue({});
+      getAppConfig.mockResolvedValue({}); // No mcpConfig at all
+
+      // Ensure no plugins are available
+      require('~/app/clients/tools').availableTools.length = 0;
+
+      // Reset MCP manager to default state
+      const mockMCPManager = {
+        getAllToolFunctions: jest.fn().mockResolvedValue({}),
+        getRawConfig: jest.fn().mockReturnValue({}),
+      };
+      require('~/config').getMCPManager.mockReturnValue(mockMCPManager);
 
       await getAvailableTools(mockReq, mockRes);
 
@@ -488,8 +544,8 @@ describe('PluginController', () => {
     });
 
     it('should handle MCP tools without customUserVars', async () => {
-      const customConfig = {
-        mcpServers: {
+      const appConfig = {
+        mcpConfig: {
           'test-server': {
             // No customUserVars defined
           },
@@ -498,35 +554,51 @@ describe('PluginController', () => {
 
       const mockUserTools = {
         [`tool1${Constants.mcp_delimiter}test-server`]: {
-          function: { name: 'tool1', description: 'Tool 1' },
+          type: 'function',
+          function: {
+            name: `tool1${Constants.mcp_delimiter}test-server`,
+            description: 'Tool 1',
+            parameters: { type: 'object', properties: {} },
+          },
         },
       };
 
-      // Mock the MCP manager to return server config without customUserVars
+      // Mock the MCP manager to return the tools
       const mockMCPManager = {
-        loadManifestTools: jest.fn().mockResolvedValue([]),
-        getRawConfig: jest.fn().mockReturnValue(customConfig.mcpServers['test-server']),
+        getAllToolFunctions: jest.fn().mockResolvedValue(mockUserTools),
+        getRawConfig: jest.fn().mockReturnValue({
+          // No customUserVars defined
+        }),
       };
       require('~/config').getMCPManager.mockReturnValue(mockMCPManager);
 
       mockCache.get.mockResolvedValue(null);
-      getAppConfig.mockResolvedValue({
-        mcpConfig: customConfig.mcpServers,
-        filteredTools: [],
-        includedTools: [],
-      });
+      getAppConfig.mockResolvedValue(appConfig);
+      getCachedTools.mockResolvedValueOnce({});
+
+      // Mock loadAndFormatTools to return the tool definitions
+      loadAndFormatTools.mockReturnValue(mockUserTools);
+
       getCachedTools.mockResolvedValueOnce(mockUserTools);
 
-      getCachedTools.mockResolvedValueOnce({
-        [`tool1${Constants.mcp_delimiter}test-server`]: true,
-      });
+      // Ensure no plugins in availableTools for clean test
+      require('~/app/clients/tools').availableTools.length = 0;
 
       await getAvailableTools(mockReq, mockRes);
 
+      expect(mockRes.status).toHaveBeenCalledWith(200);
       const responseData = mockRes.json.mock.calls[0][0];
-      expect(responseData[0].authenticated).toBe(true);
-      // The actual implementation doesn't set authConfig on tools without customUserVars
-      expect(responseData[0].authConfig).toEqual([]);
+      expect(Array.isArray(responseData)).toBe(true);
+      expect(responseData.length).toBeGreaterThan(0);
+
+      const mcpTool = responseData.find(
+        (tool) => tool.pluginKey === `tool1${Constants.mcp_delimiter}test-server`,
+      );
+
+      expect(mcpTool).toBeDefined();
+      expect(mcpTool.authenticated).toBe(true);
+      // The actual implementation sets authConfig to empty array when no customUserVars
+      expect(mcpTool.authConfig).toEqual([]);
     });
 
     it('should handle undefined filteredTools and includedTools', async () => {
@@ -561,7 +633,7 @@ describe('PluginController', () => {
 
       mockCache.get.mockResolvedValue(null);
       getCachedTools.mockResolvedValue({});
-      getCustomConfig.mockResolvedValue(null);
+      getAppConfig.mockResolvedValue({ mcpConfig: null });
 
       // Mock loadAndFormatTools to return an empty object when toolDefinitions is null
       loadAndFormatTools.mockReturnValue({});

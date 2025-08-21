@@ -116,7 +116,7 @@ const getAvailableTools = async (req, res) => {
           const plugin = convertMCPToolToPlugin({
             toolKey,
             toolData,
-            customConfig,
+            mcpManager,
           });
           if (plugin) {
             pluginManifest.push(plugin);

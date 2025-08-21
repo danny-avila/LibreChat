@@ -112,10 +112,10 @@ export function convertMCPToolToPlugin({
  */
 export function convertMCPToolsToPlugins({
   functionTools,
-  customConfig,
+  mcpManager,
 }: {
   functionTools?: LCAvailableTools;
-  customConfig?: Partial<TCustomConfig> | null;
+  mcpManager?: MCPManager;
 }): TPlugin[] | undefined {
   if (!functionTools || typeof functionTools !== 'object') {
     return;
@@ -123,7 +123,7 @@ export function convertMCPToolsToPlugins({
 
   const plugins: TPlugin[] = [];
   for (const [toolKey, toolData] of Object.entries(functionTools)) {
-    const plugin = convertMCPToolToPlugin({ toolKey, toolData, customConfig });
+    const plugin = convertMCPToolToPlugin({ toolKey, toolData, mcpManager });
     if (plugin) {
       plugins.push(plugin);
     }
