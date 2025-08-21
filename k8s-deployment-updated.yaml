@@ -1,0 +1,89 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: emeritus-chatapp-api
+  namespace: emeritus-chatapp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: emeritus-chatapp-api
+  template:
+    metadata:
+      labels:
+        app: emeritus-chatapp-api
+      annotations:
+        cluster-autoscaler.kubernetes.io/safe-to-evict: "false"
+    spec:
+      containers:
+      - name: emeritus-chatapp
+        image: ${REGION}-docker.pkg.dev/$PROJECT_ID/$AR_REPO/emeritus-chatapp:v1.2
+        ports:
+        - containerPort: 3080
+        envFrom:
+        - secretRef:
+            name: emeritus-chatapp-env
+        env:
+        - name: GOOGLE_REQUEST_TIMEOUT
+          value: "600000"  # 10 minutes
+        - name: GOOGLE_STREAMING_TIMEOUT
+          value: "300000"  # 5 minutes for streaming
+        - name: NODE_OPTIONS
+          value: "--max-old-space-size=2048"
+        volumeMounts:
+        - name: uploads-storage
+          mountPath: /app/uploads
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "4Gi"
+            cpu: "2000m"
+        livenessProbe:
+          httpGet:
+            path: /api/health
+            port: 3080
+          initialDelaySeconds: 120
+          periodSeconds: 60
+          timeoutSeconds: 30
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /api/health
+            port: 3080
+          initialDelaySeconds: 90
+          periodSeconds: 30
+          timeoutSeconds: 15
+          failureThreshold: 3
+      volumes:
+      - name: uploads-storage
+        persistentVolumeClaim:
+          claimName: emeritus-chatapp-uploads-pvc
+      terminationGracePeriodSeconds: 60
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: emeritus-chatapp-api
+  namespace: emeritus-chatapp
+  annotations:
+    cloud.google.com/backend-config: '{"default": "emeritus-chatapp-backendconfig"}'
+spec:
+  selector:
+    app: emeritus-chatapp-api
+  ports:
+    - protocol: TCP
+      port: 3080
+      targetPort: 3080
+  type: ClusterIP
+---
+apiVersion: cloud.google.com/v1
+kind: BackendConfig
+metadata:
+  name: emeritus-chatapp-backendconfig
+  namespace: emeritus-chatapp
+spec:
+  timeoutSec: 600  # 10 minutes backend timeout
+  connectionDraining:
+    drainingTimeoutSec: 60

@@ -1,13 +1,16 @@
 # Production LibreChat Configuration
-version: 1.2.1
+version: 1.2.8
 cache: true
 
 # Definition of custom endpoints
 endpoints:
   # Google/Gemini endpoint configuration
   google:
-    streamRate: 5  # Lower stream rate for better stability with long responses
-    timeoutMs: 300000  # 5 minute timeout for long requests (300 seconds)
+    streamRate: 15  # Slower stream rate for better stability in K8s
+    timeoutMs: 600000  # 10 minute timeout for long requests
+    streamingTimeoutMs: 300000  # 5 minute streaming timeout
+    maxRetries: 3  # Retry failed requests
+    retryDelay: 1000  # 1 second delay between retries
 
 # File configuration
 fileConfig:
