@@ -5,10 +5,10 @@ import type { TMessage, TMessageContentParts, TConversationCosts } from 'librech
 import type { TMessageProps, TMessageIcon } from '~/common';
 import ContentParts from '~/components/Chat/Messages/Content/ContentParts';
 import PlaceholderRow from '~/components/Chat/Messages/ui/PlaceholderRow';
+import { useAttachments, useMessageActions, useLocalize } from '~/hooks';
 import SiblingSwitch from '~/components/Chat/Messages/SiblingSwitch';
 import HoverButtons from '~/components/Chat/Messages/HoverButtons';
 import MessageIcon from '~/components/Chat/Messages/MessageIcon';
-import { useAttachments, useMessageActions } from '~/hooks';
 import SubRow from '~/components/Chat/Messages/SubRow';
 import { cn, logger } from '~/utils';
 import store from '~/store';
@@ -37,6 +37,7 @@ const ContentRender = memo(
     isSubmittingFamily = false,
     costs,
   }: ContentRenderProps) => {
+    const localize = useLocalize();
     const { attachments, searchResults } = useAttachments({
       messageId: msg?.messageId,
       attachments: msg?.attachments,
@@ -180,7 +181,9 @@ const ContentRender = memo(
                     ) : (
                       <ArrowIcon direction="down" className="inline" />
                     )}
-                    {perMessageCost.tokenCount}t
+                    {localize('com_ui_token_abbreviation', {
+                      0: perMessageCost.tokenCount,
+                    })}
                   </span>
                 )}
                 <span className="whitespace-pre">${Math.abs(perMessageCost.usd).toFixed(6)}</span>

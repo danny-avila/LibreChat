@@ -1,5 +1,6 @@
 import { ArrowIcon } from '@librechat/client';
 import type { TConversationCosts } from 'librechat-data-provider';
+import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
 interface CostBarProps {
@@ -8,6 +9,7 @@ interface CostBarProps {
 }
 
 export default function CostBar({ conversationCosts, showCostBar }: CostBarProps) {
+  const localize = useLocalize();
   if (!conversationCosts || !conversationCosts.totals) {
     return null;
   }
@@ -23,18 +25,26 @@ export default function CostBar({ conversationCosts, showCostBar }: CostBarProps
         <div>
           <div>
             <ArrowIcon direction="up" />
-            {conversationCosts.totals.prompt.tokenCount}t
+            {localize('com_ui_token_abbreviation', {
+              0: conversationCosts.totals.prompt.tokenCount,
+            })}
           </div>
           <div>${Math.abs(conversationCosts.totals.prompt.usd).toFixed(6)}</div>
         </div>
         <div>
-          <div>{conversationCosts.totals.total.tokenCount}t</div>
+          <div>
+            {localize('com_ui_token_abbreviation', {
+              0: conversationCosts.totals.total.tokenCount,
+            })}
+          </div>
           <div>${Math.abs(conversationCosts.totals.total.usd).toFixed(6)}</div>
         </div>
         <div>
           <div>
             <ArrowIcon direction="down" />
-            {conversationCosts.totals.completion.tokenCount}t
+            {localize('com_ui_token_abbreviation', {
+              0: conversationCosts.totals.completion.tokenCount,
+            })}
           </div>
           <div>${Math.abs(conversationCosts.totals.completion.usd).toFixed(6)}</div>
         </div>

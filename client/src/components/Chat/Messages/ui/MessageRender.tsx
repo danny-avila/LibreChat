@@ -8,10 +8,10 @@ import PlaceholderRow from '~/components/Chat/Messages/ui/PlaceholderRow';
 import SiblingSwitch from '~/components/Chat/Messages/SiblingSwitch';
 import HoverButtons from '~/components/Chat/Messages/HoverButtons';
 import MessageIcon from '~/components/Chat/Messages/MessageIcon';
+import { useMessageActions, useLocalize } from '~/hooks';
 import { Plugin } from '~/components/Messages/Content';
 import SubRow from '~/components/Chat/Messages/SubRow';
 import { MessageContext } from '~/Providers';
-import { useMessageActions } from '~/hooks';
 import { cn, logger } from '~/utils';
 import store from '~/store';
 
@@ -39,6 +39,7 @@ const MessageRender = memo(
     isSubmittingFamily = false,
     costs,
   }: MessageRenderProps) => {
+    const localize = useLocalize();
     const {
       ask,
       edit,
@@ -183,7 +184,9 @@ const MessageRender = memo(
                     ) : (
                       <ArrowIcon direction="down" className="inline" />
                     )}
-                    {perMessageCost.tokenCount}t
+                    {localize('com_ui_token_abbreviation', {
+                      0: perMessageCost.tokenCount,
+                    })}
                   </span>
                 )}
                 <span className="whitespace-pre">${Math.abs(perMessageCost.usd).toFixed(6)}</span>
