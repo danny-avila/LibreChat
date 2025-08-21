@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
       - name: emeritus-chatapp
-        image: ${REGION}-docker.pkg.dev/$PROJECT_ID/$AR_REPO/emeritus-chatapp:v1.2
+        image: asia-south1-docker.pkg.dev/emeritus-rnd/emeritus-chatapp-repo/emeritus-chatapp:v1.2
         ports:
         - containerPort: 3080
         envFrom:
@@ -25,9 +25,9 @@ spec:
             name: emeritus-chatapp-env
         env:
         - name: GOOGLE_REQUEST_TIMEOUT
-          value: "600000"  # 10 minutes
+          value: "6000000"  # 100 minutes
         - name: GOOGLE_STREAMING_TIMEOUT
-          value: "300000"  # 5 minutes for streaming
+          value: "3000000"  # 50 minutes for streaming
         - name: NODE_OPTIONS
           value: "--max-old-space-size=2048"
         volumeMounts:
@@ -84,6 +84,6 @@ metadata:
   name: emeritus-chatapp-backendconfig
   namespace: emeritus-chatapp
 spec:
-  timeoutSec: 600  # 10 minutes backend timeout
+  timeoutSec: 6000  # 100 minutes backend timeout
   connectionDraining:
     drainingTimeoutSec: 60
