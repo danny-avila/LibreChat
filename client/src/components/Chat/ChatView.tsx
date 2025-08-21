@@ -51,9 +51,12 @@ function ChatView({ index = 0 }: { index?: number }) {
     enabled: !!fileMap,
   });
 
-  const { data: conversationCosts } = useGetConversationCosts(conversationId ?? '', {
-    enabled: !!conversationId && conversationId !== Constants.NEW_CONVO,
-  });
+  const { data: conversationCosts } = useGetConversationCosts(
+    conversationId && conversationId !== Constants.NEW_CONVO ? conversationId : '',
+    {
+      enabled: !!conversationId && conversationId !== Constants.NEW_CONVO && conversationId !== '',
+    },
+  );
 
   const chatHelpers = useChatHelpers(index, conversationId);
   const addedChatHelpers = useAddedResponse({ rootIndex: index });
@@ -168,6 +171,7 @@ function ChatView({ index = 0 }: { index?: number }) {
             </div>
           )
         }
+        costs={conversationCosts}
       />
     );
   } else {

@@ -1,6 +1,7 @@
 import React from 'react';
 import { useRecoilValue } from 'recoil';
 import { useMessageProcess } from '~/hooks';
+import type { TConversationCosts } from 'librechat-data-provider';
 import type { TMessageProps } from '~/common';
 import MessageRender from './ui/MessageRender';
 // eslint-disable-next-line import/no-cycle
@@ -28,7 +29,7 @@ const MessageContainer = React.memo(
   },
 );
 
-export default function Message(props: TMessageProps) {
+export default function Message(props: TMessageProps & { costs?: TConversationCosts }) {
   const {
     showSibling,
     conversation,
@@ -37,7 +38,7 @@ export default function Message(props: TMessageProps) {
     latestMultiMessage,
     isSubmittingFamily,
   } = useMessageProcess({ message: props.message });
-  const { message, currentEditId, setCurrentEditId } = props;
+  const { message, currentEditId, setCurrentEditId, costs } = props;
   const maximizeChatSpace = useRecoilValue(store.maximizeChatSpace);
 
   if (!message || typeof message !== 'object') {
@@ -62,6 +63,7 @@ export default function Message(props: TMessageProps) {
                 message={message}
                 isSubmittingFamily={isSubmittingFamily}
                 isCard
+                costs={costs}
               />
               <MessageRender
                 {...props}
@@ -69,12 +71,13 @@ export default function Message(props: TMessageProps) {
                 isCard
                 message={siblingMessage ?? latestMultiMessage ?? undefined}
                 isSubmittingFamily={isSubmittingFamily}
+                costs={costs}
               />
             </div>
           </div>
         ) : (
-          <div className="m-auto justify-center p-4 py-2 md:gap-6 ">
-            <MessageRender {...props} />
+          <div className="m-auto justify-center p-4 py-2 md:gap-6">
+            <MessageRender {...props} costs={costs} />
           </div>
         )}
       </MessageContainer>
@@ -85,6 +88,7 @@ export default function Message(props: TMessageProps) {
         messagesTree={children ?? []}
         currentEditId={currentEditId}
         setCurrentEditId={setCurrentEditId}
+        costs={costs}
       />
     </>
   );

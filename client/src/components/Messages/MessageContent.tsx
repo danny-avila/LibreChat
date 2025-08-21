@@ -1,5 +1,6 @@
 import React from 'react';
 import { useMessageProcess } from '~/hooks';
+import type { TConversationCosts } from 'librechat-data-provider';
 import type { TMessageProps } from '~/common';
 // eslint-disable-next-line import/no-cycle
 import MultiMessage from '~/components/Chat/Messages/MultiMessage';
@@ -25,7 +26,7 @@ const MessageContainer = React.memo(
   },
 );
 
-export default function MessageContent(props: TMessageProps) {
+export default function MessageContent(props: TMessageProps & { costs?: TConversationCosts }) {
   const {
     showSibling,
     conversation,
@@ -34,7 +35,7 @@ export default function MessageContent(props: TMessageProps) {
     latestMultiMessage,
     isSubmittingFamily,
   } = useMessageProcess({ message: props.message });
-  const { message, currentEditId, setCurrentEditId } = props;
+  const { message, currentEditId, setCurrentEditId, costs } = props;
 
   if (!message || typeof message !== 'object') {
     return null;
@@ -53,6 +54,7 @@ export default function MessageContent(props: TMessageProps) {
                 message={message}
                 isSubmittingFamily={isSubmittingFamily}
                 isCard
+                costs={costs}
               />
               <ContentRender
                 {...props}
@@ -60,12 +62,13 @@ export default function MessageContent(props: TMessageProps) {
                 isCard
                 message={siblingMessage ?? latestMultiMessage ?? undefined}
                 isSubmittingFamily={isSubmittingFamily}
+                costs={costs}
               />
             </div>
           </div>
         ) : (
-          <div className="m-auto justify-center p-4 py-2 md:gap-6 ">
-            <ContentRender {...props} />
+          <div className="m-auto justify-center p-4 py-2 md:gap-6">
+            <ContentRender {...props} costs={costs} />
           </div>
         )}
       </MessageContainer>
@@ -76,6 +79,7 @@ export default function MessageContent(props: TMessageProps) {
         messagesTree={children ?? []}
         currentEditId={currentEditId}
         setCurrentEditId={setCurrentEditId}
+        costs={costs}
       />
     </>
   );

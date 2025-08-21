@@ -1,13 +1,12 @@
 import React, { useCallback, useMemo, memo } from 'react';
 import { useRecoilValue } from 'recoil';
-import { type TMessage } from 'librechat-data-provider';
+import { type TMessage, TConversationCosts } from 'librechat-data-provider';
 import type { TMessageProps, TMessageIcon } from '~/common';
 import MessageContent from '~/components/Chat/Messages/Content/MessageContent';
 import PlaceholderRow from '~/components/Chat/Messages/ui/PlaceholderRow';
 import SiblingSwitch from '~/components/Chat/Messages/SiblingSwitch';
 import HoverButtons from '~/components/Chat/Messages/HoverButtons';
 import MessageIcon from '~/components/Chat/Messages/MessageIcon';
-import { useGetConversationCosts } from '~/data-provider';
 import { Plugin } from '~/components/Messages/Content';
 import SubRow from '~/components/Chat/Messages/SubRow';
 import { MessageContext } from '~/Providers';
@@ -20,6 +19,7 @@ type MessageRenderProps = {
   isCard?: boolean;
   isMultiMessage?: boolean;
   isSubmittingFamily?: boolean;
+  costs?: TConversationCosts;
 } & Pick<
   TMessageProps,
   'currentEditId' | 'setCurrentEditId' | 'siblingIdx' | 'setSiblingIdx' | 'siblingCount'
@@ -36,6 +36,7 @@ const MessageRender = memo(
     isMultiMessage = false,
     setCurrentEditId,
     isSubmittingFamily = false,
+    costs,
   }: MessageRenderProps) => {
     const {
       ask,
@@ -62,20 +63,17 @@ const MessageRender = memo(
     const maximizeChatSpace = useRecoilValue(store.maximizeChatSpace);
     const fontSize = useRecoilValue(store.fontSize);
     const convoId = conversation?.conversationId ?? '';
-    const { data: convoCosts } = useGetConversationCosts(convoId, {
-      enabled: !!convoId,
-    });
 
     const perMessageCost = useMemo(() => {
-      if (!convoCosts || !convoCosts.perMessage || !msg?.messageId) {
+      if (!costs || !costs.perMessage || !msg?.messageId) {
         return null;
       }
-      const entry = convoCosts.perMessage.find((p) => p.messageId === msg.messageId);
+      const entry = costs.perMessage.find((p) => p.messageId === msg.messageId);
       if (!entry) {
         return null;
       }
       return entry;
-    }, [convoCosts, msg?.messageId]);
+    }, [costs, msg?.messageId]);
 
     const handleRegenerateMessage = useCallback(() => regenerateMessage(), [regenerateMessage]);
     const hasNoChildren = !(msg?.children?.length ?? 0);

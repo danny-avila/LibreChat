@@ -1,6 +1,6 @@
 import { useRecoilValue } from 'recoil';
 import { useCallback, useMemo, memo } from 'react';
-import type { TMessage, TMessageContentParts } from 'librechat-data-provider';
+import type { TMessage, TMessageContentParts, TConversationCosts } from 'librechat-data-provider';
 import type { TMessageProps, TMessageIcon } from '~/common';
 import ContentParts from '~/components/Chat/Messages/Content/ContentParts';
 import PlaceholderRow from '~/components/Chat/Messages/ui/PlaceholderRow';
@@ -8,7 +8,6 @@ import SiblingSwitch from '~/components/Chat/Messages/SiblingSwitch';
 import HoverButtons from '~/components/Chat/Messages/HoverButtons';
 import MessageIcon from '~/components/Chat/Messages/MessageIcon';
 import { useAttachments, useMessageActions } from '~/hooks';
-import { useGetConversationCosts } from '~/data-provider';
 import SubRow from '~/components/Chat/Messages/SubRow';
 import { cn, logger } from '~/utils';
 import store from '~/store';
@@ -18,6 +17,7 @@ type ContentRenderProps = {
   isCard?: boolean;
   isMultiMessage?: boolean;
   isSubmittingFamily?: boolean;
+  costs?: TConversationCosts;
 } & Pick<
   TMessageProps,
   'currentEditId' | 'setCurrentEditId' | 'siblingIdx' | 'setSiblingIdx' | 'siblingCount'
@@ -34,6 +34,7 @@ const ContentRender = memo(
     isMultiMessage = false,
     setCurrentEditId,
     isSubmittingFamily = false,
+    costs,
   }: ContentRenderProps) => {
     const { attachments, searchResults } = useAttachments({
       messageId: msg?.messageId,
@@ -64,14 +65,13 @@ const ContentRender = memo(
     const maximizeChatSpace = useRecoilValue(store.maximizeChatSpace);
     const fontSize = useRecoilValue(store.fontSize);
     const convoId = conversation?.conversationId ?? '';
-    const { data: convoCosts } = useGetConversationCosts(convoId, { enabled: !!convoId });
 
     const perMessageCost = useMemo(() => {
-      if (!convoCosts || !convoCosts.perMessage || !msg?.messageId) {
+      if (!costs || !costs.perMessage || !msg?.messageId) {
         return null;
       }
-      return convoCosts.perMessage.find((p) => p.messageId === msg.messageId) ?? null;
-    }, [convoCosts, msg?.messageId]);
+      return costs.perMessage.find((p) => p.messageId === msg.messageId) ?? null;
+    }, [costs, msg?.messageId]);
 
     const handleRegenerateMessage = useCallback(() => regenerateMessage(), [regenerateMessage]);
     const isLast = useMemo(
