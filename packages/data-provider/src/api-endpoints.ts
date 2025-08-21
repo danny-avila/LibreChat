@@ -3,8 +3,8 @@ import * as q from './types/queries';
 import { ResourceType } from './accessPermissions';
 
 let BASE_URL = '';
-if (typeof process === 'undefined') {
-  // process is only available in node context, so we check if it's undefined
+if (typeof process === 'undefined' || process.browser === true) {
+  // process is only available in node context, or process.browser is true in client-side code
   // This is to ensure that the BASE_URL is set correctly based on the <base>
   // element in the HTML document, if it exists.
   const baseEl = document.querySelector('base');
