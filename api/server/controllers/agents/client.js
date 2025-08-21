@@ -36,7 +36,7 @@ const {
   createGetMCPAuthMap,
   checkCapability,
 } = require('~/server/services/Config');
-const { addCacheControl, createContextHandlers } = require('~/app/clients/prompts');
+const { addCacheControl, createContextHandlers, buildSystemInstruction } = require('~/app/clients/prompts');
 const { initializeAgent } = require('~/server/services/Endpoints/agents/agent');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
 const { getFormattedMemories, deleteMemory, setMemory } = require('~/models');
@@ -377,6 +377,9 @@ class AgentClient extends BaseClient {
     if (withoutKeys) {
       systemContent += `${memoryInstructions}\n\n# Existing memory about the user:\n${withoutKeys}`;
     }
+
+    // Add default system instruction for related questions
+    systemContent = buildSystemInstruction(systemContent);
 
     if (systemContent) {
       this.options.agent.instructions = systemContent;

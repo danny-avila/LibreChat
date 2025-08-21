@@ -29,6 +29,7 @@ const {
   createContextHandlers,
   titleInstruction,
   truncateText,
+  buildSystemInstruction,
 } = require('./prompts');
 const BaseClient = require('./BaseClient');
 
@@ -187,6 +188,10 @@ class GoogleClient extends BaseClient {
     if (typeof this.options.artifactsPrompt === 'string' && this.options.artifactsPrompt) {
       promptPrefix = `${promptPrefix ?? ''}\n${this.options.artifactsPrompt}`.trim();
     }
+
+    // Add default system instruction for related questions
+    promptPrefix = buildSystemInstruction(promptPrefix);
+
     this.systemMessage = promptPrefix;
     this.initializeClient();
     return this;

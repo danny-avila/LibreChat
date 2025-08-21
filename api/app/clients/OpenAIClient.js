@@ -30,6 +30,7 @@ const {
   CUT_OFF_PROMPT,
   titleInstruction,
   createContextHandlers,
+  buildSystemInstruction,
 } = require('./prompts');
 const { extractBaseURL, getModelMaxTokens, getModelMaxOutputTokens } = require('~/utils');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
@@ -406,6 +407,9 @@ class OpenAIClient extends BaseClient {
     if (typeof this.options.artifactsPrompt === 'string' && this.options.artifactsPrompt) {
       promptPrefix = `${promptPrefix ?? ''}\n${this.options.artifactsPrompt}`.trim();
     }
+
+    // Add default system instruction for related questions
+    promptPrefix = buildSystemInstruction(promptPrefix);
 
     if (this.options.attachments) {
       const attachments = await this.options.attachments;

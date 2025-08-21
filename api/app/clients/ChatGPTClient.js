@@ -11,7 +11,7 @@ const {
   CohereConstants,
   mapModelToAzureConfig,
 } = require('librechat-data-provider');
-const { createContextHandlers } = require('./prompts');
+const { createContextHandlers, buildSystemInstruction } = require('./prompts');
 const { createCoherePayload } = require('./llm');
 const { extractBaseURL } = require('~/utils');
 const BaseClient = require('./BaseClient');
@@ -667,6 +667,9 @@ ${botMessage.message}
       this.augmentedPrompt = await this.contextHandlers.createContext();
       promptPrefix = this.augmentedPrompt + promptPrefix;
     }
+
+    // Add default system instruction for related questions
+    promptPrefix = buildSystemInstruction(promptPrefix);
 
     if (promptPrefix) {
       // If the prompt prefix doesn't end with the end token, add it.

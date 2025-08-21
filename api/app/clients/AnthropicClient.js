@@ -18,6 +18,7 @@ const {
   titleFunctionPrompt,
   parseParamFromPrompt,
   createContextHandlers,
+  buildSystemInstruction,
 } = require('./prompts');
 const {
   getClaudeHeaders,
@@ -519,6 +520,10 @@ class AnthropicClient extends BaseClient {
     if (typeof this.options.artifactsPrompt === 'string' && this.options.artifactsPrompt) {
       promptPrefix = `${promptPrefix ?? ''}\n${this.options.artifactsPrompt}`.trim();
     }
+
+    // Add default system instruction for related questions
+    promptPrefix = buildSystemInstruction(promptPrefix);
+
     if (promptPrefix) {
       // If the prompt prefix doesn't end with the end token, add it.
       if (!promptPrefix.endsWith(`${this.endToken}`)) {
