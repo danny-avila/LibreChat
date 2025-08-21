@@ -180,7 +180,7 @@ properties:
           - name: REQUESTS_CA_BUNDLE
             value: /etc/ssl/certs/ca-certificates.crt
           - name: RAG_USE_FULL_CONTEXT
-            value: 'true'
+            value: "True"
           - name: DEBUG_RAG_API
             value: 'true'
           - name: CURL_CA_BUNDLE
