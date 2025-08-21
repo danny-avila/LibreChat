@@ -1,11 +1,11 @@
-const { SystemRoles } = require('librechat-data-provider');
+const { checkAdminAccess } = require('~/server/stripe/hardcodedAdminUtils');
 
 function checkAdmin(req, res, next) {
   try {
-    if (req.user.role !== SystemRoles.ADMIN) {
-      return res.status(403).json({ message: 'Forbidden' });
+    if (checkAdminAccess(req.user)) {
+      return next();
     }
-    next();
+    return res.status(403).json({ message: 'Forbidden' });
   } catch (error) {
     res.status(500).json({ message: 'Internal Server Error' });
   }
