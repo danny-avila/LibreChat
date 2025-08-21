@@ -160,6 +160,107 @@ router.post('/artifact/:messageId', async (req, res) => {
   }
 });
 
+router.get('/:conversationId/costs', validateMessageReq, async (req, res) => {
+  try {
+    const user = req.user.id;
+    const { conversationId } = req.params;
+
+    const [transactions, messages] = await Promise.all([
+      Transaction.find({
+        conversationId,
+        user,
+        tokenType: { $in: ['prompt', 'completion'] },
+      })
+        .select('tokenType tokenValue createdAt')
+        .sort({ createdAt: 1 })
+        .lean(),
+      Message.find({ conversationId, user })
+        .select('messageId isCreatedByUser tokenCount createdAt')
+        .sort({ createdAt: 1 })
+        .lean(),
+    ]);
+
+    const userMsgs = messages.filter((m) => m.isCreatedByUser);
+    const aiMsgs = messages.filter((m) => !m.isCreatedByUser);
+
+    const perMessageMap = new Map();
+    for (const msg of messages) {
+      perMessageMap.set(msg.messageId, {
+        messageId: msg.messageId,
+        tokenType: msg.isCreatedByUser ? 'prompt' : 'completion',
+        tokenCount: msg.tokenCount ?? 0,
+        tokenValue: 0,
+        usd: 0,
+      });
+    }
+
+    let currentPrompt = 0;
+    let currentCompletion = 0;
+
+    let promptTokenValue = 0;
+    let completionTokenValue = 0;
+
+    for (const tx of transactions) {
+      const value = Math.abs(tx.tokenValue ?? 0);
+      if (tx.tokenType === 'prompt') {
+        promptTokenValue += value;
+        const target = userMsgs[currentPrompt] ?? userMsgs[userMsgs.length - 1];
+        if (target) {
+          const entry = perMessageMap.get(target.messageId);
+          entry.tokenValue += value;
+          perMessageMap.set(target.messageId, entry);
+          if (currentPrompt < userMsgs.length - 1) {
+            currentPrompt++;
+          }
+        }
+      } else if (tx.tokenType === 'completion') {
+        completionTokenValue += value;
+        const target = aiMsgs[currentCompletion] ?? aiMsgs[aiMsgs.length - 1];
+        if (target) {
+          const entry = perMessageMap.get(target.messageId);
+          entry.tokenValue += value;
+          perMessageMap.set(target.messageId, entry);
+          if (currentCompletion < aiMsgs.length - 1) {
+            currentCompletion++;
+          }
+        }
+      }
+    }
+
+    const perMessage = Array.from(perMessageMap.values()).map((entry) => ({
+      messageId: entry.messageId,
+      tokenType: entry.tokenType,
+      tokenCount: entry.tokenCount,
+      usd: entry.tokenValue / 1_000_000,
+    }));
+
+    const promptTokenCount = userMsgs.reduce((sum, m) => sum + (m.tokenCount ?? 0), 0);
+    const completionTokenCount = aiMsgs.reduce((sum, m) => sum + (m.tokenCount ?? 0), 0);
+    const totalTokenCount = promptTokenCount + completionTokenCount;
+
+    const totals = {
+      prompt: {
+        usd: promptTokenValue / 1_000_000,
+        tokenCount: promptTokenCount,
+      },
+      completion: {
+        usd: completionTokenValue / 1_000_000,
+        tokenCount: completionTokenCount,
+      },
+      total: {
+        usd: (promptTokenValue + completionTokenValue) / 1_000_000,
+        tokenCount: totalTokenCount,
+      },
+    };
+
+    const response = { conversationId, totals, perMessage };
+    res.status(200).json(response);
+  } catch (error) {
+    logger.error('Error fetching conversation costs:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 /* Note: It's necessary to add `validateMessageReq` within route definition for correct params */
 router.get('/:conversationId', validateMessageReq, async (req, res) => {
   try {
@@ -290,106 +391,6 @@ router.delete('/:conversationId/:messageId', validateMessageReq, async (req, res
     res.status(204).send();
   } catch (error) {
     logger.error('Error deleting message:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-router.get('/:conversationId/costs', validateMessageReq, async (req, res) => {
-  try {
-    const user = req.user.id;
-    const { conversationId } = req.params;
-
-    const [transactions, messages] = await Promise.all([
-      Transaction.find({
-        conversationId,
-        user,
-        tokenType: { $in: ['prompt', 'completion'] },
-      })
-        .select('tokenType tokenValue createdAt')
-        .sort({ createdAt: 1 })
-        .lean(),
-      Message.find({ conversationId, user })
-        .select('messageId isCreatedByUser tokenCount createdAt')
-        .sort({ createdAt: 1 })
-        .lean(),
-    ]);
-
-    const userMsgs = messages.filter((m) => m.isCreatedByUser);
-    const aiMsgs = messages.filter((m) => !m.isCreatedByUser);
-
-    const perMessageMap = new Map();
-    for (const msg of messages) {
-      perMessageMap.set(msg.messageId, {
-        messageId: msg.messageId,
-        tokenType: msg.isCreatedByUser ? 'prompt' : 'completion',
-        tokenCount: msg.tokenCount ?? 0,
-        tokenValue: 0,
-        usd: 0,
-      });
-    }
-
-    let currentPrompt = 0;
-    let currentCompletion = 0;
-
-    let promptTokenValue = 0;
-    let completionTokenValue = 0;
-
-    for (const tx of transactions) {
-      const value = Math.abs(tx.tokenValue ?? 0);
-      if (tx.tokenType === 'prompt') {
-        promptTokenValue += value;
-        const target = userMsgs[currentPrompt] ?? userMsgs[userMsgs.length - 1];
-        if (target) {
-          const entry = perMessageMap.get(target.messageId);
-          entry.tokenValue += value;
-          perMessageMap.set(target.messageId, entry);
-          if (currentPrompt < userMsgs.length - 1) {
-            currentPrompt++;
-          }
-        }
-      } else if (tx.tokenType === 'completion') {
-        completionTokenValue += value;
-        const target = aiMsgs[currentCompletion] ?? aiMsgs[aiMsgs.length - 1];
-        if (target) {
-          const entry = perMessageMap.get(target.messageId);
-          entry.tokenValue += value;
-          perMessageMap.set(target.messageId, entry);
-          if (currentCompletion < aiMsgs.length - 1) {
-            currentCompletion++;
-          }
-        }
-      }
-    }
-
-    const perMessage = Array.from(perMessageMap.values()).map((entry) => ({
-      messageId: entry.messageId,
-      tokenType: entry.tokenType,
-      tokenCount: entry.tokenCount,
-      usd: entry.tokenValue / 1_000_000,
-    }));
-
-    const promptTokenCount = userMsgs.reduce((sum, m) => sum + (m.tokenCount ?? 0), 0);
-    const completionTokenCount = aiMsgs.reduce((sum, m) => sum + (m.tokenCount ?? 0), 0);
-    const totalTokenCount = promptTokenCount + completionTokenCount;
-
-    const totals = {
-      prompt: {
-        usd: promptTokenValue / 1_000_000,
-        tokenCount: promptTokenCount,
-      },
-      completion: {
-        usd: completionTokenValue / 1_000_000,
-        tokenCount: completionTokenCount,
-      },
-      total: {
-        usd: (promptTokenValue + completionTokenValue) / 1_000_000,
-        tokenCount: totalTokenCount,
-      },
-    };
-
-    res.status(200).json({ conversationId, totals, perMessage });
-  } catch (error) {
-    logger.error('Error fetching conversation costs:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
