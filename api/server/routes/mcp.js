@@ -9,6 +9,7 @@ const { CacheKeys, Constants } = require('librechat-data-provider');
 const { getMCPManager, getFlowStateManager } = require('~/config');
 const { requireJwtAuth } = require('~/server/middleware');
 const { getLogStores } = require('~/cache');
+const { handleMCPError } = require('~/server/utils/routeErrorHandlers');
 
 const router = Router();
 
@@ -444,7 +445,7 @@ router.post('/:serverName/reinitialize', requireJwtAuth, async (req, res) => {
     });
   } catch (error) {
     logger.error('[MCP Reinitialize] Unexpected error', error);
-    res.status(500).json({ error: 'Internal server error' });
+    handleMCPError(error, req, res, 'reinitialize-server');
   }
 });
 
