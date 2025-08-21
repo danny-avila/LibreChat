@@ -77,7 +77,9 @@ const AttachFileMenu = ({
    * */
   const capabilities = useAgentCapabilities(agentsConfig?.capabilities ?? defaultAgentCapabilities);
 
-  const handleUploadClick = (fileType?: 'image' | 'document' | 'multimodal') => {
+  const handleUploadClick = (
+    fileType?: 'image' | 'document' | 'multimodal' | 'google_multimodal',
+  ) => {
     if (!inputRef.current) {
       return;
     }
@@ -103,7 +105,14 @@ const AttachFileMenu = ({
     ) => {
       const items: MenuItemProps[] = [];
 
-      const shouldShowDirectAttach = isDocumentSupportedEndpoint(agent?.provider ?? endpoint);
+      const currentProvider = agent?.provider ?? endpoint;
+      const isOpenAIOrAzure =
+        currentProvider === EModelEndpoint.openAI || currentProvider === EModelEndpoint.azureOpenAI;
+      const useResponsesApiEnabled = conversation?.useResponsesApi ?? false;
+
+      const shouldShowDirectAttach =
+        isDocumentSupportedEndpoint(currentProvider) &&
+        (!isOpenAIOrAzure || useResponsesApiEnabled);
 
       if (shouldShowDirectAttach) {
         items.push({
@@ -194,6 +203,7 @@ const AttachFileMenu = ({
     sharePointEnabled,
     setIsSharePointDialogOpen,
     endpoint,
+    agent?.provider,
   ]);
 
   const menuTrigger = (

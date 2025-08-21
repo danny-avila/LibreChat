@@ -11,6 +11,9 @@ const {
   memoryInstructions,
   formatContentStrings,
   createMemoryProcessor,
+  encodeAndFormatAudios,
+  encodeAndFormatVideos,
+  encodeAndFormatDocuments,
 } = require('@librechat/api');
 const {
   Callback,
@@ -42,21 +45,19 @@ const {
   setMemory,
 } = require('~/models');
 const { getMCPAuthMap, checkCapability, hasCustomUserVars } = require('~/server/services/Config');
-const { encodeAndFormatDocuments } = require('~/server/services/Files/Documents/encode');
 const { addCacheControl, createContextHandlers } = require('~/app/clients/prompts');
-const { encodeAndFormatVideos } = require('~/server/services/Files/Video/encode');
-const { encodeAndFormatAudios } = require('~/server/services/Files/Audio/encode');
-const { getFiles } = require('~/models');
 const { initializeAgent } = require('~/server/services/Endpoints/agents/agent');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
 const { getFormattedMemories, deleteMemory, setMemory } = require('~/models');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const { getProviderConfig } = require('~/server/services/Endpoints');
+const { getStrategyFunctions } = require('~/server/services/Files');
 const { checkCapability } = require('~/server/services/Config');
 const BaseClient = require('~/app/clients/BaseClient');
 const { getRoleByName } = require('~/models/Role');
 const { loadAgent } = require('~/models/Agent');
 const { getMCPManager } = require('~/config');
+const { getFiles } = require('~/models');
 
 const omitTitleOptions = new Set([
   'stream',
@@ -239,6 +240,7 @@ class AgentClient extends BaseClient {
       this.options.req,
       attachments,
       this.options.agent.provider,
+      getStrategyFunctions,
     );
     message.documents =
       documentResult.documents && documentResult.documents.length
@@ -252,6 +254,7 @@ class AgentClient extends BaseClient {
       this.options.req,
       attachments,
       this.options.agent.provider,
+      getStrategyFunctions,
     );
     message.videos =
       videoResult.videos && videoResult.videos.length ? videoResult.videos : undefined;
@@ -263,6 +266,7 @@ class AgentClient extends BaseClient {
       this.options.req,
       attachments,
       this.options.agent.provider,
+      getStrategyFunctions,
     );
     message.audios =
       audioResult.audios && audioResult.audios.length ? audioResult.audios : undefined;
