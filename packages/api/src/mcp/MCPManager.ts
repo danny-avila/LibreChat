@@ -58,6 +58,21 @@ export class MCPManager extends UserConnectionManager {
   public getAppToolFunctions(): t.LCAvailableTools | null {
     return this.serversRegistry.toolFunctions!;
   }
+  /** Returns all available tool functions from all connections available to user */
+  public async getAllToolFunctions(userId: string): Promise<t.LCAvailableTools | null> {
+    const allToolFunctions: t.LCAvailableTools = this.getAppToolFunctions() ?? {};
+    const userConnections = this.getUserConnections(userId);
+    if (!userConnections || userConnections.size === 0) {
+      return allToolFunctions;
+    }
+
+    for (const [serverName, connection] of userConnections.entries()) {
+      const toolFunctions = await this.serversRegistry.getToolFunctions(serverName, connection);
+      Object.assign(allToolFunctions, toolFunctions);
+    }
+
+    return allToolFunctions;
+  }
 
   /**
    * Get instructions for MCP servers
