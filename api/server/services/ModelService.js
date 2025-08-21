@@ -34,6 +34,7 @@ const { openAIApiKey, userProvidedOpenAI } = require('./Config/EndpointService')
  * @param {string} params.apiKey - The API key for authentication with the API.
  * @param {string} params.baseURL - The base path URL for the API.
  * @param {string} [params.name='OpenAI'] - The name of the API; defaults to 'OpenAI'.
+ * @param {boolean} [params.direct=false] - Whether `directEndpoint` was configured
  * @param {boolean} [params.azure=false] - Whether to fetch models from Azure.
  * @param {boolean} [params.userIdQuery=false] - Whether to send the user ID as a query parameter.
  * @param {boolean} [params.createTokenConfig=true] - Whether to create a token configuration from the API response.
@@ -44,14 +45,16 @@ const { openAIApiKey, userProvidedOpenAI } = require('./Config/EndpointService')
 const fetchModels = async ({
   user,
   apiKey,
-  baseURL,
+  baseURL: _baseURL,
   name = EModelEndpoint.openAI,
+  direct,
   azure = false,
   userIdQuery = false,
   createTokenConfig = true,
   tokenKey,
 }) => {
   let models = [];
+  const baseURL = direct ? extractBaseURL(_baseURL) : _baseURL;
 
   if (!baseURL && !azure) {
     return models;
