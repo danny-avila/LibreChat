@@ -54,22 +54,15 @@ describe('loadDefaultInterface', () => {
     const expectedPermissionsForUser = {
       [PermissionTypes.PROMPTS]: {
         [Permissions.USE]: true,
-        [Permissions.SHARED_GLOBAL]: false,
-        [Permissions.CREATE]: true,
       },
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: true },
       [PermissionTypes.MEMORIES]: {
         [Permissions.USE]: true,
-        [Permissions.CREATE]: true,
-        [Permissions.UPDATE]: true,
-        [Permissions.READ]: true,
         [Permissions.OPT_OUT]: undefined,
       },
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: true },
       [PermissionTypes.AGENTS]: {
         [Permissions.USE]: true,
-        [Permissions.SHARED_GLOBAL]: false,
-        [Permissions.CREATE]: true,
       },
       [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: true },
       [PermissionTypes.RUN_CODE]: { [Permissions.USE]: true },
@@ -87,22 +80,15 @@ describe('loadDefaultInterface', () => {
     const expectedPermissionsForAdmin = {
       [PermissionTypes.PROMPTS]: {
         [Permissions.USE]: true,
-        [Permissions.SHARED_GLOBAL]: true,
-        [Permissions.CREATE]: true,
       },
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: true },
       [PermissionTypes.MEMORIES]: {
         [Permissions.USE]: true,
-        [Permissions.CREATE]: true,
-        [Permissions.UPDATE]: true,
-        [Permissions.READ]: true,
         [Permissions.OPT_OUT]: undefined,
       },
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: true },
       [PermissionTypes.AGENTS]: {
         [Permissions.USE]: true,
-        [Permissions.SHARED_GLOBAL]: true,
-        [Permissions.CREATE]: true,
       },
       [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: true },
       [PermissionTypes.RUN_CODE]: { [Permissions.USE]: true },
@@ -164,22 +150,15 @@ describe('loadDefaultInterface', () => {
     const expectedPermissionsForUser = {
       [PermissionTypes.PROMPTS]: {
         [Permissions.USE]: false,
-        [Permissions.SHARED_GLOBAL]: false,
-        [Permissions.CREATE]: true,
       },
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: false },
       [PermissionTypes.MEMORIES]: {
         [Permissions.USE]: false,
-        [Permissions.CREATE]: true,
-        [Permissions.UPDATE]: true,
-        [Permissions.READ]: true,
         [Permissions.OPT_OUT]: undefined,
       },
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: false },
       [PermissionTypes.AGENTS]: {
         [Permissions.USE]: false,
-        [Permissions.SHARED_GLOBAL]: false,
-        [Permissions.CREATE]: true,
       },
       [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: false },
       [PermissionTypes.RUN_CODE]: { [Permissions.USE]: false },
@@ -197,22 +176,15 @@ describe('loadDefaultInterface', () => {
     const expectedPermissionsForAdmin = {
       [PermissionTypes.PROMPTS]: {
         [Permissions.USE]: false,
-        [Permissions.SHARED_GLOBAL]: true,
-        [Permissions.CREATE]: true,
       },
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: false },
       [PermissionTypes.MEMORIES]: {
         [Permissions.USE]: false,
-        [Permissions.CREATE]: true,
-        [Permissions.UPDATE]: true,
-        [Permissions.READ]: true,
         [Permissions.OPT_OUT]: undefined,
       },
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: false },
       [PermissionTypes.AGENTS]: {
         [Permissions.USE]: false,
-        [Permissions.SHARED_GLOBAL]: true,
-        [Permissions.CREATE]: true,
       },
       [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: false },
       [PermissionTypes.RUN_CODE]: { [Permissions.USE]: false },
@@ -274,22 +246,15 @@ describe('loadDefaultInterface', () => {
     const expectedPermissionsForUser = {
       [PermissionTypes.PROMPTS]: {
         [Permissions.USE]: true,
-        [Permissions.SHARED_GLOBAL]: false,
-        [Permissions.CREATE]: true,
       },
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: true },
       [PermissionTypes.MEMORIES]: {
         [Permissions.USE]: true,
-        [Permissions.CREATE]: true,
-        [Permissions.UPDATE]: true,
-        [Permissions.READ]: true,
         [Permissions.OPT_OUT]: undefined,
       },
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: true },
       [PermissionTypes.AGENTS]: {
         [Permissions.USE]: true,
-        [Permissions.SHARED_GLOBAL]: false,
-        [Permissions.CREATE]: true,
       },
       [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: true },
       [PermissionTypes.RUN_CODE]: { [Permissions.USE]: true },
@@ -307,22 +272,15 @@ describe('loadDefaultInterface', () => {
     const expectedPermissionsForAdmin = {
       [PermissionTypes.PROMPTS]: {
         [Permissions.USE]: true,
-        [Permissions.SHARED_GLOBAL]: true,
-        [Permissions.CREATE]: true,
       },
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: true },
       [PermissionTypes.MEMORIES]: {
         [Permissions.USE]: true,
-        [Permissions.CREATE]: true,
-        [Permissions.UPDATE]: true,
-        [Permissions.READ]: true,
         [Permissions.OPT_OUT]: undefined,
       },
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: true },
       [PermissionTypes.AGENTS]: {
         [Permissions.USE]: true,
-        [Permissions.SHARED_GLOBAL]: true,
-        [Permissions.CREATE]: true,
       },
       [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: true },
       [PermissionTypes.RUN_CODE]: { [Permissions.USE]: true },
@@ -397,22 +355,15 @@ describe('loadDefaultInterface', () => {
     const expectedPermissionsForUser = {
       [PermissionTypes.PROMPTS]: {
         [Permissions.USE]: true,
-        [Permissions.SHARED_GLOBAL]: false,
-        [Permissions.CREATE]: true,
       },
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: false },
       [PermissionTypes.MEMORIES]: {
         [Permissions.USE]: true,
-        [Permissions.CREATE]: true,
-        [Permissions.UPDATE]: true,
-        [Permissions.READ]: true,
         [Permissions.OPT_OUT]: undefined,
       },
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: true },
       [PermissionTypes.AGENTS]: {
         [Permissions.USE]: true,
-        [Permissions.SHARED_GLOBAL]: false,
-        [Permissions.CREATE]: true,
       },
       [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: true },
       [PermissionTypes.RUN_CODE]: { [Permissions.USE]: false },
@@ -430,22 +381,15 @@ describe('loadDefaultInterface', () => {
     const expectedPermissionsForAdmin = {
       [PermissionTypes.PROMPTS]: {
         [Permissions.USE]: true,
-        [Permissions.SHARED_GLOBAL]: true,
-        [Permissions.CREATE]: true,
       },
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: false },
       [PermissionTypes.MEMORIES]: {
         [Permissions.USE]: true,
-        [Permissions.CREATE]: true,
-        [Permissions.UPDATE]: true,
-        [Permissions.READ]: true,
         [Permissions.OPT_OUT]: undefined,
       },
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: true },
       [PermissionTypes.AGENTS]: {
         [Permissions.USE]: true,
-        [Permissions.SHARED_GLOBAL]: true,
-        [Permissions.CREATE]: true,
       },
       [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: true },
       [PermissionTypes.RUN_CODE]: { [Permissions.USE]: false },
@@ -507,22 +451,15 @@ describe('loadDefaultInterface', () => {
     const expectedPermissionsForUser = {
       [PermissionTypes.PROMPTS]: {
         [Permissions.USE]: true,
-        [Permissions.SHARED_GLOBAL]: false,
-        [Permissions.CREATE]: true,
       },
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: true },
       [PermissionTypes.MEMORIES]: {
         [Permissions.USE]: true,
-        [Permissions.CREATE]: true,
-        [Permissions.UPDATE]: true,
-        [Permissions.READ]: true,
         [Permissions.OPT_OUT]: undefined,
       },
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: true },
       [PermissionTypes.AGENTS]: {
         [Permissions.USE]: true,
-        [Permissions.SHARED_GLOBAL]: false,
-        [Permissions.CREATE]: true,
       },
       [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: true },
       [PermissionTypes.RUN_CODE]: { [Permissions.USE]: true },
@@ -540,22 +477,15 @@ describe('loadDefaultInterface', () => {
     const expectedPermissionsForAdmin = {
       [PermissionTypes.PROMPTS]: {
         [Permissions.USE]: true,
-        [Permissions.SHARED_GLOBAL]: true,
-        [Permissions.CREATE]: true,
       },
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: true },
       [PermissionTypes.MEMORIES]: {
         [Permissions.USE]: true,
-        [Permissions.CREATE]: true,
-        [Permissions.UPDATE]: true,
-        [Permissions.READ]: true,
         [Permissions.OPT_OUT]: undefined,
       },
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: true },
       [PermissionTypes.AGENTS]: {
         [Permissions.USE]: true,
-        [Permissions.SHARED_GLOBAL]: true,
-        [Permissions.CREATE]: true,
       },
       [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: true },
       [PermissionTypes.RUN_CODE]: { [Permissions.USE]: true },
@@ -627,9 +557,6 @@ describe('loadDefaultInterface', () => {
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: true },
       [PermissionTypes.MEMORIES]: {
         [Permissions.USE]: true,
-        [Permissions.CREATE]: true,
-        [Permissions.UPDATE]: true,
-        [Permissions.READ]: true,
         [Permissions.OPT_OUT]: undefined,
       },
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: true },
@@ -650,9 +577,6 @@ describe('loadDefaultInterface', () => {
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: true },
       [PermissionTypes.MEMORIES]: {
         [Permissions.USE]: true,
-        [Permissions.CREATE]: true,
-        [Permissions.UPDATE]: true,
-        [Permissions.READ]: true,
         [Permissions.OPT_OUT]: undefined,
       },
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: true },
@@ -738,15 +662,10 @@ describe('loadDefaultInterface', () => {
     const expectedPermissionsForUser = {
       [PermissionTypes.PROMPTS]: {
         [Permissions.USE]: true,
-        [Permissions.SHARED_GLOBAL]: false,
-        [Permissions.CREATE]: true,
       }, // Explicitly configured
       // All other permissions that don't exist in the database
       [PermissionTypes.MEMORIES]: {
         [Permissions.USE]: true,
-        [Permissions.CREATE]: true,
-        [Permissions.UPDATE]: true,
-        [Permissions.READ]: true,
         [Permissions.OPT_OUT]: undefined,
       },
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: true },
@@ -766,15 +685,10 @@ describe('loadDefaultInterface', () => {
     const expectedPermissionsForAdmin = {
       [PermissionTypes.PROMPTS]: {
         [Permissions.USE]: true,
-        [Permissions.SHARED_GLOBAL]: true,
-        [Permissions.CREATE]: true,
       }, // Explicitly configured
       // All other permissions that don't exist in the database
       [PermissionTypes.MEMORIES]: {
         [Permissions.USE]: true,
-        [Permissions.CREATE]: true,
-        [Permissions.UPDATE]: true,
-        [Permissions.READ]: true,
         [Permissions.OPT_OUT]: undefined,
       },
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: true },
@@ -888,43 +802,29 @@ describe('loadDefaultInterface', () => {
     // Check PROMPTS permissions use role defaults
     expect(userCall[1][PermissionTypes.PROMPTS]).toEqual({
       [Permissions.USE]: true,
-      [Permissions.SHARED_GLOBAL]: false,
-      [Permissions.CREATE]: true,
     });
 
     expect(adminCall[1][PermissionTypes.PROMPTS]).toEqual({
       [Permissions.USE]: true,
-      [Permissions.SHARED_GLOBAL]: true,
-      [Permissions.CREATE]: true,
     });
 
     // Check AGENTS permissions use role defaults
     expect(userCall[1][PermissionTypes.AGENTS]).toEqual({
       [Permissions.USE]: true,
-      [Permissions.SHARED_GLOBAL]: false,
-      [Permissions.CREATE]: true,
     });
 
     expect(adminCall[1][PermissionTypes.AGENTS]).toEqual({
       [Permissions.USE]: true,
-      [Permissions.SHARED_GLOBAL]: true,
-      [Permissions.CREATE]: true,
     });
 
     // Check MEMORIES permissions use role defaults
     expect(userCall[1][PermissionTypes.MEMORIES]).toEqual({
       [Permissions.USE]: true,
-      [Permissions.CREATE]: true,
-      [Permissions.UPDATE]: true,
-      [Permissions.READ]: true,
       [Permissions.OPT_OUT]: undefined,
     });
 
     expect(adminCall[1][PermissionTypes.MEMORIES]).toEqual({
       [Permissions.USE]: true,
-      [Permissions.CREATE]: true,
-      [Permissions.UPDATE]: true,
-      [Permissions.READ]: true,
       [Permissions.OPT_OUT]: undefined,
     });
   });
@@ -1164,12 +1064,6 @@ describe('loadDefaultInterface', () => {
     // Explicitly configured permissions should be updated
     expect(userCall[1][PermissionTypes.PROMPTS]).toEqual({
       [Permissions.USE]: true,
-      [Permissions.SHARED_GLOBAL]:
-        roleDefaults[SystemRoles.USER].permissions[PermissionTypes.PROMPTS][
-          Permissions.SHARED_GLOBAL
-        ],
-      [Permissions.CREATE]:
-        roleDefaults[SystemRoles.USER].permissions[PermissionTypes.PROMPTS][Permissions.CREATE],
     });
     expect(userCall[1][PermissionTypes.BOOKMARKS]).toEqual({ [Permissions.USE]: true });
     expect(userCall[1][PermissionTypes.MARKETPLACE]).toEqual({ [Permissions.USE]: true });
