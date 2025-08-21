@@ -1,4 +1,3 @@
-import type OpenAI from 'openai';
 import type { InfiniteData } from '@tanstack/react-query';
 import type {
   TBanner,
@@ -12,9 +11,8 @@ import type {
 } from './schemas';
 import type { SettingDefinition } from './generate';
 import type { TMinimalFeedback } from './feedback';
+import type { ContentTypes } from './types/runs';
 import type { Agent } from './types/assistants';
-
-export type TOpenAIMessage = OpenAI.Chat.ChatCompletionMessageParam;
 
 export * from './schemas';
 
@@ -43,6 +41,7 @@ export type TEndpointOption = Pick<
   | 'resendFiles'
   | 'imageDetail'
   | 'reasoning_effort'
+  | 'verbosity'
   | 'instructions'
   | 'additional_instructions'
   | 'append_current_datetime'
@@ -105,16 +104,25 @@ export type TEphemeralAgent = {
 export type TPayload = Partial<TMessage> &
   Partial<TEndpointOption> & {
     isContinued: boolean;
+    isRegenerate?: boolean;
     conversationId: string | null;
     messages?: TMessages;
     isTemporary: boolean;
     ephemeralAgent?: TEphemeralAgent | null;
-    editedContent?: {
-      index: number;
-      text: string;
-      type: 'text' | 'think';
-    } | null;
+    editedContent?: TEditedContent | null;
   };
+
+export type TEditedContent =
+  | {
+      index: number;
+      type: ContentTypes.THINK;
+      [ContentTypes.THINK]: string;
+    }
+  | {
+      index: number;
+      type: ContentTypes.TEXT;
+      [ContentTypes.TEXT]: string;
+    };
 
 export type TSubmission = {
   plugin?: TResPlugin;
@@ -125,17 +133,12 @@ export type TSubmission = {
   isTemporary: boolean;
   messages: TMessage[];
   isRegenerate?: boolean;
-  isResubmission?: boolean;
   initialResponse?: TMessage;
   conversation: Partial<TConversation>;
   endpointOption: TEndpointOption;
   clientTimestamp?: string;
   ephemeralAgent?: TEphemeralAgent | null;
-  editedContent?: {
-    index: number;
-    text: string;
-    type: 'text' | 'think';
-  } | null;
+  editedContent?: TEditedContent | null;
 };
 
 export type EventSubmission = Omit<TSubmission, 'initialResponse'> & { initialResponse: TMessage };
@@ -161,6 +164,11 @@ export type TCategory = {
   id?: string;
   value: string;
   label: string;
+};
+
+export type TMarketplaceCategory = TCategory & {
+  count: number;
+  description?: string;
 };
 
 export type TError = {
@@ -413,6 +421,14 @@ export type TVerify2FATempResponse = {
   token?: string;
   user?: TUser;
   message?: string;
+};
+
+/**
+ * Request for disabling 2FA.
+ */
+export type TDisable2FARequest = {
+  token?: string;
+  backupCode?: string;
 };
 
 /**

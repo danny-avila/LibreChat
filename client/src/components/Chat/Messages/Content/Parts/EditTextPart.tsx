@@ -1,5 +1,6 @@
 import { useRef, useEffect, useCallback, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
+import { TextareaAutosize } from '@librechat/client';
 import { ContentTypes } from 'librechat-data-provider';
 import { useRecoilState, useRecoilValue } from 'recoil';
 import { useUpdateMessageContentMutation } from 'librechat-data-provider/react-query';
@@ -7,7 +8,6 @@ import type { Agents } from 'librechat-data-provider';
 import type { TEditProps } from '~/common';
 import Container from '~/components/Chat/Messages/Content/Container';
 import { useChatContext, useAddedChatContext } from '~/Providers';
-import { TextareaAutosize } from '~/components/ui';
 import { cn, removeFocusRings } from '~/utils';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
@@ -62,17 +62,26 @@ const EditTextPart = ({
     const messages = getMessages();
     const parentMessage = messages?.find((msg) => msg.messageId === message?.parentMessageId);
 
+    const editedContent =
+      part.type === ContentTypes.THINK
+        ? {
+            index,
+            type: ContentTypes.THINK as const,
+            [ContentTypes.THINK]: data.text,
+          }
+        : {
+            index,
+            type: ContentTypes.TEXT as const,
+            [ContentTypes.TEXT]: data.text,
+          };
+
     if (!parentMessage) {
       return;
     }
     ask(
       { ...parentMessage },
       {
-        editedContent: {
-          index,
-          text: data.text,
-          type: part.type,
-        },
+        editedContent,
         editedMessageId: messageId,
         isRegenerate: true,
         isEdited: true,

@@ -3,9 +3,9 @@ const fetch = require('node-fetch');
 const passport = require('passport');
 const client = require('openid-client');
 const jwtDecode = require('jsonwebtoken/decode');
-const { CacheKeys } = require('librechat-data-provider');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const { hashToken, logger } = require('@librechat/data-schemas');
+const { CacheKeys, ErrorTypes } = require('librechat-data-provider');
 const { Strategy: OpenIDStrategy } = require('openid-client/passport');
 const { isEnabled, safeStringify, logHeaders } = require('@librechat/api');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
@@ -99,11 +99,29 @@ class CustomOpenIDStrategy extends OpenIDStrategy {
     const hostAndProtocol = process.env.DOMAIN_SERVER;
     return new URL(`${hostAndProtocol}${req.originalUrl ?? req.url}`);
   }
+
   authorizationRequestParams(req, options) {
     const params = super.authorizationRequestParams(req, options);
     if (options?.state && !params.has('state')) {
       params.set('state', options.state);
     }
+
+    if (process.env.OPENID_AUDIENCE) {
+      params.set('audience', process.env.OPENID_AUDIENCE);
+      logger.debug(
+        `[openidStrategy] Adding audience to authorization request: ${process.env.OPENID_AUDIENCE}`,
+      );
+    }
+
+    /** Generate nonce for federated providers that require it */
+    const shouldGenerateNonce = isEnabled(process.env.OPENID_GENERATE_NONCE);
+    if (shouldGenerateNonce && !params.has('nonce') && this._sessionKey) {
+      const crypto = require('crypto');
+      const nonce = crypto.randomBytes(16).toString('hex');
+      params.set('nonce', nonce);
+      logger.debug('[openidStrategy] Generated nonce for federated provider:', nonce);
+    }
+
     return params;
   }
 }
@@ -268,11 +286,19 @@ function convertToUsername(input, defaultValue = '') {
  */
 async function setupOpenId() {
   try {
+    const shouldGenerateNonce = isEnabled(process.env.OPENID_GENERATE_NONCE);
+
     /** @type {ClientMetadata} */
     const clientMetadata = {
       client_id: process.env.OPENID_CLIENT_ID,
       client_secret: process.env.OPENID_CLIENT_SECRET,
     };
+
+    if (shouldGenerateNonce) {
+      clientMetadata.response_types = ['code'];
+      clientMetadata.grant_types = ['authorization_code'];
+      clientMetadata.token_endpoint_auth_method = 'client_secret_post';
+    }
 
     /** @type {Configuration} */
     openidConfig = await client.discovery(
@@ -289,11 +315,19 @@ async function setupOpenId() {
     const requiredRoleParameterPath = process.env.OPENID_REQUIRED_ROLE_PARAMETER_PATH;
     const requiredRoleTokenKind = process.env.OPENID_REQUIRED_ROLE_TOKEN_KIND;
     const usePKCE = isEnabled(process.env.OPENID_USE_PKCE);
+    logger.info(`[openidStrategy] OpenID authentication configuration`, {
+      generateNonce: shouldGenerateNonce,
+      reason: shouldGenerateNonce
+        ? 'OPENID_GENERATE_NONCE=true - Will generate nonce and use explicit metadata for federated providers'
+        : 'OPENID_GENERATE_NONCE=false - Standard flow without explicit nonce or metadata',
+    });
+
     const openidLogin = new CustomOpenIDStrategy(
       {
         config: openidConfig,
         scope: process.env.OPENID_SCOPE,
         callbackURL: process.env.DOMAIN_SERVER + process.env.OPENID_CALLBACK_URL,
+        clockTolerance: process.env.OPENID_CLOCK_TOLERANCE || 300,
         usePKCE,
       },
       async (tokenset, done) => {
@@ -311,6 +345,14 @@ async function setupOpenId() {
                 claims.email
               } for openidId: ${claims.sub}`,
             );
+          }
+          if (user != null && user.provider !== 'openid') {
+            logger.info(
+              `[openidStrategy] Attempted OpenID login by user ${user.email}, was registered with "${user.provider}" provider`,
+            );
+            return done(null, false, {
+              message: ErrorTypes.AUTH_FAILED,
+            });
           }
           const userinfo = {
             ...claims,
@@ -353,7 +395,7 @@ async function setupOpenId() {
             username = userinfo[process.env.OPENID_USERNAME_CLAIM];
           } else {
             username = convertToUsername(
-              userinfo.username || userinfo.given_name || userinfo.email,
+              userinfo.preferred_username || userinfo.username || userinfo.email,
             );
           }
 
@@ -365,6 +407,7 @@ async function setupOpenId() {
               email: userinfo.email || '',
               emailVerified: userinfo.email_verified || false,
               name: fullName,
+              idOnTheSource: userinfo.oid,
             };
 
             const balanceConfig = await getBalanceConfig();
@@ -375,6 +418,7 @@ async function setupOpenId() {
             user.openidId = userinfo.sub;
             user.username = username;
             user.name = fullName;
+            user.idOnTheSource = userinfo.oid;
           }
 
           if (!!userinfo && userinfo.picture && !user.avatar?.includes('manual=true')) {

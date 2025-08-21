@@ -1,7 +1,6 @@
 import React from 'react';
+import { Label, InfoHoverCard, ESide } from '@librechat/client';
 import { useLocalize } from '~/hooks';
-import { Label } from '~/components';
-import HoverCardSettings from '~/components/Nav/SettingsTabs/HoverCardSettings';
 
 interface TokenCreditsItemProps {
   tokenCredits?: number;
@@ -15,7 +14,7 @@ const TokenCreditsItem: React.FC<TokenCreditsItemProps> = ({ tokenCredits }) => 
       {/* Left Section: Label */}
       <div className="flex items-center space-x-2">
         <Label className="font-light">{localize('com_nav_balance')}</Label>
-        <HoverCardSettings side="bottom" text="com_nav_info_balance" />
+        <InfoHoverCard side={ESide.Bottom} text={localize('com_nav_info_balance')} />
       </div>
 
       {/* Right Section: tokenCredits Value */}

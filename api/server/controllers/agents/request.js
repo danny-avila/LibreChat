@@ -12,6 +12,7 @@ const { saveMessage } = require('~/models');
 const AgentController = async (req, res, next, initializeClient, addTitle) => {
   let {
     text,
+    isRegenerate,
     endpointOption,
     conversationId,
     isContinued = false,
@@ -167,6 +168,7 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
       onStart,
       getReqData,
       isContinued,
+      isRegenerate,
       editedContent,
       conversationId,
       parentMessageId,
@@ -230,6 +232,26 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
           { context: 'api/server/controllers/agents/request.js - response end' },
         );
       }
+    }
+    // Edge case: sendMessage completed but abort happened during sendCompletion
+    // We need to ensure a final event is sent
+    else if (!res.headersSent && !res.finished) {
+      logger.debug(
+        '[AgentController] Handling edge case: `sendMessage` completed but aborted during `sendCompletion`',
+      );
+
+      const finalResponse = { ...response };
+      finalResponse.error = true;
+
+      sendEvent(res, {
+        final: true,
+        conversation,
+        title: conversation.title,
+        requestMessage: userMessage,
+        responseMessage: finalResponse,
+        error: { message: 'Request was aborted during completion' },
+      });
+      res.end();
     }
 
     // Save user message if needed

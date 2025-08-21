@@ -206,7 +206,9 @@ export type AgentPanelProps = {
   setActivePanel: React.Dispatch<React.SetStateAction<Panel>>;
   setMcp: React.Dispatch<React.SetStateAction<t.MCP | undefined>>;
   setAction: React.Dispatch<React.SetStateAction<t.Action | undefined>>;
+  endpointsConfig?: t.TEndpointsConfig;
   setCurrentAgentId: React.Dispatch<React.SetStateAction<string | undefined>>;
+  agentsConfig?: t.TAgentsEndpoint | null;
 };
 
 export type AgentPanelContextType = {
@@ -217,14 +219,13 @@ export type AgentPanelContextType = {
   mcps?: t.MCP[];
   setMcp: React.Dispatch<React.SetStateAction<t.MCP | undefined>>;
   setMcps: React.Dispatch<React.SetStateAction<t.MCP[] | undefined>>;
+  groupedTools: Record<string, t.AgentToolType & { tools?: t.AgentToolType[] }>;
   tools: t.AgentToolType[];
   activePanel?: string;
   setActivePanel: React.Dispatch<React.SetStateAction<Panel>>;
   setCurrentAgentId: React.Dispatch<React.SetStateAction<string | undefined>>;
-  groupedTools?: Record<string, t.AgentToolType & { tools?: t.AgentToolType[] }>;
   agent_id?: string;
-  agentsConfig?: t.TAgentsEndpoint | null;
-  endpointsConfig?: t.TEndpointsConfig | null;
+  agentsConfig?: t.TAgentsEndpoint;
 };
 
 export type AgentModelPanelProps = {
@@ -335,12 +336,8 @@ export type TAskProps = {
 
 export type TOptions = {
   editedMessageId?: string | null;
+  editedContent?: t.TEditedContent;
   editedText?: string | null;
-  editedContent?: {
-    index: number;
-    text: string;
-    type: 'text' | 'think';
-  };
   isRegenerate?: boolean;
   isContinued?: boolean;
   isEdited?: boolean;

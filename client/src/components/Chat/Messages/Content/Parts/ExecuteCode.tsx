@@ -10,23 +10,23 @@ import { cn } from '~/utils';
 import store from '~/store';
 
 interface ParsedArgs {
-  lang: string;
-  code: string;
+  lang?: string;
+  code?: string;
 }
 
-export function useParseArgs(args: string): ParsedArgs {
+export function useParseArgs(args?: string): ParsedArgs | null {
   return useMemo(() => {
-    let parsedArgs: ParsedArgs | string = args;
+    let parsedArgs: ParsedArgs | string | undefined | null = args;
     try {
-      parsedArgs = JSON.parse(args);
+      parsedArgs = JSON.parse(args || '');
     } catch {
       // console.error('Failed to parse args:', e);
     }
     if (typeof parsedArgs === 'object') {
       return parsedArgs;
     }
-    const langMatch = args.match(/"lang"\s*:\s*"(\w+)"/);
-    const codeMatch = args.match(/"code"\s*:\s*"(.+?)(?="\s*,\s*"(session_id|args)"|"\s*})/s);
+    const langMatch = args?.match(/"lang"\s*:\s*"(\w+)"/);
+    const codeMatch = args?.match(/"code"\s*:\s*"(.+?)(?="\s*,\s*"(session_id|args)"|"\s*})/s);
 
     let code = '';
     if (codeMatch) {
@@ -51,7 +51,7 @@ export default function ExecuteCode({
   attachments,
 }: {
   initialProgress: number;
-  args: string;
+  args?: string;
   output?: string;
   attachments?: TAttachment[];
 }) {
@@ -65,7 +65,7 @@ export default function ExecuteCode({
   const outputRef = useRef<string>(output);
   const prevShowCodeRef = useRef<boolean>(showCode);
 
-  const { lang, code } = useParseArgs(args);
+  const { lang, code } = useParseArgs(args) ?? ({} as ParsedArgs);
   const progress = useProgress(initialProgress);
 
   useEffect(() => {
@@ -144,7 +144,7 @@ export default function ExecuteCode({
           onClick={() => setShowCode((prev) => !prev)}
           inProgressText={localize('com_ui_analyzing')}
           finishedText={localize('com_ui_analyzing_finished')}
-          hasInput={!!code.length}
+          hasInput={!!code?.length}
           isExpanded={showCode}
         />
       </div>

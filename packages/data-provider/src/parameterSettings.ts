@@ -1,4 +1,5 @@
 import {
+  Verbosity,
   ImageDetail,
   EModelEndpoint,
   openAISettings,
@@ -221,12 +222,14 @@ const openAIParams: Record<string, SettingDefinition> = {
     component: 'slider',
     options: [
       ReasoningEffort.none,
+      ReasoningEffort.minimal,
       ReasoningEffort.low,
       ReasoningEffort.medium,
       ReasoningEffort.high,
     ],
     enumMappings: {
       [ReasoningEffort.none]: 'com_ui_none',
+      [ReasoningEffort.minimal]: 'com_ui_minimal',
       [ReasoningEffort.low]: 'com_ui_low',
       [ReasoningEffort.medium]: 'com_ui_medium',
       [ReasoningEffort.high]: 'com_ui_high',
@@ -284,6 +287,38 @@ const openAIParams: Record<string, SettingDefinition> = {
     optionType: 'model',
     columnSpan: 4,
   },
+  verbosity: {
+    key: 'verbosity',
+    label: 'com_endpoint_verbosity',
+    labelCode: true,
+    description: 'com_endpoint_openai_verbosity',
+    descriptionCode: true,
+    type: 'enum',
+    default: Verbosity.none,
+    component: 'slider',
+    options: [Verbosity.none, Verbosity.low, Verbosity.medium, Verbosity.high],
+    enumMappings: {
+      [Verbosity.none]: 'com_ui_none',
+      [Verbosity.low]: 'com_ui_low',
+      [Verbosity.medium]: 'com_ui_medium',
+      [Verbosity.high]: 'com_ui_high',
+    },
+    optionType: 'model',
+    columnSpan: 4,
+  },
+  disableStreaming: {
+    key: 'disableStreaming',
+    label: 'com_endpoint_disable_streaming_label',
+    labelCode: true,
+    description: 'com_endpoint_disable_streaming',
+    descriptionCode: true,
+    type: 'boolean',
+    default: false,
+    component: 'switch',
+    optionType: 'model',
+    showDefault: false,
+    columnSpan: 2,
+  } as const,
 };
 
 const anthropic: Record<string, SettingDefinition> = {
@@ -626,6 +661,8 @@ const openAI: SettingsConfiguration = [
   openAIParams.reasoning_effort,
   openAIParams.useResponsesApi,
   openAIParams.reasoning_summary,
+  openAIParams.verbosity,
+  openAIParams.disableStreaming,
 ];
 
 const openAICol1: SettingsConfiguration = [
@@ -646,8 +683,10 @@ const openAICol2: SettingsConfiguration = [
   baseDefinitions.imageDetail,
   openAIParams.reasoning_effort,
   openAIParams.reasoning_summary,
+  openAIParams.verbosity,
   openAIParams.useResponsesApi,
   openAIParams.web_search,
+  openAIParams.disableStreaming,
 ];
 
 const anthropicConfig: SettingsConfiguration = [

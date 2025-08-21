@@ -83,7 +83,6 @@ export default function useChatFunctions({
     {
       editedContent = null,
       editedMessageId = null,
-      isResubmission = false,
       isRegenerate = false,
       isContinued = false,
       isEdited = false,
@@ -230,7 +229,10 @@ export default function useChatFunctions({
     }
 
     const responseMessageId =
-      editedMessageId ?? (latestMessage?.messageId ? latestMessage?.messageId + '_' : null) ?? null;
+      editedMessageId ??
+      (latestMessage?.messageId && isRegenerate ? latestMessage?.messageId + '_' : null) ??
+      null;
+
     const initialResponse: TMessage = {
       sender: responseSender,
       text: '',
@@ -265,13 +267,13 @@ export default function useChatFunctions({
 
       if (editedContent && latestMessage?.content) {
         initialResponse.content = cloneDeep(latestMessage.content);
-        const { index, text, type } = editedContent;
+        const { index, type, ...part } = editedContent;
         if (initialResponse.content && index >= 0 && index < initialResponse.content.length) {
           const contentPart = initialResponse.content[index];
           if (type === ContentTypes.THINK && contentPart.type === ContentTypes.THINK) {
-            contentPart[ContentTypes.THINK] = text;
+            contentPart[ContentTypes.THINK] = part[ContentTypes.THINK];
           } else if (type === ContentTypes.TEXT && contentPart.type === ContentTypes.TEXT) {
-            contentPart[ContentTypes.TEXT] = text;
+            contentPart[ContentTypes.TEXT] = part[ContentTypes.TEXT];
           }
         }
       } else {
@@ -307,7 +309,6 @@ export default function useChatFunctions({
       isEdited: isEditOrContinue,
       isContinued,
       isRegenerate,
-      isResubmission,
       initialResponse,
       isTemporary,
       ephemeralAgent,

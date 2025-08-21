@@ -85,7 +85,7 @@ const Part = memo(
 
       const isToolCall =
         'args' in toolCall && (!toolCall.type || toolCall.type === ToolCallTypes.TOOL_CALL);
-      if (isToolCall && toolCall.name === Tools.execute_code) {
+      if (isToolCall && toolCall.name === Tools.execute_code && toolCall.args) {
         return (
           <ExecuteCode
             args={typeof toolCall.args === 'string' ? toolCall.args : ''}

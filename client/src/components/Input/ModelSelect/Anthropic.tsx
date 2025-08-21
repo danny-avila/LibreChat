@@ -1,6 +1,7 @@
-import { SelectDropDown, SelectDropDownPop } from '~/components/ui';
+import { SelectDropDown } from '@librechat/client';
 import type { TModelSelectProps } from '~/common';
-import { cn, cardStyle } from '~/utils/';
+import SelectDropDownPop from '~/components/Input/ModelSelect/SelectDropDownPop';
+import { cn, cardStyle } from '~/utils';
 
 export default function Anthropic({
   conversation,

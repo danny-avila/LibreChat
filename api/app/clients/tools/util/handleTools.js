@@ -1,14 +1,9 @@
-const { mcpToolPattern } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 const { SerpAPI } = require('@langchain/community/tools/serpapi');
 const { Calculator } = require('@langchain/community/tools/calculator');
+const { mcpToolPattern, loadWebSearchAuth } = require('@librechat/api');
 const { EnvVar, createCodeExecutionTool, createSearchTool } = require('@librechat/agents');
-const {
-  Tools,
-  EToolResources,
-  loadWebSearchAuth,
-  replaceSpecialVars,
-} = require('librechat-data-provider');
+const { Tools, EToolResources, replaceSpecialVars } = require('librechat-data-provider');
 const {
   availableTools,
   manifestToolMap,
@@ -235,7 +230,7 @@ const loadTools = async ({
 
   /** @type {Record<string, string>} */
   const toolContextMap = {};
-  const appTools = (await getCachedTools({ includeGlobal: true })) ?? {};
+  const cachedTools = (await getCachedTools({ userId: user, includeGlobal: true })) ?? {};
 
   for (const tool of tools) {
     if (tool === Tools.execute_code) {
@@ -245,7 +240,13 @@ const loadTools = async ({
           authFields: [EnvVar.CODE_API_KEY],
         });
         const codeApiKey = authValues[EnvVar.CODE_API_KEY];
-        const { files, toolContext } = await primeCodeFiles(options, codeApiKey);
+        const { files, toolContext } = await primeCodeFiles(
+          {
+            ...options,
+            agentId: agent?.id,
+          },
+          codeApiKey,
+        );
         if (toolContext) {
           toolContextMap[tool] = toolContext;
         }
@@ -260,7 +261,10 @@ const loadTools = async ({
       continue;
     } else if (tool === Tools.file_search) {
       requestedTools[tool] = async () => {
-        const { files, toolContext } = await primeSearchFiles(options);
+        const { files, toolContext } = await primeSearchFiles({
+          ...options,
+          agentId: agent?.id,
+        });
         if (toolContext) {
           toolContextMap[tool] = toolContext;
         }
@@ -294,7 +298,7 @@ Current Date & Time: ${replaceSpecialVars({ text: '{{iso_datetime}}' })}
         });
       };
       continue;
-    } else if (tool && appTools[tool] && mcpToolPattern.test(tool)) {
+    } else if (tool && cachedTools && mcpToolPattern.test(tool)) {
       requestedTools[tool] = async () =>
         createMCPTool({
           req: options.req,

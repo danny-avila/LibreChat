@@ -37,6 +37,8 @@ class BaseClient {
     this.conversationId;
     /** @type {string} */
     this.responseMessageId;
+    /** @type {string} */
+    this.parentMessageId;
     /** @type {TAttachment[]} */
     this.attachments;
     /** The key for the usage object's input tokens
@@ -108,12 +110,15 @@ class BaseClient {
   /**
    * Abstract method to record token usage. Subclasses must implement this method.
    * If a correction to the token usage is needed, the method should return an object with the corrected token counts.
+   * Should only be used if `recordCollectedUsage` was not used instead.
+   * @param {string} [model]
    * @param {number} promptTokens
    * @param {number} completionTokens
    * @returns {Promise<void>}
    */
-  async recordTokenUsage({ promptTokens, completionTokens }) {
+  async recordTokenUsage({ model, promptTokens, completionTokens }) {
     logger.debug('[BaseClient] `recordTokenUsage` not implemented.', {
+      model,
       promptTokens,
       completionTokens,
     });
@@ -182,7 +187,8 @@ class BaseClient {
     this.user = user;
     const saveOptions = this.getSaveOptions();
     this.abortController = opts.abortController ?? new AbortController();
-    const conversationId = overrideConvoId ?? opts.conversationId ?? crypto.randomUUID();
+    const requestConvoId = overrideConvoId ?? opts.conversationId;
+    const conversationId = requestConvoId ?? crypto.randomUUID();
     const parentMessageId = opts.parentMessageId ?? Constants.NO_PARENT;
     const userMessageId =
       overrideUserMessageId ?? opts.overrideParentMessageId ?? crypto.randomUUID();
@@ -197,17 +203,22 @@ class BaseClient {
       this.currentMessages[this.currentMessages.length - 1].messageId = head;
     }
 
+    if (opts.isRegenerate && responseMessageId.endsWith('_')) {
+      responseMessageId = crypto.randomUUID();
+    }
+
     this.responseMessageId = responseMessageId;
 
     return {
       ...opts,
       user,
       head,
+      saveOptions,
+      userMessageId,
+      requestConvoId,
       conversationId,
       parentMessageId,
-      userMessageId,
       responseMessageId,
-      saveOptions,
     };
   }
 
@@ -226,11 +237,12 @@ class BaseClient {
     const {
       user,
       head,
+      saveOptions,
+      userMessageId,
+      requestConvoId,
       conversationId,
       parentMessageId,
-      userMessageId,
       responseMessageId,
-      saveOptions,
     } = await this.setMessageOptions(opts);
 
     const userMessage = opts.isEdited
@@ -252,7 +264,8 @@ class BaseClient {
     }
 
     if (typeof opts?.onStart === 'function') {
-      opts.onStart(userMessage, responseMessageId);
+      const isNewConvo = !requestConvoId && parentMessageId === Constants.NO_PARENT;
+      opts.onStart(userMessage, responseMessageId, isNewConvo);
     }
 
     return {
@@ -607,15 +620,19 @@ class BaseClient {
       this.currentMessages.push(userMessage);
     }
 
+    /**
+     * When the userMessage is pushed to currentMessages, the parentMessage is the userMessageId.
+     * this only matters when buildMessages is utilizing the parentMessageId, and may vary on implementation
+     */
+    const parentMessageId = isEdited ? head : userMessage.messageId;
+    this.parentMessageId = parentMessageId;
     let {
       prompt: payload,
       tokenCountMap,
       promptTokens,
     } = await this.buildMessages(
       this.currentMessages,
-      // When the userMessage is pushed to currentMessages, the parentMessage is the userMessageId.
-      // this only matters when buildMessages is utilizing the parentMessageId, and may vary on implementation
-      isEdited ? head : userMessage.messageId,
+      parentMessageId,
       this.getBuildMessagesOptions(opts),
       opts,
     );
@@ -737,9 +754,13 @@ class BaseClient {
       } else {
         responseMessage.tokenCount = this.getTokenCountForResponse(responseMessage);
         completionTokens = responseMessage.tokenCount;
+        await this.recordTokenUsage({
+          usage,
+          promptTokens,
+          completionTokens,
+          model: responseMessage.model,
+        });
       }
-
-      await this.recordTokenUsage({ promptTokens, completionTokens, usage });
     }
 
     if (userMessagePromise) {

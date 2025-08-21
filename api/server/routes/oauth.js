@@ -2,16 +2,19 @@
 const express = require('express');
 const passport = require('passport');
 const { randomState } = require('openid-client');
-const {
-  checkBan,
-  logHeaders,
-  loginLimiter,
-  setBalanceConfig,
-  checkDomainAllowed,
-} = require('~/server/middleware');
+const { logger } = require('@librechat/data-schemas');
+const { ErrorTypes } = require('librechat-data-provider');
+const { isEnabled, createSetBalanceConfig } = require('@librechat/api');
+const { checkDomainAllowed, loginLimiter, logHeaders, checkBan } = require('~/server/middleware');
+const { syncUserEntraGroupMemberships } = require('~/server/services/PermissionService');
 const { setAuthTokens, setOpenIDAuthTokens } = require('~/server/services/AuthService');
-const { isEnabled } = require('~/server/utils');
-const { logger } = require('~/config');
+const { getBalanceConfig } = require('~/server/services/Config');
+const { Balance } = require('~/db/models');
+
+const setBalanceConfig = createSetBalanceConfig({
+  getBalanceConfig,
+  Balance,
+});
 
 const router = express.Router();
 
@@ -35,6 +38,7 @@ const oauthHandler = async (req, res) => {
       req.user.provider == 'openid' &&
       isEnabled(process.env.OPENID_REUSE_TOKENS) === true
     ) {
+      await syncUserEntraGroupMemberships(req.user, req.user.tokenset.access_token);
       setOpenIDAuthTokens(req.user.tokenset, res);
     } else {
       await setAuthTokens(req.user._id, res);
@@ -46,13 +50,13 @@ const oauthHandler = async (req, res) => {
 };
 
 router.get('/error', (req, res) => {
-  // A single error message is pushed by passport when authentication fails.
+  /** A single error message is pushed by passport when authentication fails. */
+  const errorMessage = req.session?.messages?.pop() || 'Unknown error';
   logger.error('Error in OAuth authentication:', {
-    message: req.session?.messages?.pop() || 'Unknown error',
+    message: errorMessage,
   });
 
-  // Redirect to login page with auth_failed parameter to prevent infinite redirect loops
-  res.redirect(`${domains.client}/login?redirect=false`);
+  res.redirect(`${domains.client}/login?redirect=false&error=${ErrorTypes.AUTH_FAILED}`);
 });
 
 /**
