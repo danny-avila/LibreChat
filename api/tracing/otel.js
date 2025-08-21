@@ -21,9 +21,6 @@ const otlpEndpoint = process.env.OTEL_EXPORTER_OTLP_ENDPOINT || 'http://localhos
 if (!process.env.OTEL_SERVICE_NAME) {
   process.env.OTEL_SERVICE_NAME = 'librechat';
 }
-if (!process.env.OTEL_SERVICE_VERSION) {
-  process.env.OTEL_SERVICE_VERSION = '0.8.0';
-}
 
 // Configure trace exporter
 const traceExporter = new OTLPTraceExporter({

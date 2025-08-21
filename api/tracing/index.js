@@ -29,7 +29,6 @@ if (OTEL_TRACING_ENABLED) {
   require('./otel');
 
   // Initialize custom instrumentations
-  // Initialize custom instrumentations
   require('./instrumentations').default;
 
   console.log(`🔍 OpenTelemetry tracing initialized for LibreChat`);
@@ -42,4 +41,4 @@ if (OTEL_TRACING_ENABLED) {
 }
 
 // Export tracing utilities for use throughout the application
-module.exports = require('./utils');
+module.exports = require('./utils').default;

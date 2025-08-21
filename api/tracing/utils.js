@@ -1,4 +1,4 @@
-const { trace, context } = require('@opentelemetry/api');
+import { trace, context } from '@opentelemetry/api';
 
 /**
  * Tracing Utilities for LibreChat
@@ -49,7 +49,7 @@ function getSpanId() {
 function addTraceContext(logObject = {}) {
   const traceId = getTraceId();
   const spanId = getSpanId();
-  
+
   if (traceId || spanId) {
     return {
       ...logObject,
@@ -74,11 +74,11 @@ function withTracing(spanName, fn, attributes = {}) {
   return function tracedFunction(...args) {
     const tracer = trace.getTracer('librechat-utils');
     const span = tracer.startSpan(spanName, { attributes });
-    
+
     return context.with(trace.setSpan(context.active(), span), () => {
       try {
         const result = fn.apply(this, args);
-        
+
         if (result && typeof result.then === 'function') {
           return result
             .then((res) => {
@@ -91,7 +91,7 @@ function withTracing(spanName, fn, attributes = {}) {
               throw error;
             });
         }
-        
+
         span.end();
         return result;
       } catch (error) {
@@ -137,7 +137,7 @@ function addEvent(name, attributes = {}) {
   }
 }
 
-module.exports = {
+export {
   getActiveSpan,
   getTraceId,
   getSpanId,
