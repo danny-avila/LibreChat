@@ -154,15 +154,5 @@
       "admin/",
       "packages/"
     ]
-  },
-  "dependencies": {
-    "@opentelemetry/api": "^1.9.0",
-    "@opentelemetry/auto-instrumentations-node": "^0.62.1",
-    "@opentelemetry/context-async-hooks": "^2.0.1",
-    "@opentelemetry/exporter-otlp-http": "^0.26.0",
-    "@opentelemetry/resources": "^2.0.1",
-    "@opentelemetry/sdk-node": "^0.203.0",
-    "@opentelemetry/sdk-trace-base": "^2.0.1",
-    "@opentelemetry/semantic-conventions": "^1.36.0"
   }
 }
