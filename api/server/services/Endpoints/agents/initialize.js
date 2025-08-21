@@ -29,7 +29,11 @@ function createToolLoader() {
    * @param {string} params.provider
    * @param {string} params.model
    * @param {AgentToolResources} params.tool_resources
-   * @returns {Promise<{ tools: StructuredTool[], toolContextMap: Record<string, unknown> } | undefined>}
+   * @returns {Promise<{
+   * tools: StructuredTool[],
+   * toolContextMap: Record<string, unknown>,
+   * userMCPAuthMap?: Record<string, Record<string, string>>
+   * } | undefined>}
    */
   return async function loadTools({ req, res, agentId, tools, provider, model, tool_resources }) {
     const agent = { id: agentId, tools, provider, model };
@@ -111,6 +115,7 @@ const initializeClient = async ({ req, res, endpointOption }) => {
   });
 
   const agent_ids = primaryConfig.agent_ids;
+  let userMCPAuthMap = primaryConfig.userMCPAuthMap;
   if (agent_ids?.length) {
     for (const agentId of agent_ids) {
       const agent = await getAgent({ id: agentId });
@@ -140,6 +145,7 @@ const initializeClient = async ({ req, res, endpointOption }) => {
         endpointOption,
         allowedProviders,
       });
+      Object.assign(userMCPAuthMap, config.userMCPAuthMap ?? {});
       agentConfigs.set(agentId, config);
     }
   }
@@ -188,7 +194,7 @@ const initializeClient = async ({ req, res, endpointOption }) => {
         : EModelEndpoint.agents,
   });
 
-  return { client };
+  return { client, userMCPAuthMap };
 };
 
 module.exports = { initializeClient };

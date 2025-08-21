@@ -105,7 +105,7 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
   };
 
   try {
-    /** @type {{ client: TAgentClient }} */
+    /** @type {{ client: TAgentClient; userMCPAuthMap?: Record<string, Record<string, string>> }} */
     const result = await initializeClient({ req, res, endpointOption });
     client = result.client;
 
@@ -175,6 +175,7 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
       abortController,
       overrideParentMessageId,
       isEdited: !!editedContent,
+      userMCPAuthMap: result.userMCPAuthMap,
       responseMessageId: editedResponseMessageId,
       progressOptions: {
         res,

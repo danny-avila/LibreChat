@@ -1825,6 +1825,7 @@
  * @param {object} opts - Options for the completion
  * @param {onTokenProgress} opts.onProgress - Callback function to handle token progress
  * @param {AbortController} opts.abortController - AbortController instance
+ * @param {Record<string, Record<string, string>>} [opts.userMCPAuthMap]
  * @returns {Promise<string>}
  * @memberof typedefs
  */

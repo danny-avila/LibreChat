@@ -116,7 +116,9 @@ async function createMCPTool({ req, res, toolKey, provider: _provider, userMCPAu
   let toolDefinition = availableTools?.[toolKey]?.function;
   const [toolName, serverName] = toolKey.split(Constants.mcp_delimiter);
   if (!toolDefinition) {
-    logger.warn(`Tool ${toolKey} not found in available tools, re-initializing available tools.`);
+    logger.warn(
+      `Tool "${toolKey}" not found in available tools, re-initializing "${serverName}" MCP server.`,
+    );
     try {
       const customUserVars = userMCPAuthMap?.[`${Constants.mcp_prefix}${serverName}`];
       /** @type {import('@librechat/api').MCPConnection | null} */
