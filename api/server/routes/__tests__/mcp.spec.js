@@ -1,9 +1,10 @@
-const { MongoMemoryServer } = require('mongodb-memory-server');
+const express = require('express');
 const request = require('supertest');
 const mongoose = require('mongoose');
-const express = require('express');
+const { MongoMemoryServer } = require('mongodb-memory-server');
 
 jest.mock('@librechat/api', () => ({
+  ...jest.requireActual('@librechat/api'),
   MCPOAuthHandler: {
     initiateOAuthFlow: jest.fn(),
     getFlowState: jest.fn(),
@@ -42,6 +43,10 @@ jest.mock('~/server/services/Config', () => ({
   setCachedTools: jest.fn(),
   getCachedTools: jest.fn(),
   loadCustomConfig: jest.fn(),
+}));
+
+jest.mock('~/server/services/Config/mcpToolsCache', () => ({
+  updateMCPUserTools: jest.fn(),
 }));
 
 jest.mock('~/server/services/MCP', () => ({
@@ -759,8 +764,10 @@ describe('MCP Routes', () => {
       require('~/cache').getLogStores.mockReturnValue({});
 
       const { getCachedTools, setCachedTools } = require('~/server/services/Config');
+      const { updateMCPUserTools } = require('~/server/services/Config/mcpToolsCache');
       getCachedTools.mockResolvedValue({});
       setCachedTools.mockResolvedValue();
+      updateMCPUserTools.mockResolvedValue();
 
       const response = await request(app).post('/api/mcp/test-server/reinitialize');
 
@@ -776,7 +783,14 @@ describe('MCP Routes', () => {
         'test-user-id',
         'test-server',
       );
-      expect(setCachedTools).toHaveBeenCalled();
+      expect(updateMCPUserTools).toHaveBeenCalledWith({
+        userId: 'test-user-id',
+        serverName: 'test-server',
+        tools: [
+          { name: 'tool1', description: 'Test tool 1', inputSchema: { type: 'object' } },
+          { name: 'tool2', description: 'Test tool 2', inputSchema: { type: 'object' } },
+        ],
+      });
     });
 
     it('should handle server with custom user variables', async () => {
@@ -803,8 +817,10 @@ describe('MCP Routes', () => {
       );
 
       const { getCachedTools, setCachedTools } = require('~/server/services/Config');
+      const { updateMCPUserTools } = require('~/server/services/Config/mcpToolsCache');
       getCachedTools.mockResolvedValue({});
       setCachedTools.mockResolvedValue();
+      updateMCPUserTools.mockResolvedValue();
 
       const response = await request(app).post('/api/mcp/test-server/reinitialize');
 

@@ -12,6 +12,7 @@ export type OpenAIParameters = z.infer<typeof openAISchema>;
  */
 export interface OpenAIConfigOptions {
   modelOptions?: Partial<OpenAIParameters>;
+  directEndpoint?: boolean;
   reverseProxyUrl?: string;
   defaultQuery?: Record<string, string | undefined>;
   headers?: Record<string, string>;

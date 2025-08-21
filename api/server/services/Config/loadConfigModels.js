@@ -76,10 +76,11 @@ async function loadConfigModels(req) {
       fetchPromisesMap[uniqueKey] =
         fetchPromisesMap[uniqueKey] ||
         fetchModels({
-          user: req.user.id,
-          baseURL: BASE_URL,
-          apiKey: API_KEY,
           name,
+          apiKey: API_KEY,
+          baseURL: BASE_URL,
+          user: req.user.id,
+          direct: endpoint.directEndpoint,
           userIdQuery: models.userIdQuery,
         });
       uniqueKeyToEndpointsMap[uniqueKey] = uniqueKeyToEndpointsMap[uniqueKey] || [];

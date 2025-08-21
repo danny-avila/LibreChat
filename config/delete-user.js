@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 const path = require('path');
-const mongoose = require(path.resolve(__dirname, '..', 'api', 'node_modules', 'mongoose'));
+const mongoose = require('mongoose');
 const {
   User,
   Agent,

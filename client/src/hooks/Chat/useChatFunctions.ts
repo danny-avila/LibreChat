@@ -267,13 +267,13 @@ export default function useChatFunctions({
 
       if (editedContent && latestMessage?.content) {
         initialResponse.content = cloneDeep(latestMessage.content);
-        const { index, text, type } = editedContent;
+        const { index, type, ...part } = editedContent;
         if (initialResponse.content && index >= 0 && index < initialResponse.content.length) {
           const contentPart = initialResponse.content[index];
           if (type === ContentTypes.THINK && contentPart.type === ContentTypes.THINK) {
-            contentPart[ContentTypes.THINK] = text;
+            contentPart[ContentTypes.THINK] = part[ContentTypes.THINK];
           } else if (type === ContentTypes.TEXT && contentPart.type === ContentTypes.TEXT) {
-            contentPart[ContentTypes.TEXT] = text;
+            contentPart[ContentTypes.TEXT] = part[ContentTypes.TEXT];
           }
         }
       } else {
