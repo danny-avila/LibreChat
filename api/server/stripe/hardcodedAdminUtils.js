@@ -3,21 +3,20 @@ const { logger } = require('~/config');
 
 /**
  * Helper function to check if a user is a hardcoded admin (username-only)
- * This function should be used consistently across authentication strategies
  * 
- * @param {Object} user - User object with username field
+ * @param {string} username - Username to check
  * @returns {boolean} - True if user is a hardcoded admin
  */
-function isHardcodedAdmin(user) {
-  if (!user) {
-    logger.error('[Stripe:isHardcodedAdmin] message=No user found');
+function isHardcodedAdmin(username) {
+  if (!username) {
+    logger.error('[Stripe:isHardcodedAdmin] message=No username found');
     return false;
   }
 
   const hardcodedAdminUsernames = process.env.HARDCODED_ADMIN_USERNAMES;
   if (hardcodedAdminUsernames) {
     const adminUsernames = hardcodedAdminUsernames.split(',').map(username => username.trim().toLowerCase());
-    if (user.username && adminUsernames.includes(user.username.toLowerCase())) {
+    if (username && adminUsernames.includes(username.toLowerCase())) {
       return true;
     }
   }
@@ -26,11 +25,10 @@ function isHardcodedAdmin(user) {
 }
 
 /**
- * Helper function to ensure ONLY hardcoded admins have admin role
- * This enforces that admin privileges are exclusively for hardcoded admin users
+ * Modifies the user object to ensure that only hardcoded admins have admin role
  * 
  * @param {Object} user - User object
- * @returns {Object} - User object with role set based on hardcoded admin status
+ * @returns {Object} - User object with modified role
  */
 function ensureHardcodedAdminRole(user) {
   if (!user) {
@@ -38,7 +36,7 @@ function ensureHardcodedAdminRole(user) {
     return user;
   }
 
-  if (isHardcodedAdmin(user)) {
+  if (isHardcodedAdmin(user.username)) {
     user.role = SystemRoles.ADMIN;
   } else {
     // User is NOT a hardcoded admin → force role to USER (even if DB says ADMIN)
@@ -49,8 +47,8 @@ function ensureHardcodedAdminRole(user) {
 }
 
 /**
- * Main function to check if a user should have admin access
- * Handles both hardcoded admin mode and fallback to database roles
+ * Checks if a user should have admin access
+ * Fallback to database role check when hardcoded admin is not enabled
  * 
  * @param {Object} user - User object
  * @returns {boolean} - True if user should have admin access
@@ -62,14 +60,13 @@ function checkAdminAccess(user) {
   }
   if (process.env.HARDCODED_ADMIN_USERNAMES) {
     logger.info('[Stripe:checkAdminAccess] message=Hardcoded admin mode enabled');
-    return isHardcodedAdmin(user);
+    return isHardcodedAdmin(user.username);
   }
   // Fallback to database role check when hardcoded admin is not enabled
   return user.role === SystemRoles.ADMIN;
 }
 
 module.exports = {
-  isHardcodedAdmin,
   ensureHardcodedAdminRole,
   checkAdminAccess,
 };
