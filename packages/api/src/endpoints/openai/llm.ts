@@ -6,7 +6,10 @@ import type { AzureOpenAIInput } from '@langchain/openai';
 import type { OpenAI } from 'openai';
 import type * as t from '~/types';
 import { sanitizeModelName, constructAzureURL } from '~/utils/azure';
+import { createFetch } from '~/utils/generators';
 import { isEnabled } from '~/utils/common';
+
+type Fetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
 export const knownOpenAIParams = new Set([
   // Constructor/Instance Parameters
@@ -92,6 +95,7 @@ export function getOpenAIConfig(
   const {
     modelOptions: _modelOptions = {},
     reverseProxyUrl,
+    directEndpoint,
     defaultQuery,
     headers,
     proxy,
@@ -309,6 +313,13 @@ export function getOpenAIConfig(
 
   if (hasModelKwargs) {
     llmConfig.modelKwargs = modelKwargs;
+  }
+
+  if (directEndpoint === true && configOptions?.baseURL != null) {
+    configOptions.fetch = createFetch({
+      directEndpoint: directEndpoint,
+      reverseProxyUrl: configOptions?.baseURL,
+    }) as unknown as Fetch;
   }
 
   const result: t.LLMConfigResult = {

@@ -94,6 +94,12 @@ const ContentParts = memo(
               return null;
             }
 
+            const isToolCall =
+              part.type === ContentTypes.TOOL_CALL || part['tool_call_ids'] != null;
+            if (isToolCall) {
+              return null;
+            }
+
             return (
               <EditTextPart
                 index={idx}

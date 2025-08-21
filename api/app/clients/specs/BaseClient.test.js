@@ -579,6 +579,8 @@ describe('BaseClient', () => {
       expect(onStart).toHaveBeenCalledWith(
         expect.objectContaining({ text: 'Hello, world!' }),
         expect.any(String),
+        /** `isNewConvo` */
+        true,
       );
     });
 
