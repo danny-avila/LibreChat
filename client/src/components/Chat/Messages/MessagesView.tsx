@@ -10,8 +10,10 @@ import store from '~/store';
 
 export default function MessagesView({
   messagesTree: _messagesTree,
+  costBar,
 }: {
   messagesTree?: TMessage[] | null;
+  costBar?: React.ReactNode;
 }) {
   const localize = useLocalize();
   const fontSize = useRecoilValue(store.fontSize);
@@ -74,6 +76,12 @@ export default function MessagesView({
               />
             </div>
           </div>
+
+          {costBar && (
+            <div className="pointer-events-none absolute bottom-2 left-1/2 z-10 -translate-x-1/2">
+              {costBar}
+            </div>
+          )}
 
           <CSSTransition
             in={showScrollButton && scrollButtonPreference}

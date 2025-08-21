@@ -7,6 +7,7 @@ import PlaceholderRow from '~/components/Chat/Messages/ui/PlaceholderRow';
 import SiblingSwitch from '~/components/Chat/Messages/SiblingSwitch';
 import HoverButtons from '~/components/Chat/Messages/HoverButtons';
 import MessageIcon from '~/components/Chat/Messages/MessageIcon';
+import { useGetConversationCosts } from '~/data-provider';
 import { Plugin } from '~/components/Messages/Content';
 import SubRow from '~/components/Chat/Messages/SubRow';
 import { MessageContext } from '~/Providers';
@@ -60,6 +61,21 @@ const MessageRender = memo(
     });
     const maximizeChatSpace = useRecoilValue(store.maximizeChatSpace);
     const fontSize = useRecoilValue(store.fontSize);
+    const convoId = conversation?.conversationId ?? '';
+    const { data: convoCosts } = useGetConversationCosts(convoId, {
+      enabled: !!convoId,
+    });
+
+    const perMessageCost = useMemo(() => {
+      if (!convoCosts || !convoCosts.perMessage || !msg?.messageId) {
+        return null;
+      }
+      const entry = convoCosts.perMessage.find((p) => p.messageId === msg.messageId);
+      if (!entry) {
+        return null;
+      }
+      return entry;
+    }, [convoCosts, msg?.messageId]);
 
     const handleRegenerateMessage = useCallback(() => regenerateMessage(), [regenerateMessage]);
     const hasNoChildren = !(msg?.children?.length ?? 0);
@@ -157,7 +173,50 @@ const MessageRender = memo(
             msg.isCreatedByUser ? 'user-turn' : 'agent-turn',
           )}
         >
-          <h2 className={cn('select-none font-semibold', fontSize)}>{messageLabel}</h2>
+          <h2 className={cn('select-none font-semibold', fontSize)}>
+            {messageLabel}
+            {perMessageCost && (
+              <span className="ml-2 inline-flex items-center gap-2 px-2 py-0.5 text-xs text-muted-foreground">
+                {perMessageCost.tokenCount > 0 && (
+                  <span>
+                    {perMessageCost.tokenType === 'prompt' ? (
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="1em"
+                        height="1em"
+                        fill="currentColor"
+                        viewBox="0 0 24 24"
+                        className="inline"
+                      >
+                        <path
+                          fillRule="evenodd"
+                          d="M11.293 5.293a1 1 0 0 1 1.414 0l5 5a1 1 0 0 1-1.414 1.414L13 8.414V18a1 1 0 1 1-2 0V8.414l-3.293 3.293a1 1 0 0 1-1.414-1.414l5-5Z"
+                          clipRule="evenodd"
+                        ></path>
+                      </svg>
+                    ) : (
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="1em"
+                        height="1em"
+                        fill="currentColor"
+                        viewBox="0 0 24 24"
+                        className="inline"
+                      >
+                        <path
+                          fillRule="evenodd"
+                          d="M12.707 18.707a1 1 0 0 1-1.414 0l-5-5a1 1 0 1 1 1.414-1.414L11 15.586V6a1 1 0 1 1 2 0v9.586l3.293-3.293a1 1 0 0 1 1.414 1.414l-5 5Z"
+                          clipRule="evenodd"
+                        ></path>
+                      </svg>
+                    )}
+                    {perMessageCost.tokenCount}t
+                  </span>
+                )}
+                <span className="whitespace-pre">${Math.abs(perMessageCost.usd).toFixed(6)}</span>
+              </span>
+            )}
+          </h2>
 
           <div className="flex flex-col gap-1">
             <div className="flex max-w-full flex-grow flex-col gap-0">
