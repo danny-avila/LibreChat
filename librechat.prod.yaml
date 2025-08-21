@@ -1,0 +1,42 @@
+# Production LibreChat Configuration
+version: 1.0.9
+cache: true
+
+# Definition of custom endpoints
+endpoints:
+  # Google/Gemini endpoint configuration
+  google:
+    streamRate: 5  # Lower stream rate for better stability with long responses
+    timeoutMs: 300000  # 5 minute timeout for long requests (300 seconds)
+
+# File configuration
+fileConfig:
+  endpoints:
+    google:
+      fileLimit: 20
+      fileSizeLimit: "100MB"
+      totalSizeLimit: "1GB"
+      supportedMimeTypes:
+        - "image/jpeg"
+        - "image/png"
+        - "image/gif"
+        - "image/webp"
+        - "text/plain"
+        - "application/pdf"
+        - "text/csv"
+        - "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        - "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+# RAG API Configuration
+ragConfig:
+  enabled: true
+  endpoint: "http://rag-api:8000"
+
+# Interface configuration
+interface:
+  privacyPolicy:
+    externalUrl: "https://emeritus-chatapp.confixa.com/privacy"
+    openNewTab: true
+  termsOfService:
+    externalUrl: "https://emeritus-chatapp.confixa.com/terms"
+    openNewTab: true

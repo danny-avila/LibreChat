@@ -21,6 +21,9 @@ USER node
 
 COPY --chown=node:node . .
 
+# Copy production config file
+COPY --chown=node:node librechat.prod.yaml ./librechat.yaml
+
 RUN \
     # Allow mounting of these files, which have no default
     touch .env ; \
