@@ -87,10 +87,9 @@ export default function MCPConfigDialog({
                   )}
                 />
                 {details.description && (
-                  <p
-                    className="text-xs text-text-secondary [&_a]:text-blue-500 [&_a]:hover:text-blue-600 dark:[&_a]:text-blue-400 dark:[&_a]:hover:text-blue-300"
-                    children={details.description}
-                  />
+                  <p className="text-xs text-text-secondary [&_a]:text-blue-500 [&_a]:hover:text-blue-600 dark:[&_a]:text-blue-400 dark:[&_a]:hover:text-blue-300">
+                    {details.description}
+                  </p>
                 )}
                 {errors[key] && <p className="text-xs text-red-500">{errors[key]?.message}</p>}
               </div>
