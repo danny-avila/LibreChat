@@ -90,7 +90,7 @@ export default defineConfig(({ command }) => ({
     }),
     sourcemapExclude({ excludeNodeModules: true }),
     compression({
-      threshold: 1024, // Reduzido para comprimir arquivos menores também
+      threshold: 1024, // Reduced to compress smaller files too
       algorithm: 'gzip',
     }),
   ],
@@ -99,11 +99,11 @@ export default defineConfig(({ command }) => ({
     sourcemap: process.env.NODE_ENV === 'development',
     outDir: './dist',
     minify: 'terser',
-    target: 'es2020', // Melhor compatibilidade com browseres modernos
+    target: 'es2020', // Improved compatibility with modern browsers
     rollupOptions: {
       preserveEntrySignatures: 'strict',
       output: {
-        // Otimização do tamanho dos chunks
+        // Chunk size optimization
         chunkFileNames: 'js/[name]-[hash].js',
         entryFileNames: 'js/[name]-[hash].js',
         assetFileNames: 'assets/[name]-[hash].[ext]',
