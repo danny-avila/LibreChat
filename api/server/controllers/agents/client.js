@@ -746,7 +746,7 @@ class AgentClient extends BaseClient {
   /**
    * @param {object} params
    * @param {string | ChatCompletionMessageParam[]} params.payload
-   * @param {Record<string, Record<string, string>>} [params.userMCPAuthMap
+   * @param {Record<string, Record<string, string>>} [params.userMCPAuthMap]
    * @param {AbortController} [params.abortController]
    */
   async chatCompletion({ payload, userMCPAuthMap, abortController = null }) {

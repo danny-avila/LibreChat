@@ -24,9 +24,9 @@ const {
 const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
 const { createFileSearchTool, primeFiles: primeSearchFiles } = require('./fileSearch');
 const { getUserPluginAuthValue } = require('~/server/services/PluginService');
+const { createMCPTool, createMCPTools } = require('~/server/services/MCP');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { getCachedTools } = require('~/server/services/Config');
-const { createMCPTool } = require('~/server/services/MCP');
 
 /**
  * Validates the availability and authentication of tools for a user based on environment variables or user-specific plugin authentication values.
@@ -302,7 +302,20 @@ Current Date & Time: ${replaceSpecialVars({ text: '{{iso_datetime}}' })}
       };
       continue;
     } else if (tool && cachedTools && mcpToolPattern.test(tool)) {
-      const serverName = tool.split(Constants.mcp_delimiter)[1];
+      const [toolName, serverName] = tool.split(Constants.mcp_delimiter);
+      if (toolName === Constants.mcp_all) {
+        const currentMCPGenerator = async () =>
+          createMCPTools({
+            req: options.req,
+            res: options.res,
+            serverName,
+            userMCPAuthMap,
+            model: agent?.model ?? model,
+            provider: agent?.provider ?? endpoint,
+          });
+        requestedMCPTools[serverName] = [currentMCPGenerator];
+        continue;
+      }
       const currentMCPGenerator = async () =>
         createMCPTool({
           req: options.req,
@@ -357,7 +370,9 @@ Current Date & Time: ${replaceSpecialVars({ text: '{{iso_datetime}}' })}
     for (const generator of generators) {
       try {
         const mcpTool = await generator();
-        if (mcpTool) {
+        if (Array.isArray(mcpTool)) {
+          loadedTools.push(...mcpTool);
+        } else if (mcpTool) {
           loadedTools.push(mcpTool);
         }
       } catch (error) {

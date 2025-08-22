@@ -100,26 +100,69 @@ function createAbortHandler({ userId, serverName, toolName, flowManager }) {
 }
 
 /**
- * Creates a general tool for an entire action set.
+ * Creates all tools from the specified MCP Server via `toolKey`.
  *
- * @param {Object} params - The parameters for loading action sets.
+ * This function assumes tools could not be aggregated from the cache of tool definitions,
+ * i.e. `availableTools`, and will reinitialize the MCP server to ensure all tools are generated.
+ *
+ * @param {Object} params
+ * @param {ServerRequest} params.req - The Express request object, containing user/request info.
+ * @param {ServerResponse} params.res - The Express response object for sending events.
+ * @param {string} params.serverName
+ * @param {Providers | EModelEndpoint} params.provider - The provider for the tool.
+ * @param {string} params.model
+ * @param {Record<string, Record<string, string>>} [params.userMCPAuthMap]
+ * @returns { Promise<Array<typeof tool | { _call: (toolInput: Object | string) => unknown}>> } An object with `_call` method to execute the tool input.
+ */
+async function createMCPTools({ req, res, serverName, provider, userMCPAuthMap }) {
+  const result = await reinitMCPServer({ req, serverName, userMCPAuthMap });
+  if (!result) {
+    logger.warn(`[MCP][${serverName}] Failed to reinitialize MCP server.`);
+    return;
+  }
+
+  const serverTools = [];
+  for (const tool of result.tools) {
+    const toolInstance = await createMCPTool({
+      req,
+      res,
+      provider,
+      userMCPAuthMap,
+      availableTools: result.availableTools,
+      toolKey: `${tool.name}${Constants.mcp_delimiter}${serverName}`,
+    });
+    if (toolInstance) {
+      serverTools.push(toolInstance);
+    }
+  }
+
+  return serverTools;
+}
+
+/**
+ * Creates a single tool from the specified MCP Server via `toolKey`.
+ * @param {Object} params
  * @param {ServerRequest} params.req - The Express request object, containing user/request info.
  * @param {ServerResponse} params.res - The Express response object for sending events.
  * @param {string} params.toolKey - The toolKey for the tool.
- * @param {import('@librechat/agents').Providers | EModelEndpoint} params.provider - The provider for the tool.
  * @param {string} params.model - The model for the tool.
- * @param {Record<string, Record<string, string>>} params.userMCPAuthMap
+ * @param {string} params.model - The model for the tool.
+ * @param {Providers | EModelEndpoint} params.provider - The provider for the tool.
+ * @param {LCAvailableTools} [params.availableTools]
+ * @param {Record<string, Record<string, string>>} [params.userMCPAuthMap]
  * @returns { Promise<typeof tool | { _call: (toolInput: Object | string) => unknown}> } An object with `_call` method to execute the tool input.
  */
-async function createMCPTool({ req, res, toolKey, provider, userMCPAuthMap }) {
+async function createMCPTool({
+  req,
+  res,
+  toolKey,
+  provider,
+  userMCPAuthMap,
+  availableTools: tools,
+}) {
   const [toolName, serverName] = toolKey.split(Constants.mcp_delimiter);
-  if (!req.user?.id) {
-    const message = `[MCP][${serverName}][${toolName}] User ID not found on MCP tool creation request.`;
-    logger.error(message);
-    throw new Error(message);
-  }
-
-  const availableTools = await getCachedTools({ userId: req.user?.id, includeGlobal: true });
+  const availableTools =
+    tools ?? (await getCachedTools({ userId: req.user?.id, includeGlobal: true }));
   /** @type {LCTool | undefined} */
   let toolDefinition = availableTools?.[toolKey]?.function;
   if (!toolDefinition) {
@@ -127,7 +170,7 @@ async function createMCPTool({ req, res, toolKey, provider, userMCPAuthMap }) {
       `[MCP][${serverName}][${toolName}] Requested tool not found in available tools, re-initializing MCP server.`,
     );
     const result = await reinitMCPServer({ req, serverName, userMCPAuthMap });
-    toolDefinition = result.availableTools?.[toolKey]?.function;
+    toolDefinition = result?.availableTools?.[toolKey]?.function;
   }
 
   if (!toolDefinition) {
@@ -401,6 +444,7 @@ async function getServerConnectionStatus(
 
 module.exports = {
   createMCPTool,
+  createMCPTools,
   getMCPSetupData,
   checkOAuthFlowStatus,
   getServerConnectionStatus,
