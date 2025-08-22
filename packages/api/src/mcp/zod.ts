@@ -484,3 +484,50 @@ export function convertWithResolvedRefs(
   const resolved = resolveJsonSchemaRefs(schema);
   return convertJsonSchemaToZod(resolved, options);
 }
+
+// Elicitation Zod schemas
+export const ElicitationActionSchema = z.enum(['accept', 'decline', 'cancel']);
+
+export const ElicitationPropertySchema = z.object({
+  type: z.enum(['string', 'number', 'integer', 'boolean']),
+  title: z.string().optional(),
+  description: z.string().optional(),
+  minLength: z.number().optional(),
+  maxLength: z.number().optional(),
+  minimum: z.number().optional(),
+  maximum: z.number().optional(),
+  format: z.enum(['email', 'uri', 'date', 'date-time']).optional(),
+  default: z.union([z.string(), z.number(), z.boolean()]).optional(),
+  enum: z.array(z.string()).optional(),
+  enumNames: z.array(z.string()).optional(),
+});
+
+export const ElicitationRequestSchemaSchema = z.object({
+  type: z.literal('object'),
+  properties: z.record(z.string(), ElicitationPropertySchema),
+  required: z.array(z.string()).optional(),
+});
+
+export const ElicitationCreateRequestSchema = z.object({
+  message: z.string(),
+  requestedSchema: ElicitationRequestSchemaSchema,
+});
+
+export const ElicitationResponseSchema = z.object({
+  action: ElicitationActionSchema,
+  content: z.record(z.string(), z.unknown()).optional(),
+});
+
+export const ElicitationStateSchema = z.object({
+  id: z.string(),
+  serverName: z.string(),
+  userId: z.string(),
+  request: ElicitationCreateRequestSchema,
+  timestamp: z.number(),
+});
+
+// MCP Request schema for elicitation/create
+export const ElicitationCreateMethodSchema = z.object({
+  method: z.literal('elicitation/create'),
+  params: ElicitationCreateRequestSchema,
+});

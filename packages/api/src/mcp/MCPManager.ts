@@ -1,10 +1,11 @@
 import pick from 'lodash/pick';
+import { EventEmitter } from 'events';
 import { logger } from '@librechat/data-schemas';
 import { CallToolResultSchema, ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import type { RequestOptions } from '@modelcontextprotocol/sdk/shared/protocol.js';
 import type { TokenMethods } from '@librechat/data-schemas';
 import type { FlowStateManager } from '~/flow/manager';
-import type { TUser } from 'librechat-data-provider';
+import type { TUser, ElicitationState, ElicitationResponse } from 'librechat-data-provider';
 import type { MCPOAuthTokens } from '~/mcp/oauth';
 import type { RequestBody } from '~/types';
 import type * as t from './types';
@@ -23,6 +24,12 @@ export class MCPManager extends UserConnectionManager {
   private static instance: MCPManager | null;
   // Connections shared by all users.
   private appConnections: ConnectionsRepository | null = null;
+  // EventEmitter functionality for elicitation events
+  private eventEmitter: EventEmitter = new EventEmitter();
+  // Elicitation state storage
+  private elicitationStates: Map<string, ElicitationState> = new Map();
+  // Pending elicitation resolvers
+  private pendingElicitations: Map<string, (response: unknown) => void> = new Map();
 
   /** Creates and initializes the singleton MCPManager instance */
   public static async createInstance(configs: t.MCPServers): Promise<MCPManager> {
@@ -42,6 +49,9 @@ export class MCPManager extends UserConnectionManager {
   public async initialize() {
     await this.serversRegistry.initialize();
     this.appConnections = new ConnectionsRepository(this.serversRegistry.appServerConfigs!);
+
+    // Don't set up elicitation handlers here - they will be set up during tool execution
+    // when we have the proper userId context
   }
 
   /** Returns all app-level connections */
@@ -253,6 +263,9 @@ Please follow these instructions when using tools from the respective MCP server
         );
       }
 
+      // Ensure elicitation handler is set up for this connection with the current userId
+      this.setupConnectionElicitationHandler(connection, serverName, userId);
+
       const rawConfig = this.getRawConfig(serverName) as t.MCPOptions;
       const currentOptions = processMCPEnv({
         user,
@@ -262,6 +275,13 @@ Please follow these instructions when using tools from the respective MCP server
       });
       if ('headers' in currentOptions) {
         connection.setRequestHeaders(currentOptions.headers || {});
+      }
+
+      // Set the current tool_call_id on the connection for elicitation context
+      const toolCallId = (options as { tool_call_id?: string })?.tool_call_id;
+      if (toolCallId) {
+        connection.setCurrentToolCallId(toolCallId);
+        logger.debug(`[MCP][${serverName}] Set tool_call_id on connection: ${toolCallId}`);
       }
 
       const result = await connection.client.request(
@@ -278,6 +298,13 @@ Please follow these instructions when using tools from the respective MCP server
           ...options,
         },
       );
+
+      // Clear the tool_call_id after the request completes
+      if (toolCallId) {
+        connection.clearCurrentToolCallId();
+        logger.debug(`[MCP][${serverName}] Cleared tool_call_id from connection`);
+      }
+
       if (userId) {
         this.updateUserLastActivity(userId);
       }
@@ -289,5 +316,171 @@ Please follow these instructions when using tools from the respective MCP server
       // Rethrowing allows the caller (createMCPTool) to handle the final user message
       throw error;
     }
+  }
+
+  // EventEmitter methods delegation
+  on(event: string, listener: (...args: unknown[]) => void): this {
+    this.eventEmitter.on(event, listener);
+    return this;
+  }
+
+  removeListener(event: string, listener: (...args: unknown[]) => void): this {
+    this.eventEmitter.removeListener(event, listener);
+    return this;
+  }
+
+  emit(event: string, ...args: unknown[]): boolean {
+    return this.eventEmitter.emit(event, ...args);
+  }
+
+  // Elicitation state management methods
+  getElicitationState(elicitationId: string): ElicitationState | undefined {
+    return this.elicitationStates.get(elicitationId);
+  }
+
+  setElicitationState(elicitationId: string, state: ElicitationState): void {
+    this.elicitationStates.set(elicitationId, state);
+    // Emit elicitationCreated event
+    const eventData = {
+      elicitationId,
+      userId: state.userId,
+      serverName: state.serverName,
+    };
+    logger.info(`[MCP] Emitting elicitationCreated event:`, eventData);
+    this.emit('elicitationCreated', eventData);
+  }
+
+  respondToElicitation(elicitationId: string, response: ElicitationResponse): boolean {
+    const state = this.elicitationStates.get(elicitationId);
+    const resolver = this.pendingElicitations.get(elicitationId);
+
+    if (!state) {
+      logger.warn(`[MCP] Elicitation ${elicitationId} not found`);
+      return false;
+    }
+
+    try {
+      // Send the response back to the MCP server via the resolver
+      if (resolver) {
+        resolver(response);
+        this.pendingElicitations.delete(elicitationId);
+      }
+
+      // Clean up the state
+      this.elicitationStates.delete(elicitationId);
+      logger.info(
+        `[MCP] Responded to elicitation ${elicitationId} with action: ${response.action}`,
+      );
+      return true;
+    } catch (error) {
+      logger.error(`[MCP] Error responding to elicitation ${elicitationId}:`, error);
+      return false;
+    }
+  }
+
+  // Clean up elicitation states (optional, for memory management)
+  cleanupExpiredElicitations(maxAge: number = 30 * 60 * 1000): void {
+    const now = Date.now();
+    for (const [id, state] of this.elicitationStates.entries()) {
+      if (now - state.timestamp > maxAge) {
+        this.elicitationStates.delete(id);
+        logger.debug(`[MCP] Cleaned up expired elicitation ${id}`);
+      }
+    }
+  }
+
+  // Track which connections already have elicitation handlers set up
+  private handlerSetupMap: Map<MCPConnection, string> = new Map();
+
+  private setupConnectionElicitationHandler(
+    connection: MCPConnection,
+    serverName: string,
+    contextUserId?: string,
+  ): void {
+    // Check if we already have a handler set up for this connection with this userId
+    const existingUserId = this.handlerSetupMap.get(connection);
+    if (existingUserId === contextUserId) {
+      // Handler already set up with the same userId, no need to recreate
+      return;
+    }
+
+    // Remove any existing listeners to avoid duplicates
+    connection.removeAllListeners('elicitationRequest');
+
+    // Track this setup
+    if (contextUserId) {
+      this.handlerSetupMap.set(connection, contextUserId);
+    }
+
+    connection.on(
+      'elicitationRequest',
+      (eventData: {
+        serverName: string;
+        userId: string;
+        request: unknown;
+        resolve: (response: unknown) => void;
+        context: { tool_call_id?: string };
+      }) => {
+        // Use the contextUserId if the connection doesn't have a userId (app-level connections)
+        const effectiveUserId = eventData.userId || contextUserId;
+
+        if (!effectiveUserId) {
+          logger.warn(`[MCP][${serverName}] No userId available for elicitation request, skipping`);
+          return;
+        }
+
+        logger.info(
+          `[MCP][${serverName}] Received elicitation request for user ${effectiveUserId} (original: ${eventData.userId}, context: ${contextUserId})`,
+        );
+        logger.info(`[MCP][${serverName}] Event context:`, eventData.context);
+
+        const elicitationId = `${serverName}_${effectiveUserId}_${Date.now()}`;
+        const toolCallId = eventData.context?.tool_call_id;
+
+        logger.info(`[MCP][${serverName}] Tool call ID: ${toolCallId}`);
+
+        // Create elicitation state
+        const elicitationState: ElicitationState = {
+          id: elicitationId,
+          serverName: eventData.serverName,
+          userId: effectiveUserId,
+          request: eventData.request as ElicitationState['request'],
+          timestamp: Date.now(),
+          tool_call_id: toolCallId,
+        } as ElicitationState;
+
+        logger.info(`[MCP][${serverName}] Created elicitation state:`, elicitationState);
+
+        // Store the resolver for later use
+        this.pendingElicitations.set(elicitationId, eventData.resolve);
+
+        logger.info(
+          `[MCP][${serverName}] Storing elicitation state and emitting elicitationCreated event for user ${effectiveUserId}`,
+        );
+
+        // Store the state and emit elicitationCreated event
+        this.setElicitationState(elicitationId, elicitationState);
+
+        // Don't resolve immediately - wait for user response via respondToElicitation
+      },
+    );
+
+    logger.debug(
+      `[MCP][${serverName}] Set up elicitation handler for connection with contextUserId: ${contextUserId}`,
+    );
+  }
+
+  // Override getUserConnection to set up elicitation handlers for user connections
+  public override async getUserConnection(
+    params: Parameters<UserConnectionManager['getUserConnection']>[0],
+  ): Promise<MCPConnection> {
+    const connection = await super.getUserConnection(params);
+
+    // Set up elicitation handler for this user connection
+    if (connection && params.user?.id) {
+      this.setupConnectionElicitationHandler(connection, params.serverName, params.user.id);
+    }
+
+    return connection;
   }
 }
