@@ -19,6 +19,7 @@ import ChatRoute from './ChatRoute';
 import Search from './Search';
 import Root from './Root';
 import AdminDashboard from '~/views/admin/AdminDashboard';
+import AdminLogs from '~/views/admin/AdminLogs'
 
 const AuthLayout = () => (
   <AuthContextProvider>
@@ -110,8 +111,13 @@ export const router = createBrowserRouter([
             path: 'admin',
             element: <AdminDashboard />,
           },
+          {
+            path: 'admin/logs',
+            element: <AdminLogs />,
+          },
         ],
       },
+      
     ],
   },
 ]);

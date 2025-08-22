@@ -13,7 +13,7 @@ import type { NavLink } from '~/common';
 import AgentPanelSwitch from '~/components/SidePanel/Agents/AgentPanelSwitch';
 import BookmarkPanel from '~/components/SidePanel/Bookmarks/BookmarkPanel';
 import MemoryViewer from '~/components/SidePanel/Memories/MemoryViewer';
-//import AdminPanel from '~/components/SidePanel/Admin/AdminPanel';
+import AdminPanel from '~/components/SidePanel/Admin/AdminPanel';
 import PanelSwitch from '~/components/SidePanel/Builder/PanelSwitch';
 import PromptsAccordion from '~/components/Prompts/PromptsAccordion';
 import Parameters from '~/components/SidePanel/Parameters/Panel';
@@ -177,11 +177,10 @@ export default function useSideNavLinks({
         label: '',
         icon: Shield,
         id: 'admin',
-        onClick: () => {
-          window.location.href = '/admin';
-        },
+        Component: AdminPanel,
       });
     }
+    
     
 
     links.push({
