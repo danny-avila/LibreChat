@@ -48,10 +48,11 @@ export default function useExportConversation({
   const { conversationId: paramId } = useParams();
 
   const getMessageTree = useCallback(() => {
-    const queryParam = paramId === 'new' ? paramId : conversation?.conversationId ?? paramId ?? '';
+    const queryParam =
+      paramId === 'new' ? paramId : (conversation?.conversationId ?? paramId ?? '');
     const messages = queryClient.getQueryData<TMessage[]>([QueryKeys.messages, queryParam]) ?? [];
     const dataTree = buildTree({ messages });
-    return dataTree?.length === 0 ? null : dataTree ?? null;
+    return dataTree?.length === 0 ? null : (dataTree ?? null);
   }, [paramId, conversation?.conversationId, queryClient]);
 
   const getMessageText = (message: TMessage | undefined, format = 'text') => {

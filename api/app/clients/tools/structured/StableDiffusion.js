@@ -11,7 +11,7 @@ const paths = require('~/config/paths');
 const { logger } = require('~/config');
 
 const displayMessage =
-  'Stable Diffusion displayed an image. All generated images are already plainly visible, so don\'t repeat the descriptions in detail. Do not list download links as they are available in the UI already. The user may download the images by clicking on them, but do not mention anything about downloading to the user.';
+  "Stable Diffusion displayed an image. All generated images are already plainly visible, so don't repeat the descriptions in detail. Do not list download links as they are available in the UI already. The user may download the images by clicking on them, but do not mention anything about downloading to the user.";
 
 class StableDiffusionAPI extends Tool {
   constructor(fields) {
@@ -44,7 +44,7 @@ class StableDiffusionAPI extends Tool {
 // "negative_prompt":"semi-realistic, cgi, 3d, render, sketch, cartoon, drawing, anime, out of frame, low quality, ugly, mutation, deformed"
 // - Generate images only once per human query unless explicitly requested by the user`;
     this.description =
-      'You can generate images using text with \'stable-diffusion\'. This tool is exclusively for visual content.';
+      "You can generate images using text with 'stable-diffusion'. This tool is exclusively for visual content.";
     this.schema = z.object({
       prompt: z
         .string()
