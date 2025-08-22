@@ -289,3 +289,37 @@ export const verifyTwoFactorTemp = () => '/api/auth/2fa/verify-temp';
 export const memories = () => '/api/memories';
 export const memory = (key: string) => `${memories()}/${encodeURIComponent(key)}`;
 export const memoryPreferences = () => `${memories()}/preferences`;
+
+/* Admin */
+export const adminRoot = () => '/api/admin';
+export const adminUsers = (params?: { page?: number; limit?: number; search?: string; role?: string }) => {
+  const { page, limit, search, role } = params ?? {};
+  const qp = new URLSearchParams();
+  if (page != null) qp.set('page', String(page));
+  if (limit != null) qp.set('limit', String(limit));
+  if (search) qp.set('search', search);
+  if (role) qp.set('role', role);
+  const qs = qp.toString();
+  return `${adminRoot()}/users${qs ? `?${qs}` : ''}`;
+};
+export const adminUser = (id: string) => `${adminRoot()}/users/${id}`;
+export const adminUserStats = (id: string) => `${adminRoot()}/users/${id}/stats`;
+export const adminUserRole = (id: string) => `${adminRoot()}/users/${id}/role`;
+export const adminUserConversations = (id: string, params?: { page?: number; limit?: number }) => {
+  const qp = new URLSearchParams();
+  if (params?.page != null) qp.set('page', String(params.page));
+  if (params?.limit != null) qp.set('limit', String(params.limit));
+  const qs = qp.toString();
+  return `${adminRoot()}/users/${id}/conversations${qs ? `?${qs}` : ''}`;
+};
+export const adminUserMessages = (
+  id: string,
+  params?: { page?: number; limit?: number; conversationId?: string },
+) => {
+  const qp = new URLSearchParams();
+  if (params?.page != null) qp.set('page', String(params.page));
+  if (params?.limit != null) qp.set('limit', String(params.limit));
+  if (params?.conversationId) qp.set('conversationId', params.conversationId);
+  const qs = qp.toString();
+  return `${adminRoot()}/users/${id}/messages${qs ? `?${qs}` : ''}`;
+};

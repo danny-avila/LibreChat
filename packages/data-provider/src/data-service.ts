@@ -10,6 +10,7 @@ import * as config from './config';
 import request from './request';
 import * as s from './schemas';
 import * as r from './roles';
+import * as apis from './api-endpoints';
 
 export function abortRequestWithMessage(
   endpoint: string,
@@ -840,3 +841,29 @@ export const createMemory = (data: {
 }): Promise<{ created: boolean; memory: q.TUserMemory }> => {
   return request.post(endpoints.memories(), data);
 };
+
+
+
+
+
+
+/* Admin */
+export const listUsersAdmin = (params?: { page?: number; limit?: number; search?: string; role?: string }) =>
+  request.get(apis.adminUsers(params ?? {}));
+
+export const getUserAdmin = (id: string) => request.get(apis.adminUser(id));
+
+export const getUserStatsAdmin = (id: string) => request.get(apis.adminUserStats(id));
+
+export const updateUserRoleAdmin = (id: string, role: string) =>
+  request.put(apis.adminUserRole(id), { role });
+
+export const deleteUserAdmin = (id: string) => request.delete(apis.adminUser(id));
+
+export const listUserConversationsAdmin = (id: string, params?: { page?: number; limit?: number }) =>
+  request.get(apis.adminUserConversations(id, params));
+
+export const listUserMessagesAdmin = (
+  id: string,
+  params?: { page?: number; limit?: number; conversationId?: string },
+) => request.get(apis.adminUserMessages(id, params));
