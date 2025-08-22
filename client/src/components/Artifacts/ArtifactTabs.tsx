@@ -19,7 +19,6 @@ export default function ArtifactTabs({
   artifact: Artifact;
   editorRef: React.MutableRefObject<CodeEditorRef>;
   previewRef: React.MutableRefObject<SandpackPreviewRef>;
-  isSubmitting: boolean;
 }) {
   const { isSubmitting } = useArtifactsContext();
   const { currentCode, setCurrentCode } = useEditorContext();

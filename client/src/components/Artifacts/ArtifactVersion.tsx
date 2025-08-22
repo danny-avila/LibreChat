@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { MenuButton } from '@ariakit/react';
 import { History, Check } from 'lucide-react';
-import { DropdownPopup, TooltipAnchor, Button } from '~/components';
-import { useLocalize, useMediaQuery } from '~/hooks';
+import { DropdownPopup, TooltipAnchor, Button, useMediaQuery } from '@librechat/client';
+import { useLocalize } from '~/hooks';
 
 interface ArtifactVersionProps {
   currentIndex: number;
