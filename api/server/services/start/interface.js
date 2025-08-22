@@ -77,6 +77,7 @@ async function loadDefaultInterface(config, configDefaults) {
     privacyPolicy: interfaceConfig?.privacyPolicy ?? defaults.privacyPolicy,
     termsOfService: interfaceConfig?.termsOfService ?? defaults.termsOfService,
     mcpServers: interfaceConfig?.mcpServers ?? defaults.mcpServers,
+    defaultEnabledMcpTools: interfaceConfig?.defaultEnabledMcpTools ?? defaults.defaultEnabledMcpTools,
     customWelcome: interfaceConfig?.customWelcome ?? defaults.customWelcome,
 
     // Permissions - only include if explicitly configured
@@ -285,7 +286,9 @@ async function loadDefaultInterface(config, configDefaults) {
   if (i > 0) {
     logSettings();
   }
-
+  if (loadedInterface.defaultEnabledMcpTools && loadedInterface.defaultEnabledMcpTools.length > 0) {
+    logger.info(`Default MCP tools configured: ${JSON.stringify(loadedInterface.defaultEnabledMcpTools)}`);
+  }
   return loadedInterface;
 }
 

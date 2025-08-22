@@ -112,6 +112,11 @@ https://www.librechat.ai/docs/configuration/stt_tts`);
       logger.info('Custom config file loaded:');
       logger.info(JSON.stringify(customConfig, null, 2));
       logger.debug('Custom config:', customConfig);
+      if (customConfig?.interface?.defaultEnabledMcpTools) {
+        logger.info(`[DEBUG] interface.defaultEnabledMcpTools found: ${JSON.stringify(customConfig.interface.defaultEnabledMcpTools)}`);
+      } else {
+        logger.info(`[DEBUG] interface.defaultEnabledMcpTools not found in config`);
+      }
     }
   }
 
