@@ -198,17 +198,18 @@ function Avatar() {
                 {localize('com_ui_upload')}
               </Button>
             </>
-          ) : (
+          ) : 
+          (
             <div
               className="flex h-64 w-11/12 flex-col items-center justify-center rounded-lg border-2 border-dashed border-gray-300 bg-transparent dark:border-gray-600"
-              onDrop={handleDrop}
-              onDragOver={handleDragOver}
+              // <stripe> onDrop={handleDrop}
+              // onDragOver={handleDragOver} </stripe>
             >
               <FileImage className="mb-4 size-12 text-gray-400" />
               <p className="mb-2 text-center text-sm text-gray-500 dark:text-gray-400">
                 {localize('com_ui_drag_drop')}
               </p>
-              <Button variant="secondary" onClick={openFileDialog}>
+              {/* <stripe> <Button variant="secondary" onClick={openFileDialog}>
                 {localize('com_ui_select_file')}
               </Button>
               <input
@@ -217,7 +218,7 @@ function Avatar() {
                 className="hidden"
                 accept=".png, .jpg, .jpeg"
                 onChange={handleFileChange}
-              />
+              /> </stripe> */}
             </div>
           )}
         </div>
