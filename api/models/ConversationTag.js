@@ -1,4 +1,4 @@
-const { logger } = require('@librechat/data-schemas');
+const { logger } = require('~/config');
 const { ConversationTag, Conversation } = require('~/db/models');
 
 /**

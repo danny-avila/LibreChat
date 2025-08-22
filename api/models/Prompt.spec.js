@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 const { ObjectId } = require('mongodb');
-const { logger } = require('@librechat/data-schemas');
+const { logger } = require('~/config');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const {
   SystemRoles,

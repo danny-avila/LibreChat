@@ -1,5 +1,5 @@
 const { isEnabled } = require('@librechat/api');
-const { logger } = require('@librechat/data-schemas');
+const { logger } = require('~/config');
 const { ErrorTypes } = require('librechat-data-provider');
 const { createSocialUser, handleExistingUser } = require('./process');
 const { findUser } = require('~/models');

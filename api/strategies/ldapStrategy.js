@@ -1,7 +1,7 @@
 const fs = require('fs');
 const { isEnabled } = require('@librechat/api');
 const LdapStrategy = require('passport-ldapauth');
-const { logger } = require('@librechat/data-schemas');
+const { logger } = require('~/config');
 const { SystemRoles, ErrorTypes } = require('librechat-data-provider');
 const { createUser, findUser, updateUser, countUsers } = require('~/models');
 const { getBalanceConfig } = require('~/server/services/Config');

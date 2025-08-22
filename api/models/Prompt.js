@@ -1,5 +1,5 @@
 const { ObjectId } = require('mongodb');
-const { logger } = require('@librechat/data-schemas');
+const { logger } = require('~/config');
 const {
   Constants,
   SystemRoles,
