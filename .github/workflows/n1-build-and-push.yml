@@ -54,10 +54,13 @@ jobs:
                 ref: 'main'
 
             - name: Update Azure Container App
-              run: |
-                az login --identity
-                az account set --subscription "${{ secrets.AZURE_NONPROD_SUBSCRIPTION_ID }}"
-                az containerapp update \
-                  --name conpaichateastusn1001 \
-                  --resource-group rg-playai-eastus-n1-001 \
-                  --yaml $GITHUB_WORKSPACE/az_container_app_definitions/n1_container_app_definition.yml
+              uses: azure/cli@v2
+              with:
+                azcliversion: latest
+                inlineScript: |
+                    az login --identity
+                    az account set --subscription "${{ secrets.AZURE_NONPROD_SUBSCRIPTION_ID }}"
+                    az containerapp update \
+                      --name conpaichateastusn1001 \
+                      --resource-group rg-playai-eastus-n1-001 \
+                      --yaml $GITHUB_WORKSPACE/az_container_app_definitions/n1_container_app_definition.yml
