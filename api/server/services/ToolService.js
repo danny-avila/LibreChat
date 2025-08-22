@@ -604,6 +604,7 @@ async function loadAgentTools({ req, res, agent, tool_resources, openAIApiKey })
   if (!checkCapability(AgentCapabilities.actions)) {
     return {
       tools: agentTools,
+      userMCPAuthMap,
       toolContextMap,
     };
   }
@@ -615,6 +616,7 @@ async function loadAgentTools({ req, res, agent, tool_resources, openAIApiKey })
     }
     return {
       tools: agentTools,
+      userMCPAuthMap,
       toolContextMap,
     };
   }
