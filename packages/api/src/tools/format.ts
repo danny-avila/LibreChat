@@ -1,5 +1,6 @@
 import { AuthType, Constants, EToolResources } from 'librechat-data-provider';
-import type { TCustomConfig, TPlugin, FunctionTool } from 'librechat-data-provider';
+import type { TCustomConfig, TPlugin } from 'librechat-data-provider';
+import { LCAvailableTools, LCFunctionTool } from '~/mcp/types';
 
 /**
  * Filters out duplicate plugins from the list of plugins.
@@ -60,7 +61,7 @@ export function convertMCPToolToPlugin({
   customConfig,
 }: {
   toolKey: string;
-  toolData: FunctionTool;
+  toolData: LCFunctionTool;
   customConfig?: Partial<TCustomConfig> | null;
 }): TPlugin | undefined {
   if (!toolData.function || !toolKey.includes(Constants.mcp_delimiter)) {
@@ -112,7 +113,7 @@ export function convertMCPToolsToPlugins({
   functionTools,
   customConfig,
 }: {
-  functionTools?: Record<string, FunctionTool>;
+  functionTools?: LCAvailableTools;
   customConfig?: Partial<TCustomConfig> | null;
 }): TPlugin[] | undefined {
   if (!functionTools || typeof functionTools !== 'object') {
