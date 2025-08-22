@@ -100,7 +100,7 @@ const VirtualizedAgentGrid: React.FC<VirtualizedAgentGridProps> = ({
       if (scrollPosition >= 0.8 && hasNextPage && !isFetchingNextPage && !isFetching) {
         fetchNextPage();
       }
-    }, 100); // Reduzido de 200ms para 100ms para melhor responsividade
+    }, 100);
 
     scrollElement.addEventListener('scroll', throttledScrollHandler, { passive: true });
 
