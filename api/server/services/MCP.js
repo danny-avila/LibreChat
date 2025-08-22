@@ -126,8 +126,8 @@ async function createMCPTool({ req, res, toolKey, provider, userMCPAuthMap }) {
     logger.warn(
       `[MCP][${serverName}][${toolName}] Requested tool not found in available tools, re-initializing MCP server.`,
     );
-    const result = await reinitMCPServer({ req, toolKey, serverName, userMCPAuthMap });
-    toolDefinition = result.toolDefinition;
+    const result = await reinitMCPServer({ req, serverName, userMCPAuthMap });
+    toolDefinition = result.availableTools?.[toolKey]?.function;
   }
 
   if (!toolDefinition) {

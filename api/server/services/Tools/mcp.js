@@ -8,15 +8,14 @@ const { getLogStores } = require('~/cache');
 /**
  * @param {Object} params
  * @param {ServerRequest} params.req
- * @param {string} params.toolKey - The key of the tool to reinitialize
  * @param {string} params.serverName - The name of the MCP server
  * @param {Record<string, Record<string, string>>} [params.userMCPAuthMap]
  */
-async function reinitMCPServer({ req, toolKey, serverName, userMCPAuthMap }) {
+async function reinitMCPServer({ req, serverName, userMCPAuthMap }) {
   /** @type {MCPConnection | null} */
   let userConnection = null;
-  /** @type {LCFunctionTool | null} */
-  let toolDefinition = null;
+  /** @type {LCAvailableTools | null} */
+  let availableTools = null;
   /** @type {ReturnType<MCPConnection['fetchTools']> | null} */
   let tools = null;
   let oauthRequired = false;
@@ -76,12 +75,11 @@ async function reinitMCPServer({ req, toolKey, serverName, userMCPAuthMap }) {
 
     if (userConnection && !oauthRequired) {
       tools = await userConnection.fetchTools();
-      const availableTools = await updateMCPUserTools({
+      availableTools = await updateMCPUserTools({
         userId: req.user.id,
         serverName,
         tools,
       });
-      toolDefinition = availableTools?.[toolKey]?.function;
     }
 
     logger.debug(
@@ -99,7 +97,7 @@ async function reinitMCPServer({ req, toolKey, serverName, userMCPAuthMap }) {
     };
 
     const result = {
-      toolDefinition,
+      availableTools,
       success: Boolean((userConnection && !oauthRequired) || (oauthRequired && oauthUrl)),
       message: getResponseMessage(),
       oauthRequired,

@@ -1,9 +1,9 @@
 const fs = require('fs');
 const path = require('path');
 const { sleep } = require('@librechat/agents');
-const { getToolkitKey } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 const { zodToJsonSchema } = require('zod-to-json-schema');
+const { getToolkitKey, getUserMCPAuthMap } = require('@librechat/api');
 const { Calculator } = require('@langchain/community/tools/calculator');
 const { tool: toolFn, Tool, DynamicStructuredTool } = require('@langchain/core/tools');
 const {
@@ -37,7 +37,6 @@ const {
   getEndpointsConfig,
   hasCustomUserVars,
   getCachedTools,
-  getMCPAuthMap,
 } = require('~/server/services/Config');
 const { createOnSearchResults } = require('~/server/services/Tools/search');
 const { isActionDomainAllowed } = require('~/server/services/domains');
@@ -532,7 +531,7 @@ async function loadAgentTools({ req, res, agent, tool_resources, openAIApiKey })
   /** @type {Record<string, Record<string, string>>} */
   let userMCPAuthMap;
   if (await hasCustomUserVars()) {
-    userMCPAuthMap = await getMCPAuthMap({
+    userMCPAuthMap = await getUserMCPAuthMap({
       tools: agent.tools,
       userId: req.user.id,
       findPluginAuthsByKeys,
