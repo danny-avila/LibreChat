@@ -151,23 +151,17 @@ function createOAuthCallback({ runStepEmitter, runStepDeltaEmitter }) {
 }
 
 /**
- * Creates all tools from the specified MCP Server via `toolKey`.
- *
- * This function assumes tools could not be aggregated from the cache of tool definitions,
- * i.e. `availableTools`, and will reinitialize the MCP server to ensure all tools are generated.
- *
  * @param {Object} params
  * @param {ServerRequest} params.req - The Express request object, containing user/request info.
  * @param {ServerResponse} params.res - The Express response object for sending events.
  * @param {string} params.serverName
  * @param {AbortSignal} params.signal
- * @param {Providers | EModelEndpoint} params.provider - The provider for the tool.
  * @param {string} params.model
  * @param {number} [params.index]
  * @param {Record<string, Record<string, string>>} [params.userMCPAuthMap]
  * @returns { Promise<Array<typeof tool | { _call: (toolInput: Object | string) => unknown}>> } An object with `_call` method to execute the tool input.
  */
-async function createMCPTools({ req, res, index, signal, serverName, provider, userMCPAuthMap }) {
+async function reconnectServer({ req, res, index, signal, serverName, userMCPAuthMap }) {
   const runId = Constants.USE_PRELIM_RESPONSE_MESSAGE_ID;
   const flowId = `${req.user?.id}:${serverName}:${Date.now()}`;
   const flowManager = getFlowStateManager(getLogStores(CacheKeys.FLOWS));
@@ -197,7 +191,7 @@ async function createMCPTools({ req, res, index, signal, serverName, provider, u
     callback,
     flowManager,
   });
-  const result = await reinitMCPServer({
+  return await reinitMCPServer({
     req,
     signal,
     serverName,
@@ -208,6 +202,27 @@ async function createMCPTools({ req, res, index, signal, serverName, provider, u
     returnOnOAuth: false,
     connectionTimeout: Time.ONE_MINUTE,
   });
+}
+
+/**
+ * Creates all tools from the specified MCP Server via `toolKey`.
+ *
+ * This function assumes tools could not be aggregated from the cache of tool definitions,
+ * i.e. `availableTools`, and will reinitialize the MCP server to ensure all tools are generated.
+ *
+ * @param {Object} params
+ * @param {ServerRequest} params.req - The Express request object, containing user/request info.
+ * @param {ServerResponse} params.res - The Express response object for sending events.
+ * @param {string} params.serverName
+ * @param {string} params.model
+ * @param {Providers | EModelEndpoint} params.provider - The provider for the tool.
+ * @param {number} [params.index]
+ * @param {AbortSignal} [params.signal]
+ * @param {Record<string, Record<string, string>>} [params.userMCPAuthMap]
+ * @returns { Promise<Array<typeof tool | { _call: (toolInput: Object | string) => unknown}>> } An object with `_call` method to execute the tool input.
+ */
+async function createMCPTools({ req, res, index, signal, serverName, provider, userMCPAuthMap }) {
+  const result = await reconnectServer({ req, res, index, signal, serverName, userMCPAuthMap });
   if (!result || !result.tools) {
     logger.warn(`[MCP][${serverName}] Failed to reinitialize MCP server.`);
     return;
@@ -238,7 +253,8 @@ async function createMCPTools({ req, res, index, signal, serverName, provider, u
  * @param {ServerResponse} params.res - The Express response object for sending events.
  * @param {string} params.toolKey - The toolKey for the tool.
  * @param {string} params.model - The model for the tool.
- * @param {string} params.model - The model for the tool.
+ * @param {number} [params.index]
+ * @param {AbortSignal} [params.signal]
  * @param {Providers | EModelEndpoint} params.provider - The provider for the tool.
  * @param {LCAvailableTools} [params.availableTools]
  * @param {Record<string, Record<string, string>>} [params.userMCPAuthMap]
@@ -247,6 +263,8 @@ async function createMCPTools({ req, res, index, signal, serverName, provider, u
 async function createMCPTool({
   req,
   res,
+  index,
+  signal,
   toolKey,
   provider,
   userMCPAuthMap,
@@ -261,7 +279,7 @@ async function createMCPTool({
     logger.warn(
       `[MCP][${serverName}][${toolName}] Requested tool not found in available tools, re-initializing MCP server.`,
     );
-    const result = await reinitMCPServer({ req, serverName, userMCPAuthMap });
+    const result = await reconnectServer({ req, res, index, signal, serverName, userMCPAuthMap });
     toolDefinition = result?.availableTools?.[toolKey]?.function;
   }
 

@@ -320,8 +320,9 @@ Current Date & Time: ${replaceSpecialVars({ text: '{{iso_datetime}}' })}
         requestedMCPTools[serverName] = [currentMCPGenerator];
         continue;
       }
-      const currentMCPGenerator = async () =>
+      const currentMCPGenerator = async (index) =>
         createMCPTool({
+          index,
           req: options.req,
           res: options.res,
           toolKey: tool,
