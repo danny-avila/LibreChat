@@ -1,8 +1,6 @@
 const { logger } = require('@librechat/data-schemas');
-const { getCachedTools, setCachedTools, getAppConfig } = require('./Config');
-const { CacheKeys } = require('librechat-data-provider');
+const { mergeAppTools, getAppConfig } = require('./Config');
 const { createMCPManager } = require('~/config');
-const { mergeAppTools } = require('./Config');
 
 /**
  * Initialize MCP servers
