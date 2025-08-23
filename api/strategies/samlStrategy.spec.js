@@ -28,7 +28,7 @@ jest.mock('~/server/services/Config', () => ({
 jest.mock('@librechat/api', () => ({
   getBalanceConfig: jest.fn(() => ({
     tokenCredits: 1000,
-    startingBalance: 1000,
+    startBalance: 1000,
   })),
 }));
 jest.mock('~/server/services/Config/EndpointService', () => ({

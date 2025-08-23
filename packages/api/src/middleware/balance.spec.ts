@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { logger, balanceSchema } from '@librechat/data-schemas';
 import type { NextFunction, Request as ServerRequest, Response as ServerResponse } from 'express';
-import type { IBalance, BalanceConfig } from '@librechat/data-schemas';
+import type { IBalance } from '@librechat/data-schemas';
 import { createSetBalanceConfig } from './balance';
 
 jest.mock('@librechat/data-schemas', () => ({
@@ -48,23 +48,22 @@ describe('createSetBalanceConfig', () => {
   });
 
   const mockNext: NextFunction = jest.fn();
-
-  const defaultBalanceConfig: BalanceConfig = {
-    enabled: true,
-    startBalance: 1000,
-    autoRefillEnabled: true,
-    refillIntervalValue: 30,
-    refillIntervalUnit: 'days',
-    refillAmount: 500,
-  };
-
   describe('Basic Functionality', () => {
     test('should create balance record for new user with start balance', async () => {
       const userId = new mongoose.Types.ObjectId();
-      const getBalanceConfig = jest.fn().mockResolvedValue(defaultBalanceConfig);
+      const getAppConfig = jest.fn().mockResolvedValue({
+        balance: {
+          enabled: true,
+          startBalance: 1000,
+          autoRefillEnabled: true,
+          refillIntervalValue: 30,
+          refillIntervalUnit: 'days',
+          refillAmount: 500,
+        },
+      });
 
       const middleware = createSetBalanceConfig({
-        getBalanceConfig,
+        getAppConfig,
         Balance,
       });
 
@@ -73,7 +72,7 @@ describe('createSetBalanceConfig', () => {
 
       await middleware(req as ServerRequest, res as ServerResponse, mockNext);
 
-      expect(getBalanceConfig).toHaveBeenCalled();
+      expect(getAppConfig).toHaveBeenCalled();
       expect(mockNext).toHaveBeenCalled();
 
       const balanceRecord = await Balance.findOne({ user: userId });
@@ -88,10 +87,14 @@ describe('createSetBalanceConfig', () => {
 
     test('should skip if balance config is not enabled', async () => {
       const userId = new mongoose.Types.ObjectId();
-      const getBalanceConfig = jest.fn().mockResolvedValue({ enabled: false });
+      const getAppConfig = jest.fn().mockResolvedValue({
+        balance: {
+          enabled: false,
+        },
+      });
 
       const middleware = createSetBalanceConfig({
-        getBalanceConfig,
+        getAppConfig,
         Balance,
       });
 
@@ -108,13 +111,15 @@ describe('createSetBalanceConfig', () => {
 
     test('should skip if startBalance is null', async () => {
       const userId = new mongoose.Types.ObjectId();
-      const getBalanceConfig = jest.fn().mockResolvedValue({
-        enabled: true,
-        startBalance: null,
+      const getAppConfig = jest.fn().mockResolvedValue({
+        balance: {
+          enabled: true,
+          startBalance: null,
+        },
       });
 
       const middleware = createSetBalanceConfig({
-        getBalanceConfig,
+        getAppConfig,
         Balance,
       });
 
@@ -131,10 +136,19 @@ describe('createSetBalanceConfig', () => {
 
     test('should handle user._id as string', async () => {
       const userId = new mongoose.Types.ObjectId().toString();
-      const getBalanceConfig = jest.fn().mockResolvedValue(defaultBalanceConfig);
+      const getAppConfig = jest.fn().mockResolvedValue({
+        balance: {
+          enabled: true,
+          startBalance: 1000,
+          autoRefillEnabled: true,
+          refillIntervalValue: 30,
+          refillIntervalUnit: 'days',
+          refillAmount: 500,
+        },
+      });
 
       const middleware = createSetBalanceConfig({
-        getBalanceConfig,
+        getAppConfig,
         Balance,
       });
 
@@ -151,10 +165,19 @@ describe('createSetBalanceConfig', () => {
     });
 
     test('should skip if user is not present in request', async () => {
-      const getBalanceConfig = jest.fn().mockResolvedValue(defaultBalanceConfig);
+      const getAppConfig = jest.fn().mockResolvedValue({
+        balance: {
+          enabled: true,
+          startBalance: 1000,
+          autoRefillEnabled: true,
+          refillIntervalValue: 30,
+          refillIntervalUnit: 'days',
+          refillAmount: 500,
+        },
+      });
 
       const middleware = createSetBalanceConfig({
-        getBalanceConfig,
+        getAppConfig,
         Balance,
       });
 
@@ -164,7 +187,7 @@ describe('createSetBalanceConfig', () => {
       await middleware(req, res as ServerResponse, mockNext);
 
       expect(mockNext).toHaveBeenCalled();
-      expect(getBalanceConfig).toHaveBeenCalled();
+      expect(getAppConfig).toHaveBeenCalled();
     });
   });
 
@@ -183,17 +206,19 @@ describe('createSetBalanceConfig', () => {
       // Remove lastRefill to simulate existing user without it
       await Balance.updateOne({ _id: doc._id }, { $unset: { lastRefill: 1 } });
 
-      const getBalanceConfig = jest.fn().mockResolvedValue({
-        enabled: true,
-        startBalance: 1000,
-        autoRefillEnabled: true,
-        refillIntervalValue: 30,
-        refillIntervalUnit: 'days',
-        refillAmount: 500,
+      const getAppConfig = jest.fn().mockResolvedValue({
+        balance: {
+          enabled: true,
+          startBalance: 1000,
+          autoRefillEnabled: true,
+          refillIntervalValue: 30,
+          refillIntervalUnit: 'days',
+          refillAmount: 500,
+        },
       });
 
       const middleware = createSetBalanceConfig({
-        getBalanceConfig,
+        getAppConfig,
         Balance,
       });
 
@@ -233,17 +258,19 @@ describe('createSetBalanceConfig', () => {
         lastRefill: existingLastRefill,
       });
 
-      const getBalanceConfig = jest.fn().mockResolvedValue({
-        enabled: true,
-        startBalance: 1000,
-        autoRefillEnabled: true,
-        refillIntervalValue: 30,
-        refillIntervalUnit: 'days',
-        refillAmount: 500,
+      const getAppConfig = jest.fn().mockResolvedValue({
+        balance: {
+          enabled: true,
+          startBalance: 1000,
+          autoRefillEnabled: true,
+          refillIntervalValue: 30,
+          refillIntervalUnit: 'days',
+          refillAmount: 500,
+        },
       });
 
       const middleware = createSetBalanceConfig({
-        getBalanceConfig,
+        getAppConfig,
         Balance,
       });
 
@@ -275,17 +302,19 @@ describe('createSetBalanceConfig', () => {
       // Remove lastRefill to simulate the edge case
       await Balance.updateOne({ _id: doc._id }, { $unset: { lastRefill: 1 } });
 
-      const getBalanceConfig = jest.fn().mockResolvedValue({
-        enabled: true,
-        startBalance: 1000,
-        autoRefillEnabled: true,
-        refillIntervalValue: 30,
-        refillIntervalUnit: 'days',
-        refillAmount: 500,
+      const getAppConfig = jest.fn().mockResolvedValue({
+        balance: {
+          enabled: true,
+          startBalance: 1000,
+          autoRefillEnabled: true,
+          refillIntervalValue: 30,
+          refillIntervalUnit: 'days',
+          refillAmount: 500,
+        },
       });
 
       const middleware = createSetBalanceConfig({
-        getBalanceConfig,
+        getAppConfig,
         Balance,
       });
 
@@ -306,14 +335,17 @@ describe('createSetBalanceConfig', () => {
     test('should not set lastRefill when auto-refill is disabled', async () => {
       const userId = new mongoose.Types.ObjectId();
 
-      const getBalanceConfig = jest.fn().mockResolvedValue({
-        enabled: true,
-        startBalance: 1000,
-        autoRefillEnabled: false,
+      const getAppConfig = jest.fn().mockResolvedValue({
+        balance: {
+          enabled: true,
+
+          startBalance: 1000,
+          autoRefillEnabled: false,
+        },
       });
 
       const middleware = createSetBalanceConfig({
-        getBalanceConfig,
+        getAppConfig,
         Balance,
       });
 
@@ -347,17 +379,19 @@ describe('createSetBalanceConfig', () => {
         refillAmount: 100,
       });
 
-      const getBalanceConfig = jest.fn().mockResolvedValue({
-        enabled: true,
-        startBalance: 1000,
-        autoRefillEnabled: true,
-        refillIntervalValue: 30,
-        refillIntervalUnit: 'days',
-        refillAmount: 500,
+      const getAppConfig = jest.fn().mockResolvedValue({
+        balance: {
+          enabled: true,
+          startBalance: 1000,
+          autoRefillEnabled: true,
+          refillIntervalValue: 30,
+          refillIntervalUnit: 'days',
+          refillAmount: 500,
+        },
       });
 
       const middleware = createSetBalanceConfig({
-        getBalanceConfig,
+        getAppConfig,
         Balance,
       });
 
@@ -389,10 +423,19 @@ describe('createSetBalanceConfig', () => {
         lastRefill: lastRefillTime,
       });
 
-      const getBalanceConfig = jest.fn().mockResolvedValue(defaultBalanceConfig);
+      const getAppConfig = jest.fn().mockResolvedValue({
+        balance: {
+          enabled: true,
+          startBalance: 1000,
+          autoRefillEnabled: true,
+          refillIntervalValue: 30,
+          refillIntervalUnit: 'days',
+          refillAmount: 500,
+        },
+      });
 
       const middleware = createSetBalanceConfig({
-        getBalanceConfig,
+        getAppConfig,
         Balance,
       });
 
@@ -417,13 +460,16 @@ describe('createSetBalanceConfig', () => {
         tokenCredits: null,
       });
 
-      const getBalanceConfig = jest.fn().mockResolvedValue({
-        enabled: true,
-        startBalance: 2000,
+      const getAppConfig = jest.fn().mockResolvedValue({
+        balance: {
+          enabled: true,
+
+          startBalance: 2000,
+        },
       });
 
       const middleware = createSetBalanceConfig({
-        getBalanceConfig,
+        getAppConfig,
         Balance,
       });
 
@@ -440,7 +486,16 @@ describe('createSetBalanceConfig', () => {
   describe('Error Handling', () => {
     test('should handle database errors gracefully', async () => {
       const userId = new mongoose.Types.ObjectId();
-      const getBalanceConfig = jest.fn().mockResolvedValue(defaultBalanceConfig);
+      const getAppConfig = jest.fn().mockResolvedValue({
+        balance: {
+          enabled: true,
+          startBalance: 1000,
+          autoRefillEnabled: true,
+          refillIntervalValue: 30,
+          refillIntervalUnit: 'days',
+          refillAmount: 500,
+        },
+      });
       const dbError = new Error('Database error');
 
       // Mock Balance.findOne to throw an error
@@ -451,7 +506,7 @@ describe('createSetBalanceConfig', () => {
       }) as unknown as mongoose.Model<IBalance>['findOne']);
 
       const middleware = createSetBalanceConfig({
-        getBalanceConfig,
+        getAppConfig,
         Balance,
       });
 
@@ -464,13 +519,13 @@ describe('createSetBalanceConfig', () => {
       expect(mockNext).toHaveBeenCalledWith(dbError);
     });
 
-    test('should handle getBalanceConfig errors', async () => {
+    test('should handle getAppConfig errors', async () => {
       const userId = new mongoose.Types.ObjectId();
       const configError = new Error('Config error');
-      const getBalanceConfig = jest.fn().mockRejectedValue(configError);
+      const getAppConfig = jest.fn().mockRejectedValue(configError);
 
       const middleware = createSetBalanceConfig({
-        getBalanceConfig,
+        getAppConfig,
         Balance,
       });
 
@@ -487,17 +542,20 @@ describe('createSetBalanceConfig', () => {
       const userId = new mongoose.Types.ObjectId();
 
       // Missing required auto-refill fields
-      const getBalanceConfig = jest.fn().mockResolvedValue({
-        enabled: true,
-        startBalance: 1000,
-        autoRefillEnabled: true,
-        refillIntervalValue: null, // Invalid
-        refillIntervalUnit: 'days',
-        refillAmount: 500,
+      const getAppConfig = jest.fn().mockResolvedValue({
+        balance: {
+          enabled: true,
+
+          startBalance: 1000,
+          autoRefillEnabled: true,
+          refillIntervalValue: null, // Invalid
+          refillIntervalUnit: 'days',
+          refillAmount: 500,
+        },
       });
 
       const middleware = createSetBalanceConfig({
-        getBalanceConfig,
+        getAppConfig,
         Balance,
       });
 
@@ -519,10 +577,19 @@ describe('createSetBalanceConfig', () => {
   describe('Concurrent Updates', () => {
     test('should handle concurrent middleware calls for same user', async () => {
       const userId = new mongoose.Types.ObjectId();
-      const getBalanceConfig = jest.fn().mockResolvedValue(defaultBalanceConfig);
+      const getAppConfig = jest.fn().mockResolvedValue({
+        balance: {
+          enabled: true,
+          startBalance: 1000,
+          autoRefillEnabled: true,
+          refillIntervalValue: 30,
+          refillIntervalUnit: 'days',
+          refillAmount: 500,
+        },
+      });
 
       const middleware = createSetBalanceConfig({
-        getBalanceConfig,
+        getAppConfig,
         Balance,
       });
 
@@ -554,17 +621,20 @@ describe('createSetBalanceConfig', () => {
       async (unit) => {
         const userId = new mongoose.Types.ObjectId();
 
-        const getBalanceConfig = jest.fn().mockResolvedValue({
-          enabled: true,
-          startBalance: 1000,
-          autoRefillEnabled: true,
-          refillIntervalValue: 10,
-          refillIntervalUnit: unit,
-          refillAmount: 100,
+        const getAppConfig = jest.fn().mockResolvedValue({
+          balance: {
+            enabled: true,
+
+            startBalance: 1000,
+            autoRefillEnabled: true,
+            refillIntervalValue: 10,
+            refillIntervalUnit: unit,
+            refillAmount: 100,
+          },
         });
 
         const middleware = createSetBalanceConfig({
-          getBalanceConfig,
+          getAppConfig,
           Balance,
         });
 
