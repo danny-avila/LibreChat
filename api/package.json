@@ -97,7 +97,6 @@
     "nodemailer": "^6.9.15",
     "ollama": "^0.5.0",
     "openai": "^5.10.1",
-    "openai-chat-tokens": "^0.2.8",
     "openid-client": "^6.5.0",
     "passport": "^0.6.0",
     "passport-apple": "^2.0.2",
