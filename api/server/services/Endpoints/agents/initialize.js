@@ -19,7 +19,10 @@ const AgentClient = require('~/server/controllers/agents/client');
 const { getAgent } = require('~/models/Agent');
 const { logViolation } = require('~/cache');
 
-function createToolLoader() {
+/**
+ * @param {AbortSignal} signal
+ */
+function createToolLoader(signal) {
   /**
    * @param {object} params
    * @param {ServerRequest} params.req
@@ -42,6 +45,7 @@ function createToolLoader() {
         req,
         res,
         agent,
+        signal,
         tool_resources,
       });
     } catch (error) {
@@ -50,7 +54,7 @@ function createToolLoader() {
   };
 }
 
-const initializeClient = async ({ req, res, endpointOption }) => {
+const initializeClient = async ({ req, res, signal, endpointOption }) => {
   if (!endpointOption) {
     throw new Error('Endpoint option not provided');
   }
@@ -96,7 +100,7 @@ const initializeClient = async ({ req, res, endpointOption }) => {
   /** @type {Set<string>} */
   const allowedProviders = new Set(req?.app?.locals?.[EModelEndpoint.agents]?.allowedProviders);
 
-  const loadTools = createToolLoader();
+  const loadTools = createToolLoader(signal);
   /** @type {Array<MongoFile>} */
   const requestFiles = req.body.files ?? [];
   /** @type {string} */

@@ -350,6 +350,7 @@ export class MCPConnectionFactory {
         newFlowId,
         'mcp_oauth',
         flowMetadata as FlowMetadata,
+        this.signal,
       );
       if (typeof this.oauthEnd === 'function') {
         await this.oauthEnd();

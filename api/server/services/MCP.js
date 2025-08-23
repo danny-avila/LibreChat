@@ -2,7 +2,6 @@ const { z } = require('zod');
 const { tool } = require('@langchain/core/tools');
 const { logger } = require('@librechat/data-schemas');
 const {
-  sleep,
   Providers,
   StepTypes,
   GraphEvents,
@@ -84,25 +83,19 @@ function createRunStepEmitter({ res, runId, stepId, toolCall, index }) {
  * @param {string} params.flowId - The ID of the login flow.
  * @param {FlowStateManager<any>} params.flowManager - The flow manager instance.
  * @param {(authURL: string) => void} [params.callback]
- * @param {AbortSignal} [params.signal] - The abort signal to handle cancellation.
  */
-function createOAuthStart({ flowId, flowManager, callback, signal }) {
+function createOAuthStart({ flowId, flowManager, callback }) {
   /**
    * Creates a function to handle OAuth login requests.
    * @param {string} authURL - The URL to redirect the user for OAuth authentication.
    * @returns {Promise<boolean>} Returns true to indicate the event was sent successfully.
    */
   return async function (authURL) {
-    await flowManager.createFlowWithHandler(
-      flowId,
-      'oauth_login',
-      async () => {
-        callback?.(authURL);
-        logger.debug('Sent OAuth login request to client');
-        return true;
-      },
-      signal,
-    );
+    await flowManager.createFlowWithHandler(flowId, 'oauth_login', async () => {
+      callback?.(authURL);
+      logger.debug('Sent OAuth login request to client');
+      return true;
+    });
   };
 }
 
@@ -167,15 +160,16 @@ function createOAuthCallback({ runStepEmitter, runStepDeltaEmitter }) {
  * @param {ServerRequest} params.req - The Express request object, containing user/request info.
  * @param {ServerResponse} params.res - The Express response object for sending events.
  * @param {string} params.serverName
+ * @param {AbortSignal} params.signal
  * @param {Providers | EModelEndpoint} params.provider - The provider for the tool.
  * @param {string} params.model
  * @param {number} [params.index]
  * @param {Record<string, Record<string, string>>} [params.userMCPAuthMap]
  * @returns { Promise<Array<typeof tool | { _call: (toolInput: Object | string) => unknown}>> } An object with `_call` method to execute the tool input.
  */
-async function createMCPTools({ req, res, index, serverName, provider, userMCPAuthMap }) {
+async function createMCPTools({ req, res, index, signal, serverName, provider, userMCPAuthMap }) {
   const runId = Constants.USE_PRELIM_RESPONSE_MESSAGE_ID;
-  const flowId = `${req.user?.id}:${serverName}`;
+  const flowId = `${req.user?.id}:${serverName}:${Date.now()}`;
   const flowManager = getFlowStateManager(getLogStores(CacheKeys.FLOWS));
   const stepId = 'step_oauth_login_' + serverName;
   const toolCall = {
@@ -183,15 +177,6 @@ async function createMCPTools({ req, res, index, serverName, provider, userMCPAu
     name: serverName,
     type: 'tool_call_chunk',
   };
-
-  const flowTypes = ['mcp_get_tokens', 'oauth_login', 'mcp_oauth'];
-  const failedFlows = [];
-  for (const flowType of flowTypes) {
-    failedFlows.push(await flowManager.failFlow(flowId, flowType, 'Restarting OAuth flow'));
-  }
-  if (failedFlows.some((val) => val === true)) {
-    await sleep(750);
-  }
 
   const runStepEmitter = createRunStepEmitter({
     res,
@@ -208,16 +193,18 @@ async function createMCPTools({ req, res, index, serverName, provider, userMCPAu
   const callback = createOAuthCallback({ runStepEmitter, runStepDeltaEmitter });
   const oauthStart = createOAuthStart({
     res,
-    callback,
     flowId,
+    callback,
     flowManager,
   });
   const result = await reinitMCPServer({
     req,
+    signal,
     serverName,
     oauthStart,
     flowManager,
     userMCPAuthMap,
+    forceNew: true,
     returnOnOAuth: false,
     connectionTimeout: Time.ONE_MINUTE,
   });
@@ -332,7 +319,6 @@ function createToolInstance({ res, toolName, serverName, toolDefinition, provide
       const oauthStart = createOAuthStart({
         flowId,
         flowManager,
-        signal: derivedSignal,
         callback: runStepDeltaEmitter,
       });
       const oauthEnd = createOAuthEnd({

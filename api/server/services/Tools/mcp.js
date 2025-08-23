@@ -10,6 +10,8 @@ const { getLogStores } = require('~/cache');
  * @param {ServerRequest} params.req
  * @param {string} params.serverName - The name of the MCP server
  * @param {boolean} params.returnOnOAuth - Whether to initiate OAuth and return, or wait for OAuth flow to finish
+ * @param {AbortSignal} [params.signal] - The abort signal to handle cancellation.
+ * @param {boolean} [params.forceNew]
  * @param {number} [params.connectionTimeout]
  * @param {FlowStateManager<any>} [params.flowManager]
  * @param {(authURL: string) => Promise<boolean>} [params.oauthStart]
@@ -17,6 +19,8 @@ const { getLogStores } = require('~/cache');
  */
 async function reinitMCPServer({
   req,
+  signal,
+  forceNew,
   serverName,
   userMCPAuthMap,
   connectionTimeout,
@@ -48,6 +52,8 @@ async function reinitMCPServer({
     try {
       userConnection = await mcpManager.getUserConnection({
         user: req.user,
+        signal,
+        forceNew,
         oauthStart,
         serverName,
         flowManager,

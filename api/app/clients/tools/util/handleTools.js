@@ -124,6 +124,7 @@ const getAuthFields = (toolKey) => {
  * @param {object} object
  * @param {string} object.user
  * @param {Record<string, Record<string, string>>} [object.userMCPAuthMap]
+ * @param {AbortSignal} [object.signal]
  * @param {Pick<Agent, 'id' | 'provider' | 'model'>} [object.agent]
  * @param {string} [object.model]
  * @param {EModelEndpoint} [object.endpoint]
@@ -138,6 +139,7 @@ const loadTools = async ({
   user,
   agent,
   model,
+  signal,
   endpoint,
   userMCPAuthMap,
   tools = [],
@@ -313,6 +315,7 @@ Current Date & Time: ${replaceSpecialVars({ text: '{{iso_datetime}}' })}
             userMCPAuthMap,
             model: agent?.model ?? model,
             provider: agent?.provider ?? endpoint,
+            signal,
           });
         requestedMCPTools[serverName] = [currentMCPGenerator];
         continue;
@@ -325,6 +328,7 @@ Current Date & Time: ${replaceSpecialVars({ text: '{{iso_datetime}}' })}
           userMCPAuthMap,
           model: agent?.model ?? model,
           provider: agent?.provider ?? endpoint,
+          signal,
         });
       requestedMCPTools[serverName] = requestedMCPTools[serverName] || [];
       requestedMCPTools[serverName].push(currentMCPGenerator);

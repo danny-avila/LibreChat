@@ -474,11 +474,12 @@ async function processRequiredActions(client, requiredActions) {
  * @param {Object} params - Run params containing user and request information.
  * @param {ServerRequest} params.req - The request object.
  * @param {ServerResponse} params.res - The request object.
+ * @param {AbortSignal} params.signal
  * @param {Pick<Agent, 'id' | 'provider' | 'model' | 'tools'} params.agent - The agent to load tools for.
  * @param {string | undefined} [params.openAIApiKey] - The OpenAI API key.
  * @returns {Promise<{ tools?: StructuredTool[]; userMCPAuthMap?: Record<string, Record<string, string>> }>} The agent tools.
  */
-async function loadAgentTools({ req, res, agent, tool_resources, openAIApiKey }) {
+async function loadAgentTools({ req, res, agent, signal, tool_resources, openAIApiKey }) {
   if (!agent.tools || agent.tools.length === 0) {
     return {};
   } else if (agent.tools && agent.tools.length === 1 && agent.tools[0] === AgentCapabilities.ocr) {
@@ -540,6 +541,7 @@ async function loadAgentTools({ req, res, agent, tool_resources, openAIApiKey })
 
   const { loadedTools, toolContextMap } = await loadTools({
     agent,
+    signal,
     userMCPAuthMap,
     functions: true,
     user: req.user.id,
