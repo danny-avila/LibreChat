@@ -1,5 +1,5 @@
-import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import { logger } from '@librechat/data-schemas';
+import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
 import { MCPServersRegistry } from '~/mcp/MCPServersRegistry';
 import { MCPConnection } from './connection';
@@ -39,8 +39,9 @@ export abstract class UserConnectionManager {
 
   /** Gets or creates a connection for a specific user */
   public async getUserConnection({
-    user,
     serverName,
+    forceNew,
+    user,
     flowManager,
     customUserVars,
     requestBody,
@@ -52,6 +53,7 @@ export abstract class UserConnectionManager {
     connectionTimeout,
   }: {
     serverName: string;
+    forceNew?: boolean;
   } & Omit<t.OAuthConnectionOptions, 'useOAuth'>): Promise<MCPConnection> {
     const userId = user.id;
     if (!userId) {
@@ -59,7 +61,7 @@ export abstract class UserConnectionManager {
     }
 
     const userServerMap = this.userConnections.get(userId);
-    let connection = userServerMap?.get(serverName);
+    let connection = forceNew ? undefined : userServerMap?.get(serverName);
     const now = Date.now();
 
     // Check if user is idle
