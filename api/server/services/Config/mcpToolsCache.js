@@ -9,7 +9,7 @@ const { getLogStores } = require('~/cache');
  * @param {string} params.userId - User ID
  * @param {string} params.serverName - MCP server name
  * @param {Array} params.tools - Array of tool objects from MCP server
- * @returns {Promise<void>}
+ * @returns {Promise<LCAvailableTools>}
  */
 async function updateMCPUserTools({ userId, serverName, tools }) {
   try {
@@ -39,6 +39,7 @@ async function updateMCPUserTools({ userId, serverName, tools }) {
     const cache = getLogStores(CacheKeys.CONFIG_STORE);
     await cache.delete(CacheKeys.TOOLS);
     logger.debug(`[MCP Cache] Updated ${tools.length} tools for ${serverName} user ${userId}`);
+    return userTools;
   } catch (error) {
     logger.error(`[MCP Cache] Failed to update tools for ${serverName}:`, error);
     throw error;
