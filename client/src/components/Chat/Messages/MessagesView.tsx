@@ -48,7 +48,7 @@ export default function MessagesView({
               width: '100%',
             }}
           >
-            <div className="flex flex-col pb-9 dark:bg-transparent">
+            <div className="flex flex-col dark:bg-transparent">
               {(_messagesTree && _messagesTree.length == 0) || _messagesTree === null ? (
                 <div
                   className={cn(
@@ -74,7 +74,7 @@ export default function MessagesView({
               )}
               <div
                 id="messages-end"
-                className="group h-0 w-full flex-shrink-0"
+                className="group h-1 w-full flex-shrink-0 pb-7"
                 ref={messagesEndRef}
               />
             </div>

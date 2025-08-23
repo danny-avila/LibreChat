@@ -38,7 +38,7 @@ function ChatView({ index = 0 }: { index?: number }) {
 
   const fileMap = useFileMapContext();
 
-  const [showCostBar, setShowCostBar] = useState(true);
+  const [showCostBar, setShowCostBar] = useState(false);
   const lastScrollY = useRef(0);
 
   const { data: messagesTree = null, isLoading } = useGetMessagesByConvoId(conversationId ?? '', {
@@ -65,23 +65,33 @@ function ChatView({ index = 0 }: { index?: number }) {
   useSSE(rootSubmission, chatHelpers, false);
   useSSE(addedSubmission, addedChatHelpers, true);
 
-  useEffect(() => {
-    const handleScroll = (event: Event) => {
-      const target = event.target as HTMLElement;
-      const currentScrollY = target.scrollTop;
-      const scrollHeight = target.scrollHeight;
-      const clientHeight = target.clientHeight;
+  const checkIfAtBottom = useCallback(
+    (container: HTMLElement) => {
+      const currentScrollY = container.scrollTop;
+      const scrollHeight = container.scrollHeight;
+      const clientHeight = container.clientHeight;
 
       const distanceFromBottom = scrollHeight - currentScrollY - clientHeight;
       const isAtBottom = distanceFromBottom < 10;
 
-      setShowCostBar(isAtBottom);
+      const isStreaming = chatHelpers.isSubmitting || addedChatHelpers.isSubmitting;
+      setShowCostBar(isAtBottom && !isStreaming);
       lastScrollY.current = currentScrollY;
+    },
+    [chatHelpers.isSubmitting, addedChatHelpers.isSubmitting],
+  );
+
+  useEffect(() => {
+    const handleScroll = (event: Event) => {
+      const target = event.target as HTMLElement;
+      checkIfAtBottom(target);
     };
 
     const findAndAttachScrollListener = () => {
       const messagesContainer = document.querySelector('[class*="scrollbar-gutter-stable"]');
       if (messagesContainer) {
+        checkIfAtBottom(messagesContainer as HTMLElement);
+
         messagesContainer.addEventListener('scroll', handleScroll, { passive: true });
         return () => {
           messagesContainer.removeEventListener('scroll', handleScroll);
@@ -93,7 +103,19 @@ function ChatView({ index = 0 }: { index?: number }) {
     const cleanup = findAndAttachScrollListener();
 
     return cleanup;
-  }, [messagesTree]);
+  }, [messagesTree, checkIfAtBottom]);
+
+  useEffect(() => {
+    const isStreaming = chatHelpers.isSubmitting || addedChatHelpers.isSubmitting;
+    if (isStreaming) {
+      setShowCostBar(false);
+    } else {
+      const messagesContainer = document.querySelector('[class*="scrollbar-gutter-stable"]');
+      if (messagesContainer) {
+        checkIfAtBottom(messagesContainer as HTMLElement);
+      }
+    }
+  }, [chatHelpers.isSubmitting, addedChatHelpers.isSubmitting, checkIfAtBottom]);
 
   const methods = useForm<ChatFormValues>({
     defaultValues: { text: '' },
@@ -110,6 +132,7 @@ function ChatView({ index = 0 }: { index?: number }) {
   } else if ((isLoading || isNavigating) && !isLandingPage) {
     content = <LoadingSpinner />;
   } else if (!isLandingPage) {
+    const isStreaming = chatHelpers.isSubmitting || addedChatHelpers.isSubmitting;
     content = (
       <MessagesView
         messagesTree={messagesTree}
@@ -117,7 +140,10 @@ function ChatView({ index = 0 }: { index?: number }) {
           !isLandingPage &&
           conversationCosts &&
           conversationCosts.totals && (
-            <CostBar conversationCosts={conversationCosts} showCostBar={showCostBar} />
+            <CostBar
+              conversationCosts={conversationCosts}
+              showCostBar={showCostBar && !isStreaming}
+            />
           )
         }
         costs={conversationCosts}

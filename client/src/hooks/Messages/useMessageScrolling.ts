@@ -19,6 +19,7 @@ export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
   const { conversationId } = conversation ?? {};
 
   const timeoutIdRef = useRef<NodeJS.Timeout>();
+  const prevIsSubmittingRef = useRef<boolean>(false);
 
   const debouncedSetShowScrollButton = useCallback((value: boolean) => {
     clearTimeout(timeoutIdRef.current);
@@ -60,7 +61,10 @@ export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
     }
   }, [debouncedSetShowScrollButton]);
 
-  const scrollCallback = () => debouncedSetShowScrollButton(false);
+  const scrollCallback = useCallback(
+    () => debouncedSetShowScrollButton(false),
+    [debouncedSetShowScrollButton],
+  );
 
   const { scrollToRef: scrollToBottom, handleSmoothToRef } = useScrollToRef({
     targetRef: messagesEndRef,
@@ -70,6 +74,18 @@ export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
       setAbortScroll(false);
     },
   });
+
+  const smoothScrollToBottom = useCallback(() => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({
+        behavior: 'smooth',
+        block: 'end',
+        inline: 'nearest',
+      });
+      scrollCallback();
+      setAbortScroll(false);
+    }
+  }, [scrollCallback, setAbortScroll]);
 
   useEffect(() => {
     if (!messagesTree || messagesTree.length === 0) {
@@ -90,6 +106,20 @@ export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
       }
     };
   }, [isSubmitting, messagesTree, scrollToBottom, abortScroll]);
+
+  useEffect(() => {
+    if (!messagesEndRef.current || !scrollableRef.current) {
+      return;
+    }
+
+    if (prevIsSubmittingRef.current && !isSubmitting && abortScroll !== true) {
+      setTimeout(() => {
+        smoothScrollToBottom();
+      }, 100);
+    }
+
+    prevIsSubmittingRef.current = isSubmitting;
+  }, [isSubmitting, smoothScrollToBottom, abortScroll]);
 
   useEffect(() => {
     if (!messagesEndRef.current || !scrollableRef.current) {
