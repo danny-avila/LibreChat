@@ -1,10 +1,10 @@
 const fs = require('fs');
-const { isEnabled } = require('@librechat/api');
 const LdapStrategy = require('passport-ldapauth');
 const { logger } = require('@librechat/data-schemas');
+const { isEnabled, getBalanceConfig } = require('@librechat/api');
 const { SystemRoles, ErrorTypes } = require('librechat-data-provider');
 const { createUser, findUser, updateUser, countUsers } = require('~/models');
-const { getBalanceConfig } = require('~/server/services/Config');
+const { getAppConfig } = require('~/server/services/Config');
 
 const {
   LDAP_URL,
@@ -133,7 +133,8 @@ const ldapLogin = new LdapStrategy(ldapOptions, async (userinfo, done) => {
         name: fullName,
         role,
       };
-      const balanceConfig = await getBalanceConfig({ role });
+      const appConfig = await getAppConfig({ role: user?.role });
+      const balanceConfig = getBalanceConfig(appConfig);
       const userId = await createUser(user, balanceConfig);
       user._id = userId;
     } else {
