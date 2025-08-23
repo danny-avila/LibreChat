@@ -200,7 +200,7 @@ async function reconnectServer({ req, res, index, signal, serverName, userMCPAut
     userMCPAuthMap,
     forceNew: true,
     returnOnOAuth: false,
-    connectionTimeout: Time.ONE_MINUTE,
+    connectionTimeout: Time.TWO_MINUTES,
   });
 }
 
