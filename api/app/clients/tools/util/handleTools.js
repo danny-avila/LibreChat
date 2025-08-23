@@ -304,10 +304,11 @@ Current Date & Time: ${replaceSpecialVars({ text: '{{iso_datetime}}' })}
     } else if (tool && cachedTools && mcpToolPattern.test(tool)) {
       const [toolName, serverName] = tool.split(Constants.mcp_delimiter);
       if (toolName === Constants.mcp_all) {
-        const currentMCPGenerator = async () =>
+        const currentMCPGenerator = async (index) =>
           createMCPTools({
             req: options.req,
             res: options.res,
+            index,
             serverName,
             userMCPAuthMap,
             model: agent?.model ?? model,
@@ -366,10 +367,13 @@ Current Date & Time: ${replaceSpecialVars({ text: '{{iso_datetime}}' })}
   }
 
   const loadedTools = (await Promise.all(toolPromises)).flatMap((plugin) => plugin || []);
+  /** MCP server tools are initialized sequentially by server */
+  let index = -1;
   for (const [_serverName, generators] of Object.entries(requestedMCPTools)) {
+    index++;
     for (const generator of generators) {
       try {
-        const mcpTool = await generator();
+        const mcpTool = await generator(index);
         if (Array.isArray(mcpTool)) {
           loadedTools.push(...mcpTool);
         } else if (mcpTool) {

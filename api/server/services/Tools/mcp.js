@@ -9,9 +9,21 @@ const { getLogStores } = require('~/cache');
  * @param {Object} params
  * @param {ServerRequest} params.req
  * @param {string} params.serverName - The name of the MCP server
+ * @param {boolean} params.returnOnOAuth - Whether to initiate OAuth and return, or wait for OAuth flow to finish
+ * @param {number} [params.connectionTimeout]
+ * @param {FlowStateManager<any>} [params.flowManager]
+ * @param {(authURL: string) => Promise<boolean>} [params.oauthStart]
  * @param {Record<string, Record<string, string>>} [params.userMCPAuthMap]
  */
-async function reinitMCPServer({ req, serverName, userMCPAuthMap }) {
+async function reinitMCPServer({
+  req,
+  serverName,
+  userMCPAuthMap,
+  connectionTimeout,
+  returnOnOAuth = true,
+  oauthStart: _oauthStart,
+  flowManager: _flowManager,
+}) {
   /** @type {MCPConnection | null} */
   let userConnection = null;
   /** @type {LCAvailableTools | null} */
@@ -22,27 +34,31 @@ async function reinitMCPServer({ req, serverName, userMCPAuthMap }) {
   let oauthUrl = null;
   try {
     const customUserVars = userMCPAuthMap?.[`${Constants.mcp_prefix}${serverName}`];
+    const flowManager = _flowManager ?? getFlowStateManager(getLogStores(CacheKeys.FLOWS));
+    const mcpManager = getMCPManager();
+
+    const oauthStart =
+      _oauthStart ??
+      (async (authURL) => {
+        logger.info(`[MCP Reinitialize] OAuth URL received: ${authURL}`);
+        oauthUrl = authURL;
+        oauthRequired = true;
+      });
 
     try {
-      const flowsCache = getLogStores(CacheKeys.FLOWS);
-      const flowManager = getFlowStateManager(flowsCache);
-      const mcpManager = getMCPManager();
       userConnection = await mcpManager.getUserConnection({
         user: req.user,
+        oauthStart,
         serverName,
         flowManager,
+        returnOnOAuth,
         customUserVars,
+        connectionTimeout,
         tokenMethods: {
           findToken,
           updateToken,
           createToken,
           deleteTokens,
-        },
-        returnOnOAuth: true,
-        oauthStart: async (authURL) => {
-          logger.info(`[MCP Reinitialize] OAuth URL received: ${authURL}`);
-          oauthUrl = authURL;
-          oauthRequired = true;
         },
       });
 
