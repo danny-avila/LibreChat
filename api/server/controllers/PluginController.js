@@ -13,7 +13,6 @@ const {
   setCachedTools,
   mergeUserTools,
 } = require('~/server/services/Config');
-const { loadAndFormatTools } = require('~/server/services/start/tools');
 const { availableTools, toolkits } = require('~/app/clients/tools');
 const { getMCPManager } = require('~/config');
 const { getLogStores } = require('~/cache');
@@ -95,16 +94,6 @@ const getAvailableTools = async (req, res) => {
     /** @type {Record<string, FunctionTool> | null} Get tool definitions to filter which tools are actually available */
     let toolDefinitions = await getCachedTools({ includeGlobal: true });
     let prelimCachedTools;
-
-    // TODO: this is a temp fix until app config is refactored
-    if (!toolDefinitions) {
-      toolDefinitions = loadAndFormatTools({
-        adminFilter: req.app.locals?.filteredTools,
-        adminIncluded: req.app.locals?.includedTools,
-        directory: req.app.locals?.paths.structuredTools,
-      });
-      prelimCachedTools = toolDefinitions;
-    }
 
     /** @type {import('@librechat/api').LCManifestTool[]} */
     let pluginManifest = availableTools;

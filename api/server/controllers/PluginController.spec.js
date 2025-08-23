@@ -17,9 +17,7 @@ jest.mock('~/server/services/Config', () => ({
   mergeUserTools: jest.fn(),
 }));
 
-jest.mock('~/server/services/start/tools', () => ({
-  loadAndFormatTools: jest.fn(),
-}));
+// loadAndFormatTools mock removed - no longer used in PluginController
 
 jest.mock('~/config', () => ({
   getMCPManager: jest.fn(() => ({
@@ -39,7 +37,6 @@ jest.mock('~/cache', () => ({
 }));
 
 const { getAvailableTools, getAvailablePluginsController } = require('./PluginController');
-const { loadAndFormatTools } = require('~/server/services/start/tools');
 
 describe('PluginController', () => {
   let mockReq, mockRes, mockCache;
@@ -48,13 +45,6 @@ describe('PluginController', () => {
     jest.clearAllMocks();
     mockReq = {
       user: { id: 'test-user-id' },
-      app: {
-        locals: {
-          paths: { structuredTools: '/mock/path' },
-          filteredTools: null,
-          includedTools: null,
-        },
-      },
     };
     mockRes = { status: jest.fn().mockReturnThis(), json: jest.fn() };
     mockCache = { get: jest.fn(), set: jest.fn() };
@@ -63,6 +53,9 @@ describe('PluginController', () => {
     // Clear availableTools and toolkits arrays before each test
     require('~/app/clients/tools').availableTools.length = 0;
     require('~/app/clients/tools').toolkits.length = 0;
+
+    // Reset getCachedTools mock to ensure clean state
+    getCachedTools.mockReset();
   });
 
   describe('getAvailablePluginsController', () => {
@@ -161,13 +154,13 @@ describe('PluginController', () => {
 
       mockCache.get.mockResolvedValue(null);
       getCachedTools.mockResolvedValueOnce(mockUserTools);
-      getAppConfig.mockResolvedValue({ mcpConfig: null });
+      getAppConfig.mockResolvedValue({
+        mcpConfig: null,
+        paths: { structuredTools: '/mock/path' },
+      });
 
-      // Mock second call to return tool definitions
+      // Mock second call to return tool definitions (includeGlobal: true)
       getCachedTools.mockResolvedValueOnce(mockUserTools);
-
-      // Mock loadAndFormatTools to ensure tools are available
-      loadAndFormatTools.mockReturnValue(mockUserTools);
 
       await getAvailableTools(mockReq, mockRes);
 
@@ -203,7 +196,10 @@ describe('PluginController', () => {
 
       mockCache.get.mockResolvedValue(mockCachedPlugins);
       getCachedTools.mockResolvedValueOnce(mockUserTools);
-      getAppConfig.mockResolvedValue({ mcpConfig: null });
+      getAppConfig.mockResolvedValue({
+        mcpConfig: null,
+        paths: { structuredTools: '/mock/path' },
+      });
 
       // Mock second call to return tool definitions
       getCachedTools.mockResolvedValueOnce(mockUserTools);
@@ -230,23 +226,15 @@ describe('PluginController', () => {
       require('~/app/clients/tools').availableTools.push(mockPlugin);
 
       mockCache.get.mockResolvedValue(null);
-      getCachedTools.mockResolvedValue(null);
-      getAppConfig.mockResolvedValue({ mcpConfig: null });
-
-      // Mock loadAndFormatTools to return tool definitions including our tool
-      loadAndFormatTools.mockReturnValue({
-        tool1: {
-          type: 'function',
-          function: {
-            name: 'tool1',
-            description: 'Tool 1',
-            parameters: {},
-          },
-        },
+      // First call returns null for user tools
+      getCachedTools.mockResolvedValueOnce(null);
+      getAppConfig.mockResolvedValue({
+        mcpConfig: null,
+        paths: { structuredTools: '/mock/path' },
       });
 
-      // Mock second getCachedTools call to return the tool definitions
-      getCachedTools.mockResolvedValueOnce(null).mockResolvedValueOnce({
+      // Second call (with includeGlobal: true) returns the tool definitions
+      getCachedTools.mockResolvedValueOnce({
         tool1: {
           type: 'function',
           function: {
@@ -286,11 +274,15 @@ describe('PluginController', () => {
       });
 
       mockCache.get.mockResolvedValue(null);
-      getCachedTools.mockResolvedValue(null);
-      getAppConfig.mockResolvedValue({ mcpConfig: null });
+      // First call returns null for user tools
+      getCachedTools.mockResolvedValueOnce(null);
+      getAppConfig.mockResolvedValue({
+        mcpConfig: null,
+        paths: { structuredTools: '/mock/path' },
+      });
 
-      // Mock loadAndFormatTools to return tool definitions
-      loadAndFormatTools.mockReturnValue({
+      // Second call (with includeGlobal: true) returns the tool definitions
+      getCachedTools.mockResolvedValueOnce({
         toolkit1_function: {
           type: 'function',
           function: {
@@ -333,10 +325,8 @@ describe('PluginController', () => {
       };
       require('~/config').getMCPManager.mockReturnValue(mockMCPManager);
 
+      // First call returns empty user tools
       getCachedTools.mockResolvedValueOnce({});
-
-      // Mock loadAndFormatTools to return the MCP tools as tool definitions
-      loadAndFormatTools.mockReturnValue(functionTools);
 
       // Mock getAppConfig to return the mcpConfig
       getAppConfig.mockResolvedValue({
@@ -345,6 +335,7 @@ describe('PluginController', () => {
         },
       });
 
+      // Second call (with includeGlobal: true) returns the tool definitions
       getCachedTools.mockResolvedValueOnce(functionTools);
 
       await getAvailableTools(mockReq, mockRes);
@@ -410,10 +401,7 @@ describe('PluginController', () => {
       // First call returns user tools (empty in this case)
       getCachedTools.mockResolvedValueOnce({});
 
-      // Mock loadAndFormatTools to return the MCP tool definitions
-      loadAndFormatTools.mockReturnValue(mcpToolFunctions);
-
-      // Second call returns tool definitions including our MCP tool
+      // Second call (with includeGlobal: true) returns tool definitions including our MCP tool
       getCachedTools.mockResolvedValueOnce(mcpToolFunctions);
 
       await getAvailableTools(mockReq, mockRes);
@@ -456,11 +444,22 @@ describe('PluginController', () => {
 
     it('should handle null cachedTools and cachedUserTools', async () => {
       mockCache.get.mockResolvedValue(null);
-      getCachedTools.mockResolvedValue(null);
-      getAppConfig.mockResolvedValue({ mcpConfig: null });
+      // First call returns null for user tools
+      getCachedTools.mockResolvedValueOnce(null);
+      getAppConfig.mockResolvedValue({
+        mcpConfig: null,
+        paths: { structuredTools: '/mock/path' },
+      });
 
-      // Mock loadAndFormatTools to return empty object when getCachedTools returns null
-      loadAndFormatTools.mockReturnValue({});
+      // Mock MCP manager to return no tools
+      const mockMCPManager = {
+        getAllToolFunctions: jest.fn().mockResolvedValue({}),
+        getRawConfig: jest.fn().mockReturnValue({}),
+      };
+      require('~/config').getMCPManager.mockReturnValue(mockMCPManager);
+
+      // Second call (with includeGlobal: true) returns empty object instead of null
+      getCachedTools.mockResolvedValueOnce({});
 
       await getAvailableTools(mockReq, mockRes);
 
@@ -471,10 +470,10 @@ describe('PluginController', () => {
 
     it('should handle when getCachedTools returns undefined', async () => {
       mockCache.get.mockResolvedValue(null);
-      getAppConfig.mockResolvedValue({ mcpConfig: null });
-
-      // Mock loadAndFormatTools to return empty object when getCachedTools returns undefined
-      loadAndFormatTools.mockReturnValue({});
+      getAppConfig.mockResolvedValue({
+        mcpConfig: null,
+        paths: { structuredTools: '/mock/path' },
+      });
 
       // Mock getCachedTools to return undefined for both calls
       getCachedTools.mockReset();
@@ -503,7 +502,10 @@ describe('PluginController', () => {
 
       mockCache.get.mockResolvedValue(cachedTools);
       getCachedTools.mockResolvedValueOnce(userTools);
-      getAppConfig.mockResolvedValue({ mcpConfig: null });
+      getAppConfig.mockResolvedValue({
+        mcpConfig: null,
+        paths: { structuredTools: '/mock/path' },
+      });
 
       // The controller expects a second call to getCachedTools
       getCachedTools.mockResolvedValueOnce({
@@ -574,11 +576,10 @@ describe('PluginController', () => {
 
       mockCache.get.mockResolvedValue(null);
       getAppConfig.mockResolvedValue(appConfig);
+      // First call returns empty user tools
       getCachedTools.mockResolvedValueOnce({});
 
-      // Mock loadAndFormatTools to return the tool definitions
-      loadAndFormatTools.mockReturnValue(mockUserTools);
-
+      // Second call (with includeGlobal: true) returns the tool definitions
       getCachedTools.mockResolvedValueOnce(mockUserTools);
 
       // Ensure no plugins in availableTools for clean test
@@ -619,27 +620,21 @@ describe('PluginController', () => {
         toolkit: true,
       };
 
-      // Ensure req.app.locals is properly mocked
-      mockReq.app = {
-        locals: {
-          filteredTools: [],
-          includedTools: [],
-          paths: { structuredTools: '/mock/path' },
-        },
-      };
+      // No need to mock app.locals anymore as it's not used
 
       // Add the toolkit to availableTools
       require('~/app/clients/tools').availableTools.push(mockToolkit);
 
       mockCache.get.mockResolvedValue(null);
-      getCachedTools.mockResolvedValue({});
-      getAppConfig.mockResolvedValue({ mcpConfig: null });
+      // First call returns empty object
+      getCachedTools.mockResolvedValueOnce({});
+      getAppConfig.mockResolvedValue({
+        mcpConfig: null,
+        paths: { structuredTools: '/mock/path' },
+      });
 
-      // Mock loadAndFormatTools to return an empty object when toolDefinitions is null
-      loadAndFormatTools.mockReturnValue({});
-
-      // Mock getCachedTools second call to return null
-      getCachedTools.mockResolvedValueOnce({}).mockResolvedValueOnce(null);
+      // Second call (with includeGlobal: true) returns empty object to avoid null reference error
+      getCachedTools.mockResolvedValueOnce({});
 
       await getAvailableTools(mockReq, mockRes);
 
