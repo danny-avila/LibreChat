@@ -1,6 +1,6 @@
 const express = require('express');
-const { isEnabled } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
+const { isEnabled, getBalanceConfig } = require('@librechat/api');
 const {
   Constants,
   CacheKeys,
@@ -62,6 +62,8 @@ router.get('/', async function (req, res) {
       !!process.env.SAML_CERT &&
       !!process.env.SAML_SESSION_SECRET;
 
+    const balanceConfig = getBalanceConfig(appConfig);
+
     /** @type {TStartupConfig} */
     const payload = {
       appTitle: process.env.APP_TITLE || 'LibreChat',
@@ -101,7 +103,7 @@ router.get('/', async function (req, res) {
       interface: appConfig?.interfaceConfig,
       turnstile: appConfig?.turnstileConfig,
       modelSpecs: appConfig?.modelSpecs,
-      balance: appConfig?.balance,
+      balance: balanceConfig,
       sharedLinksEnabled,
       publicSharedLinksEnabled,
       analyticsGtmId: process.env.ANALYTICS_GTM_ID,

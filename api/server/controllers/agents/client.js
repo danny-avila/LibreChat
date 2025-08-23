@@ -7,6 +7,7 @@ const {
   createRun,
   Tokenizer,
   checkAccess,
+  getBalanceConfig,
   memoryInstructions,
   formatContentStrings,
   createMemoryProcessor,
@@ -1038,7 +1039,8 @@ class AgentClient extends BaseClient {
           this.artifactPromises.push(...attachments);
         }
 
-        await this.recordCollectedUsage({ context: 'message', balance: appConfig?.balance });
+        const balanceConfig = getBalanceConfig(appConfig);
+        await this.recordCollectedUsage({ context: 'message', balance: balanceConfig });
       } catch (err) {
         logger.error(
           '[api/server/controllers/agents/client.js #chatCompletion] Error recording collected usage',
@@ -1217,11 +1219,12 @@ class AgentClient extends BaseClient {
         };
       });
 
+      const balanceConfig = getBalanceConfig(appConfig);
       await this.recordCollectedUsage({
         collectedUsage,
         context: 'title',
         model: clientOptions.model,
-        balance: appConfig?.balance,
+        balance: balanceConfig,
       }).catch((err) => {
         logger.error(
           '[api/server/controllers/agents/client.js #titleConvo] Error recording collected usage',

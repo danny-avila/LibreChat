@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const fetch = require('node-fetch');
+const { getBalanceConfig } = require('@librechat/api');
 const {
   supportsBalanceCheck,
   isAgentsEndpoint,
@@ -661,9 +662,9 @@ class BaseClient {
       }
     }
 
-    const balance = appConfig?.balance;
+    const balanceConfig = getBalanceConfig(appConfig);
     if (
-      balance?.enabled &&
+      balanceConfig?.enabled &&
       supportsBalanceCheck[this.options.endpointType ?? this.options.endpoint]
     ) {
       await checkBalance({
@@ -760,9 +761,9 @@ class BaseClient {
         completionTokens = responseMessage.tokenCount;
         await this.recordTokenUsage({
           usage,
-          balance,
           promptTokens,
           completionTokens,
+          balance: balanceConfig,
           model: responseMessage.model,
         });
       }
