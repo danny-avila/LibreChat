@@ -372,12 +372,22 @@ Current Date & Time: ${replaceSpecialVars({ text: '{{iso_datetime}}' })}
   }
 
   const loadedTools = (await Promise.all(toolPromises)).flatMap((plugin) => plugin || []);
+  const mcpToolPromises = [];
   /** MCP server tools are initialized sequentially by server */
   let index = -1;
-  for (const [_serverName, generators] of Object.entries(requestedMCPTools)) {
+  for (const [serverName, generators] of Object.entries(requestedMCPTools)) {
     index++;
     for (const generator of generators) {
       try {
+        if (generator && generators.length === 1) {
+          mcpToolPromises.push(
+            generator(index).catch((error) => {
+              logger.error(`Error loading ${serverName} tools:`, error);
+              return null;
+            }),
+          );
+          continue;
+        }
         const mcpTool = await generator(index);
         if (Array.isArray(mcpTool)) {
           loadedTools.push(...mcpTool);
@@ -385,10 +395,11 @@ Current Date & Time: ${replaceSpecialVars({ text: '{{iso_datetime}}' })}
           loadedTools.push(mcpTool);
         }
       } catch (error) {
-        logger.error(`Error loading MCP tool for server ${_serverName}:`, error);
+        logger.error(`Error loading MCP tool for server ${serverName}:`, error);
       }
     }
   }
+  loadedTools.push(...(await Promise.all(mcpToolPromises)).flatMap((plugin) => plugin || []));
   return { loadedTools, toolContextMap };
 };
 
