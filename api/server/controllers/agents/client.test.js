@@ -241,6 +241,9 @@ describe('AgentClient - titleConvo', () => {
         model: 'gpt-3.5-turbo',
         context: 'title',
         collectedUsage: expect.any(Array),
+        balance: {
+          enabled: false,
+        },
       });
     });
 
