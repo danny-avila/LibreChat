@@ -149,7 +149,11 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         endpointOption,
         allowedProviders,
       });
-      Object.assign(userMCPAuthMap, config.userMCPAuthMap ?? {});
+      if (userMCPAuthMap != null) {
+        Object.assign(userMCPAuthMap, config.userMCPAuthMap ?? {});
+      } else {
+        userMCPAuthMap = config.userMCPAuthMap;
+      }
       agentConfigs.set(agentId, config);
     }
   }
