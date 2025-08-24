@@ -1226,10 +1226,6 @@ export enum CacheKeys {
    */
   ABORT_KEYS = 'ABORT_KEYS',
   /**
-   * Key for the override config cache.
-   */
-  OVERRIDE_CONFIG = 'OVERRIDE_CONFIG',
-  /**
    * Key for the bans cache.
    */
   BANS = 'BANS',
