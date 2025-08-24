@@ -1,7 +1,7 @@
 import { useEffect, useMemo } from 'react';
 import { Search, X } from 'lucide-react';
 import { useFormContext } from 'react-hook-form';
-import { Constants, isAgentsEndpoint } from 'librechat-data-provider';
+import { isAgentsEndpoint } from 'librechat-data-provider';
 import { Dialog, DialogPanel, DialogTitle, Description } from '@headlessui/react';
 import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
 import type {
@@ -25,7 +25,7 @@ function ToolSelectDialog({
 }: TPluginStoreDialogProps & {
   endpoint: AssistantsEndpoint | EModelEndpoint.agents;
 }) {
-  const { groupedTools, groupedMCPTools } = useAgentPanelContext();
+  const { groupedTools } = useAgentPanelContext();
   const { getValues, setValue } = useFormContext<AgentForm>();
   const { data: tools } = useAvailableToolsQuery(endpoint);
   const isAgentTools = isAgentsEndpoint(endpoint);
