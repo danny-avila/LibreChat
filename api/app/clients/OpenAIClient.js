@@ -34,7 +34,6 @@ const {
 const { extractBaseURL, getModelMaxTokens, getModelMaxOutputTokens } = require('~/utils');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const { addSpaceIfNeeded, sleep } = require('~/server/utils');
-const { getAppConfig } = require('~/server/services/Config');
 const { spendTokens } = require('~/models/spendTokens');
 const { handleOpenAIErrors } = require('./tools/util');
 const { summaryBuffer } = require('./memory');
@@ -689,7 +688,7 @@ class OpenAIClient extends BaseClient {
    *                            In case of failure, it will return the default title, "New Chat".
    */
   async titleConvo({ text, conversationId, responseText = '' }) {
-    const appConfig = await getAppConfig({ role: this.options.req?.user?.role });
+    const appConfig = this.options.req?.config;
     this.conversationId = conversationId;
 
     if (this.options.attachments) {
@@ -1107,7 +1106,7 @@ ${convo}
   }
 
   async chatCompletion({ payload, onProgress, abortController = null }) {
-    const appConfig = await getAppConfig({ role: this.options.req?.user?.role });
+    const appConfig = this.options.req?.config;
     let error = null;
     let intermediateReply = [];
     const errorCallback = (err) => (error = err);

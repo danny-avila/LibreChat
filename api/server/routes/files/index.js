@@ -1,5 +1,11 @@
 const express = require('express');
-const { uaParser, checkBan, requireJwtAuth, createFileLimiters } = require('~/server/middleware');
+const {
+  createFileLimiters,
+  configMiddleware,
+  requireJwtAuth,
+  uaParser,
+  checkBan,
+} = require('~/server/middleware');
 const { avatar: asstAvatarRouter } = require('~/server/routes/assistants/v1');
 const { avatar: agentAvatarRouter } = require('~/server/routes/agents/v1');
 const { createMulterInstance } = require('./multer');
@@ -12,6 +18,7 @@ const speech = require('./speech');
 const initialize = async () => {
   const router = express.Router();
   router.use(requireJwtAuth);
+  router.use(configMiddleware);
   router.use(checkBan);
   router.use(uaParser);
 

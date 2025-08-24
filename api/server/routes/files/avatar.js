@@ -1,17 +1,16 @@
 const fs = require('fs').promises;
 const express = require('express');
+const { logger } = require('@librechat/data-schemas');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { resizeAvatar } = require('~/server/services/Files/images/avatar');
 const { getFileStrategy } = require('~/server/utils/getFileStrategy');
 const { filterFile } = require('~/server/services/Files/process');
-const { getAppConfig } = require('~/server/services/Config');
-const { logger } = require('~/config');
 
 const router = express.Router();
 
 router.post('/', async (req, res) => {
   try {
-    const appConfig = await getAppConfig({ role: req.user?.role });
+    const appConfig = req.config;
     filterFile({ req, file: req.file, image: true, isAvatar: true });
     const userId = req.user.id;
     const { manual } = req.body;

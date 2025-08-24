@@ -8,7 +8,6 @@ const {
   createHandleLLMNewToken,
 } = require('@librechat/api');
 const { getUserKeyValues, checkUserKeyExpiry } = require('~/server/services/UserService');
-const { getAppConfig } = require('~/server/services/Config');
 const OpenAIClient = require('~/app/clients/OpenAIClient');
 
 const initializeClient = async ({
@@ -19,7 +18,7 @@ const initializeClient = async ({
   overrideEndpoint,
   overrideModel,
 }) => {
-  const appConfig = await getAppConfig({ role: req.user?.role });
+  const appConfig = req.config;
   const {
     PROXY,
     OPENAI_API_KEY,

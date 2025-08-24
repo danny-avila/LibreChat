@@ -16,7 +16,6 @@ const generateArtifactsPrompt = require('~/app/clients/prompts/artifacts');
 const { getProviderConfig } = require('~/server/services/Endpoints');
 const { processFiles } = require('~/server/services/Files/process');
 const { getFiles, getToolFilesByIds } = require('~/models/File');
-const { getAppConfig } = require('~/server/services/Config');
 const { getConvoFiles } = require('~/models/Conversation');
 const { getModelMaxTokens } = require('~/utils');
 
@@ -50,7 +49,7 @@ const initializeAgent = async ({
   allowedProviders,
   isInitialAgent = false,
 }) => {
-  const appConfig = await getAppConfig({ role: req.user?.role });
+  const appConfig = req.config;
   if (
     isAgentsEndpoint(endpointOption?.endpoint) &&
     allowedProviders.size > 0 &&

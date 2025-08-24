@@ -3,7 +3,6 @@ const path = require('path');
 const sharp = require('sharp');
 const { logger } = require('@librechat/data-schemas');
 const { resizeImageBuffer } = require('../images/resize');
-const { getAppConfig } = require('~/server/services/Config');
 const { updateUser, updateFile } = require('~/models');
 const { saveBufferToAzure } = require('./crud');
 
@@ -31,7 +30,7 @@ async function uploadImageToAzure({
   containerName,
 }) {
   try {
-    const appConfig = await getAppConfig({ role: req.user?.role });
+    const appConfig = req.config;
     const inputFilePath = file.path;
     const inputBuffer = await fs.promises.readFile(inputFilePath);
     const {

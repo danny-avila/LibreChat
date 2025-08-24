@@ -2,7 +2,6 @@ const path = require('path');
 const { EModelEndpoint, AuthKeys } = require('librechat-data-provider');
 const { getGoogleConfig, isEnabled, loadServiceKey } = require('@librechat/api');
 const { getUserKey, checkUserKeyExpiry } = require('~/server/services/UserService');
-const { getAppConfig } = require('~/server/services/Config');
 const { GoogleClient } = require('~/app');
 
 const initializeClient = async ({ req, res, endpointOption, overrideModel, optionsOnly }) => {
@@ -47,7 +46,7 @@ const initializeClient = async ({ req, res, endpointOption, overrideModel, optio
 
   let clientOptions = {};
 
-  const appConfig = await getAppConfig({ role: req.user?.role });
+  const appConfig = req.config;
   /** @type {undefined | TBaseEndpoint} */
   const allConfig = appConfig.endpoints?.all;
   /** @type {undefined | TBaseEndpoint} */

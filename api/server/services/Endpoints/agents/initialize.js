@@ -15,7 +15,6 @@ const { initializeAgent } = require('~/server/services/Endpoints/agents/agent');
 const { getModelsConfig } = require('~/server/controllers/ModelController');
 const { loadAgentTools } = require('~/server/services/ToolService');
 const AgentClient = require('~/server/controllers/agents/client');
-const { getAppConfig } = require('~/server/services/Config');
 const { getAgent } = require('~/models/Agent');
 const { logViolation } = require('~/cache');
 
@@ -58,7 +57,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
   if (!endpointOption) {
     throw new Error('Endpoint option not provided');
   }
-  const appConfig = await getAppConfig({ role: req.user?.role });
+  const appConfig = req.config;
 
   // TODO: use endpointOption to determine options/modelOptions
   /** @type {Array<UsageMetadata>} */

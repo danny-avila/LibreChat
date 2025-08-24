@@ -357,7 +357,7 @@ async function loadAgentTools({ req, res, agent, signal, tool_resources, openAIA
     return {};
   }
 
-  const appConfig = await getAppConfig({ role: req.user?.role });
+  const appConfig = req.config;
   const endpointsConfig = await getEndpointsConfig(req);
   let enabledCapabilities = new Set(endpointsConfig?.[EModelEndpoint.agents]?.capabilities ?? []);
   /** Edge case: use defined/fallback capabilities when the "agents" endpoint is not enabled */

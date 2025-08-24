@@ -1,9 +1,10 @@
 const express = require('express');
 const { callTool, verifyToolAuth, getToolCalls } = require('~/server/controllers/tools');
 const { getAvailableTools } = require('~/server/controllers/PluginController');
-const { toolCallLimiter } = require('~/server/middleware/limiters');
+const { configMiddleware, toolCallLimiter } = require('~/server/middleware');
 
 const router = express.Router();
+router.use(configMiddleware);
 
 /**
  * Get a list of available tools for agents.

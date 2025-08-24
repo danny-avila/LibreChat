@@ -15,7 +15,6 @@ const { filterFilesByAgentAccess } = require('~/server/services/Files/permission
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { convertImage } = require('~/server/services/Files/images/convert');
 const { createFile, getFiles, updateFile } = require('~/models/File');
-const { getAppConfig } = require('~/server/services/Config');
 
 /**
  * Process OpenAI image files, convert to target format, save and return file metadata.
@@ -39,7 +38,7 @@ const processCodeOutput = async ({
   messageId,
   session_id,
 }) => {
-  const appConfig = await getAppConfig({ role: req.user?.role });
+  const appConfig = req.config;
   const currentDate = new Date();
   const baseURL = getCodeBaseURL();
   const fileExt = path.extname(name);

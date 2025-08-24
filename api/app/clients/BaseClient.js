@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const fetch = require('node-fetch');
+const { logger } = require('@librechat/data-schemas');
 const { getBalanceConfig } = require('@librechat/api');
 const {
   supportsBalanceCheck,
@@ -12,12 +13,10 @@ const {
   Constants,
 } = require('librechat-data-provider');
 const { getMessages, saveMessage, updateMessage, saveConvo, getConvo } = require('~/models');
-const { getAppConfig } = require('~/server/services/Config');
 const { checkBalance } = require('~/models/balanceMethods');
 const { truncateToolCallOutputs } = require('./prompts');
 const { getFiles } = require('~/models/File');
 const TextStream = require('./TextStream');
-const { logger } = require('~/config');
 
 class BaseClient {
   constructor(apiKey, options = {}) {
@@ -575,7 +574,7 @@ class BaseClient {
   }
 
   async sendMessage(message, opts = {}) {
-    const appConfig = await getAppConfig({ role: this.options.req?.user?.role });
+    const appConfig = this.options.req?.config;
     /** @type {Promise<TMessage>} */
     let userMessagePromise;
     const { user, head, isEdited, conversationId, responseMessageId, saveOptions, userMessage } =

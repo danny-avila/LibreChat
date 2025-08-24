@@ -1,7 +1,6 @@
 const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');
-const { getAppConfig } = require('~/server/services/Config');
 const { getStrategyFunctions } = require('../strategies');
 const { resizeImageBuffer } = require('./resize');
 const { logger } = require('~/config');
@@ -18,7 +17,7 @@ const { logger } = require('~/config');
  */
 async function convertImage(req, file, resolution = 'high', basename = '') {
   try {
-    const appConfig = await getAppConfig({ role: req.user?.role });
+    const appConfig = req.config;
     let inputBuffer;
     let outputBuffer;
     let extension = path.extname(file.path ?? basename).toLowerCase();

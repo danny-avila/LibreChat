@@ -1,20 +1,19 @@
 const path = require('path');
 const fs = require('fs').promises;
 const express = require('express');
+const { logger } = require('@librechat/data-schemas');
 const { isAgentsEndpoint } = require('librechat-data-provider');
 const {
   filterFile,
   processImageFile,
   processAgentFileUpload,
 } = require('~/server/services/Files/process');
-const { getAppConfig } = require('~/server/services/Config');
-const { logger } = require('~/config');
 
 const router = express.Router();
 
 router.post('/', async (req, res) => {
-  const appConfig = await getAppConfig({ role: req.user?.role });
   const metadata = req.body;
+  const appConfig = req.config;
 
   try {
     filterFile({ req, image: true });

@@ -27,9 +27,9 @@ const { addResourceFileId, deleteResourceFileId } = require('~/server/controller
 const { addAgentResourceFile, removeAgentResourceFiles } = require('~/models/Agent');
 const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
 const { createFile, updateFileUsage, deleteFiles } = require('~/models/File');
-const { checkCapability, getAppConfig } = require('~/server/services/Config');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { getFileStrategy } = require('~/server/utils/getFileStrategy');
+const { checkCapability } = require('~/server/services/Config');
 const { LB_QueueAsyncCall } = require('~/server/utils/queue');
 const { getStrategyFunctions } = require('./strategies');
 const { determineFileType } = require('~/server/utils');
@@ -157,7 +157,7 @@ function enqueueDeleteOperation({ req, file, deleteFile, promises, resolvedFileI
  * @returns {Promise<void>}
  */
 const processDeleteRequest = async ({ req, files }) => {
-  const appConfig = await getAppConfig({ role: req.user?.role });
+  const appConfig = req.config;
   const resolvedFileIds = [];
   const deletionMethods = {};
   const promises = [];
@@ -321,7 +321,7 @@ const processFileURL = async ({ fileStrategy, userId, URL, fileName, basePath, c
  */
 const processImageFile = async ({ req, res, metadata, returnFile = false }) => {
   const { file } = req;
-  const appConfig = await getAppConfig({ role: req.user?.role });
+  const appConfig = req.config;
   const source = getFileStrategy(appConfig, { isImage: true });
   const { handleImageUpload } = getStrategyFunctions(source);
   const { file_id, temp_file_id, endpoint } = metadata;
@@ -368,7 +368,7 @@ const processImageFile = async ({ req, res, metadata, returnFile = false }) => {
  * @returns {Promise<{ filepath: string, filename: string, source: string, type: string}>}
  */
 const uploadImageBuffer = async ({ req, context, metadata = {}, resize = true }) => {
-  const appConfig = await getAppConfig({ role: req.user?.role });
+  const appConfig = req.config;
   const source = getFileStrategy(appConfig, { isImage: true });
   const { saveBuffer } = getStrategyFunctions(source);
   let { buffer, width, height, bytes, filename, file_id, type } = metadata;
@@ -414,7 +414,7 @@ const uploadImageBuffer = async ({ req, context, metadata = {}, resize = true })
  * @returns {Promise<void>}
  */
 const processFileUpload = async ({ req, res, metadata }) => {
-  const appConfig = await getAppConfig({ role: req.user?.role });
+  const appConfig = req.config;
   const isAssistantUpload = isAssistantsEndpoint(metadata.endpoint);
   const assistantSource =
     metadata.endpoint === EModelEndpoint.azureAssistants ? FileSources.azure : FileSources.openai;
@@ -505,7 +505,7 @@ const processFileUpload = async ({ req, res, metadata }) => {
  */
 const processAgentFileUpload = async ({ req, res, metadata }) => {
   const { file } = req;
-  const appConfig = await getAppConfig({ role: req.user?.role });
+  const appConfig = req.config;
   const { agent_id, tool_resource, file_id, temp_file_id = null } = metadata;
   if (agent_id && !tool_resource) {
     throw new Error('No tool resource provided for agent file upload');
@@ -757,7 +757,7 @@ const processOpenAIFile = async ({
 const processOpenAIImageOutput = async ({ req, buffer, file_id, filename, fileExt }) => {
   const currentDate = new Date();
   const formattedDate = currentDate.toISOString();
-  const appConfig = await getAppConfig({ role: req.user?.role });
+  const appConfig = req.config;
   const _file = await convertImage(req, buffer, undefined, `${file_id}${fileExt}`);
 
   // Create only one file record with the correct information
@@ -909,7 +909,7 @@ async function saveBase64Image(
   }
 
   const image = await resizeImageBuffer(inputBuffer, effectiveResolution, endpoint);
-  const appConfig = await getAppConfig({ role: req.user?.role });
+  const appConfig = req.config;
   const source = getFileStrategy(appConfig, { isImage: true });
   const { saveBuffer } = getStrategyFunctions(source);
   const filepath = await saveBuffer({
@@ -971,7 +971,7 @@ function filterFile({ req, image, isAvatar }) {
     throw new Error('No endpoint provided');
   }
 
-  const appConfig = getAppConfig({ role: req.user?.role });
+  const appConfig = req.config;
   const fileConfig = mergeFileConfig(appConfig.fileConfig);
 
   const { fileSizeLimit: sizeLimit, supportedMimeTypes } =

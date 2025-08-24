@@ -13,7 +13,6 @@ const { processFileURL, uploadImageBuffer } = require('~/server/services/Files/p
 const { processCodeOutput } = require('~/server/services/Files/Code/process');
 const { createToolCall, getToolCallsByConvo } = require('~/models/ToolCall');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
-const { getAppConfig } = require('~/server/services/Config');
 const { loadTools } = require('~/app/clients/tools/util');
 const { getRoleByName } = require('~/models/Role');
 const { getMessage } = require('~/models/Message');
@@ -36,7 +35,7 @@ const toolAccessPermType = {
  */
 const verifyWebSearchAuth = async (req, res) => {
   try {
-    const appConfig = await getAppConfig({ role: req.user?.role });
+    const appConfig = req.config;
     const userId = req.user.id;
     /** @type {TCustomConfig['webSearch']} */
     const webSearchConfig = appConfig?.webSearch || {};
@@ -112,7 +111,7 @@ const verifyToolAuth = async (req, res) => {
  */
 const callTool = async (req, res) => {
   try {
-    const appConfig = await getAppConfig({ role: req.user?.role });
+    const appConfig = req.config;
     const { toolId = '' } = req.params;
     if (!fieldsMap[toolId]) {
       logger.warn(`[${toolId}/call] User ${req.user.id} attempted call to invalid tool`);

@@ -1,7 +1,6 @@
 const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');
-const { getAppConfig } = require('~/server/services/Config');
 const { resizeImageBuffer } = require('../images/resize');
 const { updateUser, updateFile } = require('~/models');
 
@@ -29,7 +28,7 @@ const { updateUser, updateFile } = require('~/models');
  *            - height: The height of the converted image.
  */
 async function uploadLocalImage({ req, file, file_id, endpoint, resolution = 'high' }) {
-  const appConfig = await getAppConfig({ role: req.user?.role });
+  const appConfig = req.config;
   const inputFilePath = file.path;
   const inputBuffer = await fs.promises.readFile(inputFilePath);
   const {
@@ -91,7 +90,7 @@ function encodeImage(imagePath) {
  * @returns {Promise<[MongoFile, string]>} - A promise that resolves to an array of results from updateFile and encodeImage.
  */
 async function prepareImagesLocal(req, file) {
-  const appConfig = await getAppConfig({ role: req.user?.role });
+  const appConfig = req.config;
   const { publicPath, imageOutput } = appConfig.paths;
   const userPath = path.join(imageOutput, req.user.id);
 

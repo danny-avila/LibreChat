@@ -9,10 +9,9 @@ const {
   removeNullishValues,
 } = require('librechat-data-provider');
 const { getUserKey, checkUserKeyExpiry } = require('~/server/services/UserService');
-const { getAppConfig } = require('~/server/services/Config');
 
 const getOptions = async ({ req, overrideModel, endpointOption }) => {
-  const appConfig = await getAppConfig({ role: req.user?.role });
+  const appConfig = req.config;
   const {
     BEDROCK_AWS_SECRET_ACCESS_KEY,
     BEDROCK_AWS_ACCESS_KEY_ID,

@@ -4,7 +4,6 @@ const axios = require('axios');
 const { logger } = require('@librechat/data-schemas');
 const { EModelEndpoint } = require('librechat-data-provider');
 const { generateShortLivedToken } = require('~/server/services/AuthService');
-const { getAppConfig } = require('~/server/services/Config');
 const { getBufferMetadata } = require('~/server/utils');
 const paths = require('~/config/paths');
 
@@ -46,7 +45,7 @@ async function saveLocalFile(file, outputPath, outputFilename) {
  * @throws Will throw an error if the image saving process fails.
  */
 const saveLocalImage = async (req, file, filename) => {
-  const appConfig = await getAppConfig({ role: req.user?.role });
+  const appConfig = req.config;
   const imagePath = appConfig.paths.imageOutput;
   const outputPath = path.join(imagePath, req.user.id ?? '');
   await saveLocalFile(file, outputPath, filename);
@@ -202,7 +201,7 @@ const unlinkFile = async (filepath) => {
  *          file path is invalid or if there is an error in deletion.
  */
 const deleteLocalFile = async (req, file) => {
-  const appConfig = await getAppConfig({ role: req.user?.role });
+  const appConfig = req.config;
   const { publicPath, uploads } = appConfig.paths;
 
   /** Filepath stripped of query parameters (e.g., ?manual=true) */
@@ -269,7 +268,7 @@ const deleteLocalFile = async (req, file) => {
  *            - bytes: The size of the file in bytes.
  */
 async function uploadLocalFile({ req, file, file_id }) {
-  const appConfig = await getAppConfig({ role: req.user?.role });
+  const appConfig = req.config;
   const inputFilePath = file.path;
   const inputBuffer = await fs.promises.readFile(inputFilePath);
   const bytes = Buffer.byteLength(inputBuffer);
@@ -299,7 +298,7 @@ async function uploadLocalFile({ req, file, file_id }) {
  */
 async function getLocalFileStream(req, filepath) {
   try {
-    const appConfig = await getAppConfig({ role: req.user?.role });
+    const appConfig = req.config;
     if (filepath.includes('/uploads/')) {
       const basePath = filepath.split('/uploads/')[1];
 

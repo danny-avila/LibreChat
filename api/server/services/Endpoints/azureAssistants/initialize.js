@@ -7,7 +7,6 @@ const {
   getUserKeyValues,
   getUserKeyExpiry,
 } = require('~/server/services/UserService');
-const { getAppConfig } = require('~/server/services/Config');
 const OAIClient = require('~/app/clients/OpenAIClient');
 
 class Files {
@@ -49,7 +48,7 @@ class Files {
 }
 
 const initializeClient = async ({ req, res, version, endpointOption, initAppClient = false }) => {
-  const appConfig = await getAppConfig({ role: req.user?.role });
+  const appConfig = req.config;
   const { PROXY, OPENAI_ORGANIZATION, AZURE_ASSISTANTS_API_KEY, AZURE_ASSISTANTS_BASE_URL } =
     process.env;
 

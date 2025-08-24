@@ -2,7 +2,6 @@ const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');
 const { logger } = require('@librechat/data-schemas');
-const { getAppConfig } = require('~/server/services/Config');
 const { resizeImageBuffer } = require('../images/resize');
 const { updateUser, updateFile } = require('~/models');
 const { saveBufferToS3 } = require('./crud');
@@ -30,7 +29,7 @@ async function uploadImageToS3({
   basePath = defaultBasePath,
 }) {
   try {
-    const appConfig = await getAppConfig({ role: req.user?.role });
+    const appConfig = req.config;
     const inputFilePath = file.path;
     const inputBuffer = await fs.promises.readFile(inputFilePath);
     const {

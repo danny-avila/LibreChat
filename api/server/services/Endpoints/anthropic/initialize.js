@@ -2,10 +2,9 @@ const { EModelEndpoint } = require('librechat-data-provider');
 const { getUserKey, checkUserKeyExpiry } = require('~/server/services/UserService');
 const { getLLMConfig } = require('~/server/services/Endpoints/anthropic/llm');
 const AnthropicClient = require('~/app/clients/AnthropicClient');
-const { getAppConfig } = require('~/server/services/Config');
 
 const initializeClient = async ({ req, res, endpointOption, overrideModel, optionsOnly }) => {
-  const appConfig = await getAppConfig({ role: req.user?.role });
+  const appConfig = req.config;
   const { ANTHROPIC_API_KEY, ANTHROPIC_REVERSE_PROXY, PROXY } = process.env;
   const expiresAt = req.body.key;
   const isUserProvided = ANTHROPIC_API_KEY === 'user_provided';

@@ -1,6 +1,11 @@
 const { Providers } = require('@librechat/agents');
-const { isUserProvided, getCustomEndpointConfig } = require('@librechat/api');
-const { getOpenAIConfig, createHandleLLMNewToken, resolveHeaders } = require('@librechat/api');
+const {
+  resolveHeaders,
+  isUserProvided,
+  getOpenAIConfig,
+  getCustomEndpointConfig,
+  createHandleLLMNewToken,
+} = require('@librechat/api');
 const {
   CacheKeys,
   ErrorTypes,
@@ -10,14 +15,13 @@ const {
 } = require('librechat-data-provider');
 const { getUserKeyValues, checkUserKeyExpiry } = require('~/server/services/UserService');
 const { fetchModels } = require('~/server/services/ModelService');
-const { getAppConfig } = require('~/server/services/Config');
 const OpenAIClient = require('~/app/clients/OpenAIClient');
 const getLogStores = require('~/cache/getLogStores');
 
 const { PROXY } = process.env;
 
 const initializeClient = async ({ req, res, endpointOption, optionsOnly, overrideEndpoint }) => {
-  const appConfig = await getAppConfig({ role: req.user?.role });
+  const appConfig = req.config;
   const { key: expiresAt } = req.body;
   const endpoint = overrideEndpoint ?? req.body.endpoint;
 

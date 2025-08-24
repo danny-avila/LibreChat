@@ -2,7 +2,6 @@ const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');
 const { logger } = require('@librechat/data-schemas');
-const { getAppConfig } = require('~/server/services/Config');
 const { resizeImageBuffer } = require('../images/resize');
 const { updateUser, updateFile } = require('~/models');
 const { saveBufferToFirebase } = require('./crud');
@@ -26,7 +25,7 @@ const { saveBufferToFirebase } = require('./crud');
  *            - height: The height of the converted image.
  */
 async function uploadImageToFirebase({ req, file, file_id, endpoint, resolution = 'high' }) {
-  const appConfig = await getAppConfig({ role: req.user?.role });
+  const appConfig = req.config;
   const inputFilePath = file.path;
   const inputBuffer = await fs.promises.readFile(inputFilePath);
   const {

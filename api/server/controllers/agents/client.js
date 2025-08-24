@@ -38,9 +38,9 @@ const { addCacheControl, createContextHandlers } = require('~/app/clients/prompt
 const { initializeAgent } = require('~/server/services/Endpoints/agents/agent');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
 const { getFormattedMemories, deleteMemory, setMemory } = require('~/models');
-const { checkCapability, getAppConfig } = require('~/server/services/Config');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const { getProviderConfig } = require('~/server/services/Endpoints');
+const { checkCapability } = require('~/server/services/Config');
 const BaseClient = require('~/app/clients/BaseClient');
 const { getRoleByName } = require('~/models/Role');
 const { loadAgent } = require('~/models/Agent');
@@ -447,7 +447,7 @@ class AgentClient extends BaseClient {
       );
       return;
     }
-    const appConfig = await getAppConfig({ role: user.role });
+    const appConfig = this.options.req.config;
     const memoryConfig = appConfig.memory;
     if (!memoryConfig || memoryConfig.disabled === true) {
       return;
@@ -578,7 +578,7 @@ class AgentClient extends BaseClient {
       if (this.processMemory == null) {
         return;
       }
-      const appConfig = await getAppConfig({ role: this.options.req.user?.role });
+      const appConfig = this.options.req.config;
       const memoryConfig = appConfig.memory;
       const messageWindowSize = memoryConfig?.messageWindowSize ?? 5;
 
@@ -769,7 +769,7 @@ class AgentClient extends BaseClient {
         abortController = new AbortController();
       }
 
-      const appConfig = await getAppConfig({ role: this.options.req.user?.role });
+      const appConfig = this.options.req.config;
       /** @type {AppConfig['endpoints']['agents']} */
       const agentsEConfig = appConfig.endpoints?.[EModelEndpoint.agents];
 
@@ -1081,7 +1081,7 @@ class AgentClient extends BaseClient {
     }
     const { handleLLMEnd, collected: collectedMetadata } = createMetadataAggregator();
     const { req, res, agent } = this.options;
-    const appConfig = await getAppConfig({ role: req.user?.role });
+    const appConfig = req.config;
     let endpoint = agent.endpoint;
 
     /** @type {import('@librechat/agents').ClientOptions} */
