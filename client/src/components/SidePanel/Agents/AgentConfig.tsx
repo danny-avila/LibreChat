@@ -46,6 +46,7 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
   const methods = useFormContext<AgentForm>();
   const { data: startupConfig } = useGetStartupConfig();
   const [showToolDialog, setShowToolDialog] = useState(false);
+  const [showMCPToolDialog, setShowMCPToolDialog] = useState(false);
   const {
     actions,
     setAction,
@@ -463,7 +464,7 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
 
           const finalMCPTools = Array.from(allMCPToolsToShow.entries());
 
-          return finalMCPTools.length > 0 ? (
+          return (
             <div className="mb-4">
               <label className={labelClass}>{localize('com_ui_mcp_servers')}</label>
               <div>
@@ -489,9 +490,21 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
                     );
                   })}
                 </div>
+                <div className="mt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowMCPToolDialog(true)}
+                    className="btn btn-neutral border-token-border-light relative h-9 w-full rounded-lg font-medium"
+                    aria-haspopup="dialog"
+                  >
+                    <div className="flex w-full items-center justify-center gap-2">
+                      {localize('com_assistants_add_mcp_server_tools')}
+                    </div>
+                  </button>
+                </div>
               </div>
             </div>
-          ) : null;
+          );
         })()}
 
         {/* Support Contact (Optional) */}
@@ -583,6 +596,13 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
         isOpen={showToolDialog}
         setIsOpen={setShowToolDialog}
         endpoint={EModelEndpoint.agents}
+        showMCPTools={false}
+      />
+      <ToolSelectDialog
+        isOpen={showMCPToolDialog}
+        setIsOpen={setShowMCPToolDialog}
+        endpoint={EModelEndpoint.agents}
+        showMCPTools={true}
       />
     </>
   );

@@ -22,8 +22,10 @@ function ToolSelectDialog({
   isOpen,
   endpoint,
   setIsOpen,
+  showMCPTools = false,
 }: TPluginStoreDialogProps & {
   endpoint: AssistantsEndpoint | EModelEndpoint.agents;
+  showMCPTools?: boolean;
 }) {
   const { groupedTools, groupedMCPTools } = useAgentPanelContext();
   const { getValues, setValue } = useFormContext<AgentForm>();
@@ -32,8 +34,11 @@ function ToolSelectDialog({
   const localize = useLocalize();
 
   const allGroupedTools = useMemo(() => {
-    return { ...groupedMCPTools, ...groupedTools };
-  }, [groupedMCPTools, groupedTools]);
+    if (showMCPTools) {
+      return groupedMCPTools;
+    }
+    return groupedTools;
+  }, [groupedMCPTools, groupedTools, showMCPTools]);
 
   const {
     maxPage,
@@ -206,9 +211,15 @@ function ToolSelectDialog({
             <div className="flex items-center">
               <div className="text-center sm:text-left">
                 <DialogTitle className="text-lg font-medium leading-6 text-text-primary">
-                  {isAgentTools
-                    ? localize('com_nav_tool_dialog_agents')
-                    : localize('com_nav_tool_dialog')}
+                  {(() => {
+                    if (showMCPTools) {
+                      return localize('com_nav_tool_dialog_mcp_server_tools');
+                    }
+                    if (isAgentTools) {
+                      return localize('com_nav_tool_dialog_agents');
+                    }
+                    return localize('com_nav_tool_dialog');
+                  })()}
                 </DialogTitle>
                 <Description className="text-sm text-text-secondary">
                   {localize('com_nav_tool_dialog_description')}
