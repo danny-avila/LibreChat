@@ -40,36 +40,43 @@ export function AgentPanelProvider({ children }: { children: React.ReactNode }) 
       agent_id: agent_id || '',
     })) || [];
 
-  const groupedTools = tools?.reduce(
+  const mcpTools = tools.filter((tool) => tool.tool_id.includes(Constants.mcp_delimiter));
+  const regularTools = tools.filter((tool) => !tool.tool_id.includes(Constants.mcp_delimiter));
+
+  const groupedTools = regularTools?.reduce(
     (acc, tool) => {
-      if (tool.tool_id.includes(Constants.mcp_delimiter)) {
-        const [_toolName, serverName] = tool.tool_id.split(Constants.mcp_delimiter);
-        const groupKey = `${serverName.toLowerCase()}`;
-        if (!acc[groupKey]) {
-          acc[groupKey] = {
-            tool_id: groupKey,
-            metadata: {
-              name: `${serverName}`,
-              pluginKey: groupKey,
-              description: `${localize('com_ui_tool_collection_prefix')} ${serverName}`,
-              icon: tool.metadata.icon || '',
-            } as TPlugin,
-            agent_id: agent_id || '',
-            tools: [],
-          };
-        }
-        acc[groupKey].tools?.push({
-          tool_id: tool.tool_id,
-          metadata: tool.metadata,
+      acc[tool.tool_id] = {
+        tool_id: tool.tool_id,
+        metadata: tool.metadata,
+        agent_id: agent_id || '',
+      };
+      return acc;
+    },
+    {} as Record<string, AgentToolType & { tools?: AgentToolType[] }>,
+  );
+
+  const groupedMCPTools = mcpTools?.reduce(
+    (acc, tool) => {
+      const [_toolName, serverName] = tool.tool_id.split(Constants.mcp_delimiter);
+      const groupKey = `${serverName.toLowerCase()}`;
+      if (!acc[groupKey]) {
+        acc[groupKey] = {
+          tool_id: groupKey,
+          metadata: {
+            name: `${serverName}`,
+            pluginKey: groupKey,
+            description: `${localize('com_ui_tool_collection_prefix')} ${serverName}`,
+            icon: tool.metadata.icon || '',
+          } as TPlugin,
           agent_id: agent_id || '',
-        });
-      } else {
-        acc[tool.tool_id] = {
-          tool_id: tool.tool_id,
-          metadata: tool.metadata,
-          agent_id: agent_id || '',
+          tools: [],
         };
       }
+      acc[groupKey].tools?.push({
+        tool_id: tool.tool_id,
+        metadata: tool.metadata,
+        agent_id: agent_id || '',
+      });
       return acc;
     },
     {} as Record<string, AgentToolType & { tools?: AgentToolType[] }>,
@@ -93,6 +100,7 @@ export function AgentPanelProvider({ children }: { children: React.ReactNode }) 
     agentsConfig,
     setActivePanel,
     endpointsConfig,
+    groupedMCPTools,
     setCurrentAgentId,
   };
 

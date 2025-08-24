@@ -29,6 +29,7 @@ import Artifacts from './Artifacts';
 import AgentTool from './AgentTool';
 import CodeForm from './Code/Form';
 import { Panel } from '~/common';
+import MCPTool from './MCPTool';
 
 const labelClass = 'mb-2 text-token-text-primary block font-medium';
 const inputClass = cn(
@@ -50,6 +51,7 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
     setActivePanel,
     endpointsConfig,
     groupedTools: allTools,
+    groupedMCPTools: allMCPTools,
   } = useAgentPanelContext();
 
   const {
@@ -181,6 +183,14 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
   Object.entries(allTools ?? {}).forEach(([toolId, toolObj]) => {
     if (toolObj.tools?.length) {
       // if any subtool of this group is selected, ensure group parent tool rendered
+      if (toolObj.tools.some((st) => selectedToolIds.includes(st.tool_id))) {
+        visibleToolIds.add(toolId);
+      }
+    }
+  });
+
+  Object.entries(allMCPTools ?? {}).forEach(([toolId, toolObj]) => {
+    if (toolObj.tools?.length) {
       if (toolObj.tools.some((st) => selectedToolIds.includes(st.tool_id))) {
         visibleToolIds.add(toolId);
       }
@@ -385,7 +395,28 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
           </div>
         </div>
         {/* MCP Section */}
-        {/* <MCPSection /> */}
+        {(() => {
+          const visibleMCPTools = Object.entries(allMCPTools ?? {}).filter(([toolId]) =>
+            visibleToolIds.has(toolId),
+          );
+          return visibleMCPTools.length > 0 ? (
+            <div className="mb-4">
+              <label className={labelClass}>{localize('com_ui_mcp_servers')}</label>
+              <div>
+                <div className="mb-1">
+                  {visibleMCPTools.map(([toolId, toolObj], i) => (
+                    <MCPTool
+                      key={`${toolId}-${i}-${agent_id}`}
+                      tool={toolId}
+                      allTools={allMCPTools}
+                      agent_id={agent_id}
+                    />
+                  ))}
+                </div>
+              </div>
+            </div>
+          ) : null;
+        })()}
 
         {/* Support Contact (Optional) */}
         <div className="mb-4">

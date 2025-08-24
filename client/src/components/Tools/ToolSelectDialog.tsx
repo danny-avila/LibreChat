@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { Search, X } from 'lucide-react';
 import { useFormContext } from 'react-hook-form';
 import { Constants, isAgentsEndpoint } from 'librechat-data-provider';
@@ -25,11 +25,15 @@ function ToolSelectDialog({
 }: TPluginStoreDialogProps & {
   endpoint: AssistantsEndpoint | EModelEndpoint.agents;
 }) {
-  const localize = useLocalize();
+  const { groupedTools, groupedMCPTools } = useAgentPanelContext();
   const { getValues, setValue } = useFormContext<AgentForm>();
   const { data: tools } = useAvailableToolsQuery(endpoint);
-  const { groupedTools } = useAgentPanelContext();
   const isAgentTools = isAgentsEndpoint(endpoint);
+  const localize = useLocalize();
+
+  const allGroupedTools = useMemo(() => {
+    return { ...groupedMCPTools, ...groupedTools };
+  }, [groupedMCPTools, groupedTools]);
 
   const {
     maxPage,
@@ -74,7 +78,8 @@ function ToolSelectDialog({
       installedToolIds.push(pluginAction.pluginKey);
 
       // If this tool is a group, add subtools too
-      const groupObj = groupedTools?.[pluginAction.pluginKey];
+      const groupObj =
+        groupedTools?.[pluginAction.pluginKey] || groupedMCPTools?.[pluginAction.pluginKey];
       if (groupObj?.tools && groupObj.tools.length > 0) {
         for (const sub of groupObj.tools) {
           if (!installedToolIds.includes(sub.tool_id)) {
@@ -100,7 +105,7 @@ function ToolSelectDialog({
   };
 
   const onRemoveTool = (toolId: string) => {
-    const groupObj = groupedTools?.[toolId];
+    const groupObj = groupedTools?.[toolId] || groupedMCPTools?.[toolId];
     const toolIdsToRemove = [toolId];
     if (groupObj?.tools && groupObj.tools.length > 0) {
       toolIdsToRemove.push(...groupObj.tools.map((sub) => sub.tool_id));
@@ -144,7 +149,7 @@ function ToolSelectDialog({
     }
   };
 
-  const filteredTools = Object.values(groupedTools || {}).filter(
+  const filteredTools = Object.values(allGroupedTools || {}).filter(
     (tool: AgentToolType & { tools?: AgentToolType[] }) => {
       // Check if the parent tool matches
       if (tool.metadata?.name?.toLowerCase().includes(searchValue.toLowerCase())) {
