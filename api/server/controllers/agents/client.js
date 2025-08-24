@@ -33,18 +33,13 @@ const {
   bedrockInputSchema,
   removeNullishValues,
 } = require('librechat-data-provider');
-const {
-  findPluginAuthsByKeys,
-  getFormattedMemories,
-  deleteMemory,
-  setMemory,
-} = require('~/models');
-const { getMCPAuthMap, checkCapability, hasCustomUserVars } = require('~/server/services/Config');
 const { addCacheControl, createContextHandlers } = require('~/app/clients/prompts');
 const { initializeAgent } = require('~/server/services/Endpoints/agents/agent');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
+const { getFormattedMemories, deleteMemory, setMemory } = require('~/models');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const { getProviderConfig } = require('~/server/services/Endpoints');
+const { checkCapability } = require('~/server/services/Config');
 const BaseClient = require('~/app/clients/BaseClient');
 const { getRoleByName } = require('~/models/Role');
 const { loadAgent } = require('~/models/Agent');
@@ -615,6 +610,7 @@ class AgentClient extends BaseClient {
     await this.chatCompletion({
       payload,
       onProgress: opts.onProgress,
+      userMCPAuthMap: opts.userMCPAuthMap,
       abortController: opts.abortController,
     });
     return this.contentParts;
@@ -747,7 +743,13 @@ class AgentClient extends BaseClient {
     return currentMessageTokens > 0 ? currentMessageTokens : originalEstimate;
   }
 
-  async chatCompletion({ payload, abortController = null }) {
+  /**
+   * @param {object} params
+   * @param {string | ChatCompletionMessageParam[]} params.payload
+   * @param {Record<string, Record<string, string>>} [params.userMCPAuthMap]
+   * @param {AbortController} [params.abortController]
+   */
+  async chatCompletion({ payload, userMCPAuthMap, abortController = null }) {
     /** @type {Partial<GraphRunnableConfig>} */
     let config;
     /** @type {ReturnType<createRun>} */
@@ -903,21 +905,9 @@ class AgentClient extends BaseClient {
           run.Graph.contentData = contentData;
         }
 
-        try {
-          if (await hasCustomUserVars()) {
-            config.configurable.userMCPAuthMap = await getMCPAuthMap({
-              tools: agent.tools,
-              userId: this.options.req.user.id,
-              findPluginAuthsByKeys,
-            });
-          }
-        } catch (err) {
-          logger.error(
-            `[api/server/controllers/agents/client.js #chatCompletion] Error getting custom user vars for agent ${agent.id}`,
-            err,
-          );
+        if (userMCPAuthMap != null) {
+          config.configurable.userMCPAuthMap = userMCPAuthMap;
         }
-
         await run.processStream({ messages }, config, {
           keepContent: i !== 0,
           tokenCounter: createTokenCounter(this.getEncoding()),
