@@ -12,10 +12,8 @@ const { getAppConfig } = require('~/server/services/Config');
 class TTSService {
   /**
    * Creates an instance of TTSService.
-   * @param {Object} customConfig - The custom configuration object.
    */
-  constructor(customConfig) {
-    this.customConfig = customConfig;
+  constructor() {
     this.providerStrategies = {
       [TTSProviders.OPENAI]: this.openAIProvider.bind(this),
       [TTSProviders.AZURE_OPENAI]: this.azureOpenAIProvider.bind(this),
