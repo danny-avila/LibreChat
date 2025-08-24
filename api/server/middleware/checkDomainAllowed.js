@@ -15,10 +15,10 @@ const { getAppConfig } = require('~/server/services/Config');
  */
 const checkDomainAllowed = async (req, res, next = () => {}) => {
   const email = req?.user?.email;
-  const appConfig = getAppConfig({
+  const appConfig = await getAppConfig({
     role: req?.user?.role,
   });
-  if (email && !(await isEmailDomainAllowed(email, appConfig?.registration?.allowedDomains))) {
+  if (email && !isEmailDomainAllowed(email, appConfig?.registration?.allowedDomains)) {
     logger.error(`[Social Login] [Social Login not allowed] [Email: ${email}]`);
     return res.redirect('/login');
   } else {

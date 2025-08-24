@@ -196,7 +196,7 @@ const registerUser = async (user, additionalData = {}) => {
     }
 
     const appConfig = await getAppConfig({ role: user.role });
-    if (!(await isEmailDomainAllowed(email, appConfig?.registration?.allowedDomains))) {
+    if (!isEmailDomainAllowed(email, appConfig?.registration?.allowedDomains)) {
       const errorMessage =
         'The email address provided cannot be used. Please use a different email address.';
       logger.error(`[registerUser] [Registration not allowed] [Email: ${user.email}]`);

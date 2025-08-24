@@ -1,9 +1,9 @@
 /**
  * @param {string} email
  * @param {string[]} [allowedDomains]
- * @returns {Promise<boolean>}
+ * @returns {boolean}
  */
-async function isEmailDomainAllowed(email, allowedDomains) {
+function isEmailDomainAllowed(email, allowedDomains) {
   if (!email) {
     return false;
   }

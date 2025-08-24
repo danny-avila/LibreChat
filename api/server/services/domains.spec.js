@@ -12,27 +12,27 @@ describe('isEmailDomainAllowed', () => {
 
   it('should return false if email is falsy', async () => {
     const email = '';
-    const result = await isEmailDomainAllowed(email);
+    const result = isEmailDomainAllowed(email);
     expect(result).toBe(false);
   });
 
   it('should return false if domain is not present in the email', async () => {
     const email = 'test';
-    const result = await isEmailDomainAllowed(email);
+    const result = isEmailDomainAllowed(email);
     expect(result).toBe(false);
   });
 
   it('should return true if customConfig is not available', async () => {
     const email = 'test@domain1.com';
     getAppConfig.mockResolvedValue(null);
-    const result = await isEmailDomainAllowed(email, null);
+    const result = isEmailDomainAllowed(email, null);
     expect(result).toBe(true);
   });
 
   it('should return true if allowedDomains is not defined in customConfig', async () => {
     const email = 'test@domain1.com';
     getAppConfig.mockResolvedValue({});
-    const result = await isEmailDomainAllowed(email, undefined);
+    const result = isEmailDomainAllowed(email, undefined);
     expect(result).toBe(true);
   });
 
@@ -43,7 +43,7 @@ describe('isEmailDomainAllowed', () => {
         allowedDomains: ['domain1.com', 'domain2.com'],
       },
     });
-    const result = await isEmailDomainAllowed(email, ['domain1.com', 'domain2.com']);
+    const result = isEmailDomainAllowed(email, ['domain1.com', 'domain2.com']);
     expect(result).toBe(true);
   });
 
@@ -54,7 +54,7 @@ describe('isEmailDomainAllowed', () => {
         allowedDomains: ['domain1.com', 'domain2.com'],
       },
     });
-    const result = await isEmailDomainAllowed(email, ['domain1.com', 'domain2.com']);
+    const result = isEmailDomainAllowed(email, ['domain1.com', 'domain2.com']);
     expect(result).toBe(false);
   });
 });
