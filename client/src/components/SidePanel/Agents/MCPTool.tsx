@@ -43,7 +43,7 @@ export default function MCPTool({
   const { showToast } = useToastContext();
   const updateUserPlugins = useUpdateUserPluginsMutation();
   const { getValues, setValue } = useFormContext<AgentForm>();
-  const { getServerStatusIconProps, isInitializing, getConfigDialogProps } = useMCPServerManager();
+  const { getServerStatusIconProps, getConfigDialogProps } = useMCPServerManager();
 
   if (!allTools) {
     return null;

@@ -414,7 +414,7 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
             ? Object.keys(startupConfig.mcpServers)
             : [];
 
-          const savedMCPTools = Object.entries(allMCPTools ?? {}).filter(([toolId, toolObj]) => {
+          const savedMCPTools = Object.entries(allMCPTools ?? {}).filter(([, toolObj]) => {
             if ((toolObj.tools?.length ?? 0) === 0) return false;
             return toolObj.tools?.some((st) => tools?.includes(st.tool_id));
           });
