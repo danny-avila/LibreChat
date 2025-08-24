@@ -279,15 +279,23 @@ function ToolSelectDialog({
                 {filteredTools &&
                   filteredTools
                     .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
-                    .map((tool, index) => (
-                      <ToolItem
-                        key={index}
-                        tool={tool}
-                        isInstalled={getValues('tools')?.includes(tool.tool_id) || false}
-                        onAddTool={() => onAddTool(tool.tool_id)}
-                        onRemoveTool={() => onRemoveTool(tool.tool_id)}
-                      />
-                    ))}
+                    .map((tool, index) => {
+                      const formTools = getValues('tools') || [];
+                      const isInstalled = showMCPTools
+                        ? tool.tools?.some((subTool) => formTools.includes(subTool.tool_id)) ||
+                          false
+                        : formTools.includes(tool.tool_id);
+
+                      return (
+                        <ToolItem
+                          key={index}
+                          tool={tool}
+                          isInstalled={isInstalled}
+                          onAddTool={() => onAddTool(tool.tool_id)}
+                          onRemoveTool={() => onRemoveTool(tool.tool_id)}
+                        />
+                      );
+                    })}
               </div>
             </div>
             <div className="mt-2 flex flex-col items-center gap-2 sm:flex-row sm:justify-between">
