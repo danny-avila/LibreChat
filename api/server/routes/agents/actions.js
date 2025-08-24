@@ -16,7 +16,6 @@ const { getAgent, updateAgent, getListAgentsByAccess } = require('~/models/Agent
 const { updateAction, getActions, deleteAction } = require('~/models/Action');
 const { isActionDomainAllowed } = require('~/server/services/domains');
 const { canAccessAgentResource } = require('~/server/middleware');
-const { getAppConfig } = require('~/server/services/Config/app');
 const { getRoleByName } = require('~/models/Role');
 
 const router = express.Router();
@@ -84,7 +83,7 @@ router.post(
       }
 
       let metadata = await encryptMetadata(removeNullishValues(_metadata, true));
-      const appConfig = await getAppConfig({ role: req.user.role });
+      const appConfig = req.config;
       const isDomainAllowed = await isActionDomainAllowed(
         metadata.domain,
         appConfig?.actions?.allowedDomains,

@@ -26,7 +26,6 @@ const validateAuthor = require('~/server/middleware/assistants/validateAuthor');
 const { createRun, StreamRunManager } = require('~/server/services/Runs');
 const { addTitle } = require('~/server/services/Endpoints/assistants');
 const { createRunBody } = require('~/server/services/createRunBody');
-const { getAppConfig } = require('~/server/services/Config');
 const { getTransactions } = require('~/models/Transaction');
 const { checkBalance } = require('~/models/balanceMethods');
 const { getConvo } = require('~/models/Conversation');
@@ -45,7 +44,7 @@ const { getOpenAIClient } = require('./helpers');
  */
 const chatV2 = async (req, res) => {
   logger.debug('[/assistants/chat/] req.body', req.body);
-  const appConfig = await getAppConfig({ role: req.user?.role });
+  const appConfig = req.config;
 
   /** @type {{files: MongoFile[]}} */
   const {

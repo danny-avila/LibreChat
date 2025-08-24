@@ -8,8 +8,7 @@ const {
   deleteMemory,
   setMemory,
 } = require('~/models');
-const { getAppConfig } = require('~/server/services/Config');
-const { requireJwtAuth } = require('~/server/middleware');
+const { requireJwtAuth, configMiddleware } = require('~/server/middleware');
 const { getRoleByName } = require('~/models/Role');
 
 const router = express.Router();
@@ -49,7 +48,7 @@ router.use(requireJwtAuth);
  * Returns all memories for the authenticated user, sorted by updated_at (newest first).
  * Also includes memory usage percentage based on token limit.
  */
-router.get('/', checkMemoryRead, async (req, res) => {
+router.get('/', checkMemoryRead, configMiddleware, async (req, res) => {
   try {
     const memories = await getAllUserMemories(req.user.id);
 
@@ -61,7 +60,7 @@ router.get('/', checkMemoryRead, async (req, res) => {
       return sum + (memory.tokenCount || 0);
     }, 0);
 
-    const appConfig = await getAppConfig({ role: req.user?.role });
+    const appConfig = req.config;
     const memoryConfig = appConfig?.memory;
     const tokenLimit = memoryConfig?.tokenLimit;
     const charLimit = memoryConfig?.charLimit || 10000;
@@ -89,7 +88,7 @@ router.get('/', checkMemoryRead, async (req, res) => {
  * Body: { key: string, value: string }
  * Returns 201 and { created: true, memory: <createdDoc> } when successful.
  */
-router.post('/', memoryPayloadLimit, checkMemoryCreate, async (req, res) => {
+router.post('/', memoryPayloadLimit, checkMemoryCreate, configMiddleware, async (req, res) => {
   const { key, value } = req.body;
 
   if (typeof key !== 'string' || key.trim() === '') {
@@ -100,7 +99,7 @@ router.post('/', memoryPayloadLimit, checkMemoryCreate, async (req, res) => {
     return res.status(400).json({ error: 'Value is required and must be a non-empty string.' });
   }
 
-  const appConfig = await getAppConfig({ role: req.user?.role });
+  const appConfig = req.config;
   const memoryConfig = appConfig?.memory;
   const charLimit = memoryConfig?.charLimit || 10000;
 
@@ -121,7 +120,7 @@ router.post('/', memoryPayloadLimit, checkMemoryCreate, async (req, res) => {
 
     const memories = await getAllUserMemories(req.user.id);
 
-    const appConfig = await getAppConfig({ role: req.user?.role });
+    const appConfig = req.config;
     const memoryConfig = appConfig?.memory;
     const tokenLimit = memoryConfig?.tokenLimit;
 
@@ -197,7 +196,7 @@ router.patch('/preferences', checkMemoryOptOut, async (req, res) => {
  * Body: { key?: string, value: string }
  * Returns 200 and { updated: true, memory: <updatedDoc> } when successful.
  */
-router.patch('/:key', memoryPayloadLimit, checkMemoryUpdate, async (req, res) => {
+router.patch('/:key', memoryPayloadLimit, checkMemoryUpdate, configMiddleware, async (req, res) => {
   const { key: urlKey } = req.params;
   const { key: bodyKey, value } = req.body || {};
 
@@ -206,7 +205,7 @@ router.patch('/:key', memoryPayloadLimit, checkMemoryUpdate, async (req, res) =>
   }
 
   const newKey = bodyKey || urlKey;
-  const appConfig = await getAppConfig({ role: req.user?.role });
+  const appConfig = req.config;
   const memoryConfig = appConfig?.memory;
   const charLimit = memoryConfig?.charLimit || 10000;
 

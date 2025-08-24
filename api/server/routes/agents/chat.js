@@ -5,7 +5,6 @@ const {
   setHeaders,
   moderateText,
   // validateModel,
-  configMiddleware,
   validateConvoAccess,
   buildEndpointOption,
   canAccessAgentFromBody,
@@ -17,7 +16,6 @@ const { getRoleByName } = require('~/models/Role');
 
 const router = express.Router();
 
-router.use(configMiddleware);
 router.use(moderateText);
 
 const checkAgentAccess = generateCheckAccess({

@@ -1,7 +1,6 @@
 const axios = require('axios');
 const { logAxiosError } = require('@librechat/api');
 const { EModelEndpoint } = require('librechat-data-provider');
-const { getAppConfig } = require('~/server/services/Config');
 
 /**
  * @typedef {Object} RetrieveOptions
@@ -19,7 +18,7 @@ const { getAppConfig } = require('~/server/services/Config');
  * @returns {Promise<Object>} The data retrieved from the API.
  */
 async function retrieveRun({ thread_id, run_id, timeout, openai }) {
-  const appConfig = await getAppConfig({ role: openai.req.user?.role });
+  const appConfig = openai.req.config;
   const { apiKey, baseURL, httpAgent, organization } = openai;
   let url = `${baseURL}/threads/${thread_id}/runs/${run_id}`;
 

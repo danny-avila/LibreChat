@@ -16,7 +16,6 @@ const { retrieveAndProcessFile } = require('~/server/services/Files/process');
 const { processRequiredActions } = require('~/server/services/ToolService');
 const { RunManager, waitForRun } = require('~/server/services/Runs');
 const { processMessages } = require('~/server/services/Threads');
-const { getAppConfig } = require('~/server/services/Config');
 const { createOnProgress } = require('~/server/utils');
 const { TextStream } = require('~/app/clients');
 
@@ -351,7 +350,7 @@ async function runAssistant({
   accumulatedMessages = [],
   in_progress: inProgress,
 }) {
-  const appConfig = await getAppConfig({ role: openai.req.user?.role });
+  const appConfig = openai.req.config;
   let steps = accumulatedSteps;
   let messages = accumulatedMessages;
   const in_progress = inProgress ?? createInProgressHandler(openai, thread_id, messages);

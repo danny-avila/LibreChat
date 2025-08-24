@@ -1,13 +1,12 @@
 const express = require('express');
 const { nanoid } = require('nanoid');
+const { logger } = require('@librechat/data-schemas');
 const { actionDelimiter, EModelEndpoint, removeNullishValues } = require('librechat-data-provider');
 const { encryptMetadata, domainParser } = require('~/server/services/ActionService');
 const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
 const { updateAction, getActions, deleteAction } = require('~/models/Action');
 const { updateAssistantDoc, getAssistant } = require('~/models/Assistant');
 const { isActionDomainAllowed } = require('~/server/services/domains');
-const { getAppConfig } = require('~/server/services/Config');
-const { logger } = require('~/config');
 
 const router = express.Router();
 
@@ -22,7 +21,7 @@ const router = express.Router();
  */
 router.post('/:assistant_id', async (req, res) => {
   try {
-    const appConfig = await getAppConfig({ role: req.user?.role });
+    const appConfig = req.config;
     const { assistant_id } = req.params;
 
     /** @type {{ functions: FunctionTool[], action_id: string, metadata: ActionMetadata }} */

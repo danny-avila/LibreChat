@@ -29,7 +29,6 @@ const { createRun, StreamRunManager } = require('~/server/services/Runs');
 const { addTitle } = require('~/server/services/Endpoints/assistants');
 const { createRunBody } = require('~/server/services/createRunBody');
 const { sendResponse } = require('~/server/middleware/error');
-const { getAppConfig } = require('~/server/services/Config');
 const { getTransactions } = require('~/models/Transaction');
 const { checkBalance } = require('~/models/balanceMethods');
 const { getConvo } = require('~/models/Conversation');
@@ -48,7 +47,7 @@ const { getOpenAIClient } = require('./helpers');
  * @returns {void}
  */
 const chatV1 = async (req, res) => {
-  const appConfig = await getAppConfig({ role: req.user?.role });
+  const appConfig = req.config;
   logger.debug('[/assistants/chat/] req.body', req.body);
 
   const {

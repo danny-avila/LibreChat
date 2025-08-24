@@ -22,8 +22,8 @@ const {
   loadActionSets,
   domainParser,
 } = require('./ActionService');
-const { getEndpointsConfig, getCachedTools, getAppConfig } = require('~/server/services/Config');
 const { processFileURL, uploadImageBuffer } = require('~/server/services/Files/process');
+const { getEndpointsConfig, getCachedTools } = require('~/server/services/Config');
 const { manifestToolMap, toolkits } = require('~/app/clients/tools/manifest');
 const { createOnSearchResults } = require('~/server/services/Tools/search');
 const { isActionDomainAllowed } = require('~/server/services/domains');
@@ -73,7 +73,7 @@ async function processRequiredActions(client, requiredActions) {
     `[required actions] user: ${client.req.user.id} | thread_id: ${requiredActions[0].thread_id} | run_id: ${requiredActions[0].run_id}`,
     requiredActions,
   );
-  const appConfig = await getAppConfig({ role: client.req.user?.role });
+  const appConfig = client.req.config;
   const toolDefinitions = await getCachedTools({ userId: client.req.user.id, includeGlobal: true });
   const seenToolkits = new Set();
   const tools = requiredActions

@@ -7,8 +7,8 @@ const {
 const {
   initializeClient: initAzureClient,
 } = require('~/server/services/Endpoints/azureAssistants');
-const { getEndpointsConfig, getAppConfig } = require('~/server/services/Config');
 const { initializeClient } = require('~/server/services/Endpoints/assistants');
+const { getEndpointsConfig } = require('~/server/services/Config');
 
 /**
  * @param {Express.Request} req
@@ -210,7 +210,7 @@ async function getOpenAIClient({ req, res, endpointOption, initAppClient, overri
  * @returns {Promise<AssistantListResponse>} 200 - success response - application/json
  */
 const fetchAssistants = async ({ req, res, overrideEndpoint }) => {
-  const appConfig = await getAppConfig({ role: req.user?.role });
+  const appConfig = req.config;
   const {
     limit = 100,
     order = 'desc',
