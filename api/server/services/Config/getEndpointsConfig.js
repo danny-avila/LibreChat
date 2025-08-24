@@ -8,6 +8,7 @@ const {
 } = require('librechat-data-provider');
 const loadDefaultEndpointsConfig = require('./loadDefaultEConfig');
 const getLogStores = require('~/cache/getLogStores');
+const { getAppConfig } = require('./app');
 
 /**
  *
@@ -21,7 +22,7 @@ async function getEndpointsConfig(req) {
     return cachedEndpointsConfig;
   }
 
-  const appConfig = req.config;
+  const appConfig = req.config ?? (await getAppConfig({ role: req.user?.role }));
   const defaultEndpointsConfig = await loadDefaultEndpointsConfig(appConfig);
   const customEndpointsConfig = loadCustomEndpointsConfig(appConfig?.endpoints?.custom);
 
