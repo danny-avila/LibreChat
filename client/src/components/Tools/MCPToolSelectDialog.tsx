@@ -1,16 +1,9 @@
 import { useEffect, useMemo } from 'react';
 import { Search, X } from 'lucide-react';
 import { useFormContext } from 'react-hook-form';
-import { Constants, isAgentsEndpoint } from 'librechat-data-provider';
 import { Dialog, DialogPanel, DialogTitle, Description } from '@headlessui/react';
 import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
-import type {
-  AssistantsEndpoint,
-  EModelEndpoint,
-  TPluginAction,
-  AgentToolType,
-  TError,
-} from 'librechat-data-provider';
+import type { EModelEndpoint, TPluginAction, AgentToolType, TError } from 'librechat-data-provider';
 import type { AgentForm, TPluginStoreDialogProps } from '~/common';
 import { PluginPagination, PluginAuthForm } from '~/components/Plugins/Store';
 import { useAgentPanelContext } from '~/Providers/AgentPanelContext';
@@ -18,22 +11,19 @@ import { useLocalize, usePluginDialogHelpers } from '~/hooks';
 import { useAvailableToolsQuery } from '~/data-provider';
 import ToolItem from './ToolItem';
 
-function ToolSelectDialog({
+type GroupedToolType = AgentToolType & { tools?: AgentToolType[] };
+
+function MCPToolSelectDialog({
   isOpen,
   endpoint,
   setIsOpen,
 }: TPluginStoreDialogProps & {
-  endpoint: AssistantsEndpoint | EModelEndpoint.agents;
+  endpoint: EModelEndpoint.agents;
 }) {
-  const { groupedTools, groupedMCPTools } = useAgentPanelContext();
+  const { groupedMCPTools } = useAgentPanelContext();
   const { getValues, setValue } = useFormContext<AgentForm>();
   const { data: tools } = useAvailableToolsQuery(endpoint);
-  const isAgentTools = isAgentsEndpoint(endpoint);
   const localize = useLocalize();
-
-  const allGroupedTools = useMemo(() => {
-    return groupedTools;
-  }, [groupedTools]);
 
   const {
     maxPage,
@@ -78,7 +68,7 @@ function ToolSelectDialog({
       installedToolIds.push(pluginAction.pluginKey);
 
       // If this tool is a group, add subtools too
-      const groupObj = groupedTools?.[pluginAction.pluginKey];
+      const groupObj = groupedMCPTools?.[pluginAction.pluginKey];
       if (groupObj?.tools && groupObj.tools.length > 0) {
         for (const sub of groupObj.tools) {
           if (!installedToolIds.includes(sub.tool_id)) {
@@ -104,7 +94,7 @@ function ToolSelectDialog({
   };
 
   const onRemoveTool = (toolId: string) => {
-    const groupObj = groupedTools?.[toolId];
+    const groupObj = groupedMCPTools?.[toolId];
     const toolIdsToRemove = [toolId];
     if (groupObj?.tools && groupObj.tools.length > 0) {
       toolIdsToRemove.push(...groupObj.tools.map((sub) => sub.tool_id));
@@ -128,33 +118,24 @@ function ToolSelectDialog({
     const getAvailablePluginFromKey = tools?.find((p) => p.pluginKey === pluginKey);
     setSelectedPlugin(getAvailablePluginFromKey);
 
-    const { authConfig, authenticated = false } = getAvailablePluginFromKey ?? {};
-    if (authConfig && authConfig.length > 0 && !authenticated) {
-      setShowPluginAuthForm(true);
-    } else {
-      handleInstall({
-        pluginKey,
-        action: 'install',
-        auth: {},
-      });
-    }
+    // MCP tools have their variables configured elsewhere (e.g., MCPPanel or MCPSelect),
+    // so we directly proceed to install without showing the auth form.
+    handleInstall({ pluginKey, action: 'install', auth: {} });
   };
 
-  const filteredTools = Object.values(allGroupedTools || {}).filter(
-    (tool: AgentToolType & { tools?: AgentToolType[] }) => {
-      // Check if the parent tool matches
-      if (tool.metadata?.name?.toLowerCase().includes(searchValue.toLowerCase())) {
-        return true;
-      }
-      // Check if any child tools match
-      if (tool.tools) {
-        return tool.tools.some((childTool) =>
-          childTool.metadata?.name?.toLowerCase().includes(searchValue.toLowerCase()),
-        );
-      }
-      return false;
-    },
-  );
+  const filteredTools = Object.values(groupedMCPTools || {}).filter((tool: GroupedToolType) => {
+    // Check if the parent tool matches
+    if (tool.metadata?.name?.toLowerCase().includes(searchValue.toLowerCase())) {
+      return true;
+    }
+    // Check if any child tools match
+    if (tool.tools) {
+      return tool.tools.some((childTool) =>
+        childTool.metadata?.name?.toLowerCase().includes(searchValue.toLowerCase()),
+      );
+    }
+    return false;
+  });
 
   useEffect(() => {
     if (filteredTools) {
@@ -197,9 +178,7 @@ function ToolSelectDialog({
             <div className="flex items-center">
               <div className="text-center sm:text-left">
                 <DialogTitle className="text-lg font-medium leading-6 text-text-primary">
-                  {isAgentTools
-                    ? localize('com_nav_tool_dialog_agents')
-                    : localize('com_nav_tool_dialog')}
+                  {localize('com_nav_tool_dialog_mcp_server_tools')}
                 </DialogTitle>
                 <Description className="text-sm text-text-secondary">
                   {localize('com_nav_tool_dialog_description')}
@@ -259,15 +238,21 @@ function ToolSelectDialog({
                 {filteredTools &&
                   filteredTools
                     .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
-                    .map((tool, index) => (
-                      <ToolItem
-                        key={index}
-                        tool={tool}
-                        isInstalled={getValues('tools')?.includes(tool.tool_id) || false}
-                        onAddTool={() => onAddTool(tool.tool_id)}
-                        onRemoveTool={() => onRemoveTool(tool.tool_id)}
-                      />
-                    ))}
+                    .map((tool, index) => {
+                      const formTools = getValues('tools') || [];
+                      const isInstalled =
+                        tool.tools?.some((subTool) => formTools.includes(subTool.tool_id)) || false;
+
+                      return (
+                        <ToolItem
+                          key={index}
+                          tool={tool}
+                          isInstalled={isInstalled}
+                          onAddTool={() => onAddTool(tool.tool_id)}
+                          onRemoveTool={() => onRemoveTool(tool.tool_id)}
+                        />
+                      );
+                    })}
               </div>
             </div>
             <div className="mt-2 flex flex-col items-center gap-2 sm:flex-row sm:justify-between">
@@ -288,4 +273,4 @@ function ToolSelectDialog({
   );
 }
 
-export default ToolSelectDialog;
+export default MCPToolSelectDialog;

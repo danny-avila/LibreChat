@@ -12,11 +12,11 @@ import {
   getIconKey,
   cn,
 } from '~/utils';
-import { useFileMapContext, useAgentPanelContext } from '~/Providers';
+import { ToolSelectDialog, MCPToolSelectDialog } from '~/components/Tools';
 import useAgentCapabilities from '~/hooks/Agents/useAgentCapabilities';
+import { useFileMapContext, useAgentPanelContext } from '~/Providers';
 import AgentCategorySelector from './AgentCategorySelector';
 import Action from '~/components/SidePanel/Builder/Action';
-import { ToolSelectDialog } from '~/components/Tools';
 import { useGetStartupConfig } from '~/data-provider';
 import { useGetAgentFiles } from '~/data-provider';
 import { icons } from '~/hooks/Endpoint/Icons';
@@ -596,13 +596,11 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
         isOpen={showToolDialog}
         setIsOpen={setShowToolDialog}
         endpoint={EModelEndpoint.agents}
-        showMCPTools={false}
       />
-      <ToolSelectDialog
+      <MCPToolSelectDialog
         isOpen={showMCPToolDialog}
         setIsOpen={setShowMCPToolDialog}
         endpoint={EModelEndpoint.agents}
-        showMCPTools={true}
       />
     </>
   );
