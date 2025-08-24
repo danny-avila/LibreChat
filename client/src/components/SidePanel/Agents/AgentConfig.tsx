@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { useToastContext } from '@librechat/client';
-import { EModelEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint, Constants } from 'librechat-data-provider';
 import { Controller, useWatch, useFormContext } from 'react-hook-form';
 import type { AgentForm, AgentPanelProps, IconComponentTypes } from '~/common';
 import {
@@ -13,6 +13,7 @@ import {
   cn,
 } from '~/utils';
 import { useFileMapContext, useAgentPanelContext } from '~/Providers';
+import { useGetStartupConfig } from '~/data-provider';
 import useAgentCapabilities from '~/hooks/Agents/useAgentCapabilities';
 import AgentCategorySelector from './AgentCategorySelector';
 import Action from '~/components/SidePanel/Builder/Action';
@@ -43,6 +44,7 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
   const fileMap = useFileMapContext();
   const { showToast } = useToastContext();
   const methods = useFormContext<AgentForm>();
+  const { data: startupConfig } = useGetStartupConfig();
   const [showToolDialog, setShowToolDialog] = useState(false);
   const {
     actions,
@@ -396,26 +398,84 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
         </div>
         {/* MCP Section */}
         {(() => {
-          const visibleMCPTools = Object.entries(allMCPTools ?? {}).filter(([toolId]) =>
-            visibleToolIds.has(toolId),
-          );
-          return visibleMCPTools.length > 0 ? (
+          const agentMCPServers = new Set();
+          tools?.forEach((tool) => {
+            if (tool.includes(Constants.mcp_delimiter)) {
+              const parts = tool.split(Constants.mcp_delimiter);
+              const serverName = parts[1]?.toLowerCase();
+              if (serverName) {
+                agentMCPServers.add(serverName);
+              }
+            }
+          });
+
+          const configuredMCPServers = startupConfig?.mcpServers
+            ? Object.keys(startupConfig.mcpServers)
+            : [];
+
+          const selectedMCPTools = configuredMCPServers
+            .filter((serverName) => agentMCPServers.has(serverName.toLowerCase()))
+            .map((serverName) => {
+              const serverTools =
+                tools
+                  ?.filter((tool) =>
+                    tool.includes(`${Constants.mcp_delimiter}${serverName.toLowerCase()}`),
+                  )
+                  .map((toolId) => ({
+                    tool_id: toolId,
+                    metadata: {
+                      name: toolId.split(Constants.mcp_delimiter)[0] || toolId,
+                      description: `MCP Tool: ${toolId}`,
+                    },
+                    agent_id: agent_id || '',
+                  })) || [];
+
+              return [
+                serverName.toLowerCase(),
+                {
+                  tool_id: serverName.toLowerCase(),
+                  metadata: {
+                    name: serverName,
+                    pluginKey: serverName.toLowerCase(),
+                    description: `MCP Server: ${serverName}`,
+                    icon: '',
+                  },
+                  agent_id: agent_id || '',
+                  tools: serverTools,
+                },
+              ];
+            });
+
+          return (
             <div className="mb-4">
-              <label className={labelClass}>{localize('com_ui_mcp_servers')}</label>
-              <div>
-                <div className="mb-1">
-                  {visibleMCPTools.map(([toolId, toolObj], i) => (
-                    <MCPTool
-                      key={`${toolId}-${i}-${agent_id}`}
-                      tool={toolId}
-                      allTools={allMCPTools}
-                      agent_id={agent_id}
-                    />
-                  ))}
-                </div>
-              </div>
+              {selectedMCPTools.length > 0 ? (
+                <>
+                  <label className={labelClass}>{localize('com_ui_mcp_servers')}</label>
+                  <div>
+                    <div className="mb-1">
+                      {selectedMCPTools.map(([toolId, toolObj], i) => {
+                        const fallbackTools = allMCPTools?.[toolId as string]
+                          ? allMCPTools
+                          : {
+                              ...allMCPTools,
+                              [toolId]: toolObj,
+                            };
+
+                        return (
+                          <MCPTool
+                            key={`${toolId as string}-${i}-${agent_id}`}
+                            tool={toolId as string}
+                            allTools={fallbackTools}
+                            agent_id={agent_id}
+                          />
+                        );
+                      })}
+                    </div>
+                  </div>
+                </>
+              ) : null}
             </div>
-          ) : null;
+          );
         })()}
 
         {/* Support Contact (Optional) */}
