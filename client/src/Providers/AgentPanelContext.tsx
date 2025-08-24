@@ -1,10 +1,13 @@
-import React, { createContext, useContext, useState } from 'react';
+import React, { createContext, useContext, useState, useMemo } from 'react';
 import { Constants, EModelEndpoint } from 'librechat-data-provider';
 import type { MCP, Action, TPlugin, AgentToolType } from 'librechat-data-provider';
 import type { AgentPanelContextType } from '~/common';
 import { useAvailableToolsQuery, useGetActionsQuery } from '~/data-provider';
 import { useLocalize, useGetAgentsConfig } from '~/hooks';
 import { Panel } from '~/common';
+
+type GroupedToolType = AgentToolType & { tools?: AgentToolType[] };
+type GroupedToolsRecord = Record<string, GroupedToolType>;
 
 const AgentPanelContext = createContext<AgentPanelContextType | undefined>(undefined);
 
@@ -33,47 +36,57 @@ export function AgentPanelProvider({ children }: { children: React.ReactNode }) 
     enabled: !!agent_id,
   });
 
-  const tools =
-    pluginTools?.map((tool) => ({
-      tool_id: tool.pluginKey,
-      metadata: tool as TPlugin,
-      agent_id: agent_id || '',
-    })) || [];
+  const { tools, groupedTools, groupedMCPTools } = useMemo(() => {
+    if (!pluginTools) {
+      return {
+        tools: [],
+        groupedTools: {},
+        groupedMCPTools: {},
+      };
+    }
 
-  const groupedTools = tools?.reduce(
-    (acc, tool) => {
+    const tools: AgentToolType[] = [];
+    const groupedTools: GroupedToolsRecord = {};
+    const groupedMCPTools: GroupedToolsRecord = {};
+
+    for (const pluginTool of pluginTools) {
+      const tool: AgentToolType = {
+        tool_id: pluginTool.pluginKey,
+        metadata: pluginTool as TPlugin,
+        agent_id: agent_id || '',
+      };
+
+      tools.push(tool);
+
       if (tool.tool_id.includes(Constants.mcp_delimiter)) {
         const [_toolName, serverName] = tool.tool_id.split(Constants.mcp_delimiter);
         const groupKey = `${serverName.toLowerCase()}`;
-        if (!acc[groupKey]) {
-          acc[groupKey] = {
+
+        if (!groupedMCPTools[groupKey]) {
+          groupedMCPTools[groupKey] = {
             tool_id: groupKey,
             metadata: {
               name: `${serverName}`,
               pluginKey: groupKey,
               description: `${localize('com_ui_tool_collection_prefix')} ${serverName}`,
-              icon: tool.metadata.icon || '',
+              icon: pluginTool.icon || '',
             } as TPlugin,
             agent_id: agent_id || '',
             tools: [],
           };
         }
-        acc[groupKey].tools?.push({
-          tool_id: tool.tool_id,
-          metadata: tool.metadata,
-          agent_id: agent_id || '',
-        });
+        groupedMCPTools[groupKey].tools?.push(tool);
       } else {
-        acc[tool.tool_id] = {
+        groupedTools[tool.tool_id] = {
           tool_id: tool.tool_id,
           metadata: tool.metadata,
           agent_id: agent_id || '',
         };
       }
-      return acc;
-    },
-    {} as Record<string, AgentToolType & { tools?: AgentToolType[] }>,
-  );
+    }
+
+    return { tools, groupedTools, groupedMCPTools };
+  }, [pluginTools, agent_id, localize]);
 
   const { agentsConfig, endpointsConfig } = useGetAgentsConfig();
 
@@ -93,6 +106,7 @@ export function AgentPanelProvider({ children }: { children: React.ReactNode }) 
     agentsConfig,
     setActivePanel,
     endpointsConfig,
+    groupedMCPTools,
     setCurrentAgentId,
   };
 

@@ -312,6 +312,12 @@ Current Date & Time: ${replaceSpecialVars({ text: '{{iso_datetime}}' })}
       continue;
     } else if (tool && cachedTools && mcpToolPattern.test(tool)) {
       const [toolName, serverName] = tool.split(Constants.mcp_delimiter);
+
+      /** Skip group placeholder tools where tool name equals server name (e.g., "spotify_mcp_spotify") */
+      if (toolName === serverName) {
+        continue;
+      }
+
       if (toolName === Constants.mcp_all) {
         const currentMCPGenerator = async (index) =>
           createMCPTools({

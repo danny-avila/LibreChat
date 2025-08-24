@@ -72,6 +72,12 @@ export function convertMCPToolToPlugin({
   const functionData = toolData.function;
   const parts = toolKey.split(Constants.mcp_delimiter);
   const serverName = parts[parts.length - 1];
+  const toolName = parts[0];
+
+  /** Skip group placeholder tools where tool name equals server name (e.g., "spotify_mcp_spotify") */
+  if (toolName === serverName) {
+    return;
+  }
 
   const serverConfig = mcpManager?.getRawConfig(serverName);
 

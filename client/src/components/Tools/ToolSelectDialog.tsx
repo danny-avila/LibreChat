@@ -1,7 +1,7 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { Search, X } from 'lucide-react';
 import { useFormContext } from 'react-hook-form';
-import { Constants, isAgentsEndpoint } from 'librechat-data-provider';
+import { isAgentsEndpoint } from 'librechat-data-provider';
 import { Dialog, DialogPanel, DialogTitle, Description } from '@headlessui/react';
 import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
 import type {
@@ -25,11 +25,15 @@ function ToolSelectDialog({
 }: TPluginStoreDialogProps & {
   endpoint: AssistantsEndpoint | EModelEndpoint.agents;
 }) {
-  const localize = useLocalize();
+  const { groupedTools } = useAgentPanelContext();
   const { getValues, setValue } = useFormContext<AgentForm>();
   const { data: tools } = useAvailableToolsQuery(endpoint);
-  const { groupedTools } = useAgentPanelContext();
   const isAgentTools = isAgentsEndpoint(endpoint);
+  const localize = useLocalize();
+
+  const allGroupedTools = useMemo(() => {
+    return groupedTools;
+  }, [groupedTools]);
 
   const {
     maxPage,
@@ -124,27 +128,19 @@ function ToolSelectDialog({
     const getAvailablePluginFromKey = tools?.find((p) => p.pluginKey === pluginKey);
     setSelectedPlugin(getAvailablePluginFromKey);
 
-    const isMCPTool = pluginKey.includes(Constants.mcp_delimiter);
-
-    if (isMCPTool) {
-      // MCP tools have their variables configured elsewhere (e.g., MCPPanel or MCPSelect),
-      // so we directly proceed to install without showing the auth form.
-      handleInstall({ pluginKey, action: 'install', auth: {} });
+    const { authConfig, authenticated = false } = getAvailablePluginFromKey ?? {};
+    if (authConfig && authConfig.length > 0 && !authenticated) {
+      setShowPluginAuthForm(true);
     } else {
-      const { authConfig, authenticated = false } = getAvailablePluginFromKey ?? {};
-      if (authConfig && authConfig.length > 0 && !authenticated) {
-        setShowPluginAuthForm(true);
-      } else {
-        handleInstall({
-          pluginKey,
-          action: 'install',
-          auth: {},
-        });
-      }
+      handleInstall({
+        pluginKey,
+        action: 'install',
+        auth: {},
+      });
     }
   };
 
-  const filteredTools = Object.values(groupedTools || {}).filter(
+  const filteredTools = Object.values(allGroupedTools || {}).filter(
     (tool: AgentToolType & { tools?: AgentToolType[] }) => {
       // Check if the parent tool matches
       if (tool.metadata?.name?.toLowerCase().includes(searchValue.toLowerCase())) {

@@ -14,6 +14,7 @@ const {
   PermissionBits,
   actionDelimiter,
   removeNullishValues,
+  Constants,
 } = require('librechat-data-provider');
 const {
   getListAgentsByAccess,
@@ -69,9 +70,9 @@ const createAgentHandler = async (req, res) => {
     for (const tool of tools) {
       if (availableTools[tool]) {
         agentData.tools.push(tool);
-      }
-
-      if (systemTools[tool]) {
+      } else if (systemTools[tool]) {
+        agentData.tools.push(tool);
+      } else if (tool.includes(Constants.mcp_delimiter)) {
         agentData.tools.push(tool);
       }
     }

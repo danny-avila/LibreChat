@@ -69,7 +69,7 @@ function AuthField({ name, config, hasValue, control, errors }: AuthFieldProps) 
                 ? localize('com_ui_mcp_update_var', { 0: config.title })
                 : localize('com_ui_mcp_enter_var', { 0: config.title })
             }
-            className="w-full shadow-sm sm:text-sm"
+            className="w-full text-text-primary shadow-sm placeholder:text-text-tertiary sm:text-sm"
           />
         )}
       />
