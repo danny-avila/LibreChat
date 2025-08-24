@@ -19,6 +19,7 @@ export type TModelSpec = {
   showIconInHeader?: boolean;
   iconURL?: string | EModelEndpoint; // Allow using project-included icons
   authType?: AuthType;
+  folder?: string; // Optional folder/category for grouping model specs
 };
 
 export const tModelSpecSchema = z.object({
@@ -32,6 +33,7 @@ export const tModelSpecSchema = z.object({
   showIconInHeader: z.boolean().optional(),
   iconURL: z.union([z.string(), eModelEndpointSchema]).optional(),
   authType: authTypeSchema.optional(),
+  folder: z.string().optional(),
 });
 
 export const specsConfigSchema = z.object({
