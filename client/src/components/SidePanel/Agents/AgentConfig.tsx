@@ -13,11 +13,11 @@ import {
   cn,
 } from '~/utils';
 import { useFileMapContext, useAgentPanelContext } from '~/Providers';
-import { useGetStartupConfig } from '~/data-provider';
 import useAgentCapabilities from '~/hooks/Agents/useAgentCapabilities';
 import AgentCategorySelector from './AgentCategorySelector';
 import Action from '~/components/SidePanel/Builder/Action';
 import { ToolSelectDialog } from '~/components/Tools';
+import { useGetStartupConfig } from '~/data-provider';
 import { useGetAgentFiles } from '~/data-provider';
 import { icons } from '~/hooks/Endpoint/Icons';
 import Instructions from './Instructions';
@@ -413,7 +413,7 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
             ? Object.keys(startupConfig.mcpServers)
             : [];
 
-          const selectedMCPTools = configuredMCPServers
+          const fallbackMCPTools = configuredMCPServers
             .filter((serverName) => agentMCPServers.has(serverName.toLowerCase()))
             .map((serverName) => {
               const serverTools =
@@ -446,36 +446,53 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
               ];
             });
 
-          return (
-            <div className="mb-4">
-              {selectedMCPTools.length > 0 ? (
-                <>
-                  <label className={labelClass}>{localize('com_ui_mcp_servers')}</label>
-                  <div>
-                    <div className="mb-1">
-                      {selectedMCPTools.map(([toolId, toolObj], i) => {
-                        const fallbackTools = allMCPTools?.[toolId as string]
-                          ? allMCPTools
-                          : {
-                              ...allMCPTools,
-                              [toolId]: toolObj,
-                            };
-
-                        return (
-                          <MCPTool
-                            key={`${toolId as string}-${i}-${agent_id}`}
-                            tool={toolId as string}
-                            allTools={fallbackTools}
-                            agent_id={agent_id}
-                          />
-                        );
-                      })}
-                    </div>
-                  </div>
-                </>
-              ) : null}
-            </div>
+          const availableMCPTools = Object.entries(allMCPTools ?? {}).filter(
+            ([toolId, toolObj]) => {
+              return (toolObj.tools?.length ?? 0) > 0;
+            },
           );
+
+          const allMCPToolsToShow = new Map();
+
+          availableMCPTools.forEach(([toolId, toolObj]) => {
+            allMCPToolsToShow.set(toolId, toolObj);
+          });
+
+          fallbackMCPTools.forEach(([toolId, toolObj]) => {
+            allMCPToolsToShow.set(toolId, toolObj);
+          });
+
+          const finalMCPTools = Array.from(allMCPToolsToShow.entries());
+
+          return finalMCPTools.length > 0 ? (
+            <div className="mb-4">
+              <label className={labelClass}>{localize('com_ui_mcp_servers')}</label>
+              <div>
+                <div className="mb-1">
+                  {finalMCPTools.map(([toolId, toolObj], i) => {
+                    const isFallback = !allMCPTools?.[toolId as string];
+
+                    const fallbackTools = allMCPTools?.[toolId as string]
+                      ? allMCPTools
+                      : {
+                          ...allMCPTools,
+                          [toolId]: toolObj,
+                        };
+
+                    return (
+                      <MCPTool
+                        key={`${toolId as string}-${i}-${agent_id}`}
+                        tool={toolId as string}
+                        allTools={fallbackTools}
+                        agent_id={agent_id}
+                        isFallback={isFallback}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          ) : null;
         })()}
 
         {/* Support Contact (Optional) */}

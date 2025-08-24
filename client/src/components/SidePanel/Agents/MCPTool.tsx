@@ -28,10 +28,12 @@ import { useMCPServerManager } from '~/hooks/MCP/useMCPServerManager';
 export default function MCPTool({
   tool,
   allTools,
+  isFallback = false,
 }: {
   tool: string;
   allTools?: Record<string, AgentToolType & { tools?: AgentToolType[] }>;
   agent_id?: string;
+  isFallback?: boolean;
 }) {
   const [isHovering, setIsHovering] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
@@ -49,6 +51,7 @@ export default function MCPTool({
   const currentTool = allTools[tool];
   const getSelectedTools = () => {
     if (!currentTool?.tools) return [];
+    if (isFallback) return [];
     const formTools = getValues('tools') || [];
     return currentTool.tools.filter((t) => formTools.includes(t.tool_id)).map((t) => t.tool_id);
   };
@@ -233,38 +236,40 @@ export default function MCPTool({
                           isHovering || isFocused ? '-translate-x-8' : 'translate-x-0',
                         )}
                       >
-                        <div
-                          data-checkbox-container
-                          onClick={(e) => e.stopPropagation()}
-                          className="mt-1"
-                        >
-                          <Checkbox
-                            id={`select-all-${currentTool.tool_id}`}
-                            checked={selectedTools.length === currentTool.tools?.length}
-                            onCheckedChange={(checked) => {
-                              if (currentTool.tools) {
-                                const newSelectedTools = checked
-                                  ? currentTool.tools.map((t) => t.tool_id)
-                                  : [];
-                                updateFormTools(newSelectedTools);
-                              }
-                            }}
-                            className={cn(
-                              'h-4 w-4 rounded border border-gray-300 transition-all duration-200 hover:border-gray-400 dark:border-gray-600 dark:hover:border-gray-500',
-                              isExpanded ? 'visible' : 'pointer-events-none invisible',
-                            )}
+                        {!isFallback && (
+                          <div
+                            data-checkbox-container
                             onClick={(e) => e.stopPropagation()}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter' || e.key === ' ') {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                const checkbox = e.currentTarget as HTMLButtonElement;
-                                checkbox.click();
-                              }
-                            }}
-                            tabIndex={isExpanded ? 0 : -1}
-                          />
-                        </div>
+                            className="mt-1"
+                          >
+                            <Checkbox
+                              id={`select-all-${currentTool.tool_id}`}
+                              checked={selectedTools.length === currentTool.tools?.length}
+                              onCheckedChange={(checked) => {
+                                if (currentTool.tools) {
+                                  const newSelectedTools = checked
+                                    ? currentTool.tools.map((t) => t.tool_id)
+                                    : [];
+                                  updateFormTools(newSelectedTools);
+                                }
+                              }}
+                              className={cn(
+                                'h-4 w-4 rounded border border-gray-300 transition-all duration-200 hover:border-gray-400 dark:border-gray-600 dark:hover:border-gray-500',
+                                isExpanded ? 'visible' : 'pointer-events-none invisible',
+                              )}
+                              onClick={(e) => e.stopPropagation()}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  const checkbox = e.currentTarget as HTMLButtonElement;
+                                  checkbox.click();
+                                }
+                              }}
+                              tabIndex={isExpanded ? 0 : -1}
+                            />
+                          </div>
+                        )}
 
                         <div
                           className={cn(
@@ -319,6 +324,7 @@ export default function MCPTool({
                   className={cn(
                     'border-token-border-light hover:bg-token-surface-secondary flex cursor-pointer items-center rounded-lg border p-2',
                     'ml-2 mr-1 focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-background',
+                    isFallback && 'cursor-not-allowed opacity-50',
                   )}
                   onClick={(e) => e.stopPropagation()}
                   onKeyDown={(e) => {
@@ -330,7 +336,9 @@ export default function MCPTool({
                   <Checkbox
                     id={subTool.tool_id}
                     checked={selectedTools.includes(subTool.tool_id)}
+                    disabled={isFallback}
                     onCheckedChange={(_checked) => {
+                      if (isFallback) return; // Prevent changes for fallback tools
                       const newSelectedTools = selectedTools.includes(subTool.tool_id)
                         ? selectedTools.filter((t) => t !== subTool.tool_id)
                         : [...selectedTools, subTool.tool_id];
@@ -345,9 +353,14 @@ export default function MCPTool({
                       }
                     }}
                     onClick={(e) => e.stopPropagation()}
-                    className="relative float-left mr-2 inline-flex h-4 w-4 cursor-pointer rounded border border-gray-300 transition-[border-color] duration-200 hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background dark:border-gray-600 dark:hover:border-gray-500"
+                    className={cn(
+                      'relative float-left mr-2 inline-flex h-4 w-4 cursor-pointer rounded border border-gray-300 transition-[border-color] duration-200 hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background dark:border-gray-600 dark:hover:border-gray-500',
+                      isFallback && 'cursor-not-allowed opacity-50',
+                    )}
                   />
-                  <span className="text-token-text-primary">{subTool.metadata.name}</span>
+                  <span className={cn('text-token-text-primary', isFallback && 'opacity-50')}>
+                    {subTool.metadata.name}
+                  </span>
                   {subTool.metadata.description && (
                     <Ariakit.HovercardProvider placement="left-start">
                       <div className="ml-auto flex h-6 w-6 items-center justify-center">
