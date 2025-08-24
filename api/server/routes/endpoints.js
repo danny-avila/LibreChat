@@ -1,7 +1,8 @@
 const express = require('express');
-const router = express.Router();
 const endpointController = require('~/server/controllers/EndpointController');
+const { configMiddleware } = require('~/server/middleware');
 
-router.get('/', endpointController);
+const router = express.Router();
+router.get('/', configMiddleware, endpointController);
 
 module.exports = router;
