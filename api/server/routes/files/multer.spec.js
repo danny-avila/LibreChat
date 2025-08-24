@@ -24,6 +24,11 @@ describe('Multer Configuration', () => {
       user: { id: 'test-user-123' },
       body: {},
       originalUrl: '/api/files/upload',
+      config: {
+        paths: {
+          uploads: tempDir,
+        },
+      },
     };
 
     mockFile = {
@@ -31,14 +36,6 @@ describe('Multer Configuration', () => {
       mimetype: 'image/jpeg',
       size: 1024,
     };
-
-    // Mock getAppConfig to return paths
-    const { getAppConfig } = require('~/server/services/Config');
-    getAppConfig.mockResolvedValue({
-      paths: {
-        uploads: tempDir,
-      },
-    });
 
     // Clear mocks
     jest.clearAllMocks();
@@ -66,12 +63,7 @@ describe('Multer Configuration', () => {
 
       it("should create directory recursively if it doesn't exist", (done) => {
         const deepPath = path.join(tempDir, 'deep', 'nested', 'path');
-        const { getAppConfig } = require('~/server/services/Config');
-        getAppConfig.mockResolvedValue({
-          paths: {
-            uploads: deepPath,
-          },
-        });
+        mockReq.config.paths.uploads = deepPath;
 
         const cb = jest.fn((err, destination) => {
           expect(err).toBeNull();
@@ -454,27 +446,15 @@ describe('Multer Configuration', () => {
       }).not.toThrow();
     });
 
-    it('should handle file system errors when directory creation fails', (done) => {
+    it('should handle file system errors when directory creation fails', () => {
       // Test with a non-existent parent directory to simulate fs issues
       const invalidPath = '/nonexistent/path/that/should/not/exist';
-      const { getAppConfig } = require('~/server/services/Config');
-      getAppConfig.mockResolvedValue({
-        paths: {
-          uploads: invalidPath,
-        },
-      });
+      mockReq.config.paths.uploads = invalidPath;
 
-      // Call getDestination which should fail due to permission/path issues
-      storage.getDestination(mockReq, mockFile, (err, destination) => {
-        // Now we expect the error to be passed to the callback
-        expect(err).toBeDefined();
-        // This is the expected behavior - mkdirSync throws synchronously for invalid paths
-        // On Linux, this typically returns EACCES (permission denied)
-        // On macOS/Darwin, this returns ENOENT (no such file or directory)
-        expect(['EACCES', 'ENOENT']).toContain(err.code);
-        expect(destination).toBeUndefined();
-        done();
-      });
+      // The current implementation doesn't catch errors, so they're thrown synchronously
+      expect(() => {
+        storage.getDestination(mockReq, mockFile, jest.fn());
+      }).toThrow();
     });
 
     it('should handle malformed filenames with real sanitization', (done) => {

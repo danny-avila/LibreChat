@@ -15,7 +15,6 @@ const {
 } = require('./Conversation');
 jest.mock('~/server/services/Config/app');
 jest.mock('./Message');
-const { getAppConfig } = require('~/server/services/Config/app');
 const { getMessages, deleteMessages } = require('./Message');
 
 const { Conversation } = require('~/db/models');
@@ -50,6 +49,11 @@ describe('Conversation Operations', () => {
     mockReq = {
       user: { id: 'user123' },
       body: {},
+      config: {
+        interfaceConfig: {
+          temporaryChatRetention: 24, // Default 24 hours
+        },
+      },
     };
 
     mockConversationData = {
@@ -119,11 +123,7 @@ describe('Conversation Operations', () => {
   describe('isTemporary conversation handling', () => {
     it('should save a conversation with expiredAt when isTemporary is true', async () => {
       // Mock app config with 24 hour retention
-      getAppConfig.mockResolvedValue({
-        interfaceConfig: {
-          temporaryChatRetention: 24,
-        },
-      });
+      mockReq.config.interfaceConfig.temporaryChatRetention = 24;
 
       mockReq.body = { isTemporary: true };
 
@@ -168,11 +168,7 @@ describe('Conversation Operations', () => {
 
     it('should use custom retention period from config', async () => {
       // Mock app config with 48 hour retention
-      getAppConfig.mockResolvedValue({
-        interfaceConfig: {
-          temporaryChatRetention: 48,
-        },
-      });
+      mockReq.config.interfaceConfig.temporaryChatRetention = 48;
 
       mockReq.body = { isTemporary: true };
 
@@ -195,11 +191,7 @@ describe('Conversation Operations', () => {
 
     it('should handle minimum retention period (1 hour)', async () => {
       // Mock app config with less than minimum retention
-      getAppConfig.mockResolvedValue({
-        interfaceConfig: {
-          temporaryChatRetention: 0.5, // Half hour - should be clamped to 1 hour
-        },
-      });
+      mockReq.config.interfaceConfig.temporaryChatRetention = 0.5; // Half hour - should be clamped to 1 hour
 
       mockReq.body = { isTemporary: true };
 
@@ -222,11 +214,7 @@ describe('Conversation Operations', () => {
 
     it('should handle maximum retention period (8760 hours)', async () => {
       // Mock app config with more than maximum retention
-      getAppConfig.mockResolvedValue({
-        interfaceConfig: {
-          temporaryChatRetention: 10000, // Should be clamped to 8760 hours
-        },
-      });
+      mockReq.config.interfaceConfig.temporaryChatRetention = 10000; // Should be clamped to 8760 hours
 
       mockReq.body = { isTemporary: true };
 
@@ -247,22 +235,36 @@ describe('Conversation Operations', () => {
       );
     });
 
-    it('should handle getAppConfig errors gracefully', async () => {
-      // Mock getAppConfig to throw an error
-      getAppConfig.mockRejectedValue(new Error('Config service unavailable'));
+    it('should handle missing config gracefully', async () => {
+      // Simulate missing config - should use default retention period
+      delete mockReq.config;
 
       mockReq.body = { isTemporary: true };
 
+      const beforeSave = new Date();
       const result = await saveConvo(mockReq, mockConversationData);
+      const afterSave = new Date();
 
-      // Should still save the conversation but with expiredAt as null
+      // Should still save the conversation with default retention period (30 days)
       expect(result.conversationId).toBe(mockConversationData.conversationId);
-      expect(result.expiredAt).toBeNull();
+      expect(result.expiredAt).toBeDefined();
+      expect(result.expiredAt).toBeInstanceOf(Date);
+
+      // Verify expiredAt is approximately 30 days in the future (720 hours)
+      const expectedExpirationTime = new Date(beforeSave.getTime() + 720 * 60 * 60 * 1000);
+      const actualExpirationTime = new Date(result.expiredAt);
+
+      expect(actualExpirationTime.getTime()).toBeGreaterThanOrEqual(
+        expectedExpirationTime.getTime() - 1000,
+      );
+      expect(actualExpirationTime.getTime()).toBeLessThanOrEqual(
+        new Date(afterSave.getTime() + 720 * 60 * 60 * 1000 + 1000).getTime(),
+      );
     });
 
     it('should use default retention when config is not provided', async () => {
       // Mock getAppConfig to return empty config
-      getAppConfig.mockResolvedValue({});
+      mockReq.config = {}; // Empty config
 
       mockReq.body = { isTemporary: true };
 
@@ -285,11 +287,7 @@ describe('Conversation Operations', () => {
 
     it('should update expiredAt when saving existing temporary conversation', async () => {
       // First save a temporary conversation
-      getAppConfig.mockResolvedValue({
-        interfaceConfig: {
-          temporaryChatRetention: 24,
-        },
-      });
+      mockReq.config.interfaceConfig.temporaryChatRetention = 24;
 
       mockReq.body = { isTemporary: true };
       const firstSave = await saveConvo(mockReq, mockConversationData);

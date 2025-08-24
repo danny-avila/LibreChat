@@ -18,14 +18,7 @@ jest.mock('~/server/services/UserService', () => ({
   checkUserKeyExpiry: jest.fn(),
 }));
 
-jest.mock('~/server/services/Config', () => ({
-  getAppConfig: jest.fn().mockResolvedValue({
-    'test-endpoint': {
-      apiKey: 'test-key',
-      baseURL: 'https://test.com',
-    },
-  }),
-}));
+// Config is now passed via req.config, not getAppConfig
 
 jest.mock('~/server/services/ModelService', () => ({
   fetchModels: jest.fn(),
@@ -48,6 +41,13 @@ describe('custom/initializeClient', () => {
     body: { endpoint: 'test-endpoint' },
     user: { id: 'user-123', email: 'test@example.com', role: 'user' },
     app: { locals: {} },
+    config: {
+      endpoints: {
+        all: {
+          streamRate: 25,
+        },
+      },
+    },
   };
   const mockResponse = {};
 
@@ -64,6 +64,9 @@ describe('custom/initializeClient', () => {
     getOpenAIConfig.mockReturnValue({
       useLegacyContent: true,
       endpointTokenConfig: null,
+      llmConfig: {
+        callbacks: [],
+      },
     });
   });
 

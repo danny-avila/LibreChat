@@ -20,39 +20,37 @@ jest.mock('~/server/services/UserService', () => ({
   checkUserKeyExpiry: jest.requireActual('~/server/services/UserService').checkUserKeyExpiry,
 }));
 
-jest.mock('~/server/services/Config', () => ({
-  getAppConfig: jest.fn().mockResolvedValue({
-    endpoints: {
-      openAI: {
-        apiKey: 'test-key',
-      },
-      azureOpenAI: {
-        apiKey: 'test-azure-key',
-        modelNames: ['gpt-4-vision-preview', 'gpt-3.5-turbo', 'gpt-4'],
-        modelGroupMap: {
-          'gpt-4-vision-preview': {
-            group: 'librechat-westus',
-            deploymentName: 'gpt-4-vision-preview',
-            version: '2024-02-15-preview',
-          },
+const mockAppConfig = {
+  endpoints: {
+    openAI: {
+      apiKey: 'test-key',
+    },
+    azureOpenAI: {
+      apiKey: 'test-azure-key',
+      modelNames: ['gpt-4-vision-preview', 'gpt-3.5-turbo', 'gpt-4'],
+      modelGroupMap: {
+        'gpt-4-vision-preview': {
+          group: 'librechat-westus',
+          deploymentName: 'gpt-4-vision-preview',
+          version: '2024-02-15-preview',
         },
-        groupMap: {
-          'librechat-westus': {
-            apiKey: 'WESTUS_API_KEY',
-            instanceName: 'librechat-westus',
-            version: '2023-12-01-preview',
-            models: {
-              'gpt-4-vision-preview': {
-                deploymentName: 'gpt-4-vision-preview',
-                version: '2024-02-15-preview',
-              },
+      },
+      groupMap: {
+        'librechat-westus': {
+          apiKey: 'WESTUS_API_KEY',
+          instanceName: 'librechat-westus',
+          version: '2023-12-01-preview',
+          models: {
+            'gpt-4-vision-preview': {
+              deploymentName: 'gpt-4-vision-preview',
+              version: '2024-02-15-preview',
             },
           },
         },
       },
     },
-  }),
-}));
+  },
+};
 
 describe('initializeClient', () => {
   // Set up environment variables
@@ -142,6 +140,7 @@ describe('initializeClient', () => {
       body: { key: null, endpoint: EModelEndpoint.openAI },
       user: { id: '123' },
       app,
+      config: mockAppConfig,
     };
     const res = {};
     const endpointOption = {};
@@ -171,6 +170,7 @@ describe('initializeClient', () => {
       },
       user: { id: '123' },
       app,
+      config: mockAppConfig,
     };
     const res = {};
     const endpointOption = {};
@@ -189,6 +189,7 @@ describe('initializeClient', () => {
       body: { key: null, endpoint: EModelEndpoint.openAI },
       user: { id: '123' },
       app,
+      config: mockAppConfig,
     };
     const res = {};
     const endpointOption = {};
@@ -206,6 +207,7 @@ describe('initializeClient', () => {
       body: { key: null, endpoint: EModelEndpoint.openAI },
       user: { id: '123' },
       app,
+      config: mockAppConfig,
     };
     const res = {};
     const endpointOption = {};
@@ -224,6 +226,7 @@ describe('initializeClient', () => {
       body: { key: null, endpoint: EModelEndpoint.openAI },
       user: { id: '123' },
       app,
+      config: mockAppConfig,
     };
     const res = {};
     const endpointOption = {};
@@ -245,6 +248,7 @@ describe('initializeClient', () => {
       body: { key: expiresAt, endpoint: EModelEndpoint.openAI },
       user: { id: '123' },
       app,
+      config: mockAppConfig,
     };
     const res = {};
     const endpointOption = {};
@@ -263,6 +267,7 @@ describe('initializeClient', () => {
       body: { key: null, endpoint: EModelEndpoint.openAI },
       user: { id: '123' },
       app,
+      config: mockAppConfig,
     };
     const res = {};
     const endpointOption = {};
@@ -283,6 +288,7 @@ describe('initializeClient', () => {
         id: '123',
       },
       app,
+      config: mockAppConfig,
     };
 
     const res = {};
@@ -307,6 +313,7 @@ describe('initializeClient', () => {
       body: { key: invalidKey, endpoint: EModelEndpoint.openAI },
       user: { id: '123' },
       app,
+      config: mockAppConfig,
     };
     const res = {};
     const endpointOption = {};
@@ -328,6 +335,7 @@ describe('initializeClient', () => {
       body: { key: new Date(Date.now() + 10000).toISOString(), endpoint: EModelEndpoint.openAI },
       user: { id: '123' },
       app,
+      config: mockAppConfig,
     };
     const res = {};
     const endpointOption = {};
@@ -364,6 +372,7 @@ describe('initializeClient', () => {
         model: modelNames[0],
       },
       user: { id: '123' },
+      config: mockAppConfig,
     };
     const res = {};
     const endpointOption = {};
@@ -381,6 +390,7 @@ describe('initializeClient', () => {
       body: { key: null, endpoint: EModelEndpoint.openAI },
       user: { id: '123' },
       app,
+      config: mockAppConfig,
     };
     const res = {};
     const endpointOption = {};
@@ -403,6 +413,7 @@ describe('initializeClient', () => {
         id: '123',
       },
       app,
+      config: mockAppConfig,
     };
     const res = {};
     const endpointOption = {};
