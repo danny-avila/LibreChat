@@ -8,17 +8,12 @@ const { getAppConfig } = require('~/server/services/Config');
 
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    getAppConfig({ role: req.user?.role })
-      .then((appConfig) => {
-        const outputPath = path.join(appConfig.paths.uploads, 'temp', req.user.id);
-        if (!fs.existsSync(outputPath)) {
-          fs.mkdirSync(outputPath, { recursive: true });
-        }
-        cb(null, outputPath);
-      })
-      .catch((error) => {
-        cb(error);
-      });
+    const appConfig = req.config;
+    const outputPath = path.join(appConfig.paths.uploads, 'temp', req.user.id);
+    if (!fs.existsSync(outputPath)) {
+      fs.mkdirSync(outputPath, { recursive: true });
+    }
+    cb(null, outputPath);
   },
   filename: function (req, file, cb) {
     req.file_id = crypto.randomUUID();
