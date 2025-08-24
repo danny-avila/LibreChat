@@ -48,6 +48,17 @@ describe('processFileCitations', () => {
     },
   };
 
+  const mockAppConfig = {
+    endpoints: {
+      agents: {
+        maxCitations: 30,
+        maxCitationsPerFile: 5,
+        minRelevanceScore: 0.45,
+      },
+    },
+    fileStrategy: 'local',
+  };
+
   const mockMetadata = {
     run_id: 'run123',
     thread_id: 'conv123',
@@ -85,6 +96,7 @@ describe('processFileCitations', () => {
         toolCallId: 'call_123',
         metadata: mockMetadata,
         user: mockReq.user,
+        appConfig: mockAppConfig,
       });
 
       expect(result).toBeTruthy();
@@ -100,6 +112,7 @@ describe('processFileCitations', () => {
         toolCallId: 'call_123',
         metadata: mockMetadata,
         user: mockReq.user,
+        appConfig: mockAppConfig,
       });
 
       expect(result).toBeNull();
@@ -127,6 +140,7 @@ describe('processFileCitations', () => {
         toolCallId: 'call_123',
         metadata: mockMetadata,
         user: mockReq.user,
+        appConfig: mockAppConfig,
       });
 
       expect(result).toBeNull();
@@ -138,6 +152,7 @@ describe('processFileCitations', () => {
         toolCallId: 'call_123',
         metadata: mockMetadata,
         user: mockReq.user,
+        appConfig: mockAppConfig,
       });
 
       expect(result).toBeNull();
