@@ -1229,6 +1229,7 @@
   "com_ui_web_search_reranker_cohere_key": "Get your Cohere API key",
   "com_ui_web_search_reranker_jina": "Jina AI",
   "com_ui_web_search_reranker_jina_key": "Get your Jina API key",
+  "com_ui_web_search_jina_url": "Jina API URL (optional)",
   "com_ui_web_search_scraper": "Scraper",
   "com_ui_web_search_scraper_firecrawl": "Firecrawl API",
   "com_ui_web_search_scraper_firecrawl_key": "Get your Firecrawl API key",
@@ -1241,5 +1242,6 @@
   "com_ui_x_selected": "{{0}} selected",
   "com_ui_yes": "Yes",
   "com_ui_zoom": "Zoom",
-  "com_user_message": "You"
+  "com_user_message": "You",
+  "com_ui_web_search_reranker_jina_url_help": "Learn about Jina Rerank API"
 }

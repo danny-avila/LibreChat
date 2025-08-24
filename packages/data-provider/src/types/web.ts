@@ -178,6 +178,7 @@ export interface SearchToolConfig extends SearchConfig, ProcessSourcesConfig, Fi
   logger?: Logger;
   safeSearch?: SafeSearchLevel;
   jinaApiKey?: string;
+  jinaApiUrl?: string;
   cohereApiKey?: string;
   rerankerType?: RerankerType;
   onSearchResults?: (results: SearchResult, runnableConfig?: RunnableConfig) => void;
