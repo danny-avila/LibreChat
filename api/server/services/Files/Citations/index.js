@@ -8,7 +8,6 @@ const {
   EModelEndpoint,
   PermissionTypes,
 } = require('librechat-data-provider');
-const { getAppConfig } = require('~/server/services/Config/app');
 const { getRoleByName } = require('~/models/Role');
 const { Files } = require('~/models');
 
@@ -16,12 +15,13 @@ const { Files } = require('~/models');
  * Process file search results from tool calls
  * @param {Object} options
  * @param {IUser} options.user - The user object
+ * @param {AppConfig} options.appConfig - The app configuration object
  * @param {GraphRunnableConfig['configurable']} options.metadata - The metadata
  * @param {any} options.toolArtifact - The tool artifact containing structured data
  * @param {string} options.toolCallId - The tool call ID
  * @returns {Promise<Object|null>} The file search attachment or null
  */
-async function processFileCitations({ user, toolArtifact, toolCallId, metadata }) {
+async function processFileCitations({ user, appConfig, toolArtifact, toolCallId, metadata }) {
   try {
     if (!toolArtifact?.[Tools.file_search]?.sources) {
       return null;
@@ -50,7 +50,6 @@ async function processFileCitations({ user, toolArtifact, toolCallId, metadata }
       }
     }
 
-    const appConfig = await getAppConfig({ role: user?.role });
     const maxCitations = appConfig.endpoints?.[EModelEndpoint.agents]?.maxCitations ?? 30;
     const maxCitationsPerFile =
       appConfig.endpoints?.[EModelEndpoint.agents]?.maxCitationsPerFile ?? 5;
