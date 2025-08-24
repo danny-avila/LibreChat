@@ -413,6 +413,11 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
             ? Object.keys(startupConfig.mcpServers)
             : [];
 
+          const savedMCPTools = Object.entries(allMCPTools ?? {}).filter(([toolId, toolObj]) => {
+            if ((toolObj.tools?.length ?? 0) === 0) return false;
+            return toolObj.tools?.some((st) => tools?.includes(st.tool_id));
+          });
+
           const fallbackMCPTools = configuredMCPServers
             .filter((serverName) => agentMCPServers.has(serverName.toLowerCase()))
             .map((serverName) => {
@@ -446,15 +451,9 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
               ];
             });
 
-          const availableMCPTools = Object.entries(allMCPTools ?? {}).filter(
-            ([toolId, toolObj]) => {
-              return (toolObj.tools?.length ?? 0) > 0;
-            },
-          );
-
           const allMCPToolsToShow = new Map();
 
-          availableMCPTools.forEach(([toolId, toolObj]) => {
+          savedMCPTools.forEach(([toolId, toolObj]) => {
             allMCPToolsToShow.set(toolId, toolObj);
           });
 
