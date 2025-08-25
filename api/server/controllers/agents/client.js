@@ -38,13 +38,6 @@ const {
   removeNullishValues,
   isDocumentSupportedEndpoint,
 } = require('librechat-data-provider');
-const {
-  findPluginAuthsByKeys,
-  getFormattedMemories,
-  deleteMemory,
-  setMemory,
-} = require('~/models');
-const { getMCPAuthMap, checkCapability, hasCustomUserVars } = require('~/server/services/Config');
 const { addCacheControl, createContextHandlers } = require('~/app/clients/prompts');
 const { initializeAgent } = require('~/server/services/Endpoints/agents/agent');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
