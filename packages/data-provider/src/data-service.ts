@@ -182,10 +182,6 @@ export const getModels = async (): Promise<t.TModelsConfig> => {
   return request.get(endpoints.models());
 };
 
-export const getEndpointsConfigOverride = (): Promise<unknown | boolean> => {
-  return request.get(endpoints.endpointsConfigOverride());
-};
-
 /* Assistants */
 
 export const createAssistant = ({

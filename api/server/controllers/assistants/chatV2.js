@@ -1,7 +1,7 @@
 const { v4 } = require('uuid');
 const { sleep } = require('@librechat/agents');
-const { sendEvent } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
+const { sendEvent, getBalanceConfig } = require('@librechat/api');
 const {
   Time,
   Constants,
@@ -44,6 +44,7 @@ const { getOpenAIClient } = require('./helpers');
  */
 const chatV2 = async (req, res) => {
   logger.debug('[/assistants/chat/] req.body', req.body);
+  const appConfig = req.config;
 
   /** @type {{files: MongoFile[]}} */
   const {
@@ -126,8 +127,8 @@ const chatV2 = async (req, res) => {
     }
 
     const checkBalanceBeforeRun = async () => {
-      const balance = req.app?.locals?.balance;
-      if (!balance?.enabled) {
+      const balanceConfig = getBalanceConfig(appConfig);
+      if (!balanceConfig?.enabled) {
         return;
       }
       const transactions =
@@ -374,9 +375,9 @@ const chatV2 = async (req, res) => {
       };
 
       /** @type {undefined | TAssistantEndpoint} */
-      const config = req.app.locals[endpoint] ?? {};
+      const config = appConfig.endpoints?.[endpoint] ?? {};
       /** @type {undefined | TBaseEndpoint} */
-      const allConfig = req.app.locals.all;
+      const allConfig = appConfig.endpoints?.all;
 
       const streamRunManager = new StreamRunManager({
         req,

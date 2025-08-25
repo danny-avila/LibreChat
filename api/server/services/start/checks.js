@@ -1,12 +1,11 @@
-const { webSearchKeys } = require('@librechat/api');
+const { logger } = require('@librechat/data-schemas');
+const { isEnabled, webSearchKeys, checkEmailConfig } = require('@librechat/api');
 const {
   Constants,
+  extractVariableName,
   deprecatedAzureVariables,
   conflictingAzureVariables,
-  extractVariableName,
 } = require('librechat-data-provider');
-const { isEnabled, checkEmailConfig } = require('~/server/utils');
-const { logger } = require('~/config');
 
 const secretDefaults = {
   CREDS_KEY: 'f34be427ebb29de8d88c107a71546019685ed8b241d8f2ed00c3df97ad2566f0',
@@ -76,7 +75,7 @@ async function checkHealth() {
     if (response?.ok && response?.status === 200) {
       logger.info(`RAG API is running and reachable at ${process.env.RAG_API_URL}.`);
     }
-  } catch (error) {
+  } catch {
     logger.warn(
       `RAG API is either not running or not reachable at ${process.env.RAG_API_URL}, you may experience errors with file uploads.`,
     );

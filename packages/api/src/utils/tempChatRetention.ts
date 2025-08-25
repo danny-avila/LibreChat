@@ -1,5 +1,5 @@
 import { logger } from '@librechat/data-schemas';
-import type { TCustomConfig } from 'librechat-data-provider';
+import type { AppConfig } from '~/types';
 
 /**
  * Default retention period for temporary chats in hours
@@ -18,10 +18,12 @@ export const MAX_RETENTION_HOURS = 8760;
 
 /**
  * Gets the temporary chat retention period from environment variables or config
- * @param config - The custom configuration object
+ * @param interfaceConfig - The custom configuration object
  * @returns The retention period in hours
  */
-export function getTempChatRetentionHours(config?: Partial<TCustomConfig> | null): number {
+export function getTempChatRetentionHours(
+  interfaceConfig?: AppConfig['interfaceConfig'] | null,
+): number {
   let retentionHours = DEFAULT_RETENTION_HOURS;
 
   // Check environment variable first
@@ -37,8 +39,8 @@ export function getTempChatRetentionHours(config?: Partial<TCustomConfig> | null
   }
 
   // Check config file (takes precedence over environment variable)
-  if (config?.interface?.temporaryChatRetention !== undefined) {
-    const configValue = config.interface.temporaryChatRetention;
+  if (interfaceConfig?.temporaryChatRetention !== undefined) {
+    const configValue = interfaceConfig.temporaryChatRetention;
     if (typeof configValue === 'number' && !isNaN(configValue)) {
       retentionHours = configValue;
     } else {
@@ -66,11 +68,11 @@ export function getTempChatRetentionHours(config?: Partial<TCustomConfig> | null
 
 /**
  * Creates an expiration date for temporary chats
- * @param config - The custom configuration object
+ * @param interfaceConfig - The custom configuration object
  * @returns The expiration date
  */
-export function createTempChatExpirationDate(config?: Partial<TCustomConfig>): Date {
-  const retentionHours = getTempChatRetentionHours(config);
+export function createTempChatExpirationDate(interfaceConfig?: AppConfig['interfaceConfig']): Date {
+  const retentionHours = getTempChatRetentionHours(interfaceConfig);
   const expiredAt = new Date();
   expiredAt.setHours(expiredAt.getHours() + retentionHours);
   return expiredAt;

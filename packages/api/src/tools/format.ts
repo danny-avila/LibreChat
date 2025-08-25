@@ -1,5 +1,6 @@
 import { AuthType, Constants, EToolResources } from 'librechat-data-provider';
-import type { TCustomConfig, TPlugin } from 'librechat-data-provider';
+import type { TPlugin } from 'librechat-data-provider';
+import type { MCPManager } from '~/mcp/MCPManager';
 import { LCAvailableTools, LCFunctionTool } from '~/mcp/types';
 
 /**
@@ -58,11 +59,11 @@ export const checkPluginAuth = (plugin?: TPlugin): boolean => {
 export function convertMCPToolToPlugin({
   toolKey,
   toolData,
-  customConfig,
+  mcpManager,
 }: {
   toolKey: string;
   toolData: LCFunctionTool;
-  customConfig?: Partial<TCustomConfig> | null;
+  mcpManager?: MCPManager;
 }): TPlugin | undefined {
   if (!toolData.function || !toolKey.includes(Constants.mcp_delimiter)) {
     return;
@@ -72,7 +73,7 @@ export function convertMCPToolToPlugin({
   const parts = toolKey.split(Constants.mcp_delimiter);
   const serverName = parts[parts.length - 1];
 
-  const serverConfig = customConfig?.mcpServers?.[serverName];
+  const serverConfig = mcpManager?.getRawConfig(serverName);
 
   const plugin: TPlugin = {
     /** Tool name without server suffix */
@@ -111,10 +112,10 @@ export function convertMCPToolToPlugin({
  */
 export function convertMCPToolsToPlugins({
   functionTools,
-  customConfig,
+  mcpManager,
 }: {
   functionTools?: LCAvailableTools;
-  customConfig?: Partial<TCustomConfig> | null;
+  mcpManager?: MCPManager;
 }): TPlugin[] | undefined {
   if (!functionTools || typeof functionTools !== 'object') {
     return;
@@ -122,7 +123,7 @@ export function convertMCPToolsToPlugins({
 
   const plugins: TPlugin[] = [];
   for (const [toolKey, toolData] of Object.entries(functionTools)) {
-    const plugin = convertMCPToolToPlugin({ toolKey, toolData, customConfig });
+    const plugin = convertMCPToolToPlugin({ toolKey, toolData, mcpManager });
     if (plugin) {
       plugins.push(plugin);
     }

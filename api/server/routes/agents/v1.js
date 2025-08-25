@@ -1,7 +1,7 @@
 const express = require('express');
 const { generateCheckAccess } = require('@librechat/api');
 const { PermissionTypes, Permissions, PermissionBits } = require('librechat-data-provider');
-const { requireJwtAuth, canAccessAgentResource } = require('~/server/middleware');
+const { requireJwtAuth, configMiddleware, canAccessAgentResource } = require('~/server/middleware');
 const v1 = require('~/server/controllers/agents/v1');
 const { getRoleByName } = require('~/models/Role');
 const actions = require('./actions');
@@ -36,13 +36,13 @@ router.use(requireJwtAuth);
  * Agent actions route.
  * @route GET|POST /agents/actions
  */
-router.use('/actions', actions);
+router.use('/actions', configMiddleware, actions);
 
 /**
  * Get a list of available tools for agents.
  * @route GET /agents/tools
  */
-router.use('/tools', tools);
+router.use('/tools', configMiddleware, tools);
 
 /**
  * Get all agent categories with counts

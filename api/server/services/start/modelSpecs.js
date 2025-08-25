@@ -1,6 +1,6 @@
+const { logger } = require('@librechat/data-schemas');
+const { normalizeEndpointName } = require('@librechat/api');
 const { EModelEndpoint } = require('librechat-data-provider');
-const { normalizeEndpointName } = require('~/server/utils');
-const { logger } = require('~/config');
 
 /**
  * Sets up Model Specs from the config (`librechat.yaml`) file.

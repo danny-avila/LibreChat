@@ -917,7 +917,6 @@
  * @typedef {Object} ImageGenOptions
  * @property {ServerRequest} req - The request object.
  * @property {boolean} isAgent - Whether the request is from an agent.
- * @property {FileSources} fileStrategy - The file strategy to use.
  * @property {processFileURL} processFileURL - The function to process a file URL.
  * @property {boolean} returnMetadata - Whether to return metadata.
  * @property {uploadImageBuffer} uploadImageBuffer - The function to upload an image buffer.
@@ -930,6 +929,7 @@
  *   signal?: AbortSignal,
  *   memory?: ConversationSummaryBufferMemory,
  *   tool_resources?: AgentToolResources,
+ *   web_search?: ReturnType<typeof import('~/server/services/Tools/search').createOnSearchResults>,
  * }} LoadToolOptions
  * @memberof typedefs
  */
@@ -1088,6 +1088,12 @@
 /**
  * @exports TUpdateResourcePermissionsResponse
  * @typedef {import('librechat-data-provider').TUpdateResourcePermissionsResponse} TUpdateResourcePermissionsResponse
+ * @memberof typedefs
+ */
+
+/**
+ * @exports AppConfig
+ * @typedef {import('@librechat/api').AppConfig} AppConfig
  * @memberof typedefs
  */
 
@@ -1789,8 +1795,8 @@
  * @property {String} conversationId - The ID of the conversation.
  * @property {String} model - The model name.
  * @property {String} context - The context in which the transaction is made.
+ * @property {AppConfig['balance']} [balance] - The balance config
  * @property {EndpointTokenConfig} [endpointTokenConfig] - The current endpoint token config.
- * @property {object} [cacheUsage] - Cache usage, if any.
  * @property {String} [valueKey] - The value key (optional).
  * @memberof typedefs
  */
@@ -1835,6 +1841,7 @@
  * @callback sendCompletion
  * @param {Array<ChatCompletionMessage> | string} payload - The messages or prompt to send to the model
  * @param {object} opts - Options for the completion
+ * @param {AppConfig} opts.appConfig - Callback function to handle token progress
  * @param {onTokenProgress} opts.onProgress - Callback function to handle token progress
  * @param {AbortController} opts.abortController - AbortController instance
  * @param {Record<string, Record<string, string>>} [opts.userMCPAuthMap]

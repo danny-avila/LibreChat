@@ -2,6 +2,14 @@ const { Constants } = require('librechat-data-provider');
 const { initializeFakeClient } = require('./FakeClient');
 
 jest.mock('~/db/connect');
+jest.mock('~/server/services/Config', () => ({
+  getAppConfig: jest.fn().mockResolvedValue({
+    // Default app config for tests
+    paths: { uploads: '/tmp' },
+    fileStrategy: 'local',
+    memory: { disabled: false },
+  }),
+}));
 jest.mock('~/models', () => ({
   User: jest.fn(),
   Key: jest.fn(),

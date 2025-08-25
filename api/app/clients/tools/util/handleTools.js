@@ -121,18 +121,21 @@ const getAuthFields = (toolKey) => {
 
 /**
  *
- * @param {object} object
- * @param {string} object.user
+ * @param {object} params
+ * @param {string} params.user
  * @param {Record<string, Record<string, string>>} [object.userMCPAuthMap]
  * @param {AbortSignal} [object.signal]
- * @param {Pick<Agent, 'id' | 'provider' | 'model'>} [object.agent]
- * @param {string} [object.model]
- * @param {EModelEndpoint} [object.endpoint]
- * @param {LoadToolOptions} [object.options]
- * @param {boolean} [object.useSpecs]
- * @param {Array<string>} object.tools
- * @param {boolean} [object.functions]
- * @param {boolean} [object.returnMap]
+ * @param {Pick<Agent, 'id' | 'provider' | 'model'>} [params.agent]
+ * @param {string} [params.model]
+ * @param {EModelEndpoint} [params.endpoint]
+ * @param {LoadToolOptions} [params.options]
+ * @param {boolean} [params.useSpecs]
+ * @param {Array<string>} params.tools
+ * @param {boolean} [params.functions]
+ * @param {boolean} [params.returnMap]
+ * @param {AppConfig['webSearch']} [params.webSearch]
+ * @param {AppConfig['fileStrategy']} [params.fileStrategy]
+ * @param {AppConfig['imageOutputType']} [params.imageOutputType]
  * @returns {Promise<{ loadedTools: Tool[], toolContextMap: Object<string, any> } | Record<string,Tool>>}
  */
 const loadTools = async ({
@@ -146,6 +149,9 @@ const loadTools = async ({
   options = {},
   functions = true,
   returnMap = false,
+  webSearch,
+  fileStrategy,
+  imageOutputType,
 }) => {
   const toolConstructors = {
     flux: FluxAPI,
@@ -204,6 +210,8 @@ const loadTools = async ({
         ...authValues,
         isAgent: !!agent,
         req: options.req,
+        imageOutputType,
+        fileStrategy,
         imageFiles,
       });
     },
@@ -219,7 +227,7 @@ const loadTools = async ({
   const imageGenOptions = {
     isAgent: !!agent,
     req: options.req,
-    fileStrategy: options.fileStrategy,
+    fileStrategy,
     processFileURL: options.processFileURL,
     returnMetadata: options.returnMetadata,
     uploadImageBuffer: options.uploadImageBuffer,
@@ -277,11 +285,10 @@ const loadTools = async ({
       };
       continue;
     } else if (tool === Tools.web_search) {
-      const webSearchConfig = options?.req?.app?.locals?.webSearch;
       const result = await loadWebSearchAuth({
         userId: user,
         loadAuthValues,
-        webSearchConfig,
+        webSearchConfig: webSearch,
       });
       const { onSearchResults, onGetHighlights } = options?.[Tools.web_search] ?? {};
       requestedTools[tool] = async () => {

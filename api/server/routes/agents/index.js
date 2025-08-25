@@ -4,6 +4,7 @@ const {
   checkBan,
   requireJwtAuth,
   messageIpLimiter,
+  configMiddleware,
   concurrentLimiter,
   messageUserLimiter,
 } = require('~/server/middleware');
@@ -22,6 +23,8 @@ router.use(uaParser);
 router.use('/', v1);
 
 const chatRouter = express.Router();
+chatRouter.use(configMiddleware);
+
 if (isEnabled(LIMIT_CONCURRENT_MESSAGES)) {
   chatRouter.use(concurrentLimiter);
 }
@@ -36,7 +39,5 @@ if (isEnabled(LIMIT_MESSAGE_USER)) {
 
 chatRouter.use('/', chat);
 router.use('/chat', chatRouter);
-
-// Add marketplace routes
 
 module.exports = router;

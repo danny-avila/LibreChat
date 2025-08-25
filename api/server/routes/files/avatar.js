@@ -1,15 +1,16 @@
 const fs = require('fs').promises;
 const express = require('express');
+const { logger } = require('@librechat/data-schemas');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { resizeAvatar } = require('~/server/services/Files/images/avatar');
-const { filterFile } = require('~/server/services/Files/process');
 const { getFileStrategy } = require('~/server/utils/getFileStrategy');
-const { logger } = require('~/config');
+const { filterFile } = require('~/server/services/Files/process');
 
 const router = express.Router();
 
 router.post('/', async (req, res) => {
   try {
+    const appConfig = req.config;
     filterFile({ req, file: req.file, image: true, isAvatar: true });
     const userId = req.user.id;
     const { manual } = req.body;
@@ -19,8 +20,8 @@ router.post('/', async (req, res) => {
       throw new Error('User ID is undefined');
     }
 
-    const fileStrategy = getFileStrategy(req.app.locals, { isAvatar: true });
-    const desiredFormat = req.app.locals.imageOutputType;
+    const fileStrategy = getFileStrategy(appConfig, { isAvatar: true });
+    const desiredFormat = appConfig.imageOutputType;
     const resizedBuffer = await resizeAvatar({
       userId,
       input,
@@ -39,7 +40,7 @@ router.post('/', async (req, res) => {
     try {
       await fs.unlink(req.file.path);
       logger.debug('[/files/images/avatar] Temp. image upload file deleted');
-    } catch (error) {
+    } catch {
       logger.debug('[/files/images/avatar] Temp. image upload file already deleted');
     }
   }

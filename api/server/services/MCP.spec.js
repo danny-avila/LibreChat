@@ -25,6 +25,7 @@ jest.mock('librechat-data-provider', () => ({
 
 jest.mock('./Config', () => ({
   loadCustomConfig: jest.fn(),
+  getAppConfig: jest.fn(),
 }));
 
 jest.mock('~/config', () => ({
@@ -65,8 +66,10 @@ describe('tests for the new helper functions used by the MCP connection status e
         server2: { type: 'http' },
       },
     };
+    let mockGetAppConfig;
 
     beforeEach(() => {
+      mockGetAppConfig = require('./Config').getAppConfig;
       mockGetMCPManager.mockReturnValue({
         getAllConnections: jest.fn(() => new Map()),
         getUserConnections: jest.fn(() => new Map()),
@@ -75,7 +78,7 @@ describe('tests for the new helper functions used by the MCP connection status e
     });
 
     it('should successfully return MCP setup data', async () => {
-      mockLoadCustomConfig.mockResolvedValue(mockConfig);
+      mockGetAppConfig.mockResolvedValue({ mcpConfig: mockConfig.mcpServers });
 
       const mockAppConnections = new Map([['server1', { status: 'connected' }]]);
       const mockUserConnections = new Map([['server2', { status: 'disconnected' }]]);
@@ -90,7 +93,7 @@ describe('tests for the new helper functions used by the MCP connection status e
 
       const result = await getMCPSetupData(mockUserId);
 
-      expect(mockLoadCustomConfig).toHaveBeenCalledWith(false);
+      expect(mockGetAppConfig).toHaveBeenCalled();
       expect(mockGetMCPManager).toHaveBeenCalledWith(mockUserId);
       expect(mockMCPManager.getAllConnections).toHaveBeenCalled();
       expect(mockMCPManager.getUserConnections).toHaveBeenCalledWith(mockUserId);
@@ -105,12 +108,12 @@ describe('tests for the new helper functions used by the MCP connection status e
     });
 
     it('should throw error when MCP config not found', async () => {
-      mockLoadCustomConfig.mockResolvedValue({});
+      mockGetAppConfig.mockResolvedValue({});
       await expect(getMCPSetupData(mockUserId)).rejects.toThrow('MCP config not found');
     });
 
     it('should handle null values from MCP manager gracefully', async () => {
-      mockLoadCustomConfig.mockResolvedValue(mockConfig);
+      mockGetAppConfig.mockResolvedValue({ mcpConfig: mockConfig.mcpServers });
 
       const mockMCPManager = {
         getAllConnections: jest.fn(() => null),
