@@ -17,7 +17,7 @@ async function migrateToPromptGroupPermissions({ dryRun = true, batchSize = 100 
   logger.info('Starting PromptGroup Permissions Migration', { dryRun, batchSize });
 
   /** Ensurse `aclentries` collection exists for DocumentDB compatibility
-   * @param {import('mongoose').mongo.Db | undefined} db
+   * @param {import('mongoose').mongo.Db} db
    * @param {string} collectionName
    */
   async function ensureCollectionExists(db, collectionName) {
