@@ -33,6 +33,8 @@ const initializeS3 = () => {
     region,
     // Conditionally add the endpoint if it is provided
     ...(endpoint ? { endpoint } : {}),
+    // Conditionally add forcePathStyle if it is enabled
+    ...(isForcePathStyle() ? { forcePathStyle: true } : {}),
   };
 
   if (accessKeyId && secretAccessKey) {
@@ -50,4 +52,8 @@ const initializeS3 = () => {
   return s3;
 };
 
-module.exports = { initializeS3 };
+const isForcePathStyle = () => {
+  return process.env.AWS_S3_FORCE_PATH_STYLE === 'true'
+}
+
+module.exports = { initializeS3, isForcePathStyle };
