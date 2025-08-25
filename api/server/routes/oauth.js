@@ -12,6 +12,7 @@ const {
 const { setAuthTokens, setOpenIDAuthTokens } = require('~/server/services/AuthService');
 const { isEnabled } = require('~/server/utils');
 const { logger } = require('~/config');
+const { UserActivityLog } = require('~/db/models');
 
 const router = express.Router();
 
@@ -27,31 +28,61 @@ const oauthHandler = async (req, res) => {
   try {
     await checkDomainAllowed(req, res);
     await checkBan(req, res);
+
     if (req.banned) {
       return;
     }
+
     if (
       req.user &&
-      req.user.provider == 'openid' &&
+      req.user.provider === 'openid' &&
       isEnabled(process.env.OPENID_REUSE_TOKENS) === true
     ) {
+      // Reuse existing OpenID tokens
       setOpenIDAuthTokens(req.user.tokenset, res);
+
+      // Deduplicated LOGIN logging (OpenID path only)
+      try {
+        const last = await UserActivityLog.findOne({
+          user: req.user._id,
+          action: 'LOGIN',
+        })
+          .sort({ timestamp: -1 })
+          .lean();
+
+        if (!last || Date.now() - new Date(last.timestamp).getTime() > 2000) {
+          const logEntry = await UserActivityLog.create({
+            user: req.user._id,
+            action: 'LOGIN',
+            timestamp: new Date(),
+          });
+          logger.info(
+            `[oauthHandler] LOGIN activity logged for user ${req.user._id} (${logEntry._id})`
+          );
+        } else {
+          logger.debug(
+            `[oauthHandler] Skipped duplicate LOGIN log for user ${req.user._id} (within 2s)`
+          );
+        }
+      } catch (e) {
+        logger.error('[oauthHandler] Failed to log login activity:', e);
+      }
     } else {
+      // Normal auth flow (LOGIN already logged inside setAuthTokens)
       await setAuthTokens(req.user._id, res);
     }
+
     res.redirect(domains.client);
   } catch (err) {
-    logger.error('Error in setting authentication tokens:', err);
+    logger.error('[oauthHandler] Error in setting authentication tokens:', err);
+    res.redirect(`${domains.client}/error?message=auth_failed`);
   }
 };
 
 router.get('/error', (req, res) => {
-  // A single error message is pushed by passport when authentication fails.
   logger.error('Error in OAuth authentication:', {
     message: req.session?.messages?.pop() || 'Unknown error',
   });
-
-  // Redirect to login page with auth_failed parameter to prevent infinite redirect loops
   res.redirect(`${domains.client}/login?redirect=false`);
 });
 

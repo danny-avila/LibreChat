@@ -29,6 +29,8 @@ const keys = require('./keys');
 const user = require('./user');
 const ask = require('./ask');
 const mcp = require('./mcp');
+const userActivity = require('./userActivity');
+
 
 module.exports = {
   ask,
@@ -62,4 +64,5 @@ module.exports = {
   categories,
   staticRoute,
   mcp,
+  userActivity,
 };
