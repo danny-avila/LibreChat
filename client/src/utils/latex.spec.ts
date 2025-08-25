@@ -233,4 +233,10 @@ y$ which spans lines`;
     const expected = 'You can win \\$1000000 or even \\$9999999.99!';
     expect(preprocessLaTeX(content)).toBe(expected);
   });
+
+  test('escapes currency with many decimal places', () => {
+    const content = 'Bitcoin: $0.00001234, Gas: $3.999, Rate: $1.234567890';
+    const expected = 'Bitcoin: \\$0.00001234, Gas: \\$3.999, Rate: \\$1.234567890';
+    expect(preprocessLaTeX(content)).toBe(expected);
+  });
 });
