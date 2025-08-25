@@ -2,7 +2,7 @@ import React from 'react';
 import type t from 'librechat-data-provider';
 import { useMediaQuery } from '@librechat/client';
 import { SmartLoader } from './SmartLoader';
-import { useLocalize } from '~/hooks/';
+import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
 /**
@@ -43,7 +43,7 @@ const CategoryTabs: React.FC<CategoryTabsProps> = ({
       return localize('com_agents_top_picks');
     }
     if (category.value === 'all') {
-      return 'All';
+      return localize('com_ui_all');
     }
     // Use database label or fallback to capitalized value
     return category.label || category.value.charAt(0).toUpperCase() + category.value.slice(1);
@@ -158,7 +158,11 @@ const CategoryTabs: React.FC<CategoryTabsProps> = ({
             aria-selected={activeTab === category.value}
             aria-controls={`tabpanel-${category.value}`}
             tabIndex={activeTab === category.value ? 0 : -1}
-            aria-label={`${getCategoryDisplayName(category)} tab (${index + 1} of ${categories.length})`}
+            aria-label={localize('com_agents_category_tab_label', {
+              category: getCategoryDisplayName(category),
+              position: index + 1,
+              total: categories.length,
+            })}
           >
             {getCategoryDisplayName(category)}
             {/* Underline for active tab */}

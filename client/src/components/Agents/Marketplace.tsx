@@ -381,8 +381,8 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
                               }
                               if (displayCategory === 'all') {
                                 return {
-                                  name: 'All Agents',
-                                  description: 'Browse all shared agents across all categories',
+                                  name: localize('com_agents_all'),
+                                  description: localize('com_agents_all_description'),
                                 };
                               }
 
@@ -455,8 +455,8 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
                                 }
                                 if (nextCategory === 'all') {
                                   return {
-                                    name: 'All Agents',
-                                    description: 'Browse all shared agents across all categories',
+                                    name: localize('com_agents_all'),
+                                    description: localize('com_agents_all_description'),
                                   };
                                 }
 
