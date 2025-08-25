@@ -78,6 +78,7 @@ async function loadDefaultInterface(config, configDefaults) {
     termsOfService: interfaceConfig?.termsOfService ?? defaults.termsOfService,
     mcpServers: interfaceConfig?.mcpServers ?? defaults.mcpServers,
     customWelcome: interfaceConfig?.customWelcome ?? defaults.customWelcome,
+    externalLinks: interfaceConfig?.externalLinks ?? defaults.externalLinks,
 
     // Permissions - only include if explicitly configured
     bookmarks: interfaceConfig?.bookmarks,
