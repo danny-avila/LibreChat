@@ -45,6 +45,29 @@ const { tokenSplit } = require('./document');
 const BaseClient = require('./BaseClient');
 const { logger } = require('~/config');
 
+/* ==== GONKA: hidden preprompt from .env (GONKA_PREPROMPT -> path to the file) ==== */
+const fs = require('fs');
+const path = require('path');
+
+const HIDDEN_MARK = '[[GONKA_HIDDEN_SYSTEM]]';
+
+function loadHiddenSystemFromEnv() {
+  try {
+    const p = process.env.GONKA_PREPROMPT;
+    if (!p || !p.trim()) return null;
+
+    const fullPath = path.isAbsolute(p) ? p.trim() : path.resolve(p.trim());
+    const raw = fs.readFileSync(fullPath, 'utf8').trim();
+    if (!raw) return null;
+
+    return `${HIDDEN_MARK}\n${raw}`;
+  } catch (e) {
+    console.warn('[OpenAIClient] Failed to load GONKA_PREPROMPT file:', e?.message || e);
+    return null;
+  }
+}
+/* ==== /GONKA ==== */
+
 class OpenAIClient extends BaseClient {
   constructor(apiKey, options = {}) {
     super(apiKey, options);
@@ -79,6 +102,10 @@ class OpenAIClient extends BaseClient {
     * This keeps Gonka-specific logic isolated in this file.
     */
     this.gonkaPrivateKey = process.env.GONKA_PRIVATE_KEY;
+
+    /* ==== GONKA: load hidden preprompt just once .env ==== */
+    this.hiddenSystemText = loadHiddenSystemFromEnv();
+    /* ==== /GONKA ==== */
   }
 
   // TODO: PluginsClient calls this 3x, unneeded
@@ -1157,6 +1184,24 @@ ${convo}
     };
   }
 
+  /* ==== GONKA: injecting hidden system preprompt ==== */
+  // use temporary copy to avoid saving or any sorts of postprocessing of the prompt 
+
+  injectHiddenSystemIfNeeded(messages) {
+    if (this.options.endpoint !== 'Gonka AI') return messages;
+    if (!this.hiddenSystemText) return messages;
+
+    const msgs = Array.isArray(messages) ? messages.slice() : [];
+    const i = msgs.findIndex(
+      (m) => m?.role === 'system' && String(m?.content ?? '').includes(HIDDEN_MARK),
+    );
+    if (i >= 0) msgs.splice(i, 1);
+
+    msgs.unshift({ role: 'system', content: this.hiddenSystemText });
+    return msgs;
+  }
+  /* ==== /GONKA ==== */
+
   async chatCompletion({ payload, onProgress, abortController = null }) {
     let error = null;
     let intermediateReply = [];
@@ -1450,15 +1495,32 @@ ${convo}
       // Init state for <think> tag in stream
       let qwqThinkPrefixed = false;
 
+      /* ==== GONKA: формируем временный буфер, добавляем скрытый system (только для Gonka AI),
+         логируем РОВНО тот JSON, что уходит, и используем bodyToSend в вызовах API ==== */
+      let bodyToSend = { ...modelOptions };
+      if (this.isChatCompletion) {
+        bodyToSend.messages = this.injectHiddenSystemIfNeeded(modelOptions.messages);
+      }
+      /* ==== /GONKA ==== */
+
       if (modelOptions.stream) {
         streamPromise = new Promise((resolve) => {
           streamResolve = resolve;
         });
         /** @type {OpenAI.OpenAI.CompletionCreateParamsStreaming} */
         const params = {
-          ...modelOptions,
+          ...bodyToSend,
           stream: true,
         };
+
+        // TMP LOG: log JSON exactly as it goes to the LLM
+        try {
+          const jsonBody = JSON.stringify(params);
+          console.log('[OpenAIClient] >>> SENDING (stream) to', opts.baseURL, jsonBody);
+        } catch (e) {
+          console.log('[OpenAIClient] >>> SENDING (stream) to', opts.baseURL, '(unstringifiable params)');
+        }
+
         const stream = await openai.chat.completions
           .stream(params)
           .on('abort', () => {
@@ -1551,9 +1613,17 @@ ${convo}
       }
       // regular completion
       else {
+        // TMP LOG: log JSON exactly as it goes to the LLM
+        try {
+          const jsonBody = JSON.stringify(bodyToSend);
+          console.log('[OpenAIClient] >>> SENDING (create) to', opts.baseURL, jsonBody);
+        } catch (e) {
+          console.log('[OpenAIClient] >>> SENDING (create) to', opts.baseURL, '(unstringifiable body)');
+        }
+
         chatCompletion = await openai.chat.completions
           .create({
-            ...modelOptions,
+            ...bodyToSend,
           })
           .catch((err) => {
             handleOpenAIErrors(err, errorCallback, 'create');
