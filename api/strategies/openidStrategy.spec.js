@@ -123,6 +123,9 @@ describe('setupOpenId', () => {
     process.env.OPENID_REQUIRED_ROLE = 'requiredRole';
     process.env.OPENID_REQUIRED_ROLE_PARAMETER_PATH = 'roles';
     process.env.OPENID_REQUIRED_ROLE_TOKEN_KIND = 'id';
+    process.env.OPENID_ADMIN_ROLE = 'admin';
+    process.env.OPENID_ADMIN_ROLE_PARAMETER_PATH = 'permissions';
+    process.env.OPENID_ADMIN_ROLE_TOKEN_KIND = 'id';
     delete process.env.OPENID_USERNAME_CLAIM;
     delete process.env.OPENID_NAME_CLAIM;
     delete process.env.PROXY;
@@ -131,6 +134,7 @@ describe('setupOpenId', () => {
     // Default jwtDecode mock returns a token that includes the required role.
     jwtDecode.mockReturnValue({
       roles: ['requiredRole'],
+      permissions: ['admin'],
     });
 
     // By default, assume that no user is found, so createUser will be called
@@ -371,5 +375,27 @@ describe('setupOpenId', () => {
     const callOptions = OpenIDStrategy.mock.calls[OpenIDStrategy.mock.calls.length - 1][0];
     expect(callOptions.usePKCE).toBe(false);
     expect(callOptions.params?.code_challenge_method).toBeUndefined();
+  });
+
+  it('should set role to "ADMIN" if OPENID_ADMIN_ROLE is set and user has that role', async () => {
+    // Act
+    const { user } = await validate(tokenset);
+
+    // Assert – verify that the user role is set to "ADMIN"
+    expect(user.role).toBe('ADMIN');
+  });
+
+  it('should not set user role if OPENID_ADMIN_ROLE is set but the user does not have that role', async () => {
+    // Arrange – simulate a token without the admin permission
+    jwtDecode.mockReturnValue({
+      roles: ['requiredRole'],
+      permissions: ['not-admin'],
+    });
+
+    // Act
+    const { user } = await validate(tokenset);
+
+    // Assert – verify that the user role is not defined
+    expect(user.role).toBeUndefined();
   });
 });
