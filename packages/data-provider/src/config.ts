@@ -545,6 +545,7 @@ export const interfaceSchema = z
       })
       .optional(),
     fileSearch: z.boolean().optional(),
+    defaultPinMcp: z.boolean().optional(),
     fileCitations: z.boolean().optional(),
   })
   .default({
@@ -570,6 +571,7 @@ export const interfaceSchema = z
       use: false,
     },
     fileSearch: true,
+    defaultPinMcp: true,
     fileCitations: true,
   });
 
