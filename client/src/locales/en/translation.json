@@ -1014,6 +1014,7 @@
   "com_ui_no_bookmarks": "it seems like you have no bookmarks yet. Click on a chat and add a new one",
   "com_ui_no_categories": "No categories available",
   "com_ui_no_category": "No category",
+  "com_ui_no_changes": "No changes were made",
   "com_ui_no_data": "something needs to go here. was empty",
   "com_ui_no_individual_access": "No individual users or groups have access to this agent",
   "com_ui_no_personalization_available": "No personalization options are currently available",
