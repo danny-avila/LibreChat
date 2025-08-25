@@ -3,9 +3,8 @@ const MHCHEM_CE_REGEX = /\$\\ce\{/g;
 const MHCHEM_PU_REGEX = /\$\\pu\{/g;
 const MHCHEM_CE_ESCAPED_REGEX = /\$\\\\ce\{[^}]*\}\$/g;
 const MHCHEM_PU_ESCAPED_REGEX = /\$\\\\pu\{[^}]*\}\$/g;
-const CURRENCY_REGEX =
-  /(?<![\\$])\$(?!\$)(?=\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?(?:\s|$|[^a-zA-Z\d]))/g;
-const SINGLE_DOLLAR_REGEX = /(?<!\\)\$(?!\$)((?:[^$\n]|\\[$])+?)(?<!\\)\$(?!\$)/g;
+const CURRENCY_REGEX = /(?<![\\$])\$(?!\$)(?=\d+(?:,\d{3})*(?:\.\d+)?(?:\s|$|[^a-zA-Z\d]))/g;
+const SINGLE_DOLLAR_REGEX = /(?<!\\)\$(?!\$)((?:[^$\n]|\\[$])+?)(?<!\\)(?<!`)\$(?!\$)/g;
 
 /**
  * Escapes mhchem package notation in LaTeX by converting single dollar delimiters to double dollars
