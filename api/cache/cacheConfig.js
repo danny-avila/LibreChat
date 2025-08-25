@@ -52,6 +52,9 @@ const cacheConfig = {
   REDIS_CONNECT_TIMEOUT: math(process.env.REDIS_CONNECT_TIMEOUT, 10000),
   /** Queue commands when disconnected */
   REDIS_ENABLE_OFFLINE_QUEUE: isEnabled(process.env.REDIS_ENABLE_OFFLINE_QUEUE ?? 'true'),
+  /** flag to modify redis connection by adding dnsLookup this is required when connecting to elasticache for ioredis
+   * see "Special Note: Aws Elasticache Clusters with TLS" on this webpage:  https://www.npmjs.com/package/ioredis **/
+  REDIS_USE_ALTERNATIVE_DNS_LOOKUP: isEnabled(process.env.REDIS_USE_ALTERNATIVE_DNS_LOOKUP),
   /** Enable redis cluster without the need of multiple URIs */
   USE_REDIS_CLUSTER: isEnabled(process.env.USE_REDIS_CLUSTER ?? 'false'),
   CI: isEnabled(process.env.CI),
