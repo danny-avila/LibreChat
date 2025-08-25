@@ -53,6 +53,9 @@ if (cacheConfig.USE_REDIS) {
       : new IoRedis.Cluster(
           urls.map((url) => ({ host: url.hostname, port: parseInt(url.port, 10) || 6379 })),
           {
+            ...(cacheConfig.REDIS_USE_ALTERNATIVE_DNS_LOOKUP
+              ? { dnsLookup: (address, callback) => callback(null, address) }
+              : {}),
             redisOptions,
             clusterRetryStrategy: (times) => {
               if (
