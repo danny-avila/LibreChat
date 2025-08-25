@@ -232,8 +232,14 @@ export default function useEventHandlers({
           },
         ]);
       }
+
+      if (userMessage?.conversationId) {
+        queryClient.invalidateQueries({
+          queryKey: [QueryKeys.conversation, userMessage.conversationId, 'costs'],
+        });
+      }
     },
-    [setMessages, announcePolite, setIsSubmitting],
+    [setMessages, announcePolite, setIsSubmitting, queryClient],
   );
 
   const cancelHandler = useCallback(
@@ -272,6 +278,12 @@ export default function useEventHandlers({
         setConversation((prevState) => {
           const update = { ...prevState, ...convoUpdate };
           return update;
+        });
+      }
+
+      if (convoUpdate?.conversationId) {
+        queryClient.invalidateQueries({
+          queryKey: [QueryKeys.conversation, convoUpdate.conversationId, 'costs'],
         });
       }
 
@@ -340,6 +352,12 @@ export default function useEventHandlers({
       setShowStopButton(true);
       if (resetLatestMessage) {
         resetLatestMessage();
+      }
+
+      if (conversationId) {
+        queryClient.invalidateQueries({
+          queryKey: [QueryKeys.conversation, conversationId, 'costs'],
+        });
       }
     },
     [
@@ -525,6 +543,12 @@ export default function useEventHandlers({
           [QueryKeys.messages, conversation.conversationId],
           [...currentMessages],
         );
+      }
+
+      if (conversation.conversationId) {
+        queryClient.invalidateQueries({
+          queryKey: [QueryKeys.conversation, conversation.conversationId, 'costs'],
+        });
       }
 
       if (isNewConvo && submissionConvo.conversationId) {

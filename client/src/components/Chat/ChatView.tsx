@@ -1,4 +1,4 @@
-import { memo, useCallback } from 'react';
+import { memo, useCallback, useState, useEffect, useRef } from 'react';
 import { useRecoilValue } from 'recoil';
 import { useForm } from 'react-hook-form';
 import { Spinner } from '@librechat/client';
@@ -7,13 +7,14 @@ import { Constants } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
 import type { ChatFormValues } from '~/common';
 import { ChatContext, AddedChatContext, useFileMapContext, ChatFormProvider } from '~/Providers';
+import { useGetMessagesByConvoId, useGetConversationCosts } from '~/data-provider';
 import { useChatHelpers, useAddedResponse, useSSE } from '~/hooks';
 import ConversationStarters from './Input/ConversationStarters';
-import { useGetMessagesByConvoId } from '~/data-provider';
 import MessagesView from './Messages/MessagesView';
 import Presentation from './Presentation';
 import { buildTree, cn } from '~/utils';
 import ChatForm from './Input/ChatForm';
+import CostBar from './CostBar';
 import Landing from './Landing';
 import Header from './Header';
 import Footer from './Footer';
@@ -37,6 +38,9 @@ function ChatView({ index = 0 }: { index?: number }) {
 
   const fileMap = useFileMapContext();
 
+  const [showCostBar, setShowCostBar] = useState(true);
+  const lastScrollY = useRef(0);
+
   const { data: messagesTree = null, isLoading } = useGetMessagesByConvoId(conversationId ?? '', {
     select: useCallback(
       (data: TMessage[]) => {
@@ -48,11 +52,48 @@ function ChatView({ index = 0 }: { index?: number }) {
     enabled: !!fileMap,
   });
 
+  const { data: conversationCosts } = useGetConversationCosts(
+    conversationId && conversationId !== Constants.NEW_CONVO ? conversationId : '',
+    {
+      enabled: !!conversationId && conversationId !== Constants.NEW_CONVO && conversationId !== '',
+    },
+  );
+
   const chatHelpers = useChatHelpers(index, conversationId);
   const addedChatHelpers = useAddedResponse({ rootIndex: index });
 
   useSSE(rootSubmission, chatHelpers, false);
   useSSE(addedSubmission, addedChatHelpers, true);
+
+  useEffect(() => {
+    const handleScroll = (event: Event) => {
+      const target = event.target as HTMLElement;
+      const currentScrollY = target.scrollTop;
+      const scrollHeight = target.scrollHeight;
+      const clientHeight = target.clientHeight;
+
+      const distanceFromBottom = scrollHeight - currentScrollY - clientHeight;
+      const isAtBottom = distanceFromBottom < 10;
+
+      setShowCostBar(isAtBottom);
+      lastScrollY.current = currentScrollY;
+    };
+
+    const findAndAttachScrollListener = () => {
+      const messagesContainer = document.querySelector('[class*="scrollbar-gutter-stable"]');
+      if (messagesContainer) {
+        messagesContainer.addEventListener('scroll', handleScroll, { passive: true });
+        return () => {
+          messagesContainer.removeEventListener('scroll', handleScroll);
+        };
+      }
+      setTimeout(findAndAttachScrollListener, 100);
+    };
+
+    const cleanup = findAndAttachScrollListener();
+
+    return cleanup;
+  }, [messagesTree]);
 
   const methods = useForm<ChatFormValues>({
     defaultValues: { text: '' },
@@ -69,7 +110,19 @@ function ChatView({ index = 0 }: { index?: number }) {
   } else if ((isLoading || isNavigating) && !isLandingPage) {
     content = <LoadingSpinner />;
   } else if (!isLandingPage) {
-    content = <MessagesView messagesTree={messagesTree} />;
+    content = (
+      <MessagesView
+        messagesTree={messagesTree}
+        costBar={
+          !isLandingPage &&
+          conversationCosts &&
+          conversationCosts.totals && (
+            <CostBar conversationCosts={conversationCosts} showCostBar={showCostBar} />
+          )
+        }
+        costs={conversationCosts}
+      />
+    );
   } else {
     content = <Landing centerFormOnLanding={centerFormOnLanding} />;
   }

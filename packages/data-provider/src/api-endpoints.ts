@@ -44,6 +44,9 @@ export const messages = (params: q.MessagesListParams) => {
   return `/api/messages${buildQuery(rest)}`;
 };
 
+export const conversationCosts = (conversationId: string) =>
+  `/api/messages/${conversationId}/costs`;
+
 const shareRoot = '/api/share';
 export const shareMessages = (shareId: string) => `${shareRoot}/${shareId}`;
 export const getSharedLink = (conversationId: string) => `${shareRoot}/link/${conversationId}`;
