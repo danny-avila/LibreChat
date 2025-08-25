@@ -1,47 +1,17 @@
 import { ChevronLeft } from 'lucide-react';
 import { useCallback, useMemo } from 'react';
+import { useToastContext } from '@librechat/client';
 import { useGetAgentByIdQuery, useRevertAgentVersionMutation } from '~/data-provider';
-import type { Agent } from 'librechat-data-provider';
+import type { AgentWithVersions, VersionContext } from './types';
 import { isActiveVersion } from './isActiveVersion';
 import { useAgentPanelContext } from '~/Providers';
-import { useLocalize, useToast } from '~/hooks';
 import VersionContent from './VersionContent';
+import { useLocalize } from '~/hooks';
 import { Panel } from '~/common';
-
-export type VersionRecord = Record<string, any>;
-
-export type AgentState = {
-  name: string | null;
-  description: string | null;
-  instructions: string | null;
-  artifacts?: string | null;
-  capabilities?: string[];
-  tools?: string[];
-} | null;
-
-export type VersionWithId = {
-  id: number;
-  originalIndex: number;
-  version: VersionRecord;
-  isActive: boolean;
-};
-
-export type VersionContext = {
-  versions: VersionRecord[];
-  versionIds: VersionWithId[];
-  currentAgent: AgentState;
-  selectedAgentId: string;
-  activeVersion: VersionRecord | null;
-};
-
-export interface AgentWithVersions extends Agent {
-  capabilities?: string[];
-  versions?: Array<VersionRecord>;
-}
 
 export default function VersionPanel() {
   const localize = useLocalize();
-  const { showToast } = useToast();
+  const { showToast } = useToastContext();
   const { agent_id, setActivePanel } = useAgentPanelContext();
 
   const selectedAgentId = agent_id ?? '';

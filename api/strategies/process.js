@@ -22,9 +22,12 @@ const handleExistingUser = async (oldUser, avatarUrl) => {
   const isLocal = fileStrategy === FileSources.local;
 
   let updatedAvatar = false;
-  if (isLocal && (oldUser.avatar === null || !oldUser.avatar.includes('?manual=true'))) {
+  const hasManualFlag =
+    typeof oldUser?.avatar === 'string' && oldUser.avatar.includes('?manual=true');
+
+  if (isLocal && (!oldUser?.avatar || !hasManualFlag)) {
     updatedAvatar = avatarUrl;
-  } else if (!isLocal && (oldUser.avatar === null || !oldUser.avatar.includes('?manual=true'))) {
+  } else if (!isLocal && (!oldUser?.avatar || !hasManualFlag)) {
     const userId = oldUser._id;
     const resizedBuffer = await resizeAvatar({
       userId,

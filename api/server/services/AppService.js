@@ -1,19 +1,23 @@
 const {
+  isEnabled,
+  loadMemoryConfig,
+  agentsConfigSetup,
+  loadWebSearchConfig,
+} = require('@librechat/api');
+const {
   FileSources,
   loadOCRConfig,
   EModelEndpoint,
-  loadMemoryConfig,
   getConfigDefaults,
-  loadWebSearchConfig,
 } = require('librechat-data-provider');
-const { agentsConfigSetup } = require('@librechat/api');
 const {
+  checkWebSearchConfig,
+  checkAzureVariables,
+  checkVariables,
   checkHealth,
   checkConfig,
-  checkVariables,
-  checkAzureVariables,
-  checkWebSearchConfig,
 } = require('./start/checks');
+const { ensureDefaultCategories, seedDefaultRoles, initializeRoles } = require('~/models');
 const { azureAssistantsDefaults, assistantsConfigSetup } = require('./start/assistants');
 const { initializeAzureBlobService } = require('./Files/Azure/initialize');
 const { initializeFirebase } = require('./Files/Firebase/initialize');
@@ -25,8 +29,6 @@ const { azureConfigSetup } = require('./start/azureOpenAI');
 const { processModelSpecs } = require('./start/modelSpecs');
 const { initializeS3 } = require('./Files/S3/initialize');
 const { loadAndFormatTools } = require('./ToolService');
-const { isEnabled } = require('~/server/utils');
-const { initializeRoles } = require('~/models');
 const { setCachedTools } = require('./Config');
 const paths = require('~/config/paths');
 
@@ -37,6 +39,8 @@ const paths = require('~/config/paths');
  */
 const AppService = async (app) => {
   await initializeRoles();
+  await seedDefaultRoles();
+  await ensureDefaultCategories();
   /** @type {TCustomConfig} */
   const config = (await loadCustomConfig()) ?? {};
   const configDefaults = getConfigDefaults();
@@ -86,6 +90,7 @@ const AppService = async (app) => {
   const turnstileConfig = loadTurnstileConfig(config, configDefaults);
 
   const defaultLocals = {
+    config,
     ocr,
     paths,
     memory,
@@ -157,6 +162,10 @@ const AppService = async (app) => {
       endpointLocals[key] = endpoints[key];
     }
   });
+
+  if (endpoints?.all) {
+    endpointLocals.all = endpoints.all;
+  }
 
   app.locals = {
     ...defaultLocals,

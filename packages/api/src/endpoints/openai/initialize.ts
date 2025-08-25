@@ -87,10 +87,10 @@ export const initializeOpenAI = async ({
     });
 
     clientOptions.reverseProxyUrl = configBaseURL ?? clientOptions.reverseProxyUrl;
-    clientOptions.headers = resolveHeaders(
-      { ...headers, ...(clientOptions.headers ?? {}) },
-      req.user,
-    );
+    clientOptions.headers = resolveHeaders({
+      headers: { ...headers, ...(clientOptions.headers ?? {}) },
+      user: req.user,
+    });
 
     const groupName = modelGroupMap[modelName || '']?.group;
     if (groupName && groupMap[groupName]) {

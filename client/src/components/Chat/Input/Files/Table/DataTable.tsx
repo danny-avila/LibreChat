@@ -16,8 +16,6 @@ import type {
   ColumnFiltersState,
 } from '@tanstack/react-table';
 import { FileContext } from 'librechat-data-provider';
-import type { AugmentedColumnDef } from '~/common';
-import type { TFile } from 'librechat-data-provider';
 import {
   Button,
   Input,
@@ -31,11 +29,14 @@ import {
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuTrigger,
-} from '~/components/ui';
+  TrashIcon,
+  Spinner,
+  useMediaQuery,
+} from '@librechat/client';
+import type { TFile } from 'librechat-data-provider';
+import type { AugmentedColumnDef } from '~/common';
 import { useDeleteFilesFromTable } from '~/hooks/Files';
-import { TrashIcon, Spinner } from '~/components/svg';
-import useLocalize from '~/hooks/useLocalize';
-import { useMediaQuery } from '~/hooks';
+import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
 

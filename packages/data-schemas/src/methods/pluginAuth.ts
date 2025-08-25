@@ -10,15 +10,20 @@ import type {
 // Factory function that takes mongoose instance and returns the methods
 export function createPluginAuthMethods(mongoose: typeof import('mongoose')) {
   /**
-   * Finds a single plugin auth entry by userId and authField
+   * Finds a single plugin auth entry by userId and authField (and optionally pluginKey)
    */
   async function findOnePluginAuth({
     userId,
     authField,
+    pluginKey,
   }: FindPluginAuthParams): Promise<IPluginAuth | null> {
     try {
       const PluginAuth: Model<IPluginAuth> = mongoose.models.PluginAuth;
-      return await PluginAuth.findOne({ userId, authField }).lean();
+      return await PluginAuth.findOne({
+        userId,
+        authField,
+        ...(pluginKey && { pluginKey }),
+      }).lean();
     } catch (error) {
       throw new Error(
         `Failed to find plugin auth: ${error instanceof Error ? error.message : 'Unknown error'}`,

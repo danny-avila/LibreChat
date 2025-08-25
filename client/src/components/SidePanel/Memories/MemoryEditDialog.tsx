@@ -1,11 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
+import {
+  OGDialog,
+  OGDialogTemplate,
+  Button,
+  Label,
+  Input,
+  Spinner,
+  useToastContext,
+} from '@librechat/client';
 import type { TUserMemory } from 'librechat-data-provider';
-import { OGDialog, OGDialogTemplate, Button, Label, Input } from '~/components/ui';
 import { useUpdateMemoryMutation, useMemoriesQuery } from '~/data-provider';
 import { useLocalize, useHasAccess } from '~/hooks';
-import { useToastContext } from '~/Providers';
-import { Spinner } from '~/components/svg';
 
 interface MemoryEditDialogProps {
   memory: TUserMemory | null;
@@ -44,9 +50,29 @@ export default function MemoryEditDialog({
         status: 'success',
       });
     },
-    onError: () => {
+    onError: (error: Error) => {
+      let errorMessage = localize('com_ui_error');
+
+      if (error && typeof error === 'object' && 'response' in error) {
+        const axiosError = error as any;
+        if (axiosError.response?.data?.error) {
+          errorMessage = axiosError.response.data.error;
+
+          // Check for duplicate key error
+          if (axiosError.response?.status === 409 || errorMessage.includes('already exists')) {
+            errorMessage = localize('com_ui_memory_key_exists');
+          }
+          // Check for key validation error (lowercase and underscores only)
+          else if (errorMessage.includes('lowercase letters and underscores')) {
+            errorMessage = localize('com_ui_memory_key_validation');
+          }
+        }
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+
       showToast({
-        message: localize('com_ui_error'),
+        message: errorMessage,
         status: 'error',
       });
     },

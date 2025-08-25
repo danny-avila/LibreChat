@@ -2,9 +2,10 @@ import { useRef, useEffect, useCallback, useMemo } from 'react';
 import { useRecoilState } from 'recoil';
 import { Constants, LocalStorageKeys, EModelEndpoint } from 'librechat-data-provider';
 import type { TPlugin } from 'librechat-data-provider';
-import { useAvailableToolsQuery } from '~/data-provider';
+import { useAvailableToolsQuery, useGetStartupConfig } from '~/data-provider';
 import useLocalStorage from '~/hooks/useLocalStorageAlt';
 import { ephemeralAgentByConvoId } from '~/store';
+import { useChatContext } from '~/Providers';
 
 const storageCondition = (value: unknown, rawCurrentValue?: string | null) => {
   if (rawCurrentValue) {
@@ -20,20 +21,23 @@ const storageCondition = (value: unknown, rawCurrentValue?: string | null) => {
   return Array.isArray(value) && value.length > 0;
 };
 
-interface UseMCPSelectOptions {
-  conversationId?: string | null;
-}
+export function useMCPSelect() {
+  const { conversation } = useChatContext();
 
-export function useMCPSelect({ conversationId }: UseMCPSelectOptions) {
-  const key = conversationId ?? Constants.NEW_CONVO;
+  const key = useMemo(
+    () => conversation?.conversationId ?? Constants.NEW_CONVO,
+    [conversation?.conversationId],
+  );
+
   const hasSetFetched = useRef<string | null>(null);
   const [ephemeralAgent, setEphemeralAgent] = useRecoilState(ephemeralAgentByConvoId(key));
-  const { data: mcpToolDetails, isFetched } = useAvailableToolsQuery(EModelEndpoint.agents, {
+  const { data: startupConfig } = useGetStartupConfig();
+  const { data: rawMcpTools, isFetched } = useAvailableToolsQuery(EModelEndpoint.agents, {
     select: (data: TPlugin[]) => {
       const mcpToolsMap = new Map<string, TPlugin>();
       data.forEach((tool) => {
         const isMCP = tool.pluginKey.includes(Constants.mcp_delimiter);
-        if (isMCP && tool.chatMenu !== false) {
+        if (isMCP) {
           const parts = tool.pluginKey.split(Constants.mcp_delimiter);
           const serverName = parts[parts.length - 1];
           if (!mcpToolsMap.has(serverName)) {
@@ -49,6 +53,16 @@ export function useMCPSelect({ conversationId }: UseMCPSelectOptions) {
       return Array.from(mcpToolsMap.values());
     },
   });
+
+  const mcpToolDetails = useMemo(() => {
+    if (!rawMcpTools || !startupConfig?.mcpServers) {
+      return rawMcpTools;
+    }
+    return rawMcpTools.filter((tool) => {
+      const serverConfig = startupConfig?.mcpServers?.[tool.name];
+      return serverConfig?.chatMenu !== false;
+    });
+  }, [rawMcpTools, startupConfig?.mcpServers]);
 
   const mcpState = useMemo(() => {
     return ephemeralAgent?.mcp ?? [];
@@ -70,12 +84,20 @@ export function useMCPSelect({ conversationId }: UseMCPSelectOptions) {
     [setEphemeralAgent],
   );
 
-  const [mcpValues, setMCPValues] = useLocalStorage<string[]>(
+  const [mcpValues, setMCPValuesRaw] = useLocalStorage<string[]>(
     `${LocalStorageKeys.LAST_MCP_}${key}`,
     mcpState,
     setSelectedValues,
     storageCondition,
   );
+
+  const setMCPValuesRawRef = useRef(setMCPValuesRaw);
+  setMCPValuesRawRef.current = setMCPValuesRaw;
+
+  // Create a stable memoized setter to avoid re-creating it on every render and causing an infinite render loop
+  const setMCPValues = useCallback((value: string[]) => {
+    setMCPValuesRawRef.current(value);
+  }, []);
 
   const [isPinned, setIsPinned] = useLocalStorage<boolean>(
     `${LocalStorageKeys.PIN_MCP_}${key}`,

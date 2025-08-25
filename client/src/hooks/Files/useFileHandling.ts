@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { v4 } from 'uuid';
+import { useToastContext } from '@librechat/client';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   QueryKeys,
@@ -17,7 +18,6 @@ import { useGetFileConfig, useUploadFileMutation } from '~/data-provider';
 import useLocalize, { TranslationKeys } from '~/hooks/useLocalize';
 import { useDelayedUploadToast } from './useDelayedUploadToast';
 import { processFileForUpload } from '~/utils/heicConverter';
-import { useToastContext } from '~/Providers/ToastContext';
 import { useChatContext } from '~/Providers/ChatContext';
 import { logger, validateFiles } from '~/utils';
 import useClientResize from './useClientResize';
@@ -25,10 +25,10 @@ import useUpdateFiles from './useUpdateFiles';
 
 type UseFileHandling = {
   fileSetter?: FileSetter;
-  fileFilter?: (file: File) => boolean;
-  additionalMetadata?: Record<string, string | undefined>;
   overrideEndpoint?: EModelEndpoint;
+  fileFilter?: (file: File) => boolean;
   overrideEndpointFileConfig?: EndpointFileConfig;
+  additionalMetadata?: Record<string, string | undefined>;
 };
 
 const useFileHandling = (params?: UseFileHandling) => {
@@ -151,6 +151,10 @@ const useFileHandling = (params?: UseFileHandling) => {
 
     const formData = new FormData();
     formData.append('endpoint', endpoint);
+    formData.append(
+      'original_endpoint',
+      conversation?.endpointType || conversation?.endpoint || '',
+    );
     formData.append('file', extendedFile.file as File, encodeURIComponent(filename));
     formData.append('file_id', extendedFile.file_id);
 

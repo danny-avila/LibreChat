@@ -1,21 +1,6 @@
-import { Schema, Document, Types } from 'mongoose';
+import { Schema } from 'mongoose';
 import { Constants } from 'librechat-data-provider';
-
-export interface IPromptGroup {
-  name: string;
-  numberOfGenerations: number;
-  oneliner: string;
-  category: string;
-  projectIds: Types.ObjectId[];
-  productionId: Types.ObjectId;
-  author: Types.ObjectId;
-  authorName: string;
-  command?: string;
-  createdAt?: Date;
-  updatedAt?: Date;
-}
-
-export interface IPromptGroupDocument extends IPromptGroup, Document {}
+import type { IPromptGroupDocument } from '~/types';
 
 const promptGroupSchema = new Schema<IPromptGroupDocument>(
   {

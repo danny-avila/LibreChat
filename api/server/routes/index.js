@@ -1,3 +1,4 @@
+const accessPermissions = require('./accessPermissions');
 const assistants = require('./assistants');
 const categories = require('./categories');
 const tokenizer = require('./tokenizer');
@@ -28,6 +29,7 @@ const user = require('./user');
 const mcp = require('./mcp');
 
 module.exports = {
+  mcp,
   edit,
   auth,
   keys,
@@ -55,5 +57,5 @@ module.exports = {
   assistants,
   categories,
   staticRoute,
-  mcp,
+  accessPermissions,
 };

@@ -8,11 +8,12 @@ const {
   ErrorTypes,
   EModelEndpoint,
   EToolResources,
+  isAgentsEndpoint,
   replaceSpecialVars,
   providerEndpointMap,
 } = require('librechat-data-provider');
-const { getProviderConfig } = require('~/server/services/Endpoints');
 const generateArtifactsPrompt = require('~/app/clients/prompts/artifacts');
+const { getProviderConfig } = require('~/server/services/Endpoints');
 const { processFiles } = require('~/server/services/Files/process');
 const { getFiles, getToolFilesByIds } = require('~/models/File');
 const { getConvoFiles } = require('~/models/Conversation');
@@ -29,7 +30,13 @@ const { getModelMaxTokens } = require('~/utils');
  * @param {TEndpointOption} [params.endpointOption]
  * @param {Set<string>} [params.allowedProviders]
  * @param {boolean} [params.isInitialAgent]
- * @returns {Promise<Agent & { tools: StructuredTool[], attachments: Array<MongoFile>, toolContextMap: Record<string, unknown>, maxContextTokens: number }>}
+ * @returns {Promise<Agent & {
+ * tools: StructuredTool[],
+ * attachments: Array<MongoFile>,
+ * toolContextMap: Record<string, unknown>,
+ * maxContextTokens: number,
+ * userMCPAuthMap?: Record<string, Record<string, string>>
+ * }>}
  */
 const initializeAgent = async ({
   req,
@@ -42,7 +49,11 @@ const initializeAgent = async ({
   allowedProviders,
   isInitialAgent = false,
 }) => {
-  if (allowedProviders.size > 0 && !allowedProviders.has(agent.provider)) {
+  if (
+    isAgentsEndpoint(endpointOption?.endpoint) &&
+    allowedProviders.size > 0 &&
+    !allowedProviders.has(agent.provider)
+  ) {
     throw new Error(
       `{ "type": "${ErrorTypes.INVALID_AGENT_PROVIDER}", "info": "${agent.provider}" }`,
     );
@@ -82,23 +93,27 @@ const initializeAgent = async ({
     attachments: currentFiles,
     tool_resources: agent.tool_resources,
     requestFileSet: new Set(requestFiles?.map((file) => file.file_id)),
+    agentId: agent.id,
   });
 
   const provider = agent.provider;
-  const { tools, toolContextMap } =
-    (await loadTools?.({
-      req,
-      res,
-      provider,
-      agentId: agent.id,
-      tools: agent.tools,
-      model: agent.model,
-      tool_resources,
-    })) ?? {};
+  const {
+    tools: structuredTools,
+    toolContextMap,
+    userMCPAuthMap,
+  } = (await loadTools?.({
+    req,
+    res,
+    provider,
+    agentId: agent.id,
+    tools: agent.tools,
+    model: agent.model,
+    tool_resources,
+  })) ?? {};
 
   agent.endpoint = provider;
   const { getOptions, overrideProvider } = await getProviderConfig(provider);
-  if (overrideProvider) {
+  if (overrideProvider !== agent.provider) {
     agent.provider = overrideProvider;
   }
 
@@ -125,7 +140,7 @@ const initializeAgent = async ({
   );
   const agentMaxContextTokens = optionalChainWithEmptyCheck(
     maxContextTokens,
-    getModelMaxTokens(tokensModel, providerEndpointMap[provider]),
+    getModelMaxTokens(tokensModel, providerEndpointMap[provider], options.endpointTokenConfig),
     4096,
   );
 
@@ -138,6 +153,24 @@ const initializeAgent = async ({
 
   if (options.provider != null) {
     agent.provider = options.provider;
+  }
+
+  /** @type {import('@librechat/agents').GenericTool[]} */
+  let tools = options.tools?.length ? options.tools : structuredTools;
+  if (
+    (agent.provider === Providers.GOOGLE || agent.provider === Providers.VERTEXAI) &&
+    options.tools?.length &&
+    structuredTools?.length
+  ) {
+    throw new Error(`{ "type": "${ErrorTypes.GOOGLE_TOOL_CONFLICT}"}`);
+  } else if (
+    (agent.provider === Providers.OPENAI ||
+      agent.provider === Providers.AZURE ||
+      agent.provider === Providers.ANTHROPIC) &&
+    options.tools?.length &&
+    structuredTools?.length
+  ) {
+    tools = structuredTools.concat(options.tools);
   }
 
   /** @type {import('@librechat/agents').ClientOptions} */
@@ -165,8 +198,10 @@ const initializeAgent = async ({
     tools,
     attachments,
     resendFiles,
+    userMCPAuthMap,
     toolContextMap,
-    maxContextTokens: (agentMaxContextTokens - maxTokens) * 0.9,
+    useLegacyContent: !!options.useLegacyContent,
+    maxContextTokens: Math.round((agentMaxContextTokens - maxTokens) * 0.9),
   };
 };
 
