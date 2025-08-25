@@ -1,11 +1,11 @@
-import typescript from 'rollup-plugin-typescript2';
-import resolve from '@rollup/plugin-node-resolve';
-import pkg from './package.json';
-import peerDepsExternal from 'rollup-plugin-peer-deps-external';
-import commonjs from '@rollup/plugin-commonjs';
-import replace from '@rollup/plugin-replace';
-import terser from '@rollup/plugin-terser';
-import generatePackageJson from 'rollup-plugin-generate-package-json';
+const typescript = require('rollup-plugin-typescript2');
+const resolve = require('@rollup/plugin-node-resolve');
+const pkg = require('./package.json');
+const peerDepsExternal = require('rollup-plugin-peer-deps-external');
+const commonjs = require('@rollup/plugin-commonjs');
+const replace = require('@rollup/plugin-replace');
+const terser = require('@rollup/plugin-terser');
+const generatePackageJson = require('rollup-plugin-generate-package-json');
 
 const plugins = [
   peerDepsExternal(),
@@ -34,7 +34,7 @@ const subfolderPlugins = (folderName) => [
   }),
 ];
 
-export default [
+module.exports = [
   {
     input: 'src/index.ts',
     output: [

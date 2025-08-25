@@ -24,6 +24,8 @@ const variableOptions: VariableOption[] = Object.keys(specialVariables).map((key
   label: `com_ui_special_var_${key}` as TSpecialVarLabel,
   value: `{{${key}}}`,
 }));
+console.log('specialVariables:', specialVariables);
+console.log('variableOptions:', variableOptions);
 
 export default function Instructions() {
   const menuId = useId();

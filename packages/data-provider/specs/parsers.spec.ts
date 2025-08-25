@@ -30,6 +30,7 @@ describe('replaceSpecialVars', () => {
   const mockUser = {
     name: 'Test User',
     id: 'user123',
+    email: 'test@example.com',
   } as TUser;
 
   beforeEach(() => {
@@ -66,11 +67,26 @@ describe('replaceSpecialVars', () => {
     expect(result).toBe('Hello Test User!');
   });
 
+  test('should replace {{current_user_email}} with the user email if provided', () => {
+    const result = replaceSpecialVars({
+      text: 'Contact me at {{current_user_email}}',
+      user: mockUser,
+    });
+    expect(result).toBe('Contact me at test@example.com');
+  });
+
   test('should not replace {{current_user}} if user is not provided', () => {
     const result = replaceSpecialVars({
       text: 'Hello {{current_user}}!',
     });
     expect(result).toBe('Hello {{current_user}}!');
+  });
+
+  test('should not replace {{current_user_email}} if user is not provided', () => {
+    const result = replaceSpecialVars({
+      text: 'Contact me at {{current_user_email}}',
+    });
+    expect(result).toBe('Contact me at {{current_user_email}}');
   });
 
   test('should not replace {{current_user}} if user has no name', () => {
@@ -81,22 +97,30 @@ describe('replaceSpecialVars', () => {
     expect(result).toBe('Hello {{current_user}}!');
   });
 
+  test('should not replace {{current_user_email}} if user has no email', () => {
+    const result = replaceSpecialVars({
+      text: 'Contact me at {{current_user_email}}',
+      user: { id: 'user123' } as TUser,
+    });
+    expect(result).toBe('Contact me at {{current_user_email}}');
+  });
+
   test('should handle multiple replacements in the same text', () => {
     const result = replaceSpecialVars({
-      text: 'Hello {{current_user}}! Today is {{current_date}} and the time is {{current_datetime}}. ISO: {{iso_datetime}}',
+      text: 'Hello {{current_user}}! Today is {{current_date}} and the time is {{current_datetime}}. ISO: {{iso_datetime}}. Email: {{current_user_email}}',
       user: mockUser,
     });
     expect(result).toBe(
-      'Hello Test User! Today is 2024-04-29 (1) and the time is 2024-04-29 12:34:56 (1). ISO: 2024-04-29T16:34:56.000Z',
+      'Hello Test User! Today is 2024-04-29 (1) and the time is 2024-04-29 12:34:56 (1). ISO: 2024-04-29T16:34:56.000Z. Email: test@example.com',
     );
   });
 
   test('should be case-insensitive when replacing variables', () => {
     const result = replaceSpecialVars({
-      text: 'Date: {{CURRENT_DATE}}, User: {{Current_User}}',
+      text: 'Date: {{CURRENT_DATE}}, User: {{Current_User}}, Email: {{CURRENT_USER_EMAIL}}',
       user: mockUser,
     });
-    expect(result).toBe('Date: 2024-04-29 (1), User: Test User');
+    expect(result).toBe('Date: 2024-04-29 (1), User: Test User, Email: test@example.com');
   });
 
   test('should confirm all specialVariables from config.ts get parsed', () => {
@@ -121,5 +145,6 @@ describe('replaceSpecialVars', () => {
     expect(result).toContain('2024-04-29 12:34:56 (1)'); // current_datetime
     expect(result).toContain('2024-04-29T16:34:56.000Z'); // iso_datetime
     expect(result).toContain('Test User'); // current_user
+    expect(result).toContain('test@example.com'); // current_user_email
   });
 });

@@ -977,6 +977,7 @@
   "com_ui_special_var_current_date": "Date actuelle",
   "com_ui_special_var_current_datetime": "Date et heure actuelle",
   "com_ui_special_var_current_user": "Utilisateur actuel",
+  "com_ui_special_var_current_user_email": "Email de l'utilisateur actuel",
   "com_ui_special_var_iso_datetime": "Date et heure ISO UTC",
   "com_ui_special_variables": "Variables spéciales : Utilisez {{current_date}} pour la date actuelle, et {{current_user}} pour le nom de votre compte donné.",
   "com_ui_special_variables_more_info": "Vous pouvez sélectionner des variables spéciales dans le menu déroulant : `{{current_date}}` (date et jour de la semaine d'aujourd'hui), `{{current_datetime}}` (date et heure locales actuelles), `{{utc_iso_datetime}}` (date et heure ISO UTC actuelle), et `{{current_user}}` (votre nom d'utilisateur).",
