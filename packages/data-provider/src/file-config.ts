@@ -57,6 +57,27 @@ export const fullMimeTypesList = [
   'application/zip',
   'image/svg',
   'image/svg+xml',
+  // Video formats
+  'video/mp4',
+  'video/avi',
+  'video/mov',
+  'video/wmv',
+  'video/flv',
+  'video/webm',
+  'video/mkv',
+  'video/m4v',
+  'video/3gp',
+  'video/ogv',
+  // Audio formats
+  'audio/mp3',
+  'audio/wav',
+  'audio/ogg',
+  'audio/m4a',
+  'audio/aac',
+  'audio/flac',
+  'audio/wma',
+  'audio/opus',
+  'audio/mpeg',
   ...excelFileTypes,
 ];
 
@@ -122,12 +143,18 @@ export const applicationMimeTypes =
 
 export const imageMimeTypes = /^image\/(jpeg|gif|png|webp|heic|heif)$/;
 
+export const videoMimeTypes = /^video\/(mp4|avi|mov|wmv|flv|webm|mkv|m4v|3gp|ogv)$/;
+
+export const audioMimeTypes = /^audio\/(mp3|wav|ogg|m4a|aac|flac|wma|opus|mpeg)$/;
+
 export const supportedMimeTypes = [
   textMimeTypes,
   excelMimeTypes,
   applicationMimeTypes,
   imageMimeTypes,
-  /** Supported by LC Code Interpreter PAI */
+  videoMimeTypes,
+  audioMimeTypes,
+  /** Supported by LC Code Interpreter API */
   /^image\/(svg|svg\+xml)$/,
 ];
 
@@ -169,6 +196,10 @@ export const megabyte = 1024 * 1024;
 export const mbToBytes = (mb: number): number => mb * megabyte;
 
 const defaultSizeLimit = mbToBytes(512);
+
+// Anthropic PDF limits: 32MB max, 100 pages max
+export const anthropicPdfSizeLimit = mbToBytes(32);
+
 const assistantsFileConfig = {
   fileLimit: 10,
   fileSizeLimit: defaultSizeLimit,
@@ -182,6 +213,14 @@ export const fileConfig = {
     [EModelEndpoint.assistants]: assistantsFileConfig,
     [EModelEndpoint.azureAssistants]: assistantsFileConfig,
     [EModelEndpoint.agents]: assistantsFileConfig,
+    [EModelEndpoint.anthropic]: {
+      fileLimit: 10,
+      fileSizeLimit: defaultSizeLimit,
+      totalSizeLimit: defaultSizeLimit,
+      supportedMimeTypes,
+      disabled: false,
+      pdfSizeLimit: anthropicPdfSizeLimit,
+    },
     default: {
       fileLimit: 10,
       fileSizeLimit: defaultSizeLimit,

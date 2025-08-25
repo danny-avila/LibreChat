@@ -174,6 +174,7 @@ export enum Capabilities {
 export enum AgentCapabilities {
   hide_sequential_outputs = 'hide_sequential_outputs',
   end_after_tools = 'end_after_tools',
+  direct_attach = 'direct_attach',
   execute_code = 'execute_code',
   file_search = 'file_search',
   web_search = 'web_search',
@@ -247,6 +248,7 @@ export const assistantEndpointSchema = baseEndpointSchema.merge(
 export type TAssistantEndpoint = z.infer<typeof assistantEndpointSchema>;
 
 export const defaultAgentCapabilities = [
+  AgentCapabilities.direct_attach,
   AgentCapabilities.execute_code,
   AgentCapabilities.file_search,
   AgentCapabilities.web_search,

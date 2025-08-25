@@ -9,6 +9,7 @@ interface AgentCapabilitiesResult {
   fileSearchEnabled: boolean;
   webSearchEnabled: boolean;
   codeEnabled: boolean;
+  directAttachEnabled: boolean;
 }
 
 export default function useAgentCapabilities(
@@ -49,6 +50,11 @@ export default function useAgentCapabilities(
     [capabilities],
   );
 
+  const directAttachEnabled = useMemo(
+    () => capabilities?.includes(AgentCapabilities.direct_attach) ?? false,
+    [capabilities],
+  );
+
   return {
     ocrEnabled,
     codeEnabled,
@@ -57,5 +63,6 @@ export default function useAgentCapabilities(
     artifactsEnabled,
     webSearchEnabled,
     fileSearchEnabled,
+    directAttachEnabled,
   };
 }

@@ -3,6 +3,7 @@ const path = require('path');
 const axios = require('axios');
 const { logger } = require('@librechat/data-schemas');
 const { EModelEndpoint } = require('librechat-data-provider');
+const { resizeImageBuffer } = require('~/server/services/Files/images/resize');
 const { generateShortLivedToken } = require('~/server/services/AuthService');
 const { getBufferMetadata } = require('~/server/utils');
 const paths = require('~/config/paths');
@@ -285,7 +286,18 @@ async function uploadLocalFile({ req, file, file_id }) {
   await fs.promises.writeFile(newPath, inputBuffer);
   const filepath = path.posix.join('/', 'uploads', req.user.id, path.basename(newPath));
 
-  return { filepath, bytes };
+  let height, width;
+  if (file.mimetype && file.mimetype.startsWith('image/')) {
+    try {
+      const { width: imgWidth, height: imgHeight } = await resizeImageBuffer(inputBuffer, 'high');
+      height = imgHeight;
+      width = imgWidth;
+    } catch (error) {
+      logger.warn('[uploadLocalFile] Could not get image dimensions:', error.message);
+    }
+  }
+
+  return { filepath, bytes, height, width };
 }
 
 /**
