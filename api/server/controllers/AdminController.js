@@ -11,7 +11,7 @@ const { deleteUserPluginAuth } = require('~/server/services/PluginService');
 const { deleteUserKey } = require('~/server/services/UserService');
 const { processDeleteRequest } = require('~/server/services/Files/process');
 const { getFiles } = require('~/models');
-const { Transaction, Balance, User, Conversation, Message, File } = require('~/db/models');
+const { Transaction, Balance, User, Conversation, Message, File, UserActivityLog } = require('~/db/models');
 const mongoose = require('mongoose');
 const { deleteAllUserSessions } = require('~/models');
 
@@ -214,16 +214,6 @@ const listUserMessages = async (req, res) => {
   }
 };
 
-module.exports = {
-  listUsers,
-  getUser,
-  getUserStats,
-  updateUserRole,
-  deleteUserByAdmin,
-  listUserConversations,
-  listUserMessages,
-};
-
 /**
  * Aggregate token usage by model and token type for a user
  * GET /api/admin/users/:id/usage?from=ISO&to=ISO
@@ -299,6 +289,120 @@ async function getUserUsage(req, res) {
   }
 }
 
-module.exports.getUserUsage = getUserUsage;
+/**
+ * List user login/logout activities
+ */
+const listUserActivities = async (req, res) => {
+  try {
+    const page = Math.max(parseInt(req.query.page || '1', 10), 1);
+    const limit = Math.min(Math.max(parseInt(req.query.limit || '20', 10), 1), 100);
+    const userId = req.query.userId;
+    const action = req.query.action;
+    const from = req.query.from;
+    const to = req.query.to;
 
+    const filter = {};
+    if (userId) filter.user = userId;
+    if (action && ['LOGIN', 'LOGOUT'].includes(action)) filter.action = action;
+    if (from || to) {
+      filter.timestamp = {};
+      if (from) filter.timestamp.$gte = new Date(from);
+      if (to) filter.timestamp.$lte = new Date(to);
+    }
 
+    const [total, activities] = await Promise.all([
+      UserActivityLog.countDocuments(filter),
+      UserActivityLog.find(filter)
+        .populate('user', 'email username name')
+        .sort({ timestamp: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit),
+    ]);
+
+    res.status(200).json({
+      page,
+      limit,
+      total,
+      activities: activities.map((activity) => ({
+        _id: activity._id,
+        user: activity.user,
+        action: activity.action,
+        timestamp: activity.timestamp,
+        createdAt: activity.createdAt,
+      })),
+    });
+  } catch (error) {
+    logger.error('[admin:listUserActivities]', error);
+    res.status(500).json({ message: 'Failed to list user activities' });
+  }
+};
+
+/**
+ * Get aggregated login/logout stats for a user
+ */
+const getUserActivityStats = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { from, to } = req.query || {};
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: 'Invalid user id' });
+    }
+
+    const match = { user: new mongoose.Types.ObjectId(id) };
+    if (from || to) {
+      match.timestamp = {};
+      if (from) match.timestamp.$gte = new Date(from);
+      if (to) match.timestamp.$lte = new Date(to);
+    }
+
+    const pipeline = [
+      { $match: match },
+      {
+        $group: {
+          _id: '$action',
+          count: { $sum: 1 },
+          lastActivity: { $max: '$timestamp' },
+        },
+      },
+    ];
+
+    const stats = await UserActivityLog.aggregate(pipeline);
+
+    const result = {
+      userId: id,
+      totalLogins: 0,
+      totalLogouts: 0,
+      lastLogin: null,
+      lastLogout: null,
+    };
+
+    stats.forEach((stat) => {
+      if (stat._id === 'LOGIN') {
+        result.totalLogins = stat.count;
+        result.lastLogin = stat.lastActivity;
+      } else if (stat._id === 'LOGOUT') {
+        result.totalLogouts = stat.count;
+        result.lastLogout = stat.lastActivity;
+      }
+    });
+
+    res.status(200).json(result);
+  } catch (error) {
+    logger.error('[admin:getUserActivityStats]', error);
+    res.status(500).json({ message: 'Failed to fetch user activity stats' });
+  }
+};
+
+module.exports = {
+  listUsers,
+  getUser,
+  getUserStats,
+  updateUserRole,
+  deleteUserByAdmin,
+  listUserConversations,
+  listUserMessages,
+  getUserUsage,
+  listUserActivities,
+  getUserActivityStats,
+};

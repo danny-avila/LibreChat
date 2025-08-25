@@ -1,6 +1,6 @@
 const { logger } = require('@librechat/data-schemas');
 const { EToolResources } = require('librechat-data-provider');
-const { File } = require('~/db/models');
+const { File, UserActivityLog } = require('~/db/models');
 
 /**
  * Finds a file by its file_id with additional query options.
@@ -64,6 +64,8 @@ const getToolFilesByIds = async (fileIds, toolResourceSet) => {
 
 /**
  * Creates a new file with a TTL of 1 hour.
+ * Logs user activity if the file is attached to a message.
+ *
  * @param {MongoFile} data - The file data to be created, must contain file_id.
  * @param {boolean} disableTTL - Whether to disable the TTL.
  * @returns {Promise<MongoFile>} A promise that resolves to the created file document.
@@ -78,10 +80,28 @@ const createFile = async (data, disableTTL) => {
     delete fileData.expiresAt;
   }
 
-  return await File.findOneAndUpdate({ file_id: data.file_id }, fileData, {
+  const doc = await File.findOneAndUpdate({ file_id: data.file_id }, fileData, {
     new: true,
     upsert: true,
   }).lean();
+
+  // Log user activity for message attachments
+  try {
+    if (data?.user && data?.context === 'message_attachment') {
+      const { logAndBroadcastActivity } = require('~/server/services/UserActivityService');
+      await logAndBroadcastActivity(data.user, 'ATTACHED FILE', {
+        filename: data.filename,
+        type: data.type,
+        size: data.bytes,
+        context: data.context
+      });
+      logger.info(`[createFile] Logged ATTACHED FILE activity for user ${data.user}`);
+    }
+  } catch (e) {
+    logger.error('[createFile] Failed to log ATTACHED FILE activity:', e);
+  }
+
+  return doc;
 };
 
 /**
