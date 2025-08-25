@@ -51,7 +51,7 @@ const transports: winston.transport[] = [
     zippedArchive: true,
     maxSize: '20m',
     maxFiles: '14d',
-    format: fileFormat,
+    format: winston.format.combine(fileFormat, winston.format.json()),
   }),
 ];
 
