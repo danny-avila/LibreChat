@@ -9,7 +9,8 @@ import type t from 'librechat-data-provider';
 jest.mock('~/hooks/useLocalize', () => () => (key: string) => {
   const mockTranslations: Record<string, string> = {
     com_agents_top_picks: 'Top Picks',
-    com_agents_all: 'All',
+    com_agents_all: 'All Agents',
+    com_agents_all_category: 'All',
     com_ui_no_categories: 'No categories available',
     com_agents_category_tabs_label: 'Agent Categories',
     com_ui_agent_category_general: 'General',

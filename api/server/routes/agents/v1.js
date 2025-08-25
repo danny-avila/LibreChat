@@ -46,7 +46,7 @@ router.use('/tools', tools);
 
 /**
  * Get all agent categories with counts
- * @route GET /agents/marketplace/categories
+ * @route GET /agents/categories
  */
 router.get('/categories', v1.getAgentCategories);
 /**
