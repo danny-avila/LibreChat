@@ -1,4 +1,7 @@
 const { HttpsProxyAgent } = require('https-proxy-agent');
+const { NodeHttpHandler } = require('@aws-sdk/node-http-handler');
+const { BedrockRuntimeClient } = require('@aws-sdk/client-bedrock-runtime');
+
 const { createHandleLLMNewToken } = require('@librechat/api');
 const {
   AuthType,
@@ -69,10 +72,6 @@ const getOptions = async ({ req, overrideModel, endpointOption }) => {
   };
 
   const configOptions = {};
-  if (PROXY) {
-    /** NOTE: NOT SUPPORTED BY BEDROCK */
-    configOptions.httpAgent = new HttpsProxyAgent(PROXY);
-  }
 
   const llmConfig = bedrockOutputParser(
     bedrockInputParser.parse(
@@ -93,6 +92,26 @@ const getOptions = async ({ req, overrideModel, endpointOption }) => {
       handleLLMNewToken: createHandleLLMNewToken(streamRate),
     },
   ];
+
+  if (PROXY) {
+    const proxyAgent = new HttpsProxyAgent(PROXY);
+
+    // Create a custom BedrockRuntimeClient with proxy configuration
+    const customClient = new BedrockRuntimeClient({
+      region: BEDROCK_AWS_DEFAULT_REGION,
+      credentials: credentials,
+      requestHandler: new NodeHttpHandler({
+        httpAgent: proxyAgent,
+        httpsAgent: proxyAgent,
+      }),
+      ...(BEDROCK_REVERSE_PROXY && {
+        endpoint: `https://${BEDROCK_REVERSE_PROXY}`,
+      }),
+    });
+
+    // Pass the pre-configured client to LangChain
+    llmConfig.client = customClient;
+  }
 
   return {
     /** @type {BedrockClientOptions} */
