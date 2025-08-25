@@ -65,8 +65,10 @@
 
 - 🔦 **Agents & Tools Integration**:  
   - **[LibreChat Agents](https://www.librechat.ai/docs/features/agents)**:
-    - No-Code Custom Assistants: Build specialized, AI-driven helpers without coding  
-    - Flexible & Extensible: Use MCP Servers, tools, file search, code execution, and more  
+    - No-Code Custom Assistants: Build specialized, AI-driven helpers
+    - Agent Marketplace: Discover and deploy community-built agents
+    - Collaborative Sharing: Share agents with specific users and groups
+    - Flexible & Extensible: Use MCP Servers, tools, file search, code execution, and more
     - Compatible with Custom Endpoints, OpenAI, Azure, Anthropic, AWS Bedrock, Google, Vertex AI, Responses API, and more
     - [Model Context Protocol (MCP) Support](https://modelcontextprotocol.io/clients#librechat) for Tools
 
