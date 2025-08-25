@@ -62,7 +62,7 @@ export default () => (
   <ScreenshotProvider>
     <App />
     <iframe
-      src="/assets/silence.mp3"
+      src="assets/silence.mp3"
       allow="autoplay"
       id="audio"
       title="audio-silence"
