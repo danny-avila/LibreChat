@@ -110,6 +110,9 @@
 
 - 🗣️ **Speech & Audio**:  
   - Chat hands-free with Speech-to-Text and Text-to-Speech  
+  - Configurable silence detection (1-15 seconds) for natural pauses while speaking
+  - Text accumulation across speech sessions - no more lost words during thinking pauses
+  - Double-click microphone to manually clear accumulated speech text
   - Automatically send and play Audio  
   - Supports OpenAI, Azure OpenAI, and Elevenlabs
 

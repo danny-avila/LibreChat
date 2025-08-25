@@ -409,6 +409,8 @@
   "com_nav_auto_send_text": "Auto send text",
   "com_nav_auto_send_text_disabled": "set -1 to disable",
   "com_nav_auto_transcribe_audio": "Auto transcribe audio",
+  "com_nav_silence_timeout": "Silence timeout",
+  "com_ui_speech_text_cleared": "Speech text cleared",
   "com_nav_automatic_playback": "Autoplay Latest Message",
   "com_nav_balance": "Balance",
   "com_nav_balance_auto_refill_disabled": "Auto-Refill is disabled.",
