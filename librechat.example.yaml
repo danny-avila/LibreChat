@@ -89,6 +89,8 @@ interface:
   bookmarks: true
   multiConvo: true
   agents: true
+  defaultEnabledMcpTools:
+    # - "filesystem" 
   peoplePicker:
     users: true
     groups: true
