@@ -207,4 +207,16 @@ y$ which spans lines`;
     const expected = 'Set $$\\{x | x > \\$0\\}$$ for positive prices';
     expect(preprocessLaTeX(content)).toBe(expected);
   });
+
+  test('does not convert when closing dollar is preceded by backtick', () => {
+    const content = 'The error "invalid $lookup namespace" occurs when using `$lookup` operator';
+    const expected = 'The error "invalid $lookup namespace" occurs when using `$lookup` operator';
+    expect(preprocessLaTeX(content)).toBe(expected);
+  });
+
+  test('handles mixed backtick and non-backtick cases', () => {
+    const content = 'Use $x + y$ in math but `$lookup` in code';
+    const expected = 'Use $$x + y$$ in math but `$lookup` in code';
+    expect(preprocessLaTeX(content)).toBe(expected);
+  });
 });
