@@ -6,6 +6,7 @@ const buildOptions = (endpoint, parsedBody) => {
     modelLabel,
     promptPrefix,
     maxContextTokens,
+    fileTokenLimit,
     resendFiles = anthropicSettings.resendFiles.default,
     promptCache = anthropicSettings.promptCache.default,
     thinking = anthropicSettings.thinking.default,
@@ -29,6 +30,7 @@ const buildOptions = (endpoint, parsedBody) => {
     greeting,
     spec,
     maxContextTokens,
+    fileTokenLimit,
     modelOptions,
   });
 

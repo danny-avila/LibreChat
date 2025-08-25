@@ -101,6 +101,11 @@ jest.mock('~/server/utils', () => ({
   determineFileType: jest.fn(),
 }));
 
+jest.mock('@librechat/api', () => ({
+  parseText: jest.fn(),
+  parseTextNative: jest.fn(),
+}));
+
 // Import the actual processFiles function after all mocks are set up
 const { processFiles } = require('./process');
 const { updateFileUsage } = require('~/models/File');

@@ -2,6 +2,7 @@ export * from './azure';
 export * from './balance';
 export * from './events';
 export * from './error';
+export * from './files';
 export * from './google';
 export * from './http';
 export * from './mistral';
