@@ -1120,6 +1120,7 @@
   "com_ui_select_search_plugin": "Search plugin by name",
   "com_ui_select_search_provider": "Search provider by name",
   "com_ui_select_search_region": "Search region by name",
+  "com_ui_select_or_create_prompt": "Select or Create a Prompt",
   "com_ui_set": "Set",
   "com_ui_share": "Share",
   "com_ui_share_create_message": "Your name and any messages you add after sharing stay private.",
