@@ -1,5 +1,8 @@
 ### node etc ###
 
+# Claude Code config
+CLAUDE.md
+
 # Logs
 data-node
 meili_data*
