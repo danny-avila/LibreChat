@@ -3,7 +3,6 @@ import { QueryKeys } from 'librechat-data-provider';
 import type { ConversationListResponse } from 'librechat-data-provider';
 import type { InfiniteData } from '@tanstack/react-query';
 import type t from 'librechat-data-provider';
-import { updateConvoFieldsInfinite } from '~/utils/convos';
 
 const useUpdateTagsInConvo = () => {
   const queryClient = useQueryClient();
@@ -53,30 +52,31 @@ const useUpdateTagsInConvo = () => {
       QueryKeys.allConversations,
     ]);
 
-    const conversationIdsWithTag = [] as string[];
-
-    // update tag to newTag in all conversations
-    const newData = JSON.parse(JSON.stringify(data)) as InfiniteData<ConversationListResponse>;
-    for (let pageIndex = 0; pageIndex < newData.pages.length; pageIndex++) {
-      const page = newData.pages[pageIndex];
-      page.conversations = page.conversations.map((conversation) => {
-        if (
-          conversation.conversationId &&
-          'tags' in conversation &&
-          Array.isArray((conversation as { tags?: string[] }).tags) &&
-          (conversation as { tags?: string[] }).tags?.includes(tag)
-        ) {
-          (conversation as { tags: string[] }).tags = (conversation as { tags: string[] }).tags.map(
-            (t: string) => (t === tag ? newTag : t),
-          );
-        }
-        return conversation;
-      });
+    if (data) {
+      const newData = JSON.parse(JSON.stringify(data)) as InfiniteData<ConversationListResponse>;
+      for (let pageIndex = 0; pageIndex < newData.pages.length; pageIndex++) {
+        const page = newData.pages[pageIndex];
+        page.conversations = page.conversations.map((conversation) => {
+          if (
+            conversation.conversationId &&
+            'tags' in conversation &&
+            Array.isArray((conversation as { tags?: string[] }).tags) &&
+            (conversation as { tags?: string[] }).tags?.includes(tag)
+          ) {
+            (conversation as { tags: string[] }).tags = (
+              conversation as { tags: string[] }
+            ).tags.map((t: string) => (t === tag ? newTag : t));
+          }
+          return conversation;
+        });
+      }
+      queryClient.setQueryData<InfiniteData<ConversationListResponse>>(
+        [QueryKeys.allConversations],
+        newData,
+      );
     }
-    queryClient.setQueryData<InfiniteData<ConversationListResponse>>(
-      [QueryKeys.allConversations],
-      newData,
-    );
+
+    const conversationIdsWithTag = [] as string[];
 
     // update the tag to newTag from the cache of each conversation
     for (let i = 0; i < conversationIdsWithTag.length; i++) {

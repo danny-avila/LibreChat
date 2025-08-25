@@ -1,4 +1,4 @@
-import { Schema, Document } from 'mongoose';
+import { Schema } from 'mongoose';
 import type { IAgentCategory } from '~/types';
 
 const agentCategorySchema = new Schema<IAgentCategory>(
@@ -30,6 +30,10 @@ const agentCategorySchema = new Schema<IAgentCategory>(
       type: Boolean,
       default: true,
       index: true,
+    },
+    custom: {
+      type: Boolean,
+      default: false,
     },
   },
   {
