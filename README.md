@@ -89,6 +89,7 @@
   - Create, Save, & Share Custom Presets  
   - Switch between AI Endpoints and Presets mid-chat
   - Edit, Resubmit, and Continue Messages with Conversation branching  
+  - Create and share prompts with specific users and groups
   - [Fork Messages & Conversations](https://www.librechat.ai/docs/features/fork) for Advanced Context control
 
 - 💬 **Multimodal & File Interactions**:  
