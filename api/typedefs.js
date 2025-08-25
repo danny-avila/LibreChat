@@ -1116,6 +1116,18 @@
  */
 
 /**
+ * @exports MCPConnection
+ * @typedef {import('@librechat/api').MCPConnection} MCPConnection
+ * @memberof typedefs
+ */
+
+/**
+ * @exports LCFunctionTool
+ * @typedef {import('@librechat/api').LCFunctionTool} LCFunctionTool
+ * @memberof typedefs
+ */
+
+/**
  * @exports FlowStateManager
  * @typedef {import('@librechat/api').FlowStateManager} FlowStateManager
  * @memberof typedefs
@@ -1825,6 +1837,7 @@
  * @param {object} opts - Options for the completion
  * @param {onTokenProgress} opts.onProgress - Callback function to handle token progress
  * @param {AbortController} opts.abortController - AbortController instance
+ * @param {Record<string, Record<string, string>>} [opts.userMCPAuthMap]
  * @returns {Promise<string>}
  * @memberof typedefs
  */

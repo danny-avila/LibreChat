@@ -1,13 +1,8 @@
-import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import { logger } from '@librechat/data-schemas';
-import type { TokenMethods } from '@librechat/data-schemas';
-import type { TUser } from 'librechat-data-provider';
-import type { FlowStateManager } from '~/flow/manager';
-import type { MCPOAuthTokens } from '~/mcp/oauth';
+import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
 import { MCPServersRegistry } from '~/mcp/MCPServersRegistry';
 import { MCPConnection } from './connection';
-import type { RequestBody } from '~/types';
 import type * as t from './types';
 
 /**
@@ -44,8 +39,9 @@ export abstract class UserConnectionManager {
 
   /** Gets or creates a connection for a specific user */
   public async getUserConnection({
-    user,
     serverName,
+    forceNew,
+    user,
     flowManager,
     customUserVars,
     requestBody,
@@ -54,25 +50,18 @@ export abstract class UserConnectionManager {
     oauthEnd,
     signal,
     returnOnOAuth = false,
+    connectionTimeout,
   }: {
-    user: TUser;
     serverName: string;
-    flowManager: FlowStateManager<MCPOAuthTokens | null>;
-    customUserVars?: Record<string, string>;
-    requestBody?: RequestBody;
-    tokenMethods?: TokenMethods;
-    oauthStart?: (authURL: string) => Promise<void>;
-    oauthEnd?: () => Promise<void>;
-    signal?: AbortSignal;
-    returnOnOAuth?: boolean;
-  }): Promise<MCPConnection> {
+    forceNew?: boolean;
+  } & Omit<t.OAuthConnectionOptions, 'useOAuth'>): Promise<MCPConnection> {
     const userId = user.id;
     if (!userId) {
       throw new McpError(ErrorCode.InvalidRequest, `[MCP] User object missing id property`);
     }
 
     const userServerMap = this.userConnections.get(userId);
-    let connection = userServerMap?.get(serverName);
+    let connection = forceNew ? undefined : userServerMap?.get(serverName);
     const now = Date.now();
 
     // Check if user is idle
@@ -131,6 +120,7 @@ export abstract class UserConnectionManager {
           oauthEnd: oauthEnd,
           returnOnOAuth: returnOnOAuth,
           requestBody: requestBody,
+          connectionTimeout: connectionTimeout,
         },
       );
 
