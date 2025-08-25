@@ -88,10 +88,12 @@ const createFile = async (data, disableTTL) => {
   // Log user activity for message attachments
   try {
     if (data?.user && data?.context === 'message_attachment') {
-      await UserActivityLog.create({
-        user: data.user,
-        action: 'ATTACHED FILE',
-        timestamp: new Date(),
+      const { logAndBroadcastActivity } = require('~/server/services/UserActivityService');
+      await logAndBroadcastActivity(data.user, 'ATTACHED FILE', {
+        filename: data.filename,
+        type: data.type,
+        size: data.bytes,
+        context: data.context
       });
       logger.info(`[createFile] Logged ATTACHED FILE activity for user ${data.user}`);
     }

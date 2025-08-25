@@ -35,7 +35,7 @@ router.get('/my-activity', requireJwtAuth, checkAdmin, async (req, res) => {
  * GET /api/user-activity/stream
  * Real-time activity stream using Server-Sent Events
  */
-router.get('/stream', requireJwtAuth, checkAdmin, (req, res) => {
+router.get('/stream', requireJwtAuth, checkAdmin, async (req, res) => {
   // Set headers for Server-Sent Events
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
@@ -58,7 +58,7 @@ router.get('/stream', requireJwtAuth, checkAdmin, (req, res) => {
   const clientId = `client_${Date.now()}_${Math.random()}`;
   
   if (userActivityService && userActivityService.addClient) {
-    userActivityService.addClient(clientId, res, req.user.role || 'USER');
+    await userActivityService.addClient(clientId, res, req.user.role || 'USER');
   }
 
   // Handle client disconnect

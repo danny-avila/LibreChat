@@ -12,7 +12,7 @@ class UserActivityService {
   /**
    * Add a client for real-time updates
    */
-  addClient(clientId, res, userRole = 'USER') {
+  async addClient(clientId, res, userRole = 'USER') {
     this.clients.set(clientId, {
       response: res,
       role: userRole,
@@ -26,13 +26,44 @@ class UserActivityService {
       timestamp: new Date()
     });
 
-    // Send recent activity buffer
-    if (this.activityBuffer.length > 0) {
-      this.sendToClient(clientId, {
-        type: 'initial_data',
-        data: this.activityBuffer.slice(-10), // Send last 10 activities
-        timestamp: new Date()
-      });
+    // Send all historical activity logs for admin users
+    if (userRole === 'ADMIN') {
+      try {
+        // Fetch all activity logs from database, sorted by timestamp (newest first)
+        const allActivities = await UserActivityLog.find({})
+          .sort({ timestamp: -1 })
+          .limit(1000) // Limit to last 1000 activities to prevent overwhelming
+          .lean();
+
+        if (allActivities.length > 0) {
+          this.sendToClient(clientId, {
+            type: 'historical_data',
+            data: allActivities,
+            count: allActivities.length,
+            message: `Loaded ${allActivities.length} historical activities`,
+            timestamp: new Date()
+          });
+        }
+      } catch (error) {
+        logger.error(`[UserActivityService] Failed to load historical data for client ${clientId}:`, error);
+        // Fallback to buffer data
+        if (this.activityBuffer.length > 0) {
+          this.sendToClient(clientId, {
+            type: 'initial_data',
+            data: this.activityBuffer.slice(-10),
+            timestamp: new Date()
+          });
+        }
+      }
+    } else {
+      // For non-admin users, send recent buffer only
+      if (this.activityBuffer.length > 0) {
+        this.sendToClient(clientId, {
+          type: 'initial_data',
+          data: this.activityBuffer.slice(-10),
+          timestamp: new Date()
+        });
+      }
     }
 
     logger.info(`[UserActivityService] Client ${clientId} connected for real-time updates`);
