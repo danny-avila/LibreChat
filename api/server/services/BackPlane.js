@@ -1,71 +1,64 @@
-
+const Redis = require('ioredis');
 const { logger } = require('~/config');
 
-let Redis;
-try {
-  Redis = require('ioredis');
-} catch {
-  // If ioredis is not installed, we degrade gracefully.
-  Redis = null;
-}
+let publisher;
+let subscriber;
 
-const CHANNEL = process.env.REDIS_CHANNEL || 'ua:activity';
-const REDIS_URL = process.env.REDIS_URL || null;
+/**
+ * Initialize Redis subscriber.
+ * Provide a callback that will be called
+ * whenever an activity event is received from another instance.
+ */
+function initSubscriber(onMessage) {
+  const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
 
-// Unique id to avoid echoing our own messages
-const instanceId = `${process.pid}-${Math.random().toString(36).slice(2)}`;
+  if (!subscriber) {
+    subscriber = new Redis(redisUrl);
 
-let pub = null;
-let sub = null;
-let onActivity = null;
-
-function initRedisIfNeeded() {
-  if (!REDIS_URL || !Redis) return false;
-  if (!pub) {
-    pub = new Redis(REDIS_URL);
-    pub.on('error', (e) => logger.error('[Backplane] Redis pub error:', e));
-  }
-  if (!sub) {
-    sub = new Redis(REDIS_URL);
-    sub.on('error', (e) => logger.error('[Backplane] Redis sub error:', e));
-    sub.subscribe(CHANNEL, (err) => {
-      if (err) logger.error('[Backplane] Failed to subscribe:', err);
-      else logger.info(`[Backplane] Subscribed to ${CHANNEL}`);
+    subscriber.subscribe('user-activity', (err, count) => {
+      if (err) {
+        logger.error('[BackPlane] Failed to subscribe to user-activity:', err);
+      } else {
+        logger.info(`[BackPlane] Subscribed to user-activity channel (count=${count})`);
+      }
     });
-    sub.on('message', (_channel, message) => {
+
+    subscriber.on('message', (channel, message) => {
+      if (channel !== 'user-activity') return;
       try {
-        const { sourceId, payload } = JSON.parse(message);
-        if (sourceId === instanceId) return; // ignore echoes
-        if (onActivity) onActivity(payload);
+        const parsed = JSON.parse(message);
+        logger.debug('[BackPlane] Received cross-instance activity:', parsed);
+        onMessage?.(parsed);
       } catch (e) {
-        logger.error('[Backplane] Failed to parse message:', e);
+        logger.error('[BackPlane] Failed to parse message:', e);
       }
     });
   }
-  return true;
-}
 
-function initSubscriber(cb) {
-  onActivity = cb;
-  const ok = initRedisIfNeeded();
-  if (!ok) {
-    logger.warn('[Backplane] Redis not configured (set REDIS_URL). Running without cross-instance streaming.');
+  if (!publisher) {
+    publisher = new Redis(redisUrl);
   }
 }
 
-async function publishActivity(payload) {
-  const ok = initRedisIfNeeded();
-  if (!ok) return; // no-op if Redis not configured
+/**
+ * Publish an activity to Redis so all instances can see it.
+ */
+async function publishActivity(activityData) {
   try {
-    const msg = JSON.stringify({ sourceId: instanceId, payload });
-    await pub.publish(CHANNEL, msg);
+    if (!publisher) {
+      const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
+      publisher = new Redis(redisUrl);
+    }
+    await publisher.publish('user-activity', JSON.stringify(activityData));
+    logger.debug('[BackPlane] Published activity to Redis');
   } catch (e) {
-    logger.error('[Backplane] Publish failed:', e);
+    logger.error('[BackPlane] Failed to publish activity:', e);
   }
 }
 
 module.exports = {
   initSubscriber,
   publishActivity,
-  instanceId,
 };
+
+

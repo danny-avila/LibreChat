@@ -1,27 +1,27 @@
-// ~/server/services/UserActivityService.js
 const { logger } = require('~/config');
 const { User, UserActivityLog } = require('~/db/models');
 const { getTokenUsageForModelChange, fetchActivityLogs } = require('~/server/controllers/UserActivityController');
-// NEW: backplane
 const { initSubscriber, publishActivity } = require('~/server/services/BackPlane');
 
 class UserActivityService {
   constructor() {
-    this.clients = new Map();
-    this.activityBuffer = [];
+    this.clients = new Map();       // Connected SSE clients
+    this.activityBuffer = [];       // Local buffer of activities
     this.maxBufferSize = 100;
 
-    // Listen for cross-instance events via Redis (if configured)
+    // Listen for Redis pub/sub events (cross-server)
     initSubscriber(async (activityData) => {
       try {
-        // Rebroadcast to our connected SSE clients
-        await this.broadcastActivity(activityData);
+        await this.broadcastActivity(activityData, false); // fromRedis = false
       } catch (e) {
-        logger.error('[UserActivityService] Backplane rebroadcast failed:', e);
+        logger.error('[UserActivityService] Redis rebroadcast failed:', e);
       }
     });
   }
 
+  /**
+   * Register a new SSE client
+   */
   async addClient(clientId, res, userRole = 'USER', options = {}) {
     this.clients.set(clientId, {
       response: res,
@@ -30,13 +30,17 @@ class UserActivityService {
       options
     });
 
+    // Send initial snapshot
     try {
       const { logs, pagination } = await fetchActivityLogs(options);
       this.sendToClient(clientId, { success: true, data: { logs, pagination } });
     } catch (err) {
       logger.error(`[UserActivityService] Failed initial snapshot for ${clientId}:`, err);
       const logs = this.activityBuffer.slice(-10);
-      const pagination = { currentPage: 1, totalPages: 1, totalCount: logs.length, hasNext: false, hasPrev: false };
+      const pagination = {
+        currentPage: 1, totalPages: 1,
+        totalCount: logs.length, hasNext: false, hasPrev: false
+      };
       this.sendToClient(clientId, { success: true, data: { logs, pagination } });
     }
 
@@ -61,7 +65,12 @@ class UserActivityService {
     }
   }
 
-  async broadcastActivity(activityData) {
+  /**
+   * Broadcast an activity to local SSE clients
+   * @param {*} activityData
+   * @param {boolean} fromLocal - true if originated locally, false if from Redis
+   */
+  async broadcastActivity(activityData, fromLocal = true) {
     try {
       this.activityBuffer.push(activityData);
       if (this.activityBuffer.length > this.maxBufferSize) this.activityBuffer.shift();
@@ -105,11 +114,8 @@ class UserActivityService {
           data: {
             logs: [enrichedLog],
             pagination: {
-              currentPage: 1,
-              totalPages: 1,
-              totalCount: 1,
-              hasNext: false,
-              hasPrev: false
+              currentPage: 1, totalPages: 1,
+              totalCount: 1, hasNext: false, hasPrev: false
             }
           }
         };
@@ -117,7 +123,7 @@ class UserActivityService {
         this.sendToClient(clientId, payload);
       }
 
-      logger.debug(`[UserActivityService] Broadcasted activity to ${this.clients.size} clients`);
+      logger.debug(`[UserActivityService] Broadcasted ${fromLocal ? 'local' : 'Redis'} activity to ${this.clients.size} clients`);
     } catch (error) {
       logger.error('[UserActivityService] Failed to broadcast activity:', error);
     }
@@ -129,7 +135,7 @@ class UserActivityService {
 
   cleanupInactiveClients() {
     const now = new Date();
-    const timeout = 5 * 60 * 1000;
+    const timeout = 5 * 60 * 1000; // 5 min
     for (const [clientId, client] of this.clients) {
       if (now - client.connectedAt > timeout) this.removeClient(clientId);
     }
@@ -151,10 +157,11 @@ class UserActivityService {
 
 const userActivityService = new UserActivityService();
 
+// Periodic maintenance
 setInterval(() => userActivityService.cleanupInactiveClients(), 5 * 60 * 1000);
 setInterval(() => userActivityService.sendHeartbeat(), 30 * 1000);
 
-// Publish to Redis in addition to local broadcast
+// Log + broadcast + publish
 const logAndBroadcastActivity = async (userId, action, details = null) => {
   try {
     const activityLog = await UserActivityLog.create({
@@ -175,9 +182,9 @@ const logAndBroadcastActivity = async (userId, action, details = null) => {
       __v: activityLog.__v
     };
 
-    // Local clients
-    await userActivityService.broadcastActivity(payload);
-    // Cross-instance clients
+    // Local broadcast
+    await userActivityService.broadcastActivity(payload, true);
+    // Cross-server broadcast
     await publishActivity(payload);
 
     return activityLog;

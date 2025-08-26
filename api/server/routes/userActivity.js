@@ -1,54 +1,35 @@
-
 const express = require('express');
 const { requireJwtAuth, checkAdmin } = require('~/server/middleware');
-// const { SystemRoles } = require('librechat-data-provider'); // optional; not strictly needed
-const {
-  getUserActivityLogs,
-  getUserActivitySummary
-} = require('~/server/controllers/UserActivityController');
+const sseAuthBridge = require('~/server/middleware/sseAuthBridge');
 const { userActivityService } = require('~/server/services/UserActivityService');
+const { getUserActivityLogs, getUserActivitySummary } = require('~/server/controllers/UserActivityController');
 
 const router = express.Router();
-const sseAuthBridge = require('~/server/middleware/sseAuthBridge');
 
-/**
- * GET /api/user-activity/logs
- * Query: page, limit, userId, action, startDate, endDate, includeTokenUsage, all
- */
+// GET logs (HTTP)
 router.get('/logs', requireJwtAuth, checkAdmin, getUserActivityLogs);
+router.get('/summary', requireJwtAuth, checkAdmin, getUserActivitySummary);
 
-/**
- * GET /api/user-activity/user/:userId
- * Query: timeframe (24h, 7d, 30d)
- */
-router.get('/user/:userId', requireJwtAuth, checkAdmin, getUserActivitySummary);
-
-/**
- * GET /api/user-activity/my-activity
- */
-router.get('/my-activity', requireJwtAuth, checkAdmin, async (req, res) => {
-  req.params.userId = req.user.id;
-  return getUserActivitySummary(req, res);
-});
-
-/**
- * GET /api/user-activity/stream  (Server-Sent Events)
- * Query: page, limit, userId, action, startDate, endDate, includeTokenUsage, all
- * Sends initial snapshot identical to /logs, then realtime single-item frames (same shape).
- */
-router.get('/stream',sseAuthBridge, requireJwtAuth, checkAdmin, async (req, res) => {
-  // SSE headers
+// GET SSE stream
+router.get('/stream', sseAuthBridge, requireJwtAuth, checkAdmin, async (req, res) => {
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache',
     'Connection': 'keep-alive',
-    'Access-Control-Allow-Origin': '*'
+    'Access-Control-Allow-Origin': 'http://localhost:3090', // your frontend origin
+    'Access-Control-Allow-Credentials': 'true',
   });
+  res.flushHeaders?.();
+
+  // Allow query ?token=
+  const tokenFromQuery = req.query.token;
+  if (tokenFromQuery) {
+    req.headers.authorization = `Bearer ${tokenFromQuery}`;
+  }
 
   const clientId = `client_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-  const role = req.user?.role || 'ADMIN'; // router is already admin-gated
+  const role = req.user?.role || 'ADMIN';
 
-  // mirror /logs query params + optional 'all'
   const {
     page, limit, userId, action, startDate, endDate, includeTokenUsage, all
   } = req.query;
