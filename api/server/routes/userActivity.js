@@ -1,30 +1,30 @@
+
 const express = require('express');
 const { requireJwtAuth, checkAdmin } = require('~/server/middleware');
-const { SystemRoles } = require('librechat-data-provider');
+// const { SystemRoles } = require('librechat-data-provider'); // optional; not strictly needed
 const {
   getUserActivityLogs,
   getUserActivitySummary
 } = require('~/server/controllers/UserActivityController');
+const { userActivityService } = require('~/server/services/UserActivityService');
 
 const router = express.Router();
+const sseAuthBridge = require('~/server/middleware/sseAuthBridge');
 
 /**
  * GET /api/user-activity/logs
- * Get paginated user activity logs with token usage data
- * Query params: page, limit, userId, action, startDate, endDate, includeTokenUsage
+ * Query: page, limit, userId, action, startDate, endDate, includeTokenUsage, all
  */
 router.get('/logs', requireJwtAuth, checkAdmin, getUserActivityLogs);
 
 /**
  * GET /api/user-activity/user/:userId
- * Get activity summary for a specific user
- * Query params: timeframe (24h, 7d, 30d)
+ * Query: timeframe (24h, 7d, 30d)
  */
 router.get('/user/:userId', requireJwtAuth, checkAdmin, getUserActivitySummary);
 
 /**
  * GET /api/user-activity/my-activity
- * Get current user's own activity summary (ADMIN ONLY)
  */
 router.get('/my-activity', requireJwtAuth, checkAdmin, async (req, res) => {
   req.params.userId = req.user.id;
@@ -32,49 +32,43 @@ router.get('/my-activity', requireJwtAuth, checkAdmin, async (req, res) => {
 });
 
 /**
- * GET /api/user-activity/stream
- * Real-time activity stream using Server-Sent Events
+ * GET /api/user-activity/stream  (Server-Sent Events)
+ * Query: page, limit, userId, action, startDate, endDate, includeTokenUsage, all
+ * Sends initial snapshot identical to /logs, then realtime single-item frames (same shape).
  */
-router.get('/stream', requireJwtAuth, checkAdmin, async (req, res) => {
-  // Set headers for Server-Sent Events
+router.get('/stream',sseAuthBridge, requireJwtAuth, checkAdmin, async (req, res) => {
+  // SSE headers
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache',
     'Connection': 'keep-alive',
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'Cache-Control'
+    'Access-Control-Allow-Origin': '*'
   });
 
-  // Send initial connection message
-  res.write('data: {"type":"connected","message":"Real-time activity stream connected"}\n\n');
+  const clientId = `client_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+  const role = req.user?.role || 'ADMIN'; // router is already admin-gated
 
-  // Keep connection alive with periodic heartbeat
-  const heartbeat = setInterval(() => {
-    res.write('data: {"type":"heartbeat","timestamp":"' + new Date().toISOString() + '"}\n\n');
-  }, 30000); // Send heartbeat every 30 seconds
+  // mirror /logs query params + optional 'all'
+  const {
+    page, limit, userId, action, startDate, endDate, includeTokenUsage, all
+  } = req.query;
 
-  // Add client to UserActivityService for real-time updates
-  const { userActivityService } = require('~/server/services/UserActivityService');
-  const clientId = `client_${Date.now()}_${Math.random()}`;
-  
-  if (userActivityService && userActivityService.addClient) {
-    await userActivityService.addClient(clientId, res, req.user.role || 'USER');
-  }
+  const options = {
+    ...(page ? { page } : {}),
+    ...(limit ? { limit } : {}),
+    ...(userId ? { userId } : {}),
+    ...(action ? { action } : {}),
+    ...(startDate ? { startDate } : {}),
+    ...(endDate ? { endDate } : {}),
+    ...(includeTokenUsage !== undefined ? { includeTokenUsage } : {}),
+    ...(all !== undefined ? { all } : {})
+  };
 
-  // Handle client disconnect
-  req.on('close', () => {
-    clearInterval(heartbeat);
-    if (userActivityService && userActivityService.removeClient) {
-      userActivityService.removeClient(clientId);
-    }
-  });
+  await userActivityService.addClient(clientId, res, role, options);
 
-  req.on('error', () => {
-    clearInterval(heartbeat);
-    if (userActivityService && userActivityService.removeClient) {
-      userActivityService.removeClient(clientId);
-    }
-  });
+  const cleanup = () => userActivityService.removeClient(clientId);
+  req.on('close', cleanup);
+  req.on('error', cleanup);
 });
 
 module.exports = router;

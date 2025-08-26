@@ -1,77 +1,48 @@
+// ~/server/services/UserActivityService.js
 const { logger } = require('~/config');
-const { UserActivityLog } = require('~/db/models');
-const { getTokenUsageForModelChange } = require('~/server/controllers/UserActivityController');
+const { User, UserActivityLog } = require('~/db/models');
+const { getTokenUsageForModelChange, fetchActivityLogs } = require('~/server/controllers/UserActivityController');
+// NEW: backplane
+const { initSubscriber, publishActivity } = require('~/server/services/BackPlane');
 
 class UserActivityService {
   constructor() {
-    this.clients = new Map(); // Store connected clients
-    this.activityBuffer = []; // Buffer for recent activities
+    this.clients = new Map();
+    this.activityBuffer = [];
     this.maxBufferSize = 100;
+
+    // Listen for cross-instance events via Redis (if configured)
+    initSubscriber(async (activityData) => {
+      try {
+        // Rebroadcast to our connected SSE clients
+        await this.broadcastActivity(activityData);
+      } catch (e) {
+        logger.error('[UserActivityService] Backplane rebroadcast failed:', e);
+      }
+    });
   }
 
-  /**
-   * Add a client for real-time updates
-   */
-  async addClient(clientId, res, userRole = 'USER') {
+  async addClient(clientId, res, userRole = 'USER', options = {}) {
     this.clients.set(clientId, {
       response: res,
       role: userRole,
-      connectedAt: new Date()
+      connectedAt: new Date(),
+      options
     });
 
-    // Send initial connection confirmation
-    this.sendToClient(clientId, {
-      type: 'connection',
-      message: 'Connected to user activity stream',
-      timestamp: new Date()
-    });
-
-    // Send all historical activity logs for admin users
-    if (userRole === 'ADMIN') {
-      try {
-        // Fetch all activity logs from database, sorted by timestamp (newest first)
-        const allActivities = await UserActivityLog.find({})
-          .sort({ timestamp: -1 })
-          .limit(1000) // Limit to last 1000 activities to prevent overwhelming
-          .lean();
-
-        if (allActivities.length > 0) {
-          this.sendToClient(clientId, {
-            type: 'historical_data',
-            data: allActivities,
-            count: allActivities.length,
-            message: `Loaded ${allActivities.length} historical activities`,
-            timestamp: new Date()
-          });
-        }
-      } catch (error) {
-        logger.error(`[UserActivityService] Failed to load historical data for client ${clientId}:`, error);
-        // Fallback to buffer data
-        if (this.activityBuffer.length > 0) {
-          this.sendToClient(clientId, {
-            type: 'initial_data',
-            data: this.activityBuffer.slice(-10),
-            timestamp: new Date()
-          });
-        }
-      }
-    } else {
-      // For non-admin users, send recent buffer only
-      if (this.activityBuffer.length > 0) {
-        this.sendToClient(clientId, {
-          type: 'initial_data',
-          data: this.activityBuffer.slice(-10),
-          timestamp: new Date()
-        });
-      }
+    try {
+      const { logs, pagination } = await fetchActivityLogs(options);
+      this.sendToClient(clientId, { success: true, data: { logs, pagination } });
+    } catch (err) {
+      logger.error(`[UserActivityService] Failed initial snapshot for ${clientId}:`, err);
+      const logs = this.activityBuffer.slice(-10);
+      const pagination = { currentPage: 1, totalPages: 1, totalCount: logs.length, hasNext: false, hasPrev: false };
+      this.sendToClient(clientId, { success: true, data: { logs, pagination } });
     }
 
-    logger.info(`[UserActivityService] Client ${clientId} connected for real-time updates`);
+    logger.info(`[UserActivityService] Client ${clientId} connected (role=${userRole})`);
   }
 
-  /**
-   * Remove a client
-   */
   removeClient(clientId) {
     if (this.clients.has(clientId)) {
       this.clients.delete(clientId);
@@ -79,57 +50,71 @@ class UserActivityService {
     }
   }
 
-  /**
-   * Send data to a specific client
-   */
-  sendToClient(clientId, data) {
+  sendToClient(clientId, payload) {
     const client = this.clients.get(clientId);
-    if (client && client.response) {
-      try {
-        client.response.write(`data: ${JSON.stringify(data)}\n\n`);
-      } catch (error) {
-        logger.error(`[UserActivityService] Failed to send to client ${clientId}:`, error);
-        this.removeClient(clientId);
-      }
+    if (!client || !client.response) return;
+    try {
+      client.response.write(`data: ${JSON.stringify(payload)}\n\n`);
+    } catch (error) {
+      logger.error(`[UserActivityService] Failed to send to client ${clientId}:`, error);
+      this.removeClient(clientId);
     }
   }
 
-  /**
-   * Broadcast activity to all connected clients
-   */
   async broadcastActivity(activityData) {
     try {
-      // Add to buffer
       this.activityBuffer.push(activityData);
-      if (this.activityBuffer.length > this.maxBufferSize) {
-        this.activityBuffer.shift(); // Remove oldest
-      }
+      if (this.activityBuffer.length > this.maxBufferSize) this.activityBuffer.shift();
 
-      // Enrich with token usage if it's a model change
-      let enrichedData = { ...activityData };
-      if (activityData.action === 'MODEL CHANGED' && activityData.details?.conversationId) {
-        const tokenStats = await getTokenUsageForModelChange(
+      const userInfo = await User.findById(activityData.user)
+        .select('name email username avatar role')
+        .lean();
+
+      const isModelChange = ['MODEL CHANGED', 'MODEL CHNAGED'].includes(activityData.action)
+        && activityData.details?.conversationId;
+
+      const anyWantsToken = Array.from(this.clients.values())
+        .some(c => c.role === 'ADMIN' && (`${c.options?.includeTokenUsage ?? 'true'}` === 'true'));
+
+      let precomputedTokenUsage = null;
+      if (isModelChange && anyWantsToken) {
+        precomputedTokenUsage = await getTokenUsageForModelChange(
           activityData.user,
           activityData.details.conversationId,
           activityData.details.fromModel,
           activityData.details.toModel,
           activityData.timestamp
         );
-        enrichedData.tokenUsage = tokenStats;
       }
 
-      // Broadcast to all connected clients
-      const broadcastData = {
-        type: 'activity_update',
-        data: enrichedData,
-        timestamp: new Date()
-      };
-
       for (const [clientId, client] of this.clients) {
-        // Only send to admin users for now (can be customized)
-        if (client.role === 'ADMIN') {
-          this.sendToClient(clientId, broadcastData);
-        }
+        if (client.role !== 'ADMIN') continue;
+
+        const includeTokenUsage = `${client.options?.includeTokenUsage ?? 'true'}` === 'true';
+
+        const enrichedLog = {
+          ...activityData,
+          userInfo,
+          tokenUsage: (includeTokenUsage && precomputedTokenUsage)
+            ? { ...activityData.details, ...precomputedTokenUsage }
+            : (['MODEL CHANGED', 'MODEL CHNAGED'].includes(activityData.action) ? activityData.details : null),
+        };
+
+        const payload = {
+          success: true,
+          data: {
+            logs: [enrichedLog],
+            pagination: {
+              currentPage: 1,
+              totalPages: 1,
+              totalCount: 1,
+              hasNext: false,
+              hasPrev: false
+            }
+          }
+        };
+
+        this.sendToClient(clientId, payload);
       }
 
       logger.debug(`[UserActivityService] Broadcasted activity to ${this.clients.size} clients`);
@@ -138,59 +123,38 @@ class UserActivityService {
     }
   }
 
-  /**
-   * Get connected clients count
-   */
   getConnectedClientsCount() {
     return this.clients.size;
   }
 
-  /**
-   * Clean up inactive clients
-   */
   cleanupInactiveClients() {
     const now = new Date();
-    const timeout = 5 * 60 * 1000; // 5 minutes
-
+    const timeout = 5 * 60 * 1000;
     for (const [clientId, client] of this.clients) {
-      if (now - client.connectedAt > timeout) {
-        this.removeClient(clientId);
-      }
+      if (now - client.connectedAt > timeout) this.removeClient(clientId);
     }
   }
 
-  /**
-   * Send periodic heartbeat to maintain connections
-   */
   sendHeartbeat() {
-    const heartbeatData = {
-      type: 'heartbeat',
-      timestamp: new Date(),
-      connectedClients: this.clients.size
+    const payload = {
+      success: true,
+      data: {
+        logs: [],
+        pagination: { currentPage: 1, totalPages: 1, totalCount: 0, hasNext: false, hasPrev: false }
+      }
     };
-
     for (const [clientId] of this.clients) {
-      this.sendToClient(clientId, heartbeatData);
+      this.sendToClient(clientId, payload);
     }
   }
 }
 
-// Singleton instance
 const userActivityService = new UserActivityService();
 
-// Cleanup inactive clients every 5 minutes
-setInterval(() => {
-  userActivityService.cleanupInactiveClients();
-}, 5 * 60 * 1000);
+setInterval(() => userActivityService.cleanupInactiveClients(), 5 * 60 * 1000);
+setInterval(() => userActivityService.sendHeartbeat(), 30 * 1000);
 
-// Send heartbeat every 30 seconds
-setInterval(() => {
-  userActivityService.sendHeartbeat();
-}, 30 * 1000);
-
-/**
- * Middleware to log user activity and broadcast in real-time
- */
+// Publish to Redis in addition to local broadcast
 const logAndBroadcastActivity = async (userId, action, details = null) => {
   try {
     const activityLog = await UserActivityLog.create({
@@ -200,14 +164,21 @@ const logAndBroadcastActivity = async (userId, action, details = null) => {
       details
     });
 
-    // Broadcast to connected clients
-    await userActivityService.broadcastActivity({
+    const payload = {
       _id: activityLog._id,
       user: userId,
       action,
       timestamp: activityLog.timestamp,
-      details
-    });
+      details,
+      createdAt: activityLog.createdAt,
+      updatedAt: activityLog.updatedAt,
+      __v: activityLog.__v
+    };
+
+    // Local clients
+    await userActivityService.broadcastActivity(payload);
+    // Cross-instance clients
+    await publishActivity(payload);
 
     return activityLog;
   } catch (error) {

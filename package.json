@@ -143,5 +143,8 @@
       "admin/",
       "packages/"
     ]
+  },
+  "dependencies": {
+    "ioredis": "^5.7.0"
   }
 }
