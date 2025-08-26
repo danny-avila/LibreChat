@@ -557,6 +557,14 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
     );
     const { file_id, temp_file_id = null } = metadata;
 
+    let ocrResult;
+    try {
+      ocrResult = await uploadOCR({ req, file, loadAuthValues });
+    } catch (error) {
+      logger.error('[OCR Debug] Error during OCR processing:', error);
+      throw new Error(`OCR processing failed: ${error.message}`);
+    }
+
     const {
       text,
       bytes,
@@ -564,7 +572,7 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
       images: _i,
       filename,
       filepath: ocrFileURL,
-    } = await uploadOCR({ req, file, loadAuthValues });
+    } = ocrResult;
 
     const fileInfo = removeNullishValues({
       text,
