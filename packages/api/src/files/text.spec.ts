@@ -5,6 +5,7 @@ import { Readable } from 'stream';
 jest.mock('fs', () => ({
   readFileSync: jest.fn(),
   createReadStream: jest.fn(),
+  existsSync: jest.fn(),
 }));
 
 jest.mock('../crypto/jwt', () => ({
