@@ -207,4 +207,36 @@ y$ which spans lines`;
     const expected = 'Set $$\\{x | x > \\$0\\}$$ for positive prices';
     expect(preprocessLaTeX(content)).toBe(expected);
   });
+
+  test('does not convert when closing dollar is preceded by backtick', () => {
+    const content = 'The error "invalid $lookup namespace" occurs when using `$lookup` operator';
+    const expected = 'The error "invalid $lookup namespace" occurs when using `$lookup` operator';
+    expect(preprocessLaTeX(content)).toBe(expected);
+  });
+
+  test('handles mixed backtick and non-backtick cases', () => {
+    const content = 'Use $x + y$ in math but `$lookup` in code';
+    const expected = 'Use $$x + y$$ in math but `$lookup` in code';
+    expect(preprocessLaTeX(content)).toBe(expected);
+  });
+
+  test('escapes currency amounts without commas', () => {
+    const content =
+      'The total amount invested is $1157.90 (existing amount) + $500 (new investment) = $1657.90.';
+    const expected =
+      'The total amount invested is \\$1157.90 (existing amount) + \\$500 (new investment) = \\$1657.90.';
+    expect(preprocessLaTeX(content)).toBe(expected);
+  });
+
+  test('handles large currency amounts', () => {
+    const content = 'You can win $1000000 or even $9999999.99!';
+    const expected = 'You can win \\$1000000 or even \\$9999999.99!';
+    expect(preprocessLaTeX(content)).toBe(expected);
+  });
+
+  test('escapes currency with many decimal places', () => {
+    const content = 'Bitcoin: $0.00001234, Gas: $3.999, Rate: $1.234567890';
+    const expected = 'Bitcoin: \\$0.00001234, Gas: \\$3.999, Rate: \\$1.234567890';
+    expect(preprocessLaTeX(content)).toBe(expected);
+  });
 });

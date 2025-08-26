@@ -65,8 +65,10 @@
 
 - 🔦 **Agents & Tools Integration**:  
   - **[LibreChat Agents](https://www.librechat.ai/docs/features/agents)**:
-    - No-Code Custom Assistants: Build specialized, AI-driven helpers without coding  
-    - Flexible & Extensible: Use MCP Servers, tools, file search, code execution, and more  
+    - No-Code Custom Assistants: Build specialized, AI-driven helpers
+    - Agent Marketplace: Discover and deploy community-built agents
+    - Collaborative Sharing: Share agents with specific users and groups
+    - Flexible & Extensible: Use MCP Servers, tools, file search, code execution, and more
     - Compatible with Custom Endpoints, OpenAI, Azure, Anthropic, AWS Bedrock, Google, Vertex AI, Responses API, and more
     - [Model Context Protocol (MCP) Support](https://modelcontextprotocol.io/clients#librechat) for Tools
 
@@ -87,15 +89,18 @@
   - Create, Save, & Share Custom Presets  
   - Switch between AI Endpoints and Presets mid-chat
   - Edit, Resubmit, and Continue Messages with Conversation branching  
+  - Create and share prompts with specific users and groups
   - [Fork Messages & Conversations](https://www.librechat.ai/docs/features/fork) for Advanced Context control
 
 - 💬 **Multimodal & File Interactions**:  
   - Upload and analyze images with Claude 3, GPT-4.5, GPT-4o, o1, Llama-Vision, and Gemini 📸  
   - Chat with Files using Custom Endpoints, OpenAI, Azure, Anthropic, AWS Bedrock, & Google 🗃️
 
-- 🌎 **Multilingual UI**:  
-  - English, 中文, Deutsch, Español, Français, Italiano, Polski, Português Brasileiro
-  - Русский, 日本語, Svenska, 한국어, Tiếng Việt, 繁體中文, العربية, Türkçe, Nederlands, עברית
+- 🌎 **Multilingual UI**:
+  - English, 中文 (简体), 中文 (繁體), العربية, Deutsch, Español, Français, Italiano
+  - Polski, Português (PT), Português (BR), Русский, 日本語, Svenska, 한국어, Tiếng Việt
+  - Türkçe, Nederlands, עברית, Català, Čeština, Dansk, Eesti, فارسی
+  - Suomi, Magyar, Հայերեն, Bahasa Indonesia, ქართული, Latviešu, ไทย, ئۇيغۇرچە
 
 - 🧠 **Reasoning UI**:  
   - Dynamic Reasoning UI for Chain-of-Thought/Reasoning AI models like DeepSeek-R1
