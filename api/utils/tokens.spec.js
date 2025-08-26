@@ -1,5 +1,12 @@
 const { EModelEndpoint } = require('librechat-data-provider');
-const { getModelMaxTokens, processModelData, matchModelName, maxTokensMap } = require('./tokens');
+const {
+  getModelMaxTokens,
+  processModelData,
+  matchModelName,
+  maxTokensMap,
+  detectBedrockInferenceProfileModel,
+  BEDROCK_INFERENCE_PROFILE_MAPPINGS,
+} = require('./tokens');
 
 describe('getModelMaxTokens', () => {
   test('should return correct tokens for exact match', () => {
@@ -759,42 +766,45 @@ describe('Kimi Model Tests', () => {
 
 describe('AWS Bedrock Custom Inference Profile Tests', () => {
   it('should detect custom inference profile ARNs', () => {
-    const customArn = 'arn:aws:bedrock:us-east-1:123456789123:application-inference-profile/rf3zeruqfake';
+    const customArn =
+      'arn:aws:bedrock:us-east-1:123456789123:application-inference-profile/rf3zeruqfake';
     const regularModel = 'anthropic.claude-3-7-sonnet-20250219-v1:0';
-    
+
     // Test ARN detection
     expect(detectBedrockInferenceProfileModel(customArn)).toBe(null); // No mapping configured
     expect(detectBedrockInferenceProfileModel(regularModel)).toBe(null); // Not an ARN
-    
+
     // Test with mapping
     const mappings = {
-      [customArn]: regularModel
+      [customArn]: regularModel,
     };
     Object.assign(BEDROCK_INFERENCE_PROFILE_MAPPINGS, mappings);
-    
+
     expect(detectBedrockInferenceProfileModel(customArn)).toBe(regularModel);
   });
 
   it('should handle custom inference profiles in model matching', () => {
-    const customArn = 'arn:aws:bedrock:us-east-1:123456789123:application-inference-profile/rf3zeruqfake';
+    const customArn =
+      'arn:aws:bedrock:us-east-1:123456789123:application-inference-profile/rf3zeruqfake';
     const underlyingModel = 'anthropic.claude-3-7-sonnet-20250219-v1:0';
-    
+
     // Configure mapping
     const mappings = {
-      [customArn]: underlyingModel
+      [customArn]: underlyingModel,
     };
     Object.assign(BEDROCK_INFERENCE_PROFILE_MAPPINGS, mappings);
-    
+
     // Test that the ARN is handled properly
     const matchedModel = matchModelName(customArn, EModelEndpoint.bedrock);
     expect(matchedModel).toBe(customArn); // Should return the original ARN for now
   });
 
   it('should validate ARN format', () => {
-    const validArn = 'arn:aws:bedrock:us-east-1:123456789123:application-inference-profile/rf3zeruqfake';
+    const validArn =
+      'arn:aws:bedrock:us-east-1:123456789123:application-inference-profile/rf3zeruqfake';
     const invalidArn = 'arn:aws:bedrock:us-east-1:123456789123:model/anthropic.claude-3-7-sonnet';
     const notArn = 'anthropic.claude-3-7-sonnet-20250219-v1:0';
-    
+
     expect(detectBedrockInferenceProfileModel(validArn)).toBe(null);
     expect(detectBedrockInferenceProfileModel(invalidArn)).toBe(null);
     expect(detectBedrockInferenceProfileModel(notArn)).toBe(null);

@@ -117,7 +117,8 @@ export const bedrockInputParser = s.tConversationSchema
     });
 
     // Handle AWS Bedrock custom inference profile ARNs
-    const inferenceProfilePattern = /^arn:aws:bedrock:[^:]+:\d+:application-inference-profile\/[^:]+$/;
+    const inferenceProfilePattern =
+      /^arn:aws:bedrock:[^:]+:\d+:application-inference-profile\/[^:]+$/;
     const isCustomInferenceProfile = inferenceProfilePattern.test(typedData.model as string);
 
     /** Default thinking and thinkingBudget for specific models that support it */
@@ -172,13 +173,15 @@ function configureThinking(data: AnthropicInput): AnthropicInput {
   const updatedData = { ...data };
   if (updatedData.additionalModelRequestFields?.thinking === true) {
     // Handle AWS Bedrock custom inference profile ARNs
-    const inferenceProfilePattern = /^arn:aws:bedrock:[^:]+:\d+:application-inference-profile\/[^:]+$/;
+    const inferenceProfilePattern =
+      /^arn:aws:bedrock:[^:]+:\d+:application-inference-profile\/[^:]+$/;
     const isCustomInferenceProfile = inferenceProfilePattern.test(updatedData.model as string);
-    
+
     // Use appropriate default based on model type
     const defaultMaxTokens = isCustomInferenceProfile ? 4096 : 8192;
-    
-    updatedData.maxTokens = updatedData.maxTokens ?? updatedData.maxOutputTokens ?? defaultMaxTokens;
+
+    updatedData.maxTokens =
+      updatedData.maxTokens ?? updatedData.maxOutputTokens ?? defaultMaxTokens;
     delete updatedData.maxOutputTokens;
     const thinkingConfig: AnthropicReasoning['thinking'] = {
       type: 'enabled',

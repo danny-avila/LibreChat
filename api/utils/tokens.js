@@ -343,7 +343,8 @@ function detectBedrockInferenceProfileModel(modelName) {
   }
 
   // Check if this is a custom inference profile ARN
-  const inferenceProfilePattern = /^arn:aws:bedrock:[^:]+:\d+:application-inference-profile\/[^:]+$/;
+  const inferenceProfilePattern =
+    /^arn:aws:bedrock:[^:]+:\d+:application-inference-profile\/[^:]+$/;
   if (!inferenceProfilePattern.test(modelName)) {
     return null;
   }
@@ -365,7 +366,7 @@ function detectBedrockInferenceProfileModel(modelName) {
  */
 function loadBedrockInferenceProfileMappings() {
   const mappings = {};
-  
+
   // Check for environment variable with mappings
   const mappingsEnv = process.env.BEDROCK_INFERENCE_PROFILE_MAPPINGS;
   if (mappingsEnv) {
@@ -457,7 +458,11 @@ function getModelMaxTokens(modelName, endpoint = EModelEndpoint.openAI, endpoint
  * @param {Object} endpointTokenConfig - Optional endpoint token configuration
  * @returns {number} - The maximum tokens for the model
  */
-function _getModelMaxTokensInternal(modelName, endpoint = EModelEndpoint.openAI, endpointTokenConfig) {
+function _getModelMaxTokensInternal(
+  modelName,
+  endpoint = EModelEndpoint.openAI,
+  endpointTokenConfig,
+) {
   const tokensMap = endpointTokenConfig ?? maxTokensMap[endpoint];
   return getModelTokenValue(modelName, tokensMap, 'context') || 4096;
 }
@@ -491,7 +496,11 @@ function getModelMaxOutputTokens(modelName, endpoint = EModelEndpoint.openAI, en
  * @param {Object} endpointTokenConfig - Optional endpoint token configuration
  * @returns {number} - The maximum output tokens for the model
  */
-function _getModelMaxOutputTokensInternal(modelName, endpoint = EModelEndpoint.openAI, endpointTokenConfig) {
+function _getModelMaxOutputTokensInternal(
+  modelName,
+  endpoint = EModelEndpoint.openAI,
+  endpointTokenConfig,
+) {
   const tokensMap = endpointTokenConfig ?? maxOutputTokensMap[endpoint];
   return getModelTokenValue(modelName, tokensMap, 'output');
 }
