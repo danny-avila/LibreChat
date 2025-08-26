@@ -66,9 +66,12 @@ const fetchActivityLogs = async (query = {}) => {
       : `${query.includeTokenUsage ?? 'true'}` === 'true';
 
   const filter = buildFilterFromQuery(query);
+  logger.info('[fetchActivityLogs] Query params:', query);
+  logger.info('[fetchActivityLogs] Built filter:', filter);
 
   // Count first so we can handle ?all=true
   const totalCount = await UserActivityLog.countDocuments(filter);
+  logger.info('[fetchActivityLogs] Total documents count:', totalCount);
 
   let skip = (pageNum - 1) * limitQ;
   let limitNum = limitQ;
@@ -78,7 +81,10 @@ const fetchActivityLogs = async (query = {}) => {
     limitNum = Math.max(totalCount, 1);
   }
 
+  logger.info('[fetchActivityLogs] Pagination:', { skip, limitNum, pageNum, limitQ });
+
   const logs = await UserActivityLog.aggregate(buildLogsAggregation(filter, { skip, limitNum }));
+  logger.info('[fetchActivityLogs] Retrieved logs count:', logs.length);
 
   // Enrich token usage if requested
   if (includeTokenUsage) {

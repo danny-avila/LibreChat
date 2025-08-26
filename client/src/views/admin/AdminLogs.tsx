@@ -32,9 +32,9 @@ type RowLog = {
 
 type UserCache = Record<string, { email?: string; name?: string; username?: string }>;
 
-function toRow(log: RawLog, cache: UserCache): RowLog {
+function toRow(log: RawLog & { userInfo?: any }, cache: UserCache): RowLog {
   const userId = typeof log.user === "string" ? log.user : log.user?._id;
-  const populated = typeof log.user === "object" ? log.user : undefined;
+  const populated = (log as any).userInfo || (typeof log.user === "object" ? log.user : undefined);
   const cached = userId ? cache[userId] : undefined;
 
   return {
@@ -57,6 +57,11 @@ export default function AdminLogs() {
   const [statusMap, setStatusMap] = useState<Record<string, "Active" | "Inactive">>({});
   const esRef = useRef<EventSource | null>(null);
 
+  // Debug: Log rows state changes
+  useEffect(() => {
+    console.log('[AdminLogs] 📊 Rows state updated:', rows.length, 'rows');
+  }, [rows]);
+
   const getStatus = (row: RowLog) =>
     statusMap[row.userId] || (row.action === "LOGOUT" ? "Inactive" : "Active");
 
@@ -69,43 +74,137 @@ export default function AdminLogs() {
     });
   };
 
+  // Test function to manually add a log
+  const addTestLog = () => {
+    const testLog: RowLog = {
+      _id: 'test-' + Date.now(),
+      userId: 'test-user',
+      email: 'test@example.com',
+      name: 'Test User',
+      action: 'LOGIN',
+      timestamp: new Date().toISOString(),
+    };
+    setRows(prev => [testLog, ...prev]);
+    console.log('[AdminLogs] 🧪 Added test log manually');
+  };
+
   // Connect to backend SSE endpoint
   useEffect(() => {
     const token = localStorage.getItem("token");
     if (!token) return console.error("[AdminLogs] ❌ No JWT token found");
 
+    // 1) One-time HTTP load as fallback/initial snapshot
+    (async () => {
+      try {
+        const resp = await fetch(`http://localhost:3080/api/user-activity/logs?all=true`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const json = await resp.json();
+        console.log('[AdminLogs] 🧭 Initial HTTP logs response:', json);
+        if (json?.success && json?.data?.logs) {
+          const normalized = json.data.logs.map((log: any) => toRow(log, userCache));
+          setRows(normalized);
+          normalized.forEach((log) => applyStatusUpdate(log));
+        }
+      } catch (e) {
+        console.error('[AdminLogs] ❌ Initial HTTP fetch failed:', e);
+      }
+    })();
+
+    console.log("[AdminLogs] 🔗 Connecting to SSE stream...");
     const es = new EventSource(`http://localhost:3080/api/user-activity/stream?token=${token}`);
     esRef.current = es;
 
-    es.onopen = () => setConnected(true);
+    es.onopen = () => {
+      console.log("[AdminLogs] ✅ SSE connection opened");
+      setConnected(true);
+    };
 
+    // Listen for specific event types
+    es.addEventListener('connected', (evt) => {
+      console.log('[AdminLogs] ✅ SSE connection established:', evt.data);
+    });
+
+    es.addEventListener('activity', (evt) => {
+      console.log('[AdminLogs] 📊 Activity event received:', evt.data);
+      if (!evt.data) return;
+      
+      try {
+        const msg = JSON.parse(evt.data);
+        console.log('[AdminLogs] 📋 Parsed activity message:', msg);
+        
+        if (msg.success && msg.data && msg.data.logs) {
+          const logs = msg.data.logs;
+          console.log('[AdminLogs] 📋 Processing logs:', logs);
+          
+          const normalized = logs.map((log: any) => toRow(log, userCache));
+          console.log('[AdminLogs] 🔄 Normalized logs:', normalized);
+          
+          setRows(prev => {
+            const newRows = [...normalized, ...prev];
+            const uniqueRows = newRows.filter((row, index, self) => 
+              index === self.findIndex(r => r._id === row._id)
+            );
+            console.log('[AdminLogs] 📈 Updated rows count:', uniqueRows.length);
+            return uniqueRows;
+          });
+          
+          normalized.forEach(log => applyStatusUpdate(log));
+        } else {
+          console.log('[AdminLogs] ⚠️ Activity event missing expected data structure:', msg);
+        }
+      } catch (e) {
+        console.error("[AdminLogs] ❌ Failed to parse activity SSE JSON:", e);
+      }
+    });
+
+    es.addEventListener('heartbeat', (evt) => {
+      try {
+        const msg = JSON.parse(evt.data);
+        console.log('[AdminLogs] 💓 Heartbeat received:', msg.ping);
+      } catch (e) {
+        console.error("[AdminLogs] ❌ Failed to parse heartbeat SSE JSON:", e);
+      }
+    });
+
+    // Fallback for generic message events (in case event listeners don't work)
     es.onmessage = evt => {
+      console.log('[AdminLogs] 📨 Generic message received:', evt);
       if (!evt.data) return;
       try {
         const msg = JSON.parse(evt.data);
-
-        if (msg.type === "historical_data") {
-          const normalized = msg.data.map((log: RawLog) => toRow(log, userCache));
-          setRows(normalized.reverse());
-        }
-
-        if (msg.type === "activity_update") {
-          const row = toRow(msg.data, userCache);
-          setRows(prev => [row, ...prev]);
-          applyStatusUpdate(row);
-        }
-
-        if (msg.type === "heartbeat") {
-          // optional heartbeat logging
+        console.log('[AdminLogs] 📨 Generic message parsed:', msg);
+        
+        if (msg.success && msg.data && msg.data.logs) {
+          console.log('[AdminLogs] 🔄 Processing activity from generic message');
+          const logs = msg.data.logs;
+          const normalized = logs.map((log: any) => toRow(log, userCache));
+          
+          setRows(prev => {
+            const newRows = [...normalized, ...prev];
+            const uniqueRows = newRows.filter((row, index, self) => 
+              index === self.findIndex(r => r._id === row._id)
+            );
+            console.log('[AdminLogs] 📈 Updated rows from generic message:', uniqueRows.length);
+            return uniqueRows;
+          });
+          
+          normalized.forEach(log => applyStatusUpdate(log));
         }
       } catch (e) {
-        console.error("[AdminLogs] ❌ Failed to parse SSE JSON:", e);
+        console.error("[AdminLogs] ❌ Failed to parse generic SSE JSON:", e);
       }
     };
 
-    es.onerror = () => setConnected(false);
+    es.onerror = (error) => {
+      console.error("[AdminLogs] ❌ SSE Error:", error);
+      setConnected(false);
+    };
 
-    return () => es.close();
+    return () => {
+      console.log("[AdminLogs] 🔌 Closing SSE connection");
+      es.close();
+    };
   }, []);
 
   const columns: ColumnDef<RowLog>[] = useMemo(
@@ -181,6 +280,9 @@ export default function AdminLogs() {
           >
             {connected ? "Live: Connected" : "Live: Disconnected"}
           </div>
+          <Button variant="outline" onClick={addTestLog}>
+            Add Test Log
+          </Button>
           <Button variant="outline" onClick={() => (window.location.href = "/c/new")}>
             Back to Chat
           </Button>

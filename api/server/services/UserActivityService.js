@@ -30,18 +30,31 @@ class UserActivityService {
       options
     });
 
+    // Confirm connection
+    res.write(`event: connected\n`);
+    res.write(`data: ${JSON.stringify({ message: 'SSE connection established', clientId })}\n\n`);
+
     // Send initial snapshot
     try {
+      logger.info(`[UserActivityService] Fetching initial snapshot for client ${clientId} with options:`, options);
       const { logs, pagination } = await fetchActivityLogs(options);
-      this.sendToClient(clientId, { success: true, data: { logs, pagination } });
+      logger.info(`[UserActivityService] Initial snapshot for client ${clientId}: ${logs.length} logs found`);
+      
+      if (logs.length === 0) {
+        logger.warn(`[UserActivityService] No logs found in initial snapshot for client ${clientId}`);
+      }
+      
+      this.sendToClient(clientId, { success: true, data: { logs, pagination } }, 'activity');
     } catch (err) {
       logger.error(`[UserActivityService] Failed initial snapshot for ${clientId}:`, err);
       const logs = this.activityBuffer.slice(-10);
+      logger.info(`[UserActivityService] Using fallback buffer for client ${clientId}: ${logs.length} logs`);
+      
       const pagination = {
         currentPage: 1, totalPages: 1,
         totalCount: logs.length, hasNext: false, hasPrev: false
       };
-      this.sendToClient(clientId, { success: true, data: { logs, pagination } });
+      this.sendToClient(clientId, { success: true, data: { logs, pagination } }, 'activity');
     }
 
     logger.info(`[UserActivityService] Client ${clientId} connected (role=${userRole})`);
@@ -54,10 +67,11 @@ class UserActivityService {
     }
   }
 
-  sendToClient(clientId, payload) {
+  sendToClient(clientId, payload, eventName = 'activity') {
     const client = this.clients.get(clientId);
     if (!client || !client.response) return;
     try {
+      client.response.write(`event: ${eventName}\n`);
       client.response.write(`data: ${JSON.stringify(payload)}\n\n`);
     } catch (error) {
       logger.error(`[UserActivityService] Failed to send to client ${clientId}:`, error);
@@ -67,8 +81,6 @@ class UserActivityService {
 
   /**
    * Broadcast an activity to local SSE clients
-   * @param {*} activityData
-   * @param {boolean} fromLocal - true if originated locally, false if from Redis
    */
   async broadcastActivity(activityData, fromLocal = true) {
     try {
@@ -120,7 +132,7 @@ class UserActivityService {
           }
         };
 
-        this.sendToClient(clientId, payload);
+        this.sendToClient(clientId, payload, 'activity');
       }
 
       logger.debug(`[UserActivityService] Broadcasted ${fromLocal ? 'local' : 'Redis'} activity to ${this.clients.size} clients`);
@@ -142,15 +154,9 @@ class UserActivityService {
   }
 
   sendHeartbeat() {
-    const payload = {
-      success: true,
-      data: {
-        logs: [],
-        pagination: { currentPage: 1, totalPages: 1, totalCount: 0, hasNext: false, hasPrev: false }
-      }
-    };
+    const payload = { ping: Date.now() };
     for (const [clientId] of this.clients) {
-      this.sendToClient(clientId, payload);
+      this.sendToClient(clientId, payload, 'heartbeat');
     }
   }
 }
