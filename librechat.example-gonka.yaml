@@ -11,10 +11,14 @@ endpoints:
       apiKey: "mock-required-by-openai-client-not-used-by-gonka"
       baseURL: "http://195.242.13.239:8000/v1"
       models:
-        default: ["Qwen/QwQ-32B"]
+        default:
+          [
+            'Qwen/QwQ-32B',
+            'Qwen/Qwen2.5-7B-Instruct'
+          ]
         fetch: false
       titleConvo: true
-      titleModel: "current_model"
+      titleModel: "Qwen/Qwen2.5-7B-Instruct" # non-reasonable modele should be used as titleModel
       summarize: false
       summaryModel: "current_model"
       forcePrompt: false
@@ -23,10 +27,16 @@ endpoints:
 modelSpecs:
   prioritize: true
   list:
-    - name: "gonka-qwen-default"
+    - name: "qwen-32b"
       label: "Qwen/QwQ-32B"
       default: true
       preset:
         endpoint: "Gonka AI"
         model: "Qwen/QwQ-32B"
         modelLabel: "Qwen/QwQ-32B"
+    - name: "qwen-7b"
+      label: "Qwen/Qwen2.5-7B-Instruct"
+      preset:
+        endpoint: "Gonka AI"
+        model: "Qwen/Qwen2.5-7B-Instruct"
+        modelLabel: "Qwen/Qwen2.5-7B-Instruct"
