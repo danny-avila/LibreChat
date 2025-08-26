@@ -1,5 +1,5 @@
-const { getCustomConfig } = require('~/server/services/Config');
-const { logger } = require('~/config');
+const { logger } = require('@librechat/data-schemas');
+const { getAppConfig } = require('~/server/services/Config');
 
 /**
  * This function retrieves the speechTab settings from the custom configuration
@@ -15,26 +15,28 @@ const { logger } = require('~/config');
  */
 async function getCustomConfigSpeech(req, res) {
   try {
-    const customConfig = await getCustomConfig();
+    const appConfig = await getAppConfig({
+      role: req.user?.role,
+    });
 
-    if (!customConfig) {
+    if (!appConfig) {
       return res.status(200).send({
         message: 'not_found',
       });
     }
 
-    const sttExternal = !!customConfig.speech?.stt;
-    const ttsExternal = !!customConfig.speech?.tts;
+    const sttExternal = !!appConfig.speech?.stt;
+    const ttsExternal = !!appConfig.speech?.tts;
     let settings = {
       sttExternal,
       ttsExternal,
     };
 
-    if (!customConfig.speech?.speechTab) {
+    if (!appConfig.speech?.speechTab) {
       return res.status(200).send(settings);
     }
 
-    const speechTab = customConfig.speech.speechTab;
+    const speechTab = appConfig.speech.speechTab;
 
     if (speechTab.advancedMode !== undefined) {
       settings.advancedMode = speechTab.advancedMode;

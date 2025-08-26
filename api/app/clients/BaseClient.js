@@ -1,5 +1,7 @@
 const crypto = require('crypto');
 const fetch = require('node-fetch');
+const { logger } = require('@librechat/data-schemas');
+const { getBalanceConfig } = require('@librechat/api');
 const {
   supportsBalanceCheck,
   isAgentsEndpoint,
@@ -15,7 +17,6 @@ const { checkBalance } = require('~/models/balanceMethods');
 const { truncateToolCallOutputs } = require('./prompts');
 const { getFiles } = require('~/models/File');
 const TextStream = require('./TextStream');
-const { logger } = require('~/config');
 
 class BaseClient {
   constructor(apiKey, options = {}) {
@@ -112,13 +113,15 @@ class BaseClient {
    * If a correction to the token usage is needed, the method should return an object with the corrected token counts.
    * Should only be used if `recordCollectedUsage` was not used instead.
    * @param {string} [model]
+   * @param {AppConfig['balance']} [balance]
    * @param {number} promptTokens
    * @param {number} completionTokens
    * @returns {Promise<void>}
    */
-  async recordTokenUsage({ model, promptTokens, completionTokens }) {
+  async recordTokenUsage({ model, balance, promptTokens, completionTokens }) {
     logger.debug('[BaseClient] `recordTokenUsage` not implemented.', {
       model,
+      balance,
       promptTokens,
       completionTokens,
     });
@@ -571,6 +574,7 @@ class BaseClient {
   }
 
   async sendMessage(message, opts = {}) {
+    const appConfig = this.options.req?.config;
     /** @type {Promise<TMessage>} */
     let userMessagePromise;
     const { user, head, isEdited, conversationId, responseMessageId, saveOptions, userMessage } =
@@ -657,9 +661,9 @@ class BaseClient {
       }
     }
 
-    const balance = this.options.req?.app?.locals?.balance;
+    const balanceConfig = getBalanceConfig(appConfig);
     if (
-      balance?.enabled &&
+      balanceConfig?.enabled &&
       supportsBalanceCheck[this.options.endpointType ?? this.options.endpoint]
     ) {
       await checkBalance({
@@ -758,6 +762,7 @@ class BaseClient {
           usage,
           promptTokens,
           completionTokens,
+          balance: balanceConfig,
           model: responseMessage.model,
         });
       }

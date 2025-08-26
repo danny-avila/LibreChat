@@ -13,8 +13,7 @@ const {
   deleteMessagesSince,
 } = require('./Message');
 
-jest.mock('~/server/services/Config/getCustomConfig');
-const { getCustomConfig } = require('~/server/services/Config/getCustomConfig');
+jest.mock('~/server/services/Config/app');
 
 /**
  * @type {import('mongoose').Model<import('@librechat/data-schemas').IMessage>}
@@ -44,6 +43,11 @@ describe('Message Operations', () => {
 
     mockReq = {
       user: { id: 'user123' },
+      config: {
+        interfaceConfig: {
+          temporaryChatRetention: 24, // Default 24 hours
+        },
+      },
     };
 
     mockMessageData = {
@@ -326,12 +330,8 @@ describe('Message Operations', () => {
     });
 
     it('should save a message with expiredAt when isTemporary is true', async () => {
-      // Mock custom config with 24 hour retention
-      getCustomConfig.mockResolvedValue({
-        interface: {
-          temporaryChatRetention: 24,
-        },
-      });
+      // Mock app config with 24 hour retention
+      mockReq.config.interfaceConfig.temporaryChatRetention = 24;
 
       mockReq.body = { isTemporary: true };
 
@@ -375,12 +375,8 @@ describe('Message Operations', () => {
     });
 
     it('should use custom retention period from config', async () => {
-      // Mock custom config with 48 hour retention
-      getCustomConfig.mockResolvedValue({
-        interface: {
-          temporaryChatRetention: 48,
-        },
-      });
+      // Mock app config with 48 hour retention
+      mockReq.config.interfaceConfig.temporaryChatRetention = 48;
 
       mockReq.body = { isTemporary: true };
 
@@ -402,12 +398,8 @@ describe('Message Operations', () => {
     });
 
     it('should handle minimum retention period (1 hour)', async () => {
-      // Mock custom config with less than minimum retention
-      getCustomConfig.mockResolvedValue({
-        interface: {
-          temporaryChatRetention: 0.5, // Half hour - should be clamped to 1 hour
-        },
-      });
+      // Mock app config with less than minimum retention
+      mockReq.config.interfaceConfig.temporaryChatRetention = 0.5; // Half hour - should be clamped to 1 hour
 
       mockReq.body = { isTemporary: true };
 
@@ -429,12 +421,8 @@ describe('Message Operations', () => {
     });
 
     it('should handle maximum retention period (8760 hours)', async () => {
-      // Mock custom config with more than maximum retention
-      getCustomConfig.mockResolvedValue({
-        interface: {
-          temporaryChatRetention: 10000, // Should be clamped to 8760 hours
-        },
-      });
+      // Mock app config with more than maximum retention
+      mockReq.config.interfaceConfig.temporaryChatRetention = 10000; // Should be clamped to 8760 hours
 
       mockReq.body = { isTemporary: true };
 
@@ -455,22 +443,36 @@ describe('Message Operations', () => {
       );
     });
 
-    it('should handle getCustomConfig errors gracefully', async () => {
-      // Mock getCustomConfig to throw an error
-      getCustomConfig.mockRejectedValue(new Error('Config service unavailable'));
+    it('should handle missing config gracefully', async () => {
+      // Simulate missing config - should use default retention period
+      delete mockReq.config;
 
       mockReq.body = { isTemporary: true };
 
+      const beforeSave = new Date();
       const result = await saveMessage(mockReq, mockMessageData);
+      const afterSave = new Date();
 
-      // Should still save the message but with expiredAt as null
+      // Should still save the message with default retention period (30 days)
       expect(result.messageId).toBe('msg123');
-      expect(result.expiredAt).toBeNull();
+      expect(result.expiredAt).toBeDefined();
+      expect(result.expiredAt).toBeInstanceOf(Date);
+
+      // Verify expiredAt is approximately 30 days in the future (720 hours)
+      const expectedExpirationTime = new Date(beforeSave.getTime() + 720 * 60 * 60 * 1000);
+      const actualExpirationTime = new Date(result.expiredAt);
+
+      expect(actualExpirationTime.getTime()).toBeGreaterThanOrEqual(
+        expectedExpirationTime.getTime() - 1000,
+      );
+      expect(actualExpirationTime.getTime()).toBeLessThanOrEqual(
+        new Date(afterSave.getTime() + 720 * 60 * 60 * 1000 + 1000).getTime(),
+      );
     });
 
     it('should use default retention when config is not provided', async () => {
-      // Mock getCustomConfig to return empty config
-      getCustomConfig.mockResolvedValue({});
+      // Mock getAppConfig to return empty config
+      mockReq.config = {}; // Empty config
 
       mockReq.body = { isTemporary: true };
 
@@ -493,11 +495,7 @@ describe('Message Operations', () => {
 
     it('should not update expiredAt on message update', async () => {
       // First save a temporary message
-      getCustomConfig.mockResolvedValue({
-        interface: {
-          temporaryChatRetention: 24,
-        },
-      });
+      mockReq.config.interfaceConfig.temporaryChatRetention = 24;
 
       mockReq.body = { isTemporary: true };
       const savedMessage = await saveMessage(mockReq, mockMessageData);
@@ -520,11 +518,7 @@ describe('Message Operations', () => {
 
     it('should preserve expiredAt when saving existing temporary message', async () => {
       // First save a temporary message
-      getCustomConfig.mockResolvedValue({
-        interface: {
-          temporaryChatRetention: 24,
-        },
-      });
+      mockReq.config.interfaceConfig.temporaryChatRetention = 24;
 
       mockReq.body = { isTemporary: true };
       const firstSave = await saveMessage(mockReq, mockMessageData);

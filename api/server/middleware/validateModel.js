@@ -6,7 +6,7 @@ const { logViolation } = require('~/cache');
  * Validates the model of the request.
  *
  * @async
- * @param {Express.Request} req - The Express request object.
+ * @param {ServerRequest} req - The Express request object.
  * @param {Express.Response} res - The Express response object.
  * @param {Function} next - The Express next function.
  */

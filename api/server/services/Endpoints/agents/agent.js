@@ -49,6 +49,7 @@ const initializeAgent = async ({
   allowedProviders,
   isInitialAgent = false,
 }) => {
+  const appConfig = req.config;
   if (
     isAgentsEndpoint(endpointOption?.endpoint) &&
     allowedProviders.size > 0 &&
@@ -90,10 +91,11 @@ const initializeAgent = async ({
   const { attachments, tool_resources } = await primeResources({
     req,
     getFiles,
+    appConfig,
+    agentId: agent.id,
     attachments: currentFiles,
     tool_resources: agent.tool_resources,
     requestFileSet: new Set(requestFiles?.map((file) => file.file_id)),
-    agentId: agent.id,
   });
 
   const provider = agent.provider;
@@ -112,7 +114,7 @@ const initializeAgent = async ({
   })) ?? {};
 
   agent.endpoint = provider;
-  const { getOptions, overrideProvider } = await getProviderConfig(provider);
+  const { getOptions, overrideProvider } = getProviderConfig({ provider, appConfig });
   if (overrideProvider !== agent.provider) {
     agent.provider = overrideProvider;
   }

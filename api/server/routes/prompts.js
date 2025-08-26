@@ -424,7 +424,7 @@ router.get('/', async (req, res) => {
 /**
  * Deletes a prompt
  *
- * @param {Express.Request} req - The request object.
+ * @param {ServerRequest} req - The request object.
  * @param {TDeletePromptVariables} req.params - The request parameters
  * @param {import('mongoose').ObjectId} req.params.promptId - The prompt ID
  * @param {Express.Response} res - The response object.

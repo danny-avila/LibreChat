@@ -1,15 +1,16 @@
+const { getBalanceConfig } = require('@librechat/api');
 const { FileSources } = require('librechat-data-provider');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { resizeAvatar } = require('~/server/services/Files/images/avatar');
 const { updateUser, createUser, getUserById } = require('~/models');
-const { getBalanceConfig } = require('~/server/services/Config');
+const { getAppConfig } = require('~/server/services/Config');
 
 /**
  * Updates the avatar URL of an existing user. If the user's avatar URL does not include the query parameter
  * '?manual=true', it updates the user's avatar with the provided URL. For local file storage, it directly updates
  * the avatar URL, while for other storage types, it processes the avatar URL using the specified file strategy.
  *
- * @param {MongoUser} oldUser - The existing user object that needs to be updated.
+ * @param {IUser} oldUser - The existing user object that needs to be updated.
  * @param {string} avatarUrl - The new avatar URL to be set for the user.
  *
  * @returns {Promise<void>}
@@ -82,7 +83,8 @@ const createSocialUser = async ({
     emailVerified,
   };
 
-  const balanceConfig = await getBalanceConfig();
+  const appConfig = await getAppConfig();
+  const balanceConfig = getBalanceConfig(appConfig);
   const newUserId = await createUser(update, balanceConfig);
   const fileStrategy = process.env.CDN_PROVIDER;
   const isLocal = fileStrategy === FileSources.local;

@@ -1,9 +1,9 @@
 const axios = require('axios');
+const { logger } = require('@librechat/data-schemas');
 const { genAzureEndpoint } = require('@librechat/api');
 const { extractEnvVariable, TTSProviders } = require('librechat-data-provider');
 const { getRandomVoiceId, createChunkProcessor, splitTextIntoChunks } = require('./streamAudio');
-const { getCustomConfig } = require('~/server/services/Config');
-const { logger } = require('~/config');
+const { getAppConfig } = require('~/server/services/Config');
 
 /**
  * Service class for handling Text-to-Speech (TTS) operations.
@@ -12,10 +12,8 @@ const { logger } = require('~/config');
 class TTSService {
   /**
    * Creates an instance of TTSService.
-   * @param {Object} customConfig - The custom configuration object.
    */
-  constructor(customConfig) {
-    this.customConfig = customConfig;
+  constructor() {
     this.providerStrategies = {
       [TTSProviders.OPENAI]: this.openAIProvider.bind(this),
       [TTSProviders.AZURE_OPENAI]: this.azureOpenAIProvider.bind(this),
@@ -32,11 +30,7 @@ class TTSService {
    * @throws {Error} If the custom config is not found.
    */
   static async getInstance() {
-    const customConfig = await getCustomConfig();
-    if (!customConfig) {
-      throw new Error('Custom config not found');
-    }
-    return new TTSService(customConfig);
+    return new TTSService();
   }
 
   /**
@@ -293,10 +287,13 @@ class TTSService {
       return res.status(400).send('Missing text in request body');
     }
 
+    const appConfig = await getAppConfig({
+      role: req.user?.role,
+    });
     try {
       res.setHeader('Content-Type', 'audio/mpeg');
       const provider = this.getProvider();
-      const ttsSchema = this.customConfig.speech.tts[provider];
+      const ttsSchema = appConfig?.speech?.tts?.[provider];
       const voice = await this.getVoice(ttsSchema, requestVoice);
 
       if (input.length < 4096) {

@@ -36,11 +36,11 @@ const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const { addSpaceIfNeeded, sleep } = require('~/server/utils');
 const { spendTokens } = require('~/models/spendTokens');
 const { handleOpenAIErrors } = require('./tools/util');
-const { createLLM, RunManager } = require('./llm');
 const { summaryBuffer } = require('./memory');
 const { runTitleChain } = require('./chains');
 const { tokenSplit } = require('./document');
 const BaseClient = require('./BaseClient');
+const { createLLM } = require('./llm');
 const { logger } = require('~/config');
 
 class OpenAIClient extends BaseClient {
@@ -618,10 +618,6 @@ class OpenAIClient extends BaseClient {
     temperature = 0.2,
     max_tokens,
     streaming,
-    context,
-    tokenBuffer,
-    initialMessageCount,
-    conversationId,
   }) {
     const modelOptions = {
       modelName: modelName ?? model,
@@ -666,22 +662,12 @@ class OpenAIClient extends BaseClient {
       configOptions.httpsAgent = new HttpsProxyAgent(this.options.proxy);
     }
 
-    const { req, res, debug } = this.options;
-    const runManager = new RunManager({ req, res, debug, abortController: this.abortController });
-    this.runManager = runManager;
-
     const llm = createLLM({
       modelOptions,
       configOptions,
       openAIApiKey: this.apiKey,
       azure: this.azure,
       streaming,
-      callbacks: runManager.createCallbacks({
-        context,
-        tokenBuffer,
-        conversationId: this.conversationId ?? conversationId,
-        initialMessageCount,
-      }),
     });
 
     return llm;
@@ -702,6 +688,7 @@ class OpenAIClient extends BaseClient {
    *                            In case of failure, it will return the default title, "New Chat".
    */
   async titleConvo({ text, conversationId, responseText = '' }) {
+    const appConfig = this.options.req?.config;
     this.conversationId = conversationId;
 
     if (this.options.attachments) {
@@ -730,8 +717,7 @@ class OpenAIClient extends BaseClient {
       max_tokens: 16,
     };
 
-    /** @type {TAzureConfig | undefined} */
-    const azureConfig = this.options?.req?.app?.locals?.[EModelEndpoint.azureOpenAI];
+    const azureConfig = appConfig?.endpoints?.[EModelEndpoint.azureOpenAI];
 
     const resetTitleOptions = !!(
       (this.azure && azureConfig) ||
@@ -1120,6 +1106,7 @@ ${convo}
   }
 
   async chatCompletion({ payload, onProgress, abortController = null }) {
+    const appConfig = this.options.req?.config;
     let error = null;
     let intermediateReply = [];
     const errorCallback = (err) => (error = err);
@@ -1165,8 +1152,7 @@ ${convo}
         opts.fetchOptions.agent = new HttpsProxyAgent(this.options.proxy);
       }
 
-      /** @type {TAzureConfig | undefined} */
-      const azureConfig = this.options?.req?.app?.locals?.[EModelEndpoint.azureOpenAI];
+      const azureConfig = appConfig?.endpoints?.[EModelEndpoint.azureOpenAI];
 
       if (
         (this.azure && this.isVisionModel && azureConfig) ||

@@ -1,5 +1,5 @@
 const { TTSProviders } = require('librechat-data-provider');
-const { getCustomConfig } = require('~/server/services/Config');
+const { getAppConfig } = require('~/server/services/Config');
 const { getProvider } = require('./TTSService');
 
 /**
@@ -14,13 +14,15 @@ const { getProvider } = require('./TTSService');
  */
 async function getVoices(req, res) {
   try {
-    const customConfig = await getCustomConfig();
+    const appConfig = await getAppConfig({
+      role: req.user?.role,
+    });
 
-    if (!customConfig || !customConfig?.speech?.tts) {
+    if (!appConfig || !appConfig?.speech?.tts) {
       throw new Error('Configuration or TTS schema is missing');
     }
 
-    const ttsSchema = customConfig?.speech?.tts;
+    const ttsSchema = appConfig?.speech?.tts;
     const provider = await getProvider(ttsSchema);
     let voices;
 

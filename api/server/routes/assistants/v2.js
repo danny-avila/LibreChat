@@ -1,4 +1,5 @@
 const express = require('express');
+const { configMiddleware } = require('~/server/middleware');
 const v1 = require('~/server/controllers/assistants/v1');
 const v2 = require('~/server/controllers/assistants/v2');
 const documents = require('./documents');
@@ -6,6 +7,7 @@ const actions = require('./actions');
 const tools = require('./tools');
 
 const router = express.Router();
+router.use(configMiddleware);
 
 /**
  * Assistant actions route.

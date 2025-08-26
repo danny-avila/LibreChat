@@ -1,18 +1,19 @@
 const path = require('path');
 const fs = require('fs').promises;
 const express = require('express');
+const { logger } = require('@librechat/data-schemas');
 const { isAgentsEndpoint } = require('librechat-data-provider');
 const {
   filterFile,
   processImageFile,
   processAgentFileUpload,
 } = require('~/server/services/Files/process');
-const { logger } = require('~/config');
 
 const router = express.Router();
 
 router.post('/', async (req, res) => {
   const metadata = req.body;
+  const appConfig = req.config;
 
   try {
     filterFile({ req, image: true });
@@ -30,7 +31,7 @@ router.post('/', async (req, res) => {
     logger.error('[/files/images] Error processing file:', error);
     try {
       const filepath = path.join(
-        req.app.locals.paths.imageOutput,
+        appConfig.paths.imageOutput,
         req.user.id,
         path.basename(req.file.filename),
       );
@@ -43,7 +44,7 @@ router.post('/', async (req, res) => {
     try {
       await fs.unlink(req.file.path);
       logger.debug('[/files/images] Temp. image upload file deleted');
-    } catch (error) {
+    } catch {
       logger.debug('[/files/images] Temp. image upload file already deleted');
     }
   }
