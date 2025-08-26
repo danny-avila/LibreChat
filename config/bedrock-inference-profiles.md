@@ -39,15 +39,14 @@ aws bedrock list-foundation-models --region us-west-2 --query "modelSummaries[?c
 aws bedrock create-inference-profile \
   --inference-profile-name "MyLibreChatProfile" \
   --description "Custom inference profile for LibreChat application" \
-  --model-source copyFrom="arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-3-sonnet-20240229-v1:0" \
-  --tags Key=Project,Value=LibreChat Key=Environment,Value=Production
+  --model-source copyFrom="arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-3-sonnet-20240229-v1:0"
 ```
 
 **Parameters explained:**
 - `--inference-profile-name`: A unique name for your profile
 - `--description`: Human-readable description
 - `--model-source copyFrom`: The ARN of the foundation model to wrap
-- `--tags`: Optional tags for organization and cost tracking
+
 
 #### Step 3: Verify Creation
 
@@ -207,8 +206,7 @@ aws bedrock list-foundation-models --region us-west-2 --query "modelSummaries[?c
 aws bedrock create-inference-profile \
   --inference-profile-name "LibreChat-Claude-Sonnet" \
   --description "Custom inference profile for LibreChat using Claude 3 Sonnet" \
-  --model-source copyFrom="arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-3-sonnet-20240229-v1:0" \
-  --tags Key=Project,Value=LibreChat Key=Model,Value=Claude3Sonnet Key=Environment,Value=Production
+  --model-source copyFrom="arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-3-sonnet-20240229-v1:0"
 ```
 
 #### 3. **Get Your Profile ARN**
@@ -246,15 +244,7 @@ BEDROCK_INFERENCE_PROFILE_MAPPINGS='{
 - Include environment: `librechat-dev-claude-haiku`
 - Include model type: `librechat-claude-opus-2024`
 
-#### **Recommended Tags:**
-```bash
---tags \
-  Key=Project,Value=LibreChat \
-  Key=Environment,Value=Production \
-  Key=Model,Value=Claude3Sonnet \
-  Key=Owner,Value=your-team \
-  Key=CostCenter,Value=AI-Development
-```
+
 
 ### Troubleshooting Creation Issues
 
