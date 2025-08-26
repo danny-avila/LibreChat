@@ -11,7 +11,7 @@ const { initializeClient } = require('~/server/services/Endpoints/assistants');
 const { getEndpointsConfig } = require('~/server/services/Config');
 
 /**
- * @param {Express.Request} req
+ * @param {ServerRequest} req
  * @param {string} [endpoint]
  * @returns {Promise<string>}
  */

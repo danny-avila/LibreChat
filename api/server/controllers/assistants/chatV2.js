@@ -38,7 +38,7 @@ const { getOpenAIClient } = require('./helpers');
  * @route POST /
  * @desc Chat with an assistant
  * @access Public
- * @param {Express.Request} req - The request object, containing the request data.
+ * @param {ServerRequest} req - The request object, containing the request data.
  * @param {Express.Response} res - The response object, used to send back a response.
  * @returns {void}
  */

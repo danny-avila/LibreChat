@@ -112,7 +112,7 @@ const sendVerificationEmail = async (user) => {
 
 /**
  * Verify Email
- * @param {Express.Request} req
+ * @param {ServerRequest} req
  */
 const verifyEmail = async (req) => {
   const { email, token } = req.body;
@@ -248,7 +248,7 @@ const registerUser = async (user, additionalData = {}) => {
 
 /**
  * Request password reset
- * @param {Express.Request} req
+ * @param {ServerRequest} req
  */
 const requestPasswordReset = async (req) => {
   const { email } = req.body;

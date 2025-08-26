@@ -15,7 +15,10 @@
 
 /**
  * @exports ServerRequest
- * @typedef {import('express').Request} ServerRequest
+ * @typedef {import('express').Request & {
+ *   user?: IUser;
+ *   config?: AppConfig;
+ * }} ServerRequest
  * @memberof typedefs
  */
 
@@ -1675,26 +1678,10 @@
  * @memberof typedefs
  */
 
-// /**
-//  * @typedef {OpenAI & {
-// * req: Express.Request,
-// * res: Express.Response
-// * getPartialText: () => string,
-// * processedFileIds: Set<string>,
-// * mappedOrder: Map<string, number>,
-// * completeToolCallSteps: Set<string>,
-// * seenCompletedMessages: Set<string>,
-// * seenToolCalls: Map<string, StepToolCall>,
-// * progressCallback: (options: Object) => void,
-// * addContentData: (data: TContentData) => void,
-// * responseMessage: ResponseMessage,
-// * }} OpenAIClient - for reference only
-// */
-
 /**
  * @typedef {Object} RunClient
  *
- * @property {Express.Request} req - The Express request object.
+ * @property {ServerRequest} req - The Express request object.
  * @property {Express.Response} res - The Express response object.
  * @property {?import('https-proxy-agent').HttpsProxyAgent} httpAgent - An optional HTTP proxy agent for the request.
 

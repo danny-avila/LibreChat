@@ -6,7 +6,7 @@ const { getAppConfig } = require('./app');
 /**
  * Load config endpoints from the cached configuration object
  * @function loadConfigModels
- * @param {Express.Request} req - The Express request object.
+ * @param {ServerRequest} req - The Express request object.
  */
 async function loadConfigModels(req) {
   const appConfig = await getAppConfig({ role: req.user?.role });

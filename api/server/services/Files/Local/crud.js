@@ -38,7 +38,7 @@ async function saveLocalFile(file, outputPath, outputFilename) {
 /**
  * Saves an uploaded image file to a specified directory based on the user's ID and a filename.
  *
- * @param {Express.Request} req - The Express request object, containing the user's information and app configuration.
+ * @param {ServerRequest} req - The Express request object, containing the user's information and app configuration.
  * @param {Express.Multer.File} file - The uploaded file object.
  * @param {string} filename - The new filename to assign to the saved image (without extension).
  * @returns {Promise<void>}
@@ -163,7 +163,7 @@ async function getLocalFileURL({ fileName, basePath = 'images' }) {
  * the expected base path using the base, subfolder, and user id from the request, and then checks if the
  * provided filepath starts with this constructed base path.
  *
- * @param {Express.Request} req - The request object from Express. It should contain a `user` property with an `id`.
+ * @param {ServerRequest} req - The request object from Express. It should contain a `user` property with an `id`.
  * @param {string} base - The base directory path.
  * @param {string} subfolder - The subdirectory under the base path.
  * @param {string} filepath - The complete file path to be validated.
@@ -192,7 +192,7 @@ const unlinkFile = async (filepath) => {
  * Deletes a file from the filesystem. This function takes a file object, constructs the full path, and
  * verifies the path's validity before deleting the file. If the path is invalid, an error is thrown.
  *
- * @param {Express.Request} req - The request object from Express.
+ * @param {ServerRequest} req - The request object from Express.
  * @param {MongoFile} file - The file object to be deleted. It should have a `filepath` property that is
  *                           a string representing the path of the file relative to the publicPath.
  *

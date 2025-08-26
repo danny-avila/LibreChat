@@ -10,7 +10,7 @@ const idSchema = z.string().uuid();
  *
  * @async
  * @function saveMessage
- * @param {Express.Request} req - The request object containing user information.
+ * @param {ServerRequest} req - The request object containing user information.
  * @param {Object} params - The message data object.
  * @param {string} params.endpoint - The endpoint where the message originated.
  * @param {string} params.iconURL - The URL of the sender's icon.

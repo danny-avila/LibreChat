@@ -81,7 +81,7 @@ const blobStorageSources = new Set([FileSources.azure_blob, FileSources.s3]);
 
 /**
  * Encodes and formats the given files.
- * @param {Express.Request} req - The request object.
+ * @param {ServerRequest} req - The request object.
  * @param {Array<MongoFile>} files - The array of files to encode and format.
  * @param {EModelEndpoint} [endpoint] - Optional: The endpoint for the image.
  * @param {string} [mode] - Optional: The endpoint mode for the image.

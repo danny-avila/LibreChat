@@ -8,7 +8,7 @@ const { logger } = require('~/config');
 /**
  * Converts an image file or buffer to target output type with specified resolution.
  *
- * @param {Express.Request} req - The request object, containing user and app configuration data.
+ * @param {ServerRequest} req - The request object, containing user and app configuration data.
  * @param {Buffer | Express.Multer.File} file - The file object, containing either a path or a buffer.
  * @param {'low' | 'high'} [resolution='high'] - The desired resolution for the output image.
  * @param {string} [basename=''] - The basename of the input file, if it is a buffer.
