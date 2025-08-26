@@ -19,7 +19,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({ search, setSearch, onSearc
     <div className="flex w-full gap-2">
       <Input
         className="flex-1"
-        placeholder="Search by email, username, name or role"
+        placeholder="Search by name,email or role"
         value={search}
         onChange={(e) => setSearch(e.target.value)}
         onKeyDown={handleKeyPress}

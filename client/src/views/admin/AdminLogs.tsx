@@ -243,7 +243,7 @@ export default function AdminLogs() {
     () => [
       {
         id: 'index',
-        header: '#',
+        header: 'No.',
         meta: { size: '60px' },
         cell: ({ row }) => (
           <span className="text-xs font-medium text-gray-500">

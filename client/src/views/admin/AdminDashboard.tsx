@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { QueryKeys, request } from 'librechat-data-provider';
@@ -8,6 +8,15 @@ import { SearchBar } from '~/views/admin/AdminSearchBar';
 import { PaginationControls } from '~/views/admin/PaginationControls';
 import { UserActions } from '~/views/admin/UserActions';
 import { UserUsageDialog } from '~/views/admin/UserUsageDialog';
+import {
+  Pagination,
+  PaginationContent,
+  PaginationEllipsis,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from '~/components/ui/Pagination';
 
 type AdminUser = {
   _id: string;
@@ -21,6 +30,7 @@ type AdminUser = {
 export default function AdminDashboard() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const mainContainerRef = useRef<HTMLDivElement>(null);
 
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
@@ -55,34 +65,85 @@ export default function AdminDashboard() {
   const data = ((usersQuery.data as any)?.users ?? []) as AdminUser[];
   const total = (usersQuery.data as any)?.total ?? 0;
 
+  // Adjust container height when data changes
+  useEffect(() => {
+    const adjustTableHeight = () => {
+      if (mainContainerRef.current) {
+        const windowHeight = window.innerHeight;
+        const containerTop = mainContainerRef.current.getBoundingClientRect().top;
+        const paginationHeight = 60; // Estimated height for pagination
+        const headerHeight = 60; // Estimated height for the header
+        const availableHeight = windowHeight - containerTop - paginationHeight - headerHeight;
+        mainContainerRef.current.style.height = `${Math.max(400, availableHeight)}px`;
+      }
+    };
+
+    setTimeout(adjustTableHeight, 100);
+    window.addEventListener('resize', adjustTableHeight);
+    return () => window.removeEventListener('resize', adjustTableHeight);
+  }, [data, page]);
+
   // --- Columns for DataTable ---
   const columns = useMemo(
     () => [
       {
         id: 'index',
-        header: '#',
-        meta: { minWidth: 50, className: 'text-center font-medium text-gray-500' },
-        cell: ({ row }: any) => (page - 1) * limit + row.index + 1,
+        header: 'No.',
+        meta: { size: '60px' },
+        cell: ({ row }: any) => (
+          <span className="text-xs font-medium text-gray-500">
+            {(page - 1) * limit + row.index + 1}
+          </span>
+        ),
       },
       {
         accessorKey: 'email',
         header: 'Email',
-        meta: { minWidth: 200, className: 'font-medium text-gray-800' },
+        cell: ({ row }: any) => row.original.email ?? '—',
+        meta: { size: '220px' },
       },
       {
         accessorKey: 'name',
         header: 'Name',
-        meta: { minWidth: 150 },
+        cell: ({ row }: any) => row.original.name ?? '—',
+        meta: { size: '180px' },
       },
       {
         accessorKey: 'role',
         header: 'Role',
-        meta: { minWidth: 120, className: 'uppercase font-semibold text-center' },
+        meta: { size: '120px' },
+        cell: ({ row }: any) => {
+          const role = row.original.role;
+          return (
+            <span
+              className={[
+                'rounded px-2 py-0.5 text-xs font-medium',
+                role === 'ADMIN'
+                  ? 'bg-purple-100 text-purple-700'
+                  : role === 'USER'
+                  ? 'bg-blue-100 text-blue-700'
+                  : 'bg-gray-100 text-gray-700',
+              ].join(' ')}
+            >
+              {role}
+            </span>
+          );
+        },
+      },
+      {
+        accessorKey: 'createdAt',
+        header: 'Created',
+        meta: { size: '150px' },
+        cell: ({ row }: any) => (
+          <span className="text-xs">
+            {row.original.createdAt ? new Date(row.original.createdAt).toLocaleDateString() : '—'}
+          </span>
+        ),
       },
       {
         id: 'actions',
         header: 'Actions',
-        meta: { minWidth: 280, className: 'text-center' },
+        meta: { size: '200px' },
         cell: ({ row }: any) => {
           const user: AdminUser = row.original;
           return (
@@ -103,13 +164,22 @@ export default function AdminDashboard() {
   );
 
   return (
-    <div className="flex h-full flex-col gap-6 p-6 bg-gray-50">
+    <div className="flex h-full flex-col gap-4 p-4">
       {/* Header */}
-      <div className="flex items-center justify-between border-b pb-4">
-        <h2 className="text-2xl font-bold text-gray-800">Admin Dashboard</h2>
-        <Button variant="neutral" onClick={() => navigate('/c/new')}>
-          Back to Chat
-        </Button>
+      <div className="mb-3 flex items-center justify-between border-b border-gray-200 pb-3">
+        <div className="flex items-center gap-3">
+          <h2 className="text-xl font-semibold">User Management</h2>
+          <div className="text-sm text-gray-500">
+            {data.length > 0
+              ? `Showing ${(page - 1) * limit + 1}-${Math.min(page * limit, total)} of ${total}`
+              : 'No users'}
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <Button variant="outline" onClick={() => navigate('/c/new')}>
+            Back to Chat
+          </Button>
+        </div>
       </div>
 
       {/* Search */}
@@ -123,18 +193,84 @@ export default function AdminDashboard() {
       />
 
       {/* Users Table */}
-      <div className="rounded-2xl border bg-white shadow-md">
-        <DataTable columns={columns as any} data={data} enableRowSelection={false} />
+      <div
+        ref={mainContainerRef}
+        className="flex-grow overflow-hidden rounded-md border border-gray-200 dark:border-gray-700"
+      >
+        <DataTable
+          columns={columns as any}
+          data={data.map((r, i) => ({ ...r, id: r._id || i }))}
+          className="h-full"
+          enableRowSelection={false}
+          showCheckboxes={false}
+          onDelete={undefined}
+        />
       </div>
 
       {/* Pagination */}
-      <PaginationControls
-        page={page}
-        total={total}
-        limit={limit}
-        setPage={setPage}
-        onRefresh={() => usersQuery.refetch()}
-      />
+      {total > limit && (
+        <Pagination className="mt-2 border-t border-gray-200 py-3 dark:border-gray-700">
+          <PaginationContent>
+            <PaginationItem>
+              <PaginationPrevious
+                onClick={() => setPage((prev) => Math.max(prev - 1, 1))}
+                className={page === 1 ? 'pointer-events-none opacity-50' : ''}
+              />
+            </PaginationItem>
+
+            {Array.from({ length: Math.min(5, Math.ceil(total / limit)) }, (_, i) => {
+              const pageNumber = i + 1;
+              const isCurrentPage = pageNumber === page;
+
+              // Show first page, last page, current page, and pages around current
+              if (
+                pageNumber === 1 ||
+                pageNumber === Math.ceil(total / limit) ||
+                (pageNumber >= page - 1 && pageNumber <= page + 1)
+              ) {
+                return (
+                  <PaginationItem key={pageNumber}>
+                    <PaginationLink
+                      isActive={isCurrentPage}
+                      onClick={() => setPage(pageNumber)}
+                    >
+                      {pageNumber}
+                    </PaginationLink>
+                  </PaginationItem>
+                );
+              }
+
+              // Show ellipsis for gaps
+              if (
+                (pageNumber === 2 && page > 3) ||
+                (pageNumber === Math.ceil(total / limit) - 1 &&
+                  page < Math.ceil(total / limit) - 2)
+              ) {
+                return (
+                  <PaginationItem key={`ellipsis-${pageNumber}`}>
+                    <PaginationEllipsis />
+                  </PaginationItem>
+                );
+              }
+
+              return null;
+            })}
+
+            <PaginationItem>
+              <PaginationNext
+                onClick={() =>
+                  setPage((prev) => Math.min(prev + 1, Math.ceil(total / limit)))
+                }
+                className={
+                  page === Math.ceil(total / limit)
+                    ? 'pointer-events-none opacity-50'
+                    : ''
+                }
+              />
+            </PaginationItem>
+          </PaginationContent>
+        </Pagination>
+      )}
 
       {/* Usage Dialog */}
       <UserUsageDialog

@@ -42,6 +42,8 @@ const listUsers = async (req, res) => {
         { email: { $regex: search, $options: 'i' } },
         { username: { $regex: search, $options: 'i' } },
         { name: { $regex: search, $options: 'i' } },
+        // Allow searching by role string (e.g., "admin" or "user")
+        { role: { $regex: search, $options: 'i' } },
       ];
     }
     if (role && [SystemRoles.ADMIN, SystemRoles.USER].includes(role)) {
