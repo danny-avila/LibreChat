@@ -1243,10 +1243,6 @@ export enum CacheKeys {
    */
   FLOWS = 'FLOWS',
   /**
-   * Key for individual MCP Tool Manifests.
-   */
-  MCP_TOOLS = 'MCP_TOOLS',
-  /**
    * Key for pending chat requests (concurrency check)
    */
   PENDING_REQ = 'PENDING_REQ',
@@ -1524,11 +1520,13 @@ export enum TTSProviders {
 /** Enum for app-wide constants */
 export enum Constants {
   /** Key for the app's version. */
-  VERSION = 'v0.8.0-rc2',
+  VERSION = 'v0.8.0-rc3',
   /** Key for the Custom Config's version (librechat.yaml). */
   CONFIG_VERSION = '1.2.8',
   /** Standard value for the first message's `parentMessageId` value, to indicate no parent exists. */
   NO_PARENT = '00000000-0000-0000-0000-000000000000',
+  /** Standard value to use whatever the submission prelim. `responseMessageId` is */
+  USE_PRELIM_RESPONSE_MESSAGE_ID = 'USE_PRELIM_RESPONSE_MESSAGE_ID',
   /** Standard value for the initial conversationId before a request is sent */
   NEW_CONVO = 'new',
   /** Standard value for the temporary conversationId after a request is sent and before the server responds */
@@ -1555,6 +1553,8 @@ export enum Constants {
   mcp_delimiter = '_mcp_',
   /** Prefix for MCP plugins */
   mcp_prefix = 'mcp_',
+  /** Unique value to indicate all MCP servers */
+  mcp_all = 'sys__all__sys',
   /** Placeholder Agent ID for Ephemeral Agents */
   EPHEMERAL_AGENT_ID = 'ephemeral',
 }

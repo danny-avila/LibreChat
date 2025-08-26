@@ -118,7 +118,7 @@ export class MCPServersRegistry {
   }
 
   /** Converts server tools to LibreChat-compatible tool functions format */
-  private async getToolFunctions(
+  public async getToolFunctions(
     serverName: string,
     conn: MCPConnection,
   ): Promise<t.LCAvailableTools> {

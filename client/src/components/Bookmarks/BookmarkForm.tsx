@@ -38,6 +38,8 @@ const BookmarkForm = ({
     control,
     formState: { errors },
   } = useForm<TConversationTagRequest>({
+    mode: 'onBlur',
+    reValidateMode: 'onChange',
     defaultValues: {
       tag: bookmark?.tag ?? '',
       description: bookmark?.description ?? '',
@@ -98,23 +100,30 @@ const BookmarkForm = ({
           <Input
             type="text"
             id="bookmark-tag"
-            aria-label="Bookmark"
+            aria-label={
+              bookmark ? localize('com_ui_bookmarks_edit') : localize('com_ui_bookmarks_new')
+            }
             {...register('tag', {
-              required: 'tag is required',
+              required: localize('com_ui_field_required'),
               maxLength: {
                 value: 128,
-                message: localize('com_auth_password_max_length'),
+                message: localize('com_ui_field_max_length', {
+                  field: localize('com_ui_bookmarks_title'),
+                  length: 128,
+                }),
               },
               validate: (value) => {
                 return (
                   value === bookmark?.tag ||
                   bookmarks.every((bookmark) => bookmark.tag !== value) ||
-                  'tag must be unique'
+                  localize('com_ui_bookmarks_tag_exists')
                 );
               },
             })}
             aria-invalid={!!errors.tag}
-            placeholder="Bookmark"
+            placeholder={
+              bookmark ? localize('com_ui_bookmarks_edit') : localize('com_ui_bookmarks_new')
+            }
           />
           {errors.tag && <span className="text-sm text-red-500">{errors.tag.message}</span>}
         </div>
@@ -127,7 +136,10 @@ const BookmarkForm = ({
             {...register('description', {
               maxLength: {
                 value: 1048,
-                message: 'Maximum 1048 characters',
+                message: localize('com_ui_field_max_length', {
+                  field: localize('com_ui_bookmarks_description'),
+                  length: 1048,
+                }),
               },
             })}
             id="bookmark-description"

@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { useTranslation } from 'react-i18next';
 import { ControlCombobox } from '@librechat/client';
 import {
   useWatch,
@@ -9,7 +8,7 @@ import {
   useFormContext,
   ControllerRenderProps,
 } from 'react-hook-form';
-import { useAgentCategories } from '~/hooks/Agents';
+import { TranslationKeys, useLocalize, useAgentCategories } from '~/hooks';
 import { cn } from '~/utils';
 
 /**
@@ -35,22 +34,25 @@ const useCategorySync = (agent_id: string | null) => {
  * A component for selecting agent categories with form validation
  */
 const AgentCategorySelector: React.FC<{ className?: string }> = ({ className }) => {
-  const { t } = useTranslation();
+  const localize = useLocalize();
   const formContext = useFormContext();
   const { categories } = useAgentCategories();
 
-  // Always call useWatch
   const agent_id = useWatch({
     name: 'id',
     control: formContext.control,
   });
 
-  // Use custom hook for category sync
   const { syncCategory } = useCategorySync(agent_id);
+  const getCategoryLabel = (category: { label: string; value: string }) => {
+    if (category.label && category.label.startsWith('com_')) {
+      return localize(category.label as TranslationKeys);
+    }
+    return category.label;
+  };
 
-  // Transform categories to the format expected by ControlCombobox
   const comboboxItems = categories.map((category) => ({
-    label: category.label,
+    label: getCategoryLabel(category),
     value: category.value,
   }));
 
@@ -59,8 +61,8 @@ const AgentCategorySelector: React.FC<{ className?: string }> = ({ className }) 
     return categoryItem?.label || comboboxItems.find((c) => c.value === 'general')?.label;
   };
 
-  const searchPlaceholder = t('com_ui_search_agent_category', 'Search categories...');
-  const ariaLabel = t('com_ui_agent_category_selector_aria', "Agent's category selector");
+  const searchPlaceholder = localize('com_ui_search_agent_category');
+  const ariaLabel = localize('com_ui_agent_category_selector_aria');
 
   return (
     <Controller

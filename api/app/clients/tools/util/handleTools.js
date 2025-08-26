@@ -3,7 +3,7 @@ const { SerpAPI } = require('@langchain/community/tools/serpapi');
 const { Calculator } = require('@langchain/community/tools/calculator');
 const { mcpToolPattern, loadWebSearchAuth } = require('@librechat/api');
 const { EnvVar, createCodeExecutionTool, createSearchTool } = require('@librechat/agents');
-const { Tools, EToolResources, replaceSpecialVars } = require('librechat-data-provider');
+const { Tools, Constants, EToolResources, replaceSpecialVars } = require('librechat-data-provider');
 const {
   availableTools,
   manifestToolMap,
@@ -24,9 +24,9 @@ const {
 const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
 const { createFileSearchTool, primeFiles: primeSearchFiles } = require('./fileSearch');
 const { getUserPluginAuthValue } = require('~/server/services/PluginService');
+const { createMCPTool, createMCPTools } = require('~/server/services/MCP');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { getCachedTools } = require('~/server/services/Config');
-const { createMCPTool } = require('~/server/services/MCP');
 
 /**
  * Validates the availability and authentication of tools for a user based on environment variables or user-specific plugin authentication values.
@@ -123,6 +123,8 @@ const getAuthFields = (toolKey) => {
  *
  * @param {object} object
  * @param {string} object.user
+ * @param {Record<string, Record<string, string>>} [object.userMCPAuthMap]
+ * @param {AbortSignal} [object.signal]
  * @param {Pick<Agent, 'id' | 'provider' | 'model'>} [object.agent]
  * @param {string} [object.model]
  * @param {EModelEndpoint} [object.endpoint]
@@ -137,7 +139,9 @@ const loadTools = async ({
   user,
   agent,
   model,
+  signal,
   endpoint,
+  userMCPAuthMap,
   tools = [],
   options = {},
   functions = true,
@@ -231,6 +235,7 @@ const loadTools = async ({
   /** @type {Record<string, string>} */
   const toolContextMap = {};
   const cachedTools = (await getCachedTools({ userId: user, includeGlobal: true })) ?? {};
+  const requestedMCPTools = {};
 
   for (const tool of tools) {
     if (tool === Tools.execute_code) {
@@ -299,14 +304,35 @@ Current Date & Time: ${replaceSpecialVars({ text: '{{iso_datetime}}' })}
       };
       continue;
     } else if (tool && cachedTools && mcpToolPattern.test(tool)) {
-      requestedTools[tool] = async () =>
+      const [toolName, serverName] = tool.split(Constants.mcp_delimiter);
+      if (toolName === Constants.mcp_all) {
+        const currentMCPGenerator = async (index) =>
+          createMCPTools({
+            req: options.req,
+            res: options.res,
+            index,
+            serverName,
+            userMCPAuthMap,
+            model: agent?.model ?? model,
+            provider: agent?.provider ?? endpoint,
+            signal,
+          });
+        requestedMCPTools[serverName] = [currentMCPGenerator];
+        continue;
+      }
+      const currentMCPGenerator = async (index) =>
         createMCPTool({
+          index,
           req: options.req,
           res: options.res,
           toolKey: tool,
+          userMCPAuthMap,
           model: agent?.model ?? model,
           provider: agent?.provider ?? endpoint,
+          signal,
         });
+      requestedMCPTools[serverName] = requestedMCPTools[serverName] || [];
+      requestedMCPTools[serverName].push(currentMCPGenerator);
       continue;
     }
 
@@ -346,6 +372,34 @@ Current Date & Time: ${replaceSpecialVars({ text: '{{iso_datetime}}' })}
   }
 
   const loadedTools = (await Promise.all(toolPromises)).flatMap((plugin) => plugin || []);
+  const mcpToolPromises = [];
+  /** MCP server tools are initialized sequentially by server */
+  let index = -1;
+  for (const [serverName, generators] of Object.entries(requestedMCPTools)) {
+    index++;
+    for (const generator of generators) {
+      try {
+        if (generator && generators.length === 1) {
+          mcpToolPromises.push(
+            generator(index).catch((error) => {
+              logger.error(`Error loading ${serverName} tools:`, error);
+              return null;
+            }),
+          );
+          continue;
+        }
+        const mcpTool = await generator(index);
+        if (Array.isArray(mcpTool)) {
+          loadedTools.push(...mcpTool);
+        } else if (mcpTool) {
+          loadedTools.push(mcpTool);
+        }
+      } catch (error) {
+        logger.error(`Error loading MCP tool for server ${serverName}:`, error);
+      }
+    }
+  }
+  loadedTools.push(...(await Promise.all(mcpToolPromises)).flatMap((plugin) => plugin || []));
   return { loadedTools, toolContextMap };
 };
 
