@@ -45,21 +45,6 @@ export const useGetPresetsQuery = (
   });
 };
 
-export const useGetEndpointsConfigOverride = <TData = unknown | boolean>(
-  config?: UseQueryOptions<unknown | boolean, unknown, TData>,
-): QueryObserverResult<TData> => {
-  return useQuery<unknown | boolean, unknown, TData>(
-    [QueryKeys.endpointsConfigOverride],
-    () => dataService.getEndpointsConfigOverride(),
-    {
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
-      refetchOnMount: false,
-      ...config,
-    },
-  );
-};
-
 export const useGetConvoIdQuery = (
   id: string,
   config?: UseQueryOptions<t.TConversation>,

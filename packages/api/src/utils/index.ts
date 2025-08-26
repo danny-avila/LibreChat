@@ -1,6 +1,7 @@
 export * from './axios';
 export * from './azure';
 export * from './common';
+export * from './email';
 export * from './env';
 export * from './events';
 export * from './files';
