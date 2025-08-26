@@ -6,14 +6,23 @@ export default function AdminPanel() {
   const navigate = useNavigate();
 
   return (
-    <div className="flex flex-col gap-3 p-2 text-sm">
-      <h3 className="text-base font-semibold">Admin</h3>
+    <div className="flex flex-col gap-2 p-2 text-sm">
+      <h3 className="text-base font-semibold"></h3>
 
-      <div className="flex gap-2">
-        <Button variant="outline" onClick={() => navigate('/admin')}>
+      <div className="flex flex-col gap-2">
+        <Button
+          type="button"
+          className="flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-input bg-transparent px-3 py-2 text-sm text-black ring-offset-background transition-colors hover:bg-accent hover:text-accent-foreground disabled:cursor-not-allowed disabled:opacity-50"
+          onClick={() => navigate('/admin')}
+        >
           Users
         </Button>
-        <Button variant="outline" onClick={() => navigate('/admin/logs')}>
+
+        <Button
+          type="button"
+          className="flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-input bg-transparent px-3 py-2 text-sm text-black ring-offset-background transition-colors hover:bg-accent hover:text-accent-foreground disabled:cursor-not-allowed disabled:opacity-50"
+          onClick={() => navigate('/admin/logs')}
+        >
           Logs
         </Button>
       </div>
