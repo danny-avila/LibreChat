@@ -1,6 +1,7 @@
 import fs from 'fs';
 import axios from 'axios';
 import FormData from 'form-data';
+import { logger } from '@librechat/data-schemas';
 import { FileSources } from 'librechat-data-provider';
 import type { Request as ServerRequest } from 'express';
 import { generateShortLivedToken } from '~/crypto/jwt';
@@ -25,12 +26,12 @@ export async function parseText({
   file_id: string;
 }): Promise<{ text: string; bytes: number; source: string }> {
   if (!process.env.RAG_API_URL) {
-    console.debug('[parseText] RAG_API_URL not defined, falling back to native text parsing');
+    logger.debug('[parseText] RAG_API_URL not defined, falling back to native text parsing');
     return parseTextNative(file);
   }
 
   if (!req.user?.id) {
-    console.debug('[parseText] No user ID provided, falling back to native text parsing');
+    logger.debug('[parseText] No user ID provided, falling back to native text parsing');
     return parseTextNative(file);
   }
 
@@ -39,11 +40,11 @@ export async function parseText({
       timeout: 5000,
     });
     if (healthResponse?.statusText !== 'OK' && healthResponse?.status !== 200) {
-      console.debug('[parseText] RAG API health check failed, falling back to native parsing');
+      logger.debug('[parseText] RAG API health check failed, falling back to native parsing');
       return parseTextNative(file);
     }
   } catch (healthError) {
-    console.debug(
+    logger.debug(
       '[parseText] RAG API health check failed, falling back to native parsing',
       healthError,
     );
@@ -68,7 +69,7 @@ export async function parseText({
     });
 
     const responseData = response.data;
-    console.debug('[parseText] Response from RAG API', responseData);
+    logger.debug('[parseText] Response from RAG API', responseData);
 
     if (!('text' in responseData)) {
       throw new Error('RAG API did not return parsed text');
@@ -80,7 +81,7 @@ export async function parseText({
       source: FileSources.text,
     };
   } catch (error) {
-    console.warn('[parseText] RAG API text parsing failed, falling back to native parsing', error);
+    logger.warn('[parseText] RAG API text parsing failed, falling back to native parsing', error);
     return parseTextNative(file);
   }
 }
