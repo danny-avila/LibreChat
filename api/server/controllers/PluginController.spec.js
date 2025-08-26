@@ -1,5 +1,5 @@
 const { Constants } = require('librechat-data-provider');
-const { getCachedTools } = require('~/server/services/Config');
+const { getCachedTools, getAppConfig } = require('~/server/services/Config');
 const { getLogStores } = require('~/cache');
 
 jest.mock('@librechat/data-schemas', () => ({
@@ -12,7 +12,10 @@ jest.mock('@librechat/data-schemas', () => ({
 
 jest.mock('~/server/services/Config', () => ({
   getCachedTools: jest.fn(),
-  getAppConfig: jest.fn(),
+  getAppConfig: jest.fn().mockResolvedValue({
+    filteredTools: [],
+    includedTools: [],
+  }),
   setCachedTools: jest.fn(),
   mergeUserTools: jest.fn(),
 }));
@@ -60,6 +63,13 @@ describe('PluginController', () => {
 
     // Reset getCachedTools mock to ensure clean state
     getCachedTools.mockReset();
+
+    // Reset getAppConfig mock to ensure clean state with default values
+    getAppConfig.mockReset();
+    getAppConfig.mockResolvedValue({
+      filteredTools: [],
+      includedTools: [],
+    });
   });
 
   describe('getAvailablePluginsController', () => {
@@ -74,6 +84,12 @@ describe('PluginController', () => {
       require('~/app/clients/tools').availableTools.push(...mockPlugins);
 
       mockCache.get.mockResolvedValue(null);
+
+      // Configure getAppConfig to return the expected config
+      getAppConfig.mockResolvedValueOnce({
+        filteredTools: [],
+        includedTools: [],
+      });
 
       await getAvailablePluginsController(mockReq, mockRes);
 
@@ -92,6 +108,12 @@ describe('PluginController', () => {
 
       require('~/app/clients/tools').availableTools.push(mockPlugin);
       mockCache.get.mockResolvedValue(null);
+
+      // Configure getAppConfig to return the expected config
+      getAppConfig.mockResolvedValueOnce({
+        filteredTools: [],
+        includedTools: [],
+      });
 
       await getAvailablePluginsController(mockReq, mockRes);
 
@@ -122,11 +144,11 @@ describe('PluginController', () => {
       require('~/app/clients/tools').availableTools.push(...mockPlugins);
       mockCache.get.mockResolvedValue(null);
 
-      // Update config to include includedTools
-      mockReq.config = {
+      // Configure getAppConfig to return config with includedTools
+      getAppConfig.mockResolvedValueOnce({
         filteredTools: [],
         includedTools: ['key1'],
-      };
+      });
 
       await getAvailablePluginsController(mockReq, mockRes);
 
@@ -602,6 +624,10 @@ describe('PluginController', () => {
     it('should handle undefined filteredTools and includedTools', async () => {
       mockReq.config = {};
       mockCache.get.mockResolvedValue(null);
+
+      // Configure getAppConfig to return config with undefined properties
+      // The controller will use default values [] for filteredTools and includedTools
+      getAppConfig.mockResolvedValueOnce({});
 
       await getAvailablePluginsController(mockReq, mockRes);
 
