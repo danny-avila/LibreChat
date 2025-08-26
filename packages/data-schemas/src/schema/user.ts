@@ -51,6 +51,7 @@ const userSchema = new Schema<IUser>(
       trim: true,
       minlength: 8,
       maxlength: 128,
+      select: false,
     },
     avatar: {
       type: String,
@@ -114,9 +115,11 @@ const userSchema = new Schema<IUser>(
     },
     totpSecret: {
       type: String,
+      select: false,
     },
     backupCodes: {
       type: [BackupCodeSchema],
+      select: false,
     },
     refreshToken: {
       type: [SessionSchema],
@@ -137,6 +140,11 @@ const userSchema = new Schema<IUser>(
         },
       },
       default: {},
+    },
+    /** Field for external source identification (for consistency with TPrincipal schema) */
+    idOnTheSource: {
+      type: String,
+      sparse: true,
     },
   },
   { timestamps: true },

@@ -10,8 +10,8 @@ import {
 import type { TUpdateUserPlugins, TPlugin } from 'librechat-data-provider';
 import type { ConfigFieldDetail } from '~/components/MCP/MCPConfigDialog';
 import { useMCPConnectionStatusQuery } from '~/data-provider/Tools/queries';
-import { useBadgeRowContext } from '~/Providers';
-import { useLocalize } from '~/hooks';
+import { useGetStartupConfig } from '~/data-provider';
+import { useLocalize, useMCPSelect } from '~/hooks';
 
 interface ServerState {
   isInitializing: boolean;
@@ -24,7 +24,8 @@ interface ServerState {
 export function useMCPServerManager() {
   const localize = useLocalize();
   const { showToast } = useToastContext();
-  const { mcpSelect, startupConfig } = useBadgeRowContext();
+  const mcpSelect = useMCPSelect();
+  const { data: startupConfig } = useGetStartupConfig();
   const { mcpValues, setMCPValues, mcpToolDetails, isPinned, setIsPinned } = mcpSelect;
   const queryClient = useQueryClient();
 
@@ -81,7 +82,9 @@ export function useMCPServerManager() {
     return initialStates;
   });
 
-  const { data: connectionStatusData } = useMCPConnectionStatusQuery();
+  const { data: connectionStatusData } = useMCPConnectionStatusQuery({
+    enabled: !!startupConfig?.mcpServers && Object.keys(startupConfig.mcpServers).length > 0,
+  });
   const connectionStatus = useMemo(
     () => connectionStatusData?.connectionStatus || {},
     [connectionStatusData?.connectionStatus],
@@ -157,6 +160,8 @@ export function useMCPServerManager() {
             if (!currentValues.includes(serverName)) {
               setMCPValues([...currentValues, serverName]);
             }
+
+            await queryClient.invalidateQueries([QueryKeys.tools]);
 
             // This delay is to ensure UI has updated with new connection status before cleanup
             // Otherwise servers will show as disconnected for a second after OAuth flow completes

@@ -1,17 +1,23 @@
 const mongoose = require('mongoose');
 const { v4: uuidv4 } = require('uuid');
-const { fileSchema } = require('@librechat/data-schemas');
-const { agentSchema } = require('@librechat/data-schemas');
-const { projectSchema } = require('@librechat/data-schemas');
+const { createModels } = require('@librechat/data-schemas');
 const { MongoMemoryServer } = require('mongodb-memory-server');
-const { GLOBAL_PROJECT_NAME } = require('librechat-data-provider').Constants;
+const {
+  SystemRoles,
+  ResourceType,
+  AccessRoleIds,
+  PrincipalType,
+} = require('librechat-data-provider');
+const { grantPermission } = require('~/server/services/PermissionService');
 const { getFiles, createFile } = require('./File');
-const { getProjectByName } = require('./Project');
+const { seedDefaultRoles } = require('~/models');
 const { createAgent } = require('./Agent');
 
 let File;
 let Agent;
-let Project;
+let AclEntry;
+let User;
+let modelsToCleanup = [];
 
 describe('File Access Control', () => {
   let mongoServer;
@@ -19,13 +25,41 @@ describe('File Access Control', () => {
   beforeAll(async () => {
     mongoServer = await MongoMemoryServer.create();
     const mongoUri = mongoServer.getUri();
-    File = mongoose.models.File || mongoose.model('File', fileSchema);
-    Agent = mongoose.models.Agent || mongoose.model('Agent', agentSchema);
-    Project = mongoose.models.Project || mongoose.model('Project', projectSchema);
     await mongoose.connect(mongoUri);
+
+    // Initialize all models
+    const models = createModels(mongoose);
+
+    // Track which models we're adding
+    modelsToCleanup = Object.keys(models);
+
+    // Register models on mongoose.models so methods can access them
+    const dbModels = require('~/db/models');
+    Object.assign(mongoose.models, dbModels);
+
+    File = dbModels.File;
+    Agent = dbModels.Agent;
+    AclEntry = dbModels.AclEntry;
+    User = dbModels.User;
+
+    // Seed default roles
+    await seedDefaultRoles();
   });
 
   afterAll(async () => {
+    // Clean up all collections before disconnecting
+    const collections = mongoose.connection.collections;
+    for (const key in collections) {
+      await collections[key].deleteMany({});
+    }
+
+    // Clear only the models we added
+    for (const modelName of modelsToCleanup) {
+      if (mongoose.models[modelName]) {
+        delete mongoose.models[modelName];
+      }
+    }
+
     await mongoose.disconnect();
     await mongoServer.stop();
   });
@@ -33,15 +67,32 @@ describe('File Access Control', () => {
   beforeEach(async () => {
     await File.deleteMany({});
     await Agent.deleteMany({});
-    await Project.deleteMany({});
+    await AclEntry.deleteMany({});
+    await User.deleteMany({});
+    // Don't delete AccessRole as they are seeded defaults needed for tests
   });
 
   describe('hasAccessToFilesViaAgent', () => {
     it('should efficiently check access for multiple files at once', async () => {
-      const userId = new mongoose.Types.ObjectId().toString();
-      const authorId = new mongoose.Types.ObjectId().toString();
+      const userId = new mongoose.Types.ObjectId();
+      const authorId = new mongoose.Types.ObjectId();
       const agentId = uuidv4();
       const fileIds = [uuidv4(), uuidv4(), uuidv4(), uuidv4()];
+
+      // Create users
+      await User.create({
+        _id: userId,
+        email: 'user@example.com',
+        emailVerified: true,
+        provider: 'local',
+      });
+
+      await User.create({
+        _id: authorId,
+        email: 'author@example.com',
+        emailVerified: true,
+        provider: 'local',
+      });
 
       // Create files
       for (const fileId of fileIds) {
@@ -54,13 +105,12 @@ describe('File Access Control', () => {
       }
 
       // Create agent with only first two files attached
-      await createAgent({
+      const agent = await createAgent({
         id: agentId,
         name: 'Test Agent',
         author: authorId,
         model: 'gpt-4',
         provider: 'openai',
-        isCollaborative: true,
         tool_resources: {
           file_search: {
             file_ids: [fileIds[0], fileIds[1]],
@@ -68,15 +118,24 @@ describe('File Access Control', () => {
         },
       });
 
-      // Get or create global project
-      const globalProject = await getProjectByName(GLOBAL_PROJECT_NAME, '_id');
-
-      // Share agent globally
-      await Agent.updateOne({ id: agentId }, { $push: { projectIds: globalProject._id } });
+      // Grant EDIT permission to user on the agent
+      await grantPermission({
+        principalType: PrincipalType.USER,
+        principalId: userId,
+        resourceType: ResourceType.AGENT,
+        resourceId: agent._id,
+        accessRoleId: AccessRoleIds.AGENT_EDITOR,
+        grantedBy: authorId,
+      });
 
       // Check access for all files
-      const { hasAccessToFilesViaAgent } = require('./File');
-      const accessMap = await hasAccessToFilesViaAgent(userId, fileIds, agentId);
+      const { hasAccessToFilesViaAgent } = require('~/server/services/Files/permissions');
+      const accessMap = await hasAccessToFilesViaAgent({
+        userId: userId,
+        role: SystemRoles.USER,
+        fileIds,
+        agentId: agent.id, // Use agent.id which is the custom UUID
+      });
 
       // Should have access only to the first two files
       expect(accessMap.get(fileIds[0])).toBe(true);
@@ -86,9 +145,17 @@ describe('File Access Control', () => {
     });
 
     it('should grant access to all files when user is the agent author', async () => {
-      const authorId = new mongoose.Types.ObjectId().toString();
+      const authorId = new mongoose.Types.ObjectId();
       const agentId = uuidv4();
       const fileIds = [uuidv4(), uuidv4(), uuidv4()];
+
+      // Create author user
+      await User.create({
+        _id: authorId,
+        email: 'author@example.com',
+        emailVerified: true,
+        provider: 'local',
+      });
 
       // Create agent
       await createAgent({
@@ -105,8 +172,13 @@ describe('File Access Control', () => {
       });
 
       // Check access as the author
-      const { hasAccessToFilesViaAgent } = require('./File');
-      const accessMap = await hasAccessToFilesViaAgent(authorId, fileIds, agentId);
+      const { hasAccessToFilesViaAgent } = require('~/server/services/Files/permissions');
+      const accessMap = await hasAccessToFilesViaAgent({
+        userId: authorId,
+        role: SystemRoles.USER,
+        fileIds,
+        agentId,
+      });
 
       // Author should have access to all files
       expect(accessMap.get(fileIds[0])).toBe(true);
@@ -115,31 +187,58 @@ describe('File Access Control', () => {
     });
 
     it('should handle non-existent agent gracefully', async () => {
-      const userId = new mongoose.Types.ObjectId().toString();
+      const userId = new mongoose.Types.ObjectId();
       const fileIds = [uuidv4(), uuidv4()];
 
-      const { hasAccessToFilesViaAgent } = require('./File');
-      const accessMap = await hasAccessToFilesViaAgent(userId, fileIds, 'non-existent-agent');
+      // Create user
+      await User.create({
+        _id: userId,
+        email: 'user@example.com',
+        emailVerified: true,
+        provider: 'local',
+      });
+
+      const { hasAccessToFilesViaAgent } = require('~/server/services/Files/permissions');
+      const accessMap = await hasAccessToFilesViaAgent({
+        userId: userId,
+        role: SystemRoles.USER,
+        fileIds,
+        agentId: 'non-existent-agent',
+      });
 
       // Should have no access to any files
       expect(accessMap.get(fileIds[0])).toBe(false);
       expect(accessMap.get(fileIds[1])).toBe(false);
     });
 
-    it('should deny access when agent is not collaborative', async () => {
-      const userId = new mongoose.Types.ObjectId().toString();
-      const authorId = new mongoose.Types.ObjectId().toString();
+    it('should deny access when user only has VIEW permission', async () => {
+      const userId = new mongoose.Types.ObjectId();
+      const authorId = new mongoose.Types.ObjectId();
       const agentId = uuidv4();
       const fileIds = [uuidv4(), uuidv4()];
 
-      // Create agent with files but isCollaborative: false
-      await createAgent({
+      // Create users
+      await User.create({
+        _id: userId,
+        email: 'user@example.com',
+        emailVerified: true,
+        provider: 'local',
+      });
+
+      await User.create({
+        _id: authorId,
+        email: 'author@example.com',
+        emailVerified: true,
+        provider: 'local',
+      });
+
+      // Create agent with files
+      const agent = await createAgent({
         id: agentId,
-        name: 'Non-Collaborative Agent',
+        name: 'View-Only Agent',
         author: authorId,
         model: 'gpt-4',
         provider: 'openai',
-        isCollaborative: false,
         tool_resources: {
           file_search: {
             file_ids: fileIds,
@@ -147,17 +246,26 @@ describe('File Access Control', () => {
         },
       });
 
-      // Get or create global project
-      const globalProject = await getProjectByName(GLOBAL_PROJECT_NAME, '_id');
-
-      // Share agent globally
-      await Agent.updateOne({ id: agentId }, { $push: { projectIds: globalProject._id } });
+      // Grant only VIEW permission to user on the agent
+      await grantPermission({
+        principalType: PrincipalType.USER,
+        principalId: userId,
+        resourceType: ResourceType.AGENT,
+        resourceId: agent._id,
+        accessRoleId: AccessRoleIds.AGENT_VIEWER,
+        grantedBy: authorId,
+      });
 
       // Check access for files
-      const { hasAccessToFilesViaAgent } = require('./File');
-      const accessMap = await hasAccessToFilesViaAgent(userId, fileIds, agentId);
+      const { hasAccessToFilesViaAgent } = require('~/server/services/Files/permissions');
+      const accessMap = await hasAccessToFilesViaAgent({
+        userId: userId,
+        role: SystemRoles.USER,
+        fileIds,
+        agentId,
+      });
 
-      // Should have no access to any files when isCollaborative is false
+      // Should have no access to any files when only VIEW permission
       expect(accessMap.get(fileIds[0])).toBe(false);
       expect(accessMap.get(fileIds[1])).toBe(false);
     });
@@ -172,23 +280,43 @@ describe('File Access Control', () => {
       const sharedFileId = `file_${uuidv4()}`;
       const inaccessibleFileId = `file_${uuidv4()}`;
 
-      // Create/get global project using getProjectByName which will upsert
-      const globalProject = await getProjectByName(GLOBAL_PROJECT_NAME);
+      // Create users
+      await User.create({
+        _id: userId,
+        email: 'user@example.com',
+        emailVerified: true,
+        provider: 'local',
+      });
+
+      await User.create({
+        _id: authorId,
+        email: 'author@example.com',
+        emailVerified: true,
+        provider: 'local',
+      });
 
       // Create agent with shared file
-      await createAgent({
+      const agent = await createAgent({
         id: agentId,
         name: 'Shared Agent',
         provider: 'test',
         model: 'test-model',
         author: authorId,
-        projectIds: [globalProject._id],
-        isCollaborative: true,
         tool_resources: {
           file_search: {
             file_ids: [sharedFileId],
           },
         },
+      });
+
+      // Grant EDIT permission to user on the agent
+      await grantPermission({
+        principalType: PrincipalType.USER,
+        principalId: userId,
+        resourceType: ResourceType.AGENT,
+        resourceId: agent._id,
+        accessRoleId: AccessRoleIds.AGENT_EDITOR,
+        grantedBy: authorId,
       });
 
       // Create files
@@ -220,13 +348,21 @@ describe('File Access Control', () => {
         bytes: 300,
       });
 
-      // Get files with access control
-      const files = await getFiles(
+      // Get all files first
+      const allFiles = await getFiles(
         { file_id: { $in: [ownedFileId, sharedFileId, inaccessibleFileId] } },
         null,
         { text: 0 },
-        { userId: userId.toString(), agentId },
       );
+
+      // Then filter by access control
+      const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
+      const files = await filterFilesByAgentAccess({
+        files: allFiles,
+        userId: userId,
+        role: SystemRoles.USER,
+        agentId,
+      });
 
       expect(files).toHaveLength(2);
       expect(files.map((f) => f.file_id)).toContain(ownedFileId);
@@ -259,6 +395,168 @@ describe('File Access Control', () => {
 
       const files = await getFiles({ file_id: { $in: [fileId1, fileId2] } });
       expect(files).toHaveLength(2);
+    });
+  });
+
+  describe('Role-based file permissions', () => {
+    it('should optimize permission checks when role is provided', async () => {
+      const userId = new mongoose.Types.ObjectId();
+      const authorId = new mongoose.Types.ObjectId();
+      const agentId = uuidv4();
+      const fileIds = [uuidv4(), uuidv4()];
+
+      // Create users
+      await User.create({
+        _id: userId,
+        email: 'user@example.com',
+        emailVerified: true,
+        provider: 'local',
+        role: 'ADMIN', // User has ADMIN role
+      });
+
+      await User.create({
+        _id: authorId,
+        email: 'author@example.com',
+        emailVerified: true,
+        provider: 'local',
+      });
+
+      // Create files
+      for (const fileId of fileIds) {
+        await createFile({
+          file_id: fileId,
+          user: authorId,
+          filename: `${fileId}.txt`,
+          filepath: `/uploads/${fileId}.txt`,
+          type: 'text/plain',
+          bytes: 100,
+        });
+      }
+
+      // Create agent with files
+      const agent = await createAgent({
+        id: agentId,
+        name: 'Test Agent',
+        author: authorId,
+        model: 'gpt-4',
+        provider: 'openai',
+        tool_resources: {
+          file_search: {
+            file_ids: fileIds,
+          },
+        },
+      });
+
+      // Grant permission to ADMIN role
+      await grantPermission({
+        principalType: PrincipalType.ROLE,
+        principalId: 'ADMIN',
+        resourceType: ResourceType.AGENT,
+        resourceId: agent._id,
+        accessRoleId: AccessRoleIds.AGENT_EDITOR,
+        grantedBy: authorId,
+      });
+
+      // Check access with role provided (should avoid DB query)
+      const { hasAccessToFilesViaAgent } = require('~/server/services/Files/permissions');
+      const accessMapWithRole = await hasAccessToFilesViaAgent({
+        userId: userId,
+        role: 'ADMIN',
+        fileIds,
+        agentId: agent.id,
+      });
+
+      // User should have access through their ADMIN role
+      expect(accessMapWithRole.get(fileIds[0])).toBe(true);
+      expect(accessMapWithRole.get(fileIds[1])).toBe(true);
+
+      // Check access without role (will query DB to get user's role)
+      const accessMapWithoutRole = await hasAccessToFilesViaAgent({
+        userId: userId,
+        fileIds,
+        agentId: agent.id,
+      });
+
+      // Should have same result
+      expect(accessMapWithoutRole.get(fileIds[0])).toBe(true);
+      expect(accessMapWithoutRole.get(fileIds[1])).toBe(true);
+    });
+
+    it('should deny access when user role changes', async () => {
+      const userId = new mongoose.Types.ObjectId();
+      const authorId = new mongoose.Types.ObjectId();
+      const agentId = uuidv4();
+      const fileId = uuidv4();
+
+      // Create users
+      await User.create({
+        _id: userId,
+        email: 'user@example.com',
+        emailVerified: true,
+        provider: 'local',
+        role: 'EDITOR',
+      });
+
+      await User.create({
+        _id: authorId,
+        email: 'author@example.com',
+        emailVerified: true,
+        provider: 'local',
+      });
+
+      // Create file
+      await createFile({
+        file_id: fileId,
+        user: authorId,
+        filename: 'test.txt',
+        filepath: '/uploads/test.txt',
+        type: 'text/plain',
+        bytes: 100,
+      });
+
+      // Create agent
+      const agent = await createAgent({
+        id: agentId,
+        name: 'Test Agent',
+        author: authorId,
+        model: 'gpt-4',
+        provider: 'openai',
+        tool_resources: {
+          file_search: {
+            file_ids: [fileId],
+          },
+        },
+      });
+
+      // Grant permission to EDITOR role only
+      await grantPermission({
+        principalType: PrincipalType.ROLE,
+        principalId: 'EDITOR',
+        resourceType: ResourceType.AGENT,
+        resourceId: agent._id,
+        accessRoleId: AccessRoleIds.AGENT_EDITOR,
+        grantedBy: authorId,
+      });
+
+      const { hasAccessToFilesViaAgent } = require('~/server/services/Files/permissions');
+
+      // Check with EDITOR role - should have access
+      const accessAsEditor = await hasAccessToFilesViaAgent({
+        userId: userId,
+        role: 'EDITOR',
+        fileIds: [fileId],
+        agentId: agent.id,
+      });
+      expect(accessAsEditor.get(fileId)).toBe(true);
+
+      // Simulate role change to USER - should lose access
+      const accessAsUser = await hasAccessToFilesViaAgent({
+        userId: userId,
+        role: SystemRoles.USER,
+        fileIds: [fileId],
+        agentId: agent.id,
+      });
+      expect(accessAsUser.get(fileId)).toBe(false);
     });
   });
 });

@@ -109,7 +109,7 @@ const AdminSettings = () => {
   const labelControllerData = [
     {
       promptPerm: Permissions.SHARED_GLOBAL,
-      label: localize('com_ui_prompts_allow_share_global'),
+      label: localize('com_ui_prompts_allow_share'),
     },
     {
       promptPerm: Permissions.CREATE,
@@ -153,7 +153,7 @@ const AdminSettings = () => {
             <span className="hidden sm:flex">{localize('com_ui_admin')}</span>
           </Button>
         </OGDialogTrigger>
-        <OGDialogContent className="w-11/12 max-w-lg border-border-light bg-surface-primary text-text-primary">
+        <OGDialogContent className="max-w-lg border-border-light bg-surface-primary text-text-primary md:w-1/4">
           <OGDialogTitle>
             {`${localize('com_ui_admin_settings')} - ${localize('com_ui_prompts')}`}
           </OGDialogTitle>

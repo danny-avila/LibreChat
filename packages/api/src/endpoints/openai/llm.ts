@@ -1,11 +1,71 @@
 import { ProxyAgent } from 'undici';
+import { Providers } from '@librechat/agents';
 import { KnownEndpoints, removeNullishValues } from 'librechat-data-provider';
 import type { BindToolsInput } from '@langchain/core/language_models/chat_models';
 import type { AzureOpenAIInput } from '@langchain/openai';
 import type { OpenAI } from 'openai';
 import type * as t from '~/types';
 import { sanitizeModelName, constructAzureURL } from '~/utils/azure';
+import { createFetch } from '~/utils/generators';
 import { isEnabled } from '~/utils/common';
+
+type Fetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
+
+export const knownOpenAIParams = new Set([
+  // Constructor/Instance Parameters
+  'model',
+  'modelName',
+  'temperature',
+  'topP',
+  'frequencyPenalty',
+  'presencePenalty',
+  'n',
+  'logitBias',
+  'stop',
+  'stopSequences',
+  'user',
+  'timeout',
+  'stream',
+  'maxTokens',
+  'maxCompletionTokens',
+  'logprobs',
+  'topLogprobs',
+  'apiKey',
+  'organization',
+  'audio',
+  'modalities',
+  'reasoning',
+  'zdrEnabled',
+  'service_tier',
+  'supportsStrictToolCalling',
+  'useResponsesApi',
+  'configuration',
+  // Call-time Options
+  'tools',
+  'tool_choice',
+  'functions',
+  'function_call',
+  'response_format',
+  'seed',
+  'stream_options',
+  'parallel_tool_calls',
+  'strict',
+  'prediction',
+  'promptIndex',
+  // Responses API specific
+  'text',
+  'truncation',
+  'include',
+  'previous_response_id',
+  // LangChain specific
+  '__includeRawResponse',
+  'maxConcurrency',
+  'maxRetries',
+  'verbose',
+  'streaming',
+  'streamUsage',
+  'disableStreaming',
+]);
 
 function hasReasoningParams({
   reasoning_effort,
@@ -35,6 +95,7 @@ export function getOpenAIConfig(
   const {
     modelOptions: _modelOptions = {},
     reverseProxyUrl,
+    directEndpoint,
     defaultQuery,
     headers,
     proxy,
@@ -43,7 +104,7 @@ export function getOpenAIConfig(
     addParams,
     dropParams,
   } = options;
-  const { reasoning_effort, reasoning_summary, ...modelOptions } = _modelOptions;
+  const { reasoning_effort, reasoning_summary, verbosity, ...modelOptions } = _modelOptions;
   const llmConfig: Partial<t.ClientOptions> &
     Partial<t.OpenAIParameters> &
     Partial<AzureOpenAIInput> = Object.assign(
@@ -54,8 +115,23 @@ export function getOpenAIConfig(
     modelOptions,
   );
 
+  const modelKwargs: Record<string, unknown> = {};
+  let hasModelKwargs = false;
+
+  if (verbosity != null && verbosity !== '') {
+    modelKwargs.verbosity = verbosity;
+    hasModelKwargs = true;
+  }
+
   if (addParams && typeof addParams === 'object') {
-    Object.assign(llmConfig, addParams);
+    for (const [key, value] of Object.entries(addParams)) {
+      if (knownOpenAIParams.has(key)) {
+        (llmConfig as Record<string, unknown>)[key] = value;
+      } else {
+        hasModelKwargs = true;
+        modelKwargs[key] = value;
+      }
+    }
   }
 
   let useOpenRouter = false;
@@ -222,9 +298,37 @@ export function getOpenAIConfig(
     });
   }
 
-  return {
+  if (modelKwargs.verbosity && llmConfig.useResponsesApi === true) {
+    modelKwargs.text = { verbosity: modelKwargs.verbosity };
+    delete modelKwargs.verbosity;
+  }
+
+  if (llmConfig.model && /\bgpt-[5-9]\b/i.test(llmConfig.model) && llmConfig.maxTokens != null) {
+    const paramName =
+      llmConfig.useResponsesApi === true ? 'max_output_tokens' : 'max_completion_tokens';
+    modelKwargs[paramName] = llmConfig.maxTokens;
+    delete llmConfig.maxTokens;
+    hasModelKwargs = true;
+  }
+
+  if (hasModelKwargs) {
+    llmConfig.modelKwargs = modelKwargs;
+  }
+
+  if (directEndpoint === true && configOptions?.baseURL != null) {
+    configOptions.fetch = createFetch({
+      directEndpoint: directEndpoint,
+      reverseProxyUrl: configOptions?.baseURL,
+    }) as unknown as Fetch;
+  }
+
+  const result: t.LLMConfigResult = {
     llmConfig,
     configOptions,
     tools,
   };
+  if (useOpenRouter) {
+    result.provider = Providers.OPENROUTER;
+  }
+  return result;
 }

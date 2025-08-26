@@ -30,7 +30,13 @@ const { getModelMaxTokens } = require('~/utils');
  * @param {TEndpointOption} [params.endpointOption]
  * @param {Set<string>} [params.allowedProviders]
  * @param {boolean} [params.isInitialAgent]
- * @returns {Promise<Agent & { tools: StructuredTool[], attachments: Array<MongoFile>, toolContextMap: Record<string, unknown>, maxContextTokens: number }>}
+ * @returns {Promise<Agent & {
+ * tools: StructuredTool[],
+ * attachments: Array<MongoFile>,
+ * toolContextMap: Record<string, unknown>,
+ * maxContextTokens: number,
+ * userMCPAuthMap?: Record<string, Record<string, string>>
+ * }>}
  */
 const initializeAgent = async ({
   req,
@@ -93,16 +99,19 @@ const initializeAgent = async ({
   // Ensure the provider is set to the endpoint, not the model
   const provider = agent.endpoint || agent.provider;
 
-  const { tools: structuredTools, toolContextMap } =
-    (await loadTools?.({
-      req,
-      res,
-      provider,
-      agentId: agent.id,
-      tools: agent.tools,
-      model: agent.model,
-      tool_resources,
-    })) ?? {};
+  const {
+    tools: structuredTools,
+    toolContextMap,
+    userMCPAuthMap,
+  } = (await loadTools?.({
+    req,
+    res,
+    provider,
+    agentId: agent.id,
+    tools: agent.tools,
+    model: agent.model,
+    tool_resources,
+  })) ?? {};
 
   agent.endpoint = provider;
   const { getOptions, overrideProvider } = await getProviderConfig(provider);
@@ -191,6 +200,7 @@ const initializeAgent = async ({
     tools,
     attachments,
     resendFiles,
+    userMCPAuthMap,
     toolContextMap,
     useLegacyContent: !!options.useLegacyContent,
     maxContextTokens: Math.round((agentMaxContextTokens - maxTokens) * 0.9),

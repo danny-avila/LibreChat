@@ -2,6 +2,7 @@ import React from 'react';
 import * as Select from '@ariakit/react/select';
 import type { Option } from '~/common';
 import { cn } from '~/utils/';
+import './Dropdown.css';
 
 interface DropdownProps {
   value?: string;
@@ -97,7 +98,13 @@ const Dropdown: React.FC<DropdownProps> = ({
       <Select.SelectPopover
         portal={portal}
         store={selectProps}
-        className={cn('popover-ui', sizeClasses, className, 'max-h-[80vh] overflow-y-auto')}
+        className={cn(
+          'popover-ui',
+          sizeClasses,
+          className,
+          'max-h-[80vh] overflow-y-auto',
+          '[pointer-events:auto]', // Override body's pointer-events:none when in modal
+        )}
       >
         {options.map((item, index) => {
           if (isDivider(item)) {

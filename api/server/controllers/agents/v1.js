@@ -5,30 +5,40 @@ const { logger } = require('@librechat/data-schemas');
 const { agentCreateSchema, agentUpdateSchema } = require('@librechat/api');
 const {
   Tools,
-  Constants,
-  FileSources,
   SystemRoles,
+  FileSources,
+  ResourceType,
+  AccessRoleIds,
+  PrincipalType,
   EToolResources,
+  PermissionBits,
   actionDelimiter,
   removeNullishValues,
 } = require('librechat-data-provider');
 const {
-  getAgent,
+  getListAgentsByAccess,
+  countPromotedAgents,
+  revertAgentVersion,
   createAgent,
   updateAgent,
   deleteAgent,
-  getListAgents,
+  getAgent,
 } = require('~/models/Agent');
+const {
+  findPubliclyAccessibleResources,
+  findAccessibleResources,
+  hasPublicPermission,
+  grantPermission,
+} = require('~/server/services/PermissionService');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { resizeAvatar } = require('~/server/services/Files/images/avatar');
+const { getFileStrategy } = require('~/server/utils/getFileStrategy');
 const { refreshS3Url } = require('~/server/services/Files/S3/crud');
 const { filterFile } = require('~/server/services/Files/process');
 const { updateAction, getActions } = require('~/models/Action');
 const { getCachedTools } = require('~/server/services/Config');
-const { updateAgentProjects } = require('~/models/Agent');
-const { getProjectByName } = require('~/models/Project');
-const { revertAgentVersion } = require('~/models/Agent');
 const { deleteFileByFilter } = require('~/models/File');
+const { getCategoriesWithCounts } = require('~/models');
 
 const systemTools = {
   [Tools.execute_code]: true,
@@ -42,7 +52,7 @@ const systemTools = {
  * @param {ServerRequest} req - The request object.
  * @param {AgentCreateParams} req.body - The request body.
  * @param {ServerResponse} res - The response object.
- * @returns {Agent} 201 - success response - application/json
+ * @returns {Promise<Agent>} 201 - success response - application/json
  */
 const createAgentHandler = async (req, res) => {
   try {
@@ -67,6 +77,27 @@ const createAgentHandler = async (req, res) => {
     }
 
     const agent = await createAgent(agentData);
+
+    // Automatically grant owner permissions to the creator
+    try {
+      await grantPermission({
+        principalType: PrincipalType.USER,
+        principalId: userId,
+        resourceType: ResourceType.AGENT,
+        resourceId: agent._id,
+        accessRoleId: AccessRoleIds.AGENT_OWNER,
+        grantedBy: userId,
+      });
+      logger.debug(
+        `[createAgent] Granted owner permissions to user ${userId} for agent ${agent.id}`,
+      );
+    } catch (permissionError) {
+      logger.error(
+        `[createAgent] Failed to grant owner permissions for agent ${agent.id}:`,
+        permissionError,
+      );
+    }
+
     res.status(201).json(agent);
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -89,21 +120,14 @@ const createAgentHandler = async (req, res) => {
  * @returns {Promise<Agent>} 200 - success response - application/json
  * @returns {Error} 404 - Agent not found
  */
-const getAgentHandler = async (req, res) => {
+const getAgentHandler = async (req, res, expandProperties = false) => {
   try {
     const id = req.params.id;
     const author = req.user.id;
 
-    let query = { id, author };
-
-    const globalProject = await getProjectByName(Constants.GLOBAL_PROJECT_NAME, ['agentIds']);
-    if (globalProject && (globalProject.agentIds?.length ?? 0) > 0) {
-      query = {
-        $or: [{ id, $in: globalProject.agentIds }, query],
-      };
-    }
-
-    const agent = await getAgent(query);
+    // Permissions are validated by middleware before calling this function
+    // Simply load the agent by ID
+    const agent = await getAgent({ id });
 
     if (!agent) {
       return res.status(404).json({ error: 'Agent not found' });
@@ -120,23 +144,45 @@ const getAgentHandler = async (req, res) => {
     }
 
     agent.author = agent.author.toString();
+
+    // @deprecated - isCollaborative replaced by ACL permissions
     agent.isCollaborative = !!agent.isCollaborative;
+
+    // Check if agent is public
+    const isPublic = await hasPublicPermission({
+      resourceType: ResourceType.AGENT,
+      resourceId: agent._id,
+      requiredPermissions: PermissionBits.VIEW,
+    });
+    agent.isPublic = isPublic;
 
     if (agent.author !== author) {
       delete agent.author;
     }
 
-    if (!agent.isCollaborative && agent.author !== author && req.user.role !== SystemRoles.ADMIN) {
+    if (!expandProperties) {
+      // VIEW permission: Basic agent info only
       return res.status(200).json({
+        _id: agent._id,
         id: agent.id,
         name: agent.name,
+        description: agent.description,
         avatar: agent.avatar,
         author: agent.author,
+        provider: agent.provider,
+        model: agent.model,
         projectIds: agent.projectIds,
+        // @deprecated - isCollaborative replaced by ACL permissions
         isCollaborative: agent.isCollaborative,
+        isPublic: agent.isPublic,
         version: agent.version,
+        // Safe metadata
+        createdAt: agent.createdAt,
+        updatedAt: agent.updatedAt,
       });
     }
+
+    // EDIT permission: Full agent details including sensitive configuration
     return res.status(200).json(agent);
   } catch (error) {
     logger.error('[/Agents/:id] Error retrieving agent', error);
@@ -157,42 +203,22 @@ const updateAgentHandler = async (req, res) => {
   try {
     const id = req.params.id;
     const validatedData = agentUpdateSchema.parse(req.body);
-    const { projectIds, removeProjectIds, ...updateData } = removeNullishValues(validatedData);
-    const isAdmin = req.user.role === SystemRoles.ADMIN;
+    const { _id, ...updateData } = removeNullishValues(validatedData);
     const existingAgent = await getAgent({ id });
 
     if (!existingAgent) {
       return res.status(404).json({ error: 'Agent not found' });
     }
 
-    const isAuthor = existingAgent.author.toString() === req.user.id;
-    const hasEditPermission = existingAgent.isCollaborative || isAdmin || isAuthor;
-
-    if (!hasEditPermission) {
-      return res.status(403).json({
-        error: 'You do not have permission to modify this non-collaborative agent',
-      });
-    }
-
-    /** @type {boolean} */
-    const isProjectUpdate = (projectIds?.length ?? 0) > 0 || (removeProjectIds?.length ?? 0) > 0;
-
     let updatedAgent =
       Object.keys(updateData).length > 0
         ? await updateAgent({ id }, updateData, {
             updatingUserId: req.user.id,
-            skipVersioning: isProjectUpdate,
           })
         : existingAgent;
 
-    if (isProjectUpdate) {
-      updatedAgent = await updateAgentProjects({
-        user: req.user,
-        agentId: id,
-        projectIds,
-        removeProjectIds,
-      });
-    }
+    // Add version count to the response
+    updatedAgent.version = updatedAgent.versions ? updatedAgent.versions.length : 0;
 
     if (updatedAgent.author) {
       updatedAgent.author = updatedAgent.author.toString();
@@ -318,6 +344,26 @@ const duplicateAgentHandler = async (req, res) => {
     newAgentData.actions = agentActions;
     const newAgent = await createAgent(newAgentData);
 
+    // Automatically grant owner permissions to the duplicator
+    try {
+      await grantPermission({
+        principalType: PrincipalType.USER,
+        principalId: userId,
+        resourceType: ResourceType.AGENT,
+        resourceId: newAgent._id,
+        accessRoleId: AccessRoleIds.AGENT_OWNER,
+        grantedBy: userId,
+      });
+      logger.debug(
+        `[duplicateAgent] Granted owner permissions to user ${userId} for duplicated agent ${newAgent.id}`,
+      );
+    } catch (permissionError) {
+      logger.error(
+        `[duplicateAgent] Failed to grant owner permissions for duplicated agent ${newAgent.id}:`,
+        permissionError,
+      );
+    }
+
     return res.status(201).json({
       agent: newAgent,
       actions: newActionsList,
@@ -344,7 +390,7 @@ const deleteAgentHandler = async (req, res) => {
     if (!agent) {
       return res.status(404).json({ error: 'Agent not found' });
     }
-    await deleteAgent({ id, author: req.user.id });
+    await deleteAgent({ id });
     return res.json({ message: 'Agent deleted' });
   } catch (error) {
     logger.error('[/Agents/:id] Error deleting Agent', error);
@@ -353,7 +399,7 @@ const deleteAgentHandler = async (req, res) => {
 };
 
 /**
- *
+ * Lists agents using ACL-aware permissions (ownership + explicit shares).
  * @route GET /Agents
  * @param {object} req - Express Request
  * @param {object} req.query - Request query
@@ -362,9 +408,65 @@ const deleteAgentHandler = async (req, res) => {
  */
 const getListAgentsHandler = async (req, res) => {
   try {
-    const data = await getListAgents({
-      author: req.user.id,
+    const userId = req.user.id;
+    const { category, search, limit, cursor, promoted } = req.query;
+    let requiredPermission = req.query.requiredPermission;
+    if (typeof requiredPermission === 'string') {
+      requiredPermission = parseInt(requiredPermission, 10);
+      if (isNaN(requiredPermission)) {
+        requiredPermission = PermissionBits.VIEW;
+      }
+    } else if (typeof requiredPermission !== 'number') {
+      requiredPermission = PermissionBits.VIEW;
+    }
+    // Base filter
+    const filter = {};
+
+    // Handle category filter - only apply if category is defined
+    if (category !== undefined && category.trim() !== '') {
+      filter.category = category;
+    }
+
+    // Handle promoted filter - only from query param
+    if (promoted === '1') {
+      filter.is_promoted = true;
+    } else if (promoted === '0') {
+      filter.is_promoted = { $ne: true };
+    }
+
+    // Handle search filter
+    if (search && search.trim() !== '') {
+      filter.$or = [
+        { name: { $regex: search.trim(), $options: 'i' } },
+        { description: { $regex: search.trim(), $options: 'i' } },
+      ];
+    }
+    // Get agent IDs the user has VIEW access to via ACL
+    const accessibleIds = await findAccessibleResources({
+      userId,
+      role: req.user.role,
+      resourceType: ResourceType.AGENT,
+      requiredPermissions: requiredPermission,
     });
+    const publiclyAccessibleIds = await findPubliclyAccessibleResources({
+      resourceType: ResourceType.AGENT,
+      requiredPermissions: PermissionBits.VIEW,
+    });
+    // Use the new ACL-aware function
+    const data = await getListAgentsByAccess({
+      accessibleIds,
+      otherParams: filter,
+      limit,
+      after: cursor,
+    });
+    if (data?.data?.length) {
+      data.data = data.data.map((agent) => {
+        if (publiclyAccessibleIds.some((id) => id.equals(agent._id))) {
+          agent.isPublic = true;
+        }
+        return agent;
+      });
+    }
     return res.json(data);
   } catch (error) {
     logger.error('[/Agents] Error listing Agents', error);
@@ -398,7 +500,7 @@ const uploadAgentAvatarHandler = async (req, res) => {
       return res.status(404).json({ error: 'Agent not found' });
     }
 
-    const isAuthor = existingAgent.author.toString() === req.user.id;
+    const isAuthor = existingAgent.author.toString() === req.user.id.toString();
     const hasEditPermission = existingAgent.isCollaborative || isAdmin || isAuthor;
 
     if (!hasEditPermission) {
@@ -409,7 +511,7 @@ const uploadAgentAvatarHandler = async (req, res) => {
 
     const buffer = await fs.readFile(req.file.path);
 
-    const fileStrategy = req.app.locals.fileStrategy;
+    const fileStrategy = getFileStrategy(req.app.locals, { isAvatar: true });
 
     const resizedBuffer = await resizeAvatar({
       userId: req.user.id,
@@ -506,7 +608,7 @@ const revertAgentVersionHandler = async (req, res) => {
       return res.status(404).json({ error: 'Agent not found' });
     }
 
-    const isAuthor = existingAgent.author.toString() === req.user.id;
+    const isAuthor = existingAgent.author.toString() === req.user.id.toString();
     const hasEditPermission = existingAgent.isCollaborative || isAdmin || isAuthor;
 
     if (!hasEditPermission) {
@@ -531,7 +633,48 @@ const revertAgentVersionHandler = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
+/**
+ * Get all agent categories with counts
+ *
+ * @param {Object} _req - Express request object (unused)
+ * @param {Object} res - Express response object
+ */
+const getAgentCategories = async (_req, res) => {
+  try {
+    const categories = await getCategoriesWithCounts();
+    const promotedCount = await countPromotedAgents();
+    const formattedCategories = categories.map((category) => ({
+      value: category.value,
+      label: category.label,
+      count: category.agentCount,
+      description: category.description,
+    }));
 
+    if (promotedCount > 0) {
+      formattedCategories.unshift({
+        value: 'promoted',
+        label: 'Promoted',
+        count: promotedCount,
+        description: 'Our recommended agents',
+      });
+    }
+
+    formattedCategories.push({
+      value: 'all',
+      label: 'All',
+      description: 'All available agents',
+    });
+
+    res.status(200).json(formattedCategories);
+  } catch (error) {
+    logger.error('[/Agents/Marketplace] Error fetching agent categories:', error);
+    res.status(500).json({
+      error: 'Failed to fetch agent categories',
+      userMessage: 'Unable to load categories. Please refresh the page.',
+      suggestion: 'Try refreshing the page or check your network connection',
+    });
+  }
+};
 module.exports = {
   createAgent: createAgentHandler,
   getAgent: getAgentHandler,
@@ -541,4 +684,5 @@ module.exports = {
   getListAgents: getListAgentsHandler,
   uploadAgentAvatar: uploadAgentAvatarHandler,
   revertAgentVersion: revertAgentVersionHandler,
+  getAgentCategories,
 };

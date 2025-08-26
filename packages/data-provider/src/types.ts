@@ -11,6 +11,7 @@ import type {
 } from './schemas';
 import type { SettingDefinition } from './generate';
 import type { TMinimalFeedback } from './feedback';
+import type { ContentTypes } from './types/runs';
 import type { Agent } from './types/assistants';
 
 export * from './schemas';
@@ -40,6 +41,7 @@ export type TEndpointOption = Pick<
   | 'resendFiles'
   | 'imageDetail'
   | 'reasoning_effort'
+  | 'verbosity'
   | 'instructions'
   | 'additional_instructions'
   | 'append_current_datetime'
@@ -107,12 +109,20 @@ export type TPayload = Partial<TMessage> &
     messages?: TMessages;
     isTemporary: boolean;
     ephemeralAgent?: TEphemeralAgent | null;
-    editedContent?: {
-      index: number;
-      text: string;
-      type: 'text' | 'think';
-    } | null;
+    editedContent?: TEditedContent | null;
   };
+
+export type TEditedContent =
+  | {
+      index: number;
+      type: ContentTypes.THINK;
+      [ContentTypes.THINK]: string;
+    }
+  | {
+      index: number;
+      type: ContentTypes.TEXT;
+      [ContentTypes.TEXT]: string;
+    };
 
 export type TSubmission = {
   plugin?: TResPlugin;
@@ -128,11 +138,7 @@ export type TSubmission = {
   endpointOption: TEndpointOption;
   clientTimestamp?: string;
   ephemeralAgent?: TEphemeralAgent | null;
-  editedContent?: {
-    index: number;
-    text: string;
-    type: 'text' | 'think';
-  } | null;
+  editedContent?: TEditedContent | null;
 };
 
 export type EventSubmission = Omit<TSubmission, 'initialResponse'> & { initialResponse: TMessage };
@@ -158,6 +164,12 @@ export type TCategory = {
   id?: string;
   value: string;
   label: string;
+  description?: string;
+  custom?: boolean;
+};
+
+export type TMarketplaceCategory = TCategory & {
+  count: number;
 };
 
 export type TError = {
@@ -410,6 +422,14 @@ export type TVerify2FATempResponse = {
   token?: string;
   user?: TUser;
   message?: string;
+};
+
+/**
+ * Request for disabling 2FA.
+ */
+export type TDisable2FARequest = {
+  token?: string;
+  backupCode?: string;
 };
 
 /**

@@ -12,6 +12,7 @@ const {
 } = require('~/server/services/AuthService');
 const { findUser, getUserById, deleteAllUserSessions, findSession } = require('~/models');
 const { getOpenIdConfig } = require('~/strategies');
+const { getGraphApiToken } = require('~/server/services/GraphTokenService');
 
 const registrationController = async (req, res) => {
   try {
@@ -83,7 +84,7 @@ const refreshController = async (req, res) => {
   }
   try {
     const payload = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
-    const user = await getUserById(payload.id, '-password -__v -totpSecret');
+    const user = await getUserById(payload.id, '-password -__v -totpSecret -backupCodes');
     if (!user) {
       return res.status(401).redirect('/login');
     }
@@ -118,9 +119,54 @@ const refreshController = async (req, res) => {
   }
 };
 
+const graphTokenController = async (req, res) => {
+  try {
+    // Validate user is authenticated via Entra ID
+    if (!req.user.openidId || req.user.provider !== 'openid') {
+      return res.status(403).json({
+        message: 'Microsoft Graph access requires Entra ID authentication',
+      });
+    }
+
+    // Check if OpenID token reuse is active (required for on-behalf-of flow)
+    if (!isEnabled(process.env.OPENID_REUSE_TOKENS)) {
+      return res.status(403).json({
+        message: 'SharePoint integration requires OpenID token reuse to be enabled',
+      });
+    }
+
+    // Extract access token from Authorization header
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({
+        message: 'Valid authorization token required',
+      });
+    }
+
+    // Get scopes from query parameters
+    const scopes = req.query.scopes;
+    if (!scopes) {
+      return res.status(400).json({
+        message: 'Graph API scopes are required as query parameter',
+      });
+    }
+
+    const accessToken = authHeader.substring(7); // Remove 'Bearer ' prefix
+    const tokenResponse = await getGraphApiToken(req.user, accessToken, scopes);
+
+    res.json(tokenResponse);
+  } catch (error) {
+    logger.error('[graphTokenController] Failed to obtain Graph API token:', error);
+    res.status(500).json({
+      message: 'Failed to obtain Microsoft Graph token',
+    });
+  }
+};
+
 module.exports = {
   refreshController,
   registrationController,
   resetPasswordController,
   resetPasswordRequestController,
+  graphTokenController,
 };

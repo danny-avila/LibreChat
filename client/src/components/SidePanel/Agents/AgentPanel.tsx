@@ -1,5 +1,5 @@
 import { Plus } from 'lucide-react';
-import React, { useMemo, useCallback } from 'react';
+import React, { useMemo, useCallback, useRef } from 'react';
 import { Button, useToastContext } from '@librechat/client';
 import { useWatch, useForm, FormProvider } from 'react-hook-form';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
@@ -8,6 +8,7 @@ import {
   Constants,
   SystemRoles,
   EModelEndpoint,
+  PermissionBits,
   isAssistantsEndpoint,
 } from 'librechat-data-provider';
 import type { AgentForm, StringOption } from '~/common';
@@ -15,8 +16,10 @@ import {
   useCreateAgentMutation,
   useUpdateAgentMutation,
   useGetAgentByIdQuery,
+  useGetExpandedAgentByIdQuery,
 } from '~/data-provider';
 import { createProviderOption, getDefaultAgentFormValues } from '~/utils';
+import { useResourcePermissions } from '~/hooks/useResourcePermissions';
 import { useSelectAgent, useLocalize, useAuthContext } from '~/hooks';
 import { useAgentPanelContext } from '~/Providers/AgentPanelContext';
 import AgentPanelSkeleton from './AgentPanelSkeleton';
@@ -43,17 +46,38 @@ export default function AgentPanel() {
   const { onSelect: onSelectAgent } = useSelectAgent();
 
   const modelsQuery = useGetModelsQuery();
-  const agentQuery = useGetAgentByIdQuery(current_agent_id ?? '', {
+
+  // Basic agent query for initial permission check
+  const basicAgentQuery = useGetAgentByIdQuery(current_agent_id ?? '', {
     enabled: !!(current_agent_id ?? '') && current_agent_id !== Constants.EPHEMERAL_AGENT_ID,
   });
+
+  const { hasPermission, isLoading: permissionsLoading } = useResourcePermissions(
+    'agent',
+    basicAgentQuery.data?._id || '',
+  );
+
+  const canEdit = hasPermission(PermissionBits.EDIT);
+
+  const expandedAgentQuery = useGetExpandedAgentByIdQuery(current_agent_id ?? '', {
+    enabled:
+      !!(current_agent_id ?? '') &&
+      current_agent_id !== Constants.EPHEMERAL_AGENT_ID &&
+      canEdit &&
+      !permissionsLoading,
+  });
+
+  const agentQuery = canEdit && expandedAgentQuery.data ? expandedAgentQuery : basicAgentQuery;
 
   const models = useMemo(() => modelsQuery.data ?? {}, [modelsQuery.data]);
   const methods = useForm<AgentForm>({
     defaultValues: getDefaultAgentFormValues(),
+    mode: 'onChange',
   });
 
   const { control, handleSubmit, reset } = methods;
   const agent_id = useWatch({ control, name: 'id' });
+  const previousVersionRef = useRef<number | undefined>();
 
   const allowedProviders = useMemo(
     () => new Set(agentsConfig?.allowedProviders),
@@ -77,50 +101,29 @@ export default function AgentPanel() {
 
   /* Mutations */
   const update = useUpdateAgentMutation({
+    onMutate: () => {
+      // Store the current version before mutation
+      previousVersionRef.current = agentQuery.data?.version;
+    },
     onSuccess: (data) => {
-      showToast({
-        message: `${localize('com_assistants_update_success')} ${
-          data.name ?? localize('com_ui_agent')
-        }`,
-      });
+      // Check if agent version is the same (no changes were made)
+      if (previousVersionRef.current !== undefined && data.version === previousVersionRef.current) {
+        showToast({
+          message: localize('com_ui_no_changes'),
+          status: 'info',
+        });
+      } else {
+        showToast({
+          message: `${localize('com_assistants_update_success')} ${
+            data.name ?? localize('com_ui_agent')
+          }`,
+        });
+      }
+      // Clear the ref after use
+      previousVersionRef.current = undefined;
     },
     onError: (err) => {
-      const error = err as Error & {
-        statusCode?: number;
-        details?: { duplicateVersion?: any; versionIndex?: number };
-        response?: { status?: number; data?: any };
-      };
-
-      const isDuplicateVersionError =
-        (error.statusCode === 409 && error.details?.duplicateVersion) ||
-        (error.response?.status === 409 && error.response?.data?.details?.duplicateVersion);
-
-      if (isDuplicateVersionError) {
-        let versionIndex: number | undefined = undefined;
-
-        if (error.details?.versionIndex !== undefined) {
-          versionIndex = error.details.versionIndex;
-        } else if (error.response?.data?.details?.versionIndex !== undefined) {
-          versionIndex = error.response.data.details.versionIndex;
-        }
-
-        if (versionIndex === undefined || versionIndex < 0) {
-          showToast({
-            message: localize('com_agents_update_error'),
-            status: 'error',
-            duration: 5000,
-          });
-        } else {
-          showToast({
-            message: localize('com_ui_agent_version_duplicate', { versionIndex: versionIndex + 1 }),
-            status: 'error',
-            duration: 10000,
-          });
-        }
-
-        return;
-      }
-
+      const error = err as Error;
       showToast({
         message: `${localize('com_agents_update_error')}${
           error.message ? ` ${localize('com_ui_error')}: ${error.message}` : ''
@@ -176,6 +179,8 @@ export default function AgentPanel() {
         end_after_tools,
         hide_sequential_outputs,
         recursion_limit,
+        category,
+        support_contact,
       } = data;
 
       const model = _model ?? '';
@@ -198,6 +203,8 @@ export default function AgentPanel() {
             end_after_tools,
             hide_sequential_outputs,
             recursion_limit,
+            category,
+            support_contact,
           },
         });
         return;
@@ -206,6 +213,12 @@ export default function AgentPanel() {
       if (!provider || !model) {
         return showToast({
           message: localize('com_agents_missing_provider_model'),
+          status: 'error',
+        });
+      }
+      if (!name) {
+        return showToast({
+          message: localize('com_agents_missing_name'),
           status: 'error',
         });
       }
@@ -223,6 +236,8 @@ export default function AgentPanel() {
         end_after_tools,
         hide_sequential_outputs,
         recursion_limit,
+        category,
+        support_contact,
       });
     },
     [agent_id, create, update, showToast, localize],
@@ -235,19 +250,16 @@ export default function AgentPanel() {
   }, [agent_id, onSelectAgent]);
 
   const canEditAgent = useMemo(() => {
-    const canEdit =
-      (agentQuery.data?.isCollaborative ?? false)
-        ? true
-        : agentQuery.data?.author === user?.id || user?.role === SystemRoles.ADMIN;
+    if (!agentQuery.data?.id) {
+      return true;
+    }
 
-    return agentQuery.data?.id != null && agentQuery.data.id ? canEdit : true;
-  }, [
-    agentQuery.data?.isCollaborative,
-    agentQuery.data?.author,
-    agentQuery.data?.id,
-    user?.id,
-    user?.role,
-  ]);
+    if (user?.role === SystemRoles.ADMIN) {
+      return true;
+    }
+
+    return canEdit;
+  }, [agentQuery.data?.id, user?.role, canEdit]);
 
   return (
     <FormProvider {...methods}>
@@ -256,7 +268,7 @@ export default function AgentPanel() {
         className="scrollbar-gutter-stable h-auto w-full flex-shrink-0 overflow-x-hidden"
         aria-label="Agent configuration form"
       >
-        <div className="mt-2 flex w-full flex-wrap gap-2">
+        <div className="mx-1 mt-2 flex w-full flex-wrap gap-2">
           <div className="w-full">
             <AgentSelect
               createMutation={create}

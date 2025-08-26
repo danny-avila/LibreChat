@@ -1,6 +1,6 @@
 {
   "name": "@librechat/client",
-  "version": "0.2.1",
+  "version": "0.2.7",
   "description": "React components for LibreChat",
   "main": "dist/index.js",
   "module": "dist/index.es.js",
@@ -54,6 +54,7 @@
     "@react-spring/web": "^10.0.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "dompurify": "^3.2.6",
     "framer-motion": "^12.23.6",
     "i18next-browser-languagedetector": "^8.2.0",
     "input-otp": "^1.4.2",
@@ -63,7 +64,9 @@
     "react-hook-form": "^7.56.4",
     "react-resizable-panels": "^3.0.2",
     "react-textarea-autosize": "^8.4.0",
-    "tailwind-merge": "^1.9.1"
+    "tailwind-merge": "^1.9.1",
+    "@dicebear/core": "^9.2.2",
+    "@dicebear/collection": "^9.2.2"
   },
   "devDependencies": {
     "@rollup/plugin-alias": "^5.1.0",

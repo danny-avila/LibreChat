@@ -225,6 +225,8 @@ export type AgentPanelContextType = {
   setActivePanel: React.Dispatch<React.SetStateAction<Panel>>;
   setCurrentAgentId: React.Dispatch<React.SetStateAction<string | undefined>>;
   agent_id?: string;
+  agentsConfig?: t.TAgentsEndpoint | null;
+  endpointsConfig?: t.TEndpointsConfig | null;
 };
 
 export type AgentModelPanelProps = {
@@ -335,6 +337,7 @@ export type TAskProps = {
 
 export type TOptions = {
   editedMessageId?: string | null;
+  editedContent?: t.TEditedContent;
   editedText?: string | null;
   isRegenerate?: boolean;
   isContinued?: boolean;

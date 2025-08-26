@@ -77,6 +77,7 @@ export const LangSelector = ({
     { value: 'zh-Hans', label: localize('com_nav_lang_chinese') },
     { value: 'zh-Hant', label: localize('com_nav_lang_traditional_chinese') },
     { value: 'ar-EG', label: localize('com_nav_lang_arabic') },
+    { value: 'bs', label: localize('com_nav_lang_bosnian') },
     { value: 'da-DK', label: localize('com_nav_lang_danish') },
     { value: 'de-DE', label: localize('com_nav_lang_german') },
     { value: 'es-ES', label: localize('com_nav_lang_spanish') },
@@ -88,6 +89,7 @@ export const LangSelector = ({
     { value: 'hu-HU', label: localize('com_nav_lang_hungarian') },
     { value: 'hy-AM', label: localize('com_nav_lang_armenian') },
     { value: 'it-IT', label: localize('com_nav_lang_italian') },
+    { value: 'nb', label: localize('com_nav_lang_norwegian_bokmal') },
     { value: 'pl-PL', label: localize('com_nav_lang_polish') },
     { value: 'pt-BR', label: localize('com_nav_lang_brazilian_portuguese') },
     { value: 'pt-PT', label: localize('com_nav_lang_portuguese') },
@@ -105,6 +107,8 @@ export const LangSelector = ({
     { value: 'nl-NL', label: localize('com_nav_lang_dutch') },
     { value: 'id-ID', label: localize('com_nav_lang_indonesia') },
     { value: 'fi-FI', label: localize('com_nav_lang_finnish') },
+    { value: 'bo', label: localize('com_nav_lang_tibetan') },
+    { value: 'uk-UA', label: localize('com_nav_lang_ukrainian') },
   ];
 
   return (

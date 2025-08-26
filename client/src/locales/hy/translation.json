@@ -4,7 +4,6 @@
   "com_a11y_ai_composing": "AI-ն դեռ շարունակում է գրել։",
   "com_a11y_end": "AI-ն ավարտեց իր պատասխանը։",
   "com_a11y_start": "AI-ն սկսել է պատասխանը։",
-  "com_agents_allow_editing": "Թույլ տալ այլ օգտատերերին խմբագրել ձեր գործակալին",
   "com_agents_by_librechat": "LibreChat-ի կողմից",
   "com_agents_code_interpreter": "Միացված լինելու դեպքում, թույլ է տալիս ձեր գործակալին օգտագործել LibreChat Code Interpreter API-ը՝ ստեղծված կոդը, այդ թվում՝ ֆայլերի մշակումը, անվտանգ կերպով գործարկելու համար: Պահանջվում է վավեր API բանալի:",
   "com_agents_code_interpreter_title": "Կոդի մեկնաբանիչ API",

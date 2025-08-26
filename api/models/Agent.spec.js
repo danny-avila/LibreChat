@@ -14,6 +14,7 @@ const mongoose = require('mongoose');
 const { v4: uuidv4 } = require('uuid');
 const { agentSchema } = require('@librechat/data-schemas');
 const { MongoMemoryServer } = require('mongodb-memory-server');
+const { AccessRoleIds, ResourceType, PrincipalType } = require('librechat-data-provider');
 const {
   getAgent,
   loadAgent,
@@ -21,13 +22,16 @@ const {
   updateAgent,
   deleteAgent,
   getListAgents,
+  getListAgentsByAccess,
+  revertAgentVersion,
   updateAgentProjects,
   addAgentResourceFile,
   removeAgentResourceFiles,
   generateActionMetadataHash,
-  revertAgentVersion,
 } = require('./Agent');
+const permissionService = require('~/server/services/PermissionService');
 const { getCachedTools } = require('~/server/services/Config');
+const { AclEntry } = require('~/db/models');
 
 /**
  * @type {import('mongoose').Model<import('@librechat/data-schemas').IAgent>}
@@ -407,12 +411,26 @@ describe('models/Agent', () => {
 
   describe('Agent CRUD Operations', () => {
     let mongoServer;
+    let AccessRole;
 
     beforeAll(async () => {
       mongoServer = await MongoMemoryServer.create();
       const mongoUri = mongoServer.getUri();
       Agent = mongoose.models.Agent || mongoose.model('Agent', agentSchema);
       await mongoose.connect(mongoUri);
+
+      // Initialize models
+      const dbModels = require('~/db/models');
+      AccessRole = dbModels.AccessRole;
+
+      // Create necessary access roles for agents
+      await AccessRole.create({
+        accessRoleId: AccessRoleIds.AGENT_OWNER,
+        name: 'Owner',
+        description: 'Full control over agents',
+        resourceType: ResourceType.AGENT,
+        permBits: 15, // VIEW | EDIT | DELETE | SHARE
+      });
     }, 20000);
 
     afterAll(async () => {
@@ -466,6 +484,51 @@ describe('models/Agent', () => {
 
       const agentAfterDelete = await getAgent({ id: agentId });
       expect(agentAfterDelete).toBeNull();
+    });
+
+    test('should remove ACL entries when deleting an agent', async () => {
+      const agentId = `agent_${uuidv4()}`;
+      const authorId = new mongoose.Types.ObjectId();
+
+      // Create agent
+      const agent = await createAgent({
+        id: agentId,
+        name: 'Agent With Permissions',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+      });
+
+      // Grant permissions (simulating sharing)
+      await permissionService.grantPermission({
+        principalType: PrincipalType.USER,
+        principalId: authorId,
+        resourceType: ResourceType.AGENT,
+        resourceId: agent._id,
+        accessRoleId: AccessRoleIds.AGENT_OWNER,
+        grantedBy: authorId,
+      });
+
+      // Verify ACL entry exists
+      const aclEntriesBefore = await AclEntry.find({
+        resourceType: ResourceType.AGENT,
+        resourceId: agent._id,
+      });
+      expect(aclEntriesBefore).toHaveLength(1);
+
+      // Delete the agent
+      await deleteAgent({ id: agentId });
+
+      // Verify agent is deleted
+      const agentAfterDelete = await getAgent({ id: agentId });
+      expect(agentAfterDelete).toBeNull();
+
+      // Verify ACL entries are removed
+      const aclEntriesAfter = await AclEntry.find({
+        resourceType: ResourceType.AGENT,
+        resourceId: agent._id,
+      });
+      expect(aclEntriesAfter).toHaveLength(0);
     });
 
     test('should list agents by author', async () => {
@@ -879,45 +942,31 @@ describe('models/Agent', () => {
       expect(emptyParamsAgent.model_parameters).toEqual({});
     });
 
-    test('should detect duplicate versions and reject updates', async () => {
-      const originalConsoleError = console.error;
-      console.error = jest.fn();
+    test('should not create new version for duplicate updates', async () => {
+      const authorId = new mongoose.Types.ObjectId();
+      const testCases = generateVersionTestCases();
 
-      try {
-        const authorId = new mongoose.Types.ObjectId();
-        const testCases = generateVersionTestCases();
+      for (const testCase of testCases) {
+        const testAgentId = `agent_${uuidv4()}`;
 
-        for (const testCase of testCases) {
-          const testAgentId = `agent_${uuidv4()}`;
+        await createAgent({
+          id: testAgentId,
+          provider: 'test',
+          model: 'test-model',
+          author: authorId,
+          ...testCase.initial,
+        });
 
-          await createAgent({
-            id: testAgentId,
-            provider: 'test',
-            model: 'test-model',
-            author: authorId,
-            ...testCase.initial,
-          });
+        const updatedAgent = await updateAgent({ id: testAgentId }, testCase.update);
+        expect(updatedAgent.versions).toHaveLength(2); // No new version created
 
-          await updateAgent({ id: testAgentId }, testCase.update);
+        // Update with duplicate data should succeed but not create a new version
+        const duplicateUpdate = await updateAgent({ id: testAgentId }, testCase.duplicate);
 
-          let error;
-          try {
-            await updateAgent({ id: testAgentId }, testCase.duplicate);
-          } catch (e) {
-            error = e;
-          }
+        expect(duplicateUpdate.versions).toHaveLength(2); // No new version created
 
-          expect(error).toBeDefined();
-          expect(error.message).toContain('Duplicate version');
-          expect(error.statusCode).toBe(409);
-          expect(error.details).toBeDefined();
-          expect(error.details.duplicateVersion).toBeDefined();
-
-          const agent = await getAgent({ id: testAgentId });
-          expect(agent.versions).toHaveLength(2);
-        }
-      } finally {
-        console.error = originalConsoleError;
+        const agent = await getAgent({ id: testAgentId });
+        expect(agent.versions).toHaveLength(2);
       }
     });
 
@@ -1093,20 +1142,13 @@ describe('models/Agent', () => {
       expect(secondUpdate.versions).toHaveLength(3);
 
       // Update without forceVersion and no changes should not create a version
-      let error;
-      try {
-        await updateAgent(
-          { id: agentId },
-          { tools: ['listEvents_action_test.com', 'createEvent_action_test.com'] },
-          { updatingUserId: authorId.toString(), forceVersion: false },
-        );
-      } catch (e) {
-        error = e;
-      }
+      const duplicateUpdate = await updateAgent(
+        { id: agentId },
+        { tools: ['listEvents_action_test.com', 'createEvent_action_test.com'] },
+        { updatingUserId: authorId.toString(), forceVersion: false },
+      );
 
-      expect(error).toBeDefined();
-      expect(error.message).toContain('Duplicate version');
-      expect(error.statusCode).toBe(409);
+      expect(duplicateUpdate.versions).toHaveLength(3); // No new version created
     });
 
     test('should handle isDuplicateVersion with arrays containing null/undefined values', async () => {
@@ -1256,6 +1298,335 @@ describe('models/Agent', () => {
       );
 
       expect(secondUpdate.versions).toHaveLength(3);
+    });
+
+    test('should detect changes in support_contact fields', async () => {
+      const agentId = `agent_${uuidv4()}`;
+      const authorId = new mongoose.Types.ObjectId();
+
+      // Create agent with initial support_contact
+      await createAgent({
+        id: agentId,
+        name: 'Agent with Support Contact',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+        support_contact: {
+          name: 'Initial Support',
+          email: 'initial@support.com',
+        },
+      });
+
+      // Update support_contact name only
+      const firstUpdate = await updateAgent(
+        { id: agentId },
+        {
+          support_contact: {
+            name: 'Updated Support',
+            email: 'initial@support.com',
+          },
+        },
+      );
+
+      expect(firstUpdate.versions).toHaveLength(2);
+      expect(firstUpdate.support_contact.name).toBe('Updated Support');
+      expect(firstUpdate.support_contact.email).toBe('initial@support.com');
+
+      // Update support_contact email only
+      const secondUpdate = await updateAgent(
+        { id: agentId },
+        {
+          support_contact: {
+            name: 'Updated Support',
+            email: 'updated@support.com',
+          },
+        },
+      );
+
+      expect(secondUpdate.versions).toHaveLength(3);
+      expect(secondUpdate.support_contact.email).toBe('updated@support.com');
+
+      // Try to update with same support_contact - should be detected as duplicate but return successfully
+      const duplicateUpdate = await updateAgent(
+        { id: agentId },
+        {
+          support_contact: {
+            name: 'Updated Support',
+            email: 'updated@support.com',
+          },
+        },
+      );
+
+      // Should not create a new version
+      expect(duplicateUpdate.versions).toHaveLength(3);
+      expect(duplicateUpdate.version).toBe(3);
+      expect(duplicateUpdate.support_contact.email).toBe('updated@support.com');
+    });
+
+    test('should handle support_contact from empty to populated', async () => {
+      const agentId = `agent_${uuidv4()}`;
+      const authorId = new mongoose.Types.ObjectId();
+
+      // Create agent without support_contact
+      const agent = await createAgent({
+        id: agentId,
+        name: 'Agent without Support',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+      });
+
+      // Verify support_contact is undefined since it wasn't provided
+      expect(agent.support_contact).toBeUndefined();
+
+      // Update to add support_contact
+      const updated = await updateAgent(
+        { id: agentId },
+        {
+          support_contact: {
+            name: 'New Support Team',
+            email: 'support@example.com',
+          },
+        },
+      );
+
+      expect(updated.versions).toHaveLength(2);
+      expect(updated.support_contact.name).toBe('New Support Team');
+      expect(updated.support_contact.email).toBe('support@example.com');
+    });
+
+    test('should handle support_contact edge cases in isDuplicateVersion', async () => {
+      const agentId = `agent_${uuidv4()}`;
+      const authorId = new mongoose.Types.ObjectId();
+
+      // Create agent with support_contact
+      await createAgent({
+        id: agentId,
+        name: 'Edge Case Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+        support_contact: {
+          name: 'Support',
+          email: 'support@test.com',
+        },
+      });
+
+      // Update to empty support_contact
+      const emptyUpdate = await updateAgent(
+        { id: agentId },
+        {
+          support_contact: {},
+        },
+      );
+
+      expect(emptyUpdate.versions).toHaveLength(2);
+      expect(emptyUpdate.support_contact).toEqual({});
+
+      // Update back to populated support_contact
+      const repopulated = await updateAgent(
+        { id: agentId },
+        {
+          support_contact: {
+            name: 'Support',
+            email: 'support@test.com',
+          },
+        },
+      );
+
+      expect(repopulated.versions).toHaveLength(3);
+
+      // Verify all versions have correct support_contact
+      const finalAgent = await getAgent({ id: agentId });
+      expect(finalAgent.versions[0].support_contact).toEqual({
+        name: 'Support',
+        email: 'support@test.com',
+      });
+      expect(finalAgent.versions[1].support_contact).toEqual({});
+      expect(finalAgent.versions[2].support_contact).toEqual({
+        name: 'Support',
+        email: 'support@test.com',
+      });
+    });
+
+    test('should preserve support_contact in version history', async () => {
+      const agentId = `agent_${uuidv4()}`;
+      const authorId = new mongoose.Types.ObjectId();
+
+      // Create agent
+      await createAgent({
+        id: agentId,
+        name: 'Version History Test',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+        support_contact: {
+          name: 'Initial Contact',
+          email: 'initial@test.com',
+        },
+      });
+
+      // Multiple updates with different support_contact values
+      await updateAgent(
+        { id: agentId },
+        {
+          support_contact: {
+            name: 'Second Contact',
+            email: 'second@test.com',
+          },
+        },
+      );
+
+      await updateAgent(
+        { id: agentId },
+        {
+          support_contact: {
+            name: 'Third Contact',
+            email: 'third@test.com',
+          },
+        },
+      );
+
+      const finalAgent = await getAgent({ id: agentId });
+
+      // Verify version history
+      expect(finalAgent.versions).toHaveLength(3);
+      expect(finalAgent.versions[0].support_contact).toEqual({
+        name: 'Initial Contact',
+        email: 'initial@test.com',
+      });
+      expect(finalAgent.versions[1].support_contact).toEqual({
+        name: 'Second Contact',
+        email: 'second@test.com',
+      });
+      expect(finalAgent.versions[2].support_contact).toEqual({
+        name: 'Third Contact',
+        email: 'third@test.com',
+      });
+
+      // Current state should match last version
+      expect(finalAgent.support_contact).toEqual({
+        name: 'Third Contact',
+        email: 'third@test.com',
+      });
+    });
+
+    test('should handle partial support_contact updates', async () => {
+      const agentId = `agent_${uuidv4()}`;
+      const authorId = new mongoose.Types.ObjectId();
+
+      // Create agent with full support_contact
+      await createAgent({
+        id: agentId,
+        name: 'Partial Update Test',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+        support_contact: {
+          name: 'Original Name',
+          email: 'original@email.com',
+        },
+      });
+
+      // MongoDB's findOneAndUpdate will replace the entire support_contact object
+      // So we need to verify that partial updates still work correctly
+      const updated = await updateAgent(
+        { id: agentId },
+        {
+          support_contact: {
+            name: 'New Name',
+            email: '', // Empty email
+          },
+        },
+      );
+
+      expect(updated.versions).toHaveLength(2);
+      expect(updated.support_contact.name).toBe('New Name');
+      expect(updated.support_contact.email).toBe('');
+
+      // Verify isDuplicateVersion works with partial changes - should return successfully without creating new version
+      const duplicateUpdate = await updateAgent(
+        { id: agentId },
+        {
+          support_contact: {
+            name: 'New Name',
+            email: '',
+          },
+        },
+      );
+
+      // Should not create a new version since content is the same
+      expect(duplicateUpdate.versions).toHaveLength(2);
+      expect(duplicateUpdate.version).toBe(2);
+      expect(duplicateUpdate.support_contact.name).toBe('New Name');
+      expect(duplicateUpdate.support_contact.email).toBe('');
+    });
+
+    // Edge Cases
+    describe.each([
+      {
+        operation: 'add',
+        name: 'empty file_id',
+        needsAgent: true,
+        params: { tool_resource: 'file_search', file_id: '' },
+        shouldResolve: true,
+      },
+      {
+        operation: 'add',
+        name: 'non-existent agent',
+        needsAgent: false,
+        params: { tool_resource: 'file_search', file_id: 'file123' },
+        shouldResolve: false,
+        error: 'Agent not found for adding resource file',
+      },
+    ])('addAgentResourceFile with $name', ({ needsAgent, params, shouldResolve, error }) => {
+      test(`should ${shouldResolve ? 'resolve' : 'reject'}`, async () => {
+        const agent = needsAgent ? await createBasicAgent() : null;
+        const agent_id = needsAgent ? agent.id : `agent_${uuidv4()}`;
+
+        if (shouldResolve) {
+          await expect(addAgentResourceFile({ agent_id, ...params })).resolves.toBeDefined();
+        } else {
+          await expect(addAgentResourceFile({ agent_id, ...params })).rejects.toThrow(error);
+        }
+      });
+    });
+
+    describe.each([
+      {
+        name: 'empty files array',
+        files: [],
+        needsAgent: true,
+        shouldResolve: true,
+      },
+      {
+        name: 'non-existent tool_resource',
+        files: [{ tool_resource: 'non_existent_tool', file_id: 'file123' }],
+        needsAgent: true,
+        shouldResolve: true,
+      },
+      {
+        name: 'non-existent agent',
+        files: [{ tool_resource: 'file_search', file_id: 'file123' }],
+        needsAgent: false,
+        shouldResolve: false,
+        error: 'Agent not found for removing resource files',
+      },
+    ])('removeAgentResourceFiles with $name', ({ files, needsAgent, shouldResolve, error }) => {
+      test(`should ${shouldResolve ? 'resolve' : 'reject'}`, async () => {
+        const agent = needsAgent ? await createBasicAgent() : null;
+        const agent_id = needsAgent ? agent.id : `agent_${uuidv4()}`;
+
+        if (shouldResolve) {
+          const result = await removeAgentResourceFiles({ agent_id, files });
+          expect(result).toBeDefined();
+          if (agent) {
+            expect(result.id).toBe(agent.id);
+          }
+        } else {
+          await expect(removeAgentResourceFiles({ agent_id, files })).rejects.toThrow(error);
+        }
+      });
     });
 
     describe('Edge Cases', () => {
@@ -1633,7 +2004,7 @@ describe('models/Agent', () => {
       expect(result.version).toBe(1);
     });
 
-    test('should return null when user is not author and agent has no projectIds', async () => {
+    test('should return agent even when user is not author (permissions checked at route level)', async () => {
       const authorId = new mongoose.Types.ObjectId();
       const userId = new mongoose.Types.ObjectId();
       const agentId = `agent_${uuidv4()}`;
@@ -1654,7 +2025,11 @@ describe('models/Agent', () => {
         model_parameters: { model: 'gpt-4' },
       });
 
-      expect(result).toBeFalsy();
+      // With the new permission system, loadAgent returns the agent regardless of permissions
+      // Permission checks are handled at the route level via middleware
+      expect(result).toBeTruthy();
+      expect(result.id).toBe(agentId);
+      expect(result.name).toBe('Test Agent');
     });
 
     test('should handle ephemeral agent with no MCP servers', async () => {
@@ -1762,7 +2137,7 @@ describe('models/Agent', () => {
         }
       });
 
-      test('should handle loadAgent with agent from different project', async () => {
+      test('should return agent from different project (permissions checked at route level)', async () => {
         const authorId = new mongoose.Types.ObjectId();
         const userId = new mongoose.Types.ObjectId();
         const agentId = `agent_${uuidv4()}`;
@@ -1785,7 +2160,11 @@ describe('models/Agent', () => {
           model_parameters: { model: 'gpt-4' },
         });
 
-        expect(result).toBeFalsy();
+        // With the new permission system, loadAgent returns the agent regardless of permissions
+        // Permission checks are handled at the route level via middleware
+        expect(result).toBeTruthy();
+        expect(result.id).toBe(agentId);
+        expect(result.name).toBe('Project Agent');
       });
     });
   });
@@ -2400,11 +2779,18 @@ describe('models/Agent', () => {
         agent_ids: ['agent1', 'agent2'],
       });
 
-      await updateAgent({ id: agentId }, { agent_ids: ['agent1', 'agent2', 'agent3'] });
+      const updatedAgent = await updateAgent(
+        { id: agentId },
+        { agent_ids: ['agent1', 'agent2', 'agent3'] },
+      );
+      expect(updatedAgent.versions).toHaveLength(2);
 
-      await expect(
-        updateAgent({ id: agentId }, { agent_ids: ['agent1', 'agent2', 'agent3'] }),
-      ).rejects.toThrow('Duplicate version');
+      // Update with same agent_ids should succeed but not create a new version
+      const duplicateUpdate = await updateAgent(
+        { id: agentId },
+        { agent_ids: ['agent1', 'agent2', 'agent3'] },
+      );
+      expect(duplicateUpdate.versions).toHaveLength(2); // No new version created
     });
 
     test('should handle agent_ids field alongside other fields', async () => {
@@ -2543,9 +2929,10 @@ describe('models/Agent', () => {
       expect(updated.versions).toHaveLength(2);
       expect(updated.agent_ids).toEqual([]);
 
-      await expect(updateAgent({ id: agentId }, { agent_ids: [] })).rejects.toThrow(
-        'Duplicate version',
-      );
+      // Update with same empty agent_ids should succeed but not create a new version
+      const duplicateUpdate = await updateAgent({ id: agentId }, { agent_ids: [] });
+      expect(duplicateUpdate.versions).toHaveLength(2); // No new version created
+      expect(duplicateUpdate.agent_ids).toEqual([]);
     });
 
     test('should handle agent without agent_ids field', async () => {
@@ -2566,6 +2953,299 @@ describe('models/Agent', () => {
 
       expect(updated.versions).toHaveLength(2);
       expect(updated.agent_ids).toEqual(['agent1']);
+    });
+  });
+});
+
+describe('Support Contact Field', () => {
+  let mongoServer;
+
+  beforeAll(async () => {
+    mongoServer = await MongoMemoryServer.create();
+    const mongoUri = mongoServer.getUri();
+    Agent = mongoose.models.Agent || mongoose.model('Agent', agentSchema);
+    await mongoose.connect(mongoUri);
+  }, 20000);
+
+  afterAll(async () => {
+    await mongoose.disconnect();
+    await mongoServer.stop();
+  });
+
+  beforeEach(async () => {
+    await Agent.deleteMany({});
+  });
+
+  it('should not create subdocument with ObjectId for support_contact', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    const agentData = {
+      id: 'agent_test_support',
+      name: 'Test Agent',
+      provider: 'openai',
+      model: 'gpt-4',
+      author: userId,
+      support_contact: {
+        name: 'Support Team',
+        email: 'support@example.com',
+      },
+    };
+
+    // Create agent
+    const agent = await createAgent(agentData);
+
+    // Verify support_contact is stored correctly
+    expect(agent.support_contact).toBeDefined();
+    expect(agent.support_contact.name).toBe('Support Team');
+    expect(agent.support_contact.email).toBe('support@example.com');
+
+    // Verify no _id field is created in support_contact
+    expect(agent.support_contact._id).toBeUndefined();
+
+    // Fetch from database to double-check
+    const dbAgent = await Agent.findOne({ id: agentData.id });
+    expect(dbAgent.support_contact).toBeDefined();
+    expect(dbAgent.support_contact.name).toBe('Support Team');
+    expect(dbAgent.support_contact.email).toBe('support@example.com');
+    expect(dbAgent.support_contact._id).toBeUndefined();
+  });
+
+  it('should handle empty support_contact correctly', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    const agentData = {
+      id: 'agent_test_empty_support',
+      name: 'Test Agent',
+      provider: 'openai',
+      model: 'gpt-4',
+      author: userId,
+      support_contact: {},
+    };
+
+    const agent = await createAgent(agentData);
+
+    // Verify empty support_contact is stored as empty object
+    expect(agent.support_contact).toEqual({});
+    expect(agent.support_contact._id).toBeUndefined();
+  });
+
+  it('should handle missing support_contact correctly', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    const agentData = {
+      id: 'agent_test_no_support',
+      name: 'Test Agent',
+      provider: 'openai',
+      model: 'gpt-4',
+      author: userId,
+    };
+
+    const agent = await createAgent(agentData);
+
+    // Verify support_contact is undefined when not provided
+    expect(agent.support_contact).toBeUndefined();
+  });
+
+  describe('getListAgentsByAccess - Security Tests', () => {
+    let userA, userB;
+    let agentA1, agentA2, agentA3;
+
+    beforeEach(async () => {
+      Agent = mongoose.models.Agent || mongoose.model('Agent', agentSchema);
+      await Agent.deleteMany({});
+      await AclEntry.deleteMany({});
+
+      // Create two users
+      userA = new mongoose.Types.ObjectId();
+      userB = new mongoose.Types.ObjectId();
+
+      // Create agents for user A
+      agentA1 = await createAgent({
+        id: `agent_${uuidv4().slice(0, 12)}`,
+        name: 'Agent A1',
+        description: 'User A agent 1',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: userA,
+      });
+
+      agentA2 = await createAgent({
+        id: `agent_${uuidv4().slice(0, 12)}`,
+        name: 'Agent A2',
+        description: 'User A agent 2',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: userA,
+      });
+
+      agentA3 = await createAgent({
+        id: `agent_${uuidv4().slice(0, 12)}`,
+        name: 'Agent A3',
+        description: 'User A agent 3',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: userA,
+      });
+    });
+
+    test('should return empty list when user has no accessible agents (empty accessibleIds)', async () => {
+      // User B has no agents and no shared agents
+      const result = await getListAgentsByAccess({
+        accessibleIds: [],
+        otherParams: {},
+      });
+
+      expect(result.data).toHaveLength(0);
+      expect(result.has_more).toBe(false);
+      expect(result.first_id).toBeNull();
+      expect(result.last_id).toBeNull();
+    });
+
+    test('should not return other users agents when accessibleIds is empty', async () => {
+      // User B trying to list agents with empty accessibleIds should not see User A's agents
+      const result = await getListAgentsByAccess({
+        accessibleIds: [],
+        otherParams: { author: userB },
+      });
+
+      expect(result.data).toHaveLength(0);
+      expect(result.has_more).toBe(false);
+    });
+
+    test('should only return agents in accessibleIds list', async () => {
+      // Give User B access to only one of User A's agents
+      const accessibleIds = [agentA1._id];
+
+      const result = await getListAgentsByAccess({
+        accessibleIds,
+        otherParams: {},
+      });
+
+      expect(result.data).toHaveLength(1);
+      expect(result.data[0].id).toBe(agentA1.id);
+      expect(result.data[0].name).toBe('Agent A1');
+    });
+
+    test('should return multiple accessible agents when provided', async () => {
+      // Give User B access to two of User A's agents
+      const accessibleIds = [agentA1._id, agentA3._id];
+
+      const result = await getListAgentsByAccess({
+        accessibleIds,
+        otherParams: {},
+      });
+
+      expect(result.data).toHaveLength(2);
+      const returnedIds = result.data.map((agent) => agent.id);
+      expect(returnedIds).toContain(agentA1.id);
+      expect(returnedIds).toContain(agentA3.id);
+      expect(returnedIds).not.toContain(agentA2.id);
+    });
+
+    test('should respect other query parameters while enforcing accessibleIds', async () => {
+      // Give access to all agents but filter by name
+      const accessibleIds = [agentA1._id, agentA2._id, agentA3._id];
+
+      const result = await getListAgentsByAccess({
+        accessibleIds,
+        otherParams: { name: 'Agent A2' },
+      });
+
+      expect(result.data).toHaveLength(1);
+      expect(result.data[0].id).toBe(agentA2.id);
+    });
+
+    test('should handle pagination correctly with accessibleIds filter', async () => {
+      // Create more agents
+      const moreAgents = [];
+      for (let i = 4; i <= 10; i++) {
+        const agent = await createAgent({
+          id: `agent_${uuidv4().slice(0, 12)}`,
+          name: `Agent A${i}`,
+          description: `User A agent ${i}`,
+          provider: 'openai',
+          model: 'gpt-4',
+          author: userA,
+        });
+        moreAgents.push(agent);
+      }
+
+      // Give access to all agents
+      const allAgentIds = [agentA1, agentA2, agentA3, ...moreAgents].map((a) => a._id);
+
+      // First page
+      const page1 = await getListAgentsByAccess({
+        accessibleIds: allAgentIds,
+        otherParams: {},
+        limit: 5,
+      });
+
+      expect(page1.data).toHaveLength(5);
+      expect(page1.has_more).toBe(true);
+      expect(page1.after).toBeTruthy();
+
+      // Second page
+      const page2 = await getListAgentsByAccess({
+        accessibleIds: allAgentIds,
+        otherParams: {},
+        limit: 5,
+        after: page1.after,
+      });
+
+      expect(page2.data).toHaveLength(5);
+      expect(page2.has_more).toBe(false);
+
+      // Verify no overlap between pages
+      const page1Ids = page1.data.map((a) => a.id);
+      const page2Ids = page2.data.map((a) => a.id);
+      const intersection = page1Ids.filter((id) => page2Ids.includes(id));
+      expect(intersection).toHaveLength(0);
+    });
+
+    test('should return empty list when accessibleIds contains non-existent IDs', async () => {
+      // Try with non-existent agent IDs
+      const fakeIds = [new mongoose.Types.ObjectId(), new mongoose.Types.ObjectId()];
+
+      const result = await getListAgentsByAccess({
+        accessibleIds: fakeIds,
+        otherParams: {},
+      });
+
+      expect(result.data).toHaveLength(0);
+      expect(result.has_more).toBe(false);
+    });
+
+    test('should handle undefined accessibleIds as empty array', async () => {
+      // When accessibleIds is undefined, it should be treated as empty array
+      const result = await getListAgentsByAccess({
+        accessibleIds: undefined,
+        otherParams: {},
+      });
+
+      expect(result.data).toHaveLength(0);
+      expect(result.has_more).toBe(false);
+    });
+
+    test('should combine accessibleIds with author filter correctly', async () => {
+      // Create an agent for User B
+      const agentB1 = await createAgent({
+        id: `agent_${uuidv4().slice(0, 12)}`,
+        name: 'Agent B1',
+        description: 'User B agent 1',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: userB,
+      });
+
+      // Give User B access to one of User A's agents
+      const accessibleIds = [agentA1._id, agentB1._id];
+
+      // Filter by author should further restrict the results
+      const result = await getListAgentsByAccess({
+        accessibleIds,
+        otherParams: { author: userB },
+      });
+
+      expect(result.data).toHaveLength(1);
+      expect(result.data[0].id).toBe(agentB1.id);
+      expect(result.data[0].author).toBe(userB.toString());
     });
   });
 });

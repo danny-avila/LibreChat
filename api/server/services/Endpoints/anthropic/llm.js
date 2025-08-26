@@ -15,6 +15,7 @@ const { checkPromptCacheSupport, getClaudeHeaders, configureReasoning } = requir
  * @param {number} [options.modelOptions.topK] - Controls the number of top tokens to consider.
  * @param {string[]} [options.modelOptions.stop] - Sequences where the API will stop generating further tokens.
  * @param {boolean} [options.modelOptions.stream] - Whether to stream the response.
+ * @param {string} options.userId - The user ID for tracking and personalization.
  * @param {string} [options.proxy] - Proxy server URL.
  * @param {string} [options.reverseProxyUrl] - URL for a reverse proxy, if used.
  *
@@ -47,6 +48,11 @@ function getLLMConfig(apiKey, options = {}) {
     maxTokens:
       mergedOptions.maxOutputTokens || anthropicSettings.maxOutputTokens.reset(mergedOptions.model),
     clientOptions: {},
+    invocationKwargs: {
+      metadata: {
+        user_id: options.userId,
+      },
+    },
   };
 
   requestOptions = configureReasoning(requestOptions, systemOptions);
