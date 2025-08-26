@@ -260,6 +260,8 @@ const useFileHandling = (params?: UseFileHandling) => {
           fileConfig?.endpoints?.default ??
           defaultFileConfig.endpoints[endpoint] ??
           defaultFileConfig.endpoints.default,
+        toolResource: _toolResource,
+        fileConfig: fileConfig,
       });
     } catch (error) {
       console.error('file validation error', error);
