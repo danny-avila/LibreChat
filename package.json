@@ -145,6 +145,7 @@
     ]
   },
   "dependencies": {
-    "event-source-polyfill": "^1.0.31"
+    "event-source-polyfill": "^1.0.31",
+    "ioredis": "^5.7.0"
   }
 }
