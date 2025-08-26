@@ -403,7 +403,7 @@ async function loadAgentTools({ req, res, agent, signal, tool_resources, openAIA
 
   /** @type {Record<string, Record<string, string>>} */
   let userMCPAuthMap;
-  if (await hasCustomUserVars()) {
+  if (hasCustomUserVars(req.config)) {
     userMCPAuthMap = await getUserMCPAuthMap({
       tools: agent.tools,
       userId: req.user.id,
