@@ -877,8 +877,8 @@
  */
 
 /**
- * @exports MongoUser
- * @typedef {import('@librechat/data-schemas').IUser} MongoUser
+ * @exports IUser
+ * @typedef {import('@librechat/data-schemas').IUser} IUser
  * @memberof typedefs
  */
 

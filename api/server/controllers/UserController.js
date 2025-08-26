@@ -24,7 +24,7 @@ const { getMCPManager } = require('~/config');
 
 const getUserController = async (req, res) => {
   const appConfig = await getAppConfig({ role: req.user?.role });
-  /** @type {MongoUser} */
+  /** @type {IUser} */
   const userData = req.user.toObject != null ? req.user.toObject() : { ...req.user };
   /**
    * These fields should not exist due to secure field selection, but deletion

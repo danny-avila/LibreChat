@@ -10,7 +10,7 @@ const { getAppConfig } = require('~/server/services/Config');
  * '?manual=true', it updates the user's avatar with the provided URL. For local file storage, it directly updates
  * the avatar URL, while for other storage types, it processes the avatar URL using the specified file strategy.
  *
- * @param {MongoUser} oldUser - The existing user object that needs to be updated.
+ * @param {IUser} oldUser - The existing user object that needs to be updated.
  * @param {string} avatarUrl - The new avatar URL to be set for the user.
  *
  * @returns {Promise<void>}

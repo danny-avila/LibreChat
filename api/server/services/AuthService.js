@@ -78,7 +78,7 @@ const createTokenHash = () => {
 
 /**
  * Send Verification Email
- * @param {Partial<MongoUser> & { _id: ObjectId, email: string, name: string}} user
+ * @param {Partial<IUser>} user
  * @returns {Promise<void>}
  */
 const sendVerificationEmail = async (user) => {
@@ -160,9 +160,9 @@ const verifyEmail = async (req) => {
 
 /**
  * Register a new user.
- * @param {MongoUser} user <email, password, name, username>
- * @param {Partial<MongoUser>} [additionalData={}]
- * @returns {Promise<{status: number, message: string, user?: MongoUser}>}
+ * @param {IUser} user <email, password, name, username>
+ * @param {Partial<IUser>} [additionalData={}]
+ * @returns {Promise<{status: number, message: string, user?: IUser}>}
  */
 const registerUser = async (user, additionalData = {}) => {
   const { error } = registerSchema.safeParse(user);
