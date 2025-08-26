@@ -1,11 +1,19 @@
 import { FileSources } from 'librechat-data-provider';
-import { parseTextNative, parseText } from './text';
 import { Readable } from 'stream';
+
+jest.mock('@librechat/data-schemas', () => ({
+  logger: {
+    debug: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn(),
+  },
+}));
+
+import { parseTextNative, parseText } from './text';
 
 jest.mock('fs', () => ({
   readFileSync: jest.fn(),
   createReadStream: jest.fn(),
-  existsSync: jest.fn(),
 }));
 
 jest.mock('../crypto/jwt', () => ({
