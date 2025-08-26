@@ -1,22 +1,48 @@
-import React from 'react';
-import { Button } from '~/components/ui/Button';
-import { useNavigate } from 'react-router-dom';
+import React, { useEffect, useState } from "react";
 
-export default function AdminLogs() {
-  const navigate = useNavigate();
+export default function AdminLogsStreamTest() {
+  const [messages, setMessages] = useState<string[]>([]);
+
+  useEffect(() => {
+    const token = localStorage.getItem("token");
+    if (!token) return;
+
+    const es = new EventSource(`/api/user-activity/stream?token=${token}`);
+
+    es.onopen = () => {
+      console.log("[Stream] Connected");
+    };
+
+    es.onmessage = (evt) => {
+      // Each evt.data is a JSON string from SSE
+      setMessages((prev) => [...prev, evt.data]);
+      console.log("[Stream] Message:", evt.data);
+    };
+
+    es.onerror = (err) => {
+      console.error("[Stream] SSE error", err);
+      es.close();
+    };
+
+    return () => es.close();
+  }, []);
 
   return (
-    <div className="flex h-full flex-col gap-4 p-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-xl font-semibold">System Logs</h2>
-        <Button variant="outline" onClick={() => navigate('/c/new')}>
-          Back to Chat
-        </Button>
-      </div>
-
-      <div className="text-sm text-gray-500">
-        {/* Placeholder: later we’ll add a DataTable for logs */}
-        Logs will appear here...
+    <div style={{ padding: 20 }}>
+      <h2>Admin Logs Stream Test</h2>
+      <div
+        style={{
+          maxHeight: 500,
+          overflowY: "auto",
+          border: "1px solid #ccc",
+          padding: 10,
+        }}
+      >
+        {messages.map((msg, i) => (
+          <pre key={i} style={{ fontSize: 12, margin: 0 }}>
+            {msg}
+          </pre>
+        ))}
       </div>
     </div>
   );

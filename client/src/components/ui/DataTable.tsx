@@ -255,6 +255,7 @@ export default function DataTable<TData, TValue>({
   const table = useReactTable({
     data,
     columns: tableColumns,
+    getRowId: (row: any, index) => row._id ?? index.toString(), // 👈 FIX
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
@@ -271,6 +272,7 @@ export default function DataTable<TData, TValue>({
     onColumnVisibilityChange: setColumnVisibility,
     onRowSelectionChange: setRowSelection,
   });
+  
 
   const { rows } = table.getRowModel();
 
@@ -341,15 +343,15 @@ export default function DataTable<TData, TValue>({
   const skeletons = Array.from({ length: 13 }, (_, index) => {
     const randomWidth = getRandomWidth();
     const firstDataColumnIndex = tableColumns[0]?.id === 'select' ? 1 : 0;
-
+  
     return (
-      <TableRow key={index} className="motion-safe:animate-fadeIn border-b border-border-light">
+      <TableRow key={`skeleton-row-${index}`} className="motion-safe:animate-fadeIn border-b border-border-light">
         {tableColumns.map((column, columnIndex) => {
           const style = getColumnStyle(column as TableColumn<TData, TValue>, isSmallScreen);
           const isFirstDataColumn = columnIndex === firstDataColumnIndex;
-
+  
           return (
-            <TableCell key={column.id} className="px-2 py-1 sm:px-4 sm:py-2" style={style}>
+            <TableCell key={`skeleton-cell-${index}-${column.id}`} className="px-2 py-1 sm:px-4 sm:py-2" style={style}>
               <Skeleton
                 className="h-6"
                 style={isFirstDataColumn ? { width: `${randomWidth}px` } : { width: '100%' }}
@@ -360,6 +362,7 @@ export default function DataTable<TData, TValue>({
       </TableRow>
     );
   });
+  
 
   return (
     <div className={cn('flex h-full flex-col gap-4', className)}>
@@ -436,7 +439,7 @@ export default function DataTable<TData, TValue>({
               const row = rows[virtualRow.index];
               return (
                 <MemoizedTableRow
-                  key={row.id}
+                  key={row.id} // row.id === row._id now, always unique
                   row={row}
                   isSmallScreen={isSmallScreen}
                   index={virtualRow.index}
@@ -444,6 +447,9 @@ export default function DataTable<TData, TValue>({
                 />
               );
             })}
+
+
+
 
             {!virtualRows.length && (
               <TableRow className="hover:bg-transparent">

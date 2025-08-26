@@ -54,20 +54,31 @@ const AuthContextProvider = ({
         const { token, isAuthenticated, user, redirect } = userContext;
         setUser(user);
         setToken(token);
+  
+        // ✅ Persist JWT token in localStorage
+        if (token) {
+          localStorage.setItem("token", token);
+        } else {
+          localStorage.removeItem("token");
+        }
+  
         //@ts-ignore - ok for token to be undefined initially
         setTokenHeader(token);
         setIsAuthenticated(isAuthenticated);
-
+  
         // Use a custom redirect if set
         const finalRedirect = logoutRedirectRef.current || redirect;
         // Clear the stored redirect
         logoutRedirectRef.current = undefined;
-
+  
         if (finalRedirect == null) {
           return;
         }
-
-        if (finalRedirect.startsWith('http://') || finalRedirect.startsWith('https://')) {
+  
+        if (
+          finalRedirect.startsWith("http://") ||
+          finalRedirect.startsWith("https://")
+        ) {
           window.location.href = finalRedirect;
         } else {
           navigate(finalRedirect, { replace: true });
