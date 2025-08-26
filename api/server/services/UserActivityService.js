@@ -1,7 +1,6 @@
 const { logger } = require('~/config');
 const { User, UserActivityLog } = require('~/db/models');
 const { getTokenUsageForModelChange, fetchActivityLogs } = require('~/server/controllers/UserActivityController');
-const { initSubscriber, publishActivity } = require('~/server/services/BackPlane');
 
 class UserActivityService {
   constructor() {
@@ -10,18 +9,19 @@ class UserActivityService {
     this.maxBufferSize = 100;
 
     // Listen for Redis pub/sub events (cross-server)
-    initSubscriber(async (activityData) => {
-      try {
-        await this.broadcastActivity(activityData, false); // fromRedis = false
-      } catch (e) {
-        logger.error('[UserActivityService] Redis rebroadcast failed:', e);
-      }
-    });
-  }
+  //   initSubscriber(async (activityData) => {
+  //     try {
+  //       await this.broadcastActivity(activityData, false); // fromRedis = false
+  //     } catch (e) {
+  //       logger.error('[UserActivityService] Redis rebroadcast failed:', e);
+  //     }
+  //   });
+   }
 
   /**
    * Register a new SSE client
    */
+
   async addClient(clientId, res, userRole = 'USER', options = {}) {
     this.clients.set(clientId, {
       response: res,
@@ -135,7 +135,7 @@ class UserActivityService {
         this.sendToClient(clientId, payload, 'activity');
       }
 
-      logger.debug(`[UserActivityService] Broadcasted ${fromLocal ? 'local' : 'Redis'} activity to ${this.clients.size} clients`);
+      logger.debug(`[UserActivityService] Broadcasted activity to ${this.clients.size} clients`);
     } catch (error) {
       logger.error('[UserActivityService] Failed to broadcast activity:', error);
     }
@@ -167,7 +167,7 @@ const userActivityService = new UserActivityService();
 setInterval(() => userActivityService.cleanupInactiveClients(), 5 * 60 * 1000);
 setInterval(() => userActivityService.sendHeartbeat(), 30 * 1000);
 
-// Log + broadcast + publish
+// Log + broadcast (local only)
 const logAndBroadcastActivity = async (userId, action, details = null) => {
   try {
     const activityLog = await UserActivityLog.create({
@@ -188,10 +188,8 @@ const logAndBroadcastActivity = async (userId, action, details = null) => {
       __v: activityLog.__v
     };
 
-    // Local broadcast
+    // Local broadcast only
     await userActivityService.broadcastActivity(payload, true);
-    // Cross-server broadcast
-    await publishActivity(payload);
 
     return activityLog;
   } catch (error) {
