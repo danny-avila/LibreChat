@@ -58,7 +58,7 @@ export const messages = (params: q.MessagesListParams) => {
     return `${messagesRoot}/${conversationId}`;
   }
 
-  return `${messagesRoot}{buildQuery(rest)}`;
+  return `${messagesRoot}${buildQuery(rest)}`;
 };
 
 export const messagesArtifacts = (messageId: string) => `${messagesRoot}/artifacts/${messageId}`;
