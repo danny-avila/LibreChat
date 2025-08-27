@@ -2,10 +2,11 @@ import { logger } from '@librechat/data-schemas';
 import type { NextFunction, Request as ServerRequest, Response as ServerResponse } from 'express';
 import type { IBalance, IUser, BalanceConfig, ObjectId } from '@librechat/data-schemas';
 import type { Model } from 'mongoose';
-import type { BalanceUpdateFields } from '~/types';
+import type { AppConfig, BalanceUpdateFields } from '~/types';
+import { getBalanceConfig } from '~/app/config';
 
 export interface BalanceMiddlewareOptions {
-  getBalanceConfig: () => Promise<BalanceConfig | null>;
+  getAppConfig: (options?: { role?: string; refresh?: boolean }) => Promise<AppConfig>;
   Balance: Model<IBalance>;
 }
 
@@ -73,7 +74,7 @@ function buildUpdateFields(
  * @returns Express middleware function
  */
 export function createSetBalanceConfig({
-  getBalanceConfig,
+  getAppConfig,
   Balance,
 }: BalanceMiddlewareOptions): (
   req: ServerRequest,
@@ -82,7 +83,9 @@ export function createSetBalanceConfig({
 ) => Promise<void> {
   return async (req: ServerRequest, res: ServerResponse, next: NextFunction): Promise<void> => {
     try {
-      const balanceConfig = await getBalanceConfig();
+      const user = req.user as IUser & { _id: string | ObjectId };
+      const appConfig = await getAppConfig({ role: user?.role });
+      const balanceConfig = getBalanceConfig(appConfig);
       if (!balanceConfig?.enabled) {
         return next();
       }
@@ -90,7 +93,6 @@ export function createSetBalanceConfig({
         return next();
       }
 
-      const user = req.user as IUser & { _id: string | ObjectId };
       if (!user || !user._id) {
         return next();
       }

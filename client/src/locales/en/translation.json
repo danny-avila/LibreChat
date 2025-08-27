@@ -889,6 +889,8 @@
   "com_ui_field_required": "This field is required",
   "com_ui_file_size": "File Size",
   "com_ui_files": "Files",
+  "com_ui_file_token_limit": "File Token Limit",
+  "com_ui_file_token_limit_desc": "Set maximum token limit for file processing to control costs and resource usage",
   "com_ui_filter_prompts": "Filter Prompts",
   "com_ui_filter_prompts_name": "Filter prompts by name",
   "com_ui_final_touch": "Final touch",
