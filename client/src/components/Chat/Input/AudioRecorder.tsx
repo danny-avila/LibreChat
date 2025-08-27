@@ -1,10 +1,11 @@
 import { useCallback, useRef } from 'react';
 import { useToastContext, TooltipAnchor, ListeningIcon, Spinner } from '@librechat/client';
-import { useLocalize, useSpeechToText } from '~/hooks';
+import { useLocalize, useSpeechToText, useGetAudioSettings } from '~/hooks';
 import { useChatFormContext } from '~/Providers';
 import { globalAudioId } from '~/common';
 import { cn } from '~/utils';
 
+const isExternalSTT = (speechToTextEndpoint: string) => speechToTextEndpoint === 'external';
 export default function AudioRecorder({
   disabled,
   ask,
@@ -21,6 +22,8 @@ export default function AudioRecorder({
   const { setValue, reset, getValues } = methods;
   const localize = useLocalize();
   const { showToast } = useToastContext();
+  const { speechToTextEndpoint } = useGetAudioSettings();
+
   const existingTextRef = useRef<string>('');
 
   const onTranscriptionComplete = useCallback(
@@ -38,23 +41,34 @@ export default function AudioRecorder({
           console.log('Unmuting global audio');
           globalAudio.muted = false;
         }
-        ask({ text });
+        /** For external STT, append existing text to the transcription */
+        const finalText =
+          isExternalSTT(speechToTextEndpoint) && existingTextRef.current
+            ? `${existingTextRef.current} ${text}`
+            : text;
+        ask({ text: finalText });
         reset({ text: '' });
         existingTextRef.current = '';
       }
     },
-    [ask, reset, showToast, localize, isSubmitting],
+    [ask, reset, showToast, localize, isSubmitting, speechToTextEndpoint],
   );
 
   const setText = useCallback(
     (text: string) => {
-      /** The transcript is cumulative, so we only need to prepend the existing text once */
-      const newText = existingTextRef.current ? `${existingTextRef.current} ${text}` : text;
+      let newText = text;
+      if (isExternalSTT(speechToTextEndpoint)) {
+        /** For external STT, the text comes as a complete transcription, so append to existing */
+        newText = existingTextRef.current ? `${existingTextRef.current} ${text}` : text;
+      } else {
+        /** For browser STT, the transcript is cumulative, so we only need to prepend the existing text once */
+        newText = existingTextRef.current ? `${existingTextRef.current} ${text}` : text;
+      }
       setValue('text', newText, {
         shouldValidate: true,
       });
     },
-    [setValue],
+    [setValue, speechToTextEndpoint],
   );
 
   const { isListening, isLoading, startRecording, stopRecording } = useSpeechToText(
@@ -73,7 +87,10 @@ export default function AudioRecorder({
 
   const handleStopRecording = async () => {
     stopRecording();
-    existingTextRef.current = '';
+    /** For browser STT, clear the reference since text was already being updated */
+    if (!isExternalSTT(speechToTextEndpoint)) {
+      existingTextRef.current = '';
+    }
   };
 
   const renderIcon = () => {
