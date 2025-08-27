@@ -8,9 +8,41 @@ import type t from 'librechat-data-provider';
 jest.mock('~/hooks/useLocalize', () => () => (key: string) => {
   const mockTranslations: Record<string, string> = {
     com_agents_created_by: 'Created by',
+    com_agents_agent_card_label: '{{name}} agent. {{description}}',
+    com_agents_category_general: 'General',
+    com_agents_category_hr: 'Human Resources',
   };
   return mockTranslations[key] || key;
 });
+
+// Mock useAgentCategories hook
+jest.mock('~/hooks', () => ({
+  useLocalize: () => (key: string, values?: Record<string, string>) => {
+    const mockTranslations: Record<string, string> = {
+      com_agents_created_by: 'Created by',
+      com_agents_agent_card_label: '{{name}} agent. {{description}}',
+      com_agents_category_general: 'General',
+      com_agents_category_hr: 'Human Resources',
+    };
+    let translation = mockTranslations[key] || key;
+
+    // Replace placeholders with actual values
+    if (values) {
+      Object.entries(values).forEach(([placeholder, value]) => {
+        translation = translation.replace(new RegExp(`{{${placeholder}}}`, 'g'), value);
+      });
+    }
+
+    return translation;
+  },
+  useAgentCategories: () => ({
+    categories: [
+      { value: 'general', label: 'com_agents_category_general' },
+      { value: 'hr', label: 'com_agents_category_hr' },
+      { value: 'custom', label: 'Custom Category' }, // Non-localized custom category
+    ],
+  }),
+}));
 
 describe('AgentCard', () => {
   const mockAgent: t.Agent = {
@@ -200,6 +232,49 @@ describe('AgentCard', () => {
 
     const card = screen.getByRole('button');
     expect(card).toHaveAttribute('tabIndex', '0');
-    expect(card).toHaveAttribute('aria-label', 'com_agents_agent_card_label');
+    expect(card).toHaveAttribute(
+      'aria-label',
+      'Test Agent agent. A test agent for testing purposes',
+    );
+  });
+
+  it('displays localized category label', () => {
+    const agentWithCategory = {
+      ...mockAgent,
+      category: 'general',
+    };
+
+    render(<AgentCard agent={agentWithCategory} onClick={mockOnClick} />);
+
+    expect(screen.getByText('General')).toBeInTheDocument();
+  });
+
+  it('displays custom category label', () => {
+    const agentWithCustomCategory = {
+      ...mockAgent,
+      category: 'custom',
+    };
+
+    render(<AgentCard agent={agentWithCustomCategory} onClick={mockOnClick} />);
+
+    expect(screen.getByText('Custom Category')).toBeInTheDocument();
+  });
+
+  it('displays capitalized fallback for unknown category', () => {
+    const agentWithUnknownCategory = {
+      ...mockAgent,
+      category: 'unknown',
+    };
+
+    render(<AgentCard agent={agentWithUnknownCategory} onClick={mockOnClick} />);
+
+    expect(screen.getByText('Unknown')).toBeInTheDocument();
+  });
+
+  it('does not display category tag when category is not provided', () => {
+    render(<AgentCard agent={mockAgent} onClick={mockOnClick} />);
+
+    expect(screen.queryByText('General')).not.toBeInTheDocument();
+    expect(screen.queryByText('Unknown')).not.toBeInTheDocument();
   });
 });
