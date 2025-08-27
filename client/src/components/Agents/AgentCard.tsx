@@ -1,8 +1,8 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Label } from '@librechat/client';
 import type t from 'librechat-data-provider';
+import { useLocalize, TranslationKeys, useAgentCategories } from '~/hooks';
 import { cn, renderAgentAvatar, getContactDisplayName } from '~/utils';
-import { useLocalize } from '~/hooks';
 
 interface AgentCardProps {
   agent: t.Agent; // The agent data to display
@@ -15,6 +15,21 @@ interface AgentCardProps {
  */
 const AgentCard: React.FC<AgentCardProps> = ({ agent, onClick, className = '' }) => {
   const localize = useLocalize();
+  const { categories } = useAgentCategories();
+
+  const categoryLabel = useMemo(() => {
+    if (!agent.category) return '';
+
+    const category = categories.find((cat) => cat.value === agent.category);
+    if (category) {
+      if (category.label && category.label.startsWith('com_')) {
+        return localize(category.label as TranslationKeys);
+      }
+      return category.label;
+    }
+
+    return agent.category.charAt(0).toUpperCase() + agent.category.slice(1);
+  }, [agent.category, categories, localize]);
 
   return (
     <div
@@ -49,9 +64,7 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, onClick, className = '' })
           {/* Category tag */}
           {agent.category && (
             <div className="inline-flex items-center rounded-md border-border-xheavy bg-surface-active-alt px-2 py-1 text-xs font-medium">
-              <Label className="line-clamp-1 font-normal">
-                {agent.category.charAt(0).toUpperCase() + agent.category.slice(1)}
-              </Label>
+              <Label className="line-clamp-1 font-normal">{categoryLabel}</Label>
             </div>
           )}
         </div>

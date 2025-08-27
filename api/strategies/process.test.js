@@ -16,7 +16,13 @@ jest.mock('~/models', () => ({
 }));
 
 jest.mock('~/server/services/Config', () => ({
-  getBalanceConfig: jest.fn(),
+  getAppConfig: jest.fn().mockResolvedValue({}),
+}));
+
+jest.mock('@librechat/api', () => ({
+  getBalanceConfig: jest.fn(() => ({
+    enabled: false,
+  })),
 }));
 
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
