@@ -109,9 +109,11 @@ class STTService {
    * @throws {Error} If no STT schema is set, multiple providers are set, or no provider is set.
    */
   async getProviderSchema(req) {
-    const appConfig = await getAppConfig({
-      role: req?.user?.role,
-    });
+    const appConfig =
+      req.config ??
+      (await getAppConfig({
+        role: req?.user?.role,
+      }));
     const sttSchema = appConfig?.speech?.stt;
     if (!sttSchema) {
       throw new Error(
