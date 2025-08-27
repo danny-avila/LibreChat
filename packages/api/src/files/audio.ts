@@ -1,6 +1,6 @@
 import fs from 'fs';
 import { logger } from '@librechat/data-schemas';
-import type { STTService, AudioFileInfo, FileObject, AudioProcessingResult } from '../types';
+import type { STTService, AudioFileInfo, FileObject, AudioProcessingResult } from '~/types';
 
 /**
  * Processes audio files using Speech-to-Text (STT) service.
