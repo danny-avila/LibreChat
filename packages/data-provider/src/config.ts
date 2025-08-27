@@ -6,6 +6,7 @@ import { specsConfigSchema, TSpecsConfig } from './models';
 import { fileConfigSchema } from './file-config';
 import { FileSources } from './types/files';
 import { MCPServersSchema } from './mcp';
+import { apiBaseUrl } from './api-endpoints';
 
 export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'discord', 'saml'];
 
@@ -1043,9 +1044,9 @@ export const initialModelsConfig: TModelsConfig = {
 };
 
 export const EndpointURLs = {
-  [EModelEndpoint.assistants]: '/api/assistants/v2/chat',
-  [EModelEndpoint.azureAssistants]: '/api/assistants/v1/chat',
-  [EModelEndpoint.agents]: `/api/${EModelEndpoint.agents}/chat`,
+  [EModelEndpoint.assistants]: `${apiBaseUrl()}/api/assistants/v2/chat`,
+  [EModelEndpoint.azureAssistants]: `${apiBaseUrl()}/api/assistants/v1/chat`,
+  [EModelEndpoint.agents]: `${apiBaseUrl()}/api/${EModelEndpoint.agents}/chat`,
 } as const;
 
 export const modularEndpoints = new Set<EModelEndpoint | string>([
