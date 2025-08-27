@@ -3,6 +3,7 @@ import {
   megabyte,
   QueryKeys,
   excelMimeTypes,
+  EToolResources,
   codeTypeMapping,
   fileConfig as defaultFileConfig,
 } from 'librechat-data-provider';
@@ -252,7 +253,7 @@ export const validateFiles = ({
     }
 
     let mimeTypesToCheck = supportedMimeTypes;
-    if (toolResource === 'ocr') {
+    if (toolResource === EToolResources.ocr) {
       mimeTypesToCheck = [
         ...(fileConfig?.text?.supportedMimeTypes || []),
         ...(fileConfig?.ocr?.supportedMimeTypes || []),
