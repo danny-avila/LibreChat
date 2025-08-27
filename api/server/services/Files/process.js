@@ -17,7 +17,8 @@ const {
   isAssistantsEndpoint,
 } = require('librechat-data-provider');
 const { EnvVar } = require('@librechat/agents');
-const { sanitizeFilename } = require('@librechat/api');
+const { logger } = require('@librechat/data-schemas');
+const { sanitizeFilename, parseText, processAudioFile } = require('@librechat/api');
 const {
   convertImage,
   resizeAndConvert,
@@ -33,7 +34,7 @@ const { checkCapability } = require('~/server/services/Config');
 const { LB_QueueAsyncCall } = require('~/server/utils/queue');
 const { getStrategyFunctions } = require('./strategies');
 const { determineFileType } = require('~/server/utils');
-const { logger } = require('~/config');
+const { STTService } = require('./Audio/STTService');
 
 /**
  * Creates a modular file upload wrapper that ensures filename sanitization
@@ -552,51 +553,84 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
     }
     // Note: File search processing continues to dual storage logic below
   } else if (tool_resource === EToolResources.ocr) {
-    const isOCREnabled = await checkCapability(req, AgentCapabilities.ocr);
-    if (!isOCREnabled) {
-      throw new Error('OCR capability is not enabled for Agents');
-    }
-
-    const { handleFileUpload: uploadOCR } = getStrategyFunctions(
-      appConfig?.ocr?.strategy ?? FileSources.mistral_ocr,
-    );
     const { file_id, temp_file_id = null } = metadata;
 
-    const {
-      text,
-      bytes,
-      // TODO: OCR images support?
-      images: _i,
-      filename,
-      filepath: ocrFileURL,
-    } = await uploadOCR({ req, appConfig, file, loadAuthValues });
-
-    const fileInfo = removeNullishValues({
-      text,
-      bytes,
-      file_id,
-      temp_file_id,
-      user: req.user.id,
-      type: 'text/plain',
-      filepath: ocrFileURL,
-      source: FileSources.text,
-      filename: filename ?? file.originalname,
-      model: messageAttachment ? undefined : req.body.model,
-      context: messageAttachment ? FileContext.message_attachment : FileContext.agents,
-    });
-
-    if (!messageAttachment && tool_resource) {
-      await addAgentResourceFile({
-        req,
+    /**
+     * @param {object} params
+     * @param {string} params.text
+     * @param {number} params.bytes
+     * @param {string} params.filepath
+     * @param {string} params.type
+     * @return {Promise<void>}
+     */
+    const createTextFile = async ({ text, bytes, filepath, type = 'text/plain' }) => {
+      const fileInfo = removeNullishValues({
+        text,
+        bytes,
         file_id,
-        agent_id,
-        tool_resource,
+        temp_file_id,
+        user: req.user.id,
+        type,
+        filepath: filepath ?? file.path,
+        source: FileSources.text,
+        filename: file.originalname,
+        model: messageAttachment ? undefined : req.body.model,
+        context: messageAttachment ? FileContext.message_attachment : FileContext.agents,
       });
+
+      if (!messageAttachment && tool_resource) {
+        await addAgentResourceFile({
+          req,
+          file_id,
+          agent_id,
+          tool_resource,
+        });
+      }
+      const result = await createFile(fileInfo, true);
+      return res
+        .status(200)
+        .json({ message: 'Agent file uploaded and processed successfully', ...result });
+    };
+
+    const fileConfig = mergeFileConfig(appConfig.fileConfig);
+
+    const shouldUseOCR = fileConfig.checkType(
+      file.mimetype,
+      fileConfig.ocr?.supportedMimeTypes || [],
+    );
+
+    if (shouldUseOCR && !(await checkCapability(req, AgentCapabilities.ocr))) {
+      throw new Error('OCR capability is not enabled for Agents');
+    } else if (shouldUseOCR) {
+      const { handleFileUpload: uploadOCR } = getStrategyFunctions(
+        appConfig?.ocr?.strategy ?? FileSources.mistral_ocr,
+      );
+      const { text, bytes, filepath: ocrFileURL } = await uploadOCR({ req, file, loadAuthValues });
+      return await createTextFile({ text, bytes, filepath: ocrFileURL });
     }
-    const result = await createFile(fileInfo, true);
-    return res
-      .status(200)
-      .json({ message: 'Agent file uploaded and processed successfully', ...result });
+
+    const shouldUseSTT = fileConfig.checkType(
+      file.mimetype,
+      fileConfig.stt?.supportedMimeTypes || [],
+    );
+
+    if (shouldUseSTT) {
+      const sttService = await STTService.getInstance();
+      const { text, bytes } = await processAudioFile({ file, sttService });
+      return await createTextFile({ text, bytes });
+    }
+
+    const shouldUseText = fileConfig.checkType(
+      file.mimetype,
+      fileConfig.text?.supportedMimeTypes || [],
+    );
+
+    if (!shouldUseText) {
+      throw new Error(`File type ${file.mimetype} is not supported for OCR or text parsing`);
+    }
+
+    const { text, bytes } = await parseText({ req, file, file_id });
+    return await createTextFile({ text, bytes, type: file.mimetype });
   }
 
   // Dual storage pattern for RAG files: Storage + Vector DB
