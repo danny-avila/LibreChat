@@ -11,6 +11,8 @@ export type AgentCategory = {
   order: number;
   /** Whether the category is active and should be displayed */
   isActive: boolean;
+  /** Whether this is a custom user-created category */
+  custom?: boolean;
 };
 
 export type IAgentCategory = AgentCategory &
