@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useRef } from 'react';
 import { useToastContext, TooltipAnchor, ListeningIcon, Spinner } from '@librechat/client';
 import { useLocalize, useSpeechToText } from '~/hooks';
 import { useChatFormContext } from '~/Providers';
@@ -18,9 +18,10 @@ export default function AudioRecorder({
   textAreaRef: React.RefObject<HTMLTextAreaElement>;
   isSubmitting: boolean;
 }) {
-  const { setValue, reset } = methods;
+  const { setValue, reset, getValues } = methods;
   const localize = useLocalize();
   const { showToast } = useToastContext();
+  const existingTextRef = useRef<string>('');
 
   const onTranscriptionComplete = useCallback(
     (text: string) => {
@@ -39,6 +40,7 @@ export default function AudioRecorder({
         }
         ask({ text });
         reset({ text: '' });
+        existingTextRef.current = '';
       }
     },
     [ask, reset, showToast, localize, isSubmitting],
@@ -46,7 +48,9 @@ export default function AudioRecorder({
 
   const setText = useCallback(
     (text: string) => {
-      setValue('text', text, {
+      /** The transcript is cumulative, so we only need to prepend the existing text once */
+      const newText = existingTextRef.current ? `${existingTextRef.current} ${text}` : text;
+      setValue('text', newText, {
         shouldValidate: true,
       });
     },
@@ -62,18 +66,24 @@ export default function AudioRecorder({
     return null;
   }
 
-  const handleStartRecording = async () => startRecording();
+  const handleStartRecording = async () => {
+    existingTextRef.current = getValues('text') || '';
+    startRecording();
+  };
 
-  const handleStopRecording = async () => stopRecording();
+  const handleStopRecording = async () => {
+    stopRecording();
+    existingTextRef.current = '';
+  };
 
   const renderIcon = () => {
     if (isListening === true) {
       return <ListeningIcon className="stroke-red-500" />;
     }
     if (isLoading === true) {
-      return <Spinner className="stroke-gray-700 dark:stroke-gray-300" />;
+      return <Spinner className="stroke-text-secondary" />;
     }
-    return <ListeningIcon className="stroke-gray-700 dark:stroke-gray-300" />;
+    return <ListeningIcon className="stroke-text-secondary" />;
   };
 
   return (
