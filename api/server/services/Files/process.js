@@ -17,8 +17,8 @@ const {
   isAssistantsEndpoint,
 } = require('librechat-data-provider');
 const { EnvVar } = require('@librechat/agents');
-const { sanitizeFilename } = require('@librechat/api');
-const { parseText, processAudioFile } = require('@librechat/api');
+const { logger } = require('@librechat/data-schemas');
+const { sanitizeFilename, parseText, processAudioFile } = require('@librechat/api');
 const {
   convertImage,
   resizeAndConvert,
@@ -35,7 +35,6 @@ const { LB_QueueAsyncCall } = require('~/server/utils/queue');
 const { getStrategyFunctions } = require('./strategies');
 const { determineFileType } = require('~/server/utils');
 const { STTService } = require('./Audio/STTService');
-const { logger } = require('~/config');
 
 /**
  * Creates a modular file upload wrapper that ensures filename sanitization
@@ -528,21 +527,6 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
     throw new Error('No tool resource provided for non-image agent file upload');
   }
 
-  const fileConfig = mergeFileConfig(appConfig.fileConfig);
-
-  const shouldUseText = fileConfig.checkType(
-    file.mimetype,
-    fileConfig.text?.supportedMimeTypes || [],
-  );
-  const shouldUseOCR = fileConfig.checkType(
-    file.mimetype,
-    fileConfig.ocr?.supportedMimeTypes || [],
-  );
-  const shouldUseSTT = fileConfig.checkType(
-    file.mimetype,
-    fileConfig.stt?.supportedMimeTypes || [],
-  );
-
   let fileInfoMetadata;
   const entity_id = messageAttachment === true ? undefined : agent_id;
   const basePath = mime.getType(file.originalname)?.startsWith('image') ? 'images' : 'uploads';
@@ -569,11 +553,6 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
     }
     // Note: File search processing continues to dual storage logic below
   } else if (tool_resource === EToolResources.ocr) {
-    const isOCREnabled = await checkCapability(req, AgentCapabilities.ocr);
-    if (!isOCREnabled) {
-      throw new Error('OCR capability is not enabled for Agents');
-    }
-
     const { file_id, temp_file_id = null } = metadata;
 
     const createTextFile = async (text, bytes, filepath, type) => {
@@ -605,7 +584,16 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
         .json({ message: 'Agent file uploaded and processed successfully', ...result });
     };
 
-    if (shouldUseOCR) {
+    const fileConfig = mergeFileConfig(appConfig.fileConfig);
+
+    const shouldUseOCR = fileConfig.checkType(
+      file.mimetype,
+      fileConfig.ocr?.supportedMimeTypes || [],
+    );
+
+    if (shouldUseOCR && !(await checkCapability(req, AgentCapabilities.ocr))) {
+      throw new Error('OCR capability is not enabled for Agents');
+    } else if (shouldUseOCR) {
       const { handleFileUpload: uploadOCR } = getStrategyFunctions(
         appConfig?.ocr?.strategy ?? FileSources.mistral_ocr,
       );
@@ -613,10 +601,10 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
       return await createTextFile(text, bytes, ocrFileURL, 'text/plain');
     }
 
-    if (shouldUseText) {
-      const { text, bytes } = await parseText({ req, file, file_id });
-      return await createTextFile(text, bytes, file.path, file.mimetype);
-    }
+    const shouldUseSTT = fileConfig.checkType(
+      file.mimetype,
+      fileConfig.stt?.supportedMimeTypes || [],
+    );
 
     if (shouldUseSTT) {
       const sttService = await STTService.getInstance();
@@ -624,7 +612,17 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
       return await createTextFile(text, bytes, file.path, 'text/plain');
     }
 
-    throw new Error(`File type ${file.mimetype} is not supported for OCR or text parsing`);
+    const shouldUseText = fileConfig.checkType(
+      file.mimetype,
+      fileConfig.text?.supportedMimeTypes || [],
+    );
+
+    if (!shouldUseText) {
+      throw new Error(`File type ${file.mimetype} is not supported for OCR or text parsing`);
+    }
+
+    const { text, bytes } = await parseText({ req, file, file_id });
+    return await createTextFile(text, bytes, file.path, file.mimetype);
   }
 
   // Dual storage pattern for RAG files: Storage + Vector DB
