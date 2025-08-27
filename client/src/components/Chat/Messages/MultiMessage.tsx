@@ -1,7 +1,7 @@
 import { useRecoilState } from 'recoil';
 import { useEffect, useCallback } from 'react';
 import { isAssistantsEndpoint } from 'librechat-data-provider';
-import type { TMessage } from 'librechat-data-provider';
+import type { TMessage, TConversationCosts } from 'librechat-data-provider';
 import type { TMessageProps } from '~/common';
 import MessageContent from '~/components/Messages/MessageContent';
 import MessageParts from './MessageParts';
@@ -14,7 +14,8 @@ export default function MultiMessage({
   messagesTree,
   currentEditId,
   setCurrentEditId,
-}: TMessageProps) {
+  costs,
+}: TMessageProps & { costs?: TConversationCosts }) {
   const [siblingIdx, setSiblingIdx] = useRecoilState(store.messagesSiblingIdxFamily(messageId));
 
   const setSiblingIdxRev = useCallback(
@@ -55,6 +56,7 @@ export default function MultiMessage({
         siblingIdx={messagesTree.length - siblingIdx - 1}
         siblingCount={messagesTree.length}
         setSiblingIdx={setSiblingIdxRev}
+        costs={costs}
       />
     );
   } else if (message.content) {
@@ -67,6 +69,7 @@ export default function MultiMessage({
         siblingIdx={messagesTree.length - siblingIdx - 1}
         siblingCount={messagesTree.length}
         setSiblingIdx={setSiblingIdxRev}
+        costs={costs}
       />
     );
   }
@@ -80,6 +83,7 @@ export default function MultiMessage({
       siblingIdx={messagesTree.length - siblingIdx - 1}
       siblingCount={messagesTree.length}
       setSiblingIdx={setSiblingIdxRev}
+      costs={costs}
     />
   );
 }

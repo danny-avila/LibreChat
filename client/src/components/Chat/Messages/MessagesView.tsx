@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useRecoilValue } from 'recoil';
 import { CSSTransition } from 'react-transition-group';
-import type { TMessage } from 'librechat-data-provider';
+import type { TMessage, TConversationCosts } from 'librechat-data-provider';
 import { useScreenshot, useMessageScrolling, useLocalize } from '~/hooks';
 import ScrollToBottom from '~/components/Messages/ScrollToBottom';
 import MultiMessage from './MultiMessage';
@@ -10,8 +10,12 @@ import store from '~/store';
 
 export default function MessagesView({
   messagesTree: _messagesTree,
+  costBar,
+  costs,
 }: {
   messagesTree?: TMessage[] | null;
+  costBar?: React.ReactNode;
+  costs?: TConversationCosts;
 }) {
   const localize = useLocalize();
   const fontSize = useRecoilValue(store.fontSize);
@@ -63,6 +67,7 @@ export default function MessagesView({
                       messageId={conversationId ?? null}
                       setCurrentEditId={setCurrentEditId}
                       currentEditId={currentEditId ?? null}
+                      costs={costs}
                     />
                   </div>
                 </>
@@ -74,6 +79,12 @@ export default function MessagesView({
               />
             </div>
           </div>
+
+          {costBar && (
+            <div className="pointer-events-none absolute bottom-2 left-1/2 z-10 -translate-x-1/2">
+              {costBar}
+            </div>
+          )}
 
           <CSSTransition
             in={showScrollButton && scrollButtonPreference}

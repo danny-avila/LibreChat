@@ -1,16 +1,17 @@
 import React, { useCallback, useMemo, memo } from 'react';
 import { useRecoilValue } from 'recoil';
-import { type TMessage } from 'librechat-data-provider';
+import { ArrowIcon } from '@librechat/client';
+import { type TMessage, TConversationCosts } from 'librechat-data-provider';
 import type { TMessageProps, TMessageIcon } from '~/common';
 import MessageContent from '~/components/Chat/Messages/Content/MessageContent';
 import PlaceholderRow from '~/components/Chat/Messages/ui/PlaceholderRow';
 import SiblingSwitch from '~/components/Chat/Messages/SiblingSwitch';
 import HoverButtons from '~/components/Chat/Messages/HoverButtons';
 import MessageIcon from '~/components/Chat/Messages/MessageIcon';
+import { useMessageActions, useLocalize } from '~/hooks';
 import { Plugin } from '~/components/Messages/Content';
 import SubRow from '~/components/Chat/Messages/SubRow';
 import { MessageContext } from '~/Providers';
-import { useMessageActions } from '~/hooks';
 import { cn, logger } from '~/utils';
 import store from '~/store';
 
@@ -19,6 +20,7 @@ type MessageRenderProps = {
   isCard?: boolean;
   isMultiMessage?: boolean;
   isSubmittingFamily?: boolean;
+  costs?: TConversationCosts;
 } & Pick<
   TMessageProps,
   'currentEditId' | 'setCurrentEditId' | 'siblingIdx' | 'setSiblingIdx' | 'siblingCount'
@@ -35,7 +37,9 @@ const MessageRender = memo(
     isMultiMessage = false,
     setCurrentEditId,
     isSubmittingFamily = false,
+    costs,
   }: MessageRenderProps) => {
+    const localize = useLocalize();
     const {
       ask,
       edit,
@@ -60,6 +64,18 @@ const MessageRender = memo(
     });
     const maximizeChatSpace = useRecoilValue(store.maximizeChatSpace);
     const fontSize = useRecoilValue(store.fontSize);
+    const showCostTracking = useRecoilValue(store.showCostTracking);
+
+    const perMessageCost = useMemo(() => {
+      if (!showCostTracking || !costs || !costs.perMessage || !msg?.messageId) {
+        return null;
+      }
+      const entry = costs.perMessage.find((p) => p.messageId === msg.messageId);
+      if (!entry) {
+        return null;
+      }
+      return entry;
+    }, [showCostTracking, costs, msg?.messageId]);
 
     const handleRegenerateMessage = useCallback(() => regenerateMessage(), [regenerateMessage]);
     const hasNoChildren = !(msg?.children?.length ?? 0);
@@ -157,7 +173,26 @@ const MessageRender = memo(
             msg.isCreatedByUser ? 'user-turn' : 'agent-turn',
           )}
         >
-          <h2 className={cn('select-none font-semibold', fontSize)}>{messageLabel}</h2>
+          <h2 className={cn('select-none font-semibold', fontSize)}>
+            {messageLabel}
+            {perMessageCost && (
+              <span className="ml-2 inline-flex items-center gap-2 px-2 py-0.5 text-xs text-muted-foreground">
+                {perMessageCost.tokenCount > 0 && (
+                  <span>
+                    {perMessageCost.tokenType === 'prompt' ? (
+                      <ArrowIcon direction="up" className="inline" />
+                    ) : (
+                      <ArrowIcon direction="down" className="inline" />
+                    )}
+                    {localize('com_ui_token_abbreviation', {
+                      0: perMessageCost.tokenCount,
+                    })}
+                  </span>
+                )}
+                <span className="whitespace-pre">${Math.abs(perMessageCost.usd).toFixed(6)}</span>
+              </span>
+            )}
+          </h2>
 
           <div className="flex flex-col gap-1">
             <div className="flex max-w-full flex-grow flex-col gap-0">
