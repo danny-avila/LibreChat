@@ -762,6 +762,7 @@ describe('web.ts', () => {
         firecrawlApiKey: '${FIRECRAWL_API_KEY}',
         firecrawlApiUrl: '${FIRECRAWL_API_URL}',
         jinaApiKey: '${JINA_API_KEY}',
+        jinaApiUrl: 'https://api.jina.ai/v1/rerank',
         cohereApiKey: '${COHERE_API_KEY}',
         safeSearch: SafeSearchTypes.MODERATE,
         rerankerType: 'jina' as RerankerTypes,
