@@ -4,6 +4,7 @@ import { useParams } from 'react-router-dom';
 import exportFromJSON from 'export-from-json';
 import { useQueryClient } from '@tanstack/react-query';
 import {
+  buildTree,
   QueryKeys,
   ContentTypes,
   ToolCallTypes,
@@ -18,7 +19,7 @@ import type {
 } from 'librechat-data-provider';
 import useBuildMessageTree from '~/hooks/Messages/useBuildMessageTree';
 import { useScreenshot } from '~/hooks/ScreenshotContext';
-import { cleanupPreset, buildTree } from '~/utils';
+import { cleanupPreset } from '~/utils';
 
 type ExportValues = {
   fieldName: string;
