@@ -117,6 +117,11 @@ router.get('/', async function (req, res) {
       openidReuseTokens,
     };
 
+    const minPasswordLength = parseInt(process.env.MIN_PASSWORD_LENGTH, 10);
+    if (minPasswordLength && !isNaN(minPasswordLength)) {
+      payload.minPasswordLength = minPasswordLength;
+    }
+
     payload.mcpServers = {};
     const getMCPServers = () => {
       try {

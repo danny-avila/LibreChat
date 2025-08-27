@@ -125,7 +125,10 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, 
               aria-label={localize('com_auth_password')}
               {...register('password', {
                 required: localize('com_auth_password_required'),
-                minLength: { value: 8, message: localize('com_auth_password_min_length') },
+                minLength: {
+                  value: startupConfig?.minPasswordLength || 8,
+                  message: localize('com_auth_password_min_length'),
+                },
                 maxLength: { value: 128, message: localize('com_auth_password_max_length') },
               })}
               aria-invalid={!!errors.password}
