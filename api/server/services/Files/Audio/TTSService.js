@@ -35,11 +35,12 @@ class TTSService {
 
   /**
    * Retrieves the configured TTS provider.
+   * @param {AppConfig | null | undefined} [appConfig] - The app configuration object.
    * @returns {string} The name of the configured provider.
    * @throws {Error} If no provider is set or multiple providers are set.
    */
-  getProvider() {
-    const ttsSchema = this.customConfig.speech.tts;
+  getProvider(appConfig) {
+    const ttsSchema = appConfig?.speech?.tts;
     if (!ttsSchema) {
       throw new Error(
         'No TTS schema is set. Did you configure TTS in the custom config (librechat.yaml)?',
@@ -276,8 +277,8 @@ class TTSService {
   /**
    * Processes a text-to-speech request.
    * @async
-   * @param {Object} req - The request object.
-   * @param {Object} res - The response object.
+   * @param {ServerRequest} req - The request object.
+   * @param {ServerResponse} res - The response object.
    * @returns {Promise<void>}
    */
   async processTextToSpeech(req, res) {
@@ -287,12 +288,14 @@ class TTSService {
       return res.status(400).send('Missing text in request body');
     }
 
-    const appConfig = await getAppConfig({
-      role: req.user?.role,
-    });
+    const appConfig =
+      req.config ??
+      (await getAppConfig({
+        role: req.user?.role,
+      }));
     try {
       res.setHeader('Content-Type', 'audio/mpeg');
-      const provider = this.getProvider();
+      const provider = this.getProvider(appConfig);
       const ttsSchema = appConfig?.speech?.tts?.[provider];
       const voice = await this.getVoice(ttsSchema, requestVoice);
 
@@ -344,14 +347,19 @@ class TTSService {
   /**
    * Streams audio data from the TTS provider.
    * @async
-   * @param {Object} req - The request object.
-   * @param {Object} res - The response object.
+   * @param {ServerRequest} req - The request object.
+   * @param {ServerResponse} res - The response object.
    * @returns {Promise<void>}
    */
   async streamAudio(req, res) {
     res.setHeader('Content-Type', 'audio/mpeg');
-    const provider = this.getProvider();
-    const ttsSchema = this.customConfig.speech.tts[provider];
+    const appConfig =
+      req.config ??
+      (await getAppConfig({
+        role: req.user?.role,
+      }));
+    const provider = this.getProvider(appConfig);
+    const ttsSchema = appConfig?.speech?.tts?.[provider];
     const voice = await this.getVoice(ttsSchema, req.body.voice);
 
     let shouldContinue = true;
@@ -436,8 +444,8 @@ async function createTTSService() {
 /**
  * Wrapper function for text-to-speech processing.
  * @async
- * @param {Object} req - The request object.
- * @param {Object} res - The response object.
+ * @param {ServerRequest} req - The request object.
+ * @param {ServerResponse} res - The response object.
  * @returns {Promise<void>}
  */
 async function textToSpeech(req, res) {
@@ -460,11 +468,12 @@ async function streamAudio(req, res) {
 /**
  * Wrapper function to get the configured TTS provider.
  * @async
+ * @param {AppConfig | null | undefined} appConfig - The app configuration object.
  * @returns {Promise<string>} A promise that resolves to the name of the configured provider.
  */
-async function getProvider() {
+async function getProvider(appConfig) {
   const ttsService = await createTTSService();
-  return ttsService.getProvider();
+  return ttsService.getProvider(appConfig);
 }
 
 module.exports = {
