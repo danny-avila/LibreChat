@@ -1,4 +1,5 @@
 const axios = require('axios');
+const { logger } = require('@librechat/data-schemas');
 const { logAxiosError, processTextWithTokenLimit } = require('@librechat/api');
 const {
   FileSources,
@@ -105,7 +106,7 @@ async function encodeAndFormat(req, files, endpoint, mode) {
   }
 
   const fileTokenLimit =
-    req.body?.fileTokenLimit ?? mergeFileConfig(req.app.locals.fileConfig).fileTokenLimit;
+    req.body?.fileTokenLimit ?? mergeFileConfig(req.config?.fileConfig).fileTokenLimit;
 
   for (let file of files) {
     /** @type {FileSources} */
@@ -120,7 +121,7 @@ async function encodeAndFormat(req, files, endpoint, mode) {
       });
 
       if (wasTruncated) {
-        console.debug(
+        logger.debug(
           `[encodeAndFormat] Text content truncated for file: ${file.filename} due to token limits`,
         );
       }
@@ -154,7 +155,7 @@ async function encodeAndFormat(req, files, endpoint, mode) {
         base64Data = null;
         continue;
       } catch (error) {
-        // Error handling code
+        logger.error('Error processing image from blob storage:', error);
       }
     } else if (source !== FileSources.local && base64Only.has(endpoint)) {
       const [_file, imageURL] = await preparePayload(req, file);
