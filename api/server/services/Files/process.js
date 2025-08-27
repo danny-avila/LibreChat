@@ -555,7 +555,15 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
   } else if (tool_resource === EToolResources.ocr) {
     const { file_id, temp_file_id = null } = metadata;
 
-    const createTextFile = async (text, bytes, filepath, type) => {
+    /**
+     * @param {object} params
+     * @param {string} params.text
+     * @param {number} params.bytes
+     * @param {string} params.filepath
+     * @param {string} params.type
+     * @return {Promise<void>}
+     */
+    const createTextFile = async ({ text, bytes, filepath, type = 'text/plain' }) => {
       const fileInfo = removeNullishValues({
         text,
         bytes,
@@ -563,7 +571,7 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
         temp_file_id,
         user: req.user.id,
         type,
-        filepath,
+        filepath: filepath ?? file.path,
         source: FileSources.text,
         filename: file.originalname,
         model: messageAttachment ? undefined : req.body.model,
@@ -598,7 +606,7 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
         appConfig?.ocr?.strategy ?? FileSources.mistral_ocr,
       );
       const { text, bytes, filepath: ocrFileURL } = await uploadOCR({ req, file, loadAuthValues });
-      return await createTextFile(text, bytes, ocrFileURL, 'text/plain');
+      return await createTextFile({ text, bytes, filepath: ocrFileURL });
     }
 
     const shouldUseSTT = fileConfig.checkType(
@@ -609,7 +617,7 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
     if (shouldUseSTT) {
       const sttService = await STTService.getInstance();
       const { text, bytes } = await processAudioFile({ file, sttService });
-      return await createTextFile(text, bytes, file.path, 'text/plain');
+      return await createTextFile({ text, bytes });
     }
 
     const shouldUseText = fileConfig.checkType(
@@ -622,7 +630,7 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
     }
 
     const { text, bytes } = await parseText({ req, file, file_id });
-    return await createTextFile(text, bytes, file.path, file.mimetype);
+    return await createTextFile({ text, bytes, type: file.mimetype });
   }
 
   // Dual storage pattern for RAG files: Storage + Vector DB
