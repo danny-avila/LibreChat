@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { Label } from '@librechat/client';
+import DOMPurify from 'dompurify';
 import type t from 'librechat-data-provider';
 import { useLocalize, TranslationKeys, useAgentCategories } from '~/hooks';
 import { cn, renderAgentAvatar, getContactDisplayName } from '~/utils';
@@ -82,9 +83,8 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, onClick, className = '' })
               id={`agent-${agent.id}-description`}
               className="line-clamp-3 text-sm leading-relaxed text-text-primary"
               {...(agent.description ? { 'aria-label': `Description: ${agent.description}` } : {})}
-            >
-              {agent.description ?? ''}
-            </p>
+              dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(agent.description ?? '') }}
+            />
           </div>
 
           {/* Owner info - moved to bottom right */}

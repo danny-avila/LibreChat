@@ -1,5 +1,6 @@
 const { logger } = require('@librechat/data-schemas');
 const { CacheKeys, Constants } = require('librechat-data-provider');
+const pLimit = require('p-limit');
 const { findToken, createToken, updateToken, deleteTokens } = require('~/models');
 const { getMCPManager, getFlowStateManager } = require('~/config');
 const { updateMCPUserTools } = require('~/server/services/Config');
@@ -17,7 +18,9 @@ const { getLogStores } = require('~/cache');
  * @param {(authURL: string) => Promise<boolean>} [params.oauthStart]
  * @param {Record<string, Record<string, string>>} [params.userMCPAuthMap]
  */
-async function reinitMCPServer({
+const reinitLimit = pLimit(1);
+
+async function internalReinit({
   req,
   signal,
   forceNew,
@@ -135,6 +138,10 @@ async function reinitMCPServer({
       error,
     );
   }
+}
+
+async function reinitMCPServer(params) {
+  return reinitLimit(() => internalReinit(params));
 }
 
 module.exports = {

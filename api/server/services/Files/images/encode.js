@@ -1,4 +1,5 @@
 const axios = require('axios');
+const { validateExternalUrl } = require('~/server/utils/validateUrl');
 const { logger } = require('@librechat/data-schemas');
 const { logAxiosError, processTextWithTokenLimit } = require('@librechat/api');
 const {
@@ -60,8 +61,11 @@ async function streamToBase64(stream, destroyStream = true) {
  */
 async function fetchImageToBase64(url) {
   try {
+    await validateExternalUrl(url);
     const response = await axios.get(url, {
       responseType: 'arraybuffer',
+      maxContentLength: 10 * 1024 * 1024,
+      timeout: 5000,
     });
     const base64Data = Buffer.from(response.data).toString('base64');
     response.data = null;

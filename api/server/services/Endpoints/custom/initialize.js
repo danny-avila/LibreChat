@@ -17,6 +17,7 @@ const { getUserKeyValues, checkUserKeyExpiry } = require('~/server/services/User
 const { fetchModels } = require('~/server/services/ModelService');
 const OpenAIClient = require('~/app/clients/OpenAIClient');
 const getLogStores = require('~/cache/getLogStores');
+const { validateExternalUrl } = require('~/server/utils/validateUrl');
 
 const { PROXY } = process.env;
 
@@ -61,6 +62,7 @@ const initializeClient = async ({ req, res, endpointOption, optionsOnly, overrid
 
   let apiKey = userProvidesKey ? userValues?.apiKey : CUSTOM_API_KEY;
   let baseURL = userProvidesURL ? userValues?.baseURL : CUSTOM_BASE_URL;
+  await validateExternalUrl(baseURL);
 
   if (userProvidesKey & !apiKey) {
     throw new Error(
@@ -128,6 +130,10 @@ const initializeClient = async ({ req, res, endpointOption, optionsOnly, overrid
   const allConfig = appConfig.endpoints?.all;
   if (allConfig) {
     customOptions.streamRate = allConfig.streamRate;
+  }
+
+  if (customOptions.directEndpoint) {
+    await validateExternalUrl(customOptions.directEndpoint);
   }
 
   let clientOptions = {
