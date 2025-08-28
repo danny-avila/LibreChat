@@ -22,8 +22,10 @@ const storageCondition = (value: unknown, rawCurrentValue?: string | null) => {
 export function useMCPSelect({ conversationId }: { conversationId?: string | null }) {
   const key = conversationId ?? Constants.NEW_CONVO;
   const hasSetFetched = useRef<string | null>(null);
+  const { isFetched, mcpToolDetails } = useGetMCPTools();
   const [ephemeralAgent, setEphemeralAgent] = useRecoilState(ephemeralAgentByConvoId(key));
 
+  const storageKey = `${LocalStorageKeys.LAST_MCP_}${key}`;
   const mcpState = useMemo(() => {
     return ephemeralAgent?.mcp ?? [];
   }, [ephemeralAgent?.mcp]);
@@ -45,7 +47,7 @@ export function useMCPSelect({ conversationId }: { conversationId?: string | nul
   );
 
   const [mcpValues, setMCPValuesRaw] = useLocalStorage<string[]>(
-    `${LocalStorageKeys.LAST_MCP_}${key}`,
+    storageKey,
     mcpState,
     setSelectedValues,
     storageCondition,
@@ -63,8 +65,6 @@ export function useMCPSelect({ conversationId }: { conversationId?: string | nul
     `${LocalStorageKeys.PIN_MCP_}${key}`,
     true,
   );
-
-  const { isFetched, mcpToolDetails } = useGetMCPTools();
 
   useEffect(() => {
     if (hasSetFetched.current === key) {
