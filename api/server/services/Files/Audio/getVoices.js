@@ -14,16 +14,18 @@ const { getProvider } = require('./TTSService');
  */
 async function getVoices(req, res) {
   try {
-    const appConfig = await getAppConfig({
-      role: req.user?.role,
-    });
+    const appConfig =
+      req.config ??
+      (await getAppConfig({
+        role: req.user?.role,
+      }));
 
-    if (!appConfig || !appConfig?.speech?.tts) {
+    const ttsSchema = appConfig?.speech?.tts;
+    if (!ttsSchema) {
       throw new Error('Configuration or TTS schema is missing');
     }
 
-    const ttsSchema = appConfig?.speech?.tts;
-    const provider = await getProvider(ttsSchema);
+    const provider = await getProvider(appConfig);
     let voices;
 
     switch (provider) {
