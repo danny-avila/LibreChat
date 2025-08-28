@@ -127,7 +127,7 @@ const uploadOpenAIVisionOCR = async ({ req, file, file_id, entity_id }) => {
   
   try {
     /** @type {TCustomConfig['ocr']} */
-    const ocrConfig = req.app.locals?.ocr;
+    const ocrConfig = req.config?.ocr;
     
 
     const apiKeyConfig = ocrConfig.apiKey || '';
