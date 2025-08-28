@@ -71,13 +71,18 @@ export default function ServerInitializationSection({
   const isReinit = shouldShowReinit;
   const outerClass = isReinit ? 'flex justify-start' : 'flex justify-end';
   const buttonVariant = isReinit ? undefined : 'default';
-  const buttonText = isServerInitializing
-    ? localize('com_ui_loading')
-    : isReinit
-      ? localize('com_ui_reinitialize')
-      : requiresOAuth
-        ? localize('com_ui_authenticate')
-        : localize('com_ui_mcp_initialize');
+
+  let buttonText = '';
+  if (isServerInitializing) {
+    buttonText = localize('com_ui_loading');
+  } else if (isReinit) {
+    buttonText = localize('com_ui_reinitialize');
+  } else if (requiresOAuth) {
+    buttonText = localize('com_ui_authenticate');
+  } else {
+    buttonText = localize('com_ui_mcp_initialize');
+  }
+
   const icon = isServerInitializing ? (
     <Spinner className="h-4 w-4" />
   ) : (
