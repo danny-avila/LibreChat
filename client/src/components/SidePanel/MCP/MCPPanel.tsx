@@ -8,15 +8,16 @@ import type { TUpdateUserPlugins } from 'librechat-data-provider';
 import ServerInitializationSection from '~/components/MCP/ServerInitializationSection';
 import { useMCPConnectionStatusQuery } from '~/data-provider/Tools/queries';
 import CustomUserVarsSection from '~/components/MCP/CustomUserVarsSection';
-import BadgeRowProvider from '~/Providers/BadgeRowContext';
+import { MCPPanelProvider, useMCPPanelContext } from '~/Providers';
 import { useGetStartupConfig } from '~/data-provider';
 import MCPPanelSkeleton from './MCPPanelSkeleton';
 import { useLocalize } from '~/hooks';
 
 function MCPPanelContent() {
   const localize = useLocalize();
-  const { showToast } = useToastContext();
   const queryClient = useQueryClient();
+  const { showToast } = useToastContext();
+  const { conversationId } = useMCPPanelContext();
   const { data: startupConfig, isLoading: startupConfigLoading } = useGetStartupConfig();
   const { data: connectionStatusData } = useMCPConnectionStatusQuery();
   const [selectedServerNameForEditing, setSelectedServerNameForEditing] = useState<string | null>(
@@ -153,6 +154,7 @@ function MCPPanelContent() {
 
         <ServerInitializationSection
           sidePanel={true}
+          conversationId={conversationId}
           serverName={selectedServerNameForEditing}
           requiresOAuth={serverStatus?.requiresOAuth || false}
           hasCustomUserVars={
@@ -204,8 +206,8 @@ function MCPPanelContent() {
 
 export default function MCPPanel() {
   return (
-    <BadgeRowProvider>
+    <MCPPanelProvider>
       <MCPPanelContent />
-    </BadgeRowProvider>
+    </MCPPanelProvider>
   );
 }
