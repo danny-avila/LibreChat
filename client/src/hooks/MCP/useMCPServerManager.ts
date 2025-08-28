@@ -90,7 +90,21 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
     [connectionStatusData?.connectionStatus],
   );
 
+  /** Filter disconnected servers when values change, but only after initial load
+   This prevents clearing selections on page refresh when servers haven't connected yet
+   */
+  const hasInitialLoadCompleted = useRef(false);
+
   useEffect(() => {
+    if (!connectionStatusData || Object.keys(connectionStatus).length === 0) {
+      return;
+    }
+
+    if (!hasInitialLoadCompleted.current) {
+      hasInitialLoadCompleted.current = true;
+      return;
+    }
+
     if (!mcpValues?.length) return;
 
     const connectedSelected = mcpValues.filter(
@@ -100,7 +114,7 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
     if (connectedSelected.length !== mcpValues.length) {
       setMCPValues(connectedSelected);
     }
-  }, [connectionStatus, mcpValues, setMCPValues]);
+  }, [connectionStatus, connectionStatusData, mcpValues, setMCPValues]);
 
   const updateServerState = useCallback((serverName: string, updates: Partial<ServerState>) => {
     setServerStates((prev) => {
