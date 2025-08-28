@@ -126,12 +126,6 @@ export class MCPServersRegistry {
 
     const toolFunctions: t.LCAvailableTools = {};
     tools.forEach((tool) => {
-      /** Skip group placeholder tools where tool name equals server name (e.g., "spotify_mcp_spotify") */
-      if (tool.name === serverName) {
-        logger.debug(`[MCP][${serverName}] Skipping placeholder tool: ${tool.name}`);
-        return;
-      }
-
       const name = `${tool.name}${CONSTANTS.mcp_delimiter}${serverName}`;
       toolFunctions[name] = {
         type: 'function',

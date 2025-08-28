@@ -230,12 +230,6 @@ async function createMCPTools({ req, res, index, signal, serverName, provider, u
 
   const serverTools = [];
   for (const tool of result.tools) {
-    /** Skip group placeholder tools where tool name equals server name (e.g., "spotify_mcp_spotify") */
-    if (tool.name === serverName) {
-      logger.debug(`[MCP][${serverName}] Skipping placeholder tool: ${tool.name}`);
-      continue;
-    }
-
     const toolInstance = await createMCPTool({
       req,
       res,
@@ -277,13 +271,6 @@ async function createMCPTool({
   availableTools: tools,
 }) {
   const [toolName, serverName] = toolKey.split(Constants.mcp_delimiter);
-
-  // Skip placeholder tools where tool name equals server name (e.g., "spotify_mcp_spotify")
-  // These are just for UI organization and shouldn't be available as callable tools
-  if (toolName === serverName) {
-    logger.debug(`[MCP][${serverName}] Skipping placeholder tool: ${toolKey}`);
-    return;
-  }
 
   const availableTools =
     tools ?? (await getCachedTools({ userId: req.user?.id, includeGlobal: true }));

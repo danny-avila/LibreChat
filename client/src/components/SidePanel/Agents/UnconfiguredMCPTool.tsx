@@ -1,76 +1,67 @@
 import React, { useState } from 'react';
+import { CircleX } from 'lucide-react';
 import { useFormContext } from 'react-hook-form';
 import { Constants } from 'librechat-data-provider';
 import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
-import { CircleX } from 'lucide-react';
 import {
-  TrashIcon,
-  OGDialog,
-  OGDialogTrigger,
   Label,
-  OGDialogTemplate,
+  OGDialog,
+  TrashIcon,
   useToastContext,
+  OGDialogTrigger,
+  OGDialogTemplate,
 } from '@librechat/client';
-import type { AgentToolType } from 'librechat-data-provider';
 import type { AgentForm } from '~/common';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
-export default function UnconfiguredMCPTool({
-  tool,
-  allTools,
-}: {
-  tool: string;
-  allTools?: Record<string, AgentToolType & { tools?: AgentToolType[] }>;
-}) {
-  const [isHovering, setIsHovering] = useState(false);
-  const [isFocused, setIsFocused] = useState(false);
+export default function UnconfiguredMCPTool({ serverName }: { serverName?: string }) {
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const updateUserPlugins = useUpdateUserPluginsMutation();
   const { getValues, setValue } = useFormContext<AgentForm>();
 
-  if (!allTools) {
+  const [isFocused, setIsFocused] = useState(false);
+  const [isHovering, setIsHovering] = useState(false);
+
+  if (!serverName) {
     return null;
   }
-  const currentTool = allTools[tool];
 
-  const removeTool = (toolId: string) => {
-    if (toolId) {
-      const mcpToolId = `${toolId}${Constants.mcp_delimiter}${toolId}`;
-      const groupObj = currentTool;
-      const toolIdsToRemove = [mcpToolId];
-      if (groupObj?.tools && groupObj.tools.length > 0) {
-        toolIdsToRemove.push(...groupObj.tools.map((sub) => sub.tool_id));
-      }
-      updateUserPlugins.mutate(
-        { pluginKey: mcpToolId, action: 'uninstall', auth: {}, isEntityTool: true },
-        {
-          onError: (error: unknown) => {
-            showToast({
-              message: localize('com_ui_delete_tool_error', { error: String(error) }),
-              status: 'error',
-            });
-          },
-          onSuccess: () => {
-            const remainingToolIds =
-              getValues('tools')?.filter((toolId) => !toolIdsToRemove.includes(toolId)) || [];
-            setValue('tools', remainingToolIds);
-            showToast({ message: localize('com_ui_delete_tool_success'), status: 'success' });
-          },
+  const removeTool = () => {
+    updateUserPlugins.mutate(
+      {
+        pluginKey: `${Constants.mcp_prefix}${serverName}`,
+        action: 'uninstall',
+        auth: {},
+        isEntityTool: true,
+      },
+      {
+        onError: (error: unknown) => {
+          showToast({
+            message: localize('com_ui_delete_tool_error', { error: String(error) }),
+            status: 'error',
+          });
         },
-      );
-    }
+        onSuccess: () => {
+          const currentTools = getValues('tools');
+          const remainingToolIds =
+            currentTools?.filter(
+              (currentToolId) =>
+                currentToolId !== serverName &&
+                !currentToolId.endsWith(`${Constants.mcp_delimiter}${serverName}`),
+            ) || [];
+          setValue('tools', remainingToolIds);
+          showToast({ message: localize('com_ui_delete_tool_success'), status: 'success' });
+        },
+      },
+    );
   };
-
-  if (!currentTool) {
-    return null;
-  }
 
   return (
     <OGDialog>
       <div
-        className="group relative flex w-full items-center gap-1 rounded-lg p-1 text-sm hover:bg-gray-50 dark:hover:bg-gray-800/50"
+        className="group relative flex w-full items-center gap-1 rounded-lg p-1 text-sm hover:bg-surface-primary-alt"
         onMouseEnter={() => setIsHovering(true)}
         onMouseLeave={() => setIsHovering(false)}
         onFocus={() => setIsFocused(true)}
@@ -87,23 +78,15 @@ export default function UnconfiguredMCPTool({
         </div>
 
         <div className="flex grow cursor-not-allowed items-center gap-1 rounded bg-transparent p-0 text-left transition-colors">
-          {currentTool.metadata.icon && (
-            <div className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full">
-              <div
-                className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full bg-center bg-no-repeat dark:bg-white/20"
-                style={{
-                  backgroundImage: `url(${currentTool.metadata.icon})`,
-                  backgroundSize: 'cover',
-                }}
-              />
-            </div>
-          )}
           <div
             className="grow px-2 py-1.5"
             style={{ textOverflow: 'ellipsis', wordBreak: 'break-all', overflow: 'hidden' }}
           >
-            {currentTool.metadata.name}
-            <span className="ml-2 text-xs text-gray-500">{localize('com_ui_unconfigured')}</span>
+            {serverName}
+            <span className="ml-2 text-xs text-text-secondary">
+              {' - '}
+              {localize('com_ui_unavailable')}
+            </span>
           </div>
         </div>
 
@@ -111,13 +94,10 @@ export default function UnconfiguredMCPTool({
           <button
             type="button"
             className={cn(
-              'flex h-7 w-7 items-center justify-center rounded transition-all duration-200',
-              'hover:bg-gray-200 dark:hover:bg-gray-700',
-              'focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1',
-              'focus:opacity-100',
+              'flex h-7 w-7 items-center justify-center rounded transition-all duration-200 hover:bg-surface-active-alt focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1',
               isHovering || isFocused ? 'opacity-100' : 'pointer-events-none opacity-0',
             )}
-            aria-label={`Delete ${currentTool.metadata.name}`}
+            aria-label={`Delete ${serverName}`}
             tabIndex={0}
             onFocus={() => setIsFocused(true)}
           >
@@ -136,7 +116,7 @@ export default function UnconfiguredMCPTool({
           </Label>
         }
         selection={{
-          selectHandler: () => removeTool(currentTool.tool_id),
+          selectHandler: () => removeTool(),
           selectClasses:
             'bg-red-700 dark:bg-red-600 hover:bg-red-800 dark:hover:bg-red-800 transition-color duration-200 text-white',
           selectText: localize('com_ui_delete'),

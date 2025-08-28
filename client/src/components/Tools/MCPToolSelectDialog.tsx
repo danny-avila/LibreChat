@@ -1,33 +1,37 @@
 import { useEffect, useState, useMemo } from 'react';
 import { Search, X } from 'lucide-react';
 import { useFormContext } from 'react-hook-form';
+import { Constants, EModelEndpoint } from 'librechat-data-provider';
 import { Dialog, DialogPanel, DialogTitle, Description } from '@headlessui/react';
 import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
+import type { TError, AgentToolType } from 'librechat-data-provider';
 import type { AgentForm, TPluginStoreDialogProps } from '~/common';
-import type { TError } from 'librechat-data-provider';
-import CustomUserVarsSection from '~/components/MCP/CustomUserVarsSection';
-import { useMCPServerManager } from '~/hooks/MCP/useMCPServerManager';
-import { useLocalize, usePluginDialogHelpers } from '~/hooks';
-import { PluginPagination } from '~/components/Plugins/Store';
-import { EModelEndpoint } from 'librechat-data-provider';
+import { useLocalize, usePluginDialogHelpers, useMCPServerManager } from '~/hooks';
 import { useGetStartupConfig, useAvailableToolsQuery } from '~/data-provider';
-import { Constants } from 'librechat-data-provider';
+import CustomUserVarsSection from '~/components/MCP/CustomUserVarsSection';
+import { PluginPagination } from '~/components/Plugins/Store';
+import { useAgentPanelContext } from '~/Providers';
 import MCPToolItem from './MCPToolItem';
 
 function MCPToolSelectDialog({
   isOpen,
+  agentId,
   setIsOpen,
+  mcpServerNames,
 }: TPluginStoreDialogProps & {
+  agentId: string;
+  mcpServerNames?: string[];
   endpoint: EModelEndpoint.agents;
 }) {
-  const { getValues, setValue } = useFormContext<AgentForm>();
   const localize = useLocalize();
-  const { configuredServers, connectionStatus, initializeServer } = useMCPServerManager();
+  const { mcpServersMap } = useAgentPanelContext();
+  const { initializeServer } = useMCPServerManager();
   const { data: startupConfig } = useGetStartupConfig();
+  const { getValues, setValue } = useFormContext<AgentForm>();
   const { refetch: refetchAvailableTools } = useAvailableToolsQuery(EModelEndpoint.agents);
 
-  const [configuringServer, setConfiguringServer] = useState<string | null>(null);
   const [isInitializing, setIsInitializing] = useState<string | null>(null);
+  const [configuringServer, setConfiguringServer] = useState<string | null>(null);
 
   const {
     maxPage,
@@ -65,16 +69,14 @@ function MCPToolSelectDialog({
   const handleDirectAdd = async (serverName: string) => {
     setIsInitializing(serverName);
     try {
-      const isConnected = connectionStatus[serverName]?.connectionState === 'connected';
-      if (!isConnected) {
+      const serverInfo = mcpServersMap.get(serverName.toLowerCase());
+      if (!serverInfo?.isConnected) {
         await initializeServer(serverName);
       }
 
-      const toolId = `${serverName}${Constants.mcp_delimiter}${serverName}`;
-
       updateUserPlugins.mutate(
         {
-          pluginKey: toolId,
+          pluginKey: `${Constants.mcp_prefix}${serverName}`,
           action: 'install',
           auth: {},
           isEntityTool: true,
@@ -87,11 +89,13 @@ function MCPToolSelectDialog({
             const { data: updatedAvailableTools } = await refetchAvailableTools();
 
             const currentTools = getValues('tools') || [];
-            const toolsToAdd = [toolId];
+            const toolsToAdd: string[] = [
+              `${Constants.mcp_server}${Constants.mcp_delimiter}${serverName}`,
+            ];
 
             if (updatedAvailableTools) {
               updatedAvailableTools.forEach((tool) => {
-                if (tool.pluginKey.includes(`${Constants.mcp_delimiter}${serverName}`)) {
+                if (tool.pluginKey.endsWith(`${Constants.mcp_delimiter}${serverName}`)) {
                   toolsToAdd.push(tool.pluginKey);
                 }
               });
@@ -114,7 +118,7 @@ function MCPToolSelectDialog({
   const handleSaveCustomVars = async (serverName: string, authData: Record<string, string>) => {
     try {
       await updateUserPlugins.mutateAsync({
-        pluginKey: `mcp_${serverName}`,
+        pluginKey: `${Constants.mcp_prefix}${serverName}`,
         action: 'install',
         auth: authData,
         isEntityTool: true,
@@ -147,53 +151,48 @@ function MCPToolSelectDialog({
   };
 
   const onRemoveTool = (serverName: string) => {
-    const toolId = `${serverName}${Constants.mcp_delimiter}${serverName}`;
-
-    const toolIdsToRemove = [toolId];
-
-    const currentTools = getValues('tools') || [];
-    currentTools.forEach((tool) => {
-      if (tool.includes(`${Constants.mcp_delimiter}${serverName}`)) {
-        toolIdsToRemove.push(tool);
-      }
-    });
-
     updateUserPlugins.mutate(
-      { pluginKey: toolId, action: 'uninstall', auth: {}, isEntityTool: true },
+      {
+        pluginKey: `${Constants.mcp_prefix}${serverName}`,
+        action: 'uninstall',
+        auth: {},
+        isEntityTool: true,
+      },
       {
         onError: (error: unknown) => handleInstallError(error as TError),
         onSuccess: () => {
-          const remainingTools = currentTools.filter((tool) => !toolIdsToRemove.includes(tool));
+          const currentTools = getValues('tools') || [];
+          const remainingTools = currentTools.filter(
+            (tool) =>
+              tool !== serverName && !tool.endsWith(`${Constants.mcp_delimiter}${serverName}`),
+          );
           setValue('tools', remainingTools);
         },
       },
     );
   };
 
-  const filteredServers = useMemo(
-    () =>
-      configuredServers?.filter((serverName: string) => {
-        return serverName.toLowerCase().includes(searchValue.toLowerCase());
-      }) || [],
-    [configuredServers, searchValue],
-  );
+  const installedToolsSet = useMemo(() => {
+    return new Set(mcpServerNames);
+  }, [mcpServerNames]);
+
+  const mcpServers = useMemo(() => {
+    return Array.from(mcpServersMap.values());
+  }, [mcpServersMap]);
 
   useEffect(() => {
-    if (filteredServers) {
-      setMaxPage(Math.ceil(filteredServers.length / itemsPerPage));
-      if (searchChanged) {
-        setCurrentPage(1);
-        setSearchChanged(false);
-      }
+    setMaxPage(Math.ceil(mcpServers.length / itemsPerPage));
+    if (searchChanged) {
+      setCurrentPage(1);
+      setSearchChanged(false);
     }
   }, [
-    itemsPerPage,
-    searchValue,
-    filteredServers,
-    searchChanged,
     setMaxPage,
+    itemsPerPage,
+    searchChanged,
     setCurrentPage,
     setSearchChanged,
+    mcpServers.length,
   ]);
 
   return (
@@ -286,38 +285,34 @@ function MCPToolSelectDialog({
                 className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
                 style={{ minHeight: '410px' }}
               >
-                {filteredServers &&
-                  filteredServers
-                    .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
-                    .map((serverName, index) => {
-                      const formTools = getValues('tools') || [];
-                      const toolId = `${serverName}${Constants.mcp_delimiter}${serverName}`;
+                {mcpServers
+                  .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
+                  .map((serverInfo) => {
+                    const isInstalled = installedToolsSet.has(serverInfo.serverName);
+                    const isConfiguring = configuringServer === serverInfo.serverName;
+                    const isServerInitializing = isInitializing === serverInfo.serverName;
 
-                      const isInstalled = formTools.includes(toolId);
-                      const isConfiguring = configuringServer === serverName;
-                      const isServerInitializing = isInitializing === serverName;
+                    const tool: AgentToolType = {
+                      tool_id: serverInfo.serverName,
+                      agent_id: agentId,
+                      metadata: {
+                        ...serverInfo.metadata,
+                        description: `${localize('com_ui_tool_collection_prefix')} ${serverInfo.serverName}`,
+                      },
+                    };
 
-                      const tool = {
-                        tool_id: toolId,
-                        metadata: {
-                          name: serverName,
-                          description: `${localize('com_ui_tool_collection_prefix')} ${serverName}`,
-                          icon: undefined,
-                        },
-                      };
-
-                      return (
-                        <MCPToolItem
-                          key={index}
-                          tool={tool}
-                          isInstalled={isInstalled}
-                          onAddTool={() => onAddTool(serverName)}
-                          onRemoveTool={() => onRemoveTool(serverName)}
-                          isConfiguring={isConfiguring}
-                          isInitializing={isServerInitializing}
-                        />
-                      );
-                    })}
+                    return (
+                      <MCPToolItem
+                        key={serverInfo.serverName}
+                        tool={tool}
+                        isInstalled={isInstalled}
+                        onAddTool={() => onAddTool(serverInfo.serverName)}
+                        onRemoveTool={() => onRemoveTool(serverInfo.serverName)}
+                        isConfiguring={isConfiguring}
+                        isInitializing={isServerInitializing}
+                      />
+                    );
+                  })}
               </div>
             </div>
 

@@ -6,103 +6,91 @@ import { Constants } from 'librechat-data-provider';
 import * as AccordionPrimitive from '@radix-ui/react-accordion';
 import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
 import {
-  Accordion,
-  AccordionItem,
-  AccordionContent,
-  TrashIcon,
-  CircleHelpIcon,
-  OGDialog,
-  OGDialogTrigger,
   Label,
   Checkbox,
-  OGDialogTemplate,
+  OGDialog,
+  Accordion,
+  TrashIcon,
+  AccordionItem,
+  CircleHelpIcon,
+  OGDialogTrigger,
   useToastContext,
+  AccordionContent,
+  OGDialogTemplate,
 } from '@librechat/client';
-import type { AgentToolType } from 'librechat-data-provider';
-import type { AgentForm } from '~/common';
+import type { AgentForm, MCPServerInfo } from '~/common';
+import MCPServerStatusIcon from '~/components/MCP/MCPServerStatusIcon';
+import { useMCPServerManager } from '~/hooks/MCP/useMCPServerManager';
+import MCPConfigDialog from '~/components/MCP/MCPConfigDialog';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
-import MCPServerStatusIcon from '~/components/MCP/MCPServerStatusIcon';
-import MCPConfigDialog from '~/components/MCP/MCPConfigDialog';
-import { useMCPServerManager } from '~/hooks/MCP/useMCPServerManager';
 
-export default function MCPTool({
-  tool,
-  allTools,
-}: {
-  tool: string;
-  allTools?: Record<string, AgentToolType & { tools?: AgentToolType[] }>;
-  agent_id?: string;
-}) {
-  const [isHovering, setIsHovering] = useState(false);
-  const [isFocused, setIsFocused] = useState(false);
-  const [hoveredToolId, setHoveredToolId] = useState<string | null>(null);
-  const [accordionValue, setAccordionValue] = useState<string>('');
+export default function MCPTool({ serverInfo }: { serverInfo?: MCPServerInfo }) {
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const updateUserPlugins = useUpdateUserPluginsMutation();
   const { getValues, setValue } = useFormContext<AgentForm>();
-  const { getServerStatusIconProps, getConfigDialogProps, initializeServer } =
-    useMCPServerManager();
+  const { getServerStatusIconProps, getConfigDialogProps } = useMCPServerManager();
 
-  if (!allTools) {
+  const [isFocused, setIsFocused] = useState(false);
+  const [isHovering, setIsHovering] = useState(false);
+  const [accordionValue, setAccordionValue] = useState<string>('');
+  const [hoveredToolId, setHoveredToolId] = useState<string | null>(null);
+
+  if (!serverInfo) {
     return null;
   }
-  const currentTool = allTools[tool];
+
+  const currentServerName = serverInfo.serverName;
+
   const getSelectedTools = () => {
-    if (!currentTool?.tools) return [];
+    if (!serverInfo?.tools) return [];
     const formTools = getValues('tools') || [];
-    return currentTool.tools.filter((t) => formTools.includes(t.tool_id)).map((t) => t.tool_id);
+    return serverInfo.tools.filter((t) => formTools.includes(t.tool_id)).map((t) => t.tool_id);
   };
 
   const updateFormTools = (newSelectedTools: string[]) => {
     const currentTools = getValues('tools') || [];
     const otherTools = currentTools.filter(
-      (t: string) => !currentTool?.tools?.some((st) => st.tool_id === t),
+      (t: string) => !serverInfo?.tools?.some((st) => st.tool_id === t),
     );
     setValue('tools', [...otherTools, ...newSelectedTools]);
   };
 
-  if (!currentTool) {
-    return null;
-  }
-
-  const serverName = currentTool.metadata.name;
-  const isGroup = currentTool.tools && currentTool.tools.length > 0;
-
-  const removeTool = (toolId: string) => {
-    if (toolId) {
-      const mcpToolId = `${toolId}${Constants.mcp_delimiter}${toolId}`;
-      const groupObj = currentTool;
-      const toolIdsToRemove = [mcpToolId];
-      if (groupObj?.tools && groupObj.tools.length > 0) {
-        toolIdsToRemove.push(...groupObj.tools.map((sub) => sub.tool_id));
-      }
-      updateUserPlugins.mutate(
-        { pluginKey: mcpToolId, action: 'uninstall', auth: {}, isEntityTool: true },
-        {
-          onError: (error: unknown) => {
-            showToast({ message: `Error while deleting the tool: ${error}`, status: 'error' });
-          },
-          onSuccess: () => {
-            const remainingToolIds =
-              getValues('tools')?.filter((toolId) => !toolIdsToRemove.includes(toolId)) || [];
-            setValue('tools', remainingToolIds);
-            showToast({ message: 'Tool deleted successfully', status: 'success' });
-          },
-        },
-      );
+  const removeTool = (serverName: string) => {
+    if (!serverName) {
+      return;
     }
+    updateUserPlugins.mutate(
+      {
+        pluginKey: `${Constants.mcp_prefix}${serverName}`,
+        action: 'uninstall',
+        auth: {},
+        isEntityTool: true,
+      },
+      {
+        onError: (error: unknown) => {
+          showToast({ message: `Error while deleting the tool: ${error}`, status: 'error' });
+        },
+        onSuccess: () => {
+          const currentTools = getValues('tools');
+          const remainingToolIds =
+            currentTools?.filter(
+              (currentToolId) =>
+                currentToolId !== serverName &&
+                !currentToolId.endsWith(`${Constants.mcp_delimiter}${serverName}`),
+            ) || [];
+          setValue('tools', remainingToolIds);
+          showToast({ message: 'Tool deleted successfully', status: 'success' });
+        },
+      },
+    );
   };
 
-  if (!currentTool) {
-    return null;
-  }
-
   const selectedTools = getSelectedTools();
-  const isExpanded = accordionValue === currentTool.tool_id;
+  const isExpanded = accordionValue === currentServerName;
 
-  const statusIconProps = getServerStatusIconProps(serverName);
+  const statusIconProps = getServerStatusIconProps(currentServerName);
   const configDialogProps = getConfigDialogProps();
 
   const statusIcon = statusIconProps && (
@@ -116,85 +104,12 @@ export default function MCPTool({
     </div>
   );
 
-  if (!isGroup) {
-    return (
-      <OGDialog>
-        <div
-          className="group relative flex w-full items-center gap-1 rounded-lg p-1 text-sm hover:bg-gray-50 dark:hover:bg-gray-800/50"
-          onMouseEnter={() => setIsHovering(true)}
-          onMouseLeave={() => setIsHovering(false)}
-          onFocus={() => setIsFocused(true)}
-          onBlur={(e) => {
-            if (!e.currentTarget.contains(e.relatedTarget)) {
-              setIsFocused(false);
-            }
-          }}
-        >
-          <div className="flex grow items-center">
-            {currentTool.metadata.icon && (
-              <div className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full">
-                <div
-                  className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full bg-center bg-no-repeat dark:bg-white/20"
-                  style={{
-                    backgroundImage: `url(${currentTool.metadata.icon})`,
-                    backgroundSize: 'cover',
-                  }}
-                />
-              </div>
-            )}
-            <div
-              className="grow px-2 py-1.5"
-              style={{ textOverflow: 'ellipsis', wordBreak: 'break-all', overflow: 'hidden' }}
-            >
-              {currentTool.metadata.name}
-            </div>
-          </div>
-
-          <OGDialogTrigger asChild>
-            <button
-              type="button"
-              className={cn(
-                'flex h-7 w-7 items-center justify-center rounded transition-all duration-200',
-                'hover:bg-gray-200 dark:hover:bg-gray-700',
-                'focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1',
-                'focus:opacity-100',
-                isHovering || isFocused ? 'opacity-100' : 'pointer-events-none opacity-0',
-              )}
-              aria-label={`Delete ${currentTool.metadata.name}`}
-              tabIndex={0}
-              onFocus={() => setIsFocused(true)}
-            >
-              <TrashIcon className="h-4 w-4" />
-            </button>
-          </OGDialogTrigger>
-        </div>
-        <OGDialogTemplate
-          showCloseButton={false}
-          title={localize('com_ui_delete_tool')}
-          mainClassName="px-0"
-          className="max-w-[450px]"
-          main={
-            <Label className="text-left text-sm font-medium">
-              {localize('com_ui_delete_tool_confirm')}
-            </Label>
-          }
-          selection={{
-            selectHandler: () => removeTool(currentTool.tool_id),
-            selectClasses:
-              'bg-red-700 dark:bg-red-600 hover:bg-red-800 dark:hover:bg-red-800 transition-color duration-200 text-white',
-            selectText: localize('com_ui_delete'),
-          }}
-        />
-      </OGDialog>
-    );
-  }
-
   return (
     <OGDialog>
       <Accordion type="single" value={accordionValue} onValueChange={setAccordionValue} collapsible>
-        <AccordionItem value={currentTool.tool_id} className="group relative w-full border-none">
+        <AccordionItem value={currentServerName} className="group relative w-full border-none">
           <div
-            className="relative flex w-full items-center gap-1 rounded-lg p-1 hover:bg-gray-50 dark:hover:bg-gray-800/50"
+            className="relative flex w-full items-center gap-1 rounded-lg p-1 hover:bg-surface-primary-alt"
             onMouseEnter={() => setIsHovering(true)}
             onMouseLeave={() => setIsHovering(false)}
             onFocus={() => setIsFocused(true)}
@@ -205,22 +120,25 @@ export default function MCPTool({
             }}
           >
             <AccordionPrimitive.Header asChild>
-              <button
-                type="button"
-                className={cn(
-                  'flex grow cursor-pointer items-center gap-1 rounded bg-transparent p-0 text-left transition-colors',
-                  'focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1',
-                )}
-                onClick={() => initializeServer(currentTool.metadata.name)}
+              <div
+                className="flex grow cursor-pointer select-none items-center gap-1 rounded bg-transparent p-0 text-left transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1"
+                onClick={() =>
+                  setAccordionValue((prev) => {
+                    if (prev) {
+                      return '';
+                    }
+                    return currentServerName;
+                  })
+                }
               >
                 {statusIcon && <div className="flex items-center">{statusIcon}</div>}
 
-                {currentTool.metadata.icon && (
+                {serverInfo.metadata.icon && (
                   <div className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full">
                     <div
                       className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full bg-center bg-no-repeat dark:bg-white/20"
                       style={{
-                        backgroundImage: `url(${currentTool.metadata.icon})`,
+                        backgroundImage: `url(${serverInfo.metadata.icon})`,
                         backgroundSize: 'cover',
                       }}
                     />
@@ -230,7 +148,7 @@ export default function MCPTool({
                   className="grow px-2 py-1.5"
                   style={{ textOverflow: 'ellipsis', wordBreak: 'break-all', overflow: 'hidden' }}
                 >
-                  {currentTool.metadata.name}
+                  {currentServerName}
                 </div>
                 <div className="flex items-center">
                   <div className="relative flex items-center">
@@ -249,18 +167,23 @@ export default function MCPTool({
                           className="mt-1"
                         >
                           <Checkbox
-                            id={`select-all-${currentTool.tool_id}`}
-                            checked={selectedTools.length === currentTool.tools?.length}
+                            id={`select-all-${currentServerName}`}
+                            checked={
+                              selectedTools.length === serverInfo.tools?.length &&
+                              selectedTools.length > 0
+                            }
                             onCheckedChange={(checked) => {
-                              if (currentTool.tools) {
+                              if (serverInfo.tools) {
                                 const newSelectedTools = checked
-                                  ? currentTool.tools.map((t) => t.tool_id)
-                                  : [];
+                                  ? serverInfo.tools.map((t) => t.tool_id)
+                                  : [
+                                      `${Constants.mcp_server}${Constants.mcp_delimiter}${currentServerName}`,
+                                    ];
                                 updateFormTools(newSelectedTools);
                               }
                             }}
                             className={cn(
-                              'h-4 w-4 rounded border border-gray-300 transition-all duration-200 hover:border-gray-400 dark:border-gray-600 dark:hover:border-gray-500',
+                              'h-4 w-4 rounded border border-border-medium transition-all duration-200 hover:border-border-heavy',
                               isExpanded ? 'visible' : 'pointer-events-none invisible',
                             )}
                             onClick={(e) => e.stopPropagation()}
@@ -285,11 +208,8 @@ export default function MCPTool({
                                 e.stopPropagation();
                               }}
                               className={cn(
-                                'flex h-7 w-7 items-center justify-center rounded transition-colors duration-200',
-                                'hover:bg-gray-200 dark:hover:bg-gray-700',
-                                'focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1',
-                                'focus:translate-x-0 focus:opacity-100',
-                                isExpanded && 'bg-gray-200 dark:bg-gray-700',
+                                'flex h-7 w-7 items-center justify-center rounded transition-colors duration-200 hover:bg-surface-active-alt focus:translate-x-0 focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1',
+                                isExpanded && 'bg-surface-active-alt',
                               )}
                               aria-hidden="true"
                               tabIndex={0}
@@ -309,12 +229,10 @@ export default function MCPTool({
                               type="button"
                               className={cn(
                                 'flex h-7 w-7 items-center justify-center rounded transition-colors duration-200',
-                                'hover:bg-gray-200 dark:hover:bg-gray-700',
-                                'focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1',
-                                'focus:translate-x-0 focus:opacity-100',
+                                'hover:bg-surface-active-alt focus:translate-x-0 focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1',
                               )}
                               onClick={(e) => e.stopPropagation()}
-                              aria-label={`Delete ${currentTool.metadata.name}`}
+                              aria-label={`Delete ${currentServerName}`}
                               tabIndex={0}
                               onFocus={() => setIsFocused(true)}
                             >
@@ -326,13 +244,13 @@ export default function MCPTool({
                     </div>
                   </div>
                 </div>
-              </button>
+              </div>
             </AccordionPrimitive.Header>
           </div>
 
           <AccordionContent className="relative ml-1 pt-1 before:absolute before:bottom-2 before:left-0 before:top-0 before:w-0.5 before:bg-border-medium">
             <div className="space-y-1">
-              {currentTool.tools?.map((subTool) => (
+              {serverInfo.tools?.map((subTool) => (
                 <label
                   key={subTool.tool_id}
                   htmlFor={subTool.tool_id}
@@ -366,10 +284,12 @@ export default function MCPTool({
                     }}
                     onClick={(e) => e.stopPropagation()}
                     className={cn(
-                      'relative float-left mr-2 inline-flex h-4 w-4 cursor-pointer rounded border border-gray-300 transition-[border-color] duration-200 hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background dark:border-gray-600 dark:hover:border-gray-500',
+                      'relative float-left mr-2 inline-flex h-4 w-4 cursor-pointer rounded border border-border-medium transition-[border-color] duration-200 hover:border-border-heavy focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background',
                     )}
                   />
-                  <span className="text-token-text-primary">{subTool.metadata.name}</span>
+                  <span className="text-token-text-primary select-none">
+                    {subTool.metadata.name}
+                  </span>
                   {subTool.metadata.description && (
                     <Ariakit.HovercardProvider placement="left-start">
                       <div className="ml-auto flex h-6 w-6 items-center justify-center">
@@ -437,7 +357,7 @@ export default function MCPTool({
           </Label>
         }
         selection={{
-          selectHandler: () => removeTool(currentTool.tool_id),
+          selectHandler: () => removeTool(currentServerName),
           selectClasses:
             'bg-red-700 dark:bg-red-600 hover:bg-red-800 dark:hover:bg-red-800 transition-color duration-200 text-white',
           selectText: localize('com_ui_delete'),

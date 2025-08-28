@@ -21,7 +21,7 @@ interface ServerState {
   pollInterval: NodeJS.Timeout | null;
 }
 
-export function useMCPServerManager({ conversationId }: { conversationId?: string | null }) {
+export function useMCPServerManager({ conversationId }: { conversationId?: string | null } = {}) {
   const localize = useLocalize();
   const queryClient = useQueryClient();
   const { showToast } = useToastContext();
