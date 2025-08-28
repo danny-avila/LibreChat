@@ -165,7 +165,7 @@ const Registration: React.FC = () => {
             {renderInput('password', 'com_auth_password', 'password', {
               required: localize('com_auth_password_required'),
               minLength: {
-                value: 8,
+                value: startupConfig?.minPasswordLength || 8,
                 message: localize('com_auth_password_min_length'),
               },
               maxLength: {
