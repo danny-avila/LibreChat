@@ -14,7 +14,6 @@ const {
 // Mock modules before importing
 jest.mock('~/server/services/Config', () => ({
   getCachedTools: jest.fn().mockResolvedValue({}),
-  getCustomConfig: jest.fn(),
 }));
 
 jest.mock('~/models/Role', () => ({

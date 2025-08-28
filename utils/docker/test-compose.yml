@@ -41,7 +41,7 @@ services:
     volumes:
       - ./meili_data_v1.7:/meili_data
   vectordb:
-    image: ankane/pgvector:latest
+    image: pgvector/pgvector:0.8.0-pg15-trixie
     environment:
       POSTGRES_DB: mydatabase
       POSTGRES_USER: myuser

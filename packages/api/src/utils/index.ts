@@ -1,6 +1,7 @@
 export * from './axios';
 export * from './azure';
 export * from './common';
+export * from './email';
 export * from './env';
 export * from './events';
 export * from './files';
@@ -10,6 +11,7 @@ export * from './llm';
 export * from './math';
 export * from './openid';
 export * from './tempChatRetention';
+export * from './text';
 export { default as Tokenizer } from './tokenizer';
 export * from './yaml';
 export * from './http';
