@@ -76,7 +76,10 @@ describe('custom/initializeClient', () => {
     expect(resolveHeaders).toHaveBeenCalledWith({
       headers: { 'x-user': '{{LIBRECHAT_USER_ID}}', 'x-email': '{{LIBRECHAT_USER_EMAIL}}' },
       user: { id: 'user-123', email: 'test@example.com', role: 'user' },
+      /**
+       * Note: Request-based Header Resolution is deferred until right before LLM request is made
       body: { endpoint: 'test-endpoint' }, // body - supports {{LIBRECHAT_BODY_*}} placeholders
+       */
     });
   });
 
