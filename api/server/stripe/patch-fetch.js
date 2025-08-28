@@ -55,20 +55,15 @@ function fetchLike(url, options = {}) {
 
 module.exports = patchFetch;
 
-function maskValue(value) {
+function redactValue(value) {
   if (!value) return '';
-  if (value.length <= 10) {
-    return '*'.repeat(value.length);
-  } else {
-    const remaining = value.length - 10;
-    return '*'.repeat(10) + `...(${remaining} more)`;
-  }
+  return `[REDACTED ${value.length} CHARACTERS]`;
 }
 
 function formatUrl(url) {
   const urlObj = new URL(url);
   urlObj.searchParams.forEach((value, key) => {
-    urlObj.searchParams.set(key, maskValue(value));
+    urlObj.searchParams.set(key, redactValue(value));
   });
   return urlObj.toString();
 }
@@ -79,8 +74,8 @@ function formatOptions(options) {
   const headers = options.headers || new Headers();
   obj.headers = {};
   for (const [key, value] of headers) {
-    obj.headers[key] = maskValue(value);
+    obj.headers[key] = redactValue(value);
   }
-  obj.body = options.body ? maskValue(options.body) : undefined;
+  obj.body = options.body ? redactValue(options.body) : undefined;
   return obj;
 }
