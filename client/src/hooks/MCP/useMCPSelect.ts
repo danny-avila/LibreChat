@@ -1,11 +1,9 @@
 import { useRef, useEffect, useCallback, useMemo } from 'react';
 import { useRecoilState } from 'recoil';
-import { Constants, LocalStorageKeys, EModelEndpoint } from 'librechat-data-provider';
-import type { TPlugin } from 'librechat-data-provider';
-import { useAvailableToolsQuery, useGetStartupConfig } from '~/data-provider';
+import { Constants, LocalStorageKeys } from 'librechat-data-provider';
 import useLocalStorage from '~/hooks/useLocalStorageAlt';
 import { ephemeralAgentByConvoId } from '~/store';
-import { useChatContext } from '~/Providers';
+import { useGetMCPTools } from './useGetMCPTools';
 
 const storageCondition = (value: unknown, rawCurrentValue?: string | null) => {
   if (rawCurrentValue) {
@@ -21,48 +19,10 @@ const storageCondition = (value: unknown, rawCurrentValue?: string | null) => {
   return Array.isArray(value) && value.length > 0;
 };
 
-export function useMCPSelect() {
-  const { conversation } = useChatContext();
-
-  const key = useMemo(
-    () => conversation?.conversationId ?? Constants.NEW_CONVO,
-    [conversation?.conversationId],
-  );
-
+export function useMCPSelect({ conversationId }: { conversationId?: string | null }) {
+  const key = conversationId ?? Constants.NEW_CONVO;
   const hasSetFetched = useRef<string | null>(null);
   const [ephemeralAgent, setEphemeralAgent] = useRecoilState(ephemeralAgentByConvoId(key));
-  const { data: startupConfig } = useGetStartupConfig();
-  const { data: rawMcpTools, isFetched } = useAvailableToolsQuery(EModelEndpoint.agents, {
-    select: (data: TPlugin[]) => {
-      const mcpToolsMap = new Map<string, TPlugin>();
-      data.forEach((tool) => {
-        const isMCP = tool.pluginKey.includes(Constants.mcp_delimiter);
-        if (isMCP) {
-          const parts = tool.pluginKey.split(Constants.mcp_delimiter);
-          const serverName = parts[parts.length - 1];
-          if (!mcpToolsMap.has(serverName)) {
-            mcpToolsMap.set(serverName, {
-              name: serverName,
-              pluginKey: tool.pluginKey,
-              authConfig: tool.authConfig,
-              authenticated: tool.authenticated,
-            });
-          }
-        }
-      });
-      return Array.from(mcpToolsMap.values());
-    },
-  });
-
-  const mcpToolDetails = useMemo(() => {
-    if (!rawMcpTools || !startupConfig?.mcpServers) {
-      return rawMcpTools;
-    }
-    return rawMcpTools.filter((tool) => {
-      const serverConfig = startupConfig?.mcpServers?.[tool.name];
-      return serverConfig?.chatMenu !== false;
-    });
-  }, [rawMcpTools, startupConfig?.mcpServers]);
 
   const mcpState = useMemo(() => {
     return ephemeralAgent?.mcp ?? [];
@@ -103,6 +63,8 @@ export function useMCPSelect() {
     `${LocalStorageKeys.PIN_MCP_}${key}`,
     true,
   );
+
+  const { isFetched, mcpToolDetails } = useGetMCPTools();
 
   useEffect(() => {
     if (hasSetFetched.current === key) {
