@@ -5,9 +5,9 @@ import { QueryKeys, request } from 'librechat-data-provider';
 import DataTable from '~/components/ui/DataTable';
 import { Button } from '~/components/ui/Button';
 import { SearchBar } from '~/views/admin/AdminSearchBar';
-import { PaginationControls } from '~/views/admin/PaginationControls';
 import { UserActions } from '~/views/admin/UserActions';
 import { UserUsageDialog } from '~/views/admin/UserUsageDialog';
+import { ArrowLeft } from 'lucide-react';
 import {
   Pagination,
   PaginationContent,
@@ -34,7 +34,7 @@ export default function AdminDashboard() {
 
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
-  const [limit] = useState(20);
+  const [limit] = useState(10); // Show 10 users per page
   const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null);
   const [usageOpen, setUsageOpen] = useState(false);
 
@@ -48,6 +48,13 @@ export default function AdminDashboard() {
     },
     keepPreviousData: true,
     refetchOnWindowFocus: false,
+    onSuccess: () => {
+      // Reset to page 1 if current page exceeds total pages
+      const totalPages = Math.ceil((usersQuery.data as any)?.total / limit) || 1;
+      if (page > totalPages && page !== 1) {
+        setPage(1);
+      }
+    },
   });
 
   // --- Mutations ---
@@ -71,13 +78,12 @@ export default function AdminDashboard() {
       if (mainContainerRef.current) {
         const windowHeight = window.innerHeight;
         const containerTop = mainContainerRef.current.getBoundingClientRect().top;
-        const paginationHeight = 60; // Estimated height for pagination
-        const headerHeight = 60; // Estimated height for the header
+        const paginationHeight = 60;
+        const headerHeight = 60;
         const availableHeight = windowHeight - containerTop - paginationHeight - headerHeight;
         mainContainerRef.current.style.height = `${Math.max(400, availableHeight)}px`;
       }
     };
-
     setTimeout(adjustTableHeight, 100);
     window.addEventListener('resize', adjustTableHeight);
     return () => window.removeEventListener('resize', adjustTableHeight);
@@ -114,15 +120,20 @@ export default function AdminDashboard() {
         meta: { size: '120px' },
         cell: ({ row }: any) => {
           const role = row.original.role;
+          // Force comparison to string value and ensure case is standardized
+          const normalizedRole = String(role).trim();
+          const isAdmin = normalizedRole.toLowerCase() === 'admin';
+          const isUser = normalizedRole.toLowerCase() === 'user';
+
           return (
             <span
               className={[
-                'rounded px-2 py-0.5 text-xs font-medium',
-                role === 'ADMIN'
-                  ? 'bg-purple-100 text-purple-700'
-                  : role === 'USER'
-                  ? 'bg-blue-100 text-blue-700'
-                  : 'bg-gray-100 text-gray-700',
+                'inline-block whitespace-nowrap rounded px-2 py-0.5 text-xs font-medium',
+                isAdmin
+                  ? 'bg-green-100 !text-green-700 dark:bg-green-900 dark:!text-green-300'
+                  : isUser
+                    ? 'bg-blue-100 !text-blue-700 dark:bg-blue-900 dark:!text-blue-300'
+                    : 'bg-slate-100 !text-slate-700 dark:bg-slate-800 dark:!text-slate-300',
               ].join(' ')}
             >
               {role}
@@ -168,17 +179,15 @@ export default function AdminDashboard() {
       {/* Header */}
       <div className="mb-3 flex items-center justify-between border-b border-gray-200 pb-3">
         <div className="flex items-center gap-3">
-          <h2 className="text-xl font-semibold">User Management</h2>
-          <div className="text-sm text-gray-500">
-            {data.length > 0
-              ? `Showing ${(page - 1) * limit + 1}-${Math.min(page * limit, total)} of ${total}`
-              : 'No users'}
-          </div>
-        </div>
-        <div className="flex items-center gap-3">
-          <Button variant="outline" onClick={() => navigate('/c/new')}>
-            Back to Chat
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => navigate('/c/new')}
+            className="rounded-full"
+          >
+            <ArrowLeft className="h-5 w-5" />
           </Button>
+          <h2 className="text-xl font-semibold">User Management</h2>
         </div>
       </div>
 
@@ -193,84 +202,66 @@ export default function AdminDashboard() {
       />
 
       {/* Users Table */}
-      <div
-        ref={mainContainerRef}
-        className="flex-grow overflow-hidden rounded-md border border-gray-200 dark:border-gray-700"
-      >
+      <div ref={mainContainerRef} className="flex-grow overflow-hidden">
         <DataTable
           columns={columns as any}
           data={data.map((r, i) => ({ ...r, id: r._id || i }))}
-          className="h-full"
+          className="flex h-full flex-col gap-4"
           enableRowSelection={false}
           showCheckboxes={false}
           onDelete={undefined}
+          pagination={false} // Disable built-in pagination as we're handling it ourselves
         />
       </div>
 
-      {/* Pagination */}
-      {total > limit && (
-        <Pagination className="mt-2 border-t border-gray-200 py-3 dark:border-gray-700">
-          <PaginationContent>
-            <PaginationItem>
-              <PaginationPrevious
-                onClick={() => setPage((prev) => Math.max(prev - 1, 1))}
-                className={page === 1 ? 'pointer-events-none opacity-50' : ''}
-              />
-            </PaginationItem>
+      {/* Pagination + Showing info */}
+      <div className="mt-2 flex items-center justify-between border-t border-gray-200 py-3 text-sm text-gray-500 dark:border-gray-700">
+        {/* Left: showing info */}
+        <div>
+          {data.length > 0
+            ? `Showing ${(page - 1) * limit + 1}-${Math.min(page * limit, total)} of ${total}`
+            : 'No users'}
+        </div>
 
-            {Array.from({ length: Math.min(5, Math.ceil(total / limit)) }, (_, i) => {
-              const pageNumber = i + 1;
-              const isCurrentPage = pageNumber === page;
+        {/* Right: pagination controls */}
+        {total > 0 && (
+          <Pagination>
+            <PaginationContent>
+              <PaginationItem>
+                <PaginationPrevious
+                  onClick={() => setPage((prev) => Math.max(prev - 1, 1))}
+                  className={page === 1 ? 'pointer-events-none opacity-50' : ''}
+                />
+              </PaginationItem>
 
-              // Show first page, last page, current page, and pages around current
-              if (
-                pageNumber === 1 ||
-                pageNumber === Math.ceil(total / limit) ||
-                (pageNumber >= page - 1 && pageNumber <= page + 1)
-              ) {
-                return (
-                  <PaginationItem key={pageNumber}>
-                    <PaginationLink
-                      isActive={isCurrentPage}
-                      onClick={() => setPage(pageNumber)}
-                    >
-                      {pageNumber}
-                    </PaginationLink>
-                  </PaginationItem>
-                );
-              }
+              {/* Show first page */}
+              <PaginationItem>
+                <PaginationLink isActive={page === 1} onClick={() => setPage(1)}>
+                  1
+                </PaginationLink>
+              </PaginationItem>
 
-              // Show ellipsis for gaps
-              if (
-                (pageNumber === 2 && page > 3) ||
-                (pageNumber === Math.ceil(total / limit) - 1 &&
-                  page < Math.ceil(total / limit) - 2)
-              ) {
-                return (
-                  <PaginationItem key={`ellipsis-${pageNumber}`}>
-                    <PaginationEllipsis />
-                  </PaginationItem>
-                );
-              }
+              {/* Show second page if there are enough pages */}
+              {Math.ceil(total / limit) >= 2 && (
+                <PaginationItem>
+                  <PaginationLink isActive={page === 2} onClick={() => setPage(2)}>
+                    2
+                  </PaginationLink>
+                </PaginationItem>
+              )}
 
-              return null;
-            })}
-
-            <PaginationItem>
-              <PaginationNext
-                onClick={() =>
-                  setPage((prev) => Math.min(prev + 1, Math.ceil(total / limit)))
-                }
-                className={
-                  page === Math.ceil(total / limit)
-                    ? 'pointer-events-none opacity-50'
-                    : ''
-                }
-              />
-            </PaginationItem>
-          </PaginationContent>
-        </Pagination>
-      )}
+              <PaginationItem>
+                <PaginationNext
+                  onClick={() => setPage((prev) => Math.min(prev + 1, Math.ceil(total / limit)))}
+                  className={
+                    page === Math.ceil(total / limit) ? 'pointer-events-none opacity-50' : ''
+                  }
+                />
+              </PaginationItem>
+            </PaginationContent>
+          </Pagination>
+        )}
+      </div>
 
       {/* Usage Dialog */}
       <UserUsageDialog

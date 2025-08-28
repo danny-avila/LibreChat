@@ -1,5 +1,6 @@
 import React from 'react';
 import { Button } from '~/components/ui/Button';
+import { ArrowLeft, ArrowRight, RefreshCcw } from 'lucide-react';
 
 interface PaginationControlsProps {
   page: number;
@@ -16,26 +17,40 @@ export const PaginationControls: React.FC<PaginationControlsProps> = ({
   setPage,
   onRefresh,
 }) => {
+  const totalPages = Math.max(1, Math.ceil(total / limit));
+
   return (
     <div className="flex items-center justify-between">
       <div className="text-sm text-muted-foreground">
-        Page {page} / {Math.max(1, Math.ceil(total / limit))} ({total} items)
+        Page {page} / {totalPages} ({total} items)
       </div>
       <div className="flex items-center gap-2">
-        <Button size="sm" variant="secondary" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>
-          Prev
-        </Button>
-        <Button
-          size="sm"
-          variant="secondary"
-          disabled={page >= Math.ceil(total / limit)}
-          onClick={() => setPage(p => p + 1)}
-        >
-          Next
-        </Button>
+        {/* Prev button only if not on first page */}
+        {page > 1 && (
+          <Button
+            size="icon"
+            variant="secondary"
+            onClick={() => setPage((p) => p - 1)}
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+        )}
+
+        {/* Next button only if not on last page */}
+        {page < totalPages && (
+          <Button
+            size="icon"
+            variant="secondary"
+            onClick={() => setPage((p) => p + 1)}
+          >
+            <ArrowRight className="h-4 w-4" />
+          </Button>
+        )}
+
+        {/* Optional Refresh button */}
         {onRefresh && (
-          <Button size="sm" variant="neutral" onClick={onRefresh}>
-            Refresh
+          <Button size="icon" variant="neutral" onClick={onRefresh}>
+            <RefreshCcw className="h-4 w-4" />
           </Button>
         )}
       </div>

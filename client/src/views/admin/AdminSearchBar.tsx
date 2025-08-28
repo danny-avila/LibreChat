@@ -24,9 +24,6 @@ export const SearchBar: React.FC<SearchBarProps> = ({ search, setSearch, onSearc
         onChange={(e) => setSearch(e.target.value)}
         onKeyDown={handleKeyPress}
       />
-      <Button variant="neutral" onClick={onSearch}>
-        Search
-      </Button>
     </div>
   );
 };
