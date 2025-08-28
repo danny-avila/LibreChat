@@ -5,6 +5,7 @@ const { logger } = require('@librechat/data-schemas');
 const { EModelEndpoint } = require('librechat-data-provider');
 const { generateShortLivedToken } = require('@librechat/api');
 const { getBufferMetadata } = require('~/server/utils');
+const { validateExternalUrl } = require('~/server/utils/validateUrl');
 const paths = require('~/config/paths');
 
 /**
@@ -103,9 +104,12 @@ async function saveLocalBuffer({ userId, buffer, fileName, basePath = 'images' }
  */
 async function saveFileFromURL({ userId, URL, fileName, basePath = 'images' }) {
   try {
+    await validateExternalUrl(URL);
     const response = await axios({
       url: URL,
       responseType: 'arraybuffer',
+      maxContentLength: 10 * 1024 * 1024,
+      timeout: 5000,
     });
 
     const buffer = Buffer.from(response.data, 'binary');
