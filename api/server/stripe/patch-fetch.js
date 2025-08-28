@@ -45,9 +45,7 @@ function fetchLike(url, options = {}) {
   options = secureRequestContext.attach(options);
 
   // Log the request
-  logger.info(
-    `[Stripe:patchFetch] fetch('${formatUrl(url)}', ${JSON.stringify(formatOptions(options))})`,
-  );
+  logger.info(`[Stripe:patchFetch] fetch request ${formatRequest(url, options)}`);
 
   // Use node-fetch to perform the request
   return nodeFetch(url, options);
@@ -60,6 +58,17 @@ function redactValue(value) {
   return `[REDACTED ${value.length} CHARACTERS]`;
 }
 
+function formatRequest(url, options) {
+  const fields = [];
+  fields.push(`method=${options.method || 'GET'}`);
+  fields.push(`url="${formatUrl(url)}"`);
+  fields.push(`headers=${JSON.stringify(formatHeaders(options.headers || new Headers()))}`);
+  if (options.body) {
+    fields.push(`body="${redactValue(options.body)}"`);
+  }
+  return fields.join(' ');
+}
+
 function formatUrl(url) {
   const urlObj = new URL(url);
   urlObj.searchParams.forEach((value, key) => {
@@ -68,14 +77,10 @@ function formatUrl(url) {
   return urlObj.toString();
 }
 
-function formatOptions(options) {
+function formatHeaders(headers) {
   const obj = {};
-  obj.method = options.method || 'GET';
-  const headers = options.headers || new Headers();
-  obj.headers = {};
   for (const [key, value] of headers) {
-    obj.headers[key] = redactValue(value);
+    obj[key] = redactValue(value);
   }
-  obj.body = options.body ? redactValue(options.body) : undefined;
   return obj;
 }
