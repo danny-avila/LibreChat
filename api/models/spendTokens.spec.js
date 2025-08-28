@@ -156,9 +156,9 @@ describe('spendTokens', () => {
 
     await spendTokens(txData, tokenUsage);
 
-    // Verify transactions were created
+    // Verify transactions were not created
     const transactions = await Transaction.find({ user: userId });
-    expect(transactions).toHaveLength(2);
+    expect(transactions).toHaveLength(0);
 
     // Verify balance was not updated (should still be 10000)
     const balance = await Balance.findOne({ user: userId });

@@ -193,15 +193,15 @@ async function createTransaction(_txData) {
   if (txData.rawAmount != null && isNaN(txData.rawAmount)) {
     return;
   }
+  if (!balance?.enabled) {
+    return;
+  }
 
   const transaction = new Transaction(txData);
   transaction.endpointTokenConfig = txData.endpointTokenConfig;
   calculateTokenValue(transaction);
 
   await transaction.save();
-  if (!balance?.enabled) {
-    return;
-  }
 
   let incrementValue = transaction.tokenValue;
   const balanceResponse = await updateBalance({
@@ -223,6 +223,11 @@ async function createTransaction(_txData) {
  */
 async function createStructuredTransaction(_txData) {
   const { balance, ...txData } = _txData;
+
+  if (!balance?.enabled) {
+    return;
+  }
+
   const transaction = new Transaction({
     ...txData,
     endpointTokenConfig: txData.endpointTokenConfig,
@@ -231,10 +236,6 @@ async function createStructuredTransaction(_txData) {
   calculateStructuredTokenValue(transaction);
 
   await transaction.save();
-
-  if (!balance?.enabled) {
-    return;
-  }
 
   let incrementValue = transaction.tokenValue;
 
