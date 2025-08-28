@@ -21,10 +21,10 @@ interface ServerState {
   pollInterval: NodeJS.Timeout | null;
 }
 
-export function useMCPServerManager() {
+export function useMCPServerManager({ conversationId }: { conversationId?: string | null }) {
   const localize = useLocalize();
   const { showToast } = useToastContext();
-  const mcpSelect = useMCPSelect();
+  const mcpSelect = useMCPSelect({ conversationId });
   const { data: startupConfig } = useGetStartupConfig();
   const { mcpValues, setMCPValues, mcpToolDetails, isPinned, setIsPinned } = mcpSelect;
   const queryClient = useQueryClient();

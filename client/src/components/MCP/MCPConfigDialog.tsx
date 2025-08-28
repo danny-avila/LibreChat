@@ -27,6 +27,7 @@ interface MCPConfigDialogProps {
   onRevoke?: () => void;
   serverName: string;
   serverStatus?: MCPServerStatus;
+  conversationId?: string | null;
 }
 
 export default function MCPConfigDialog({
@@ -38,6 +39,7 @@ export default function MCPConfigDialog({
   onRevoke,
   serverName,
   serverStatus,
+  conversationId,
 }: MCPConfigDialogProps) {
   const localize = useLocalize();
 
@@ -126,6 +128,7 @@ export default function MCPConfigDialog({
         {/* Server Initialization Section */}
         <ServerInitializationSection
           serverName={serverName}
+          conversationId={conversationId}
           requiresOAuth={serverStatus?.requiresOAuth || false}
           hasCustomUserVars={fieldsSchema && Object.keys(fieldsSchema).length > 0}
         />

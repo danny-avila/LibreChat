@@ -4,7 +4,7 @@ import MCPServerStatusIcon from '~/components/MCP/MCPServerStatusIcon';
 import { useMCPServerManager } from '~/hooks/MCP/useMCPServerManager';
 import MCPConfigDialog from '~/components/MCP/MCPConfigDialog';
 
-function MCPSelect() {
+function MCPSelect({ conversationId }: { conversationId?: string | null }) {
   const {
     configuredServers,
     mcpValues,
@@ -15,7 +15,7 @@ function MCPSelect() {
     getConfigDialogProps,
     isInitializing,
     localize,
-  } = useMCPServerManager();
+  } = useMCPServerManager({ conversationId });
 
   const renderSelectedValues = useCallback(
     (values: string[], placeholder?: string) => {
@@ -93,7 +93,9 @@ function MCPSelect() {
         selectItemsClassName="border border-blue-600/50 bg-blue-500/10 hover:bg-blue-700/10"
         selectClassName="group relative inline-flex items-center justify-center md:justify-start gap-1.5 rounded-full border border-border-medium text-sm font-medium transition-all md:w-full size-9 p-2 md:p-3 bg-transparent shadow-sm hover:bg-surface-hover hover:shadow-md active:shadow-inner"
       />
-      {configDialogProps && <MCPConfigDialog {...configDialogProps} />}
+      {configDialogProps && (
+        <MCPConfigDialog {...configDialogProps} conversationId={conversationId} />
+      )}
     </>
   );
 }

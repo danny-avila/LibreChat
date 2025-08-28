@@ -9,12 +9,14 @@ interface ServerInitializationSectionProps {
   serverName: string;
   requiresOAuth: boolean;
   hasCustomUserVars?: boolean;
+  conversationId?: string | null;
 }
 
 export default function ServerInitializationSection({
-  sidePanel = false,
   serverName,
   requiresOAuth,
+  conversationId,
+  sidePanel = false,
   hasCustomUserVars = false,
 }: ServerInitializationSectionProps) {
   const localize = useLocalize();
@@ -26,7 +28,7 @@ export default function ServerInitializationSection({
     isInitializing,
     isCancellable,
     getOAuthUrl,
-  } = useMCPServerManager();
+  } = useMCPServerManager({ conversationId });
 
   const serverStatus = connectionStatus[serverName];
   const isConnected = serverStatus?.connectionState === 'connected';

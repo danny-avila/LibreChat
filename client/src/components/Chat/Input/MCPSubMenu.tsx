@@ -9,10 +9,11 @@ import { cn } from '~/utils';
 
 interface MCPSubMenuProps {
   placeholder?: string;
+  conversationId?: string | null;
 }
 
 const MCPSubMenu = React.forwardRef<HTMLDivElement, MCPSubMenuProps>(
-  ({ placeholder, ...props }, ref) => {
+  ({ placeholder, conversationId, ...props }, ref) => {
     const {
       configuredServers,
       mcpValues,
@@ -23,7 +24,7 @@ const MCPSubMenu = React.forwardRef<HTMLDivElement, MCPSubMenuProps>(
       getServerStatusIconProps,
       getConfigDialogProps,
       isInitializing,
-    } = useMCPServerManager();
+    } = useMCPServerManager({ conversationId });
 
     const menuStore = Ariakit.useMenuStore({
       focusLoop: true,
