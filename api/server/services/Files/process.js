@@ -34,6 +34,7 @@ const { checkCapability } = require('~/server/services/Config');
 const { LB_QueueAsyncCall } = require('~/server/utils/queue');
 const { getStrategyFunctions } = require('./strategies');
 const { determineFileType } = require('~/server/utils');
+const { base64ToBuffer } = require('./utils');
 const { STTService } = require('./Audio/STTService');
 
 /**
@@ -897,31 +898,6 @@ async function retrieveAndProcessFile({
   } else {
     logger.debug(`[retrieveAndProcessFile] Non-image file type detected: ${basename}`);
     return await processOpenAIFile({ ...processArgs, saveFile: true });
-  }
-}
-
-/**
- * Converts a base64 string to a buffer.
- * @param {string} base64String
- * @returns {Buffer<ArrayBufferLike>}
- */
-function base64ToBuffer(base64String) {
-  try {
-    const typeMatch = base64String.match(/^data:([A-Za-z-+/]+);base64,/);
-    const type = typeMatch ? typeMatch[1] : '';
-
-    const base64Data = base64String.replace(/^data:([A-Za-z-+/]+);base64,/, '');
-
-    if (!base64Data) {
-      throw new Error('Invalid base64 string');
-    }
-
-    return {
-      buffer: Buffer.from(base64Data, 'base64'),
-      type,
-    };
-  } catch (error) {
-    throw new Error(`Failed to convert base64 to buffer: ${error.message}`);
   }
 }
 
