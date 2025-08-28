@@ -49,7 +49,7 @@
     "pluginKey": "image_gen_oai",
     "toolkit": true,
     "description": "Image Generation and Editing using OpenAI's latest state-of-the-art models",
-    "icon": "/assets/image_gen_oai.png",
+    "icon": "assets/image_gen_oai.png",
     "authConfig": [
       {
         "authField": "IMAGE_GEN_OAI_API_KEY",
@@ -75,7 +75,7 @@
     "name": "Browser",
     "pluginKey": "web-browser",
     "description": "Scrape and summarize webpage data",
-    "icon": "/assets/web-browser.svg",
+    "icon": "assets/web-browser.svg",
     "authConfig": [
       {
         "authField": "OPENAI_API_KEY",
@@ -170,7 +170,7 @@
     "name": "OpenWeather",
     "pluginKey": "open_weather",
     "description": "Get weather forecasts and historical data from the OpenWeather API",
-    "icon": "/assets/openweather.png",
+    "icon": "assets/openweather.png",
     "authConfig": [
       {
         "authField": "OPENWEATHER_API_KEY",
