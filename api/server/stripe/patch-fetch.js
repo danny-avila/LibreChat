@@ -44,8 +44,43 @@ function fetchLike(url, options = {}) {
   // Attach the secure request context to the options
   options = secureRequestContext.attach(options);
 
+  // Log the request
+  logger.info(
+    `[Stripe:patchFetch] fetch('${formatUrl(url)}', ${JSON.stringify(formatOptions(options))})`,
+  );
+
   // Use node-fetch to perform the request
   return nodeFetch(url, options);
 }
 
 module.exports = patchFetch;
+
+function maskValue(value) {
+  if (!value) return '';
+  if (value.length <= 10) {
+    return '*'.repeat(value.length);
+  } else {
+    const remaining = value.length - 10;
+    return '*'.repeat(10) + `...(${remaining} more)`;
+  }
+}
+
+function formatUrl(url) {
+  const urlObj = new URL(url);
+  urlObj.searchParams.forEach((value, key) => {
+    urlObj.searchParams.set(key, maskValue(value));
+  });
+  return urlObj.toString();
+}
+
+function formatOptions(options) {
+  const obj = {};
+  obj.method = options.method || 'GET';
+  const headers = options.headers || new Headers();
+  obj.headers = {};
+  for (const [key, value] of headers) {
+    obj.headers[key] = maskValue(value);
+  }
+  obj.body = options.body ? maskValue(options.body) : undefined;
+  return obj;
+}
