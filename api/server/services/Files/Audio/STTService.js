@@ -110,7 +110,7 @@ class STTService {
    */
   async getProviderSchema(req) {
     const appConfig =
-      req.config ??
+      req?.config ??
       (await getAppConfig({
         role: req?.user?.role,
       }));
