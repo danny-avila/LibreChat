@@ -84,19 +84,6 @@ function attach(options = {}) {
     return options;
   }
 
-  // Prevent further re-use of the context in this request
-  asyncLocalStorage.disable();
-  if (asyncLocalStorage.getStore()) {
-    logger.error(
-      `[Stripe] Unexpectedly found existing '${SECURE_REQUEST_CONTEXT_HEADER}' in AsyncLocalStorage after disabling it. This is a bug.`,
-    );
-    throw new Error(
-      `[Stripe] Unexpectedly found existing '${SECURE_REQUEST_CONTEXT_HEADER}' in AsyncLocalStorage after disabling it. This is a bug.`,
-    );
-  } else {
-    logger.debug(`[Stripe] Successfully disabled AsyncLocalStorage after attaching context`);
-  }
-
   // Set the header in the options
   const headers = options.headers || new Headers();
   headers.set(SECURE_REQUEST_CONTEXT_HEADER, src);

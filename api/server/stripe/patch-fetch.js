@@ -44,8 +44,43 @@ function fetchLike(url, options = {}) {
   // Attach the secure request context to the options
   options = secureRequestContext.attach(options);
 
+  // Log the request
+  logger.info(`[Stripe:patchFetch] fetch request ${formatRequest(url, options)}`);
+
   // Use node-fetch to perform the request
   return nodeFetch(url, options);
 }
 
 module.exports = patchFetch;
+
+function redactValue(value) {
+  if (!value) return '';
+  return `[REDACTED ${value.length} CHARACTERS]`;
+}
+
+function formatRequest(url, options) {
+  const fields = [];
+  fields.push(`method=${options.method || 'GET'}`);
+  fields.push(`url="${formatUrl(url)}"`);
+  fields.push(`headers=${JSON.stringify(formatHeaders(options.headers || new Headers()))}`);
+  if (options.body) {
+    fields.push(`body="${redactValue(options.body)}"`);
+  }
+  return fields.join(' ');
+}
+
+function formatUrl(url) {
+  const urlObj = new URL(url);
+  urlObj.searchParams.forEach((value, key) => {
+    urlObj.searchParams.set(key, redactValue(value));
+  });
+  return urlObj.toString();
+}
+
+function formatHeaders(headers) {
+  const obj = {};
+  for (const [key, value] of headers) {
+    obj[key] = redactValue(value);
+  }
+  return obj;
+}
