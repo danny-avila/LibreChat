@@ -10,7 +10,7 @@ import {
   PermissionTypes,
   defaultAgentCapabilities,
 } from 'librechat-data-provider';
-import { useLocalize, useHasAccess, useGetMCPTools, useAgentCapabilities } from '~/hooks';
+import { useLocalize, useHasAccess, useAgentCapabilities } from '~/hooks';
 import ArtifactsSubMenu from '~/components/Chat/Input/ArtifactsSubMenu';
 import MCPSubMenu from '~/components/Chat/Input/MCPSubMenu';
 import { useGetStartupConfig } from '~/data-provider';
@@ -30,6 +30,7 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
     artifacts,
     fileSearch,
     agentsConfig,
+    mcpServerNames,
     conversationId,
     codeApiKeyForm,
     codeInterpreter,
@@ -285,12 +286,6 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
       ),
     });
   }
-
-  const { mcpToolDetails } = useGetMCPTools();
-
-  const mcpServerNames = useMemo(() => {
-    return (mcpToolDetails ?? []).map((tool) => tool.name);
-  }, [mcpToolDetails]);
 
   if (mcpServerNames && mcpServerNames.length > 0) {
     dropdownItems.push({

@@ -3,8 +3,11 @@ import { MultiSelect, MCPIcon } from '@librechat/client';
 import MCPServerStatusIcon from '~/components/MCP/MCPServerStatusIcon';
 import { useMCPServerManager } from '~/hooks/MCP/useMCPServerManager';
 import MCPConfigDialog from '~/components/MCP/MCPConfigDialog';
+import { useBadgeRowContext } from '~/Providers';
 
-function MCPSelect({ conversationId }: { conversationId?: string | null }) {
+type MCPSelectProps = { conversationId?: string | null };
+
+function MCPSelectContent({ conversationId }: MCPSelectProps) {
   const {
     configuredServers,
     mcpValues,
@@ -98,6 +101,12 @@ function MCPSelect({ conversationId }: { conversationId?: string | null }) {
       )}
     </>
   );
+}
+
+function MCPSelect(props: MCPSelectProps) {
+  const { mcpServerNames } = useBadgeRowContext();
+  if ((mcpServerNames?.length ?? 0) === 0) return null;
+  return <MCPSelectContent {...props} />;
 }
 
 export default memo(MCPSelect);
