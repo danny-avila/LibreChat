@@ -8,10 +8,10 @@ import {
   useReinitializeMCPServerMutation,
 } from 'librechat-data-provider/react-query';
 import type { TUpdateUserPlugins, TPlugin } from 'librechat-data-provider';
-import type { ConfigFieldDetail } from '~/components/MCP/MCPConfigDialog';
+import type { ConfigFieldDetail } from '~/common';
 import { useMCPConnectionStatusQuery } from '~/data-provider/Tools/queries';
+import { useLocalize, useMCPSelect, useGetMCPTools } from '~/hooks';
 import { useGetStartupConfig } from '~/data-provider';
-import { useLocalize, useMCPSelect } from '~/hooks';
 
 interface ServerState {
   isInitializing: boolean;
@@ -23,11 +23,12 @@ interface ServerState {
 
 export function useMCPServerManager({ conversationId }: { conversationId?: string | null }) {
   const localize = useLocalize();
+  const queryClient = useQueryClient();
   const { showToast } = useToastContext();
+  const { mcpToolDetails } = useGetMCPTools();
   const mcpSelect = useMCPSelect({ conversationId });
   const { data: startupConfig } = useGetStartupConfig();
-  const { mcpValues, setMCPValues, mcpToolDetails, isPinned, setIsPinned } = mcpSelect;
-  const queryClient = useQueryClient();
+  const { mcpValues, setMCPValues, isPinned, setIsPinned } = mcpSelect;
 
   const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
   const [selectedToolForConfig, setSelectedToolForConfig] = useState<TPlugin | null>(null);
@@ -500,12 +501,12 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
       };
     },
     [
+      isCancellable,
       mcpToolDetails,
+      isInitializing,
+      cancelOAuthFlow,
       connectionStatus,
       startupConfig?.mcpServers,
-      isInitializing,
-      isCancellable,
-      cancelOAuthFlow,
     ],
   );
 
@@ -561,7 +562,6 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
     mcpValues,
     setMCPValues,
 
-    mcpToolDetails,
     isPinned,
     setIsPinned,
     placeholderText,

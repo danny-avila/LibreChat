@@ -5,7 +5,7 @@ import { useAvailableToolsQuery, useGetStartupConfig } from '~/data-provider';
 
 export function useGetMCPTools() {
   const { data: startupConfig } = useGetStartupConfig();
-  const { data: rawMcpTools, isFetched } = useAvailableToolsQuery(EModelEndpoint.agents, {
+  const { data: rawMcpTools } = useAvailableToolsQuery(EModelEndpoint.agents, {
     select: (data: TPlugin[]) => {
       const mcpToolsMap = new Map<string, TPlugin>();
       data.forEach((tool) => {
@@ -38,7 +38,6 @@ export function useGetMCPTools() {
   }, [rawMcpTools, startupConfig?.mcpServers]);
 
   return {
-    isFetched,
     mcpToolDetails,
   };
 }

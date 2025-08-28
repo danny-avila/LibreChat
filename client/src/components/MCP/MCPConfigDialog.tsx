@@ -8,14 +8,10 @@ import {
   OGDialogContent,
 } from '@librechat/client';
 import type { MCPServerStatus } from 'librechat-data-provider';
+import type { ConfigFieldDetail } from '~/common';
 import ServerInitializationSection from './ServerInitializationSection';
 import CustomUserVarsSection from './CustomUserVarsSection';
 import { useLocalize } from '~/hooks';
-
-export interface ConfigFieldDetail {
-  title: string;
-  description: string;
-}
 
 interface MCPConfigDialogProps {
   isOpen: boolean;
