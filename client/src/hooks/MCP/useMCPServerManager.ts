@@ -8,10 +8,10 @@ import {
   useReinitializeMCPServerMutation,
 } from 'librechat-data-provider/react-query';
 import type { TUpdateUserPlugins, TPlugin } from 'librechat-data-provider';
-import type { ConfigFieldDetail } from '~/components/MCP/MCPConfigDialog';
+import type { ConfigFieldDetail } from '~/common';
 import { useMCPConnectionStatusQuery } from '~/data-provider/Tools/queries';
+import { useLocalize, useMCPSelect, useGetMCPTools } from '~/hooks';
 import { useGetStartupConfig } from '~/data-provider';
-import { useLocalize, useMCPSelect } from '~/hooks';
 
 interface ServerState {
   isInitializing: boolean;
@@ -21,13 +21,14 @@ interface ServerState {
   pollInterval: NodeJS.Timeout | null;
 }
 
-export function useMCPServerManager() {
+export function useMCPServerManager({ conversationId }: { conversationId?: string | null }) {
   const localize = useLocalize();
-  const { showToast } = useToastContext();
-  const mcpSelect = useMCPSelect();
-  const { data: startupConfig } = useGetStartupConfig();
-  const { mcpValues, setMCPValues, mcpToolDetails, isPinned, setIsPinned } = mcpSelect;
   const queryClient = useQueryClient();
+  const { showToast } = useToastContext();
+  const { mcpToolDetails } = useGetMCPTools();
+  const mcpSelect = useMCPSelect({ conversationId });
+  const { data: startupConfig } = useGetStartupConfig();
+  const { mcpValues, setMCPValues, isPinned, setIsPinned } = mcpSelect;
 
   const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
   const [selectedToolForConfig, setSelectedToolForConfig] = useState<TPlugin | null>(null);
@@ -90,7 +91,21 @@ export function useMCPServerManager() {
     [connectionStatusData?.connectionStatus],
   );
 
+  /** Filter disconnected servers when values change, but only after initial load
+   This prevents clearing selections on page refresh when servers haven't connected yet
+   */
+  const hasInitialLoadCompleted = useRef(false);
+
   useEffect(() => {
+    if (!connectionStatusData || Object.keys(connectionStatus).length === 0) {
+      return;
+    }
+
+    if (!hasInitialLoadCompleted.current) {
+      hasInitialLoadCompleted.current = true;
+      return;
+    }
+
     if (!mcpValues?.length) return;
 
     const connectedSelected = mcpValues.filter(
@@ -100,7 +115,7 @@ export function useMCPServerManager() {
     if (connectedSelected.length !== mcpValues.length) {
       setMCPValues(connectedSelected);
     }
-  }, [connectionStatus, mcpValues, setMCPValues]);
+  }, [connectionStatus, connectionStatusData, mcpValues, setMCPValues]);
 
   const updateServerState = useCallback((serverName: string, updates: Partial<ServerState>) => {
     setServerStates((prev) => {
@@ -486,12 +501,12 @@ export function useMCPServerManager() {
       };
     },
     [
+      isCancellable,
       mcpToolDetails,
+      isInitializing,
+      cancelOAuthFlow,
       connectionStatus,
       startupConfig?.mcpServers,
-      isInitializing,
-      isCancellable,
-      cancelOAuthFlow,
     ],
   );
 
@@ -547,7 +562,6 @@ export function useMCPServerManager() {
     mcpValues,
     setMCPValues,
 
-    mcpToolDetails,
     isPinned,
     setIsPinned,
     placeholderText,

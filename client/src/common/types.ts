@@ -8,6 +8,11 @@ import type * as t from 'librechat-data-provider';
 import type { LucideIcon } from 'lucide-react';
 import type { TranslationKeys } from '~/hooks';
 
+export interface ConfigFieldDetail {
+  title: string;
+  description: string;
+}
+
 export type CodeBarProps = {
   lang: string;
   error?: boolean;

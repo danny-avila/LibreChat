@@ -146,7 +146,7 @@ const AdminSettings = () => {
           {localize('com_ui_admin_settings')}
         </Button>
       </OGDialogTrigger>
-      <OGDialogContent className="border-border-light bg-surface-primary text-text-primary md:w-1/4">
+      <OGDialogContent className="border-border-light bg-surface-primary text-text-primary lg:w-1/4">
         <OGDialogTitle>{`${localize('com_ui_admin_settings')} - ${localize(
           'com_ui_memories',
         )}`}</OGDialogTitle>

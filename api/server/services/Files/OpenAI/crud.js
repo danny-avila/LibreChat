@@ -7,8 +7,7 @@ const { logger } = require('~/config');
  * Uploads a file that can be used across various OpenAI services.
  *
  * @param {Object} params - The params object.
- * @param {ServerRequest} params.req - The request object from Express. It should have a `user` property with an `id`
- *                       representing the user, and an `app.locals.paths` object with an `imageOutput` path.
+ * @param {ServerRequest} params.req - The request object from Express. It should have a `user` property with an `id` representing the user
  * @param {Express.Multer.File} params.file - The file uploaded to the server via multer.
  * @param {OpenAIClient} params.openai - The initialized OpenAI client.
  * @returns {Promise<OpenAIFile>}
