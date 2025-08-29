@@ -1,18 +1,23 @@
 import fs from 'fs';
 import { logger } from '@librechat/data-schemas';
-import type { STTService, AudioFileInfo, FileObject, AudioProcessingResult } from '~/types';
+import type {
+  AudioProcessingResult,
+  ServerRequest,
+  AudioFileInfo,
+  STTService,
+  FileObject,
+} from '~/types';
 
 /**
  * Processes audio files using Speech-to-Text (STT) service.
- * @param {Object} params - The parameters object.
- * @param {FileObject} params.file - The audio file object.
- * @param {STTService} params.sttService - The STT service instance.
- * @returns {Promise<AudioProcessingResult>} A promise that resolves to an object containing text and bytes.
+ * @returns A promise that resolves to an object containing text and bytes.
  */
 export async function processAudioFile({
+  req,
   file,
   sttService,
 }: {
+  req: ServerRequest;
   file: FileObject;
   sttService: STTService;
 }): Promise<AudioProcessingResult> {
@@ -24,7 +29,7 @@ export async function processAudioFile({
       size: file.size,
     };
 
-    const [provider, sttSchema] = await sttService.getProviderSchema();
+    const [provider, sttSchema] = await sttService.getProviderSchema(req);
     const text = await sttService.sttRequest(provider, sttSchema, { audioBuffer, audioFile });
 
     return {

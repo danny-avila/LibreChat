@@ -10,9 +10,10 @@ const { getAgent } = require('~/models/Agent');
  * @param {string} [params.role] - Optional user role to avoid DB query
  * @param {string[]} params.fileIds - Array of file IDs to check
  * @param {string} params.agentId - The agent ID that might grant access
+ * @param {boolean} [params.isDelete] - Whether the operation is a delete operation
  * @returns {Promise<Map<string, boolean>>} Map of fileId to access status
  */
-const hasAccessToFilesViaAgent = async ({ userId, role, fileIds, agentId }) => {
+const hasAccessToFilesViaAgent = async ({ userId, role, fileIds, agentId, isDelete }) => {
   const accessMap = new Map();
 
   // Initialize all files as no access
@@ -44,22 +45,23 @@ const hasAccessToFilesViaAgent = async ({ userId, role, fileIds, agentId }) => {
       return accessMap;
     }
 
-    // Check if user has EDIT permission (which would indicate collaborative access)
-    const hasEditPermission = await checkPermission({
-      userId,
-      role,
-      resourceType: ResourceType.AGENT,
-      resourceId: agent._id,
-      requiredPermission: PermissionBits.EDIT,
-    });
+    if (isDelete) {
+      // Check if user has EDIT permission (which would indicate collaborative access)
+      const hasEditPermission = await checkPermission({
+        userId,
+        role,
+        resourceType: ResourceType.AGENT,
+        resourceId: agent._id,
+        requiredPermission: PermissionBits.EDIT,
+      });
 
-    // If user only has VIEW permission, they can't access files
-    // Only users with EDIT permission or higher can access agent files
-    if (!hasEditPermission) {
-      return accessMap;
+      // If user only has VIEW permission, they can't access files
+      // Only users with EDIT permission or higher can access agent files
+      if (!hasEditPermission) {
+        return accessMap;
+      }
     }
 
-    // User has edit permissions - check which files are actually attached
     const attachedFileIds = new Set();
     if (agent.tool_resources) {
       for (const [_resourceType, resource] of Object.entries(agent.tool_resources)) {
