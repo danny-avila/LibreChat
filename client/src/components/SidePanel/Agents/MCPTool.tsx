@@ -20,9 +20,8 @@ import {
 } from '@librechat/client';
 import type { AgentForm, MCPServerInfo } from '~/common';
 import MCPServerStatusIcon from '~/components/MCP/MCPServerStatusIcon';
-import { useMCPServerManager } from '~/hooks/MCP/useMCPServerManager';
 import MCPConfigDialog from '~/components/MCP/MCPConfigDialog';
-import { useLocalize } from '~/hooks';
+import { useLocalize, useMCPServerManager } from '~/hooks';
 import { cn } from '~/utils';
 
 export default function MCPTool({ serverInfo }: { serverInfo?: MCPServerInfo }) {

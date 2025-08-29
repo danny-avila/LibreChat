@@ -1,9 +1,9 @@
 import React, { memo, useCallback } from 'react';
 import { MultiSelect, MCPIcon } from '@librechat/client';
 import MCPServerStatusIcon from '~/components/MCP/MCPServerStatusIcon';
-import { useMCPServerManager } from '~/hooks/MCP/useMCPServerManager';
 import MCPConfigDialog from '~/components/MCP/MCPConfigDialog';
 import { useBadgeRowContext } from '~/Providers';
+import { useMCPServerManager } from '~/hooks';
 
 type MCPSelectProps = { conversationId?: string | null };
 

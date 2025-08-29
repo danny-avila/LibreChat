@@ -3,7 +3,7 @@ import { Constants, EModelEndpoint } from 'librechat-data-provider';
 import type { MCP, Action, TPlugin, AgentToolType } from 'librechat-data-provider';
 import type { AgentPanelContextType, MCPServerInfo } from '~/common';
 import { useAvailableToolsQuery, useGetActionsQuery, useGetStartupConfig } from '~/data-provider';
-import { useLocalize, useGetAgentsConfig, useMCPServerManager } from '~/hooks';
+import { useLocalize, useGetAgentsConfig, useMCPConnectionStatus } from '~/hooks';
 import { Panel } from '~/common';
 
 type GroupedToolType = AgentToolType & { tools?: AgentToolType[] };
@@ -36,8 +36,10 @@ export function AgentPanelProvider({ children }: { children: React.ReactNode }) 
     enabled: !!agent_id,
   });
 
-  const { connectionStatus } = useMCPServerManager();
   const { data: startupConfig } = useGetStartupConfig();
+  const { connectionStatus } = useMCPConnectionStatus({
+    enabled: !!startupConfig?.mcpServers && Object.keys(startupConfig.mcpServers).length > 0,
+  });
 
   const processedData = useMemo(() => {
     if (!pluginTools) {
@@ -81,7 +83,7 @@ export function AgentPanelProvider({ children }: { children: React.ReactNode }) 
             serverName,
             tools: [],
             isConfigured: configuredServers.has(serverName),
-            isConnected: connectionStatus[serverName]?.connectionState === 'connected',
+            isConnected: connectionStatus?.[serverName]?.connectionState === 'connected',
             metadata,
           });
         }
