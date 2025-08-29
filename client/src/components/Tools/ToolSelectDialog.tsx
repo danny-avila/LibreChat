@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect } from 'react';
 import { Search, X } from 'lucide-react';
 import { useFormContext } from 'react-hook-form';
 import { isAgentsEndpoint } from 'librechat-data-provider';
@@ -15,7 +15,6 @@ import type { AgentForm, TPluginStoreDialogProps } from '~/common';
 import { PluginPagination, PluginAuthForm } from '~/components/Plugins/Store';
 import { useAgentPanelContext } from '~/Providers/AgentPanelContext';
 import { useLocalize, usePluginDialogHelpers } from '~/hooks';
-import { useAvailableToolsQuery } from '~/data-provider';
 import ToolItem from './ToolItem';
 
 function ToolSelectDialog({
@@ -25,15 +24,10 @@ function ToolSelectDialog({
 }: TPluginStoreDialogProps & {
   endpoint: AssistantsEndpoint | EModelEndpoint.agents;
 }) {
-  const { groupedTools } = useAgentPanelContext();
-  const { getValues, setValue } = useFormContext<AgentForm>();
-  const { data: tools } = useAvailableToolsQuery(endpoint);
-  const isAgentTools = isAgentsEndpoint(endpoint);
   const localize = useLocalize();
-
-  const allGroupedTools = useMemo(() => {
-    return groupedTools;
-  }, [groupedTools]);
+  const isAgentTools = isAgentsEndpoint(endpoint);
+  const { getValues, setValue } = useFormContext<AgentForm>();
+  const { groupedTools, pluginTools } = useAgentPanelContext();
 
   const {
     maxPage,
@@ -125,10 +119,10 @@ function ToolSelectDialog({
 
   const onAddTool = (pluginKey: string) => {
     setShowPluginAuthForm(false);
-    const getAvailablePluginFromKey = tools?.find((p) => p.pluginKey === pluginKey);
-    setSelectedPlugin(getAvailablePluginFromKey);
+    const availablePluginFromKey = pluginTools?.find((p) => p.pluginKey === pluginKey);
+    setSelectedPlugin(availablePluginFromKey);
 
-    const { authConfig, authenticated = false } = getAvailablePluginFromKey ?? {};
+    const { authConfig, authenticated = false } = availablePluginFromKey ?? {};
     if (authConfig && authConfig.length > 0 && !authenticated) {
       setShowPluginAuthForm(true);
     } else {
@@ -140,15 +134,13 @@ function ToolSelectDialog({
     }
   };
 
-  const filteredTools = Object.values(allGroupedTools || {}).filter(
-    (tool: AgentToolType & { tools?: AgentToolType[] }) => {
-      // Check if the parent tool matches
-      if (tool.metadata?.name?.toLowerCase().includes(searchValue.toLowerCase())) {
+  const filteredTools = Object.values(groupedTools || {}).filter(
+    (currentTool: AgentToolType & { tools?: AgentToolType[] }) => {
+      if (currentTool.metadata?.name?.toLowerCase().includes(searchValue.toLowerCase())) {
         return true;
       }
-      // Check if any child tools match
-      if (tool.tools) {
-        return tool.tools.some((childTool) =>
+      if (currentTool.tools) {
+        return currentTool.tools.some((childTool) =>
           childTool.metadata?.name?.toLowerCase().includes(searchValue.toLowerCase()),
         );
       }
@@ -165,9 +157,9 @@ function ToolSelectDialog({
       }
     }
   }, [
-    tools,
-    itemsPerPage,
+    pluginTools,
     searchValue,
+    itemsPerPage,
     filteredTools,
     searchChanged,
     setMaxPage,

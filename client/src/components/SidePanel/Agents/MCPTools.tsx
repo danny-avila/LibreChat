@@ -1,6 +1,4 @@
 import React from 'react';
-import { useWatch, useFormContext } from 'react-hook-form';
-import type { AgentForm } from '~/common';
 import UninitializedMCPTool from './UninitializedMCPTool';
 import UnconfiguredMCPTool from './UnconfiguredMCPTool';
 import { useAgentPanelContext } from '~/Providers';
@@ -8,18 +6,16 @@ import { useLocalize } from '~/hooks';
 import MCPTool from './MCPTool';
 
 export default function MCPTools({
+  agentId,
   mcpServerNames,
   setShowMCPToolDialog,
 }: {
+  agentId: string;
   mcpServerNames?: string[];
   setShowMCPToolDialog: React.Dispatch<React.SetStateAction<boolean>>;
 }) {
   const localize = useLocalize();
-  const methods = useFormContext<AgentForm>();
   const { mcpServersMap } = useAgentPanelContext();
-
-  const { control } = methods;
-  const agent_id = useWatch({ control, name: 'id' });
 
   return (
     <div className="mb-4">
@@ -34,7 +30,7 @@ export default function MCPTools({
             if (!serverInfo?.isConfigured) {
               return (
                 <UnconfiguredMCPTool
-                  key={`${mcpServerName}-${agent_id}`}
+                  key={`${mcpServerName}-${agentId}`}
                   serverName={mcpServerName}
                 />
               );
@@ -45,13 +41,13 @@ export default function MCPTools({
 
             if (serverInfo.isConnected) {
               return (
-                <MCPTool key={`${serverInfo.serverName}-${agent_id}`} serverInfo={serverInfo} />
+                <MCPTool key={`${serverInfo.serverName}-${agentId}`} serverInfo={serverInfo} />
               );
             }
 
             return (
               <UninitializedMCPTool
-                key={`${serverInfo.serverName}-${agent_id}`}
+                key={`${serverInfo.serverName}-${agentId}`}
                 serverInfo={serverInfo}
               />
             );

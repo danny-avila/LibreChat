@@ -37,8 +37,13 @@ export function AgentPanelProvider({ children }: { children: React.ReactNode }) 
   });
 
   const { data: startupConfig } = useGetStartupConfig();
+  const mcpServerNames = useMemo(
+    () => Object.keys(startupConfig?.mcpServers ?? {}),
+    [startupConfig],
+  );
+
   const { connectionStatus } = useMCPConnectionStatus({
-    enabled: !!startupConfig?.mcpServers && Object.keys(startupConfig.mcpServers).length > 0,
+    enabled: !!agent_id && mcpServerNames.length > 0,
   });
 
   const processedData = useMemo(() => {
@@ -53,17 +58,13 @@ export function AgentPanelProvider({ children }: { children: React.ReactNode }) 
     const tools: AgentToolType[] = [];
     const groupedTools: GroupedToolsRecord = {};
 
+    const configuredServers = new Set(mcpServerNames);
     const mcpServersMap = new Map<string, MCPServerInfo>();
-
-    const configuredServers = new Set(
-      startupConfig?.mcpServers ? Object.keys(startupConfig.mcpServers) : [],
-    );
 
     for (const pluginTool of pluginTools) {
       const tool: AgentToolType = {
         tool_id: pluginTool.pluginKey,
         metadata: pluginTool as TPlugin,
-        agent_id: agent_id || '',
       };
 
       tools.push(tool);
@@ -94,9 +95,28 @@ export function AgentPanelProvider({ children }: { children: React.ReactNode }) 
         groupedTools[tool.tool_id] = {
           tool_id: tool.tool_id,
           metadata: tool.metadata,
-          agent_id: agent_id || '',
         };
       }
+    }
+
+    for (const mcpServerName of mcpServerNames) {
+      if (mcpServersMap.has(mcpServerName)) {
+        continue;
+      }
+      const metadata = {
+        icon: '',
+        name: mcpServerName,
+        pluginKey: mcpServerName,
+        description: `${localize('com_ui_tool_collection_prefix')} ${mcpServerName}`,
+      } as TPlugin;
+
+      mcpServersMap.set(mcpServerName, {
+        tools: [],
+        metadata,
+        isConfigured: true,
+        serverName: mcpServerName,
+        isConnected: connectionStatus?.[mcpServerName]?.connectionState === 'connected',
+      });
     }
 
     return {
@@ -104,7 +124,7 @@ export function AgentPanelProvider({ children }: { children: React.ReactNode }) 
       groupedTools,
       mcpServersMap,
     };
-  }, [pluginTools, agent_id, localize, startupConfig?.mcpServers, connectionStatus]);
+  }, [pluginTools, localize, mcpServerNames, connectionStatus]);
 
   const { agentsConfig, endpointsConfig } = useGetAgentsConfig();
 
@@ -117,6 +137,7 @@ export function AgentPanelProvider({ children }: { children: React.ReactNode }) 
     setMcps,
     agent_id,
     setAction,
+    pluginTools,
     activePanel,
     agentsConfig,
     setActivePanel,

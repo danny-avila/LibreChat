@@ -376,7 +376,11 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
           </div>
         </div>
         {/* MCP Section */}
-        <MCPTools mcpServerNames={mcpServerNames} setShowMCPToolDialog={setShowMCPToolDialog} />
+        <MCPTools
+          agentId={agent_id}
+          mcpServerNames={mcpServerNames}
+          setShowMCPToolDialog={setShowMCPToolDialog}
+        />
         {/* Support Contact (Optional) */}
         <div className="mb-4">
           <div className="mb-1.5 flex items-center gap-2">
