@@ -282,11 +282,12 @@ async function createMCPTool({
     const result = await reconnectServer({ req, res, index, signal, serverName, userMCPAuthMap });
     toolDefinition = result?.availableTools?.[toolKey]?.function;
   }
-
   if (!toolDefinition) {
     logger.warn(`[MCP][${serverName}][${toolName}] Tool definition not found, cannot create tool.`);
     return;
   }
+
+  logger.debug(`createMCPTool(${toolKey})`);
 
   return createToolInstance({
     res,
@@ -360,6 +361,7 @@ function createToolInstance({ res, toolName, serverName, toolDefinition, provide
         toolArguments,
         options: {
           signal: derivedSignal,
+          tool_call_id: toolCall?.id,
         },
         user: config?.configurable?.user,
         requestBody: config?.configurable?.requestBody,
