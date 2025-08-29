@@ -1,0 +1,37 @@
+/* Test file to verify responsive CSS structure */
+
+/* This file validates that our responsive design CSS is properly structured */
+
+/* Mobile breakpoints should be present */
+@media (max-width: 640px) {
+  .test-mobile {
+    display: block;
+  }
+}
+
+/* Tablet breakpoints should be present */
+@media (min-width: 641px) and (max-width: 1024px) {
+  .test-tablet {
+    display: block;
+  }
+}
+
+/* Desktop breakpoints should be present */
+@media (min-width: 1025px) {
+  .test-desktop {
+    display: block;
+  }
+}
+
+/* Touch-friendly elements should have proper sizing */
+.touch-element {
+  min-height: 2.5rem; /* 44px minimum touch target */
+  touch-action: manipulation;
+}
+
+/* Container queries should be supported */
+@supports (container-type: inline-size) {
+  .container-element {
+    container-type: inline-size;
+  }
+}

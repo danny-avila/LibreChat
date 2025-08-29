@@ -66,8 +66,17 @@ export default function useExportConversation({
       return `**${sender}**\n${text}`;
     };
 
+    // Handle enhanced content metadata in exports
+    let messageText = message.text;
+    if (message.enhancedContent?.hasEnhancedContent && message.enhancedContent.contentBlocks) {
+      const enhancedInfo = `\n[Enhanced Content: ${message.enhancedContent.contentBlocks.length} blocks - ${
+        [...new Set(message.enhancedContent.contentBlocks.map(b => b.type))].join(', ')
+      }]`;
+      messageText += enhancedInfo;
+    }
+
     if (!message.content) {
-      return formatText(message.sender || '', message.text);
+      return formatText(message.sender || '', messageText);
     }
 
     return message.content
@@ -335,6 +344,7 @@ export default function useExportConversation({
       exportAt: new Date().toTimeString(),
       branches: exportBranches,
       recursive: recursive,
+      enhancedContentSupport: true, // Flag to indicate this export includes enhanced content
     };
 
     if (includeOptions === true) {
@@ -349,10 +359,27 @@ export default function useExportConversation({
       recursive: Boolean(recursive),
     });
 
+    // Preserve enhanced content metadata in exports
+    const processMessagesForExport = (msgs: any) => {
+      if (Array.isArray(msgs)) {
+        return msgs.map(msg => ({
+          ...msg,
+          enhancedContent: msg.enhancedContent || undefined,
+        }));
+      } else if (msgs && typeof msgs === 'object') {
+        return {
+          ...msgs,
+          enhancedContent: msgs.enhancedContent || undefined,
+          children: msgs.children ? processMessagesForExport(msgs.children) : undefined,
+        };
+      }
+      return msgs;
+    };
+
     if (recursive === true && !Array.isArray(messages)) {
-      data['messagesTree'] = messages.children;
+      data['messagesTree'] = processMessagesForExport(messages.children);
     } else {
-      data['messages'] = messages;
+      data['messages'] = processMessagesForExport(messages);
     }
 
     exportFromJSON({

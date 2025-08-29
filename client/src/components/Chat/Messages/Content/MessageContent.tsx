@@ -13,6 +13,7 @@ import Container from './Container';
 import Markdown from './Markdown';
 import { cn } from '~/utils';
 import store from '~/store';
+import { EnhancedMessageContent, MessageIntegration } from './enhanced';
 
 export const ErrorMessage = ({
   text,
@@ -81,6 +82,24 @@ const DisplayMessage = ({ text, isCreatedByUser, message, showCursor }: TDisplay
     [message.messageId, latestMessage?.messageId],
   );
 
+  // Check if this is an agent message with enhanced content
+  const hasEnhancedContent = useMemo(() => {
+    return MessageIntegration.hasEnhancedContent(message);
+  }, [message]);
+
+  // If agent message has enhanced content, use EnhancedMessageContent
+  if (hasEnhancedContent) {
+    return (
+      <EnhancedMessageContent
+        message={message}
+        isLatestMessage={isLatestMessage}
+        isCreatedByUser={isCreatedByUser}
+        showCursor={showCursorState && !!text.length}
+      />
+    );
+  }
+
+  // Standard rendering for user messages or agent messages without enhanced content
   let content: React.ReactElement;
   if (!isCreatedByUser) {
     content = <Markdown content={text} isLatestMessage={isLatestMessage} />;

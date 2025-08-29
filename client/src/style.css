@@ -2,6 +2,9 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Enhanced Content Rendering Styles */
+@import './components/Chat/Messages/Content/enhanced/enhanced-content.css';
+
 /* Custom Variables */
 :root {
   --white: #fff;

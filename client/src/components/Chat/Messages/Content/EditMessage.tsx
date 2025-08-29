@@ -107,6 +107,10 @@ const EditMessage = ({
     const isInMessages = messages.some((message) => message.messageId === messageId);
     if (!isInMessages) {
       message.text = data.text;
+      // Clear enhanced content cache when text is updated
+      if (message.enhancedContent) {
+        message.enhancedContent = undefined;
+      }
     } else {
       setMessages(
         messages.map((msg) =>
@@ -114,6 +118,8 @@ const EditMessage = ({
             ? {
                 ...msg,
                 text: data.text,
+                // Clear enhanced content cache when text is updated
+                enhancedContent: undefined,
               }
             : msg,
         ),
