@@ -20,6 +20,11 @@ services:
       - MEILI_HOST=http://meilisearch:7700
       - RAG_PORT=${RAG_PORT:-8000}
       - RAG_API_URL=http://rag_api:${RAG_PORT:-8000}
+      - OPENROUTER_KEY:${OPENROUTER_KEY}
+      - MISTRAL_API_KEY:${MISTRAL_API_KEY}
+      - PORTKEY_API_KEY:${PORTKEY_API_KEY}
+      - GOOGLE_API_KEY:${GOOGLE_API_KEY}
+      - DEEPSEEK_API_KEY:${DEEPSEEK_API_KEY}
     volumes:
       - type: bind
         source: ./.env
@@ -27,6 +32,7 @@ services:
       - ./images:/app/client/public/images
       - ./uploads:/app/uploads
       - ./logs:/app/api/logs
+      - ./librechat.yaml:/app/librechat.yaml
   mongodb:
     container_name: chat-mongodb
     image: mongo

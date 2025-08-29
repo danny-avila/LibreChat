@@ -82,13 +82,29 @@ const DisplayMessage = ({ text, isCreatedByUser, message, showCursor }: TDisplay
     [message.messageId, latestMessage?.messageId],
   );
 
+  // Debug logging
+  console.log('DisplayMessage - Processing message:', {
+    messageId: message.messageId,
+    isCreatedByUser,
+    text: text?.substring(0, 100),
+    hasText: !!text
+  });
+
   // Check if this is an agent message with enhanced content
   const hasEnhancedContent = useMemo(() => {
-    return MessageIntegration.hasEnhancedContent(message);
+    const result = MessageIntegration.hasEnhancedContent(message);
+    console.log('DisplayMessage - Enhanced content check:', {
+      messageId: message.messageId,
+      isCreatedByUser,
+      hasEnhancedContent: result,
+      text: text?.substring(0, 100)
+    });
+    return result;
   }, [message]);
 
   // If agent message has enhanced content, use EnhancedMessageContent
   if (hasEnhancedContent) {
+    console.log('DisplayMessage - Using EnhancedMessageContent for message:', message.messageId);
     return (
       <EnhancedMessageContent
         message={message}

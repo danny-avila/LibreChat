@@ -27,8 +27,17 @@ export class ContentParser {
   };
 
   private static readonly MEDIA_PATTERNS = {
-    // Image URLs
-    image: /https?:\/\/[^\s]+\.(?:jpg|jpeg|png|gif|webp|svg)(?:\?[^\s]*)?/gi,
+    // Image URLs - expanded to catch more patterns
+    image: /https?:\/\/[^\s]+\.(?:jpg|jpeg|png|gif|webp|svg|bmp|tiff|ico)(?:\?[^\s]*)?/gi,
+    
+    // Image URLs without extensions (common in APIs)
+    imageGeneric: /https?:\/\/[^\s]*(?:image|img|photo|picture|pic)[^\s]*/gi,
+    
+    // Common image hosting services
+    imageServices: /https?:\/\/(?:i\.imgur\.com|cdn\.discordapp\.com|images\.unsplash\.com|picsum\.photos|via\.placeholder\.com|placehold\.it|dummyimage\.com)[^\s]*/gi,
+    
+    // Generic HTTP/HTTPS URLs that might be images (fallback)
+    genericUrl: /https?:\/\/[^\s]+/gi,
     
     // Video URLs
     video: /https?:\/\/[^\s]+\.(?:mp4|webm|ogg|mov|avi|mkv)(?:\?[^\s]*)?/gi,
@@ -139,14 +148,94 @@ export class ContentParser {
     blocks: ContentBlock[],
     processedRanges: Array<{ start: number; end: number }>
   ): void {
-    // Process images
+    // Process images - specific patterns first
     this.processMediaPattern(text, this.MEDIA_PATTERNS.image, 'image', blocks, processedRanges);
+    this.processMediaPattern(text, this.MEDIA_PATTERNS.imageGeneric, 'image', blocks, processedRanges);
+    this.processMediaPattern(text, this.MEDIA_PATTERNS.imageServices, 'image', blocks, processedRanges);
     
     // Process videos
     this.processMediaPattern(text, this.MEDIA_PATTERNS.video, 'video', blocks, processedRanges);
     
     // Process audio
     this.processMediaPattern(text, this.MEDIA_PATTERNS.audio, 'audio', blocks, processedRanges);
+    
+    // Process generic URLs as potential images (fallback)
+    this.processGenericUrls(text, blocks, processedRanges);
+  }
+
+  /**
+   * Process generic URLs and try to determine if they're images
+   */
+  private static processGenericUrls(
+    text: string,
+    blocks: ContentBlock[],
+    processedRanges: Array<{ start: number; end: number }>
+  ): void {
+    let match;
+    const pattern = this.MEDIA_PATTERNS.genericUrl;
+    pattern.lastIndex = 0;
+    
+    while ((match = pattern.exec(text)) !== null) {
+      const start = match.index;
+      const end = start + match[0].length;
+      const url = match[0];
+      
+      // Skip if already processed
+      if (this.isRangeOverlapping(start, end, processedRanges)) {
+        continue;
+      }
+      
+      // Try to determine if this URL is likely an image
+      if (this.isLikelyImageUrl(url)) {
+        blocks.push({
+          id: this.generateId(),
+          type: 'image',
+          content: url,
+          metadata: {
+            mediaType: 'image',
+            isGenericUrl: true,
+          },
+          position: start,
+        });
+        
+        processedRanges.push({ start, end });
+      }
+    }
+  }
+
+  /**
+   * Heuristic to determine if a URL is likely an image
+   */
+  private static isLikelyImageUrl(url: string): boolean {
+    // Check for image-related keywords in URL
+    const imageKeywords = ['image', 'img', 'photo', 'picture', 'pic', 'avatar', 'thumbnail', 'thumb'];
+    const lowerUrl = url.toLowerCase();
+    
+    // Check for image keywords
+    if (imageKeywords.some(keyword => lowerUrl.includes(keyword))) {
+      return true;
+    }
+    
+    // Check for common image hosting domains
+    const imageHosts = [
+      'imgur.com', 'i.imgur.com',
+      'cdn.discordapp.com',
+      'images.unsplash.com',
+      'picsum.photos',
+      'via.placeholder.com',
+      'placehold.it',
+      'dummyimage.com',
+      'gravatar.com',
+      'githubusercontent.com'
+    ];
+    
+    if (imageHosts.some(host => lowerUrl.includes(host))) {
+      return true;
+    }
+    
+    // For now, let's be aggressive and treat most URLs as potential images
+    // This can be refined based on actual usage
+    return true;
   }
 
   /**

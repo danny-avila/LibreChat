@@ -45,15 +45,36 @@ export class MessageIntegration {
    * Check if a message has enhanced content (cached or parsed)
    */
   static hasEnhancedContent(message: TMessage): boolean {
-    if (message.isCreatedByUser) {
-      return false;
-    }
+    console.log('MessageIntegration.hasEnhancedContent called with:', {
+      messageId: message.messageId,
+      isCreatedByUser: message.isCreatedByUser,
+      text: message.text?.substring(0, 100)
+    });
+
+    // TEMPORARILY allow user messages for testing
+    // if (message.isCreatedByUser) {
+    //   return false;
+    // }
 
     if (message.enhancedContent?.hasEnhancedContent) {
+      console.log('Enhanced content found in cache:', message.enhancedContent);
       return true;
     }
 
-    return ContentParser.hasEnhancedContent(message.text || '');
+    const hasEnhanced = ContentParser.hasEnhancedContent(message.text || '');
+    console.log('ContentParser.hasEnhancedContent result:', {
+      hasEnhanced,
+      text: message.text?.substring(0, 100),
+      isCreatedByUser: message.isCreatedByUser
+    });
+
+    if (hasEnhanced) {
+      console.log('Enhanced content detected in message:', message.text);
+    } else {
+      console.log('No enhanced content detected in message:', message.text?.substring(0, 100));
+    }
+
+    return hasEnhanced;
   }
 
   /**
