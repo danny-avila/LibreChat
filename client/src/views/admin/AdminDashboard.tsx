@@ -215,7 +215,7 @@ export default function AdminDashboard() {
       </div>
 
       {/* Pagination + Showing info */}
-      <div className="mt-2 flex items-center justify-between border-t border-gray-200 py-3 text-sm text-gray-500 dark:border-gray-700">
+      <div className="flex items-center whitespace-nowrap text-sm text-gray-500">
         {/* Left: showing info */}
         <div>
           {data.length > 0

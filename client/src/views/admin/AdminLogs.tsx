@@ -74,7 +74,7 @@ export default function AdminLogs() {
   const [userCache] = useState<UserCache>({});
   const [selected, setSelected] = useState<RowLog | null>(null);
   const [connected, setConnected] = useState(false);
-  const [statusMap, setStatusMap] = useState<Record<string, 'Active' | 'Inactive'>>({});
+  const [statusMap, setStatusMap] = useState<Record<string, 'Active' | 'Inactive' | 'Unknown'>>({});
   const esRef = useRef<EventSource | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [search, setSearch] = useState('');
@@ -133,15 +133,61 @@ export default function AdminLogs() {
     return () => window.removeEventListener('resize', adjustTableHeight);
   }, [filteredRows, currentPage]);
 
-  const getStatus = (row: RowLog) =>
-    statusMap[row.userId] || (row.action === 'LOGOUT' ? 'Inactive' : 'Active');
+  // Improved function to calculate user status based on all their logs
+  const calculateUserStatus = (
+    userId: string,
+    allLogs: RowLog[],
+  ): 'Active' | 'Inactive' | 'Unknown' => {
+    if (!userId) return 'Unknown';
 
+    // Get all logs for this user, sorted by timestamp (newest first)
+    const userLogs = allLogs
+      .filter((log) => log.userId === userId && (log.action === 'LOGIN' || log.action === 'LOGOUT'))
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+    if (userLogs.length === 0) return 'Unknown';
+
+    // The most recent LOGIN/LOGOUT action determines current status
+    const mostRecentAction = userLogs[0].action;
+    return mostRecentAction === 'LOGIN' ? 'Active' : 'Inactive';
+  };
+
+  const getStatus = (row: RowLog): 'Active' | 'Inactive' | 'Unknown' => {
+    // Use the cached status if available, otherwise calculate it
+    if (statusMap[row.userId]) {
+      return statusMap[row.userId];
+    }
+
+    // Calculate status based on all available logs
+    return calculateUserStatus(row.userId, rows);
+  };
+
+  // Recalculate all user statuses when logs change
+  const recalculateAllStatuses = (allLogs: RowLog[]) => {
+    const newStatusMap: Record<string, 'Active' | 'Inactive' | 'Unknown'> = {};
+
+    // Get unique user IDs
+    const uniqueUserIds = [...new Set(allLogs.map((log) => log.userId).filter(Boolean))];
+
+    // Calculate status for each user
+    uniqueUserIds.forEach((userId) => {
+      newStatusMap[userId] = calculateUserStatus(userId, allLogs);
+    });
+
+    setStatusMap(newStatusMap);
+  };
+
+  // Apply status update for a single user (for real-time updates)
   const applyStatusUpdate = (log: RowLog) => {
     if (!log.userId) return;
     setStatusMap((prev) => {
-      if (log.action === 'LOGIN') return { ...prev, [log.userId]: 'Active' };
-      if (log.action === 'LOGOUT') return { ...prev, [log.userId]: 'Inactive' };
-      return prev;
+      const newStatus =
+        log.action === 'LOGIN'
+          ? 'Active'
+          : log.action === 'LOGOUT'
+            ? 'Inactive'
+            : prev[log.userId] || 'Unknown';
+      return { ...prev, [log.userId]: newStatus };
     });
   };
 
@@ -159,7 +205,8 @@ export default function AdminLogs() {
         if (json?.success && json?.data?.logs) {
           const normalized = json.data.logs.map((log: any) => toRow(log, userCache));
           setRows(normalized);
-          normalized.forEach((log) => applyStatusUpdate(log));
+          // Recalculate all statuses after initial load
+          recalculateAllStatuses(normalized);
         }
       } catch (e) {
         console.error('[AdminLogs] ❌ Initial HTTP fetch failed:', e);
@@ -180,8 +227,17 @@ export default function AdminLogs() {
           const normalized = msg.data.logs.map((log: any) => toRow(log, userCache));
           setRows((prev) => {
             const newRows = [...normalized, ...prev];
-            return newRows.filter((row, i, self) => i === self.findIndex((r) => r._id === row._id));
+            const uniqueRows = newRows.filter(
+              (row, i, self) => i === self.findIndex((r) => r._id === row._id),
+            );
+
+            // Recalculate statuses with the updated rows
+            setTimeout(() => recalculateAllStatuses(uniqueRows), 0);
+
+            return uniqueRows;
           });
+
+          // Apply immediate status update for real-time feedback
           normalized.forEach((log) => applyStatusUpdate(log));
         }
       } catch (e) {
@@ -256,7 +312,11 @@ export default function AdminLogs() {
             <span
               className={[
                 'rounded px-2 py-0.5 text-xs font-medium',
-                s === 'Active' ? 'bg-emerald-100 text-emerald-700' : 'bg-zinc-100 text-zinc-700',
+                s === 'Active'
+                  ? 'bg-emerald-100 text-emerald-700'
+                  : s === 'Inactive'
+                    ? 'bg-zinc-100 text-zinc-700'
+                    : 'bg-yellow-100 text-yellow-700', // Unknown status
               ].join(' ')}
             >
               {s}
@@ -275,7 +335,7 @@ export default function AdminLogs() {
         ),
       },
     ],
-    [statusMap, currentPage, itemsPerPage],
+    [statusMap, currentPage, itemsPerPage, rows], // Added rows as dependency
   );
 
   const totalPages = Math.ceil(filteredRows.length / itemsPerPage);
@@ -301,31 +361,53 @@ export default function AdminLogs() {
       </div>
 
       {/* Search with Category Selection */}
-      <div className="flex flex-col gap-2">
-        <div className="flex w-full gap-2">
-          <div className="flex-none">
-            <select
-              className="h-10 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
-              value={searchCategory}
-              onChange={(e) => setSearchCategory(e.target.value as any)}
-            >
-              <option value="all">All Fields</option>
-              <option value="action">Event</option>
-              <option value="email">Email</option>
-              <option value="name">Username</option>
-            </select>
-          </div>
-          <SearchBar
-            search={search}
-            setSearch={setSearch}
-            onSearch={() => {
-              /* Immediate filtering handled by useEffect */
-            }}
-          />
-        </div>
+      <div className="flex w-full gap-2">
+        {/* Left: Search Bar */}
+        <SearchBar
+          search={search}
+          setSearch={setSearch}
+          onSearch={() => {
+            /* Immediate filtering handled by useEffect */
+          }}
+        />
 
-        {/* Event Filter Buttons */}
-        <div className="flex flex-wrap gap-2">
+        {/* Right: Event Filter Dropdown */}
+        <select
+          className="h-10 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+          value={searchCategory === 'action' ? search : ''}
+          onChange={(e) => {
+            if (e.target.value === '') {
+              setSearchCategory('all');
+              setSearch('');
+            } else {
+              setSearchCategory('action');
+              setSearch(e.target.value);
+            }
+          }}
+        >
+          <option value="">All Events</option>
+          <option value="LOGIN">LOGIN</option>
+          <option value="LOGOUT">LOGOUT</option>
+          <option value="MODEL CHANGED">MODEL CHANGED</option>
+          <option value="ATTACHED FILE">ATTACHED FILE</option>
+        </select>
+      </div>
+
+      {/*<div className="flex-none">
+          <select
+            className="h-10 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+            value={searchCategory}
+            onChange={(e) => setSearchCategory(e.target.value as any)}
+          >
+            <option value="all">All Fields</option>
+            <option value="action">Event</option>
+            <option value="email">Email</option>
+            <option value="name">Username</option>
+          </select>
+        </div>*/}
+
+      {/* Event Filter Buttons */}
+      {/*<div className="flex flex-wrap gap-2">
           <Button
             size="sm"
             variant={search === 'LOGIN' && searchCategory === 'action' ? 'default' : 'outline'}
@@ -384,36 +466,31 @@ export default function AdminLogs() {
           >
             Clear
           </Button>
-        </div>
-      </div>
+        </div>*/}
 
       {/* Table */}
-      <div
-        ref={mainContainerRef}
-        className="flex-grow overflow-hidden rounded-md border border-gray-200 dark:border-gray-700"
-      >
-        <DataTable
-          columns={columns}
-          data={filteredRows
-            .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
-            .map((r, i) => ({ ...r, id: r._id || i }))}
-          className="h-full"
-          enableRowSelection={false}
-          showCheckboxes={false}
-          onDelete={undefined}
-        />
-        {filteredRows.length === 0 && (
-          <div className="flex h-40 w-full items-center justify-center">
-            <p className="text-gray-500">No matching logs found</p>
-          </div>
-        )}
-      </div>
+
+      <DataTable
+        columns={columns}
+        data={filteredRows
+          .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
+          .map((r, i) => ({ ...r, id: r._id || i }))}
+        className="h-full"
+        enableRowSelection={false}
+        showCheckboxes={false}
+        onDelete={undefined}
+      />
+      {filteredRows.length === 0 && (
+        <div className="flex h-40 w-full items-center justify-center">
+          <p className="text-gray-500">No matching logs found</p>
+        </div>
+      )}
 
       {/* Pagination */}
       {filteredRows.length > itemsPerPage && (
         <div className="flex items-center justify-between border-t border-gray-200 py-3 dark:border-gray-700">
           {/* Left: Showing text */}
-          <div className="text-sm text-gray-500">
+          <div className="flex items-center whitespace-nowrap text-sm text-gray-500">
             {filteredRows.length > 0
               ? `Showing ${(currentPage - 1) * itemsPerPage + 1}-${Math.min(
                   currentPage * itemsPerPage,
@@ -656,7 +733,6 @@ export default function AdminLogs() {
                       Model Usage Statistics
                     </h3>
                   </div>
-
                   <div className="mb-4 grid grid-cols-2 gap-4">
                     <div className="rounded-md bg-blue-50 p-3 dark:bg-blue-900/30">
                       <div className="mb-1 text-xs font-medium text-gray-500 dark:text-gray-400">
@@ -685,7 +761,6 @@ export default function AdminLogs() {
                         </div>
                       </div>
                     </div>
-
                     <div className="rounded-md bg-blue-50 p-3 dark:bg-blue-900/30">
                       <div className="mb-1 text-xs font-medium text-gray-500 dark:text-gray-400">
                         After Change
@@ -714,7 +789,6 @@ export default function AdminLogs() {
                       </div>
                     </div>
                   </div>
-
                   <div className="flex items-center justify-between rounded-md bg-gray-50 p-2 dark:bg-gray-700">
                     <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
                       Token Difference:
@@ -752,9 +826,118 @@ export default function AdminLogs() {
                     </h3>
                   </div>
 
-                  {selected.details?.filename && (
-                    <div className="mb-3 rounded-md bg-purple-50 p-3 dark:bg-purple-900/30">
-                      <div className="flex items-center gap-2">
+                  {/* Enhanced file details display */}
+                  <div className="space-y-3">
+                    {/* File name with icon */}
+                    {selected.details?.filename && (
+                      <div className="flex items-center gap-3 rounded-md bg-purple-50 p-3 dark:bg-purple-900/30">
+                        <div className="flex-shrink-0">
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            width="24"
+                            height="24"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            className="text-purple-500"
+                          >
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                            <polyline points="14 2 14 8 20 8" />
+                            <line x1="16" y1="13" x2="8" y2="13" />
+                            <line x1="16" y1="17" x2="8" y2="17" />
+                            <polyline points="10 9 9 9 8 9" />
+                          </svg>
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-sm font-medium text-purple-700 dark:text-purple-300">
+                            {selected.details.filename}
+                          </div>
+                          <div className="text-xs text-purple-600 dark:text-purple-400">
+                            Primary file
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* File properties table */}
+                    <div className="overflow-hidden rounded-md border border-purple-100 dark:border-purple-900">
+                      <table className="w-full">
+                        <tbody className="divide-y divide-purple-100 dark:divide-purple-900">
+                          {selected.details?.type && (
+                            <tr className="bg-white dark:bg-gray-800">
+                              <td className="px-4 py-3 text-sm font-medium text-gray-500 dark:text-gray-400">
+                                File Type
+                              </td>
+                              <td className="px-4 py-3 text-sm text-gray-900 dark:text-gray-100">
+                                <span className="inline-flex items-center rounded-full bg-purple-100 px-2.5 py-0.5 text-xs font-medium text-purple-800 dark:bg-purple-900 dark:text-purple-200">
+                                  {selected.details.type}
+                                </span>
+                              </td>
+                            </tr>
+                          )}
+                          {selected.details?.size && (
+                            <tr className="bg-purple-50/50 dark:bg-purple-900/10">
+                              <td className="px-4 py-3 text-sm font-medium text-gray-500 dark:text-gray-400">
+                                File Size
+                              </td>
+                              <td className="px-4 py-3 text-sm text-gray-900 dark:text-gray-100">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-medium">
+                                    {(selected.details.size / 1024).toFixed(1)} KB
+                                  </span>
+                                  <span className="text-xs text-gray-500 dark:text-gray-400">
+                                    ({selected.details.size.toLocaleString()} bytes)
+                                  </span>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                          {selected.details?.context && (
+                            <tr className="bg-white dark:bg-gray-800">
+                              <td className="px-4 py-3 text-sm font-medium text-gray-500 dark:text-gray-400">
+                                Context
+                              </td>
+                              <td className="px-4 py-3 text-sm text-gray-900 dark:text-gray-100">
+                                <span className="capitalize">
+                                  {selected.details.context.replace(/_/g, ' ')}
+                                </span>
+                              </td>
+                            </tr>
+                          )}
+                          {/* Display other properties if they exist */}
+                          {Object.entries(selected.details || {})
+                            .filter(
+                              ([key]) => !['filename', 'type', 'size', 'context'].includes(key),
+                            )
+                            .map(([key, value], index) => (
+                              <tr
+                                key={key}
+                                className={
+                                  index % 2 === 0
+                                    ? 'bg-purple-50/50 dark:bg-purple-900/10'
+                                    : 'bg-white dark:bg-gray-800'
+                                }
+                              >
+                                <td className="px-4 py-3 text-sm font-medium text-gray-500 dark:text-gray-400">
+                                  <span className="capitalize">{key.replace(/_/g, ' ')}</span>
+                                </td>
+                                <td className="px-4 py-3 text-sm text-gray-900 dark:text-gray-100">
+                                  {typeof value === 'object'
+                                    ? JSON.stringify(value)
+                                    : String(value)}
+                                </td>
+                              </tr>
+                            ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Summary card */}
+                    <div className="rounded-md bg-purple-50 p-3 dark:bg-purple-900/20">
+                      <div className="flex items-start gap-2">
                         <svg
                           xmlns="http://www.w3.org/2000/svg"
                           width="16"
@@ -765,27 +948,19 @@ export default function AdminLogs() {
                           strokeWidth="2"
                           strokeLinecap="round"
                           strokeLinejoin="round"
-                          className="text-purple-500"
+                          className="mt-0.5 flex-shrink-0 text-purple-500"
                         >
-                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                          <polyline points="14 2 14 8 20 8" />
-                          <line x1="16" y1="13" x2="8" y2="13" />
-                          <line x1="16" y1="17" x2="8" y2="17" />
-                          <polyline points="10 9 9 9 8 9" />
+                          <circle cx="12" cy="12" r="10" />
+                          <path d="M12 16v-4" />
+                          <path d="M12 8h.01" />
                         </svg>
-                        <span className="text-sm font-medium">{selected.details.filename}</span>
-                      </div>
-                      {selected.details.fileSize && (
-                        <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                          Size: {Math.round(selected.details.fileSize / 1024)} KB
+                        <div className="text-xs text-purple-700 dark:text-purple-300">
+                          <span className="font-medium">File attached</span> to the conversation as
+                          a {selected.details?.context?.replace(/_/g, ' ') || 'message attachment'}.
                         </div>
-                      )}
+                      </div>
                     </div>
-                  )}
-
-                  <pre className="max-h-64 overflow-auto rounded bg-gray-50 p-3 text-xs dark:bg-gray-700">
-                    {JSON.stringify(selected.details ?? {}, null, 2)}
-                  </pre>
+                  </div>
                 </div>
               ) : (
                 <div className="rounded-md border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800">
@@ -811,9 +986,39 @@ export default function AdminLogs() {
                     </h3>
                   </div>
 
-                  <pre className="max-h-64 overflow-auto rounded bg-gray-50 p-3 text-xs dark:bg-gray-700">
-                    {JSON.stringify(selected.details ?? {}, null, 2)}
-                  </pre>
+                  {/* Check if details are empty or null for LOGIN/LOGOUT events */}
+                  {(selected.action === 'LOGIN' || selected.action === 'LOGOUT') &&
+                  (!selected.details || Object.keys(selected.details).length === 0) ? (
+                    <div className="flex items-center justify-center rounded-md bg-gray-50 p-6 dark:bg-gray-700">
+                      <div className="text-center">
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          width="24"
+                          height="24"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          className="mx-auto mb-2 text-gray-400 dark:text-gray-500"
+                        >
+                          <circle cx="12" cy="12" r="10" />
+                          <path d="M12 16v-4" />
+                          <path d="M12 8h.01" />
+                        </svg>
+                        <p className="text-sm text-gray-500 dark:text-gray-400">
+                          {selected.action === 'LOGIN'
+                            ? 'User successfully logged in. No additional details available.'
+                            : 'User successfully logged out. No additional details available.'}
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <pre className="max-h-64 overflow-auto rounded bg-gray-50 p-3 text-xs dark:bg-gray-700">
+                      {JSON.stringify(selected.details ?? {}, null, 2)}
+                    </pre>
+                  )}
                 </div>
               )}
             </div>
