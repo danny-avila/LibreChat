@@ -67,13 +67,12 @@ function MCPToolSelectDialog({
   };
 
   const handleDirectAdd = async (serverName: string) => {
-    setIsInitializing(serverName);
     try {
-      const serverInfo = mcpServersMap.get(serverName.toLowerCase());
+      setIsInitializing(serverName);
+      const serverInfo = mcpServersMap.get(serverName);
       if (!serverInfo?.isConnected) {
         await initializeServer(serverName);
       }
-
       updateUserPlugins.mutate(
         {
           pluginKey: `${Constants.mcp_prefix}${serverName}`,
@@ -84,6 +83,7 @@ function MCPToolSelectDialog({
         {
           onError: (error: unknown) => {
             handleInstallError(error as TError);
+            setIsInitializing(null);
           },
           onSuccess: async () => {
             const { data: updatedAvailableTools } = await refetchAvailableTools();
@@ -105,13 +105,12 @@ function MCPToolSelectDialog({
             if (newTools.length > 0) {
               setValue('tools', [...currentTools, ...newTools]);
             }
+            setIsInitializing(null);
           },
         },
       );
     } catch (error) {
       console.error('Error adding MCP server:', error);
-    } finally {
-      setIsInitializing(null);
     }
   };
 

@@ -243,7 +243,7 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
 
             startServerPolling(serverName);
           } else {
-            await queryClient.refetchQueries([QueryKeys.mcpConnectionStatus]);
+            await queryClient.invalidateQueries([QueryKeys.mcpConnectionStatus]);
 
             showToast({
               message: localize('com_ui_mcp_initialized_success', { 0: serverName }),
