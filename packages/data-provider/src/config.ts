@@ -316,6 +316,13 @@ export const endpointSchema = baseEndpointSchema.merge(
     customOrder: z.number().optional(),
     directEndpoint: z.boolean().optional(),
     titleMessageRole: z.string().optional(),
+    tokenConfig: z.record(
+      z.object({
+        prompt: z.number(),
+        completion: z.number(),
+        context: z.number(),
+      })
+    ).optional(),
   }),
 );
 
