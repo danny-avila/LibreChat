@@ -52,6 +52,7 @@
     "@librechat/agents": "^2.4.76",
     "@librechat/api": "*",
     "@librechat/data-schemas": "*",
+    "@mcp-ui/server": "5.10.0",
     "@microsoft/microsoft-graph-client": "^3.0.7",
     "@modelcontextprotocol/sdk": "^1.17.1",
     "@node-saml/passport-saml": "^5.1.0",

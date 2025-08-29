@@ -8,6 +8,7 @@ import Thinking from '~/components/Artifacts/Thinking';
 import { useChatContext } from '~/Providers';
 import MarkdownLite from './MarkdownLite';
 import EditMessage from './EditMessage';
+import MCPUIResourceRenderer from '../MCPUIResourceRenderer';
 import { useLocalize } from '~/hooks';
 import Container from './Container';
 import Markdown from './Markdown';
@@ -166,6 +167,7 @@ const MessageContent = ({
         text={regularContent}
         {...props}
       />
+      <MCPUIResourceRenderer message={message} />
       {unfinishedMessage}
     </>
   );
