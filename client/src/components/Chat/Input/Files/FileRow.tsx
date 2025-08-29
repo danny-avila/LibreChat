@@ -59,10 +59,12 @@ export default function FileRow({
 
   useEffect(() => {
     if (files.length === 0) {
+      setFilesLoading(false);
       return;
     }
 
     if (files.some((file) => file.progress < 1)) {
+      setFilesLoading(true);
       return;
     }
 
