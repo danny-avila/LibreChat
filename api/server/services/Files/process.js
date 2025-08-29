@@ -646,8 +646,8 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
       req,
       file,
       file_id,
-      entity_id,
       basePath,
+      entity_id,
     });
 
     // SECOND: Upload to Vector DB
@@ -670,17 +670,18 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
       req,
       file,
       file_id,
-      entity_id,
       basePath,
+      entity_id,
     });
   }
 
-  const { bytes, filename, filepath: _filepath, height, width } = storageResult;
+  let { bytes, filename, filepath: _filepath, height, width } = storageResult;
   // For RAG files, use embedding result; for others, use storage result
-  const embedded =
-    tool_resource === EToolResources.file_search
-      ? embeddingResult?.embedded
-      : storageResult.embedded;
+  let embedded = storageResult.embedded;
+  if (tool_resource === EToolResources.file_search) {
+    embedded = embeddingResult?.embedded;
+    filename = embeddingResult?.filename || filename;
+  }
 
   let filepath = _filepath;
 
