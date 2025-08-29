@@ -605,7 +605,11 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
       const { handleFileUpload: uploadOCR } = getStrategyFunctions(
         appConfig?.ocr?.strategy ?? FileSources.mistral_ocr,
       );
-      const { text, bytes, filepath: ocrFileURL } = await uploadOCR({ req, file, loadAuthValues });
+      const {
+        text,
+        bytes,
+        filepath: ocrFileURL,
+      } = await uploadOCR({ req, file, loadAuthValues, appConfig });
       return await createTextFile({ text, bytes, filepath: ocrFileURL });
     }
 
