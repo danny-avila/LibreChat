@@ -1,6 +1,7 @@
+import type { ServerRequest } from './http';
 export interface STTService {
   getInstance(): Promise<STTService>;
-  getProviderSchema(): Promise<[string, object]>;
+  getProviderSchema(req: ServerRequest): Promise<[string, object]>;
   sttRequest(
     provider: string,
     schema: object,
