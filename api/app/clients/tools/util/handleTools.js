@@ -312,6 +312,16 @@ Current Date & Time: ${replaceSpecialVars({ text: '{{iso_datetime}}' })}
       continue;
     } else if (tool && cachedTools && mcpToolPattern.test(tool)) {
       const [toolName, serverName] = tool.split(Constants.mcp_delimiter);
+      if (toolName === Constants.mcp_server) {
+        /** Placeholder used for UI purposes */
+        continue;
+      }
+      if (serverName && options.req?.config?.mcpConfig?.[serverName] == null) {
+        logger.warn(
+          `MCP server "${serverName}" is not configured${agent?.id != null && agent.id ? ` but attached to "${agent.id}"` : ''}`,
+        );
+        continue;
+      }
       if (toolName === Constants.mcp_all) {
         const currentMCPGenerator = async (index) =>
           createMCPTools({
@@ -325,8 +335,6 @@ Current Date & Time: ${replaceSpecialVars({ text: '{{iso_datetime}}' })}
             signal,
           });
         requestedMCPTools[serverName] = [currentMCPGenerator];
-        continue;
-      } else if (toolName === Constants.mcp_server) {
         continue;
       }
       const currentMCPGenerator = async (index) =>
