@@ -162,6 +162,53 @@ export const whimsicalOpenapiSpec: OpenAPIV3.Document = {
   },
 };
 
+export const formOpenAPISpec: OpenAPIV3.Document = {
+  openapi: '3.1.0',
+  info: {
+    title: 'Submit Google Form',
+    description: 'Submit data to a Google Forms',
+    version: 'v1.0.0',
+  },
+  servers: [
+    {
+      url: 'https://docs.google.com/forms',
+    },
+  ],
+  paths: {
+    '/formResponse': {
+      post: {
+        description: 'Submit a Google Form',
+        operationId: 'SubmitForm',
+        requestBody: {
+          required: true,
+          content: {
+            'application/x-www-form-urlencoded': {
+              schema: {
+                type: 'object',
+                properties: {
+                  'entry.123': {
+                    type: 'string',
+                    description: 'Name',
+                  },
+                  'entry.456': {
+                    type: 'string',
+                    description: 'Address',
+                  },
+                },
+              },
+            },
+          },
+        },
+        deprecated: false,
+        responses: {},
+      },
+    },
+  },
+  components: {
+    schemas: {},
+  },
+};
+
 export const scholarAIOpenapiSpec = `
 openapi: 3.0.1
 info:
