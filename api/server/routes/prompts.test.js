@@ -610,4 +610,305 @@ describe('Prompt Routes - ACL Permissions', () => {
       expect(response.body._id).toBe(publicPrompt._id.toString());
     });
   });
+
+  describe('Pagination', () => {
+    beforeEach(async () => {
+      // Create multiple prompt groups for pagination testing
+      const groups = [];
+      for (let i = 0; i < 15; i++) {
+        const group = await PromptGroup.create({
+          name: `Test Group ${i + 1}`,
+          category: 'pagination-test',
+          author: testUsers.owner._id,
+          authorName: testUsers.owner.name,
+          productionId: new ObjectId(),
+          updatedAt: new Date(Date.now() - i * 1000), // Stagger updatedAt for consistent ordering
+        });
+        groups.push(group);
+
+        // Grant owner permissions on each group
+        await grantPermission({
+          principalType: PrincipalType.USER,
+          principalId: testUsers.owner._id,
+          resourceType: ResourceType.PROMPTGROUP,
+          resourceId: group._id,
+          accessRoleId: AccessRoleIds.PROMPTGROUP_OWNER,
+          grantedBy: testUsers.owner._id,
+        });
+      }
+    });
+
+    afterEach(async () => {
+      await PromptGroup.deleteMany({});
+      await AclEntry.deleteMany({});
+    });
+
+    it('should correctly indicate hasMore when there are more pages', async () => {
+      const response = await request(app)
+        .get('/api/prompts/groups')
+        .query({ limit: '10' })
+        .expect(200);
+
+      expect(response.body.promptGroups).toHaveLength(10);
+      expect(response.body.has_more).toBe(true);
+      expect(response.body.after).toBeTruthy();
+      // Since has_more is true, pages should be a high number (9999 in our fix)
+      expect(parseInt(response.body.pages)).toBeGreaterThan(1);
+    });
+
+    it('should correctly indicate no more pages on the last page', async () => {
+      // First get the cursor for page 2
+      const firstPage = await request(app)
+        .get('/api/prompts/groups')
+        .query({ limit: '10' })
+        .expect(200);
+
+      expect(firstPage.body.has_more).toBe(true);
+      expect(firstPage.body.after).toBeTruthy();
+
+      // Now fetch the second page using the cursor
+      const response = await request(app)
+        .get('/api/prompts/groups')
+        .query({ limit: '10', cursor: firstPage.body.after })
+        .expect(200);
+
+      expect(response.body.promptGroups).toHaveLength(5); // 15 total, 10 on page 1, 5 on page 2
+      expect(response.body.has_more).toBe(false);
+    });
+
+    it('should support cursor-based pagination', async () => {
+      // First page
+      const firstPage = await request(app)
+        .get('/api/prompts/groups')
+        .query({ limit: '5' })
+        .expect(200);
+
+      expect(firstPage.body.promptGroups).toHaveLength(5);
+      expect(firstPage.body.has_more).toBe(true);
+      expect(firstPage.body.after).toBeTruthy();
+
+      // Second page using cursor
+      const secondPage = await request(app)
+        .get('/api/prompts/groups')
+        .query({ limit: '5', cursor: firstPage.body.after })
+        .expect(200);
+
+      expect(secondPage.body.promptGroups).toHaveLength(5);
+      expect(secondPage.body.has_more).toBe(true);
+      expect(secondPage.body.after).toBeTruthy();
+
+      // Verify different groups
+      const firstPageIds = firstPage.body.promptGroups.map((g) => g._id);
+      const secondPageIds = secondPage.body.promptGroups.map((g) => g._id);
+      expect(firstPageIds).not.toEqual(secondPageIds);
+    });
+
+    it('should paginate correctly with category filtering', async () => {
+      // Create groups with different categories
+      await PromptGroup.deleteMany({}); // Clear existing groups
+      await AclEntry.deleteMany({});
+
+      // Create 8 groups with category 'test-cat-1'
+      for (let i = 0; i < 8; i++) {
+        const group = await PromptGroup.create({
+          name: `Category 1 Group ${i + 1}`,
+          category: 'test-cat-1',
+          author: testUsers.owner._id,
+          authorName: testUsers.owner.name,
+          productionId: new ObjectId(),
+          updatedAt: new Date(Date.now() - i * 1000),
+        });
+
+        await grantPermission({
+          principalType: PrincipalType.USER,
+          principalId: testUsers.owner._id,
+          resourceType: ResourceType.PROMPTGROUP,
+          resourceId: group._id,
+          accessRoleId: AccessRoleIds.PROMPTGROUP_OWNER,
+          grantedBy: testUsers.owner._id,
+        });
+      }
+
+      // Create 7 groups with category 'test-cat-2'
+      for (let i = 0; i < 7; i++) {
+        const group = await PromptGroup.create({
+          name: `Category 2 Group ${i + 1}`,
+          category: 'test-cat-2',
+          author: testUsers.owner._id,
+          authorName: testUsers.owner.name,
+          productionId: new ObjectId(),
+          updatedAt: new Date(Date.now() - (i + 8) * 1000),
+        });
+
+        await grantPermission({
+          principalType: PrincipalType.USER,
+          principalId: testUsers.owner._id,
+          resourceType: ResourceType.PROMPTGROUP,
+          resourceId: group._id,
+          accessRoleId: AccessRoleIds.PROMPTGROUP_OWNER,
+          grantedBy: testUsers.owner._id,
+        });
+      }
+
+      // Test pagination with category filter
+      const firstPage = await request(app)
+        .get('/api/prompts/groups')
+        .query({ limit: '5', category: 'test-cat-1' })
+        .expect(200);
+
+      expect(firstPage.body.promptGroups).toHaveLength(5);
+      expect(firstPage.body.promptGroups.every((g) => g.category === 'test-cat-1')).toBe(true);
+      expect(firstPage.body.has_more).toBe(true);
+      expect(firstPage.body.after).toBeTruthy();
+
+      const secondPage = await request(app)
+        .get('/api/prompts/groups')
+        .query({ limit: '5', cursor: firstPage.body.after, category: 'test-cat-1' })
+        .expect(200);
+
+      expect(secondPage.body.promptGroups).toHaveLength(3); // 8 total, 5 on page 1, 3 on page 2
+      expect(secondPage.body.promptGroups.every((g) => g.category === 'test-cat-1')).toBe(true);
+      expect(secondPage.body.has_more).toBe(false);
+    });
+
+    it('should paginate correctly with name/keyword filtering', async () => {
+      // Create groups with specific names
+      await PromptGroup.deleteMany({}); // Clear existing groups
+      await AclEntry.deleteMany({});
+
+      // Create 12 groups with 'Search' in the name
+      for (let i = 0; i < 12; i++) {
+        const group = await PromptGroup.create({
+          name: `Search Test Group ${i + 1}`,
+          category: 'search-test',
+          author: testUsers.owner._id,
+          authorName: testUsers.owner.name,
+          productionId: new ObjectId(),
+          updatedAt: new Date(Date.now() - i * 1000),
+        });
+
+        await grantPermission({
+          principalType: PrincipalType.USER,
+          principalId: testUsers.owner._id,
+          resourceType: ResourceType.PROMPTGROUP,
+          resourceId: group._id,
+          accessRoleId: AccessRoleIds.PROMPTGROUP_OWNER,
+          grantedBy: testUsers.owner._id,
+        });
+      }
+
+      // Create 5 groups without 'Search' in the name
+      for (let i = 0; i < 5; i++) {
+        const group = await PromptGroup.create({
+          name: `Other Group ${i + 1}`,
+          category: 'other-test',
+          author: testUsers.owner._id,
+          authorName: testUsers.owner.name,
+          productionId: new ObjectId(),
+          updatedAt: new Date(Date.now() - (i + 12) * 1000),
+        });
+
+        await grantPermission({
+          principalType: PrincipalType.USER,
+          principalId: testUsers.owner._id,
+          resourceType: ResourceType.PROMPTGROUP,
+          resourceId: group._id,
+          accessRoleId: AccessRoleIds.PROMPTGROUP_OWNER,
+          grantedBy: testUsers.owner._id,
+        });
+      }
+
+      // Test pagination with name filter
+      const firstPage = await request(app)
+        .get('/api/prompts/groups')
+        .query({ limit: '10', name: 'Search' })
+        .expect(200);
+
+      expect(firstPage.body.promptGroups).toHaveLength(10);
+      expect(firstPage.body.promptGroups.every((g) => g.name.includes('Search'))).toBe(true);
+      expect(firstPage.body.has_more).toBe(true);
+      expect(firstPage.body.after).toBeTruthy();
+
+      const secondPage = await request(app)
+        .get('/api/prompts/groups')
+        .query({ limit: '10', cursor: firstPage.body.after, name: 'Search' })
+        .expect(200);
+
+      expect(secondPage.body.promptGroups).toHaveLength(2); // 12 total, 10 on page 1, 2 on page 2
+      expect(secondPage.body.promptGroups.every((g) => g.name.includes('Search'))).toBe(true);
+      expect(secondPage.body.has_more).toBe(false);
+    });
+
+    it('should paginate correctly with combined filters', async () => {
+      // Create groups with various combinations
+      await PromptGroup.deleteMany({}); // Clear existing groups
+      await AclEntry.deleteMany({});
+
+      // Create 6 groups matching both category and name filters
+      for (let i = 0; i < 6; i++) {
+        const group = await PromptGroup.create({
+          name: `API Test Group ${i + 1}`,
+          category: 'api-category',
+          author: testUsers.owner._id,
+          authorName: testUsers.owner.name,
+          productionId: new ObjectId(),
+          updatedAt: new Date(Date.now() - i * 1000),
+        });
+
+        await grantPermission({
+          principalType: PrincipalType.USER,
+          principalId: testUsers.owner._id,
+          resourceType: ResourceType.PROMPTGROUP,
+          resourceId: group._id,
+          accessRoleId: AccessRoleIds.PROMPTGROUP_OWNER,
+          grantedBy: testUsers.owner._id,
+        });
+      }
+
+      // Create groups that only match one filter
+      for (let i = 0; i < 4; i++) {
+        const group = await PromptGroup.create({
+          name: `API Other Group ${i + 1}`,
+          category: 'other-category',
+          author: testUsers.owner._id,
+          authorName: testUsers.owner.name,
+          productionId: new ObjectId(),
+          updatedAt: new Date(Date.now() - (i + 6) * 1000),
+        });
+
+        await grantPermission({
+          principalType: PrincipalType.USER,
+          principalId: testUsers.owner._id,
+          resourceType: ResourceType.PROMPTGROUP,
+          resourceId: group._id,
+          accessRoleId: AccessRoleIds.PROMPTGROUP_OWNER,
+          grantedBy: testUsers.owner._id,
+        });
+      }
+
+      // Test pagination with both filters
+      const response = await request(app)
+        .get('/api/prompts/groups')
+        .query({ limit: '5', name: 'API', category: 'api-category' })
+        .expect(200);
+
+      expect(response.body.promptGroups).toHaveLength(5);
+      expect(
+        response.body.promptGroups.every(
+          (g) => g.name.includes('API') && g.category === 'api-category',
+        ),
+      ).toBe(true);
+      expect(response.body.has_more).toBe(true);
+      expect(response.body.after).toBeTruthy();
+
+      // Page 2
+      const page2 = await request(app)
+        .get('/api/prompts/groups')
+        .query({ limit: '5', cursor: response.body.after, name: 'API', category: 'api-category' })
+        .expect(200);
+
+      expect(page2.body.promptGroups).toHaveLength(1); // 6 total, 5 on page 1, 1 on page 2
+      expect(page2.body.has_more).toBe(false);
+    });
+  });
 });
