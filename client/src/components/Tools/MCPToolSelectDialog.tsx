@@ -71,7 +71,11 @@ function MCPToolSelectDialog({
       setIsInitializing(serverName);
       const serverInfo = mcpServersMap.get(serverName);
       if (!serverInfo?.isConnected) {
-        await initializeServer(serverName);
+        const result = await initializeServer(serverName);
+        if (result?.success && result.oauthRequired && result.oauthUrl) {
+          setIsInitializing(null);
+          return;
+        }
       }
       updateUserPlugins.mutate(
         {
@@ -278,7 +282,10 @@ function MCPToolSelectDialog({
 
           <div className="p-4 sm:p-6 sm:pt-4">
             <div className="mt-4 flex flex-col gap-4">
-              <div className="flex items-center justify-center space-x-4">
+              <div
+                className="flex items-center justify-center space-x-4"
+                onClick={() => setConfiguringServer(null)}
+              >
                 <Search className="h-6 w-6 text-text-tertiary" />
                 <input
                   type="text"
