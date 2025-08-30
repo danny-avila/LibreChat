@@ -10,7 +10,14 @@ const {
   validateVisionModel,
 } = require('librechat-data-provider');
 const { SplitStreamHandler: _Handler } = require('@librechat/agents');
-const { Tokenizer, createFetch, createStreamEventHandlers } = require('@librechat/api');
+const {
+  Tokenizer,
+  createFetch,
+  matchModelName,
+  getModelMaxTokens,
+  getModelMaxOutputTokens,
+  createStreamEventHandlers,
+} = require('@librechat/api');
 const {
   truncateText,
   formatMessage,
@@ -24,7 +31,6 @@ const {
   configureReasoning,
   checkPromptCacheSupport,
 } = require('~/server/services/Endpoints/anthropic/helpers');
-const { getModelMaxTokens, getModelMaxOutputTokens, matchModelName } = require('~/utils');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const { sleep } = require('~/server/utils');
