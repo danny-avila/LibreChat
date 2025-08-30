@@ -224,46 +224,46 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
   const initializeServer = useCallback(
     async (serverName: string, autoOpenOAuth: boolean = true) => {
       updateServerState(serverName, { isInitializing: true });
-
       try {
         const response = await reinitializeMutation.mutateAsync(serverName);
-
-        if (response.success) {
-          if (response.oauthRequired && response.oauthUrl) {
-            updateServerState(serverName, {
-              oauthUrl: response.oauthUrl,
-              oauthStartTime: Date.now(),
-              isCancellable: true,
-              isInitializing: true,
-            });
-
-            if (autoOpenOAuth) {
-              window.open(response.oauthUrl, '_blank', 'noopener,noreferrer');
-            }
-
-            startServerPolling(serverName);
-          } else {
-            await queryClient.invalidateQueries([QueryKeys.mcpConnectionStatus]);
-
-            showToast({
-              message: localize('com_ui_mcp_initialized_success', { 0: serverName }),
-              status: 'success',
-            });
-
-            const currentValues = mcpValues ?? [];
-            if (!currentValues.includes(serverName)) {
-              setMCPValues([...currentValues, serverName]);
-            }
-
-            cleanupServerState(serverName);
-          }
-        } else {
+        if (!response.success) {
           showToast({
             message: localize('com_ui_mcp_init_failed', { 0: serverName }),
             status: 'error',
           });
           cleanupServerState(serverName);
+          return response;
         }
+
+        if (response.oauthRequired && response.oauthUrl) {
+          updateServerState(serverName, {
+            oauthUrl: response.oauthUrl,
+            oauthStartTime: Date.now(),
+            isCancellable: true,
+            isInitializing: true,
+          });
+
+          if (autoOpenOAuth) {
+            window.open(response.oauthUrl, '_blank', 'noopener,noreferrer');
+          }
+
+          startServerPolling(serverName);
+        } else {
+          await queryClient.invalidateQueries([QueryKeys.mcpConnectionStatus]);
+
+          showToast({
+            message: localize('com_ui_mcp_initialized_success', { 0: serverName }),
+            status: 'success',
+          });
+
+          const currentValues = mcpValues ?? [];
+          if (!currentValues.includes(serverName)) {
+            setMCPValues([...currentValues, serverName]);
+          }
+
+          cleanupServerState(serverName);
+        }
+        return response;
       } catch (error) {
         console.error(`[MCP Manager] Failed to initialize ${serverName}:`, error);
         showToast({
