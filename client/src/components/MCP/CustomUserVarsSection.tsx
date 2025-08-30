@@ -138,10 +138,20 @@ export default function CustomUserVarsSection({
       </form>
 
       <div className="flex justify-end gap-2">
-        <Button onClick={handleRevokeClick} variant="destructive" disabled={isSubmitting}>
+        <Button
+          type="button"
+          variant="destructive"
+          disabled={isSubmitting}
+          onClick={handleRevokeClick}
+        >
           {localize('com_ui_revoke')}
         </Button>
-        <Button onClick={handleSubmit(onFormSubmit)} variant="submit" disabled={isSubmitting}>
+        <Button
+          type="button"
+          variant="submit"
+          disabled={isSubmitting}
+          onClick={handleSubmit(onFormSubmit)}
+        >
           {isSubmitting ? localize('com_ui_saving') : localize('com_ui_save')}
         </Button>
       </div>
