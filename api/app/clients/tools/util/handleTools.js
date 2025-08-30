@@ -318,7 +318,7 @@ Current Date & Time: ${replaceSpecialVars({ text: '{{iso_datetime}}' })}
       }
       if (serverName && options.req?.config?.mcpConfig?.[serverName] == null) {
         logger.warn(
-          `MCP server "${serverName}" is not configured${agent?.id != null && agent.id ? ` but attached to "${agent.id}"` : ''}`,
+          `MCP server "${serverName}" for "${toolName}" tool is not configured${agent?.id != null && agent.id ? ` but attached to "${agent.id}"` : ''}`,
         );
         continue;
       }
