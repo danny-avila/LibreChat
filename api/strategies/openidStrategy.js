@@ -281,6 +281,28 @@ function convertToUsername(input, defaultValue = '') {
 }
 
 /**
+ * Retrieves a property from an object using a dot-separated path.
+ * If the property does not exist, it returns undefined.
+ *
+ * @param {Object} obj - The object from which to retrieve the property.
+ * @param {string} path - The dot-separated path to the property.
+ * @returns {*} The value of the property at the specified path, or undefined if it does not exist.
+ */
+function getPropertyFromObject(obj, path) {
+  if (!obj || !path) {
+    return undefined;
+  }
+
+  const pathParts = path.split('.');
+  return pathParts.reduce((o, key) => {
+    if (o === null || o === undefined || !(key in o)) {
+      return undefined;
+    }
+    return o[key];
+  }, obj);
+}
+
+/**
  * Sets up the OpenID strategy for authentication.
  * This function configures the OpenID client, handles proxy settings,
  * and defines the OpenID strategy for Passport.js.
@@ -328,6 +350,12 @@ async function setupOpenId() {
         : 'OPENID_GENERATE_NONCE=false - Standard flow without explicit nonce or metadata',
     });
 
+    // Set of env variables that specify how to set if a user is an admin
+    // If not set, all users will be treated as regular users
+    const adminRole = process.env.OPENID_ADMIN_ROLE;
+    const adminRoleParameterPath = process.env.OPENID_ADMIN_ROLE_PARAMETER_PATH;
+    const adminRoleTokenKind = process.env.OPENID_ADMIN_ROLE_TOKEN_KIND;
+
     const openidLogin = new CustomOpenIDStrategy(
       {
         config: openidConfig,
@@ -366,17 +394,9 @@ async function setupOpenId() {
             } else if (requiredRoleTokenKind === 'id') {
               decodedToken = jwtDecode(tokenset.id_token);
             }
-            const pathParts = requiredRoleParameterPath.split('.');
-            let found = true;
-            let roles = pathParts.reduce((o, key) => {
-              if (o === null || o === undefined || !(key in o)) {
-                found = false;
-                return [];
-              }
-              return o[key];
-            }, decodedToken);
 
-            if (!found) {
+            let roles = getPropertyFromObject(decodedToken, requiredRoleParameterPath);
+            if (!roles) {
               logger.error(
                 `[openidStrategy] Key '${requiredRoleParameterPath}' not found in ${requiredRoleTokenKind} token!`,
               );
@@ -418,6 +438,45 @@ async function setupOpenId() {
             user.username = username;
             user.name = fullName;
             user.idOnTheSource = userinfo.oid;
+          }
+
+          if (adminRole && adminRoleParameterPath && adminRoleTokenKind) {
+            let adminRoleObject;
+            switch (adminRoleTokenKind) {
+              case 'access':
+                adminRoleObject = jwtDecode(tokenset.access_token);
+                break;
+              case 'id':
+                adminRoleObject = jwtDecode(tokenset.id_token);
+                break;
+              case 'userinfo':
+                adminRoleObject = userinfo;
+                break;
+              default:
+                logger.error(
+                  `[openidStrategy] Invalid admin role token kind: ${adminRoleTokenKind}. Must be one of 'access', 'id', or 'userinfo'.`,
+                );
+                return done(new Error('Invalid admin role token kind'));
+            }
+
+            const adminRoles = getPropertyFromObject(adminRoleObject, adminRoleParameterPath);
+
+            // Accept 3 types of values for the object extracted from adminRoleParameterPath:
+            // 1. A boolean value indicating if the user is an admin
+            // 2. A string with a single role name
+            // 3. An array of role names
+
+            if (
+              adminRoles &&
+              (adminRoles === true ||
+                adminRoles === adminRole ||
+                (Array.isArray(adminRoles) && adminRoles.includes(adminRole)))
+            ) {
+              user.role = 'ADMIN';
+              logger.info(
+                `[openidStrategy] User ${username} is an admin based on role: ${adminRole}`,
+              );
+            }
           }
 
           if (!!userinfo && userinfo.picture && !user.avatar?.includes('manual=true')) {
