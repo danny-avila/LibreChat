@@ -176,11 +176,21 @@ function MCPToolSelectDialog({
   }, [mcpServerNames]);
 
   const mcpServers = useMemo(() => {
-    return Array.from(mcpServersMap.values());
+    const servers = Array.from(mcpServersMap.values());
+    return servers.sort((a, b) => a.serverName.localeCompare(b.serverName));
   }, [mcpServersMap]);
 
+  const filteredServers = useMemo(() => {
+    if (!searchValue) {
+      return mcpServers;
+    }
+    return mcpServers.filter((serverInfo) =>
+      serverInfo.serverName.toLowerCase().includes(searchValue.toLowerCase()),
+    );
+  }, [mcpServers, searchValue]);
+
   useEffect(() => {
-    setMaxPage(Math.ceil(mcpServers.length / itemsPerPage));
+    setMaxPage(Math.ceil(filteredServers.length / itemsPerPage));
     if (searchChanged) {
       setCurrentPage(1);
       setSearchChanged(false);
@@ -191,7 +201,7 @@ function MCPToolSelectDialog({
     searchChanged,
     setCurrentPage,
     setSearchChanged,
-    mcpServers.length,
+    filteredServers.length,
   ]);
 
   return (
@@ -284,7 +294,7 @@ function MCPToolSelectDialog({
                 className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
                 style={{ minHeight: '410px' }}
               >
-                {mcpServers
+                {filteredServers
                   .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
                   .map((serverInfo) => {
                     const isInstalled = installedToolsSet.has(serverInfo.serverName);
@@ -292,8 +302,8 @@ function MCPToolSelectDialog({
                     const isServerInitializing = isInitializing === serverInfo.serverName;
 
                     const tool: AgentToolType = {
-                      tool_id: serverInfo.serverName,
                       agent_id: agentId,
+                      tool_id: serverInfo.serverName,
                       metadata: {
                         ...serverInfo.metadata,
                         description: `${localize('com_ui_tool_collection_prefix')} ${serverInfo.serverName}`,
@@ -302,13 +312,13 @@ function MCPToolSelectDialog({
 
                     return (
                       <MCPToolItem
-                        key={serverInfo.serverName}
                         tool={tool}
                         isInstalled={isInstalled}
-                        onAddTool={() => onAddTool(serverInfo.serverName)}
-                        onRemoveTool={() => onRemoveTool(serverInfo.serverName)}
+                        key={serverInfo.serverName}
                         isConfiguring={isConfiguring}
                         isInitializing={isServerInitializing}
+                        onAddTool={() => onAddTool(serverInfo.serverName)}
+                        onRemoveTool={() => onRemoveTool(serverInfo.serverName)}
                       />
                     );
                   })}

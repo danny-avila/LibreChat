@@ -72,8 +72,8 @@ export function useVisibleTools(
     }
 
     return {
-      toolIds: Array.from(regularToolIds),
-      mcpServerNames: Array.from(mcpServers),
+      toolIds: Array.from(regularToolIds).sort((a, b) => a.localeCompare(b)),
+      mcpServerNames: Array.from(mcpServers).sort((a, b) => a.localeCompare(b)),
     };
-  }, [selectedToolIds, allTools, mcpServersMap]);
+  }, [allTools, mcpServersMap, selectedToolIds]);
 }

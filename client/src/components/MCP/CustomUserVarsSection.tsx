@@ -16,7 +16,6 @@ interface CustomUserVarsSectionProps {
   onRevoke: () => void;
   isSubmitting?: boolean;
 }
-
 interface AuthFieldProps {
   name: string;
   config: CustomUserVarConfig;
@@ -69,7 +68,7 @@ function AuthField({ name, config, hasValue, control, errors }: AuthFieldProps) 
                 ? localize('com_ui_mcp_update_var', { 0: config.title })
                 : localize('com_ui_mcp_enter_var', { 0: config.title })
             }
-            className="w-full text-text-primary shadow-sm placeholder:text-text-tertiary sm:text-sm"
+            className="w-full rounded border border-border-medium bg-transparent px-2 py-1 text-text-primary placeholder:text-text-secondary focus:outline-none sm:text-sm"
           />
         )}
       />
@@ -79,23 +78,22 @@ function AuthField({ name, config, hasValue, control, errors }: AuthFieldProps) 
 }
 
 export default function CustomUserVarsSection({
-  serverName,
   fields,
   onSave,
   onRevoke,
+  serverName,
   isSubmitting = false,
 }: CustomUserVarsSectionProps) {
   const localize = useLocalize();
 
-  // Fetch auth value flags for the server
   const { data: authValuesData } = useMCPAuthValuesQuery(serverName, {
     enabled: !!serverName,
   });
 
   const {
+    reset,
     control,
     handleSubmit,
-    reset,
     formState: { errors },
   } = useForm<Record<string, string>>({
     defaultValues: useMemo(() => {
