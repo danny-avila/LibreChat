@@ -135,6 +135,23 @@ function MCPToolSelectDialog({
     }
   };
 
+  const handleRevokeCustomVars = (serverName: string) => {
+    updateUserPlugins.mutate(
+      {
+        pluginKey: `${Constants.mcp_prefix}${serverName}`,
+        action: 'uninstall',
+        auth: {},
+        isEntityTool: true,
+      },
+      {
+        onError: (error: unknown) => handleInstallError(error as TError),
+        onSuccess: () => {
+          setConfiguringServer(null);
+        },
+      },
+    );
+  };
+
   const onAddTool = async (serverName: string) => {
     if (configuringServer === serverName) {
       setConfiguringServer(null);
@@ -274,7 +291,7 @@ function MCPToolSelectDialog({
                 serverName={configuringServer}
                 fields={startupConfig?.mcpServers?.[configuringServer]?.customUserVars || {}}
                 onSave={(authData) => handleSaveCustomVars(configuringServer, authData)}
-                onRevoke={() => setConfiguringServer(null)}
+                onRevoke={() => handleRevokeCustomVars(configuringServer)}
                 isSubmitting={updateUserPlugins.isLoading}
               />
             </div>
