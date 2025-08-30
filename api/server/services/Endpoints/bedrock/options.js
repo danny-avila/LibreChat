@@ -8,7 +8,7 @@ const {
   bedrockOutputParser,
   removeNullishValues,
 } = require('librechat-data-provider');
-const { getUserKey, checkUserKeyExpiry } = require('~/server/services/UserService');
+const { getUserKeyValues, checkUserKeyExpiry } = require('~/server/services/UserService');
 
 const getOptions = async ({ req, overrideModel, endpointOption }) => {
   const appConfig = req.config;
@@ -16,20 +16,36 @@ const getOptions = async ({ req, overrideModel, endpointOption }) => {
     BEDROCK_AWS_SECRET_ACCESS_KEY,
     BEDROCK_AWS_ACCESS_KEY_ID,
     BEDROCK_AWS_SESSION_TOKEN,
+    BEDROCK_AWS_BEARER_TOKEN,
     BEDROCK_REVERSE_PROXY,
     BEDROCK_AWS_DEFAULT_REGION,
     PROXY,
   } = process.env;
   const expiresAt = req.body.key;
-  const isUserProvided = BEDROCK_AWS_SECRET_ACCESS_KEY === AuthType.USER_PROVIDED;
+  const isUserProvided =
+    BEDROCK_AWS_SECRET_ACCESS_KEY === AuthType.USER_PROVIDED ||
+    BEDROCK_AWS_BEARER_TOKEN === AuthType.USER_PROVIDED;
 
-  let credentials = isUserProvided
-    ? await getUserKey({ userId: req.user.id, name: EModelEndpoint.bedrock })
-    : {
-        accessKeyId: BEDROCK_AWS_ACCESS_KEY_ID,
-        secretAccessKey: BEDROCK_AWS_SECRET_ACCESS_KEY,
-        ...(BEDROCK_AWS_SESSION_TOKEN && { sessionToken: BEDROCK_AWS_SESSION_TOKEN }),
-      };
+  let userValues = null;
+  if (isUserProvided) {
+    if (expiresAt) {
+      checkUserKeyExpiry(expiresAt, EModelEndpoint.bedrock);
+    }
+    userValues = await getUserKeyValues({ userId: req.user.id, name: EModelEndpoint.bedrock });
+  }
+
+  let credentials;
+  if (isUserProvided) {
+    credentials = JSON.parse(userValues.apiKey);
+  } else if (BEDROCK_AWS_BEARER_TOKEN) {
+    credentials = { bearerToken: BEDROCK_AWS_BEARER_TOKEN };
+  } else {
+    credentials = {
+      accessKeyId: BEDROCK_AWS_ACCESS_KEY_ID,
+      secretAccessKey: BEDROCK_AWS_SECRET_ACCESS_KEY,
+      ...(BEDROCK_AWS_SESSION_TOKEN && { sessionToken: BEDROCK_AWS_SESSION_TOKEN }),
+    };
+  }
 
   if (!credentials) {
     throw new Error('Bedrock credentials not provided. Please provide them again.');
@@ -37,6 +53,7 @@ const getOptions = async ({ req, overrideModel, endpointOption }) => {
 
   if (
     !isUserProvided &&
+    !credentials.bearerToken &&
     (credentials.accessKeyId === undefined || credentials.accessKeyId === '') &&
     (credentials.secretAccessKey === undefined || credentials.secretAccessKey === '')
   ) {
