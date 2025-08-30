@@ -14,6 +14,7 @@ const requireLdapAuth = require('./requireLdapAuth');
 const abortMiddleware = require('./abortMiddleware');
 const checkInviteUser = require('./checkInviteUser');
 const requireJwtAuth = require('./requireJwtAuth');
+const requireAdmin = require('./requireAdmin');
 const configMiddleware = require('./config/app');
 const validateModel = require('./validateModel');
 const moderateText = require('./moderateText');
@@ -40,8 +41,7 @@ module.exports = {
   moderateText,
   validateModel,
   requireJwtAuth,
-  requireAdminAuth,
-  requireAdminJwtAuth,
+  requireAdmin,
   checkInviteUser,
   requireLdapAuth,
   requireLocalAuth,
