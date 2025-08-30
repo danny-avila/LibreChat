@@ -109,6 +109,11 @@ const initializeClient = async ({ req, res, endpointOption, optionsOnly, overrid
     endpointTokenConfig = await cache.get(tokenKey);
   }
 
+  // Handle YAML tokenConfig if present
+  if (endpointConfig.tokenConfig && !endpointTokenConfig) {
+    endpointTokenConfig = endpointConfig.tokenConfig;
+  }
+
   const customOptions = {
     headers: resolvedHeaders,
     addParams: endpointConfig.addParams,
