@@ -1,5 +1,5 @@
-const z = require('zod');
-const { EModelEndpoint } = require('librechat-data-provider');
+import z from 'zod';
+import { EModelEndpoint } from 'librechat-data-provider';
 
 const openAIModels = {
   'o4-mini': 200000,
@@ -478,15 +478,15 @@ const tiktokenModels = new Set([
   'gpt-3.5-turbo-0301',
 ]);
 
-module.exports = {
+export {
   inputSchema,
   modelSchema,
   maxTokensMap,
   tiktokenModels,
-  maxOutputTokensMap,
   matchModelName,
   processModelData,
   getModelMaxTokens,
+  maxOutputTokensMap,
   getModelTokenValue,
   findMatchingPattern,
   getModelMaxOutputTokens,
