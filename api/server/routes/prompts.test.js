@@ -33,22 +33,11 @@ let promptRoutes;
 let Prompt, PromptGroup, AclEntry, AccessRole, User;
 let testUsers, testRoles;
 let grantPermission;
+let currentTestUser; // Track current user for middleware
 
 // Helper function to set user in middleware
 function setTestUser(app, user) {
-  app.use((req, res, next) => {
-    req.user = {
-      ...(user.toObject ? user.toObject() : user),
-      id: user.id || user._id.toString(),
-      _id: user._id,
-      name: user.name,
-      role: user.role,
-    };
-    if (user.role === SystemRoles.ADMIN) {
-      console.log('Setting admin user with role:', req.user.role);
-    }
-    next();
-  });
+  currentTestUser = user;
 }
 
 beforeAll(async () => {
@@ -75,12 +64,33 @@ beforeAll(async () => {
   app = express();
   app.use(express.json());
 
-  // Mock authentication middleware - default to owner
-  setTestUser(app, testUsers.owner);
+  // Add user middleware before routes
+  app.use((req, res, next) => {
+    if (currentTestUser) {
+      req.user = {
+        ...(currentTestUser.toObject ? currentTestUser.toObject() : currentTestUser),
+        id: currentTestUser._id.toString(),
+        _id: currentTestUser._id,
+        name: currentTestUser.name,
+        role: currentTestUser.role,
+      };
+    }
+    next();
+  });
 
-  // Import routes after mocks are set up
+  // Set default user
+  currentTestUser = testUsers.owner;
+
+  // Import routes after middleware is set up
   promptRoutes = require('./prompts');
   app.use('/api/prompts', promptRoutes);
+});
+
+afterEach(() => {
+  // Always reset to owner user after each test for isolation
+  if (currentTestUser !== testUsers.owner) {
+    currentTestUser = testUsers.owner;
+  }
 });
 
 afterAll(async () => {
@@ -116,36 +126,26 @@ async function setupTestData() {
   // Create test users
   testUsers = {
     owner: await User.create({
-      id: new ObjectId().toString(),
-      _id: new ObjectId(),
       name: 'Prompt Owner',
       email: 'owner@example.com',
       role: SystemRoles.USER,
     }),
     viewer: await User.create({
-      id: new ObjectId().toString(),
-      _id: new ObjectId(),
       name: 'Prompt Viewer',
       email: 'viewer@example.com',
       role: SystemRoles.USER,
     }),
     editor: await User.create({
-      id: new ObjectId().toString(),
-      _id: new ObjectId(),
       name: 'Prompt Editor',
       email: 'editor@example.com',
       role: SystemRoles.USER,
     }),
     noAccess: await User.create({
-      id: new ObjectId().toString(),
-      _id: new ObjectId(),
       name: 'No Access',
       email: 'noaccess@example.com',
       role: SystemRoles.USER,
     }),
     admin: await User.create({
-      id: new ObjectId().toString(),
-      _id: new ObjectId(),
       name: 'Admin',
       email: 'admin@example.com',
       role: SystemRoles.ADMIN,
@@ -181,8 +181,7 @@ describe('Prompt Routes - ACL Permissions', () => {
   it('should have routes loaded', async () => {
     // This should at least not crash
     const response = await request(app).get('/api/prompts/test-404');
-    console.log('Test 404 response status:', response.status);
-    console.log('Test 404 response body:', response.body);
+
     // We expect a 401 or 404, not 500
     expect(response.status).not.toBe(500);
   });
@@ -206,12 +205,6 @@ describe('Prompt Routes - ACL Permissions', () => {
       };
 
       const response = await request(app).post('/api/prompts').send(promptData);
-
-      if (response.status !== 200) {
-        console.log('POST /api/prompts error status:', response.status);
-        console.log('POST /api/prompts error body:', response.body);
-        console.log('Console errors:', consoleErrorSpy.mock.calls);
-      }
 
       expect(response.status).toBe(200);
       expect(response.body.prompt).toBeDefined();
@@ -318,29 +311,8 @@ describe('Prompt Routes - ACL Permissions', () => {
     });
 
     it('should allow admin access without explicit permissions', async () => {
-      // First, reset the app to remove previous middleware
-      app = express();
-      app.use(express.json());
-
-      // Set admin user BEFORE adding routes
-      app.use((req, res, next) => {
-        req.user = {
-          ...testUsers.admin.toObject(),
-          id: testUsers.admin._id.toString(),
-          _id: testUsers.admin._id,
-          name: testUsers.admin.name,
-          role: testUsers.admin.role,
-        };
-        next();
-      });
-
-      // Now add the routes
-      const promptRoutes = require('./prompts');
-      app.use('/api/prompts', promptRoutes);
-
-      console.log('Admin user:', testUsers.admin);
-      console.log('Admin role:', testUsers.admin.role);
-      console.log('SystemRoles.ADMIN:', SystemRoles.ADMIN);
+      // Set admin user
+      setTestUser(app, testUsers.admin);
 
       const response = await request(app).get(`/api/prompts/${testPrompt._id}`).expect(200);
 
@@ -432,21 +404,8 @@ describe('Prompt Routes - ACL Permissions', () => {
         grantedBy: testUsers.editor._id,
       });
 
-      // Recreate app with viewer user
-      app = express();
-      app.use(express.json());
-      app.use((req, res, next) => {
-        req.user = {
-          ...testUsers.viewer.toObject(),
-          id: testUsers.viewer._id.toString(),
-          _id: testUsers.viewer._id,
-          name: testUsers.viewer.name,
-          role: testUsers.viewer.role,
-        };
-        next();
-      });
-      const promptRoutes = require('./prompts');
-      app.use('/api/prompts', promptRoutes);
+      // Set viewer user
+      setTestUser(app, testUsers.viewer);
 
       await request(app)
         .delete(`/api/prompts/${authorPrompt._id}`)
@@ -499,21 +458,8 @@ describe('Prompt Routes - ACL Permissions', () => {
         grantedBy: testUsers.owner._id,
       });
 
-      // Recreate app to ensure fresh middleware
-      app = express();
-      app.use(express.json());
-      app.use((req, res, next) => {
-        req.user = {
-          ...testUsers.owner.toObject(),
-          id: testUsers.owner._id.toString(),
-          _id: testUsers.owner._id,
-          name: testUsers.owner.name,
-          role: testUsers.owner.role,
-        };
-        next();
-      });
-      const promptRoutes = require('./prompts');
-      app.use('/api/prompts', promptRoutes);
+      // Ensure owner user
+      setTestUser(app, testUsers.owner);
 
       const response = await request(app)
         .patch(`/api/prompts/${testPrompt._id}/tags/production`)
@@ -537,21 +483,8 @@ describe('Prompt Routes - ACL Permissions', () => {
         grantedBy: testUsers.owner._id,
       });
 
-      // Recreate app with viewer user
-      app = express();
-      app.use(express.json());
-      app.use((req, res, next) => {
-        req.user = {
-          ...testUsers.viewer.toObject(),
-          id: testUsers.viewer._id.toString(),
-          _id: testUsers.viewer._id,
-          name: testUsers.viewer.name,
-          role: testUsers.viewer.role,
-        };
-        next();
-      });
-      const promptRoutes = require('./prompts');
-      app.use('/api/prompts', promptRoutes);
+      // Set viewer user
+      setTestUser(app, testUsers.viewer);
 
       await request(app).patch(`/api/prompts/${testPrompt._id}/tags/production`).expect(403);
 
