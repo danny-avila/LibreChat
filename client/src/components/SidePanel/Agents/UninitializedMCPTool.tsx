@@ -93,13 +93,33 @@ export default function UninitializedMCPTool({ serverInfo }: { serverInfo?: MCPS
           }
         }}
       >
-        <button
-          type="button"
-          className="flex grow cursor-pointer items-center gap-1 rounded bg-transparent p-0 text-left transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1"
-          onClick={() => initializeServer(serverName)}
-          disabled={isServerInitializing}
+        <div
+          className="flex grow cursor-pointer items-center gap-1 rounded bg-transparent p-0 text-left transition-colors"
+          onClick={(e) => {
+            if ((e.target as HTMLElement).closest('[data-status-icon]')) {
+              return;
+            }
+            if (!isServerInitializing) {
+              initializeServer(serverName);
+            }
+          }}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              if (!isServerInitializing) {
+                initializeServer(serverName);
+              }
+            }
+          }}
+          aria-disabled={isServerInitializing}
         >
-          {statusIcon && <div className="flex items-center">{statusIcon}</div>}
+          {statusIcon && (
+            <div className="flex items-center" data-status-icon>
+              {statusIcon}
+            </div>
+          )}
 
           {serverInfo.metadata.icon && (
             <div className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full">
@@ -123,7 +143,7 @@ export default function UninitializedMCPTool({ serverInfo }: { serverInfo?: MCPS
               </span>
             )}
           </div>
-        </button>
+        </div>
 
         <OGDialogTrigger asChild>
           <button
