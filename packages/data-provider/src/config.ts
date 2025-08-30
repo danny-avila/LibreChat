@@ -1561,8 +1561,13 @@ export enum Constants {
   mcp_delimiter = '_mcp_',
   /** Prefix for MCP plugins */
   mcp_prefix = 'mcp_',
-  /** Unique value to indicate all MCP servers */
+  /** Unique value to indicate all MCP servers. For backend use only. */
   mcp_all = 'sys__all__sys',
+  /**
+   * Unique value to indicate the MCP tool was added to an agent.
+   * This helps inform the UI if the mcp server was previously added.
+   * */
+  mcp_server = 'sys__server__sys',
   /** Placeholder Agent ID for Ephemeral Agents */
   EPHEMERAL_AGENT_ID = 'ephemeral',
 }

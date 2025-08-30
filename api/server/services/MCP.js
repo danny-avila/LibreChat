@@ -271,6 +271,7 @@ async function createMCPTool({
   availableTools: tools,
 }) {
   const [toolName, serverName] = toolKey.split(Constants.mcp_delimiter);
+
   const availableTools =
     tools ?? (await getCachedTools({ userId: req.user?.id, includeGlobal: true }));
   /** @type {LCTool | undefined} */
