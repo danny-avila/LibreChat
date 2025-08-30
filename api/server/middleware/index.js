@@ -14,6 +14,7 @@ const checkInviteUser = require('./checkInviteUser');
 const requireJwtAuth = require('./requireJwtAuth');
 const configMiddleware = require('./config/app');
 const validateModel = require('./validateModel');
+const requireAdmin = require('./requireAdmin');
 const moderateText = require('./moderateText');
 const logHeaders = require('./logHeaders');
 const setHeaders = require('./setHeaders');
@@ -36,6 +37,7 @@ module.exports = {
   setHeaders,
   logHeaders,
   moderateText,
+  requireAdmin,
   validateModel,
   requireJwtAuth,
   checkInviteUser,

@@ -1,6 +1,7 @@
 const accessPermissions = require('./accessPermissions');
 const assistants = require('./assistants');
 const categories = require('./categories');
+const adminAuth = require('./admin/auth');
 const tokenizer = require('./tokenizer');
 const endpoints = require('./endpoints');
 const staticRoute = require('./static');
@@ -32,6 +33,7 @@ module.exports = {
   mcp,
   edit,
   auth,
+  adminAuth,
   keys,
   user,
   tags,
