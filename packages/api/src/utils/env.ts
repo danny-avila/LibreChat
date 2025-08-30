@@ -217,12 +217,15 @@ export function resolveHeaders(options?: {
 
   if (inputHeaders && typeof inputHeaders === 'object' && !Array.isArray(inputHeaders)) {
     Object.keys(inputHeaders).forEach((key) => {
+      if (!/^[A-Za-z0-9-]+$/.test(key)) {
+        return;
+      }
       resolvedHeaders[key] = processSingleValue({
         originalValue: inputHeaders[key],
         customUserVars,
         user: user as TUser,
         body,
-      });
+      }).replace(/\r|\n/g, '');
     });
   }
 

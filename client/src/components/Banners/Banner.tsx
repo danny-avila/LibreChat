@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import DOMPurify from 'dompurify';
 import { XIcon } from 'lucide-react';
 import { useRecoilState } from 'recoil';
 import { useGetBannerQuery } from '~/data-provider';
@@ -33,7 +34,7 @@ export const Banner = ({ onHeightChange }: { onHeightChange?: (height: number) =
     >
       <div
         className="w-full truncate px-4 text-center text-sm"
-        dangerouslySetInnerHTML={{ __html: banner.message }}
+        dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(banner.message) }}
       ></div>
       <button
         type="button"

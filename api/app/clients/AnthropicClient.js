@@ -745,9 +745,9 @@ class AnthropicClient extends BaseClient {
     }
 
     logger.debug('modelOptions', { modelOptions });
-    const metadata = {
-      user_id: this.user,
-    };
+    const metadata = this.user
+      ? { user_hash: require('crypto').createHash('sha256').update(this.user).digest('hex') }
+      : undefined;
 
     const {
       stream,

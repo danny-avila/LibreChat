@@ -1,6 +1,7 @@
 const sharp = require('sharp');
 const fs = require('fs').promises;
-const fetch = require('node-fetch');
+const axios = require('axios');
+const { validateExternalUrl } = require('~/server/utils/validateUrl');
 const { EImageOutputType } = require('librechat-data-provider');
 const { resizeAndConvert } = require('./resize');
 const { logger } = require('~/config');
@@ -29,12 +30,13 @@ async function resizeAvatar({ userId, input, desiredFormat = EImageOutputType.PN
 
     let imageBuffer;
     if (typeof input === 'string') {
-      const response = await fetch(input);
-
-      if (!response.ok) {
-        throw new Error(`Failed to fetch image from URL. Status: ${response.status}`);
-      }
-      imageBuffer = await response.buffer();
+      await validateExternalUrl(input);
+      const response = await axios.get(input, {
+        responseType: 'arraybuffer',
+        maxContentLength: 10 * 1024 * 1024,
+        timeout: 5000,
+      });
+      imageBuffer = Buffer.from(response.data);
     } else if (input instanceof Buffer) {
       imageBuffer = input;
     } else if (typeof input === 'object' && input instanceof File) {
