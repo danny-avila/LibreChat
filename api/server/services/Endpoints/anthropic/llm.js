@@ -1,6 +1,6 @@
 const { ProxyAgent } = require('undici');
 const { anthropicSettings, removeNullishValues } = require('librechat-data-provider');
-const { checkPromptCacheSupport, getClaudeHeaders, configureReasoning } = require('./helpers');
+const { checkPromptCacheSupport, getClaudeHeaders, configureReasoning } = require('@librechat/api');
 
 /**
  * Generates configuration options for creating an Anthropic language model (LLM) instance.
