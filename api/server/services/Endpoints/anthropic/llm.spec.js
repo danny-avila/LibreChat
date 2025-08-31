@@ -211,13 +211,13 @@ describe('getLLMConfig', () => {
     it('should handle empty modelOptions', () => {
       expect(() => {
         getLLMConfig('test-api-key', {});
-      }).toThrow("Cannot read properties of undefined (reading 'thinking')");
+      }).toThrow('No modelOptions provided');
     });
 
     it('should handle no options parameter', () => {
       expect(() => {
         getLLMConfig('test-api-key');
-      }).toThrow("Cannot read properties of undefined (reading 'thinking')");
+      }).toThrow('No modelOptions provided');
     });
 
     it('should handle temperature, stop sequences, and stream settings', () => {
