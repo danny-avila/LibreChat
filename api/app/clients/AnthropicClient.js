@@ -14,7 +14,10 @@ const {
   Tokenizer,
   createFetch,
   matchModelName,
+  getClaudeHeaders,
   getModelMaxTokens,
+  configureReasoning,
+  checkPromptCacheSupport,
   getModelMaxOutputTokens,
   createStreamEventHandlers,
 } = require('@librechat/api');
@@ -26,11 +29,6 @@ const {
   parseParamFromPrompt,
   createContextHandlers,
 } = require('./prompts');
-const {
-  getClaudeHeaders,
-  configureReasoning,
-  checkPromptCacheSupport,
-} = require('~/server/services/Endpoints/anthropic/helpers');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const { sleep } = require('~/server/utils');
