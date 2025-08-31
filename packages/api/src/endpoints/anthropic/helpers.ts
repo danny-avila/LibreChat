@@ -1,13 +1,14 @@
-const { matchModelName } = require('@librechat/api');
-const { EModelEndpoint, anthropicSettings } = require('librechat-data-provider');
-const { logger } = require('~/config');
+import { logger } from '@librechat/data-schemas';
+import { AnthropicClientOptions } from '@librechat/agents';
+import { EModelEndpoint, anthropicSettings } from 'librechat-data-provider';
+import { matchModelName } from '~/utils/tokens';
 
 /**
  * @param {string} modelName
  * @returns {boolean}
  */
-function checkPromptCacheSupport(modelName) {
-  const modelMatch = matchModelName(modelName, EModelEndpoint.anthropic);
+function checkPromptCacheSupport(modelName: string): boolean {
+  const modelMatch = matchModelName(modelName, EModelEndpoint.anthropic) ?? '';
   if (
     modelMatch.includes('claude-3-5-sonnet-latest') ||
     modelMatch.includes('claude-3.5-sonnet-latest')
@@ -31,7 +32,10 @@ function checkPromptCacheSupport(modelName) {
  * @param {boolean} supportsCacheControl Whether the model supports cache control
  * @returns {AnthropicClientOptions['extendedOptions']['defaultHeaders']|undefined} The headers object or undefined if not applicable
  */
-function getClaudeHeaders(model, supportsCacheControl) {
+function getClaudeHeaders(
+  model: string,
+  supportsCacheControl: boolean,
+): Record<string, string> | undefined {
   if (!supportsCacheControl) {
     return undefined;
   }
@@ -72,9 +76,13 @@ function getClaudeHeaders(model, supportsCacheControl) {
  * @param {number|null} extendedOptions.thinkingBudget The token budget for thinking
  * @returns {Object} Updated request options
  */
-function configureReasoning(anthropicInput, extendedOptions = {}) {
+function configureReasoning(
+  anthropicInput: AnthropicClientOptions & { max_tokens?: number },
+  extendedOptions: { thinking?: boolean; thinkingBudget?: number | null } = {},
+): AnthropicClientOptions & { max_tokens?: number } {
   const updatedOptions = { ...anthropicInput };
   const currentMaxTokens = updatedOptions.max_tokens ?? updatedOptions.maxTokens;
+
   if (
     extendedOptions.thinking &&
     updatedOptions?.model &&
@@ -82,11 +90,16 @@ function configureReasoning(anthropicInput, extendedOptions = {}) {
       /claude-(?:sonnet|opus|haiku)-[4-9]/.test(updatedOptions.model))
   ) {
     updatedOptions.thinking = {
+      ...updatedOptions.thinking,
       type: 'enabled',
-    };
+    } as { type: 'enabled'; budget_tokens: number };
   }
 
-  if (updatedOptions.thinking != null && extendedOptions.thinkingBudget != null) {
+  if (
+    updatedOptions.thinking != null &&
+    extendedOptions.thinkingBudget != null &&
+    updatedOptions.thinking.type === 'enabled'
+  ) {
     updatedOptions.thinking = {
       ...updatedOptions.thinking,
       budget_tokens: extendedOptions.thinkingBudget,
@@ -95,9 +108,10 @@ function configureReasoning(anthropicInput, extendedOptions = {}) {
 
   if (
     updatedOptions.thinking != null &&
+    updatedOptions.thinking.type === 'enabled' &&
     (currentMaxTokens == null || updatedOptions.thinking.budget_tokens > currentMaxTokens)
   ) {
-    const maxTokens = anthropicSettings.maxOutputTokens.reset(updatedOptions.model);
+    const maxTokens = anthropicSettings.maxOutputTokens.reset(updatedOptions.model ?? '');
     updatedOptions.max_tokens = currentMaxTokens ?? maxTokens;
 
     logger.warn(
@@ -115,4 +129,4 @@ function configureReasoning(anthropicInput, extendedOptions = {}) {
   return updatedOptions;
 }
 
-module.exports = { checkPromptCacheSupport, getClaudeHeaders, configureReasoning };
+export { checkPromptCacheSupport, getClaudeHeaders, configureReasoning };
