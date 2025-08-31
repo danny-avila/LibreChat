@@ -1,4 +1,4 @@
-const { getLLMConfig } = require('@librechat/api');
+const { getLLMConfig } = require('./llm');
 
 jest.mock('https-proxy-agent', () => ({
   HttpsProxyAgent: jest.fn().mockImplementation((proxy) => ({ proxy })),
