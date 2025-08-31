@@ -1,10 +1,12 @@
 import { ProxyAgent } from 'undici';
 import { Providers } from '@librechat/agents';
-import { KnownEndpoints, removeNullishValues } from 'librechat-data-provider';
+import type { AnthropicClientOptions } from '@librechat/agents';
+import { KnownEndpoints, removeNullishValues, EModelEndpoint } from 'librechat-data-provider';
 import type { BindToolsInput } from '@langchain/core/language_models/chat_models';
 import type { AzureOpenAIInput } from '@langchain/openai';
 import type { OpenAI } from 'openai';
 import type * as t from '~/types';
+import { getLLMConfig as getAnthropicLLMConfig } from '~/endpoints/anthropic/llm';
 import { sanitizeModelName, constructAzureURL } from '~/utils/azure';
 import { createFetch } from '~/utils/generators';
 import { isEnabled } from '~/utils/common';
@@ -233,12 +235,30 @@ export function getOpenAIConfig(
     dropParams,
   } = options;
 
-  const { llmConfig, tools } = getOpenAILLMConfig({
-    streaming,
-    modelOptions: _modelOptions,
-    addParams,
-    dropParams,
-  });
+  let llmConfig:
+    | (Partial<t.ClientOptions> & Partial<t.OpenAIParameters> & Partial<AzureOpenAIInput>)
+    | AnthropicClientOptions;
+  let tools: BindToolsInput[];
+
+  if (options.customParams?.defaultParamsEndpoint === EModelEndpoint.anthropic) {
+    const anthropicResult = getAnthropicLLMConfig(apiKey, {
+      modelOptions: _modelOptions,
+      userId: options.userId || '',
+      proxy: options.proxy,
+      reverseProxyUrl: options.reverseProxyUrl,
+    });
+    llmConfig = anthropicResult.llmConfig;
+    tools = anthropicResult.tools;
+  } else {
+    const openaiResult = getOpenAILLMConfig({
+      streaming,
+      modelOptions: _modelOptions,
+      addParams,
+      dropParams,
+    });
+    llmConfig = openaiResult.llmConfig;
+    tools = openaiResult.tools;
+  }
 
   let useOpenRouter = false;
   const configOptions: t.OpenAIConfiguration = {};
