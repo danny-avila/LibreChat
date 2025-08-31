@@ -1,4 +1,4 @@
-const { getLLMConfig } = require('~/server/services/Endpoints/anthropic/llm');
+const { getLLMConfig } = require('@librechat/api');
 
 jest.mock('https-proxy-agent', () => ({
   HttpsProxyAgent: jest.fn().mockImplementation((proxy) => ({ proxy })),
