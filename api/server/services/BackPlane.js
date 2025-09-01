@@ -10,7 +10,7 @@ let subscriber;
  * whenever an activity event is received from another instance.
  */
 function initSubscriber(onMessage) {
-  const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
+  const redisUrl = process.env.REDIS_URI || 'redis://localhost:6379';
 
   if (!subscriber) {
     subscriber = new Redis(redisUrl);
@@ -46,7 +46,7 @@ function initSubscriber(onMessage) {
 async function publishActivity(activityData) {
   try {
     if (!publisher) {
-      const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
+      const redisUrl = process.env.REDIS_URI || 'redis://localhost:6379';
       publisher = new Redis(redisUrl);
     }
     await publisher.publish('user-activity', JSON.stringify(activityData));

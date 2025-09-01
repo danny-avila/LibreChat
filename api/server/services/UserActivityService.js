@@ -1,63 +1,96 @@
 const { logger } = require('~/config');
 const { User, UserActivityLog } = require('~/db/models');
-const { getTokenUsageForModelChange, fetchActivityLogs } = require('~/server/controllers/UserActivityController');
+const {
+  getTokenUsageForModelChange,
+  fetchActivityLogs,
+} = require('~/server/controllers/UserActivityController');
+const { initSubscriber, publishActivity } = require('./BackPlane');
 
 class UserActivityService {
   constructor() {
-    this.clients = new Map();       // Connected SSE clients
-    this.activityBuffer = [];       // Local buffer of activities
+    this.clients = new Map(); // Connected SSE clients
+    this.activityBuffer = []; // Local buffer of activities
     this.maxBufferSize = 100;
 
-    // Listen for Redis pub/sub events (cross-server)
-  //   initSubscriber(async (activityData) => {
-  //     try {
-  //       await this.broadcastActivity(activityData, false); // fromRedis = false
-  //     } catch (e) {
-  //       logger.error('[UserActivityService] Redis rebroadcast failed:', e);
-  //     }
-  //   });
-   }
+    // Initialize Redis subscriber for cross-instance communication
+    initSubscriber(async (activityData) => {
+      try {
+        await this.broadcastActivity(activityData, false); // fromRedis = false
+      } catch (e) {
+        logger.error('[UserActivityService] Redis rebroadcast failed:', e);
+      }
+    });
+  }
 
   /**
    * Register a new SSE client
    */
-
   async addClient(clientId, res, userRole = 'USER', options = {}) {
     this.clients.set(clientId, {
       response: res,
       role: userRole,
       connectedAt: new Date(),
-      options
+      options,
     });
 
     // Confirm connection
     res.write(`event: connected\n`);
-    res.write(`data: ${JSON.stringify({ message: 'SSE connection established', clientId })}\n\n`);
+    res.write(
+      `data: ${JSON.stringify({
+        message: 'SSE connection established',
+        clientId,
+      })}\n\n`,
+    );
 
     // Send initial snapshot
     try {
-      logger.info(`[UserActivityService] Fetching initial snapshot for client ${clientId} with options:`, options);
+      logger.info(
+        `[UserActivityService] Fetching initial snapshot for client ${clientId} with options:`,
+        options,
+      );
       const { logs, pagination } = await fetchActivityLogs(options);
-      logger.info(`[UserActivityService] Initial snapshot for client ${clientId}: ${logs.length} logs found`);
-      
+      logger.info(
+        `[UserActivityService] Initial snapshot for client ${clientId}: ${logs.length} logs found`,
+      );
+
       if (logs.length === 0) {
-        logger.warn(`[UserActivityService] No logs found in initial snapshot for client ${clientId}`);
+        logger.warn(
+          `[UserActivityService] No logs found in initial snapshot for client ${clientId}`,
+        );
       }
-      
-      this.sendToClient(clientId, { success: true, data: { logs, pagination } }, 'activity');
+
+      this.sendToClient(
+        clientId,
+        { success: true, data: { logs, pagination } },
+        'activity',
+      );
     } catch (err) {
-      logger.error(`[UserActivityService] Failed initial snapshot for ${clientId}:`, err);
+      logger.error(
+        `[UserActivityService] Failed initial snapshot for ${clientId}:`,
+        err,
+      );
       const logs = this.activityBuffer.slice(-10);
-      logger.info(`[UserActivityService] Using fallback buffer for client ${clientId}: ${logs.length} logs`);
-      
+      logger.info(
+        `[UserActivityService] Using fallback buffer for client ${clientId}: ${logs.length} logs`,
+      );
+
       const pagination = {
-        currentPage: 1, totalPages: 1,
-        totalCount: logs.length, hasNext: false, hasPrev: false
+        currentPage: 1,
+        totalPages: 1,
+        totalCount: logs.length,
+        hasNext: false,
+        hasPrev: false,
       };
-      this.sendToClient(clientId, { success: true, data: { logs, pagination } }, 'activity');
+      this.sendToClient(
+        clientId,
+        { success: true, data: { logs, pagination } },
+        'activity',
+      );
     }
 
-    logger.info(`[UserActivityService] Client ${clientId} connected (role=${userRole})`);
+    logger.info(
+      `[UserActivityService] Client ${clientId} connected (role=${userRole})`,
+    );
   }
 
   removeClient(clientId) {
@@ -74,7 +107,10 @@ class UserActivityService {
       client.response.write(`event: ${eventName}\n`);
       client.response.write(`data: ${JSON.stringify(payload)}\n\n`);
     } catch (error) {
-      logger.error(`[UserActivityService] Failed to send to client ${clientId}:`, error);
+      logger.error(
+        `[UserActivityService] Failed to send to client ${clientId}:`,
+        error,
+      );
       this.removeClient(clientId);
     }
   }
@@ -85,17 +121,22 @@ class UserActivityService {
   async broadcastActivity(activityData, fromLocal = true) {
     try {
       this.activityBuffer.push(activityData);
-      if (this.activityBuffer.length > this.maxBufferSize) this.activityBuffer.shift();
+      if (this.activityBuffer.length > this.maxBufferSize)
+        this.activityBuffer.shift();
 
       const userInfo = await User.findById(activityData.user)
         .select('name email username avatar role')
         .lean();
 
-      const isModelChange = ['MODEL CHANGED', 'MODEL CHNAGED'].includes(activityData.action)
-        && activityData.details?.conversationId;
+      const isModelChange =
+        ['MODEL CHANGED', 'MODEL CHNAGED'].includes(activityData.action) &&
+        activityData.details?.conversationId;
 
-      const anyWantsToken = Array.from(this.clients.values())
-        .some(c => c.role === 'ADMIN' && (`${c.options?.includeTokenUsage ?? 'true'}` === 'true'));
+      const anyWantsToken = Array.from(this.clients.values()).some(
+        (c) =>
+          c.role === 'ADMIN' &&
+          `${c.options?.includeTokenUsage ?? 'true'}` === 'true',
+      );
 
       let precomputedTokenUsage = null;
       if (isModelChange && anyWantsToken) {
@@ -104,21 +145,25 @@ class UserActivityService {
           activityData.details.conversationId,
           activityData.details.fromModel,
           activityData.details.toModel,
-          activityData.timestamp
+          activityData.timestamp,
         );
       }
 
       for (const [clientId, client] of this.clients) {
         if (client.role !== 'ADMIN') continue;
 
-        const includeTokenUsage = `${client.options?.includeTokenUsage ?? 'true'}` === 'true';
+        const includeTokenUsage =
+          `${client.options?.includeTokenUsage ?? 'true'}` === 'true';
 
         const enrichedLog = {
           ...activityData,
           userInfo,
-          tokenUsage: (includeTokenUsage && precomputedTokenUsage)
-            ? { ...activityData.details, ...precomputedTokenUsage }
-            : (['MODEL CHANGED', 'MODEL CHNAGED'].includes(activityData.action) ? activityData.details : null),
+          tokenUsage:
+            includeTokenUsage && precomputedTokenUsage
+              ? { ...activityData.details, ...precomputedTokenUsage }
+              : ['MODEL CHANGED', 'MODEL CHNAGED'].includes(activityData.action)
+              ? activityData.details
+              : null,
         };
 
         const payload = {
@@ -126,16 +171,21 @@ class UserActivityService {
           data: {
             logs: [enrichedLog],
             pagination: {
-              currentPage: 1, totalPages: 1,
-              totalCount: 1, hasNext: false, hasPrev: false
-            }
-          }
+              currentPage: 1,
+              totalPages: 1,
+              totalCount: 1,
+              hasNext: false,
+              hasPrev: false,
+            },
+          },
         };
 
         this.sendToClient(clientId, payload, 'activity');
       }
 
-      logger.debug(`[UserActivityService] Broadcasted activity to ${this.clients.size} clients`);
+      logger.debug(
+        `[UserActivityService] Broadcasted activity to ${this.clients.size} clients`,
+      );
     } catch (error) {
       logger.error('[UserActivityService] Failed to broadcast activity:', error);
     }
@@ -164,17 +214,20 @@ class UserActivityService {
 const userActivityService = new UserActivityService();
 
 // Periodic maintenance
-setInterval(() => userActivityService.cleanupInactiveClients(), 5 * 60 * 1000);
+setInterval(
+  () => userActivityService.cleanupInactiveClients(),
+  5 * 60 * 1000,
+);
 setInterval(() => userActivityService.sendHeartbeat(), 30 * 1000);
 
-// Log + broadcast (local only)
+// Log + broadcast (local and cross-instance)
 const logAndBroadcastActivity = async (userId, action, details = null) => {
   try {
     const activityLog = await UserActivityLog.create({
       user: userId,
       action,
       timestamp: new Date(),
-      details
+      details,
     });
 
     const payload = {
@@ -185,10 +238,13 @@ const logAndBroadcastActivity = async (userId, action, details = null) => {
       details,
       createdAt: activityLog.createdAt,
       updatedAt: activityLog.updatedAt,
-      __v: activityLog.__v
+      __v: activityLog.__v,
     };
 
-    // Local broadcast only
+    // Publish to Redis for cross-instance communication
+    await publishActivity(payload);
+
+    // Local broadcast
     await userActivityService.broadcastActivity(payload, true);
 
     return activityLog;
@@ -200,5 +256,5 @@ const logAndBroadcastActivity = async (userId, action, details = null) => {
 
 module.exports = {
   userActivityService,
-  logAndBroadcastActivity
+  logAndBroadcastActivity,
 };
