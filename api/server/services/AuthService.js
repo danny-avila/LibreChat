@@ -355,17 +355,24 @@ const setAuthTokens = async (userId, res, sessionId = null) => {
     try {
       const { UserActivityLog } = require('~/db/models');
       const { logAndBroadcastActivity } = require('~/server/services/UserActivityService');
-      const last = await UserActivityLog.findOne({ user: userId, action: 'LOGIN' })
-        .sort({ timestamp: -1 })
-        .lean();
+      
+      // Only log login for new sessions, not refreshes
+      if (!sessionId) {
+        const last = await UserActivityLog.findOne({ user: userId, action: 'LOGIN' })
+          .sort({ timestamp: -1 })
+          .lean();
 
-      if (!last || Date.now() - new Date(last.timestamp).getTime() > 2000) {
-        await logAndBroadcastActivity(userId, 'LOGIN');
-        logger.info(`[setAuthTokens] Login activity logged for user: ${userId}`);
+        // Only log if last login was more than 5 minutes ago
+        if (!last || Date.now() - new Date(last.timestamp).getTime() > 5 * 60 * 1000) {
+          await logAndBroadcastActivity(userId, 'LOGIN');
+          logger.info(`[setAuthTokens] Login activity logged for user: ${userId}`);
+        } else {
+          logger.debug(
+            `[setAuthTokens] Skipped duplicate LOGIN log for user: ${userId} (within 5m window)`
+          );
+        }
       } else {
-        logger.debug(
-          `[setAuthTokens] Skipped duplicate LOGIN log for user: ${userId} (within 2s window)`
-        );
+        logger.debug(`[setAuthTokens] Session refresh for user: ${userId}, not logging login activity`);
       }
     } catch (logError) {
       logger.error('[setAuthTokens] Failed to log login activity:', logError);
