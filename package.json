@@ -147,6 +147,7 @@
   "dependencies": {
     "event-source-polyfill": "^1.0.31",
     "ioredis": "^5.7.0",
-    "lucide-react": "^0.541.0"
+    "lucide-react": "^0.541.0",
+    "moment": "^2.30.1"
   }
 }

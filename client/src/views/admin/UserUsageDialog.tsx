@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
-
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '~/components/ui/Dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from '~/components/ui/Dialog';
 import { Input } from '~/components/ui/Input';
 import { Button } from '~/components/ui/Button';
 import { useQuery } from '@tanstack/react-query';
 import { request, QueryKeys } from 'librechat-data-provider';
+import moment from 'moment';
 
 interface AdminUser {
   _id: string;
@@ -25,16 +25,16 @@ export const UserUsageDialog: React.FC<{
   const [to, setTo] = useState('');
 
   return (
-    // Wrap all content inside DialogContent with a scroll container
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="max-w-3xl border-2 border-indigo-100 bg-white shadow-lg dark:border-indigo-900 dark:bg-gray-800"
-        style={{ maxHeight: 'calc(90vh - 40px)', display: 'flex', flexDirection: 'column' }}
+        className="max-w-3xl border-2 border-indigo-100 bg-white shadow-lg dark:border-indigo-900 dark:bg-gray-800 rounded-lg p-0 flex flex-col"
+        style={{ maxHeight: 'calc(90vh - 40px)' }}
       >
-        <DialogHeader className="border-b border-gray-200 pb-4 dark:border-gray-700">
-          <DialogTitle className="flex items-center gap-2 text-xl font-bold text-gray-800 dark:text-gray-100">
-            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-indigo-100 p-1.5 dark:bg-indigo-900">
-              {/* Icon */}
+        {/* Header */}
+        <DialogHeader className="flex items-start justify-between border-b border-gray-200 p-5 dark:border-gray-700">
+          <div className="flex items-start gap-3">
+            {/* Icon */}
+            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-indigo-100 p-1.5 dark:bg-indigo-900">
               <svg
                 className="h-5 w-5 text-indigo-600 dark:text-indigo-300"
                 xmlns="http://www.w3.org/2000/svg"
@@ -50,20 +50,35 @@ export const UserUsageDialog: React.FC<{
                 />
               </svg>
             </span>
+
+            {/* Title & user info */}
             <div className="flex flex-col">
-              <span>Usage Statistics</span>
-              <span className="text-sm font-normal text-gray-500 dark:text-gray-400">
+              <span className="text-2xl font-semibold text-gray-900 dark:text-gray-100">
+                Usage Statistics
+              </span>
+              <span className="text-sm font-medium text-gray-600 dark:text-gray-400 mt-0.5">
                 {user?.email || user?.username}
               </span>
+              {user?.createdAt && (
+                <span className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+                  Joined {moment(user.createdAt).format('MMMM Do YYYY, h:mm:ss a')}
+                </span>
+              )}
             </div>
-          </DialogTitle>
+          </div>
+
+          {/* Close Button */}
+          {/* <DialogClose className="ml-4 mt-1.5">
+            <XIcon className="h-5 w-5 text-gray-500 dark:text-gray-400" />
+          </DialogClose> */}
         </DialogHeader>
 
+        {/* Content */}
         {user ? (
-          <div className="custom-scrollbar flex-1 overflow-y-auto p-4">
+          <div className="custom-scrollbar flex-1 overflow-y-auto p-5 space-y-4">
             {/* Filter Section */}
-            <div className="dark:bg-gray-750 mb-4 rounded-md border border-gray-200 bg-gray-50 p-4 dark:border-gray-700">
-              <div className="mb-2 flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+            <div className="rounded-md border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-750 shadow-sm">
+              <div className="mb-3 flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300">
                 <svg
                   className="h-4 w-4 text-indigo-600 dark:text-indigo-400"
                   xmlns="http://www.w3.org/2000/svg"
@@ -87,7 +102,7 @@ export const UserUsageDialog: React.FC<{
                     type="date"
                     value={from}
                     onChange={(e) => setFrom(e.target.value)}
-                    className="h-9"
+                    className="h-9 rounded-md border border-gray-300 px-2 dark:bg-gray-800 dark:border-gray-600 dark:text-gray-200"
                   />
                 </div>
                 <div className="flex flex-1 flex-col gap-1">
@@ -96,7 +111,7 @@ export const UserUsageDialog: React.FC<{
                     type="date"
                     value={to}
                     onChange={(e) => setTo(e.target.value)}
-                    className="h-9"
+                    className="h-9 rounded-md border border-gray-300 px-2 dark:bg-gray-800 dark:border-gray-600 dark:text-gray-200"
                   />
                 </div>
                 <Button
@@ -114,7 +129,7 @@ export const UserUsageDialog: React.FC<{
           </div>
         ) : (
           <div className="flex flex-1 flex-col items-center justify-center gap-4 text-gray-500 dark:text-gray-400">
-            <div className="rounded-full bg-gray-100 p-4 dark:bg-gray-700">
+            <div className="rounded-full bg-gray-100 p-5 dark:bg-gray-700">
               <svg
                 className="h-12 w-12 text-gray-400 dark:text-gray-500"
                 xmlns="http://www.w3.org/2000/svg"
@@ -134,20 +149,7 @@ export const UserUsageDialog: React.FC<{
             <Button
               variant="outline"
               onClick={() => onOpenChange(false)}
-              className="bg-indigo-50 px-4 text-indigo-600 hover:bg-indigo-100 dark:bg-indigo-900/30 dark:text-indigo-300 dark:hover:bg-indigo-900/50"
-            >
-              Close
-            </Button>
-          </div>
-        )}
-
-        {/* Close Button (fixed at bottom) */}
-        {user && (
-          <div className="flex justify-end border-t border-gray-200 pt-4 dark:border-gray-700">
-            <Button
-              variant="outline"
-              onClick={() => onOpenChange(false)}
-              className="bg-indigo-50 px-4 text-indigo-600 hover:bg-indigo-100 dark:bg-indigo-900/30 dark:text-indigo-300 dark:hover:bg-indigo-900/50"
+              className="bg-indigo-50 px-5 py-2 text-indigo-600 hover:bg-indigo-100 dark:bg-indigo-900/30 dark:text-indigo-300 dark:hover:bg-indigo-900/50"
             >
               Close
             </Button>
@@ -157,6 +159,10 @@ export const UserUsageDialog: React.FC<{
     </Dialog>
   );
 };
+
+
+import { X as XIcon } from 'lucide-react';
+
 
 // Subcomponent
 const UserUsage = ({ userId, from, to }: { userId: string; from?: string; to?: string }) => {

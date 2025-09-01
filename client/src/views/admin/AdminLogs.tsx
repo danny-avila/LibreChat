@@ -13,8 +13,10 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from '~/components/ui/Pagination';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Info } from 'lucide-react';
+import { cn } from '~/utils';
 
+import moment from 'moment';
 type RawUser = { _id: string; email?: string; username?: string; name?: string } | string;
 
 type RawLog = {
@@ -253,7 +255,7 @@ export default function AdminLogs() {
       {
         id: 'index',
         header: 'No.',
-        meta: { size: '60px' },
+        meta: { size: '45px' },
         cell: ({ row }) => (
           <span className="text-xs font-medium text-gray-500">
             {(currentPage - 1) * itemsPerPage + row.index + 1}
@@ -261,13 +263,12 @@ export default function AdminLogs() {
         ),
       },
       {
-        accessorKey: 'timestamp',
-        header: 'Time',
-        meta: { size: '150px' },
-        cell: ({ row }) => (
-          <span className="text-xs">{new Date(row.original.timestamp).toLocaleString()}</span>
-        ),
+        accessorKey: 'name',
+        header: 'Name',
+        cell: ({ row }) => row.original.name ?? '—',
+        meta: { size: '180px' },
       },
+
       {
         accessorKey: 'email',
         header: 'Email',
@@ -275,10 +276,14 @@ export default function AdminLogs() {
         meta: { size: '220px' },
       },
       {
-        accessorKey: 'name',
-        header: 'Name',
-        cell: ({ row }) => row.original.name ?? '—',
-        meta: { size: '180px' },
+        accessorKey: 'timestamp',
+        header: 'Time',
+        meta: { size: '150px' },
+        cell: ({ row }) => (
+          <span className="text-xs">
+            {moment(row.original.timestamp).format(' Do MMM YYYY , h:mm a')}
+          </span>
+        ),
       },
       {
         accessorKey: 'action',
@@ -326,12 +331,19 @@ export default function AdminLogs() {
       },
       {
         id: 'view',
-        header: 'View',
-        meta: { size: '80px' },
+        header: 'Actions',
+        meta: { size: '60px' }, // slightly wider to fit both
         cell: ({ row }) => (
-          <Button size="sm" variant="outline" onClick={() => setSelected(row.original)}>
-            View
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              size="icon"
+              variant="ghost"
+              onClick={() => setSelected(row.original)} // reuse same action (or make custom)
+              className="h-8 w-8 rounded-full"
+            >
+              <Info className="h-4 w-4 text-gray-600" />
+            </Button>
+          </div>
         ),
       },
     ],
@@ -356,7 +368,7 @@ export default function AdminLogs() {
           </Button>
 
           {/* Title */}
-          <h2 className="text-xl font-semibold">System Logs</h2>
+          <h1 className="text-xl font-semibold">System Logs</h1>
         </div>
       </div>
 
@@ -393,80 +405,7 @@ export default function AdminLogs() {
         </select>
       </div>
 
-      {/*<div className="flex-none">
-          <select
-            className="h-10 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
-            value={searchCategory}
-            onChange={(e) => setSearchCategory(e.target.value as any)}
-          >
-            <option value="all">All Fields</option>
-            <option value="action">Event</option>
-            <option value="email">Email</option>
-            <option value="name">Username</option>
-          </select>
-        </div>*/}
-
-      {/* Event Filter Buttons */}
-      {/*<div className="flex flex-wrap gap-2">
-          <Button
-            size="sm"
-            variant={search === 'LOGIN' && searchCategory === 'action' ? 'default' : 'outline'}
-            onClick={() => {
-              setSearchCategory('action');
-              setSearch('LOGIN');
-            }}
-            className="bg-[#DEF2ED] text-[#0A4F53] hover:bg-[#c7e6e1] hover:text-[#0A4F53]"
-          >
-            LOGIN
-          </Button>
-          <Button
-            size="sm"
-            variant={search === 'LOGOUT' && searchCategory === 'action' ? 'default' : 'outline'}
-            onClick={() => {
-              setSearchCategory('action');
-              setSearch('LOGOUT');
-            }}
-            className="bg-red-100 text-red-700 hover:bg-red-200 hover:text-red-800"
-          >
-            LOGOUT
-          </Button>
-          <Button
-            size="sm"
-            variant={
-              search === 'MODEL CHANGED' && searchCategory === 'action' ? 'default' : 'outline'
-            }
-            onClick={() => {
-              setSearchCategory('action');
-              setSearch('MODEL CHANGED');
-            }}
-            className="bg-blue-100 text-blue-700 hover:bg-blue-200 hover:text-blue-800"
-          >
-            MODEL CHANGED
-          </Button>
-          <Button
-            size="sm"
-            variant={
-              search === 'ATTACHED FILE' && searchCategory === 'action' ? 'default' : 'outline'
-            }
-            onClick={() => {
-              setSearchCategory('action');
-              setSearch('ATTACHED FILE');
-            }}
-            className="bg-purple-100 text-purple-700 hover:bg-purple-200 hover:text-purple-800"
-          >
-            ATTACHED FILE
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => {
-              setSearchCategory('all');
-              setSearch('');
-            }}
-          >
-            Clear
-          </Button>
-        </div>*/}
+  
 
       {/* Table */}
 
@@ -487,97 +426,106 @@ export default function AdminLogs() {
       )}
 
       {/* Pagination */}
-      {filteredRows.length > itemsPerPage && (
-        <div className="flex items-center justify-between border-t border-gray-200 py-3 dark:border-gray-700">
-          {/* Left: Showing text */}
-          <div className="flex items-center whitespace-nowrap text-sm text-gray-500">
-            {filteredRows.length > 0
-              ? `Showing ${(currentPage - 1) * itemsPerPage + 1}-${Math.min(
-                  currentPage * itemsPerPage,
-                  filteredRows.length,
-                )} of ${filteredRows.length}`
-              : 'No logs'}
-          </div>
+{filteredRows.length > itemsPerPage && (
+  <div className="flex items-center justify-between rounded-md border border-gray-200 bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+    {/* Left: Showing text */}
+    <div className="flex items-center whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">
+      {filteredRows.length > 0
+        ? `Showing ${(currentPage - 1) * itemsPerPage + 1}-${Math.min(
+            currentPage * itemsPerPage,
+            filteredRows.length
+          )} of ${filteredRows.length}`
+        : 'No logs'}
+    </div>
 
-          {/* Right: Pagination */}
-          <Pagination>
-            <PaginationContent>
-              {/* Previous */}
-              <PaginationItem>
-                <PaginationPrevious
-                  onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
-                  className={currentPage === 1 ? 'pointer-events-none opacity-50' : ''}
-                />
+    {/* Right: Pagination */}
+    <Pagination>
+      <PaginationContent>
+        {/* Previous */}
+        <PaginationItem>
+          <PaginationPrevious
+            onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+            className={currentPage === 1 ? 'pointer-events-none opacity-50' : ''}
+          />
+        </PaginationItem>
+
+        {/* Page numbers with ellipsis */}
+        {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+          const pageNumber = i + 1;
+          const isCurrentPage = pageNumber === currentPage;
+
+          if (
+            pageNumber === 1 ||
+            pageNumber === totalPages ||
+            (pageNumber >= currentPage - 1 && pageNumber <= currentPage + 1)
+          ) {
+            return (
+              <PaginationItem key={pageNumber}>
+                <PaginationLink
+                  isActive={isCurrentPage}
+                  onClick={() => setCurrentPage(pageNumber)}
+                  className={cn(
+                    'rounded-md px-3 py-1 text-sm font-medium transition-colors',
+                    isCurrentPage
+                      ? 'bg-gray-200 text-gray-900 dark:bg-gray-700 dark:text-white'
+                      : 'text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-600'
+                  )}
+                >
+                  {pageNumber}
+                </PaginationLink>
               </PaginationItem>
+            );
+          }
 
-              {/* Page numbers with ellipsis */}
-              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                const pageNumber = i + 1;
-                const isCurrentPage = pageNumber === currentPage;
-
-                if (
-                  pageNumber === 1 ||
-                  pageNumber === totalPages ||
-                  (pageNumber >= currentPage - 1 && pageNumber <= currentPage + 1)
-                ) {
-                  return (
-                    <PaginationItem key={pageNumber}>
-                      <PaginationLink
-                        isActive={isCurrentPage}
-                        onClick={() => setCurrentPage(pageNumber)}
-                      >
-                        {pageNumber}
-                      </PaginationLink>
-                    </PaginationItem>
-                  );
-                }
-
-                if (
-                  (pageNumber === 2 && currentPage > 3) ||
-                  (pageNumber === totalPages - 1 && currentPage < totalPages - 2)
-                ) {
-                  return (
-                    <PaginationItem key={`ellipsis-${pageNumber}`}>
-                      <PaginationEllipsis />
-                    </PaginationItem>
-                  );
-                }
-
-                return null;
-              })}
-
-              {/* Next */}
-              <PaginationItem>
-                <PaginationNext
-                  onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
-                  className={currentPage === totalPages ? 'pointer-events-none opacity-50' : ''}
-                />
+          if (
+            (pageNumber === 2 && currentPage > 3) ||
+            (pageNumber === totalPages - 1 && currentPage < totalPages - 2)
+          ) {
+            return (
+              <PaginationItem key={`ellipsis-${pageNumber}`}>
+                <PaginationEllipsis />
               </PaginationItem>
-            </PaginationContent>
-          </Pagination>
-        </div>
-      )}
+            );
+          }
+
+          return null;
+        })}
+
+        {/* Next */}
+        <PaginationItem>
+          <PaginationNext
+            onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
+            className={currentPage === totalPages ? 'pointer-events-none opacity-50' : ''}
+          />
+        </PaginationItem>
+      </PaginationContent>
+    </Pagination>
+  </div>
+)}
+
 
       {/* Details Dialog */}
-      <Dialog open={!!selected} onOpenChange={(v) => !v && setSelected(null)}>
-        <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto border border-gray-200 shadow-lg dark:border-gray-700">
-          <DialogHeader className="border-b border-gray-200 dark:border-gray-700">
-            <DialogTitle className="flex items-center gap-2 text-xl">
-              {/* Event-specific icon */}
-              {selected && (
-                <span
-                  className={`rounded-full p-1.5 ${
-                    selected?.action === 'LOGIN'
-                      ? 'bg-[#DEF2ED] text-[#0A4F53] dark:bg-green-900 dark:text-green-300'
-                      : selected?.action === 'LOGOUT'
-                        ? 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300'
-                        : selected?.action === 'MODEL CHANGED'
-                          ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300'
-                          : selected?.action === 'ATTACHED FILE'
-                            ? 'bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300'
-                            : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'
-                  }`}
-                >
+<Dialog open={!!selected} onOpenChange={(v) => !v && setSelected(null)}>
+  <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto border border-gray-200 shadow-lg dark:border-gray-700">
+    <DialogHeader className="border-b border-gray-100 pb-3 pt-2 dark:border-gray-700">
+      <DialogTitle className="flex items-start justify-between text-lg">
+        {/* Left side - Event icon and title */}
+        <div className="flex items-start gap-2">
+          {selected && (
+            <span
+              className={`rounded-full p-1.5 ${
+                selected?.action === 'LOGIN'
+                  ? 'bg-[#DEF2ED] text-[#0A4F53] dark:bg-green-900 dark:text-green-300'
+                  : selected?.action === 'LOGOUT'
+                  ? 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300'
+                  : selected?.action === 'MODEL CHANGED'
+                  ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300'
+                  : selected?.action === 'ATTACHED FILE'
+                  ? 'bg-gray-100 text-gray-700 dark:bg-gray-900 dark:text-gray-300'
+                  : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'
+              }`}
+            >
+              {/* Action-specific icons */}
                   {selected?.action === 'LOGIN' && (
                     <svg
                       xmlns="http://www.w3.org/2000/svg"
@@ -663,50 +611,66 @@ export default function AdminLogs() {
                     )}
                 </span>
               )}
-              {selected?.action || 'Log Details'}
-            </DialogTitle>
-          </DialogHeader>
+             {/* Fixed title */}
+          <span className="font-medium mt-0.5">System Logs</span>
+        </div>
+
+        {/* Right side - Close Button */}
+        {/* <DialogClose className="ml-4 mt-1.5">
+          <XIcon className="h-5 w-5 text-gray-500 dark:text-gray-400" />
+        </DialogClose> */}
+      </DialogTitle>
+    </DialogHeader>
+
 
           {selected && (
             <div className="flex flex-col gap-4 p-1">
               <div className="grid grid-cols-2 gap-4 rounded-md bg-gray-50 p-4 text-sm shadow-sm dark:bg-gray-800">
                 <div className="flex flex-col gap-1">
-                  <span className="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">
+                  <label className="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">
                     Time
-                  </span>
-                  <span>{new Date(selected.timestamp).toLocaleString()}</span>
+                  </label>
+                  <div className="w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 shadow-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
+                    {moment(selected.timestamp).format('Do MMMM YYYY, HH:mm:ss')}
+                  </div>
                 </div>
                 <div className="flex flex-col gap-1">
                   <span className="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">
                     Event
                   </span>
-                  <span
-                    className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                      selected.action === 'LOGIN'
-                        ? 'bg-[#DEF2ED] text-[#0A4F53] dark:bg-green-900 dark:text-green-300'
-                        : selected.action === 'LOGOUT'
-                          ? 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300'
-                          : selected.action === 'MODEL CHANGED'
-                            ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300'
-                            : selected.action === 'ATTACHED FILE'
-                              ? 'bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300'
-                              : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'
-                    }`}
-                  >
-                    {selected.action}
-                  </span>
+                  <div className="w-full rounded-md border border-gray-200 bg-white px-3 py-2 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+                    <span
+                      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                        selected.action === 'LOGIN'
+                          ? 'bg-[#DEF2ED] text-[#0A4F53] dark:bg-green-900 dark:text-green-300'
+                          : selected.action === 'LOGOUT'
+                            ? 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300'
+                            : selected.action === 'MODEL CHANGED'
+                              ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300'
+                              : selected.action === 'ATTACHED FILE'
+                                ? 'bg-dark-grey-100 text-grey-700 dark:bg-dark-grey-900 dark:text-dark-grey-300'
+                                : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'
+                      }`}
+                    >
+                      {selected.action}
+                    </span>
+                  </div>
                 </div>
                 <div className="flex flex-col gap-1">
                   <span className="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">
                     Email
                   </span>
-                  <span>{selected.email ?? '—'}</span>
+                  <div className="w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 shadow-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
+                    {selected.email ?? '—'}
+                  </div>
                 </div>
                 <div className="flex flex-col gap-1">
                   <span className="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">
                     Name
                   </span>
-                  <span>{selected.name ?? '—'}</span>
+                  <div className="w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 shadow-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
+                    {selected.name ?? '—'}
+                  </div>
                 </div>
               </div>
 
@@ -805,163 +769,163 @@ export default function AdminLogs() {
                   </div>
                 </div>
               ) : selected.action === 'ATTACHED FILE' ? (
-                <div className="rounded-md border border-purple-100 bg-white p-4 shadow-sm dark:border-purple-900 dark:bg-gray-800">
-                  <div className="mb-3 flex items-center gap-2 border-b border-gray-100 pb-2 dark:border-gray-700">
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      width="16"
-                      height="16"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      className="text-purple-500"
-                    >
-                      <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48" />
-                    </svg>
-                    <h3 className="text-sm font-semibold text-purple-700 dark:text-purple-300">
-                      File Attachment Details
-                    </h3>
-                  </div>
-
-                  {/* Enhanced file details display */}
-                  <div className="space-y-3">
-                    {/* File name with icon */}
-                    {selected.details?.filename && (
-                      <div className="flex items-center gap-3 rounded-md bg-purple-50 p-3 dark:bg-purple-900/30">
-                        <div className="flex-shrink-0">
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            width="24"
-                            height="24"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            className="text-purple-500"
-                          >
-                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                            <polyline points="14 2 14 8 20 8" />
-                            <line x1="16" y1="13" x2="8" y2="13" />
-                            <line x1="16" y1="17" x2="8" y2="17" />
-                            <polyline points="10 9 9 9 8 9" />
-                          </svg>
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="truncate text-sm font-medium text-purple-700 dark:text-purple-300">
-                            {selected.details.filename}
-                          </div>
-                          <div className="text-xs text-purple-600 dark:text-purple-400">
-                            Primary file
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* File properties table */}
-                    <div className="overflow-hidden rounded-md border border-purple-100 dark:border-purple-900">
-                      <table className="w-full">
-                        <tbody className="divide-y divide-purple-100 dark:divide-purple-900">
-                          {selected.details?.type && (
-                            <tr className="bg-white dark:bg-gray-800">
-                              <td className="px-4 py-3 text-sm font-medium text-gray-500 dark:text-gray-400">
-                                File Type
-                              </td>
-                              <td className="px-4 py-3 text-sm text-gray-900 dark:text-gray-100">
-                                <span className="inline-flex items-center rounded-full bg-purple-100 px-2.5 py-0.5 text-xs font-medium text-purple-800 dark:bg-purple-900 dark:text-purple-200">
-                                  {selected.details.type}
-                                </span>
-                              </td>
-                            </tr>
-                          )}
-                          {selected.details?.size && (
-                            <tr className="bg-purple-50/50 dark:bg-purple-900/10">
-                              <td className="px-4 py-3 text-sm font-medium text-gray-500 dark:text-gray-400">
-                                File Size
-                              </td>
-                              <td className="px-4 py-3 text-sm text-gray-900 dark:text-gray-100">
-                                <div className="flex items-center gap-2">
-                                  <span className="font-medium">
-                                    {(selected.details.size / 1024).toFixed(1)} KB
-                                  </span>
-                                  <span className="text-xs text-gray-500 dark:text-gray-400">
-                                    ({selected.details.size.toLocaleString()} bytes)
-                                  </span>
-                                </div>
-                              </td>
-                            </tr>
-                          )}
-                          {selected.details?.context && (
-                            <tr className="bg-white dark:bg-gray-800">
-                              <td className="px-4 py-3 text-sm font-medium text-gray-500 dark:text-gray-400">
-                                Context
-                              </td>
-                              <td className="px-4 py-3 text-sm text-gray-900 dark:text-gray-100">
-                                <span className="capitalize">
-                                  {selected.details.context.replace(/_/g, ' ')}
-                                </span>
-                              </td>
-                            </tr>
-                          )}
-                          {/* Display other properties if they exist */}
-                          {Object.entries(selected.details || {})
-                            .filter(
-                              ([key]) => !['filename', 'type', 'size', 'context'].includes(key),
-                            )
-                            .map(([key, value], index) => (
-                              <tr
-                                key={key}
-                                className={
-                                  index % 2 === 0
-                                    ? 'bg-purple-50/50 dark:bg-purple-900/10'
-                                    : 'bg-white dark:bg-gray-800'
-                                }
-                              >
-                                <td className="px-4 py-3 text-sm font-medium text-gray-500 dark:text-gray-400">
-                                  <span className="capitalize">{key.replace(/_/g, ' ')}</span>
-                                </td>
-                                <td className="px-4 py-3 text-sm text-gray-900 dark:text-gray-100">
-                                  {typeof value === 'object'
-                                    ? JSON.stringify(value)
-                                    : String(value)}
-                                </td>
-                              </tr>
-                            ))}
-                        </tbody>
-                      </table>
-                    </div>
-
-                    {/* Summary card */}
-                    <div className="rounded-md bg-purple-50 p-3 dark:bg-purple-900/20">
-                      <div className="flex items-start gap-2">
+                <div className="rounded-md border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-900">
+                <div className="mb-3 flex items-center gap-2 border-b border-gray-200 pb-2 dark:border-gray-700">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="text-gray-600 dark:text-gray-300"
+                  >
+                    <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+                  </svg>
+                  <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">
+                    File Attachment Details
+                  </h3>
+                </div>
+            
+                {/* Enhanced file details display */}
+                <div className="space-y-3">
+                  {/* File name with icon */}
+                  {selected.details?.filename && (
+                    <div className="flex items-center gap-3 rounded-md bg-gray-50 p-3 dark:bg-gray-800/50">
+                      <div className="flex-shrink-0">
                         <svg
                           xmlns="http://www.w3.org/2000/svg"
-                          width="16"
-                          height="16"
+                          width="24"
+                          height="24"
                           viewBox="0 0 24 24"
                           fill="none"
                           stroke="currentColor"
                           strokeWidth="2"
                           strokeLinecap="round"
                           strokeLinejoin="round"
-                          className="mt-0.5 flex-shrink-0 text-purple-500"
+                          className="text-gray-600 dark:text-gray-300"
                         >
-                          <circle cx="12" cy="12" r="10" />
-                          <path d="M12 16v-4" />
-                          <path d="M12 8h.01" />
+                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                          <polyline points="14 2 14 8 20 8" />
+                          <line x1="16" y1="13" x2="8" y2="13" />
+                          <line x1="16" y1="17" x2="8" y2="17" />
+                          <polyline points="10 9 9 9 8 9" />
                         </svg>
-                        <div className="text-xs text-purple-700 dark:text-purple-300">
-                          <span className="font-medium">File attached</span> to the conversation as
-                          a {selected.details?.context?.replace(/_/g, ' ') || 'message attachment'}.
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-sm font-medium text-gray-900 dark:text-gray-100">
+                          {selected.details.filename}
                         </div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400">
+                          Primary file
+                        </div>
+                      </div>
+                    </div>
+                  )}
+            
+                  {/* File properties table */}
+                  <div className="overflow-hidden rounded-md border border-gray-200 dark:border-gray-700">
+                    <table className="w-full">
+                      <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                        {selected.details?.type && (
+                          <tr className="bg-white dark:bg-gray-900">
+                            <td className="px-4 py-3 text-sm font-medium text-gray-500 dark:text-gray-400">
+                              File Type
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-900 dark:text-gray-100">
+                              <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-800 dark:bg-gray-800 dark:text-gray-200">
+                                {selected.details.type}
+                              </span>
+                            </td>
+                          </tr>
+                        )}
+                        {selected.details?.size && (
+                          <tr className="bg-gray-50/50 dark:bg-gray-800/50">
+                            <td className="px-4 py-3 text-sm font-medium text-gray-500 dark:text-gray-400">
+                              File Size
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-900 dark:text-gray-100">
+                              <div className="flex items-center gap-2">
+                                <span className="font-medium">
+                                  {(selected.details.size / 1024).toFixed(1)} KB
+                                </span>
+                                <span className="text-xs text-gray-500 dark:text-gray-400">
+                                  ({selected.details.size.toLocaleString()} bytes)
+                                </span>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                        {selected.details?.context && (
+                          <tr className="bg-white dark:bg-gray-900">
+                            <td className="px-4 py-3 text-sm font-medium text-gray-500 dark:text-gray-400">
+                              Context
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-900 dark:text-gray-100">
+                              <span className="capitalize">
+                                {selected.details.context.replace(/_/g, ' ')}
+                              </span>
+                            </td>
+                          </tr>
+                        )}
+                        {/* Display other properties if they exist */}
+                        {Object.entries(selected.details || {})
+                          .filter(
+                            ([key]) => !['filename', 'type', 'size', 'context'].includes(key),
+                          )
+                          .map(([key, value], index) => (
+                            <tr
+                              key={key}
+                              className={
+                                index % 2 === 0
+                                  ? 'bg-gray-50/50 dark:bg-gray-800/50'
+                                  : 'bg-white dark:bg-gray-900'
+                              }
+                            >
+                              <td className="px-4 py-3 text-sm font-medium text-gray-500 dark:text-gray-400">
+                                <span className="capitalize">{key.replace(/_/g, ' ')}</span>
+                              </td>
+                              <td className="px-4 py-3 text-sm text-gray-900 dark:text-gray-100">
+                                {typeof value === 'object'
+                                  ? JSON.stringify(value)
+                                  : String(value)}
+                              </td>
+                            </tr>
+                          ))}
+                      </tbody>
+                    </table>
+                  </div>
+            
+                  {/* Summary card */}
+                  <div className="rounded-md bg-gray-50 p-3 dark:bg-gray-800/50">
+                    <div className="flex items-start gap-2">
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="16"
+                        height="16"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        className="mt-0.5 flex-shrink-0 text-gray-500 dark:text-gray-400"
+                      >
+                        <circle cx="12" cy="12" r="10" />
+                        <path d="M12 16v-4" />
+                        <path d="M12 8h.01" />
+                      </svg>
+                      <div className="text-xs text-gray-700 dark:text-gray-300">
+                        <span className="font-medium">File attached</span> to the conversation as a{' '}
+                        {selected.details?.context?.replace(/_/g, ' ') || 'message attachment'}.
                       </div>
                     </div>
                   </div>
                 </div>
+              </div>
               ) : (
                 <div className="rounded-md border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800">
                   <div className="mb-3 flex items-center gap-2 border-b border-gray-100 pb-2 dark:border-gray-700">
@@ -1021,20 +985,6 @@ export default function AdminLogs() {
                   )}
                 </div>
               )}
-            </div>
-          )}
-
-          {/* Dialog Footer */}
-          {selected && (
-            <div className="flex justify-end border-t border-gray-200 pt-4 dark:border-gray-700">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setSelected(null)}
-                className="px-4"
-              >
-                Close
-              </Button>
             </div>
           )}
         </DialogContent>
