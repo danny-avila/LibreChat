@@ -2,11 +2,7 @@ const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const { spendTokens, spendStructuredTokens } = require('./spendTokens');
 const { getMultiplier, getCacheMultiplier } = require('./tx');
-const {
-  createTransaction,
-  createStructuredTransaction,
-  createAutoRefillTransaction,
-} = require('./Transaction');
+const { createTransaction, createStructuredTransaction } = require('./Transaction');
 const { Balance, Transaction } = require('~/db/models');
 
 let mongoServer;
@@ -384,8 +380,8 @@ describe('NaN Handling Tests', () => {
   });
 });
 
-describe('Balance Disabled Tests', () => {
-  test('createTransaction should not save transaction when balance is disabled', async () => {
+describe('Transactions Config Tests', () => {
+  test('createTransaction should not save when transactions.enabled is false', async () => {
     // Arrange
     const userId = new mongoose.Types.ObjectId();
     const initialBalance = 10000000;
@@ -400,13 +396,13 @@ describe('Balance Disabled Tests', () => {
       endpointTokenConfig: null,
       rawAmount: -100,
       tokenType: 'prompt',
-      balance: { enabled: false },
+      transactions: { enabled: false },
     };
 
     // Act
     const result = await createTransaction(txData);
 
-    // Assert: No transaction should be created, no result returned, and balance unchanged
+    // Assert: No transaction should be created
     expect(result).toBeUndefined();
     const transactions = await Transaction.find({ user: userId });
     expect(transactions).toHaveLength(0);
@@ -414,37 +410,7 @@ describe('Balance Disabled Tests', () => {
     expect(balance.tokenCredits).toBe(initialBalance);
   });
 
-  test('createStructuredTransaction should not save transaction when balance is disabled', async () => {
-    // Arrange
-    const userId = new mongoose.Types.ObjectId();
-    const initialBalance = 10000000;
-    await Balance.create({ user: userId, tokenCredits: initialBalance });
-
-    const model = 'claude-3-5-sonnet';
-    const txData = {
-      user: userId,
-      conversationId: 'test-conversation-id',
-      model,
-      context: 'message',
-      tokenType: 'prompt',
-      inputTokens: -10,
-      writeTokens: -100,
-      readTokens: -5,
-      balance: { enabled: false },
-    };
-
-    // Act
-    const result = await createStructuredTransaction(txData);
-
-    // Assert: No transaction should be created, no result returned, and balance unchanged
-    expect(result).toBeUndefined();
-    const transactions = await Transaction.find({ user: userId });
-    expect(transactions).toHaveLength(0);
-    const balance = await Balance.findOne({ user: userId });
-    expect(balance.tokenCredits).toBe(initialBalance);
-  });
-
-  test('createTransaction should save transaction when balance is enabled', async () => {
+  test('createTransaction should save when transactions.enabled is true', async () => {
     // Arrange
     const userId = new mongoose.Types.ObjectId();
     const initialBalance = 10000000;
@@ -459,13 +425,14 @@ describe('Balance Disabled Tests', () => {
       endpointTokenConfig: null,
       rawAmount: -100,
       tokenType: 'prompt',
+      transactions: { enabled: true },
       balance: { enabled: true },
     };
 
     // Act
     const result = await createTransaction(txData);
 
-    // Assert: Transaction should be created and balance updated
+    // Assert: Transaction should be created
     expect(result).toBeDefined();
     expect(result.balance).toBeLessThan(initialBalance);
     const transactions = await Transaction.find({ user: userId });
@@ -473,7 +440,67 @@ describe('Balance Disabled Tests', () => {
     expect(transactions[0].rawAmount).toBe(-100);
   });
 
-  test('createStructuredTransaction should save transaction when balance is enabled', async () => {
+  test('createTransaction should save when balance.enabled is true even if transactions config is missing', async () => {
+    // Arrange
+    const userId = new mongoose.Types.ObjectId();
+    const initialBalance = 10000000;
+    await Balance.create({ user: userId, tokenCredits: initialBalance });
+
+    const model = 'gpt-3.5-turbo';
+    const txData = {
+      user: userId,
+      conversationId: 'test-conversation-id',
+      model,
+      context: 'test',
+      endpointTokenConfig: null,
+      rawAmount: -100,
+      tokenType: 'prompt',
+      balance: { enabled: true },
+      // No transactions config provided
+    };
+
+    // Act
+    const result = await createTransaction(txData);
+
+    // Assert: Transaction should be created (backward compatibility)
+    expect(result).toBeDefined();
+    expect(result.balance).toBeLessThan(initialBalance);
+    const transactions = await Transaction.find({ user: userId });
+    expect(transactions).toHaveLength(1);
+  });
+
+  test('createTransaction should save transaction but not update balance when balance is disabled but transactions enabled', async () => {
+    // Arrange
+    const userId = new mongoose.Types.ObjectId();
+    const initialBalance = 10000000;
+    await Balance.create({ user: userId, tokenCredits: initialBalance });
+
+    const model = 'gpt-3.5-turbo';
+    const txData = {
+      user: userId,
+      conversationId: 'test-conversation-id',
+      model,
+      context: 'test',
+      endpointTokenConfig: null,
+      rawAmount: -100,
+      tokenType: 'prompt',
+      transactions: { enabled: true },
+      balance: { enabled: false },
+    };
+
+    // Act
+    const result = await createTransaction(txData);
+
+    // Assert: Transaction should be created but balance unchanged
+    expect(result).toBeUndefined();
+    const transactions = await Transaction.find({ user: userId });
+    expect(transactions).toHaveLength(1);
+    expect(transactions[0].rawAmount).toBe(-100);
+    const balance = await Balance.findOne({ user: userId });
+    expect(balance.tokenCredits).toBe(initialBalance);
+  });
+
+  test('createStructuredTransaction should not save when transactions.enabled is false', async () => {
     // Arrange
     const userId = new mongoose.Types.ObjectId();
     const initialBalance = 10000000;
@@ -489,45 +516,51 @@ describe('Balance Disabled Tests', () => {
       inputTokens: -10,
       writeTokens: -100,
       readTokens: -5,
-      balance: { enabled: true },
+      transactions: { enabled: false },
     };
 
     // Act
     const result = await createStructuredTransaction(txData);
 
-    // Assert: Transaction should be created and balance updated
-    expect(result).toBeDefined();
-    expect(result.balance).toBeLessThan(initialBalance);
+    // Assert: No transaction should be created
+    expect(result).toBeUndefined();
     const transactions = await Transaction.find({ user: userId });
-    expect(transactions).toHaveLength(1);
-    expect(transactions[0].inputTokens).toBe(-10);
-    expect(transactions[0].writeTokens).toBe(-100);
-    expect(transactions[0].readTokens).toBe(-5);
+    expect(transactions).toHaveLength(0);
+    const balance = await Balance.findOne({ user: userId });
+    expect(balance.tokenCredits).toBe(initialBalance);
   });
 
-  test('createAutoRefillTransaction should create transaction and update balance', async () => {
+  test('createStructuredTransaction should save transaction but not update balance when balance is disabled but transactions enabled', async () => {
     // Arrange
     const userId = new mongoose.Types.ObjectId();
     const initialBalance = 10000000;
     await Balance.create({ user: userId, tokenCredits: initialBalance });
 
+    const model = 'claude-3-5-sonnet';
     const txData = {
       user: userId,
-      tokenType: 'credits',
-      context: 'autoRefill',
-      rawAmount: 5000000,
+      conversationId: 'test-conversation-id',
+      model,
+      context: 'message',
+      tokenType: 'prompt',
+      inputTokens: -10,
+      writeTokens: -100,
+      readTokens: -5,
+      transactions: { enabled: true },
+      balance: { enabled: false },
     };
 
     // Act
-    const result = await createAutoRefillTransaction(txData);
+    const result = await createStructuredTransaction(txData);
 
-    // Assert: Transaction should be created and balance updated
-    expect(result).toBeDefined();
-    expect(result.balance).toBeGreaterThan(initialBalance);
-    expect(result.transaction).toBeDefined();
+    // Assert: Transaction should be created but balance unchanged
+    expect(result).toBeUndefined();
     const transactions = await Transaction.find({ user: userId });
     expect(transactions).toHaveLength(1);
-    expect(transactions[0].rawAmount).toBe(5000000);
-    expect(transactions[0].context).toBe('autoRefill');
+    expect(transactions[0].inputTokens).toBe(-10);
+    expect(transactions[0].writeTokens).toBe(-100);
+    expect(transactions[0].readTokens).toBe(-5);
+    const balance = await Balance.findOne({ user: userId });
+    expect(balance.tokenCredits).toBe(initialBalance);
   });
 });

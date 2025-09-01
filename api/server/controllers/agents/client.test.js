@@ -237,6 +237,9 @@ describe('AgentClient - titleConvo', () => {
         balance: {
           enabled: false,
         },
+        transactions: {
+          enabled: true,
+        },
       });
     });
 

@@ -189,11 +189,13 @@ async function createAutoRefillTransaction(txData) {
  * @param {txData} _txData - Transaction data.
  */
 async function createTransaction(_txData) {
-  const { balance, ...txData } = _txData;
+  const { balance, transactions, ...txData } = _txData;
   if (txData.rawAmount != null && isNaN(txData.rawAmount)) {
     return;
   }
-  if (!balance?.enabled) {
+
+  // Check if transactions are disabled
+  if (transactions?.enabled === false) {
     return;
   }
 
@@ -202,6 +204,9 @@ async function createTransaction(_txData) {
   calculateTokenValue(transaction);
 
   await transaction.save();
+  if (!balance?.enabled) {
+    return;
+  }
 
   let incrementValue = transaction.tokenValue;
   const balanceResponse = await updateBalance({
@@ -222,9 +227,9 @@ async function createTransaction(_txData) {
  * @param {txData} _txData - Transaction data.
  */
 async function createStructuredTransaction(_txData) {
-  const { balance, ...txData } = _txData;
-
-  if (!balance?.enabled) {
+  const { balance, transactions, ...txData } = _txData;
+  // Check if transactions are disabled
+  if (transactions?.enabled === false) {
     return;
   }
 
@@ -236,6 +241,10 @@ async function createStructuredTransaction(_txData) {
   calculateStructuredTokenValue(transaction);
 
   await transaction.save();
+
+  if (!balance?.enabled) {
+    return;
+  }
 
   let incrementValue = transaction.tokenValue;
 
