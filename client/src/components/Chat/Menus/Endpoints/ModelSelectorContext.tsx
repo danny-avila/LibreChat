@@ -59,7 +59,21 @@ export function ModelSelectorProvider({ children, startupConfig }: ModelSelector
   const { data: endpointsConfig } = useGetEndpointsQuery();
   const { endpoint, model, spec, agent_id, assistant_id, newConversation } =
     useModelSelectorChatContext();
-  const modelSpecs = useMemo(() => startupConfig?.modelSpecs?.list ?? [], [startupConfig]);
+  const modelSpecs = useMemo(() => {
+    const specs = startupConfig?.modelSpecs?.list ?? [];
+    if (!agentsMap) {
+      return [];
+    }
+
+    // Filter modelSpecs to only include agents the user has access to
+    // Use agentsMap which already contains permission-filtered agents (consistent with other components)
+    return specs.filter(spec => {
+      if (spec.preset?.endpoint === 'agents' && spec.preset?.agent_id) {
+        return spec.preset.agent_id in agentsMap;
+      }
+      return true; // Keep non-agent modelSpecs
+    });
+  }, [startupConfig, agentsMap]);
   const permissionLevel = useAgentDefaultPermissionLevel();
   const { data: agents = null } = useListAgentsQuery(
     { requiredPermission: permissionLevel },
