@@ -1,0 +1,17 @@
+{
+  "schema_version": "v1",
+  "name_for_human": "BrowserOp",
+  "name_for_model": "BrowserOp",
+  "description_for_human": "Browse dozens of webpages in one query. Fetch information more efficiently.",
+  "description_for_model": "This tool offers the feature for users to input a URL or multiple URLs and interact with them as needed. It's designed to comprehend the user's intent and proffer tailored suggestions in line with the content and functionality of the webpage at hand. Services like text rewrites, translations and more can be requested. When users need specific information to finish a task or if they intend to perform a search, this tool becomes a bridge to the search engine and generates responses based on the results. Whether the user is seeking information about restaurants, rentals, weather, or shopping, this tool connects to the internet and delivers the most recent results.",
+  "auth": {
+    "type": "none"
+  },
+  "api": {
+    "type": "openapi",
+    "url": "https://testplugin.feednews.com/.well-known/openapi.yaml"
+  },
+  "logo_url": "https://openapi-af.op-mobile.opera.com/openapi/testplugin/.well-known/logo.png",
+  "contact_email": "aiplugins-contact-list@opera.com",
+  "legal_info_url": "https://legal.apexnews.com/terms/"
+}

@@ -1,0 +1,345 @@
+[
+  {
+    "title": "Citation Convo",
+    "create_time": 1704629915.775304,
+    "update_time": 1704717442.442031,
+    "mapping": {
+      "9e874379-5008-4a2d-aa2e-628d1d705a04": {
+        "id": "9e874379-5008-4a2d-aa2e-628d1d705a04",
+        "message": {
+          "id": "9e874379-5008-4a2d-aa2e-628d1d705a04",
+          "author": {
+            "role": "tool",
+            "name": "browser",
+            "metadata": {}
+          },
+          "create_time": 1708580164.172007,
+          "update_time": null,
+          "content": {
+            "content_type": "tether_browsing_display",
+            "result": "# 【0†Signal Sciences - Crunchbase Company Profile & Funding†www.crunchbase.com】\nFounded Date Mar 10, 2014. Founders Andrew Peterson, Nick Galbreath, Zane Lackey. Operating Status Active. Last Funding Type Series C. Legal Name Signal Sciences Corp. Company Type For Profit. Contact Email info@signalsciences.com. Phone Number +1 424-404-1139. Signal Sciences is the fastest growing web application security company in the world.\n# 【1†Demand More from Your WAF - Signal Sciences now part of Fastly†www.signalsciences.com】\nModernize Your Application/API Protection While Lowering Your TCO. Legacy WAFs weren't designed for today's web apps that are distributed across cloud, on-premise, edge or hybrid environments. Our next-gen web application firewall (NGWAF) and runtime application self protection (RASP) increase security and maintain reliability without ...\n# 【2†Security at Scale: Fastly Announces Intent to Acquire Signal Science†www.fastly.com】\nSignal Sciences' technology combined with Fastly's current solutions will form Fastly's upcoming new security offering, called Secure@Edge. Secure@Edge will be a modern, unified web application and API security solution that will integrate with our Compute platform, and power and protect companies looking to further or begin their digital ...\n# 【3†Web Application and API Protection - Signal Sciences now part of Fastly†www.signalsciences.com】\nOur customers have spoken: Signal Sciences is the highest rated Web Application Firewalls (WAF) vendor. We were named a 2021 Gartner Peer Insights Customers' Choice for WAF based on detailed end-user testimonials. In addition, we are the only vendor to be named a Customers' Choice for three consecutive times and have an overall rating of 5 ...\n# 【4†Fastly Completes Acquisition of Signal Sciences | Fastly†www.fastly.com】\nSAN FRANCISCO, October 1, 2020 – Fastly, Inc. (NYSE: FSLY), provider of an edge cloud platform, today announced it has successfully completed the acquisition of Signal Sciences (“Signal Sciences”). The transaction combines Signal Sciences' powerful web application and API security solutions with Fastly's edge cloud platform and existing security offerings to form a unified suite of ...\n# 【5†Signal Sciences: Enterprises still overlooking web app security†www.techtarget.com】\nRansomware threats are everywhere these days, but one startup is focusing on the most common cause behind data breaches. Signal Sciences is a Web Application Firewall (WAF) and Runtime Application Self-Protection (RASP) company that protects customers' web applications and APIs, regardless of the software architecture or deployment model used, such as on-premises, cloud, containers or hybrid ...\n# 【6†Signal Sciences Launches Cloud WAF for Easy Web Application Security†www.signalsciences.com】\nToday we are proud to announce the launch of the new Signal Sciences Cloud Web Application Firewall (WAF) deployment option for our award-winning WAF and RASP solution.As the fastest growing web application security company in the world, we know organizations must quickly detect and stop web application layer attacks wherever their apps, APIs, or microservices operate—whether that be in the ...\n# 【7†Fastly Agrees to Acquire Signal Sciences for $775 Million - Cooley†www.cooley.com】\nSan Francisco – August 27, 2020 – Cooley advised edge cloud platform provider Fastly on its agreement to acquire Signal Sciences, one of the fastest growing web application security companies in the world, for approximately $775 million in cash and stock.The acquisition, which is expected to close this year, will expand Fastly's robust security portfolio at a time when security at the ...\n# 【8†Signal Sciences†info.signalsciences.com】\nSignal Sciences next-gen WAF and RASP technology is designed to work quickly and effectively, enabling application developers and operations teams to deliver modern, business-critical web applications and APIs while ensuring they're well protected and running performantly.. There are many vendors claiming to provide effective and scalable offerings to protect applications and APIs, so we ...\n# 【9†Gartner names Signal Sciences a Visionary in the 2020 Magic ... - Fastly†www.fastly.com】\nWe believe Signal Sciences' innovation earned them recognition in the 2019 Gartner Magic Quadrant for WAF, ... Gartner research publications consist of the opinions of Gartner's research organization and should not be construed as statements of fact. Gartner disclaims all warranties, express or implied, with respect to this research ...\n# 【10†Fastly acquires Signal Sciences - 2020-08-27 - Crunchbase†www.crunchbase.com】\nSignal Sciences Signal Sciences is a software as a service platform providing security monitoring and defense for your web applications. Acquiring Organization: Fastly Fastly helps digital businesses keep pace with their customer expectations by delivering secure and online experiences. Announced Date Aug 27, 2020;\n# 【11†Signal Sciences - Funding, Financials, Valuation & Investors - Crunchbase†www.crunchbase.com】\nFunding. Signal Sciences has raised a total of. $61.7M. in funding over 4 rounds. Their latest funding was raised on Feb 5, 2019 from a Series C round. Signal Sciences is funded by 8 investors. CRV and Harrison Metal are the most recent investors. Signal Sciences has invested in Open Raven on Feb 11, 2020. This investment - Seed Round - Open ...\n# 【12†Signal Sciences WAF Review and Alternatives - Comparitech†www.comparitech.com】\nSignal Sciences WAF is completely agentless as it works in the cloud to apply both managed and custom rulesets to your application traffic. Protections extend beyond the OWASP Top 10 and include defense from botnet attacks, account takeovers, credential stuffing, API abuse, and DDoS mitigation. Automatic blocking and scanning are applied to ...\n# 【13†Integrations - Web Application Security - Signal Sciences now part of ...†www.signalsciences.com】\nThe Signal Sciences site extension protects any IIS web application hosted on AAS and provides production visibility necessary to detect and block malicious web requests before they can compromise your business-critical apps, APIs and microservices. ... and efficiently into an organization's existing hybrid, or cloud architecture ...\n# 【14†Fastly Next-Gen WAF professional services | Fastly Products†docs.fastly.com】\nFastly Next-Gen WAF (powered by Signal Sciences) (Next-Gen WAF) professional services provide your organization with training, implementation, and maintenance services for the Next-Gen WAF. Depending on the service offerings you select, our team will provide training and work with you to plan, test, deploy, and maintain a solution to protect ...\n# 【15†Andrew Peterson - Founder & CEO @ Signal Sciences - Crunchbase†www.crunchbase.com】\nAndrew Peterson is the founder and CEO of Signal Sciences, a Software-as-a-Service platform that provides security monitoring and defense solutions for web applications. He was previously the group product manager of international growth at Etsy. Prior to Etsy, Peterson was a health information management officer at the Clinton Foundation\n# 【16†Signal Sciences†info.signalsciences.com】\nThe webinar will cover: The most common attacks targeting distributed web apps. How a web application firewall (WAF) can inspect and decision on both north-south (client-to-app origin) and east-west (service-to-service) web requests. How to detect and prevent malicious client-side activity originating from website supply chain vendors. A live ...\n# 【17†Next-Generation Cloud Web Application Firewall (WAF) - Signal Sciences ...†www.signalsciences.com】\nWith a single change to a DNS record, web requests are routed to the Signal Sciences Cloud WAF to inspect and decision on those requests and block bad requests. Our unique solution provides robust detection and protection capabilities no matter where your organization's applications operate or how rapidly they scale. No complex software ...\n# 【18†How to Configure SAML 2.0 for Signal Sciences - UserDocs†saml-doc.okta.com】\nConfiguration Steps. Log in to Signal Sciences as an Organization Administrator. Navigate to organization > Settings.. Click the Switch to SAML button:. Click the I understand, configure SSO button:. On the Configure SSO with SAML page, enter the following:. Copy and paste the following IDP Login page into the SAML endpoint field:. Sign into the Okta Admin Dashboard to generate this variable.\n# 【19†Powering the best of the internet | Fastly†www.fastly.com】\nEverybody needs speed, reliability, security, savings, and scale – but different industries have different needs. Fastly's powerful network and smarter solutions can be tailored to your organization. We partner with you to guarantee a smooth migration, so you can deliver the best possible user experiences.\nVisible: 0% - 100%",
+            "summary": null,
+            "assets": [],
+            "tether_id": null
+          },
+          "status": "finished_successfully",
+          "end_turn": null,
+          "weight": 0,
+          "metadata": {
+            "_cite_metadata": {
+              "citation_format": {
+                "name": "tether_og",
+                "regex": "【(\\d+)(?::(\\d+))?†([^†【】]*)[^【】]*?】"
+              },
+              "metadata_list": [
+                {
+                  "type": "webpage",
+                  "title": "Signal Sciences - Crunchbase Company Profile & Funding",
+                  "url": "https://www.crunchbase.com/organization/signal-sciences",
+                  "text": "\nFounded Date Mar 10, 2014. Founders Andrew Peterson, Nick Galbreath, Zane Lackey. Operating Status Active. Last Funding Type Series C. Legal Name Signal Sciences Corp. Company Type For Profit. Contact Email info@signalsciences.com. Phone Number +1 424-404-1139. Signal Sciences is the fastest growing web application security company in the world.\n",
+                  "pub_date": null,
+                  "extra": null
+                },
+                {
+                  "type": "webpage",
+                  "title": "Demand More from Your WAF - Signal Sciences now part of Fastly",
+                  "url": "https://www.signalsciences.com/",
+                  "text": "\nModernize Your Application/API Protection While Lowering Your TCO. Legacy WAFs weren't designed for today's web apps that are distributed across cloud, on-premise, edge or hybrid environments. Our next-gen web application firewall (NGWAF) and runtime application self protection (RASP) increase security and maintain reliability without ...\n",
+                  "pub_date": null,
+                  "extra": null
+                },
+                {
+                  "type": "webpage",
+                  "title": "Security at Scale: Fastly Announces Intent to Acquire Signal Science",
+                  "url": "https://www.fastly.com/blog/fastly-intent-to-acquire-signal-sciences",
+                  "text": "\nSignal Sciences' technology combined with Fastly's current solutions will form Fastly's upcoming new security offering, called Secure@Edge. Secure@Edge will be a modern, unified web application and API security solution that will integrate with our Compute platform, and power and protect companies looking to further or begin their digital ...\n",
+                  "pub_date": null,
+                  "extra": null
+                },
+                {
+                  "type": "webpage",
+                  "title": "Web Application and API Protection - Signal Sciences now part of Fastly",
+                  "url": "https://www.signalsciences.com/products/",
+                  "text": "\nOur customers have spoken: Signal Sciences is the highest rated Web Application Firewalls (WAF) vendor. We were named a 2021 Gartner Peer Insights Customers' Choice for WAF based on detailed end-user testimonials. In addition, we are the only vendor to be named a Customers' Choice for three consecutive times and have an overall rating of 5 ...\n",
+                  "pub_date": null,
+                  "extra": null
+                },
+                {
+                  "type": "webpage",
+                  "title": "Fastly Completes Acquisition of Signal Sciences | Fastly",
+                  "url": "https://www.fastly.com/press/press-releases/fastly-completes-acquisition-signal-sciences",
+                  "text": "\nSAN FRANCISCO, October 1, 2020 – Fastly, Inc. (NYSE: FSLY), provider of an edge cloud platform, today announced it has successfully completed the acquisition of Signal Sciences (“Signal Sciences”). The transaction combines Signal Sciences' powerful web application and API security solutions with Fastly's edge cloud platform and existing security offerings to form a unified suite of ...\n",
+                  "pub_date": null,
+                  "extra": null
+                },
+                {
+                  "type": "webpage",
+                  "title": "Signal Sciences: Enterprises still overlooking web app security",
+                  "url": "https://www.techtarget.com/searchsecurity/news/252476659/Signal-Sciences-Enterprises-still-overlooking-web-app-security",
+                  "text": "\nRansomware threats are everywhere these days, but one startup is focusing on the most common cause behind data breaches. Signal Sciences is a Web Application Firewall (WAF) and Runtime Application Self-Protection (RASP) company that protects customers' web applications and APIs, regardless of the software architecture or deployment model used, such as on-premises, cloud, containers or hybrid ...\n",
+                  "pub_date": null,
+                  "extra": null
+                },
+                {
+                  "type": "webpage",
+                  "title": "Signal Sciences Launches Cloud WAF for Easy Web Application Security",
+                  "url": "https://www.signalsciences.com/blog/cloud-waf-web-applications/",
+                  "text": "\nToday we are proud to announce the launch of the new Signal Sciences Cloud Web Application Firewall (WAF) deployment option for our award-winning WAF and RASP solution.As the fastest growing web application security company in the world, we know organizations must quickly detect and stop web application layer attacks wherever their apps, APIs, or microservices operate—whether that be in the ...\n",
+                  "pub_date": null,
+                  "extra": null
+                },
+                {
+                  "type": "webpage",
+                  "title": "Fastly Agrees to Acquire Signal Sciences for $775 Million - Cooley",
+                  "url": "https://www.cooley.com/news/coverage/2020/2020-08-27-fastly-agrees-to-acquire-signal-sciences-for-775-million",
+                  "text": "\nSan Francisco – August 27, 2020 – Cooley advised edge cloud platform provider Fastly on its agreement to acquire Signal Sciences, one of the fastest growing web application security companies in the world, for approximately $775 million in cash and stock.The acquisition, which is expected to close this year, will expand Fastly's robust security portfolio at a time when security at the ...\n",
+                  "pub_date": null,
+                  "extra": null
+                },
+                {
+                  "type": "webpage",
+                  "title": "Signal Sciences",
+                  "url": "https://info.signalsciences.com/10-key-capabilities-of-signal-sciences",
+                  "text": "\nSignal Sciences next-gen WAF and RASP technology is designed to work quickly and effectively, enabling application developers and operations teams to deliver modern, business-critical web applications and APIs while ensuring they're well protected and running performantly.. There are many vendors claiming to provide effective and scalable offerings to protect applications and APIs, so we ...\n",
+                  "pub_date": null,
+                  "extra": null
+                },
+                {
+                  "type": "webpage",
+                  "title": "Gartner names Signal Sciences a Visionary in the 2020 Magic ... - Fastly",
+                  "url": "https://www.fastly.com/blog/gartner-names-signal-sciences-a-visionary-in-the-2020-magic-quadrant-for-waf",
+                  "text": "\nWe believe Signal Sciences' innovation earned them recognition in the 2019 Gartner Magic Quadrant for WAF, ... Gartner research publications consist of the opinions of Gartner's research organization and should not be construed as statements of fact. Gartner disclaims all warranties, express or implied, with respect to this research ...\n",
+                  "pub_date": null,
+                  "extra": null
+                },
+                {
+                  "type": "webpage",
+                  "title": "Fastly acquires Signal Sciences - 2020-08-27 - Crunchbase",
+                  "url": "https://www.crunchbase.com/acquisition/fastly-acquires-signal-sciences--2b836efb",
+                  "text": "\nSignal Sciences Signal Sciences is a software as a service platform providing security monitoring and defense for your web applications. Acquiring Organization: Fastly Fastly helps digital businesses keep pace with their customer expectations by delivering secure and online experiences. Announced Date Aug 27, 2020;\n",
+                  "pub_date": null,
+                  "extra": null
+                },
+                {
+                  "type": "webpage",
+                  "title": "Signal Sciences - Funding, Financials, Valuation & Investors - Crunchbase",
+                  "url": "https://www.crunchbase.com/organization/signal-sciences/company_financials",
+                  "text": "\nFunding. Signal Sciences has raised a total of. $61.7M. in funding over 4 rounds. Their latest funding was raised on Feb 5, 2019 from a Series C round. Signal Sciences is funded by 8 investors. CRV and Harrison Metal are the most recent investors. Signal Sciences has invested in Open Raven on Feb 11, 2020. This investment - Seed Round - Open ...\n",
+                  "pub_date": null,
+                  "extra": null
+                },
+                {
+                  "type": "webpage",
+                  "title": "Signal Sciences WAF Review and Alternatives - Comparitech",
+                  "url": "https://www.comparitech.com/net-admin/signal-sciences-waf-review/",
+                  "text": "\nSignal Sciences WAF is completely agentless as it works in the cloud to apply both managed and custom rulesets to your application traffic. Protections extend beyond the OWASP Top 10 and include defense from botnet attacks, account takeovers, credential stuffing, API abuse, and DDoS mitigation. Automatic blocking and scanning are applied to ...\n",
+                  "pub_date": null,
+                  "extra": null
+                },
+                {
+                  "type": "webpage",
+                  "title": "Integrations - Web Application Security - Signal Sciences now part of ...",
+                  "url": "https://www.signalsciences.com/integrations/",
+                  "text": "\nThe Signal Sciences site extension protects any IIS web application hosted on AAS and provides production visibility necessary to detect and block malicious web requests before they can compromise your business-critical apps, APIs and microservices. ... and efficiently into an organization's existing hybrid, or cloud architecture ...\n",
+                  "pub_date": null,
+                  "extra": null
+                },
+                {
+                  "type": "webpage",
+                  "title": "Fastly Next-Gen WAF professional services | Fastly Products",
+                  "url": "https://docs.fastly.com/products/fastly-next-gen-waf-professional-services",
+                  "text": "\nFastly Next-Gen WAF (powered by Signal Sciences) (Next-Gen WAF) professional services provide your organization with training, implementation, and maintenance services for the Next-Gen WAF. Depending on the service offerings you select, our team will provide training and work with you to plan, test, deploy, and maintain a solution to protect ...\n",
+                  "pub_date": null,
+                  "extra": null
+                },
+                {
+                  "type": "webpage",
+                  "title": "Andrew Peterson - Founder & CEO @ Signal Sciences - Crunchbase",
+                  "url": "https://www.crunchbase.com/person/andrew-peterson",
+                  "text": "\nAndrew Peterson is the founder and CEO of Signal Sciences, a Software-as-a-Service platform that provides security monitoring and defense solutions for web applications. He was previously the group product manager of international growth at Etsy. Prior to Etsy, Peterson was a health information management officer at the Clinton Foundation\n",
+                  "pub_date": null,
+                  "extra": null
+                },
+                {
+                  "type": "webpage",
+                  "title": "Signal Sciences",
+                  "url": "https://info.signalsciences.com/preventing-modern-web-app-attacks-source-defense",
+                  "text": "\nThe webinar will cover: The most common attacks targeting distributed web apps. How a web application firewall (WAF) can inspect and decision on both north-south (client-to-app origin) and east-west (service-to-service) web requests. How to detect and prevent malicious client-side activity originating from website supply chain vendors. A live ...\n",
+                  "pub_date": null,
+                  "extra": null
+                },
+                {
+                  "type": "webpage",
+                  "title": "Next-Generation Cloud Web Application Firewall (WAF) - Signal Sciences ...",
+                  "url": "https://www.signalsciences.com/products/cloud-waf/",
+                  "text": "\nWith a single change to a DNS record, web requests are routed to the Signal Sciences Cloud WAF to inspect and decision on those requests and block bad requests. Our unique solution provides robust detection and protection capabilities no matter where your organization's applications operate or how rapidly they scale. No complex software ...\n",
+                  "pub_date": null,
+                  "extra": null
+                },
+                {
+                  "type": "webpage",
+                  "title": "How to Configure SAML 2.0 for Signal Sciences - UserDocs",
+                  "url": "https://saml-doc.okta.com/SAML_Docs/How-to-Configure-SAML-2.0-for-Signal-Sciences.html",
+                  "text": "\nConfiguration Steps. Log in to Signal Sciences as an Organization Administrator. Navigate to organization > Settings.. Click the Switch to SAML button:. Click the I understand, configure SSO button:. On the Configure SSO with SAML page, enter the following:. Copy and paste the following IDP Login page into the SAML endpoint field:. Sign into the Okta Admin Dashboard to generate this variable.\n",
+                  "pub_date": null,
+                  "extra": null
+                },
+                {
+                  "type": "webpage",
+                  "title": "Powering the best of the internet | Fastly",
+                  "url": "https://www.fastly.com/",
+                  "text": "\nEverybody needs speed, reliability, security, savings, and scale – but different industries have different needs. Fastly's powerful network and smarter solutions can be tailored to your organization. We partner with you to guarantee a smooth migration, so you can deliver the best possible user experiences.\nVisible: 0% - 100%",
+                  "pub_date": null,
+                  "extra": null
+                },
+                {
+                  "type": "webpage",
+                  "title": "Search results for query: 'Signal Sciences organization'",
+                  "url": "",
+                  "text": "# 【0†Signal Sciences - Crunchbase Company Profile & Funding†www.crunchbase.com】\nFounded Date Mar 10, 2014. Founders Andrew Peterson, Nick Galbreath, Zane Lackey. Operating Status Active. Last Funding Type Series C. Legal Name Signal Sciences Corp. Company Type For Profit. Contact Email info@signalsciences.com. Phone Number +1 424-404-1139. Signal Sciences is the fastest growing web application security company in the world.\n# 【1†Demand More from Your WAF - Signal Sciences now part of Fastly†www.signalsciences.com】\nModernize Your Application/API Protection While Lowering Your TCO. Legacy WAFs weren't designed for today's web apps that are distributed across cloud, on-premise, edge or hybrid environments. Our next-gen web application firewall (NGWAF) and runtime application self protection (RASP) increase security and maintain reliability without ...\n# 【2†Security at Scale: Fastly Announces Intent to Acquire Signal Science†www.fastly.com】\nSignal Sciences' technology combined with Fastly's current solutions will form Fastly's upcoming new security offering, called Secure@Edge. Secure@Edge will be a modern, unified web application and API security solution that will integrate with our Compute platform, and power and protect companies looking to further or begin their digital ...\n# 【3†Web Application and API Protection - Signal Sciences now part of Fastly†www.signalsciences.com】\nOur customers have spoken: Signal Sciences is the highest rated Web Application Firewalls (WAF) vendor. We were named a 2021 Gartner Peer Insights Customers' Choice for WAF based on detailed end-user testimonials. In addition, we are the only vendor to be named a Customers' Choice for three consecutive times and have an overall rating of 5 ...\n# 【4†Fastly Completes Acquisition of Signal Sciences | Fastly†www.fastly.com】\nSAN FRANCISCO, October 1, 2020 – Fastly, Inc. (NYSE: FSLY), provider of an edge cloud platform, today announced it has successfully completed the acquisition of Signal Sciences (“Signal Sciences”). The transaction combines Signal Sciences' powerful web application and API security solutions with Fastly's edge cloud platform and existing security offerings to form a unified suite of ...\n# 【5†Signal Sciences: Enterprises still overlooking web app security†www.techtarget.com】\nRansomware threats are everywhere these days, but one startup is focusing on the most common cause behind data breaches. Signal Sciences is a Web Application Firewall (WAF) and Runtime Application Self-Protection (RASP) company that protects customers' web applications and APIs, regardless of the software architecture or deployment model used, such as on-premises, cloud, containers or hybrid ...\n# 【6†Signal Sciences Launches Cloud WAF for Easy Web Application Security†www.signalsciences.com】\nToday we are proud to announce the launch of the new Signal Sciences Cloud Web Application Firewall (WAF) deployment option for our award-winning WAF and RASP solution.As the fastest growing web application security company in the world, we know organizations must quickly detect and stop web application layer attacks wherever their apps, APIs, or microservices operate—whether that be in the ...\n# 【7†Fastly Agrees to Acquire Signal Sciences for $775 Million - Cooley†www.cooley.com】\nSan Francisco – August 27, 2020 – Cooley advised edge cloud platform provider Fastly on its agreement to acquire Signal Sciences, one of the fastest growing web application security companies in the world, for approximately $775 million in cash and stock.The acquisition, which is expected to close this year, will expand Fastly's robust security portfolio at a time when security at the ...\n# 【8†Signal Sciences†info.signalsciences.com】\nSignal Sciences next-gen WAF and RASP technology is designed to work quickly and effectively, enabling application developers and operations teams to deliver modern, business-critical web applications and APIs while ensuring they're well protected and running performantly.. There are many vendors claiming to provide effective and scalable offerings to protect applications and APIs, so we ...\n# 【9†Gartner names Signal Sciences a Visionary in the 2020 Magic ... - Fastly†www.fastly.com】\nWe believe Signal Sciences' innovation earned them recognition in the 2019 Gartner Magic Quadrant for WAF, ... Gartner research publications consist of the opinions of Gartner's research organization and should not be construed as statements of fact. Gartner disclaims all warranties, express or implied, with respect to this research ...\n# 【10†Fastly acquires Signal Sciences - 2020-08-27 - Crunchbase†www.crunchbase.com】\nSignal Sciences Signal Sciences is a software as a service platform providing security monitoring and defense for your web applications. Acquiring Organization: Fastly Fastly helps digital businesses keep pace with their customer expectations by delivering secure and online experiences. Announced Date Aug 27, 2020;\n# 【11†Signal Sciences - Funding, Financials, Valuation & Investors - Crunchbase†www.crunchbase.com】\nFunding. Signal Sciences has raised a total of. $61.7M. in funding over 4 rounds. Their latest funding was raised on Feb 5, 2019 from a Series C round. Signal Sciences is funded by 8 investors. CRV and Harrison Metal are the most recent investors. Signal Sciences has invested in Open Raven on Feb 11, 2020. This investment - Seed Round - Open ...\n# 【12†Signal Sciences WAF Review and Alternatives - Comparitech†www.comparitech.com】\nSignal Sciences WAF is completely agentless as it works in the cloud to apply both managed and custom rulesets to your application traffic. Protections extend beyond the OWASP Top 10 and include defense from botnet attacks, account takeovers, credential stuffing, API abuse, and DDoS mitigation. Automatic blocking and scanning are applied to ...\n# 【13†Integrations - Web Application Security - Signal Sciences now part of ...†www.signalsciences.com】\nThe Signal Sciences site extension protects any IIS web application hosted on AAS and provides production visibility necessary to detect and block malicious web requests before they can compromise your business-critical apps, APIs and microservices. ... and efficiently into an organization's existing hybrid, or cloud architecture ...\n# 【14†Fastly Next-Gen WAF professional services | Fastly Products†docs.fastly.com】\nFastly Next-Gen WAF (powered by Signal Sciences) (Next-Gen WAF) professional services provide your organization with training, implementation, and maintenance services for the Next-Gen WAF. Depending on the service offerings you select, our team will provide training and work with you to plan, test, deploy, and maintain a solution to protect ...\n# 【15†Andrew Peterson - Founder & CEO @ Signal Sciences - Crunchbase†www.crunchbase.com】\nAndrew Peterson is the founder and CEO of Signal Sciences, a Software-as-a-Service platform that provides security monitoring and defense solutions for web applications. He was previously the group product manager of international growth at Etsy. Prior to Etsy, Peterson was a health information management officer at the Clinton Foundation\n# 【16†Signal Sciences†info.signalsciences.com】\nThe webinar will cover: The most common attacks targeting distributed web apps. How a web application firewall (WAF) can inspect and decision on both north-south (client-to-app origin) and east-west (service-to-service) web requests. How to detect and prevent malicious client-side activity originating from website supply chain vendors. A live ...\n# 【17†Next-Generation Cloud Web Application Firewall (WAF) - Signal Sciences ...†www.signalsciences.com】\nWith a single change to a DNS record, web requests are routed to the Signal Sciences Cloud WAF to inspect and decision on those requests and block bad requests. Our unique solution provides robust detection and protection capabilities no matter where your organization's applications operate or how rapidly they scale. No complex software ...\n# 【18†How to Configure SAML 2.0 for Signal Sciences - UserDocs†saml-doc.okta.com】\nConfiguration Steps. Log in to Signal Sciences as an Organization Administrator. Navigate to organization > Settings.. Click the Switch to SAML button:. Click the I understand, configure SSO button:. On the Configure SSO with SAML page, enter the following:. Copy and paste the following IDP Login page into the SAML endpoint field:. Sign into the Okta Admin Dashboard to generate this variable.\n# 【19†Powering the best of the internet | Fastly†www.fastly.com】\nEverybody needs speed, reliability, security, savings, and scale – but different industries have different needs. Fastly's powerful network and smarter solutions can be tailored to your organization. We partner with you to guarantee a smooth migration, so you can deliver the best possible user experiences.\nVisible: 0% - 100%",
+                  "pub_date": null,
+                  "extra": null
+                }
+              ],
+              "original_query": null
+            },
+            "command": "search",
+            "args": ["Signal Sciences organization"],
+            "status": "finished",
+            "is_complete": true,
+            "message_type": null,
+            "model_slug": "gpt-4",
+            "parent_id": "5cc5e87b-2b74-485a-b3a7-23cb25f202db",
+            "request_id": "8594dde3b85705f4-IAD",
+            "timestamp_": "absolute"
+          },
+          "recipient": "all"
+        },
+        "parent": "5cc5e87b-2b74-485a-b3a7-23cb25f202db",
+        "children": ["4b3aec6b-5146-4bad-ae8e-204fdb6accda"]
+      },
+      "4b3aec6b-5146-4bad-ae8e-204fdb6accda": {
+        "id": "4b3aec6b-5146-4bad-ae8e-204fdb6accda",
+        "message": {
+          "id": "4b3aec6b-5146-4bad-ae8e-204fdb6accda",
+          "author": {
+            "role": "assistant",
+            "name": null,
+            "metadata": {}
+          },
+          "create_time": 1708580164.175371,
+          "update_time": null,
+          "content": {
+            "content_type": "text",
+            "parts": [
+              "Signal Sciences is a web application security company that was founded on March 10, 2014, by Andrew Peterson, Nick Galbreath, and Zane Lackey. It operates as a for-profit company with its legal name being Signal Sciences Corp. The company has achieved significant growth and is recognized as the fastest-growing web application security company in the world. Signal Sciences developed a next-gen web application firewall (NGWAF) and runtime application self-protection (RASP) technologies designed to increase security and maintain reliability without compromising the performance of modern web applications distributed across cloud, on-premise, edge, or hybrid environments【3:0†source】【3:1†source】.\n\nIn a major development, Fastly, Inc., a provider of an edge cloud platform, announced the completion of its acquisition of Signal Sciences on October 1, 2020. This acquisition was valued at approximately $775 million in cash and stock. By integrating Signal Sciences' powerful web application and API security solutions with Fastly's edge cloud platform and existing security offerings, they aimed to form a unified suite of security solutions. The merger was aimed at expanding Fastly's security portfolio, particularly at a time when digital security has become paramount for businesses operating online【3:4†source】【3:7†source】."
+            ]
+          },
+          "status": "finished_successfully",
+          "end_turn": true,
+          "weight": 1,
+          "metadata": {
+            "finish_details": {
+              "type": "stop",
+              "stop_tokens": [100260]
+            },
+            "citations": [
+              {
+                "start_ix": 674,
+                "end_ix": 686,
+                "citation_format_type": "tether_og",
+                "metadata": {
+                  "type": "webpage",
+                  "title": "Signal Sciences - Crunchbase Company Profile & Funding",
+                  "url": "https://www.crunchbase.com/organization/signal-sciences",
+                  "text": "",
+                  "pub_date": null,
+                  "extra": {
+                    "evidence_text": "source",
+                    "cited_message_idx": 3,
+                    "search_result_idx": 0
+                  }
+                }
+              },
+              {
+                "start_ix": 686,
+                "end_ix": 698,
+                "citation_format_type": "tether_og",
+                "metadata": {
+                  "type": "webpage",
+                  "title": "Demand More from Your WAF - Signal Sciences now part of Fastly",
+                  "url": "https://www.signalsciences.com/",
+                  "text": "",
+                  "pub_date": null,
+                  "extra": {
+                    "evidence_text": "source",
+                    "cited_message_idx": 3,
+                    "search_result_idx": 1
+                  }
+                }
+              },
+              {
+                "start_ix": 1306,
+                "end_ix": 1318,
+                "citation_format_type": "tether_og",
+                "metadata": {
+                  "type": "webpage",
+                  "title": "Fastly Completes Acquisition of Signal Sciences | Fastly",
+                  "url": "https://www.fastly.com/press/press-releases/fastly-completes-acquisition-signal-sciences",
+                  "text": "",
+                  "pub_date": null,
+                  "extra": {
+                    "evidence_text": "source",
+                    "cited_message_idx": 3,
+                    "search_result_idx": 4
+                  }
+                }
+              },
+              {
+                "start_ix": 1318,
+                "end_ix": 1330,
+                "citation_format_type": "tether_og",
+                "metadata": {
+                  "type": "webpage",
+                  "title": "Fastly Agrees to Acquire Signal Sciences for $775 Million - Cooley",
+                  "url": "https://www.cooley.com/news/coverage/2020/2020-08-27-fastly-agrees-to-acquire-signal-sciences-for-775-million",
+                  "text": "",
+                  "pub_date": null,
+                  "extra": {
+                    "evidence_text": "source",
+                    "cited_message_idx": 3,
+                    "search_result_idx": 7
+                  }
+                }
+              }
+            ],
+            "gizmo_id": null,
+            "is_complete": true,
+            "message_type": null,
+            "model_slug": "gpt-4",
+            "parent_id": "9e874379-5008-4a2d-aa2e-628d1d705a04",
+            "request_id": "8594dde3b85705f4-IAD",
+            "timestamp_": "absolute"
+          },
+          "recipient": "all"
+        },
+        "parent": "9e874379-5008-4a2d-aa2e-628d1d705a04",
+        "children": ["aaa27ed5-1e1c-4189-ac6c-737608404ec1"]
+      }
+    },
+    "moderation_results": [],
+    "current_node": "88a0cf9f-e860-4b34-8e7e-65f8346f4862",
+    "plugin_ids": null,
+    "conversation_id": "d6523d1e-7ec3-474f-a363-0e9dffdb3d93",
+    "conversation_template_id": null,
+    "gizmo_id": null,
+    "is_archived": false,
+    "safe_urls": [
+      "https://www.carsales.com.au/volkswagen/transporter/price/2014/tdi340-381631/",
+      "https://www.drive.com.au/reviews/volkswagen-transporter-review/",
+      "https://www.ultimatespecs.com/car-specs/volkswagen/118424/2021-volkswagen-transporter-t61-l2h1-20-tdi-110hp.html"
+    ],
+    "default_model_slug": null,
+    "id": "d6523d1e-7ec3-474f-a363-0e9dffdb3d93"
+  }
+]

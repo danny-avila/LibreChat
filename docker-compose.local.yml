@@ -1,0 +1,90 @@
+services:
+  librechat_api:
+    build:
+      context: .
+      dockerfile: Dockerfile.GovGPT.multi
+      target: api-build
+    container_name: librechat_api_local
+    restart: unless-stopped
+    environment:
+      CONFIG_PATH: /app/librechat.merged.yaml
+      BASE_CONFIG_PATH: /app/librechat.yaml
+      ADMIN_OVERLAY_PATH: /app/admin-overrides.yaml
+      HOST: 0.0.0.0
+      PORT: 3080
+      MONGO_URI: mongodb://mongodb:27017/LibreChat
+      MEILI_HOST: http://meilisearch:7700
+      RAG_API_URL: http://rag_api:8000
+      GOVGPT_ROOT: /app
+    depends_on:
+      - mongodb
+      - rag_api
+    env_file:
+      - .env
+    volumes:
+      - ./librechat.yaml:/app/librechat.yaml:ro
+      - ./librechat.merged.yaml:/app/librechat.merged.yaml:rw
+      - ./admin-overrides.yaml:/app/admin-overrides.yaml:rw
+      - ./uploads:/app/uploads
+      - ./logs:/app/api/logs
+    ports:
+      - "3080:3080"
+
+  mongodb:
+    image: mongo
+    container_name: local-mongodb
+    restart: unless-stopped
+    volumes:
+      - ./data-node:/data/db
+    command: mongod --noauth
+
+  meilisearch:
+    image: getmeili/meilisearch:v1.12.3
+    container_name: local-meilisearch
+    restart: unless-stopped
+    environment:
+      MEILI_NO_ANALYTICS: "true"
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY}
+    volumes:
+      - ./meili_data_v1.12:/meili_data
+
+  vectordb:
+    image: ankane/pgvector:latest
+    container_name: local-vectordb
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: mydatabase
+      POSTGRES_USER: myuser
+      POSTGRES_PASSWORD: mypassword
+    volumes:
+      - pgdata2:/var/lib/postgresql/data
+
+  rag_api:
+    image: ghcr.io/danny-avila/librechat-rag-api-dev:latest
+    container_name: local-rag-api
+    restart: unless-stopped
+    depends_on:
+      - vectordb
+      - ollama
+    environment:
+      DB_HOST: vectordb
+      RAG_PORT: 8000
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OLLAMA_HOST: http://ollama:11434
+    env_file:
+      - .env
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: local-ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama:/root/.ollama   # persist pulled models
+    environment:
+      - OLLAMA_DISABLE_TELEMETRY=1
+
+volumes:
+  pgdata2:
+  ollama: 

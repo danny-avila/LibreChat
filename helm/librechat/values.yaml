@@ -1,0 +1,234 @@
+# Default values for librechat.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+replicaCount: 1
+
+
+
+global:
+   # existing Secret for all envs/ only Passwords. Can be locally generated with: kubectl create secret generic librechat-secret-envs --from-env-file=.env.example --dry-run=client -o yaml > secret-envs.yaml
+   # For better maintainabillity, you can put all vars directly in the config Section and only overwrite Secrets with this if nessesary.
+   # Required Values:
+   # - MEILI_MASTER_KEY
+  librechat:
+    existingSecretName: "librechat-credentials-env"
+    # Used for Setting the Right Key, can be something like AZURE_API_KEY, if Azure OpenAI is used
+    existingSecretApiKey: OPENAI_API_KEY
+
+librechat:
+  configEnv:
+    PLUGIN_MODELS: gpt-4,gpt-4-turbo-preview,gpt-4-0125-preview,gpt-4-1106-preview,gpt-4-0613,gpt-3.5-turbo,gpt-3.5-turbo-0125,gpt-3.5-turbo-1106,gpt-3.5-turbo-0613
+    DEBUG_PLUGINS: "true"
+    # IMPORTANT -- GENERATE your own: openssl rand -hex 32 and openssl rand -hex 16 for CREDS_IV. Best Practise: Put into Secret. See gloobal.librechat.existingSecretName
+    CREDS_KEY: 9e95d9894da7e68dd69c0046caf5343c8b1e80c89609b5a1e40e6568b5b23ce6
+    CREDS_IV: ac028c86ba23f4cd48165e0ca9f2c683
+    JWT_SECRET: 16f8c0ef4a5d391b26034086c628469d3f9f497f08163ab9b40137092f2909ef
+    JWT_REFRESH_SECRET: eaa5191f2914e30b9387fd84e254e4ba6fc51b4654968a9b0803b456a54b8418
+    # Set Config Params here
+    # ENV_NAME: env-value
+
+    # existing Secret for all envs/ only Passwords. Can be locally generated with: kubectl create secret generic librechat-secret-envs --from-env-file=.env.example --dry-run=client -o yaml > secret-envs.yaml
+    # For better maintainabillity, you can put all vars directly in the config Section and only overwrite Secrets with this if nessesary.
+    # Required Values:
+    # - MEILI_MASTER_KEY
+  existingSecretName: "librechat-credentials-env"
+  
+  # For adding a custom config yaml-file you can set the contents in this var. See https://www.librechat.ai/docs/configuration/librechat_yaml/example
+  configYamlContent: ""
+  # configYamlContent: |
+  #   version: 1.0.8
+
+  #   cache: true
+
+  #   interface:
+  #     # Privacy policy settings
+  #     privacyPolicy:
+  #       externalUrl: 'https://librechat.ai/privacy-policy'
+  #       openNewTab: true
+
+  #     # Terms of service
+  #     termsOfService:
+  #       externalUrl: 'https://librechat.ai/tos'
+  #       openNewTab: true
+
+  #   registration:
+  #     socialLogins: ["discord", "facebook", "github", "google", "openid"] 
+  #   endpoints:
+  #     azureOpenAI:
+  #      # Endpoint-level configuration
+  #      titleModel: "gpt-4o"
+  #      plugins: true
+  #      assistants: true
+  #      groups:
+  #           Group-level configuration
+  #         - group: "my-resource-sweden"
+  #           apiKey: "${SWEDEN_API_KEY}"
+  #           instanceName: "my-resource-sweden"
+  #           deploymentName: gpt-4-1106-preview
+  #           version: "2024-03-01-preview"
+  #           assistants: true
+  #           # Model-level configuration
+  #           models:
+  #             gpt-4o: true
+  #     custom:
+  #       # OpenRouter.ai
+  #       - name: "OpenRouter"
+  #         apiKey: "${OPENROUTER_KEY}"
+  #         baseURL: "https://openrouter.ai/api/v1"
+  #         models:
+  #           default: ["openai/gpt-3.5-turbo"]
+  #           fetch: true
+  #         titleConvo: true
+  #         titleModel: "gpt-3.5-turbo"
+  #         summarize: false
+  #         summaryModel: "gpt-3.5-turbo"
+  #         forcePrompt: false
+  #         modelDisplayLabel: "OpenRouter"
+
+  # name of existing Yaml configmap, key must be librechat.yaml
+  existingConfigYaml: ""
+
+  # Volume used to store image Files uploaded to the Web UI
+  imageVolume:
+    enabled: true
+    size: 10G
+    accessModes: ReadWriteOnce
+    # storageClassName: 
+
+# only lite RAG is supported
+librechat-rag-api:
+  enabled: false
+  # can be azure, openai, huggingface or huggingfacetei
+  embeddingsProvider: openai
+
+
+image:
+  repository: danny-avila/librechat
+  registry: ghcr.io
+  pullPolicy: IfNotPresent
+  # Overrides the image tag whose default is the chart appVersion.
+  tag: ""
+
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+
+lifecycle: {}
+# # base for adding a custom banner // see https://github.com/danny-avila/LibreChat/pull/3952 for an example
+#   postStart:
+#     exec:
+#       command: ["/bin/sh", "-c", "npm run update-banner <displayFrom(Format: yyyy-mm-ddTHH:MM:SSZ)> <displayTo(Format: yyyy-mm-ddTHH:MM:SSZ)> <message> <isPublic(true/false)>"]
+
+
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext:
+  fsGroup: 2000
+
+securityContext:
+  capabilities:
+    drop:
+    - ALL
+  # readOnlyRootFilesystem: true # not supported yet
+  runAsNonRoot: true
+  runAsUser: 1000
+
+service:
+  type: ClusterIP
+  port: 3080
+  annotations: {}
+
+ingress:
+  enabled: true
+  className: ""
+  annotations: {}
+    # kubernetes.io/ingress.class: nginx
+    # kubernetes.io/tls-acme: "true"
+  hosts:
+    - host: chat.example.com
+      paths:
+        - path: /
+          pathType: ImplementationSpecific
+  tls: []
+  #  - secretName: chart-example-tls
+  #    hosts:
+  #      - chat.example.com
+
+resources: {}
+  # We usually recommend not to specify default resources and to leave this as a conscious
+  # choice for the user. This also increases chances charts run on environments with little
+  # resources, such as Minikube. If you do want to specify resources, uncomment the following
+  # lines, adjust them as necessary, and remove the curly braces after 'resources:'.
+  # limits:
+  #   cpu: 100m
+  #   memory: 128Mi
+  # requests:
+  #   cpu: 100m
+  #   memory: 128Mi
+
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 100
+  targetCPUUtilizationPercentage: 80
+  # targetMemoryUtilizationPercentage: 80
+
+livenessProbe:
+  httpGet:
+    path: /health
+    port: http
+readinessProbe:
+  httpGet:
+    path: /health
+    port: http
+
+# Additional volumes on the output Deployment definition.
+volumes: []
+# - name: foo
+#   secret:
+#     secretName: mysecret
+#     optional: false
+
+# Additional volumeMounts on the output Deployment definition.
+volumeMounts: []
+# - name: foo
+#   mountPath: "/etc/foo"
+#   readOnly: true
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+# Strategy for LibreChat deployment updates
+updateStrategy:
+  type: RollingUpdate
+
+# MongoDB Parameters
+mongodb:
+  enabled: true
+  auth:
+    enabled: false
+  databases:
+   - LibreChat
+#  persistence: 
+#    size: 8Gi
+
+
+meilisearch:
+  enabled: true
+  persistence:
+    enabled: true
+    storageClass: ""
+  image: 
+    tag: "v1.7.3"
+  auth:
+    # Use an existing Kubernetes secret for the MEILI_MASTER_KEY
+    existingMasterKeySecret: "librechat-credentials-env"

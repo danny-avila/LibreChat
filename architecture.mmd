@@ -1,0 +1,35 @@
+flowchart TD
+ subgraph Web_Search["Web Search Stack"]
+        searx["SearXNG 1 vCPU"]
+        firecrawl["Firecrawl API + Worker 8+ vCPUs, 16–32GB RAM"]
+        playwright["Playwright Service Headless Browser"]
+        redis["Redis Queue Minimal"]
+  end
+    user["User Interface 
+  (User Request)"] --> chat["LibreChat API Few CPUs, Moderate RAM"]
+    chat --> mongo["MongoDB Moderate CPU/RAM"] & meili["Meilisearch 
+  Fast SSD, Few CPUs"] & rag["RAG API 
+  Moderate CPU"] & llm["LLM Inference Provider 
+  (External or GPU node)"] & Web_Search
+    rag --> vectordb["Vector DB (pgvector) Moderate CPU/RAM"] & embed["Embedding Provider 
+  Small GPU"]
+    embed --> llm
+    searx --> firecrawl
+    firecrawl --> playwright & redis
+    grafana["Grafana Prometheus
+   Minimal CPU/RAM"] --> chat
+    ragas["Ragas OPIK 
+  Lightweight + Eval LLM"] --> chat
+  mcp["MCP servers 
+  variable"] --> chat
+     chat:::chatStyle
+     llm:::llmStyle
+     embed:::llmStyle
+     Web_Search:::llmStyle
+     mcp:::llmStyle
+     grafana:::llmStyle
+     ragas
+    classDef chatStyle fill:#DCEEFF,stroke:#003366,stroke-width:1px
+    classDef llmStyle fill:#FFF3D6,stroke:#CC7A00,stroke-width:1px
+
+

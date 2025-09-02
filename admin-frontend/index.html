@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" href="favicon.ico" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GovAI Admin</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module">
+      /**
+       * Pre–auth gate: try to exchange the refreshToken cookie for a JWT.
+       * If none is returned, immediately redirect to /login before the
+       * heavy React bundle begins downloading. Otherwise, lazily import
+       * the real application entry point.
+       */
+      (async () => {
+        try {
+          const res = await fetch('/api/auth/refresh', {
+            method: 'POST',
+            credentials: 'include',
+          });
+
+          // Some deployments send plain text when not logged in
+          const data = await res.json().catch(() => null);
+          const token = data?.token ?? null;
+
+          if (!token) {
+            window.location.replace('/login');
+            return;
+          }
+
+          // Token present → dynamically load the React app
+          await import('/src/main.tsx');
+        } catch (err) {
+          console.warn('[Admin pre-auth] Refresh check failed:', err);
+          window.location.replace('/login');
+        }
+      })();
+    </script>
+  </body>
+</html> 

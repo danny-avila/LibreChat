@@ -1,0 +1,8 @@
+{
+  "name": "custom",
+  "version": "1.0.0",
+  "description": "Custom extensions mount point for GovGPT LibreChat",
+  "main": "mount.js",
+  "private": true,
+  "dependencies": {}
+} 
