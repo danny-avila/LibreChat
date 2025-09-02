@@ -1,4 +1,4 @@
-const { getLLMConfig } = require('./llm');
+import { getLLMConfig } from './llm';
 
 jest.mock('https-proxy-agent', () => ({
   HttpsProxyAgent: jest.fn().mockImplementation((proxy) => ({ proxy })),
@@ -25,9 +25,9 @@ describe('getLLMConfig', () => {
     });
 
     expect(result.llmConfig.clientOptions).toHaveProperty('fetchOptions');
-    expect(result.llmConfig.clientOptions.fetchOptions).toHaveProperty('dispatcher');
-    expect(result.llmConfig.clientOptions.fetchOptions.dispatcher).toBeDefined();
-    expect(result.llmConfig.clientOptions.fetchOptions.dispatcher.constructor.name).toBe(
+    expect(result.llmConfig.clientOptions?.fetchOptions).toHaveProperty('dispatcher');
+    expect(result.llmConfig.clientOptions?.fetchOptions?.dispatcher).toBeDefined();
+    expect(result.llmConfig.clientOptions?.fetchOptions?.dispatcher.constructor.name).toBe(
       'ProxyAgent',
     );
   });
@@ -93,9 +93,10 @@ describe('getLLMConfig', () => {
     };
     const result = getLLMConfig('test-key', { modelOptions });
     const clientOptions = result.llmConfig.clientOptions;
-    expect(clientOptions.defaultHeaders).toBeDefined();
-    expect(clientOptions.defaultHeaders).toHaveProperty('anthropic-beta');
-    expect(clientOptions.defaultHeaders['anthropic-beta']).toBe(
+    expect(clientOptions?.defaultHeaders).toBeDefined();
+    expect(clientOptions?.defaultHeaders).toHaveProperty('anthropic-beta');
+    const defaultHeaders = clientOptions?.defaultHeaders as Record<string, string>;
+    expect(defaultHeaders['anthropic-beta']).toBe(
       'prompt-caching-2024-07-31,context-1m-2025-08-07',
     );
   });
@@ -111,9 +112,10 @@ describe('getLLMConfig', () => {
       const modelOptions = { model, promptCache: true };
       const result = getLLMConfig('test-key', { modelOptions });
       const clientOptions = result.llmConfig.clientOptions;
-      expect(clientOptions.defaultHeaders).toBeDefined();
-      expect(clientOptions.defaultHeaders).toHaveProperty('anthropic-beta');
-      expect(clientOptions.defaultHeaders['anthropic-beta']).toBe(
+      expect(clientOptions?.defaultHeaders).toBeDefined();
+      expect(clientOptions?.defaultHeaders).toHaveProperty('anthropic-beta');
+      const defaultHeaders = clientOptions?.defaultHeaders as Record<string, string>;
+      expect(defaultHeaders['anthropic-beta']).toBe(
         'prompt-caching-2024-07-31,context-1m-2025-08-07',
       );
     });
@@ -254,9 +256,9 @@ describe('getLLMConfig', () => {
       });
 
       expect(result.llmConfig.clientOptions).toHaveProperty('fetchOptions');
-      expect(result.llmConfig.clientOptions.fetchOptions).toHaveProperty('dispatcher');
-      expect(result.llmConfig.clientOptions.fetchOptions.dispatcher).toBeDefined();
-      expect(result.llmConfig.clientOptions.fetchOptions.dispatcher.constructor.name).toBe(
+      expect(result.llmConfig.clientOptions?.fetchOptions).toHaveProperty('dispatcher');
+      expect(result.llmConfig.clientOptions?.fetchOptions?.dispatcher).toBeDefined();
+      expect(result.llmConfig.clientOptions?.fetchOptions?.dispatcher.constructor.name).toBe(
         'ProxyAgent',
       );
       expect(result.llmConfig.clientOptions).toHaveProperty('baseURL', 'https://reverse-proxy.com');
@@ -272,7 +274,7 @@ describe('getLLMConfig', () => {
       });
 
       // claude-3-5-sonnet supports prompt caching and should get the appropriate headers
-      expect(result.llmConfig.clientOptions.defaultHeaders).toEqual({
+      expect(result.llmConfig.clientOptions?.defaultHeaders).toEqual({
         'anthropic-beta': 'max-tokens-3-5-sonnet-2024-07-15,prompt-caching-2024-07-31',
       });
     });

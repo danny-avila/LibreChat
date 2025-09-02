@@ -28,7 +28,7 @@ import { checkPromptCacheSupport, getClaudeHeaders, configureReasoning } from '.
  * @returns {Object} Configuration options for creating an Anthropic LLM instance, with null and undefined values removed.
  */
 function getLLMConfig(
-  apiKey: string,
+  apiKey?: string,
   options: AnthropicConfigOptions = {} as AnthropicConfigOptions,
 ): AnthropicLLMConfigResult {
   const systemOptions = {
