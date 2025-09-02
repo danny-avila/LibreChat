@@ -8,16 +8,8 @@ import { SearchBar } from '~/views/admin/AdminSearchBar';
 import { UserActions } from '~/views/admin/UserActions';
 import { UserUsageDialog } from '~/views/admin/UserUsageDialog';
 import { ArrowLeft } from 'lucide-react';
-import {
-  Pagination,
-  PaginationContent,
-  PaginationEllipsis,
-  PaginationItem,
-  PaginationLink,
-  PaginationNext,
-  PaginationPrevious,
-} from '~/components/ui/Pagination';
-import { cn } from '~/utils';
+import {Pagination} from '~/components/ui/Pagination';
+
 type AdminUser = {
   _id: string;
   email?: string;
@@ -49,7 +41,6 @@ export default function AdminDashboard() {
     keepPreviousData: true,
     refetchOnWindowFocus: false,
     onSuccess: () => {
-      // Reset to page 1 if current page exceeds total pages
       const totalPages = Math.ceil((usersQuery.data as any)?.total / limit) || 1;
       if (page > totalPages && page !== 1) {
         setPage(1);
@@ -120,7 +111,6 @@ export default function AdminDashboard() {
         meta: { size: '120px' },
         cell: ({ row }: any) => {
           const role = row.original.role;
-          // Force comparison to string value and ensure case is standardized
           const normalizedRole = String(role).trim();
           const isAdmin = normalizedRole.toLowerCase() === 'admin';
           const isUser = normalizedRole.toLowerCase() === 'user';
@@ -132,8 +122,8 @@ export default function AdminDashboard() {
                 isAdmin
                   ? 'bg-green-100 !text-green-700 dark:bg-green-900 dark:!text-green-300'
                   : isUser
-                    ? 'bg-blue-100 !text-blue-700 dark:bg-blue-900 dark:!text-blue-300'
-                    : 'bg-slate-100 !text-slate-700 dark:bg-slate-800 dark:!text-slate-300',
+                  ? 'bg-blue-100 !text-blue-700 dark:bg-blue-900 dark:!text-blue-300'
+                  : 'bg-slate-100 !text-slate-700 dark:bg-slate-800 dark:!text-slate-300',
               ].join(' ')}
             >
               {role}
@@ -210,72 +200,19 @@ export default function AdminDashboard() {
           enableRowSelection={false}
           showCheckboxes={false}
           onDelete={undefined}
-          //pagination={false} // Disable built-in pagination as we're handling it ourselves
         />
       </div>
 
-      
-      {/* Pagination + Showing info */}
-<div className="flex flex-col sm:flex-row items-center justify-between gap-3 border border-gray-200 rounded-md bg-white p-3 shadow-sm dark:border-gray-700 dark:bg-gray-800">
-  {/* Left: showing info */}
-  <div className="text-sm text-gray-500 dark:text-gray-400 whitespace-nowrap">
-    {data.length > 0
-      ? `Showing ${(page - 1) * limit + 1}-${Math.min(page * limit, total)} of ${total}`
-      : 'No users'}
-  </div>
-
-  {/* Right: pagination controls */}
-  {total > 0 && (
-    <Pagination>
-      <PaginationContent className="flex items-center gap-1">
-        {/* Previous */}
-        <PaginationItem>
-          <PaginationPrevious
-            onClick={() => setPage((prev) => Math.max(prev - 1, 1))}
-            className={`bg-white hover:bg-gray-100 dark:bg-gray-700 dark:hover:bg-gray-600 px-2 py-1 rounded-md ${
-              page === 1 ? 'pointer-events-none opacity-50' : ''
-            }`}
-          />
-        </PaginationItem>
-
-        {/* Page 1 */}
-        <PaginationItem>
-          <PaginationLink
-            isActive={page === 1}
-            onClick={() => setPage(1)}
-            className="bg-white hover:bg-gray-100 dark:bg-gray-700 dark:hover:bg-gray-600 px-2 py-1 rounded-md"
-          >
-            1
-          </PaginationLink>
-        </PaginationItem>
-
-        {/* Page 2 if enough pages */}
-        {Math.ceil(total / limit) >= 2 && (
-          <PaginationItem>
-            <PaginationLink
-              isActive={page === 2}
-              onClick={() => setPage(2)}
-              className="bg-white hover:bg-gray-100 dark:bg-gray-700 dark:hover:bg-gray-600 px-2 py-1 rounded-md"
-            >
-              2
-            </PaginationLink>
-          </PaginationItem>
-        )}
-
-        {/* Next */}
-        <PaginationItem>
-          <PaginationNext
-            onClick={() => setPage((prev) => Math.min(prev + 1, Math.ceil(total / limit)))}
-            className={`bg-white hover:bg-gray-100 dark:bg-gray-700 dark:hover:bg-gray-600 px-2 py-1 rounded-md ${
-              page === Math.ceil(total / limit) ? 'pointer-events-none opacity-50' : ''
-            }`}
-          />
-        </PaginationItem>
-      </PaginationContent>
-    </Pagination>
-  )}
-</div>
-
+      {/* Pagination (reusable component) */}
+      {total > 0 && (
+        <Pagination
+          page={page}
+          limit={limit}
+          total={total}
+          data={data}
+          onPageChange={setPage}
+        />
+      )}
 
       {/* Usage Dialog */}
       <UserUsageDialog
