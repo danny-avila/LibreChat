@@ -35,9 +35,10 @@ const toolAccessPermType = {
  */
 const verifyWebSearchAuth = async (req, res) => {
   try {
+    const appConfig = req.config;
     const userId = req.user.id;
     /** @type {TCustomConfig['webSearch']} */
-    const webSearchConfig = req.app.locals?.webSearch || {};
+    const webSearchConfig = appConfig?.webSearch || {};
     const result = await loadWebSearchAuth({
       userId,
       loadAuthValues,
@@ -110,6 +111,7 @@ const verifyToolAuth = async (req, res) => {
  */
 const callTool = async (req, res) => {
   try {
+    const appConfig = req.config;
     const { toolId = '' } = req.params;
     if (!fieldsMap[toolId]) {
       logger.warn(`[${toolId}/call] User ${req.user.id} attempted call to invalid tool`);
@@ -155,8 +157,10 @@ const callTool = async (req, res) => {
         returnMetadata: true,
         processFileURL,
         uploadImageBuffer,
-        fileStrategy: req.app.locals.fileStrategy,
       },
+      webSearch: appConfig.webSearch,
+      fileStrategy: appConfig.fileStrategy,
+      imageOutputType: appConfig.imageOutputType,
     });
 
     const tool = loadedTools[0];

@@ -239,4 +239,16 @@ y$ which spans lines`;
     const expected = 'Bitcoin: \\$0.00001234, Gas: \\$3.999, Rate: \\$1.234567890';
     expect(preprocessLaTeX(content)).toBe(expected);
   });
+
+  test('escapes abbreviated currency notation', () => {
+    const content = '$250k is 25% of $1M';
+    const expected = '\\$250k is 25% of \\$1M';
+    expect(preprocessLaTeX(content)).toBe(expected);
+  });
+
+  test('handles various abbreviated currency formats', () => {
+    const content = 'Revenue: $5M to $10M, funding: $1.5B, price: $5K';
+    const expected = 'Revenue: \\$5M to \\$10M, funding: \\$1.5B, price: \\$5K';
+    expect(preprocessLaTeX(content)).toBe(expected);
+  });
 });
