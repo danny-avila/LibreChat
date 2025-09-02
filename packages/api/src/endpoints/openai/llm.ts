@@ -80,6 +80,134 @@ function hasReasoningParams({
   );
 }
 
+function getOpenAILLMConfig({
+  streaming,
+  modelOptions,
+  addParams,
+  dropParams,
+}: {
+  streaming: boolean;
+  modelOptions: Partial<t.OpenAIParameters>;
+  addParams?: Record<string, unknown>;
+  dropParams?: string[];
+}): {
+  llmConfig: Partial<t.ClientOptions> & Partial<t.OpenAIParameters> & Partial<AzureOpenAIInput>;
+  tools: BindToolsInput[];
+} {
+  const { reasoning_effort, reasoning_summary, verbosity, web_search, ...restModelOptions } =
+    modelOptions;
+
+  const llmConfig = Object.assign(
+    {
+      streaming,
+      model: restModelOptions.model ?? '',
+    },
+    restModelOptions,
+  ) as Partial<t.ClientOptions> & Partial<t.OpenAIParameters> & Partial<AzureOpenAIInput>;
+
+  const modelKwargs: Record<string, unknown> = {};
+  let hasModelKwargs = false;
+
+  if (verbosity != null && verbosity !== '') {
+    modelKwargs.verbosity = verbosity;
+    hasModelKwargs = true;
+  }
+
+  if (addParams && typeof addParams === 'object') {
+    for (const [key, value] of Object.entries(addParams)) {
+      if (knownOpenAIParams.has(key)) {
+        (llmConfig as Record<string, unknown>)[key] = value;
+      } else {
+        hasModelKwargs = true;
+        modelKwargs[key] = value;
+      }
+    }
+  }
+
+  if (
+    hasReasoningParams({ reasoning_effort, reasoning_summary }) &&
+    llmConfig.useResponsesApi === true
+  ) {
+    llmConfig.reasoning = removeNullishValues(
+      {
+        effort: reasoning_effort,
+        summary: reasoning_summary,
+      },
+      true,
+    ) as OpenAI.Reasoning;
+  } else if (hasReasoningParams({ reasoning_effort })) {
+    llmConfig.reasoning_effort = reasoning_effort;
+  }
+
+  if (llmConfig.max_tokens != null) {
+    llmConfig.maxTokens = llmConfig.max_tokens;
+    delete llmConfig.max_tokens;
+  }
+
+  const tools: BindToolsInput[] = [];
+
+  if (web_search) {
+    llmConfig.useResponsesApi = true;
+    tools.push({ type: 'web_search_preview' });
+  }
+
+  /**
+   * Note: OpenAI Web Search models do not support any known parameters besides `max_tokens`
+   */
+  if (modelOptions.model && /gpt-4o.*search/.test(modelOptions.model as string)) {
+    const searchExcludeParams = [
+      'frequency_penalty',
+      'presence_penalty',
+      'reasoning',
+      'reasoning_effort',
+      'temperature',
+      'top_p',
+      'top_k',
+      'stop',
+      'logit_bias',
+      'seed',
+      'response_format',
+      'n',
+      'logprobs',
+      'user',
+    ];
+
+    const updatedDropParams = dropParams || [];
+    const combinedDropParams = [...new Set([...updatedDropParams, ...searchExcludeParams])];
+
+    combinedDropParams.forEach((param) => {
+      if (param in llmConfig) {
+        delete llmConfig[param as keyof t.ClientOptions];
+      }
+    });
+  } else if (dropParams && Array.isArray(dropParams)) {
+    dropParams.forEach((param) => {
+      if (param in llmConfig) {
+        delete llmConfig[param as keyof t.ClientOptions];
+      }
+    });
+  }
+
+  if (modelKwargs.verbosity && llmConfig.useResponsesApi === true) {
+    modelKwargs.text = { verbosity: modelKwargs.verbosity };
+    delete modelKwargs.verbosity;
+  }
+
+  if (llmConfig.model && /\bgpt-[5-9]\b/i.test(llmConfig.model) && llmConfig.maxTokens != null) {
+    const paramName =
+      llmConfig.useResponsesApi === true ? 'max_output_tokens' : 'max_completion_tokens';
+    modelKwargs[paramName] = llmConfig.maxTokens;
+    delete llmConfig.maxTokens;
+    hasModelKwargs = true;
+  }
+
+  if (hasModelKwargs) {
+    llmConfig.modelKwargs = modelKwargs;
+  }
+
+  return { llmConfig, tools };
+}
+
 /**
  * Generates configuration options for creating a language model (LLM) instance.
  * @param apiKey - The API key for authentication.
@@ -104,35 +232,13 @@ export function getOpenAIConfig(
     addParams,
     dropParams,
   } = options;
-  const { reasoning_effort, reasoning_summary, verbosity, ...modelOptions } = _modelOptions;
-  const llmConfig: Partial<t.ClientOptions> &
-    Partial<t.OpenAIParameters> &
-    Partial<AzureOpenAIInput> = Object.assign(
-    {
-      streaming,
-      model: modelOptions.model ?? '',
-    },
-    modelOptions,
-  );
 
-  const modelKwargs: Record<string, unknown> = {};
-  let hasModelKwargs = false;
-
-  if (verbosity != null && verbosity !== '') {
-    modelKwargs.verbosity = verbosity;
-    hasModelKwargs = true;
-  }
-
-  if (addParams && typeof addParams === 'object') {
-    for (const [key, value] of Object.entries(addParams)) {
-      if (knownOpenAIParams.has(key)) {
-        (llmConfig as Record<string, unknown>)[key] = value;
-      } else {
-        hasModelKwargs = true;
-        modelKwargs[key] = value;
-      }
-    }
-  }
+  const { llmConfig, tools } = getOpenAILLMConfig({
+    streaming,
+    modelOptions: _modelOptions,
+    addParams,
+    dropParams,
+  });
 
   let useOpenRouter = false;
   const configOptions: t.OpenAIConfiguration = {};
@@ -232,87 +338,6 @@ export function getOpenAIConfig(
 
   if (process.env.OPENAI_ORGANIZATION && azure) {
     configOptions.organization = process.env.OPENAI_ORGANIZATION;
-  }
-
-  if (
-    hasReasoningParams({ reasoning_effort, reasoning_summary }) &&
-    (llmConfig.useResponsesApi === true || useOpenRouter)
-  ) {
-    llmConfig.reasoning = removeNullishValues(
-      {
-        effort: reasoning_effort,
-        summary: reasoning_summary,
-      },
-      true,
-    ) as OpenAI.Reasoning;
-  } else if (hasReasoningParams({ reasoning_effort })) {
-    llmConfig.reasoning_effort = reasoning_effort;
-  }
-
-  if (llmConfig.max_tokens != null) {
-    llmConfig.maxTokens = llmConfig.max_tokens;
-    delete llmConfig.max_tokens;
-  }
-
-  const tools: BindToolsInput[] = [];
-
-  if (modelOptions.web_search) {
-    llmConfig.useResponsesApi = true;
-    tools.push({ type: 'web_search_preview' });
-  }
-
-  /**
-   * Note: OpenAI Web Search models do not support any known parameters besides `max_tokens`
-   */
-  if (modelOptions.model && /gpt-4o.*search/.test(modelOptions.model)) {
-    const searchExcludeParams = [
-      'frequency_penalty',
-      'presence_penalty',
-      'reasoning',
-      'reasoning_effort',
-      'temperature',
-      'top_p',
-      'top_k',
-      'stop',
-      'logit_bias',
-      'seed',
-      'response_format',
-      'n',
-      'logprobs',
-      'user',
-    ];
-
-    const updatedDropParams = dropParams || [];
-    const combinedDropParams = [...new Set([...updatedDropParams, ...searchExcludeParams])];
-
-    combinedDropParams.forEach((param) => {
-      if (param in llmConfig) {
-        delete llmConfig[param as keyof t.ClientOptions];
-      }
-    });
-  } else if (dropParams && Array.isArray(dropParams)) {
-    dropParams.forEach((param) => {
-      if (param in llmConfig) {
-        delete llmConfig[param as keyof t.ClientOptions];
-      }
-    });
-  }
-
-  if (modelKwargs.verbosity && llmConfig.useResponsesApi === true) {
-    modelKwargs.text = { verbosity: modelKwargs.verbosity };
-    delete modelKwargs.verbosity;
-  }
-
-  if (llmConfig.model && /\bgpt-[5-9]\b/i.test(llmConfig.model) && llmConfig.maxTokens != null) {
-    const paramName =
-      llmConfig.useResponsesApi === true ? 'max_output_tokens' : 'max_completion_tokens';
-    modelKwargs[paramName] = llmConfig.maxTokens;
-    delete llmConfig.maxTokens;
-    hasModelKwargs = true;
-  }
-
-  if (hasModelKwargs) {
-    llmConfig.modelKwargs = modelKwargs;
   }
 
   if (directEndpoint === true && configOptions?.baseURL != null) {
