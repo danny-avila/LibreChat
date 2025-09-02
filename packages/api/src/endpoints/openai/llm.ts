@@ -239,7 +239,7 @@ export function getOpenAIConfig(
     | (Partial<t.ClientOptions> & Partial<t.OpenAIParameters> & Partial<AzureOpenAIInput>)
     | AnthropicClientOptions;
   let tools: BindToolsInput[];
-
+  let isAnthropic = false;
   if (options.customParams?.defaultParamsEndpoint === EModelEndpoint.anthropic) {
     const anthropicResult = getAnthropicLLMConfig(apiKey, {
       modelOptions: _modelOptions,
@@ -248,7 +248,8 @@ export function getOpenAIConfig(
       reverseProxyUrl: options.reverseProxyUrl,
     });
     llmConfig = anthropicResult.llmConfig;
-    tools = anthropicResult.tools;
+    tools = anthropicResult.tools || [];
+    isAnthropic = true;
   } else {
     const openaiResult = getOpenAILLMConfig({
       streaming,
@@ -264,11 +265,12 @@ export function getOpenAIConfig(
   const configOptions: t.OpenAIConfiguration = {};
 
   if (
-    (reverseProxyUrl && reverseProxyUrl.includes(KnownEndpoints.openrouter)) ||
-    (endpoint && endpoint.toLowerCase().includes(KnownEndpoints.openrouter))
+    ((reverseProxyUrl && reverseProxyUrl.includes(KnownEndpoints.openrouter)) ||
+      (endpoint && endpoint.toLowerCase().includes(KnownEndpoints.openrouter))) &&
+    !isAnthropic
   ) {
     useOpenRouter = true;
-    llmConfig.include_reasoning = true;
+    (llmConfig as t.ClientOptions).include_reasoning = true;
     configOptions.baseURL = reverseProxyUrl;
     configOptions.defaultHeaders = Object.assign(
       {
@@ -323,6 +325,14 @@ export function getOpenAIConfig(
     Object.assign(llmConfig, updatedAzure);
 
     const constructAzureResponsesApi = () => {
+      if (!isAnthropic) {
+        llmConfig = llmConfig as Partial<t.ClientOptions> &
+          Partial<t.OpenAIParameters> &
+          Partial<AzureOpenAIInput>;
+      } else {
+        return;
+      }
+
       if (!llmConfig.useResponsesApi) {
         return;
       }

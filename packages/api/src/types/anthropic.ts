@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { Dispatcher } from 'undici';
 import { anthropicSchema } from 'librechat-data-provider';
 import { AnthropicClientOptions } from '@librechat/agents';
+import { BindToolsInput } from '@langchain/core/language_models/chat_models';
 
 export type AnthropicParameters = z.infer<typeof anthropicSchema>;
 
@@ -29,8 +30,5 @@ export interface AnthropicLLMConfigResult {
     };
   };
   /** Array of tools to be used */
-  tools: Array<{
-    type: string;
-    name?: string;
-  }>;
+  tools?: BindToolsInput[];
 }
