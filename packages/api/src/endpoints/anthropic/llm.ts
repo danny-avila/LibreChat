@@ -1,4 +1,4 @@
-import { ProxyAgent } from 'undici';
+import { Dispatcher, ProxyAgent } from 'undici';
 import { AnthropicClientOptions } from '@librechat/agents';
 import { anthropicSettings, removeNullishValues } from 'librechat-data-provider';
 import type {
@@ -121,7 +121,7 @@ function getLLMConfig(
     /** @type {AnthropicClientOptions} */
     llmConfig: removeNullishValues(
       requestOptions as Record<string, unknown>,
-    ) as AnthropicClientOptions,
+    ) as AnthropicClientOptions & { clientOptions?: { fetchOptions?: { dispatcher: Dispatcher } } },
   };
 }
 
