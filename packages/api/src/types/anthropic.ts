@@ -1,6 +1,7 @@
 import { z } from 'zod';
-import { AnthropicClientOptions } from '@librechat/agents';
+import { Dispatcher } from 'undici';
 import { anthropicSchema } from 'librechat-data-provider';
+import { AnthropicClientOptions } from '@librechat/agents';
 
 export type AnthropicParameters = z.infer<typeof anthropicSchema>;
 
@@ -22,7 +23,11 @@ export interface AnthropicConfigOptions {
  */
 export interface AnthropicLLMConfigResult {
   /** Configuration options for creating an Anthropic LLM instance */
-  llmConfig: AnthropicClientOptions;
+  llmConfig: AnthropicClientOptions & {
+    clientOptions?: {
+      fetchOptions?: { dispatcher: Dispatcher };
+    };
+  };
   /** Array of tools to be used */
   tools: Array<{
     type: string;
