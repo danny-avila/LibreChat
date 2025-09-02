@@ -358,17 +358,34 @@ const setAuthTokens = async (userId, res, sessionId = null) => {
       
       // Only log login for new sessions, not refreshes
       if (!sessionId) {
-        const last = await UserActivityLog.findOne({ user: userId, action: 'LOGIN' })
-          .sort({ timestamp: -1 })
-          .lean();
+        // Get the most recent login and logout events
+        const [lastLogin, lastLogout] = await Promise.all([
+          UserActivityLog.findOne({ user: userId, action: 'LOGIN' })
+            .sort({ timestamp: -1 })
+            .lean(),
+          UserActivityLog.findOne({ 
+            user: userId, 
+            action: 'LOGOUT',
+            timestamp: { $exists: true }
+          })
+            .sort({ timestamp: -1 })
+            .lean()
+        ]);
 
-        // Only log if last login was more than 5 minutes ago
-        if (!last || Date.now() - new Date(last.timestamp).getTime() > 5 * 60 * 1000) {
+        // Log login if:
+        // 1. No previous login found, OR
+        // 2. Last logout is more recent than last login, OR
+        // 3. Last login was more than 5 minutes ago
+        const shouldLogLogin = !lastLogin || 
+          (lastLogout && new Date(lastLogout.timestamp) > new Date(lastLogin.timestamp)) ||
+          (Date.now() - new Date(lastLogin.timestamp).getTime() > 5 * 60 * 1000);
+
+        if (shouldLogLogin) {
           await logAndBroadcastActivity(userId, 'LOGIN');
           logger.info(`[setAuthTokens] Login activity logged for user: ${userId}`);
         } else {
           logger.debug(
-            `[setAuthTokens] Skipped duplicate LOGIN log for user: ${userId} (within 5m window)`
+            `[setAuthTokens] Skipped duplicate LOGIN log for user: ${userId} (within 5m window or no logout detected)`
           );
         }
       } else {

@@ -47,46 +47,120 @@ function mapURI(uri) {
 }
 
 if (REDIS_URI && isEnabled(USE_REDIS)) {
-  let redisOptions = null;
+  const redisOptions = {
+    // Enable auto-reconnection
+    retryStrategy: (times) => {
+      const delay = Math.min(times * 100, 5000); // Max 5 seconds delay
+      logger.warn(`[Redis] Reconnecting in ${delay}ms...`);
+      return delay;
+    },
+    // Reconnect on error
+    reconnectOnError: (err) => {
+      logger.error('[Redis] Reconnect on error:', err.message);
+      return true; // Reconnect on any error
+    },
+    // Enable keep-alive
+    keepAlive: 10000, // 10 seconds
+    // Connection timeout
+    connectTimeout: 10000, // 10 seconds
+    // Max retries per request
+    maxRetriesPerRequest: 3,
+    // Enable offline queue
+    enableOfflineQueue: true,
+    // Auto-resend unfulfilled commands
+    autoResendUnfulfilledCommands: true,
+  };
 
-  if (REDIS_CA) {
-    const ca = fs.readFileSync(REDIS_CA);
-    redisOptions = { tls: { ca } };
-  }
+  try {
+    if (isEnabled(USE_REDIS_CLUSTER)) {
+      // Cluster configuration
+      const nodes = REDIS_URI.split(',').map(uri => {
+        const { host, port } = mapURI(uri.trim());
+        return { host, port: parseInt(port) };
+      });
+      
+      ioredisClient = new Redis.Cluster(nodes, {
+        ...redisOptions,
+        scaleReads: 'slave',
+        redisOptions: {
+          ...redisOptions,
+          password: mapURI(REDIS_URI).password,
+          tls: REDIS_CA ? { ca: [fs.readFileSync(REDIS_CA)] } : undefined,
+        },
+      });
+    } else {
+      // Single instance configuration
+      const { host, port, password } = mapURI(REDIS_URI);
+      ioredisClient = new Redis({
+        ...redisOptions,
+        host,
+        port: parseInt(port),
+        password,
+        tls: REDIS_CA ? { ca: [fs.readFileSync(REDIS_CA)] } : undefined,
+      });
+    }
 
-  if (isEnabled(USE_REDIS_CLUSTER)) {
-    const hosts = REDIS_URI.split(',').map((item) => {
-      var value = mapURI(item);
-
-      return {
-        host: value.host,
-        port: value.port,
-      };
+    // Event listeners
+    ioredisClient.on('connect', () => {
+      logger.info('[Redis] Connected to Redis server');
     });
-    ioredisClient = new Redis.Cluster(hosts, { redisOptions });
-  } else {
-    ioredisClient = new Redis(REDIS_URI, redisOptions);
-  }
 
-  ioredisClient.on('ready', () => {
-    logger.info('IoRedis connection ready');
-  });
-  ioredisClient.on('reconnecting', () => {
-    logger.info('IoRedis connection reconnecting');
-  });
-  ioredisClient.on('end', () => {
-    logger.info('IoRedis connection ended');
-  });
-  ioredisClient.on('close', () => {
-    logger.info('IoRedis connection closed');
-  });
-  ioredisClient.on('error', (err) => logger.error('IoRedis connection error:', err));
-  ioredisClient.setMaxListeners(redis_max_listeners);
-  logger.info(
-    '[Optional] IoRedis initialized for rate limiters. If you have issues, disable Redis or restart the server.',
-  );
+    ioredisClient.on('ready', () => {
+      logger.info('[Redis] Redis client is ready');
+    });
+
+    ioredisClient.on('error', (err) => {
+      logger.error('[Redis] Error:', err);
+    });
+
+    ioredisClient.on('reconnecting', () => {
+      logger.warn('[Redis] Reconnecting to Redis...');
+    });
+
+    // Set max listeners
+    ioredisClient.setMaxListeners(redis_max_listeners);
+    logger.info('[Optional] Redis initialized. If you have issues, or seeing older values, disable it or flush cache to refresh values.');
+  } catch (error) {
+    logger.error('[Redis] Failed to initialize Redis client:', error);
+    // Don't crash the app if Redis fails to initialize
+    ioredisClient = null;
+  }
 } else {
   logger.info('[Optional] IoRedis not initialized for rate limiters.');
+}
+
+// Initialize health check
+if (ioredisClient) {
+  // Import and start health check
+  const redisHealth = require('./redisHealth');
+  
+  // Add error handler for unhandled rejections
+  process.on('unhandledRejection', (reason, promise) => {
+    if (reason.message && reason.message.includes('ETIMEDOUT')) {
+      logger.warn('[Redis] Unhandled timeout, attempting to reconnect...');
+      ioredisClient.disconnect();
+      ioredisClient.connect().catch(err => {
+        logger.error('[Redis] Reconnection attempt failed:', err.message);
+      });
+    }
+  });
+
+  // Graceful shutdown
+  const shutdown = async () => {
+    try {
+      logger.info('[Redis] Closing connection...');
+      await ioredisClient.quit();
+      logger.info('[Redis] Connection closed');
+      process.exit(0);
+    } catch (error) {
+      logger.error('[Redis] Error during shutdown:', error);
+      process.exit(1);
+    }
+  };
+
+  // Handle process termination
+  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', shutdown);
 }
 
 module.exports = ioredisClient;
