@@ -88,6 +88,10 @@ export default function ToolCall({
       const url = new URL(authURL);
       return url.hostname;
     } catch (e) {
+      logger.error(
+        'client/src/components/Chat/Messages/Content/ToolCall.tsx - Failed to parse auth URL',
+        e,
+      );
       return '';
     }
   }, [auth]);

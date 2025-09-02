@@ -31,6 +31,7 @@ const { getAssistant } = require('~/models/Assistant');
 const { getAgent } = require('~/models/Agent');
 const { getLogStores } = require('~/cache');
 const { logger } = require('~/config');
+const { Readable } = require('stream');
 
 const router = express.Router();
 
@@ -184,6 +185,7 @@ router.delete('/', async (req, res) => {
         role: req.user.role,
         fileIds: nonOwnedFileIds,
         agentId: req.body.agent_id,
+        isDelete: true,
       });
 
       for (const file of nonOwnedFiles) {
@@ -325,11 +327,6 @@ router.get('/download/:userId/:file_id', fileAccess, async (req, res) => {
       res.setHeader('X-File-Metadata', JSON.stringify(file));
     };
 
-    /** @type {{ body: import('stream').PassThrough } | undefined} */
-    let passThrough;
-    /** @type {ReadableStream | undefined} */
-    let fileStream;
-
     if (checkOpenAIStorage(file.source)) {
       req.body = { model: file.model };
       const endpointMap = {
@@ -342,12 +339,19 @@ router.get('/download/:userId/:file_id', fileAccess, async (req, res) => {
         overrideEndpoint: endpointMap[file.source],
       });
       logger.debug(`Downloading file ${file_id} from OpenAI`);
-      passThrough = await getDownloadStream(file_id, openai);
+      const passThrough = await getDownloadStream(file_id, openai);
       setHeaders();
       logger.debug(`File ${file_id} downloaded from OpenAI`);
-      passThrough.body.pipe(res);
+
+      // Handle both Node.js and Web streams
+      const stream =
+        passThrough.body && typeof passThrough.body.getReader === 'function'
+          ? Readable.fromWeb(passThrough.body)
+          : passThrough.body;
+
+      stream.pipe(res);
     } else {
-      fileStream = await getDownloadStream(req, file.filepath);
+      const fileStream = await getDownloadStream(req, file.filepath);
 
       fileStream.on('error', (streamError) => {
         logger.error('[DOWNLOAD ROUTE] Stream error:', streamError);

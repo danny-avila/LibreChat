@@ -6,12 +6,11 @@ import { Constants, QueryKeys } from 'librechat-data-provider';
 import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
 import type { TUpdateUserPlugins } from 'librechat-data-provider';
 import ServerInitializationSection from '~/components/MCP/ServerInitializationSection';
-import { useMCPConnectionStatusQuery } from '~/data-provider/Tools/queries';
 import CustomUserVarsSection from '~/components/MCP/CustomUserVarsSection';
 import { MCPPanelProvider, useMCPPanelContext } from '~/Providers';
+import { useLocalize, useMCPConnectionStatus } from '~/hooks';
 import { useGetStartupConfig } from '~/data-provider';
 import MCPPanelSkeleton from './MCPPanelSkeleton';
-import { useLocalize } from '~/hooks';
 
 function MCPPanelContent() {
   const localize = useLocalize();
@@ -19,7 +18,10 @@ function MCPPanelContent() {
   const { showToast } = useToastContext();
   const { conversationId } = useMCPPanelContext();
   const { data: startupConfig, isLoading: startupConfigLoading } = useGetStartupConfig();
-  const { data: connectionStatusData } = useMCPConnectionStatusQuery();
+  const { connectionStatus } = useMCPConnectionStatus({
+    enabled: !!startupConfig?.mcpServers && Object.keys(startupConfig.mcpServers).length > 0,
+  });
+
   const [selectedServerNameForEditing, setSelectedServerNameForEditing] = useState<string | null>(
     null,
   );
@@ -56,11 +58,6 @@ function MCPPanelContent() {
       },
     }));
   }, [startupConfig?.mcpServers]);
-
-  const connectionStatus = useMemo(
-    () => connectionStatusData?.connectionStatus || {},
-    [connectionStatusData?.connectionStatus],
-  );
 
   const handleServerClickToEdit = (serverName: string) => {
     setSelectedServerNameForEditing(serverName);
@@ -125,7 +122,7 @@ function MCPPanelContent() {
       );
     }
 
-    const serverStatus = connectionStatus[selectedServerNameForEditing];
+    const serverStatus = connectionStatus?.[selectedServerNameForEditing];
 
     return (
       <div className="h-auto max-w-full space-y-4 overflow-x-hidden py-2">
@@ -170,7 +167,7 @@ function MCPPanelContent() {
       <div className="h-auto max-w-full overflow-x-hidden py-2">
         <div className="space-y-2">
           {mcpServerDefinitions.map((server) => {
-            const serverStatus = connectionStatus[server.serverName];
+            const serverStatus = connectionStatus?.[server.serverName];
             const isConnected = serverStatus?.connectionState === 'connected';
 
             return (

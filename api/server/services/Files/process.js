@@ -616,7 +616,7 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
 
     if (shouldUseSTT) {
       const sttService = await STTService.getInstance();
-      const { text, bytes } = await processAudioFile({ file, sttService });
+      const { text, bytes } = await processAudioFile({ req, file, sttService });
       return await createTextFile({ text, bytes });
     }
 
@@ -646,8 +646,8 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
       req,
       file,
       file_id,
-      entity_id,
       basePath,
+      entity_id,
     });
 
     // SECOND: Upload to Vector DB
@@ -670,17 +670,18 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
       req,
       file,
       file_id,
-      entity_id,
       basePath,
+      entity_id,
     });
   }
 
-  const { bytes, filename, filepath: _filepath, height, width } = storageResult;
+  let { bytes, filename, filepath: _filepath, height, width } = storageResult;
   // For RAG files, use embedding result; for others, use storage result
-  const embedded =
-    tool_resource === EToolResources.file_search
-      ? embeddingResult?.embedded
-      : storageResult.embedded;
+  let embedded = storageResult.embedded;
+  if (tool_resource === EToolResources.file_search) {
+    embedded = embeddingResult?.embedded;
+    filename = embeddingResult?.filename || filename;
+  }
 
   let filepath = _filepath;
 
@@ -929,6 +930,7 @@ async function saveBase64Image(
   url,
   { req, file_id: _file_id, filename: _filename, endpoint, context, resolution },
 ) {
+  const appConfig = req.config;
   const effectiveResolution = resolution ?? appConfig.fileConfig?.imageGeneration ?? 'high';
   const file_id = _file_id ?? v4();
   let filename = `${file_id}-${_filename}`;
@@ -943,7 +945,6 @@ async function saveBase64Image(
   }
 
   const image = await resizeImageBuffer(inputBuffer, effectiveResolution, endpoint);
-  const appConfig = req.config;
   const source = getFileStrategy(appConfig, { isImage: true });
   const { saveBuffer } = getStrategyFunctions(source);
   const filepath = await saveBuffer({

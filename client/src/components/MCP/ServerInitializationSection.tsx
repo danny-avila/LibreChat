@@ -1,8 +1,8 @@
 import React from 'react';
 import { RefreshCw } from 'lucide-react';
 import { Button, Spinner } from '@librechat/client';
-import { useMCPServerManager } from '~/hooks/MCP/useMCPServerManager';
-import { useLocalize } from '~/hooks';
+import { useLocalize, useMCPServerManager, useMCPConnectionStatus } from '~/hooks';
+import { useGetStartupConfig } from '~/data-provider';
 
 interface ServerInitializationSectionProps {
   sidePanel?: boolean;
@@ -21,16 +21,15 @@ export default function ServerInitializationSection({
 }: ServerInitializationSectionProps) {
   const localize = useLocalize();
 
-  const {
-    initializeServer,
-    connectionStatus,
-    cancelOAuthFlow,
-    isInitializing,
-    isCancellable,
-    getOAuthUrl,
-  } = useMCPServerManager({ conversationId });
+  const { initializeServer, cancelOAuthFlow, isInitializing, isCancellable, getOAuthUrl } =
+    useMCPServerManager({ conversationId });
 
-  const serverStatus = connectionStatus[serverName];
+  const { data: startupConfig } = useGetStartupConfig();
+  const { connectionStatus } = useMCPConnectionStatus({
+    enabled: !!startupConfig?.mcpServers && Object.keys(startupConfig.mcpServers).length > 0,
+  });
+
+  const serverStatus = connectionStatus?.[serverName];
   const isConnected = serverStatus?.connectionState === 'connected';
   const canCancel = isCancellable(serverName);
   const isServerInitializing = isInitializing(serverName);

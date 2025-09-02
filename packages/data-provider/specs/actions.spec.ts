@@ -15,6 +15,7 @@ import {
   getWeatherOpenapiSpec,
   whimsicalOpenapiSpec,
   scholarAIOpenapiSpec,
+  formOpenAPISpec,
   swapidev,
 } from './openapiSpecs';
 import { AuthorizationTypeEnum, AuthTypeEnum } from '../src/types/agents';
@@ -960,6 +961,34 @@ describe('openapiToFunction', () => {
 
     expect(requestBuilders).toHaveProperty('GetCurrentWeather');
     expect(requestBuilders.GetCurrentWeather).toBeInstanceOf(ActionRequest);
+    expect(requestBuilders.GetCurrentWeather.contentType).toBe('application/json');
+  });
+
+  it('preserves OpenAPI spec content-type', () => {
+    const { functionSignatures, requestBuilders } = openapiToFunction(formOpenAPISpec);
+    expect(functionSignatures.length).toBe(1);
+    expect(functionSignatures[0].name).toBe('SubmitForm');
+
+    const parameters = functionSignatures[0].parameters as ParametersSchema & {
+      properties: {
+        'entry.123': {
+          type: 'string';
+        };
+        'entry.456': {
+          type: 'string';
+        };
+      };
+    };
+
+    expect(parameters).toBeDefined();
+    expect(parameters.properties['entry.123']).toBeDefined();
+    expect(parameters.properties['entry.123'].type).toBe('string');
+    expect(parameters.properties['entry.456']).toBeDefined();
+    expect(parameters.properties['entry.456'].type).toBe('string');
+
+    expect(requestBuilders).toHaveProperty('SubmitForm');
+    expect(requestBuilders.SubmitForm).toBeInstanceOf(ActionRequest);
+    expect(requestBuilders.SubmitForm.contentType).toBe('application/x-www-form-urlencoded');
   });
 
   describe('openapiToFunction with $ref resolution', () => {

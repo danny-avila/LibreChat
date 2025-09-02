@@ -7,6 +7,7 @@ const {
   createRun,
   Tokenizer,
   checkAccess,
+  resolveHeaders,
   getBalanceConfig,
   memoryInstructions,
   formatContentStrings,
@@ -879,6 +880,16 @@ class AgentClient extends BaseClient {
           memoryPromise = this.runMemory(messages);
         }
 
+        /** Resolve request-based headers for Custom Endpoints. Note: if this is added to
+         *  non-custom endpoints, needs consideration of varying provider header configs.
+         */
+        if (agent.model_parameters?.configuration?.defaultHeaders != null) {
+          agent.model_parameters.configuration.defaultHeaders = resolveHeaders({
+            headers: agent.model_parameters.configuration.defaultHeaders,
+            body: config.configurable.requestBody,
+          });
+        }
+
         run = await createRun({
           agent,
           req: this.options.req,
@@ -1179,6 +1190,20 @@ class AgentClient extends BaseClient {
         endpointConfig?.titleMethod === TitleMethod.STRUCTURED)
     ) {
       clientOptions.json = true;
+    }
+
+    /** Resolve request-based headers for Custom Endpoints. Note: if this is added to
+     *  non-custom endpoints, needs consideration of varying provider header configs.
+     */
+    if (clientOptions?.configuration?.defaultHeaders != null) {
+      clientOptions.configuration.defaultHeaders = resolveHeaders({
+        headers: clientOptions.configuration.defaultHeaders,
+        body: {
+          messageId: this.responseMessageId,
+          conversationId: this.conversationId,
+          parentMessageId: this.parentMessageId,
+        },
+      });
     }
 
     try {
