@@ -2,10 +2,10 @@ const axios = require('axios');
 const fs = require('fs').promises;
 const FormData = require('form-data');
 const { Readable } = require('stream');
+const { logger } = require('@librechat/data-schemas');
 const { genAzureEndpoint } = require('@librechat/api');
 const { extractEnvVariable, STTProviders } = require('librechat-data-provider');
-const { getCustomConfig } = require('~/server/services/Config');
-const { logger } = require('~/config');
+const { getAppConfig } = require('~/server/services/Config');
 
 /**
  * Maps MIME types to their corresponding file extensions for audio files.
@@ -84,12 +84,7 @@ function getFileExtensionFromMime(mimeType) {
  * @class
  */
 class STTService {
-  /**
-   * Creates an instance of STTService.
-   * @param {Object} customConfig - The custom configuration object.
-   */
-  constructor(customConfig) {
-    this.customConfig = customConfig;
+  constructor() {
     this.providerStrategies = {
       [STTProviders.OPENAI]: this.openAIProvider,
       [STTProviders.AZURE_OPENAI]: this.azureOpenAIProvider,
@@ -104,21 +99,22 @@ class STTService {
    * @throws {Error} If the custom config is not found.
    */
   static async getInstance() {
-    const customConfig = await getCustomConfig();
-    if (!customConfig) {
-      throw new Error('Custom config not found');
-    }
-    return new STTService(customConfig);
+    return new STTService();
   }
 
   /**
    * Retrieves the configured STT provider and its schema.
+   * @param {ServerRequest} req - The request object.
    * @returns {Promise<[string, Object]>} A promise that resolves to an array containing the provider name and its schema.
    * @throws {Error} If no STT schema is set, multiple providers are set, or no provider is set.
    */
-  async getProviderSchema() {
-    const sttSchema = this.customConfig.speech.stt;
-
+  async getProviderSchema(req) {
+    const appConfig =
+      req.config ??
+      (await getAppConfig({
+        role: req?.user?.role,
+      }));
+    const sttSchema = appConfig?.speech?.stt;
     if (!sttSchema) {
       throw new Error(
         'No STT schema is set. Did you configure STT in the custom config (librechat.yaml)?',
@@ -274,7 +270,7 @@ class STTService {
    * @param {Object} res - The response object.
    * @returns {Promise<void>}
    */
-  async processTextToSpeech(req, res) {
+  async processSpeechToText(req, res) {
     if (!req.file) {
       return res.status(400).json({ message: 'No audio file provided in the FormData' });
     }
@@ -287,7 +283,7 @@ class STTService {
     };
 
     try {
-      const [provider, sttSchema] = await this.getProviderSchema();
+      const [provider, sttSchema] = await this.getProviderSchema(req);
       const text = await this.sttRequest(provider, sttSchema, { audioBuffer, audioFile });
       res.json({ text });
     } catch (error) {
@@ -297,7 +293,7 @@ class STTService {
       try {
         await fs.unlink(req.file.path);
         logger.debug('[/speech/stt] Temp. audio upload file deleted');
-      } catch (error) {
+      } catch {
         logger.debug('[/speech/stt] Temp. audio upload file already deleted');
       }
     }
@@ -322,7 +318,7 @@ async function createSTTService() {
  */
 async function speechToText(req, res) {
   const sttService = await createSTTService();
-  await sttService.processTextToSpeech(req, res);
+  await sttService.processSpeechToText(req, res);
 }
 
-module.exports = { speechToText };
+module.exports = { STTService, speechToText };

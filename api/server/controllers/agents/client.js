@@ -7,6 +7,8 @@ const {
   createRun,
   Tokenizer,
   checkAccess,
+  resolveHeaders,
+  getBalanceConfig,
   memoryInstructions,
   formatContentStrings,
   createMemoryProcessor,
@@ -446,8 +448,8 @@ class AgentClient extends BaseClient {
       );
       return;
     }
-    /** @type {TCustomConfig['memory']} */
-    const memoryConfig = this.options.req?.app?.locals?.memory;
+    const appConfig = this.options.req.config;
+    const memoryConfig = appConfig.memory;
     if (!memoryConfig || memoryConfig.disabled === true) {
       return;
     }
@@ -455,7 +457,7 @@ class AgentClient extends BaseClient {
     /** @type {Agent} */
     let prelimAgent;
     const allowedProviders = new Set(
-      this.options.req?.app?.locals?.[EModelEndpoint.agents]?.allowedProviders,
+      appConfig?.endpoints?.[EModelEndpoint.agents]?.allowedProviders,
     );
     try {
       if (memoryConfig.agent?.id != null && memoryConfig.agent.id !== this.options.agent.id) {
@@ -577,8 +579,8 @@ class AgentClient extends BaseClient {
       if (this.processMemory == null) {
         return;
       }
-      /** @type {TCustomConfig['memory']} */
-      const memoryConfig = this.options.req?.app?.locals?.memory;
+      const appConfig = this.options.req.config;
+      const memoryConfig = appConfig.memory;
       const messageWindowSize = memoryConfig?.messageWindowSize ?? 5;
 
       let messagesToProcess = [...messages];
@@ -620,9 +622,15 @@ class AgentClient extends BaseClient {
    * @param {Object} params
    * @param {string} [params.model]
    * @param {string} [params.context='message']
+   * @param {AppConfig['balance']} [params.balance]
    * @param {UsageMetadata[]} [params.collectedUsage=this.collectedUsage]
    */
-  async recordCollectedUsage({ model, context = 'message', collectedUsage = this.collectedUsage }) {
+  async recordCollectedUsage({
+    model,
+    balance,
+    context = 'message',
+    collectedUsage = this.collectedUsage,
+  }) {
     if (!collectedUsage || !collectedUsage.length) {
       return;
     }
@@ -644,6 +652,7 @@ class AgentClient extends BaseClient {
 
       const txMetadata = {
         context,
+        balance,
         conversationId: this.conversationId,
         user: this.user ?? this.options.req.user?.id,
         endpointTokenConfig: this.options.endpointTokenConfig,
@@ -761,8 +770,9 @@ class AgentClient extends BaseClient {
         abortController = new AbortController();
       }
 
-      /** @type {TCustomConfig['endpoints']['agents']} */
-      const agentsEConfig = this.options.req.app.locals[EModelEndpoint.agents];
+      const appConfig = this.options.req.config;
+      /** @type {AppConfig['endpoints']['agents']} */
+      const agentsEConfig = appConfig.endpoints?.[EModelEndpoint.agents];
 
       config = {
         configurable: {
@@ -868,6 +878,16 @@ class AgentClient extends BaseClient {
 
         if (i === 0) {
           memoryPromise = this.runMemory(messages);
+        }
+
+        /** Resolve request-based headers for Custom Endpoints. Note: if this is added to
+         *  non-custom endpoints, needs consideration of varying provider header configs.
+         */
+        if (agent.model_parameters?.configuration?.defaultHeaders != null) {
+          agent.model_parameters.configuration.defaultHeaders = resolveHeaders({
+            headers: agent.model_parameters.configuration.defaultHeaders,
+            body: config.configurable.requestBody,
+          });
         }
 
         run = await createRun({
@@ -1030,7 +1050,8 @@ class AgentClient extends BaseClient {
           this.artifactPromises.push(...attachments);
         }
 
-        await this.recordCollectedUsage({ context: 'message' });
+        const balanceConfig = getBalanceConfig(appConfig);
+        await this.recordCollectedUsage({ context: 'message', balance: balanceConfig });
       } catch (err) {
         logger.error(
           '[api/server/controllers/agents/client.js #chatCompletion] Error recording collected usage',
@@ -1071,6 +1092,7 @@ class AgentClient extends BaseClient {
     }
     const { handleLLMEnd, collected: collectedMetadata } = createMetadataAggregator();
     const { req, res, agent } = this.options;
+    const appConfig = req.config;
     let endpoint = agent.endpoint;
 
     /** @type {import('@librechat/agents').ClientOptions} */
@@ -1078,11 +1100,13 @@ class AgentClient extends BaseClient {
       model: agent.model || agent.model_parameters.model,
     };
 
-    let titleProviderConfig = await getProviderConfig(endpoint);
+    let titleProviderConfig = getProviderConfig({ provider: endpoint, appConfig });
 
     /** @type {TEndpoint | undefined} */
     const endpointConfig =
-      req.app.locals.all ?? req.app.locals[endpoint] ?? titleProviderConfig.customEndpointConfig;
+      appConfig.endpoints?.all ??
+      appConfig.endpoints?.[endpoint] ??
+      titleProviderConfig.customEndpointConfig;
     if (!endpointConfig) {
       logger.warn(
         '[api/server/controllers/agents/client.js #titleConvo] Error getting endpoint config',
@@ -1091,7 +1115,10 @@ class AgentClient extends BaseClient {
 
     if (endpointConfig?.titleEndpoint && endpointConfig.titleEndpoint !== endpoint) {
       try {
-        titleProviderConfig = await getProviderConfig(endpointConfig.titleEndpoint);
+        titleProviderConfig = getProviderConfig({
+          provider: endpointConfig.titleEndpoint,
+          appConfig,
+        });
         endpoint = endpointConfig.titleEndpoint;
       } catch (error) {
         logger.warn(
@@ -1100,7 +1127,7 @@ class AgentClient extends BaseClient {
         );
         // Fall back to original provider config
         endpoint = agent.endpoint;
-        titleProviderConfig = await getProviderConfig(endpoint);
+        titleProviderConfig = getProviderConfig({ provider: endpoint, appConfig });
       }
     }
 
@@ -1165,6 +1192,20 @@ class AgentClient extends BaseClient {
       clientOptions.json = true;
     }
 
+    /** Resolve request-based headers for Custom Endpoints. Note: if this is added to
+     *  non-custom endpoints, needs consideration of varying provider header configs.
+     */
+    if (clientOptions?.configuration?.defaultHeaders != null) {
+      clientOptions.configuration.defaultHeaders = resolveHeaders({
+        headers: clientOptions.configuration.defaultHeaders,
+        body: {
+          messageId: this.responseMessageId,
+          conversationId: this.conversationId,
+          parentMessageId: this.parentMessageId,
+        },
+      });
+    }
+
     try {
       const titleResult = await this.run.generateTitle({
         provider,
@@ -1203,10 +1244,12 @@ class AgentClient extends BaseClient {
         };
       });
 
+      const balanceConfig = getBalanceConfig(appConfig);
       await this.recordCollectedUsage({
-        model: clientOptions.model,
-        context: 'title',
         collectedUsage,
+        context: 'title',
+        model: clientOptions.model,
+        balance: balanceConfig,
       }).catch((err) => {
         logger.error(
           '[api/server/controllers/agents/client.js #titleConvo] Error recording collected usage',
@@ -1225,17 +1268,26 @@ class AgentClient extends BaseClient {
    * @param {object} params
    * @param {number} params.promptTokens
    * @param {number} params.completionTokens
-   * @param {OpenAIUsageMetadata} [params.usage]
    * @param {string} [params.model]
+   * @param {OpenAIUsageMetadata} [params.usage]
+   * @param {AppConfig['balance']} [params.balance]
    * @param {string} [params.context='message']
    * @returns {Promise<void>}
    */
-  async recordTokenUsage({ model, promptTokens, completionTokens, usage, context = 'message' }) {
+  async recordTokenUsage({
+    model,
+    usage,
+    balance,
+    promptTokens,
+    completionTokens,
+    context = 'message',
+  }) {
     try {
       await spendTokens(
         {
           model,
           context,
+          balance,
           conversationId: this.conversationId,
           user: this.user ?? this.options.req.user?.id,
           endpointTokenConfig: this.options.endpointTokenConfig,
@@ -1252,6 +1304,7 @@ class AgentClient extends BaseClient {
         await spendTokens(
           {
             model,
+            balance,
             context: 'reasoning',
             conversationId: this.conversationId,
             user: this.user ?? this.options.req.user?.id,

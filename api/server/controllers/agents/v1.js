@@ -5,6 +5,7 @@ const { logger } = require('@librechat/data-schemas');
 const { agentCreateSchema, agentUpdateSchema } = require('@librechat/api');
 const {
   Tools,
+  Constants,
   SystemRoles,
   FileSources,
   ResourceType,
@@ -69,9 +70,9 @@ const createAgentHandler = async (req, res) => {
     for (const tool of tools) {
       if (availableTools[tool]) {
         agentData.tools.push(tool);
-      }
-
-      if (systemTools[tool]) {
+      } else if (systemTools[tool]) {
+        agentData.tools.push(tool);
+      } else if (tool.includes(Constants.mcp_delimiter)) {
         agentData.tools.push(tool);
       }
     }
@@ -487,6 +488,7 @@ const getListAgentsHandler = async (req, res) => {
  */
 const uploadAgentAvatarHandler = async (req, res) => {
   try {
+    const appConfig = req.config;
     filterFile({ req, file: req.file, image: true, isAvatar: true });
     const { agent_id } = req.params;
     if (!agent_id) {
@@ -510,9 +512,7 @@ const uploadAgentAvatarHandler = async (req, res) => {
     }
 
     const buffer = await fs.readFile(req.file.path);
-
-    const fileStrategy = getFileStrategy(req.app.locals, { isAvatar: true });
-
+    const fileStrategy = getFileStrategy(appConfig, { isAvatar: true });
     const resizedBuffer = await resizeAvatar({
       userId: req.user.id,
       input: buffer,
