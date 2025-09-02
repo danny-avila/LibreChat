@@ -1,6 +1,6 @@
+const { getLLMConfig } = require('@librechat/api');
 const { EModelEndpoint } = require('librechat-data-provider');
 const { getUserKey, checkUserKeyExpiry } = require('~/server/services/UserService');
-const { getLLMConfig } = require('~/server/services/Endpoints/anthropic/llm');
 const AnthropicClient = require('~/app/clients/AnthropicClient');
 
 const initializeClient = async ({ req, res, endpointOption, overrideModel, optionsOnly }) => {
