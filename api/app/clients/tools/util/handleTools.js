@@ -15,6 +15,7 @@ const {
   OpenWeather,
   StructuredSD,
   StructuredACS,
+  StructuredWPPACS,
   TraversaalSearch,
   StructuredWolfram,
   createYouTubeTools,
@@ -155,6 +156,7 @@ const loadTools = async ({
     wolfram: StructuredWolfram,
     'stable-diffusion': StructuredSD,
     'azure-ai-search': StructuredACS,
+    'woodland-ai-search': StructuredWPPACS,
     traversaal_search: TraversaalSearch,
     tavily_search_results_json: TavilySearchResults,
   };
@@ -235,6 +237,7 @@ const loadTools = async ({
   /** @type {Record<string, string>} */
   const toolContextMap = {};
   const cachedTools = (await getCachedTools({ userId: user, includeGlobal: true })) ?? {};
+
   const requestedMCPTools = {};
 
   for (const tool of tools) {

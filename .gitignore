@@ -138,3 +138,5 @@ helm/**/.values.yaml
 /.tabnine/
 /.codeium
 *.local.md
+postgres/
+redis/
