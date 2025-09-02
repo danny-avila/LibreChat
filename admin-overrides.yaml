@@ -1,0 +1,19 @@
+endpoints:
+  agents:
+    allowedProviders:
+      - openAI
+      - Local
+      - UbiOps
+      - Mistral
+    capabilities:
+      - file_search
+      - web_search
+      - chain
+balance:
+  enabled: true
+  autoRefillEnabled: false
+interface:
+  runCode: false
+  customWelcome: Welkom bij KWINK!
+  parameters: true
+  multiConvo: false

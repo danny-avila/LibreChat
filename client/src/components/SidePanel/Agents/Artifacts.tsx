@@ -1,15 +1,15 @@
 import { useFormContext } from 'react-hook-form';
 import { ArtifactModes, AgentCapabilities } from 'librechat-data-provider';
-import type { AgentForm } from '~/common';
 import {
   Switch,
   HoverCard,
   HoverCardPortal,
   HoverCardContent,
   HoverCardTrigger,
-} from '~/components/ui';
+  CircleHelpIcon,
+} from '@librechat/client';
+import type { AgentForm } from '~/common';
 import { useLocalize } from '~/hooks';
-import { CircleHelpIcon } from '~/components/svg';
 import { ESide } from '~/common';
 
 export default function Artifacts() {

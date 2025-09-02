@@ -1,12 +1,12 @@
 import { memo } from 'react';
+import { Spinner } from '@librechat/client';
 import { useParams } from 'react-router-dom';
+import { buildTree } from 'librechat-data-provider';
 import { useGetSharedMessages } from 'librechat-data-provider/react-query';
 import { useLocalize, useDocumentTitle } from '~/hooks';
 import { useGetStartupConfig } from '~/data-provider';
 import { ShareContext } from '~/Providers';
-import { Spinner } from '~/components/svg';
 import MessagesView from './MessagesView';
-import { buildTree } from '~/utils';
 import Footer from '../Chat/Footer';
 
 function SharedView() {

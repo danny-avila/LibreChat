@@ -1,0 +1,53 @@
+# Raw MCP server configurations used as input to MCPServersRegistry constructor
+# These configs test different code paths in the initialization process
+
+# Test OAuth detection with URL - should trigger fetchOAuthRequirement
+oauth_server:
+  type: "streamable-http"
+  url: "https://api.github.com/mcp"
+  headers:
+    Authorization: "Bearer {{GITHUB_TOKEN}}"
+  serverInstructions: true
+
+# Test OAuth already specified - should skip OAuth detection
+oauth_predefined:
+  type: "sse"
+  url: "https://api.example.com/sse"
+  requiresOAuth: true
+  oauthMetadata:
+    authorization_url: "https://example.com/oauth/authorize"
+    token_url: "https://example.com/oauth/token"
+
+# Test stdio server without URL - should set requiresOAuth to false
+stdio_server:
+  command: "node"
+  args: ["server.js"]
+  env:
+    API_KEY: "${TEST_API_KEY}"
+  startup: true
+  serverInstructions: "Follow these instructions for stdio server"
+
+# Test websocket server with capabilities but no tools
+websocket_server:
+  type: "websocket"
+  url: "ws://localhost:3001/mcp"
+  startup: true
+
+# Test server with startup disabled - should not be included in appServerConfigs
+disabled_server:
+  type: "streamable-http"
+  url: "https://api.disabled.com/mcp"
+  startup: false
+
+# Test non-OAuth server - should be included in appServerConfigs
+non_oauth_server:
+  type: "streamable-http"
+  url: "https://api.public.com/mcp"
+  requiresOAuth: false
+  serverInstructions: true
+
+# Test server with OAuth but startup enabled - should not be in appServerConfigs
+oauth_startup_enabled:
+  type: "sse"
+  url: "https://api.oauth-startup.com/sse"
+  requiresOAuth: true

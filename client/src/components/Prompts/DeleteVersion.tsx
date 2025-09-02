@@ -1,9 +1,10 @@
+import React, { useCallback } from 'react';
 import { Trash2 } from 'lucide-react';
-import { Button, OGDialog, OGDialogTrigger, Label } from '~/components/ui';
-import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
+import { useDeletePrompt } from '~/data-provider';
+import { Button, OGDialog, OGDialogTrigger, Label, OGDialogTemplate } from '@librechat/client';
 import { useLocalize } from '~/hooks';
 
-const DeleteVersion = ({
+const DeleteConfirmDialog = ({
   name,
   disabled,
   selectHandler,
@@ -59,4 +60,42 @@ const DeleteVersion = ({
   );
 };
 
-export default DeleteVersion;
+interface DeletePromptProps {
+  promptId?: string;
+  groupId: string;
+  promptName: string;
+  disabled: boolean;
+}
+
+const DeletePrompt = React.memo(
+  ({ promptId, groupId, promptName, disabled }: DeletePromptProps) => {
+    const deletePromptMutation = useDeletePrompt();
+
+    const handleDelete = useCallback(() => {
+      if (!promptId) {
+        console.warn('No prompt ID provided for deletion');
+        return;
+      }
+      deletePromptMutation.mutate({
+        _id: promptId,
+        groupId,
+      });
+    }, [promptId, groupId, deletePromptMutation]);
+
+    if (!promptId) {
+      return null;
+    }
+
+    return (
+      <DeleteConfirmDialog
+        name={promptName}
+        disabled={disabled || !promptId}
+        selectHandler={handleDelete}
+      />
+    );
+  },
+);
+
+DeletePrompt.displayName = 'DeletePrompt';
+
+export default DeletePrompt;

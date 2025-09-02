@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
+import { Switch, useToastContext } from '@librechat/client';
 import { useGetUserQuery, useUpdateMemoryPreferencesMutation } from '~/data-provider';
-import { useToastContext } from '~/Providers';
-import { Switch } from '~/components/ui';
 import { useLocalize } from '~/hooks';
 
 interface PersonalizationProps {

@@ -22,7 +22,7 @@ const getLogStores = require('~/cache/getLogStores');
 
 /**
  * @typedef {Object} ErrorHandlerDependencies
- * @property {Express.Request} req - The Express request object
+ * @property {ServerRequest} req - The Express request object
  * @property {Express.Response} res - The Express response object
  * @property {() => ErrorHandlerContext} getContext - Function to get the current context
  * @property {string} [originPath] - The origin path for the error handler
@@ -108,7 +108,7 @@ const createErrorHandler = ({ req, res, getContext, originPath = '/assistants/ch
         return res.end();
       }
       await cache.delete(cacheKey);
-      const cancelledRun = await openai.beta.threads.runs.cancel(thread_id, run_id);
+      const cancelledRun = await openai.beta.threads.runs.cancel(run_id, { thread_id });
       logger.debug(`[${originPath}] Cancelled run:`, cancelledRun);
     } catch (error) {
       logger.error(`[${originPath}] Error cancelling run`, error);
@@ -118,7 +118,7 @@ const createErrorHandler = ({ req, res, getContext, originPath = '/assistants/ch
 
     let run;
     try {
-      run = await openai.beta.threads.runs.retrieve(thread_id, run_id);
+      run = await openai.beta.threads.runs.retrieve(run_id, { thread_id });
       await recordUsage({
         ...run.usage,
         model: run.model,

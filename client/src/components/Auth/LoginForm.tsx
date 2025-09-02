@@ -1,11 +1,11 @@
-import { useForm } from 'react-hook-form';
 import React, { useState, useEffect, useContext } from 'react';
+import { useForm } from 'react-hook-form';
 import { Turnstile } from '@marsidev/react-turnstile';
+import { ThemeContext, Spinner, Button } from '@librechat/client';
 import type { TLoginUser, TStartupConfig } from 'librechat-data-provider';
 import type { TAuthContext } from '~/common';
 import { useResendVerificationEmail, useGetStartupConfig } from '~/data-provider';
-import { ThemeContext, useLocalize } from '~/hooks';
-import { Spinner, Button } from '~/components';
+import { useLocalize } from '~/hooks';
 
 type TLoginFormProps = {
   onSubmit: (data: TLoginUser) => void;
@@ -125,7 +125,10 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, 
               aria-label={localize('com_auth_password')}
               {...register('password', {
                 required: localize('com_auth_password_required'),
-                minLength: { value: 8, message: localize('com_auth_password_min_length') },
+                minLength: {
+                  value: startupConfig?.minPasswordLength || 8,
+                  message: localize('com_auth_password_min_length'),
+                },
                 maxLength: { value: 128, message: localize('com_auth_password_max_length') },
               })}
               aria-invalid={!!errors.password}

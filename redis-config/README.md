@@ -174,6 +174,15 @@ REDIS_KEY_PREFIX=librechat
 
 # Connection limits
 REDIS_MAX_LISTENERS=40
+
+# Ping interval to keep connection alive (seconds, 0 to disable)
+REDIS_PING_INTERVAL=0
+
+# Reconnection configuration
+REDIS_RETRY_MAX_DELAY=3000      # Max delay between reconnection attempts (ms)
+REDIS_RETRY_MAX_ATTEMPTS=10     # Max reconnection attempts (0 = infinite)
+REDIS_CONNECT_TIMEOUT=10000     # Connection timeout (ms)
+REDIS_ENABLE_OFFLINE_QUEUE=true # Queue commands when disconnected
 ```
 
 ## TLS/SSL Redis Setup

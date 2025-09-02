@@ -1,12 +1,12 @@
 import { useForm } from 'react-hook-form';
 import React, { useContext, useState } from 'react';
 import { Turnstile } from '@marsidev/react-turnstile';
+import { ThemeContext, Spinner, Button } from '@librechat/client';
 import { useNavigate, useOutletContext, useLocation } from 'react-router-dom';
 import { useRegisterUserMutation } from 'librechat-data-provider/react-query';
 import type { TRegisterUser, TError } from 'librechat-data-provider';
-import { useLocalize, TranslationKeys, ThemeContext } from '~/hooks';
 import type { TLoginLayoutContext } from '~/common';
-import { Spinner, Button } from '~/components';
+import { useLocalize, TranslationKeys } from '~/hooks';
 import { ErrorMessage } from './ErrorMessage';
 
 const Registration: React.FC = () => {
@@ -165,7 +165,7 @@ const Registration: React.FC = () => {
             {renderInput('password', 'com_auth_password', 'password', {
               required: localize('com_auth_password_required'),
               minLength: {
-                value: 8,
+                value: startupConfig?.minPasswordLength || 8,
                 message: localize('com_auth_password_min_length'),
               },
               maxLength: {

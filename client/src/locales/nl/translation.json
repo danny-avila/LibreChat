@@ -4,7 +4,7 @@
   "com_a11y_ai_composing": "De AI is nog bezig met het formuleren van een antwoord.",
   "com_a11y_end": "De AI is klaar met het antwoord.",
   "com_a11y_start": "De AI is begonnen met antwoorden.",
-  "com_agents_allow_editing": "Sta sndere gebruikers toe om je agent te bewerken",
+  "com_agents_all": "Alle Agents",
   "com_agents_by_librechat": "door LibreChat",
   "com_agents_code_interpreter": "Indien ingeschakeld, kan je agent de LibreChat Code Interpreter API gebruiken om gegenereerde code, inclusief het verwerken van bestanden, veilig uit te voeren. Vereist een geldige API-sleutel.",
   "com_agents_code_interpreter_title": "Code Interpreter API",
@@ -351,6 +351,5 @@
   "com_ui_terms_and_conditions": "Gebruiksvoorwaarden",
   "com_ui_unarchive": "Uit archiveren",
   "com_ui_unarchive_error": "Kan conversatie niet uit archiveren",
-  "com_ui_upload_success": "Bestand succesvol geüpload",
-  "com_ui_use_prompt": "Gebruik prompt"
+  "com_ui_upload_success": "Bestand succesvol geüpload"
 }

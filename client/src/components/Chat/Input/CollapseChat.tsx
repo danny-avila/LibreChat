@@ -1,6 +1,6 @@
 import React from 'react';
+import { TooltipAnchor } from '@librechat/client';
 import { ChevronDown, ChevronUp } from 'lucide-react';
-import { TooltipAnchor } from '~/components/ui';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 

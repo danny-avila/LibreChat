@@ -1,10 +1,8 @@
 import { useMemo } from 'react';
+import { OGDialog, DialogTemplate, useToastContext } from '@librechat/client';
 import type { TTermsOfService } from 'librechat-data-provider';
 import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
-import DialogTemplate from '~/components/ui/DialogTemplate';
 import { useAcceptTermsMutation } from '~/data-provider';
-import { useToastContext } from '~/Providers';
-import { OGDialog } from '~/components/ui';
 import { useLocalize } from '~/hooks';
 
 const TermsAndConditionsModal = ({
@@ -73,7 +71,7 @@ const TermsAndConditionsModal = ({
         main={
           <section
             // Motivation: This is a dialog, so its content should be focusable
-            // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex
+
             tabIndex={0}
             className="max-h-[60vh] overflow-y-auto p-4"
             aria-label={localize('com_ui_terms_and_conditions')}

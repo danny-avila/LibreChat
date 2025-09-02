@@ -361,6 +361,18 @@ export function convertJsonSchemaToZod(
     const shape: Record<string, z.ZodType> = {};
     const properties = schema.properties ?? {};
 
+    /** Check if this is a bare object schema with no properties defined
+    and no explicit additionalProperties setting */
+    const isBareObjectSchema =
+      Object.keys(properties).length === 0 &&
+      schema.additionalProperties === undefined &&
+      !schema.patternProperties &&
+      !schema.propertyNames &&
+      !schema.$ref &&
+      !schema.allOf &&
+      !schema.anyOf &&
+      !schema.oneOf;
+
     for (const [key, value] of Object.entries(properties)) {
       // Handle nested oneOf/anyOf if transformOneOfAnyOf is enabled
       if (transformOneOfAnyOf) {
@@ -436,8 +448,9 @@ export function convertJsonSchemaToZod(
     }
 
     // Handle additionalProperties for open-ended objects
-    if (schema.additionalProperties === true) {
+    if (schema.additionalProperties === true || isBareObjectSchema) {
       // This allows any additional properties with any type
+      // Bare object schemas are treated as passthrough to allow dynamic properties
       zodSchema = objectSchema.passthrough();
     } else if (typeof schema.additionalProperties === 'object') {
       // For specific additional property types

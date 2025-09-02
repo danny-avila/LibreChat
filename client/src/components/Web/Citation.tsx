@@ -1,8 +1,12 @@
-import { memo, useState, useContext } from 'react';
+import { memo, useState, useContext, useCallback } from 'react';
+import { useRecoilValue } from 'recoil';
+import { useToastContext } from '@librechat/client';
 import type { CitationProps } from './types';
 import { SourceHovercard, FaviconImage, getCleanDomain } from '~/components/Web/SourceHovercard';
 import { CitationContext, useCitation, useCompositeCitations } from './Context';
+import { useFileDownload } from '~/data-provider';
 import { useLocalize } from '~/hooks';
+import store from '~/store';
 
 interface CompositeCitationProps {
   citationId?: string;
@@ -114,6 +118,8 @@ interface CitationComponentProps {
 
 export function Citation(props: CitationComponentProps) {
   const localize = useLocalize();
+  const user = useRecoilValue(store.user);
+  const { showToast } = useToastContext();
   const { citation, citationId } = props.node?.properties ?? {};
   const { setHoveredCitationId } = useContext(CitationContext);
   const refData = useCitation({
@@ -121,6 +127,59 @@ export function Citation(props: CitationComponentProps) {
     refType: citation?.refType,
     index: citation?.index || 0,
   });
+
+  // Setup file download hook
+  const isFileType = refData?.refType === 'file' && (refData as any)?.fileId;
+  const isLocalFile = isFileType && (refData as any)?.metadata?.storageType === 'local';
+  const { refetch: downloadFile } = useFileDownload(
+    user?.id ?? '',
+    isFileType && !isLocalFile ? (refData as any).fileId : '',
+  );
+
+  const handleFileDownload = useCallback(
+    async (e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      if (!isFileType || !(refData as any)?.fileId) return;
+
+      // Don't allow download for local files
+      if (isLocalFile) {
+        showToast({
+          status: 'error',
+          message: localize('com_sources_download_local_unavailable'),
+        });
+        return;
+      }
+
+      try {
+        const stream = await downloadFile();
+        if (stream.data == null || stream.data === '') {
+          console.error('Error downloading file: No data found');
+          showToast({
+            status: 'error',
+            message: localize('com_ui_download_error'),
+          });
+          return;
+        }
+        const link = document.createElement('a');
+        link.href = stream.data;
+        link.setAttribute('download', (refData as any).fileName || 'file');
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(stream.data);
+      } catch (error) {
+        console.error('Error downloading file:', error);
+        showToast({
+          status: 'error',
+          message: localize('com_ui_download_error'),
+        });
+      }
+    },
+    [downloadFile, isFileType, isLocalFile, refData, localize, showToast],
+  );
+
   if (!refData) return null;
 
   const getCitationLabel = () => {
@@ -138,6 +197,9 @@ export function Citation(props: CitationComponentProps) {
       label={getCitationLabel()}
       onMouseEnter={() => setHoveredCitationId(citationId || null)}
       onMouseLeave={() => setHoveredCitationId(null)}
+      onClick={isFileType && !isLocalFile ? handleFileDownload : undefined}
+      isFile={isFileType}
+      isLocalFile={isLocalFile}
     />
   );
 }

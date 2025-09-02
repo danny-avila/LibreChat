@@ -1,8 +1,8 @@
 import React, { useMemo } from 'react';
+import { OGDialog, OGDialogTemplate } from '@librechat/client';
+import { ImageUpIcon, FileSearch, TerminalSquareIcon, FileType2Icon } from 'lucide-react';
 import { EToolResources, defaultAgentCapabilities } from 'librechat-data-provider';
-import { FileSearch, ImageUpIcon, FileType2Icon, TerminalSquareIcon } from 'lucide-react';
 import { useLocalize, useGetAgentsConfig, useAgentCapabilities } from '~/hooks';
-import { OGDialog, OGDialogTemplate } from '~/components/ui';
 
 interface DragDropModalProps {
   onOptionSelect: (option: EToolResources | undefined) => void;

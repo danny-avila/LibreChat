@@ -197,7 +197,7 @@ const deleteAssistant = async (req, res) => {
     await validateAuthor({ req, openai });
 
     const assistant_id = req.params.id;
-    const deletionStatus = await openai.beta.assistants.del(assistant_id);
+    const deletionStatus = await openai.beta.assistants.delete(assistant_id);
     if (deletionStatus?.deleted) {
       await deleteAssistantActions({ req, assistant_id });
     }
@@ -258,8 +258,9 @@ function filterAssistantDocs({ documents, userId, assistantsConfig = {} }) {
  */
 const getAssistantDocuments = async (req, res) => {
   try {
+    const appConfig = req.config;
     const endpoint = req.query;
-    const assistantsConfig = req.app.locals[endpoint];
+    const assistantsConfig = appConfig.endpoints?.[endpoint];
     const documents = await getAssistants(
       {},
       {
@@ -296,6 +297,7 @@ const getAssistantDocuments = async (req, res) => {
  */
 const uploadAssistantAvatar = async (req, res) => {
   try {
+    const appConfig = req.config;
     filterFile({ req, file: req.file, image: true, isAvatar: true });
     const { assistant_id } = req.params;
     if (!assistant_id) {
@@ -337,7 +339,7 @@ const uploadAssistantAvatar = async (req, res) => {
     const metadata = {
       ..._metadata,
       avatar: image.filepath,
-      avatar_source: req.app.locals.fileStrategy,
+      avatar_source: appConfig.fileStrategy,
     };
 
     const promises = [];
@@ -347,7 +349,7 @@ const uploadAssistantAvatar = async (req, res) => {
         {
           avatar: {
             filepath: image.filepath,
-            source: req.app.locals.fileStrategy,
+            source: appConfig.fileStrategy,
           },
           user: req.user.id,
         },
@@ -365,7 +367,7 @@ const uploadAssistantAvatar = async (req, res) => {
     try {
       await fs.unlink(req.file.path);
       logger.debug('[/:agent_id/avatar] Temp. image upload file deleted');
-    } catch (error) {
+    } catch {
       logger.debug('[/:agent_id/avatar] Temp. image upload file already deleted');
     }
   }

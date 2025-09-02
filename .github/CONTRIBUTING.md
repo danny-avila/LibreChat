@@ -147,7 +147,7 @@ Apply the following naming conventions to branches, labels, and other Git-relate
 ## 8. Module Import Conventions
 
 - `npm` packages first, 
-     - from shortest line (top) to longest (bottom)
+     - from longest line (top) to shortest (bottom)
 
 - Followed by typescript types (pertains to data-provider and client workspaces)
      - longest line (top) to shortest (bottom)
@@ -156,6 +156,8 @@ Apply the following naming conventions to branches, labels, and other Git-relate
 - Lastly, local imports
      - longest line (top) to shortest (bottom)
      - imports with alias `~` treated the same as relative import with respect to line length
+
+**Note:** ESLint will automatically enforce these import conventions when you run `npm run lint --fix` or through pre-commit hooks.
 
 ---
 

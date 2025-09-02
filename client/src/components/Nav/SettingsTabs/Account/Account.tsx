@@ -7,7 +7,7 @@ import BackupCodesItem from './BackupCodesItem';
 import { useAuthContext } from '~/hooks';
 
 function Account() {
-  const user = useAuthContext();
+  const { user } = useAuthContext();
 
   return (
     <div className="flex flex-col gap-3 p-1 text-sm text-text-primary">
@@ -17,12 +17,12 @@ function Account() {
       <div className="pb-3">
         <Avatar />
       </div>
-      {user?.user?.provider === 'local' && (
+      {user?.provider === 'local' && (
         <>
           <div className="pb-3">
             <EnableTwoFactorItem />
           </div>
-          {user?.user?.twoFactorEnabled && (
+          {user?.twoFactorEnabled && (
             <div className="pb-3">
               <BackupCodesItem />
             </div>

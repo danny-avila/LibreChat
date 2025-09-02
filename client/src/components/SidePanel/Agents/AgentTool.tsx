@@ -4,13 +4,21 @@ import { ChevronDown } from 'lucide-react';
 import { useFormContext } from 'react-hook-form';
 import * as AccordionPrimitive from '@radix-ui/react-accordion';
 import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
+import {
+  Accordion,
+  AccordionItem,
+  AccordionContent,
+  TrashIcon,
+  CircleHelpIcon,
+  OGDialog,
+  OGDialogTrigger,
+  Label,
+  Checkbox,
+  OGDialogTemplate,
+  useToastContext,
+} from '@librechat/client';
 import type { AgentToolType } from 'librechat-data-provider';
 import type { AgentForm } from '~/common';
-import { Accordion, AccordionItem, AccordionContent } from '~/components/ui/Accordion';
-import { OGDialog, OGDialogTrigger, Label, Checkbox } from '~/components/ui';
-import { TrashIcon, CircleHelpIcon } from '~/components/svg';
-import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
-import { useToastContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 

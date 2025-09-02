@@ -2,19 +2,25 @@ import React, { useCallback, useState } from 'react';
 import { useSetRecoilState } from 'recoil';
 import { SmartphoneIcon } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import {
+  OGDialog,
+  useToastContext,
+  OGDialogContent,
+  OGDialogHeader,
+  OGDialogTitle,
+  Progress,
+} from '@librechat/client';
 import type { TUser, TVerify2FARequest } from 'librechat-data-provider';
-import { OGDialog, OGDialogContent, OGDialogHeader, OGDialogTitle, Progress } from '~/components';
-import { SetupPhase, QRPhase, VerifyPhase, BackupPhase, DisablePhase } from './TwoFactorPhases';
-import { DisableTwoFactorToggle } from './DisableTwoFactorToggle';
-import { useAuthContext, useLocalize } from '~/hooks';
-import { useToastContext } from '~/Providers';
-import store from '~/store';
 import {
   useConfirmTwoFactorMutation,
   useDisableTwoFactorMutation,
   useEnableTwoFactorMutation,
   useVerifyTwoFactorMutation,
 } from '~/data-provider';
+import { SetupPhase, QRPhase, VerifyPhase, BackupPhase, DisablePhase } from './TwoFactorPhases';
+import { DisableTwoFactorToggle } from './DisableTwoFactorToggle';
+import { useAuthContext, useLocalize } from '~/hooks';
+import store from '~/store';
 
 export type Phase = 'setup' | 'qr' | 'verify' | 'backup' | 'disable';
 
@@ -33,8 +39,8 @@ const TwoFactorAuthentication: React.FC = () => {
   const [secret, setSecret] = useState<string>('');
   const [otpauthUrl, setOtpauthUrl] = useState<string>('');
   const [downloaded, setDownloaded] = useState<boolean>(false);
-  const [disableToken, setDisableToken] = useState<string>('');
   const [backupCodes, setBackupCodes] = useState<string[]>([]);
+  const [_disableToken, setDisableToken] = useState<string>('');
   const [isDialogOpen, setDialogOpen] = useState<boolean>(false);
   const [verificationToken, setVerificationToken] = useState<string>('');
   const [phase, setPhase] = useState<Phase>(user?.twoFactorEnabled ? 'disable' : 'setup');
@@ -160,32 +166,26 @@ const TwoFactorAuthentication: React.FC = () => {
         payload.token = token.trim();
       }
 
-      verify2FAMutate(payload, {
+      disable2FAMutate(payload, {
         onSuccess: () => {
-          disable2FAMutate(undefined, {
-            onSuccess: () => {
-              showToast({ message: localize('com_ui_2fa_disabled') });
-              setDialogOpen(false);
-              setUser(
-                (prev) =>
-                  ({
-                    ...prev,
-                    totpSecret: '',
-                    backupCodes: [],
-                    twoFactorEnabled: false,
-                  }) as TUser,
-              );
-              setPhase('setup');
-              setOtpauthUrl('');
-            },
-            onError: () =>
-              showToast({ message: localize('com_ui_2fa_disable_error'), status: 'error' }),
-          });
+          showToast({ message: localize('com_ui_2fa_disabled') });
+          setDialogOpen(false);
+          setUser(
+            (prev) =>
+              ({
+                ...prev,
+                totpSecret: '',
+                backupCodes: [],
+                twoFactorEnabled: false,
+              }) as TUser,
+          );
+          setPhase('setup');
+          setOtpauthUrl('');
         },
         onError: () => showToast({ message: localize('com_ui_2fa_invalid'), status: 'error' }),
       });
     },
-    [verify2FAMutate, disable2FAMutate, showToast, localize, setUser],
+    [disable2FAMutate, showToast, localize, setUser],
   );
 
   return (

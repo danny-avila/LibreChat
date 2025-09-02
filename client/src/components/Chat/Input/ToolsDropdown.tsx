@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { Globe, Settings, Settings2, TerminalSquareIcon } from 'lucide-react';
+import { TooltipAnchor, DropdownPopup, PinIcon, VectorIcon } from '@librechat/client';
 import type { MenuItemProps } from '~/common';
 import {
   AuthType,
@@ -9,11 +10,10 @@ import {
   PermissionTypes,
   defaultAgentCapabilities,
 } from 'librechat-data-provider';
-import { TooltipAnchor, DropdownPopup } from '~/components';
 import { useLocalize, useHasAccess, useAgentCapabilities } from '~/hooks';
 import ArtifactsSubMenu from '~/components/Chat/Input/ArtifactsSubMenu';
 import MCPSubMenu from '~/components/Chat/Input/MCPSubMenu';
-import { PinIcon, VectorIcon } from '~/components/svg';
+import { useGetStartupConfig } from '~/data-provider';
 import { useBadgeRowContext } from '~/Providers';
 import { cn } from '~/utils';
 
@@ -27,15 +27,17 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
   const [isPopoverActive, setIsPopoverActive] = useState(false);
   const {
     webSearch,
-    mcpSelect,
     artifacts,
     fileSearch,
     agentsConfig,
-    startupConfig,
+    mcpServerNames,
+    conversationId,
     codeApiKeyForm,
     codeInterpreter,
     searchApiKeyForm,
   } = useBadgeRowContext();
+  const { data: startupConfig } = useGetStartupConfig();
+
   const { codeEnabled, webSearchEnabled, artifactsEnabled, fileSearchEnabled } =
     useAgentCapabilities(agentsConfig?.capabilities ?? defaultAgentCapabilities);
 
@@ -55,12 +57,6 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
   } = codeInterpreter;
   const { isPinned: isFileSearchPinned, setIsPinned: setIsFileSearchPinned } = fileSearch;
   const { isPinned: isArtifactsPinned, setIsPinned: setIsArtifactsPinned } = artifacts;
-  const {
-    mcpValues,
-    mcpServerNames,
-    isPinned: isMCPPinned,
-    setIsPinned: setIsMCPPinned,
-  } = mcpSelect;
 
   const canUseWebSearch = useHasAccess({
     permissionType: PermissionTypes.WEB_SEARCH,
@@ -69,6 +65,11 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
 
   const canRunCode = useHasAccess({
     permissionType: PermissionTypes.RUN_CODE,
+    permission: Permissions.USE,
+  });
+
+  const canUseFileSearch = useHasAccess({
+    permissionType: PermissionTypes.FILE_SEARCH,
     permission: Permissions.USE,
   });
 
@@ -125,22 +126,11 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
     }
   }, [artifacts]);
 
-  const handleMCPToggle = useCallback(
-    (serverName: string) => {
-      const currentValues = mcpSelect.mcpValues ?? [];
-      const newValues = currentValues.includes(serverName)
-        ? currentValues.filter((v) => v !== serverName)
-        : [...currentValues, serverName];
-      mcpSelect.setMCPValues(newValues);
-    },
-    [mcpSelect],
-  );
-
   const mcpPlaceholder = startupConfig?.interface?.mcpServers?.placeholder;
 
   const dropdownItems: MenuItemProps[] = [];
 
-  if (fileSearchEnabled) {
+  if (fileSearchEnabled && canUseFileSearch) {
     dropdownItems.push({
       onClick: handleFileSearchToggle,
       hideOnClick: false,
@@ -301,15 +291,7 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
     dropdownItems.push({
       hideOnClick: false,
       render: (props) => (
-        <MCPSubMenu
-          {...props}
-          mcpValues={mcpValues}
-          isMCPPinned={isMCPPinned}
-          placeholder={mcpPlaceholder}
-          mcpServerNames={mcpServerNames}
-          setIsMCPPinned={setIsMCPPinned}
-          handleMCPToggle={handleMCPToggle}
-        />
+        <MCPSubMenu {...props} placeholder={mcpPlaceholder} conversationId={conversationId} />
       ),
     });
   }
@@ -338,7 +320,7 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
 
   return (
     <DropdownPopup
-      itemClassName="flex w-full cursor-pointer items-center justify-between hover:bg-surface-hover gap-5"
+      itemClassName="flex w-full cursor-pointer rounded-lg items-center justify-between hover:bg-surface-hover gap-5"
       menuId="tools-dropdown-menu"
       isOpen={isPopoverActive}
       setIsOpen={setIsPopoverActive}

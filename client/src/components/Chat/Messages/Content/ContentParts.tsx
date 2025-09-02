@@ -11,9 +11,9 @@ import { ThinkingButton } from '~/components/Artifacts/Thinking';
 import { MessageContext, SearchContext } from '~/Providers';
 import MemoryArtifacts from './MemoryArtifacts';
 import Sources from '~/components/Web/Sources';
-import useLocalize from '~/hooks/useLocalize';
 import { mapAttachments } from '~/utils/map';
 import { EditTextPart } from './Parts';
+import { useLocalize } from '~/hooks';
 import store from '~/store';
 import Part from './Part';
 
@@ -94,6 +94,12 @@ const ContentParts = memo(
               return null;
             }
 
+            const isToolCall =
+              part.type === ContentTypes.TOOL_CALL || part['tool_call_ids'] != null;
+            if (isToolCall) {
+              return null;
+            }
+
             return (
               <EditTextPart
                 index={idx}
@@ -115,7 +121,7 @@ const ContentParts = memo(
       <>
         <SearchContext.Provider value={{ searchResults }}>
           <MemoryArtifacts attachments={attachments} />
-          <Sources />
+          <Sources messageId={messageId} conversationId={conversationId || undefined} />
           {hasReasoningParts && (
             <div className="mb-5">
               <ThinkingButton

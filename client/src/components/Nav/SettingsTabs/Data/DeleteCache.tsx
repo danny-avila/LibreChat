@@ -1,7 +1,14 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { Label, Button, OGDialog, OGDialogTrigger, Spinner } from '~/components';
-import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
-import { useOnClickOutside, useLocalize } from '~/hooks';
+import {
+  OGDialogTemplate,
+  Label,
+  Button,
+  OGDialog,
+  OGDialogTrigger,
+  Spinner,
+  useOnClickOutside,
+} from '@librechat/client';
+import { useLocalize } from '~/hooks';
 
 export const DeleteCache = ({ disabled = false }: { disabled?: boolean }) => {
   const localize = useLocalize();

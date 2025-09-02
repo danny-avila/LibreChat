@@ -1,6 +1,6 @@
-import { PlusIcon } from 'lucide-react';
 import React from 'react';
-import { Button } from '~/components/ui';
+import { PlusIcon } from 'lucide-react';
+import { Button } from '@librechat/client';
 
 type UploadFileProps = {
   onClick: () => void;

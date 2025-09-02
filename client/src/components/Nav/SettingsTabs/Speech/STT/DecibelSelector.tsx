@@ -1,9 +1,9 @@
 import React from 'react';
+import { Slider, InputNumber } from '@librechat/client';
 import { useRecoilState, useRecoilValue } from 'recoil';
-import { Slider, InputNumber } from '~/components/ui';
+import { cn, defaultTextProps, optionText } from '~/utils';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
-import { cn, defaultTextProps, optionText } from '~/utils/';
 
 export default function DecibelSelector() {
   const localize = useLocalize();
@@ -15,7 +15,9 @@ export default function DecibelSelector() {
       <div className="flex items-center justify-between">
         <div>{localize('com_nav_db_sensitivity')}</div>
         <div className="w-2" />
-        <small className="opacity-40">({localize('com_endpoint_default_with_num', { 0: '-45' })})</small>
+        <small className="opacity-40">
+          ({localize('com_endpoint_default_with_num', { 0: '-45' })})
+        </small>
       </div>
       <div className="flex items-center justify-between">
         <Slider

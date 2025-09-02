@@ -8,7 +8,7 @@ on:
       - release/*
     paths:
       - 'client/**'
-      - 'packages/**'
+      - 'packages/data-provider/**'
 
 jobs:
   tests_frontend_ubuntu:

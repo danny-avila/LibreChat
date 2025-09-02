@@ -2,17 +2,18 @@ import { useRecoilValue } from 'recoil';
 import { ChevronDownIcon } from 'lucide-react';
 import { useState, useEffect, useMemo } from 'react';
 import { useAvailablePluginsQuery } from 'librechat-data-provider/react-query';
-import type { TPlugin } from 'librechat-data-provider';
-import type { TModelSelectProps } from '~/common';
 import {
   Button,
-  MultiSelectPop,
   SelectDropDown,
   SelectDropDownPop,
   MultiSelectDropDown,
-} from '~/components/ui';
-import { useSetIndexOptions, useAuthContext, useMediaQuery, useLocalize } from '~/hooks';
+  useMediaQuery,
+} from '@librechat/client';
+import type { TPlugin } from 'librechat-data-provider';
+import type { TModelSelectProps } from '~/common';
+import { useSetIndexOptions, useAuthContext, useLocalize } from '~/hooks';
 import { cn, cardStyle, selectPlugins, processPlugins } from '~/utils';
+import MultiSelectPop from './MultiSelectPop';
 import store from '~/store';
 
 export default function PluginsByIndex({
