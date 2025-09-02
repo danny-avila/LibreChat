@@ -22,6 +22,10 @@ export interface OpenAIConfigOptions {
   streaming?: boolean;
   addParams?: Record<string, unknown>;
   dropParams?: string[];
+  customParams?: {
+    defaultParamsEndpoint?: string;
+  };
+  userId?: string;
 }
 
 export type OpenAIConfiguration = OpenAIClientOptions['configuration'];
