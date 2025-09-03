@@ -870,7 +870,7 @@
   "com_ui_error_connection": "Verbindungsfehler zum Server. Versuche, die Seite zu aktualisieren.",
   "com_ui_error_save_admin_settings": "Beim Speichern Ihrer Admin-Einstellungen ist ein Fehler aufgetreten.",
   "com_ui_error_updating_preferences": "Fehler beim Aktualisieren der Einstellungen",
-  "com_ui_everyone_permission_level": "Berechtigungsstufe für alle",
+  "com_ui_everyone_permission_level": "Berechtigungsstufe für Alle",
   "com_ui_examples": "Beispiele",
   "com_ui_expand_chat": "Chat erweitern",
   "com_ui_export_convo_modal": "Konversation exportieren",
