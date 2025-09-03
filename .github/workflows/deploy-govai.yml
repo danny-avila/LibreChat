@@ -372,7 +372,7 @@ jobs:
 
       - name: Bootstrap Nginx with ACME and issue certificate
         env:
-          GRADIENT_MAIL: ${{ env.GRADIENT_MAIL }}
+          GRADIENT_MAIL: ${{ secrets.GRADIENT_MAIL }}
         run: |
           ip=${{ inputs.ip }}
           fqdn=${{ inputs.domain }}
