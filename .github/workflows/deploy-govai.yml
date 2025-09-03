@@ -484,6 +484,32 @@ jobs:
           done
           curl -fsS "https://$fqdn/" >/dev/null
 
+      - name: Collect container logs (success)
+        if: success()
+        run: |
+          ip=${{ inputs.ip }}
+          ssh -o StrictHostKeyChecking=no -i "${{ steps.ssh.outputs.key_path }}" deploy@"$ip" bash -lc '
+            set -euo pipefail
+            cd /home/deploy/govai
+            echo "=== docker compose ps ==="; docker compose -f deploy-compose.govai.yml ps | cat
+            echo
+            echo "=== API logs: librechat_api (last 300) ==="; docker logs --tail=300 librechat_api || true
+            echo
+            echo "=== Nginx logs: nginx-govai (last 200) ==="; docker logs --tail=200 nginx-govai || true
+            echo
+            echo "=== Mongo logs: chat-mongodb (last 100) ==="; docker logs --tail=100 chat-mongodb || true
+            echo
+            echo "=== Meilisearch logs: chat-meilisearch (last 100) ==="; docker logs --tail=100 chat-meilisearch || true
+            echo
+            echo "=== Certbot logs: certbot-govai (last 100) ==="; docker logs --tail=100 certbot-govai || true
+            echo
+            echo "=== VectorDB logs: govai-vectordb-1 (last 100) ==="; docker logs --tail=100 govai-vectordb-1 || true
+            echo
+            echo "=== RAG API logs: govai-rag_api-1 (last 100) ==="; docker logs --tail=100 govai-rag_api-1 || true
+            echo
+            echo "=== All compose logs (last 200, all services) ==="; docker compose -f deploy-compose.govai.yml logs --no-color --tail=200 | cat || true
+          '
+
       - name: Debug nginx/api on failure
         if: failure()
         run: |
