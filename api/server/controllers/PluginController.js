@@ -74,14 +74,23 @@ const getAvailableTools = async (req, res) => {
     const cachedToolsArray = await cache.get(CacheKeys.TOOLS);
     const cachedUserTools = await getCachedTools({ userId });
 
-    const mcpManager = getMCPManager();
-    const userPlugins =
-      cachedUserTools != null
-        ? convertMCPToolsToPlugins({ functionTools: cachedUserTools, mcpManager })
-        : undefined;
+    const appConfig = req.config ?? (await getAppConfig({ role: req.user?.role }));
 
-    if (cachedToolsArray != null && userPlugins != null) {
-      const dedupedTools = filterUniquePlugins([...userPlugins, ...cachedToolsArray]);
+    /** @type {TPlugin[]} */
+    let mcpPlugins;
+    if (appConfig?.mcpConfig) {
+      const mcpManager = getMCPManager();
+      mcpPlugins =
+        cachedUserTools != null
+          ? convertMCPToolsToPlugins({ functionTools: cachedUserTools, mcpManager })
+          : undefined;
+    }
+
+    if (
+      cachedToolsArray != null &&
+      (appConfig?.mcpConfig != null ? mcpPlugins != null && mcpPlugins.length > 0 : true)
+    ) {
+      const dedupedTools = filterUniquePlugins([...(mcpPlugins ?? []), ...cachedToolsArray]);
       res.status(200).json(dedupedTools);
       return;
     }
@@ -93,9 +102,9 @@ const getAvailableTools = async (req, res) => {
     /** @type {import('@librechat/api').LCManifestTool[]} */
     let pluginManifest = availableTools;
 
-    const appConfig = req.config ?? (await getAppConfig({ role: req.user?.role }));
     if (appConfig?.mcpConfig != null) {
       try {
+        const mcpManager = getMCPManager();
         const mcpTools = await mcpManager.getAllToolFunctions(userId);
         prelimCachedTools = prelimCachedTools ?? {};
         for (const [toolKey, toolData] of Object.entries(mcpTools)) {
@@ -175,7 +184,7 @@ const getAvailableTools = async (req, res) => {
     const finalTools = filterUniquePlugins(toolsOutput);
     await cache.set(CacheKeys.TOOLS, finalTools);
 
-    const dedupedTools = filterUniquePlugins([...(userPlugins ?? []), ...finalTools]);
+    const dedupedTools = filterUniquePlugins([...(mcpPlugins ?? []), ...finalTools]);
     res.status(200).json(dedupedTools);
   } catch (error) {
     logger.error('[getAvailableTools]', error);

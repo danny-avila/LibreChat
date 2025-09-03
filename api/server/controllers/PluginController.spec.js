@@ -174,9 +174,18 @@ describe('PluginController', () => {
       mockCache.get.mockResolvedValue(null);
       getCachedTools.mockResolvedValueOnce(mockUserTools);
       mockReq.config = {
-        mcpConfig: null,
+        mcpConfig: {
+          server1: {},
+        },
         paths: { structuredTools: '/mock/path' },
       };
+
+      // Mock MCP manager to return empty tools initially (since getAllToolFunctions is called)
+      const mockMCPManager = {
+        getAllToolFunctions: jest.fn().mockResolvedValue({}),
+        getRawConfig: jest.fn().mockReturnValue({}),
+      };
+      require('~/config').getMCPManager.mockReturnValue(mockMCPManager);
 
       // Mock second call to return tool definitions (includeGlobal: true)
       getCachedTools.mockResolvedValueOnce(mockUserTools);
@@ -505,7 +514,7 @@ describe('PluginController', () => {
       expect(mockRes.json).toHaveBeenCalledWith([]);
     });
 
-    it('should handle cachedToolsArray and userPlugins both being defined', async () => {
+    it('should handle `cachedToolsArray` and `mcpPlugins` both being defined', async () => {
       const cachedTools = [{ name: 'CachedTool', pluginKey: 'cached-tool', description: 'Cached' }];
       // Use MCP delimiter for the user tool so convertMCPToolsToPlugins works
       const userTools = {
@@ -522,9 +531,18 @@ describe('PluginController', () => {
       mockCache.get.mockResolvedValue(cachedTools);
       getCachedTools.mockResolvedValueOnce(userTools);
       mockReq.config = {
-        mcpConfig: null,
+        mcpConfig: {
+          server1: {},
+        },
         paths: { structuredTools: '/mock/path' },
       };
+
+      // Mock MCP manager to return empty tools initially
+      const mockMCPManager = {
+        getAllToolFunctions: jest.fn().mockResolvedValue({}),
+        getRawConfig: jest.fn().mockReturnValue({}),
+      };
+      require('~/config').getMCPManager.mockReturnValue(mockMCPManager);
 
       // The controller expects a second call to getCachedTools
       getCachedTools.mockResolvedValueOnce({
