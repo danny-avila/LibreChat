@@ -79,4 +79,5 @@ webSearch:
   safeSearch: 1
 balance:
   enabled: true
+  startBalance: 200000
   autoRefillEnabled: false

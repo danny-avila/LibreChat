@@ -270,6 +270,12 @@ jobs:
           ALLOW_REGISTRATION: ${{ inputs.allow_registration }}
           ALLOW_EMAIL_LOGIN: ${{ vars.allow_email_login }}
           ALLOW_UNVERIFIED_EMAIL_LOGIN: ${{ vars.allow_unverified_email_login }}
+          EMAIL_FROM: ${{vars.EMAIL_FROM}}
+          SMTP_HOST: ${{vars.SMTP_HOST}}
+          SMTP_PORT: ${{vars.SMTP_PORT}}
+          SMTP_USER: ${{vars.SMTP_USER}}
+          SMTP_SECURE: ${{vars.SMTP_SECURE}}
+          SMTP_PASSWORD: ${{secrets.SMTP_PASSWORD}}
           APP_TITLE: ${{ inputs.app_title }}
           HELP_AND_FAQ_URL: ${{ vars.help_and_faq_url }}
           SERPER_API_KEY: ${{ secrets.SERPER_API_KEY }}
@@ -304,6 +310,12 @@ jobs:
             printf 'ALLOW_REGISTRATION=%q\n' "$ALLOW_REGISTRATION"
             printf 'ALLOW_EMAIL_LOGIN=%q\n' "$ALLOW_EMAIL_LOGIN"
             printf 'ALLOW_UNVERIFIED_EMAIL_LOGIN=%q\n' "$ALLOW_UNVERIFIED_EMAIL_LOGIN"
+            printf 'EMAIL_FROM=%q\n' "$EMAIL_FROM"
+            printf 'SMTP_HOST=%q\n' "$SMTP_HOST"
+            printf 'SMTP_PORT=%q\n' "$SMTP_PORT"
+            printf 'SMTP_USER=%q\n' "$SMTP_USER"
+            printf 'SMTP_SECURE=%q\n' "$SMTP_SECURE"
+            printf 'SMTP_PASSWORD=%q\n' "$SMTP_PASSWORD"
             printf 'APP_TITLE=%q\n' "$APP_TITLE"
             printf 'HELP_AND_FAQ_URL=%q\n' "$HELP_AND_FAQ_URL"
             printf 'SERPER_API_KEY=%q\n' "$SERPER_API_KEY"
