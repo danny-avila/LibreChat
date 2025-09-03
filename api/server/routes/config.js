@@ -125,6 +125,9 @@ router.get('/', async function (req, res) {
     payload.mcpServers = {};
     const getMCPServers = () => {
       try {
+        if (appConfig?.mcpConfig == null) {
+          return;
+        }
         const mcpManager = getMCPManager();
         if (!mcpManager) {
           return;
