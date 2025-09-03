@@ -282,7 +282,7 @@ jobs:
           fqdn=${{ inputs.domain }}
           dir=/home/deploy/govai
           mkdir -p bundle
-          tar -czf bundle/deploy.tar.gz deploy-compose.govai.yml client/nginx-acme.conf client/nginx.tmpl.conf govai.yaml librechat.merged.yaml admin-overrides.yaml
+          tar -czf bundle/deploy.tar.gz deploy-compose.govai.yml client/nginx.conf client/nginx-acme.conf client/nginx.tmpl.conf govai.yaml librechat.merged.yaml admin-overrides.yaml
           scp -o StrictHostKeyChecking=no -i "${{ steps.ssh.outputs.key_path }}" bundle/deploy.tar.gz deploy@"$ip":/home/deploy/deploy.tar.gz
           {
             printf 'FQDN=%q\n' "$fqdn"
