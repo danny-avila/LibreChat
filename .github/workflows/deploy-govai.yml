@@ -415,6 +415,19 @@ jobs:
 
           sudo ls -l "/srv/govai/letsencrypt/live/$FQDN/fullchain.pem" "/srv/govai/letsencrypt/live/$FQDN/privkey.pem"
 
+          # Wait for API to be ready before switching to TLS
+          echo "Waiting for API health (host 127.0.0.1:3080) ..."
+          ok=""
+          for i in $(seq 1 120); do
+            code=$(curl -sS -o /dev/null -w "%{http_code}" http://127.0.0.1:3080/health || true)
+            if [ "$code" = "200" ]; then ok=1; break; fi
+            sleep 2
+          done
+          if [ -z "$ok" ]; then
+            echo "API health not ready on host after waiting; checking from nginx container ..."
+            docker exec nginx-govai sh -lc 'apk add --no-cache curl >/dev/null 2>&1 || true; curl -sS -o /dev/null -w "%{http_code}" http://api:3080/health || true'
+          fi
+
           # Ensure TLS helper files exist on host (visible in container via bind mount)
           sudo mkdir -p /srv/govai/letsencrypt
           if [ ! -f /srv/govai/letsencrypt/options-ssl-nginx.conf ]; then
@@ -468,4 +481,23 @@ jobs:
             echo "Waiting for HTTPS ($i/60) ..."; sleep 2
           done
           curl -fsS "https://$fqdn/" >/dev/null
+
+      - name: Debug nginx/api on failure
+        if: failure()
+        run: |
+          ip=${{ inputs.ip }}
+          ssh -o StrictHostKeyChecking=no -i "${{ steps.ssh.outputs.key_path }}" deploy@"$ip" bash -lc '
+            set -euo pipefail
+            echo "=== docker compose ps ==="; docker compose -f /home/deploy/govai/deploy-compose.govai.yml ps | cat
+            echo
+            echo "=== nginx config (nginx -T, last 120 lines) ==="; docker exec nginx-govai sh -lc "nginx -T 2>&1 | tail -n 120" || true
+            echo
+            echo "=== nginx logs (last 200) ==="; docker logs --tail=200 nginx-govai || true
+            echo
+            echo "=== api logs (last 200) ==="; docker logs --tail=200 librechat_api || true
+            echo
+            echo "=== DNS inside nginx ==="; docker exec nginx-govai getent hosts api librechat_api || true
+            echo
+            echo "=== API health from host ==="; curl -sS -o /dev/null -w "%{http_code}\n" http://127.0.0.1:3080/health || true
+          '
 
