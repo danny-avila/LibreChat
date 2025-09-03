@@ -710,6 +710,14 @@ export const webSearchSchema = z.object({
   searchProvider: z.nativeEnum(SearchProviders).optional(),
   scraperType: z.nativeEnum(ScraperTypes).optional(),
   rerankerType: z.nativeEnum(RerankerTypes).optional(),
+  /**
+   * Maximum number of sources to include after processing/reranking
+   */
+  topResults: z.number().optional(),
+  /**
+   * Number of raw results to request from the provider (if supported)
+   */
+  numResults: z.number().optional(),
   scraperTimeout: z.number().optional(),
   safeSearch: z.nativeEnum(SafeSearchTypes).default(SafeSearchTypes.MODERATE),
   firecrawlOptions: z

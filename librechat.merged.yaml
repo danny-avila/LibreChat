@@ -1,7 +1,7 @@
 version: 1.2.1
 cache: true
 interface:
-  customWelcome: Welkom bij GovAI!
+  customWelcome: Welkom bij KWINK!
   mcpServers:
     placeholder: MCP Servers
   privacyPolicy:
@@ -88,6 +88,9 @@ interface:
   multiConvo: false
   agents: true
   runCode: false
+registration:
+  allowedDomains:
+    - gradient-ds.com
 actions:
   allowedDomains:
     - swapi.dev

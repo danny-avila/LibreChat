@@ -1,0 +1,439 @@
+name: Production build on IP + Domain
+
+on:
+  workflow_dispatch:
+    inputs:
+      ip:
+        description: 'ip address of the production server'
+        type: string
+      domain:
+        description: 'Domain of the production server'
+        type: string
+        default: chat.sovai.nl
+      api_version:
+        description: 'API image tag to deploy'
+        type: string
+        default: latest
+      frontend_version:
+        description: 'Frontend image tag to deploy'
+        type: string
+        default: latest
+      config_path:
+        description: 'Config path to deploy'
+        type: string
+        default: librechat.merged.yaml
+      allow_registration:
+        description: 'Allow registration'
+        type: boolean
+        default: true
+      app_title:
+        description: 'App title'
+        type: string
+        default: GovAI
+
+env:
+  SSH_PRIVATE_KEY_PROD: ${{ secrets.SSH_PRIVATE_KEY_PROD }}
+  GRADIENT_MAIL: ${{ secrets.GRADIENT_MAIL }}
+  SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+jobs:
+  production:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Wait for SSH (port 22)
+        run: |
+          set -euo pipefail
+          ip=${{ inputs.ip }}
+          for i in {1..60}; do
+            if (echo > /dev/tcp/$ip/22) >/dev/null 2>&1; then exit 0; fi
+            echo "Waiting for SSH ($i/60) ..."; sleep 5
+          done
+          exit 1
+
+      - name: Prepare SSH key
+        id: ssh
+        env:
+          SSH_PRIVATE_KEY_PROD: ${{ env.SSH_PRIVATE_KEY_PROD }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY_PROD" > ~/.ssh/id_do
+          chmod 600 ~/.ssh/id_do
+          echo "key_path=$HOME/.ssh/id_do" >> $GITHUB_OUTPUT
+
+      - name: Select SSH control user
+        id: ctrl
+        run: |
+          set -euo pipefail
+          IP=${{ inputs.ip }}
+          KEY=${{ steps.ssh.outputs.key_path }}
+
+          try_user() {
+            local user="$1"; shift || true
+            echo "[debug] trying SSH as '$user' ..."
+            if ssh -o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=5 -i "$KEY" "$user@$IP" "echo ok" >/dev/null 2>&1; then
+              echo "[debug] SSH ok as '$user'"
+              return 0
+            else
+              rc=$?
+              echo "[debug] SSH failed as '$user' (rc=$rc)"
+              return 1
+            fi
+          }
+
+          for U in root; do
+            if try_user "$U"; then
+              echo "ssh_user=$U" >> $GITHUB_OUTPUT
+              echo "mode=needs-bootstrap" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+          done
+
+          if try_user deploy; then
+            echo "ssh_user=deploy" >> $GITHUB_OUTPUT
+            KEY_ESCAPED="$KEY"
+            if ssh -o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=5 -i "$KEY_ESCAPED" "deploy@$IP" "sudo -n /usr/bin/ls /" >/dev/null 2>&1; then
+              echo "mode=deploy-ready" >> $GITHUB_OUTPUT
+            else
+              echo "mode=deploy-no-sudo" >> $GITHUB_OUTPUT
+            fi
+            exit 0
+          fi
+
+          echo "No suitable SSH user found (tried root, deploy)." >&2
+          exit 1
+
+      - name: Bootstrap/repair deploy (if needed)
+        if: steps.ctrl.outputs.mode == 'needs-bootstrap'
+        run: |
+          set -euo pipefail
+          IP=${{ inputs.ip }}
+          KEY=${{ steps.ssh.outputs.key_path }}
+          BOOT=${{ steps.ctrl.outputs.ssh_user }}
+
+          ssh -o StrictHostKeyChecking=no -i "$KEY" "$BOOT@$IP" bash -s <<'REMOTE'
+          set -euo pipefail
+
+          if ! id deploy >/dev/null 2>&1; then
+            sudo useradd -m -s /bin/bash -G sudo,adm deploy
+          fi
+          sudo install -d -m 0700 -o deploy -g deploy /home/deploy/.ssh
+          if [ -r "$HOME/.ssh/authorized_keys" ]; then
+            sudo install -m 0600 -o deploy -g deploy "$HOME/.ssh/authorized_keys" /home/deploy/.ssh/authorized_keys
+          fi
+
+          TMP=$(mktemp)
+          cat > "$TMP" <<'SUDOERS'
+          Defaults:deploy secure_path="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+          deploy ALL=(ALL) NOPASSWD:ALL
+          SUDOERS
+          sudo visudo -cf "$TMP"
+          sudo install -m 0440 "$TMP" /etc/sudoers.d/90-deploy
+          sudo chown root:root /etc/sudoers.d/90-deploy
+          rm -f "$TMP"
+
+          sudo usermod -aG docker deploy || true
+          echo "Deploy user bootstrapped."
+          REMOTE
+
+      - name: Wait for SSH deploy (with sudo)
+        if: steps.ctrl.outputs.mode == 'deploy-ready'
+        run: |
+          set -euo pipefail
+          ip=${{ inputs.ip }}
+          key=${{ steps.ssh.outputs.key_path }}
+          for i in {1..90}; do
+            if ssh -o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=5 -i "$key" deploy@"$ip" "sudo -n /usr/bin/ls /" >/dev/null 2>&1; then
+              echo "SSH deploy ready"; exit 0; fi
+            echo "Waiting for deploy sudo ($i/90) ..."; sleep 5
+          done
+          echo "deploy reachable but sudo -n failed." >&2; exit 1
+
+      - name: Bootstrap production VM (idempotent, via deploy)
+        run: |
+          IP=${{ inputs.ip }}
+          ssh -o StrictHostKeyChecking=no -i "${{ steps.ssh.outputs.key_path }}" deploy@"$IP" bash -s <<'REMOTE'
+          set -euo pipefail
+          export DEBIAN_FRONTEND=noninteractive
+
+          sudon() { sudo -n "$@"; }
+
+          TMP_SUDOERS=$(mktemp)
+          cat > "$TMP_SUDOERS" <<'SUDOERS'
+          Defaults:deploy secure_path="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+          deploy ALL=(ALL) NOPASSWD: \
+            /usr/bin/docker, \
+            /usr/bin/systemctl, \
+            /usr/bin/journalctl, \
+            /usr/bin/apt-get, \
+            /usr/bin/apt, \
+            /usr/sbin/usermod, \
+            /usr/sbin/ufw, \
+            /usr/sbin/visudo, \
+            /usr/bin/install, \
+            /bin/mkdir, /usr/bin/mkdir, \
+            /bin/chmod, /usr/bin/chmod, \
+            /bin/chown, /usr/bin/chown, \
+            /usr/bin/curl, \
+            /usr/bin/tar, \
+            /usr/bin/tee, \
+            /usr/bin/tail, \
+            /usr/bin/cloud-init, \
+            /bin/cp, /usr/bin/cp, \
+            /bin/ls, /usr/bin/ls, \
+            /usr/bin/stat, \
+            /usr/bin/test, \
+            /usr/bin/openssl, \
+            /usr/bin/sed
+          SUDOERS
+          sudon visudo -cf "$TMP_SUDOERS"
+          sudon install -m 0440 "$TMP_SUDOERS" /etc/sudoers.d/90-deploy
+          sudon chown root:root /etc/sudoers.d/90-deploy
+          rm -f "$TMP_SUDOERS"
+
+          set +e
+          ok=""
+          for i in {1..30}; do
+            if sudon apt-get update -y && sudon apt-get install -y ca-certificates curl git python3 python3-pip docker.io ufw fail2ban unattended-upgrades auditd; then
+              ok=1; break; fi
+            echo "[keepalive] apt busy; retry $i/30"; sleep 5
+          done
+          set -e
+          if [ -z "$ok" ]; then echo "apt install failed after retries" >&2; exit 1; fi
+
+          if ! docker compose version >/dev/null 2>&1; then
+            sudon mkdir -p /usr/lib/docker/cli-plugins
+            sudon curl -sSL -o /usr/lib/docker/cli-plugins/docker-compose \
+              https://github.com/docker/compose/releases/download/v2.39.1/docker-compose-linux-x86_64
+            sudon chmod +x /usr/lib/docker/cli-plugins/docker-compose
+          fi
+          sudon usermod -aG docker deploy || true
+
+          sudon mkdir -p /etc/ssh/sshd_config.d
+          TS="/etc/ssh/sshd_config.d/01-hardening.conf"
+          TMP_SSH=$(mktemp)
+          cat > "$TMP_SSH" <<'SSHDROPIN'
+          PasswordAuthentication no
+          KbdInteractiveAuthentication no
+          PermitRootLogin no
+          PubkeyAuthentication yes
+          X11Forwarding no
+          UseDNS no
+          AllowUsers deploy
+          SSHDROPIN
+          if ! cmp -s "$TMP_SSH" "$TS" 2>/dev/null; then
+            sudon install -m 0644 "$TMP_SSH" "$TS"
+            sudon systemctl reload ssh || sudon systemctl reload sshd || true
+          fi
+          rm -f "$TMP_SSH"
+
+          sudon install -d -m 0775 -o deploy -g deploy \
+            /srv/govai/letsencrypt \
+            /srv/govai/certbot-www \
+            /srv/govai/letsencrypt-log
+
+          sudon ufw --force reset || true
+          sudon ufw default deny incoming
+          sudon ufw default allow outgoing
+          sudon ufw limit 22/tcp
+          sudon ufw allow 80/tcp
+          sudon ufw allow 443/tcp
+          sudon ufw --force enable
+
+          sudon systemctl enable --now docker || true
+          sudon systemctl enable --now fail2ban || true
+          sudon systemctl enable --now auditd || true
+          echo 'APT::Periodic::Update-Package-Lists "1";'          | sudon tee /etc/apt/apt.conf.d/20auto-upgrades >/dev/null
+          echo 'APT::Periodic::Download-Upgradeable-Packages "1";' | sudon tee -a /etc/apt/apt.conf.d/20auto-upgrades >/dev/null
+          echo 'APT::Periodic::AutocleanInterval "7";'             | sudon tee -a /etc/apt/apt.conf.d/20auto-upgrades >/dev/null
+          echo 'APT::Periodic::Unattended-Upgrade "1";'            | sudon tee -a /etc/apt/apt.conf.d/20auto-upgrades >/dev/null
+          sudon systemctl enable --now unattended-upgrades || true
+
+          sudon visudo -cf /etc/sudoers.d/90-deploy
+          REMOTE
+
+      - name: Upload deployment bundle and runtime env
+        env:
+          API_VERSION: ${{ inputs.api_version }}
+          GH_PAT: ${{ secrets.GH_PAT }}
+          GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
+          CONFIG_PATH: ${{ inputs.config_path }}
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          CREDS_KEY: ${{ secrets.CREDS_KEY }}
+          CREDS_IV: ${{ secrets.CREDS_IV }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          JWT_REFRESH_SECRET: ${{ secrets.JWT_REFRESH_SECRET }}
+          RAG_OPENAI_API_KEY: ${{ secrets.RAG_OPENAI_API_KEY }}
+          RAG_API_URL: ${{ vars.RAG_API_URL }}
+          ALLOW_REGISTRATION: ${{ inputs.allow_registration }}
+          ALLOW_EMAIL_LOGIN: ${{ vars.allow_email_login }}
+          ALLOW_UNVERIFIED_EMAIL_LOGIN: ${{ vars.allow_unverified_email_login }}
+          APP_TITLE: ${{ inputs.app_title }}
+          HELP_AND_FAQ_URL: ${{ vars.help_and_faq_url }}
+          SERPER_API_KEY: ${{ secrets.SERPER_API_KEY }}
+          WEBSEARCH_SEARCH_PROVIDER: ${{ vars.websearch_search_provider }}
+          FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
+          COHERE_API_KEY: ${{ secrets.COHERE_API_KEY }}
+        run: |
+          set -euo pipefail
+          ip=${{ inputs.ip }}
+          fqdn=${{ inputs.domain }}
+          dir=/home/deploy/govai
+          mkdir -p bundle
+          tar -czf bundle/deploy.tar.gz deploy-compose.govai.yml client/nginx-acme.conf client/nginx.tmpl.conf govai.yaml librechat.merged.yaml admin-overrides.yaml
+          scp -o StrictHostKeyChecking=no -i "${{ steps.ssh.outputs.key_path }}" bundle/deploy.tar.gz deploy@"$ip":/home/deploy/deploy.tar.gz
+          {
+            printf 'FQDN=%q\n' "$fqdn"
+            printf 'IP=%q\n' "$ip"
+            printf 'LIBRECHAT_TAG=%q\n' "$API_VERSION"
+            printf 'GH_PAT=%q\n' "$GH_PAT"
+            printf 'GHCR_USERNAME=%q\n' "$GHCR_USERNAME"
+            printf 'CONFIG_PATH=%q\n' "$CONFIG_PATH"
+            printf 'MISTRAL_API_KEY=%q\n' "$MISTRAL_API_KEY"
+            printf 'OPENAI_API_KEY=%q\n' "$OPENAI_API_KEY"
+            printf 'CREDS_KEY=%q\n' "$CREDS_KEY"
+            printf 'CREDS_IV=%q\n' "$CREDS_IV"
+            printf 'JWT_SECRET=%q\n' "$JWT_SECRET"
+            printf 'JWT_REFRESH_SECRET=%q\n' "$JWT_REFRESH_SECRET"
+            printf 'RAG_OPENAI_API_KEY=%q\n' "$RAG_OPENAI_API_KEY"
+            printf 'RAG_API_URL=%q\n' "$RAG_API_URL"
+            printf 'ALLOW_REGISTRATION=%q\n' "$ALLOW_REGISTRATION"
+            printf 'ALLOW_EMAIL_LOGIN=%q\n' "$ALLOW_EMAIL_LOGIN"
+            printf 'ALLOW_UNVERIFIED_EMAIL_LOGIN=%q\n' "$ALLOW_UNVERIFIED_EMAIL_LOGIN"
+            printf 'APP_TITLE=%q\n' "$APP_TITLE"
+            printf 'HELP_AND_FAQ_URL=%q\n' "$HELP_AND_FAQ_URL"
+            printf 'SERPER_API_KEY=%q\n' "$SERPER_API_KEY"
+            printf 'WEBSEARCH_SEARCH_PROVIDER=%q\n' "$WEBSEARCH_SEARCH_PROVIDER"
+            printf 'FIRECRAWL_API_KEY=%q\n' "$FIRECRAWL_API_KEY"
+            printf 'COHERE_API_KEY=%q\n' "$COHERE_API_KEY"
+
+          } > .remote.env
+          scp -o StrictHostKeyChecking=no -i "${{ steps.ssh.outputs.key_path }}" .remote.env deploy@"$ip":/home/deploy/.remote.env
+
+      - name: Authenticate to GHCR on remote
+        run: |
+          ip=${{ inputs.ip }}
+          ssh -o StrictHostKeyChecking=no -i "${{ steps.ssh.outputs.key_path }}" deploy@"$ip" bash -lc '
+            set -euo pipefail
+            [ -f /home/deploy/.remote.env ] && . /home/deploy/.remote.env || true
+            USERNAME="${GHCR_USERNAME:-${GITHUB_ACTOR:-}}"
+            TOKEN="${GH_PAT:-}"
+            if [ -z "$TOKEN" ]; then
+              echo "GH_PAT not set; cannot login to GHCR." >&2
+              exit 1
+            fi
+            mkdir -p /home/deploy/.docker && chmod 700 /home/deploy/.docker
+            docker logout ghcr.io >/dev/null 2>&1 || true
+            echo "$TOKEN" | docker login ghcr.io -u "$USERNAME" --password-stdin
+            echo "Logged into GHCR as $USERNAME (deploy)"
+            sudo mkdir -p /root/.docker && sudo chmod 700 /root/.docker
+            sudo docker logout ghcr.io >/dev/null 2>&1 || true
+            echo "$TOKEN" | sudo docker login ghcr.io -u "$USERNAME" --password-stdin
+            echo "Logged into GHCR as $USERNAME (root)"
+          '
+
+      - name: Remote bootstrap (extract bundle, start stack HTTP)
+        run: |
+          ip=${{ inputs.ip }}
+          ssh -o StrictHostKeyChecking=no -i "${{ steps.ssh.outputs.key_path }}" deploy@"$ip" bash -lc '
+            set -euo pipefail
+            mkdir -p /home/deploy/govai && cd /home/deploy/govai
+            tar -xzf /home/deploy/deploy.tar.gz
+            . /home/deploy/.remote.env || true
+            export HOST=0.0.0.0
+            export PORT=3080
+            export DOMAIN_CLIENT="http://$FQDN"
+            export DOMAIN_SERVER="http://$FQDN"
+            export TRUST_PROXY=1
+            export ALLOW_REGISTRATION=true
+            export ALLOW_UNVERIFIED_EMAIL_LOGIN=true
+            docker compose --env-file /home/deploy/.remote.env -f deploy-compose.govai.yml pull | cat
+            docker compose --env-file /home/deploy/.remote.env -f deploy-compose.govai.yml up -d | cat
+          '
+
+      - name: Wait for DNS propagation (A record)
+        run: |
+          set -euo pipefail
+          fqdn=${{ inputs.domain }}
+          ip=${{ inputs.ip }}
+          for resolver in 1.1.1.1 8.8.8.8 9.9.9.9; do
+            echo "Checking resolver $resolver for $fqdn -> $ip"
+            ok=""
+            for i in {1..60}; do
+              resolved=$(dig +short A "$fqdn" @"$resolver" | tail -n1 || true)
+              if [ "$resolved" = "$ip" ]; then ok=1; break; fi
+              echo "  waiting DNS ($i/60): got '$resolved'"; sleep 5
+            done
+            if [ -z "$ok" ]; then echo "Resolver $resolver does not return $ip for $fqdn" >&2; exit 1; fi
+          done
+
+      - name: Bootstrap Nginx with ACME and issue certificate
+        env:
+          GRADIENT_MAIL: ${{ env.GRADIENT_MAIL }}
+        run: |
+          ip=${{ inputs.ip }}
+          fqdn=${{ inputs.domain }}
+          ssh -o StrictHostKeyChecking=no -i "${{ steps.ssh.outputs.key_path }}" deploy@"$ip" bash -lc '
+            set -euo pipefail
+            cd /home/deploy/govai
+            : "${GRADIENT_MAIL:=}"
+            if [ -z "$GRADIENT_MAIL" ]; then echo "GRADIENT_MAIL not set; skipping cert issuance"; exit 0; fi
+            sed "s/SERVER_NAME_PLACEHOLDER/${FQDN}/g" client/nginx-acme.conf > /tmp/nginx-default.conf
+            docker cp /tmp/nginx-default.conf nginx-govai:/etc/nginx/conf.d/default.conf
+            docker exec nginx-govai nginx -t
+            docker exec nginx-govai nginx -s reload
+            for i in $(seq 1 60); do
+              if curl -fsS "http://$FQDN/" >/dev/null 2>&1; then break; fi
+              sleep 2
+            done
+            sudo mkdir -p /srv/govai/letsencrypt /srv/govai/certbot-www /srv/govai/letsencrypt-log
+            sudo docker run --rm \
+              -v "/srv/govai/letsencrypt:/etc/letsencrypt" \
+              -v "/srv/govai/certbot-www:/var/www/certbot" \
+              -v "/srv/govai/letsencrypt-log:/var/log/letsencrypt" \
+              certbot/certbot:latest certonly --webroot \
+              -w /var/www/certbot -d "$FQDN" \
+              --agree-tos --email "$GRADIENT_MAIL" --non-interactive -v
+            sudo ls -l "/srv/govai/letsencrypt/live/$FQDN/fullchain.pem" "/srv/govai/letsencrypt/live/$FQDN/privkey.pem"
+            sed "s/SERVER_NAME_PLACEHOLDER/${FQDN}/g" client/nginx.tmpl.conf > /tmp/nginx-default.conf
+            docker cp /tmp/nginx-default.conf nginx-govai:/etc/nginx/conf.d/default.conf
+            docker exec nginx-govai nginx -t
+            docker exec nginx-govai nginx -s reload
+          '
+
+      - name: Ensure LE TLS helper files exist
+        run: |
+          IP=${{ inputs.ip }}
+          ssh -o StrictHostKeyChecking=no -i "${{ steps.ssh.outputs.key_path }}" deploy@"$IP" bash -s <<'REMOTE'
+          set -euo pipefail
+          sudo mkdir -p /srv/govai/letsencrypt
+          if [ ! -f /srv/govai/letsencrypt/options-ssl-nginx.conf ]; then
+            sudo tee /srv/govai/letsencrypt/options-ssl-nginx.conf >/dev/null <<'EOF'
+          ssl_protocols TLSv1.2 TLSv1.3;
+          ssl_prefer_server_ciphers off;
+          ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305;
+          ssl_session_timeout 1d;
+          ssl_session_cache shared:SSL:10m;
+          ssl_session_tickets off;
+          EOF
+          fi
+          if [ ! -f /srv/govai/letsencrypt/ssl-dhparams.pem ]; then
+            sudo openssl dhparam -out /srv/govai/letsencrypt/ssl-dhparams.pem 2048
+          fi
+          REMOTE
+
+      - name: Smoke tests (remote)
+        run: |
+          fqdn=${{ inputs.domain }}
+          for i in {1..60}; do
+            code=$(curl -sS -o /dev/null -w "%{http_code}" "https://$fqdn/")
+            if [ "$code" -ge 200 ] && [ "$code" -lt 500 ]; then break; fi
+            echo "Waiting for HTTPS ($i/60) ..."; sleep 2
+          done
+          curl -fsS "https://$fqdn/" >/dev/null
+
