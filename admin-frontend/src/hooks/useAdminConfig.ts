@@ -197,12 +197,23 @@ export function useAdminConfig(): UseAdminConfig {
 
       // Send entire draft so server writes complete YAML
       setRestarting(true);
-      await fetch('/admin/config', {
+      const applyRes = await fetch('/admin/config', {
         method: 'POST',
         headers,
         credentials: 'include',
         body: JSON.stringify({ overrides: draft }),
       });
+      await handleResponse(applyRes);
+
+      const reloadRes = await fetch('/api/reload', {
+        method: 'POST',
+        headers,
+        credentials: 'include',
+      });
+      await handleResponse(reloadRes);
+
+      setOverrides(_.cloneDeep(draft));
+      setRestarting(false);
     } finally {
       setSaving(false);
     }

@@ -40,7 +40,7 @@ export const AdminHeader: React.FC<AdminHeaderProps> = ({ restarting, dirty, onA
           Home
         </button>
 
-        {/* Apply & Restart */}
+        {/* Apply & Reload */}
         <button
           onClick={onApplyChanges}
           disabled={!dirty || restarting}
@@ -52,7 +52,7 @@ export const AdminHeader: React.FC<AdminHeaderProps> = ({ restarting, dirty, onA
             : 'cursor-pointer hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2'}
         `}
         >
-          {restarting ? 'Applying…' : 'Apply & Restart'}
+          {restarting ? 'Applying…' : 'Apply & Reload'}
 
           {dirty && !restarting && (
             <span className="absolute -top-1 -right-1 flex h-3 w-3">

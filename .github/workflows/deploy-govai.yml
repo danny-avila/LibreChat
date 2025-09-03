@@ -374,38 +374,53 @@ jobs:
 
       - name: Bootstrap Nginx with ACME and issue certificate
         env:
-          GRADIENT_MAIL: ${{ secrets.GRADIENT_MAIL }} 
+          GRADIENT_MAIL: ${{ secrets.GRADIENT_MAIL }}
         run: |
           ip=${{ inputs.ip }}
           fqdn=${{ inputs.domain }}
-          ssh -o StrictHostKeyChecking=no -i "${{ steps.ssh.outputs.key_path }}" deploy@"$ip" bash -lc '
-            set -euo pipefail
-            cd /home/deploy/govai
-            . /home/deploy/.remote.env || true
-            : "${GRADIENT_MAIL:=}"
-            if [ -z "$GRADIENT_MAIL" ]; then echo "GRADIENT_MAIL not set; skipping cert issuance"; exit 0; fi
-            sed "s/SERVER_NAME_PLACEHOLDER/${FQDN}/g" client/nginx-acme.conf > /tmp/nginx-default.conf
-            docker cp /tmp/nginx-default.conf nginx-govai:/etc/nginx/conf.d/default.conf
-            docker exec nginx-govai nginx -t
-            docker exec nginx-govai nginx -s reload
-            for i in $(seq 1 60); do
-              if curl -fsS "http://$FQDN/" >/dev/null 2>&1; then break; fi
-              sleep 2
-            done
-            sudo mkdir -p /srv/govai/letsencrypt /srv/govai/certbot-www /srv/govai/letsencrypt-log
-            sudo docker run --rm \
-              -v "/srv/govai/letsencrypt:/etc/letsencrypt" \
-              -v "/srv/govai/certbot-www:/var/www/certbot" \
-              -v "/srv/govai/letsencrypt-log:/var/log/letsencrypt" \
-              certbot/certbot:latest certonly --webroot \
+          ssh -o StrictHostKeyChecking=no -i "${{ steps.ssh.outputs.key_path }}" deploy@"$ip" bash -s <<'REMOTE'
+          set -euo pipefail
+          cd /home/deploy/govai
+          . /home/deploy/.remote.env || true
+
+          : "${GRADIENT_MAIL:=}"
+          if [ -z "$GRADIENT_MAIL" ]; then
+            echo "GRADIENT_MAIL not set; skipping cert issuance"
+            exit 0
+          fi
+
+          # 1) ACME bootstrap config (HTTP only)
+          sed "s/SERVER_NAME_PLACEHOLDER/${FQDN}/g" client/nginx-acme.conf > /tmp/nginx-default.conf
+
+          # Write in-place instead of docker cp (works with bind mounts)
+          docker exec -i nginx-govai sh -c 'cat > /etc/nginx/conf.d/default.conf' < /tmp/nginx-default.conf
+          docker exec nginx-govai nginx -t
+          docker exec nginx-govai nginx -s reload
+
+          # Wait until HTTP is actually answering
+          for i in $(seq 1 60); do
+            if curl -fsS "http://$FQDN/" >/dev/null 2>&1; then break; fi
+            sleep 2
+          done
+
+          # 2) Issue certificate via webroot
+          sudo mkdir -p /srv/govai/letsencrypt /srv/govai/certbot-www /srv/govai/letsencrypt-log
+          sudo docker run --rm \
+            -v "/srv/govai/letsencrypt:/etc/letsencrypt" \
+            -v "/srv/govai/certbot-www:/var/www/certbot" \
+            -v "/srv/govai/letsencrypt-log:/var/log/letsencrypt" \
+            certbot/certbot:latest certonly --webroot \
               -w /var/www/certbot -d "$FQDN" \
               --agree-tos --email "$GRADIENT_MAIL" --non-interactive -v
-            sudo ls -l "/srv/govai/letsencrypt/live/$FQDN/fullchain.pem" "/srv/govai/letsencrypt/live/$FQDN/privkey.pem"
-            sed "s/SERVER_NAME_PLACEHOLDER/${FQDN}/g" client/nginx.tmpl.conf > /tmp/nginx-default.conf
-            docker cp /tmp/nginx-default.conf nginx-govai:/etc/nginx/conf.d/default.conf
-            docker exec nginx-govai nginx -t
-            docker exec nginx-govai nginx -s reload
-          '
+
+          sudo ls -l "/srv/govai/letsencrypt/live/$FQDN/fullchain.pem" "/srv/govai/letsencrypt/live/$FQDN/privkey.pem"
+
+          # 3) Switch to TLS config and reload
+          sed "s/SERVER_NAME_PLACEHOLDER/${FQDN}/g" client/nginx.tmpl.conf > /tmp/nginx-default.conf
+          docker exec -i nginx-govai sh -c 'cat > /etc/nginx/conf.d/default.conf' < /tmp/nginx-default.conf
+          docker exec nginx-govai nginx -t
+          docker exec nginx-govai nginx -s reload
+          REMOTE
 
       - name: Ensure LE TLS helper files exist
         run: |
