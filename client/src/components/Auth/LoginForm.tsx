@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useContext } from 'react';
 import { useForm } from 'react-hook-form';
 import { Turnstile } from '@marsidev/react-turnstile';
-import { ThemeContext, Spinner, Button } from '@librechat/client';
+import { ThemeContext, Spinner, Button, isDark } from '@librechat/client';
 import type { TLoginUser, TStartupConfig } from 'librechat-data-provider';
 import type { TAuthContext } from '~/common';
 import { useResendVerificationEmail, useGetStartupConfig } from '~/data-provider';
@@ -28,7 +28,7 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, 
 
   const { data: config } = useGetStartupConfig();
   const useUsernameLogin = config?.ldap?.username;
-  const validTheme = theme === 'dark' ? 'dark' : 'light';
+  const validTheme = isDark(theme) ? 'dark' : 'light';
   const requireCaptcha = Boolean(startupConfig.turnstile?.siteKey);
 
   useEffect(() => {
