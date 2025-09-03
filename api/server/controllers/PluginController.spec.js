@@ -514,7 +514,7 @@ describe('PluginController', () => {
       expect(mockRes.json).toHaveBeenCalledWith([]);
     });
 
-    it('should handle `cachedToolsArray` and `cachedMCPPlugins` both being defined', async () => {
+    it('should handle `cachedToolsArray` and `mcpPlugins` both being defined', async () => {
       const cachedTools = [{ name: 'CachedTool', pluginKey: 'cached-tool', description: 'Cached' }];
       // Use MCP delimiter for the user tool so convertMCPToolsToPlugins works
       const userTools = {

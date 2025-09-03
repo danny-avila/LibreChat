@@ -77,10 +77,10 @@ const getAvailableTools = async (req, res) => {
     const appConfig = req.config ?? (await getAppConfig({ role: req.user?.role }));
 
     /** @type {TPlugin[]} */
-    let cachedMCPPlugins;
+    let mcpPlugins;
     if (appConfig?.mcpConfig) {
       const mcpManager = getMCPManager();
-      cachedMCPPlugins =
+      mcpPlugins =
         cachedUserTools != null
           ? convertMCPToolsToPlugins({ functionTools: cachedUserTools, mcpManager })
           : undefined;
@@ -88,9 +88,9 @@ const getAvailableTools = async (req, res) => {
 
     if (
       cachedToolsArray != null &&
-      (appConfig?.mcpConfig != null ? cachedMCPPlugins != null : true)
+      (appConfig?.mcpConfig != null ? mcpPlugins != null && mcpPlugins.length > 0 : true)
     ) {
-      const dedupedTools = filterUniquePlugins([...(cachedMCPPlugins ?? []), ...cachedToolsArray]);
+      const dedupedTools = filterUniquePlugins([...(mcpPlugins ?? []), ...cachedToolsArray]);
       res.status(200).json(dedupedTools);
       return;
     }
@@ -184,7 +184,7 @@ const getAvailableTools = async (req, res) => {
     const finalTools = filterUniquePlugins(toolsOutput);
     await cache.set(CacheKeys.TOOLS, finalTools);
 
-    const dedupedTools = filterUniquePlugins([...(cachedMCPPlugins ?? []), ...finalTools]);
+    const dedupedTools = filterUniquePlugins([...(mcpPlugins ?? []), ...finalTools]);
     res.status(200).json(dedupedTools);
   } catch (error) {
     logger.error('[getAvailableTools]', error);
