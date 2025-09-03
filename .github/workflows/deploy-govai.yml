@@ -415,6 +415,22 @@ jobs:
 
           sudo ls -l "/srv/govai/letsencrypt/live/$FQDN/fullchain.pem" "/srv/govai/letsencrypt/live/$FQDN/privkey.pem"
 
+          # Ensure TLS helper files exist on host (visible in container via bind mount)
+          sudo mkdir -p /srv/govai/letsencrypt
+          if [ ! -f /srv/govai/letsencrypt/options-ssl-nginx.conf ]; then
+            sudo tee /srv/govai/letsencrypt/options-ssl-nginx.conf >/dev/null <<'EOF'
+          ssl_protocols TLSv1.2 TLSv1.3;
+          ssl_prefer_server_ciphers off;
+          ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305;
+          ssl_session_timeout 1d;
+          ssl_session_cache shared:SSL:10m;
+          ssl_session_tickets off;
+          EOF
+          fi
+          if [ ! -f /srv/govai/letsencrypt/ssl-dhparams.pem ]; then
+            sudo openssl dhparam -out /srv/govai/letsencrypt/ssl-dhparams.pem 2048
+          fi
+
           # 3) Switch to TLS config and reload
           sed "s/SERVER_NAME_PLACEHOLDER/${FQDN}/g" client/nginx.tmpl.conf > /tmp/nginx-default.conf
           docker exec -i nginx-govai sh -c 'cat > /etc/nginx/conf.d/default.conf' < /tmp/nginx-default.conf
