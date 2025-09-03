@@ -29,6 +29,7 @@ const {
   createContextHandlers,
   titleInstruction,
   truncateText,
+  followupPrompt,
 } = require('./prompts');
 const BaseClient = require('./BaseClient');
 
@@ -185,7 +186,8 @@ class GoogleClient extends BaseClient {
 
     let promptPrefix = (this.options.promptPrefix ?? '').trim();
     if (typeof this.options.artifactsPrompt === 'string' && this.options.artifactsPrompt) {
-      promptPrefix = `${promptPrefix ?? ''}\n${this.options.artifactsPrompt}`.trim();
+      // Ensure we properly combine the prompt prefix with the artifacts prompt
+      promptPrefix = promptPrefix ? `${promptPrefix}\n\n${this.options.artifactsPrompt}` : this.options.artifactsPrompt;
     }
     this.systemMessage = promptPrefix;
     this.initializeClient();
@@ -734,6 +736,18 @@ class GoogleClient extends BaseClient {
               },
             ],
           };
+          console.log('\n🔍 === GEMINI SYSTEM INSTRUCTION DEBUG ===');
+          console.log('📝 Full system message length:', promptPrefix.length);
+          console.log('🎯 Has artifacts prompt:', !!this.options.artifactsPrompt);
+          console.log('📋 System message content:');
+          console.log('---START---');
+          console.log(promptPrefix);
+          console.log('---END---');
+          console.log('==========================================\n');
+          logger.debug('[GoogleClient] System instruction set:', { 
+            hasArtifactsPrompt: !!this.options.artifactsPrompt,
+            promptPrefixLength: promptPrefix.length 
+          });
         }
 
         const delay = modelName.includes('flash') ? 8 : 15;
@@ -933,12 +947,28 @@ class GoogleClient extends BaseClient {
         },
       };
 
+      const promptPrefix = (this.systemMessage ?? '').trim();
+      if (promptPrefix.length) {
+        requestOptions.systemInstruction = {
+          parts: [
+            {
+              text: promptPrefix,
+            },
+          ],
+        };
+        logger.debug('[GoogleClient] System instruction set:', { 
+          hasArtifactsPrompt: !!this.options.artifactsPrompt,
+          promptPrefixLength: promptPrefix.length 
+        });
+      }
+
       const result = await client.generateContent(requestOptions);
       reply = result.response?.text();
       return reply;
     } else {
       const { instances } = _payload;
       const { messages } = instances?.[0] ?? {};
+
       const titleResponse = await this.client.invoke(messages, {
         signal: abortController.signal,
         timeout: 7000,

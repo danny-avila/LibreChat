@@ -30,6 +30,7 @@ const user = require('./user');
 const ask = require('./ask');
 const mcp = require('./mcp');
 const userActivity = require('./userActivity');
+const logs = require('./logs');
 
 
 module.exports = {
@@ -65,4 +66,5 @@ module.exports = {
   staticRoute,
   mcp,
   userActivity,
+  logs,
 };

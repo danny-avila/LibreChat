@@ -145,6 +145,7 @@
     ]
   },
   "dependencies": {
+    "dedent": "^1.6.0",
     "event-source-polyfill": "^1.0.31",
     "ioredis": "^5.7.0",
     "lucide-react": "^0.541.0",

@@ -165,4 +165,8 @@ messageSchema.index({ expiredAt: 1 }, { expireAfterSeconds: 0 });
 messageSchema.index({ createdAt: 1 });
 messageSchema.index({ messageId: 1, user: 1 }, { unique: true });
 
+messageSchema.index({ user: 1, createdAt: -1 });
+messageSchema.index({ model: 1, createdAt: -1 });
+messageSchema.index({ user: 1, model: 1, createdAt: -1 });
+
 export default messageSchema;

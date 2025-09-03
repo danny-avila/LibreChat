@@ -68,7 +68,10 @@ const startServer = async () => {
         filter: (req, res) => {
           try {
             // Do NOT compress SSE streams
-            if (req.path === '/api/user-activity/stream') {
+            if (
+              req.path === '/api/logs/queries' ||
+              req.path === '/api/user-activity/stream'
+            ) {
               return false;
             }
           } catch (_) {}
@@ -136,6 +139,7 @@ const startServer = async () => {
   app.use('/api/tags', routes.tags);
   app.use('/api/mcp', routes.mcp);
   app.use('/api/user-activity', routes.userActivity);
+  app.use('/api/logs', routes.logs);
 
   app.use((req, res) => {
     res.set({

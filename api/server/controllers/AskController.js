@@ -14,6 +14,7 @@ const { sendMessage, createOnProgress } = require('~/server/utils');
 const { saveMessage, getConvo } = require('~/models');
 const { logger } = require('~/config');
 const { UserActivityLog } = require('~/db/models');
+const queryLogger = require('~/server/services/QueryLogger');
 
 const AskController = async (req, res, next, initializeClient, addTitle) => {
   let {
@@ -248,13 +249,7 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
       });
       res.end();
 
-      if (client?.savedMessageIds && !client.savedMessageIds.has(response.messageId)) {
-        await saveMessage(
-          req,
-          { ...finalResponseMessage, user: userId },
-          { context: 'api/server/controllers/AskController.js - response end' },
-        );
-      }
+      
     }
 
     if (!client?.skipSaveUserMessage && latestUserMessage) {
