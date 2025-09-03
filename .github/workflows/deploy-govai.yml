@@ -311,7 +311,9 @@ jobs:
             printf 'FIRECRAWL_API_KEY=%q\n' "$FIRECRAWL_API_KEY"
             printf 'COHERE_API_KEY=%q\n' "$COHERE_API_KEY"
             printf 'MEILI_MASTER_KEY=%q\n' "$MEILI_MASTER_KEY"
-
+            printf 'DOMAIN_CLIENT=%q\n' "https://$fqdn"
+            printf 'DOMAIN_SERVER=%q\n' "https://$fqdn"
+            printf 'TRUST_PROXY=%q\n' "1"
           } > .remote.env
           scp -o StrictHostKeyChecking=no -i "${{ steps.ssh.outputs.key_path }}" .remote.env deploy@"$ip":/home/deploy/.remote.env
 

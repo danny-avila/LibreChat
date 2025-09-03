@@ -28,8 +28,9 @@ services:
       MEILI_HOST: http://meilisearch:7700
       RAG_PORT: ${RAG_PORT:-8000}
       RAG_API_URL: http://rag_api:${RAG_PORT:-8000}
-      DOMAIN_CLIENT: ${DOMAIN_CLIENT:-http://localhost}
-      DOMAIN_SERVER: ${DOMAIN_SERVER:-http://localhost}
+      DOMAIN_CLIENT: ${DOMAIN_CLIENT:-https://gradient-testing.nl}
+      DOMAIN_SERVER: ${DOMAIN_SERVER:-https://gradient-testing.nl}
+      TRUST_PROXY: "1"
       APP_TITLE: ${APP_TITLE:-GovAI}
       HELP_AND_FAQ_URL: ${HELP_AND_FAQ_URL:-https://govai.lexgov.ai/help}
       SERPER_API_KEY: ${SERPER_API_KEY}
@@ -38,7 +39,8 @@ services:
       COHERE_API_KEY: ${COHERE_API_KEY}
       MEILI_MASTER_KEY: ${MEILI_MASTER_KEY}
       ALLOW_REGISTRATION: ${ALLOW_REGISTRATION:-true}
-      ALLOW_UNVERIFIED_EMAIL_LOGIN: ${ALLOW_UNVERIFIED_EMAIL_LOGIN:-false}
+      ALLOW_UNVERIFIED_EMAIL_LOGIN: ${ALLOW_UNVERIFIED_EMAIL_LOGIN:-true}
+      ALLOW_EMAIL_LOGIN: ${ALLOW_EMAIL_LOGIN:-true}
     volumes:
       - ./govai.yaml:/app/govai.yaml:ro
       - ./librechat.merged.yaml:/app/librechat.merged.yaml:rw
