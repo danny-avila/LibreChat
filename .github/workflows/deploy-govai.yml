@@ -349,8 +349,8 @@ jobs:
             . /home/deploy/.remote.env || true
             export HOST=0.0.0.0
             export PORT=3080
-            export DOMAIN_CLIENT="http://$FQDN"
-            export DOMAIN_SERVER="http://$FQDN"
+            export DOMAIN_CLIENT="https://$FQDN"
+            export DOMAIN_SERVER="https://$FQDN"
             export TRUST_PROXY=1
             export ALLOW_REGISTRATION=true
             export ALLOW_UNVERIFIED_EMAIL_LOGIN=true
