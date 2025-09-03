@@ -1,24 +1,8 @@
 import React from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '~/components/ui/Dialog';
-import { Button } from '~/components/ui/Button';
 import { cn } from '~/utils';
 import moment from 'moment';
-import { Info } from 'lucide-react';
-
-export type RowLog = {
-  _id: string;
-  userId: string;
-  email?: string;
-  name?: string;
-  action: string;
-  timestamp: string;
-  details?: any;
-  tokenUsage?: {
-    beforeModelChange?: { model: string; totalTokens: number; messageCount: number };
-    afterModelChange?: { model: string; totalTokens: number; messageCount: number };
-    tokenDifference?: number;
-  };
-};
+import type { RowLog } from './AdminLogs';
 
 interface AdminLogsDialogProps {
   selected: RowLog | null;
@@ -29,7 +13,7 @@ export default function AdminLogsDialog({ selected, onClose }: AdminLogsDialogPr
   if (!selected) return null;
 
   return (
-    <Dialog open={!!selected} onOpenChange={() => onClose()}>
+    <Dialog open={!!selected} onOpenChange={(open) => { if (!open) onClose(); }}>
       <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto border border-gray-200 shadow-lg dark:border-gray-700">
         <DialogHeader className="border-b border-gray-100 pb-3 pt-2 dark:border-gray-700">
         <DialogTitle className="flex items-start justify-between text-lg">

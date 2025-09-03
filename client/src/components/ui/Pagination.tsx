@@ -1,5 +1,5 @@
 import React, { useEffect, useCallback } from "react";
-import { Button } from "~/components/ui/button";
+import { Button } from "~/components/ui/Button";
 import { cn } from "~/utils";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
@@ -11,7 +11,6 @@ interface PaginationProps {
   limit: number;
   total: number;
   onPageChange: (page: number) => void;
-  data: any[];
   siblingCount?: number;
 }
 
@@ -20,7 +19,6 @@ const PaginationRoot: React.FC<PaginationProps> = ({
   limit,
   total,
   onPageChange,
-  data,
   siblingCount = 1,
 }) => {
   const totalPages = Math.ceil(total / limit);
@@ -34,7 +32,6 @@ const PaginationRoot: React.FC<PaginationProps> = ({
     } else {
       const leftSibling = Math.max(page - siblingCount, 1);
       const rightSibling = Math.min(page + siblingCount, totalPages);
-
       const showLeftDots = leftSibling > 2;
       const showRightDots = rightSibling < totalPages - 1;
 
@@ -77,70 +74,44 @@ const PaginationRoot: React.FC<PaginationProps> = ({
     <div className="flex items-center justify-between gap-3 border border-gray-200 rounded-md bg-white p-3 shadow-sm dark:border-gray-700 dark:bg-gray-800">
       {/* Left: empty space for balance */}
       <div className="flex-1"></div>
-
       {/* Center: pagination controls */}
       <div className="flex justify-center">
         <PaginationContent>
-          <PaginationPrevious
-            page={page}
-            onPageChange={onPageChange}
-            disabled={page === 1}
-          />
-
+          <PaginationPrevious page={page} onPageChange={onPageChange} disabled={page === 1} />
           {getPageNumbers().map((p, idx) =>
             p === "…" ? (
               <PaginationEllipsis key={idx} />
             ) : (
               <PaginationItem key={idx}>
-                <PaginationLink
-                  active={page === p}
-                  onClick={() => onPageChange(p as number)}
-                >
+                <PaginationLink active={page === p} onClick={() => onPageChange(p as number)}>
                   {p}
                 </PaginationLink>
               </PaginationItem>
             )
           )}
-
-          <PaginationNext
-            page={page}
-            totalPages={totalPages}
-            onPageChange={onPageChange}
-            disabled={page === totalPages}
-          />
+          <PaginationNext page={page} totalPages={totalPages} onPageChange={onPageChange} disabled={page === totalPages} />
         </PaginationContent>
       </div>
-
       {/* Right: showing info */}
       <div className="flex-1 flex justify-end">
         <div className="text-sm text-gray-600 dark:text-gray-300 whitespace-nowrap">
-          {data.length > 0
-            ? `Showing ${(page - 1) * limit + 1}-${Math.min(
-                page * limit,
-                total
-              )} of ${total}`
-            : "No data"}
+          {total > 0 ? `Showing ${(page - 1) * limit + 1}-${Math.min(page * limit, total)} of ${total}` : "No data"}
         </div>
       </div>
     </div>
   );
 };
 
-
 // ---------------------------
 // Sub-components
 // ---------------------------
-const PaginationContent: React.FC<{ children: React.ReactNode }> = ({
-  children,
-}) => (
+const PaginationContent: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <div className="flex items-center gap-1" role="navigation">
     {children}
   </div>
 );
 
-const PaginationItem: React.FC<{ children: React.ReactNode }> = ({
-  children,
-}) => <div>{children}</div>;
+const PaginationItem: React.FC<{ children: React.ReactNode }> = ({ children }) => <div>{children}</div>;
 
 const PaginationLink: React.FC<{
   children: React.ReactNode;
@@ -154,8 +125,8 @@ const PaginationLink: React.FC<{
     className={cn(
       "min-w-[36px] text-black dark:text-white",
       active
-        ? "bg-gray-200 dark:bg-gray-700 font-medium"
-        : "bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-600"
+        ? "bg-gray-200 dark:bg-gray-700 font-medium hover:bg-gray-300 dark:hover:bg-gray-300"
+        : "bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-300"
     )}
     aria-label={`Page ${children}`}
   >

@@ -8,8 +8,9 @@ import { Pagination } from '~/components/ui/Pagination';
 import { ArrowLeft, ChevronLeft, ChevronRight, Info } from 'lucide-react';
 import { cn } from '~/utils';
 import moment from 'moment';
-import { useAdminLogs}  from './useAdmin';
+import { useAdminLogs } from './useAdmin';
 import AdminLogsDialog from './AdminLogsDialog';
+
 type RawUser = { _id: string; email?: string; username?: string; name?: string } | string;
 
 type RawLog = {
@@ -23,9 +24,10 @@ type RawLog = {
     afterModelChange?: { model: string; totalTokens: number; messageCount: number };
     tokenDifference?: number;
   };
+  userInfo?: { email?: string; name?: string; username?: string };
 };
 
-type RowLog = {
+export type RowLog = {
   _id: string;
   userId: string;
   email?: string;
@@ -35,12 +37,13 @@ type RowLog = {
   details?: any;
   tokenUsage?: RawLog['tokenUsage'];
 };
+ 
 
 type UserCache = Record<string, { email?: string; name?: string; username?: string }>;
 
-function toRow(log: RawLog & { userInfo?: any }, cache: UserCache): RowLog {
+function toRow(log: RawLog, cache: UserCache): RowLog {
   const userId = typeof log.user === 'string' ? log.user : log.user?._id;
-  const populated = (log as any).userInfo || (typeof log.user === 'object' ? log.user : undefined);
+  const populated = log.userInfo || (typeof log.user === 'object' ? log.user : undefined);
   const cached = userId ? cache[userId] : undefined;
 
   return {
@@ -56,68 +59,53 @@ function toRow(log: RawLog & { userInfo?: any }, cache: UserCache): RowLog {
 }
 
 export default function AdminLogs() {
-  const [rows, setRows] = useState<RowLog[]>([]);
-  const [filteredRows, setFilteredRows] = useState<RowLog[]>([]);
   const [userCache] = useState<UserCache>({});
   const [selected, setSelected] = useState<RowLog | null>(null);
-  const [connected, setConnected] = useState(false);
-  const [statusMap, setStatusMap] = useState<Record<string, 'Active' | 'Inactive' | 'Unknown'>>({});
-  const mainContainerRef = useRef<HTMLDivElement>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [search, setSearch] = useState('');
-  const [searchCategory, setSearchCategory] = useState<'all' | 'action' | 'email' | 'name'>('all');
+  const [searchCategory, setSearchCategory] = useState<'all' | 'action'>('all');
   const itemsPerPage = 10;
 
-  const { logs, connected: isConnected } = useAdminLogs();
+  const { logs, connected, total, loading, error, refetchLogs } = useAdminLogs(itemsPerPage, currentPage, search, searchCategory === 'action' ? search : '');
 
   // Process logs from useAdminLogs
-  useEffect(() => {
-    if (logs.length > 0) {
-      const normalized = logs.map((log: any) => toRow(log, userCache));
-      setRows((prev) => {
-        const newRows = [...normalized, ...prev];
-        const uniqueRows = newRows.filter((row, i, self) => i === self.findIndex((r) => r._id === row._id));
-        setTimeout(() => recalculateAllStatuses(uniqueRows), 0);
-        return uniqueRows;
-      });
-      normalized.forEach((log) => applyStatusUpdate(log));
-      setConnected(isConnected);
-    }
-  }, [logs, isConnected]);
+  const rows = useMemo(() => logs.map((log: any) => toRow(log, userCache)), [logs, userCache]);
 
-  // Filter logs based on search term and category
+  // Log for debugging
   useEffect(() => {
-    const searchLower = search.toLowerCase().trim();
-    setFilteredRows(
-      searchLower
-        ? rows.filter((log) => {
-            switch (searchCategory) {
-              case 'action':
-                return log.action.toLowerCase().includes(searchLower);
-              case 'email':
-                return log.email?.toLowerCase().includes(searchLower);
-              case 'name':
-                return log.name?.toLowerCase().includes(searchLower);
-              case 'all':
-              default:
-                return (
-                  log.email?.toLowerCase().includes(searchLower) ||
-                  log.name?.toLowerCase().includes(searchLower) ||
-                  log.action.toLowerCase().includes(searchLower)
-                );
-            }
-          })
-        : rows
-    );
-    setCurrentPage(1);
-  }, [search, searchCategory, rows]);
+    console.log('[AdminLogs] State:', { total, logsLength: logs.length, currentPage, loading, error, totalPages: Math.ceil(total / itemsPerPage) });
+    console.log('[AdminLogs] Log IDs:', logs.map((log: any) => log._id));
+  }, [total, logs, currentPage, loading, error]);
 
-  // Adjust table height and reset page if needed
+  // Reset page if totalPages is less than currentPage
   useEffect(() => {
-    if (filteredRows.length > 0 && Math.ceil(filteredRows.length / itemsPerPage) < currentPage) {
+    const totalPages = Math.ceil(total / itemsPerPage);
+    if (totalPages > 0 && currentPage > totalPages) {
+      console.log('[AdminLogs] Resetting page to 1, totalPages:', totalPages);
       setCurrentPage(1);
     }
+  }, [total, currentPage, itemsPerPage]);
 
+  // Calculate user status based on current page
+  const statusMap = useMemo(() => {
+    const map: Record<string, 'Active' | 'Inactive' | 'Unknown'> = {};
+    const uniqueUserIds = [...new Set(rows.map((log) => log.userId).filter(Boolean))];
+    uniqueUserIds.forEach((userId) => {
+      const userLogs = rows
+        .filter((log) => log.userId === userId && (log.action === 'LOGIN' || log.action === 'LOGOUT'))
+        .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      map[userId] = userLogs.length === 0 ? 'Unknown' : userLogs[0].action === 'LOGIN' ? 'Active' : 'Inactive';
+    });
+    return map;
+  }, [rows]);
+
+  // Adjust table height only on mount and resize
+  const mainContainerRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const scrollPositionRef = useRef<number>(0);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
     const adjustTableHeight = () => {
       if (mainContainerRef.current) {
         const windowHeight = window.innerHeight;
@@ -125,44 +113,31 @@ export default function AdminLogs() {
         const paginationHeight = 60;
         const headerHeight = 60;
         const availableHeight = windowHeight - containerTop - paginationHeight - headerHeight;
-        mainContainerRef.current.style.height = `${Math.max(400, availableHeight)}px`;
+        mainContainerRef.current.style.minHeight = `${Math.max(400, availableHeight)}px`;
       }
     };
 
-    setTimeout(adjustTableHeight, 100);
+    adjustTableHeight();
     window.addEventListener('resize', adjustTableHeight);
     return () => window.removeEventListener('resize', adjustTableHeight);
-  }, [filteredRows, currentPage]);
+  }, []);
 
-  // Calculate user status
-  const calculateUserStatus = (userId: string, allLogs: RowLog[]): 'Active' | 'Inactive' | 'Unknown' => {
-    if (!userId) return 'Unknown';
-    const userLogs = allLogs
-      .filter((log) => log.userId === userId && (log.action === 'LOGIN' || log.action === 'LOGOUT'))
-      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-    return userLogs.length === 0 ? 'Unknown' : userLogs[0].action === 'LOGIN' ? 'Active' : 'Inactive';
-  };
+  // Restore scroll position after page change
+  useEffect(() => {
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTop = scrollPositionRef.current;
+      console.log('[AdminLogs] Restored scroll position:', scrollPositionRef.current);
+    }
+  }, [logs]);
 
-  const getStatus = (row: RowLog): 'Active' | 'Inactive' | 'Unknown' =>
-    statusMap[row.userId] || calculateUserStatus(row.userId, rows);
-
-  // Recalculate all user statuses
-  const recalculateAllStatuses = (allLogs: RowLog[]) => {
-    const newStatusMap: Record<string, 'Active' | 'Inactive' | 'Unknown'> = {};
-    const uniqueUserIds = [...new Set(allLogs.map((log) => log.userId).filter(Boolean))];
-    uniqueUserIds.forEach((userId) => {
-      newStatusMap[userId] = calculateUserStatus(userId, allLogs);
-    });
-    setStatusMap(newStatusMap);
-  };
-
-  // Apply status update for a single user
-  const applyStatusUpdate = (log: RowLog) => {
-    if (!log.userId) return;
-    setStatusMap((prev) => ({
-      ...prev,
-      [log.userId]: log.action === 'LOGIN' ? 'Active' : log.action === 'LOGOUT' ? 'Inactive' : prev[log.userId] || 'Unknown',
-    }));
+  // Save scroll position before page change
+  const handlePageChange = (page: number) => {
+    console.log('[AdminLogs] Changing page to:', page);
+    if (scrollContainerRef.current) {
+      scrollPositionRef.current = scrollContainerRef.current.scrollTop;
+      console.log('[AdminLogs] Saved scroll position:', scrollPositionRef.current);
+    }
+    setCurrentPage(page);
   };
 
   const columns: ColumnDef<RowLog>[] = useMemo(
@@ -226,7 +201,7 @@ export default function AdminLogs() {
         header: 'Status',
         meta: { size: '100px' },
         cell: ({ row }) => {
-          const s = getStatus(row.original);
+          const s = statusMap[row.original.userId] || 'Unknown';
           return (
             <span
               className={cn(
@@ -259,10 +234,8 @@ export default function AdminLogs() {
         ),
       },
     ],
-    [statusMap, currentPage, itemsPerPage, rows]
+    [statusMap, currentPage, itemsPerPage]
   );
-
-  const handlePageChange = (page: number) => setCurrentPage(page);
 
   return (
     <div className="flex h-full flex-col gap-4 p-4">
@@ -279,14 +252,23 @@ export default function AdminLogs() {
           </Button>
           <h1 className="text-xl font-semibold">System Logs</h1>
         </div>
+        {connected && (
+          <span className="text-sm text-green-600">Live</span>
+        )}
       </div>
 
       {/* Search with Category Selection */}
       <div className="flex w-full gap-2">
         <SearchBar
           search={search}
-          setSearch={setSearch}
-          onSearch={() => {}}
+          setSearch={(value) => {
+            setSearch(value);
+            setCurrentPage(1);
+            if (value && searchCategory === 'action') {
+              setSearchCategory('all');
+            }
+          }}
+          inputRef={searchInputRef}
         />
         <select
           className="h-10 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
@@ -299,7 +281,9 @@ export default function AdminLogs() {
               setSearchCategory('action');
               setSearch(e.target.value);
             }
+            setCurrentPage(1);
           }}
+          disabled={loading}
         >
           <option value="">All Events</option>
           <option value="LOGIN">LOGIN</option>
@@ -309,36 +293,53 @@ export default function AdminLogs() {
         </select>
       </div>
 
-      {/* Table */}
-      <div ref={mainContainerRef}>
-        <DataTable
-          columns={columns}
-          data={filteredRows
-            .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
-            .map((r, i) => ({ ...r, id: r._id || i }))}
-          className="h-full"
-          enableRowSelection={false}
-          showCheckboxes={false}
-          onDelete={undefined}
-        />
+      {/* Error State */}
+      {error && (
+        <div className="flex items-center justify-between rounded bg-red-100 p-2 text-red-700">
+          <span>{error}</span>
+          <Button variant="outline" onClick={refetchLogs}>
+            Retry
+          </Button>
+        </div>
+      )}
+
+      {/* Table with Loading Overlay */}
+      <div ref={mainContainerRef} className="relative">
+        {loading && (
+          <div className="absolute inset-0 flex items-center justify-center bg-white bg-opacity-50 dark:bg-gray-800 dark:bg-opacity-50 z-10">
+            <svg className="animate-spin h-5 w-5 text-gray-500" viewBox="0 0 24 24">
+              <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+            </svg>
+            <p className="ml-2 text-gray-500">Loading...</p>
+          </div>
+        )}
+        <div ref={scrollContainerRef} className="overflow-auto">
+          <DataTable
+            columns={columns}
+            data={rows.map((r, i) => ({ ...r, id: r._id || i }))}
+            className="h-full"
+            enableRowSelection={false}
+            showCheckboxes={false}
+            onDelete={undefined}
+          />
+        </div>
       </div>
-      {filteredRows.length === 0 && (
+      {rows.length === 0 && !loading && (
         <div className="flex h-40 w-full items-center justify-center">
           <p className="text-gray-500">No matching logs found</p>
         </div>
       )}
 
       {/* Pagination */}
-      {filteredRows.length > itemsPerPage && (
+      <div data-testid="pagination-container">
         <Pagination
           page={currentPage}
           limit={itemsPerPage}
-          total={filteredRows.length}
+          total={total}
           onPageChange={handlePageChange}
-          data={filteredRows}
           siblingCount={1}
         />
-      )}
+      </div>
 
       {/* Details Dialog */}
       <AdminLogsDialog selected={selected} onClose={() => setSelected(null)} />

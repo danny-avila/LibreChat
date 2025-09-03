@@ -1,11 +1,10 @@
-// ~/server/controllers/UserActivityController.js
 const { logger } = require('~/config');
 const { UserActivityLog, User, Message } = require('~/db/models');
 const mongoose = require('mongoose');
 
 /** ---------------- Shared helpers ---------------- **/
 const buildFilterFromQuery = (query = {}) => {
-  const { userId, action, startDate, endDate } = query;
+  const { userId, action, startDate, endDate, search } = query;
   const filter = {};
   if (userId) {
     try {
@@ -20,38 +19,55 @@ const buildFilterFromQuery = (query = {}) => {
     if (startDate) filter.timestamp.$gte = new Date(startDate);
     if (endDate) filter.timestamp.$lte = new Date(endDate);
   }
-  return filter;
+  return { filter, search };
 };
 
-const buildLogsAggregation = (filter, { skip = 0, limitNum = 20 } = {}) => ([
-  { $match: filter },
-  {
-    $lookup: {
-      from: 'users',
-      localField: 'user',
-      foreignField: '_id',
-      as: 'userInfo',
-      pipeline: [
-        { $project: { name: 1, email: 1, username: 1, avatar: 1, role: 1 } }
-      ]
-    }
-  },
-  { $unwind: '$userInfo' },
-  {
-    $addFields: {
-      tokenUsage: {
-        $cond: [
-          { $in: ['$action', ['MODEL CHANGED', 'MODEL CHNAGED']] },
-          '$details',
-          null
+const buildLogsAggregation = (filter, { skip = 0, limitNum = 20 }, search) => {
+  const pipeline = [
+    { $match: filter },
+    {
+      $lookup: {
+        from: 'users',
+        localField: 'user',
+        foreignField: '_id',
+        as: 'userInfo',
+        pipeline: [
+          { $project: { name: 1, email: 1, username: 1, avatar: 1, role: 1 } }
         ]
       }
-    }
-  },
-  { $sort: { timestamp: -1 } },
-  { $skip: skip },
-  { $limit: limitNum }
-]);
+    },
+    { $unwind: '$userInfo' },
+  ];
+  if (search) {
+    pipeline.push({
+      $match: {
+        $or: [
+          { 'userInfo.name': { $regex: search, $options: 'i' } },
+          { 'userInfo.email': { $regex: search, $options: 'i' } },
+          { 'userInfo.username': { $regex: search, $options: 'i' } },
+          { action: { $regex: search, $options: 'i' } }
+        ]
+      }
+    });
+  }
+  pipeline.push(
+    {
+      $addFields: {
+        tokenUsage: {
+          $cond: [
+            { $in: ['$action', ['MODEL CHANGED']] },
+            '$details',
+            null
+          ]
+        }
+      }
+    },
+    { $sort: { timestamp: -1 } },
+    { $skip: skip },
+    { $limit: limitNum }
+  );
+  return pipeline;
+};
 
 /**
  * Shared fetcher used by both /logs and /stream (initial snapshot)
@@ -65,12 +81,41 @@ const fetchActivityLogs = async (query = {}) => {
       ? query.includeTokenUsage
       : `${query.includeTokenUsage ?? 'true'}` === 'true';
 
-  const filter = buildFilterFromQuery(query);
+  const { filter, search } = buildFilterFromQuery(query);
   logger.info('[fetchActivityLogs] Query params:', query);
   logger.info('[fetchActivityLogs] Built filter:', filter);
 
-  // Count first so we can handle ?all=true
-  const totalCount = await UserActivityLog.countDocuments(filter);
+  // Compute total count with search filter
+  const countPipeline = [
+    { $match: filter },
+    {
+      $lookup: {
+        from: 'users',
+        localField: 'user',
+        foreignField: '_id',
+        as: 'userInfo',
+        pipeline: [
+          { $project: { name: 1, email: 1, username: 1, avatar: 1, role: 1 } }
+        ]
+      }
+    },
+    { $unwind: '$userInfo' }
+  ];
+  if (search) {
+    countPipeline.push({
+      $match: {
+        $or: [
+          { 'userInfo.name': { $regex: search, $options: 'i' } },
+          { 'userInfo.email': { $regex: search, $options: 'i' } },
+          { 'userInfo.username': { $regex: search, $options: 'i' } },
+          { action: { $regex: search, $options: 'i' } }
+        ]
+      }
+    });
+  }
+  countPipeline.push({ $count: 'total' });
+  const [countResult] = await UserActivityLog.aggregate(countPipeline);
+  const totalCount = countResult?.total || 0;
   logger.info('[fetchActivityLogs] Total documents count:', totalCount);
 
   let skip = (pageNum - 1) * limitQ;
@@ -83,14 +128,14 @@ const fetchActivityLogs = async (query = {}) => {
 
   logger.info('[fetchActivityLogs] Pagination:', { skip, limitNum, pageNum, limitQ });
 
-  const logs = await UserActivityLog.aggregate(buildLogsAggregation(filter, { skip, limitNum }));
+  const logs = await UserActivityLog.aggregate(buildLogsAggregation(filter, { skip, limitNum }, search));
   logger.info('[fetchActivityLogs] Retrieved logs count:', logs.length);
 
   // Enrich token usage if requested
   if (includeTokenUsage) {
     for (const log of logs) {
       if (
-        ['MODEL CHANGED', 'MODEL CHNAGED'].includes(log.action) &&
+        ['MODEL CHANGED'].includes(log.action) &&
         log.details?.conversationId
       ) {
         const tokenStats = await getTokenUsageForModelChange(
@@ -122,7 +167,7 @@ const fetchActivityLogs = async (query = {}) => {
 
 /**
  * Get user activity logs with token usage data
- * Query: page, limit, userId, action, startDate, endDate, includeTokenUsage, all
+ * Query: page, limit, userId, action, startDate, endDate, includeTokenUsage, all, search
  */
 const getUserActivityLogs = async (req, res) => {
   try {
@@ -218,7 +263,7 @@ const getActivityStats = async (req, res) => {
     const activeUsers = await UserActivityLog.distinct('user', { timestamp: { $gte: startDate } });
 
     const modelChangeStats = await UserActivityLog.aggregate([
-      { $match: { action: { $in: ['MODEL CHANGED', 'MODEL CHNAGED'] }, timestamp: { $gte: startDate } } },
+      { $match: { action: { $in: ['MODEL CHANGED'] }, timestamp: { $gte: startDate } } },
       {
         $group: {
           _id: { fromModel: '$details.fromModel', toModel: '$details.toModel' },

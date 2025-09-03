@@ -185,10 +185,10 @@ export default function AdminDashboard() {
       <SearchBar
         search={search}
         setSearch={setSearch}
-        onSearch={() => {
-          setPage(1);
-          usersQuery.refetch();
-        }}
+        // onSearch={() => {
+        //   setPage(1);
+        //   usersQuery.refetch();
+        // }}
       />
 
       {/* Users Table */}
@@ -209,7 +209,7 @@ export default function AdminDashboard() {
           page={page}
           limit={limit}
           total={total}
-          data={data}
+         // data={data}
           onPageChange={setPage}
         />
       )}
