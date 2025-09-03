@@ -95,9 +95,6 @@ export class MCPConnection extends EventEmitter {
     for (const [key, value] of Object.entries(headers)) {
       normalizedHeaders[key.toLowerCase()] = value;
     }
-    logger.debug(
-      `${this.getLogPrefix()} Setting request headers: ${JSON.stringify(normalizedHeaders)}`,
-    );
     this.requestHeaders = normalizedHeaders;
   }
 
