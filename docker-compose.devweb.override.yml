@@ -1,0 +1,197 @@
+services:
+  librechat_api:
+    image: ghcr.io/lexgovai/librechat-api:${LIBRECHAT_TAG:-latest}
+    container_name: dev-librechat-api
+    restart: unless-stopped
+    depends_on:
+      - mongodb
+      - rag_api
+    environment:
+      CONFIG_PATH: /app/librechat.merged.yaml
+      BASE_CONFIG_PATH: /app/librechat.yaml
+      HOST: 0.0.0.0
+      PORT: 3080
+      MONGO_URI: mongodb://mongodb:27017/LibreChat
+      MEILI_HOST: http://meilisearch:7700
+      RAG_API_URL: http://rag_api:8000
+      GOVGPT_ROOT: /app
+    env_file:
+      - .env
+    volumes:
+      - ./librechat.yaml:/app/librechat.yaml:ro
+      - ./librechat.merged.yaml:/app/librechat.merged.yaml:rw
+      - ./admin-overrides.yaml:/app/admin-overrides.yaml:rw
+      - ./uploads:/app/uploads
+      - ./logs:/app/api/logs
+    ports:
+      - "3080:3080"
+
+      
+  mongodb:
+    image: mongo
+    container_name: dev-mongodb
+    restart: unless-stopped
+    volumes:
+      - ./data-node:/data/db
+    command: mongod --noauth
+    ports:
+      - "27017:27017"
+
+  meilisearch:
+    image: getmeili/meilisearch:v1.12.3
+    container_name: dev-meilisearch
+    restart: unless-stopped
+    environment:
+      MEILI_NO_ANALYTICS: "true"
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY}
+    volumes:
+      - ./meili_data_v1.12:/meili_data
+    ports:
+      - "7700:7700"
+
+  vectordb:
+    image: ankane/pgvector:latest
+    container_name: dev-vectordb
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: mydatabase
+      POSTGRES_USER: myuser
+      POSTGRES_PASSWORD: mypassword
+    volumes:
+      - pgdata2:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  rag_api:
+    image: ghcr.io/danny-avila/librechat-rag-api-dev-lite:latest
+    container_name: dev-rag-api
+    restart: unless-stopped
+    depends_on:
+      - vectordb
+    environment:
+      DB_HOST: vectordb
+      RAG_PORT: 8000
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+  
+  # firecrawl_redis:
+  #     image: redis:alpine
+  #     container_name: firecrawl_redis
+  #     restart: unless-stopped
+  #     deploy:
+  #       resources:
+  #         limits:
+  #           memory: 512M
+  #           cpus: '0.5'
+  #         reservations:
+  #           memory: 128M
+  #           cpus: '0.1'
+
+  # # ───── Scraper : Firecrawl Playwright ─────
+  # playwright_service:
+  #   image: ghcr.io/mendableai/playwright-service:latest
+  #   container_name: playwright_service
+  #   restart: unless-stopped
+  #   environment:
+  #     - PORT=3000
+  #     - NODE_OPTIONS=--max-old-space-size=8192
+  #     - BROWSER_POOL_SIZE=3
+  #     - MAX_CONCURRENT_PAGES=8
+  #     - PLAYWRIGHT_BROWSER_POOL_SIZE=3
+  #     - BROWSER_EXECUTABLE_PATH=/usr/bin/chromium
+  #     - LAUNCH_OPTIONS={"args":["--no-sandbox","--disable-setuid-sandbox","--disable-dev-shm-usage","--disable-background-timer-throttling","--disable-renderer-backgrounding","--disable-features=TranslateUI","--disable-extensions","--disable-default-apps","--disable-sync","--metrics-recording-only","--no-first-run","--disable-background-networking"],"timeout":45000}
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         memory: 8G
+  #         cpus: '8.0'
+  #       reservations:
+  #         memory: 4G
+  #         cpus: '6.0'
+  #   shm_size: 8gb
+  #   depends_on:
+  #     - firecrawl_redis
+
+  # # ───── Scraper : Firecrawl API ─────
+  # firecrawl_api:
+  #   image: ghcr.io/mendableai/firecrawl:latest
+  #   container_name: firecrawl_api
+  #   restart: unless-stopped
+  #   command: ["pnpm","run","start:production"]     # default, but explicit is safe
+  #   ports:
+  #     - "3002:3002"
+  #   environment:
+  #     - HOST=0.0.0.0
+  #     - PORT=3002
+  #     - REDIS_URL=redis://firecrawl_redis:6379
+  #     - REDIS_RATE_LIMIT_URL=redis://firecrawl_redis:6379
+  #     - PLAYWRIGHT_MICROSERVICE_URL=http://playwright_service:3000
+  #     - NUM_WORKERS_PER_QUEUE=3
+  #     - CONCURRENCY_LIMIT=6
+  #     - USE_DB_AUTHENTICATION=false
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         memory: 4G
+  #         cpus: '4.0'
+  #       reservations:
+  #         memory: 2G
+  #         cpus: '2.0'
+  #   depends_on:
+  #     - firecrawl_redis
+  #     - playwright_service
+
+  # # ───── Scraper : Firecrawl Worker ─────
+  # firecrawl_worker:
+  #   image: ghcr.io/mendableai/firecrawl:latest
+  #   container_name: firecrawl_worker
+  #   restart: unless-stopped
+  #   command: ["pnpm","run","workers"]              # switch image into worker mode
+  #   environment:
+  #     - REDIS_URL=redis://firecrawl_redis:6379
+  #     - REDIS_RATE_LIMIT_URL=redis://firecrawl_redis:6379
+  #     - PLAYWRIGHT_MICROSERVICE_URL=http://playwright_service:3000
+  #     - NUM_WORKERS_PER_QUEUE=3
+  #     - CONCURRENCY_LIMIT=6
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         memory: 4G
+  #         cpus: '4.0'
+  #       reservations:
+  #         memory: 2G
+  #         cpus: '2.0'
+  #   depends_on:
+  #     - firecrawl_redis
+  #     - firecrawl_api
+  #     - playwright_service
+
+# ───── Custom Reranking Service (Disabled) ─────
+# jina_proxy:
+#   image: python:3.11-slim
+#   container_name: jina_proxy
+#   restart: unless-stopped
+#   ports:
+#     - "8001:8000"
+#   environment:
+#     - PYTHONUNBUFFERED=1
+#   volumes:
+#     - ./reranker-proxy:/app
+#   working_dir: /app
+#   command: >
+#     sh -c "
+#     pip install --no-cache-dir sentence-transformers flask requests numpy torch &&
+#     python proxy.py
+#     "
+#   deploy:
+#     resources:
+#       limits:
+#         memory: 3G
+#         cpus: '2.0'
+#       reservations:
+#         memory: 1G
+#         cpus: '0.5'
+volumes:
+  pgdata2:
