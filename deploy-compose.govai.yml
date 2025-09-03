@@ -20,6 +20,10 @@ services:
       HOST: 0.0.0.0
       PORT: 3080
       NODE_ENV: production
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      CREDS_KEY: ${CREDS_KEY}
+      CREDS_IV: ${CREDS_IV}
       MONGO_URI: mongodb://mongodb:27017/LibreChat
       MEILI_HOST: http://meilisearch:7700
       RAG_PORT: ${RAG_PORT:-8000}
@@ -28,8 +32,6 @@ services:
       DOMAIN_SERVER: ${DOMAIN_SERVER:-http://localhost}
       ALLOW_REGISTRATION: ${ALLOW_REGISTRATION:-true}
       ALLOW_UNVERIFIED_EMAIL_LOGIN: ${ALLOW_UNVERIFIED_EMAIL_LOGIN:-false}
-      EMAIL_HOST: ${EMAIL_HOST:-mailpit}
-      EMAIL_PORT: ${EMAIL_PORT:-1025}
     volumes:
       - ./govai.yaml:/app/govai.yaml:ro
       - ./librechat.merged.yaml:/app/librechat.merged.yaml:rw
@@ -59,7 +61,8 @@ services:
     restart: always
     volumes:
       - ./data-node:/data/db
-    command: mongod --noauth
+    command: ["mongod", "--bind_ip_all", "--noauth"]
+
   meilisearch:
     container_name: chat-meilisearch
     image: getmeili/meilisearch:v1.12.3
