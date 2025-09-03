@@ -10,12 +10,8 @@ on:
         description: 'Domain of the production server'
         type: string
         default: chat.sovai.nl
-      api_version:
-        description: 'API image tag to deploy'
-        type: string
-        default: latest
-      frontend_version:
-        description: 'Frontend image tag to deploy'
+      tag_version:
+        description: 'Image tag to deploy'
         type: string
         default: latest
       config_path:
@@ -279,6 +275,7 @@ jobs:
           WEBSEARCH_SEARCH_PROVIDER: ${{ vars.websearch_search_provider }}
           FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
           COHERE_API_KEY: ${{ secrets.COHERE_API_KEY }}
+          MEILI_MASTER_KEY: ${{ secrets.MEILI_MASTER_KEY }}
         run: |
           set -euo pipefail
           ip=${{ inputs.ip }}
@@ -311,6 +308,7 @@ jobs:
             printf 'WEBSEARCH_SEARCH_PROVIDER=%q\n' "$WEBSEARCH_SEARCH_PROVIDER"
             printf 'FIRECRAWL_API_KEY=%q\n' "$FIRECRAWL_API_KEY"
             printf 'COHERE_API_KEY=%q\n' "$COHERE_API_KEY"
+            printf 'MEILI_MASTER_KEY=%q\n' "$MEILI_MASTER_KEY"
 
           } > .remote.env
           scp -o StrictHostKeyChecking=no -i "${{ steps.ssh.outputs.key_path }}" .remote.env deploy@"$ip":/home/deploy/.remote.env
