@@ -254,7 +254,7 @@ jobs:
 
       - name: Upload deployment bundle and runtime env
         env:
-          API_VERSION: ${{ inputs.api_version }}
+          TAG_VERSION: ${{ inputs.tag_version }}
           GH_PAT: ${{ secrets.GH_PAT }}
           GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
           CONFIG_PATH: ${{ inputs.config_path }}
@@ -287,7 +287,7 @@ jobs:
           {
             printf 'FQDN=%q\n' "$fqdn"
             printf 'IP=%q\n' "$ip"
-            printf 'LIBRECHAT_TAG=%q\n' "$API_VERSION"
+            printf 'LIBRECHAT_TAG=%q\n' "$TAG_VERSION"
             printf 'GH_PAT=%q\n' "$GH_PAT"
             printf 'GHCR_USERNAME=%q\n' "$GHCR_USERNAME"
             printf 'CONFIG_PATH=%q\n' "$CONFIG_PATH"
