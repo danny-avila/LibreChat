@@ -5,6 +5,7 @@ const { logger } = require('@librechat/data-schemas');
 const { agentCreateSchema, agentUpdateSchema } = require('@librechat/api');
 const {
   Tools,
+  Constants,
   SystemRoles,
   FileSources,
   ResourceType,
@@ -69,9 +70,9 @@ const createAgentHandler = async (req, res) => {
     for (const tool of tools) {
       if (availableTools[tool]) {
         agentData.tools.push(tool);
-      }
-
-      if (systemTools[tool]) {
+      } else if (systemTools[tool]) {
+        agentData.tools.push(tool);
+      } else if (tool.includes(Constants.mcp_delimiter)) {
         agentData.tools.push(tool);
       }
     }

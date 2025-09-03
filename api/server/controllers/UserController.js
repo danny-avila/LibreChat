@@ -187,7 +187,7 @@ const updateUserPluginsController = async (req, res) => {
             // Extract server name from pluginKey (format: "mcp_<serverName>")
             const serverName = pluginKey.replace(Constants.mcp_prefix, '');
             logger.info(
-              `[updateUserPluginsController] Disconnecting MCP server ${serverName} for user ${user.id} after plugin auth update for ${pluginKey}.`,
+              `[updateUserPluginsController] Attempting disconnect of MCP server "${serverName}" for user ${user.id} after plugin auth update.`,
             );
             await mcpManager.disconnectUserConnection(user.id, serverName);
           }

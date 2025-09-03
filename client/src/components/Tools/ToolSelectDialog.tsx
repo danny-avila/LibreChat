@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { Search, X } from 'lucide-react';
 import { useFormContext } from 'react-hook-form';
-import { Constants, isAgentsEndpoint } from 'librechat-data-provider';
+import { isAgentsEndpoint } from 'librechat-data-provider';
 import { Dialog, DialogPanel, DialogTitle, Description } from '@headlessui/react';
 import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
 import type {
@@ -15,7 +15,6 @@ import type { AgentForm, TPluginStoreDialogProps } from '~/common';
 import { PluginPagination, PluginAuthForm } from '~/components/Plugins/Store';
 import { useAgentPanelContext } from '~/Providers/AgentPanelContext';
 import { useLocalize, usePluginDialogHelpers } from '~/hooks';
-import { useAvailableToolsQuery } from '~/data-provider';
 import ToolItem from './ToolItem';
 
 function ToolSelectDialog({
@@ -26,10 +25,9 @@ function ToolSelectDialog({
   endpoint: AssistantsEndpoint | EModelEndpoint.agents;
 }) {
   const localize = useLocalize();
-  const { getValues, setValue } = useFormContext<AgentForm>();
-  const { data: tools } = useAvailableToolsQuery(endpoint);
-  const { groupedTools } = useAgentPanelContext();
   const isAgentTools = isAgentsEndpoint(endpoint);
+  const { getValues, setValue } = useFormContext<AgentForm>();
+  const { groupedTools, pluginTools } = useAgentPanelContext();
 
   const {
     maxPage,
@@ -121,38 +119,28 @@ function ToolSelectDialog({
 
   const onAddTool = (pluginKey: string) => {
     setShowPluginAuthForm(false);
-    const getAvailablePluginFromKey = tools?.find((p) => p.pluginKey === pluginKey);
-    setSelectedPlugin(getAvailablePluginFromKey);
+    const availablePluginFromKey = pluginTools?.find((p) => p.pluginKey === pluginKey);
+    setSelectedPlugin(availablePluginFromKey);
 
-    const isMCPTool = pluginKey.includes(Constants.mcp_delimiter);
-
-    if (isMCPTool) {
-      // MCP tools have their variables configured elsewhere (e.g., MCPPanel or MCPSelect),
-      // so we directly proceed to install without showing the auth form.
-      handleInstall({ pluginKey, action: 'install', auth: {} });
+    const { authConfig, authenticated = false } = availablePluginFromKey ?? {};
+    if (authConfig && authConfig.length > 0 && !authenticated) {
+      setShowPluginAuthForm(true);
     } else {
-      const { authConfig, authenticated = false } = getAvailablePluginFromKey ?? {};
-      if (authConfig && authConfig.length > 0 && !authenticated) {
-        setShowPluginAuthForm(true);
-      } else {
-        handleInstall({
-          pluginKey,
-          action: 'install',
-          auth: {},
-        });
-      }
+      handleInstall({
+        pluginKey,
+        action: 'install',
+        auth: {},
+      });
     }
   };
 
   const filteredTools = Object.values(groupedTools || {}).filter(
-    (tool: AgentToolType & { tools?: AgentToolType[] }) => {
-      // Check if the parent tool matches
-      if (tool.metadata?.name?.toLowerCase().includes(searchValue.toLowerCase())) {
+    (currentTool: AgentToolType & { tools?: AgentToolType[] }) => {
+      if (currentTool.metadata?.name?.toLowerCase().includes(searchValue.toLowerCase())) {
         return true;
       }
-      // Check if any child tools match
-      if (tool.tools) {
-        return tool.tools.some((childTool) =>
+      if (currentTool.tools) {
+        return currentTool.tools.some((childTool) =>
           childTool.metadata?.name?.toLowerCase().includes(searchValue.toLowerCase()),
         );
       }
@@ -169,9 +157,9 @@ function ToolSelectDialog({
       }
     }
   }, [
-    tools,
-    itemsPerPage,
+    pluginTools,
     searchValue,
+    itemsPerPage,
     filteredTools,
     searchChanged,
     setMaxPage,
