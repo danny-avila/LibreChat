@@ -22,6 +22,10 @@ export default defineConfig(({ command }) => ({
         target: 'http://localhost:3080',
         changeOrigin: true,
       },
+      '/admin': {
+        target: 'http://localhost:3080',
+        changeOrigin: true,
+      },
     },
   },
   // Set the directory where environment variables are loaded from and restrict prefixes

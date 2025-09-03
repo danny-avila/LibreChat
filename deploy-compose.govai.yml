@@ -1,0 +1,118 @@
+services:
+  api:
+    # build:
+    #   context: .
+    #   dockerfile: Dockerfile.multi
+    #   target: api-build
+    image: ghcr.io/lexgovai/librechat-api:${LIBRECHAT_TAG:-latest}
+    container_name: librechat_api
+    ports:
+      - 3080:3080
+    depends_on:
+      - mongodb
+      - rag_api
+    restart: always
+    extra_hosts:
+    - "host.docker.internal:host-gateway"
+    environment:
+      CONFIG_PATH: /app/librechat.merged.yaml
+      BASE_CONFIG_PATH: /app/govai.yaml
+      HOST: 0.0.0.0
+      PORT: 3080
+      NODE_ENV: production
+      MONGO_URI: mongodb://mongodb:27017/LibreChat
+      MEILI_HOST: http://meilisearch:7700
+      RAG_PORT: ${RAG_PORT:-8000}
+      RAG_API_URL: http://rag_api:${RAG_PORT:-8000}
+      DOMAIN_CLIENT: ${DOMAIN_CLIENT:-http://localhost}
+      DOMAIN_SERVER: ${DOMAIN_SERVER:-http://localhost}
+      ALLOW_REGISTRATION: ${ALLOW_REGISTRATION:-true}
+      ALLOW_UNVERIFIED_EMAIL_LOGIN: ${ALLOW_UNVERIFIED_EMAIL_LOGIN:-false}
+      EMAIL_HOST: ${EMAIL_HOST:-mailpit}
+      EMAIL_PORT: ${EMAIL_PORT:-1025}
+    volumes:
+      - ./govai.yaml:/app/govai.yaml:ro
+      - ./librechat.merged.yaml:/app/librechat.merged.yaml:rw
+      - ./admin-overrides.yaml:/app/admin-overrides.yaml:rw
+      - ./images:/app/client/public/images
+      - ./uploads:/app/uploads
+      - ./logs:/app/api/logs
+
+  client:
+    image: nginx:1.27.0-alpine
+    container_name: nginx-govai
+    ports:
+      - 80:80
+      - 443:443
+    depends_on:
+      - api
+    restart: always
+    volumes:
+      - ./client/nginx.conf:/etc/nginx/conf.d/default.conf
+      - /srv/govai/certbot-www:/var/www/certbot
+      - /srv/govai/letsencrypt:/etc/letsencrypt
+  mongodb:
+    container_name: chat-mongodb
+    # ports:  # Uncomment this to access mongodb from outside docker, not safe in deployment
+    #   - 27018:27017
+    image: mongo
+    restart: always
+    volumes:
+      - ./data-node:/data/db
+    command: mongod --noauth
+  meilisearch:
+    container_name: chat-meilisearch
+    image: getmeili/meilisearch:v1.12.3
+    restart: always
+    # ports: # Uncomment this to access meilisearch from outside docker
+    #   - 7700:7700 # if exposing these ports, make sure your master key is not the default value
+    env_file:
+      - .env
+    environment:
+      - MEILI_HOST=http://meilisearch:7700
+      - MEILI_NO_ANALYTICS=true
+      - MEILI_MASTER_KEY=${MEILI_MASTER_KEY}
+    volumes:
+      - ./meili_data_v1.12:/meili_data
+  vectordb:
+    image: pgvector/pgvector:0.8.0-pg15-trixie
+    environment:
+      POSTGRES_DB: mydatabase
+      POSTGRES_USER: myuser
+      POSTGRES_PASSWORD: mypassword
+    restart: always
+    volumes:
+      - pgdata2:/var/lib/postgresql/data
+  rag_api:
+    image: ghcr.io/danny-avila/librechat-rag-api-dev-lite:latest
+    environment:
+      - DB_HOST=vectordb
+      - RAG_PORT=${RAG_PORT:-8000}
+    restart: always
+    depends_on:
+      - vectordb
+
+  certbot:
+    image: certbot/certbot:latest
+    container_name: certbot-govai
+    volumes:
+      - /srv/govai/letsencrypt:/etc/letsencrypt
+      - /srv/govai/certbot-www:/var/www/certbot
+      - /srv/govai/letsencrypt-log:/var/log/letsencrypt
+      - /var/run/docker.sock:/var/run/docker.sock
+    entrypoint: >-
+      /bin/sh -c '
+        trap exit TERM;
+        while :; do
+          certbot renew --quiet --deploy-hook "docker exec nginx-govai nginx -s reload" || true;
+          sleep 12h;
+        done'
+    depends_on:
+      - client
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+volumes:
+  pgdata2:

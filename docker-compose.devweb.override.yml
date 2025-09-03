@@ -1,0 +1,27 @@
+services:
+  librechat_api:
+    image: ghcr.io/lexgovai/librechat-api:${LIBRECHAT_TAG:-latest}
+    container_name: dev-librechat-api
+    restart: unless-stopped
+    depends_on:
+      - mongodb
+      - rag_api
+    environment:
+      CONFIG_PATH: /app/librechat.merged.yaml
+      BASE_CONFIG_PATH: /app/librechat.yaml
+      HOST: 0.0.0.0
+      PORT: 3080
+      MONGO_URI: mongodb://mongodb:27017/LibreChat
+      MEILI_HOST: http://meilisearch:7700
+      RAG_API_URL: http://rag_api:8000
+      GOVGPT_ROOT: /app
+    env_file:
+      - .env
+    volumes:
+      - ./librechat.yaml:/app/librechat.yaml:ro
+      - ./librechat.merged.yaml:/app/librechat.merged.yaml:rw
+      - ./admin-overrides.yaml:/app/admin-overrides.yaml:rw
+      - ./uploads:/app/uploads
+      - ./logs:/app/api/logs
+    ports:
+      - "3080:3080"

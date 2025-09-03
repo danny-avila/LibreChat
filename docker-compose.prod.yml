@@ -1,6 +1,6 @@
 services:
   librechat_api:
-    image: ghcr.io/gradient-ds/librechat-api:${LIBRECHAT_TAG:-latest}
+    image: ghcr.io/lexgovai/librechat-api:${LIBRECHAT_TAG:-latest}
     container_name: librechat_api
     restart: unless-stopped
     labels:

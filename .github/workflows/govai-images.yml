@@ -37,11 +37,11 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: Dockerfile.GovGPT.multi
+          file: Dockerfile.GovAI.multi
           target: api-build
           push: true
           platforms: linux/amd64,linux/arm64
           tags: |
-            ghcr.io/gradient-ds/librechat-api:${{ github.sha }}
-            ghcr.io/gradient-ds/librechat-api:${{ steps.vars.outputs.safe_ref }}
-            ${{ github.ref == 'refs/heads/main' && 'ghcr.io/gradient-ds/librechat-api:latest' || '' }}
+            ghcr.io/lexgovai/librechat-api:${{ github.sha }}
+            ghcr.io/lexgovai/librechat-api:${{ steps.vars.outputs.safe_ref }}
+            ${{ github.ref == 'refs/heads/main' && 'ghcr.io/lexgovai/librechat-api:latest' || '' }}

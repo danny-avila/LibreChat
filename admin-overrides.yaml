@@ -17,3 +17,4 @@ interface:
   customWelcome: Welkom bij KWINK!
   parameters: true
   multiConvo: false
+  sidePanel: true
