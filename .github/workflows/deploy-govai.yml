@@ -257,6 +257,7 @@ jobs:
           TAG_VERSION: ${{ inputs.tag_version }}
           GH_PAT: ${{ secrets.GH_PAT }}
           GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
+          GRADIENT_MAIL: ${{ secrets.GRADIENT_MAIL }}
           CONFIG_PATH: ${{ inputs.config_path }}
           MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -291,6 +292,7 @@ jobs:
             printf 'GH_PAT=%q\n' "$GH_PAT"
             printf 'GHCR_USERNAME=%q\n' "$GHCR_USERNAME"
             printf 'CONFIG_PATH=%q\n' "$CONFIG_PATH"
+            printf 'GRADIENT_MAIL=%q\n' "$GRADIENT_MAIL"
             printf 'MISTRAL_API_KEY=%q\n' "$MISTRAL_API_KEY"
             printf 'OPENAI_API_KEY=%q\n' "$OPENAI_API_KEY"
             printf 'CREDS_KEY=%q\n' "$CREDS_KEY"
@@ -372,13 +374,14 @@ jobs:
 
       - name: Bootstrap Nginx with ACME and issue certificate
         env:
-          GRADIENT_MAIL: ${{ secrets.GRADIENT_MAIL }}
+          GRADIENT_MAIL: ${{ secrets.GRADIENT_MAIL }} 
         run: |
           ip=${{ inputs.ip }}
           fqdn=${{ inputs.domain }}
           ssh -o StrictHostKeyChecking=no -i "${{ steps.ssh.outputs.key_path }}" deploy@"$ip" bash -lc '
             set -euo pipefail
             cd /home/deploy/govai
+            . /home/deploy/.remote.env || true
             : "${GRADIENT_MAIL:=}"
             if [ -z "$GRADIENT_MAIL" ]; then echo "GRADIENT_MAIL not set; skipping cert issuance"; exit 0; fi
             sed "s/SERVER_NAME_PLACEHOLDER/${FQDN}/g" client/nginx-acme.conf > /tmp/nginx-default.conf
