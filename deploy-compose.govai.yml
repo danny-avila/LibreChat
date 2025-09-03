@@ -41,6 +41,9 @@ services:
       ALLOW_REGISTRATION: ${ALLOW_REGISTRATION:-true}
       ALLOW_UNVERIFIED_EMAIL_LOGIN: ${ALLOW_UNVERIFIED_EMAIL_LOGIN:-true}
       ALLOW_EMAIL_LOGIN: ${ALLOW_EMAIL_LOGIN:-true}
+      MISTRAL_API_KEY: ${MISTRAL_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      RAG_OPENAI_API_KEY: ${RAG_OPENAI_API_KEY}
     volumes:
       - ./govai.yaml:/app/govai.yaml:ro
       - ./librechat.merged.yaml:/app/librechat.merged.yaml:rw
