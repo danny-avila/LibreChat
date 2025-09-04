@@ -51,6 +51,8 @@ registration:
 #   socialLogins: ['github', 'google', 'discord', 'openid', 'facebook', 'apple', 'saml']
   allowedDomains:
     - "gradient-ds.com"
+    - "ai-labs.nl"
+    - "ubiops.com"
 
 
 # Example Balance settings
