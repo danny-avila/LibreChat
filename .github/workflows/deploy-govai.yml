@@ -283,6 +283,7 @@ jobs:
           FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
           COHERE_API_KEY: ${{ secrets.COHERE_API_KEY }}
           MEILI_MASTER_KEY: ${{ secrets.MEILI_MASTER_KEY }}
+          ENDPOINTS: ${{ vars.ENDPOINTS }}
         run: |
           set -euo pipefail
           ip=${{ inputs.ip }}
@@ -326,6 +327,7 @@ jobs:
             printf 'DOMAIN_CLIENT=%q\n' "https://$fqdn"
             printf 'DOMAIN_SERVER=%q\n' "https://$fqdn"
             printf 'TRUST_PROXY=%q\n' "1"
+            printf 'ENDPOINTS=%q\n' "$ENDPOINTS"
           } > .remote.env
           scp -o StrictHostKeyChecking=no -i "${{ steps.ssh.outputs.key_path }}" .remote.env deploy@"$ip":/home/deploy/.remote.env
 

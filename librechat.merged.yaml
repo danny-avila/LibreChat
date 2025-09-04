@@ -58,7 +58,7 @@ endpoints:
           - mistral-small
         fetch: true
       titleConvo: true
-      titleModel: mistral-small
+      titleModel: mistral-medium
       modelDisplayLabel: Mistral
       dropParams:
         - stop

@@ -15,6 +15,8 @@ services:
     extra_hosts:
     - "host.docker.internal:host-gateway"
     environment:
+      GOVGPT_ROOT: /app
+      ADMIN_OVERLAY_PATH: /app/admin-overrides.yaml
       CONFIG_PATH: /app/librechat.merged.yaml
       BASE_CONFIG_PATH: /app/govai.yaml
       HOST: 0.0.0.0
@@ -52,6 +54,8 @@ services:
       MISTRAL_API_KEY: ${MISTRAL_API_KEY}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       RAG_OPENAI_API_KEY: ${RAG_OPENAI_API_KEY}
+
+      ENDPOINTS: ${ENDPOINTS}
     volumes:
       - ./govai.yaml:/app/govai.yaml:ro
       - ./librechat.merged.yaml:/app/librechat.merged.yaml:rw
