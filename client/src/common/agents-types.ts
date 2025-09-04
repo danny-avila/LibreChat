@@ -34,6 +34,7 @@ export type AgentForm = {
   model_parameters: AgentModelParameters;
   tools?: string[];
   provider?: AgentProvider | OptionWithIcon;
+  /** @deprecated Use edges instead */
   agent_ids?: string[];
   edges?: GraphEdge[];
   [AgentCapabilities.artifacts]?: ArtifactModes | string;

@@ -225,6 +225,7 @@ export type Agent = {
   /** @deprecated Use ACL permissions instead */
   isCollaborative?: boolean;
   tool_resources?: AgentToolResources;
+  /** @deprecated Use edges instead */
   agent_ids?: string[];
   edges?: GraphEdge[];
   end_after_tools?: boolean;
