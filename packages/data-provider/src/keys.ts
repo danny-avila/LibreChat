@@ -21,7 +21,6 @@ export enum QueryKeys {
   assistant = 'assistant',
   agents = 'agents',
   agent = 'agent',
-  endpointsConfigOverride = 'endpointsConfigOverride',
   files = 'files',
   fileConfig = 'fileConfig',
   tools = 'tools',

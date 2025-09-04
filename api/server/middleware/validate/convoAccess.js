@@ -15,7 +15,7 @@ const { USE_REDIS, CONVO_ACCESS_VIOLATION_SCORE: score = 0 } = process.env ?? {}
  * If the `cache` store is not available, the middleware will skip its logic.
  *
  * @function
- * @param {Express.Request} req - Express request object containing user information.
+ * @param {ServerRequest} req - Express request object containing user information.
  * @param {Express.Response} res - Express response object.
  * @param {function} next - Express next middleware function.
  * @throws {Error} Throws an error if the user doesn't have access to the conversation.

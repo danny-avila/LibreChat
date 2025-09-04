@@ -1,4 +1,4 @@
-import { Schema, Document } from 'mongoose';
+import { Schema } from 'mongoose';
 import type { IAgentCategory } from '~/types';
 
 const agentCategorySchema = new Schema<IAgentCategory>(
@@ -31,6 +31,10 @@ const agentCategorySchema = new Schema<IAgentCategory>(
       default: true,
       index: true,
     },
+    custom: {
+      type: Boolean,
+      default: false,
+    },
   },
   {
     timestamps: true,
@@ -38,5 +42,6 @@ const agentCategorySchema = new Schema<IAgentCategory>(
 );
 
 agentCategorySchema.index({ isActive: 1, order: 1 });
+agentCategorySchema.index({ order: 1, label: 1 });
 
 export default agentCategorySchema;

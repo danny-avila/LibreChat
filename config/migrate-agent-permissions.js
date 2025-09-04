@@ -16,6 +16,38 @@ async function migrateAgentPermissionsEnhanced({ dryRun = true, batchSize = 100 
 
   logger.info('Starting Enhanced Agent Permissions Migration', { dryRun, batchSize });
 
+  /** Ensurse `aclentries` collection exists for DocumentDB compatibility
+   * @param {import('mongoose').mongo.Db} db
+   * @param {string} collectionName
+   */
+  async function ensureCollectionExists(db, collectionName) {
+    try {
+      const collections = await db.listCollections({ name: collectionName }).toArray();
+      if (collections.length === 0) {
+        await db.createCollection(collectionName);
+        logger.info(`Created collection: ${collectionName}`);
+      } else {
+        logger.info(`Collection already exists: ${collectionName}`);
+      }
+    } catch (error) {
+      logger.error(`'Failed to check/create "${collectionName}" collection:`, error);
+      // If listCollections fails, try alternative approach
+      try {
+        // Try to access the collection directly - this will create it in MongoDB if it doesn't exist
+        await db.collection(collectionName).findOne({}, { projection: { _id: 1 } });
+      } catch (createError) {
+        logger.error(`Could not ensure collection ${collectionName} exists:`, createError);
+      }
+    }
+  }
+
+  const mongoose = require('mongoose');
+  /** @type {import('mongoose').mongo.Db | undefined} */
+  const db = mongoose.connection.db;
+  if (db) {
+    await ensureCollectionExists(db, 'aclentries');
+  }
+
   // Verify required roles exist
   const ownerRole = await findRoleByIdentifier(AccessRoleIds.AGENT_OWNER);
   const viewerRole = await findRoleByIdentifier(AccessRoleIds.AGENT_VIEWER);
@@ -100,12 +132,19 @@ async function migrateAgentPermissionsEnhanced({ dryRun = true, batchSize = 100 
     }
   });
 
-  logger.info('Agent categorization:', {
-    globalEditAccess: categories.globalEditAccess.length,
-    globalViewAccess: categories.globalViewAccess.length,
-    privateAgents: categories.privateAgents.length,
-    total: agentsToMigrate.length,
-  });
+  logger.info(
+    'Agent categorization:\n' +
+      JSON.stringify(
+        {
+          globalEditAccess: categories.globalEditAccess.length,
+          globalViewAccess: categories.globalViewAccess.length,
+          privateAgents: categories.privateAgents.length,
+          total: agentsToMigrate.length,
+        },
+        null,
+        2,
+      ),
+  );
 
   if (dryRun) {
     return {

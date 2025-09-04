@@ -1,12 +1,8 @@
 import React, { useEffect } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import { Button, Input, Label, OGDialog, OGDialogTemplate } from '@librechat/client';
+import type { ConfigFieldDetail } from '~/common';
 import { useLocalize } from '~/hooks';
-
-export interface ConfigFieldDetail {
-  title: string;
-  description: string;
-}
 
 interface MCPConfigDialogProps {
   isOpen: boolean;
@@ -34,7 +30,7 @@ export default function MCPConfigDialog({
     control,
     handleSubmit,
     reset,
-    formState: { errors, _ },
+    formState: { errors },
   } = useForm<Record<string, string>>({
     defaultValues: initialValues,
   });
@@ -56,14 +52,12 @@ export default function MCPConfigDialog({
   };
 
   const dialogTitle = localize('com_ui_configure_mcp_variables_for', { 0: serverName });
-  const dialogDescription = localize('com_ui_mcp_dialog_desc');
 
   return (
     <OGDialog open={isOpen} onOpenChange={onOpenChange}>
       <OGDialogTemplate
         className="sm:max-w-lg"
         title={dialogTitle}
-        description={dialogDescription}
         headerClassName="px-6 pt-6 pb-4"
         main={
           <form onSubmit={handleSubmit(onFormSubmit)} className="space-y-4 px-6 pb-2">

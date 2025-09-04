@@ -61,6 +61,7 @@ const mockLocalize = jest.fn((key: string, options?: any) => {
     com_agents_search_empty_heading: 'No search results',
     com_agents_created_by: 'by',
     com_agents_top_picks: 'Top Picks',
+    com_agents_all_category: 'All',
     // ErrorDisplay translations
     com_agents_error_suggestion_generic: 'Try refreshing the page or check your network connection',
     com_agents_error_network_title: 'Network Error',
@@ -199,7 +200,7 @@ describe('Accessibility Improvements', () => {
         />,
       );
 
-      const promotedTab = screen.getByRole('tab', { name: /Top Picks tab/ });
+      const promotedTab = screen.getByRole('tab', { name: /Top Picks category/ });
 
       // Test arrow key navigation
       fireEvent.keyDown(promotedTab, { key: 'ArrowRight' });
@@ -226,8 +227,8 @@ describe('Accessibility Improvements', () => {
         />,
       );
 
-      const promotedTab = screen.getByRole('tab', { name: /Top Picks tab/ });
-      const allTab = screen.getByRole('tab', { name: /All tab/ });
+      const promotedTab = screen.getByRole('tab', { name: /Top Picks category/ });
+      const allTab = screen.getByRole('tab', { name: /All category/ });
 
       // Active tab should be focusable
       expect(promotedTab).toHaveAttribute('tabIndex', '0');

@@ -269,7 +269,7 @@ async function getListPromptGroupsByAccess({
   const baseQuery = { ...otherParams, _id: { $in: accessibleIds } };
 
   // Add cursor condition
-  if (after) {
+  if (after && typeof after === 'string' && after !== 'undefined' && after !== 'null') {
     try {
       const cursor = JSON.parse(Buffer.from(after, 'base64').toString('utf8'));
       const { updatedAt, _id } = cursor;

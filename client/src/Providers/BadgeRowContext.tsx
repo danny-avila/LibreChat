@@ -1,12 +1,19 @@
-import React, { createContext, useContext, useEffect, useRef } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useRef } from 'react';
 import { useSetRecoilState } from 'recoil';
 import { Tools, Constants, LocalStorageKeys, AgentCapabilities } from 'librechat-data-provider';
 import type { TAgentsEndpoint } from 'librechat-data-provider';
-import { useSearchApiKeyForm, useGetAgentsConfig, useCodeApiKeyForm, useToolToggle } from '~/hooks';
+import {
+  useSearchApiKeyForm,
+  useGetAgentsConfig,
+  useCodeApiKeyForm,
+  useGetMCPTools,
+  useToolToggle,
+} from '~/hooks';
 import { ephemeralAgentByConvoId } from '~/store';
 
 interface BadgeRowContextType {
   conversationId?: string | null;
+  mcpServerNames?: string[] | null;
   agentsConfig?: TAgentsEndpoint | null;
   webSearch: ReturnType<typeof useToolToggle>;
   artifacts: ReturnType<typeof useToolToggle>;
@@ -37,10 +44,12 @@ export default function BadgeRowProvider({
   isSubmitting,
   conversationId,
 }: BadgeRowProviderProps) {
-  const hasInitializedRef = useRef(false);
   const lastKeyRef = useRef<string>('');
+  const hasInitializedRef = useRef(false);
+  const { mcpToolDetails } = useGetMCPTools();
   const { agentsConfig } = useGetAgentsConfig();
   const key = conversationId ?? Constants.NEW_CONVO;
+
   const setEphemeralAgent = useSetRecoilState(ephemeralAgentByConvoId(key));
 
   /** Initialize ephemeralAgent from localStorage on mount and when conversation changes */
@@ -156,11 +165,16 @@ export default function BadgeRowProvider({
     isAuthenticated: true,
   });
 
+  const mcpServerNames = useMemo(() => {
+    return (mcpToolDetails ?? []).map((tool) => tool.name);
+  }, [mcpToolDetails]);
+
   const value: BadgeRowContextType = {
     webSearch,
     artifacts,
     fileSearch,
     agentsConfig,
+    mcpServerNames,
     conversationId,
     codeApiKeyForm,
     codeInterpreter,

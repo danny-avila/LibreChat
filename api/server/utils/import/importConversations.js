@@ -1,6 +1,6 @@
 const fs = require('fs').promises;
+const { logger } = require('@librechat/data-schemas');
 const { getImporter } = require('./importers');
-const { logger } = require('~/config');
 
 /**
  * Job definition for importing a conversation.

@@ -45,7 +45,7 @@ describe('getUserMCPAuthMap', () => {
         },
       ];
 
-      const tools = testCases.map((testCase) =>
+      const toolInstances = testCases.map((testCase) =>
         createMockTool(testCase.normalizedToolName, testCase.originalName),
       );
 
@@ -54,7 +54,7 @@ describe('getUserMCPAuthMap', () => {
 
       await getUserMCPAuthMap({
         userId: 'user123',
-        tools,
+        toolInstances,
         findPluginAuthsByKeys: mockFindPluginAuthsByKeys,
       });
 
@@ -69,7 +69,7 @@ describe('getUserMCPAuthMap', () => {
 
   describe('Edge Cases', () => {
     it('should return empty object when no tools have mcpRawServerName', async () => {
-      const tools = [
+      const toolInstances = [
         createMockTool('regular_tool', undefined, false),
         createMockTool('another_tool', undefined, false),
         createMockTool('test_mcp_Server_no_raw_name', undefined),
@@ -77,7 +77,7 @@ describe('getUserMCPAuthMap', () => {
 
       const result = await getUserMCPAuthMap({
         userId: 'user123',
-        tools,
+        toolInstances,
         findPluginAuthsByKeys: mockFindPluginAuthsByKeys,
       });
 
@@ -104,14 +104,14 @@ describe('getUserMCPAuthMap', () => {
     });
 
     it('should handle database errors gracefully', async () => {
-      const tools = [createMockTool('test_mcp_Server1', 'Server1')];
+      const toolInstances = [createMockTool('test_mcp_Server1', 'Server1')];
       const dbError = new Error('Database connection failed');
 
       mockGetPluginAuthMap.mockRejectedValue(dbError);
 
       const result = await getUserMCPAuthMap({
         userId: 'user123',
-        tools,
+        toolInstances,
         findPluginAuthsByKeys: mockFindPluginAuthsByKeys,
       });
 
@@ -119,17 +119,118 @@ describe('getUserMCPAuthMap', () => {
     });
 
     it('should handle non-Error exceptions gracefully', async () => {
-      const tools = [createMockTool('test_mcp_Server1', 'Server1')];
+      const toolInstances = [createMockTool('test_mcp_Server1', 'Server1')];
 
       mockGetPluginAuthMap.mockRejectedValue('String error');
 
       const result = await getUserMCPAuthMap({
         userId: 'user123',
-        tools,
+        toolInstances,
         findPluginAuthsByKeys: mockFindPluginAuthsByKeys,
       });
 
       expect(result).toEqual({});
+    });
+
+    it('should handle mixed null/undefined values in tools array', async () => {
+      const tools = [
+        'test_mcp_Server1',
+        null,
+        'test_mcp_Server2',
+        undefined,
+        'regular_tool',
+        'test_mcp_Server3',
+      ];
+
+      mockGetPluginAuthMap.mockResolvedValue({
+        mcp_Server1: { API_KEY: 'key1' },
+        mcp_Server2: { API_KEY: 'key2' },
+        mcp_Server3: { API_KEY: 'key3' },
+      });
+
+      const result = await getUserMCPAuthMap({
+        userId: 'user123',
+        tools: tools as (string | undefined)[],
+        findPluginAuthsByKeys: mockFindPluginAuthsByKeys,
+      });
+
+      expect(mockGetPluginAuthMap).toHaveBeenCalledWith({
+        userId: 'user123',
+        pluginKeys: ['mcp_Server1', 'mcp_Server2', 'mcp_Server3'],
+        throwError: false,
+        findPluginAuthsByKeys: mockFindPluginAuthsByKeys,
+      });
+
+      expect(result).toEqual({
+        mcp_Server1: { API_KEY: 'key1' },
+        mcp_Server2: { API_KEY: 'key2' },
+        mcp_Server3: { API_KEY: 'key3' },
+      });
+    });
+
+    it('should handle mixed null/undefined values in servers array', async () => {
+      const servers = ['Server1', null, 'Server2', undefined, 'Server3'];
+
+      mockGetPluginAuthMap.mockResolvedValue({
+        mcp_Server1: { API_KEY: 'key1' },
+        mcp_Server2: { API_KEY: 'key2' },
+        mcp_Server3: { API_KEY: 'key3' },
+      });
+
+      const result = await getUserMCPAuthMap({
+        userId: 'user123',
+        servers: servers as (string | undefined)[],
+        findPluginAuthsByKeys: mockFindPluginAuthsByKeys,
+      });
+
+      expect(mockGetPluginAuthMap).toHaveBeenCalledWith({
+        userId: 'user123',
+        pluginKeys: ['mcp_Server1', 'mcp_Server2', 'mcp_Server3'],
+        throwError: false,
+        findPluginAuthsByKeys: mockFindPluginAuthsByKeys,
+      });
+
+      expect(result).toEqual({
+        mcp_Server1: { API_KEY: 'key1' },
+        mcp_Server2: { API_KEY: 'key2' },
+        mcp_Server3: { API_KEY: 'key3' },
+      });
+    });
+
+    it('should handle mixed null/undefined values in toolInstances array', async () => {
+      const toolInstances = [
+        createMockTool('test_mcp_Server1', 'Server1'),
+        null,
+        createMockTool('test_mcp_Server2', 'Server2'),
+        undefined,
+        createMockTool('regular_tool', undefined, false),
+        createMockTool('test_mcp_Server3', 'Server3'),
+      ];
+
+      mockGetPluginAuthMap.mockResolvedValue({
+        mcp_Server1: { API_KEY: 'key1' },
+        mcp_Server2: { API_KEY: 'key2' },
+        mcp_Server3: { API_KEY: 'key3' },
+      });
+
+      const result = await getUserMCPAuthMap({
+        userId: 'user123',
+        toolInstances: toolInstances as (GenericTool | null)[],
+        findPluginAuthsByKeys: mockFindPluginAuthsByKeys,
+      });
+
+      expect(mockGetPluginAuthMap).toHaveBeenCalledWith({
+        userId: 'user123',
+        pluginKeys: ['mcp_Server1', 'mcp_Server2', 'mcp_Server3'],
+        throwError: false,
+        findPluginAuthsByKeys: mockFindPluginAuthsByKeys,
+      });
+
+      expect(result).toEqual({
+        mcp_Server1: { API_KEY: 'key1' },
+        mcp_Server2: { API_KEY: 'key2' },
+        mcp_Server3: { API_KEY: 'key3' },
+      });
     });
   });
 
@@ -138,7 +239,7 @@ describe('getUserMCPAuthMap', () => {
       const originalServerName = 'Connector: Company';
       const toolName = 'test_auth_mcp_Connector__Company';
 
-      const tools = [createMockTool(toolName, originalServerName)];
+      const toolInstances = [createMockTool(toolName, originalServerName)];
 
       const mockCustomUserVars = {
         'mcp_Connector: Company': {
@@ -151,7 +252,7 @@ describe('getUserMCPAuthMap', () => {
 
       const result = await getUserMCPAuthMap({
         userId: 'user123',
-        tools,
+        toolInstances,
         findPluginAuthsByKeys: mockFindPluginAuthsByKeys,
       });
 

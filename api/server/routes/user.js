@@ -1,14 +1,14 @@
 const express = require('express');
-const { requireJwtAuth, canDeleteAccount, verifyEmailLimiter } = require('~/server/middleware');
 const {
-  getUserController,
-  deleteUserController,
-  verifyEmailController,
   updateUserPluginsController,
   resendVerificationController,
   getTermsStatusController,
   acceptTermsController,
+  verifyEmailController,
+  deleteUserController,
+  getUserController,
 } = require('~/server/controllers/UserController');
+const { requireJwtAuth, canDeleteAccount, verifyEmailLimiter } = require('~/server/middleware');
 
 const router = express.Router();
 

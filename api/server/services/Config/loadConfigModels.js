@@ -1,43 +1,39 @@
+const { isUserProvided, normalizeEndpointName } = require('@librechat/api');
 const { EModelEndpoint, extractEnvVariable } = require('librechat-data-provider');
-const { isUserProvided, normalizeEndpointName } = require('~/server/utils');
 const { fetchModels } = require('~/server/services/ModelService');
-const { getCustomConfig } = require('./getCustomConfig');
+const { getAppConfig } = require('./app');
 
 /**
  * Load config endpoints from the cached configuration object
  * @function loadConfigModels
- * @param {Express.Request} req - The Express request object.
+ * @param {ServerRequest} req - The Express request object.
  */
 async function loadConfigModels(req) {
-  const customConfig = await getCustomConfig();
-
-  if (!customConfig) {
+  const appConfig = await getAppConfig({ role: req.user?.role });
+  if (!appConfig) {
     return {};
   }
-
-  const { endpoints = {} } = customConfig ?? {};
   const modelsConfig = {};
-  const azureEndpoint = endpoints[EModelEndpoint.azureOpenAI];
-  const azureConfig = req.app.locals[EModelEndpoint.azureOpenAI];
+  const azureConfig = appConfig.endpoints?.[EModelEndpoint.azureOpenAI];
   const { modelNames } = azureConfig ?? {};
 
-  if (modelNames && azureEndpoint) {
+  if (modelNames && azureConfig) {
     modelsConfig[EModelEndpoint.azureOpenAI] = modelNames;
   }
 
-  if (modelNames && azureEndpoint && azureEndpoint.plugins) {
+  if (modelNames && azureConfig && azureConfig.plugins) {
     modelsConfig[EModelEndpoint.gptPlugins] = modelNames;
   }
 
-  if (azureEndpoint?.assistants && azureConfig.assistantModels) {
+  if (azureConfig?.assistants && azureConfig.assistantModels) {
     modelsConfig[EModelEndpoint.azureAssistants] = azureConfig.assistantModels;
   }
 
-  if (!Array.isArray(endpoints[EModelEndpoint.custom])) {
+  if (!Array.isArray(appConfig.endpoints?.[EModelEndpoint.custom])) {
     return modelsConfig;
   }
 
-  const customEndpoints = endpoints[EModelEndpoint.custom].filter(
+  const customEndpoints = appConfig.endpoints[EModelEndpoint.custom].filter(
     (endpoint) =>
       endpoint.baseURL &&
       endpoint.apiKey &&
@@ -76,10 +72,11 @@ async function loadConfigModels(req) {
       fetchPromisesMap[uniqueKey] =
         fetchPromisesMap[uniqueKey] ||
         fetchModels({
-          user: req.user.id,
-          baseURL: BASE_URL,
-          apiKey: API_KEY,
           name,
+          apiKey: API_KEY,
+          baseURL: BASE_URL,
+          user: req.user.id,
+          direct: endpoint.directEndpoint,
           userIdQuery: models.userIdQuery,
         });
       uniqueKeyToEndpointsMap[uniqueKey] = uniqueKeyToEndpointsMap[uniqueKey] || [];

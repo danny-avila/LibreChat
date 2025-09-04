@@ -62,17 +62,26 @@ const EditTextPart = ({
     const messages = getMessages();
     const parentMessage = messages?.find((msg) => msg.messageId === message?.parentMessageId);
 
+    const editedContent =
+      part.type === ContentTypes.THINK
+        ? {
+            index,
+            type: ContentTypes.THINK as const,
+            [ContentTypes.THINK]: data.text,
+          }
+        : {
+            index,
+            type: ContentTypes.TEXT as const,
+            [ContentTypes.TEXT]: data.text,
+          };
+
     if (!parentMessage) {
       return;
     }
     ask(
       { ...parentMessage },
       {
-        editedContent: {
-          index,
-          text: data.text,
-          type: part.type,
-        },
+        editedContent,
         editedMessageId: messageId,
         isRegenerate: true,
         isEdited: true,

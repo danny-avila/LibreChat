@@ -95,9 +95,6 @@ export class MCPConnection extends EventEmitter {
     for (const [key, value] of Object.entries(headers)) {
       normalizedHeaders[key.toLowerCase()] = value;
     }
-    logger.debug(
-      `${this.getLogPrefix()} Setting request headers: ${JSON.stringify(normalizedHeaders)}`,
-    );
     this.requestHeaders = normalizedHeaders;
   }
 
@@ -446,7 +443,7 @@ export class MCPConnection extends EventEmitter {
           const serverUrl = this.url;
           logger.debug(`${this.getLogPrefix()} Server URL for OAuth: ${serverUrl}`);
 
-          const oauthTimeout = this.options.initTimeout ?? 60000;
+          const oauthTimeout = this.options.initTimeout ?? 60000 * 2;
           /** Promise that will resolve when OAuth is handled */
           const oauthHandledPromise = new Promise<void>((resolve, reject) => {
             let timeoutId: NodeJS.Timeout | null = null;

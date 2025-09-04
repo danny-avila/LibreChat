@@ -8,14 +8,10 @@ import {
   OGDialogContent,
 } from '@librechat/client';
 import type { MCPServerStatus } from 'librechat-data-provider';
+import type { ConfigFieldDetail } from '~/common';
 import ServerInitializationSection from './ServerInitializationSection';
 import CustomUserVarsSection from './CustomUserVarsSection';
 import { useLocalize } from '~/hooks';
-
-export interface ConfigFieldDetail {
-  title: string;
-  description: string;
-}
 
 interface MCPConfigDialogProps {
   isOpen: boolean;
@@ -27,6 +23,7 @@ interface MCPConfigDialogProps {
   onRevoke?: () => void;
   serverName: string;
   serverStatus?: MCPServerStatus;
+  conversationId?: string | null;
 }
 
 export default function MCPConfigDialog({
@@ -38,6 +35,7 @@ export default function MCPConfigDialog({
   onRevoke,
   serverName,
   serverStatus,
+  conversationId,
 }: MCPConfigDialogProps) {
   const localize = useLocalize();
 
@@ -126,6 +124,7 @@ export default function MCPConfigDialog({
         {/* Server Initialization Section */}
         <ServerInitializationSection
           serverName={serverName}
+          conversationId={conversationId}
           requiresOAuth={serverStatus?.requiresOAuth || false}
           hasCustomUserVars={fieldsSchema && Object.keys(fieldsSchema).length > 0}
         />

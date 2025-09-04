@@ -36,7 +36,7 @@ class StreamRunManager {
     /** @type {Run | null} */
     this.run = null;
 
-    /** @type {Express.Request} */
+    /** @type {ServerRequest} */
     this.req = fields.req;
     /** @type {Express.Response} */
     this.res = fields.res;

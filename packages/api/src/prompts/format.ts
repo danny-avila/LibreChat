@@ -21,9 +21,12 @@ export function formatPromptGroupsResponse({
   hasMore?: boolean;
   after?: string | null;
 }): PromptGroupsListResponse {
-  const effectivePageSize = parseInt(pageSize || '') || parseInt(String(actualLimit || '')) || 10;
-  const totalPages =
-    promptGroups.length > 0 ? Math.ceil(promptGroups.length / effectivePageSize).toString() : '0';
+  const currentPage = parseInt(pageNumber || '1');
+
+  // Calculate total pages based on whether there are more results
+  // If hasMore is true, we know there's at least one more page
+  // We use a high number (9999) to indicate "many pages" since we don't know the exact count
+  const totalPages = hasMore ? '9999' : currentPage.toString();
 
   return {
     promptGroups,

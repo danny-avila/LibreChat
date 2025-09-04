@@ -12,22 +12,23 @@ import {
   getIconKey,
   cn,
 } from '~/utils';
-import { useFileMapContext, useAgentPanelContext } from '~/Providers';
+import { ToolSelectDialog, MCPToolSelectDialog } from '~/components/Tools';
 import useAgentCapabilities from '~/hooks/Agents/useAgentCapabilities';
+import { useFileMapContext, useAgentPanelContext } from '~/Providers';
 import AgentCategorySelector from './AgentCategorySelector';
 import Action from '~/components/SidePanel/Builder/Action';
-import { ToolSelectDialog } from '~/components/Tools';
+import { useLocalize, useVisibleTools } from '~/hooks';
 import { useGetAgentFiles } from '~/data-provider';
 import { icons } from '~/hooks/Endpoint/Icons';
 import Instructions from './Instructions';
 import AgentAvatar from './AgentAvatar';
 import FileContext from './FileContext';
 import SearchForm from './Search/Form';
-import { useLocalize } from '~/hooks';
 import FileSearch from './FileSearch';
 import Artifacts from './Artifacts';
 import AgentTool from './AgentTool';
 import CodeForm from './Code/Form';
+import MCPTools from './MCPTools';
 import { Panel } from '~/common';
 
 const labelClass = 'mb-2 text-token-text-primary block font-medium';
@@ -43,10 +44,12 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
   const { showToast } = useToastContext();
   const methods = useFormContext<AgentForm>();
   const [showToolDialog, setShowToolDialog] = useState(false);
+  const [showMCPToolDialog, setShowMCPToolDialog] = useState(false);
   const {
     actions,
     setAction,
     agentsConfig,
+    mcpServersMap,
     setActivePanel,
     endpointsConfig,
     groupedTools: allTools,
@@ -173,19 +176,7 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
     Icon = icons[iconKey];
   }
 
-  // Determine what to show
-  const selectedToolIds = tools ?? [];
-  const visibleToolIds = new Set(selectedToolIds);
-
-  // Check what group parent tools should be shown if any subtool is present
-  Object.entries(allTools ?? {}).forEach(([toolId, toolObj]) => {
-    if (toolObj.tools?.length) {
-      // if any subtool of this group is selected, ensure group parent tool rendered
-      if (toolObj.tools.some((st) => selectedToolIds.includes(st.tool_id))) {
-        visibleToolIds.add(toolId);
-      }
-    }
-  });
+  const { toolIds, mcpServerNames } = useVisibleTools(tools, allTools, mcpServersMap);
 
   return (
     <>
@@ -326,8 +317,8 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
           </label>
           <div>
             <div className="mb-1">
-              {/* // Render all visible IDs (including groups with subtools selected) */}
-              {[...visibleToolIds].map((toolId, i) => {
+              {/* Render all visible IDs (including groups with subtools selected) */}
+              {toolIds.map((toolId, i) => {
                 if (!allTools) return null;
                 const tool = allTools[toolId];
                 if (!tool) return null;
@@ -385,8 +376,11 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
           </div>
         </div>
         {/* MCP Section */}
-        {/* <MCPSection /> */}
-
+        <MCPTools
+          agentId={agent_id}
+          mcpServerNames={mcpServerNames}
+          setShowMCPToolDialog={setShowMCPToolDialog}
+        />
         {/* Support Contact (Optional) */}
         <div className="mb-4">
           <div className="mb-1.5 flex items-center gap-2">
@@ -475,6 +469,13 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
       <ToolSelectDialog
         isOpen={showToolDialog}
         setIsOpen={setShowToolDialog}
+        endpoint={EModelEndpoint.agents}
+      />
+      <MCPToolSelectDialog
+        agentId={agent_id}
+        isOpen={showMCPToolDialog}
+        mcpServerNames={mcpServerNames}
+        setIsOpen={setShowMCPToolDialog}
         endpoint={EModelEndpoint.agents}
       />
     </>

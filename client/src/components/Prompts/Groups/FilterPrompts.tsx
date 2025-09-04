@@ -11,9 +11,9 @@ import store from '~/store';
 
 export default function FilterPrompts({ className = '' }: { className?: string }) {
   const localize = useLocalize();
-  const { setName } = usePromptGroupsContext();
+  const { name, setName } = usePromptGroupsContext();
   const { categories } = useCategories('h-4 w-4');
-  const [displayName, setDisplayName] = useState('');
+  const [displayName, setDisplayName] = useState(name || '');
   const [isSearching, setIsSearching] = useState(false);
   const [categoryFilter, setCategory] = useRecoilState(store.promptsCategory);
 
@@ -60,13 +60,26 @@ export default function FilterPrompts({ className = '' }: { className?: string }
     [setCategory],
   );
 
+  // Sync displayName with name prop when it changes externally
   useEffect(() => {
+    setDisplayName(name || '');
+  }, [name]);
+
+  useEffect(() => {
+    if (displayName === '') {
+      // Clear immediately when empty
+      setName('');
+      setIsSearching(false);
+      return;
+    }
+
     setIsSearching(true);
     const timeout = setTimeout(() => {
       setIsSearching(false);
+      setName(displayName); // Debounced setName call
     }, 500);
     return () => clearTimeout(timeout);
-  }, [displayName]);
+  }, [displayName, setName]);
 
   return (
     <div className={cn('flex w-full gap-2 text-text-primary', className)}>
@@ -84,7 +97,6 @@ export default function FilterPrompts({ className = '' }: { className?: string }
         value={displayName}
         onChange={(e) => {
           setDisplayName(e.target.value);
-          setName(e.target.value);
         }}
         isSearching={isSearching}
         placeholder={localize('com_ui_filter_prompts_name')}

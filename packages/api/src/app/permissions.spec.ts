@@ -1,27 +1,21 @@
-const {
-  SystemRoles,
-  Permissions,
-  PermissionTypes,
-  roleDefaults,
-} = require('librechat-data-provider');
-const { updateAccessPermissions, getRoleByName } = require('~/models/Role');
-const { loadDefaultInterface } = require('./interface');
+import { SystemRoles, Permissions, PermissionTypes, roleDefaults } from 'librechat-data-provider';
+import type { TConfigDefaults, TCustomConfig } from 'librechat-data-provider';
+import type { AppConfig } from '~/types/config';
+import { updateInterfacePermissions } from './permissions';
+import { loadDefaultInterface } from './interface';
 
-jest.mock('~/models/Role', () => ({
-  updateAccessPermissions: jest.fn(),
-  getRoleByName: jest.fn(),
-}));
+const mockUpdateAccessPermissions = jest.fn();
+const mockGetRoleByName = jest.fn();
 
-jest.mock('@librechat/api', () => ({
-  ...jest.requireActual('@librechat/api'),
+jest.mock('~/memory', () => ({
   isMemoryEnabled: jest.fn((config) => config?.enable === true),
 }));
 
-describe('loadDefaultInterface', () => {
+describe('updateInterfacePermissions - permissions', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     // Mock getRoleByName to return null (no existing permissions)
-    getRoleByName.mockResolvedValue(null);
+    mockGetRoleByName.mockResolvedValue(null);
   });
 
   it('should call updateAccessPermissions with the correct parameters when permission types are true', async () => {
@@ -47,29 +41,28 @@ describe('loadDefaultInterface', () => {
         },
       },
     };
-    const configDefaults = { interface: {} };
+    const configDefaults = { interface: {} } as TConfigDefaults;
+    const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
+    const appConfig = { config, interfaceConfig } as unknown as AppConfig;
 
-    await loadDefaultInterface(config, configDefaults);
+    await updateInterfacePermissions({
+      appConfig,
+      getRoleByName: mockGetRoleByName,
+      updateAccessPermissions: mockUpdateAccessPermissions,
+    });
 
     const expectedPermissionsForUser = {
       [PermissionTypes.PROMPTS]: {
         [Permissions.USE]: true,
-        [Permissions.SHARED_GLOBAL]: false,
-        [Permissions.CREATE]: true,
       },
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: true },
       [PermissionTypes.MEMORIES]: {
         [Permissions.USE]: true,
-        [Permissions.CREATE]: true,
-        [Permissions.UPDATE]: true,
-        [Permissions.READ]: true,
         [Permissions.OPT_OUT]: undefined,
       },
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: true },
       [PermissionTypes.AGENTS]: {
         [Permissions.USE]: true,
-        [Permissions.SHARED_GLOBAL]: false,
-        [Permissions.CREATE]: true,
       },
       [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: true },
       [PermissionTypes.RUN_CODE]: { [Permissions.USE]: true },
@@ -87,22 +80,15 @@ describe('loadDefaultInterface', () => {
     const expectedPermissionsForAdmin = {
       [PermissionTypes.PROMPTS]: {
         [Permissions.USE]: true,
-        [Permissions.SHARED_GLOBAL]: true,
-        [Permissions.CREATE]: true,
       },
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: true },
       [PermissionTypes.MEMORIES]: {
         [Permissions.USE]: true,
-        [Permissions.CREATE]: true,
-        [Permissions.UPDATE]: true,
-        [Permissions.READ]: true,
         [Permissions.OPT_OUT]: undefined,
       },
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: true },
       [PermissionTypes.AGENTS]: {
         [Permissions.USE]: true,
-        [Permissions.SHARED_GLOBAL]: true,
-        [Permissions.CREATE]: true,
       },
       [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: true },
       [PermissionTypes.RUN_CODE]: { [Permissions.USE]: true },
@@ -117,17 +103,17 @@ describe('loadDefaultInterface', () => {
       [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: true },
     };
 
-    expect(updateAccessPermissions).toHaveBeenCalledTimes(2);
+    expect(mockUpdateAccessPermissions).toHaveBeenCalledTimes(2);
 
     // Check USER role call
-    expect(updateAccessPermissions).toHaveBeenCalledWith(
+    expect(mockUpdateAccessPermissions).toHaveBeenCalledWith(
       SystemRoles.USER,
       expectedPermissionsForUser,
       null,
     );
 
     // Check ADMIN role call
-    expect(updateAccessPermissions).toHaveBeenCalledWith(
+    expect(mockUpdateAccessPermissions).toHaveBeenCalledWith(
       SystemRoles.ADMIN,
       expectedPermissionsForAdmin,
       null,
@@ -157,29 +143,28 @@ describe('loadDefaultInterface', () => {
         },
       },
     };
-    const configDefaults = { interface: {} };
+    const configDefaults = { interface: {} } as TConfigDefaults;
+    const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
+    const appConfig = { config, interfaceConfig } as unknown as AppConfig;
 
-    await loadDefaultInterface(config, configDefaults);
+    await updateInterfacePermissions({
+      appConfig,
+      getRoleByName: mockGetRoleByName,
+      updateAccessPermissions: mockUpdateAccessPermissions,
+    });
 
     const expectedPermissionsForUser = {
       [PermissionTypes.PROMPTS]: {
         [Permissions.USE]: false,
-        [Permissions.SHARED_GLOBAL]: false,
-        [Permissions.CREATE]: true,
       },
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: false },
       [PermissionTypes.MEMORIES]: {
         [Permissions.USE]: false,
-        [Permissions.CREATE]: true,
-        [Permissions.UPDATE]: true,
-        [Permissions.READ]: true,
         [Permissions.OPT_OUT]: undefined,
       },
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: false },
       [PermissionTypes.AGENTS]: {
         [Permissions.USE]: false,
-        [Permissions.SHARED_GLOBAL]: false,
-        [Permissions.CREATE]: true,
       },
       [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: false },
       [PermissionTypes.RUN_CODE]: { [Permissions.USE]: false },
@@ -197,22 +182,15 @@ describe('loadDefaultInterface', () => {
     const expectedPermissionsForAdmin = {
       [PermissionTypes.PROMPTS]: {
         [Permissions.USE]: false,
-        [Permissions.SHARED_GLOBAL]: true,
-        [Permissions.CREATE]: true,
       },
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: false },
       [PermissionTypes.MEMORIES]: {
         [Permissions.USE]: false,
-        [Permissions.CREATE]: true,
-        [Permissions.UPDATE]: true,
-        [Permissions.READ]: true,
         [Permissions.OPT_OUT]: undefined,
       },
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: false },
       [PermissionTypes.AGENTS]: {
         [Permissions.USE]: false,
-        [Permissions.SHARED_GLOBAL]: true,
-        [Permissions.CREATE]: true,
       },
       [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: false },
       [PermissionTypes.RUN_CODE]: { [Permissions.USE]: false },
@@ -227,17 +205,17 @@ describe('loadDefaultInterface', () => {
       [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: false },
     };
 
-    expect(updateAccessPermissions).toHaveBeenCalledTimes(2);
+    expect(mockUpdateAccessPermissions).toHaveBeenCalledTimes(2);
 
     // Check USER role call
-    expect(updateAccessPermissions).toHaveBeenCalledWith(
+    expect(mockUpdateAccessPermissions).toHaveBeenCalledWith(
       SystemRoles.USER,
       expectedPermissionsForUser,
       null,
     );
 
     // Check ADMIN role call
-    expect(updateAccessPermissions).toHaveBeenCalledWith(
+    expect(mockUpdateAccessPermissions).toHaveBeenCalledWith(
       SystemRoles.ADMIN,
       expectedPermissionsForAdmin,
       null,
@@ -267,29 +245,28 @@ describe('loadDefaultInterface', () => {
           use: false,
         },
       },
-    };
+    } as TConfigDefaults;
+    const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
+    const appConfig = { config, interfaceConfig } as unknown as AppConfig;
 
-    await loadDefaultInterface(config, configDefaults);
+    await updateInterfacePermissions({
+      appConfig,
+      getRoleByName: mockGetRoleByName,
+      updateAccessPermissions: mockUpdateAccessPermissions,
+    });
 
     const expectedPermissionsForUser = {
       [PermissionTypes.PROMPTS]: {
         [Permissions.USE]: true,
-        [Permissions.SHARED_GLOBAL]: false,
-        [Permissions.CREATE]: true,
       },
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: true },
       [PermissionTypes.MEMORIES]: {
         [Permissions.USE]: true,
-        [Permissions.CREATE]: true,
-        [Permissions.UPDATE]: true,
-        [Permissions.READ]: true,
         [Permissions.OPT_OUT]: undefined,
       },
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: true },
       [PermissionTypes.AGENTS]: {
         [Permissions.USE]: true,
-        [Permissions.SHARED_GLOBAL]: false,
-        [Permissions.CREATE]: true,
       },
       [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: true },
       [PermissionTypes.RUN_CODE]: { [Permissions.USE]: true },
@@ -307,22 +284,15 @@ describe('loadDefaultInterface', () => {
     const expectedPermissionsForAdmin = {
       [PermissionTypes.PROMPTS]: {
         [Permissions.USE]: true,
-        [Permissions.SHARED_GLOBAL]: true,
-        [Permissions.CREATE]: true,
       },
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: true },
       [PermissionTypes.MEMORIES]: {
         [Permissions.USE]: true,
-        [Permissions.CREATE]: true,
-        [Permissions.UPDATE]: true,
-        [Permissions.READ]: true,
         [Permissions.OPT_OUT]: undefined,
       },
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: true },
       [PermissionTypes.AGENTS]: {
         [Permissions.USE]: true,
-        [Permissions.SHARED_GLOBAL]: true,
-        [Permissions.CREATE]: true,
       },
       [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: true },
       [PermissionTypes.RUN_CODE]: { [Permissions.USE]: true },
@@ -337,17 +307,17 @@ describe('loadDefaultInterface', () => {
       [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: true },
     };
 
-    expect(updateAccessPermissions).toHaveBeenCalledTimes(2);
+    expect(mockUpdateAccessPermissions).toHaveBeenCalledTimes(2);
 
     // Check USER role call
-    expect(updateAccessPermissions).toHaveBeenCalledWith(
+    expect(mockUpdateAccessPermissions).toHaveBeenCalledWith(
       SystemRoles.USER,
       expectedPermissionsForUser,
       null,
     );
 
     // Check ADMIN role call
-    expect(updateAccessPermissions).toHaveBeenCalledWith(
+    expect(mockUpdateAccessPermissions).toHaveBeenCalledWith(
       SystemRoles.ADMIN,
       expectedPermissionsForAdmin,
       null,
@@ -390,29 +360,28 @@ describe('loadDefaultInterface', () => {
           use: false,
         },
       },
-    };
+    } as TConfigDefaults;
+    const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
+    const appConfig = { config, interfaceConfig } as unknown as AppConfig;
 
-    await loadDefaultInterface(config, configDefaults);
+    await updateInterfacePermissions({
+      appConfig,
+      getRoleByName: mockGetRoleByName,
+      updateAccessPermissions: mockUpdateAccessPermissions,
+    });
 
     const expectedPermissionsForUser = {
       [PermissionTypes.PROMPTS]: {
         [Permissions.USE]: true,
-        [Permissions.SHARED_GLOBAL]: false,
-        [Permissions.CREATE]: true,
       },
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: false },
       [PermissionTypes.MEMORIES]: {
         [Permissions.USE]: true,
-        [Permissions.CREATE]: true,
-        [Permissions.UPDATE]: true,
-        [Permissions.READ]: true,
         [Permissions.OPT_OUT]: undefined,
       },
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: true },
       [PermissionTypes.AGENTS]: {
         [Permissions.USE]: true,
-        [Permissions.SHARED_GLOBAL]: false,
-        [Permissions.CREATE]: true,
       },
       [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: true },
       [PermissionTypes.RUN_CODE]: { [Permissions.USE]: false },
@@ -430,22 +399,15 @@ describe('loadDefaultInterface', () => {
     const expectedPermissionsForAdmin = {
       [PermissionTypes.PROMPTS]: {
         [Permissions.USE]: true,
-        [Permissions.SHARED_GLOBAL]: true,
-        [Permissions.CREATE]: true,
       },
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: false },
       [PermissionTypes.MEMORIES]: {
         [Permissions.USE]: true,
-        [Permissions.CREATE]: true,
-        [Permissions.UPDATE]: true,
-        [Permissions.READ]: true,
         [Permissions.OPT_OUT]: undefined,
       },
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: true },
       [PermissionTypes.AGENTS]: {
         [Permissions.USE]: true,
-        [Permissions.SHARED_GLOBAL]: true,
-        [Permissions.CREATE]: true,
       },
       [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: true },
       [PermissionTypes.RUN_CODE]: { [Permissions.USE]: false },
@@ -460,17 +422,17 @@ describe('loadDefaultInterface', () => {
       [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: true },
     };
 
-    expect(updateAccessPermissions).toHaveBeenCalledTimes(2);
+    expect(mockUpdateAccessPermissions).toHaveBeenCalledTimes(2);
 
     // Check USER role call
-    expect(updateAccessPermissions).toHaveBeenCalledWith(
+    expect(mockUpdateAccessPermissions).toHaveBeenCalledWith(
       SystemRoles.USER,
       expectedPermissionsForUser,
       null,
     );
 
     // Check ADMIN role call
-    expect(updateAccessPermissions).toHaveBeenCalledWith(
+    expect(mockUpdateAccessPermissions).toHaveBeenCalledWith(
       SystemRoles.ADMIN,
       expectedPermissionsForAdmin,
       null,
@@ -500,29 +462,28 @@ describe('loadDefaultInterface', () => {
           use: false,
         },
       },
-    };
+    } as TConfigDefaults;
+    const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
+    const appConfig = { interfaceConfig } as unknown as AppConfig;
 
-    await loadDefaultInterface(config, configDefaults);
+    await updateInterfacePermissions({
+      appConfig,
+      getRoleByName: mockGetRoleByName,
+      updateAccessPermissions: mockUpdateAccessPermissions,
+    });
 
     const expectedPermissionsForUser = {
       [PermissionTypes.PROMPTS]: {
         [Permissions.USE]: true,
-        [Permissions.SHARED_GLOBAL]: false,
-        [Permissions.CREATE]: true,
       },
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: true },
       [PermissionTypes.MEMORIES]: {
         [Permissions.USE]: true,
-        [Permissions.CREATE]: true,
-        [Permissions.UPDATE]: true,
-        [Permissions.READ]: true,
         [Permissions.OPT_OUT]: undefined,
       },
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: true },
       [PermissionTypes.AGENTS]: {
         [Permissions.USE]: true,
-        [Permissions.SHARED_GLOBAL]: false,
-        [Permissions.CREATE]: true,
       },
       [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: true },
       [PermissionTypes.RUN_CODE]: { [Permissions.USE]: true },
@@ -540,22 +501,15 @@ describe('loadDefaultInterface', () => {
     const expectedPermissionsForAdmin = {
       [PermissionTypes.PROMPTS]: {
         [Permissions.USE]: true,
-        [Permissions.SHARED_GLOBAL]: true,
-        [Permissions.CREATE]: true,
       },
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: true },
       [PermissionTypes.MEMORIES]: {
         [Permissions.USE]: true,
-        [Permissions.CREATE]: true,
-        [Permissions.UPDATE]: true,
-        [Permissions.READ]: true,
         [Permissions.OPT_OUT]: undefined,
       },
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: true },
       [PermissionTypes.AGENTS]: {
         [Permissions.USE]: true,
-        [Permissions.SHARED_GLOBAL]: true,
-        [Permissions.CREATE]: true,
       },
       [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: true },
       [PermissionTypes.RUN_CODE]: { [Permissions.USE]: true },
@@ -570,17 +524,17 @@ describe('loadDefaultInterface', () => {
       [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: true },
     };
 
-    expect(updateAccessPermissions).toHaveBeenCalledTimes(2);
+    expect(mockUpdateAccessPermissions).toHaveBeenCalledTimes(2);
 
     // Check USER role call
-    expect(updateAccessPermissions).toHaveBeenCalledWith(
+    expect(mockUpdateAccessPermissions).toHaveBeenCalledWith(
       SystemRoles.USER,
       expectedPermissionsForUser,
       null,
     );
 
     // Check ADMIN role call
-    expect(updateAccessPermissions).toHaveBeenCalledWith(
+    expect(mockUpdateAccessPermissions).toHaveBeenCalledWith(
       SystemRoles.ADMIN,
       expectedPermissionsForAdmin,
       null,
@@ -589,7 +543,7 @@ describe('loadDefaultInterface', () => {
 
   it('should only update permissions that do not exist when no config provided', async () => {
     // Mock that some permissions already exist
-    getRoleByName.mockResolvedValue({
+    mockGetRoleByName.mockResolvedValue({
       permissions: {
         [PermissionTypes.PROMPTS]: { [Permissions.USE]: false },
         [PermissionTypes.AGENTS]: { [Permissions.USE]: true },
@@ -618,18 +572,21 @@ describe('loadDefaultInterface', () => {
           use: false,
         },
       },
-    };
+    } as TConfigDefaults;
+    const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
+    const appConfig = { interfaceConfig } as unknown as AppConfig;
 
-    await loadDefaultInterface(config, configDefaults);
+    await updateInterfacePermissions({
+      appConfig,
+      getRoleByName: mockGetRoleByName,
+      updateAccessPermissions: mockUpdateAccessPermissions,
+    });
 
     // Should be called with all permissions EXCEPT prompts and agents (which already exist)
     const expectedPermissionsForUser = {
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: true },
       [PermissionTypes.MEMORIES]: {
         [Permissions.USE]: true,
-        [Permissions.CREATE]: true,
-        [Permissions.UPDATE]: true,
-        [Permissions.READ]: true,
         [Permissions.OPT_OUT]: undefined,
       },
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: true },
@@ -650,9 +607,6 @@ describe('loadDefaultInterface', () => {
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: true },
       [PermissionTypes.MEMORIES]: {
         [Permissions.USE]: true,
-        [Permissions.CREATE]: true,
-        [Permissions.UPDATE]: true,
-        [Permissions.READ]: true,
         [Permissions.OPT_OUT]: undefined,
       },
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: true },
@@ -669,8 +623,8 @@ describe('loadDefaultInterface', () => {
       [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: true },
     };
 
-    expect(updateAccessPermissions).toHaveBeenCalledTimes(2);
-    expect(updateAccessPermissions).toHaveBeenCalledWith(
+    expect(mockUpdateAccessPermissions).toHaveBeenCalledTimes(2);
+    expect(mockUpdateAccessPermissions).toHaveBeenCalledWith(
       SystemRoles.USER,
       expectedPermissionsForUser,
       expect.objectContaining({
@@ -680,7 +634,7 @@ describe('loadDefaultInterface', () => {
         },
       }),
     );
-    expect(updateAccessPermissions).toHaveBeenCalledWith(
+    expect(mockUpdateAccessPermissions).toHaveBeenCalledWith(
       SystemRoles.ADMIN,
       expectedPermissionsForAdmin,
       expect.objectContaining({
@@ -694,7 +648,7 @@ describe('loadDefaultInterface', () => {
 
   it('should override existing permissions when explicitly configured', async () => {
     // Mock that some permissions already exist
-    getRoleByName.mockResolvedValue({
+    mockGetRoleByName.mockResolvedValue({
       permissions: {
         [PermissionTypes.PROMPTS]: { [Permissions.USE]: false },
         [PermissionTypes.AGENTS]: { [Permissions.USE]: false },
@@ -730,23 +684,24 @@ describe('loadDefaultInterface', () => {
           use: false,
         },
       },
-    };
+    } as TConfigDefaults;
+    const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
+    const appConfig = { config, interfaceConfig } as unknown as AppConfig;
 
-    await loadDefaultInterface(config, configDefaults);
+    await updateInterfacePermissions({
+      appConfig,
+      getRoleByName: mockGetRoleByName,
+      updateAccessPermissions: mockUpdateAccessPermissions,
+    });
 
     // Should update prompts (explicitly configured) and all other permissions that don't exist
     const expectedPermissionsForUser = {
       [PermissionTypes.PROMPTS]: {
         [Permissions.USE]: true,
-        [Permissions.SHARED_GLOBAL]: false,
-        [Permissions.CREATE]: true,
       }, // Explicitly configured
       // All other permissions that don't exist in the database
       [PermissionTypes.MEMORIES]: {
         [Permissions.USE]: true,
-        [Permissions.CREATE]: true,
-        [Permissions.UPDATE]: true,
-        [Permissions.READ]: true,
         [Permissions.OPT_OUT]: undefined,
       },
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: true },
@@ -766,15 +721,10 @@ describe('loadDefaultInterface', () => {
     const expectedPermissionsForAdmin = {
       [PermissionTypes.PROMPTS]: {
         [Permissions.USE]: true,
-        [Permissions.SHARED_GLOBAL]: true,
-        [Permissions.CREATE]: true,
       }, // Explicitly configured
       // All other permissions that don't exist in the database
       [PermissionTypes.MEMORIES]: {
         [Permissions.USE]: true,
-        [Permissions.CREATE]: true,
-        [Permissions.UPDATE]: true,
-        [Permissions.READ]: true,
         [Permissions.OPT_OUT]: undefined,
       },
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: true },
@@ -791,21 +741,56 @@ describe('loadDefaultInterface', () => {
       [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: true },
     };
 
-    expect(updateAccessPermissions).toHaveBeenCalledTimes(2);
-    expect(updateAccessPermissions).toHaveBeenCalledWith(
+    expect(mockUpdateAccessPermissions).toHaveBeenCalledTimes(2);
+    expect(mockUpdateAccessPermissions).toHaveBeenCalledWith(
       SystemRoles.USER,
       expectedPermissionsForUser,
       expect.objectContaining({
         permissions: expect.any(Object),
       }),
     );
-    expect(updateAccessPermissions).toHaveBeenCalledWith(
+    expect(mockUpdateAccessPermissions).toHaveBeenCalledWith(
       SystemRoles.ADMIN,
       expectedPermissionsForAdmin,
       expect.objectContaining({
         permissions: expect.any(Object),
       }),
     );
+  });
+
+  it('should handle memories OPT_OUT based on personalization when memories are enabled', async () => {
+    const config = {
+      interface: {
+        memories: true,
+      },
+      memory: {
+        // Memory enabled with personalization
+        agent: {
+          id: 'test-agent-id',
+        },
+        personalize: true,
+      } as unknown as TCustomConfig['memory'],
+    };
+    const configDefaults = { interface: {} } as TConfigDefaults;
+    const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
+    const appConfig = { config, interfaceConfig } as unknown as AppConfig;
+
+    await updateInterfacePermissions({
+      appConfig,
+      getRoleByName: mockGetRoleByName,
+      updateAccessPermissions: mockUpdateAccessPermissions,
+    });
+
+    const userCall = mockUpdateAccessPermissions.mock.calls.find(
+      (call) => call[0] === SystemRoles.USER,
+    );
+    const adminCall = mockUpdateAccessPermissions.mock.calls.find(
+      (call) => call[0] === SystemRoles.ADMIN,
+    );
+
+    // Both roles should have OPT_OUT set to true when personalization is enabled
+    expect(userCall[1][PermissionTypes.MEMORIES][Permissions.OPT_OUT]).toBe(true);
+    expect(adminCall[1][PermissionTypes.MEMORIES][Permissions.OPT_OUT]).toBe(true);
   });
 
   it('should use role-specific defaults for PEOPLE_PICKER when peoplePicker config is undefined', async () => {
@@ -816,17 +801,23 @@ describe('loadDefaultInterface', () => {
         bookmarks: true,
       },
     };
-    const configDefaults = { interface: {} };
+    const configDefaults = { interface: {} } as TConfigDefaults;
+    const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
+    const appConfig = { config, interfaceConfig } as unknown as AppConfig;
 
-    await loadDefaultInterface(config, configDefaults);
+    await updateInterfacePermissions({
+      appConfig,
+      getRoleByName: mockGetRoleByName,
+      updateAccessPermissions: mockUpdateAccessPermissions,
+    });
 
-    expect(updateAccessPermissions).toHaveBeenCalledTimes(2);
+    expect(mockUpdateAccessPermissions).toHaveBeenCalledTimes(2);
 
     // Get the calls to updateAccessPermissions
-    const userCall = updateAccessPermissions.mock.calls.find(
+    const userCall = mockUpdateAccessPermissions.mock.calls.find(
       (call) => call[0] === SystemRoles.USER,
     );
-    const adminCall = updateAccessPermissions.mock.calls.find(
+    const adminCall = mockUpdateAccessPermissions.mock.calls.find(
       (call) => call[0] === SystemRoles.ADMIN,
     );
 
@@ -843,6 +834,29 @@ describe('loadDefaultInterface', () => {
       [Permissions.VIEW_GROUPS]: true,
       [Permissions.VIEW_ROLES]: true,
     });
+  });
+
+  it('should only call getRoleByName once per role for efficiency', async () => {
+    const config = {
+      interface: {
+        prompts: true,
+        bookmarks: true,
+      },
+    };
+    const configDefaults = { interface: {} } as TConfigDefaults;
+    const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
+    const appConfig = { config, interfaceConfig } as unknown as AppConfig;
+
+    await updateInterfacePermissions({
+      appConfig,
+      getRoleByName: mockGetRoleByName,
+      updateAccessPermissions: mockUpdateAccessPermissions,
+    });
+
+    // Should call getRoleByName exactly twice (once for USER, once for ADMIN)
+    expect(mockGetRoleByName).toHaveBeenCalledTimes(2);
+    expect(mockGetRoleByName).toHaveBeenCalledWith(SystemRoles.USER);
+    expect(mockGetRoleByName).toHaveBeenCalledWith(SystemRoles.ADMIN);
   });
 
   it('should use role-specific defaults for complex permissions when not configured', async () => {
@@ -874,91 +888,56 @@ describe('loadDefaultInterface', () => {
           use: false,
         },
       },
-    };
+    } as TConfigDefaults;
+    const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
+    const appConfig = { config, interfaceConfig } as unknown as AppConfig;
 
-    await loadDefaultInterface(config, configDefaults);
+    await updateInterfacePermissions({
+      appConfig,
+      getRoleByName: mockGetRoleByName,
+      updateAccessPermissions: mockUpdateAccessPermissions,
+    });
 
-    const userCall = updateAccessPermissions.mock.calls.find(
+    const userCall = mockUpdateAccessPermissions.mock.calls.find(
       (call) => call[0] === SystemRoles.USER,
     );
-    const adminCall = updateAccessPermissions.mock.calls.find(
+    const adminCall = mockUpdateAccessPermissions.mock.calls.find(
       (call) => call[0] === SystemRoles.ADMIN,
     );
 
     // Check PROMPTS permissions use role defaults
     expect(userCall[1][PermissionTypes.PROMPTS]).toEqual({
       [Permissions.USE]: true,
-      [Permissions.SHARED_GLOBAL]: false,
-      [Permissions.CREATE]: true,
     });
 
     expect(adminCall[1][PermissionTypes.PROMPTS]).toEqual({
       [Permissions.USE]: true,
-      [Permissions.SHARED_GLOBAL]: true,
-      [Permissions.CREATE]: true,
     });
 
     // Check AGENTS permissions use role defaults
     expect(userCall[1][PermissionTypes.AGENTS]).toEqual({
       [Permissions.USE]: true,
-      [Permissions.SHARED_GLOBAL]: false,
-      [Permissions.CREATE]: true,
     });
 
     expect(adminCall[1][PermissionTypes.AGENTS]).toEqual({
       [Permissions.USE]: true,
-      [Permissions.SHARED_GLOBAL]: true,
-      [Permissions.CREATE]: true,
     });
 
     // Check MEMORIES permissions use role defaults
     expect(userCall[1][PermissionTypes.MEMORIES]).toEqual({
       [Permissions.USE]: true,
-      [Permissions.CREATE]: true,
-      [Permissions.UPDATE]: true,
-      [Permissions.READ]: true,
       [Permissions.OPT_OUT]: undefined,
     });
 
     expect(adminCall[1][PermissionTypes.MEMORIES]).toEqual({
       [Permissions.USE]: true,
-      [Permissions.CREATE]: true,
-      [Permissions.UPDATE]: true,
-      [Permissions.READ]: true,
       [Permissions.OPT_OUT]: undefined,
     });
   });
 
-  it('should handle memories OPT_OUT based on personalization when memories are enabled', async () => {
-    const config = {
-      interface: {
-        memories: true,
-      },
-      memory: {
-        // Memory enabled with personalization
-        enable: true,
-        personalize: true,
-      },
-    };
-    const configDefaults = { interface: {} };
-
-    await loadDefaultInterface(config, configDefaults);
-
-    const userCall = updateAccessPermissions.mock.calls.find(
-      (call) => call[0] === SystemRoles.USER,
-    );
-    const adminCall = updateAccessPermissions.mock.calls.find(
-      (call) => call[0] === SystemRoles.ADMIN,
-    );
-
-    // Both roles should have OPT_OUT set to true when personalization is enabled
-    expect(userCall[1][PermissionTypes.MEMORIES][Permissions.OPT_OUT]).toBe(true);
-    expect(adminCall[1][PermissionTypes.MEMORIES][Permissions.OPT_OUT]).toBe(true);
-  });
-
   it('should populate missing PEOPLE_PICKER and MARKETPLACE permissions with role-specific defaults', async () => {
     // Mock that PEOPLE_PICKER and MARKETPLACE permissions don't exist yet
-    getRoleByName.mockResolvedValue({
+    mockGetRoleByName.mockResolvedValue({
       permissions: {
         [PermissionTypes.PROMPTS]: { [Permissions.USE]: true },
         [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: true },
@@ -985,14 +964,20 @@ describe('loadDefaultInterface', () => {
           use: false,
         },
       },
-    };
+    } as TConfigDefaults;
+    const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
+    const appConfig = { config, interfaceConfig } as unknown as AppConfig;
 
-    await loadDefaultInterface(config, configDefaults);
+    await updateInterfacePermissions({
+      appConfig,
+      getRoleByName: mockGetRoleByName,
+      updateAccessPermissions: mockUpdateAccessPermissions,
+    });
 
-    const userCall = updateAccessPermissions.mock.calls.find(
+    const userCall = mockUpdateAccessPermissions.mock.calls.find(
       (call) => call[0] === SystemRoles.USER,
     );
-    const adminCall = updateAccessPermissions.mock.calls.find(
+    const adminCall = mockUpdateAccessPermissions.mock.calls.find(
       (call) => call[0] === SystemRoles.ADMIN,
     );
 
@@ -1053,7 +1038,7 @@ describe('loadDefaultInterface', () => {
       [PermissionTypes.MARKETPLACE]: { [Permissions.USE]: true },
     };
 
-    getRoleByName.mockResolvedValue({
+    mockGetRoleByName.mockResolvedValue({
       permissions: existingUserPermissions,
     });
 
@@ -1073,12 +1058,18 @@ describe('loadDefaultInterface', () => {
           use: false,
         },
       },
-    };
+    } as TConfigDefaults;
+    const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
+    const appConfig = { interfaceConfig } as unknown as AppConfig;
 
-    await loadDefaultInterface(config, configDefaults);
+    await updateInterfacePermissions({
+      appConfig,
+      getRoleByName: mockGetRoleByName,
+      updateAccessPermissions: mockUpdateAccessPermissions,
+    });
 
     // Should only update permissions that don't exist
-    const userCall = updateAccessPermissions.mock.calls.find(
+    const userCall = mockUpdateAccessPermissions.mock.calls.find(
       (call) => call[0] === SystemRoles.USER,
     );
 
@@ -1094,26 +1085,9 @@ describe('loadDefaultInterface', () => {
     expect(userCall[1]).toHaveProperty(PermissionTypes.AGENTS);
   });
 
-  it('should only call getRoleByName once per role for efficiency', async () => {
-    const config = {
-      interface: {
-        prompts: true,
-        bookmarks: true,
-      },
-    };
-    const configDefaults = { interface: {} };
-
-    await loadDefaultInterface(config, configDefaults);
-
-    // Should call getRoleByName exactly twice (once for USER, once for ADMIN)
-    expect(getRoleByName).toHaveBeenCalledTimes(2);
-    expect(getRoleByName).toHaveBeenCalledWith(SystemRoles.USER);
-    expect(getRoleByName).toHaveBeenCalledWith(SystemRoles.ADMIN);
-  });
-
   it('should only update explicitly configured permissions and leave others unchanged', async () => {
     // Mock existing permissions
-    getRoleByName.mockResolvedValue({
+    mockGetRoleByName.mockResolvedValue({
       permissions: {
         [PermissionTypes.PROMPTS]: { [Permissions.USE]: false },
         [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: false },
@@ -1153,23 +1127,23 @@ describe('loadDefaultInterface', () => {
           use: false,
         },
       },
-    };
+    } as TConfigDefaults;
+    const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
+    const appConfig = { config, interfaceConfig } as unknown as AppConfig;
 
-    await loadDefaultInterface(config, configDefaults);
+    await updateInterfacePermissions({
+      appConfig,
+      getRoleByName: mockGetRoleByName,
+      updateAccessPermissions: mockUpdateAccessPermissions,
+    });
 
-    const userCall = updateAccessPermissions.mock.calls.find(
+    const userCall = mockUpdateAccessPermissions.mock.calls.find(
       (call) => call[0] === SystemRoles.USER,
     );
 
     // Explicitly configured permissions should be updated
     expect(userCall[1][PermissionTypes.PROMPTS]).toEqual({
       [Permissions.USE]: true,
-      [Permissions.SHARED_GLOBAL]:
-        roleDefaults[SystemRoles.USER].permissions[PermissionTypes.PROMPTS][
-          Permissions.SHARED_GLOBAL
-        ],
-      [Permissions.CREATE]:
-        roleDefaults[SystemRoles.USER].permissions[PermissionTypes.PROMPTS][Permissions.CREATE],
     });
     expect(userCall[1][PermissionTypes.BOOKMARKS]).toEqual({ [Permissions.USE]: true });
     expect(userCall[1][PermissionTypes.MARKETPLACE]).toEqual({ [Permissions.USE]: true });

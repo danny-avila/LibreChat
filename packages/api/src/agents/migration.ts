@@ -1,7 +1,7 @@
 import { logger } from '@librechat/data-schemas';
 import { AccessRoleIds, ResourceType, PrincipalType, Constants } from 'librechat-data-provider';
 import type { AccessRoleMethods, IAgent } from '@librechat/data-schemas';
-import type { Model } from 'mongoose';
+import type { Model, Mongoose, mongo } from 'mongoose';
 
 const { GLOBAL_PROJECT_NAME } = Constants;
 
@@ -17,7 +17,8 @@ export interface MigrationCheckDbMethods {
 }
 
 export interface MigrationCheckParams {
-  db: MigrationCheckDbMethods;
+  mongoose: Mongoose;
+  methods: MigrationCheckDbMethods;
   AgentModel: Model<IAgent>;
 }
 
@@ -46,16 +47,44 @@ export interface MigrationCheckResult {
  * This performs a dry-run check similar to the migration script
  */
 export async function checkAgentPermissionsMigration({
-  db,
+  methods,
+  mongoose,
   AgentModel,
 }: MigrationCheckParams): Promise<MigrationCheckResult> {
   logger.debug('Checking if agent permissions migration is needed');
 
   try {
+    /** Ensurse `aclentries` collection exists for DocumentDB compatibility */
+    async function ensureCollectionExists(db: mongo.Db, collectionName: string) {
+      try {
+        const collections = await db.listCollections({ name: collectionName }).toArray();
+        if (collections.length === 0) {
+          await db.createCollection(collectionName);
+          logger.info(`Created collection: ${collectionName}`);
+        } else {
+          logger.debug(`Collection already exists: ${collectionName}`);
+        }
+      } catch (error) {
+        logger.error(`'Failed to check/create "${collectionName}" collection:`, error);
+        // If listCollections fails, try alternative approach
+        try {
+          // Try to access the collection directly - this will create it in MongoDB if it doesn't exist
+          await db.collection(collectionName).findOne({}, { projection: { _id: 1 } });
+        } catch (createError) {
+          logger.error(`Could not ensure collection ${collectionName} exists:`, createError);
+        }
+      }
+    }
+
+    const db = mongoose.connection.db;
+    if (db) {
+      await ensureCollectionExists(db, 'aclentries');
+    }
+
     // Verify required roles exist
-    const ownerRole = await db.findRoleByIdentifier(AccessRoleIds.AGENT_OWNER);
-    const viewerRole = await db.findRoleByIdentifier(AccessRoleIds.AGENT_VIEWER);
-    const editorRole = await db.findRoleByIdentifier(AccessRoleIds.AGENT_EDITOR);
+    const ownerRole = await methods.findRoleByIdentifier(AccessRoleIds.AGENT_OWNER);
+    const viewerRole = await methods.findRoleByIdentifier(AccessRoleIds.AGENT_VIEWER);
+    const editorRole = await methods.findRoleByIdentifier(AccessRoleIds.AGENT_EDITOR);
 
     if (!ownerRole || !viewerRole || !editorRole) {
       logger.warn(
@@ -70,7 +99,7 @@ export async function checkAgentPermissionsMigration({
     }
 
     // Get global project agent IDs
-    const globalProject = await db.getProjectByName(GLOBAL_PROJECT_NAME, ['agentIds']);
+    const globalProject = await methods.getProjectByName(GLOBAL_PROJECT_NAME, ['agentIds']);
     const globalAgentIds = new Set(globalProject?.agentIds || []);
 
     // Find agents without ACL entries (no batching for efficiency on startup)

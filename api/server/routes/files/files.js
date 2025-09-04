@@ -31,13 +31,15 @@ const { getAssistant } = require('~/models/Assistant');
 const { getAgent } = require('~/models/Agent');
 const { getLogStores } = require('~/cache');
 const { logger } = require('~/config');
+const { Readable } = require('stream');
 
 const router = express.Router();
 
 router.get('/', async (req, res) => {
   try {
+    const appConfig = req.config;
     const files = await getFiles({ user: req.user.id });
-    if (req.app.locals.fileStrategy === FileSources.s3) {
+    if (appConfig.fileStrategy === FileSources.s3) {
       try {
         const cache = getLogStores(CacheKeys.S3_EXPIRY_INTERVAL);
         const alreadyChecked = await cache.get(req.user.id);
@@ -114,7 +116,8 @@ router.get('/agent/:agent_id', async (req, res) => {
 
 router.get('/config', async (req, res) => {
   try {
-    res.status(200).json(req.app.locals.fileConfig);
+    const appConfig = req.config;
+    res.status(200).json(appConfig.fileConfig);
   } catch (error) {
     logger.error('[/files] Error getting fileConfig', error);
     res.status(400).json({ message: 'Error in request', error: error.message });
@@ -182,6 +185,7 @@ router.delete('/', async (req, res) => {
         role: req.user.role,
         fileIds: nonOwnedFileIds,
         agentId: req.body.agent_id,
+        isDelete: true,
       });
 
       for (const file of nonOwnedFiles) {
@@ -323,11 +327,6 @@ router.get('/download/:userId/:file_id', fileAccess, async (req, res) => {
       res.setHeader('X-File-Metadata', JSON.stringify(file));
     };
 
-    /** @type {{ body: import('stream').PassThrough } | undefined} */
-    let passThrough;
-    /** @type {ReadableStream | undefined} */
-    let fileStream;
-
     if (checkOpenAIStorage(file.source)) {
       req.body = { model: file.model };
       const endpointMap = {
@@ -340,12 +339,19 @@ router.get('/download/:userId/:file_id', fileAccess, async (req, res) => {
         overrideEndpoint: endpointMap[file.source],
       });
       logger.debug(`Downloading file ${file_id} from OpenAI`);
-      passThrough = await getDownloadStream(file_id, openai);
+      const passThrough = await getDownloadStream(file_id, openai);
       setHeaders();
       logger.debug(`File ${file_id} downloaded from OpenAI`);
-      passThrough.body.pipe(res);
+
+      // Handle both Node.js and Web streams
+      const stream =
+        passThrough.body && typeof passThrough.body.getReader === 'function'
+          ? Readable.fromWeb(passThrough.body)
+          : passThrough.body;
+
+      stream.pipe(res);
     } else {
-      fileStream = await getDownloadStream(req, file.filepath);
+      const fileStream = await getDownloadStream(req, file.filepath);
 
       fileStream.on('error', (streamError) => {
         logger.error('[DOWNLOAD ROUTE] Stream error:', streamError);
@@ -385,7 +391,8 @@ router.post('/', async (req, res) => {
 
     if (
       error.message?.includes('Invalid file format') ||
-      error.message?.includes('No OCR result')
+      error.message?.includes('No OCR result') ||
+      error.message?.includes('exceeds token limit')
     ) {
       message = error.message;
     }

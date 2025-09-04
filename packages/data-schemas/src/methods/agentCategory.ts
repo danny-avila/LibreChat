@@ -1,5 +1,5 @@
-import type { Model, Types, DeleteResult } from 'mongoose';
-import type { IAgentCategory, AgentCategory } from '../types/agentCategory';
+import type { Model, Types } from 'mongoose';
+import type { IAgentCategory } from '~/types';
 
 export function createAgentCategoryMethods(mongoose: typeof import('mongoose')) {
   /**
@@ -52,8 +52,9 @@ export function createAgentCategoryMethods(mongoose: typeof import('mongoose')) 
       label?: string;
       description?: string;
       order?: number;
+      custom?: boolean;
     }>,
-  ): Promise<any> {
+  ): Promise<import('mongoose').mongo.BulkWriteResult> {
     const AgentCategory = mongoose.models.AgentCategory as Model<IAgentCategory>;
 
     const operations = categories.map((category, index) => ({
@@ -66,6 +67,7 @@ export function createAgentCategoryMethods(mongoose: typeof import('mongoose')) 
             description: category.description || '',
             order: category.order || index,
             isActive: true,
+            custom: category.custom || false,
           },
         },
         upsert: true,
@@ -145,63 +147,104 @@ export function createAgentCategoryMethods(mongoose: typeof import('mongoose')) 
   }
 
   /**
-   * Ensure default categories exist, seed them if none are present
-   * @returns Promise<boolean> - true if categories were seeded, false if they already existed
+   * Ensure default categories exist and update them if they don't have localization keys
+   * @returns Promise<boolean> - true if categories were created/updated, false if no changes
    */
   async function ensureDefaultCategories(): Promise<boolean> {
-    const existingCategories = await getAllCategories();
-
-    if (existingCategories.length > 0) {
-      return false; // Categories already exist
-    }
+    const AgentCategory = mongoose.models.AgentCategory as Model<IAgentCategory>;
 
     const defaultCategories = [
       {
         value: 'general',
-        label: 'General',
-        description: 'General purpose agents for common tasks and inquiries',
+        label: 'com_agents_category_general',
+        description: 'com_agents_category_general_description',
         order: 0,
       },
       {
         value: 'hr',
-        label: 'Human Resources',
-        description: 'Agents specialized in HR processes, policies, and employee support',
+        label: 'com_agents_category_hr',
+        description: 'com_agents_category_hr_description',
         order: 1,
       },
       {
         value: 'rd',
-        label: 'Research & Development',
-        description: 'Agents focused on R&D processes, innovation, and technical research',
+        label: 'com_agents_category_rd',
+        description: 'com_agents_category_rd_description',
         order: 2,
       },
       {
         value: 'finance',
-        label: 'Finance',
-        description: 'Agents specialized in financial analysis, budgeting, and accounting',
+        label: 'com_agents_category_finance',
+        description: 'com_agents_category_finance_description',
         order: 3,
       },
       {
         value: 'it',
-        label: 'IT',
-        description: 'Agents for IT support, technical troubleshooting, and system administration',
+        label: 'com_agents_category_it',
+        description: 'com_agents_category_it_description',
         order: 4,
       },
       {
         value: 'sales',
-        label: 'Sales',
-        description: 'Agents focused on sales processes, customer relations.',
+        label: 'com_agents_category_sales',
+        description: 'com_agents_category_sales_description',
         order: 5,
       },
       {
         value: 'aftersales',
-        label: 'After Sales',
-        description: 'Agents specialized in post-sale support, maintenance, and customer service',
+        label: 'com_agents_category_aftersales',
+        description: 'com_agents_category_aftersales_description',
         order: 6,
       },
     ];
 
-    await seedCategories(defaultCategories);
-    return true; // Categories were seeded
+    const existingCategories = await getAllCategories();
+    const existingCategoryMap = new Map(existingCategories.map((cat) => [cat.value, cat]));
+
+    const updates = [];
+    let created = 0;
+
+    for (const defaultCategory of defaultCategories) {
+      const existingCategory = existingCategoryMap.get(defaultCategory.value);
+
+      if (existingCategory) {
+        const isNotCustom = !existingCategory.custom;
+        const needsLocalization = !existingCategory.label.startsWith('com_');
+
+        if (isNotCustom && needsLocalization) {
+          updates.push({
+            value: defaultCategory.value,
+            label: defaultCategory.label,
+            description: defaultCategory.description,
+          });
+        }
+      } else {
+        await createCategory({
+          ...defaultCategory,
+          isActive: true,
+          custom: false,
+        });
+        created++;
+      }
+    }
+
+    if (updates.length > 0) {
+      const bulkOps = updates.map((update) => ({
+        updateOne: {
+          filter: { value: update.value, custom: { $ne: true } },
+          update: {
+            $set: {
+              label: update.label,
+              description: update.description,
+            },
+          },
+        },
+      }));
+
+      await AgentCategory.bulkWrite(bulkOps, { ordered: false });
+    }
+
+    return updates.length > 0 || created > 0;
   }
 
   return {
