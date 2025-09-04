@@ -1,3 +1,4 @@
+import type { AgentToolResources } from 'librechat-data-provider';
 import type { Document, Types } from 'mongoose';
 
 export interface IPrompt extends Document {
@@ -5,6 +6,7 @@ export interface IPrompt extends Document {
   author: Types.ObjectId;
   prompt: string;
   type: 'text' | 'chat';
+  tool_resources?: AgentToolResources;
   createdAt?: Date;
   updatedAt?: Date;
 }
