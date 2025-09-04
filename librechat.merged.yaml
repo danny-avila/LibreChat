@@ -1,9 +1,7 @@
 version: 1.2.1
 cache: true
 interface:
-  customWelcome: Welkom bij KWINK!
-  mcpServers:
-    placeholder: MCP Servers
+  customWelcome: Welkom bij GovAI (merged)!
   privacyPolicy:
     externalUrl: https://librechat.ai/privacy-policy
     openNewTab: true
@@ -41,7 +39,6 @@ endpoints:
     disableBuilder: false
     capabilities:
       - file_search
-      - tools
       - web_search
       - chain
     allowedProviders:
