@@ -131,26 +131,6 @@ const AgentHandoffs: React.FC<AgentHandoffsProps> = ({ field, currentAgentId }) 
         </div>
       </div>
       <div className="space-y-1">
-        {/* Current fixed agent */}
-        <div className="flex h-10 items-center justify-between rounded-md border border-border-medium bg-surface-primary-contrast px-3 py-2">
-          <div className="flex items-center gap-2">
-            <div className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full">
-              <MessageIcon
-                message={
-                  {
-                    endpoint: EModelEndpoint.agents,
-                    isCreatedByUser: false,
-                  } as TMessage
-                }
-                agent={currentAgentId && agentsMap ? agentsMap[currentAgentId] : undefined}
-              />
-            </div>
-            <div className="font-medium text-text-primary">
-              {getAgentDetails(currentAgentId)?.name}
-            </div>
-          </div>
-        </div>
-        {edges.length > 0 && <Waypoints className="mx-auto text-text-secondary" size={14} />}
         {edges.map((edge, idx) => {
           const targetAgentId = getTargetAgentId(edge.to);
           const isExpanded = expandedIndices.has(idx);
