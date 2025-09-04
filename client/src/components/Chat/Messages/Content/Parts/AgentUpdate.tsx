@@ -11,8 +11,8 @@ interface AgentUpdateProps {
 
 const AgentUpdate: React.FC<AgentUpdateProps> = ({ currentAgentId }) => {
   const localize = useLocalize();
-  const agentsMap = useAgentsMapContext() || {};
-  const currentAgent = useMemo(() => agentsMap[currentAgentId], [agentsMap, currentAgentId]);
+  const agentsMap = useAgentsMapContext();
+  const currentAgent = useMemo(() => agentsMap?.[currentAgentId], [agentsMap, currentAgentId]);
   if (!currentAgentId) {
     return null;
   }
