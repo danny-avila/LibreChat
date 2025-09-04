@@ -310,190 +310,170 @@ const QueryLogs: React.FC = () => {
   );
 
   return (
-    <div className="flex h-full flex-col gap-4 p-6 bg-gray-50 min-h-screen">
-      {/* Header */}
-      <div className="flex items-center justify-between border-b border-gray-200 pb-3">
-        <div className="flex items-center gap-3">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => navigate('/admin')}
-            className="rounded-full hover:bg-gray-200"
-            aria-label="Back to Admin Dashboard"
-          >
-            <ArrowLeft className="h-5 w-5 text-gray-600" />
-          </Button>
-          <h2 className="text-2xl font-semibold text-gray-800">Query Logs</h2>
-        </div>
+  <div className="flex h-full flex-col px-6 py-4 sm:py-6">
+    {/* Header */}
+    <div className="mb-4 flex items-center justify-between border-b border-border-light pb-3">
+      <div className="flex items-center gap-3">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => navigate('/c/new')}
+          className="rounded-full hover:bg-surface-secondary"
+          aria-label="Back to Admin Dashboard"
+        >
+          <ArrowLeft className="h-5 w-5 text-muted-foreground" />
+        </Button>
+        <h2 className="text-lg font-semibold text-foreground sm:text-2xl">
+          Query Logs
+        </h2>
       </div>
+    </div>
 
-      {error && (
-        <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 rounded-md">
-          {error}
-        </div>
-      )}
-
-<SearchBar
-  search={search}
-  setSearch={handleSearch}
-  placeholder="Search by user name, email, or model"
-/>
-
-
-      {loading && (
-        <div className="flex justify-center items-center p-4">
-          <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
-          <span className="ml-2 text-gray-600">Loading query logs...</span>
-        </div>
-      )}
-
-      {!loading && logs.length === 0 && (
-        <div className="flex h-full flex-col gap-4 p-4 text-center">
-          <p className="text-gray-500 text-lg">
-            {search ? 'No logs match your search.' : 'No query logs available.'}
-          </p>
-        </div>
-      )}
-
-        {!loading && logs.length > 0 && (
-        <>
-            <div ref={mainContainerRef} className="flex-grow">
-            <DataTable
-                columns={columns}
-                data={logs.map((log, i) => ({ ...log, id: log._id || `${i}` }))}
-                className="flex h-full flex-col gap-4"
-                enableRowSelection={false}
-                showCheckboxes={false}
-                isLoading={false}
-            />
-            </div>
-            <Pagination
-            page={page}
-            limit={limit}
-            total={total}
-            onPageChange={setPage}
-            />
-        </>
-        )}
-
-      {/* Dialog for message */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-  <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto border border-gray-200 shadow-lg dark:border-gray-700">
-    <DialogHeader className="border-b border-gray-100 pb-3 pt-2 dark:border-gray-700">
-      <DialogTitle className="flex items-start justify-between text-lg">
-        <div className="flex items-start gap-2">
-          {/* Icon Badge */}
-          <span
-            className={`rounded-full p-1.5 ${
-              selectedLog?.role === "ai"
-                ? "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300"
-                : "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300"
-            }`}
-          >
-            {/* Icon for role */}
-            {selectedLog?.role === "ai" ? (
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="20"
-                height="20"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <circle cx="12" cy="12" r="10" />
-                <path d="M8 15h8M9 9h6" />
-              </svg>
-            ) : (
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="20"
-                height="20"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-                <circle cx="8.5" cy="7" r="4" />
-                <line x1="20" y1="8" x2="20" y2="14" />
-                <line x1="23" y1="11" x2="17" y2="11" />
-              </svg>
-            )}
-          </span>
-
-          {/* Title */}
-          <span className="font-medium mt-0.5 text-gray-800 dark:text-gray-200">
-            Query Log Details
-          </span>
-        </div>
-      </DialogTitle>
-    </DialogHeader>
-
-    {selectedLog && (
-      <div className="space-y-4 p-2">
-        {/* Metadata */}
-        <div className="grid grid-cols-2 gap-4 text-sm">
-          <div>
-            <p className="text-gray-500 font-medium">User</p>
-            <p className="text-gray-800 dark:text-gray-200">
-              {selectedLog.user?.name ?? "Unknown"}
-            </p>
-            <p className="text-xs text-gray-500">
-              {selectedLog.user?.email ?? "N/A"}
-            </p>
-          </div>
-          <div>
-            <p className="text-gray-500 font-medium">Role</p>
-            <span
-              className={`inline-block rounded px-2 py-0.5 text-xs font-semibold ${
-                selectedLog.role === "ai"
-                  ? "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300"
-                  : "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300"
-              }`}
-            >
-              {selectedLog.role === "ai" ? "AI" : "User"}
-            </span>
-          </div>
-          <div>
-            <p className="text-gray-500 font-medium">Model</p>
-            <p className="text-gray-800 dark:text-gray-200">
-              {selectedLog.model ?? "—"}
-            </p>
-          </div>
-          <div>
-            <p className="text-gray-500 font-medium">Tokens</p>
-            <p className="text-gray-800 dark:text-gray-200">
-              {selectedLog.tokenCount ?? 0}
-            </p>
-          </div>
-          <div>
-            <p className="text-gray-500 font-medium">Timestamp</p>
-            <p className="text-gray-800 dark:text-gray-200">
-            {moment(selectedLog.createdAt).format('Do MMMM YYYY, h:mm:ss a')}
-            </p>
-          </div>
-        </div>
-
-        {/* Message Content */}
-        <div>
-          <p className="text-gray-500 font-medium mb-1">Message</p>
-          <div className="relative rounded-md border bg-gray-50 p-3 max-h-60 overflow-y-auto text-sm text-gray-700 dark:bg-gray-800 dark:text-gray-200 whitespace-pre-wrap">
-            {selectedLog.text || "No message available"}
-          </div>
-        </div>
+    {/* Error Message */}
+    {error && (
+      <div className="mb-4 rounded-md border-l-4 border-red-500 bg-red-100 p-4 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
+        {error}
       </div>
     )}
-  </DialogContent>
-</Dialog>
 
-
+    {/* Search */}
+    <div className="mb-4">
+      <SearchBar
+        search={search}
+        setSearch={handleSearch}
+        placeholder="Search by user name, email, or model"
+      />
     </div>
-  );
+
+    {/* Loading Spinner */}
+    {loading && (
+      <div className="flex items-center justify-center py-6">
+        <div className="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-blue-500" />
+        <span className="ml-3 text-sm text-muted-foreground">Loading query logs...</span>
+      </div>
+    )}
+
+    {/* Empty State */}
+    {!loading && logs.length === 0 && (
+      <div className="flex flex-1 items-center justify-center text-center text-muted-foreground">
+        <p className="text-base">
+          {search ? 'No logs match your search.' : 'No query logs available.'}
+        </p>
+      </div>
+    )}
+
+    {/* Data Table */}
+    {!loading && logs.length > 0 && (
+      <div className="flex flex-1 flex-col gap-4">
+        <div ref={mainContainerRef} className="min-h-[400px] flex-grow">
+          <DataTable
+            columns={columns}
+            data={logs.map((log, i) => ({ ...log, id: log._id || `${i}` }))}
+            className="h-full"
+            enableRowSelection={false}
+            showCheckboxes={false}
+            isLoading={false}
+          />
+        </div>
+
+        {/* Pagination */}
+        <Pagination
+          page={page}
+          limit={limit}
+          total={total}
+          onPageChange={setPage}
+        />
+      </div>
+    )}
+
+    {/* Log Detail Dialog */}
+    <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+      <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto border border-border-light shadow-xl">
+        <DialogHeader className="border-b border-border-light pb-3 pt-2">
+          <DialogTitle className="flex items-start justify-between text-base font-semibold">
+            <div className="flex items-center gap-2">
+              <span
+                className={`rounded-full p-1.5 ${
+                  selectedLog?.role === 'ai'
+                    ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300'
+                    : 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300'
+                }`}
+              >
+                {selectedLog?.role === 'ai' ? (
+                  <Info className="h-4 w-4" />
+                ) : (
+                  <ArrowLeft className="h-4 w-4" />
+                )}
+              </span>
+              <span className="text-foreground">Query Log Details</span>
+            </div>
+          </DialogTitle>
+        </DialogHeader>
+
+        {selectedLog && (
+          <div className="space-y-6 p-4 text-sm text-foreground">
+            {/* User Info */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">User</label>
+                <div className="rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 shadow-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
+                  {selectedLog.user?.name ?? 'Unknown'}
+                  <div className="text-xs text-muted-foreground">{selectedLog.user?.email ?? 'N/A'}</div>
+                </div>
+              </div>
+              
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Role</label>
+                <div className="rounded-md border border-gray-200 bg-white px-3 py-2 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+                  <span
+                    className={`inline-block rounded px-2 py-0.5 text-xs font-semibold ${
+                      selectedLog.role === 'ai'
+                        ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300'
+                        : 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300'
+                    }`}
+                  >
+                    {selectedLog.role === 'ai' ? 'AI' : 'User'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Model</label>
+                <div className="rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 shadow-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
+                  {selectedLog.model ?? '—'}
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Tokens</label>
+                <div className="rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 shadow-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
+                  {selectedLog.tokenCount ?? 0}
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-1 col-span-2">
+                <label className="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Timestamp</label>
+                <div className="rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 shadow-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
+                  {moment(selectedLog.createdAt).format('Do MMMM YYYY, h:mm:ss a')}
+                </div>
+              </div>
+            </div>
+
+
+            {/* Message Content */}
+            <div>
+              <p className="text-muted-foreground font-medium mb-2">Message</p>
+              <div className="max-h-60 overflow-y-auto whitespace-pre-wrap rounded-md border bg-muted p-3 text-sm text-muted-foreground dark:bg-muted/50">
+                {selectedLog.text || 'No message available'}
+              </div>
+            </div>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  </div>
+);
+
 };
 
 export default QueryLogs;
