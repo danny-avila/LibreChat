@@ -2,11 +2,80 @@ const { z } = require('zod');
 const { Tool } = require('@langchain/core/tools');
 const { SearchClient, AzureKeyCredential } = require('@azure/search-documents');
 const { logger } = require('~/config');
+
 let AbortControllerCtor;
 try {
   AbortControllerCtor = global.AbortController || require('abort-controller');
 } catch (_) {
   AbortControllerCtor = global.AbortController; // final fallback
+}
+
+// --- WoodlandAISearch loop guards (module-level) ---
+let __WAS_DISABLE_SCORING_PARAMS__ = false; // once a profile rejects params, stop sending them for future calls
+let __WAS_LAST_SIG__ = null;                // dedupe signature of the last executed request
+let __WAS_LAST_TS__ = 0;                    // timestamp of last exec
+let __WAS_LAST_RESULT__ = null;             // last successful JSON stringified result
+const __WAS_DEDUPE_WINDOW_MS__ = 4000;      // ignore exact duplicate calls within this window
+
+function _extractPartNumber(text) {
+  if (!text) return null;
+  const rx = /(Part\s*#\s*)?(\d{2}-\d{2}-\d{3,4})/i;
+  const m = rx.exec(text);
+  return m ? m[2] : null;
+}
+function _firstUrl(docs, pred) {
+  for (const d of docs) if (pred(d) && d.url) return d.url;
+  return null;
+}
+function _collectNonAirtableUrls(docs, limit = 4) {
+  const urls = [];
+  const seen = new Set();
+  for (const d of docs) {
+    if (d.source === 'airtable') continue;
+    if (d.url && !seen.has(d.url)) {
+      urls.push(d.url);
+      seen.add(d.url);
+      if (urls.length >= limit) break;
+    }
+  }
+  return urls;
+}
+function _buildGovernedAnswer(query, docs) {
+  // 1) Prefer Airtable (deterministic)
+  const airtableDocs = docs.filter(d => d.source === 'airtable');
+  if (airtableDocs.length) {
+    // Try to extract SKU and a plain description
+    const at = airtableDocs[0];
+    const sku = _extractPartNumber(`${at.chunk || ''} ${at.title || ''}`) || _extractPartNumber(query) || 'UNKNOWN';
+    const titleBits = (at.chunk || at.title || '').split('|');
+    // Try to pull a friendly item name, e.g., "Key - Electric Start"
+    let item = 'this item';
+    for (const b of titleBits) {
+      const t = b.trim();
+      if (/key\s*-\s*electric\s*start/i.test(t)) { item = 'Key - Electric Start'; break; }
+      if (/\|/.test(t)) continue;
+      if (t && !/^Question|ID:|Model:|Component:/i.test(t)) { item = t; break; }
+    }
+    const citeUrls = _collectNonAirtableUrls(docs);
+
+    const answer = [
+      `Answer:`,
+      `The part number for ${item} is **${sku}**.`,
+      ``,
+      `Fit & Compatibility:`,
+      `Part Number   Description`,
+      `${sku}         ${item}`,
+      ``,
+      `Citations:`,
+      `- Airtable record_id: ${at.record_id || at.title || 'unknown'}`,
+      ...(at.url ? [`- ${at.url}`] : []),
+      ...citeUrls.map(u => `- ${u}`)
+    ].join('\n');
+    return answer;
+  }
+
+  // 2) Fallback to website/cyclopedia (non-deterministic but helpful)
+  return 'needs human review';
 }
 
 class WoodlandAISearch extends Tool {
@@ -68,16 +137,16 @@ class WoodlandAISearch extends Tool {
     this.scoringProfile = this._initializeField(
       fields.AZURE_AI_SEARCH_SCORING_PROFILE,
       'AZURE_AI_SEARCH_SCORING_PROFILE',
-      undefined // changed from 'boost_reviewed_recent' to undefined
+      undefined
     );
     this.scoringParameters = this._initializeField(
       fields.AZURE_AI_SEARCH_SCORING_PARAMETERS,
       'AZURE_AI_SEARCH_SCORING_PARAMETERS'
-    ); // comma-separated list like: tag:reviewed,true;freshnessBoostingDuration:P30D
+    );
     this.orderBy = this._initializeField(
       fields.AZURE_AI_SEARCH_ORDER_BY,
       'AZURE_AI_SEARCH_ORDER_BY'
-    ); // e.g., "updated_at desc"
+    );
     this.minimumCoverage = this._initializeField(
       fields.AZURE_AI_SEARCH_MINIMUM_COVERAGE,
       'AZURE_AI_SEARCH_MINIMUM_COVERAGE'
@@ -87,9 +156,8 @@ class WoodlandAISearch extends Tool {
     this.semanticConfiguration = this._initializeField(
       fields.AZURE_AI_SEARCH_SEMANTIC_CONFIGURATION,
       'AZURE_AI_SEARCH_SEMANTIC_CONFIGURATION',
-      undefined // changed from 'sem1' to undefined
+      undefined
     );
-    // Normalize: if blank/whitespace, fall back to undefined (no semantic)
     if (typeof this.semanticConfiguration === 'string') {
       const trimmed = this.semanticConfiguration.trim();
       this.semanticConfiguration = trimmed.length ? trimmed : undefined;
@@ -101,7 +169,7 @@ class WoodlandAISearch extends Tool {
     );
     this.queryAnswer = this._initializeField(
       fields.AZURE_AI_SEARCH_QUERY_ANSWER,
-      'AZURE_AI_SEARCH_QUERY_ANSWER' // e.g., 'extractive' or 'none'
+      'AZURE_AI_SEARCH_QUERY_ANSWER'
     );
     this.answersCount = Number(
       this._initializeField(
@@ -112,7 +180,7 @@ class WoodlandAISearch extends Tool {
     );
     this.queryCaption = this._initializeField(
       fields.AZURE_AI_SEARCH_QUERY_CAPTION,
-      'AZURE_AI_SEARCH_QUERY_CAPTION' // e.g., 'extractive' or 'none'
+      'AZURE_AI_SEARCH_QUERY_CAPTION'
     );
     this.captionsHighlightEnabled = this._initializeField(
       fields.AZURE_AI_SEARCH_CAPTIONS_HIGHLIGHT,
@@ -121,7 +189,7 @@ class WoodlandAISearch extends Tool {
     );
     this.speller = this._initializeField(
       fields.AZURE_AI_SEARCH_SPELLER,
-      'AZURE_AI_SEARCH_SPELLER' // e.g., 'lexicon' (if supported on your API version)
+      'AZURE_AI_SEARCH_SPELLER'
     );
     this.timeoutMs = Number(
       this._initializeField(
@@ -130,6 +198,14 @@ class WoodlandAISearch extends Tool {
         WoodlandAISearch.DEFAULT_TIMEOUT_MS,
       ),
     );
+
+    this.returnMode = this._initializeField(
+      fields.WOODLAND_RETURN_MODE,
+      'WOODLAND_RETURN_MODE',
+      'governed' // default to governed output for LLM-friendly formatting
+    );
+
+    this._disableScoringParams = __WAS_DISABLE_SCORING_PARAMS__;
 
     // Check for required fields
     if (!this.override && (!this.serviceEndpoint || !this.indexName || !this.apiKey)) {
@@ -151,161 +227,104 @@ class WoodlandAISearch extends Tool {
     );
   }
 
-  // Improved error handling and logging with timeout and retry logic
   async _call(data) {
-    const rawQuery = (data?.query ?? '').trim();
-    if (!rawQuery) {
-      return JSON.stringify({ ok: false, error: 'EMPTY_QUERY', message: 'Query is empty.' });
+    const { query } = data || {};
+    const q = (query || '').trim();
+    if (!q) {
+      return JSON.stringify([]);
     }
-
-    // Compose search options with ranking & semantic controls if set
-    const sanitize = (opts) => {
-      const out = { ...opts };
-      // If semantic, orderBy is not supported
-      if (out.queryType === 'semantic' && out.orderBy) delete out.orderBy;
-      // If no scoringProfile, drop scoringParameters
-      if (!out.scoringProfile && out.scoringParameters) delete out.scoringParameters;
-      return out;
-    };
-
-    const searchOptionsBase = {
-      queryType: this.queryType,
-      top: typeof this.top === 'string' ? Number(this.top) : this.top,
-      includeTotalCount: false,
-    };
-
-    if (this.select) searchOptionsBase.select = this.select.split(',').map(s => s.trim()).filter(Boolean);
-    if (this.scoringProfile) searchOptionsBase.scoringProfile = this.scoringProfile;
-    if (this.scoringParameters) {
-      const parts = this.scoringParameters.split(',').map(s => s.trim()).filter(Boolean);
-      if (parts.length) searchOptionsBase.scoringParameters = parts;
-    }
-    if (this.orderBy) searchOptionsBase.orderBy = this.orderBy.split(',').map(s => s.trim()).filter(Boolean);
-    if (this.minimumCoverage) searchOptionsBase.minimumCoverage = Number(this.minimumCoverage);
-
-    const _semConfig = (typeof this.semanticConfiguration === 'string')
-      ? this.semanticConfiguration.trim()
-      : this.semanticConfiguration;
-    if (_semConfig) {
-      searchOptionsBase.queryType = 'semantic';
-      searchOptionsBase.semanticConfiguration = _semConfig;
-      if (this.queryLanguage) searchOptionsBase.queryLanguage = this.queryLanguage;
-      if (this.queryAnswer) {
-        searchOptionsBase.queryAnswer = this.queryAnswer;
-        if (Number.isFinite(this.answersCount)) searchOptionsBase.answersCount = this.answersCount;
-      }
-      if (this.queryCaption) {
-        searchOptionsBase.queryCaption = this.queryCaption;
-        searchOptionsBase.captionsHighlightEnabled = !!this.captionsHighlightEnabled;
-      }
-      if (this.speller) searchOptionsBase.speller = this.speller;
-    } else {
-      // if no semanticConfiguration provided, keep queryType as originally set (likely 'simple')
-    }
-
-    // Final guard: if queryType is semantic but no valid semanticConfiguration, downgrade to simple
-    if (!_semConfig && searchOptionsBase.queryType === 'semantic') {
-      searchOptionsBase.queryType = 'simple';
-      if (process?.env?.NODE_ENV !== 'production') {
-        logger.warn("queryType was 'semantic' but semanticConfiguration is missing/empty; downgraded to 'simple'.");
-      }
-    }
-
-    // Azure Search limitation: 'orderBy' is not supported with semantic queryType
-    if (this.semanticConfiguration && searchOptionsBase.orderBy) {
-      delete searchOptionsBase.orderBy;
-      if (process?.env?.NODE_ENV !== 'production') {
-        logger.warn("'orderBy' ignored because semantic ranking is enabled (queryType='semantic').");
-      }
-    }
-
-    const execSearch = async (opts) => {
-      const controller = new AbortControllerCtor();
-      const timer = setTimeout(() => controller.abort(), this.timeoutMs);
-      const t0 = process.hrtime.bigint();
-      try {
-        const searchResults = await this.client.search(rawQuery, { ...opts, abortSignal: controller.signal });
-        const resultDocuments = [];
-        for await (const result of searchResults.results) {
-          resultDocuments.push(result.document);
-        }
-        const res = { ok: true, results: resultDocuments };
-        if (opts.queryType === 'semantic') {
-          try {
-            if (typeof searchResults?.answers !== 'undefined') {
-              res.semantic_answers = searchResults.answers;
-            }
-          } catch (_) { /* ignore */ }
-        }
-        const t1 = process.hrtime.bigint();
-        res.latency_ms = Number((t1 - t0) / 1000000n);
-        return res;
-      } finally {
-        clearTimeout(timer);
-      }
-    };
-
-    // First attempt (possibly with $select)
     try {
-      const res = await execSearch(sanitize(searchOptionsBase));
-      return JSON.stringify(res);
-    } catch (err) {
-      const msg = err?.message || '';
-      // If service reports missing/empty semanticConfiguration, auto-downgrade to simple and retry once
-      if (/semanticConfiguration\'?\s+must not be empty/i.test(msg)) {
-        try {
-          const optsNoSemantic = { ...searchOptionsBase };
-          delete optsNoSemantic.semanticConfiguration;
-          optsNoSemantic.queryType = 'simple';
-          delete optsNoSemantic.scoringParameters;
-          // ensure orderBy is allowed again under simple
-          if (this.orderBy) {
-            optsNoSemantic.orderBy = this.orderBy.split(',').map(s => s.trim()).filter(Boolean);
-          }
-          const res3 = await execSearch(sanitize(optsNoSemantic));
-          res3.warning = 'Semantic config missing; downgraded to simple and retried.';
-          res3.error_detail = msg;
-          return JSON.stringify(res3);
-        } catch (err3) {
-          logger.error('Retry after semantic downgrade failed', err3);
-          return JSON.stringify({ ok: false, error: 'AZURE_SEARCH_FAILED', message: 'Azure AI Search failed after semantic downgrade retry.', detail: String(err3?.message || err3) });
-        }
-      }
-      // If scoringParameters are not expected by the profile, retry without them
-      if (/scoringParameter/i.test(msg) && /Expected\s+0\s+parameter\(s\)/i.test(msg)) {
-        try {
-          const optsNoParams = { ...searchOptionsBase };
-          delete optsNoParams.scoringParameters;
-          const res4 = await execSearch(sanitize(optsNoParams));
-          res4.warning = 'Profile does not accept scoringParameters; retried without scoringParameters.';
-          res4.error_detail = msg;
-          return JSON.stringify(res4);
-        } catch (err4) {
-          logger.error('Retry without scoringParameters failed', err4);
-          return JSON.stringify({ ok: false, error: 'AZURE_SEARCH_FAILED', message: 'Azure AI Search failed after removing scoringParameters.', detail: String(err4?.message || err4) });
-        }
-      }
-      // Safe retry without $select if schema mismatches happen
-      if (searchOptionsBase.select && /(Invalid expression|\$select|Could not find a property)/i.test(msg)) {
-        try {
-          const { select, ...optsNoSelect } = searchOptionsBase;
-          const res2 = await execSearch(sanitize(optsNoSelect));
-          res2.warning = 'Retried without $select due to schema mismatch.';
-          res2.error_detail = msg;
-          return JSON.stringify(res2);
-        } catch (err2) {
-          logger.error('Azure AI Search retry without $select failed', err2);
-          return JSON.stringify({ ok: false, error: 'AZURE_SEARCH_FAILED', message: 'Azure AI Search failed on retry without $select.', detail: String(err2?.message || err2) });
-        }
+      const searchOption = {
+        top: typeof this.top === 'string' ? Number(this.top) : this.top,
+      };
+
+      if (this.select) {
+        searchOption.select = this.select
+          .split(',')
+          .map(s => s.trim())
+          .filter(Boolean);
       }
 
-      // Timeout vs other errors
-      if (err?.name === 'AbortError') {
-        return JSON.stringify({ ok: false, error: 'TIMEOUT', message: `Search aborted after ${this.timeoutMs} ms.` });
+      // ranking options
+      if (this.scoringProfile) {
+        searchOption.scoringProfile = this.scoringProfile;
+      }
+      if (!this._disableScoringParams && this.scoringParameters) {
+        const parts = this.scoringParameters.split(',').map(s => s.trim()).filter(Boolean);
+        if (parts.length) searchOption.scoringParameters = parts;
+      }
+      if (this.orderBy) {
+        searchOption.orderBy = this.orderBy.split(',').map(s => s.trim()).filter(Boolean);
+      }
+      if (this.minimumCoverage) {
+        searchOption.minimumCoverage = Number(this.minimumCoverage);
       }
 
-      logger.error('Azure AI Search request failed', err);
-      return JSON.stringify({ ok: false, error: 'AZURE_SEARCH_FAILED', message: 'Azure AI Search request failed.', detail: msg });
+      // semantic options (if provided)
+      if (this.semanticConfiguration && String(this.semanticConfiguration).trim().length) {
+        searchOption.semanticConfiguration = String(this.semanticConfiguration).trim();
+        // Intentionally do NOT set searchOption.queryType here to mirror the working cURL
+      } else if (this.queryType) {
+        searchOption.queryType = this.queryType;
+      }
+
+      delete searchOption.queryLanguage;
+
+      // Build a stable signature (query + options) to prevent runaway loops
+      const sigOptions = { ...searchOption };
+      // signature should not include scoringParameters array order differences
+      if (Array.isArray(sigOptions.scoringParameters)) sigOptions.scoringParameters = [...sigOptions.scoringParameters].sort();
+      if (Array.isArray(sigOptions.select)) sigOptions.select = [...sigOptions.select].sort();
+      if (Array.isArray(sigOptions.orderBy)) sigOptions.orderBy = [...sigOptions.orderBy].sort();
+      const signature = `${q}|${JSON.stringify(sigOptions)}`;
+      const now = Date.now();
+      if (__WAS_LAST_SIG__ === signature && (now - __WAS_LAST_TS__) < __WAS_DEDUPE_WINDOW_MS__ && __WAS_LAST_RESULT__) {
+        logger.warn('WoodlandAISearch: dedupe short-circuit (identical call within window)', { windowMs: __WAS_DEDUPE_WINDOW_MS__ });
+        return __WAS_LAST_RESULT__;
+      }
+
+      logger.info('WoodlandAISearch: executing search', { query: q, options: searchOption });
+
+      const exec = async (opts) => {
+        const res = await this.client.search(q, opts);
+        const docs = [];
+        for await (const r of res.results) docs.push(r.document);
+        return docs;
+      };
+
+      let retriedWithoutScoring = false;
+
+      try {
+        const docs = await exec(searchOption);
+        const payload = (this.returnMode === 'governed') ? _buildGovernedAnswer(q, docs) : JSON.stringify(docs);
+        __WAS_LAST_SIG__ = signature; __WAS_LAST_TS__ = Date.now(); __WAS_LAST_RESULT__ = payload;
+        return payload;
+      } catch (innerErr) {
+        const msg = (innerErr && (innerErr.message || String(innerErr))) || '';
+        const code = innerErr && (innerErr.statusCode || innerErr.code || innerErr.name);
+        const scoringParamError = /scoringParameter/i.test(msg) || /Expected\s*0\s*parameter\(s\)/i.test(msg);
+        if (scoringParamError && searchOption.scoringParameters && !retriedWithoutScoring) {
+          logger.warn('WoodlandAISearch: retrying without scoringParameters due to profile mismatch', { code, msg });
+          const retryOpts = { ...searchOption };
+          delete retryOpts.scoringParameters;
+          retriedWithoutScoring = true;
+          // disable for future calls (module + instance)
+          __WAS_DISABLE_SCORING_PARAMS__ = true;
+          this._disableScoringParams = true;
+          const docs = await exec(retryOpts);
+          const payload = (this.returnMode === 'governed') ? _buildGovernedAnswer(q, docs) : JSON.stringify(docs);
+          __WAS_LAST_SIG__ = signature; __WAS_LAST_TS__ = Date.now(); __WAS_LAST_RESULT__ = payload;
+          return payload;
+        }
+        throw innerErr;
+      }
+    } catch (error) {
+      logger.error('Azure AI Search request failed', error);
+      const msg = (error && (error.message || String(error))) || 'Unknown error';
+      const status = error && (error.statusCode || error.code || error.name);
+      const resultJson = JSON.stringify([{ _error: 'AZURE_SEARCH_FAILED', message: msg, status }]);
+      __WAS_LAST_SIG__ = null; __WAS_LAST_TS__ = Date.now(); __WAS_LAST_RESULT__ = resultJson;
+      return resultJson;
     }
   }
 }
