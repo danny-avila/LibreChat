@@ -153,7 +153,7 @@ export async function createRun({
     edges: agents[0].edges,
   };
 
-  if (agentInputs.length > 1 || ('edges' in graphConfig && graphConfig.edges.length > 0)) {
+  if (agentInputs.length > 1 || ((graphConfig as MultiAgentGraphConfig).edges?.length ?? 0) > 0) {
     (graphConfig as unknown as MultiAgentGraphConfig).type = 'multi-agent';
   } else {
     (graphConfig as StandardGraphConfig).type = 'standard';
