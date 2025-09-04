@@ -2,11 +2,11 @@ import { UIResourceRenderer } from '@mcp-ui/client';
 import type { UIResource } from '~/common';
 import React, { useState } from 'react';
 
-interface UIResourceGridProps {
+interface UIResourceCarouselProps {
   uiResources: UIResource[];
 }
 
-const UIResourceGrid: React.FC<UIResourceGridProps> = React.memo(({ uiResources }) => {
+const UIResourceCarousel: React.FC<UIResourceCarouselProps> = React.memo(({ uiResources }) => {
   const [showLeftArrow, setShowLeftArrow] = useState(false);
   const [showRightArrow, setShowRightArrow] = useState(true);
   const [isContainerHovered, setIsContainerHovered] = useState(false);
@@ -142,4 +142,4 @@ const UIResourceGrid: React.FC<UIResourceGridProps> = React.memo(({ uiResources 
   );
 });
 
-export default UIResourceGrid;
+export default UIResourceCarousel;
