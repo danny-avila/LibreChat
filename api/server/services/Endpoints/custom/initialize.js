@@ -4,7 +4,6 @@ const {
   isUserProvided,
   getOpenAIConfig,
   getCustomEndpointConfig,
-  createHandleLLMNewToken,
 } = require('@librechat/api');
 const {
   CacheKeys,
@@ -159,11 +158,7 @@ const initializeClient = async ({ req, res, endpointOption, optionsOnly, overrid
       if (!clientOptions.streamRate) {
         return options;
       }
-      options.llmConfig.callbacks = [
-        {
-          handleLLMNewToken: createHandleLLMNewToken(clientOptions.streamRate),
-        },
-      ];
+      options.llmConfig._lc_stream_delay = clientOptions.streamRate;
       return options;
     }
 
