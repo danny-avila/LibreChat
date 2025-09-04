@@ -198,7 +198,7 @@ endpoints:
       # NOTE: For Mistral, it is necessary to drop the following parameters or you will encounter a 422 Error:
       dropParams: ['stop', 'user', 'frequency_penalty', 'presence_penalty']
       
-    - name: 'Together AI'
+    - name: 'Open Source'
       apiKey: '${TOGETHER_API_KEY}'
       baseURL: 'https://api.together.xyz/v1'
       models:
@@ -211,7 +211,7 @@ endpoints:
         fetch: false
       titleConvo: true
       titleModel: 'openai/gpt-oss-20b'
-      modelDisplayLabel: 'Together AI'
+      modelDisplayLabel: 'Open Source'
     # Together AI
     # - name: 'Local'
     #   apiKey: '${TOGETHER_API_KEY}'
