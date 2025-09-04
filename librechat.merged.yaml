@@ -1,20 +1,18 @@
 version: 1.2.1
-cache: true
 interface:
-  customWelcome: Welkom bij GovAI (merged)!
+  customWelcome: Welkom bij GovAI!
   privacyPolicy:
     externalUrl: https://librechat.ai/privacy-policy
     openNewTab: true
   termsOfService:
-    externalUrl: https://librechat.ai/tos
+    externalUrl: https://gradient-ds.com/
     openNewTab: true
     modalAcceptance: true
     modalTitle: Terms of Service for LibreChat
-    modalContent: >
+    modalContent: |
       # Terms and Conditions for GovAI
 
-      No terms and conditions yet.
-      
+      This is a demo version, no terms and conditions apply beyond fair use.
   endpointsMenu: true
   modelSelect: true
   parameters: true
@@ -25,6 +23,8 @@ interface:
   multiConvo: false
   agents: true
   runCode: false
+  webSearch: false
+  fileCitations: true
 registration:
   allowedDomains:
     - gradient-ds.com
@@ -33,7 +33,6 @@ actions:
     - swapi.dev
     - librechat.ai
     - google.com
-
 endpoints:
   agents:
     disableBuilder: false
@@ -42,6 +41,9 @@ endpoints:
       - web_search
       - chain
     allowedProviders:
+      - openAI
+      - Local
+      - UbiOps
       - Mistral
   custom:
     - name: Mistral
@@ -55,7 +57,7 @@ endpoints:
           - mistral-small
         fetch: true
       titleConvo: true
-      titleModel: mistral-medium
+      titleModel: mistral-small
       modelDisplayLabel: Mistral
       dropParams:
         - stop
@@ -67,6 +69,7 @@ webSearch:
   scraperType: firecrawl
   firecrawlApiKey: ${FIRECRAWL_API_KEY}
   scraperTimeout: 30000
+  topResults: 3
   firecrawlOptions:
     timeout: 30000
     waitFor: 2000
@@ -76,5 +79,4 @@ webSearch:
   safeSearch: 1
 balance:
   enabled: true
-  startBalance: 200000
   autoRefillEnabled: false

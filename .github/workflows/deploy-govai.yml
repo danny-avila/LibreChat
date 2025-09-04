@@ -311,7 +311,7 @@ jobs:
             printf 'ALLOW_REGISTRATION=%q\n' "$ALLOW_REGISTRATION"
             printf 'ALLOW_EMAIL_LOGIN=%q\n' "$ALLOW_EMAIL_LOGIN"
             printf 'ALLOW_UNVERIFIED_EMAIL_LOGIN=%q\n' "$ALLOW_UNVERIFIED_EMAIL_LOGIN"
-            printf 'EMAIL_FROM=%q\n' "$EMAIL_FROM"
+            printf '%s=%s\n' "EMAIL_FROM" "\"$EMAIL_FROM\""
             printf 'SMTP_HOST=%q\n' "$SMTP_HOST"
             printf 'SMTP_PORT=%q\n' "$SMTP_PORT"
             printf 'SMTP_USER=%q\n' "$SMTP_USER"
@@ -327,7 +327,7 @@ jobs:
             printf 'DOMAIN_CLIENT=%q\n' "https://$fqdn"
             printf 'DOMAIN_SERVER=%q\n' "https://$fqdn"
             printf 'TRUST_PROXY=%q\n' "1"
-            printf 'ENDPOINTS=%q\n' "$ENDPOINTS"
+            printf '%s=%s\n' "ENDPOINTS" "$ENDPOINTS"
           } > .remote.env
           scp -o StrictHostKeyChecking=no -i "${{ steps.ssh.outputs.key_path }}" .remote.env deploy@"$ip":/home/deploy/.remote.env
 

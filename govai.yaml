@@ -9,10 +9,10 @@ version: 1.2.1
 
 # Custom interface configuration
 interface:
-  customWelcome: "Welcome to LibreChat! Enjoy your experience."
+  customWelcome: "Welkom bij GovAI!"
   # Privacy policy settings
   privacyPolicy:
-    externalUrl: 'https://librechat.ai/privacy-policy'
+    externalUrl: 'https://gradient-ds.com/'
     openNewTab: true
 
   # Terms of service
@@ -34,6 +34,7 @@ interface:
   bookmarks: true
   multiConvo: true
   agents: true
+  fileCitations: true
   # Temporary chat retention period in hours (default: 720, min: 1, max: 8760)
   # temporaryChatRetention: 1
 
