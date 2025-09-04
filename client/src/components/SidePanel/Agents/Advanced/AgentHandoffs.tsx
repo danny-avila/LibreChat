@@ -126,8 +126,13 @@ const AgentHandoffs: React.FC<AgentHandoffsProps> = ({ field, currentAgentId }) 
             <CircleHelpIcon className="h-4 w-4 text-text-tertiary" />
           </HoverCardTrigger>
         </div>
-        <div className="text-xs text-text-secondary">
-          {edges.length} / {MAX_HANDOFFS}
+        <div className="flex items-center gap-3">
+          <div className="rounded-full border border-purple-600/40 bg-purple-500/10 px-2 py-0.5 text-xs font-medium text-purple-700 hover:bg-purple-700/10 dark:text-purple-400">
+            {localize('com_ui_beta')}
+          </div>
+          <div className="text-xs text-text-secondary">
+            {edges.length} / {MAX_HANDOFFS}
+          </div>
         </div>
       </div>
       <div className="space-y-1">

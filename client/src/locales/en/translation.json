@@ -668,6 +668,7 @@
   "com_ui_transferred_to_agent": "Transferred to {{0}}",
   "com_ui_transferred_to": "Transferred to",
   "com_ui_handoff_instructions": "Handoff instructions",
+  "com_ui_beta": "Beta",
   "com_ui_agent_delete_error": "There was an error deleting the agent",
   "com_ui_agent_deleted": "Successfully deleted agent",
   "com_ui_agent_duplicate_error": "There was an error duplicating the agent",
