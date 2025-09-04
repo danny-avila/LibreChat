@@ -46,6 +46,7 @@ services:
       ALLOW_EMAIL_LOGIN: ${ALLOW_EMAIL_LOGIN:-true}
       # EMAIL_* variables used by LibreChat email subsystem
       EMAIL_FROM: ${EMAIL_FROM}
+      EMAIL_FROM_NAME: "GovAI - Gradient DS"
       EMAIL_HOST: ${SMTP_HOST}
       EMAIL_PORT: ${SMTP_PORT}
       EMAIL_USERNAME: ${SMTP_USER}
