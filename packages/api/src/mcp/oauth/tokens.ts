@@ -382,4 +382,34 @@ export class MCPTokenStorage {
       return null;
     }
   }
+
+  static async getClientInfoAndMetadata({
+    userId,
+    serverName,
+    findToken,
+  }: {
+    userId: string;
+    serverName: string;
+    findToken: TokenMethods['findToken'];
+  }): Promise<{
+    clientInfo: OAuthClientInformation;
+    clientMetadata: Record<string, unknown>;
+  } | null> {
+    const identifier = `mcp:${serverName}`;
+
+    const clientInfoData: IToken | null = await findToken({
+      userId,
+      type: 'mcp_oauth_client',
+      identifier: `${identifier}:client`,
+    });
+    if (clientInfoData == null) {
+      return null;
+    }
+
+    const tokenData = await decryptV2(clientInfoData.token);
+    return {
+      clientInfo: JSON.parse(tokenData),
+      clientMetadata: { ...(clientInfoData.metadata ?? new Map()) },
+    };
+  }
 }
