@@ -20,9 +20,9 @@ const {
   ContentTypes,
   isAssistantsEndpoint,
 } = require('librechat-data-provider');
-const { getCachedTools, loadCustomConfig } = require('./Config');
 const { findToken, createToken, updateToken } = require('~/models');
 const { getMCPManager, getFlowStateManager } = require('~/config');
+const { getCachedTools, getAppConfig } = require('./Config');
 const { reinitMCPServer } = require('./Tools/mcp');
 const { getLogStores } = require('~/cache');
 
@@ -271,6 +271,7 @@ async function createMCPTool({
   availableTools: tools,
 }) {
   const [toolName, serverName] = toolKey.split(Constants.mcp_delimiter);
+
   const availableTools =
     tools ?? (await getCachedTools({ userId: req.user?.id, includeGlobal: true }));
   /** @type {LCTool | undefined} */
@@ -428,9 +429,8 @@ function createToolInstance({ res, toolName, serverName, toolDefinition, provide
  * @returns {Object} Object containing mcpConfig, appConnections, userConnections, and oauthServers
  */
 async function getMCPSetupData(userId) {
-  const printConfig = false;
-  const config = await loadCustomConfig(printConfig);
-  const mcpConfig = config?.mcpServers;
+  const config = await getAppConfig();
+  const mcpConfig = config?.mcpConfig;
 
   if (!mcpConfig) {
     throw new Error('MCP config not found');

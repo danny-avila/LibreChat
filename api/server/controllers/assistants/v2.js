@@ -94,7 +94,7 @@ const createAssistant = async (req, res) => {
 /**
  * Modifies an assistant.
  * @param {object} params
- * @param {Express.Request} params.req
+ * @param {ServerRequest} params.req
  * @param {OpenAIClient} params.openai
  * @param {string} params.assistant_id
  * @param {AssistantUpdateParams} params.updateData
@@ -199,7 +199,7 @@ const updateAssistant = async ({ req, openai, assistant_id, updateData }) => {
 /**
  * Modifies an assistant with the resource file id.
  * @param {object} params
- * @param {Express.Request} params.req
+ * @param {ServerRequest} params.req
  * @param {OpenAIClient} params.openai
  * @param {string} params.assistant_id
  * @param {string} params.tool_resource
@@ -227,7 +227,7 @@ const addResourceFileId = async ({ req, openai, assistant_id, tool_resource, fil
 /**
  * Deletes a file ID from an assistant's resource.
  * @param {object} params
- * @param {Express.Request} params.req
+ * @param {ServerRequest} params.req
  * @param {OpenAIClient} params.openai
  * @param {string} params.assistant_id
  * @param {string} [params.tool_resource]

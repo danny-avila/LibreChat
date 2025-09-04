@@ -7,6 +7,7 @@ import {
   Tools,
   Constants,
   SystemRoles,
+  ResourceType,
   EModelEndpoint,
   PermissionBits,
   isAssistantsEndpoint,
@@ -53,7 +54,7 @@ export default function AgentPanel() {
   });
 
   const { hasPermission, isLoading: permissionsLoading } = useResourcePermissions(
-    'agent',
+    ResourceType.AGENT,
     basicAgentQuery.data?._id || '',
   );
 
