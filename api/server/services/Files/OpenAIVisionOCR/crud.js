@@ -12,7 +12,6 @@ const axios = createAxiosInstance();
  *
  * @param {Object} params Upload parameters
  * @param {string} params.filePath The path to the file on disk
- * @param {string} [params.fileName] Optional filename to use
  * @param {string} params.apiKey OpenAI API key
  * @param {string} [params.baseURL=https://api.openai.com/v1] OpenAI API base URL
  * @param {string} [params.model=gpt-4o] Vision model to use for OCR
@@ -20,7 +19,6 @@ const axios = createAxiosInstance();
  */
 async function performVisionOCR({
   filePath,
-  fileName = '',
   apiKey,
   baseURL = 'https://api.openai.com/v1',
   model = 'gpt-4o',
@@ -117,11 +115,9 @@ async function performVisionOCR({
  * @param {Object} params - The params object.
  * @param {ServerRequest} params.req - The request object
  * @param {Express.Multer.File} params.file - The file object
- * @param {string} params.file_id - The file ID.
- * @param {string} [params.entity_id] - The entity ID
  * @returns {Promise<{ filepath: string, bytes: number, text: string }>} - The OCR result
  */
-const uploadOpenAIVisionOCR = async ({ req, file, file_id, entity_id }) => {
+const uploadOpenAIVisionOCR = async ({ req, file }) => {
   try {
     /** @type {TCustomConfig['ocr']} */
     const ocrConfig = req.config?.ocr;
@@ -159,7 +155,6 @@ const uploadOpenAIVisionOCR = async ({ req, file, file_id, entity_id }) => {
 
     const ocrResult = await performVisionOCR({
       filePath: file.path,
-      fileName: file.originalname,
       apiKey,
       baseURL,
       model,
