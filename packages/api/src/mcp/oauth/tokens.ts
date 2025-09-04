@@ -1,7 +1,7 @@
 import { logger } from '@librechat/data-schemas';
 import type { OAuthTokens, OAuthClientInformation } from '@modelcontextprotocol/sdk/shared/auth.js';
 import type { TokenMethods, IToken } from '@librechat/data-schemas';
-import type { MCPOAuthTokens, ExtendedOAuthTokens } from './types';
+import type { MCPOAuthTokens, ExtendedOAuthTokens, OAuthMetadata } from './types';
 import { encryptV2, decryptV2 } from '~/crypto';
 import { isSystemUserId } from '~/mcp/enum';
 
@@ -13,6 +13,7 @@ interface StoreTokensParams {
   updateToken?: TokenMethods['updateToken'];
   findToken?: TokenMethods['findToken'];
   clientInfo?: OAuthClientInformation;
+  metadata?: OAuthMetadata;
   /** Optional: Pass existing token state to avoid duplicate DB calls */
   existingTokens?: {
     accessToken?: IToken | null;
@@ -55,6 +56,7 @@ export class MCPTokenStorage {
     findToken,
     clientInfo,
     existingTokens,
+    metadata,
   }: StoreTokensParams): Promise<void> {
     const logPrefix = this.getLogPrefix(userId, serverName);
 
@@ -188,6 +190,7 @@ export class MCPTokenStorage {
           identifier: `${identifier}:client`,
           token: encryptedClientInfo,
           expiresIn: 365 * 24 * 60 * 60,
+          metadata,
         };
 
         // Check if client info already exists and update if it does
