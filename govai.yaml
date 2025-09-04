@@ -151,16 +151,22 @@ endpoints:
   #   retrievalModels: ["gpt-4-turbo-preview"]
   #   # (optional) Assistant Capabilities available to all users. Omit the ones you wish to exclude. Defaults to list below.
   #   capabilities: ["code_interpreter", "retrieval", "actions", "tools", "image_vision"]
-  agents:
-  #   # (optional) Default recursion depth for agents, defaults to 25
-  #   recursionLimit: 50
-  #   # (optional) Max recursion depth for agents, defaults to 25
-  #   maxRecursionLimit: 100
-  #   # (optional) Disable the builder interface for agents
-    disableBuilder: false
-  #   # (optional) Agent Capabilities available to all users. Omit the ones you wish to exclude. Defaults to list below.
-    capabilities: ["file_search", "web_search", "tools", "chain"]
+
   custom:
+    - name: 'Together AI'
+      apiKey: '${TOGETHER_API_KEY}'
+      baseURL: 'https://api.together.xyz/v1'
+      models:
+        default:
+          - 'openai/gpt-oss-120b'
+          - 'Qwen/Qwen3-235B-A22B-Thinking-2507'           # Qwen       # Mistral
+          - 'meta-llama/Llama-3-70b-chat-hf'               # Llama 70B            # Llama 8B
+          - 'meta-llama/Llama-4-Scout-17B-16E-Instruct'    # Llama 4 Scout 17B 16E
+          - 'openai/gpt-oss-20b'
+        fetch: false
+      titleConvo: true
+      titleModel: 'openai/gpt-oss-20b'
+      modelDisplayLabel: 'Together AI'
     # Together AI
     # - name: 'Local'
     #   apiKey: '${TOGETHER_API_KEY}'
@@ -257,26 +263,21 @@ endpoints:
       # NOTE: For Mistral, it is necessary to drop the following parameters or you will encounter a 422 Error:
       dropParams: ['stop', 'user', 'frequency_penalty', 'presence_penalty']
 
-    - name: 'Together AI'
-      apiKey: '${TOGETHER_API_KEY}'
-      baseURL: 'https://api.together.xyz/v1'
-      models:
-        default:
-          - 'Qwen/Qwen3-235B-A22B-Thinking-2507'           # Qwen
-          - 'mistralai/Mixtral-8x22B-Instruct-v0.1'        # Mistral
-          - 'meta-llama/Llama-3-70b-chat-hf'               # Llama 70B
-          - 'meta-llama/Llama-3-8b-chat-hf'                # Llama 8B
-          - 'meta-llama/Llama-4-Scout-17B-16E-Instruct'    # Llama 4 Scout 17B 16E
-          - 'openai/gpt-oss-20b'
-          - 'openai/gpt-oss-120b'
-        fetch: false
-      titleConvo: true
-      titleModel: 'meta-llama/Llama-3-8b-chat-hf'
-      modelDisplayLabel: 'Together AI'
-
     # # OpenRouter Example
     # - name: 'OpenRouter'
     #   # For `apiKey` and `
+    
+  agents:
+  #   # (optional) Default recursion depth for agents, defaults to 25
+  #   recursionLimit: 50
+  #   # (optional) Max recursion depth for agents, defaults to 25
+  #   maxRecursionLimit: 100
+  #   # (optional) Disable the builder interface for agents
+    disableBuilder: false
+  #   # (optional) Agent Capabilities available to all users. Omit the ones you wish to exclude. Defaults to list below.
+    capabilities: ["file_search", "web_search", "tools", "chain"]
+  
+
 
 webSearch:
   searchProvider: "serper"
