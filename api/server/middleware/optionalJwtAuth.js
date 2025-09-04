@@ -1,10 +1,16 @@
 const cookies = require('cookie');
-const { isEnabled } = require('~/server/utils');
+const { isEnabled } = require('@librechat/api');
+const { getSingleUser } = require('~/server/utils/singleUser');
 const passport = require('passport');
 
 // This middleware does not require authentication,
 // but if the user is authenticated, it will set the user object.
 const optionalJwtAuth = (req, res, next) => {
+  // Single-user / no-auth mode: set a default user and continue
+  if (isEnabled(process.env.DISABLE_AUTH)) {
+    req.user = getSingleUser();
+    return next();
+  }
   const cookieHeader = req.headers.cookie;
   const tokenProvider = cookieHeader ? cookies.parse(cookieHeader).token_provider : null;
   const callback = (err, user) => {

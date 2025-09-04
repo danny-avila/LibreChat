@@ -1,12 +1,18 @@
 const passport = require('passport');
 const cookies = require('cookie');
-const { isEnabled } = require('~/server/utils');
+const { isEnabled } = require('@librechat/api');
+const { getSingleUser } = require('~/server/utils/singleUser');
 
 /**
  * Custom Middleware to handle JWT authentication, with support for OpenID token reuse
  * Switches between JWT and OpenID authentication based on cookies and environment settings
  */
 const requireJwtAuth = (req, res, next) => {
+  // Single-user / no-auth mode: short-circuit authentication
+  if (isEnabled(process.env.DISABLE_AUTH)) {
+    req.user = getSingleUser();
+    return next();
+  }
   // Check if token provider is specified in cookies
   const cookieHeader = req.headers.cookie;
   const tokenProvider = cookieHeader ? cookies.parse(cookieHeader).token_provider : null;

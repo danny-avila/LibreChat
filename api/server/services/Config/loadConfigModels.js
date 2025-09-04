@@ -68,7 +68,8 @@ async function loadConfigModels(req) {
 
     modelsConfig[name] = [];
 
-    if (models.fetch && !isUserProvided(API_KEY) && !isUserProvided(BASE_URL)) {
+    const isOllama = name && name.toLowerCase().startsWith('ollama');
+    if (models.fetch && (!isUserProvided(API_KEY) || isOllama) && !isUserProvided(BASE_URL)) {
       fetchPromisesMap[uniqueKey] =
         fetchPromisesMap[uniqueKey] ||
         fetchModels({

@@ -60,12 +60,12 @@ const fetchModels = async ({
     return models;
   }
 
-  if (!apiKey) {
-    return models;
-  }
-
   if (name && name.toLowerCase().startsWith(Providers.OLLAMA)) {
     return await OllamaClient.fetchModels(baseURL);
+  }
+
+  if (!apiKey) {
+    return models;
   }
 
   try {

@@ -3,6 +3,7 @@ const jwt = require('jsonwebtoken');
 const openIdClient = require('openid-client');
 const { isEnabled } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
+const { getSingleUser } = require('~/server/utils/singleUser');
 const {
   requestPasswordReset,
   setOpenIDAuthTokens,
@@ -59,6 +60,13 @@ const resetPasswordController = async (req, res) => {
 };
 
 const refreshController = async (req, res) => {
+  // Single-user / no-auth mode: always return a token and default user
+  if (isEnabled(process.env.DISABLE_AUTH)) {
+    const user = getSingleUser();
+    // token value is not used by server in no-auth mode; send a placeholder
+    const token = 'single-user-token';
+    return res.status(200).send({ token, user });
+  }
   const refreshToken = req.headers.cookie ? cookies.parse(req.headers.cookie).refreshToken : null;
   const token_provider = req.headers.cookie
     ? cookies.parse(req.headers.cookie).token_provider
