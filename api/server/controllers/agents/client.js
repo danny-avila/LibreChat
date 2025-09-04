@@ -877,21 +877,7 @@ class AgentClient extends BaseClient {
       };
 
       await runAgents(initialMessages);
-      let finalContentStart = this.contentParts.length;
-      /** Note: not implemented */
-      if (config.configurable.hide_sequential_outputs !== true) {
-        finalContentStart = 0;
-      }
 
-      this.contentParts = this.contentParts.filter((part, index) => {
-        // Include parts that are either:
-        // 1. At or after the finalContentStart index
-        // 2. Of type tool_call
-        // 3. Have tool_call_ids property
-        return (
-          index >= finalContentStart || part.type === ContentTypes.TOOL_CALL || part.tool_call_ids
-        );
-      });
       try {
         const attachments = await this.awaitMemoryWithTimeout(memoryPromise);
         if (attachments && attachments.length > 0) {
