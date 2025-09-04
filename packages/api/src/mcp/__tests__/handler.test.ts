@@ -188,7 +188,7 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
     });
   });
 
-  describe('revokeOAuthTokens', () => {
+  describe('revokeOAuthToken', () => {
     const mockServerName = 'test-server';
     const mockToken = 'test-token-12345';
 
@@ -222,7 +222,7 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
         status: 200,
       } as Response);
 
-      await MCPOAuthHandler.revokeOAuthTokens(mockServerName, mockToken, 'access', metadata);
+      await MCPOAuthHandler.revokeOAuthToken(mockServerName, mockToken, 'access', metadata);
 
       expect(mockFetch).toHaveBeenCalledWith(new URL('https://auth.example.com/oauth/revoke'), {
         method: 'POST',
@@ -248,7 +248,7 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
         status: 200,
       } as Response);
 
-      await MCPOAuthHandler.revokeOAuthTokens(mockServerName, mockToken, 'refresh', metadata);
+      await MCPOAuthHandler.revokeOAuthToken(mockServerName, mockToken, 'refresh', metadata);
 
       expect(mockFetch).toHaveBeenCalledWith(new URL('https://auth.example.com/oauth/revoke'), {
         method: 'POST',
@@ -274,7 +274,7 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
         status: 200,
       } as Response);
 
-      await MCPOAuthHandler.revokeOAuthTokens(mockServerName, mockToken, 'access', metadata);
+      await MCPOAuthHandler.revokeOAuthToken(mockServerName, mockToken, 'access', metadata);
 
       expect(mockFetch).toHaveBeenCalledWith(new URL('https://auth.example.com/oauth/revoke'), {
         method: 'POST',
@@ -297,7 +297,7 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
         status: 200,
       } as Response);
 
-      await MCPOAuthHandler.revokeOAuthTokens(mockServerName, mockToken, 'refresh', metadata);
+      await MCPOAuthHandler.revokeOAuthToken(mockServerName, mockToken, 'refresh', metadata);
 
       expect(mockFetch).toHaveBeenCalledWith(
         new URL('https://auth.example.com/revoke'),
@@ -318,7 +318,7 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
         status: 200,
       } as Response);
 
-      await MCPOAuthHandler.revokeOAuthTokens(mockServerName, mockToken, 'refresh', metadata);
+      await MCPOAuthHandler.revokeOAuthToken(mockServerName, mockToken, 'refresh', metadata);
 
       expect(mockFetch).toHaveBeenCalledWith(
         expect.any(URL),
@@ -344,7 +344,7 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
       } as Response);
 
       await expect(
-        MCPOAuthHandler.revokeOAuthTokens(mockServerName, mockToken, 'refresh', metadata),
+        MCPOAuthHandler.revokeOAuthToken(mockServerName, mockToken, 'refresh', metadata),
       ).rejects.toThrow('Token revocation failed: HTTP 418');
     });
 
@@ -366,7 +366,7 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
         status: 200,
       } as Response);
 
-      await MCPOAuthHandler.revokeOAuthTokens(mockServerName, mockToken, 'refresh', metadata);
+      await MCPOAuthHandler.revokeOAuthToken(mockServerName, mockToken, 'refresh', metadata);
 
       expect(mockFetch).toHaveBeenCalledWith(
         expect.any(URL),

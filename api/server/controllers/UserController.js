@@ -297,85 +297,71 @@ const maybeUninstallOAuthMCP = async (userId, pluginKey, appConfig) => {
     return;
   }
 
-  // get client info used for revocation (client id, secret)
+  // 1. get client info used for revocation (client id, secret), then delete it
   const { clientInfo, clientMetadata } = await MCPTokenStorage.getClientInfoAndMetadata({
     userId,
     serverName,
     findToken,
   });
-  // delete the client token
+
+  // 2. delete tokens from the DB
   await Token.deleteOne({
     userId: userId,
     type: 'mcp_oauth_client',
     identifier: `mcp:${serverName}:client`,
   });
-
-  // delete the existing access token
-  const accessTokenIdentifier = `mcp:${serverName}`;
-  const accessToken = await Token.findOne({
+  const accessToken = await Token.findOneAndDelete({
     userId: userId,
     type: 'mcp_oauth',
-    identifier: accessTokenIdentifier,
+    identifier: `mcp:${serverName}`,
   });
-  await Token.deleteOne({
-    userId: userId,
-    type: 'mcp_oauth',
-    identifier: accessTokenIdentifier,
-  });
-
-  // delete the existing refresh token
-  const refreshTokenIdentifier = `mcp:${serverName}:refresh`;
-  const refreshToken = await Token.findOne({
+  const refreshToken = await Token.findOneAndDelete({
     userId: userId,
     type: 'mcp_oauth_refresh',
-    identifier: refreshTokenIdentifier,
-  });
-  await Token.deleteOne({
-    userId: userId,
-    type: 'mcp_oauth_refresh',
-    identifier: refreshTokenIdentifier,
+    identifier: `mcp:${serverName}:refresh`,
   });
 
-  if (clientInfo != null) {
-    const serverUrl = serverConfig.url;
-    const clientId = clientInfo.client_id;
-    const clientSecret = clientInfo.client_secret;
-    const revocationEndpoint =
-      serverConfig.oauth.revocation_endpoint ?? clientMetadata.revocation_endpoint;
-    const revocationEndpointAuthMethodsSupported =
-      serverConfig.oauth.revocation_endpoint_auth_methods_supported;
+  // 3. revoke OAuth tokens
+  const revocationEndpoint =
+    serverConfig.oauth.revocation_endpoint ?? clientMetadata.revocation_endpoint;
+  const revocationEndpointAuthMethodsSupported =
+    serverConfig.oauth.revocation_endpoint_auth_methods_supported ??
+    clientMetadata.revocation_endpoint_auth_methods_supported;
+  if (accessToken != null) {
     try {
-      // revoke the tokens
-      if (accessToken) {
-        await MCPOAuthHandler.revokeOAuthTokens(serverName, accessToken.token, 'access', {
-          serverUrl,
-          clientId,
-          clientSecret,
-          revocationEndpoint,
-          revocationEndpointAuthMethodsSupported,
-        });
-      }
-      if (refreshToken) {
-        await MCPOAuthHandler.revokeOAuthTokens(serverName, refreshToken.token, 'refresh', {
-          serverUrl,
-          clientId,
-          clientSecret,
-          revocationEndpoint,
-          revocationEndpointAuthMethodsSupported,
-        });
-      }
+      await MCPOAuthHandler.revokeOAuthToken(serverName, accessToken.token, 'access', {
+        serverUrl: serverConfig.url,
+        clientInfo,
+        clientMetadata,
+        revocationEndpoint,
+        revocationEndpointAuthMethodsSupported,
+      });
     } catch (error) {
-      logger.warn(`Error revoking OAuth tokens for ${serverName}:`, error);
+      logger.error(`Error revoking OAuth access token for ${serverName}:`, error);
+    }
+  }
+  if (refreshToken != null) {
+    try {
+      await MCPOAuthHandler.revokeOAuthToken(serverName, refreshToken.token, 'refresh', {
+        serverUrl: serverConfig.url,
+        clientInfo,
+        clientMetadata,
+        revocationEndpoint,
+        revocationEndpointAuthMethodsSupported,
+      });
+    } catch (error) {
+      logger.error(`Error revoking OAuth refresh token for ${serverName}:`, error);
     }
   }
 
-  // clear the flow state for the OAuth tokens
+  // 4. clear the flow state for the OAuth tokens
   const flowsCache = getLogStores(CacheKeys.FLOWS);
   const flowManager = getFlowStateManager(flowsCache);
-  await flowManager.deleteFlow(`${userId}:${serverName}`, 'mcp_get_tokens');
-  await flowManager.deleteFlow(`${userId}:${serverName}`, 'mcp_oauth');
+  const flowId = MCPOAuthHandler.generateFlowId(userId, serverName);
+  await flowManager.deleteFlow(flowId, 'mcp_get_tokens');
+  await flowManager.deleteFlow(flowId, 'mcp_oauth');
 
-  // clear the tools cache for the server
+  // 5. clear the tools cache for the server
   await clearMCPServerTools({ userId, serverName });
 };
 

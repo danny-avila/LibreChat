@@ -647,7 +647,7 @@ export class MCPOAuthHandler {
   /**
    * Revokes OAuth tokens at the authorization server (RFC 7009)
    */
-  public static async revokeOAuthTokens(
+  public static async revokeOAuthToken(
     serverName: string,
     token: string,
     tokenType: 'refresh' | 'access',
