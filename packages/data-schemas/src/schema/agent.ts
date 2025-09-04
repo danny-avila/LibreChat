@@ -71,6 +71,10 @@ const agentSchema = new Schema<IAgent>(
     agent_ids: {
       type: [String],
     },
+    edges: {
+      type: [{ type: Schema.Types.Mixed }],
+      default: [],
+    },
     isCollaborative: {
       type: Boolean,
       default: undefined,

@@ -1,7 +1,7 @@
 import type { OpenAPIV3 } from 'openapi-types';
 import type { AssistantsEndpoint, AgentProvider } from 'src/schemas';
+import type { Agents, GraphEdge } from './agents';
 import type { ContentTypes } from './runs';
-import type { Agents } from './agents';
 import type { TFile } from './files';
 import { ArtifactModes } from 'src/artifacts';
 
@@ -226,6 +226,7 @@ export type Agent = {
   isCollaborative?: boolean;
   tool_resources?: AgentToolResources;
   agent_ids?: string[];
+  edges?: GraphEdge[];
   end_after_tools?: boolean;
   hide_sequential_outputs?: boolean;
   artifacts?: ArtifactModes;
@@ -251,6 +252,7 @@ export type AgentCreateParams = {
 } & Pick<
   Agent,
   | 'agent_ids'
+  | 'edges'
   | 'end_after_tools'
   | 'hide_sequential_outputs'
   | 'artifacts'
@@ -276,6 +278,7 @@ export type AgentUpdateParams = {
 } & Pick<
   Agent,
   | 'agent_ids'
+  | 'edges'
   | 'end_after_tools'
   | 'hide_sequential_outputs'
   | 'artifacts'
