@@ -96,8 +96,7 @@ COPY --from=data-provider-build /app/packages/data-provider/dist ./packages/data
 COPY --from=data-schemas-build /app/packages/data-schemas/dist ./packages/data-schemas/dist
 COPY --from=api-package-build /app/packages/api/dist ./packages/api/dist
 COPY --from=admin-package-build /app/packages/librechat-admin/dist ./packages/librechat-admin/dist
-# Place admin frontend where the server looks for it: /app/api/admin-frontend/dist
-COPY --from=admin-frontend-build /app/admin-frontend/dist ./api/admin-frontend/dist
+COPY --from=admin-frontend-build /app/admin-frontend/dist ./admin-frontend/dist
 COPY --from=client-build /app/client/dist ./client/dist
 WORKDIR /app/api
 EXPOSE 3080
