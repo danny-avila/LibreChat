@@ -153,6 +153,51 @@ endpoints:
   #   capabilities: ["code_interpreter", "retrieval", "actions", "tools", "image_vision"]
 
   custom:
+      # Mistral AI Example
+    - name: 'Mistral' # Unique name for the endpoint
+      # For `apiKey` and `baseURL`, you can use environment variables that you define.
+      # recommended environment variables:
+      apiKey: '${MISTRAL_API_KEY}'
+      baseURL: 'https://api.mistral.ai/v1'
+
+      # Models configuration
+      models:
+        # List of default models to use. At least one value is required.
+        default: ['mistral-medium', 'mistral-large', 'mistral-tiny', 'mistral-small']
+        # Fetch option: Set to true to fetch models from API.
+        fetch: true # Defaults to false.
+
+      # Optional configurations
+
+      # Title Conversation setting
+      titleConvo: true # Set to true to enable title conversation
+
+      # Title Method: Choose between "completion" or "functions".
+      # titleMethod: "completion"  # Defaults to "completion" if omitted.
+
+      # Title Model: Specify the model to use for titles.
+      titleModel: 'mistral-small' # Defaults to "gpt-3.5-turbo" if omitted.
+
+      # Summarize setting: Set to true to enable summarization.
+      # summarize: false
+
+      # Summary Model: Specify the model to use if summarization is enabled.
+      # summaryModel: "mistral-tiny"  # Defaults to "gpt-3.5-turbo" if omitted.
+
+      # Force Prompt setting: If true, sends a `prompt` parameter instead of `messages`.
+      # forcePrompt: false
+
+      # The label displayed for the AI model in messages.
+      modelDisplayLabel: 'Mistral' # Default is "AI" when not set.
+
+      # Add additional parameters to the request. Default params will be overwritten.
+      # addParams:
+      # safe_prompt: true # This field is specific to Mistral AI: https://docs.mistral.ai/api/
+
+      # Drop Default params parameters from the request. See default params in guide linked below.
+      # NOTE: For Mistral, it is necessary to drop the following parameters or you will encounter a 422 Error:
+      dropParams: ['stop', 'user', 'frequency_penalty', 'presence_penalty']
+      
     - name: 'Together AI'
       apiKey: '${TOGETHER_API_KEY}'
       baseURL: 'https://api.together.xyz/v1'
@@ -217,51 +262,6 @@ endpoints:
     #   titleConvo: true
     #   titleModel: 'mixtral-8x7b-32768'
     #   modelDisplayLabel: 'groq'
-
-    # Mistral AI Example
-    - name: 'Mistral' # Unique name for the endpoint
-      # For `apiKey` and `baseURL`, you can use environment variables that you define.
-      # recommended environment variables:
-      apiKey: '${MISTRAL_API_KEY}'
-      baseURL: 'https://api.mistral.ai/v1'
-
-      # Models configuration
-      models:
-        # List of default models to use. At least one value is required.
-        default: ['mistral-medium', 'mistral-large', 'mistral-tiny', 'mistral-small']
-        # Fetch option: Set to true to fetch models from API.
-        fetch: true # Defaults to false.
-
-      # Optional configurations
-
-      # Title Conversation setting
-      titleConvo: true # Set to true to enable title conversation
-
-      # Title Method: Choose between "completion" or "functions".
-      # titleMethod: "completion"  # Defaults to "completion" if omitted.
-
-      # Title Model: Specify the model to use for titles.
-      titleModel: 'mistral-small' # Defaults to "gpt-3.5-turbo" if omitted.
-
-      # Summarize setting: Set to true to enable summarization.
-      # summarize: false
-
-      # Summary Model: Specify the model to use if summarization is enabled.
-      # summaryModel: "mistral-tiny"  # Defaults to "gpt-3.5-turbo" if omitted.
-
-      # Force Prompt setting: If true, sends a `prompt` parameter instead of `messages`.
-      # forcePrompt: false
-
-      # The label displayed for the AI model in messages.
-      modelDisplayLabel: 'Mistral' # Default is "AI" when not set.
-
-      # Add additional parameters to the request. Default params will be overwritten.
-      # addParams:
-      # safe_prompt: true # This field is specific to Mistral AI: https://docs.mistral.ai/api/
-
-      # Drop Default params parameters from the request. See default params in guide linked below.
-      # NOTE: For Mistral, it is necessary to drop the following parameters or you will encounter a 422 Error:
-      dropParams: ['stop', 'user', 'frequency_penalty', 'presence_penalty']
 
     # # OpenRouter Example
     # - name: 'OpenRouter'
