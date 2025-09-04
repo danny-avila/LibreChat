@@ -347,7 +347,7 @@ const maybeUninstallOAuthMCP = async (userId, pluginKey, appConfig) => {
     try {
       // revoke the tokens
       if (accessToken) {
-        await MCPOAuthHandler.revokeOAuthTokens(accessToken.token, 'access', {
+        await MCPOAuthHandler.revokeOAuthTokens(serverName, accessToken.token, 'access', {
           serverUrl,
           clientId,
           clientSecret,
@@ -356,7 +356,7 @@ const maybeUninstallOAuthMCP = async (userId, pluginKey, appConfig) => {
         });
       }
       if (refreshToken) {
-        await MCPOAuthHandler.revokeOAuthTokens(refreshToken.token, 'refresh', {
+        await MCPOAuthHandler.revokeOAuthTokens(serverName, refreshToken.token, 'refresh', {
           serverUrl,
           clientId,
           clientSecret,
