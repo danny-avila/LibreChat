@@ -23,6 +23,10 @@ const promptSchema: Schema<IPrompt> = new Schema(
       enum: ['text', 'chat'],
       required: true,
     },
+    tool_resources: {
+      type: Schema.Types.Mixed,
+      default: {},
+    },
   },
   {
     timestamps: true,

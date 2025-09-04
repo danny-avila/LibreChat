@@ -9,10 +9,10 @@ import type {
   TConversationTag,
   TAttachment,
 } from './schemas';
+import type { Agent, AgentToolResources } from './types/assistants';
 import type { SettingDefinition } from './generate';
 import type { TMinimalFeedback } from './feedback';
 import type { ContentTypes } from './types/runs';
-import type { Agent } from './types/assistants';
 
 export * from './schemas';
 
@@ -499,6 +499,7 @@ export type TPrompt = {
   author: string;
   prompt: string;
   type: 'text' | 'chat';
+  tool_resources?: AgentToolResources;
   createdAt: string;
   updatedAt: string;
   _id?: string;
@@ -521,7 +522,7 @@ export type TPromptGroup = {
 };
 
 export type TCreatePrompt = {
-  prompt: Pick<TPrompt, 'prompt' | 'type'> & { groupId?: string };
+  prompt: Pick<TPrompt, 'prompt' | 'type' | 'tool_resources'> & { groupId?: string };
   group?: { name: string; category?: string; oneliner?: string; command?: string };
 };
 
