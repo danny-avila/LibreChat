@@ -27,14 +27,15 @@ interface:
       This is a demo version, no terms and conditions apply beyond fair use.
   endpointsMenu: true
   modelSelect: true
-  parameters: true
+  parameters: false
   sidePanel: true
   presets: true
   prompts: true
   bookmarks: true
-  multiConvo: true
+  multiConvo: false
   agents: true
   fileCitations: true
+  memories: false
   # Temporary chat retention period in hours (default: 720, min: 1, max: 8760)
   # temporaryChatRetention: 1
 
@@ -255,6 +256,23 @@ endpoints:
       # Drop Default params parameters from the request. See default params in guide linked below.
       # NOTE: For Mistral, it is necessary to drop the following parameters or you will encounter a 422 Error:
       dropParams: ['stop', 'user', 'frequency_penalty', 'presence_penalty']
+
+    - name: 'Together AI'
+      apiKey: '${TOGETHER_API_KEY}'
+      baseURL: 'https://api.together.xyz/v1'
+      models:
+        default:
+          - 'Qwen/Qwen3-235B-A22B-Thinking-2507'           # Qwen
+          - 'mistralai/Mixtral-8x22B-Instruct-v0.1'        # Mistral
+          - 'meta-llama/Llama-3-70b-chat-hf'               # Llama 70B
+          - 'meta-llama/Llama-3-8b-chat-hf'                # Llama 8B
+          - 'meta-llama/Llama-4-Scout-17B-16E-Instruct'    # Llama 4 Scout 17B 16E
+          - 'openai/gpt-oss-20b'
+          - 'openai/gpt-oss-120b'
+        fetch: false
+      titleConvo: true
+      titleModel: 'meta-llama/Llama-3-8b-chat-hf'
+      modelDisplayLabel: 'Together AI'
 
     # # OpenRouter Example
     # - name: 'OpenRouter'
