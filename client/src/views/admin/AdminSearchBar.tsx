@@ -7,9 +7,11 @@ interface SearchBarProps {
   setSearch: (v: string) => void;
   disabled?: boolean;
   inputRef?: React.RefObject<HTMLInputElement>;
+  placeholder?: string; // ✅ ADD THIS LINE
 }
 
-export const SearchBar: React.FC<SearchBarProps> = React.memo(({ search, setSearch, disabled, inputRef }) => {
+
+export const SearchBar: React.FC<SearchBarProps> = React.memo(({ search, setSearch, disabled, inputRef, placeholder }) => {
   const [localSearch, setLocalSearch] = useState(search);
 
   // Sync local state with parent
@@ -45,13 +47,14 @@ export const SearchBar: React.FC<SearchBarProps> = React.memo(({ search, setSear
       <Input
         key="search-input"
         className="flex-1"
-        placeholder="Search by name, email, username, or action"
+        placeholder={placeholder || "Search by name, email, username, or action"} // ✅ USE PROP
         value={localSearch}
         onChange={handleChange}
         disabled={disabled}
         aria-label="Search user activity logs"
         ref={inputRef}
       />
+
     </div>
   );
 }, (prevProps, nextProps) => {

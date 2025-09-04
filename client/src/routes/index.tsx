@@ -20,6 +20,7 @@ import Search from './Search';
 import Root from './Root';
 import AdminDashboard from '~/views/admin/AdminDashboard';
 import AdminLogs from '~/views/admin/AdminLogs'
+import QueryLogs from '~/views/admin/QueryLogs'
 
 const AuthLayout = () => (
   <AuthContextProvider>
@@ -114,6 +115,10 @@ export const router = createBrowserRouter([
           {
             path: 'admin/logs',
             element: <AdminLogs />,
+          },
+          {
+            path: 'admin/query-logs',
+            element: <QueryLogs />,
           },
         ],
       },

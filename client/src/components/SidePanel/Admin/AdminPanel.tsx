@@ -30,6 +30,15 @@ export default function AdminPanel() {
           <FileText className="h-5 w-5" /> {/* Logs Icon */}
           Logs
         </Button>
+        {/* Query Logs Button */}
+        <Button
+          type="button"
+          className="flex h-10 w-full items-center justify-start gap-3 rounded-lg border border-input bg-transparent px-3 py-2 text-sm text-black ring-offset-background transition-colors hover:bg-accent hover:text-accent-foreground disabled:cursor-not-allowed disabled:opacity-50"
+          onClick={() => navigate('/admin/query-logs')}
+        >
+          <FileText className="h-5 w-5" /> {/* Logs Icon */}
+          Query Logs
+        </Button>
       </div>
     </div>
   );
