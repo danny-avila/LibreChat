@@ -44,14 +44,15 @@ const AgentHandoff: React.FC<AgentHandoffProps> = ({ name, args: _args = '' }) =
     }
   }, [_args]) as string;
 
-  const hasInfo = useMemo(() => (args?.length ?? 0) > 0, [args]);
+  /** Requires more than 2 characters as can be an empty object: `{}` */
+  const hasInfo = useMemo(() => (args?.trim()?.length ?? 0) > 2, [args]);
 
   return (
     <div className="my-3">
       <div
         className={cn(
-          'flex cursor-pointer items-center gap-2.5 text-sm text-text-secondary',
-          hasInfo && 'transition-colors hover:text-text-primary',
+          'flex items-center gap-2.5 text-sm text-text-secondary',
+          hasInfo && 'cursor-pointer transition-colors hover:text-text-primary',
         )}
         onClick={() => hasInfo && setShowInfo(!showInfo)}
       >
@@ -66,7 +67,7 @@ const AgentHandoff: React.FC<AgentHandoffProps> = ({ name, args: _args = '' }) =
             agent={targetAgent || undefined}
           />
         </div>
-        <span>{localize('com_ui_transferred_to')}</span>
+        <span className="select-none">{localize('com_ui_transferred_to')}</span>
         <span className="select-none font-medium text-text-primary">
           {targetAgent?.name || localize('com_ui_agent')}
         </span>
