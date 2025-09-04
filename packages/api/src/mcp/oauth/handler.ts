@@ -426,6 +426,62 @@ export class MCPOAuthHandler {
   }
 
   /**
+   * Revokes OAuth tokens at the authorization server (RFC 7009)
+   */
+  public static async revokeOAuthTokens(
+    token: string,
+    tokenType: 'refresh' | 'access',
+    metadata: {
+      serverUrl: string;
+      clientId: string;
+      clientSecret: string;
+      revocationEndpoint?: string;
+      revocationEndpointAuthMethodsSupported?: string[];
+    },
+  ): Promise<void> {
+    let revokeUrl: URL;
+    if (metadata.revocationEndpoint != null) {
+      revokeUrl = new URL(metadata.revocationEndpoint);
+    } else {
+      revokeUrl = new URL('/revoke', metadata.serverUrl);
+    }
+
+    const body = new URLSearchParams({ token });
+    body.set('token_type_hint', tokenType === 'refresh' ? 'refresh_token' : 'access_token');
+
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/x-www-form-urlencoded',
+    };
+
+    const authMethods = metadata.revocationEndpointAuthMethodsSupported ?? [
+      'client_secret_basic', // RFC 8414 (https://datatracker.ietf.org/doc/html/rfc8414)
+    ];
+    const usesBasicAuth = authMethods.includes('client_secret_basic');
+    const usesClientSecretPost = authMethods.includes('client_secret_post');
+
+    if (usesBasicAuth) {
+      const credentials = Buffer.from(`${metadata.clientId}:${metadata.clientSecret}`).toString(
+        'base64',
+      );
+      headers['Authorization'] = `Basic ${credentials}`;
+    } else if (usesClientSecretPost) {
+      body.set('client_secret', metadata.clientSecret);
+      body.set('client_id', metadata.clientId);
+    }
+
+    logger.info(`[MCPOAuth] Revoking tokens with URL: ${revokeUrl.toString()}`);
+    const response = await fetch(revokeUrl, {
+      method: 'POST',
+      body: body.toString(),
+      headers,
+    });
+
+    if (!response.ok) {
+      throw new Error(`Token revocation failed: HTTP ${response.status}`);
+    }
+  }
+
+  /**
    * Generates a secure state parameter
    */
   private static generateState(): string {
