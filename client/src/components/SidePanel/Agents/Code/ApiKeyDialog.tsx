@@ -1,9 +1,8 @@
+import { OGDialogTemplate, Input, Button, OGDialog } from '@librechat/client';
 import type { UseFormRegister, UseFormHandleSubmit } from 'react-hook-form';
 import type { ApiKeyFormData } from '~/common';
-import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
-import { Input, Button, OGDialog } from '~/components/ui';
-import { useLocalize } from '~/hooks';
 import type { RefObject } from 'react';
+import { useLocalize } from '~/hooks';
 
 export default function ApiKeyDialog({
   isOpen,
@@ -66,7 +65,7 @@ export default function ApiKeyDialog({
                 {languageIcons.map((icon) => (
                   <div key={icon} className="h-6 w-6">
                     <img
-                      src={`/assets/${icon}`}
+                      src={`assets/${icon}`}
                       alt=""
                       className="h-full w-full object-contain opacity-[0.85] dark:invert"
                     />

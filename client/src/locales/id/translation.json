@@ -4,7 +4,6 @@
   "com_a11y_ai_composing": "AI sedang menulis.",
   "com_a11y_end": "AI sudah selesai membalas.",
   "com_a11y_start": "AI telah mulai membalas.",
-  "com_agents_allow_editing": "Izinkan pengguna lain untuk mengedit agen Anda",
   "com_agents_by_librechat": "oleh LibreChat",
   "com_auth_already_have_account": "Sudah memiliki akun?",
   "com_auth_click": "Klik",
@@ -287,6 +286,5 @@
   "com_ui_upload": "Unggah",
   "com_ui_upload_error": "Ada kesalahan saat mengunggah file Anda",
   "com_ui_upload_success": "Berhasil mengunggah file",
-  "com_ui_use_prompt": "Gunakan petunjuk",
   "com_user_message": "Kamu"
 }

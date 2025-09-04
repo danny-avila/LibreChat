@@ -1,6 +1,6 @@
 import { useGetCategories } from '~/data-provider';
 import CategoryIcon from '~/components/Prompts/Groups/CategoryIcon';
-import useLocalize, { TranslationKeys } from '~/hooks/useLocalize';
+import { useLocalize, TranslationKeys } from '~/hooks';
 
 const loadingCategories: { label: TranslationKeys; value: string }[] = [
   {

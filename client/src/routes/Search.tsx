@@ -1,12 +1,12 @@
 import { useEffect, useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
+import { buildTree } from 'librechat-data-provider';
+import { Spinner, useToastContext } from '@librechat/client';
 import MinimalMessagesWrapper from '~/components/Chat/Messages/MinimalMessages';
 import { useNavScrolling, useLocalize, useAuthContext } from '~/hooks';
 import SearchMessage from '~/components/Chat/Messages/SearchMessage';
-import { useToastContext, useFileMapContext } from '~/Providers';
 import { useMessagesInfiniteQuery } from '~/data-provider';
-import { Spinner } from '~/components';
-import { buildTree } from '~/utils';
+import { useFileMapContext } from '~/Providers';
 import store from '~/store';
 
 export default function Search() {
@@ -23,7 +23,7 @@ export default function Search() {
     isError,
     fetchNextPage,
     isFetchingNextPage,
-    hasNextPage,
+    hasNextPage: _hasNextPage,
   } = useMessagesInfiniteQuery(
     {
       search: searchQuery || undefined,

@@ -1,10 +1,10 @@
 import { useForm } from 'react-hook-form';
+import { Spinner, Button } from '@librechat/client';
 import { useOutletContext } from 'react-router-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useResetPasswordMutation } from 'librechat-data-provider/react-query';
 import type { TResetPassword } from 'librechat-data-provider';
 import type { TLoginLayoutContext } from '~/common';
-import { Spinner, Button } from '~/components';
 import { useLocalize } from '~/hooks';
 
 function ResetPassword() {
@@ -19,7 +19,7 @@ function ResetPassword() {
   const [params] = useSearchParams();
   const password = watch('password');
   const resetPassword = useResetPasswordMutation();
-  const { setError, setHeaderText } = useOutletContext<TLoginLayoutContext>();
+  const { setError, setHeaderText, startupConfig } = useOutletContext<TLoginLayoutContext>();
 
   const onSubmit = (data: TResetPassword) => {
     resetPassword.mutate(data, {
@@ -83,7 +83,7 @@ function ResetPassword() {
             {...register('password', {
               required: localize('com_auth_password_required'),
               minLength: {
-                value: 8,
+                value: startupConfig?.minPasswordLength || 8,
                 message: localize('com_auth_password_min_length'),
               },
               maxLength: {

@@ -36,7 +36,7 @@ class StreamRunManager {
     /** @type {Run | null} */
     this.run = null;
 
-    /** @type {Express.Request} */
+    /** @type {ServerRequest} */
     this.req = fields.req;
     /** @type {Express.Response} */
     this.res = fields.res;
@@ -573,9 +573,9 @@ class StreamRunManager {
     let toolRun;
     try {
       toolRun = this.openai.beta.threads.runs.submitToolOutputsStream(
-        run.thread_id,
         run.id,
         {
+          thread_id: run.thread_id,
           tool_outputs,
           stream: true,
         },

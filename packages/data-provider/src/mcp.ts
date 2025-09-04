@@ -3,6 +3,13 @@ import { TokenExchangeMethodEnum } from './types/agents';
 import { extractEnvVariable } from './utils';
 
 const BaseOptionsSchema = z.object({
+  /**
+   * Controls whether the MCP server is initialized during application startup.
+   * - true (default): Server is initialized during app startup and included in app-level connections
+   * - false: Skips initialization at startup and excludes from app-level connections - useful for servers
+   *   requiring manual authentication (e.g., GitHub PAT tokens) that need to be configured through the UI after startup
+   */
+  startup: z.boolean().optional(),
   iconPath: z.string().optional(),
   timeout: z.number().optional(),
   initTimeout: z.number().optional(),
@@ -15,6 +22,11 @@ const BaseOptionsSchema = z.object({
    * - string: Use custom instructions (overrides server-provided)
    */
   serverInstructions: z.union([z.boolean(), z.string()]).optional(),
+  /**
+   * Whether this server requires OAuth authentication
+   * If not specified, will be auto-detected during construction
+   */
+  requiresOAuth: z.boolean().optional(),
   /**
    * OAuth configuration for SSE and Streamable HTTP transports
    * - Optional: OAuth can be auto-discovered on 401 responses
@@ -36,6 +48,14 @@ const BaseOptionsSchema = z.object({
       redirect_uri: z.string().url().optional(),
       /** Token exchange method */
       token_exchange_method: z.nativeEnum(TokenExchangeMethodEnum).optional(),
+      /** Supported grant types (defaults to ['authorization_code', 'refresh_token']) */
+      grant_types_supported: z.array(z.string()).optional(),
+      /** Supported token endpoint authentication methods (defaults to ['client_secret_basic', 'client_secret_post']) */
+      token_endpoint_auth_methods_supported: z.array(z.string()).optional(),
+      /** Supported response types (defaults to ['code']) */
+      response_types_supported: z.array(z.string()).optional(),
+      /** Supported code challenge methods (defaults to ['S256', 'plain']) */
+      code_challenge_methods_supported: z.array(z.string()).optional(),
     })
     .optional(),
   customUserVars: z

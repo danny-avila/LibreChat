@@ -34,6 +34,7 @@ jest.mock('react-router-dom', () => ({
 
 jest.mock('@tanstack/react-query', () => ({
   useQueryClient: jest.fn(),
+  useQuery: jest.fn(),
 }));
 
 jest.mock('~/Providers', () => ({
@@ -51,6 +52,19 @@ jest.mock('~/hooks/Conversations/useDefaultConvo', () => ({
   default: jest.fn(),
 }));
 
+jest.mock('~/hooks/AuthContext', () => ({
+  useAuthContext: jest.fn(),
+}));
+
+jest.mock('~/hooks/Agents/useAgentsMap', () => ({
+  __esModule: true,
+  default: jest.fn(() => ({})),
+}));
+jest.mock('~/hooks/Agents/useAgentDefaultPermissionLevel', () => ({
+  __esModule: true,
+  default: jest.fn(() => ({})),
+}));
+
 jest.mock('~/utils', () => ({
   getConvoSwitchLogic: jest.fn(() => ({
     template: {},
@@ -63,6 +77,8 @@ jest.mock('~/utils', () => ({
   getModelSpecIconURL: jest.fn(() => 'icon-url'),
   removeUnavailableTools: jest.fn((preset) => preset),
   logger: { log: jest.fn() },
+  getInitialTheme: jest.fn(() => 'light'),
+  applyFontSize: jest.fn(),
 }));
 
 // Mock the tQueryParamsSchema
@@ -82,6 +98,33 @@ jest.mock('librechat-data-provider', () => ({
   EModelEndpoint: { custom: 'custom', assistants: 'assistants', agents: 'agents' },
 }));
 
+// Mock data-provider hooks
+jest.mock('~/data-provider', () => ({
+  useGetAgentByIdQuery: jest.fn(() => ({
+    data: null,
+    isLoading: false,
+    error: null,
+  })),
+  useListAgentsQuery: jest.fn(() => ({
+    data: null,
+    isLoading: false,
+    error: null,
+  })),
+}));
+
+// Mock global window.history
+global.window = Object.create(window);
+global.window.history = {
+  replaceState: jest.fn(),
+  pushState: jest.fn(),
+  go: jest.fn(),
+  back: jest.fn(),
+  forward: jest.fn(),
+  length: 1,
+  scrollRestoration: 'auto',
+  state: null,
+};
+
 describe('useQueryParams', () => {
   // Setup common mocks before each test
   beforeEach(() => {
@@ -89,6 +132,14 @@ describe('useQueryParams', () => {
 
     // Reset mock for setSearchParams
     jest.clearAllMocks();
+
+    // Reset data-provider mocks
+    const dataProvider = jest.requireMock('~/data-provider');
+    (dataProvider.useGetAgentByIdQuery as jest.Mock).mockReturnValue({
+      data: null,
+      isLoading: false,
+      error: null,
+    });
 
     // Create mocks for all dependencies
     const mockSearchParams = new URLSearchParams();
@@ -134,6 +185,13 @@ describe('useQueryParams', () => {
 
     const mockGetDefaultConversation = jest.fn().mockReturnValue({});
     (useDefaultConvo as jest.Mock).mockReturnValue(mockGetDefaultConversation);
+
+    // Mock useAuthContext
+    const { useAuthContext } = jest.requireMock('~/hooks/AuthContext');
+    (useAuthContext as jest.Mock).mockReturnValue({
+      user: { id: 'test-user-id' },
+      isAuthenticated: true,
+    });
   });
 
   afterEach(() => {

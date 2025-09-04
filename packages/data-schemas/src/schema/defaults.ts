@@ -141,11 +141,18 @@ export const conversationPreset = {
   disableStreaming: {
     type: Boolean,
   },
+  fileTokenLimit: {
+    type: Number,
+  },
   /** Reasoning models only */
   reasoning_effort: {
     type: String,
   },
   reasoning_summary: {
+    type: String,
+  },
+  /** Verbosity control */
+  verbosity: {
     type: String,
   },
 };

@@ -1,4 +1,5 @@
 import { useMemo, useState, useEffect, useRef, useLayoutEffect } from 'react';
+import { Button } from '@librechat/client';
 import { TriangleAlert } from 'lucide-react';
 import { actionDelimiter, actionDomainSeparator, Constants } from 'librechat-data-provider';
 import type { TAttachment } from 'librechat-data-provider';
@@ -6,7 +7,6 @@ import { useLocalize, useProgress } from '~/hooks';
 import { AttachmentGroup } from './Parts';
 import ToolCallInfo from './ToolCallInfo';
 import ProgressText from './ProgressText';
-import { Button } from '~/components';
 import { logger, cn } from '~/utils';
 
 export default function ToolCall({
@@ -88,6 +88,10 @@ export default function ToolCall({
       const url = new URL(authURL);
       return url.hostname;
     } catch (e) {
+      logger.error(
+        'client/src/components/Chat/Messages/Content/ToolCall.tsx - Failed to parse auth URL',
+        e,
+      );
       return '';
     }
   }, [auth]);

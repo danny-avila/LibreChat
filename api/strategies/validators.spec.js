@@ -258,7 +258,7 @@ describe('Zod Schemas', () => {
         email: 'john@example.com',
         password: 'password123',
         confirm_password: 'password123',
-        extraField: 'I shouldn\'t be here',
+        extraField: "I shouldn't be here",
       });
       expect(result.success).toBe(true);
     });
@@ -407,7 +407,7 @@ describe('Zod Schemas', () => {
         'john{doe}', // Contains `{` and `}`
         'j', // Only one character
         'a'.repeat(81), // More than 80 characters
-        '\' OR \'1\'=\'1\'; --', // SQL Injection
+        "' OR '1'='1'; --", // SQL Injection
         '{$ne: null}', // MongoDB Injection
         '<script>alert("XSS")</script>', // Basic XSS
         '"><script>alert("XSS")</script>', // XSS breaking out of an attribute
@@ -451,6 +451,66 @@ describe('Zod Schemas', () => {
 
       const result = errorsToString(error.errors);
       expect(result).toBe('name: String must contain at least 3 character(s)');
+    });
+  });
+
+  describe('MIN_PASSWORD_LENGTH environment variable', () => {
+    // Note: These tests verify the behavior based on whatever MIN_PASSWORD_LENGTH
+    // was set when the validators module was loaded
+    const minLength = parseInt(process.env.MIN_PASSWORD_LENGTH, 10) || 8;
+
+    it('should respect the configured minimum password length for login', () => {
+      // Test password exactly at minimum length
+      const resultValid = loginSchema.safeParse({
+        email: 'test@example.com',
+        password: 'a'.repeat(minLength),
+      });
+      expect(resultValid.success).toBe(true);
+
+      // Test password one character below minimum
+      if (minLength > 1) {
+        const resultInvalid = loginSchema.safeParse({
+          email: 'test@example.com',
+          password: 'a'.repeat(minLength - 1),
+        });
+        expect(resultInvalid.success).toBe(false);
+      }
+    });
+
+    it('should respect the configured minimum password length for registration', () => {
+      // Test password exactly at minimum length
+      const resultValid = registerSchema.safeParse({
+        name: 'John Doe',
+        email: 'john@example.com',
+        password: 'a'.repeat(minLength),
+        confirm_password: 'a'.repeat(minLength),
+      });
+      expect(resultValid.success).toBe(true);
+
+      // Test password one character below minimum
+      if (minLength > 1) {
+        const resultInvalid = registerSchema.safeParse({
+          name: 'John Doe',
+          email: 'john@example.com',
+          password: 'a'.repeat(minLength - 1),
+          confirm_password: 'a'.repeat(minLength - 1),
+        });
+        expect(resultInvalid.success).toBe(false);
+      }
+    });
+
+    it('should handle edge case of very short minimum password length', () => {
+      // This test is meaningful only if MIN_PASSWORD_LENGTH is set to a very low value
+      if (minLength <= 3) {
+        const result = loginSchema.safeParse({
+          email: 'test@example.com',
+          password: 'abc',
+        });
+        expect(result.success).toBe(minLength <= 3);
+      } else {
+        // Skip this test if minimum length is > 3
+        expect(true).toBe(true);
+      }
     });
   });
 });

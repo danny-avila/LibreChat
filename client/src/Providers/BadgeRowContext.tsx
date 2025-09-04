@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useRef } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useRef } from 'react';
 import { useSetRecoilState } from 'recoil';
 import { Tools, Constants, LocalStorageKeys, AgentCapabilities } from 'librechat-data-provider';
 import type { TAgentsEndpoint } from 'librechat-data-provider';
@@ -6,23 +6,21 @@ import {
   useSearchApiKeyForm,
   useGetAgentsConfig,
   useCodeApiKeyForm,
+  useGetMCPTools,
   useToolToggle,
-  useMCPSelect,
 } from '~/hooks';
-import { useGetStartupConfig } from '~/data-provider';
 import { ephemeralAgentByConvoId } from '~/store';
 
 interface BadgeRowContextType {
   conversationId?: string | null;
+  mcpServerNames?: string[] | null;
   agentsConfig?: TAgentsEndpoint | null;
-  mcpSelect: ReturnType<typeof useMCPSelect>;
   webSearch: ReturnType<typeof useToolToggle>;
   artifacts: ReturnType<typeof useToolToggle>;
   fileSearch: ReturnType<typeof useToolToggle>;
   codeInterpreter: ReturnType<typeof useToolToggle>;
   codeApiKeyForm: ReturnType<typeof useCodeApiKeyForm>;
   searchApiKeyForm: ReturnType<typeof useSearchApiKeyForm>;
-  startupConfig: ReturnType<typeof useGetStartupConfig>['data'];
 }
 
 const BadgeRowContext = createContext<BadgeRowContextType | undefined>(undefined);
@@ -46,10 +44,12 @@ export default function BadgeRowProvider({
   isSubmitting,
   conversationId,
 }: BadgeRowProviderProps) {
-  const hasInitializedRef = useRef(false);
   const lastKeyRef = useRef<string>('');
+  const hasInitializedRef = useRef(false);
+  const { mcpToolDetails } = useGetMCPTools();
   const { agentsConfig } = useGetAgentsConfig();
   const key = conversationId ?? Constants.NEW_CONVO;
+
   const setEphemeralAgent = useSetRecoilState(ephemeralAgentByConvoId(key));
 
   /** Initialize ephemeralAgent from localStorage on mount and when conversation changes */
@@ -119,12 +119,6 @@ export default function BadgeRowProvider({
     }
   }, [key, isSubmitting, setEphemeralAgent]);
 
-  /** Startup config */
-  const { data: startupConfig } = useGetStartupConfig();
-
-  /** MCPSelect hook */
-  const mcpSelect = useMCPSelect({ conversationId });
-
   /** CodeInterpreter hooks */
   const codeApiKeyForm = useCodeApiKeyForm({});
   const { setIsDialogOpen: setCodeDialogOpen } = codeApiKeyForm;
@@ -171,13 +165,16 @@ export default function BadgeRowProvider({
     isAuthenticated: true,
   });
 
+  const mcpServerNames = useMemo(() => {
+    return (mcpToolDetails ?? []).map((tool) => tool.name);
+  }, [mcpToolDetails]);
+
   const value: BadgeRowContextType = {
-    mcpSelect,
     webSearch,
     artifacts,
     fileSearch,
     agentsConfig,
-    startupConfig,
+    mcpServerNames,
     conversationId,
     codeApiKeyForm,
     codeInterpreter,

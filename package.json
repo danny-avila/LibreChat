@@ -1,6 +1,6 @@
 {
   "name": "LibreChat",
-  "version": "v0.7.9",
+  "version": "v0.8.0-rc3",
   "description": "",
   "workspaces": [
     "api",
@@ -32,6 +32,7 @@
     "reset-password": "node config/reset-password.js",
     "ban-user": "node config/ban-user.js",
     "delete-user": "node config/delete-user.js",
+    "reset-meili-sync": "node config/reset-meili-sync.js",
     "update-banner": "node config/update-banner.js",
     "delete-banner": "node config/delete-banner.js",
     "backend": "cross-env NODE_ENV=production node api/server/index.js",
@@ -40,8 +41,9 @@
     "build:data-provider": "cd packages/data-provider && npm run build",
     "build:api": "cd packages/api && npm run build",
     "build:data-schemas": "cd packages/data-schemas && npm run build",
-    "frontend": "npm run build:data-provider && npm run build:data-schemas && npm run build:api && cd client && npm run build",
-    "frontend:ci": "npm run build:data-provider && cd client && npm run build:ci",
+    "build:client-package": "cd packages/client && npm run build",
+    "frontend": "npm run build:data-provider && npm run build:data-schemas && npm run build:api && npm run build:client-package && cd client && npm run build",
+    "frontend:ci": "npm run build:data-provider && npm run build:client-package && cd client && npm run build:ci",
     "frontend:dev": "cd client && npm run dev",
     "e2e": "playwright test --config=e2e/playwright.config.local.ts",
     "e2e:headed": "playwright test --config=e2e/playwright.config.local.ts --headed",
@@ -71,7 +73,14 @@
     "b:test:api": "cd api && bun run b:test",
     "b:balance": "bun config/add-balance.js",
     "b:list-balances": "bun config/list-balances.js",
-    "reset-terms": "node config/reset-terms.js"
+    "reset-terms": "node config/reset-terms.js",
+    "flush-cache": "node config/flush-cache.js",
+    "migrate:agent-permissions:dry-run": "node config/migrate-agent-permissions.js --dry-run",
+    "migrate:agent-permissions": "node config/migrate-agent-permissions.js",
+    "migrate:agent-permissions:batch": "node config/migrate-agent-permissions.js --batch-size=50",
+    "migrate:prompt-permissions:dry-run": "node config/migrate-prompt-permissions.js --dry-run",
+    "migrate:prompt-permissions": "node config/migrate-prompt-permissions.js",
+    "migrate:prompt-permissions:batch": "node config/migrate-prompt-permissions.js --batch-size=50"
   },
   "repository": {
     "type": "git",
@@ -100,7 +109,6 @@
     "eslint-plugin-import": "^2.31.0",
     "eslint-plugin-jest": "^28.11.0",
     "eslint-plugin-jsx-a11y": "^6.10.2",
-    "eslint-plugin-perfectionist": "^4.8.0",
     "eslint-plugin-prettier": "^5.2.3",
     "eslint-plugin-react": "^7.37.4",
     "eslint-plugin-react-hooks": "^5.1.0",

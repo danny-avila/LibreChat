@@ -1,7 +1,7 @@
-import { Spinner } from '~/components/svg';
-import { useLocalize } from '~/hooks';
-import VersionItem from './VersionItem';
+import { Spinner } from '@librechat/client';
 import type { VersionContext } from './types';
+import VersionItem from './VersionItem';
+import { useLocalize } from '~/hooks';
 
 type VersionContentProps = {
   selectedAgentId: string;

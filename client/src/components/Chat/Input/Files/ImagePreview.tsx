@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Maximize2 } from 'lucide-react';
-import { OGDialog, OGDialogContent } from '~/components/ui';
 import { FileSources } from 'librechat-data-provider';
+import { OGDialog, OGDialogContent } from '@librechat/client';
 import ProgressCircle from './ProgressCircle';
 import SourceIcon from './SourceIcon';
 import { cn } from '~/utils';
@@ -93,9 +93,9 @@ const ImagePreview = ({
 
   const style: styleProps = imageUrl
     ? {
-      ...baseStyle,
-      backgroundImage: `url(${imageUrl})`,
-    }
+        ...baseStyle,
+        backgroundImage: `url(${imageUrl})`,
+      }
     : baseStyle;
 
   if (typeof style.backgroundImage !== 'string' || style.backgroundImage.length === 0) {
