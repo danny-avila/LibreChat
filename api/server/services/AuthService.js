@@ -465,7 +465,7 @@ const setOpenIDAuthTokens = (tokenset, res, userId) => {
 const resendVerificationEmail = async (req) => {
   try {
     const { email } = req.body;
-    await deleteTokens(email);
+    await deleteTokens({ email });
     const user = await findUser({ email }, 'email _id name');
 
     if (!user) {
