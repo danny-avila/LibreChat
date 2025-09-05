@@ -407,18 +407,24 @@ export class MCPTokenStorage {
     }
 
     const tokenData = await decryptV2(clientInfoData.token);
+    const clientInfo = JSON.parse(tokenData);
 
-    let clientMetadata: Record<string, unknown> = {};
-    if (clientInfoData.metadata) {
-      if (clientInfoData.metadata instanceof Map) {
-        clientMetadata = Object.fromEntries(clientInfoData.metadata);
-      } else {
-        clientMetadata = { ...(clientInfoData.metadata as Record<string, unknown>) };
+    // get metadata from the token as a plain object. While it's defined as a Map in the database type, it's a plain object at runtime.
+    function getMetadata(
+      metadata: Map<string, unknown> | Record<string, unknown> | null,
+    ): Record<string, unknown> {
+      if (metadata == null) {
+        return {};
       }
+      if (metadata instanceof Map) {
+        return Object.fromEntries(metadata);
+      }
+      return { ...(metadata as Record<string, unknown>) };
     }
+    const clientMetadata = getMetadata(clientInfoData.metadata ?? null);
 
     return {
-      clientInfo: JSON.parse(tokenData),
+      clientInfo,
       clientMetadata,
     };
   }
