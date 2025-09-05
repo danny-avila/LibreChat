@@ -407,9 +407,19 @@ export class MCPTokenStorage {
     }
 
     const tokenData = await decryptV2(clientInfoData.token);
+
+    let clientMetadata: Record<string, unknown> = {};
+    if (clientInfoData.metadata) {
+      if (clientInfoData.metadata instanceof Map) {
+        clientMetadata = Object.fromEntries(clientInfoData.metadata);
+      } else {
+        clientMetadata = { ...(clientInfoData.metadata as Record<string, unknown>) };
+      }
+    }
+
     return {
       clientInfo: JSON.parse(tokenData),
-      clientMetadata: { ...(clientInfoData.metadata ?? new Map()) },
+      clientMetadata,
     };
   }
 }
