@@ -74,7 +74,17 @@ const startServer = async () => {
   app.use(express.json({ limit: '3mb' }));
   app.use(express.urlencoded({ extended: true, limit: '3mb' }));
   app.use(mongoSanitize());
-  app.use(cors());
+  const allowed = process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : [];
+  app.use(
+    cors({
+      origin: function (origin, callback) {
+        if (!origin) return callback(null, true);
+        if (allowed.includes(origin)) return callback(null, true);
+        return callback(new Error('Not allowed by CORS'));
+      },
+      credentials: true,
+    }),
+  );
   app.use(cookieParser());
 
   if (!isEnabled(DISABLE_COMPRESSION)) {
