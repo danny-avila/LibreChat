@@ -86,7 +86,7 @@ export type FormattedContent =
       metadata?: {
         type: string;
         data: UIResource[];
-      }
+      };
       text?: string;
     }
   | {
@@ -111,10 +111,16 @@ export type FormattedContent =
       };
     };
 
-export type FormattedContentResult = [
-  string | FormattedContent[],
-  undefined | { content: FormattedContent[] },
-];
+export type Artifacts =
+  | {
+      content?: FormattedContent[];
+      ui_resources?: {
+        data: UIResource[];
+      };
+    }
+  | undefined;
+
+export type FormattedContentResult = [string | FormattedContent[], undefined | Artifacts];
 
 export type UIResource = {
   uri: string;
