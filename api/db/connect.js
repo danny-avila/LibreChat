@@ -3,10 +3,47 @@ const { isEnabled } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 
 const mongoose = require('mongoose');
-const MONGO_URI = process.env.MONGO_URI;
+let MONGO_URI = process.env.MONGO_URI;
+let memoryServer = null;
 
-if (!MONGO_URI) {
-  throw new Error('Please define the MONGO_URI environment variable');
+async function resolveMongoUri() {
+  if (MONGO_URI) {
+    return MONGO_URI;
+  }
+
+  // Only allow in-memory DB if explicitly enabled
+  if (!isEnabled(process.env.ALLOW_IN_MEMORY_DB)) {
+    throw new Error('Please define the MONGO_URI environment variable');
+  }
+
+  try {
+    // Lazy-require to avoid bundling when not used
+    const { MongoMemoryServer } = require('mongodb-memory-server');
+    if (!memoryServer) {
+      memoryServer = await MongoMemoryServer.create();
+      const shutdown = async () => {
+        try {
+          await memoryServer.stop();
+        } catch (e) {
+          /* noop */
+        }
+      };
+      process.on('SIGINT', shutdown);
+      process.on('SIGTERM', shutdown);
+      process.on('beforeExit', shutdown);
+      process.on('exit', shutdown);
+    }
+    const uri = memoryServer.getUri();
+    logger.warn('[DB] MONGO_URI not set. Using in-memory MongoDB instance for this session.');
+    logger.warn('[DB] Data will NOT persist after the container stops.');
+    MONGO_URI = uri;
+    // Expose for any consumers that read from env after startup
+    process.env.MONGO_URI = uri;
+    return uri;
+  } catch (err) {
+    logger.error('[DB] Failed to start in-memory MongoDB. Set MONGO_URI to use an external database.');
+    throw err;
+  }
 }
 /** The maximum number of connections in the connection pool. */
 const maxPoolSize = parseInt(process.env.MONGO_MAX_POOL_SIZE) || undefined;
@@ -65,7 +102,7 @@ async function connectDb() {
     logger.info('Mongo Connection options');
     logger.info(JSON.stringify(opts, null, 2));
     mongoose.set('strictQuery', true);
-    cached.promise = mongoose.connect(MONGO_URI, opts).then((mongoose) => {
+    cached.promise = resolveMongoUri().then((uri) => mongoose.connect(uri, opts)).then((mongoose) => {
       return mongoose;
     });
   }
