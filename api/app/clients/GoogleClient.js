@@ -1,5 +1,75 @@
 const { google } = require('googleapis');
 const { Tokenizer } = require('@librechat/api');
+const { z } = require('zod');
+
+// Schema for the analysis output from the first LLM call
+const AnalysisSchema = z.object({
+  intent: z.string().describe("The main intent or purpose of the user's message"),
+  context: z.object({
+    domain: z.string().optional().describe("The domain or subject area of the query"),
+    complexity: z.union([
+      z.string().transform(val => {
+        const lowerVal = val.toLowerCase();
+        if (lowerVal.includes('beginner')) return 'beginner';
+        if (lowerVal.includes('advanced')) return 'advanced';
+        return 'intermediate';
+      }),
+      z.enum(['beginner', 'intermediate', 'advanced'])
+    ]).default('intermediate'),
+    requires_code: z.union([z.boolean(), z.string().transform(val => 
+      typeof val === 'string' ? val.toLowerCase() === 'true' : val
+    )]).default(false),
+    aspect: z.union([
+      z.string().transform(val => {
+        const lowerVal = val.toLowerCase();
+        if (lowerVal.includes('technical')) return 'technical';
+        if (lowerVal.includes('business')) return 'business';
+        if (lowerVal.includes('design')) return 'design';
+        return 'general';
+      }),
+      z.enum(['technical', 'business', 'design', 'general'])
+    ]).optional(),
+  }),
+  constraints: z.object({
+    format: z.union([
+      z.string().transform(val => {
+        const lowerVal = val.toLowerCase();
+        if (lowerVal.includes('step') || lowerVal.includes('guide')) return 'steps';
+        if (lowerVal.includes('checklist') || lowerVal.includes('list')) return 'checklist';
+        if (lowerVal.includes('code') || lowerVal.includes('example')) return 'code';
+        return 'explanation';
+      }),
+      z.enum(['steps', 'checklist', 'code', 'explanation'])
+    ]).optional(),
+    length: z.union([
+      z.string().transform(val => {
+        const lowerVal = val.toLowerCase();
+        if (lowerVal.includes('brief') || lowerVal.includes('short')) return 'brief';
+        if (lowerVal.includes('detailed') || lowerVal.includes('comprehensive')) return 'detailed';
+        return 'moderate';
+      }),
+      z.enum(['brief', 'moderate', 'detailed'])
+    ]).default('moderate'),
+    tone: z.union([
+      z.string().transform(val => {
+        const lowerVal = val.toLowerCase();
+        if (lowerVal.includes('casual') || lowerVal.includes('informal')) return 'casual';
+        if (lowerVal.includes('technical') || lowerVal.includes('expert')) return 'technical';
+        if (lowerVal.includes('friendly') || lowerVal.includes('warm')) return 'friendly';
+        return 'professional';
+      }),
+      z.enum(['casual', 'professional', 'friendly', 'technical'])
+    ]).default('professional'),
+  }),
+  needs_clarification: z.boolean().optional(),
+  clarification_question: z.string().optional(),
+  system_instructions: z.string().describe("Detailed instructions for the second LLM call"),
+  target_audience: z.string().optional().describe("Description of the target audience for the response"),
+  risk_flags: z.union([
+    z.array(z.string()),
+    z.string().transform(str => [str])
+  ]).optional().describe("Any potential risks or sensitive topics to handle carefully"),
+}).describe("Structured analysis of the user's input to guide the response generation");
 const { concat } = require('@langchain/core/utils/stream');
 const { ChatVertexAI } = require('@langchain/google-vertexai');
 const { ChatGoogleGenerativeAI } = require('@langchain/google-genai');
@@ -30,6 +100,7 @@ const {
   titleInstruction,
   truncateText,
   followupPrompt,
+  buildSystemInstruction,
 } = require('./prompts');
 const BaseClient = require('./BaseClient');
 
@@ -124,7 +195,7 @@ class GoogleClient extends BaseClient {
     if (this.options && !this.options.replaceOptions) {
       // nested options aren't spread properly, so we need to do this manually
       this.options.modelOptions = {
-        ...this.options.modelOptions,
+        ...this.options.modelOptions,  
         ...options.modelOptions,
       };
       delete options.modelOptions;
@@ -189,6 +260,9 @@ class GoogleClient extends BaseClient {
       // Ensure we properly combine the prompt prefix with the artifacts prompt
       promptPrefix = promptPrefix ? `${promptPrefix}\n\n${this.options.artifactsPrompt}` : this.options.artifactsPrompt;
     }
+        promptPrefix = buildSystemInstruction(promptPrefix);
+
+
     this.systemMessage = promptPrefix;
     this.initializeClient();
     return this;
@@ -707,6 +781,221 @@ class GoogleClient extends BaseClient {
     return this.client;
   }
 
+  /**
+   * Analyzes user input using a lightweight model to extract intent, context, and constraints.
+   * This is the first step in the two-step LLM call process.
+   * @param {string} userInput - The user's input text to analyze
+   * @param {Object} metadata - Additional metadata about the user/context
+   * @returns {Promise<Object>} Structured analysis of the input
+   */
+  async analyzeInput(userInput, metadata = {}, onProgress) {
+    // Create a clean version of user input (single line, max 500 chars)
+    const cleanInput = userInput
+      .replace(/[\n\r]+/g, ' ')
+      .replace(/"/g, "'")
+      .substring(0, 500);
+    const truncated = userInput.length > 500 ? '...' : '';
+    
+    const analysisPrompt = `Analyze this input and respond in JSON format. If the request is ambiguous (like about creating an app without specifying aspect), ask for clarification:
+
+Input: "${cleanInput}${truncated}"
+Context: ${metadata.skillLevel ? `Skill: ${metadata.skillLevel}` : ''} ${metadata.previousContext ? '| Has context' : ''}
+
+First, determine if the request is about:
+1. Technical implementation (UI/UX, backend, infrastructure)
+2. Business aspects (model, strategy, funding)
+3. Design (UI/UX, user flows, wireframes)
+4. General guidance
+
+Then respond with a JSON object containing:
+- intent: Main purpose (1-3 words, be specific about the aspect)
+- needs_clarification: true if the request is too broad
+- clarification_question: Question to ask user (if needs_clarification is true)
+- context: { 
+    domain: string, 
+    complexity: enum, 
+    requires_code: boolean,
+    aspect: enum['technical', 'business', 'design', 'general']
+  }
+- constraints: { format: enum, length: enum, tone: enum }
+- system_instructions: string (specific to the identified aspect)
+- target_audience: string (optional)
+- risk_flags: string[] (optional)
+
+Keep responses brief and use enums from the schema.`;
+    
+    try {
+      // Use a lightweight model for analysis
+      const originalModel = this.modelOptions.model;
+      this.modelOptions.model = 'gemini-2.5-flash';
+      
+      // Create a new abort controller for the analysis phase
+      const analysisAbortController = new AbortController();
+      
+      try {
+        const response = await this.getCompletion(
+          [
+            {
+              role: 'user',
+              parts: [{ text: analysisPrompt }],
+            },
+          ],
+          { 
+            stream: false,
+            abortController: analysisAbortController,
+            format: 'json',
+            onProgress: onProgress ? (chunk) => {
+              try {
+                onProgress(chunk);
+              } catch (error) {
+                logger.error('Error in analysis progress callback:', error);
+              }
+            } : undefined
+          }
+        );
+        
+        // Clean up the abort controller
+        analysisAbortController.abort();
+        
+        let analysis;
+        try {
+          // First, try to extract JSON from markdown code block if present
+          let jsonStr = response;
+          const jsonMatch = response.match(/```(?:json)?\n([\s\S]*?)\n```/);
+          if (jsonMatch) {
+            jsonStr = jsonMatch[1];
+          } else {
+            // If no code block, try to find standalone JSON
+            const jsonMatchBrace = response.match(/\{.*\}/s);
+            if (jsonMatchBrace) {
+              jsonStr = jsonMatchBrace[0];
+            }
+          }
+          
+          // Clean up the JSON string
+          jsonStr = jsonStr.trim()
+            .replace(/^```(?:json)?/, '') // Remove opening code block if present
+            .replace(/```$/, '') // Remove closing code block if present
+            .trim();
+            
+          logger.debug('Parsing analysis JSON:', jsonStr);
+          const parsed = JSON.parse(jsonStr);
+          
+          // Validate against schema with detailed error messages
+          analysis = AnalysisSchema.safeParse(parsed);
+          
+          if (!analysis.success) {
+            const errorDetails = analysis.error.issues.map(issue => 
+              `- ${issue.path.join('.')}: ${issue.message}`
+            ).join('\n');
+            logger.error('Analysis validation failed with issues:', {
+              issues: analysis.error.issues,
+              response: jsonStr
+            });
+            
+            // Create a fallback analysis with default values
+            const fallbackAnalysis = {
+              intent: 'general',
+              context: {
+                domain: 'general',
+                complexity: 'intermediate',
+                requires_code: false,
+                aspect: 'general'
+              },
+              constraints: {
+                format: 'explanation',
+                length: 'moderate',
+                tone: 'professional',
+              },
+              system_instructions: parsed.system_instructions || 'Provide a helpful response to the user query.',
+              target_audience: parsed.target_audience || 'general audience',
+              risk_flags: [],
+              needs_clarification: false,
+              clarification_question: ''
+            };
+            
+            logger.warn('Using fallback analysis due to validation errors');
+            return fallbackAnalysis;
+          }
+          
+          return analysis.data;
+          
+        } catch (parseError) {
+          logger.error('Failed to parse analysis response:', {
+            error: parseError,
+            response: response.substring(0, 500) + (response.length > 500 ? '...' : '')
+          });
+          
+          // Return a default analysis object if parsing fails
+          return {
+            intent: 'general',
+            context: {
+              domain: 'general',
+              complexity: 'intermediate',
+              requires_code: false,
+              aspect: 'general'
+            },
+            constraints: {
+              format: 'explanation',
+              length: 'moderate',
+              tone: 'professional',
+            },
+            system_instructions: 'Provide a helpful response to the user query.',
+            target_audience: 'general audience',
+            risk_flags: [],
+            needs_clarification: false,
+            clarification_question: ''
+          };
+        }
+        
+        return analysis;
+      } catch (error) {
+        // Ensure we clean up even if there's an error
+        analysisAbortController.abort();
+        throw error;
+      } finally {
+        // Always restore the original model
+        this.modelOptions.model = originalModel;
+      }
+
+      // Parse and validate the response
+      let analysis;
+      try {
+        const jsonMatch = response.match(/```json\n([\s\S]*?)\n```/);
+        const jsonStr = jsonMatch ? jsonMatch[1] : response;
+        const parsed = JSON.parse(jsonStr);
+        analysis = AnalysisSchema.parse(parsed);
+      } catch (parseError) {
+        logger.error('Failed to parse analysis response:', parseError);
+        throw new Error('Failed to analyze input. Please try again.');
+      }
+
+      return analysis;
+    } catch (error) {
+      logger.error('Error in analyzeInput:', error);
+      // Fallback to default analysis
+      return {
+        intent: 'general',
+        context: {
+          domain: 'general',
+          complexity: 'intermediate',
+          requires_code: false,
+          aspect: 'general'
+        },
+        constraints: {
+          format: 'explanation',
+          length: 'moderate',
+          tone: 'professional',
+        },
+        system_instructions: 'Provide a helpful response to the user\'s query.',
+        target_audience: 'general',
+        risk_flags: [],
+        needs_clarification: false,
+        clarification_question: ''
+      };
+    }
+  }
+
   async getCompletion(_payload, options = {}) {
     const { onProgress, abortController } = options;
     const safetySettings = getSafetySettings(this.modelOptions.model);
@@ -736,14 +1025,7 @@ class GoogleClient extends BaseClient {
               },
             ],
           };
-          console.log('\n🔍 === GEMINI SYSTEM INSTRUCTION DEBUG ===');
-          console.log('📝 Full system message length:', promptPrefix.length);
-          console.log('🎯 Has artifacts prompt:', !!this.options.artifactsPrompt);
-          console.log('📋 System message content:');
-          console.log('---START---');
-          console.log(promptPrefix);
-          console.log('---END---');
-          console.log('==========================================\n');
+
           logger.debug('[GoogleClient] System instruction set:', { 
             hasArtifactsPrompt: !!this.options.artifactsPrompt,
             promptPrefixLength: promptPrefix.length 
@@ -1039,10 +1321,103 @@ class GoogleClient extends BaseClient {
     // logger.debug('GoogleClient doesn\'t use getBuildMessagesOptions');
   }
 
+  /**
+   * Sends a completion request, optionally using a two-step process:
+   * 1. Analyze the input with a lightweight model
+   * 2. Generate a response using the analysis
+   * @param {Array|Object} payload - The input messages or prompt
+   * @param {Object} opts - Options for the completion
+   * @param {boolean} [opts.twoStep=true] - Whether to use the two-step process
+   * @param {Object} [opts.metadata] - Additional metadata for analysis
+   * @returns {Promise<string>} The generated completion
+   */
   async sendCompletion(payload, opts = {}) {
-    let reply = '';
-    reply = await this.getCompletion(payload, opts);
-    return reply.trim();
+    console.log('[GoogleClient] Starting sendCompletion with twoStep:', opts.twoStep !== false);
+    const {
+      twoStep = true,
+      metadata = {},
+      onProgress,
+      abortController,
+      ...completionOpts
+    } = opts;
+    
+    // Ensure onProgress is a function or undefined
+    const safeOnProgress = typeof onProgress === 'function' ? onProgress : undefined;
+
+    // If not using two-step or payload is not in the expected format, use direct completion
+    if (!twoStep || !Array.isArray(payload) || payload.length === 0) {
+      return (await this.getCompletion(payload, { ...opts, stream: false })).trim();
+    }
+
+    try {
+      // Extract the last user message for analysis
+      const lastUserMessage = [...payload].reverse().find(m => m.role === 'user');
+      if (!lastUserMessage) {
+        throw new Error('No user message found in payload');
+      }
+
+      // Step 1: Analyze the input
+      console.log('[GoogleClient] Starting analysis phase with lightweight model...');
+      const userInput = lastUserMessage.parts?.map(p => p.text || '').join('\n') || '';
+      
+      // Show analysis progress if onProgress is provided
+      if (safeOnProgress) {
+        safeOnProgress('[Analyzing your request...]');
+      }
+      
+      // Pass the safeOnProgress callback to analyzeInput
+      const analysis = await this.analyzeInput(userInput, metadata, safeOnProgress);
+      console.log('[GoogleClient] Analysis complete. Intent:', analysis.intent);
+      
+      // Log analysis for debugging
+      logger.debug('Input analysis:', analysis);
+
+      // Prepare the enhanced payload with system instructions
+      // Convert system message to user message format for Google's API
+      // store system instructions silently
+this.systemMessage = analysis.system_instructions;  
+      
+      // Ensure all messages have valid roles for Google's API
+      const enhancedPayload = [
+        systemMessage,
+        ...payload.map(msg => ({
+          ...msg,
+          role: msg.role === 'assistant' ? 'model' : 'user'  // Convert 'assistant' to 'model'
+        }))
+      ].filter(msg => msg.role === 'user' || msg.role === 'model');  // Only include valid roles
+
+      // Step 2: Generate the response using the full model
+      console.log('[GoogleClient] Starting generation phase with full model...');
+      
+      // Create a wrapper for onProgress to handle potential undefined
+      const generationOnProgress = safeOnProgress ? (chunk) => {
+        try {
+          safeOnProgress(chunk);
+        } catch (error) {
+          logger.error('Error in onProgress callback:', error);
+        }
+      } : undefined;
+      
+      const response = await this.getCompletion(
+        enhancedPayload,
+        {
+          ...completionOpts,
+          onProgress: generationOnProgress,
+          abortController,
+          model: this.modelOptions.model, // Use the original model
+          temperature: analysis.constraints.tone === 'technical' ? 0.2 : 0.7,
+          max_tokens: analysis.constraints.length === 'brief' ? 500 : 
+                     analysis.constraints.length === 'detailed' ? 2000 : 1000
+        }
+      );
+      console.log('[GoogleClient] Generation complete. Response length:', response.length);
+
+      return response.trim();
+    } catch (error) {
+      logger.error('Error in two-step completion:', error);
+      // Fall back to direct completion if two-step fails
+      return (await this.getCompletion(payload, { ...opts, stream: false })).trim();
+    }
   }
 
   getEncoding() {
