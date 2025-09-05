@@ -70,6 +70,13 @@ RUN \
 
 RUN mkdir -p /app/client/public/images /app/api/logs
 
+# Provide sane defaults to boot without external config
+RUN cp -n librechat.example.yaml librechat.yaml || true
+ENV JWT_SECRET=16f8c0ef4a5d391b26034086c628469d3f9f497f08163ab9b40137092f2909ef \
+    JWT_REFRESH_SECRET=eaa5191f2914e30b9387fd84e254e4ba6fc51b4654968a9b0803b456a54b8418 \
+    ALLOW_SOCIAL_LOGIN=false \
+    ALLOW_PASSWORD_RESET=false
+
 # Node API setup
 EXPOSE 3080
 ENV HOST=0.0.0.0
