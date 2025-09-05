@@ -5,6 +5,166 @@ import type { JsonSchemaType } from '~/types';
 import { resolveJsonSchemaRefs, convertJsonSchemaToZod, convertWithResolvedRefs } from '../zod';
 
 describe('convertJsonSchemaToZod', () => {
+  describe('integer type handling', () => {
+    // Before the fix, integer types were falling through to the default case
+    // and being converted to something like:
+    // "anyOf": [{"anyOf": [{"not": {}}, {}]}, {"type": "null"}]
+    // This test ensures that integer is now properly handled
+    it('should convert integer type to z.number() and NOT to anyOf', () => {
+      const schema = {
+        type: 'integer' as const,
+      };
+      const result = convertJsonSchemaToZod(schema);
+      expect(result).toBeDefined();
+
+      // The schema should be a ZodNumber, not a ZodUnion
+      expect(result).toBeInstanceOf(z.ZodNumber);
+
+      // It should parse numbers correctly
+      expect(result?.parse(42)).toBe(42);
+      expect(result?.parse(3.14)).toBe(3.14); // z.number() accepts floats too
+    });
+
+    it('should NOT convert optional integer fields to anyOf structures', () => {
+      // User reported that before the fix, this schema:
+      // "max_results": { "default": 10, "title": "Max Results", "type": "integer" }
+      // Was being converted to:
+      // "max_results": {"anyOf":[{"anyOf":[{"not":{}},{}]},{"type":"null"}]}
+      const searchSchema = {
+        type: 'object' as const,
+        properties: {
+          query: {
+            title: 'Query',
+            type: 'string' as const,
+          },
+          max_results: {
+            default: 10,
+            title: 'Max Results',
+            type: 'integer' as const,
+          },
+        },
+        required: ['query'],
+        title: 'searchArguments',
+      };
+
+      const result = convertJsonSchemaToZod(searchSchema);
+      expect(result).toBeDefined();
+
+      // Check the shape to ensure max_results is not a union type
+      if (result instanceof z.ZodObject) {
+        const shape = result.shape;
+        expect(shape.query).toBeInstanceOf(z.ZodString);
+
+        // max_results should be ZodOptional(ZodNullable(ZodNumber)), not a ZodUnion
+        const maxResultsSchema = shape.max_results;
+        expect(maxResultsSchema).toBeDefined();
+
+        // It should NOT be a ZodUnion (which would indicate the anyOf structure)
+        expect(maxResultsSchema).not.toBeInstanceOf(z.ZodUnion);
+
+        // Extract the inner type (it's wrapped in ZodOptional and ZodNullable)
+        let innerType = maxResultsSchema;
+        while (innerType instanceof z.ZodOptional || innerType instanceof z.ZodNullable) {
+          if (innerType instanceof z.ZodOptional) {
+            innerType = innerType._def.innerType;
+          } else if (innerType instanceof z.ZodNullable) {
+            innerType = innerType._def.innerType;
+          }
+        }
+
+        // The core type should be ZodNumber
+        expect(innerType).toBeInstanceOf(z.ZodNumber);
+      }
+
+      // Test with valid data
+      const validData = { query: 'test search' };
+      const parsedValid = result?.parse(validData);
+      expect(parsedValid).toBeDefined();
+      expect(parsedValid.query).toBe('test search');
+      // max_results is optional and may not be in the result when not provided
+
+      // Test with max_results included
+      const dataWithMaxResults = { query: 'test search', max_results: 5 };
+      expect(result?.parse(dataWithMaxResults)).toEqual(dataWithMaxResults);
+
+      // Test that integer values work
+      const dataWithIntegerMaxResults = { query: 'test', max_results: 20 };
+      expect(result?.parse(dataWithIntegerMaxResults)).toEqual(dataWithIntegerMaxResults);
+    });
+
+    it('should handle float type correctly', () => {
+      const schema = {
+        type: 'float' as const,
+      };
+      const result = convertJsonSchemaToZod(schema);
+      expect(result).toBeDefined();
+      expect(result?.parse(3.14159)).toBe(3.14159);
+      expect(result?.parse(42)).toBe(42); // integers are valid floats
+    });
+
+    it('should handle mixed number, integer, and float in object properties', () => {
+      const schema = {
+        type: 'object' as const,
+        properties: {
+          numberField: { type: 'number' as const },
+          integerField: { type: 'integer' as const },
+          floatField: { type: 'float' as const },
+        },
+        required: ['numberField'],
+      };
+
+      const result = convertJsonSchemaToZod(schema);
+      expect(result).toBeDefined();
+
+      const testData = {
+        numberField: 1.5,
+        integerField: 42,
+        floatField: 3.14,
+      };
+
+      expect(result?.parse(testData)).toEqual(testData);
+
+      // Test with optional fields omitted
+      const minimalData = { numberField: 2.5 };
+      const parsedMinimal = result?.parse(minimalData);
+      expect(parsedMinimal).toBeDefined();
+      expect(parsedMinimal.numberField).toBe(2.5);
+      // Optional fields may be undefined or null when not provided
+      expect(parsedMinimal.integerField ?? null).toBe(null);
+      expect(parsedMinimal.floatField ?? null).toBe(null);
+    });
+  });
+
+  describe('existing functionality preservation', () => {
+    it('should still handle string types correctly', () => {
+      const schema = {
+        type: 'string' as const,
+      };
+      const result = convertJsonSchemaToZod(schema);
+      expect(result).toBeDefined();
+      expect(result?.parse('hello')).toBe('hello');
+    });
+
+    it('should still handle number types correctly', () => {
+      const schema = {
+        type: 'number' as const,
+      };
+      const result = convertJsonSchemaToZod(schema);
+      expect(result).toBeDefined();
+      expect(result?.parse(123.45)).toBe(123.45);
+    });
+
+    it('should still handle boolean types correctly', () => {
+      const schema = {
+        type: 'boolean' as const,
+      };
+      const result = convertJsonSchemaToZod(schema);
+      expect(result).toBeDefined();
+      expect(result?.parse(true)).toBe(true);
+      expect(result?.parse(false)).toBe(false);
+    });
+  });
+
   describe('primitive types', () => {
     it('should convert string schema', () => {
       const schema: JsonSchemaType = {
