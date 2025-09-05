@@ -361,11 +361,12 @@ export class MCPConnectionFactory {
 
       /** Client information from the flow metadata */
       const clientInfo = flowMetadata?.clientInfo;
+      const metadata = flowMetadata?.metadata;
 
       return {
         tokens,
         clientInfo,
-        metadata: flowMetadata?.metadata,
+        metadata,
       };
     } catch (error) {
       logger.error(`${this.logPrefix} Failed to complete OAuth flow for ${this.serverName}`, error);
