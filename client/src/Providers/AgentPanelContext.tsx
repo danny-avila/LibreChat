@@ -140,6 +140,7 @@ export function AgentPanelProvider({ children }: { children: React.ReactNode }) 
     pluginTools,
     activePanel,
     agentsConfig,
+    startupConfig,
     setActivePanel,
     endpointsConfig,
     setCurrentAgentId,
