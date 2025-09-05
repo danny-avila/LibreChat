@@ -97,6 +97,23 @@ async function getEndpointsConfig(req) {
     };
   }
 
+  // Add individual credential flags for Bedrock
+  if (mergedConfig[EModelEndpoint.bedrock]) {
+    const userProvideAccessKeyId = process.env.BEDROCK_AWS_ACCESS_KEY_ID === 'user_provided';
+    const userProvideSecretAccessKey =
+      process.env.BEDROCK_AWS_SECRET_ACCESS_KEY === 'user_provided';
+    const userProvideSessionToken = process.env.BEDROCK_AWS_SESSION_TOKEN === 'user_provided';
+    const userProvideBearerToken = process.env.BEDROCK_AWS_BEARER_TOKEN === 'user_provided';
+
+    mergedConfig[EModelEndpoint.bedrock] = {
+      ...mergedConfig[EModelEndpoint.bedrock],
+      userProvideAccessKeyId,
+      userProvideSecretAccessKey,
+      userProvideSessionToken,
+      userProvideBearerToken,
+    };
+  }
+
   const endpointsConfig = orderEndpointsConfig(mergedConfig);
 
   await cache.set(CacheKeys.ENDPOINT_CONFIG, endpointsConfig);
