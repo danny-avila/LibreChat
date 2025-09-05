@@ -290,10 +290,16 @@ const resendVerificationController = async (req, res) => {
  * OAuth MCP specific uninstall logic
  */
 const maybeUninstallOAuthMCP = async (userId, pluginKey, appConfig) => {
+  if (!pluginKey.startsWith(Constants.mcp_prefix)) {
+    // this is not an MCP server, so nothing to do here
+    return;
+  }
+
   const serverName = pluginKey.replace(Constants.mcp_prefix, '');
   const mcpManager = getMCPManager(userId);
   const serverConfig = mcpManager?.getRawConfig(serverName) || appConfig?.mcpServers?.[serverName];
   if (!serverConfig?.oauth) {
+    // this server does not use OAuth, so nothing to do here as well
     return;
   }
 
@@ -351,20 +357,12 @@ const maybeUninstallOAuthMCP = async (userId, pluginKey, appConfig) => {
   }
 
   // 4. delete tokens from the DB after revocation attempts
-  await Token.deleteOne({
-    userId: userId,
-    type: 'mcp_oauth_client',
-    identifier: `mcp:${serverName}:client`,
-  });
-  await Token.deleteOne({
-    userId: userId,
-    type: 'mcp_oauth',
-    identifier: `mcp:${serverName}`,
-  });
-  await Token.deleteOne({
-    userId: userId,
-    type: 'mcp_oauth_refresh',
-    identifier: `mcp:${serverName}:refresh`,
+  await MCPTokenStorage.deleteUserTokens({
+    userId,
+    serverName,
+    deleteToken: async (filter) => {
+      await Token.deleteOne(filter);
+    },
   });
 
   // 5. clear the flow state for the OAuth tokens

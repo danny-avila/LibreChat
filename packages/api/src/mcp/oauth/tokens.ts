@@ -428,4 +428,40 @@ export class MCPTokenStorage {
       clientMetadata,
     };
   }
+
+  /**
+   * Deletes all OAuth-related tokens for a specific user and server
+   */
+  static async deleteUserTokens({
+    userId,
+    serverName,
+    deleteToken,
+  }: {
+    userId: string;
+    serverName: string;
+    deleteToken: (filter: { userId: string; type: string; identifier: string }) => Promise<void>;
+  }): Promise<void> {
+    const identifier = `mcp:${serverName}`;
+
+    // delete client info token
+    await deleteToken({
+      userId,
+      type: 'mcp_oauth_client',
+      identifier: `${identifier}:client`,
+    });
+
+    // delete access token
+    await deleteToken({
+      userId,
+      type: 'mcp_oauth',
+      identifier,
+    });
+
+    // delete refresh token
+    await deleteToken({
+      userId,
+      type: 'mcp_oauth_refresh',
+      identifier: `${identifier}:refresh`,
+    });
+  }
 }

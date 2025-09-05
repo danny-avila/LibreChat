@@ -14,6 +14,59 @@ describe('MCPTokenStorage', () => {
     jest.clearAllMocks();
   });
 
+  describe('deleteUserTokens', () => {
+    const userId = '000000001111111122222222';
+    const serverName = 'test-server';
+    let mockDeleteToken: jest.MockedFunction<
+      (filter: { userId: string; type: string; identifier: string }) => Promise<void>
+    >;
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+      mockDeleteToken = jest.fn().mockResolvedValue(undefined);
+    });
+
+    it('should delete all OAuth-related tokens for a user and server', async () => {
+      await MCPTokenStorage.deleteUserTokens({
+        userId,
+        serverName,
+        deleteToken: mockDeleteToken,
+      });
+
+      // Verify all three token types were deleted with correct identifiers
+      expect(mockDeleteToken).toHaveBeenCalledTimes(3);
+      expect(mockDeleteToken).toHaveBeenCalledWith({
+        userId,
+        type: 'mcp_oauth_client',
+        identifier: `mcp:${serverName}:client`,
+      });
+      expect(mockDeleteToken).toHaveBeenCalledWith({
+        userId,
+        type: 'mcp_oauth',
+        identifier: `mcp:${serverName}`,
+      });
+      expect(mockDeleteToken).toHaveBeenCalledWith({
+        userId,
+        type: 'mcp_oauth_refresh',
+        identifier: `mcp:${serverName}:refresh`,
+      });
+    });
+
+    it('should handle deletion errors gracefully', async () => {
+      mockDeleteToken.mockRejectedValueOnce(new Error('Deletion failed'));
+
+      await expect(
+        MCPTokenStorage.deleteUserTokens({
+          userId,
+          serverName,
+          deleteToken: mockDeleteToken,
+        }),
+      ).rejects.toThrow('Deletion failed');
+
+      expect(mockDeleteToken).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('getClientInfoAndMetadata', () => {
     const userId = '000000001111111122222222';
     const serverName = 'test-server';
