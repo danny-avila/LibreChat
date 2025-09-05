@@ -218,7 +218,7 @@ function Avatar({
           </button>
         </Popover.Trigger>
       </div>
-      {/* <stripe> {<AvatarMenu handleFileChange={handleFileChange} />} </stripe> */}
+      {<AvatarMenu handleFileChange={handleFileChange} />}
     </Popover.Root>
   );
 }
