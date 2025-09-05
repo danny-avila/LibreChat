@@ -63,3 +63,16 @@ Create the name of the service account to use
 {{- default "default" .Values.serviceAccount.name }}
 {{- end }}
 {{- end }}
+
+{{/*
+Define apiVersion of HorizontalPodAutoscaler
+*/}}
+{{- define "librechat.hpa.apiVersion" -}}
+{{- if .Capabilities.APIVersions.Has "autoscaling/v2" -}}
+{{- print "autoscaling/v2" -}}
+{{- else if .Capabilities.APIVersions.Has "autoscaling/v2beta2" -}}
+{{- print "autoscaling/v2beta2" -}}
+{{- else -}}
+{{- print "autoscaling/v2beta1" -}}
+{{- end -}}
+{{- end -}}
