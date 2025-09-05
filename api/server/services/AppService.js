@@ -49,6 +49,7 @@ const AppService = async () => {
     enabled: isEnabled(process.env.CHECK_BALANCE),
     startBalance: startBalance ? parseInt(startBalance, 10) : undefined,
   };
+  const transactions = config.transactions ?? configDefaults.transactions;
   const imageOutputType = config?.imageOutputType ?? configDefaults.imageOutputType;
 
   process.env.CDN_PROVIDER = fileStrategy;
@@ -84,6 +85,7 @@ const AppService = async () => {
     memory,
     speech,
     balance,
+    transactions,
     mcpConfig,
     webSearch,
     fileStrategy,

@@ -1,7 +1,7 @@
 import React from 'react';
 import { useLocalize } from '~/hooks';
 import { UIResourceRenderer } from '@mcp-ui/client';
-import UIResourceGrid from './UIResourceGrid';
+import UIResourceCarousel from './UIResourceCarousel';
 import type { UIResource } from '~/common';
 
 function OptimizedCodeBlock({ text, maxHeight = 320 }: { text: string; maxHeight?: number }) {
@@ -57,16 +57,21 @@ export default function ToolCallInfo({
   // Extract ui_resources from the output to display them in the UI
   let uiResources: UIResource[] = [];
   if (output?.includes('ui_resources')) {
-    const parsedOutput = JSON.parse(output);
-    const uiResourcesItem = parsedOutput.find(
-      (contentItem) => contentItem.metadata === 'ui_resources',
-    );
-    if (uiResourcesItem?.text) {
-      uiResources = JSON.parse(atob(uiResourcesItem.text)) as UIResource[];
+    try {
+      const parsedOutput = JSON.parse(output);
+      const uiResourcesItem = parsedOutput.find(
+        (contentItem) => contentItem.metadata?.type === 'ui_resources',
+      );
+      if (uiResourcesItem?.metadata?.data) {
+        uiResources = uiResourcesItem.metadata.data;
+        output = JSON.stringify(
+          parsedOutput.filter((contentItem) => contentItem.metadata?.type !== 'ui_resources'),
+        );
+      }
+    } catch (error) {
+      // If JSON parsing fails, keep original output
+      console.error('Failed to parse output:', error);
     }
-    output = JSON.stringify(
-      parsedOutput.filter((contentItem) => contentItem.metadata !== 'ui_resources'),
-    );
   }
 
   return (
@@ -90,7 +95,7 @@ export default function ToolCallInfo({
               </div>
             )}
             <div>
-              {uiResources.length > 1 && <UIResourceGrid uiResources={uiResources} />}
+              {uiResources.length > 1 && <UIResourceCarousel uiResources={uiResources} />}
 
               {uiResources.length === 1 && (
                 <UIResourceRenderer

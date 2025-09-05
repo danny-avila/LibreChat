@@ -220,6 +220,7 @@ async function setupSaml() {
             getUserName(profile) || getGivenName(profile) || getEmail(profile),
           );
 
+          const appConfig = await getAppConfig();
           if (!user) {
             user = {
               provider: 'saml',
@@ -229,7 +230,6 @@ async function setupSaml() {
               emailVerified: true,
               name: fullName,
             };
-            const appConfig = await getAppConfig();
             const balanceConfig = getBalanceConfig(appConfig);
             user = await createUser(user, balanceConfig, true, true);
           } else {
@@ -250,7 +250,9 @@ async function setupSaml() {
                 fileName = profile.nameID + '.png';
               }
 
-              const { saveBuffer } = getStrategyFunctions(process.env.CDN_PROVIDER);
+              const { saveBuffer } = getStrategyFunctions(
+                appConfig?.fileStrategy ?? process.env.CDN_PROVIDER,
+              );
               const imagePath = await saveBuffer({
                 fileName,
                 userId: user._id.toString(),

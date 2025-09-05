@@ -49,6 +49,7 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
     actions,
     setAction,
     agentsConfig,
+    startupConfig,
     mcpServersMap,
     setActivePanel,
     endpointsConfig,
@@ -308,6 +309,14 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
             {fileSearchEnabled && <FileSearch agent_id={agent_id} files={knowledge_files} />}
           </div>
         )}
+        {/* MCP Section */}
+        {startupConfig?.mcpServers != null && (
+          <MCPTools
+            agentId={agent_id}
+            mcpServerNames={mcpServerNames}
+            setShowMCPToolDialog={setShowMCPToolDialog}
+          />
+        )}
         {/* Agent Tools & Actions */}
         <div className="mb-4">
           <label className={labelClass}>
@@ -375,12 +384,6 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
             </div>
           </div>
         </div>
-        {/* MCP Section */}
-        <MCPTools
-          agentId={agent_id}
-          mcpServerNames={mcpServerNames}
-          setShowMCPToolDialog={setShowMCPToolDialog}
-        />
         {/* Support Contact (Optional) */}
         <div className="mb-4">
           <div className="mb-1.5 flex items-center gap-2">

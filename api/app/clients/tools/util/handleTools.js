@@ -1,9 +1,16 @@
 const { logger } = require('@librechat/data-schemas');
 const { SerpAPI } = require('@langchain/community/tools/serpapi');
 const { Calculator } = require('@langchain/community/tools/calculator');
-const { mcpToolPattern, loadWebSearchAuth } = require('@librechat/api');
+const { mcpToolPattern, loadWebSearchAuth, checkAccess } = require('@librechat/api');
 const { EnvVar, createCodeExecutionTool, createSearchTool } = require('@librechat/agents');
-const { Tools, Constants, EToolResources, replaceSpecialVars } = require('librechat-data-provider');
+const {
+  Tools,
+  Constants,
+  Permissions,
+  EToolResources,
+  PermissionTypes,
+  replaceSpecialVars,
+} = require('librechat-data-provider');
 const {
   availableTools,
   manifestToolMap,
@@ -27,6 +34,7 @@ const { getUserPluginAuthValue } = require('~/server/services/PluginService');
 const { createMCPTool, createMCPTools } = require('~/server/services/MCP');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { getCachedTools } = require('~/server/services/Config');
+const { getRoleByName } = require('~/models/Role');
 
 /**
  * Validates the availability and authentication of tools for a user based on environment variables or user-specific plugin authentication values.
@@ -281,7 +289,29 @@ const loadTools = async ({
         if (toolContext) {
           toolContextMap[tool] = toolContext;
         }
-        return createFileSearchTool({ req: options.req, files, entity_id: agent?.id });
+
+        /** @type {boolean | undefined} Check if user has FILE_CITATIONS permission */
+        let fileCitations;
+        if (fileCitations == null && options.req?.user != null) {
+          try {
+            fileCitations = await checkAccess({
+              user: options.req.user,
+              permissionType: PermissionTypes.FILE_CITATIONS,
+              permissions: [Permissions.USE],
+              getRoleByName,
+            });
+          } catch (error) {
+            logger.error('[handleTools] FILE_CITATIONS permission check failed:', error);
+            fileCitations = false;
+          }
+        }
+
+        return createFileSearchTool({
+          req: options.req,
+          files,
+          entity_id: agent?.id,
+          fileCitations,
+        });
       };
       continue;
     } else if (tool === Tools.web_search) {
