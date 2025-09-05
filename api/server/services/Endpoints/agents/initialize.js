@@ -1,6 +1,10 @@
 const { logger } = require('@librechat/data-schemas');
 const { createContentAggregator } = require('@librechat/agents');
-const { validateAgentModel, getCustomEndpointConfig } = require('@librechat/api');
+const {
+  validateAgentModel,
+  getCustomEndpointConfig,
+  createSequentialChainEdges,
+} = require('@librechat/api');
 const {
   Constants,
   EModelEndpoint,
@@ -156,15 +160,9 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     agentConfigs.set(agentId, config);
   }
 
-  if (agent_ids?.length) {
-    for (const agentId of agent_ids) {
-      await processAgent(agentId);
-    }
-  }
-
-  if ((primaryConfig.edges?.length ?? 0) > 0) {
-    const edges = primaryConfig.edges;
-    const checkAgentInit = (agentId) => agentId === primaryConfig.id || agentConfigs.has(agentId);
+  let edges = primaryConfig.edges;
+  const checkAgentInit = (agentId) => agentId === primaryConfig.id || agentConfigs.has(agentId);
+  if ((edges?.length ?? 0) > 0) {
     for (const edge of edges) {
       if (Array.isArray(edge.to)) {
         for (const to of edge.to) {
@@ -193,6 +191,20 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       }
     }
   }
+
+  if (agent_ids?.length) {
+    for (const agentId of agent_ids) {
+      if (checkAgentInit(agentId)) {
+        continue;
+      }
+      await processAgent(agentId);
+    }
+
+    const chain = await createSequentialChainEdges([primaryConfig.id].concat(agent_ids));
+    edges = edges ? edges.concat(chain) : chain;
+  }
+
+  primaryConfig.edges = edges;
 
   let endpointConfig = appConfig.endpoints?.[primaryConfig.endpoint];
   if (!isAgentsEndpoint(primaryConfig.endpoint) && !endpointConfig) {
