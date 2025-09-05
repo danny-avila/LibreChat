@@ -7,11 +7,12 @@ const {
   createRun,
   Tokenizer,
   checkAccess,
+  logAxiosError,
   resolveHeaders,
   getBalanceConfig,
-  getTransactionsConfig,
   memoryInstructions,
   formatContentStrings,
+  getTransactionsConfig,
   createMemoryProcessor,
 } = require('@librechat/api');
 const {
@@ -88,11 +89,10 @@ function createTokenCounter(encoding) {
 }
 
 function logToolError(graph, error, toolId) {
-  logger.error(
-    '[api/server/controllers/agents/client.js #chatCompletion] Tool Error',
+  logAxiosError({
     error,
-    toolId,
-  );
+    message: `[api/server/controllers/agents/client.js #chatCompletion] Tool Error "${toolId}"`,
+  });
 }
 
 class AgentClient extends BaseClient {
