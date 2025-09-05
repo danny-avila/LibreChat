@@ -6,9 +6,9 @@ const { EnvVar, createCodeExecutionTool, createSearchTool } = require('@librecha
 const {
   Tools,
   Constants,
+  Permissions,
   EToolResources,
   PermissionTypes,
-  Permissions,
   replaceSpecialVars,
 } = require('librechat-data-provider');
 const {
