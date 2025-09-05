@@ -290,9 +290,9 @@ const loadTools = async ({
           toolContextMap[tool] = toolContext;
         }
 
-        // Check if user has FILE_CITATIONS permission
-        let fileCitations = false;
-        if (options.req?.user) {
+        /** @type {boolean | undefined} Check if user has FILE_CITATIONS permission */
+        let fileCitations;
+        if (fileCitations == null && options.req?.user != null) {
           try {
             fileCitations = await checkAccess({
               user: options.req.user,
@@ -301,8 +301,7 @@ const loadTools = async ({
               getRoleByName,
             });
           } catch (error) {
-            logger.debug(`[handleTools] FILE_CITATIONS permission check failed: ${error.message}`);
-            // Default to false if permission check fails
+            logger.error('[handleTools] FILE_CITATIONS permission check failed:', error);
             fileCitations = false;
           }
         }

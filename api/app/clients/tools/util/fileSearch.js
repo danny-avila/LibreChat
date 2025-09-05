@@ -159,7 +159,7 @@ const createFileSearchTool = async ({ req, files, entity_id, fileCitations = fal
         pageRelevance: result.page ? { [result.page]: 1.0 - result.distance } : {},
       }));
 
-      return [formattedString, { [Tools.file_search]: { sources } }];
+      return [formattedString, { [Tools.file_search]: { sources, fileCitations } }];
     },
     {
       name: Tools.file_search,
