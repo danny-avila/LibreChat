@@ -192,6 +192,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     }
   }
 
+  /** @deprecated Agent Chain */
   if (agent_ids?.length) {
     for (const agentId of agent_ids) {
       if (checkAgentInit(agentId)) {

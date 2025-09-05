@@ -7,6 +7,7 @@ const DEFAULT_PROMPT_TEMPLATE = `Based on the following conversation and analysi
 /**
  * Helper function to create sequential chain edges with buffer string prompts
  *
+ * @deprecated Agent Chain helper
  * @param agentIds - Array of agent IDs in order of execution
  * @param promptTemplate - Optional prompt template string; defaults to a predefined template if not provided
  * @returns Array of edges configured for sequential chain with buffer prompts

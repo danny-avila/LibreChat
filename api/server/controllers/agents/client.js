@@ -867,6 +867,9 @@ class AgentClient extends BaseClient {
         if (userMCPAuthMap != null) {
           config.configurable.userMCPAuthMap = userMCPAuthMap;
         }
+
+        /** @deprecated Agent Chain */
+        config.configurable.last_agent_id = agents[agents.length - 1].id;
         await run.processStream({ messages }, config, {
           callbacks: {
             [Callback.TOOL_ERROR]: logToolError,
@@ -877,6 +880,20 @@ class AgentClient extends BaseClient {
       };
 
       await runAgents(initialMessages);
+      /** @deprecated Agent Chain */
+      if (config.configurable.hide_sequential_outputs) {
+        this.contentParts = this.contentParts.filter((part, index) => {
+          // Include parts that are either:
+          // 1. At or after the finalContentStart index
+          // 2. Of type tool_call
+          // 3. Have tool_call_ids property
+          return (
+            index >= this.contentParts.length - 1 ||
+            part.type === ContentTypes.TOOL_CALL ||
+            part.tool_call_ids
+          );
+        });
+      }
 
       try {
         const attachments = await this.awaitMemoryWithTimeout(memoryPromise);
