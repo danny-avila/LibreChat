@@ -194,7 +194,6 @@ async function createTransaction(_txData) {
     return;
   }
 
-  // Check if transactions are disabled
   if (transactions?.enabled === false) {
     return;
   }
@@ -228,7 +227,6 @@ async function createTransaction(_txData) {
  */
 async function createStructuredTransaction(_txData) {
   const { balance, transactions, ...txData } = _txData;
-  // Check if transactions are disabled
   if (transactions?.enabled === false) {
     return;
   }
