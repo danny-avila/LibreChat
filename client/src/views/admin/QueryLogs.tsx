@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '~/components/u
 import { ArrowLeft, Info } from 'lucide-react';
 import { debounce } from 'lodash';
 import moment from 'moment';
-
+import QueryLogDetailsDialog from './QueryLogDetailsDialog';
 
 interface QueryLog {
   _id: string;
@@ -387,90 +387,7 @@ const QueryLogs: React.FC = () => {
     )}
 
     {/* Log Detail Dialog */}
-    <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-      <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto border border-border-light shadow-xl">
-        <DialogHeader className="border-b border-border-light pb-3 pt-2">
-          <DialogTitle className="flex items-start justify-between text-base font-semibold">
-            <div className="flex items-center gap-2">
-              <span
-                className={`rounded-full p-1.5 ${
-                  selectedLog?.role === 'ai'
-                    ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300'
-                    : 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300'
-                }`}
-              >
-                {selectedLog?.role === 'ai' ? (
-                  <Info className="h-4 w-4" />
-                ) : (
-                  <ArrowLeft className="h-4 w-4" />
-                )}
-              </span>
-              <span className="text-foreground">Query Log Details</span>
-            </div>
-          </DialogTitle>
-        </DialogHeader>
-
-        {selectedLog && (
-          <div className="space-y-6 p-4 text-sm text-foreground">
-            {/* User Info */}
-            <div className="grid grid-cols-2 gap-4">
-              <div className="flex flex-col gap-1">
-                <label className="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">User</label>
-                <div className="rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 shadow-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
-                  {selectedLog.user?.name ?? 'Unknown'}
-                  <div className="text-xs text-muted-foreground">{selectedLog.user?.email ?? 'N/A'}</div>
-                </div>
-              </div>
-              
-              <div className="flex flex-col gap-1">
-                <label className="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Role</label>
-                <div className="rounded-md border border-gray-200 bg-white px-3 py-2 shadow-sm dark:border-gray-700 dark:bg-gray-800">
-                  <span
-                    className={`inline-block rounded px-2 py-0.5 text-xs font-semibold ${
-                      selectedLog.role === 'ai'
-                        ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300'
-                        : 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300'
-                    }`}
-                  >
-                    {selectedLog.role === 'ai' ? 'AI' : 'User'}
-                  </span>
-                </div>
-              </div>
-
-              <div className="flex flex-col gap-1">
-                <label className="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Model</label>
-                <div className="rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 shadow-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
-                  {selectedLog.model ?? '—'}
-                </div>
-              </div>
-
-              <div className="flex flex-col gap-1">
-                <label className="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Tokens</label>
-                <div className="rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 shadow-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
-                  {selectedLog.tokenCount ?? 0}
-                </div>
-              </div>
-
-              <div className="flex flex-col gap-1 col-span-2">
-                <label className="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Timestamp</label>
-                <div className="rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 shadow-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
-                  {moment(selectedLog.createdAt).format('Do MMMM YYYY, h:mm:ss a')}
-                </div>
-              </div>
-            </div>
-
-
-            {/* Message Content */}
-            <div>
-              <p className="text-muted-foreground font-medium mb-2">Message</p>
-              <div className="max-h-60 overflow-y-auto whitespace-pre-wrap rounded-md border bg-muted p-3 text-sm text-muted-foreground dark:bg-muted/50">
-                {selectedLog.text || 'No message available'}
-              </div>
-            </div>
-          </div>
-        )}
-      </DialogContent>
-    </Dialog>
+    <QueryLogDetailsDialog dialogOpen={dialogOpen}setDialogOpen={setDialogOpen}selectedLog={selectedLog}/>
   </div>
 );
 

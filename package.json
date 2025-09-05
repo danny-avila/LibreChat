@@ -145,11 +145,14 @@
     ]
   },
   "dependencies": {
+    "@radix-ui/react-dialog": "^1.1.15",
     "dedent": "^1.6.0",
     "event-source-polyfill": "^1.0.31",
     "ioredis": "^5.7.0",
     "lodash": "^4.17.21",
     "lucide-react": "^0.541.0",
-    "moment": "^2.30.1"
+    "moment": "^2.30.1",
+    "react-markdown": "^10.1.0",
+    "react-syntax-highlighter": "^15.6.6"
   }
 }
