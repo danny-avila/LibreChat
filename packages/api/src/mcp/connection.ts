@@ -1,4 +1,5 @@
 import { EventEmitter } from 'events';
+import { fetch as undiciFetch, Agent } from 'undici';
 import {
   StdioClientTransport,
   getDefaultEnvironment,
@@ -11,9 +12,16 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { logger } from '@librechat/data-schemas';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js';
+import type {
+  RequestInit as UndiciRequestInit,
+  RequestInfo as UndiciRequestInfo,
+  Response as UndiciResponse,
+} from 'undici';
 import type { MCPOAuthTokens } from './oauth/types';
 import { mcpConfig } from './mcpConfig';
 import type * as t from './types';
+
+type FetchLike = (url: string | URL, init?: RequestInit) => Promise<Response>;
 
 function isStdioOptions(options: t.MCPOptions): options is t.StdioOptions {
   return 'command' in options;
@@ -141,11 +149,18 @@ export class MCPConnection extends EventEmitter {
    */
   private createFetchFunction(
     getHeaders: () => Record<string, string> | null | undefined,
-  ): (input: RequestInfo | URL, init?: RequestInit) => Promise<Response> {
-    return function customFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  ): (input: UndiciRequestInfo, init?: UndiciRequestInit) => Promise<UndiciResponse> {
+    return function customFetch(
+      input: UndiciRequestInfo,
+      init?: UndiciRequestInit,
+    ): Promise<UndiciResponse> {
       const requestHeaders = getHeaders();
+      const agent = new Agent({
+        bodyTimeout: 0,
+        headersTimeout: 0,
+      });
       if (!requestHeaders) {
-        return fetch(input, init);
+        return undiciFetch(input, { ...init, dispatcher: agent });
       }
 
       let initHeaders: Record<string, string> = {};
@@ -159,12 +174,13 @@ export class MCPConnection extends EventEmitter {
         }
       }
 
-      return fetch(input, {
+      return undiciFetch(input, {
         ...init,
         headers: {
           ...initHeaders,
           ...requestHeaders,
         },
+        dispatcher: agent,
       });
     };
   }
@@ -235,13 +251,20 @@ export class MCPConnection extends EventEmitter {
             eventSourceInit: {
               fetch: (url, init) => {
                 const fetchHeaders = new Headers(Object.assign({}, init?.headers, headers));
-                return fetch(url, {
+                const agent = new Agent({
+                  bodyTimeout: 0,
+                  headersTimeout: 0,
+                });
+                return undiciFetch(url, {
                   ...init,
+                  dispatcher: agent,
                   headers: fetchHeaders,
                 });
               },
             },
-            fetch: this.createFetchFunction(this.getRequestHeaders.bind(this)),
+            fetch: this.createFetchFunction(
+              this.getRequestHeaders.bind(this),
+            ) as unknown as FetchLike,
           });
 
           transport.onclose = () => {
@@ -279,7 +302,9 @@ export class MCPConnection extends EventEmitter {
               headers,
               signal: abortController.signal,
             },
-            fetch: this.createFetchFunction(this.getRequestHeaders.bind(this)),
+            fetch: this.createFetchFunction(
+              this.getRequestHeaders.bind(this),
+            ) as unknown as FetchLike,
           });
 
           transport.onclose = () => {
