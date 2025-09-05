@@ -662,12 +662,10 @@ export class MCPOAuthHandler {
     logger.debug(`[MCPOAuth] Revoking tokens for ${serverName}`);
 
     // build the revoke URL, falling back to the server URL + /revoke if no revocation endpoint is provided
-    let revokeUrl: URL;
-    if (metadata.revocationEndpoint != null) {
-      revokeUrl = new URL(metadata.revocationEndpoint);
-    } else {
-      revokeUrl = new URL('/revoke', metadata.serverUrl);
-    }
+    const revokeUrl: URL =
+      metadata.revocationEndpoint != null
+        ? new URL(metadata.revocationEndpoint)
+        : new URL('/revoke', metadata.serverUrl);
 
     // detect auth method to use
     const authMethods = metadata.revocationEndpointAuthMethodsSupported ?? [
