@@ -60,66 +60,89 @@ function createValidateImageRequest(secureImageLinks) {
    * Must be set by `secureImageLinks` via custom config file.
    */
   return async function validateImageRequest(req, res, next) {
-    const cookieHeader = req.headers.cookie;
-    if (!cookieHeader) {
-      logger.warn('[validateImageRequest] No cookies provided');
-      return res.status(401).send('Unauthorized');
-    }
+    try {
+      const cookieHeader = req.headers.cookie;
+      if (!cookieHeader) {
+        logger.warn('[validateImageRequest] No cookies provided');
+        return res.status(401).send('Unauthorized');
+      }
 
-    const parsedCookies = cookies.parse(cookieHeader);
-    const refreshToken = parsedCookies.refreshToken;
+      const parsedCookies = cookies.parse(cookieHeader);
+      const refreshToken = parsedCookies.refreshToken;
 
-    if (!refreshToken) {
-      logger.warn('[validateImageRequest] Token not provided');
-      return res.status(401).send('Unauthorized');
-    }
+      if (!refreshToken) {
+        logger.warn('[validateImageRequest] Token not provided');
+        return res.status(401).send('Unauthorized');
+      }
 
-    const tokenProvider = parsedCookies.token_provider;
-    let userIdForPath;
+      const tokenProvider = parsedCookies.token_provider;
+      let userIdForPath;
 
-    if (tokenProvider === 'openid' && isEnabled(process.env.OPENID_REUSE_TOKENS)) {
-      const openidUserId = parsedCookies.openid_user_id;
-      if (!openidUserId) {
-        logger.warn('[validateImageRequest] No OpenID user ID cookie found');
+      if (tokenProvider === 'openid' && isEnabled(process.env.OPENID_REUSE_TOKENS)) {
+        const openidUserId = parsedCookies.openid_user_id;
+        if (!openidUserId) {
+          logger.warn('[validateImageRequest] No OpenID user ID cookie found');
+          return res.status(403).send('Access Denied');
+        }
+
+        const validationResult = validateToken(openidUserId);
+        if (!validationResult.valid) {
+          logger.warn(`[validateImageRequest] ${validationResult.error}`);
+          return res.status(403).send('Access Denied');
+        }
+        userIdForPath = validationResult.userId;
+      } else {
+        const validationResult = validateToken(refreshToken);
+        if (!validationResult.valid) {
+          logger.warn(`[validateImageRequest] ${validationResult.error}`);
+          return res.status(403).send('Access Denied');
+        }
+        userIdForPath = validationResult.userId;
+      }
+
+      if (!userIdForPath) {
+        logger.warn('[validateImageRequest] No user ID available for path validation');
         return res.status(403).send('Access Denied');
       }
 
-      const validationResult = validateToken(openidUserId);
-      if (!validationResult.valid) {
-        logger.warn(`[validateImageRequest] ${validationResult.error}`);
+      const MAX_URL_LENGTH = 2048;
+      if (req.originalUrl.length > MAX_URL_LENGTH) {
+        logger.warn('[validateImageRequest] URL too long');
         return res.status(403).send('Access Denied');
       }
-      userIdForPath = validationResult.userId;
-    } else {
-      const validationResult = validateToken(refreshToken);
-      if (!validationResult.valid) {
-        logger.warn(`[validateImageRequest] ${validationResult.error}`);
+
+      if (req.originalUrl.includes('\x00')) {
+        logger.warn('[validateImageRequest] URL contains null byte');
         return res.status(403).send('Access Denied');
       }
-      userIdForPath = validationResult.userId;
-    }
 
-    if (!userIdForPath) {
-      logger.warn('[validateImageRequest] No user ID available for path validation');
-      return res.status(403).send('Access Denied');
-    }
+      let fullPath;
+      try {
+        fullPath = decodeURIComponent(req.originalUrl);
+      } catch {
+        logger.warn('[validateImageRequest] Invalid URL encoding');
+        return res.status(403).send('Access Denied');
+      }
 
-    const fullPath = decodeURIComponent(req.originalUrl);
-    const agentAvatarPattern = /^\/images\/[a-f0-9]{24}\/agent-[^/]*$/;
-    if (agentAvatarPattern.test(fullPath)) {
-      logger.debug('[validateImageRequest] Image request validated');
-      return next();
-    }
+      const agentAvatarPattern = /^\/images\/[a-f0-9]{24}\/agent-[^/]*$/;
+      if (agentAvatarPattern.test(fullPath)) {
+        logger.debug('[validateImageRequest] Image request validated');
+        return next();
+      }
 
-    const escapedUserId = userIdForPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const pathPattern = new RegExp(`^/images/${escapedUserId}/[^/]+$`);
+      const escapedUserId = userIdForPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const pathPattern = new RegExp(`^/images/${escapedUserId}/[^/]+$`);
 
-    if (pathPattern.test(fullPath)) {
-      logger.debug('[validateImageRequest] Image request validated');
-      next();
-    } else {
-      logger.warn('[validateImageRequest] Invalid image path');
-      res.status(403).send('Access Denied');
+      if (pathPattern.test(fullPath)) {
+        logger.debug('[validateImageRequest] Image request validated');
+        next();
+      } else {
+        logger.warn('[validateImageRequest] Invalid image path');
+        res.status(403).send('Access Denied');
+      }
+    } catch (error) {
+      logger.error('[validateImageRequest] Error:', error);
+      res.status(500).send('Internal Server Error');
     }
   };
 }
