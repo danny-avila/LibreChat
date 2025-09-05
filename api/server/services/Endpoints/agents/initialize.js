@@ -200,7 +200,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       await processAgent(agentId);
     }
 
-    const chain = await createSequentialChainEdges([primaryConfig.id].concat(agent_ids));
+    const chain = await createSequentialChainEdges([primaryConfig.id].concat(agent_ids), '{convo}');
     edges = edges ? edges.concat(chain) : chain;
   }
 
