@@ -17,9 +17,6 @@ export async function findOpenIDUser({
   strategyName?: string;
 }): Promise<{ user: IUser | null; error: string | null; migration: boolean }> {
   let user = await findUser({ openidId });
-  logger.info(`[${strategyName}] user ${user ? 'found' : 'not found'} with openidId: ${openidId}`);
-
-  // If user not found by openidId, try to find by email
   if (!user && email) {
     user = await findUser({ email });
     logger.warn(

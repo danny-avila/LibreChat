@@ -183,7 +183,7 @@ const getUserInfo = async (config, accessToken, sub) => {
     const exchangedAccessToken = await exchangeAccessTokenIfNeeded(config, accessToken, sub);
     return await client.fetchUserInfo(config, exchangedAccessToken, sub);
   } catch (error) {
-    logger.warn(`[openidStrategy] getUserInfo: Error fetching user info: ${error}`);
+    logger.error('[openidStrategy] getUserInfo: Error fetching user info:', error);
     return null;
   }
 };
