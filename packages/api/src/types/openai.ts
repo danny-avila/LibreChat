@@ -14,11 +14,11 @@ export type OpenAIParameters = z.infer<typeof openAISchema>;
 export interface OpenAIConfigOptions {
   modelOptions?: Partial<OpenAIParameters>;
   directEndpoint?: boolean;
-  reverseProxyUrl?: string;
+  reverseProxyUrl?: string | null;
   defaultQuery?: Record<string, string | undefined>;
   headers?: Record<string, string>;
-  proxy?: string;
-  azure?: AzureOptions;
+  proxy?: string | null;
+  azure?: false | AzureOptions;
   streaming?: boolean;
   addParams?: Record<string, unknown>;
   dropParams?: string[];
