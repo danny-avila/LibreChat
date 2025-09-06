@@ -21,7 +21,7 @@ export function loadWebSearchConfig(
   const firecrawlApiKey = config?.firecrawlApiKey ?? '${FIRECRAWL_API_KEY}';
   const firecrawlApiUrl = config?.firecrawlApiUrl ?? '${FIRECRAWL_API_URL}';
   const jinaApiKey = config?.jinaApiKey ?? '${JINA_API_KEY}';
-  const jinaApiUrl = config?.jinaApiUrl ?? (process.env.JINA_API_URL || 'https://api.jina.ai/v1/rerank');
+  const jinaApiUrl = config?.jinaApiUrl ?? '${JINA_API_URL}';
   const cohereApiKey = config?.cohereApiKey ?? '${COHERE_API_KEY}';
   const safeSearch = config?.safeSearch ?? SafeSearchTypes.MODERATE;
 
@@ -73,7 +73,7 @@ export const webSearchAuth = {
     },
   },
   rerankers: {
-    jina: { 
+    jina: {
       jinaApiKey: 1 as const,
       /** Optional (0) */
       jinaApiUrl: 0 as const,
