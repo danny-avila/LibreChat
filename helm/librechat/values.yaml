@@ -88,6 +88,14 @@ librechat:
 
   # name of existing Yaml configmap, key must be librechat.yaml
   existingConfigYaml: ""
+  serviceAccount:
+    # If you want to disable the automountServiceAccountToken, set it to false
+    automountServiceAccountToken: true
+    # If you want to add annotations to the service account, you can do so here
+    # Example:
+    # annotations:
+    # - iam.amazonaws.com/role: arn:aws:iam::<account_id>:role/<role_name>
+    annotations: {}
 
   # Volume used to store image Files uploaded to the Web UI
   imageVolume:
