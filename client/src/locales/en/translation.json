@@ -1262,10 +1262,11 @@
   "com_ui_web_search_reranker_cohere_key": "Get your Cohere API key",
   "com_ui_web_search_reranker_jina": "Jina AI",
   "com_ui_web_search_reranker_jina_key": "Get your Jina API key",
-  "com_ui_web_search_jina_url": "Jina API URL (optional)",
+  "com_ui_web_search_reranker_jina_url_help": "Learn about Jina Rerank API",
   "com_ui_web_search_scraper": "Scraper",
   "com_ui_web_search_scraper_firecrawl": "Firecrawl API",
   "com_ui_web_search_scraper_firecrawl_key": "Get your Firecrawl API key",
+  "com_ui_web_search_jina_url": "Jina API URL (optional)",
   "com_ui_web_search_searxng_api_key": "Enter SearXNG API Key (optional)",
   "com_ui_web_search_searxng_instance_url": "SearXNG Instance URL",
   "com_ui_web_searching": "Searching the web",
@@ -1275,8 +1276,5 @@
   "com_ui_x_selected": "{{0}} selected",
   "com_ui_yes": "Yes",
   "com_ui_zoom": "Zoom",
-  "com_ui_mcp_configure_server": "Configure {{0}}",
-  "com_ui_mcp_configure_server_description": "Configure custom variables for {{0}}",
-  "com_user_message": "You",
-  "com_ui_web_search_reranker_jina_url_help": "Learn about Jina Rerank API"
+  "com_user_message": "You"
 }
