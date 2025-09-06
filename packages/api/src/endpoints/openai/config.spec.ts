@@ -1,7 +1,8 @@
 import { Verbosity, ReasoningEffort, ReasoningSummary } from 'librechat-data-provider';
 import type { RequestInit } from 'undici';
 import type { OpenAIParameters, AzureOptions } from '~/types';
-import { getOpenAIConfig, knownOpenAIParams } from './llm';
+import { getOpenAIConfig } from './config';
+import { knownOpenAIParams } from './llm';
 
 describe('getOpenAIConfig', () => {
   const mockApiKey = 'test-api-key';

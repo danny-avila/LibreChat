@@ -1,7 +1,7 @@
 const { v4 } = require('uuid');
 const { sleep } = require('@librechat/agents');
 const { logger } = require('@librechat/data-schemas');
-const { sendEvent, getBalanceConfig } = require('@librechat/api');
+const { sendEvent, getBalanceConfig, getModelMaxTokens } = require('@librechat/api');
 const {
   Time,
   Constants,
@@ -34,7 +34,6 @@ const { checkBalance } = require('~/models/balanceMethods');
 const { getConvo } = require('~/models/Conversation');
 const getLogStores = require('~/cache/getLogStores');
 const { countTokens } = require('~/server/utils');
-const { getModelMaxTokens } = require('~/utils');
 const { getOpenAIClient } = require('./helpers');
 
 /**
