@@ -60,7 +60,9 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, onClick, className = '' })
               detail: { id: agent.id, favorited: false },
             }),
           );
-        } catch {}
+        } catch (_err) {
+          void 0;
+        }
       } else {
         const { dataService } = await import('librechat-data-provider');
         const res = await dataService.addFavoriteAgent(agent.id);
@@ -72,7 +74,9 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, onClick, className = '' })
               detail: { id: agent.id, favorited: true },
             }),
           );
-        } catch {}
+        } catch (_err) {
+          void 0;
+        }
       }
     } catch (_err) {
       // ignore

@@ -93,7 +93,9 @@ export function ModelSelectorProvider({ children, startupConfig }: ModelSelector
   );
 
   // Fetch favorites list (IDs), used to flag favorites inside mapped endpoints
-  const { data: favoriteData, refetch: refetchFavorites } = useFavoriteAgentsQuery({ enabled: true });
+  const { data: favoriteData, refetch: refetchFavorites } = useFavoriteAgentsQuery({
+    enabled: true,
+  });
 
   // Fetch favorite agents by IDs with VIEW permission to include in dropdown
   const favoriteIds = useMemo(() => favoriteData?.favoriteAgents ?? [], [favoriteData]);

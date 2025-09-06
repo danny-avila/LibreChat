@@ -76,7 +76,9 @@ export function EndpointModelItem({ modelId, endpoint, isSelected }: EndpointMod
                       detail: { id: modelId, favorited: false },
                     }),
                   );
-                } catch {}
+                } catch (_err) {
+                  void 0;
+                }
               } else {
                 const { dataService } = await import('librechat-data-provider');
                 const res = await dataService.addFavoriteAgent(modelId);
@@ -88,7 +90,9 @@ export function EndpointModelItem({ modelId, endpoint, isSelected }: EndpointMod
                       detail: { id: modelId, favorited: true },
                     }),
                   );
-                } catch {}
+                } catch (_err) {
+                  void 0;
+                }
               }
             } catch (_err) {
               // ignore
