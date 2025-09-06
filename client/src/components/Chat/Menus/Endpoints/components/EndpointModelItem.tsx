@@ -1,5 +1,5 @@
 import React from 'react';
-import { isAgentsEndpoint, isAssistantsEndpoint, QueryKeys, dataService } from 'librechat-data-provider';
+import { isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
 import type { Endpoint } from '~/common';
 import { useModelSelectorContext } from '../ModelSelectorContext';
 import { CustomMenuItem as MenuItem } from '../CustomMenu';
@@ -66,6 +66,7 @@ export function EndpointModelItem({ modelId, endpoint, isSelected }: EndpointMod
             e.stopPropagation();
             try {
               if (favorited) {
+                const { dataService, QueryKeys } = await import('librechat-data-provider');
                 const res = await dataService.removeFavoriteAgent(modelId);
                 queryClient?.setQueryData?.([QueryKeys.user, 'favoriteAgents'], res);
                 setFavorited(false);
@@ -79,6 +80,7 @@ export function EndpointModelItem({ modelId, endpoint, isSelected }: EndpointMod
                   void 0;
                 }
               } else {
+                const { dataService, QueryKeys } = await import('librechat-data-provider');
                 const res = await dataService.addFavoriteAgent(modelId);
                 queryClient?.setQueryData?.([QueryKeys.user, 'favoriteAgents'], res);
                 setFavorited(true);
