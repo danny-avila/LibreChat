@@ -459,6 +459,16 @@ export const listAgents = (params: a.AgentListParams): Promise<a.AgentListRespon
   );
 };
 
+/* Favorites */
+export const getFavoriteAgents = (): Promise<{ favoriteAgents: string[] }> =>
+  request.get(endpoints.userFavoritesAgents());
+
+export const addFavoriteAgent = (agent_id: string): Promise<{ favoriteAgents: string[] }> =>
+  request.post(endpoints.userFavoritesAgents(), { agent_id });
+
+export const removeFavoriteAgent = (agent_id: string): Promise<{ favoriteAgents: string[] }> =>
+  request.delete(endpoints.userFavoriteAgent(agent_id));
+
 export const revertAgentVersion = ({
   agent_id,
   version_index,

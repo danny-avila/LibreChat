@@ -1,5 +1,8 @@
 import React, { useMemo } from 'react';
 import { Label } from '@librechat/client';
+import { Star } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
+import { QueryKeys, dataService } from 'librechat-data-provider';
 import type t from 'librechat-data-provider';
 import { useLocalize, TranslationKeys, useAgentCategories } from '~/hooks';
 import { cn, renderAgentAvatar, getContactDisplayName } from '~/utils';
@@ -16,6 +19,27 @@ interface AgentCardProps {
 const AgentCard: React.FC<AgentCardProps> = ({ agent, onClick, className = '' }) => {
   const localize = useLocalize();
   const { categories } = useAgentCategories();
+  const queryClient = useQueryClient();
+
+  const favoriteIds =
+    queryClient.getQueryData<{ favoriteAgents: string[] }>([QueryKeys.user, 'favoriteAgents'])
+      ?.favoriteAgents ?? [];
+  const isFavorite = favoriteIds.includes(agent.id);
+
+  const toggleFavorite = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      if (isFavorite) {
+        const res = await dataService.removeFavoriteAgent(agent.id);
+        queryClient.setQueryData([QueryKeys.user, 'favoriteAgents'], res);
+      } else {
+        const res = await dataService.addFavoriteAgent(agent.id);
+        queryClient.setQueryData([QueryKeys.user, 'favoriteAgents'], res);
+      }
+    } catch (err) {
+      // no-op
+    }
+  };
 
   const categoryLabel = useMemo(() => {
     if (!agent.category) return '';
@@ -55,6 +79,14 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, onClick, className = '' })
         }
       }}
     >
+      {/* Favorite toggle */}
+      <button
+        aria-label={isFavorite ? 'Unfavorite agent' : 'Favorite agent'}
+        onClick={toggleFavorite}
+        className="absolute right-3 top-3 rounded-full p-1 hover:bg-surface-hover"
+      >
+        <Star className={`size-4 ${isFavorite ? 'fill-yellow-400 text-yellow-400' : 'text-text-secondary'}`} />
+      </button>
       {/* Two column layout */}
       <div className="flex h-full items-start gap-3">
         {/* Left column: Avatar and Category */}

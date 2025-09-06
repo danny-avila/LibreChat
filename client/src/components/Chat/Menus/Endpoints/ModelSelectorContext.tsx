@@ -1,6 +1,6 @@
 import debounce from 'lodash/debounce';
 import React, { createContext, useContext, useState, useMemo } from 'react';
-import { EModelEndpoint, isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint, isAgentsEndpoint, isAssistantsEndpoint, PermissionBits } from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
 import type { Endpoint, SelectedValues } from '~/common';
 import {
@@ -11,6 +11,7 @@ import {
 } from '~/hooks';
 import { useAgentsMapContext, useAssistantsMapContext } from '~/Providers';
 import { useGetEndpointsQuery, useListAgentsQuery } from '~/data-provider';
+import { useFavoriteAgentsQuery } from '~/data-provider/Agents/queries';
 import { useModelSelectorChatContext } from './ModelSelectorChatContext';
 import useSelectMention from '~/hooks/Input/useSelectMention';
 import { filterItems } from './utils';
@@ -86,12 +87,64 @@ export function ModelSelectorProvider({ children, startupConfig }: ModelSelector
     },
   );
 
+  // Fetch favorites list (IDs), used to flag favorites inside mapped endpoints
+  const { data: favoriteData } = useFavoriteAgentsQuery({ enabled: true });
+
+  // Fetch favorite agents by IDs with VIEW permission to include in dropdown
+  const favoriteIds = favoriteData?.favoriteAgents ?? [];
+  const { data: favoriteAgentsList = null } = useListAgentsQuery(
+    favoriteIds.length > 0
+      ? { requiredPermission: PermissionBits.VIEW, ids: favoriteIds.join(',') }
+      : { requiredPermission: PermissionBits.VIEW, limit: 0 },
+    {
+      select: (data) => data?.data,
+      enabled: favoriteIds.length > 0,
+    },
+  );
+
+  // Merge EDIT-owned agents with VIEW-only favorites
+  const combinedAgents = useMemo(() => {
+    const base = agents ?? [];
+    const extras = favoriteAgentsList ?? [];
+    if (extras.length === 0) {
+      return base;
+    }
+    const seen = new Set(base.map((a) => a.id));
+    const merged = base.slice();
+    for (const a of extras) {
+      if (!seen.has(a.id)) {
+        merged.push(a);
+      }
+    }
+    return merged;
+  }, [agents, favoriteAgentsList]);
+
   const { mappedEndpoints, endpointRequiresUserKey } = useEndpoints({
-    agents,
+    agents: combinedAgents,
     assistantsMap,
     startupConfig,
     endpointsConfig,
   });
+
+  // Inject favorites map for agents endpoint for quick toggling in items
+  const enhancedEndpoints = useMemo(() => {
+    if (!mappedEndpoints) return mappedEndpoints;
+    const favoritesSet: Set<string> = new Set<string>(favoriteIds as string[]);
+    return mappedEndpoints.map((ep) => {
+      if (ep.value === EModelEndpoint.agents) {
+        const clone: any = { ...ep };
+        clone.favoriteAgentIds = Array.from(favoritesSet).reduce(
+          (acc: Record<string, true>, id: string) => {
+            acc[id] = true;
+            return acc;
+          },
+          {} as Record<string, true>,
+        );
+        return clone as typeof ep;
+      }
+      return ep;
+    });
+  }, [mappedEndpoints, favoriteIds]);
 
   const { onSelectEndpoint, onSelectSpec } = useSelectMention({
     // presets,
@@ -210,7 +263,7 @@ export function ModelSelectorProvider({ children, startupConfig }: ModelSelector
     agentsMap,
     modelSpecs,
     assistantsMap,
-    mappedEndpoints,
+    mappedEndpoints: enhancedEndpoints ?? mappedEndpoints,
     endpointsConfig,
 
     // Functions

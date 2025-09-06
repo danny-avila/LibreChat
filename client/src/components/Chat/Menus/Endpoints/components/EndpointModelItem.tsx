@@ -4,6 +4,9 @@ import { isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider'
 import type { Endpoint } from '~/common';
 import { useModelSelectorContext } from '../ModelSelectorContext';
 import { CustomMenuItem as MenuItem } from '../CustomMenu';
+import { Star } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
+import { QueryKeys, dataService } from 'librechat-data-provider';
 
 interface EndpointModelItemProps {
   modelId: string | null;
@@ -13,9 +16,12 @@ interface EndpointModelItemProps {
 
 export function EndpointModelItem({ modelId, endpoint, isSelected }: EndpointModelItemProps) {
   const { handleSelectModel } = useModelSelectorContext();
+  const queryClient = useQueryClient();
   let isGlobal = false;
   let modelName = modelId;
   const avatarUrl = endpoint?.modelIcons?.[modelId ?? ''] || null;
+  const favoritesMap: Record<string, true> | undefined = (endpoint as any).favoriteAgentIds;
+  const isFavorite = !!(favoritesMap && modelId && favoritesMap[modelId]);
 
   // Use custom names if available
   if (endpoint && modelId && isAgentsEndpoint(endpoint.value) && endpoint.agentNames?.[modelId]) {
@@ -52,6 +58,26 @@ export function EndpointModelItem({ modelId, endpoint, isSelected }: EndpointMod
         <span>{modelName}</span>
       </div>
       {isGlobal && <EarthIcon className="ml-auto size-4 text-green-400" />}
+      {isAgentsEndpoint(endpoint.value) && modelId && (
+        <button
+          aria-label={isFavorite ? 'Unfavorite agent' : 'Favorite agent'}
+          className="ml-2"
+          onClick={async (e) => {
+            e.stopPropagation();
+            try {
+              if (isFavorite) {
+                const res = await dataService.removeFavoriteAgent(modelId);
+                queryClient.setQueryData([QueryKeys.user, 'favoriteAgents'], res);
+              } else {
+                const res = await dataService.addFavoriteAgent(modelId);
+                queryClient.setQueryData([QueryKeys.user, 'favoriteAgents'], res);
+              }
+            } catch {}
+          }}
+        >
+          <Star className={`size-4 ${isFavorite ? 'fill-yellow-400 text-yellow-400' : 'text-text-secondary'}`} />
+        </button>
+      )}
       {isSelected && (
         <svg
           width="16"
@@ -79,7 +105,16 @@ export function renderEndpointModels(
   selectedModel: string | null,
   filteredModels?: string[],
 ) {
-  const modelsToRender = filteredModels || models.map((model) => model.name);
+  let modelsToRender = filteredModels || models.map((model) => model.name);
+  const favoritesMap: Record<string, true> | undefined = (endpoint as any)?.favoriteAgentIds;
+  if (favoritesMap) {
+    modelsToRender = [...modelsToRender].sort((a, b) => {
+      const af = favoritesMap[a] ? 1 : 0;
+      const bf = favoritesMap[b] ? 1 : 0;
+      if (af !== bf) return bf - af; // favorites first
+      return a.localeCompare(b);
+    });
+  }
 
   return modelsToRender.map(
     (modelId) =>

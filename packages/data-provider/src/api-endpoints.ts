@@ -41,6 +41,8 @@ const buildQuery = (params: Record<string, unknown>): string => {
 
 export const health = () => `${BASE_URL}/health`;
 export const user = () => `${BASE_URL}/api/user`;
+export const userFavoritesAgents = () => `${user()}/favorites/agents`;
+export const userFavoriteAgent = (agentId: string) => `${userFavoritesAgents()}/${agentId}`;
 
 export const balance = () => `${BASE_URL}/api/balance`;
 

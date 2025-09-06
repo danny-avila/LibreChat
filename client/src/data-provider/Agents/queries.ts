@@ -60,6 +60,24 @@ export const useListAgentsQuery = <TData = t.AgentListResponse>(
   );
 };
 
+/** Favorites hooks */
+export const useFavoriteAgentsQuery = (
+  config?: UseQueryOptions<{ favoriteAgents: string[] }>,
+): QueryObserverResult<{ favoriteAgents: string[] }> => {
+  return useQuery<{ favoriteAgents: string[] }>(
+    [QueryKeys.user, 'favoriteAgents'],
+    () => dataService.getFavoriteAgents(),
+    {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      retry: false,
+      staleTime: 60 * 1000,
+      ...(config || {}),
+    },
+  );
+};
+
 /**
  * Hook for retrieving basic details about a single agent (VIEW permission)
  */

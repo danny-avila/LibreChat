@@ -291,6 +291,8 @@ export type AgentListParams = {
   search?: string;
   cursor?: string;
   promoted?: 0 | 1;
+  /** Optional comma-separated list of agent IDs or string[] */
+  ids?: string | string[];
 };
 
 export type AgentListResponse = {

@@ -410,7 +410,7 @@ const deleteAgentHandler = async (req, res) => {
 const getListAgentsHandler = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { category, search, limit, cursor, promoted } = req.query;
+    const { category, search, limit, cursor, promoted, ids } = req.query;
     let requiredPermission = req.query.requiredPermission;
     if (typeof requiredPermission === 'string') {
       requiredPermission = parseInt(requiredPermission, 10);
@@ -433,6 +433,17 @@ const getListAgentsHandler = async (req, res) => {
       filter.is_promoted = true;
     } else if (promoted === '0') {
       filter.is_promoted = { $ne: true };
+    }
+
+    // Handle IDs filter (comma-separated agent custom IDs)
+    if (ids && typeof ids === 'string' && ids.trim() !== '') {
+      const idsArr = ids
+        .split(',')
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0);
+      if (idsArr.length > 0) {
+        filter.id = { $in: idsArr };
+      }
     }
 
     // Handle search filter

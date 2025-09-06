@@ -269,6 +269,63 @@ const resendVerificationController = async (req, res) => {
   }
 };
 
+/**
+ * Favorites: Agents
+ */
+const getFavoriteAgents = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id).select('personalization').lean();
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    const favorites = user.personalization?.favoriteAgents ?? [];
+    return res.status(200).json({ favoriteAgents: favorites });
+  } catch (error) {
+    logger.error('[getFavoriteAgents]', error);
+    return res.status(500).json({ message: 'Something went wrong.' });
+  }
+};
+
+const addFavoriteAgent = async (req, res) => {
+  try {
+    const { agent_id } = req.body || {};
+    if (!agent_id) {
+      return res.status(400).json({ message: 'agent_id is required' });
+    }
+    const updated = await User.findByIdAndUpdate(
+      req.user.id,
+      { $addToSet: { 'personalization.favoriteAgents': agent_id } },
+      { new: true, select: 'personalization' },
+    ).lean();
+    return res
+      .status(200)
+      .json({ favoriteAgents: updated?.personalization?.favoriteAgents ?? [] });
+  } catch (error) {
+    logger.error('[addFavoriteAgent]', error);
+    return res.status(500).json({ message: 'Something went wrong.' });
+  }
+};
+
+const removeFavoriteAgent = async (req, res) => {
+  try {
+    const { agent_id } = req.params || {};
+    if (!agent_id) {
+      return res.status(400).json({ message: 'agent_id is required' });
+    }
+    const updated = await User.findByIdAndUpdate(
+      req.user.id,
+      { $pull: { 'personalization.favoriteAgents': agent_id } },
+      { new: true, select: 'personalization' },
+    ).lean();
+    return res
+      .status(200)
+      .json({ favoriteAgents: updated?.personalization?.favoriteAgents ?? [] });
+  } catch (error) {
+    logger.error('[removeFavoriteAgent]', error);
+    return res.status(500).json({ message: 'Something went wrong.' });
+  }
+};
+
 module.exports = {
   getUserController,
   getTermsStatusController,
@@ -277,4 +334,7 @@ module.exports = {
   verifyEmailController,
   updateUserPluginsController,
   resendVerificationController,
+  getFavoriteAgents,
+  addFavoriteAgent,
+  removeFavoriteAgent,
 };
