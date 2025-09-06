@@ -16,6 +16,13 @@ import type {
   TStartupConfig,
   AgentListResponse,
 } from 'librechat-data-provider';
+import type {
+  TPreset,
+  TEndpointsConfig,
+  TStartupConfig,
+  TConfig,
+  TModelSpec,
+} from 'librechat-data-provider';
 import type { ZodAny } from 'zod';
 import { getConvoSwitchLogic, getModelSpecIconURL, removeUnavailableTools, logger } from '~/utils';
 import { useAuthContext, useAgentsMap, useDefaultConvo, useSubmitMessage } from '~/hooks';
@@ -147,7 +154,7 @@ export default function useQueryParams({
       if (newPreset.spec != null && newPreset.spec !== '') {
         const startupConfig = queryClient.getQueryData<TStartupConfig>([QueryKeys.startupConfig]);
         const modelSpecs = startupConfig?.modelSpecs?.list ?? [];
-        const spec = modelSpecs.find((s) => s.name === newPreset.spec);
+        const spec = modelSpecs.find((s: TModelSpec) => s.name === newPreset.spec);
         if (!spec) {
           return;
         }
@@ -165,7 +172,8 @@ export default function useQueryParams({
         for (const [key, value] of Object.entries(endpointsConfig)) {
           if (
             value &&
-            value.type === EModelEndpoint.custom &&
+            typeof value === 'object' &&
+            (value as TConfig).type === EModelEndpoint.custom &&
             key.toLowerCase() === normalizedNewEndpoint
           ) {
             newEndpoint = key;
@@ -214,7 +222,7 @@ export default function useQueryParams({
           cleanOutput: newPreset.spec != null && newPreset.spec !== '',
         });
 
-        /* We don't reset the latest message, only when changing settings mid-converstion */
+        /* We don't reset the latest message, only when changing settings mid-conversation */
         logger.log('conversation', 'Switching conversation from query params', currentConvo);
         newConversation({
           template: currentConvo,
@@ -279,13 +287,12 @@ export default function useQueryParams({
       if (data.text?.trim()) {
         submitMessage(data);
 
-        const newUrl = window.location.pathname;
-        window.history.replaceState({}, '', newUrl);
+        setSearchParams({}, { replace: true });
 
         console.log('Message submitted with conversation state:', conversation);
       }
     })();
-  }, [methods, submitMessage, conversation]);
+  }, [methods, submitMessage, conversation, setSearchParams]);
 
   useEffect(() => {
     const processQueryParams = () => {
@@ -345,8 +352,7 @@ export default function useQueryParams({
 
         // Only clean URL if there's no pending submission
         if (!pendingSubmitRef.current) {
-          const newUrl = window.location.pathname;
-          window.history.replaceState({}, '', newUrl);
+          setSearchParams({}, { replace: true });
         }
       };
 
