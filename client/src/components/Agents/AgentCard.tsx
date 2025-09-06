@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { Label } from '@librechat/client';
-import { QueryKeys } from 'librechat-data-provider';
+import { QueryKeys, dataService } from 'librechat-data-provider';
 import type t from 'librechat-data-provider';
 import { useLocalize, TranslationKeys, useAgentCategories } from '~/hooks';
 import { cn, renderAgentAvatar, getContactDisplayName } from '~/utils';
@@ -30,7 +30,6 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, onClick, className = '' })
     let ignore = false;
     (async () => {
       try {
-        const { dataService } = await import('librechat-data-provider');
         const res = await dataService.getFavoriteAgents();
         if (!ignore) {
           const ids = res?.favoriteAgents ?? [];
@@ -49,7 +48,6 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, onClick, className = '' })
     e.stopPropagation();
     try {
       if (favorited) {
-        const { dataService } = await import('librechat-data-provider');
         const res = await dataService.removeFavoriteAgent(agent.id);
         queryClient?.setQueryData?.([QueryKeys.user, 'favoriteAgents'], res);
         setFavorited(false);
@@ -63,7 +61,6 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, onClick, className = '' })
           void 0;
         }
       } else {
-        const { dataService } = await import('librechat-data-provider');
         const res = await dataService.addFavoriteAgent(agent.id);
         queryClient?.setQueryData?.([QueryKeys.user, 'favoriteAgents'], res);
         setFavorited(true);
