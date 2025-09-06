@@ -10,12 +10,12 @@ import { replaceSpecialVars } from 'librechat-data-provider';
 import type { TPromptGroup, AgentToolResources } from 'librechat-data-provider';
 import { codeNoExecution } from '~/components/Chat/Messages/Content/MarkdownComponents';
 import { useLocalize, useAuthContext } from '~/hooks';
+import PromptFilesPreview from './PromptFilesPreview';
 import CategoryIcon from './Groups/CategoryIcon';
 import PromptVariables from './PromptVariables';
 import { PromptVariableGfm } from './Markdown';
 import Description from './Description';
 import Command from './Command';
-import PromptFilesPreview from './PromptFilesPreview';
 
 const PromptDetails = ({ group }: { group?: TPromptGroup }) => {
   const localize = useLocalize();
@@ -26,7 +26,7 @@ const PromptDetails = ({ group }: { group?: TPromptGroup }) => {
     return replaceSpecialVars({ text: initialText, user });
   }, [group?.productionPrompt?.prompt, user]);
 
-  const toolResources = useMemo(() => {
+  const toolResources = useMemo((): AgentToolResources | undefined => {
     return group?.productionPrompt?.tool_resources;
   }, [group?.productionPrompt?.tool_resources]);
 

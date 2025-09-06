@@ -1,6 +1,6 @@
 import React from 'react';
 import { X, FileText, Image, Upload } from 'lucide-react';
-import type { ExtendedFile } from 'librechat-data-provider';
+import type { ExtendedFile } from '~/common';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -59,16 +59,16 @@ const PromptFileRow: React.FC<PromptFileRowProps> = ({
               {file.filename}
             </span>
           </div>
-          
+
           {getFileStatus(file)}
-          
+
           {!isReadOnly && (
             <button
               type="button"
               onClick={() => onRemoveFile(file.temp_file_id || file.file_id || '')}
               className={cn(
                 'ml-1 flex h-5 w-5 items-center justify-center rounded-full',
-                'hover:bg-surface-hover text-text-secondary hover:text-text-primary',
+                'text-text-secondary hover:bg-surface-hover hover:text-text-primary',
                 'transition-colors duration-200',
               )}
               title={localize('com_ui_remove_file')}
@@ -83,4 +83,3 @@ const PromptFileRow: React.FC<PromptFileRowProps> = ({
 };
 
 export default PromptFileRow;
-
