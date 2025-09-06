@@ -1,7 +1,7 @@
 import { logger } from '@librechat/data-schemas';
 import type { OAuthTokens, OAuthClientInformation } from '@modelcontextprotocol/sdk/shared/auth.js';
 import type { TokenMethods, IToken } from '@librechat/data-schemas';
-import type { MCPOAuthTokens, ExtendedOAuthTokens } from './types';
+import type { MCPOAuthTokens, ExtendedOAuthTokens, OAuthMetadata } from './types';
 import { encryptV2, decryptV2 } from '~/crypto';
 import { isSystemUserId } from '~/mcp/enum';
 
@@ -13,6 +13,7 @@ interface StoreTokensParams {
   updateToken?: TokenMethods['updateToken'];
   findToken?: TokenMethods['findToken'];
   clientInfo?: OAuthClientInformation;
+  metadata?: OAuthMetadata;
   /** Optional: Pass existing token state to avoid duplicate DB calls */
   existingTokens?: {
     accessToken?: IToken | null;
@@ -55,6 +56,7 @@ export class MCPTokenStorage {
     findToken,
     clientInfo,
     existingTokens,
+    metadata,
   }: StoreTokensParams): Promise<void> {
     const logPrefix = this.getLogPrefix(userId, serverName);
 
@@ -188,6 +190,7 @@ export class MCPTokenStorage {
           identifier: `${identifier}:client`,
           token: encryptedClientInfo,
           expiresIn: 365 * 24 * 60 * 60,
+          metadata,
         };
 
         // Check if client info already exists and update if it does
@@ -378,5 +381,87 @@ export class MCPTokenStorage {
       logger.error(`${logPrefix} Failed to retrieve tokens`, error);
       return null;
     }
+  }
+
+  static async getClientInfoAndMetadata({
+    userId,
+    serverName,
+    findToken,
+  }: {
+    userId: string;
+    serverName: string;
+    findToken: TokenMethods['findToken'];
+  }): Promise<{
+    clientInfo: OAuthClientInformation;
+    clientMetadata: Record<string, unknown>;
+  } | null> {
+    const identifier = `mcp:${serverName}`;
+
+    const clientInfoData: IToken | null = await findToken({
+      userId,
+      type: 'mcp_oauth_client',
+      identifier: `${identifier}:client`,
+    });
+    if (clientInfoData == null) {
+      return null;
+    }
+
+    const tokenData = await decryptV2(clientInfoData.token);
+    const clientInfo = JSON.parse(tokenData);
+
+    // get metadata from the token as a plain object. While it's defined as a Map in the database type, it's a plain object at runtime.
+    function getMetadata(
+      metadata: Map<string, unknown> | Record<string, unknown> | null,
+    ): Record<string, unknown> {
+      if (metadata == null) {
+        return {};
+      }
+      if (metadata instanceof Map) {
+        return Object.fromEntries(metadata);
+      }
+      return { ...(metadata as Record<string, unknown>) };
+    }
+    const clientMetadata = getMetadata(clientInfoData.metadata ?? null);
+
+    return {
+      clientInfo,
+      clientMetadata,
+    };
+  }
+
+  /**
+   * Deletes all OAuth-related tokens for a specific user and server
+   */
+  static async deleteUserTokens({
+    userId,
+    serverName,
+    deleteToken,
+  }: {
+    userId: string;
+    serverName: string;
+    deleteToken: (filter: { userId: string; type: string; identifier: string }) => Promise<void>;
+  }): Promise<void> {
+    const identifier = `mcp:${serverName}`;
+
+    // delete client info token
+    await deleteToken({
+      userId,
+      type: 'mcp_oauth_client',
+      identifier: `${identifier}:client`,
+    });
+
+    // delete access token
+    await deleteToken({
+      userId,
+      type: 'mcp_oauth',
+      identifier,
+    });
+
+    // delete refresh token
+    await deleteToken({
+      userId,
+      type: 'mcp_oauth_refresh',
+      identifier: `${identifier}:refresh`,
+    });
   }
 }

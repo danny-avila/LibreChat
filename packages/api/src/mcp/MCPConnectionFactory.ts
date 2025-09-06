@@ -1,7 +1,7 @@
 import { logger } from '@librechat/data-schemas';
 import type { OAuthClientInformation } from '@modelcontextprotocol/sdk/shared/auth.js';
 import type { TokenMethods } from '@librechat/data-schemas';
-import type { MCPOAuthTokens, MCPOAuthFlowMetadata } from '~/mcp/oauth';
+import type { MCPOAuthTokens, MCPOAuthFlowMetadata, OAuthMetadata } from '~/mcp/oauth';
 import type { FlowStateManager } from '~/flow/manager';
 import type { FlowMetadata } from '~/flow/types';
 import type * as t from './types';
@@ -186,6 +186,7 @@ export class MCPConnectionFactory {
             updateToken: this.tokenMethods.updateToken,
             findToken: this.tokenMethods.findToken,
             clientInfo: result.clientInfo,
+            metadata: result.metadata,
           });
           logger.info(`${this.logPrefix} OAuth tokens saved to storage`);
         } catch (error) {
@@ -284,6 +285,7 @@ export class MCPConnectionFactory {
   protected async handleOAuthRequired(): Promise<{
     tokens: MCPOAuthTokens | null;
     clientInfo?: OAuthClientInformation;
+    metadata?: OAuthMetadata;
   } | null> {
     const serverUrl = (this.serverConfig as t.SSEOptions | t.StreamableHTTPOptions).url;
     logger.debug(`${this.logPrefix} \`handleOAuthRequired\` called with serverUrl: ${serverUrl}`);
@@ -359,8 +361,13 @@ export class MCPConnectionFactory {
 
       /** Client information from the flow metadata */
       const clientInfo = flowMetadata?.clientInfo;
+      const metadata = flowMetadata?.metadata;
 
-      return { tokens, clientInfo };
+      return {
+        tokens,
+        clientInfo,
+        metadata,
+      };
     } catch (error) {
       logger.error(`${this.logPrefix} Failed to complete OAuth flow for ${this.serverName}`, error);
       return null;
