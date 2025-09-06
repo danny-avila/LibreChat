@@ -79,10 +79,7 @@ function PromptsCommand({
 
   const handleSelect = useCallback(
     (mention?: PromptOption, e?: React.KeyboardEvent<HTMLInputElement>) => {
-      console.log('PromptsCommand.handleSelect called with mention:', mention);
-
       if (!mention) {
-        console.log('No mention provided');
         return;
       }
 
@@ -95,19 +92,9 @@ function PromptsCommand({
       }
 
       const group = promptsMap?.[mention.id];
-      console.log('Found group for mention:', group);
       if (!group) {
-        console.log('No group found for mention ID:', mention.id);
         return;
       }
-
-      console.log('Group productionPrompt details:', {
-        hasProductionPrompt: !!group.productionPrompt,
-        prompt: group.productionPrompt?.prompt?.substring(0, 100) + '...',
-        tool_resources: group.productionPrompt?.tool_resources,
-        hasToolResources: !!group.productionPrompt?.tool_resources,
-      });
-
       const hasVariables = detectVariables(group.productionPrompt?.prompt ?? '');
       if (hasVariables) {
         if (e && e.key === 'Tab') {
@@ -117,15 +104,6 @@ function PromptsCommand({
         setVariableDialogOpen(true);
         return;
       } else {
-        console.log('PromptsCommand - Clicking prompt:', {
-          promptName: group.name,
-          promptText: group.productionPrompt?.prompt,
-          toolResources: group.productionPrompt?.tool_resources,
-          hasToolResources: !!group.productionPrompt?.tool_resources,
-          toolResourcesKeys: group.productionPrompt?.tool_resources
-            ? Object.keys(group.productionPrompt.tool_resources)
-            : [],
-        });
         submitPrompt(group.productionPrompt?.prompt ?? '', group.productionPrompt?.tool_resources);
       }
     },
