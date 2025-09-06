@@ -1,14 +1,9 @@
 import debounce from 'lodash/debounce';
 import React, { createContext, useContext, useState, useMemo } from 'react';
-import { EModelEndpoint, isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint, isAgentsEndpoint, isAssistantsEndpoint, PermissionBits } from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
 import type { Endpoint, SelectedValues } from '~/common';
-import {
-  useAgentDefaultPermissionLevel,
-  useSelectorEffects,
-  useKeyDialog,
-  useEndpoints,
-} from '~/hooks';
+import { useSelectorEffects, useKeyDialog, useEndpoints } from '~/hooks';
 import { useAgentsMapContext, useAssistantsMapContext } from '~/Providers';
 import { useGetEndpointsQuery, useListAgentsQuery } from '~/data-provider';
 import { useModelSelectorChatContext } from './ModelSelectorChatContext';
@@ -78,9 +73,8 @@ export function ModelSelectorProvider({ children, startupConfig }: ModelSelector
     });
   }, [startupConfig, agentsMap]);
 
-  const permissionLevel = useAgentDefaultPermissionLevel();
   const { data: agents = null } = useListAgentsQuery(
-    { requiredPermission: permissionLevel },
+    { requiredPermission: PermissionBits.VIEW },
     {
       select: (data) => data?.data,
     },

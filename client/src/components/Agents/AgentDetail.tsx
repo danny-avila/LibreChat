@@ -45,14 +45,19 @@ const AgentDetail: React.FC<AgentDetailProps> = ({ agent, isOpen, onClose }) => 
    */
   const handleStartChat = () => {
     if (agent) {
-      const keys = [QueryKeys.agents, { requiredPermission: PermissionBits.EDIT }];
-      const listResp = queryClient.getQueryData<AgentListResponse>(keys);
-      if (listResp != null) {
-        if (!listResp.data.some((a) => a.id === agent.id)) {
+      const editKey = [QueryKeys.agents, { requiredPermission: PermissionBits.EDIT }];
+      const viewKey = [QueryKeys.agents, { requiredPermission: PermissionBits.VIEW }];
+
+      const maybeAddAgent = (key: any) => {
+        const listResp = queryClient.getQueryData<AgentListResponse>(key);
+        if (listResp != null && !listResp.data.some((a) => a.id === agent.id)) {
           const currentAgents = [agent, ...JSON.parse(JSON.stringify(listResp.data))];
-          queryClient.setQueryData<AgentListResponse>(keys, { ...listResp, data: currentAgents });
+          queryClient.setQueryData<AgentListResponse>(key, { ...listResp, data: currentAgents });
         }
-      }
+      };
+
+      maybeAddAgent(editKey);
+      maybeAddAgent(viewKey);
 
       localStorage.setItem(`${LocalStorageKeys.AGENT_ID_PREFIX}0`, agent.id);
 
