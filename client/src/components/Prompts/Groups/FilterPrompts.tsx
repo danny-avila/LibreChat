@@ -2,7 +2,7 @@ import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { useRecoilState } from 'recoil';
 import { ListFilter, User, Share2 } from 'lucide-react';
 import { SystemCategories } from 'librechat-data-provider';
-import { Dropdown, AnimatedSearchInput } from '@librechat/client';
+import { Dropdown, AnimatedSearchInput, AttachmentIcon } from '@librechat/client';
 import type { Option } from '~/common';
 import { useLocalize, useCategories } from '~/hooks';
 import { usePromptGroupsContext } from '~/Providers';

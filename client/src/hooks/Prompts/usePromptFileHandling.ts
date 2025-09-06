@@ -143,11 +143,13 @@ export const usePromptFileHandling = (params?: UsePromptFileHandling) => {
     (extendedFile: ExtendedFile, preview: string) => {
       const img = new Image();
       img.onload = async () => {
+        // Update the file with dimensions
+        extendedFile.width = img.width;
+        extendedFile.height = img.height;
+        extendedFile.progress = 0.6;
+
         const updatedFile = {
           ...extendedFile,
-          width: img.width,
-          height: img.height,
-          progress: 0.6,
         };
 
         setFiles((prev) =>
@@ -357,7 +359,7 @@ export const usePromptFileHandling = (params?: UsePromptFileHandling) => {
                 filename: dbFile.filename,
                 filepath: dbFile.filepath,
                 progress: 1,
-                preview: undefined, // Will be set by FilePreviewLoader
+                preview: dbFile.filepath, // Use filepath as preview for existing files
                 size: dbFile.bytes || 0,
                 width: dbFile.width,
                 height: dbFile.height,

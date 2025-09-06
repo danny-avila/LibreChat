@@ -702,6 +702,8 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
       returnFile: true,
     });
     filepath = result.filepath;
+    width = result.width;
+    height = result.height;
   }
 
   const fileInfo = removeNullishValues({
