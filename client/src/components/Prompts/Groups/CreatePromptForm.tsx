@@ -3,11 +3,12 @@ import { useNavigate } from 'react-router-dom';
 import { Button, TextareaAutosize, Input } from '@librechat/client';
 import { useForm, Controller, FormProvider } from 'react-hook-form';
 import { LocalStorageKeys, PermissionTypes, Permissions } from 'librechat-data-provider';
+import type { AgentToolResources } from 'librechat-data-provider';
+import PromptVariablesAndFiles from '~/components/Prompts/PromptVariablesAndFiles';
 import CategorySelector from '~/components/Prompts/Groups/CategorySelector';
+import { useLocalize, useHasAccess, usePromptFileHandling } from '~/hooks';
 import VariablesDropdown from '~/components/Prompts/VariablesDropdown';
-import PromptVariables from '~/components/Prompts/PromptVariables';
 import Description from '~/components/Prompts/Description';
-import { useLocalize, useHasAccess } from '~/hooks';
 import Command from '~/components/Prompts/Command';
 import { useCreatePrompt } from '~/data-provider';
 import { cn } from '~/utils';
@@ -19,6 +20,7 @@ type CreateFormValues = {
   category: string;
   oneliner?: string;
   command?: string;
+  tool_resources?: AgentToolResources;
 };
 
 const defaultPrompt: CreateFormValues = {
@@ -37,6 +39,15 @@ const CreatePromptForm = ({
 }) => {
   const localize = useLocalize();
   const navigate = useNavigate();
+
+  const {
+    promptFiles: files,
+    setFiles,
+    handleFileChange,
+    handleFileRemove,
+    getToolResources,
+  } = usePromptFileHandling();
+
   const hasAccess = useHasAccess({
     permissionType: PermissionTypes.PROMPTS,
     permission: Permissions.CREATE,
@@ -88,8 +99,15 @@ const CreatePromptForm = ({
     if ((command?.length ?? 0) > 0) {
       groupData.command = command;
     }
+
+    const promptData = { ...rest };
+    const toolResources = getToolResources();
+    if (toolResources) {
+      promptData.tool_resources = toolResources;
+    }
+
     createPromptMutation.mutate({
-      prompt: rest,
+      prompt: promptData,
       group: groupData,
     });
   };
@@ -161,7 +179,14 @@ const CreatePromptForm = ({
               />
             </div>
           </div>
-          <PromptVariables promptText={promptText} />
+          <PromptVariablesAndFiles
+            promptText={promptText}
+            files={files}
+            onFilesChange={setFiles}
+            handleFileChange={handleFileChange}
+            onFileRemove={handleFileRemove}
+            disabled={isSubmitting}
+          />
           <Description
             onValueChange={(value) => methods.setValue('oneliner', value)}
             tabIndex={0}
