@@ -1,6 +1,6 @@
 import { Verbosity, ReasoningEffort, ReasoningSummary } from 'librechat-data-provider';
 import type { RequestInit } from 'undici';
-import type { OpenAIParameters } from '~/types/openai';
+import type { OpenAIParameters, AzureOptions } from '~/types';
 import { getOpenAIConfig, knownOpenAIParams } from './llm';
 
 describe('getOpenAIConfig', () => {
@@ -76,7 +76,7 @@ describe('getOpenAIConfig', () => {
     expect(result.llmConfig.modelKwargs).toBeUndefined();
   });
 
-  it('should handle reasoning params for useResponsesApi', () => {
+  it('should handle reasoning params for `useResponsesApi`', () => {
     const modelOptions = {
       reasoning_effort: ReasoningEffort.high,
       reasoning_summary: ReasoningSummary.detailed,
@@ -94,7 +94,7 @@ describe('getOpenAIConfig', () => {
     expect((result.llmConfig as Record<string, unknown>).reasoning_summary).toBeUndefined();
   });
 
-  it('should handle reasoning params without useResponsesApi', () => {
+  it('should handle reasoning params without `useResponsesApi`', () => {
     const modelOptions = {
       reasoning_effort: ReasoningEffort.high,
       reasoning_summary: ReasoningSummary.detailed,
@@ -884,6 +884,444 @@ describe('getOpenAIConfig', () => {
         fetchOptions: expect.objectContaining({
           dispatcher: expect.any(Object),
         }),
+      });
+    });
+  });
+
+  describe('Real Usage Integration Tests', () => {
+    describe('OpenAI Initialize.js Simulation', () => {
+      it('should handle OpenAI endpoint configuration like initialize.js', () => {
+        // Simulate the configuration from OpenAI initialize.js
+        const modelName = 'gpt-4-turbo';
+        const endpointOption = {
+          model_parameters: {
+            temperature: 0.7,
+            max_tokens: 2048,
+            top_p: 0.9,
+            frequency_penalty: 0.1,
+            presence_penalty: 0.1,
+          },
+        };
+
+        // Simulate clientOptions from initialize.js
+        const clientOptions = {
+          contextStrategy: 'summarize',
+          proxy: null,
+          debug: false,
+          reverseProxyUrl: null,
+          streamRate: 30,
+          titleModel: 'gpt-3.5-turbo',
+          titleMethod: 'completion',
+          modelOptions: {
+            model: modelName,
+            user: 'test-user-id',
+            ...endpointOption.model_parameters,
+          },
+        };
+
+        const result = getOpenAIConfig(mockApiKey, clientOptions);
+
+        expect(result.llmConfig).toMatchObject({
+          model: modelName,
+          temperature: 0.7,
+          maxTokens: 2048,
+          // topP is converted from top_p in modelOptions
+          frequencyPenalty: 0.1, // converted from frequency_penalty
+          presencePenalty: 0.1, // converted from presence_penalty
+          user: 'test-user-id',
+          streaming: true, // default
+          apiKey: mockApiKey,
+        });
+        expect(result.configOptions).toEqual({});
+        expect(result.tools).toEqual([]);
+      });
+
+      it('should handle Azure OpenAI configuration like initialize.js', () => {
+        // Simulate Azure configuration from mapModelToAzureConfig
+        const modelName = 'gpt-4-turbo';
+        const azureOptions = {
+          azureOpenAIApiKey: 'azure-key-123',
+          azureOpenAIApiInstanceName: 'prod-instance',
+          azureOpenAIApiDeploymentName: 'gpt-4-turbo-deployment',
+          azureOpenAIApiVersion: '2023-12-01-preview',
+        };
+        const baseURL = 'https://prod-instance.openai.azure.com';
+        const headers = {
+          'X-Custom-Header': 'azure-value',
+          Authorization: 'Bearer custom-token',
+        };
+
+        // Simulate clientOptions from Azure initialize.js
+        const clientOptions = {
+          contextStrategy: null,
+          proxy: null,
+          debug: false,
+          reverseProxyUrl: baseURL,
+          headers,
+          titleConvo: true,
+          titleModel: 'gpt-3.5-turbo',
+          streamRate: 30,
+          titleMethod: 'completion',
+          azure: azureOptions,
+          addParams: {
+            temperature: 0.8,
+            max_completion_tokens: 4000,
+          },
+          dropParams: ['frequency_penalty'],
+          forcePrompt: false,
+          modelOptions: {
+            model: modelName,
+            user: 'azure-user-123',
+            temperature: 0.7, // Should be overridden by addParams
+            frequency_penalty: 0.2, // Should be dropped
+          },
+        };
+
+        const result = getOpenAIConfig(mockApiKey, clientOptions);
+
+        expect(result.llmConfig).toMatchObject({
+          model: 'gpt-4-turbo-deployment', // Uses deployment name
+          temperature: 0.8, // From addParams
+          user: 'azure-user-123',
+          streaming: true,
+          azureOpenAIApiKey: 'azure-key-123',
+          azureOpenAIApiInstanceName: 'prod-instance',
+          azureOpenAIApiDeploymentName: 'gpt-4-turbo-deployment',
+          azureOpenAIApiVersion: '2023-12-01-preview',
+        });
+        expect((result.llmConfig as Record<string, unknown>).frequency_penalty).toBeUndefined(); // Dropped
+        expect(result.llmConfig.modelKwargs).toMatchObject({
+          max_completion_tokens: 4000,
+        });
+        expect(result.configOptions).toMatchObject({
+          baseURL: baseURL,
+          defaultHeaders: headers,
+        });
+      });
+
+      it('should handle Azure serverless configuration', () => {
+        const modelName = 'gpt-4';
+        const azureOptions = {
+          azureOpenAIApiKey: 'serverless-key',
+          azureOpenAIApiInstanceName: 'serverless-instance',
+          azureOpenAIApiDeploymentName: 'gpt-4-serverless',
+          azureOpenAIApiVersion: '2024-02-15-preview',
+        };
+
+        const clientOptions = {
+          reverseProxyUrl: 'https://serverless.openai.azure.com/openai/v1',
+          headers: {
+            'api-key': azureOptions.azureOpenAIApiKey,
+          },
+          defaultQuery: {
+            'api-version': azureOptions.azureOpenAIApiVersion,
+          },
+          azure: false as const, // Serverless doesn't use azure object
+          modelOptions: {
+            model: modelName,
+            user: 'serverless-user',
+          },
+        };
+
+        const result = getOpenAIConfig(azureOptions.azureOpenAIApiKey, clientOptions);
+
+        expect(result.llmConfig).toMatchObject({
+          model: modelName,
+          user: 'serverless-user',
+          apiKey: azureOptions.azureOpenAIApiKey,
+        });
+        expect(result.configOptions).toMatchObject({
+          baseURL: 'https://serverless.openai.azure.com/openai/v1',
+          defaultHeaders: {
+            'api-key': azureOptions.azureOpenAIApiKey,
+          },
+          defaultQuery: {
+            'api-version': azureOptions.azureOpenAIApiVersion,
+          },
+        });
+      });
+    });
+
+    describe('Custom Endpoint Initialize.js Simulation', () => {
+      it('should handle custom endpoint configuration like initialize.js', () => {
+        const endpoint = 'custom-openai';
+        const apiKey = 'custom-api-key-456';
+        const baseURL = 'https://api.custom-provider.com/v1';
+
+        // Simulate endpointConfig from custom initialize.js
+        const endpointConfig = {
+          apiKey: 'user_provided',
+          baseURL: baseURL,
+          headers: {
+            'X-Custom-Provider': 'LibreChat',
+            'User-Agent': 'LibreChat/1.0',
+          },
+          addParams: {
+            custom_parameter: 'custom_value',
+            temperature: 0.9,
+          },
+          dropParams: ['presence_penalty'],
+          titleConvo: true,
+          titleModel: 'gpt-3.5-turbo',
+          forcePrompt: false,
+          summaryModel: 'gpt-3.5-turbo',
+          modelDisplayLabel: 'Custom GPT-4',
+          titleMethod: 'completion',
+          contextStrategy: 'summarize',
+          directEndpoint: true,
+          titleMessageRole: 'user',
+          streamRate: 25,
+        };
+
+        const clientOptions = {
+          reverseProxyUrl: baseURL,
+          proxy: null,
+          headers: endpointConfig.headers,
+          addParams: endpointConfig.addParams,
+          dropParams: endpointConfig.dropParams,
+          customParams: {},
+          titleConvo: endpointConfig.titleConvo,
+          titleModel: endpointConfig.titleModel,
+          forcePrompt: endpointConfig.forcePrompt,
+          summaryModel: endpointConfig.summaryModel,
+          modelDisplayLabel: endpointConfig.modelDisplayLabel,
+          titleMethod: endpointConfig.titleMethod,
+          contextStrategy: endpointConfig.contextStrategy,
+          directEndpoint: endpointConfig.directEndpoint,
+          titleMessageRole: endpointConfig.titleMessageRole,
+          streamRate: endpointConfig.streamRate,
+          modelOptions: {
+            model: 'gpt-4-custom',
+            user: 'custom-user-789',
+            presence_penalty: 0.3, // Should be dropped
+            max_tokens: 3000,
+          },
+        };
+
+        const result = getOpenAIConfig(apiKey, clientOptions, endpoint);
+
+        expect(result.llmConfig).toMatchObject({
+          model: 'gpt-4-custom',
+          user: 'custom-user-789',
+          temperature: 0.9, // From addParams
+          maxTokens: 3000,
+          apiKey: apiKey,
+        });
+        expect((result.llmConfig as Record<string, unknown>).presence_penalty).toBeUndefined(); // Dropped
+        expect(result.llmConfig.modelKwargs).toMatchObject({
+          custom_parameter: 'custom_value',
+        });
+        expect(result.configOptions).toMatchObject({
+          baseURL: baseURL,
+          defaultHeaders: endpointConfig.headers,
+          fetch: expect.any(Function), // directEndpoint creates custom fetch
+        });
+      });
+
+      it('should handle OpenRouter configuration like custom initialize.js', () => {
+        const endpoint = 'openrouter';
+        const apiKey = 'sk-or-v1-custom-key';
+        const baseURL = 'https://openrouter.ai/api/v1';
+
+        const clientOptions = {
+          reverseProxyUrl: baseURL,
+          headers: {
+            'HTTP-Referer': 'https://librechat.ai',
+            'X-Title': 'LibreChat',
+            Authorization: `Bearer ${apiKey}`,
+          },
+          addParams: {
+            top_k: 50,
+            repetition_penalty: 1.1,
+          },
+          modelOptions: {
+            model: 'anthropic/claude-3-sonnet',
+            user: 'openrouter-user',
+            temperature: 0.7,
+            max_tokens: 4000,
+            reasoning_effort: ReasoningEffort.high,
+            reasoning_summary: ReasoningSummary.detailed,
+          },
+        };
+
+        const result = getOpenAIConfig(apiKey, clientOptions, endpoint);
+
+        expect(result.llmConfig).toMatchObject({
+          model: 'anthropic/claude-3-sonnet',
+          user: 'openrouter-user',
+          temperature: 0.7,
+          maxTokens: 4000,
+          include_reasoning: true, // OpenRouter specific
+          reasoning: {
+            effort: ReasoningEffort.high,
+            summary: ReasoningSummary.detailed,
+          },
+          apiKey: apiKey,
+        });
+        expect(result.llmConfig.modelKwargs).toMatchObject({
+          top_k: 50,
+          repetition_penalty: 1.1,
+        });
+        expect(result.configOptions?.defaultHeaders).toMatchObject({
+          'HTTP-Referer': 'https://librechat.ai',
+          'X-Title': 'LibreChat',
+          Authorization: `Bearer ${apiKey}`,
+        });
+        expect(result.provider).toBe('openrouter');
+      });
+    });
+
+    describe('Production-like Azure Scenarios', () => {
+      it('should handle complex Azure multi-group configuration', () => {
+        // Simulate a production Azure setup with multiple groups
+        const modelName = 'gpt-4-turbo';
+        const azureConfig = {
+          azureOpenAIApiKey: 'prod-key-multi',
+          azureOpenAIApiInstanceName: 'prod-east-instance',
+          azureOpenAIApiDeploymentName: 'gpt-4-turbo-prod',
+          azureOpenAIApiVersion: '2024-02-15-preview',
+        };
+
+        const clientOptions = {
+          reverseProxyUrl: 'https://prod-east-instance.openai.azure.com',
+          headers: {
+            'X-Environment': 'production',
+            'X-Region': 'us-east-1',
+            'Content-Type': 'application/json',
+          },
+          azure: azureConfig,
+          addParams: {
+            temperature: 0.2, // Conservative for production
+            max_completion_tokens: 8192,
+            topP: 0.95, // Use camelCase for known param
+            frequencyPenalty: 0.0, // Use camelCase for known param
+            presencePenalty: 0.0, // Use camelCase for known param
+            seed: 12345, // For reproducibility
+          },
+          dropParams: [], // Don't drop any params in prod
+          modelOptions: {
+            model: modelName,
+            user: 'prod-user-session-abc123',
+            stream: true,
+          },
+        };
+
+        const result = getOpenAIConfig(mockApiKey, clientOptions);
+
+        expect(result.llmConfig).toMatchObject({
+          model: 'gpt-4-turbo-prod',
+          user: 'prod-user-session-abc123',
+          temperature: 0.2,
+          // Parameters from addParams are processed
+          seed: 12345,
+          stream: true,
+          azureOpenAIApiKey: 'prod-key-multi',
+          azureOpenAIApiInstanceName: 'prod-east-instance',
+          azureOpenAIApiDeploymentName: 'gpt-4-turbo-prod',
+          azureOpenAIApiVersion: '2024-02-15-preview',
+        });
+        // Check that camelCase conversions happened
+        expect(result.llmConfig.topP).toBe(0.95);
+        expect(result.llmConfig.frequencyPenalty).toBe(0.0);
+        expect(result.llmConfig.presencePenalty).toBe(0.0);
+        expect(result.llmConfig.modelKwargs).toMatchObject({
+          max_completion_tokens: 8192,
+        });
+        expect(result.configOptions?.baseURL).toBe('https://prod-east-instance.openai.azure.com');
+      });
+
+      it('should handle Azure with environment variable placeholders', () => {
+        const originalEnv = {
+          INSTANCE_NAME: process.env.INSTANCE_NAME,
+          DEPLOYMENT_NAME: process.env.DEPLOYMENT_NAME,
+          API_VERSION: process.env.API_VERSION,
+        };
+
+        // Set environment variables
+        process.env.INSTANCE_NAME = 'env-instance';
+        process.env.DEPLOYMENT_NAME = 'env-deployment';
+        process.env.API_VERSION = '2024-03-01-preview';
+
+        const clientOptions = {
+          reverseProxyUrl: 'https://${INSTANCE_NAME}.openai.azure.com/openai/v1',
+          azure: {
+            azureOpenAIApiKey: 'env-key',
+            azureOpenAIApiInstanceName: '${INSTANCE_NAME}',
+            azureOpenAIApiDeploymentName: '${DEPLOYMENT_NAME}',
+            azureOpenAIApiVersion: '${API_VERSION}',
+          },
+          modelOptions: {
+            model: 'gpt-4',
+            user: 'env-user',
+          },
+        };
+
+        const result = getOpenAIConfig(mockApiKey, clientOptions);
+
+        // The constructAzureURL should process placeholders (actual replacement depends on implementation)
+        expect((result.llmConfig as Record<string, unknown>).azureOpenAIBasePath).toBeDefined();
+        expect(result.llmConfig.model).toBe('${DEPLOYMENT_NAME}'); // Model becomes deployment name
+
+        // Cleanup
+        Object.entries(originalEnv).forEach(([key, value]) => {
+          if (value !== undefined) {
+            process.env[key] = value;
+          } else {
+            delete process.env[key];
+          }
+        });
+      });
+    });
+
+    describe('Error Handling and Edge Cases from Real Usage', () => {
+      it('should handle missing API key scenario', () => {
+        expect(() => {
+          getOpenAIConfig('', {
+            modelOptions: { model: 'gpt-4' },
+          });
+        }).not.toThrow(); // The function itself doesn't validate empty keys
+      });
+
+      it('should handle malformed Azure configuration gracefully', () => {
+        const clientOptions = {
+          azure: {
+            azureOpenAIApiKey: 'valid-key',
+            // Missing required fields
+          } as Partial<AzureOptions>,
+          modelOptions: {
+            model: 'gpt-4',
+          },
+        };
+
+        const result = getOpenAIConfig(mockApiKey, clientOptions);
+        expect(result.llmConfig).toBeDefined();
+      });
+
+      it('should handle large parameter sets without performance issues', () => {
+        const largeAddParams: Record<string, unknown> = {};
+        const largeModelKwargs: Record<string, unknown> = {};
+
+        // Create 50 unknown parameters (using names not in knownOpenAIParams)
+        for (let i = 0; i < 50; i++) {
+          largeAddParams[`unknown_param_${i}`] = 0.5;
+        }
+
+        // Create 50 more unknown parameters
+        for (let i = 0; i < 50; i++) {
+          largeAddParams[`custom_param_${i}`] = `value_${i}`;
+          largeModelKwargs[`unknown_param_${i}`] = 0.5;
+          largeModelKwargs[`custom_param_${i}`] = `value_${i}`;
+        }
+
+        const startTime = Date.now();
+        const result = getOpenAIConfig(mockApiKey, {
+          addParams: largeAddParams,
+          modelOptions: { model: 'gpt-4' },
+        });
+        const endTime = Date.now();
+
+        expect(endTime - startTime).toBeLessThan(100); // Should be fast
+        expect(result.llmConfig.modelKwargs).toEqual(largeModelKwargs);
       });
     });
   });
