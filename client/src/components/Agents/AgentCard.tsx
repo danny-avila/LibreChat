@@ -1,8 +1,7 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { Label } from '@librechat/client';
 import { Star } from 'lucide-react';
-import { useQueryClient } from '@tanstack/react-query';
-import { QueryKeys, dataService } from 'librechat-data-provider';
+import { QueryKeys } from 'librechat-data-provider';
 import type t from 'librechat-data-provider';
 import { useLocalize, TranslationKeys, useAgentCategories } from '~/hooks';
 import { cn, renderAgentAvatar, getContactDisplayName } from '~/utils';
@@ -19,25 +18,64 @@ interface AgentCardProps {
 const AgentCard: React.FC<AgentCardProps> = ({ agent, onClick, className = '' }) => {
   const localize = useLocalize();
   const { categories } = useAgentCategories();
-  const queryClient = useQueryClient();
+  const queryClient: any = (globalThis as any).__REACT_QUERY_CLIENT__;
 
   const favoriteIds =
-    queryClient.getQueryData<{ favoriteAgents: string[] }>([QueryKeys.user, 'favoriteAgents'])
+    queryClient?.getQueryData?.<{ favoriteAgents: string[] }>([QueryKeys.user, 'favoriteAgents'])
       ?.favoriteAgents ?? [];
   const isFavorite = favoriteIds.includes(agent.id);
+  const [favorited, setFavorited] = useState<boolean>(isFavorite);
+
+  // Ensure initial favorite state reflects server data in Marketplace
+  useEffect(() => {
+    let ignore = false;
+    (async () => {
+      try {
+        const { dataService } = await import('librechat-data-provider');
+        const res = await dataService.getFavoriteAgents();
+        if (!ignore) {
+          const ids = res?.favoriteAgents ?? [];
+          setFavorited(ids.includes(agent.id));
+        }
+      } catch (_err) {
+        // ignore
+      }
+    })();
+    return () => {
+      ignore = true;
+    };
+  }, [agent.id]);
 
   const toggleFavorite = async (e: React.MouseEvent) => {
     e.stopPropagation();
     try {
-      if (isFavorite) {
+      if (favorited) {
+        const { dataService } = await import('librechat-data-provider');
         const res = await dataService.removeFavoriteAgent(agent.id);
-        queryClient.setQueryData([QueryKeys.user, 'favoriteAgents'], res);
+        queryClient?.setQueryData?.([QueryKeys.user, 'favoriteAgents'], res);
+        setFavorited(false);
+        try {
+          window.dispatchEvent(
+            new CustomEvent('favoriteAgentsUpdated', {
+              detail: { id: agent.id, favorited: false },
+            }),
+          );
+        } catch {}
       } else {
+        const { dataService } = await import('librechat-data-provider');
         const res = await dataService.addFavoriteAgent(agent.id);
-        queryClient.setQueryData([QueryKeys.user, 'favoriteAgents'], res);
+        queryClient?.setQueryData?.([QueryKeys.user, 'favoriteAgents'], res);
+        setFavorited(true);
+        try {
+          window.dispatchEvent(
+            new CustomEvent('favoriteAgentsUpdated', {
+              detail: { id: agent.id, favorited: true },
+            }),
+          );
+        } catch {}
       }
-    } catch (err) {
-      // no-op
+    } catch (_err) {
+      // ignore
     }
   };
 
@@ -85,7 +123,9 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, onClick, className = '' })
         onClick={toggleFavorite}
         className="absolute right-3 top-3 rounded-full p-1 hover:bg-surface-hover"
       >
-        <Star className={`size-4 ${isFavorite ? 'fill-yellow-400 text-yellow-400' : 'text-text-secondary'}`} />
+        <Star
+          className={`size-4 ${favorited ? 'fill-yellow-400 text-yellow-400' : 'text-text-secondary'}`}
+        />
       </button>
       {/* Two column layout */}
       <div className="flex h-full items-start gap-3">

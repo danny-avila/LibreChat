@@ -1,6 +1,11 @@
 import debounce from 'lodash/debounce';
 import React, { createContext, useContext, useState, useMemo } from 'react';
-import { EModelEndpoint, isAgentsEndpoint, isAssistantsEndpoint, PermissionBits } from 'librechat-data-provider';
+import {
+  EModelEndpoint,
+  isAgentsEndpoint,
+  isAssistantsEndpoint,
+  PermissionBits,
+} from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
 import type { Endpoint, SelectedValues } from '~/common';
 import {
@@ -88,10 +93,10 @@ export function ModelSelectorProvider({ children, startupConfig }: ModelSelector
   );
 
   // Fetch favorites list (IDs), used to flag favorites inside mapped endpoints
-  const { data: favoriteData } = useFavoriteAgentsQuery({ enabled: true });
+  const { data: favoriteData, refetch: refetchFavorites } = useFavoriteAgentsQuery({ enabled: true });
 
   // Fetch favorite agents by IDs with VIEW permission to include in dropdown
-  const favoriteIds = favoriteData?.favoriteAgents ?? [];
+  const favoriteIds = useMemo(() => favoriteData?.favoriteAgents ?? [], [favoriteData]);
   const { data: favoriteAgentsList = null } = useListAgentsQuery(
     favoriteIds.length > 0
       ? { requiredPermission: PermissionBits.VIEW, ids: favoriteIds.join(',') }
@@ -145,6 +150,19 @@ export function ModelSelectorProvider({ children, startupConfig }: ModelSelector
       return ep;
     });
   }, [mappedEndpoints, favoriteIds]);
+
+  // Listen for marketplace updates to favorites and refetch favorites list
+  React.useEffect(() => {
+    const handler = () => {
+      refetchFavorites();
+    };
+    window.addEventListener('favoriteAgentsUpdated', handler as EventListener);
+    window.addEventListener('storage', handler as EventListener);
+    return () => {
+      window.removeEventListener('favoriteAgentsUpdated', handler as EventListener);
+      window.removeEventListener('storage', handler as EventListener);
+    };
+  }, [refetchFavorites]);
 
   const { onSelectEndpoint, onSelectSpec } = useSelectMention({
     // presets,

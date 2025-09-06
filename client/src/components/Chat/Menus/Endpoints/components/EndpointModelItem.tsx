@@ -5,8 +5,7 @@ import type { Endpoint } from '~/common';
 import { useModelSelectorContext } from '../ModelSelectorContext';
 import { CustomMenuItem as MenuItem } from '../CustomMenu';
 import { Star } from 'lucide-react';
-import { useQueryClient } from '@tanstack/react-query';
-import { QueryKeys, dataService } from 'librechat-data-provider';
+import { QueryKeys } from 'librechat-data-provider';
 
 interface EndpointModelItemProps {
   modelId: string | null;
@@ -16,12 +15,13 @@ interface EndpointModelItemProps {
 
 export function EndpointModelItem({ modelId, endpoint, isSelected }: EndpointModelItemProps) {
   const { handleSelectModel } = useModelSelectorContext();
-  const queryClient = useQueryClient();
+  const queryClient: any = (globalThis as any).__REACT_QUERY_CLIENT__;
   let isGlobal = false;
   let modelName = modelId;
   const avatarUrl = endpoint?.modelIcons?.[modelId ?? ''] || null;
   const favoritesMap: Record<string, true> | undefined = (endpoint as any).favoriteAgentIds;
   const isFavorite = !!(favoritesMap && modelId && favoritesMap[modelId]);
+  const [favorited, setFavorited] = React.useState<boolean>(isFavorite);
 
   // Use custom names if available
   if (endpoint && modelId && isAgentsEndpoint(endpoint.value) && endpoint.agentNames?.[modelId]) {
@@ -65,17 +65,39 @@ export function EndpointModelItem({ modelId, endpoint, isSelected }: EndpointMod
           onClick={async (e) => {
             e.stopPropagation();
             try {
-              if (isFavorite) {
+              if (favorited) {
+                const { dataService } = await import('librechat-data-provider');
                 const res = await dataService.removeFavoriteAgent(modelId);
-                queryClient.setQueryData([QueryKeys.user, 'favoriteAgents'], res);
+                queryClient?.setQueryData?.([QueryKeys.user, 'favoriteAgents'], res);
+                setFavorited(false);
+                try {
+                  window.dispatchEvent(
+                    new CustomEvent('favoriteAgentsUpdated', {
+                      detail: { id: modelId, favorited: false },
+                    }),
+                  );
+                } catch {}
               } else {
+                const { dataService } = await import('librechat-data-provider');
                 const res = await dataService.addFavoriteAgent(modelId);
-                queryClient.setQueryData([QueryKeys.user, 'favoriteAgents'], res);
+                queryClient?.setQueryData?.([QueryKeys.user, 'favoriteAgents'], res);
+                setFavorited(true);
+                try {
+                  window.dispatchEvent(
+                    new CustomEvent('favoriteAgentsUpdated', {
+                      detail: { id: modelId, favorited: true },
+                    }),
+                  );
+                } catch {}
               }
-            } catch {}
+            } catch (_err) {
+              // ignore
+            }
           }}
         >
-          <Star className={`size-4 ${isFavorite ? 'fill-yellow-400 text-yellow-400' : 'text-text-secondary'}`} />
+          <Star
+            className={`size-4 ${favorited ? 'fill-yellow-400 text-yellow-400' : 'text-text-secondary'}`}
+          />
         </button>
       )}
       {isSelected && (

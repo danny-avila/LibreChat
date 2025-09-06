@@ -297,9 +297,7 @@ const addFavoriteAgent = async (req, res) => {
       { $addToSet: { 'personalization.favoriteAgents': agent_id } },
       { new: true, select: 'personalization' },
     ).lean();
-    return res
-      .status(200)
-      .json({ favoriteAgents: updated?.personalization?.favoriteAgents ?? [] });
+    return res.status(200).json({ favoriteAgents: updated?.personalization?.favoriteAgents ?? [] });
   } catch (error) {
     logger.error('[addFavoriteAgent]', error);
     return res.status(500).json({ message: 'Something went wrong.' });
@@ -317,9 +315,7 @@ const removeFavoriteAgent = async (req, res) => {
       { $pull: { 'personalization.favoriteAgents': agent_id } },
       { new: true, select: 'personalization' },
     ).lean();
-    return res
-      .status(200)
-      .json({ favoriteAgents: updated?.personalization?.favoriteAgents ?? [] });
+    return res.status(200).json({ favoriteAgents: updated?.personalization?.favoriteAgents ?? [] });
   } catch (error) {
     logger.error('[removeFavoriteAgent]', error);
     return res.status(500).json({ message: 'Something went wrong.' });
