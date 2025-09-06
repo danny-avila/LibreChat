@@ -1,0 +1,18 @@
+{
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "app",
+  "workspaceFolder": "/workspaces",
+  "customizations": {
+    "vscode": {
+      "extensions": [],
+      "settings": {
+        "terminal.integrated.profiles.linux": {
+          "bash": null
+        }
+      }
+    }
+  },
+  "postCreateCommand": "",
+  "features": { "ghcr.io/devcontainers/features/git:1": {} },
+  "remoteUser": "vscode"
+}
