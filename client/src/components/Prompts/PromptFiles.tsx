@@ -40,38 +40,40 @@ const PromptFiles = ({
         {localize('com_ui_files')}
       </h3>
       <div className="flex flex-1 flex-col space-y-4">
-        {!files.length && (
-          <div className="text-sm text-text-secondary">
-            <ReactMarkdown className="markdown prose dark:prose-invert">
-              {localize('com_ui_files_info')}
-            </ReactMarkdown>
-          </div>
-        )}
+        <div className="flex-1">
+          {!files.length && (
+            <>
+              <div className="text-sm text-text-secondary">
+                <ReactMarkdown className="markdown prose dark:prose-invert">
+                  {localize('com_ui_files_info')}
+                </ReactMarkdown>
+              </div>
+              <Separator className="my-3 text-text-primary" />
+            </>
+          )}
 
-        {files.length > 0 && (
-          <div className="mb-3 flex-1">
-            <PromptFile
-              files={filesMap}
-              setFiles={(newMapOrUpdater) => {
-                const newMap =
-                  typeof newMapOrUpdater === 'function'
-                    ? newMapOrUpdater(filesMap)
-                    : newMapOrUpdater;
-                const newFiles = Array.from(newMap.values()) as ExtendedFile[];
-                onFilesChange?.(newFiles);
-              }}
-              setFilesLoading={() => {}}
-              onFileRemove={onFileRemove}
-              Wrapper={({ children }) => <div className="flex flex-wrap gap-2">{children}</div>}
-            />
-          </div>
-        )}
+          {files.length > 0 && (
+            <div className="mb-3">
+              <PromptFile
+                files={filesMap}
+                setFiles={(newMapOrUpdater) => {
+                  const newMap =
+                    typeof newMapOrUpdater === 'function'
+                      ? newMapOrUpdater(filesMap)
+                      : newMapOrUpdater;
+                  const newFiles = Array.from(newMap.values()) as ExtendedFile[];
+                  onFilesChange?.(newFiles);
+                }}
+                setFilesLoading={() => {}}
+                onFileRemove={onFileRemove}
+                Wrapper={({ children }) => <div className="flex flex-wrap gap-2">{children}</div>}
+              />
+            </div>
+          )}
+        </div>
 
-        <Separator className="my-3 text-text-primary" />
-        <div className="flex flex-col justify-end text-text-secondary">
-          <div className="flex justify-start">
-            <AttachFileButton handleFileChange={handleFileChange} disabled={disabled} />
-          </div>
+        <div className="flex justify-start text-text-secondary">
+          <AttachFileButton handleFileChange={handleFileChange} disabled={disabled} />
         </div>
       </div>
     </div>
