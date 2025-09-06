@@ -98,7 +98,9 @@ const initializeAgent = async ({
     requestFileSet: new Set(requestFiles?.map((file) => file.file_id)),
   });
 
-  const provider = agent.provider;
+  // Ensure the provider is set to the endpoint, not the model
+  const provider = agent.endpoint || agent.provider;
+
   const {
     tools: structuredTools,
     toolContextMap,
