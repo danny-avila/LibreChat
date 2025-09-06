@@ -260,7 +260,7 @@ const aggregateModels = {
   'gpt-oss-120b': 131000,
 };
 
-const maxTokensMap = {
+export const maxTokensMap = {
   [EModelEndpoint.azureOpenAI]: openAIModels,
   [EModelEndpoint.openAI]: aggregateModels,
   [EModelEndpoint.agents]: aggregateModels,
@@ -270,7 +270,7 @@ const maxTokensMap = {
   [EModelEndpoint.bedrock]: bedrockModels,
 };
 
-const modelMaxOutputs = {
+export const modelMaxOutputs = {
   o1: 32268, // -500 from max: 32,768
   'o1-mini': 65136, // -500 from max: 65,536
   'o1-preview': 32268, // -500 from max: 32,768
@@ -279,7 +279,7 @@ const modelMaxOutputs = {
   'gpt-5-nano': 128000,
   'gpt-oss-20b': 131000,
   'gpt-oss-120b': 131000,
-  system_default: 1024,
+  system_default: 32000,
 };
 
 /** Outputs from https://docs.anthropic.com/en/docs/about-claude/models/all-models#model-names */
@@ -295,7 +295,7 @@ const anthropicMaxOutputs = {
   'claude-3-7-sonnet': 128000,
 };
 
-const maxOutputTokensMap = {
+export const maxOutputTokensMap = {
   [EModelEndpoint.anthropic]: anthropicMaxOutputs,
   [EModelEndpoint.azureOpenAI]: modelMaxOutputs,
   [EModelEndpoint.openAI]: modelMaxOutputs,
@@ -308,7 +308,7 @@ const maxOutputTokensMap = {
  * @param {Record<string, number> | EndpointTokenConfig} tokensMap
  * @returns {string|null}
  */
-function findMatchingPattern(
+export function findMatchingPattern(
   modelName: string,
   tokensMap: Record<string, number> | EndpointTokenConfig,
 ): string | null {
@@ -326,66 +326,56 @@ function findMatchingPattern(
 /**
  * Retrieves a token value for a given model name from a tokens map.
  *
- * @param {string} modelName - The name of the model to look up.
- * @param {EndpointTokenConfig | Record<string, number>} tokensMap - The map of model names to token values.
- * @param {string} [key='context'] - The key to look up in the tokens map.
- * @returns {number|undefined} The token value for the given model or undefined if no match is found.
+ * @param modelName - The name of the model to look up.
+ * @param tokensMap - The map of model names to token values.
+ * @param [key='context'] - The key to look up in the tokens map.
+ * @returns The token value for the given model or undefined if no match is found.
  */
-function getModelTokenValue(
+export function getModelTokenValue(
   modelName: string,
-  tokensMap: EndpointTokenConfig | Record<string, number>,
-  key = 'context',
+  tokensMap?: EndpointTokenConfig | Record<string, number>,
+  key = 'context' as keyof TokenConfig,
 ): number | undefined {
   if (typeof modelName !== 'string' || !tokensMap) {
     return undefined;
   }
 
-  if (
-    tokensMap[modelName] &&
-    typeof tokensMap[modelName] === 'object' &&
-    'context' in (tokensMap[modelName] as object)
-  ) {
-    return (tokensMap[modelName] as TokenConfig).context;
+  const value = tokensMap[modelName];
+  if (typeof value === 'number') {
+    return value;
   }
 
-  if (tokensMap[modelName] && typeof tokensMap[modelName] === 'number') {
-    return tokensMap[modelName] as number;
+  if (value?.context) {
+    return value.context;
   }
 
   const matchedPattern = findMatchingPattern(modelName, tokensMap);
 
   if (matchedPattern) {
     const result = tokensMap[matchedPattern];
-    if (result && typeof result === 'object' && key in result) {
-      return (result as TokenConfig)[key as keyof TokenConfig] as number;
-    }
     if (typeof result === 'number') {
       return result;
     }
+
+    const tokenValue = result?.[key];
+    if (typeof tokenValue === 'number') {
+      return tokenValue;
+    }
+    return tokensMap.system_default as number | undefined;
   }
 
-  if (typeof tokensMap === 'object' && 'system_default' in tokensMap) {
-    return (tokensMap as Record<string, number>).system_default;
-  }
-
-  /** Remove this comment once confirmed this shares same functionality with original js version:
-   * returning undefined when
-   * tokenMaps[modelName] didn't exist,
-   * tokenMaps wasn't an object (EndpointTokenConfig),
-   * modelName didn't match any pattern in tokenMaps,
-   * and tokenMaps didn't have a system_default property */
-  return undefined;
+  return tokensMap.system_default as number | undefined;
 }
 
 /**
  * Retrieves the maximum tokens for a given model name.
  *
- * @param {string} modelName - The name of the model to look up.
- * @param {string} endpoint - The endpoint (default is 'openAI').
- * @param {EndpointTokenConfig} [endpointTokenConfig] - Token Config for current endpoint to use for max tokens lookup
- * @returns {number|undefined} The maximum tokens for the given model or undefined if no match is found.
+ * @param modelName - The name of the model to look up.
+ * @param endpoint - The endpoint (default is 'openAI').
+ * @param [endpointTokenConfig] - Token Config for current endpoint to use for max tokens lookup
+ * @returns The maximum tokens for the given model or undefined if no match is found.
  */
-function getModelMaxTokens(
+export function getModelMaxTokens(
   modelName: string,
   endpoint = EModelEndpoint.openAI,
   endpointTokenConfig?: EndpointTokenConfig,
@@ -397,12 +387,12 @@ function getModelMaxTokens(
 /**
  * Retrieves the maximum output tokens for a given model name.
  *
- * @param {string} modelName - The name of the model to look up.
- * @param {string} endpoint - The endpoint (default is 'openAI').
- * @param {EndpointTokenConfig} [endpointTokenConfig] - Token Config for current endpoint to use for max tokens lookup
- * @returns {number|undefined} The maximum output tokens for the given model or undefined if no match is found.
+ * @param modelName - The name of the model to look up.
+ * @param endpoint - The endpoint (default is 'openAI').
+ * @param [endpointTokenConfig] - Token Config for current endpoint to use for max tokens lookup
+ * @returns The maximum output tokens for the given model or undefined if no match is found.
  */
-function getModelMaxOutputTokens(
+export function getModelMaxOutputTokens(
   modelName: string,
   endpoint = EModelEndpoint.openAI,
   endpointTokenConfig?: EndpointTokenConfig,
@@ -416,16 +406,19 @@ function getModelMaxOutputTokens(
  * Retrieves the model name key for a given model name input. If the exact model name isn't found,
  * it searches for partial matches within the model name, checking keys in reverse order.
  *
- * @param {string} modelName - The name of the model to look up.
- * @param {string} endpoint - The endpoint (default is 'openAI').
- * @returns {string|undefined} The model name key for the given model; returns input if no match is found and is string.
+ * @param modelName - The name of the model to look up.
+ * @param endpoint - The endpoint (default is 'openAI').
+ * @returns The model name key for the given model; returns input if no match is found and is string.
  *
  * @example
  * matchModelName('gpt-4-32k-0613'); // Returns 'gpt-4-32k-0613'
  * matchModelName('gpt-4-32k-unknown'); // Returns 'gpt-4-32k'
  * matchModelName('unknown-model'); // Returns undefined
  */
-function matchModelName(modelName: string, endpoint = EModelEndpoint.openAI): string | undefined {
+export function matchModelName(
+  modelName: string,
+  endpoint = EModelEndpoint.openAI,
+): string | undefined {
   if (typeof modelName !== 'string') {
     return undefined;
   }
@@ -443,7 +436,7 @@ function matchModelName(modelName: string, endpoint = EModelEndpoint.openAI): st
   return matchedPattern || modelName;
 }
 
-const modelSchema = z.object({
+export const modelSchema = z.object({
   id: z.string(),
   pricing: z.object({
     prompt: z.string(),
@@ -452,7 +445,7 @@ const modelSchema = z.object({
   context_length: z.number(),
 });
 
-const inputSchema = z.object({
+export const inputSchema = z.object({
   data: z.array(modelSchema),
 });
 
@@ -461,7 +454,7 @@ const inputSchema = z.object({
  * @param {{ data: Array<z.infer<typeof modelSchema>> }} input The input object containing base URL and data fetched from the API.
  * @returns {EndpointTokenConfig} The processed model data.
  */
-function processModelData(input: z.infer<typeof inputSchema>): EndpointTokenConfig {
+export function processModelData(input: z.infer<typeof inputSchema>): EndpointTokenConfig {
   const validationResult = inputSchema.safeParse(input);
   if (!validationResult.success) {
     throw new Error('Invalid input data');
@@ -492,7 +485,7 @@ function processModelData(input: z.infer<typeof inputSchema>): EndpointTokenConf
   return tokenConfig;
 }
 
-const tiktokenModels = new Set([
+export const tiktokenModels = new Set([
   'text-davinci-003',
   'text-davinci-002',
   'text-davinci-001',
@@ -530,17 +523,3 @@ const tiktokenModels = new Set([
   'gpt-3.5-turbo',
   'gpt-3.5-turbo-0301',
 ]);
-
-export {
-  inputSchema,
-  modelSchema,
-  maxTokensMap,
-  tiktokenModels,
-  matchModelName,
-  processModelData,
-  getModelMaxTokens,
-  maxOutputTokensMap,
-  getModelTokenValue,
-  findMatchingPattern,
-  getModelMaxOutputTokens,
-};
