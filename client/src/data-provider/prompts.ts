@@ -118,6 +118,8 @@ export const useCreatePrompt = (
         },
       );
 
+      queryClient.invalidateQueries([QueryKeys.files]);
+
       if (group) {
         queryClient.setQueryData<t.PromptGroupListData>(
           [QueryKeys.promptGroups, name, category, pageSize],
@@ -162,6 +164,8 @@ export const useAddPromptToGroup = (
           return [prompt, ...(oldData ?? [])];
         },
       );
+
+      queryClient.invalidateQueries([QueryKeys.files]);
 
       if (onSuccess) {
         onSuccess(response, variables, context);

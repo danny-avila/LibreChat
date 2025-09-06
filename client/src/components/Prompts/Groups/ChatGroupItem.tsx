@@ -1,5 +1,5 @@
 import { useState, useMemo, memo } from 'react';
-import { Menu as MenuIcon, Edit as EditIcon, EarthIcon, TextSearch } from 'lucide-react';
+import { Menu as MenuIcon, Edit as EditIcon, EarthIcon, TextSearch, Paperclip } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuItem,
@@ -37,18 +37,39 @@ function ChatGroupItem({
   const { hasPermission } = useResourcePermissions('promptGroup', group._id || '');
   const canEdit = hasPermission(PermissionBits.EDIT);
 
+  // Check if prompt has attached files
+  const hasFiles = useMemo(() => {
+    const toolResources = group.productionPrompt?.tool_resources;
+    if (!toolResources) return false;
+
+    return Object.values(toolResources).some(
+      (resource) => resource?.file_ids && resource.file_ids.length > 0,
+    );
+  }, [group.productionPrompt?.tool_resources]);
+
   const onCardClick: React.MouseEventHandler<HTMLButtonElement> = () => {
+    console.log('ChatGroupItem.onCardClick called for:', group.name);
+    console.log('Group productionPrompt:', {
+      hasPrompt: !!group.productionPrompt?.prompt,
+      prompt: group.productionPrompt?.prompt?.substring(0, 100) + '...',
+      tool_resources: group.productionPrompt?.tool_resources,
+      hasToolResources: !!group.productionPrompt?.tool_resources,
+    });
+
     const text = group.productionPrompt?.prompt;
     if (!text?.trim()) {
+      console.log('No prompt text found');
       return;
     }
 
     if (detectVariables(text)) {
+      console.log('Prompt has variables, opening dialog');
       setVariableDialogOpen(true);
       return;
     }
 
-    submitPrompt(text);
+    console.log('Calling submitPrompt with tool_resources');
+    submitPrompt(text, group.productionPrompt?.tool_resources);
   };
 
   return (
@@ -57,6 +78,7 @@ function ChatGroupItem({
         name={group.name}
         category={group.category ?? ''}
         onClick={onCardClick}
+        hasFiles={hasFiles}
         snippet={
           typeof group.oneliner === 'string' && group.oneliner.length > 0
             ? group.oneliner

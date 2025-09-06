@@ -133,7 +133,7 @@ export default function VariableForm({
       text = text.replace(regex, value);
     });
 
-    submitPrompt(text);
+    submitPrompt(text, group.productionPrompt?.tool_resources);
     onClose();
   };
 
