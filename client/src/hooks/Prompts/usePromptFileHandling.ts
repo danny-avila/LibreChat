@@ -38,7 +38,15 @@ export const usePromptFileHandling = (params?: UsePromptFileHandling) => {
   const [filesLoading, setFilesLoading] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  const deleteFileMutation = useDeleteFilesMutation();
+  const deleteFileMutation = useDeleteFilesMutation({
+    onSuccess: () => {
+      params?.onFileChange?.();
+    },
+    onError: (error) => {
+      logger.error('Error deleting file:', error);
+      params?.onFileChange?.();
+    },
+  });
 
   const uploadFile = useUploadFileMutation({
     onSuccess: (data) => {
@@ -53,7 +61,13 @@ export const usePromptFileHandling = (params?: UsePromptFileHandling) => {
               filepath: data.filepath,
               progress: 1,
               attached: true,
-              preview: file.preview,
+              preview: data.filepath || file.preview, // Use filepath for preview if available
+              filename: data.filename || file.filename,
+              type: data.type || file.type,
+              size: data.bytes || file.size,
+              width: data.width || file.width,
+              height: data.height || file.height,
+              source: data.source || file.source,
             };
           }
           return file;
@@ -65,6 +79,9 @@ export const usePromptFileHandling = (params?: UsePromptFileHandling) => {
         message: 'File uploaded successfully',
         status: 'success',
       });
+
+      // Call the onFileChange callback to trigger save
+      params?.onFileChange?.();
     },
     onError: (error, body) => {
       logger.error('File upload error:', error);
@@ -226,9 +243,6 @@ export const usePromptFileHandling = (params?: UsePromptFileHandling) => {
           return true; // Keep this file
         });
       });
-
-      // Call the onFileChange callback to trigger save
-      params?.onFileChange?.();
     },
     [deleteFileMutation, params?.onFileChange],
   );
