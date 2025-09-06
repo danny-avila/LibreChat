@@ -100,7 +100,7 @@ export default function useSubmitMessage() {
   );
 
   const submitMessage = useCallback(
-    (data?: { text: string; toolResources?: AgentToolResources }) => {
+    (data?: { text: string; toolResources?: AgentToolResources; files?: ExtendedFile[] }) => {
       if (!data) {
         return console.warn('No data provided to submitMessage');
       }
@@ -122,13 +122,25 @@ export default function useSubmitMessage() {
       const rootIndex = addedIndex - 1;
       const clientTimestamp = new Date().toISOString();
 
-      ask({
-        text: data.text,
-        overrideConvoId: appendIndex(rootIndex, overrideConvoId),
-        overrideUserMessageId: appendIndex(rootIndex, overrideUserMessageId),
-        clientTimestamp,
+      console.log('submitMessage calling ask with:', {
+        text: data.text?.substring(0, 100) + '...',
         toolResources: data.toolResources,
+        overrideFiles: data.files,
+        hasOverrideFiles: !!data.files?.length,
       });
+
+      ask(
+        {
+          text: data.text,
+          overrideConvoId: appendIndex(rootIndex, overrideConvoId),
+          overrideUserMessageId: appendIndex(rootIndex, overrideUserMessageId),
+          clientTimestamp,
+          toolResources: data.toolResources,
+        },
+        {
+          overrideFiles: data.files,
+        },
+      );
 
       if (hasAdded) {
         askAdditional(
@@ -139,7 +151,10 @@ export default function useSubmitMessage() {
             clientTimestamp,
             toolResources: data.toolResources,
           },
-          { overrideMessages: rootMessages },
+          {
+            overrideMessages: rootMessages,
+            overrideFiles: data.files,
+          },
         );
       }
       methods.reset();
@@ -168,9 +183,18 @@ export default function useSubmitMessage() {
 
       const parsedText = replaceSpecialVars({ text, user });
 
-      // ALWAYS add files to chat state first (like AttachFileMenu does)
+      if (autoSendPrompts) {
+        console.log('Auto-sending message with toolResources');
+        // Auto-send: convert toolResources to files and pass both
+        const promptFiles = toolResources ? convertToolResourcesToFiles(toolResources) : [];
+        console.log('Auto-send converted files:', promptFiles);
+        submitMessage({ text: parsedText, toolResources, files: promptFiles });
+        return;
+      }
+
+      // Manual mode: add files to chat state so they appear in UI
       if (toolResources) {
-        console.log('Converting toolResources to files...');
+        console.log('Converting toolResources to files for manual mode...');
         const promptFiles = convertToolResourcesToFiles(toolResources);
         console.log('Converted files:', promptFiles);
 
@@ -189,16 +213,6 @@ export default function useSubmitMessage() {
         console.log('No toolResources provided');
       }
 
-      if (autoSendPrompts) {
-        console.log('Auto-sending message (files should be in chat state)');
-        // Auto-send: files are now in chat state, submit without toolResources
-        // (files will be picked up from chat state like AttachFileMenu)
-        submitMessage({ text: parsedText });
-        return;
-      }
-
-      console.log('Manual mode: setting text in input (files should be visible in UI)');
-      // Manual send: files are in chat state, just set text
       const currentText = methods.getValues('text');
       const newText = currentText.trim().length > 1 ? `\n${parsedText}` : parsedText;
       setActivePrompt(newText);
