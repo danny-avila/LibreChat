@@ -81,6 +81,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
   } = useAddedChatContext();
   const assistantMap = useAssistantsMapContext();
   const showStopAdded = useRecoilValue(store.showStopButtonByIndex(addedIndex));
+  const hasHandledSubmit = useRef(false);
 
   const endpoint = useMemo(
     () => conversation?.endpointType ?? conversation?.endpoint,
@@ -176,6 +177,16 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
       setBackupBadges([...badges]);
     }
   }, [isEditingBadges, badges, backupBadges.length]);
+
+  useEffect(() => {
+    if (!isSubmitting && !isSubmittingAdded && !hasHandledSubmit.current) {
+      hasHandledSubmit.current = true;
+      methods.setValue('text', textValue, { shouldValidate: true });
+    }
+    if (isSubmitting || isSubmittingAdded) {
+      hasHandledSubmit.current = false;
+    }
+  }, [isSubmitting, isSubmittingAdded, methods, textValue]);
 
   const handleSaveBadges = useCallback(() => {
     setIsEditingBadges(false);
