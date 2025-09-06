@@ -14,9 +14,9 @@ export interface AnthropicConfigOptions {
   /** The user ID for tracking and personalization */
   userId?: string;
   /** Proxy server URL */
-  proxy?: string;
+  proxy?: string | null;
   /** URL for a reverse proxy, if used */
-  reverseProxyUrl?: string;
+  reverseProxyUrl?: string | null;
 }
 
 /**
