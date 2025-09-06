@@ -46,14 +46,7 @@ export default function ListCard({
           >
             {name}
           </Label>
-          {/* Sometimes the paperclip renders a bit smaller in some entries compared to others, need to find cause before i mark ready for review */}
-          {hasFiles && (
-            <Paperclip
-              className="h-4 w-4 text-text-secondary"
-              aria-label="Has attached files"
-              title="This prompt has attached files"
-            />
-          )}
+          {hasFiles && <Paperclip className="icon-xs mt-1 flex-shrink-0 text-text-secondary" />}
         </div>
         <div>{children}</div>
       </div>
