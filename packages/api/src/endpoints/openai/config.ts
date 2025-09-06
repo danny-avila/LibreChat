@@ -24,7 +24,6 @@ export function getOpenAIConfig(
 ): t.OpenAIConfigResult {
   const {
     proxy,
-    headers,
     addParams,
     dropParams,
     defaultQuery,
@@ -44,15 +43,22 @@ export function getOpenAIConfig(
     !isAnthropic;
 
   let azure = options.azure;
+  let headers = options.headers;
   if (isAnthropic) {
     const anthropicResult = getAnthropicLLMConfig(apiKey, {
       modelOptions,
-      userId: options.userId || '',
       proxy: options.proxy,
-      reverseProxyUrl: options.reverseProxyUrl,
+      userId: options.userId || '',
     });
-    llmConfig = transformToOpenAIConfig(anthropicResult.llmConfig);
+    const transformed = transformToOpenAIConfig({
+      llmConfig: anthropicResult.llmConfig,
+      fromEndpoint: EModelEndpoint.anthropic,
+    });
+    llmConfig = transformed.llmConfig;
     tools = anthropicResult.tools;
+    if (transformed.configOptions?.defaultHeaders) {
+      headers = Object.assign(headers ?? {}, transformed.configOptions?.defaultHeaders);
+    }
   } else {
     const openaiResult = getOpenAILLMConfig({
       azure,
