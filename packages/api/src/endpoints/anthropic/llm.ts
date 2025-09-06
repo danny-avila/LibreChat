@@ -11,21 +11,21 @@ import { checkPromptCacheSupport, getClaudeHeaders, configureReasoning } from '.
 /**
  * Generates configuration options for creating an Anthropic language model (LLM) instance.
  *
- * @param {string} apiKey - The API key for authentication with Anthropic.
- * @param {Object} [options={}] - Additional options for configuring the LLM.
- * @param {Object} [options.modelOptions] - Model-specific options.
- * @param {string} [options.modelOptions.model] - The name of the model to use.
- * @param {number} [options.modelOptions.maxOutputTokens] - The maximum number of tokens to generate.
- * @param {number} [options.modelOptions.temperature] - Controls randomness in output generation.
- * @param {number} [options.modelOptions.topP] - Controls diversity of output generation.
- * @param {number} [options.modelOptions.topK] - Controls the number of top tokens to consider.
- * @param {string[]} [options.modelOptions.stop] - Sequences where the API will stop generating further tokens.
- * @param {boolean} [options.modelOptions.stream] - Whether to stream the response.
- * @param {string} options.userId - The user ID for tracking and personalization.
- * @param {string} [options.proxy] - Proxy server URL.
- * @param {string} [options.reverseProxyUrl] - URL for a reverse proxy, if used.
+ * @param apiKey - The API key for authentication with Anthropic.
+ * @param options={} - Additional options for configuring the LLM.
+ * @param options.modelOptions - Model-specific options.
+ * @param options.modelOptions.model - The name of the model to use.
+ * @param options.modelOptions.maxOutputTokens - The maximum number of tokens to generate.
+ * @param options.modelOptions.temperature - Controls randomness in output generation.
+ * @param options.modelOptions.topP - Controls diversity of output generation.
+ * @param options.modelOptions.topK - Controls the number of top tokens to consider.
+ * @param options.modelOptions.stop - Sequences where the API will stop generating further tokens.
+ * @param options.modelOptions.stream - Whether to stream the response.
+ * @param options.userId - The user ID for tracking and personalization.
+ * @param options.proxy - Proxy server URL.
+ * @param options.reverseProxyUrl - URL for a reverse proxy, if used.
  *
- * @returns {Object} Configuration options for creating an Anthropic LLM instance, with null and undefined values removed.
+ * @returns Configuration options for creating an Anthropic LLM instance, with null and undefined values removed.
  */
 function getLLMConfig(
   apiKey?: string,
@@ -61,7 +61,6 @@ function getLLMConfig(
   ) as typeof defaultOptions &
     Partial<AnthropicParameters> & { stop?: string[]; web_search?: boolean };
 
-  /** @type {AnthropicClientOptions} */
   let requestOptions: AnthropicClientOptions & { stream?: boolean } = {
     apiKey,
     model: mergedOptions.model,
@@ -118,7 +117,6 @@ function getLLMConfig(
 
   return {
     tools,
-    /** @type {AnthropicClientOptions} */
     llmConfig: removeNullishValues(
       requestOptions as Record<string, unknown>,
     ) as AnthropicClientOptions & { clientOptions?: { fetchOptions?: { dispatcher: Dispatcher } } },

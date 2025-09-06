@@ -1,17 +1,10 @@
-import { ProxyAgent } from 'undici';
-import { Providers } from '@librechat/agents';
-import { KnownEndpoints, removeNullishValues, EModelEndpoint } from 'librechat-data-provider';
+import { removeNullishValues } from 'librechat-data-provider';
 import type { BindToolsInput } from '@langchain/core/language_models/chat_models';
-import type { AnthropicClientOptions } from '@librechat/agents';
 import type { AzureOpenAIInput } from '@langchain/openai';
 import type { OpenAI } from 'openai';
 import type * as t from '~/types';
-import { getLLMConfig as getAnthropicLLMConfig } from '~/endpoints/anthropic/llm';
 import { sanitizeModelName, constructAzureURL } from '~/utils/azure';
-import { createFetch } from '~/utils/generators';
 import { isEnabled } from '~/utils/common';
-
-type Fetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
 export const knownOpenAIParams = new Set([
   // Constructor/Instance Parameters
@@ -82,30 +75,51 @@ function hasReasoningParams({
   );
 }
 
-function getOpenAILLMConfig({
+export function getOpenAILLMConfig({
+  azure,
+  apiKey,
+  baseURL,
   streaming,
-  modelOptions,
   addParams,
   dropParams,
+  useOpenRouter,
+  modelOptions: _modelOptions,
 }: {
+  apiKey: string;
   streaming: boolean;
+  baseURL?: string | null;
   modelOptions: Partial<t.OpenAIParameters>;
   addParams?: Record<string, unknown>;
   dropParams?: string[];
-}): {
-  llmConfig: Partial<t.ClientOptions> & Partial<t.OpenAIParameters> & Partial<AzureOpenAIInput>;
-  tools: BindToolsInput[];
+  useOpenRouter?: boolean;
+  azure?: false | t.AzureOptions;
+}): Pick<t.LLMConfigResult, 'llmConfig' | 'tools'> & {
+  azure?: t.AzureOptions;
 } {
-  const { reasoning_effort, reasoning_summary, verbosity, web_search, ...restModelOptions } =
-    modelOptions;
+  const {
+    reasoning_effort,
+    reasoning_summary,
+    verbosity,
+    web_search,
+    frequency_penalty,
+    presence_penalty,
+    ...modelOptions
+  } = _modelOptions;
 
   const llmConfig = Object.assign(
     {
       streaming,
-      model: restModelOptions.model ?? '',
+      model: modelOptions.model ?? '',
     },
-    restModelOptions,
+    modelOptions,
   ) as Partial<t.ClientOptions> & Partial<t.OpenAIParameters> & Partial<AzureOpenAIInput>;
+
+  if (frequency_penalty != null) {
+    llmConfig.frequencyPenalty = frequency_penalty;
+  }
+  if (presence_penalty != null) {
+    llmConfig.presencePenalty = presence_penalty;
+  }
 
   const modelKwargs: Record<string, unknown> = {};
   let hasModelKwargs = false;
@@ -126,9 +140,13 @@ function getOpenAILLMConfig({
     }
   }
 
+  if (useOpenRouter) {
+    llmConfig.include_reasoning = true;
+  }
+
   if (
     hasReasoningParams({ reasoning_effort, reasoning_summary }) &&
-    llmConfig.useResponsesApi === true
+    (llmConfig.useResponsesApi === true || useOpenRouter)
   ) {
     llmConfig.reasoning = removeNullishValues(
       {
@@ -207,183 +225,52 @@ function getOpenAILLMConfig({
     llmConfig.modelKwargs = modelKwargs;
   }
 
-  return { llmConfig, tools };
-}
-
-/**
- * Generates configuration options for creating a language model (LLM) instance.
- * @param apiKey - The API key for authentication.
- * @param options - Additional options for configuring the LLM.
- * @param endpoint - The endpoint name
- * @returns Configuration options for creating an LLM instance.
- */
-export function getOpenAIConfig(
-  apiKey: string,
-  options: t.OpenAIConfigOptions = {},
-  endpoint?: string | null,
-): t.LLMConfigResult {
-  const {
-    modelOptions: _modelOptions = {},
-    reverseProxyUrl,
-    directEndpoint,
-    defaultQuery,
-    headers,
-    proxy,
-    azure,
-    streaming = true,
-    addParams,
-    dropParams,
-  } = options;
-
-  let llmConfig:
-    | (Partial<t.ClientOptions> & Partial<t.OpenAIParameters> & Partial<AzureOpenAIInput>)
-    | AnthropicClientOptions;
-  let tools: BindToolsInput[];
-  let isAnthropic = false;
-  if (options.customParams?.defaultParamsEndpoint === EModelEndpoint.anthropic) {
-    const anthropicResult = getAnthropicLLMConfig(apiKey, {
-      modelOptions: _modelOptions,
-      userId: options.userId || '',
-      proxy: options.proxy,
-      reverseProxyUrl: options.reverseProxyUrl,
-    });
-    llmConfig = anthropicResult.llmConfig;
-    tools = anthropicResult.tools || [];
-    isAnthropic = true;
-  } else {
-    const openaiResult = getOpenAILLMConfig({
-      streaming,
-      modelOptions: _modelOptions,
-      addParams,
-      dropParams,
-    });
-    llmConfig = openaiResult.llmConfig;
-    tools = openaiResult.tools;
-  }
-
-  let useOpenRouter = false;
-  const configOptions: t.OpenAIConfiguration = {};
-
-  if (
-    ((reverseProxyUrl && reverseProxyUrl.includes(KnownEndpoints.openrouter)) ||
-      (endpoint && endpoint.toLowerCase().includes(KnownEndpoints.openrouter))) &&
-    !isAnthropic
-  ) {
-    useOpenRouter = true;
-    (llmConfig as t.ClientOptions).include_reasoning = true;
-    configOptions.baseURL = reverseProxyUrl;
-    configOptions.defaultHeaders = Object.assign(
-      {
-        'HTTP-Referer': 'https://librechat.ai',
-        'X-Title': 'LibreChat',
-      },
-      headers,
-    );
-  } else if (reverseProxyUrl) {
-    configOptions.baseURL = reverseProxyUrl;
-    if (headers) {
-      configOptions.defaultHeaders = headers;
-    }
-  }
-
-  if (defaultQuery) {
-    configOptions.defaultQuery = defaultQuery;
-  }
-
-  if (proxy) {
-    const proxyAgent = new ProxyAgent(proxy);
-    configOptions.fetchOptions = {
-      dispatcher: proxyAgent,
-    };
-  }
-
-  if (azure) {
-    const useModelName = isEnabled(process.env.AZURE_USE_MODEL_AS_DEPLOYMENT_NAME);
-    const updatedAzure = { ...azure };
-    updatedAzure.azureOpenAIApiDeploymentName = useModelName
-      ? sanitizeModelName(llmConfig.model || '')
-      : azure.azureOpenAIApiDeploymentName;
-
-    if (process.env.AZURE_OPENAI_DEFAULT_MODEL) {
-      llmConfig.model = process.env.AZURE_OPENAI_DEFAULT_MODEL;
-    }
-
-    const constructBaseURL = () => {
-      if (!configOptions.baseURL) {
-        return;
-      }
-      const azureURL = constructAzureURL({
-        baseURL: configOptions.baseURL,
-        azureOptions: updatedAzure,
-      });
-      updatedAzure.azureOpenAIBasePath = azureURL.split(
-        `/${updatedAzure.azureOpenAIApiDeploymentName}`,
-      )[0];
-    };
-
-    constructBaseURL();
-    Object.assign(llmConfig, updatedAzure);
-
-    const constructAzureResponsesApi = () => {
-      if (!isAnthropic) {
-        llmConfig = llmConfig as Partial<t.ClientOptions> &
-          Partial<t.OpenAIParameters> &
-          Partial<AzureOpenAIInput>;
-      } else {
-        return;
-      }
-
-      if (!llmConfig.useResponsesApi) {
-        return;
-      }
-
-      configOptions.baseURL = constructAzureURL({
-        baseURL: configOptions.baseURL || 'https://${INSTANCE_NAME}.openai.azure.com/openai/v1',
-        azureOptions: llmConfig,
-      });
-
-      delete llmConfig.azureOpenAIApiDeploymentName;
-      delete llmConfig.azureOpenAIApiInstanceName;
-      delete llmConfig.azureOpenAIApiVersion;
-      delete llmConfig.azureOpenAIBasePath;
-      delete llmConfig.azureOpenAIApiKey;
-      llmConfig.apiKey = apiKey;
-
-      configOptions.defaultHeaders = {
-        ...configOptions.defaultHeaders,
-        'api-key': apiKey,
-      };
-      configOptions.defaultQuery = {
-        ...configOptions.defaultQuery,
-        'api-version': configOptions.defaultQuery?.['api-version'] ?? 'preview',
-      };
-    };
-
-    constructAzureResponsesApi();
-
-    llmConfig.model = updatedAzure.azureOpenAIApiDeploymentName;
-  } else {
+  if (!azure) {
     llmConfig.apiKey = apiKey;
+    return { llmConfig, tools };
   }
 
-  if (process.env.OPENAI_ORGANIZATION && azure) {
-    configOptions.organization = process.env.OPENAI_ORGANIZATION;
+  const useModelName = isEnabled(process.env.AZURE_USE_MODEL_AS_DEPLOYMENT_NAME);
+  const updatedAzure = { ...azure };
+  updatedAzure.azureOpenAIApiDeploymentName = useModelName
+    ? sanitizeModelName(llmConfig.model || '')
+    : azure.azureOpenAIApiDeploymentName;
+
+  if (process.env.AZURE_OPENAI_DEFAULT_MODEL) {
+    llmConfig.model = process.env.AZURE_OPENAI_DEFAULT_MODEL;
   }
 
-  if (directEndpoint === true && configOptions?.baseURL != null) {
-    configOptions.fetch = createFetch({
-      directEndpoint: directEndpoint,
-      reverseProxyUrl: configOptions?.baseURL,
-    }) as unknown as Fetch;
-  }
-
-  const result: t.LLMConfigResult = {
-    llmConfig,
-    configOptions,
-    tools,
+  const constructAzureOpenAIBasePath = () => {
+    if (!baseURL) {
+      return;
+    }
+    const azureURL = constructAzureURL({
+      baseURL,
+      azureOptions: updatedAzure,
+    });
+    updatedAzure.azureOpenAIBasePath = azureURL.split(
+      `/${updatedAzure.azureOpenAIApiDeploymentName}`,
+    )[0];
   };
-  if (useOpenRouter) {
-    result.provider = Providers.OPENROUTER;
-  }
-  return result;
+
+  constructAzureOpenAIBasePath();
+  Object.assign(llmConfig, updatedAzure);
+
+  const constructAzureResponsesApi = () => {
+    if (!llmConfig.useResponsesApi) {
+      return;
+    }
+
+    delete llmConfig.azureOpenAIApiDeploymentName;
+    delete llmConfig.azureOpenAIApiInstanceName;
+    delete llmConfig.azureOpenAIApiVersion;
+    delete llmConfig.azureOpenAIBasePath;
+    delete llmConfig.azureOpenAIApiKey;
+    llmConfig.apiKey = apiKey;
+  };
+
+  constructAzureResponsesApi();
+
+  llmConfig.model = updatedAzure.azureOpenAIApiDeploymentName;
+  return { llmConfig, tools, azure: updatedAzure };
 }
