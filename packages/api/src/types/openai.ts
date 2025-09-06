@@ -8,11 +8,13 @@ import type { AppConfig } from './config';
 
 export type OpenAIParameters = z.infer<typeof openAISchema>;
 
+export type OpenAIModelOptions = Partial<OpenAIParameters>;
+
 /**
  * Configuration options for the getLLMConfig function
  */
 export interface OpenAIConfigOptions {
-  modelOptions?: Partial<OpenAIParameters>;
+  modelOptions?: OpenAIModelOptions;
   directEndpoint?: boolean;
   reverseProxyUrl?: string | null;
   defaultQuery?: Record<string, string | undefined>;
@@ -30,19 +32,22 @@ export interface OpenAIConfigOptions {
 
 export type OpenAIConfiguration = OpenAIClientOptions['configuration'];
 
-export type ClientOptions = OpenAIClientOptions & {
+export type OAIClientOptions = OpenAIClientOptions & {
   include_reasoning?: boolean;
 };
 
 /**
  * Return type for getLLMConfig function
  */
-export interface LLMConfigResult<T = ClientOptions> {
+export interface LLMConfigResult<T = OAIClientOptions> {
   llmConfig: T;
-  configOptions: OpenAIConfiguration;
-  tools?: BindToolsInput[];
   provider?: Providers;
+  tools?: BindToolsInput[];
 }
+
+export type OpenAIConfigResult = LLMConfigResult<OAIClientOptions> & {
+  configOptions?: OpenAIConfiguration;
+};
 
 /**
  * Interface for user values retrieved from the database

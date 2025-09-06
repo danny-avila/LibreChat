@@ -1,8 +1,8 @@
 import { z } from 'zod';
 import { Dispatcher } from 'undici';
 import { anthropicSchema } from 'librechat-data-provider';
-import { AnthropicClientOptions } from '@librechat/agents';
-import { BindToolsInput } from '@langchain/core/language_models/chat_models';
+import type { AnthropicClientOptions } from '@librechat/agents';
+import type { LLMConfigResult } from './openai';
 
 export type AnthropicParameters = z.infer<typeof anthropicSchema>;
 
@@ -60,14 +60,11 @@ export interface AnthropicConfigOptions {
 /**
  * Return type for getLLMConfig function
  */
-export interface AnthropicLLMConfigResult {
-  /** Configuration options for creating an Anthropic LLM instance */
-  llmConfig: AnthropicClientOptions & {
+export type AnthropicLLMConfigResult = LLMConfigResult<
+  AnthropicClientOptions & {
     clientOptions?: {
       fetchOptions?: { dispatcher: Dispatcher };
     };
     stream?: boolean;
-  };
-  /** Array of tools to be used */
-  tools?: BindToolsInput[];
-}
+  }
+>;

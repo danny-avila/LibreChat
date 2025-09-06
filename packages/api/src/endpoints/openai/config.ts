@@ -1,44 +1,14 @@
 import { ProxyAgent } from 'undici';
 import { Providers } from '@librechat/agents';
 import { KnownEndpoints, EModelEndpoint } from 'librechat-data-provider';
-import type { AnthropicClientOptions } from '@librechat/agents';
-import type { AzureOpenAIInput } from '@langchain/openai';
 import type * as t from '~/types';
 import { getLLMConfig as getAnthropicLLMConfig } from '~/endpoints/anthropic/llm';
+import { transformToOpenAIConfig } from './transform';
 import { constructAzureURL } from '~/utils/azure';
 import { createFetch } from '~/utils/generators';
 import { getOpenAILLMConfig } from './llm';
 
 type Fetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
-
-type SupportedLLMConfig =
-  | AnthropicClientOptions
-  | t.ClientOptions
-  | (t.ClientOptions &
-      AzureOpenAIInput & {
-        useResponsesApi?: boolean;
-        azureOpenAIApiKey?: string;
-      });
-
-/**
- * Overload for Anthropic configuration
- */
-export function getOpenAIConfig(
-  apiKey: string,
-  options: t.OpenAIConfigOptions & {
-    customParams: { defaultParamsEndpoint: typeof EModelEndpoint.anthropic };
-  },
-  endpoint?: string | null,
-): t.LLMConfigResult<AnthropicClientOptions>;
-
-/**
- * Overload for OpenAI/Azure configuration
- */
-export function getOpenAIConfig(
-  apiKey: string,
-  options?: t.OpenAIConfigOptions,
-  endpoint?: string | null,
-): t.LLMConfigResult<t.ClientOptions>;
 
 /**
  * Generates configuration options for creating a language model (LLM) instance.
@@ -51,7 +21,7 @@ export function getOpenAIConfig(
   apiKey: string,
   options: t.OpenAIConfigOptions = {},
   endpoint?: string | null,
-): t.LLMConfigResult<SupportedLLMConfig> {
+): t.OpenAIConfigResult {
   const {
     proxy,
     headers,
@@ -64,7 +34,7 @@ export function getOpenAIConfig(
     reverseProxyUrl: baseURL,
   } = options;
 
-  let llmConfig: SupportedLLMConfig;
+  let llmConfig: t.OAIClientOptions;
   let tools: t.LLMConfigResult['tools'];
   const isAnthropic = options.customParams?.defaultParamsEndpoint === EModelEndpoint.anthropic;
 
@@ -81,7 +51,7 @@ export function getOpenAIConfig(
       proxy: options.proxy,
       reverseProxyUrl: options.reverseProxyUrl,
     });
-    llmConfig = anthropicResult.llmConfig;
+    llmConfig = transformToOpenAIConfig(anthropicResult.llmConfig);
     tools = anthropicResult.tools;
   } else {
     const openaiResult = getOpenAILLMConfig({
@@ -128,7 +98,7 @@ export function getOpenAIConfig(
 
   if (azure && !isAnthropic) {
     const constructAzureResponsesApi = () => {
-      if (!(llmConfig as t.ClientOptions).useResponsesApi || !azure) {
+      if (!llmConfig.useResponsesApi || !azure) {
         return;
       }
 
@@ -161,7 +131,7 @@ export function getOpenAIConfig(
     }) as unknown as Fetch;
   }
 
-  const result: t.LLMConfigResult<SupportedLLMConfig> = {
+  const result: t.OpenAIConfigResult = {
     llmConfig,
     configOptions,
     tools,
