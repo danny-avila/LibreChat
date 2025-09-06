@@ -413,7 +413,10 @@ module.exports = {
         prompt: newPrompt,
         group: {
           ...newPromptGroup,
-          productionPrompt: { prompt: newPrompt.prompt },
+          productionPrompt: {
+            prompt: newPrompt.prompt,
+            tool_resources: newPrompt.tool_resources,
+          },
         },
       };
     } catch (error) {
