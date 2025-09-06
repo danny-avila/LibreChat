@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { openAISchema, EModelEndpoint } from 'librechat-data-provider';
-import type { TEndpointOption, TAzureConfig, TEndpoint } from 'librechat-data-provider';
+import type { TEndpointOption, TAzureConfig, TEndpoint, TConfig } from 'librechat-data-provider';
 import type { BindToolsInput } from '@langchain/core/language_models/chat_models';
 import type { OpenAIClientOptions, Providers } from '@librechat/agents';
 import type { AzureOptions } from './azure';
@@ -24,9 +24,7 @@ export interface OpenAIConfigOptions {
   streaming?: boolean;
   addParams?: Record<string, unknown>;
   dropParams?: string[];
-  customParams?: {
-    defaultParamsEndpoint?: string;
-  };
+  customParams?: TConfig['customParams'];
   userId?: string;
 }
 
