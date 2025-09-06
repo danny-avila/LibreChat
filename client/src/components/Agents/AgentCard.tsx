@@ -1,6 +1,5 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { Label } from '@librechat/client';
-import { Star } from 'lucide-react';
 import { QueryKeys } from 'librechat-data-provider';
 import type t from 'librechat-data-provider';
 import { useLocalize, TranslationKeys, useAgentCategories } from '~/hooks';
@@ -123,13 +122,23 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, onClick, className = '' })
     >
       {/* Favorite toggle */}
       <button
-        aria-label={isFavorite ? 'Unfavorite agent' : 'Favorite agent'}
+        role="switch"
+        aria-checked={favorited}
+        aria-label={favorited ? 'Unfavorite agent' : 'Favorite agent'}
         onClick={toggleFavorite}
         className="absolute right-3 top-3 rounded-full p-1 hover:bg-surface-hover"
       >
-        <Star
-          className={`size-4 ${favorited ? 'fill-yellow-400 text-yellow-400' : 'text-text-secondary'}`}
-        />
+        <svg
+          viewBox="0 0 24 24"
+          xmlns="http://www.w3.org/2000/svg"
+          className={`size-5 ${favorited ? 'fill-yellow-400 text-yellow-400' : 'text-text-secondary'}`}
+          aria-hidden="true"
+        >
+          <path
+            d="M12 17.27l-5.197 3.084 1.39-5.96L3 9.82l6.02-.52L12 3l2.98 6.3L21 9.82l-5.193 4.574 1.39 5.96z"
+            fill="currentColor"
+          />
+        </svg>
       </button>
       {/* Two column layout */}
       <div className="flex h-full items-start gap-3">

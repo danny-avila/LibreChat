@@ -1,10 +1,9 @@
 import React from 'react';
-import { EarthIcon } from 'lucide-react';
 import { isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
 import type { Endpoint } from '~/common';
 import { useModelSelectorContext } from '../ModelSelectorContext';
 import { CustomMenuItem as MenuItem } from '../CustomMenu';
-import { Star } from 'lucide-react';
+import { EarthIcon } from 'lucide-react';
 import { QueryKeys } from 'librechat-data-provider';
 
 interface EndpointModelItemProps {
@@ -60,7 +59,9 @@ export function EndpointModelItem({ modelId, endpoint, isSelected }: EndpointMod
       {isGlobal && <EarthIcon className="ml-auto size-4 text-green-400" />}
       {isAgentsEndpoint(endpoint.value) && modelId && (
         <button
-          aria-label={isFavorite ? 'Unfavorite agent' : 'Favorite agent'}
+          role="switch"
+          aria-checked={favorited}
+          aria-label={favorited ? 'Unfavorite agent' : 'Favorite agent'}
           className="ml-2"
           onClick={async (e) => {
             e.stopPropagation();
@@ -99,9 +100,17 @@ export function EndpointModelItem({ modelId, endpoint, isSelected }: EndpointMod
             }
           }}
         >
-          <Star
-            className={`size-4 ${favorited ? 'fill-yellow-400 text-yellow-400' : 'text-text-secondary'}`}
-          />
+          <svg
+            viewBox="0 0 24 24"
+            xmlns="http://www.w3.org/2000/svg"
+            className={`size-5 ${favorited ? 'fill-yellow-400 text-yellow-400' : 'text-text-secondary'}`}
+            aria-hidden="true"
+          >
+            <path
+              d="M12 17.27l-5.197 3.084 1.39-5.96L3 9.82l6.02-.52L12 3l2.98 6.3L21 9.82l-5.193 4.574 1.39 5.96z"
+              fill="currentColor"
+            />
+          </svg>
         </button>
       )}
       {isSelected && (
