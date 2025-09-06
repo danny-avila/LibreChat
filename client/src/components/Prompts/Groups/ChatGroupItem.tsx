@@ -1,5 +1,5 @@
 import { useState, useMemo, memo } from 'react';
-import { Menu as MenuIcon, Edit as EditIcon, EarthIcon, TextSearch, Paperclip } from 'lucide-react';
+import { Menu as MenuIcon, Edit as EditIcon, EarthIcon, TextSearch } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuItem,
