@@ -4,14 +4,14 @@ import { useToastContext } from '@librechat/client';
 import { EModelEndpoint, EToolResources, FileSources } from 'librechat-data-provider';
 import type { AgentToolResources, TFile } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
-import { useUploadFileMutation, useGetFiles, useDeleteFilesMutation } from '~/data-provider';
+import { useUploadFileMutation, useGetFiles } from '~/data-provider';
 import { useAuthContext } from '~/hooks';
 import { logger } from '~/utils';
 
 interface UsePromptFileHandling {
   fileSetter?: (files: ExtendedFile[]) => void;
   initialFiles?: ExtendedFile[];
-  onFileChange?: () => void; // Callback when files are added/removed
+  onFileChange?: (updatedFiles: ExtendedFile[]) => void; // Callback when files are added/removed
 }
 
 /**
@@ -37,16 +37,6 @@ export const usePromptFileHandling = (params?: UsePromptFileHandling) => {
   });
   const [filesLoading, setFilesLoading] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
-
-  const deleteFileMutation = useDeleteFilesMutation({
-    onSuccess: () => {
-      params?.onFileChange?.();
-    },
-    onError: (error) => {
-      logger.error('Error deleting file:', error);
-      params?.onFileChange?.();
-    },
-  });
 
   const uploadFile = useUploadFileMutation({
     onSuccess: (data) => {
@@ -80,8 +70,27 @@ export const usePromptFileHandling = (params?: UsePromptFileHandling) => {
         status: 'success',
       });
 
-      // Call the onFileChange callback to trigger save
-      params?.onFileChange?.();
+      // Call the onFileChange callback to trigger save with updated files
+      const updatedFiles = files.map((file) => {
+        if (file.temp_file_id === data.temp_file_id) {
+          return {
+            ...file,
+            file_id: data.file_id,
+            filepath: data.filepath,
+            progress: 1,
+            attached: true,
+            preview: data.filepath || file.preview,
+            filename: data.filename || file.filename,
+            type: data.type || file.type,
+            size: data.bytes || file.size,
+            width: data.width || file.width,
+            height: data.height || file.height,
+            source: data.source || file.source,
+          };
+        }
+        return file;
+      });
+      params?.onFileChange?.(updatedFiles);
     },
     onError: (error, body) => {
       logger.error('File upload error:', error);
@@ -228,8 +237,8 @@ export const usePromptFileHandling = (params?: UsePromptFileHandling) => {
   // Handle file removal
   const handleFileRemove = useCallback(
     (fileId: string) => {
-      // Call delete API to remove from database
-      deleteFileMutation.mutate([fileId]);
+      // For prompts, we only remove the file from the current prompt's tool_resources
+      // We don't delete the file from the database to preserve previous versions
 
       setFiles((prev) => {
         return prev.filter((file) => {
@@ -243,8 +252,17 @@ export const usePromptFileHandling = (params?: UsePromptFileHandling) => {
           return true; // Keep this file
         });
       });
+
+      // Call the onFileChange callback to trigger prompt version update with updated files
+      const updatedFiles = files.filter((file) => {
+        if (file.file_id === fileId || file.temp_file_id === fileId) {
+          return false; // Remove this file
+        }
+        return true; // Keep this file
+      });
+      params?.onFileChange?.(updatedFiles);
     },
-    [deleteFileMutation, params?.onFileChange],
+    [params?.onFileChange],
   );
 
   // Sync with external fileSetter when files change

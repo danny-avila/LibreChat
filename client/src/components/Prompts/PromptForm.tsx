@@ -11,6 +11,7 @@ import {
   ResourceType,
   PermissionBits,
   PermissionTypes,
+  EToolResources,
 } from 'librechat-data-provider';
 import type { TCreatePrompt, TPrompt, TPromptGroup } from 'librechat-data-provider';
 import {
@@ -193,16 +194,18 @@ const PromptForm = () => {
     handleFileRemove,
     setFiles,
   } = usePromptFileHandling({
-    onFileChange: () => {
+    onFileChange: (updatedFiles) => {
       // Auto-save when files are added/removed
-      console.log('onFileChange called', { canEdit, selectedPrompt: !!selectedPrompt });
+      console.log('onFileChange called', {
+        canEdit,
+        selectedPrompt: !!selectedPrompt,
+        updatedFiles,
+      });
       if (canEdit && selectedPrompt) {
         const currentPromptText = getValues('prompt');
-        console.log('Calling onSave with:', currentPromptText);
-        // Use setTimeout to ensure file state is updated before calling onSave
-        setTimeout(() => {
-          onSave(currentPromptText);
-        }, 100);
+        console.log('Calling onSave with:', currentPromptText, 'and updated files:', updatedFiles);
+        // Call onSave with the updated files to ensure correct tool_resources
+        onSave(currentPromptText, updatedFiles);
       }
     },
   });
@@ -280,8 +283,33 @@ const PromptForm = () => {
     },
   });
 
+  // Helper function to get tool resources from a specific files array
+  const getToolResourcesFromFiles = useCallback((files: ExtendedFile[]) => {
+    if (files.length === 0) {
+      return undefined;
+    }
+
+    const toolResources: AgentToolResources = {};
+
+    files.forEach((file) => {
+      if (!file.file_id) return; // Skip files that haven't been uploaded yet
+
+      // Initialize the tool resource if it doesn't exist
+      if (!toolResources[file.tool_resource]) {
+        toolResources[file.tool_resource] = { file_ids: [] };
+      }
+
+      // Add file_id to the appropriate tool resource
+      if (!toolResources[file.tool_resource]!.file_ids!.includes(file.file_id)) {
+        toolResources[file.tool_resource]!.file_ids!.push(file.file_id);
+      }
+    });
+
+    return Object.keys(toolResources).length > 0 ? toolResources : undefined;
+  }, []);
+
   const onSave = useCallback(
-    (value: string) => {
+    (value: string, updatedFiles?: ExtendedFile[]) => {
       if (!canEdit) {
         return;
       }
@@ -299,7 +327,10 @@ const PromptForm = () => {
         return;
       }
 
-      const toolResources = getToolResources();
+      // Use updated files if provided, otherwise use current hook state
+      const toolResources = updatedFiles
+        ? getToolResourcesFromFiles(updatedFiles)
+        : getToolResources();
       const tempPrompt: TCreatePrompt = {
         prompt: {
           type: selectedPrompt.type ?? 'text',
