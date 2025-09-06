@@ -183,7 +183,7 @@ const getUserInfo = async (config, accessToken, sub) => {
     const exchangedAccessToken = await exchangeAccessTokenIfNeeded(config, accessToken, sub);
     return await client.fetchUserInfo(config, exchangedAccessToken, sub);
   } catch (error) {
-    logger.warn(`[openidStrategy] getUserInfo: Error fetching user info: ${error}`);
+    logger.error('[openidStrategy] getUserInfo: Error fetching user info:', error);
     return null;
   }
 };
@@ -398,6 +398,7 @@ async function setupOpenId() {
             );
           }
 
+          const appConfig = await getAppConfig();
           if (!user) {
             user = {
               provider: 'openid',
@@ -409,7 +410,6 @@ async function setupOpenId() {
               idOnTheSource: userinfo.oid,
             };
 
-            const appConfig = await getAppConfig();
             const balanceConfig = getBalanceConfig(appConfig);
             user = await createUser(user, balanceConfig, true, true);
           } else {
@@ -438,7 +438,9 @@ async function setupOpenId() {
               userinfo.sub,
             );
             if (imageBuffer) {
-              const { saveBuffer } = getStrategyFunctions(process.env.CDN_PROVIDER);
+              const { saveBuffer } = getStrategyFunctions(
+                appConfig?.fileStrategy ?? process.env.CDN_PROVIDER,
+              );
               const imagePath = await saveBuffer({
                 fileName,
                 userId: user._id.toString(),

@@ -12,7 +12,7 @@ const { logger } = require('@librechat/data-schemas');
 const mongoSanitize = require('express-mongo-sanitize');
 const { isEnabled, ErrorController } = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
-const validateImageRequest = require('./middleware/validateImageRequest');
+const createValidateImageRequest = require('./middleware/validateImageRequest');
 const { jwtLogin, ldapLogin, passportLogin } = require('~/strategies');
 const { updateInterfacePermissions } = require('~/models/interface');
 const { checkMigrations } = require('./services/start/migration');
@@ -126,7 +126,7 @@ const startServer = async () => {
   app.use('/api/config', routes.config);
   app.use('/api/assistants', routes.assistants);
   app.use('/api/files', await routes.files.initialize());
-  app.use('/images/', validateImageRequest, routes.staticRoute);
+  app.use('/images/', createValidateImageRequest(appConfig.secureImageLinks), routes.staticRoute);
   app.use('/api/share', routes.share);
   app.use('/api/roles', routes.roles);
   app.use('/api/agents', routes.agents);

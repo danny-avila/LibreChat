@@ -42,5 +42,6 @@ const agentCategorySchema = new Schema<IAgentCategory>(
 );
 
 agentCategorySchema.index({ isActive: 1, order: 1 });
+agentCategorySchema.index({ order: 1, label: 1 });
 
 export default agentCategorySchema;

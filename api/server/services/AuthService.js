@@ -402,9 +402,10 @@ const setAuthTokens = async (userId, res, sessionId = null) => {
  * @param {import('openid-client').TokenEndpointResponse & import('openid-client').TokenEndpointResponseHelpers} tokenset
  * - The tokenset object containing access and refresh tokens
  * @param {Object} res - response object
+ * @param {string} [userId] - Optional MongoDB user ID for image path validation
  * @returns {String} - access token
  */
-const setOpenIDAuthTokens = (tokenset, res) => {
+const setOpenIDAuthTokens = (tokenset, res, userId) => {
   try {
     if (!tokenset) {
       logger.error('[setOpenIDAuthTokens] No tokenset found in request');
@@ -435,6 +436,18 @@ const setOpenIDAuthTokens = (tokenset, res) => {
       secure: isProduction,
       sameSite: 'strict',
     });
+    if (userId && isEnabled(process.env.OPENID_REUSE_TOKENS)) {
+      /** JWT-signed user ID cookie for image path validation when OPENID_REUSE_TOKENS is enabled */
+      const signedUserId = jwt.sign({ id: userId }, process.env.JWT_REFRESH_SECRET, {
+        expiresIn: expiryInMilliseconds / 1000,
+      });
+      res.cookie('openid_user_id', signedUserId, {
+        expires: expirationDate,
+        httpOnly: true,
+        secure: isProduction,
+        sameSite: 'strict',
+      });
+    }
     return tokenset.access_token;
   } catch (error) {
     logger.error('[setOpenIDAuthTokens] Error in setting authentication tokens:', error);
@@ -452,7 +465,7 @@ const setOpenIDAuthTokens = (tokenset, res) => {
 const resendVerificationEmail = async (req) => {
   try {
     const { email } = req.body;
-    await deleteTokens(email);
+    await deleteTokens({ email });
     const user = await findUser({ email }, 'email _id name');
 
     if (!user) {

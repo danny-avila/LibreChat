@@ -2,6 +2,7 @@ const { isEnabled } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 const { ErrorTypes } = require('librechat-data-provider');
 const { createSocialUser, handleExistingUser } = require('./process');
+const { getAppConfig } = require('~/server/services/Config');
 const { findUser } = require('~/models');
 
 const socialLogin =
@@ -12,11 +13,12 @@ const socialLogin =
         profile,
       });
 
+      const appConfig = await getAppConfig();
       const existingUser = await findUser({ email: email.trim() });
       const ALLOW_SOCIAL_REGISTRATION = isEnabled(process.env.ALLOW_SOCIAL_REGISTRATION);
 
       if (existingUser?.provider === provider) {
-        await handleExistingUser(existingUser, avatarUrl);
+        await handleExistingUser(existingUser, avatarUrl, appConfig);
         return cb(null, existingUser);
       } else if (existingUser) {
         logger.info(
@@ -38,6 +40,7 @@ const socialLogin =
           username,
           name,
           emailVerified,
+          appConfig,
         });
         return cb(null, newUser);
       }
