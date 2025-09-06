@@ -112,7 +112,7 @@ export function getOpenAILLMConfig({
       model: modelOptions.model ?? '',
     },
     modelOptions,
-  ) as Partial<t.ClientOptions> & Partial<t.OpenAIParameters> & Partial<AzureOpenAIInput>;
+  ) as Partial<t.OAIClientOptions> & Partial<t.OpenAIParameters> & Partial<AzureOpenAIInput>;
 
   if (frequency_penalty != null) {
     llmConfig.frequencyPenalty = frequency_penalty;
@@ -197,13 +197,13 @@ export function getOpenAILLMConfig({
 
     combinedDropParams.forEach((param) => {
       if (param in llmConfig) {
-        delete llmConfig[param as keyof t.ClientOptions];
+        delete llmConfig[param as keyof t.OAIClientOptions];
       }
     });
   } else if (dropParams && Array.isArray(dropParams)) {
     dropParams.forEach((param) => {
       if (param in llmConfig) {
-        delete llmConfig[param as keyof t.ClientOptions];
+        delete llmConfig[param as keyof t.OAIClientOptions];
       }
     });
   }
