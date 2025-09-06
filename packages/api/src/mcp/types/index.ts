@@ -111,9 +111,16 @@ export type FormattedContent =
       };
     };
 
+export type Artifacts = {
+  content?: FormattedContent[];
+  ui_resources?: {
+    data: UIResource[];
+  }
+} | undefined;
+
 export type FormattedContentResult = [
   string | FormattedContent[],
-  undefined | { content: FormattedContent[] },
+  undefined | Artifacts,
 ];
 
 export type UIResource = {
