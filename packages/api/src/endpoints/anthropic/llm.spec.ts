@@ -1,4 +1,5 @@
 import { getLLMConfig } from './llm';
+import type * as t from '~/types';
 
 jest.mock('https-proxy-agent', () => ({
   HttpsProxyAgent: jest.fn().mockImplementation((proxy) => ({ proxy })),
@@ -240,7 +241,7 @@ describe('getLLMConfig', () => {
       const result = getLLMConfig('test-api-key', {
         modelOptions: {
           model: 'claude-3-opus',
-          maxOutputTokens: null,
+          maxOutputTokens: undefined,
         },
       });
 
@@ -327,7 +328,7 @@ describe('getLLMConfig', () => {
     it('should handle all nullish values removal', () => {
       const result = getLLMConfig('test-api-key', {
         modelOptions: {
-          temperature: null,
+          temperature: undefined,
           topP: undefined,
           topK: 0,
           stop: [],
@@ -414,8 +415,8 @@ describe('getLLMConfig', () => {
             },
           },
         });
-        expect(result.llmConfig.clientOptions.fetchOptions).toHaveProperty('dispatcher');
-        expect(result.llmConfig.clientOptions.fetchOptions.dispatcher.constructor.name).toBe(
+        expect(result.llmConfig.clientOptions?.fetchOptions).toHaveProperty('dispatcher');
+        expect(result.llmConfig.clientOptions?.fetchOptions?.dispatcher.constructor.name).toBe(
           'ProxyAgent',
         );
       });
@@ -481,7 +482,7 @@ describe('getLLMConfig', () => {
         expect(result.llmConfig).not.toHaveProperty('topP');
         expect(result.llmConfig).not.toHaveProperty('topK');
         // Should have appropriate headers for Claude-3.7 with prompt cache
-        expect(result.llmConfig.clientOptions.defaultHeaders).toEqual({
+        expect(result.llmConfig.clientOptions?.defaultHeaders).toEqual({
           'anthropic-beta':
             'token-efficient-tools-2025-02-19,output-128k-2025-02-19,prompt-caching-2024-07-31',
         });
@@ -605,13 +606,13 @@ describe('getLLMConfig', () => {
 
         const result = getLLMConfig('sk-ant-no-user-key', clientOptions);
 
-        expect(result.llmConfig.invocationKwargs.metadata).toMatchObject({
+        expect(result.llmConfig.invocationKwargs?.metadata).toMatchObject({
           user_id: undefined,
         });
       });
 
       it('should handle large parameter sets without performance issues', () => {
-        const largeModelOptions = {
+        const largeModelOptions: Record<string, string | number | boolean> = {
           model: 'claude-3-opus',
           temperature: 0.7,
           maxOutputTokens: 4096,
@@ -722,7 +723,7 @@ describe('getLLMConfig', () => {
           budget_tokens: 2000, // default thinkingBudget
         });
         // Should have prompt cache headers by default
-        expect(result.llmConfig.clientOptions.defaultHeaders).toBeDefined();
+        expect(result.llmConfig.clientOptions?.defaultHeaders).toBeDefined();
       });
     });
 
@@ -812,7 +813,9 @@ describe('getLLMConfig', () => {
               thinkingBudget,
             },
           });
-          expect(result.llmConfig.thinking.budget_tokens).toBe(expected);
+          expect((result.llmConfig.thinking as t.ThinkingConfigEnabled)?.budget_tokens).toBe(
+            expected,
+          );
         });
       });
     });
@@ -841,12 +844,14 @@ describe('getLLMConfig', () => {
               thinkingBudget,
             },
           });
-          expect(result.llmConfig.thinking.budget_tokens).toBe(expectedBudget);
+          expect((result.llmConfig.thinking as t.ThinkingConfigEnabled)?.budget_tokens).toBe(
+            expectedBudget,
+          );
         });
       });
 
       it('should handle topP/topK exclusion logic for Claude-3.7 models', () => {
-        const testCases = [
+        const testCases: (t.AnthropicModelOptions & { shouldInclude: boolean })[] = [
           // Claude-3.7 with thinking = true - should exclude topP/topK
           { model: 'claude-3-7-sonnet', thinking: true, shouldInclude: false },
           { model: 'claude-3.7-sonnet', thinking: true, shouldInclude: false },
@@ -902,13 +907,15 @@ describe('getLLMConfig', () => {
             modelOptions: { model, promptCache },
           });
 
+          const headers = result.llmConfig.clientOptions?.defaultHeaders;
+
           if (shouldHaveHeaders) {
-            expect(result.llmConfig.clientOptions.defaultHeaders).toBeDefined();
-            expect(result.llmConfig.clientOptions.defaultHeaders['anthropic-beta']).toContain(
+            expect(headers).toBeDefined();
+            expect((headers as Record<string, string>)['anthropic-beta']).toContain(
               'prompt-caching',
             );
           } else {
-            expect(result.llmConfig.clientOptions.defaultHeaders).toBeUndefined();
+            expect(headers).toBeUndefined();
           }
         });
       });
@@ -928,8 +935,8 @@ describe('getLLMConfig', () => {
         ];
 
         testCases.forEach((testCase) => {
-          const key = Object.keys(testCase)[0];
-          const value = testCase[key];
+          const key = Object.keys(testCase)[0] as keyof t.AnthropicModelOptions;
+          const value = (testCase as unknown as t.AnthropicModelOptions)[key];
           const expected = testCase.expected;
 
           const result = getLLMConfig('test-key', {
@@ -937,7 +944,7 @@ describe('getLLMConfig', () => {
           });
 
           const outputKey = key === 'maxOutputTokens' ? 'maxTokens' : key;
-          expect(result.llmConfig[outputKey]).toBe(expected);
+          expect(result.llmConfig[outputKey as keyof typeof result.llmConfig]).toBe(expected);
         });
       });
 
@@ -952,7 +959,7 @@ describe('getLLMConfig', () => {
 
         testCases.forEach(({ stop, expected }) => {
           const result = getLLMConfig('test-key', {
-            modelOptions: { model: 'claude-3-opus', stop },
+            modelOptions: { model: 'claude-3-opus', stop } as t.AnthropicModelOptions,
           });
 
           if (expected === null || expected === undefined) {
@@ -980,8 +987,8 @@ describe('getLLMConfig', () => {
         ];
 
         testCases.forEach((testCase) => {
-          const key = Object.keys(testCase)[0];
-          const value = testCase[key];
+          const key = Object.keys(testCase)[0] as keyof t.AnthropicModelOptions;
+          const value = (testCase as unknown as t.AnthropicModelOptions)[key];
           const expected = testCase.expected;
 
           const result = getLLMConfig('test-key', {
@@ -1051,7 +1058,7 @@ describe('getLLMConfig', () => {
         // thinking is false, so no thinking object should be created
         expect(result.llmConfig.thinking).toBeUndefined();
         // promptCache default is true, so should have headers
-        expect(result.llmConfig.clientOptions.defaultHeaders).toBeDefined();
+        expect(result.llmConfig.clientOptions?.defaultHeaders).toBeDefined();
       });
     });
 
@@ -1127,7 +1134,7 @@ describe('getLLMConfig', () => {
 
         testCases.forEach(({ stop, expected }) => {
           const result = getLLMConfig('test-key', {
-            modelOptions: { model: 'claude-3-opus', stop },
+            modelOptions: { model: 'claude-3-opus', stop } as t.AnthropicModelOptions,
           });
 
           expect(result.llmConfig.stopSequences).toEqual(expected);
