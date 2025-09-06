@@ -79,6 +79,7 @@ export default function useChatFunctions({
       parentMessageId = null,
       conversationId = null,
       messageId = null,
+      toolResources,
     },
     {
       editedContent = null,
@@ -204,7 +205,15 @@ export default function useChatFunctions({
       messageId: isContinued && messageId != null && messageId ? messageId : intermediateId,
       thread_id,
       error: false,
+      ...(toolResources && { tool_resources: toolResources }),
     };
+
+    console.log('ask() currentMsg before files processing:', {
+      text: currentMsg.text?.substring(0, 100) + '...',
+      tool_resources: currentMsg.tool_resources,
+      hasFiles: files?.size > 0,
+      filesSize: files?.size,
+    });
 
     const submissionFiles = overrideFiles ?? targetParentMessage?.files;
     const reuseFiles =
@@ -212,21 +221,38 @@ export default function useChatFunctions({
       submissionFiles &&
       submissionFiles.length > 0;
 
+    console.log('ask() files processing:', {
+      overrideFiles,
+      hasOverrideFiles: !!overrideFiles?.length,
+      submissionFiles,
+      hasSubmissionFiles: !!submissionFiles?.length,
+      reuseFiles,
+      chatFilesSize: files?.size,
+    });
+
     if (setFiles && reuseFiles === true) {
-      currentMsg.files = [...submissionFiles];
+      currentMsg.files = submissionFiles;
       setFiles(new Map());
       setFilesToDelete({});
     } else if (setFiles && files && files.size > 0) {
-      currentMsg.files = Array.from(files.values()).map((file) => ({
+      const chatFiles = Array.from(files.values()).map((file) => ({
         file_id: file.file_id,
         filepath: file.filepath,
         type: file.type ?? '', // Ensure type is not undefined
         height: file.height,
         width: file.width,
       }));
+      currentMsg.files = chatFiles;
       setFiles(new Map());
       setFilesToDelete({});
     }
+
+    console.log('ask() currentMsg after files processing:', {
+      text: currentMsg.text?.substring(0, 100) + '...',
+      tool_resources: currentMsg.tool_resources,
+      files: currentMsg.files,
+      hasFiles: !!currentMsg.files?.length,
+    });
 
     const responseMessageId =
       editedMessageId ??

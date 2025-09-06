@@ -12,7 +12,13 @@ import {
   PermissionBits,
   PermissionTypes,
 } from 'librechat-data-provider';
-import type { TCreatePrompt, TPrompt, TPromptGroup } from 'librechat-data-provider';
+import type {
+  TCreatePrompt,
+  TPrompt,
+  TPromptGroup,
+  AgentToolResources,
+} from 'librechat-data-provider';
+import type { ExtendedFile } from '~/common';
 import {
   useGetPrompts,
   useGetPromptGroup,
@@ -20,11 +26,11 @@ import {
   useUpdatePromptGroup,
   useMakePromptProduction,
 } from '~/data-provider';
-import { useResourcePermissions, useHasAccess, useLocalize } from '~/hooks';
+import { useResourcePermissions, useHasAccess, useLocalize, usePromptFileHandling } from '~/hooks';
 import CategorySelector from './Groups/CategorySelector';
 import { usePromptGroupsContext } from '~/Providers';
 import NoPromptGroup from './Groups/NoPromptGroup';
-import PromptVariables from './PromptVariables';
+import PromptVariablesAndFiles from './PromptVariablesAndFiles';
 import { cn, findPromptGroup } from '~/utils';
 import PromptVersions from './PromptVersions';
 import { PromptsEditorMode } from '~/common';
@@ -119,7 +125,12 @@ const RightPanel = React.memo(
                   makeProductionMutation.mutate({
                     id: promptVersionId,
                     groupId,
-                    productionPrompt: { prompt },
+                    productionPrompt: {
+                      prompt,
+                      ...(selectedPrompt.tool_resources && {
+                        tool_resources: selectedPrompt.tool_resources,
+                      }),
+                    },
                   });
                 }}
                 disabled={
@@ -179,6 +190,31 @@ const PromptForm = () => {
   const [showSidePanel, setShowSidePanel] = useState(false);
   const sidePanelWidth = '320px';
 
+  // Initialize prompt file handling
+  const {
+    loadFromToolResources,
+    getToolResources,
+    promptFiles: hookPromptFiles,
+    handleFileChange,
+    handleFileRemove,
+    setFiles,
+  } = usePromptFileHandling({
+    onFileChange: (updatedFiles) => {
+      // Auto-save when files are added/removed
+      console.log('onFileChange called', {
+        canEdit,
+        selectedPrompt: !!selectedPrompt,
+        updatedFiles,
+      });
+      if (canEdit && selectedPrompt) {
+        const currentPromptText = getValues('prompt');
+        console.log('Calling onSave with:', currentPromptText, 'and updated files:', updatedFiles);
+        // Call onSave with the updated files to ensure correct tool_resources
+        onSave(currentPromptText, updatedFiles);
+      }
+    },
+  });
+
   const { data: group, isLoading: isLoadingGroup } = useGetPromptGroup(promptId);
   const { data: prompts = [], isLoading: isLoadingPrompts } = useGetPrompts(
     { groupId: promptId },
@@ -200,7 +236,7 @@ const PromptForm = () => {
       category: group ? group.category : '',
     },
   });
-  const { handleSubmit, setValue, reset, watch } = methods;
+  const { handleSubmit, setValue, reset, watch, getValues } = methods;
   const promptText = watch('prompt');
 
   const selectedPrompt = useMemo(
@@ -237,7 +273,10 @@ const PromptForm = () => {
         makeProductionMutation.mutate({
           id: data.prompt._id,
           groupId: data.prompt.groupId,
-          productionPrompt: { prompt: data.prompt.prompt },
+          productionPrompt: {
+            prompt: data.prompt.prompt,
+            ...(data.prompt.tool_resources && { tool_resources: data.prompt.tool_resources }),
+          },
         });
       }
 
@@ -249,8 +288,30 @@ const PromptForm = () => {
     },
   });
 
+  const getToolResourcesFromFiles = useCallback((files: ExtendedFile[]) => {
+    if (files.length === 0) {
+      return undefined;
+    }
+
+    const toolResources: AgentToolResources = {};
+
+    files.forEach((file) => {
+      if (!file.file_id || !file.tool_resource) return; // Skip files that haven't been uploaded yet
+
+      if (!toolResources[file.tool_resource]) {
+        toolResources[file.tool_resource] = { file_ids: [] };
+      }
+
+      if (!toolResources[file.tool_resource]!.file_ids!.includes(file.file_id)) {
+        toolResources[file.tool_resource]!.file_ids!.push(file.file_id);
+      }
+    });
+
+    return Object.keys(toolResources).length > 0 ? toolResources : undefined;
+  }, []);
+
   const onSave = useCallback(
-    (value: string) => {
+    (value: string, updatedFiles?: ExtendedFile[]) => {
       if (!canEdit) {
         return;
       }
@@ -268,22 +329,47 @@ const PromptForm = () => {
         return;
       }
 
+      // Use updated files if provided, otherwise use current hook state
+      const toolResources = updatedFiles
+        ? getToolResourcesFromFiles(updatedFiles)
+        : getToolResources();
       const tempPrompt: TCreatePrompt = {
         prompt: {
           type: selectedPrompt.type ?? 'text',
           groupId: groupId,
           prompt: value,
+          ...(toolResources && { tool_resources: toolResources }),
         },
       };
 
-      if (value === selectedPrompt.prompt) {
+      // Check if prompt text or tool_resources have changed
+      const promptTextChanged = value !== selectedPrompt.prompt;
+      const toolResourcesChanged =
+        JSON.stringify(toolResources) !== JSON.stringify(selectedPrompt.tool_resources);
+
+      console.log('onSave check:', {
+        promptTextChanged,
+        toolResourcesChanged,
+        currentToolResources: toolResources,
+        selectedToolResources: selectedPrompt.tool_resources,
+      });
+
+      if (!promptTextChanged && !toolResourcesChanged) {
+        console.log('No changes detected, returning early');
         return;
       }
 
       // We're adding to an existing group, so use the addPromptToGroup mutation
       addPromptToGroupMutation.mutate({ ...tempPrompt, groupId });
     },
-    [selectedPrompt, group, addPromptToGroupMutation, canEdit],
+    [
+      selectedPrompt,
+      group,
+      addPromptToGroupMutation,
+      canEdit,
+      getToolResources,
+      getToolResourcesFromFiles,
+    ],
   );
 
   const handleLoadingComplete = useCallback(() => {
@@ -307,7 +393,13 @@ const PromptForm = () => {
   useEffect(() => {
     setValue('prompt', selectedPrompt ? selectedPrompt.prompt : '', { shouldDirty: false });
     setValue('category', group ? group.category : '', { shouldDirty: false });
-  }, [selectedPrompt, group, setValue]);
+
+    if (selectedPrompt?.tool_resources) {
+      loadFromToolResources(selectedPrompt.tool_resources);
+    } else {
+      loadFromToolResources(undefined);
+    }
+  }, [selectedPrompt, group, setValue, loadFromToolResources]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -447,7 +539,14 @@ const PromptForm = () => {
                       isEditing={isEditing}
                       setIsEditing={(value) => canEdit && setIsEditing(value)}
                     />
-                    <PromptVariables promptText={promptText} />
+                    <PromptVariablesAndFiles
+                      promptText={promptText}
+                      files={hookPromptFiles}
+                      onFilesChange={setFiles}
+                      handleFileChange={handleFileChange}
+                      onFileRemove={handleFileRemove}
+                      disabled={!canEdit}
+                    />
                     <Description
                       initialValue={group.oneliner ?? ''}
                       onValueChange={canEdit ? handleUpdateOneliner : undefined}
