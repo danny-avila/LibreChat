@@ -1,5 +1,5 @@
 import React, { useRef, useState, useMemo } from 'react';
-import { Paperclip, Upload, Folder } from 'lucide-react';
+import { Upload, Folder } from 'lucide-react';
 import {
   Button,
   TooltipAnchor,
@@ -8,12 +8,12 @@ import {
   FileUpload,
 } from '@librechat/client';
 import { EToolResources } from 'librechat-data-provider';
-import type { ExtendedFile } from 'librechat-data-provider';
-import { useLocalize } from '~/hooks';
+import type { ExtendedFile } from '~/common';
 import { usePromptFileHandling } from '~/hooks/Prompts';
 import PromptFileRow from './PromptFileRow';
-import { cn } from '~/utils';
 import * as Ariakit from '@ariakit/react';
+import { useLocalize } from '~/hooks';
+import { cn } from '~/utils';
 
 interface PromptFileUploadProps {
   files: ExtendedFile[];
@@ -59,12 +59,6 @@ const PromptFileUpload: React.FC<PromptFileUploadProps> = ({
     } else {
       setToolResource(EToolResources.file_search);
     }
-    if (fileInputRef.current) {
-      fileInputRef.current.click();
-    }
-  };
-
-  const handleButtonClick = () => {
     if (fileInputRef.current) {
       fileInputRef.current.click();
     }

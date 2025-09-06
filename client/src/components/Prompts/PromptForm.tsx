@@ -11,9 +11,14 @@ import {
   ResourceType,
   PermissionBits,
   PermissionTypes,
-  EToolResources,
 } from 'librechat-data-provider';
-import type { TCreatePrompt, TPrompt, TPromptGroup } from 'librechat-data-provider';
+import type {
+  TCreatePrompt,
+  TPrompt,
+  TPromptGroup,
+  AgentToolResources,
+} from 'librechat-data-provider';
+import type { ExtendedFile } from '~/common';
 import {
   useGetPrompts,
   useGetPromptGroup,
@@ -283,7 +288,6 @@ const PromptForm = () => {
     },
   });
 
-  // Helper function to get tool resources from a specific files array
   const getToolResourcesFromFiles = useCallback((files: ExtendedFile[]) => {
     if (files.length === 0) {
       return undefined;
@@ -292,14 +296,12 @@ const PromptForm = () => {
     const toolResources: AgentToolResources = {};
 
     files.forEach((file) => {
-      if (!file.file_id) return; // Skip files that haven't been uploaded yet
+      if (!file.file_id || !file.tool_resource) return; // Skip files that haven't been uploaded yet
 
-      // Initialize the tool resource if it doesn't exist
       if (!toolResources[file.tool_resource]) {
         toolResources[file.tool_resource] = { file_ids: [] };
       }
 
-      // Add file_id to the appropriate tool resource
       if (!toolResources[file.tool_resource]!.file_ids!.includes(file.file_id)) {
         toolResources[file.tool_resource]!.file_ids!.push(file.file_id);
       }
@@ -360,7 +362,14 @@ const PromptForm = () => {
       // We're adding to an existing group, so use the addPromptToGroup mutation
       addPromptToGroupMutation.mutate({ ...tempPrompt, groupId });
     },
-    [selectedPrompt, group, addPromptToGroupMutation, canEdit, getToolResources],
+    [
+      selectedPrompt,
+      group,
+      addPromptToGroupMutation,
+      canEdit,
+      getToolResources,
+      getToolResourcesFromFiles,
+    ],
   );
 
   const handleLoadingComplete = useCallback(() => {
@@ -390,7 +399,7 @@ const PromptForm = () => {
     } else {
       loadFromToolResources(undefined);
     }
-  }, [selectedPrompt, group, setValue]);
+  }, [selectedPrompt, group, setValue, loadFromToolResources]);
 
   useEffect(() => {
     const handleResize = () => {

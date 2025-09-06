@@ -513,7 +513,7 @@ export type TPromptGroup = {
   category?: string;
   projectIds?: string[];
   productionId?: string | null;
-  productionPrompt?: Pick<TPrompt, 'prompt'> | null;
+  productionPrompt?: Pick<TPrompt, 'prompt' | 'tool_resources'> | null;
   author: string;
   authorName: string;
   createdAt?: Date;
@@ -592,7 +592,7 @@ export type TMakePromptProductionResponse = {
 export type TMakePromptProductionRequest = {
   id: string;
   groupId: string;
-  productionPrompt: Pick<TPrompt, 'prompt'>;
+  productionPrompt: Pick<TPrompt, 'prompt' | 'tool_resources'>;
 };
 
 export type TUpdatePromptLabelsRequest = {
