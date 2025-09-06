@@ -5,9 +5,19 @@ export default function useUpdateFiles(setFiles: FileSetter) {
   const setFilesToDelete = useSetFilesToDelete();
 
   const addFile = (newFile: ExtendedFile) => {
+    console.log('useUpdateFiles.addFile called with:', {
+      file_id: newFile.file_id,
+      filename: newFile.filename,
+      type: newFile.type,
+      size: newFile.size,
+      progress: newFile.progress,
+      attached: newFile.attached,
+    });
     setFiles((currentFiles) => {
+      console.log('Current files before adding:', Array.from(currentFiles.keys()));
       const updatedFiles = new Map(currentFiles);
       updatedFiles.set(newFile.file_id, newFile);
+      console.log('Files after adding:', Array.from(updatedFiles.keys()));
       return updatedFiles;
     });
   };

@@ -7,7 +7,7 @@ import supersub from 'remark-supersub';
 import { Label } from '@librechat/client';
 import rehypeHighlight from 'rehype-highlight';
 import { replaceSpecialVars } from 'librechat-data-provider';
-import type { TPromptGroup } from 'librechat-data-provider';
+import type { TPromptGroup, AgentToolResources } from 'librechat-data-provider';
 import { codeNoExecution } from '~/components/Chat/Messages/Content/MarkdownComponents';
 import { useLocalize, useAuthContext } from '~/hooks';
 import CategoryIcon from './Groups/CategoryIcon';
@@ -15,6 +15,7 @@ import PromptVariables from './PromptVariables';
 import { PromptVariableGfm } from './Markdown';
 import Description from './Description';
 import Command from './Command';
+import PromptFilesPreview from './PromptFilesPreview';
 
 const PromptDetails = ({ group }: { group?: TPromptGroup }) => {
   const localize = useLocalize();
@@ -24,6 +25,17 @@ const PromptDetails = ({ group }: { group?: TPromptGroup }) => {
     const initialText = group?.productionPrompt?.prompt ?? '';
     return replaceSpecialVars({ text: initialText, user });
   }, [group?.productionPrompt?.prompt, user]);
+
+  const toolResources = useMemo(() => {
+    return group?.productionPrompt?.tool_resources;
+  }, [group?.productionPrompt?.tool_resources]);
+
+  const hasFiles = useMemo(() => {
+    if (!toolResources) return false;
+    return Object.values(toolResources).some(
+      (resource) => resource?.file_ids && resource.file_ids.length > 0,
+    );
+  }, [toolResources]);
 
   if (!group) {
     return null;
@@ -72,6 +84,7 @@ const PromptDetails = ({ group }: { group?: TPromptGroup }) => {
             </div>
           </div>
           <PromptVariables promptText={mainText} showInfo={false} />
+          {hasFiles && toolResources && <PromptFilesPreview toolResources={toolResources} />}
           <Description initialValue={group.oneliner} disabled={true} />
           <Command initialValue={group.command} disabled={true} />
         </div>
