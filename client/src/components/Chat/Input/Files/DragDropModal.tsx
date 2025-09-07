@@ -36,7 +36,8 @@ const DragDropModal = ({ onOptionSelect, setShowModal, files, isVisible }: DragD
 
   const { data: agentData } = useGetAgentByIdQuery(agentId, { enabled: agentSelected });
 
-  const tools = (agentData?.tools as string[] | undefined) || (selectedAgent?.tools as string[] | undefined);
+  const tools =
+    (agentData?.tools as string[] | undefined) || (selectedAgent?.tools as string[] | undefined);
 
   const fileSearchAllowedByAgent = (() => {
     if (!agentSelected) return true;
