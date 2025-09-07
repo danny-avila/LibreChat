@@ -215,18 +215,17 @@ export default function useChatFunctions({
       submissionFiles.length > 0;
 
     if (setFiles && reuseFiles === true) {
-      currentMsg.files = submissionFiles;
+      currentMsg.files = [...submissionFiles];
       setFiles(new Map());
       setFilesToDelete({});
     } else if (setFiles && files && files.size > 0) {
-      const chatFiles = Array.from(files.values()).map((file) => ({
+      currentMsg.files = Array.from(files.values()).map((file) => ({
         file_id: file.file_id,
         filepath: file.filepath,
         type: file.type ?? '', // Ensure type is not undefined
         height: file.height,
         width: file.width,
       }));
-      currentMsg.files = chatFiles;
       setFiles(new Map());
       setFilesToDelete({});
     }
