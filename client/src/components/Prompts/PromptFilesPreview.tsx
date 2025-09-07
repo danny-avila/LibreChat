@@ -10,20 +10,20 @@ interface PromptFilesPreviewProps {
 
 const PromptFilesPreview: React.FC<PromptFilesPreviewProps> = ({ toolResources }) => {
   const localize = useLocalize();
-  const { data: allFiles = [] } = useGetFiles();
+  const { data: allFiles } = useGetFiles();
 
-  // Create a fileMap for quick lookup
   const fileMap = useMemo(() => {
     const map: Record<string, any> = {};
-    allFiles.forEach((file) => {
-      if (file.file_id) {
-        map[file.file_id] = file;
-      }
-    });
+    if (Array.isArray(allFiles)) {
+      allFiles.forEach((file) => {
+        if (file.file_id) {
+          map[file.file_id] = file;
+        }
+      });
+    }
     return map;
   }, [allFiles]);
 
-  // Extract all file IDs from tool resources
   const attachedFiles = useMemo(() => {
     const files: Array<{ file: any; toolResource: string }> = [];
 
