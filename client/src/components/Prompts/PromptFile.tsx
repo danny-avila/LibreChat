@@ -1,19 +1,15 @@
 import { useEffect } from 'react';
 import { useToastContext } from '@librechat/client';
-import { FileSources } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
 import FileContainer from '~/components/Chat/Input/Files/FileContainer';
-import { useDeleteFilesMutation } from '~/data-provider';
 import Image from '~/components/Chat/Input/Files/Image';
 import { useLocalize } from '~/hooks';
-import { logger } from '~/utils';
 
 export default function PromptFile({
   files: _files,
   setFiles,
   abortUpload,
   setFilesLoading,
-  onFileRemove,
   fileFilter,
   isRTL = false,
   Wrapper,
@@ -22,7 +18,6 @@ export default function PromptFile({
   abortUpload?: () => void;
   setFiles: React.Dispatch<React.SetStateAction<Map<string, ExtendedFile>>>;
   setFilesLoading: React.Dispatch<React.SetStateAction<boolean>>;
-  onFileRemove?: (fileId: string) => void;
   fileFilter?: (file: ExtendedFile) => boolean;
   isRTL?: boolean;
   Wrapper?: React.FC<{ children: React.ReactNode }>;
@@ -32,21 +27,6 @@ export default function PromptFile({
   const files = Array.from(_files?.values() ?? []).filter((file) =>
     fileFilter ? fileFilter(file) : true,
   );
-
-  const { mutateAsync } = useDeleteFilesMutation({
-    onMutate: async () =>
-      logger.log(
-        'prompts',
-        'Deleting prompt files',
-        files.map((f) => f.file_id),
-      ),
-    onSuccess: () => {
-      console.log('Prompt files deleted');
-    },
-    onError: (error) => {
-      console.log('Error deleting prompt files:', error);
-    },
-  });
 
   useEffect(() => {
     if (files.length === 0) {
@@ -111,29 +91,18 @@ export default function PromptFile({
                 abortUpload();
               }
 
-              if (onFileRemove) {
-                onFileRemove(file.file_id);
-              } else {
-                mutateAsync({
-                  files: [
-                    {
-                      file_id: file.file_id,
-                      filepath: file.filepath || '',
-                      embedded: file.embedded || false,
-                      source: file.source || FileSources.local,
-                    },
-                  ],
-                });
-
-                setFiles((currentFiles) => {
-                  const updatedFiles = new Map(currentFiles);
-                  updatedFiles.delete(file.file_id);
-                  if (file.temp_file_id) {
-                    updatedFiles.delete(file.temp_file_id);
-                  }
-                  return updatedFiles;
-                });
+              if (file.preview && file.preview.startsWith('blob:')) {
+                URL.revokeObjectURL(file.preview);
               }
+
+              setFiles((currentFiles) => {
+                const updatedFiles = new Map(currentFiles);
+                updatedFiles.delete(file.file_id);
+                if (file.temp_file_id) {
+                  updatedFiles.delete(file.temp_file_id);
+                }
+                return updatedFiles;
+              });
             };
 
             const isImage = file.type?.startsWith('image') ?? false;

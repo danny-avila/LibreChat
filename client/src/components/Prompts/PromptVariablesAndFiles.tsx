@@ -8,7 +8,6 @@ interface PromptVariablesAndFilesProps {
   files?: ExtendedFile[];
   onFilesChange?: (files: ExtendedFile[]) => void;
   handleFileChange?: (event: React.ChangeEvent<HTMLInputElement>, toolResource?: string) => void;
-  onFileRemove?: (fileId: string) => void;
   disabled?: boolean;
   showVariablesInfo?: boolean;
 }
@@ -18,7 +17,6 @@ const PromptVariablesAndFiles: React.FC<PromptVariablesAndFilesProps> = ({
   files = [],
   onFilesChange,
   handleFileChange,
-  onFileRemove,
   disabled,
   showVariablesInfo = true,
 }) => {
@@ -35,7 +33,6 @@ const PromptVariablesAndFiles: React.FC<PromptVariablesAndFilesProps> = ({
           files={files}
           onFilesChange={onFilesChange}
           handleFileChange={handleFileChange}
-          onFileRemove={onFileRemove}
           disabled={disabled}
         />
       </div>
