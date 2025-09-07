@@ -52,18 +52,19 @@ const PromptFilesPreview: React.FC<PromptFilesPreviewProps> = ({ toolResources }
   };
 
   const getToolResourceLabel = (toolResource: string) => {
-    switch (toolResource) {
-      case 'file_search':
-        return localize('com_ui_upload_file_search');
-      case 'execute_code':
-        return localize('com_ui_upload_code_files');
-      case 'ocr':
-        return localize('com_ui_upload_ocr_text');
-      case 'image_edit':
-        return localize('com_ui_upload_image_input');
-      default:
-        return toolResource;
+    if (toolResource === 'file_search') {
+      return localize('com_ui_upload_file_search');
     }
+    if (toolResource === 'execute_code') {
+      return localize('com_ui_upload_code_files');
+    }
+    if (toolResource === 'ocr') {
+      return localize('com_ui_upload_ocr_text');
+    }
+    if (toolResource === 'image_edit') {
+      return localize('com_ui_upload_image_input');
+    }
+    return toolResource;
   };
 
   if (attachedFiles.length === 0) {
