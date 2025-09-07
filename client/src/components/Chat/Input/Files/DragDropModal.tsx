@@ -34,18 +34,21 @@ const DragDropModal = ({ onOptionSelect, setShowModal, files, isVisible }: DragD
   const selectedAgent = agentSelected ? agentsMap?.[conversation!.agent_id as string] : undefined;
   const agentId = (conversation?.agent_id as string) || '';
   const { data: agentData } = useGetAgentByIdQuery(agentId, { enabled: agentSelected });
-  const tools = (agentData?.tools as string[] | undefined) ?? (selectedAgent?.tools as string[] | undefined);
-  const hasToolsInfo = Array.isArray(tools);
-  const fileSearchAllowedByAgent = !agentSelected
-    ? true
-    : selectedAgent
-      ? (tools?.includes(Tools.file_search) ?? false)
-      : false;
-  const codeAllowedByAgent = !agentSelected
-    ? true
-    : selectedAgent
-      ? (tools?.includes(Tools.execute_code) ?? false)
-      : false;
+  const tools =
+    (agentData?.tools as string[] | undefined) ||
+    (selectedAgent?.tools as string[] | undefined);
+
+  const fileSearchAllowedByAgent = (() => {
+    if (!agentSelected) return true;
+    if (!selectedAgent) return false;
+    return tools?.includes(Tools.file_search) ?? false;
+  })();
+
+  const codeAllowedByAgent = (() => {
+    if (!agentSelected) return true;
+    if (!selectedAgent) return false;
+    return tools?.includes(Tools.execute_code) ?? false;
+  })();
   const options = useMemo(() => {
     const _options: FileOption[] = [
       {

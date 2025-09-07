@@ -76,19 +76,22 @@ export default function useDragHelpers() {
 
         // Agent-specific gating (only for tools, not for image option)
         const agentId = conversation?.agent_id ?? '';
-        const selectedAgent = agentId ? (agentData ?? (agentsMap?.[agentId] as t.Agent | undefined)) : undefined;
+        const selectedAgent = agentId
+          ? (agentData ?? (agentsMap?.[agentId] as t.Agent | undefined))
+          : undefined;
         const tools = selectedAgent?.tools as string[] | undefined;
         const agentSelected = Boolean(agentId);
-        const agentAllowsFileSearch = !agentSelected
-          ? true
-          : selectedAgent
-            ? (tools?.includes(Tools.file_search) ?? false)
-            : false;
-        const agentAllowsCode = !agentSelected
-          ? true
-          : selectedAgent
-            ? (tools?.includes(Tools.execute_code) ?? false)
-            : false;
+        const agentAllowsFileSearch = (() => {
+          if (!agentSelected) return true;
+          if (!selectedAgent) return false;
+          return tools?.includes(Tools.file_search) ?? false;
+        })();
+
+        const agentAllowsCode = (() => {
+          if (!agentSelected) return true;
+          if (!selectedAgent) return false;
+          return tools?.includes(Tools.execute_code) ?? false;
+        })();
 
         const shouldShowModal =
           allImages ||

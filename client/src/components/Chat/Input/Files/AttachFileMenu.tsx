@@ -2,7 +2,12 @@ import React, { useRef, useState, useMemo } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { useSetRecoilState } from 'recoil';
 import { FileSearch, ImageUpIcon, TerminalSquareIcon, FileType2Icon } from 'lucide-react';
-import { EToolResources, EModelEndpoint, defaultAgentCapabilities, Tools } from 'librechat-data-provider';
+import {
+  EToolResources,
+  EModelEndpoint,
+  defaultAgentCapabilities,
+  Tools,
+} from 'librechat-data-provider';
 import {
   FileUpload,
   TooltipAnchor,
@@ -61,18 +66,21 @@ const AttachFileMenu = ({ disabled, conversationId, endpointFileConfig }: Attach
   const selectedAgent = agentSelected ? agentsMap?.[conversation!.agent_id as string] : undefined;
   const agentId = (conversation?.agent_id as string) || '';
   const { data: agentData } = useGetAgentByIdQuery(agentId, { enabled: agentSelected });
-  const tools = (agentData?.tools as string[] | undefined) ?? (selectedAgent?.tools as string[] | undefined);
-  const hasToolsInfo = Array.isArray(tools);
-  const fileSearchAllowedByAgent = !agentSelected
-    ? true
-    : selectedAgent
-      ? (tools?.includes(Tools.file_search) ?? false)
-      : false;
-  const codeAllowedByAgent = !agentSelected
-    ? true
-    : selectedAgent
-      ? (tools?.includes(Tools.execute_code) ?? false)
-      : false;
+  const tools =
+    (agentData?.tools as string[] | undefined) ||
+    (selectedAgent?.tools as string[] | undefined);
+
+  const fileSearchAllowedByAgent = (() => {
+    if (!agentSelected) return true;
+    if (!selectedAgent) return false;
+    return tools?.includes(Tools.file_search) ?? false;
+  })();
+
+  const codeAllowedByAgent = (() => {
+    if (!agentSelected) return true;
+    if (!selectedAgent) return false;
+    return tools?.includes(Tools.execute_code) ?? false;
+  })();
 
   const handleUploadClick = (isImage?: boolean) => {
     if (!inputRef.current) {
