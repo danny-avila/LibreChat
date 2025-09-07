@@ -10,7 +10,6 @@ interface PromptVariablesAndFilesProps {
   handleFileChange?: (event: React.ChangeEvent<HTMLInputElement>, toolResource?: string) => void;
   disabled?: boolean;
   showVariablesInfo?: boolean;
-  onFileChange?: (files: ExtendedFile[]) => void;
 }
 
 const PromptVariablesAndFiles: React.FC<PromptVariablesAndFilesProps> = ({
@@ -20,7 +19,6 @@ const PromptVariablesAndFiles: React.FC<PromptVariablesAndFilesProps> = ({
   handleFileChange,
   disabled,
   showVariablesInfo = true,
-  onFileChange,
 }) => {
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:items-stretch">
@@ -36,7 +34,6 @@ const PromptVariablesAndFiles: React.FC<PromptVariablesAndFilesProps> = ({
           onFilesChange={onFilesChange}
           handleFileChange={handleFileChange}
           disabled={disabled}
-          onFileChange={onFileChange}
         />
       </div>
     </div>

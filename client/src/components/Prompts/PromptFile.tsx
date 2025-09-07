@@ -13,7 +13,6 @@ export default function PromptFile({
   fileFilter,
   isRTL = false,
   Wrapper,
-  onFileChange,
 }: {
   files: Map<string, ExtendedFile> | undefined;
   abortUpload?: () => void;
@@ -22,7 +21,6 @@ export default function PromptFile({
   fileFilter?: (file: ExtendedFile) => boolean;
   isRTL?: boolean;
   Wrapper?: React.FC<{ children: React.ReactNode }>;
-  onFileChange?: (files: ExtendedFile[]) => void;
 }) {
   const localize = useLocalize();
   const { showToast } = useToastContext();
@@ -103,11 +101,6 @@ export default function PromptFile({
                 if (file.temp_file_id) {
                   updatedFiles.delete(file.temp_file_id);
                 }
-
-                // Call onFileChange with the updated files array
-                const updatedFilesArray = Array.from(updatedFiles.values());
-                onFileChange?.(updatedFilesArray);
-
                 return updatedFiles;
               });
             };

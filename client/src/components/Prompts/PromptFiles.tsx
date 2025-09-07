@@ -12,13 +12,11 @@ const PromptFiles = ({
   onFilesChange,
   handleFileChange,
   disabled,
-  onFileChange,
 }: {
   files: ExtendedFile[];
   onFilesChange?: (files: ExtendedFile[]) => void;
   handleFileChange?: (event: React.ChangeEvent<HTMLInputElement>, toolResource?: string) => void;
   disabled?: boolean;
-  onFileChange?: (files: ExtendedFile[]) => void;
 }) => {
   const localize = useLocalize();
 
@@ -65,7 +63,6 @@ const PromptFiles = ({
                   onFilesChange?.(newFiles);
                 }}
                 setFilesLoading={() => {}}
-                onFileChange={onFileChange}
                 Wrapper={({ children }) => <div className="flex flex-wrap gap-2">{children}</div>}
               />
             </div>

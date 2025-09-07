@@ -541,15 +541,15 @@ const PromptForm = () => {
                     <PromptVariablesAndFiles
                       promptText={promptText}
                       files={hookPromptFiles}
-                      onFilesChange={setFiles}
-                      handleFileChange={handleFileChange}
-                      disabled={!canEdit}
-                      onFileChange={(updatedFiles) => {
+                      onFilesChange={(files) => {
+                        setFiles(files);
                         if (canEdit && selectedPrompt) {
                           const currentPromptText = getValues('prompt');
-                          onSave(currentPromptText, updatedFiles);
+                          onSave(currentPromptText, files);
                         }
                       }}
+                      handleFileChange={handleFileChange}
+                      disabled={!canEdit}
                     />
                     <Description
                       initialValue={group.oneliner ?? ''}
