@@ -190,7 +190,6 @@ const PromptForm = () => {
   const [showSidePanel, setShowSidePanel] = useState(false);
   const sidePanelWidth = '320px';
 
-  // Initialize prompt file handling
   const {
     loadFromToolResources,
     getToolResources,
@@ -199,16 +198,8 @@ const PromptForm = () => {
     setFiles,
   } = usePromptFileHandling({
     onFileChange: (updatedFiles) => {
-      // Auto-save when files are added/removed
-      console.log('onFileChange called', {
-        canEdit,
-        selectedPrompt: !!selectedPrompt,
-        updatedFiles,
-      });
       if (canEdit && selectedPrompt) {
         const currentPromptText = getValues('prompt');
-        console.log('Calling onSave with:', currentPromptText, 'and updated files:', updatedFiles);
-        // Call onSave with the updated files to ensure correct tool_resources
         onSave(currentPromptText, updatedFiles);
       }
     },
@@ -328,7 +319,6 @@ const PromptForm = () => {
         return;
       }
 
-      // Use updated files if provided, otherwise use current hook state
       const toolResources = updatedFiles
         ? getToolResourcesFromFiles(updatedFiles)
         : getToolResources();
@@ -341,24 +331,14 @@ const PromptForm = () => {
         },
       };
 
-      // Check if prompt text or tool_resources have changed
       const promptTextChanged = value !== selectedPrompt.prompt;
       const toolResourcesChanged =
         JSON.stringify(toolResources) !== JSON.stringify(selectedPrompt.tool_resources);
 
-      console.log('onSave check:', {
-        promptTextChanged,
-        toolResourcesChanged,
-        currentToolResources: toolResources,
-        selectedToolResources: selectedPrompt.tool_resources,
-      });
-
       if (!promptTextChanged && !toolResourcesChanged) {
-        console.log('No changes detected, returning early');
         return;
       }
 
-      // We're adding to an existing group, so use the addPromptToGroup mutation
       addPromptToGroupMutation.mutate({ ...tempPrompt, groupId });
     },
     [
