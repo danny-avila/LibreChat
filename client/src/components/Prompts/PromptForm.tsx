@@ -544,6 +544,12 @@ const PromptForm = () => {
                       onFilesChange={setFiles}
                       handleFileChange={handleFileChange}
                       disabled={!canEdit}
+                      onFileChange={(updatedFiles) => {
+                        if (canEdit && selectedPrompt) {
+                          const currentPromptText = getValues('prompt');
+                          onSave(currentPromptText, updatedFiles);
+                        }
+                      }}
                     />
                     <Description
                       initialValue={group.oneliner ?? ''}

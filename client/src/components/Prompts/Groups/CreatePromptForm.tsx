@@ -184,6 +184,7 @@ const CreatePromptForm = ({
             onFilesChange={setFiles}
             handleFileChange={handleFileChange}
             disabled={isSubmitting}
+            onFileChange={() => {}}
           />
           <Description
             onValueChange={(value) => methods.setValue('oneliner', value)}
