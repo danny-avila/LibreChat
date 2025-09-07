@@ -10,7 +10,7 @@ import { logger } from '~/utils';
 interface UsePromptFileHandling {
   fileSetter?: (files: ExtendedFile[]) => void;
   initialFiles?: ExtendedFile[];
-  onFileChange?: (updatedFiles: ExtendedFile[]) => void; // Callback when files are added/removed
+  onFileChange?: (updatedFiles: ExtendedFile[]) => void;
 }
 
 export const usePromptFileHandling = (params?: UsePromptFileHandling) => {
@@ -47,7 +47,7 @@ export const usePromptFileHandling = (params?: UsePromptFileHandling) => {
               filepath: data.filepath,
               progress: 1,
               attached: true,
-              preview: data.filepath || file.preview, // Use filepath for preview if available
+              preview: data.filepath || file.preview,
               filename: data.filename || file.filename,
               type: data.type || file.type,
               size: data.bytes || file.size,
@@ -152,7 +152,7 @@ export const usePromptFileHandling = (params?: UsePromptFileHandling) => {
           encodeURIComponent(extendedFile.filename || ''),
         );
         formData.append('file_id', extendedFile.file_id);
-        formData.append('message_file', 'true'); // For prompts, treat as message attachment
+        formData.append('message_file', 'true');
 
         formData.append('width', img.width.toString());
         formData.append('height', img.height.toString());
