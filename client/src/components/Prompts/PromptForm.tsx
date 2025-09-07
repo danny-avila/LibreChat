@@ -196,7 +196,6 @@ const PromptForm = () => {
     getToolResources,
     promptFiles: hookPromptFiles,
     handleFileChange,
-    handleFileRemove,
     setFiles,
   } = usePromptFileHandling({
     onFileChange: (updatedFiles) => {
@@ -544,7 +543,6 @@ const PromptForm = () => {
                       files={hookPromptFiles}
                       onFilesChange={setFiles}
                       handleFileChange={handleFileChange}
-                      onFileRemove={handleFileRemove}
                       disabled={!canEdit}
                     />
                     <Description

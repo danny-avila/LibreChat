@@ -44,7 +44,6 @@ const CreatePromptForm = ({
     promptFiles: files,
     setFiles,
     handleFileChange,
-    handleFileRemove,
     getToolResources,
   } = usePromptFileHandling();
 
@@ -184,7 +183,6 @@ const CreatePromptForm = ({
             files={files}
             onFilesChange={setFiles}
             handleFileChange={handleFileChange}
-            onFileRemove={handleFileRemove}
             disabled={isSubmitting}
           />
           <Description
