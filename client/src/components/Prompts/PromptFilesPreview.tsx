@@ -54,13 +54,13 @@ const PromptFilesPreview: React.FC<PromptFilesPreviewProps> = ({ toolResources }
   const getToolResourceLabel = (toolResource: string) => {
     switch (toolResource) {
       case 'file_search':
-        return 'File Search';
+        return localize('com_ui_upload_file_search');
       case 'execute_code':
-        return 'Code Interpreter';
+        return localize('com_ui_upload_code_files');
       case 'ocr':
-        return 'Text Extraction';
+        return localize('com_ui_upload_ocr_text');
       case 'image_edit':
-        return 'Image Editing';
+        return localize('com_ui_upload_image_input');
       default:
         return toolResource;
     }
