@@ -2,7 +2,7 @@ import React, { useRef, useState, useMemo } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { useSetRecoilState } from 'recoil';
 import { FileSearch, ImageUpIcon, TerminalSquareIcon, FileType2Icon } from 'lucide-react';
-import { EToolResources, EModelEndpoint, defaultAgentCapabilities } from 'librechat-data-provider';
+import { EToolResources, EModelEndpoint, defaultAgentCapabilities, Tools } from 'librechat-data-provider';
 import {
   FileUpload,
   TooltipAnchor,
@@ -12,6 +12,8 @@ import {
 } from '@librechat/client';
 import type { EndpointFileConfig } from 'librechat-data-provider';
 import { useLocalize, useGetAgentsConfig, useFileHandling, useAgentCapabilities } from '~/hooks';
+import { useChatContext, useAgentsMapContext } from '~/Providers';
+import { useGetAgentByIdQuery } from '~/data-provider';
 import useSharePointFileHandling from '~/hooks/Files/useSharePointFileHandling';
 import { SharePointPickerDialog } from '~/components/SharePoint';
 import { useGetStartupConfig } from '~/data-provider';
@@ -52,6 +54,26 @@ const AttachFileMenu = ({ disabled, conversationId, endpointFileConfig }: Attach
    * */
   const capabilities = useAgentCapabilities(agentsConfig?.capabilities ?? defaultAgentCapabilities);
 
+  /** Refine endpoint capabilities with the selected agent's tools, if any */
+  const { conversation } = useChatContext();
+  const agentsMap = useAgentsMapContext();
+  const agentSelected = Boolean(conversation?.agent_id);
+  const selectedAgent = agentSelected ? agentsMap?.[conversation!.agent_id as string] : undefined;
+  const agentId = (conversation?.agent_id as string) || '';
+  const { data: agentData } = useGetAgentByIdQuery(agentId, { enabled: agentSelected });
+  const tools = (agentData?.tools as string[] | undefined) ?? (selectedAgent?.tools as string[] | undefined);
+  const hasToolsInfo = Array.isArray(tools);
+  const fileSearchAllowedByAgent = !agentSelected
+    ? true
+    : selectedAgent
+      ? (tools?.includes(Tools.file_search) ?? false)
+      : false;
+  const codeAllowedByAgent = !agentSelected
+    ? true
+    : selectedAgent
+      ? (tools?.includes(Tools.execute_code) ?? false)
+      : false;
+
   const handleUploadClick = (isImage?: boolean) => {
     if (!inputRef.current) {
       return;
@@ -86,7 +108,7 @@ const AttachFileMenu = ({ disabled, conversationId, endpointFileConfig }: Attach
         });
       }
 
-      if (capabilities.fileSearchEnabled) {
+      if (capabilities.fileSearchEnabled && fileSearchAllowedByAgent) {
         items.push({
           label: localize('com_ui_upload_file_search'),
           onClick: () => {
@@ -101,7 +123,7 @@ const AttachFileMenu = ({ disabled, conversationId, endpointFileConfig }: Attach
         });
       }
 
-      if (capabilities.codeEnabled) {
+      if (capabilities.codeEnabled && codeAllowedByAgent) {
         items.push({
           label: localize('com_ui_upload_code_files'),
           onClick: () => {
@@ -143,6 +165,8 @@ const AttachFileMenu = ({ disabled, conversationId, endpointFileConfig }: Attach
     setEphemeralAgent,
     sharePointEnabled,
     setIsSharePointDialogOpen,
+    fileSearchAllowedByAgent,
+    codeAllowedByAgent,
   ]);
 
   const menuTrigger = (

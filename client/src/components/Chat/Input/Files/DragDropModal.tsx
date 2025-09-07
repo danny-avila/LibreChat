@@ -1,8 +1,10 @@
 import React, { useMemo } from 'react';
 import { OGDialog, OGDialogTemplate } from '@librechat/client';
 import { ImageUpIcon, FileSearch, TerminalSquareIcon, FileType2Icon } from 'lucide-react';
-import { EToolResources, defaultAgentCapabilities } from 'librechat-data-provider';
+import { EToolResources, defaultAgentCapabilities, Tools } from 'librechat-data-provider';
 import { useLocalize, useGetAgentsConfig, useAgentCapabilities } from '~/hooks';
+import { useChatContext, useAgentsMapContext } from '~/Providers';
+import { useGetAgentByIdQuery } from '~/data-provider';
 
 interface DragDropModalProps {
   onOptionSelect: (option: EToolResources | undefined) => void;
@@ -26,6 +28,24 @@ const DragDropModal = ({ onOptionSelect, setShowModal, files, isVisible }: DragD
    * Use definition for agents endpoint for ephemeral agents
    * */
   const capabilities = useAgentCapabilities(agentsConfig?.capabilities ?? defaultAgentCapabilities);
+  const { conversation } = useChatContext();
+  const agentsMap = useAgentsMapContext();
+  const agentSelected = Boolean(conversation?.agent_id);
+  const selectedAgent = agentSelected ? agentsMap?.[conversation!.agent_id as string] : undefined;
+  const agentId = (conversation?.agent_id as string) || '';
+  const { data: agentData } = useGetAgentByIdQuery(agentId, { enabled: agentSelected });
+  const tools = (agentData?.tools as string[] | undefined) ?? (selectedAgent?.tools as string[] | undefined);
+  const hasToolsInfo = Array.isArray(tools);
+  const fileSearchAllowedByAgent = !agentSelected
+    ? true
+    : selectedAgent
+      ? (tools?.includes(Tools.file_search) ?? false)
+      : false;
+  const codeAllowedByAgent = !agentSelected
+    ? true
+    : selectedAgent
+      ? (tools?.includes(Tools.execute_code) ?? false)
+      : false;
   const options = useMemo(() => {
     const _options: FileOption[] = [
       {
@@ -35,14 +55,14 @@ const DragDropModal = ({ onOptionSelect, setShowModal, files, isVisible }: DragD
         condition: files.every((file) => file.type?.startsWith('image/')),
       },
     ];
-    if (capabilities.fileSearchEnabled) {
+    if (capabilities.fileSearchEnabled && fileSearchAllowedByAgent) {
       _options.push({
         label: localize('com_ui_upload_file_search'),
         value: EToolResources.file_search,
         icon: <FileSearch className="icon-md" />,
       });
     }
-    if (capabilities.codeEnabled) {
+    if (capabilities.codeEnabled && codeAllowedByAgent) {
       _options.push({
         label: localize('com_ui_upload_code_files'),
         value: EToolResources.execute_code,
