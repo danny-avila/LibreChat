@@ -7,7 +7,7 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from '@librechat/client';
-import { PermissionBits } from 'librechat-data-provider';
+import { PermissionBits, ResourceType } from 'librechat-data-provider';
 import type { TPromptGroup } from 'librechat-data-provider';
 import { useLocalize, useSubmitMessage, useCustomLink, useResourcePermissions } from '~/hooks';
 import VariableDialog from '~/components/Prompts/Groups/VariableDialog';
@@ -34,10 +34,9 @@ function ChatGroupItem({
   );
 
   // Check permissions for the promptGroup
-  const { hasPermission } = useResourcePermissions('promptGroup', group._id || '');
+  const { hasPermission } = useResourcePermissions(ResourceType.PROMPTGROUP, group._id || '');
   const canEdit = hasPermission(PermissionBits.EDIT);
 
-  // Check if prompt has attached files
   const hasFiles = useMemo(() => {
     const toolResources = group.productionPrompt?.tool_resources;
     if (!toolResources) return false;
@@ -48,27 +47,16 @@ function ChatGroupItem({
   }, [group.productionPrompt?.tool_resources]);
 
   const onCardClick: React.MouseEventHandler<HTMLButtonElement> = () => {
-    console.log('ChatGroupItem.onCardClick called for:', group.name);
-    console.log('Group productionPrompt:', {
-      hasPrompt: !!group.productionPrompt?.prompt,
-      prompt: group.productionPrompt?.prompt?.substring(0, 100) + '...',
-      tool_resources: group.productionPrompt?.tool_resources,
-      hasToolResources: !!group.productionPrompt?.tool_resources,
-    });
-
     const text = group.productionPrompt?.prompt;
     if (!text?.trim()) {
-      console.log('No prompt text found');
       return;
     }
 
     if (detectVariables(text)) {
-      console.log('Prompt has variables, opening dialog');
       setVariableDialogOpen(true);
       return;
     }
 
-    console.log('Calling submitPrompt with tool_resources');
     submitPrompt(text, group.productionPrompt?.tool_resources);
   };
 
