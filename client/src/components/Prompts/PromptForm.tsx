@@ -27,10 +27,10 @@ import {
   useMakePromptProduction,
 } from '~/data-provider';
 import { useResourcePermissions, useHasAccess, useLocalize, usePromptFileHandling } from '~/hooks';
+import PromptVariablesAndFiles from './PromptVariablesAndFiles';
 import CategorySelector from './Groups/CategorySelector';
 import { usePromptGroupsContext } from '~/Providers';
 import NoPromptGroup from './Groups/NoPromptGroup';
-import PromptVariablesAndFiles from './PromptVariablesAndFiles';
 import { cn, findPromptGroup } from '~/utils';
 import PromptVersions from './PromptVersions';
 import { PromptsEditorMode } from '~/common';
