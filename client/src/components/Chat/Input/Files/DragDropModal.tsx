@@ -33,6 +33,7 @@ const DragDropModal = ({ onOptionSelect, setShowModal, files, isVisible }: DragD
   const agentSelected = Boolean(conversation?.agent_id);
   const selectedAgent = agentSelected ? agentsMap?.[conversation!.agent_id as string] : undefined;
   const agentId = (conversation?.agent_id as string) || '';
+
   const { data: agentData } = useGetAgentByIdQuery(agentId, { enabled: agentSelected });
 
   const tools = (agentData?.tools as string[] | undefined) || (selectedAgent?.tools as string[] | undefined);
