@@ -338,4 +338,799 @@ describe('getLLMConfig', () => {
       expect(result.llmConfig).toHaveProperty('stopSequences', []);
     });
   });
+
+  describe('Real Usage Integration Tests', () => {
+    describe('Initialize.js Simulation', () => {
+      it('should handle basic Anthropic endpoint configuration like initialize.js', () => {
+        // Simulate the configuration from Anthropic initialize.js
+        const anthropicApiKey = 'sk-ant-api-key-123';
+        const endpointOption = {
+          model_parameters: {
+            model: 'claude-3-5-sonnet-latest',
+            temperature: 0.7,
+            maxOutputTokens: 4096,
+            topP: 0.9,
+            topK: 40,
+            stop: ['\\n\\n', 'Human:', 'Assistant:'],
+            stream: true,
+          },
+        };
+
+        // Simulate clientOptions from initialize.js
+        const clientOptions = {
+          proxy: null,
+          userId: 'test-user-id-123',
+          reverseProxyUrl: null,
+          modelOptions: endpointOption.model_parameters,
+          streamRate: 25,
+          titleModel: 'claude-3-haiku',
+        };
+
+        const result = getLLMConfig(anthropicApiKey, clientOptions);
+
+        expect(result.llmConfig).toMatchObject({
+          apiKey: anthropicApiKey,
+          model: 'claude-3-5-sonnet-latest',
+          temperature: 0.7,
+          maxTokens: 4096,
+          topP: 0.9,
+          topK: 40,
+          stopSequences: ['\\n\\n', 'Human:', 'Assistant:'],
+          stream: true,
+          invocationKwargs: {
+            metadata: {
+              user_id: 'test-user-id-123',
+            },
+          },
+        });
+        expect(result.tools).toEqual([]);
+      });
+
+      it('should handle Anthropic with proxy configuration like initialize.js', () => {
+        const anthropicApiKey = 'sk-ant-proxy-key';
+        const clientOptions = {
+          proxy: 'http://corporate-proxy:8080',
+          userId: 'proxy-user-456',
+          reverseProxyUrl: null,
+          modelOptions: {
+            model: 'claude-3-opus',
+            temperature: 0.3,
+            maxOutputTokens: 2048,
+          },
+        };
+
+        const result = getLLMConfig(anthropicApiKey, clientOptions);
+
+        expect(result.llmConfig).toMatchObject({
+          apiKey: anthropicApiKey,
+          model: 'claude-3-opus',
+          temperature: 0.3,
+          maxTokens: 2048,
+          invocationKwargs: {
+            metadata: {
+              user_id: 'proxy-user-456',
+            },
+          },
+        });
+        expect(result.llmConfig.clientOptions.fetchOptions).toHaveProperty('dispatcher');
+        expect(result.llmConfig.clientOptions.fetchOptions.dispatcher.constructor.name).toBe(
+          'ProxyAgent',
+        );
+      });
+
+      it('should handle Anthropic with reverse proxy like initialize.js', () => {
+        const anthropicApiKey = 'sk-ant-reverse-proxy';
+        const reverseProxyUrl = 'https://api.custom-anthropic.com/v1';
+        const clientOptions = {
+          proxy: null,
+          userId: 'reverse-proxy-user',
+          reverseProxyUrl: reverseProxyUrl,
+          modelOptions: {
+            model: 'claude-3-5-haiku',
+            temperature: 0.5,
+            stream: false,
+          },
+        };
+
+        const result = getLLMConfig(anthropicApiKey, clientOptions);
+
+        expect(result.llmConfig).toMatchObject({
+          apiKey: anthropicApiKey,
+          model: 'claude-3-5-haiku',
+          temperature: 0.5,
+          stream: false,
+          anthropicApiUrl: reverseProxyUrl,
+        });
+        expect(result.llmConfig.clientOptions).toMatchObject({
+          baseURL: reverseProxyUrl,
+        });
+      });
+    });
+
+    describe('Model-Specific Real Usage Scenarios', () => {
+      it('should handle Claude-3.7 with thinking enabled like production', () => {
+        const clientOptions = {
+          userId: 'thinking-user-789',
+          modelOptions: {
+            model: 'claude-3-7-sonnet',
+            temperature: 0.4,
+            maxOutputTokens: 8192,
+            topP: 0.95,
+            topK: 50,
+            thinking: true,
+            thinkingBudget: 3000,
+            promptCache: true,
+          },
+        };
+
+        const result = getLLMConfig('sk-ant-thinking-key', clientOptions);
+
+        expect(result.llmConfig).toMatchObject({
+          model: 'claude-3-7-sonnet',
+          temperature: 0.4,
+          maxTokens: 8192,
+          stream: true, // default
+          thinking: {
+            type: 'enabled',
+            budget_tokens: 3000,
+          },
+        });
+        // topP and topK should NOT be included for Claude-3.7 with thinking enabled
+        expect(result.llmConfig).not.toHaveProperty('topP');
+        expect(result.llmConfig).not.toHaveProperty('topK');
+        // Should have appropriate headers for Claude-3.7 with prompt cache
+        expect(result.llmConfig.clientOptions.defaultHeaders).toEqual({
+          'anthropic-beta':
+            'token-efficient-tools-2025-02-19,output-128k-2025-02-19,prompt-caching-2024-07-31',
+        });
+      });
+
+      it('should handle web search functionality like production', () => {
+        const clientOptions = {
+          userId: 'websearch-user-303',
+          modelOptions: {
+            model: 'claude-3-5-sonnet-latest',
+            temperature: 0.6,
+            maxOutputTokens: 4096,
+            web_search: true,
+          },
+        };
+
+        const result = getLLMConfig('sk-ant-websearch-key', clientOptions);
+
+        expect(result.llmConfig).toMatchObject({
+          model: 'claude-3-5-sonnet-latest',
+          temperature: 0.6,
+          maxTokens: 4096,
+        });
+        expect(result.tools).toEqual([
+          {
+            type: 'web_search_20250305',
+            name: 'web_search',
+          },
+        ]);
+      });
+    });
+
+    describe('Production-like Configuration Scenarios', () => {
+      it('should handle complex production configuration', () => {
+        const clientOptions = {
+          proxy: 'http://prod-proxy.company.com:3128',
+          userId: 'prod-user-enterprise-404',
+          reverseProxyUrl: 'https://anthropic-gateway.company.com/v1',
+          modelOptions: {
+            model: 'claude-3-opus-20240229',
+            temperature: 0.2, // Conservative for production
+            maxOutputTokens: 4096,
+            topP: 0.95,
+            topK: 10,
+            stop: ['\\n\\nHuman:', '\\n\\nAssistant:', 'END_CONVERSATION'],
+            stream: true,
+            promptCache: true,
+          },
+          streamRate: 15, // Conservative stream rate
+          titleModel: 'claude-3-haiku-20240307',
+        };
+
+        const result = getLLMConfig('sk-ant-prod-enterprise-key', clientOptions);
+
+        expect(result.llmConfig).toMatchObject({
+          apiKey: 'sk-ant-prod-enterprise-key',
+          model: 'claude-3-opus-20240229',
+          temperature: 0.2,
+          maxTokens: 4096,
+          topP: 0.95,
+          topK: 10,
+          stopSequences: ['\\n\\nHuman:', '\\n\\nAssistant:', 'END_CONVERSATION'],
+          stream: true,
+          anthropicApiUrl: 'https://anthropic-gateway.company.com/v1',
+          invocationKwargs: {
+            metadata: {
+              user_id: 'prod-user-enterprise-404',
+            },
+          },
+        });
+        expect(result.llmConfig.clientOptions).toMatchObject({
+          baseURL: 'https://anthropic-gateway.company.com/v1',
+          fetchOptions: {
+            dispatcher: expect.any(Object),
+          },
+        });
+        expect(result.tools).toEqual([]);
+      });
+
+      it('should handle multiple system options removal from modelOptions', () => {
+        const modelOptions = {
+          model: 'claude-3-5-sonnet',
+          temperature: 0.7,
+          maxOutputTokens: 8192,
+          // System options that should be removed
+          thinking: true,
+          promptCache: true,
+          thinkingBudget: 2500,
+          // Regular options that should remain
+          topP: 0.9,
+          topK: 40,
+        };
+
+        const clientOptions = {
+          userId: 'system-options-user',
+          modelOptions,
+        };
+
+        getLLMConfig('sk-ant-system-key', clientOptions);
+
+        // System options should be removed from original modelOptions
+        expect(modelOptions).not.toHaveProperty('thinking');
+        expect(modelOptions).not.toHaveProperty('promptCache');
+        expect(modelOptions).not.toHaveProperty('thinkingBudget');
+        // Regular options should remain
+        expect(modelOptions).toHaveProperty('temperature', 0.7);
+        expect(modelOptions).toHaveProperty('topP', 0.9);
+        expect(modelOptions).toHaveProperty('topK', 40);
+      });
+    });
+
+    describe('Error Handling and Edge Cases from Real Usage', () => {
+      it('should handle missing userId gracefully', () => {
+        const clientOptions = {
+          modelOptions: {
+            model: 'claude-3-haiku',
+            temperature: 0.5,
+          },
+          // userId is missing
+        };
+
+        const result = getLLMConfig('sk-ant-no-user-key', clientOptions);
+
+        expect(result.llmConfig.invocationKwargs.metadata).toMatchObject({
+          user_id: undefined,
+        });
+      });
+
+      it('should handle large parameter sets without performance issues', () => {
+        const largeModelOptions = {
+          model: 'claude-3-opus',
+          temperature: 0.7,
+          maxOutputTokens: 4096,
+          topP: 0.9,
+          topK: 40,
+        };
+
+        // Add many additional properties to test performance
+        for (let i = 0; i < 100; i++) {
+          largeModelOptions[`custom_param_${i}`] = `value_${i}`;
+        }
+
+        const clientOptions = {
+          userId: 'performance-test-user',
+          modelOptions: largeModelOptions,
+          proxy: 'http://performance-proxy:8080',
+          reverseProxyUrl: 'https://performance-reverse-proxy.com',
+        };
+
+        const startTime = Date.now();
+        const result = getLLMConfig('sk-ant-performance-key', clientOptions);
+        const endTime = Date.now();
+
+        expect(endTime - startTime).toBeLessThan(50); // Should be very fast
+        expect(result.llmConfig).toMatchObject({
+          model: 'claude-3-opus',
+          temperature: 0.7,
+          maxTokens: 4096,
+          topP: 0.9,
+          topK: 40,
+        });
+      });
+
+      it('should handle model name variations and edge cases', () => {
+        const modelVariations = [
+          'claude-3-7-sonnet',
+          'claude-3.7-sonnet',
+          'anthropic/claude-3-opus-20240229',
+          'claude-sonnet-4-latest',
+          'claude-3-5-sonnet-latest',
+        ];
+
+        modelVariations.forEach((model) => {
+          const clientOptions = {
+            userId: 'model-variation-user',
+            modelOptions: {
+              model,
+              temperature: 0.5,
+              topP: 0.9,
+              topK: 40,
+              thinking: true,
+              promptCache: true,
+            },
+          };
+
+          const result = getLLMConfig('sk-ant-variation-key', clientOptions);
+
+          expect(result.llmConfig).toHaveProperty('model', model);
+          expect(result.llmConfig).toHaveProperty('temperature', 0.5);
+          // The specific behavior (thinking, topP/topK inclusion) depends on model pattern
+        });
+      });
+    });
+  });
+
+  describe('Comprehensive Parameter Logic Tests', () => {
+    describe('Default Values and Fallbacks', () => {
+      it('should apply correct default values from anthropicSettings', () => {
+        const result = getLLMConfig('test-key', { modelOptions: {} });
+
+        expect(result.llmConfig).toMatchObject({
+          model: 'claude-3-5-sonnet-latest', // default model
+          stream: true, // default stream
+          maxTokens: 8192, // DEFAULT_MAX_OUTPUT for claude-3-5-sonnet
+        });
+      });
+
+      it('should handle maxOutputTokens reset logic for different models', () => {
+        const testCases = [
+          { model: 'claude-3-5-sonnet', expectedMaxTokens: 8192 },
+          { model: 'claude-3.5-sonnet-20241022', expectedMaxTokens: 8192 },
+          { model: 'claude-3-7-sonnet', expectedMaxTokens: 8192 },
+          { model: 'claude-3.7-sonnet-20250109', expectedMaxTokens: 8192 },
+          { model: 'claude-3-opus', expectedMaxTokens: 4096 },
+          { model: 'claude-3-haiku', expectedMaxTokens: 4096 },
+          { model: 'claude-2.1', expectedMaxTokens: 4096 },
+        ];
+
+        testCases.forEach(({ model, expectedMaxTokens }) => {
+          const result = getLLMConfig('test-key', {
+            modelOptions: { model, maxOutputTokens: null }, // Force reset
+          });
+          expect(result.llmConfig.maxTokens).toBe(expectedMaxTokens);
+        });
+      });
+
+      it('should handle system options defaults correctly', () => {
+        const result = getLLMConfig('test-key', {
+          modelOptions: {
+            model: 'claude-3-7-sonnet',
+            // Don't specify thinking, promptCache, thinkingBudget - should use defaults
+          },
+        });
+
+        // Should have thinking enabled by default for claude-3-7
+        expect(result.llmConfig.thinking).toMatchObject({
+          type: 'enabled',
+          budget_tokens: 2000, // default thinkingBudget
+        });
+        // Should have prompt cache headers by default
+        expect(result.llmConfig.clientOptions.defaultHeaders).toBeDefined();
+      });
+    });
+
+    describe('Parameter Boundary and Validation Logic', () => {
+      it('should handle temperature boundary values', () => {
+        const testCases = [
+          { temperature: 0, expected: 0 }, // min
+          { temperature: 1, expected: 1 }, // max
+          { temperature: 0.5, expected: 0.5 }, // middle
+          { temperature: -0.1, expected: -0.1 }, // below min (should pass through)
+          { temperature: 1.1, expected: 1.1 }, // above max (should pass through)
+        ];
+
+        testCases.forEach(({ temperature, expected }) => {
+          const result = getLLMConfig('test-key', {
+            modelOptions: { temperature },
+          });
+          expect(result.llmConfig.temperature).toBe(expected);
+        });
+      });
+
+      it('should handle topP boundary values', () => {
+        const testCases = [
+          { topP: 0, expected: 0 }, // min
+          { topP: 1, expected: 1 }, // max
+          { topP: 0.7, expected: 0.7 }, // default
+          { topP: -0.1, expected: -0.1 }, // below min
+          { topP: 1.1, expected: 1.1 }, // above max
+        ];
+
+        testCases.forEach(({ topP, expected }) => {
+          const result = getLLMConfig('test-key', {
+            modelOptions: { model: 'claude-3-opus', topP },
+          });
+          expect(result.llmConfig.topP).toBe(expected);
+        });
+      });
+
+      it('should handle topK boundary values', () => {
+        const testCases = [
+          { topK: 1, expected: 1 }, // min
+          { topK: 40, expected: 40 }, // max
+          { topK: 5, expected: 5 }, // default
+          { topK: 0, expected: 0 }, // below min
+          { topK: 50, expected: 50 }, // above max
+        ];
+
+        testCases.forEach(({ topK, expected }) => {
+          const result = getLLMConfig('test-key', {
+            modelOptions: { model: 'claude-3-opus', topK },
+          });
+          expect(result.llmConfig.topK).toBe(expected);
+        });
+      });
+
+      it('should handle maxOutputTokens boundary values', () => {
+        const testCases = [
+          { model: 'claude-3-opus', maxOutputTokens: 1, expected: 1 }, // min
+          { model: 'claude-3-opus', maxOutputTokens: 4096, expected: 4096 }, // max for legacy
+          { model: 'claude-3-5-sonnet', maxOutputTokens: 1, expected: 1 }, // min
+          { model: 'claude-3-5-sonnet', maxOutputTokens: 200000, expected: 200000 }, // max for new
+          { model: 'claude-3-7-sonnet', maxOutputTokens: 8192, expected: 8192 }, // default
+        ];
+
+        testCases.forEach(({ model, maxOutputTokens, expected }) => {
+          const result = getLLMConfig('test-key', {
+            modelOptions: { model, maxOutputTokens },
+          });
+          expect(result.llmConfig.maxTokens).toBe(expected);
+        });
+      });
+
+      it('should handle thinkingBudget boundary values', () => {
+        const testCases = [
+          { thinkingBudget: 1024, expected: 1024 }, // min
+          { thinkingBudget: 2000, expected: 2000 }, // default
+          { thinkingBudget: 7000, expected: 7000 }, // within max tokens (8192)
+          { thinkingBudget: 500, expected: 500 }, // below min
+          { thinkingBudget: 200000, expected: 7372 }, // above max tokens, constrained to 90% of 8192
+        ];
+
+        testCases.forEach(({ thinkingBudget, expected }) => {
+          const result = getLLMConfig('test-key', {
+            modelOptions: {
+              model: 'claude-3-7-sonnet',
+              thinking: true,
+              thinkingBudget,
+            },
+          });
+          expect(result.llmConfig.thinking.budget_tokens).toBe(expected);
+        });
+      });
+    });
+
+    describe('Complex Parameter Interactions', () => {
+      it('should handle thinking budget vs maxTokens constraints', () => {
+        const testCases = [
+          // Budget within maxTokens - should keep original
+          { maxOutputTokens: 4096, thinkingBudget: 2000, expectedBudget: 2000 },
+          // Budget exceeds maxTokens - should constrain to 90%
+          { maxOutputTokens: 4096, thinkingBudget: 5000, expectedBudget: 3686 }, // 90% of 4096
+          // Budget equals maxTokens - should keep original (not constrained unless it exceeds)
+          { maxOutputTokens: 2000, thinkingBudget: 2000, expectedBudget: 2000 },
+          // Budget slightly exceeds maxTokens - should constrain to 90%
+          { maxOutputTokens: 2000, thinkingBudget: 2001, expectedBudget: 1800 }, // 90% of 2000
+          // Very small maxTokens
+          { maxOutputTokens: 1000, thinkingBudget: 3000, expectedBudget: 900 }, // 90% of 1000
+        ];
+
+        testCases.forEach(({ maxOutputTokens, thinkingBudget, expectedBudget }) => {
+          const result = getLLMConfig('test-key', {
+            modelOptions: {
+              model: 'claude-3-7-sonnet',
+              maxOutputTokens,
+              thinking: true,
+              thinkingBudget,
+            },
+          });
+          expect(result.llmConfig.thinking.budget_tokens).toBe(expectedBudget);
+        });
+      });
+
+      it('should handle topP/topK exclusion logic for Claude-3.7 models', () => {
+        const testCases = [
+          // Claude-3.7 with thinking = true - should exclude topP/topK
+          { model: 'claude-3-7-sonnet', thinking: true, shouldInclude: false },
+          { model: 'claude-3.7-sonnet', thinking: true, shouldInclude: false },
+          // Claude-3.7 with thinking = false - should include topP/topK
+          { model: 'claude-3-7-sonnet', thinking: false, shouldInclude: true },
+          { model: 'claude-3.7-sonnet', thinking: false, shouldInclude: true },
+          // Claude-3.7 with thinking = null - thinking defaults to true, so should exclude topP/topK
+          { model: 'claude-3-7-sonnet', thinking: null, shouldInclude: false },
+          // Non-Claude-3.7 models - should always include topP/topK (thinking doesn't affect them)
+          { model: 'claude-3-5-sonnet', thinking: true, shouldInclude: true },
+          { model: 'claude-3-opus', thinking: true, shouldInclude: true },
+          { model: 'claude-sonnet-4', thinking: true, shouldInclude: true },
+        ];
+
+        testCases.forEach(({ model, thinking, shouldInclude }) => {
+          const result = getLLMConfig('test-key', {
+            modelOptions: {
+              model,
+              thinking,
+              topP: 0.9,
+              topK: 40,
+            },
+          });
+
+          if (shouldInclude) {
+            expect(result.llmConfig).toHaveProperty('topP', 0.9);
+            expect(result.llmConfig).toHaveProperty('topK', 40);
+          } else {
+            expect(result.llmConfig).not.toHaveProperty('topP');
+            expect(result.llmConfig).not.toHaveProperty('topK');
+          }
+        });
+      });
+
+      it('should handle prompt cache support logic for different models', () => {
+        const testCases = [
+          // Models that support prompt cache
+          { model: 'claude-3-5-sonnet', promptCache: true, shouldHaveHeaders: true },
+          { model: 'claude-3.5-sonnet-20241022', promptCache: true, shouldHaveHeaders: true },
+          { model: 'claude-3-7-sonnet', promptCache: true, shouldHaveHeaders: true },
+          { model: 'claude-3.7-sonnet-20250109', promptCache: true, shouldHaveHeaders: true },
+          { model: 'claude-3-opus', promptCache: true, shouldHaveHeaders: true },
+          { model: 'claude-sonnet-4-20250514', promptCache: true, shouldHaveHeaders: true },
+          // Models that don't support prompt cache
+          { model: 'claude-3-5-sonnet-latest', promptCache: true, shouldHaveHeaders: false },
+          { model: 'claude-3.5-sonnet-latest', promptCache: true, shouldHaveHeaders: false },
+          // Prompt cache disabled
+          { model: 'claude-3-5-sonnet', promptCache: false, shouldHaveHeaders: false },
+        ];
+
+        testCases.forEach(({ model, promptCache, shouldHaveHeaders }) => {
+          const result = getLLMConfig('test-key', {
+            modelOptions: { model, promptCache },
+          });
+
+          if (shouldHaveHeaders) {
+            expect(result.llmConfig.clientOptions.defaultHeaders).toBeDefined();
+            expect(result.llmConfig.clientOptions.defaultHeaders['anthropic-beta']).toContain(
+              'prompt-caching',
+            );
+          } else {
+            expect(result.llmConfig.clientOptions.defaultHeaders).toBeUndefined();
+          }
+        });
+      });
+    });
+
+    describe('Parameter Type Handling', () => {
+      it('should handle different data types for numeric parameters', () => {
+        const testCases = [
+          { temperature: '0.5', expected: '0.5' }, // string
+          { temperature: 0.5, expected: 0.5 }, // number
+          { topP: '0.9', expected: '0.9' }, // string
+          { topP: 0.9, expected: 0.9 }, // number
+          { topK: '20', expected: '20' }, // string
+          { topK: 20, expected: 20 }, // number
+          { maxOutputTokens: '4096', expected: '4096' }, // string
+          { maxOutputTokens: 4096, expected: 4096 }, // number
+        ];
+
+        testCases.forEach((testCase) => {
+          const key = Object.keys(testCase)[0];
+          const value = testCase[key];
+          const expected = testCase.expected;
+
+          const result = getLLMConfig('test-key', {
+            modelOptions: { model: 'claude-3-opus', [key]: value },
+          });
+
+          const outputKey = key === 'maxOutputTokens' ? 'maxTokens' : key;
+          expect(result.llmConfig[outputKey]).toBe(expected);
+        });
+      });
+
+      it('should handle array parameters correctly', () => {
+        const testCases = [
+          { stop: [], expected: [] }, // empty array
+          { stop: ['\\n'], expected: ['\\n'] }, // single item
+          { stop: ['\\n', 'Human:', 'Assistant:'], expected: ['\\n', 'Human:', 'Assistant:'] }, // multiple items
+          { stop: null, expected: null }, // null
+          { stop: undefined, expected: undefined }, // undefined
+        ];
+
+        testCases.forEach(({ stop, expected }) => {
+          const result = getLLMConfig('test-key', {
+            modelOptions: { model: 'claude-3-opus', stop },
+          });
+
+          if (expected === null || expected === undefined) {
+            expect(result.llmConfig).not.toHaveProperty('stopSequences');
+          } else {
+            expect(result.llmConfig.stopSequences).toEqual(expected);
+          }
+        });
+      });
+
+      it('should handle boolean parameters correctly', () => {
+        const testCases = [
+          { stream: true, expected: true },
+          { stream: false, expected: false },
+          { stream: 'true', expected: 'true' }, // string boolean
+          { stream: 'false', expected: 'false' }, // string boolean
+          { stream: 1, expected: 1 }, // truthy number
+          { stream: 0, expected: 0 }, // falsy number
+          { thinking: true, expected: true },
+          { thinking: false, expected: false },
+          { promptCache: true, expected: true },
+          { promptCache: false, expected: false },
+          { web_search: true, expected: true },
+          { web_search: false, expected: false },
+        ];
+
+        testCases.forEach((testCase) => {
+          const key = Object.keys(testCase)[0];
+          const value = testCase[key];
+          const expected = testCase.expected;
+
+          const result = getLLMConfig('test-key', {
+            modelOptions: { model: 'claude-3-opus', [key]: value },
+          });
+
+          if (key === 'stream') {
+            expect(result.llmConfig.stream).toBe(expected);
+          } else if (key === 'web_search' && expected) {
+            expect(result.tools).toEqual([{ type: 'web_search_20250305', name: 'web_search' }]);
+          }
+        });
+      });
+    });
+
+    describe('Parameter Precedence and Override Logic', () => {
+      it('should handle modelOptions vs defaultOptions precedence', () => {
+        const result = getLLMConfig('test-key', {
+          modelOptions: {
+            model: 'claude-3-opus', // override default
+            maxOutputTokens: 2048, // override default
+            stream: false, // override default
+            temperature: 0.3, // new parameter
+          },
+        });
+
+        expect(result.llmConfig).toMatchObject({
+          model: 'claude-3-opus', // overridden
+          maxTokens: 2048, // overridden
+          stream: false, // overridden
+          temperature: 0.3, // added
+        });
+      });
+
+      it('should handle system options extraction and defaults', () => {
+        const modelOptions = {
+          model: 'claude-3-7-sonnet',
+          temperature: 0.5,
+          // Missing system options should use defaults
+        };
+
+        const result = getLLMConfig('test-key', {
+          modelOptions,
+        });
+
+        // System options should be removed from modelOptions
+        expect(modelOptions).not.toHaveProperty('thinking');
+        expect(modelOptions).not.toHaveProperty('promptCache');
+        expect(modelOptions).not.toHaveProperty('thinkingBudget');
+
+        // Should use defaults for system options
+        expect(result.llmConfig.thinking).toMatchObject({
+          type: 'enabled',
+          budget_tokens: 2000, // default
+        });
+      });
+
+      it('should handle partial system options with defaults', () => {
+        const result = getLLMConfig('test-key', {
+          modelOptions: {
+            model: 'claude-3-7-sonnet',
+            thinking: false, // explicit false
+            // promptCache and thinkingBudget should use defaults
+          },
+        });
+
+        // thinking is false, so no thinking object should be created
+        expect(result.llmConfig.thinking).toBeUndefined();
+        // promptCache default is true, so should have headers
+        expect(result.llmConfig.clientOptions.defaultHeaders).toBeDefined();
+      });
+    });
+
+    describe('Edge Cases and Error Conditions', () => {
+      it('should handle extremely large numbers', () => {
+        const result = getLLMConfig('test-key', {
+          modelOptions: {
+            temperature: Number.MAX_SAFE_INTEGER,
+            topP: Number.MAX_VALUE,
+            topK: 999999,
+            maxOutputTokens: Number.MAX_SAFE_INTEGER,
+            thinkingBudget: Number.MAX_SAFE_INTEGER,
+          },
+        });
+
+        // Should pass through without crashing
+        expect(result.llmConfig.temperature).toBe(Number.MAX_SAFE_INTEGER);
+        expect(result.llmConfig.topP).toBe(Number.MAX_VALUE);
+        expect(result.llmConfig.topK).toBe(999999);
+        expect(result.llmConfig.maxTokens).toBe(Number.MAX_SAFE_INTEGER);
+      });
+
+      it('should handle negative numbers', () => {
+        const result = getLLMConfig('test-key', {
+          modelOptions: {
+            temperature: -1,
+            topP: -0.5,
+            topK: -10,
+            maxOutputTokens: -1000,
+            thinkingBudget: -500,
+          },
+        });
+
+        // Should pass through negative values (API will handle validation)
+        expect(result.llmConfig.temperature).toBe(-1);
+        expect(result.llmConfig.topP).toBe(-0.5);
+        expect(result.llmConfig.topK).toBe(-10);
+        expect(result.llmConfig.maxTokens).toBe(-1000);
+      });
+
+      it('should handle special numeric values', () => {
+        const testCases = [
+          { value: NaN, shouldBeRemoved: false }, // NaN passes through removeNullishValues
+          { value: Infinity, shouldBeRemoved: false },
+          { value: -Infinity, shouldBeRemoved: false },
+          { value: 0, shouldBeRemoved: false },
+          { value: -0, shouldBeRemoved: false },
+        ];
+
+        testCases.forEach(({ value, shouldBeRemoved }) => {
+          const result = getLLMConfig('test-key', {
+            modelOptions: {
+              model: 'claude-3-opus',
+              temperature: value,
+            },
+          });
+
+          if (shouldBeRemoved) {
+            expect(result.llmConfig).not.toHaveProperty('temperature');
+          } else {
+            expect(result.llmConfig.temperature).toBe(value);
+          }
+        });
+      });
+
+      it('should handle malformed stop sequences', () => {
+        const testCases = [
+          { stop: 'string', expected: 'string' }, // single string instead of array
+          { stop: [null, undefined, ''], expected: [null, undefined, ''] }, // mixed values
+          { stop: [123, true, false], expected: [123, true, false] }, // non-string values
+          { stop: {}, expected: {} }, // object instead of array
+        ];
+
+        testCases.forEach(({ stop, expected }) => {
+          const result = getLLMConfig('test-key', {
+            modelOptions: { model: 'claude-3-opus', stop },
+          });
+
+          expect(result.llmConfig.stopSequences).toEqual(expected);
+        });
+      });
+    });
+  });
 });

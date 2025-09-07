@@ -104,7 +104,14 @@ export function getOpenAIConfig(
     addParams,
     dropParams,
   } = options;
-  const { reasoning_effort, reasoning_summary, verbosity, ...modelOptions } = _modelOptions;
+  const {
+    reasoning_effort,
+    reasoning_summary,
+    verbosity,
+    frequency_penalty,
+    presence_penalty,
+    ...modelOptions
+  } = _modelOptions;
   const llmConfig: Partial<t.ClientOptions> &
     Partial<t.OpenAIParameters> &
     Partial<AzureOpenAIInput> = Object.assign(
@@ -114,6 +121,13 @@ export function getOpenAIConfig(
     },
     modelOptions,
   );
+
+  if (frequency_penalty != null) {
+    llmConfig.frequencyPenalty = frequency_penalty;
+  }
+  if (presence_penalty != null) {
+    llmConfig.presencePenalty = presence_penalty;
+  }
 
   const modelKwargs: Record<string, unknown> = {};
   let hasModelKwargs = false;
