@@ -24,7 +24,7 @@ export interface OpenAIConfigOptions {
   streaming?: boolean;
   addParams?: Record<string, unknown>;
   dropParams?: string[];
-  customParams?: TConfig['customParams'];
+  customParams?: Partial<TConfig['customParams']>;
 }
 
 export type OpenAIConfiguration = OpenAIClientOptions['configuration'];
