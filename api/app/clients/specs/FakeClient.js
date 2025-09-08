@@ -1,5 +1,5 @@
+const { getModelMaxTokens } = require('@librechat/api');
 const BaseClient = require('../BaseClient');
-const { getModelMaxTokens } = require('../../../utils');
 
 class FakeClient extends BaseClient {
   constructor(apiKey, options = {}) {
