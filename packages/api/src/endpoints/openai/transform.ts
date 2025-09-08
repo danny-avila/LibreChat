@@ -9,11 +9,16 @@ const anthropicExcludeParams = new Set(['anthropicApiUrl']);
  * Transforms a Non-OpenAI LLM config to an OpenAI-conformant config.
  * Non-OpenAI parameters are moved to modelKwargs.
  * Also extracts configuration options that belong in configOptions.
+ * Handles addParams and dropParams for parameter customization.
  */
 export function transformToOpenAIConfig({
+  addParams,
+  dropParams,
   llmConfig,
   fromEndpoint,
 }: {
+  addParams?: Record<string, unknown>;
+  dropParams?: string[];
   llmConfig: ClientOptions;
   fromEndpoint: string;
 }): {
@@ -54,8 +59,33 @@ export function transformToOpenAIConfig({
     }
   }
 
+  if (addParams && typeof addParams === 'object') {
+    for (const [key, value] of Object.entries(addParams)) {
+      if (knownOpenAIParams.has(key)) {
+        (openAIConfig as Record<string, unknown>)[key] = value;
+      } else {
+        modelKwargs[key] = value;
+        hasModelKwargs = true;
+      }
+    }
+  }
+
   if (hasModelKwargs) {
     openAIConfig.modelKwargs = modelKwargs;
+  }
+
+  if (dropParams && Array.isArray(dropParams)) {
+    dropParams.forEach((param) => {
+      if (param in openAIConfig) {
+        delete openAIConfig[param as keyof t.OAIClientOptions];
+      }
+      if (openAIConfig.modelKwargs && param in openAIConfig.modelKwargs) {
+        delete openAIConfig.modelKwargs[param];
+        if (Object.keys(openAIConfig.modelKwargs).length === 0) {
+          delete openAIConfig.modelKwargs;
+        }
+      }
+    });
   }
 
   return {

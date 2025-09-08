@@ -273,7 +273,7 @@ describe('getOpenAIConfig - Anthropic Compatibility', () => {
       });
     });
 
-    it('should handle dropParams only working in OpenAI path not Anthropic', () => {
+    it('should handle dropParams correctly in Anthropic path', () => {
       const apiKey = 'sk-drop';
       const endpoint = 'Anthropic (via LiteLLM)';
       const options = {
@@ -282,11 +282,11 @@ describe('getOpenAIConfig - Anthropic Compatibility', () => {
           user: 'userDrop',
           temperature: 0.5,
           maxOutputTokens: 2048,
-          thinking: true,
-          thinkingBudget: 5000,
+          topP: 0.9,
+          topK: 40,
         },
         reverseProxyUrl: 'http://proxy.litellm/v1',
-        dropParams: ['temperature', 'user'],
+        dropParams: ['temperature', 'topK', 'metadata'],
         customParams: {
           defaultParamsEndpoint: 'anthropic',
         },
@@ -301,13 +301,11 @@ describe('getOpenAIConfig - Anthropic Compatibility', () => {
           apiKey: 'sk-drop',
           model: 'claude-3-opus-20240229',
           stream: true,
-          temperature: 0.5,
+          topP: 0.9,
           maxTokens: 2048,
-          modelKwargs: {
-            metadata: {
-              user_id: 'userDrop',
-            },
-          },
+          // temperature is dropped
+          // modelKwargs.topK is dropped
+          // modelKwargs.metadata is dropped completely
         },
         configOptions: {
           baseURL: 'http://proxy.litellm/v1',
@@ -442,6 +440,108 @@ describe('getOpenAIConfig - Anthropic Compatibility', () => {
           baseURL: 'http://litellm/v1',
           defaultHeaders: {
             'anthropic-beta': 'prompt-caching-2024-07-31',
+          },
+        },
+        tools: [],
+      });
+    });
+
+    it('should handle addParams with Anthropic defaults', () => {
+      const apiKey = 'sk-add';
+      const endpoint = 'Anthropic (via LiteLLM)';
+      const options = {
+        modelOptions: {
+          model: 'claude-3-opus-20240229',
+          user: 'addUser',
+          temperature: 0.7,
+        },
+        reverseProxyUrl: 'http://litellm/v1',
+        addParams: {
+          customParam1: 'value1',
+          customParam2: 42,
+          frequencyPenalty: 0.5, // Known OpenAI param
+        },
+        customParams: {
+          defaultParamsEndpoint: 'anthropic',
+        },
+        endpoint: 'Anthropic (via LiteLLM)',
+        endpointType: 'custom',
+      };
+
+      const result = getOpenAIConfig(apiKey, options, endpoint);
+
+      expect(result).toEqual({
+        llmConfig: {
+          apiKey: 'sk-add',
+          model: 'claude-3-opus-20240229',
+          stream: true,
+          temperature: 0.7,
+          frequencyPenalty: 0.5, // Known param added to main config
+          maxTokens: 8192,
+          modelKwargs: {
+            metadata: {
+              user_id: 'addUser',
+            },
+            customParam1: 'value1', // Unknown params added to modelKwargs
+            customParam2: 42,
+          },
+        },
+        configOptions: {
+          baseURL: 'http://litellm/v1',
+          defaultHeaders: {
+            'anthropic-beta': 'prompt-caching-2024-07-31',
+          },
+        },
+        tools: [],
+      });
+    });
+
+    it('should handle both addParams and dropParams together', () => {
+      const apiKey = 'sk-both';
+      const endpoint = 'Anthropic (via LiteLLM)';
+      const options = {
+        modelOptions: {
+          model: 'claude-3.5-sonnet-20240620',
+          user: 'bothUser',
+          temperature: 0.6,
+          topP: 0.9,
+          topK: 40,
+        },
+        reverseProxyUrl: 'http://litellm/v1',
+        addParams: {
+          customParam: 'customValue',
+          maxRetries: 3, // Known OpenAI param
+        },
+        dropParams: ['temperature', 'topK'], // Drop one known and one unknown param
+        customParams: {
+          defaultParamsEndpoint: 'anthropic',
+        },
+        endpoint: 'Anthropic (via LiteLLM)',
+        endpointType: 'custom',
+      };
+
+      const result = getOpenAIConfig(apiKey, options, endpoint);
+
+      expect(result).toEqual({
+        llmConfig: {
+          apiKey: 'sk-both',
+          model: 'claude-3.5-sonnet-20240620',
+          stream: true,
+          topP: 0.9,
+          maxRetries: 3,
+          maxTokens: 8192,
+          modelKwargs: {
+            metadata: {
+              user_id: 'bothUser',
+            },
+            customParam: 'customValue',
+            // topK is dropped
+          },
+        },
+        configOptions: {
+          baseURL: 'http://litellm/v1',
+          defaultHeaders: {
+            'anthropic-beta': 'max-tokens-3-5-sonnet-2024-07-15,prompt-caching-2024-07-31',
           },
         },
         tools: [],

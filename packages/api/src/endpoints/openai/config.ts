@@ -50,6 +50,8 @@ export function getOpenAIConfig(
       proxy: options.proxy,
     });
     const transformed = transformToOpenAIConfig({
+      addParams,
+      dropParams,
       llmConfig: anthropicResult.llmConfig,
       fromEndpoint: EModelEndpoint.anthropic,
     });
