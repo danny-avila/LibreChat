@@ -298,7 +298,8 @@ const maybeUninstallOAuthMCP = async (userId, pluginKey, appConfig) => {
   const serverName = pluginKey.replace(Constants.mcp_prefix, '');
   const mcpManager = getMCPManager(userId);
   const serverConfig = mcpManager?.getRawConfig(serverName) || appConfig?.mcpServers?.[serverName];
-  if (!serverConfig?.oauth) {
+
+  if (!getMCPManager(userId).getOAuthServers().has(serverName)) {
     // this server does not use OAuth, so nothing to do here as well
     return;
   }
