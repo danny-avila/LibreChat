@@ -25,7 +25,6 @@ export interface OpenAIConfigOptions {
   addParams?: Record<string, unknown>;
   dropParams?: string[];
   customParams?: TConfig['customParams'];
-  userId?: string;
 }
 
 export type OpenAIConfiguration = OpenAIClientOptions['configuration'];

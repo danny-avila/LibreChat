@@ -42,6 +42,7 @@ export type ThinkingConfigParam = ThinkingConfigEnabled | ThinkingConfigDisabled
 
 export type AnthropicModelOptions = Partial<Omit<AnthropicParameters, 'thinking'>> & {
   thinking?: AnthropicParameters['thinking'] | null;
+  user?: string;
 };
 
 /**
@@ -49,8 +50,6 @@ export type AnthropicModelOptions = Partial<Omit<AnthropicParameters, 'thinking'
  */
 export interface AnthropicConfigOptions {
   modelOptions?: AnthropicModelOptions;
-  /** The user ID for tracking and personalization */
-  userId?: string;
   /** Proxy server URL */
   proxy?: string | null;
   /** URL for a reverse proxy, if used */

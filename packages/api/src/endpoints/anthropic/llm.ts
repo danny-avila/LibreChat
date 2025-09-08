@@ -1,30 +1,13 @@
 import { Dispatcher, ProxyAgent } from 'undici';
 import { AnthropicClientOptions } from '@librechat/agents';
 import { anthropicSettings, removeNullishValues } from 'librechat-data-provider';
-import type {
-  AnthropicConfigOptions,
-  AnthropicLLMConfigResult,
-  AnthropicParameters,
-} from '~/types/anthropic';
+import type { AnthropicLLMConfigResult, AnthropicConfigOptions } from '~/types/anthropic';
 import { checkPromptCacheSupport, getClaudeHeaders, configureReasoning } from './helpers';
 
 /**
  * Generates configuration options for creating an Anthropic language model (LLM) instance.
- *
  * @param apiKey - The API key for authentication with Anthropic.
  * @param options={} - Additional options for configuring the LLM.
- * @param options.modelOptions - Model-specific options.
- * @param options.modelOptions.model - The name of the model to use.
- * @param options.modelOptions.maxOutputTokens - The maximum number of tokens to generate.
- * @param options.modelOptions.temperature - Controls randomness in output generation.
- * @param options.modelOptions.topP - Controls diversity of output generation.
- * @param options.modelOptions.topK - Controls the number of top tokens to consider.
- * @param options.modelOptions.stop - Sequences where the API will stop generating further tokens.
- * @param options.modelOptions.stream - Whether to stream the response.
- * @param options.userId - The user ID for tracking and personalization.
- * @param options.proxy - Proxy server URL.
- * @param options.reverseProxyUrl - URL for a reverse proxy, if used.
- *
  * @returns Configuration options for creating an Anthropic LLM instance, with null and undefined values removed.
  */
 function getLLMConfig(
@@ -55,11 +38,7 @@ function getLLMConfig(
     stream: true,
   };
 
-  const mergedOptions = Object.assign(
-    defaultOptions,
-    options.modelOptions,
-  ) as typeof defaultOptions &
-    Partial<AnthropicParameters> & { stop?: string[]; web_search?: boolean };
+  const mergedOptions = Object.assign(defaultOptions, options.modelOptions);
 
   let requestOptions: AnthropicClientOptions & { stream?: boolean } = {
     apiKey,
@@ -72,7 +51,7 @@ function getLLMConfig(
     clientOptions: {},
     invocationKwargs: {
       metadata: {
-        user_id: options.userId,
+        user_id: mergedOptions.user,
       },
     },
   };

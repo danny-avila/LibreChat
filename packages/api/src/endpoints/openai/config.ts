@@ -38,9 +38,9 @@ export function getOpenAIConfig(
   const isAnthropic = options.customParams?.defaultParamsEndpoint === EModelEndpoint.anthropic;
 
   const useOpenRouter =
+    !isAnthropic &&
     ((baseURL && baseURL.includes(KnownEndpoints.openrouter)) ||
-      (endpoint != null && endpoint.toLowerCase().includes(KnownEndpoints.openrouter))) &&
-    !isAnthropic;
+      (endpoint != null && endpoint.toLowerCase().includes(KnownEndpoints.openrouter)));
 
   let azure = options.azure;
   let headers = options.headers;
@@ -48,7 +48,6 @@ export function getOpenAIConfig(
     const anthropicResult = getAnthropicLLMConfig(apiKey, {
       modelOptions,
       proxy: options.proxy,
-      userId: options.userId || '',
     });
     const transformed = transformToOpenAIConfig({
       llmConfig: anthropicResult.llmConfig,
