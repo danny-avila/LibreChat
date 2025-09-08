@@ -97,6 +97,260 @@ describe('getOpenAIConfig - Backward Compatibility', () => {
     });
   });
 
+  describe('Azure OpenAI endpoint', () => {
+    it('should handle basic Azure OpenAI configuration', () => {
+      const apiKey = 'some_key';
+      const endpoint = undefined;
+      const options = {
+        modelOptions: {
+          model: 'gpt-4o',
+          user: 'some_user_id',
+        },
+        reverseProxyUrl: null,
+        endpoint: 'azureOpenAI',
+        azure: {
+          azureOpenAIApiKey: 'some_azure_key',
+          azureOpenAIApiInstanceName: 'some_instance_name',
+          azureOpenAIApiDeploymentName: 'gpt-4o',
+          azureOpenAIApiVersion: '2024-02-15-preview',
+        },
+      };
+
+      const result = getOpenAIConfig(apiKey, options, endpoint);
+
+      expect(result).toEqual({
+        llmConfig: {
+          streaming: true,
+          model: 'gpt-4o',
+          user: 'some_user_id',
+          azureOpenAIApiKey: 'some_azure_key',
+          azureOpenAIApiInstanceName: 'some_instance_name',
+          azureOpenAIApiDeploymentName: 'gpt-4o',
+          azureOpenAIApiVersion: '2024-02-15-preview',
+        },
+        configOptions: {},
+        tools: [],
+      });
+    });
+
+    it('should handle Azure OpenAI with Responses API and reasoning', () => {
+      const apiKey = 'some_azure_key';
+      const endpoint = undefined;
+      const options = {
+        modelOptions: {
+          model: 'gpt-5',
+          reasoning_effort: ReasoningEffort.high,
+          reasoning_summary: ReasoningSummary.detailed,
+          verbosity: Verbosity.high,
+          useResponsesApi: true,
+          user: 'some_user_id',
+        },
+        endpoint: 'azureOpenAI',
+        azure: {
+          azureOpenAIApiKey: 'some_azure_key',
+          azureOpenAIApiInstanceName: 'some_instance_name',
+          azureOpenAIApiDeploymentName: 'gpt-5',
+          azureOpenAIApiVersion: '2024-12-01-preview',
+        },
+      };
+
+      const result = getOpenAIConfig(apiKey, options, endpoint);
+
+      expect(result).toEqual({
+        llmConfig: {
+          streaming: true,
+          model: 'gpt-5',
+          useResponsesApi: true,
+          user: 'some_user_id',
+          apiKey: 'some_azure_key',
+          reasoning: {
+            effort: ReasoningEffort.high,
+            summary: ReasoningSummary.detailed,
+          },
+          modelKwargs: {
+            text: {
+              verbosity: Verbosity.high,
+            },
+          },
+        },
+        configOptions: {
+          baseURL: 'https://some_instance_name.openai.azure.com/openai/v1',
+          defaultHeaders: {
+            'api-key': 'some_azure_key',
+          },
+          defaultQuery: {
+            'api-version': 'preview',
+          },
+        },
+        tools: [],
+      });
+    });
+
+    it('should handle Azure serverless configuration with dropParams', () => {
+      const apiKey = 'some_azure_key';
+      const endpoint = undefined;
+      const options = {
+        modelOptions: {
+          model: 'jais-30b-chat',
+          user: 'some_user_id',
+        },
+        reverseProxyUrl: 'https://some_endpoint_name.services.ai.azure.com/models',
+        endpoint: 'azureOpenAI',
+        headers: {
+          'api-key': 'some_azure_key',
+        },
+        dropParams: ['stream_options', 'user'],
+        azure: false as const,
+        defaultQuery: {
+          'api-version': '2024-05-01-preview',
+        },
+      };
+
+      const result = getOpenAIConfig(apiKey, options, endpoint);
+
+      expect(result).toEqual({
+        llmConfig: {
+          streaming: true,
+          model: 'jais-30b-chat',
+          apiKey: 'some_azure_key',
+        },
+        configOptions: {
+          baseURL: 'https://some_endpoint_name.services.ai.azure.com/models',
+          defaultHeaders: {
+            'api-key': 'some_azure_key',
+          },
+          defaultQuery: {
+            'api-version': '2024-05-01-preview',
+          },
+        },
+        tools: [],
+      });
+    });
+
+    it('should handle Azure serverless with user-provided key configuration', () => {
+      const apiKey = 'some_azure_key';
+      const endpoint = undefined;
+      const options = {
+        modelOptions: {
+          model: 'grok-3',
+          user: 'some_user_id',
+        },
+        reverseProxyUrl: 'https://some_endpoint_name.services.ai.azure.com/models',
+        endpoint: 'azureOpenAI',
+        headers: {
+          'api-key': 'some_azure_key',
+        },
+        dropParams: ['stream_options', 'user'],
+        azure: false as const,
+        defaultQuery: {
+          'api-version': '2024-05-01-preview',
+        },
+      };
+
+      const result = getOpenAIConfig(apiKey, options, endpoint);
+
+      expect(result).toEqual({
+        llmConfig: {
+          streaming: true,
+          model: 'grok-3',
+          apiKey: 'some_azure_key',
+        },
+        configOptions: {
+          baseURL: 'https://some_endpoint_name.services.ai.azure.com/models',
+          defaultHeaders: {
+            'api-key': 'some_azure_key',
+          },
+          defaultQuery: {
+            'api-version': '2024-05-01-preview',
+          },
+        },
+        tools: [],
+      });
+    });
+
+    it('should handle Azure serverless with Mistral model configuration', () => {
+      const apiKey = 'some_azure_key';
+      const endpoint = undefined;
+      const options = {
+        modelOptions: {
+          model: 'Mistral-Large-2411',
+          user: 'some_user_id',
+        },
+        reverseProxyUrl: 'https://some_endpoint_name.services.ai.azure.com/models',
+        endpoint: 'azureOpenAI',
+        headers: {
+          'api-key': 'some_azure_key',
+        },
+        dropParams: ['stream_options', 'user'],
+        azure: false as const,
+        defaultQuery: {
+          'api-version': '2024-05-01-preview',
+        },
+      };
+
+      const result = getOpenAIConfig(apiKey, options, endpoint);
+
+      expect(result).toEqual({
+        llmConfig: {
+          streaming: true,
+          model: 'Mistral-Large-2411',
+          apiKey: 'some_azure_key',
+        },
+        configOptions: {
+          baseURL: 'https://some_endpoint_name.services.ai.azure.com/models',
+          defaultHeaders: {
+            'api-key': 'some_azure_key',
+          },
+          defaultQuery: {
+            'api-version': '2024-05-01-preview',
+          },
+        },
+        tools: [],
+      });
+    });
+
+    it('should handle Azure serverless with DeepSeek model without dropParams', () => {
+      const apiKey = 'some_azure_key';
+      const endpoint = undefined;
+      const options = {
+        modelOptions: {
+          model: 'DeepSeek-R1',
+          user: 'some_user_id',
+        },
+        reverseProxyUrl: 'https://some_endpoint_name.models.ai.azure.com/v1/',
+        endpoint: 'azureOpenAI',
+        headers: {
+          'api-key': 'some_azure_key',
+        },
+        azure: false as const,
+        defaultQuery: {
+          'api-version': '2024-08-01-preview',
+        },
+      };
+
+      const result = getOpenAIConfig(apiKey, options, endpoint);
+
+      expect(result).toEqual({
+        llmConfig: {
+          streaming: true,
+          model: 'DeepSeek-R1',
+          user: 'some_user_id',
+          apiKey: 'some_azure_key',
+        },
+        configOptions: {
+          baseURL: 'https://some_endpoint_name.models.ai.azure.com/v1/',
+          defaultHeaders: {
+            'api-key': 'some_azure_key',
+          },
+          defaultQuery: {
+            'api-version': '2024-08-01-preview',
+          },
+        },
+        tools: [],
+      });
+    });
+  });
+
   describe('Custom endpoints', () => {
     it('should handle Groq custom endpoint configuration', () => {
       const apiKey = 'gsk_somekey';
