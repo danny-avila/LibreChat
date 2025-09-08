@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState, memo, useMemo } from 'react';
+import { ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   Row,
@@ -410,26 +411,38 @@ export default function DataTable<TData, TValue>({
           <TableHeader className="sticky top-0 z-50 bg-surface-secondary">
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id} className="border-b border-border-light">
-                {headerGroup.headers.map((header) => (
-                  <TableHead
-                    key={header.id}
-                    className="whitespace-nowrap bg-surface-secondary px-2 py-2 text-left text-sm font-medium text-text-secondary sm:px-4"
-                    style={getColumnStyle(
-                      header.column.columnDef as TableColumn<TData, TValue>,
-                      isSmallScreen,
-                    )}
-                    onClick={
-                      header.column.getCanSort()
-                        ? header.column.getToggleSortingHandler()
-                        : undefined
-                    }
-                    scope="col"
-                  >
-                    {header.isPlaceholder
-                      ? null
-                      : flexRender(header.column.columnDef.header, header.getContext())}
-                  </TableHead>
-                ))}
+                {headerGroup.headers.map((header) => {
+                  const sortDir = header.column.getIsSorted();
+                  const canSort = header.column.getCanSort();
+                  return (
+                    <TableHead
+                      onClick={canSort ? header.column.getToggleSortingHandler() : undefined}
+                      key={header.id}
+                      className="relative cursor-pointer whitespace-nowrap bg-surface-secondary px-2 py-2 text-left text-sm font-medium text-text-secondary hover:bg-surface-hover sm:px-4"
+                      style={getColumnStyle(
+                        header.column.columnDef as TableColumn<TData, TValue>,
+                        isSmallScreen,
+                      )}
+                    >
+                      <div className="flex items-center">
+                        <span className="flex-1 text-left">
+                          {header.isPlaceholder
+                            ? null
+                            : flexRender(header.column.columnDef.header, header.getContext())}
+                        </span>
+                        {canSort && (
+                          <span className="ml-1">
+                            {sortDir === false && (
+                              <ChevronsUpDown className="h-4 w-4 text-muted-foreground" />
+                            )}
+                            {sortDir === 'asc' && <ChevronUp className="h-4 w-4 text-primary" />}
+                            {sortDir === 'desc' && <ChevronDown className="h-4 w-4 text-primary" />}
+                          </span>
+                        )}
+                      </div>
+                    </TableHead>
+                  );
+                })}
               </TableRow>
             ))}
           </TableHeader>

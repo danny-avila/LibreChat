@@ -61,16 +61,7 @@ export const columns: ColumnDef<TFile>[] = [
     accessorKey: 'filename',
     header: ({ column }) => {
       const localize = useLocalize();
-      return (
-        <Button
-          variant="ghost"
-          className="px-2 py-0 text-xs hover:bg-surface-hover sm:px-2 sm:py-2 sm:text-sm"
-          onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-        >
-          {localize('com_ui_name')}
-          <ArrowUpDown className="ml-2 h-3 w-4 sm:h-4 sm:w-4" />
-        </Button>
-      );
+      return <SortFilterHeader column={column} title={localize('com_ui_name')} />;
     },
     cell: ({ row }) => {
       const file = row.original;
@@ -100,16 +91,7 @@ export const columns: ColumnDef<TFile>[] = [
     accessorKey: 'updatedAt',
     header: ({ column }) => {
       const localize = useLocalize();
-      return (
-        <Button
-          variant="ghost"
-          onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-          className="px-2 py-0 text-xs hover:bg-surface-hover sm:px-2 sm:py-2 sm:text-sm"
-        >
-          {localize('com_ui_date')}
-          <ArrowUpDown className="ml-2 h-3 w-4 sm:h-4 sm:w-4" />
-        </Button>
-      );
+      return <SortFilterHeader column={column} title={localize('com_ui_date')} />;
     },
     cell: ({ row }) => {
       const isSmallScreen = useMediaQuery('(max-width: 768px)');
@@ -197,16 +179,7 @@ export const columns: ColumnDef<TFile>[] = [
     accessorKey: 'bytes',
     header: ({ column }) => {
       const localize = useLocalize();
-      return (
-        <Button
-          variant="ghost"
-          className="px-2 py-0 text-xs hover:bg-surface-hover sm:px-2 sm:py-2 sm:text-sm"
-          onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-        >
-          {localize('com_ui_size')}
-          <ArrowUpDown className="ml-2 h-3 w-4 sm:h-4 sm:w-4" />
-        </Button>
-      );
+      return <SortFilterHeader column={column} title={localize('com_ui_size')} />;
     },
     cell: ({ row }) => {
       const suffix = ' MB';

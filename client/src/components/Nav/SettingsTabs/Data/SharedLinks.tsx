@@ -1,8 +1,8 @@
-import { useCallback, useState, useMemo, useEffect } from 'react';
+import { useCallback, useState, useMemo, useEffect, useRef } from 'react';
 import debounce from 'lodash/debounce';
 import { useRecoilValue } from 'recoil';
 import { Link } from 'react-router-dom';
-import { TrashIcon, MessageSquare, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
+import { TrashIcon, MessageSquare } from 'lucide-react';
 import type { SharedLinkItem, SharedLinksListParams } from 'librechat-data-provider';
 import {
   OGDialog,
@@ -19,15 +19,13 @@ import {
   Label,
 } from '@librechat/client';
 import { useDeleteSharedLinkMutation, useSharedLinksQuery } from '~/data-provider';
-import { useLocalize } from '~/hooks';
 import { NotificationSeverity } from '~/common';
+import { useLocalize } from '~/hooks';
 import { formatDate } from '~/utils';
 import store from '~/store';
 
-const PAGE_SIZE = 25;
-
 const DEFAULT_PARAMS: SharedLinksListParams = {
-  pageSize: PAGE_SIZE,
+  pageSize: 25,
   isPublic: true,
   sortBy: 'createdAt',
   sortDirection: 'desc',
@@ -43,15 +41,32 @@ export default function SharedLinks() {
   const [deleteRow, setDeleteRow] = useState<SharedLinkItem | null>(null);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
+  const prevSortRef = useRef({
+    sortBy: DEFAULT_PARAMS.sortBy,
+    sortDirection: DEFAULT_PARAMS.sortDirection,
+  });
 
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, refetch, isLoading } =
     useSharedLinksQuery(queryParams, {
       enabled: isOpen,
-      staleTime: 0,
+      staleTime: 30 * 1000,
       cacheTime: 5 * 60 * 1000,
       refetchOnWindowFocus: false,
       refetchOnMount: false,
+      keepPreviousData: false,
     });
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const { sortBy, sortDirection } = queryParams;
+    const prevSort = prevSortRef.current;
+
+    if (sortBy !== prevSort.sortBy || sortDirection !== prevSort.sortDirection) {
+      refetch();
+      prevSortRef.current = { sortBy, sortDirection };
+    }
+  }, [queryParams, isOpen, refetch]);
 
   const handleSort = useCallback((sortField: string, sortOrder: 'asc' | 'desc') => {
     setQueryParams((prev) => ({
@@ -70,7 +85,7 @@ export default function SharedLinks() {
   }, []);
 
   const debouncedFilterChange = useMemo(
-    () => debounce(handleFilterChange, 300),
+    () => debounce(handleFilterChange, 500), // Increased debounce time to 500ms
     [handleFilterChange],
   );
 
@@ -133,7 +148,7 @@ export default function SharedLinks() {
       } catch (error) {
         console.error('Failed to delete shared links:', error);
         showToast({
-          message: localize('com_ui_bulk_delete_error'),
+          message: localize('com_ui_share_delete_error'),
           severity: NotificationSeverity.ERROR,
         });
       }
@@ -145,8 +160,17 @@ export default function SharedLinks() {
     if (hasNextPage !== true || isFetchingNextPage) {
       return;
     }
-    await fetchNextPage();
-  }, [fetchNextPage, hasNextPage, isFetchingNextPage]);
+
+    try {
+      await fetchNextPage();
+    } catch (error) {
+      console.error('Failed to fetch next page:', error);
+      showToast({
+        message: localize('com_ui_share_delete_error'),
+        severity: NotificationSeverity.ERROR,
+      });
+    }
+  }, [fetchNextPage, hasNextPage, isFetchingNextPage, showToast, localize]);
 
   const confirmDelete = useCallback(() => {
     if (deleteRow) {
@@ -159,28 +183,7 @@ export default function SharedLinks() {
     () => [
       {
         accessorKey: 'title',
-        header: () => {
-          const isSorted = queryParams.sortBy === 'title';
-          const sortDirection = queryParams.sortDirection;
-          return (
-            <Button
-              variant="ghost"
-              className="px-2 py-0 text-xs hover:bg-surface-hover sm:px-2 sm:py-2 sm:text-sm"
-              onClick={() =>
-                handleSort('title', isSorted && sortDirection === 'asc' ? 'desc' : 'asc')
-              }
-            >
-              {localize('com_ui_name')}
-              {isSorted && sortDirection === 'asc' && (
-                <ArrowUp className="ml-2 h-3 w-4 sm:h-4 sm:w-4" />
-              )}
-              {isSorted && sortDirection === 'desc' && (
-                <ArrowDown className="ml-2 h-3 w-4 sm:h-4 sm:w-4" />
-              )}
-              {!isSorted && <ArrowUpDown className="ml-2 h-3 w-4 sm:h-4 sm:w-4" />}
-            </Button>
-          );
-        },
+        header: () => <span className="text-xs sm:text-sm">{localize('com_ui_name')}</span>,
         cell: ({ row }) => {
           const { title, shareId } = row.original;
           return (
@@ -200,36 +203,17 @@ export default function SharedLinks() {
         meta: {
           size: '35%',
           mobileSize: '50%',
+          enableSorting: true,
         },
       },
       {
         accessorKey: 'createdAt',
-        header: () => {
-          const isSorted = queryParams.sortBy === 'createdAt';
-          const sortDirection = queryParams.sortDirection;
-          return (
-            <Button
-              variant="ghost"
-              className="px-2 py-0 text-xs hover:bg-surface-hover sm:px-2 sm:py-2 sm:text-sm"
-              onClick={() =>
-                handleSort('createdAt', isSorted && sortDirection === 'asc' ? 'desc' : 'asc')
-              }
-            >
-              {localize('com_ui_date')}
-              {isSorted && sortDirection === 'asc' && (
-                <ArrowUp className="ml-2 h-3 w-4 sm:h-4 sm:w-4" />
-              )}
-              {isSorted && sortDirection === 'desc' && (
-                <ArrowDown className="ml-2 h-3 w-4 sm:h-4 sm:w-4" />
-              )}
-              {!isSorted && <ArrowUpDown className="ml-2 h-3 w-4 sm:h-4 sm:w-4" />}
-            </Button>
-          );
-        },
+        header: () => <span className="text-xs sm:text-sm">{localize('com_ui_date')}</span>,
         cell: ({ row }) => formatDate(row.original.createdAt?.toString() ?? '', isSmallScreen),
         meta: {
           size: '10%',
           mobileSize: '20%',
+          enableSorting: true,
         },
       },
       {
@@ -242,6 +226,7 @@ export default function SharedLinks() {
         meta: {
           size: '7%',
           mobileSize: '25%',
+          enableSorting: false,
         },
         cell: ({ row }) => (
           <div className="flex items-center gap-2">
@@ -270,24 +255,19 @@ export default function SharedLinks() {
         ),
       },
     ],
-    [isSmallScreen, localize, queryParams, handleSort],
+    [isSmallScreen, localize],
   );
 
   return (
     <div className="flex items-center justify-between">
       <Label id="shared-links-label">{localize('com_nav_shared_links')}</Label>
-
       <OGDialog open={isOpen} onOpenChange={setIsOpen}>
         <OGDialogTrigger asChild onClick={() => setIsOpen(true)}>
           <Button aria-labelledby="shared-links-label" variant="outline">
             {localize('com_ui_manage')}
           </Button>
         </OGDialogTrigger>
-
-        <OGDialogContent
-          title={localize('com_nav_my_files')}
-          className="w-11/12 max-w-5xl bg-background text-text-primary shadow-2xl"
-        >
+        <OGDialogContent className="w-11/12 max-w-5xl">
           <OGDialogHeader>
             <OGDialogTitle>{localize('com_nav_shared_links')}</OGDialogTitle>
           </OGDialogHeader>
@@ -303,7 +283,10 @@ export default function SharedLinks() {
             onFilterChange={debouncedFilterChange}
             filterValue={queryParams.search}
             isLoading={isLoading}
-            enableSearch={isSearchEnabled}
+            enableSearch={!!isSearchEnabled}
+            onSortChange={handleSort}
+            sortBy={queryParams.sortBy}
+            sortDirection={queryParams.sortDirection}
           />
         </OGDialogContent>
       </OGDialog>
@@ -311,7 +294,7 @@ export default function SharedLinks() {
         <OGDialogTemplate
           showCloseButton={false}
           title={localize('com_ui_delete_shared_link')}
-          className="max-w-[450px]"
+          className="w-11/12 max-w-md"
           main={
             <>
               <div className="flex w-full flex-col items-center gap-2">
