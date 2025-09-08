@@ -35,6 +35,8 @@ DialogOverlay.displayName = DialogPrimitive.Overlay.displayName;
 type DialogContentProps = React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & {
   showCloseButton?: boolean;
   disableScroll?: boolean;
+  maxWidth?: string; // Custom max width prop
+  maxHeight?: string; // Custom max height prop
 };
 
 const DialogContent = React.forwardRef<
@@ -42,7 +44,7 @@ const DialogContent = React.forwardRef<
   DialogContentProps
 >(
   (
-    { className, children = true, showCloseButton = true, disableScroll = false, ...props },
+    { className, children = true, showCloseButton = true, disableScroll = false, maxWidth = 'max-w-2xl', maxHeight = 'auto', ...props },
     ref,
   ) => {
     const isSmallScreen = useMediaQuery('(max-width: 768px)');
@@ -52,13 +54,15 @@ const DialogContent = React.forwardRef<
         <DialogPrimitive.Content
           ref={ref}
           className={cn(
-            // Broader + more padding
-            'fixed z-[999] grid w-full gap-4 rounded-lg border border-gray-200 bg-white p-6 shadow-lg animate-in data-[state=open]:fade-in-90 data-[state=open]:slide-in-from-bottom-10 sm:max-w-2xl',
+            // Use custom maxWidth and maxHeight, fallback to defaults if not provided
+            'fixed z-[999] grid w-full gap-4 rounded-lg border border-gray-200 bg-white p-6 shadow-lg animate-in data-[state=open]:fade-in-90 data-[state=open]:slide-in-from-bottom-10',
+            `max-w-[${maxWidth}]`, // Dynamic max-width
+            maxHeight !== 'auto' ? `max-h-[${maxHeight}]` : '', // Dynamic max-height
             'dark:border-gray-700 dark:bg-gray-800',
             isSmallScreen
               ? 'fixed left-1/2 top-1/2 z-[999] m-auto grid w-11/12 -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-white p-6 dark:bg-gray-800'
               : 'fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2', // Center on desktop
-            disableScroll ? 'overflow-hidden' : '',
+            disableScroll ? 'overflow-hidden' : 'overflow-y-auto', // Ensure scroll if not disabled
             className ?? '',
           )}
           {...props}

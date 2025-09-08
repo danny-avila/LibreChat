@@ -4,7 +4,7 @@ import moment from 'moment';
 import ReactMarkdown from 'react-markdown';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
-
+import {cn} from '~/utils';
 interface MessageSegment {
   type: 'markdown' | 'code';
   content: string;
@@ -18,7 +18,7 @@ interface MessageType {
 
 const parseMessageSegments = (text: string): MessageSegment[] => {
   const segments: MessageSegment[] = [];
-  const codeRegex = /(\w+)?\n([\s\S]*?)\n/g;
+  const codeRegex = /```(\w+)?\n([\s\S]*?)\n```/g;
   let lastIndex = 0;
   let match;
 
@@ -118,8 +118,14 @@ const QueryLogDetailsDialog: React.FC<QueryLogDetailsDialogProps> = ({
 
   return (
     <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-      {/* Fixed width constraints and overflow handling */}
-      <DialogContent className="max-h-[85vh] max-w-5xl w-full overflow-hidden border border-border-light shadow-xl">
+      <DialogContent
+        className={cn(
+          'max-h-[90vh] max-w-4xl w-full overflow-hidden border border-border-light shadow-xl p-6',
+          'dark:border-gray-700 dark:bg-gray-800',
+          'fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2',
+          'grid gap-4 rounded-lg bg-white animate-in data-[state=open]:fade-in-90 data-[state=open]:slide-in-from-bottom-10',
+        )}
+      >
         <DialogHeader className="border-b border-border-light pb-3 pt-2 flex-shrink-0">
           <DialogTitle className="flex items-start justify-between text-base font-semibold">
             <div className="flex items-center gap-2">
@@ -142,7 +148,7 @@ const QueryLogDetailsDialog: React.FC<QueryLogDetailsDialogProps> = ({
         </DialogHeader>
 
         {selectedLog && (
-          <div className="space-y-6 p-4 pb-8 text-sm text-foreground overflow-y-auto min-w-0" style={{ maxHeight: 'calc(85vh - 200px)' }}>
+          <div className="space-y-6 p-4 pb-8 text-sm text-foreground overflow-y-auto min-w-0" style={{ maxHeight: 'calc(90vh - 200px)' }}>
             {/* User Info */}
             <div className="grid grid-cols-2 gap-4">
               <div className="flex flex-col gap-1 min-w-0">
