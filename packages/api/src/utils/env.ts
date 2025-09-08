@@ -191,6 +191,21 @@ export function processMCPEnv(params: {
     newObj.url = processSingleValue({ originalValue: newObj.url, customUserVars, user, body });
   }
 
+  // Process OAuth configuration if it exists (for all transport types)
+  if ('oauth' in newObj && newObj.oauth) {
+    const processedOAuth: Record<string, string | string[] | undefined> = {};
+    for (const [key, originalValue] of Object.entries(newObj.oauth)) {
+      // Only process string values for environment variables
+      // token_exchange_method is an enum and shouldn't be processed
+      if (typeof originalValue === 'string') {
+        processedOAuth[key] = processSingleValue({ originalValue, customUserVars, user, body });
+      } else {
+        processedOAuth[key] = originalValue;
+      }
+    }
+    newObj.oauth = processedOAuth;
+  }
+
   return newObj;
 }
 
