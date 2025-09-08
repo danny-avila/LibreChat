@@ -362,9 +362,11 @@ describe('getLLMConfig', () => {
         // Simulate clientOptions from initialize.js
         const clientOptions = {
           proxy: null,
-          userId: 'test-user-id-123',
           reverseProxyUrl: null,
-          modelOptions: endpointOption.model_parameters,
+          modelOptions: {
+            ...endpointOption.model_parameters,
+            user: 'test-user-id-123',
+          },
           streamRate: 25,
           titleModel: 'claude-3-haiku',
         };
@@ -393,12 +395,12 @@ describe('getLLMConfig', () => {
         const anthropicApiKey = 'sk-ant-proxy-key';
         const clientOptions = {
           proxy: 'http://corporate-proxy:8080',
-          userId: 'proxy-user-456',
           reverseProxyUrl: null,
           modelOptions: {
             model: 'claude-3-opus',
             temperature: 0.3,
             maxOutputTokens: 2048,
+            user: 'proxy-user-456',
           },
         };
 
@@ -426,12 +428,12 @@ describe('getLLMConfig', () => {
         const reverseProxyUrl = 'https://api.custom-anthropic.com/v1';
         const clientOptions = {
           proxy: null,
-          userId: 'reverse-proxy-user',
           reverseProxyUrl: reverseProxyUrl,
           modelOptions: {
             model: 'claude-3-5-haiku',
             temperature: 0.5,
             stream: false,
+            user: 'reverse-proxy-user',
           },
         };
 
@@ -453,7 +455,6 @@ describe('getLLMConfig', () => {
     describe('Model-Specific Real Usage Scenarios', () => {
       it('should handle Claude-3.7 with thinking enabled like production', () => {
         const clientOptions = {
-          userId: 'thinking-user-789',
           modelOptions: {
             model: 'claude-3-7-sonnet',
             temperature: 0.4,
@@ -463,6 +464,7 @@ describe('getLLMConfig', () => {
             thinking: true,
             thinkingBudget: 3000,
             promptCache: true,
+            user: 'thinking-user-789',
           },
         };
 
@@ -490,12 +492,12 @@ describe('getLLMConfig', () => {
 
       it('should handle web search functionality like production', () => {
         const clientOptions = {
-          userId: 'websearch-user-303',
           modelOptions: {
             model: 'claude-3-5-sonnet-latest',
             temperature: 0.6,
             maxOutputTokens: 4096,
             web_search: true,
+            user: 'websearch-user-303',
           },
         };
 
@@ -519,7 +521,6 @@ describe('getLLMConfig', () => {
       it('should handle complex production configuration', () => {
         const clientOptions = {
           proxy: 'http://prod-proxy.company.com:3128',
-          userId: 'prod-user-enterprise-404',
           reverseProxyUrl: 'https://anthropic-gateway.company.com/v1',
           modelOptions: {
             model: 'claude-3-opus-20240229',
@@ -530,6 +531,7 @@ describe('getLLMConfig', () => {
             stop: ['\\n\\nHuman:', '\\n\\nAssistant:', 'END_CONVERSATION'],
             stream: true,
             promptCache: true,
+            user: 'prod-user-enterprise-404',
           },
           streamRate: 15, // Conservative stream rate
           titleModel: 'claude-3-haiku-20240307',
@@ -574,10 +576,10 @@ describe('getLLMConfig', () => {
           // Regular options that should remain
           topP: 0.9,
           topK: 40,
+          user: 'system-options-user',
         };
 
         const clientOptions = {
-          userId: 'system-options-user',
           modelOptions,
         };
 
@@ -595,13 +597,13 @@ describe('getLLMConfig', () => {
     });
 
     describe('Error Handling and Edge Cases from Real Usage', () => {
-      it('should handle missing userId gracefully', () => {
+      it('should handle missing `user` ID string gracefully', () => {
         const clientOptions = {
           modelOptions: {
             model: 'claude-3-haiku',
             temperature: 0.5,
+            // `user` is missing
           },
-          // userId is missing
         };
 
         const result = getLLMConfig('sk-ant-no-user-key', clientOptions);
@@ -618,6 +620,7 @@ describe('getLLMConfig', () => {
           maxOutputTokens: 4096,
           topP: 0.9,
           topK: 40,
+          user: 'performance-test-user',
         };
 
         // Add many additional properties to test performance
@@ -626,7 +629,6 @@ describe('getLLMConfig', () => {
         }
 
         const clientOptions = {
-          userId: 'performance-test-user',
           modelOptions: largeModelOptions,
           proxy: 'http://performance-proxy:8080',
           reverseProxyUrl: 'https://performance-reverse-proxy.com',
@@ -657,7 +659,6 @@ describe('getLLMConfig', () => {
 
         modelVariations.forEach((model) => {
           const clientOptions = {
-            userId: 'model-variation-user',
             modelOptions: {
               model,
               temperature: 0.5,
@@ -665,6 +666,7 @@ describe('getLLMConfig', () => {
               topK: 40,
               thinking: true,
               promptCache: true,
+              user: 'model-variation-user',
             },
           };
 
