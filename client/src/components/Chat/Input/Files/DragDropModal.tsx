@@ -39,17 +39,17 @@ const DragDropModal = ({ onOptionSelect, setShowModal, files, isVisible }: DragD
   const tools =
     (agentData?.tools as string[] | undefined) || (selectedAgent?.tools as string[] | undefined);
 
-  const fileSearchAllowedByAgent = (() => {
+  const fileSearchAllowedByAgent = useMemo(() => {
     if (!agentSelected) return true;
     if (!selectedAgent) return false;
-    return tools?.includes(Tools.file_search) ?? false;
-  })();
+    return tools?.includes(Tools.file_search) === true;
+  }, [agentSelected, selectedAgent, tools]);
 
-  const codeAllowedByAgent = (() => {
+  const codeAllowedByAgent = useMemo(() => {
     if (!agentSelected) return true;
     if (!selectedAgent) return false;
-    return tools?.includes(Tools.execute_code) ?? false;
-  })();
+    return tools?.includes(Tools.execute_code) === true;
+  }, [agentSelected, selectedAgent, tools]);
   const options = useMemo(() => {
     const _options: FileOption[] = [
       {
@@ -82,7 +82,7 @@ const DragDropModal = ({ onOptionSelect, setShowModal, files, isVisible }: DragD
     }
 
     return _options;
-  }, [capabilities, files, localize]);
+  }, [capabilities, files, localize, fileSearchAllowedByAgent, codeAllowedByAgent]);
 
   if (!isVisible) {
     return null;

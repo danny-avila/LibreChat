@@ -81,17 +81,11 @@ export default function useDragHelpers() {
           : undefined;
         const tools = selectedAgent?.tools as string[] | undefined;
         const agentSelected = Boolean(agentId);
-        const agentAllowsFileSearch = (() => {
-          if (!agentSelected) return true;
-          if (!selectedAgent) return false;
-          return tools?.includes(Tools.file_search) ?? false;
-        })();
+        const agentAllowsFileSearch =
+          !agentSelected || (!!selectedAgent && (tools?.includes(Tools.file_search) === true));
 
-        const agentAllowsCode = (() => {
-          if (!agentSelected) return true;
-          if (!selectedAgent) return false;
-          return tools?.includes(Tools.execute_code) ?? false;
-        })();
+        const agentAllowsCode =
+          !agentSelected || (!!selectedAgent && (tools?.includes(Tools.execute_code) === true));
 
         const shouldShowModal =
           allImages ||
