@@ -872,11 +872,10 @@ class AgentClient extends BaseClient {
         if (agent.useLegacyContent === true) {
           messages = formatContentStrings(messages);
         }
-        if (
-          agent.model_parameters?.clientOptions?.defaultHeaders?.['anthropic-beta']?.includes(
-            'prompt-caching',
-          )
-        ) {
+        const defaultHeaders =
+          agent.model_parameters?.clientOptions?.defaultHeaders ??
+          agent.model_parameters?.configuration?.defaultHeaders;
+        if (defaultHeaders?.['anthropic-beta']?.includes('prompt-caching')) {
           messages = addCacheControl(messages);
         }
 
