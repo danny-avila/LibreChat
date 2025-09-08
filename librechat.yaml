@@ -5,7 +5,7 @@
 version: 1.2.1
 
 # Cache settings: Set to true to enable caching
-cache: false
+cache: true
 
 # File strategy s3/firebase
 # fileStrategy: "s3"

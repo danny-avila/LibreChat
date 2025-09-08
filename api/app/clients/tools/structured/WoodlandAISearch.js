@@ -169,10 +169,10 @@ class WoodlandAISearch extends Tool {
       return JSON.stringify(resultDocuments);
     } catch (error) {
       logger.error('Azure AI Search request failed', error);
-      return 'There was an error with Azure AI Search. If using semantic, ensure a valid semantic configuration (e.g., AZURE_AI_SEARCH_SEMANTIC_CONFIGURATION=sem1) and a 2024+ API version.';
+      const msg = (error && (error.message || String(error))) || 'Unknown error';
+      return `AZURE_SEARCH_FAILED: ${msg}`;
     }
   }
 }
 
 module.exports = WoodlandAISearch;
-
