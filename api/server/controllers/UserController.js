@@ -297,7 +297,7 @@ const maybeUninstallOAuthMCP = async (userId, pluginKey, appConfig) => {
 
   const serverName = pluginKey.replace(Constants.mcp_prefix, '');
   const mcpManager = getMCPManager(userId);
-  const serverConfig = mcpManager?.getRawConfig(serverName) || appConfig?.mcpServers?.[serverName];
+  const serverConfig = mcpManager.getRawConfig(serverName) ?? appConfig?.mcpServers?.[serverName];
 
   if (!mcpManager.getOAuthServers().has(serverName)) {
     // this server does not use OAuth, so nothing to do here as well
@@ -324,9 +324,9 @@ const maybeUninstallOAuthMCP = async (userId, pluginKey, appConfig) => {
 
   // 3. revoke OAuth tokens at the provider
   const revocationEndpoint =
-    serverConfig.oauth.revocation_endpoint ?? clientMetadata.revocation_endpoint;
+    serverConfig.oauth?.revocation_endpoint ?? clientMetadata.revocation_endpoint;
   const revocationEndpointAuthMethodsSupported =
-    serverConfig.oauth.revocation_endpoint_auth_methods_supported ??
+    serverConfig.oauth?.revocation_endpoint_auth_methods_supported ??
     clientMetadata.revocation_endpoint_auth_methods_supported;
 
   if (tokens?.access_token) {
