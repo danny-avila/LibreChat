@@ -71,44 +71,47 @@ export function removeTimestampedValue(key: string): void {
  * This should be called on app startup
  */
 export function cleanupTimestampedStorage(): void {
-  const keysToRemove: string[] = [];
-  const now = Date.now();
+  try {
+    const keysToRemove: string[] = [];
+    const now = Date.now();
 
-  // Iterate through all localStorage keys
-  for (let i = 0; i < localStorage.length; i++) {
-    const key = localStorage.key(i);
-    if (!key) continue;
-    if (key === LocalStorageKeys.PIN_MCP_) {
-      continue;
-    }
-
-    // Check if this key should be timestamped
-    const isTimestampedKey = TIMESTAMPED_KEYS.some((prefix) => key.startsWith(prefix));
-
-    if (isTimestampedKey && !key.endsWith(TIMESTAMP_SUFFIX)) {
-      const timestampKey = `${key}${TIMESTAMP_SUFFIX}`;
-      const timestamp = localStorage.getItem(timestampKey);
-
-      if (!timestamp) {
-        // No timestamp exists for a key that should have one - mark for cleanup
-        keysToRemove.push(key);
+    // Iterate through all localStorage keys
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key) continue;
+      if (key === LocalStorageKeys.PIN_MCP_) {
         continue;
       }
 
-      const age = now - parseInt(timestamp, 10);
-      if (age > CLEANUP_THRESHOLD) {
-        // Entry is too old - mark for cleanup
-        keysToRemove.push(key);
-        keysToRemove.push(timestampKey);
+      // Check if this key should be timestamped
+      const isTimestampedKey = TIMESTAMPED_KEYS.some((prefix) => key.startsWith(prefix));
+
+      if (isTimestampedKey && !key.endsWith(TIMESTAMP_SUFFIX)) {
+        const timestampKey = `${key}${TIMESTAMP_SUFFIX}`;
+        const timestamp = localStorage.getItem(timestampKey);
+
+        if (!timestamp) {
+          // No timestamp exists for a key that should have one - mark for cleanup
+          keysToRemove.push(key);
+          continue;
+        }
+
+        const age = now - parseInt(timestamp, 10);
+        if (age > CLEANUP_THRESHOLD) {
+          // Entry is too old - mark for cleanup
+          keysToRemove.push(key);
+          keysToRemove.push(timestampKey);
+        }
       }
     }
-  }
 
-  // Remove all marked keys
-  keysToRemove.forEach((key) => localStorage.removeItem(key));
+    keysToRemove.forEach((key) => localStorage.removeItem(key));
 
-  if (keysToRemove.length > 0) {
-    console.log(`Cleaned up ${keysToRemove.length} old localStorage entries`);
+    if (keysToRemove.length > 0) {
+      console.log(`Cleaned up ${keysToRemove.length} old localStorage entries`);
+    }
+  } catch (error) {
+    console.error('Error during cleanup of timestamped storage:', error);
   }
 }
 
