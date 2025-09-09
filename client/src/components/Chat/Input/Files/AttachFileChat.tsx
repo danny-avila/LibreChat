@@ -40,6 +40,7 @@ function AttachFileChat({
         disabled={disableInputs}
         conversationId={conversationId}
         endpointFileConfig={endpointFileConfig}
+        endpoint={endpoint}
       />
     );
   }
