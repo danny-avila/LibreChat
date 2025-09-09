@@ -69,6 +69,8 @@ export async function updateInterfacePermissions({
   const interfaceConfig = appConfig?.config?.interface;
   const memoryConfig = appConfig?.config?.memory;
   const memoryEnabled = isMemoryEnabled(memoryConfig);
+  /** Check if memory is explicitly disabled */
+  const isMemoryExplicitlyDisabled = memoryConfig && !memoryEnabled;
   /** Check if personalization is enabled (defaults to true if memory is configured and enabled) */
   const isPersonalizationEnabled =
     memoryConfig && memoryEnabled && memoryConfig.personalize !== false;
@@ -139,11 +141,28 @@ export async function updateInterfacePermissions({
         ),
       },
       [PermissionTypes.MEMORIES]: {
-        [Permissions.USE]: getPermissionValue(
-          loadedInterface.memories,
-          defaultPerms[PermissionTypes.MEMORIES]?.[Permissions.USE],
-          defaults.memories,
-        ),
+        [Permissions.USE]: isMemoryExplicitlyDisabled
+          ? false
+          : getPermissionValue(
+              loadedInterface.memories,
+              defaultPerms[PermissionTypes.MEMORIES]?.[Permissions.USE],
+              defaults.memories,
+            ),
+        ...(defaultPerms[PermissionTypes.MEMORIES]?.[Permissions.CREATE] !== undefined && {
+          [Permissions.CREATE]: isMemoryExplicitlyDisabled
+            ? false
+            : defaultPerms[PermissionTypes.MEMORIES][Permissions.CREATE],
+        }),
+        ...(defaultPerms[PermissionTypes.MEMORIES]?.[Permissions.READ] !== undefined && {
+          [Permissions.READ]: isMemoryExplicitlyDisabled
+            ? false
+            : defaultPerms[PermissionTypes.MEMORIES][Permissions.READ],
+        }),
+        ...(defaultPerms[PermissionTypes.MEMORIES]?.[Permissions.UPDATE] !== undefined && {
+          [Permissions.UPDATE]: isMemoryExplicitlyDisabled
+            ? false
+            : defaultPerms[PermissionTypes.MEMORIES][Permissions.UPDATE],
+        }),
         [Permissions.OPT_OUT]: isPersonalizationEnabled,
       },
       [PermissionTypes.MULTI_CONVO]: {
