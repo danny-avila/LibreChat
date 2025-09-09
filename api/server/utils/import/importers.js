@@ -255,7 +255,7 @@ function processConversation(conv, importBatchBuilder, requestUserId) {
     const isCreatedByUser = role === 'user';
     let sender = isCreatedByUser ? 'user' : 'GPT-3.5';
     const model = mapping.message.metadata.model_slug || openAISettings.model.default;
-    if (model.includes('gpt-4')) {
+    if (!isCreatedByUser && model.includes('gpt-4')) {
       sender = 'GPT-4';
     }
 

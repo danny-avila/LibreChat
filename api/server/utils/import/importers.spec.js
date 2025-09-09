@@ -215,6 +215,109 @@ describe('importChatGptConvo', () => {
     expect(secondUser.parentMessageId).toBe(firstAssistant.messageId);
     expect(secondAssistant.parentMessageId).toBe(secondUser.messageId);
   });
+
+  it('should maintain correct sender for user messages regardless of GPT-4 model', async () => {
+    /**
+     * Test data with GPT-4 model to ensure user messages keep 'user' sender
+     */
+    const testData = [
+      {
+        title: 'GPT-4 Sender Test',
+        create_time: 1714585031.148505,
+        update_time: 1714585060.879308,
+        mapping: {
+          'root-node': {
+            id: 'root-node',
+            message: null,
+            parent: null,
+            children: ['user-msg-1'],
+          },
+          'user-msg-1': {
+            id: 'user-msg-1',
+            message: {
+              id: 'user-msg-1',
+              author: { role: 'user' },
+              create_time: 1714585031.150442,
+              content: { content_type: 'text', parts: ['User message with GPT-4'] },
+              metadata: { model_slug: 'gpt-4' },
+            },
+            parent: 'root-node',
+            children: ['assistant-msg-1'],
+          },
+          'assistant-msg-1': {
+            id: 'assistant-msg-1',
+            message: {
+              id: 'assistant-msg-1',
+              author: { role: 'assistant' },
+              create_time: 1714585032.150442,
+              content: { content_type: 'text', parts: ['Assistant response with GPT-4'] },
+              metadata: { model_slug: 'gpt-4' },
+            },
+            parent: 'user-msg-1',
+            children: ['user-msg-2'],
+          },
+          'user-msg-2': {
+            id: 'user-msg-2',
+            message: {
+              id: 'user-msg-2',
+              author: { role: 'user' },
+              create_time: 1714585033.150442,
+              content: { content_type: 'text', parts: ['Another user message with GPT-4o-mini'] },
+              metadata: { model_slug: 'gpt-4o-mini' },
+            },
+            parent: 'assistant-msg-1',
+            children: ['assistant-msg-2'],
+          },
+          'assistant-msg-2': {
+            id: 'assistant-msg-2',
+            message: {
+              id: 'assistant-msg-2',
+              author: { role: 'assistant' },
+              create_time: 1714585034.150442,
+              content: { content_type: 'text', parts: ['Assistant response with GPT-3.5'] },
+              metadata: { model_slug: 'gpt-3.5-turbo' },
+            },
+            parent: 'user-msg-2',
+            children: [],
+          },
+        },
+      },
+    ];
+
+    const requestUserId = 'user-123';
+    const importBatchBuilder = new ImportBatchBuilder(requestUserId);
+    jest.spyOn(importBatchBuilder, 'saveMessage');
+
+    const importer = getImporter(testData);
+    await importer(testData, requestUserId, () => importBatchBuilder);
+
+    const savedMessages = importBatchBuilder.saveMessage.mock.calls.map((call) => call[0]);
+
+    const userMsg1 = savedMessages.find((msg) => msg.text === 'User message with GPT-4');
+    const assistantMsg1 = savedMessages.find((msg) => msg.text === 'Assistant response with GPT-4');
+    const userMsg2 = savedMessages.find(
+      (msg) => msg.text === 'Another user message with GPT-4o-mini',
+    );
+    const assistantMsg2 = savedMessages.find(
+      (msg) => msg.text === 'Assistant response with GPT-3.5',
+    );
+
+    expect(userMsg1.sender).toBe('user');
+    expect(userMsg1.isCreatedByUser).toBe(true);
+    expect(userMsg1.model).toBe('gpt-4');
+
+    expect(userMsg2.sender).toBe('user');
+    expect(userMsg2.isCreatedByUser).toBe(true);
+    expect(userMsg2.model).toBe('gpt-4o-mini');
+
+    expect(assistantMsg1.sender).toBe('GPT-4');
+    expect(assistantMsg1.isCreatedByUser).toBe(false);
+    expect(assistantMsg1.model).toBe('gpt-4');
+
+    expect(assistantMsg2.sender).toBe('GPT-3.5');
+    expect(assistantMsg2.isCreatedByUser).toBe(false);
+    expect(assistantMsg2.model).toBe('gpt-3.5-turbo');
+  });
 });
 
 describe('importLibreChatConvo', () => {
