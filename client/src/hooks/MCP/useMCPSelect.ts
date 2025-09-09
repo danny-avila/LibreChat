@@ -1,13 +1,14 @@
 import { useCallback, useEffect } from 'react';
 import { useAtom } from 'jotai';
 import { useRecoilState } from 'recoil';
-import { Constants } from 'librechat-data-provider';
-import { ephemeralAgentByConvoId, mcpValuesAtomFamily, mcpPinnedAtomFamily } from '~/store';
+import { Constants, LocalStorageKeys } from 'librechat-data-provider';
+import { ephemeralAgentByConvoId, mcpValuesAtomFamily, mcpPinnedAtom } from '~/store';
+import { setTimestamp } from '~/utils/timestamps';
 
 export function useMCPSelect({ conversationId }: { conversationId?: string | null }) {
   const key = conversationId ?? Constants.NEW_CONVO;
 
-  const [isPinned, setIsPinned] = useAtom(mcpPinnedAtomFamily(key));
+  const [isPinned, setIsPinned] = useAtom(mcpPinnedAtom);
   const [mcpValues, setMCPValuesRaw] = useAtom(mcpValuesAtomFamily(key));
   const [ephemeralAgent, setEphemeralAgent] = useRecoilState(ephemeralAgentByConvoId(key));
 
@@ -27,6 +28,13 @@ export function useMCPSelect({ conversationId }: { conversationId?: string | nul
       }));
     }
   }, [mcpValues, ephemeralAgent?.mcp, setEphemeralAgent]);
+
+  useEffect(() => {
+    const mcpStorageKey = `${LocalStorageKeys.LAST_MCP_}${key}`;
+    if (mcpValues.length > 0) {
+      setTimestamp(mcpStorageKey);
+    }
+  }, [mcpValues, key]);
 
   /** Stable memoized setter */
   const setMCPValues = useCallback(

@@ -13,11 +13,8 @@ export const mcpValuesAtomFamily = atomFamily((conversationId: string | null) =>
 });
 
 /**
- * Creates a storage atom for MCP pinned state per conversation
+ * Global storage atom for MCP pinned state (shared across all conversations)
  */
-export const mcpPinnedAtomFamily = atomFamily((conversationId: string | null) => {
-  const key = conversationId ?? Constants.NEW_CONVO;
-  const storageKey = `${LocalStorageKeys.PIN_MCP_}${key}`;
-
-  return atomWithStorage<boolean>(storageKey, true, undefined, { getOnInit: true });
+export const mcpPinnedAtom = atomWithStorage<boolean>(LocalStorageKeys.PIN_MCP_, true, undefined, {
+  getOnInit: true,
 });
