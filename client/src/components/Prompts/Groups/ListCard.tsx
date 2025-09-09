@@ -38,7 +38,7 @@ export default function ListCard({
     >
       <div className="flex w-full justify-between gap-2">
         <div className="flex flex-row gap-2">
-          <CategoryIcon category={category} className="icon-md" aria-hidden="true" />
+          <CategoryIcon category={category} className="icon-md flex-shrink-0" aria-hidden="true" />
           <Label
             id={`card-title-${name}`}
             className="break-word select-none text-balance text-sm font-semibold text-text-primary"

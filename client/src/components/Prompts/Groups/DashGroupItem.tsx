@@ -93,7 +93,11 @@ function DashGroupItemComponent({ group, instanceProjectId }: DashGroupItemProps
     >
       <div className="flex w-full items-center justify-between">
         <div className="flex items-center gap-2 truncate pr-2">
-          <CategoryIcon category={group.category ?? ''} className="icon-lg" aria-hidden="true" />
+          <CategoryIcon
+            category={group.category ?? ''}
+            className="icon-lg flex-shrink-0"
+            aria-hidden="true"
+          />
 
           <Label className="text-md cursor-pointer truncate font-semibold text-text-primary">
             {group.name}
