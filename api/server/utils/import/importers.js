@@ -1,9 +1,9 @@
 const { v4: uuidv4 } = require('uuid');
+const { logger } = require('@librechat/data-schemas');
 const { EModelEndpoint, Constants, openAISettings, CacheKeys } = require('librechat-data-provider');
 const { createImportBatchBuilder } = require('./importBatchBuilder');
 const { cloneMessagesWithTimestamps } = require('./fork');
 const getLogStores = require('~/cache/getLogStores');
-const logger = require('~/config/winston');
 
 /**
  * Returns the appropriate importer function based on the provided JSON data.
@@ -212,6 +212,29 @@ function processConversation(conv, importBatchBuilder, requestUserId) {
     }
   }
 
+  /**
+   * Helper function to find the nearest non-system parent
+   * @param {string} parentId - The ID of the parent message.
+   * @returns {string} The ID of the nearest non-system parent message.
+   */
+  const findNonSystemParent = (parentId) => {
+    if (!parentId || !messageMap.has(parentId)) {
+      return Constants.NO_PARENT;
+    }
+
+    const parentMapping = conv.mapping[parentId];
+    if (!parentMapping?.message) {
+      return Constants.NO_PARENT;
+    }
+
+    /* If parent is a system message, traverse up to find the nearest non-system parent */
+    if (parentMapping.message.author?.role === 'system') {
+      return findNonSystemParent(parentMapping.parent);
+    }
+
+    return messageMap.get(parentId);
+  };
+
   // Create and save messages using the mapped IDs
   const messages = [];
   for (const [id, mapping] of Object.entries(conv.mapping)) {
@@ -220,15 +243,12 @@ function processConversation(conv, importBatchBuilder, requestUserId) {
       messageMap.delete(id);
       continue;
     } else if (role === 'system') {
-      messageMap.delete(id);
+      // Skip system messages but keep their ID in messageMap for parent references
       continue;
     }
 
     const newMessageId = messageMap.get(id);
-    const parentMessageId =
-      mapping.parent && messageMap.has(mapping.parent)
-        ? messageMap.get(mapping.parent)
-        : Constants.NO_PARENT;
+    const parentMessageId = findNonSystemParent(mapping.parent);
 
     const messageText = formatMessageText(mapping.message);
 

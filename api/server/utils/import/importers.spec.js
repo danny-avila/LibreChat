@@ -99,6 +99,122 @@ describe('importChatGptConvo', () => {
 
     expect(importBatchBuilder.saveBatch).toHaveBeenCalled();
   });
+
+  it('should handle system messages without breaking parent-child relationships', async () => {
+    /**
+     * Test data that reproduces message graph "breaking" when it encounters a system message
+     */
+    const testData = [
+      {
+        title: 'System Message Parent Test',
+        create_time: 1714585031.148505,
+        update_time: 1714585060.879308,
+        mapping: {
+          'root-node': {
+            id: 'root-node',
+            message: null,
+            parent: null,
+            children: ['user-msg-1'],
+          },
+          'user-msg-1': {
+            id: 'user-msg-1',
+            message: {
+              id: 'user-msg-1',
+              author: { role: 'user' },
+              create_time: 1714585031.150442,
+              content: { content_type: 'text', parts: ['First user message'] },
+              metadata: { model_slug: 'gpt-4' },
+            },
+            parent: 'root-node',
+            children: ['assistant-msg-1'],
+          },
+          'assistant-msg-1': {
+            id: 'assistant-msg-1',
+            message: {
+              id: 'assistant-msg-1',
+              author: { role: 'assistant' },
+              create_time: 1714585032.150442,
+              content: { content_type: 'text', parts: ['First assistant response'] },
+              metadata: { model_slug: 'gpt-4' },
+            },
+            parent: 'user-msg-1',
+            children: ['system-msg'],
+          },
+          'system-msg': {
+            id: 'system-msg',
+            message: {
+              id: 'system-msg',
+              author: { role: 'system' },
+              create_time: 1714585033.150442,
+              content: { content_type: 'text', parts: ['System message in middle'] },
+              metadata: { model_slug: 'gpt-4' },
+            },
+            parent: 'assistant-msg-1',
+            children: ['user-msg-2'],
+          },
+          'user-msg-2': {
+            id: 'user-msg-2',
+            message: {
+              id: 'user-msg-2',
+              author: { role: 'user' },
+              create_time: 1714585034.150442,
+              content: { content_type: 'text', parts: ['Second user message'] },
+              metadata: { model_slug: 'gpt-4' },
+            },
+            parent: 'system-msg',
+            children: ['assistant-msg-2'],
+          },
+          'assistant-msg-2': {
+            id: 'assistant-msg-2',
+            message: {
+              id: 'assistant-msg-2',
+              author: { role: 'assistant' },
+              create_time: 1714585035.150442,
+              content: { content_type: 'text', parts: ['Second assistant response'] },
+              metadata: { model_slug: 'gpt-4' },
+            },
+            parent: 'user-msg-2',
+            children: [],
+          },
+        },
+      },
+    ];
+
+    const requestUserId = 'user-123';
+    const importBatchBuilder = new ImportBatchBuilder(requestUserId);
+    jest.spyOn(importBatchBuilder, 'saveMessage');
+
+    const importer = getImporter(testData);
+    await importer(testData, requestUserId, () => importBatchBuilder);
+
+    /** 2 user messages + 2 assistant messages (system message should be skipped) */
+    const expectedMessages = 4;
+    expect(importBatchBuilder.saveMessage).toHaveBeenCalledTimes(expectedMessages);
+
+    const savedMessages = importBatchBuilder.saveMessage.mock.calls.map((call) => call[0]);
+
+    const messageMap = new Map();
+    savedMessages.forEach((msg) => {
+      messageMap.set(msg.text, msg);
+    });
+
+    const firstUser = messageMap.get('First user message');
+    const firstAssistant = messageMap.get('First assistant response');
+    const secondUser = messageMap.get('Second user message');
+    const secondAssistant = messageMap.get('Second assistant response');
+
+    expect(firstUser).toBeDefined();
+    expect(firstAssistant).toBeDefined();
+    expect(secondUser).toBeDefined();
+    expect(secondAssistant).toBeDefined();
+    expect(firstUser.parentMessageId).toBe(Constants.NO_PARENT);
+    expect(firstAssistant.parentMessageId).toBe(firstUser.messageId);
+
+    // This is the key test: second user message should have first assistant as parent
+    // (not NO_PARENT which would indicate the system message broke the chain)
+    expect(secondUser.parentMessageId).toBe(firstAssistant.messageId);
+    expect(secondAssistant.parentMessageId).toBe(secondUser.messageId);
+  });
 });
 
 describe('importLibreChatConvo', () => {
