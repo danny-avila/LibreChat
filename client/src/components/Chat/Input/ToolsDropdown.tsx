@@ -31,7 +31,6 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
     fileSearch,
     agentsConfig,
     mcpServerNames,
-    conversationId,
     codeApiKeyForm,
     codeInterpreter,
     searchApiKeyForm,
@@ -290,9 +289,7 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
   if (mcpServerNames && mcpServerNames.length > 0) {
     dropdownItems.push({
       hideOnClick: false,
-      render: (props) => (
-        <MCPSubMenu {...props} placeholder={mcpPlaceholder} conversationId={conversationId} />
-      ),
+      render: (props) => <MCPSubMenu {...props} placeholder={mcpPlaceholder} />,
     });
   }
 

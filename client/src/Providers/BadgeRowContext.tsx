@@ -3,6 +3,7 @@ import { useSetRecoilState } from 'recoil';
 import { Tools, Constants, LocalStorageKeys, AgentCapabilities } from 'librechat-data-provider';
 import type { TAgentsEndpoint } from 'librechat-data-provider';
 import {
+  useMCPServerManager,
   useSearchApiKeyForm,
   useGetAgentsConfig,
   useCodeApiKeyForm,
@@ -22,6 +23,8 @@ interface BadgeRowContextType {
   codeInterpreter: ReturnType<typeof useToolToggle>;
   codeApiKeyForm: ReturnType<typeof useCodeApiKeyForm>;
   searchApiKeyForm: ReturnType<typeof useSearchApiKeyForm>;
+  // MCP Server Manager fields
+  mcpServerManager: ReturnType<typeof useMCPServerManager>;
 }
 
 const BadgeRowContext = createContext<BadgeRowContextType | undefined>(undefined);
@@ -187,6 +190,8 @@ export default function BadgeRowProvider({
     isAuthenticated: true,
   });
 
+  const mcpServerManager = useMCPServerManager({ conversationId });
+
   const mcpServerNames = useMemo(() => {
     return (mcpToolDetails ?? []).map((tool) => tool.name);
   }, [mcpToolDetails]);
@@ -201,6 +206,7 @@ export default function BadgeRowProvider({
     codeApiKeyForm,
     codeInterpreter,
     searchApiKeyForm,
+    mcpServerManager,
   };
 
   return <BadgeRowContext.Provider value={value}>{children}</BadgeRowContext.Provider>;
