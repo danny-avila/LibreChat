@@ -102,97 +102,116 @@ export default defineConfig(({ command }) => ({
       preserveEntrySignatures: 'strict',
       output: {
         manualChunks(id: string) {
-          if (id.includes('node_modules')) {
+          const normalizedId = id.replace(/\\/g, '/');
+          if (normalizedId.includes('node_modules')) {
             // High-impact chunking for large libraries
-            if (id.includes('@codesandbox/sandpack')) {
+            if (normalizedId.includes('@codesandbox/sandpack')) {
               return 'sandpack';
             }
-            if (id.includes('react-virtualized')) {
+            if (normalizedId.includes('react-virtualized')) {
               return 'virtualization';
             }
-            if (id.includes('i18next') || id.includes('react-i18next')) {
+            if (normalizedId.includes('i18next') || normalizedId.includes('react-i18next')) {
               return 'i18n';
             }
-            if (id.includes('lodash')) {
+            if (normalizedId.includes('lodash')) {
               return 'utilities';
             }
-            if (id.includes('date-fns')) {
+            if (normalizedId.includes('date-fns')) {
               return 'date-utils';
             }
-            if (id.includes('@dicebear')) {
+            if (normalizedId.includes('@dicebear')) {
               return 'avatars';
             }
-            if (id.includes('react-dnd') || id.includes('react-flip-toolkit')) {
+            if (normalizedId.includes('react-dnd') || normalizedId.includes('react-flip-toolkit')) {
               return 'react-interactions';
             }
-            if (id.includes('react-hook-form')) {
+            if (normalizedId.includes('react-hook-form')) {
               return 'forms';
             }
-            if (id.includes('react-router-dom')) {
+            if (normalizedId.includes('react-router-dom')) {
               return 'routing';
             }
-            if (id.includes('qrcode.react') || id.includes('@marsidev/react-turnstile')) {
+            if (
+              normalizedId.includes('qrcode.react') ||
+              normalizedId.includes('@marsidev/react-turnstile')
+            ) {
               return 'security-ui';
             }
 
-            if (id.includes('@codemirror/view')) {
+            if (normalizedId.includes('@codemirror/view')) {
               return 'codemirror-view';
             }
-            if (id.includes('@codemirror/state')) {
+            if (normalizedId.includes('@codemirror/state')) {
               return 'codemirror-state';
             }
-            if (id.includes('@codemirror/language')) {
+            if (normalizedId.includes('@codemirror/language')) {
               return 'codemirror-language';
             }
-            if (id.includes('@codemirror')) {
+            if (normalizedId.includes('@codemirror')) {
               return 'codemirror-core';
             }
 
-            if (id.includes('react-markdown') || id.includes('remark-') || id.includes('rehype-')) {
+            if (
+              normalizedId.includes('react-markdown') ||
+              normalizedId.includes('remark-') ||
+              normalizedId.includes('rehype-')
+            ) {
               return 'markdown-processing';
             }
-            if (id.includes('monaco-editor') || id.includes('@monaco-editor')) {
+            if (normalizedId.includes('monaco-editor') || normalizedId.includes('@monaco-editor')) {
               return 'code-editor';
             }
-            if (id.includes('react-window') || id.includes('react-virtual')) {
+            if (normalizedId.includes('react-window') || normalizedId.includes('react-virtual')) {
               return 'virtualization';
             }
-            if (id.includes('zod') || id.includes('yup') || id.includes('joi')) {
+            if (
+              normalizedId.includes('zod') ||
+              normalizedId.includes('yup') ||
+              normalizedId.includes('joi')
+            ) {
               return 'validation';
             }
-            if (id.includes('axios') || id.includes('ky') || id.includes('fetch')) {
+            if (
+              normalizedId.includes('axios') ||
+              normalizedId.includes('ky') ||
+              normalizedId.includes('fetch')
+            ) {
               return 'http-client';
             }
-            if (id.includes('react-spring') || id.includes('react-transition-group')) {
+            if (
+              normalizedId.includes('react-spring') ||
+              normalizedId.includes('react-transition-group')
+            ) {
               return 'animations';
             }
-            if (id.includes('react-select') || id.includes('downshift')) {
+            if (normalizedId.includes('react-select') || normalizedId.includes('downshift')) {
               return 'advanced-inputs';
             }
-            if (id.includes('heic-to')) {
+            if (normalizedId.includes('heic-to')) {
               return 'heic-converter';
             }
 
             // Existing chunks
-            if (id.includes('@radix-ui')) {
+            if (normalizedId.includes('@radix-ui')) {
               return 'radix-ui';
             }
-            if (id.includes('framer-motion')) {
+            if (normalizedId.includes('framer-motion')) {
               return 'framer-motion';
             }
-            if (id.includes('node_modules/highlight.js')) {
+            if (normalizedId.includes('node_modules/highlight.js')) {
               return 'markdown_highlight';
             }
-            if (id.includes('katex') || id.includes('node_modules/katex')) {
+            if (normalizedId.includes('katex') || normalizedId.includes('node_modules/katex')) {
               return 'math-katex';
             }
-            if (id.includes('node_modules/hast-util-raw')) {
+            if (normalizedId.includes('node_modules/hast-util-raw')) {
               return 'markdown_large';
             }
-            if (id.includes('@tanstack')) {
+            if (normalizedId.includes('@tanstack')) {
               return 'tanstack-vendor';
             }
-            if (id.includes('@headlessui')) {
+            if (normalizedId.includes('@headlessui')) {
               return 'headlessui';
             }
 
@@ -200,7 +219,7 @@ export default defineConfig(({ command }) => ({
             return 'vendor';
           }
           // Create a separate chunk for all locale files under src/locales.
-          if (id.includes(path.join('src', 'locales'))) {
+          if (normalizedId.includes('/src/locales/')) {
             return 'locales';
           }
           // Let Rollup decide automatically for any other files.
