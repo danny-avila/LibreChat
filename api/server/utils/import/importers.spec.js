@@ -314,9 +314,188 @@ describe('importChatGptConvo', () => {
     expect(assistantMsg1.isCreatedByUser).toBe(false);
     expect(assistantMsg1.model).toBe('gpt-4');
 
-    expect(assistantMsg2.sender).toBe('GPT-3.5');
+    expect(assistantMsg2.sender).toBe('GPT-3.5-turbo');
     expect(assistantMsg2.isCreatedByUser).toBe(false);
     expect(assistantMsg2.model).toBe('gpt-3.5-turbo');
+  });
+
+  it('should correctly extract and format model names from various model slugs', async () => {
+    /**
+     * Test data with various model slugs to test dynamic model identifier extraction
+     */
+    const testData = [
+      {
+        title: 'Dynamic Model Identifier Test',
+        create_time: 1714585031.148505,
+        update_time: 1714585060.879308,
+        mapping: {
+          'root-node': {
+            id: 'root-node',
+            message: null,
+            parent: null,
+            children: ['msg-1'],
+          },
+          'msg-1': {
+            id: 'msg-1',
+            message: {
+              id: 'msg-1',
+              author: { role: 'user' },
+              create_time: 1714585031.150442,
+              content: { content_type: 'text', parts: ['Test message'] },
+              metadata: {},
+            },
+            parent: 'root-node',
+            children: ['msg-2', 'msg-3', 'msg-4', 'msg-5', 'msg-6', 'msg-7', 'msg-8', 'msg-9'],
+          },
+          'msg-2': {
+            id: 'msg-2',
+            message: {
+              id: 'msg-2',
+              author: { role: 'assistant' },
+              create_time: 1714585032.150442,
+              content: { content_type: 'text', parts: ['GPT-4 response'] },
+              metadata: { model_slug: 'gpt-4' },
+            },
+            parent: 'msg-1',
+            children: [],
+          },
+          'msg-3': {
+            id: 'msg-3',
+            message: {
+              id: 'msg-3',
+              author: { role: 'assistant' },
+              create_time: 1714585033.150442,
+              content: { content_type: 'text', parts: ['GPT-4o response'] },
+              metadata: { model_slug: 'gpt-4o' },
+            },
+            parent: 'msg-1',
+            children: [],
+          },
+          'msg-4': {
+            id: 'msg-4',
+            message: {
+              id: 'msg-4',
+              author: { role: 'assistant' },
+              create_time: 1714585034.150442,
+              content: { content_type: 'text', parts: ['GPT-4o-mini response'] },
+              metadata: { model_slug: 'gpt-4o-mini' },
+            },
+            parent: 'msg-1',
+            children: [],
+          },
+          'msg-5': {
+            id: 'msg-5',
+            message: {
+              id: 'msg-5',
+              author: { role: 'assistant' },
+              create_time: 1714585035.150442,
+              content: { content_type: 'text', parts: ['GPT-3.5-turbo response'] },
+              metadata: { model_slug: 'gpt-3.5-turbo' },
+            },
+            parent: 'msg-1',
+            children: [],
+          },
+          'msg-6': {
+            id: 'msg-6',
+            message: {
+              id: 'msg-6',
+              author: { role: 'assistant' },
+              create_time: 1714585036.150442,
+              content: { content_type: 'text', parts: ['GPT-4-turbo response'] },
+              metadata: { model_slug: 'gpt-4-turbo' },
+            },
+            parent: 'msg-1',
+            children: [],
+          },
+          'msg-7': {
+            id: 'msg-7',
+            message: {
+              id: 'msg-7',
+              author: { role: 'assistant' },
+              create_time: 1714585037.150442,
+              content: { content_type: 'text', parts: ['GPT-4-1106-preview response'] },
+              metadata: { model_slug: 'gpt-4-1106-preview' },
+            },
+            parent: 'msg-1',
+            children: [],
+          },
+          'msg-8': {
+            id: 'msg-8',
+            message: {
+              id: 'msg-8',
+              author: { role: 'assistant' },
+              create_time: 1714585038.150442,
+              content: { content_type: 'text', parts: ['Claude response'] },
+              metadata: { model_slug: 'claude-3-opus' },
+            },
+            parent: 'msg-1',
+            children: [],
+          },
+          'msg-9': {
+            id: 'msg-9',
+            message: {
+              id: 'msg-9',
+              author: { role: 'assistant' },
+              create_time: 1714585039.150442,
+              content: { content_type: 'text', parts: ['No model slug response'] },
+              metadata: {},
+            },
+            parent: 'msg-1',
+            children: [],
+          },
+        },
+      },
+    ];
+
+    const requestUserId = 'user-123';
+    const importBatchBuilder = new ImportBatchBuilder(requestUserId);
+    jest.spyOn(importBatchBuilder, 'saveMessage');
+
+    const importer = getImporter(testData);
+    await importer(testData, requestUserId, () => importBatchBuilder);
+
+    const savedMessages = importBatchBuilder.saveMessage.mock.calls.map((call) => call[0]);
+
+    // Test various GPT model slug formats
+    const gpt4 = savedMessages.find((msg) => msg.text === 'GPT-4 response');
+    expect(gpt4.sender).toBe('GPT-4');
+    expect(gpt4.model).toBe('gpt-4');
+
+    const gpt4o = savedMessages.find((msg) => msg.text === 'GPT-4o response');
+    expect(gpt4o.sender).toBe('GPT-4o');
+    expect(gpt4o.model).toBe('gpt-4o');
+
+    const gpt4oMini = savedMessages.find((msg) => msg.text === 'GPT-4o-mini response');
+    expect(gpt4oMini.sender).toBe('GPT-4o-mini');
+    expect(gpt4oMini.model).toBe('gpt-4o-mini');
+
+    const gpt35Turbo = savedMessages.find((msg) => msg.text === 'GPT-3.5-turbo response');
+    expect(gpt35Turbo.sender).toBe('GPT-3.5-turbo');
+    expect(gpt35Turbo.model).toBe('gpt-3.5-turbo');
+
+    const gpt4Turbo = savedMessages.find((msg) => msg.text === 'GPT-4-turbo response');
+    expect(gpt4Turbo.sender).toBe('GPT-4-turbo');
+    expect(gpt4Turbo.model).toBe('gpt-4-turbo');
+
+    const gpt4Preview = savedMessages.find((msg) => msg.text === 'GPT-4-1106-preview response');
+    expect(gpt4Preview.sender).toBe('GPT-4-1106-preview');
+    expect(gpt4Preview.model).toBe('gpt-4-1106-preview');
+
+    // Test non-GPT model (should use the model slug as sender)
+    const claude = savedMessages.find((msg) => msg.text === 'Claude response');
+    expect(claude.sender).toBe('claude-3-opus');
+    expect(claude.model).toBe('claude-3-opus');
+
+    // Test missing model slug (should default to openAISettings.model.default)
+    const noModel = savedMessages.find((msg) => msg.text === 'No model slug response');
+    // When no model slug is provided, it defaults to gpt-4o-mini which gets formatted to GPT-4o-mini
+    expect(noModel.sender).toBe('GPT-4o-mini');
+    expect(noModel.model).toBe(openAISettings.model.default);
+
+    // Verify user message is unaffected
+    const userMsg = savedMessages.find((msg) => msg.text === 'Test message');
+    expect(userMsg.sender).toBe('user');
+    expect(userMsg.isCreatedByUser).toBe(true);
   });
 });
 

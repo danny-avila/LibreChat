@@ -253,10 +253,17 @@ function processConversation(conv, importBatchBuilder, requestUserId) {
     const messageText = formatMessageText(mapping.message);
 
     const isCreatedByUser = role === 'user';
-    let sender = isCreatedByUser ? 'user' : 'GPT-3.5';
+    let sender = isCreatedByUser ? 'user' : 'assistant';
     const model = mapping.message.metadata.model_slug || openAISettings.model.default;
-    if (!isCreatedByUser && model.includes('gpt-4')) {
-      sender = 'GPT-4';
+
+    if (!isCreatedByUser) {
+      /** Extracted model name from model slug */
+      const gptMatch = model.match(/gpt-(.+)/i);
+      if (gptMatch) {
+        sender = `GPT-${gptMatch[1]}`;
+      } else {
+        sender = model || 'assistant';
+      }
     }
 
     messages.push({
