@@ -293,6 +293,10 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
     });
   }
 
+  if (dropdownItems.length === 0) {
+    return null;
+  }
+
   const menuTrigger = (
     <TooltipAnchor
       render={
