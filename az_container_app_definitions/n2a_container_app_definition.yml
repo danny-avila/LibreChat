@@ -99,48 +99,50 @@ properties:
       - image: conpaychexaiprod001.azurecr.io/paychex/librechat:n2a.latest
         name: conpaichat
         env:
-        - name: OPENID_CALLBACK_URL
-          value: /oauth/openid/callback
-        - name: MONGO_URI
-          secretRef: mongo-connection-string
-        - name: OPENID_SCOPE
-          value: openid profile email
-        - name: OPENID_SESSION_SECRET
-          secretRef: openid-session-secret
-        - name: OPENID_ISSUER
-          value: https://login.microsoftonline.com/bcc529c5-dfce-4f97-b44f-debd50891d83/v2.0/
-        - name: OPENID_CLIENT_SECRET
-          secretRef: client-secret
-        - name: OPENID_CLIENT_ID
-          value: 1ebba027-b707-42b7-b509-44566c9ecff1
-        - name: JWT_SECRET
-          secretRef: jwt-secret
-        - name: JWT_REFRESH_SECRET
-          secretRef: jwt-refresh-secret
-        - name: AZURE_OPENAI_BASEURL
-          value: https://service-internal-n2a.paychex.com/is/librechat/azure/openai/deployments/${DEPLOYMENT_NAME}
-        - name: AZURE_OPENAI_API_KEY
-          secretRef: maas-api-key
-        - name: ALLOW_REGISTRATION
-          value: FALSE
-        - name: ALLOW_EMAIL_LOGIN
-          value: FALSE
-        - name: DOMAIN_CLIENT
-          value: https://play.ain2a.paychex.com
-        - name: DOMAIN_SERVER
-          value: https://play.ain2a.paychex.com
-        - name: HOST
-          value: 0.0.0.0
-        - name: CREDS_KEY
-          secretRef: creds-key
-        - name: CREDS_IV
-          secretRef: creds-iv
-        - name: ALLOW_SOCIAL_LOGIN
-          value: TRUE
-        - name: NODE_EXTRA_CA_CERTS
-          value: /app/paychex-root.pem
-        - name: RAG_API_URL
-          value: http://conpaichateastusn2a001:8000
+          - name: OPENID_CALLBACK_URL
+            value: /oauth/openid/callback
+          - name: MONGO_URI
+            secretRef: mongo-connection-string
+          - name: OPENID_SCOPE
+            value: openid profile email
+          - name: OPENID_SESSION_SECRET
+            secretRef: openid-session-secret
+          - name: OPENID_ISSUER
+            value: https://login.microsoftonline.com/bcc529c5-dfce-4f97-b44f-debd50891d83/v2.0/
+          - name: OPENID_CLIENT_SECRET
+            secretRef: client-secret
+          - name: OPENID_CLIENT_ID
+            value: 1ebba027-b707-42b7-b509-44566c9ecff1
+          - name: JWT_SECRET
+            secretRef: jwt-secret
+          - name: JWT_REFRESH_SECRET
+            secretRef: jwt-refresh-secret
+          - name: AZURE_OPENAI_BASEURL
+            value: https://service-internal-n2a.paychex.com/is/librechat/azure/openai/deployments/${DEPLOYMENT_NAME}
+          - name: AZURE_OPENAI_API_KEY
+            secretRef: maas-api-key
+          - name: ALLOW_REGISTRATION
+            value: FALSE
+          - name: ALLOW_EMAIL_LOGIN
+            value: FALSE
+          - name: DOMAIN_CLIENT
+            value: https://play.ain2a.paychex.com
+          - name: DOMAIN_SERVER
+            value: https://play.ain2a.paychex.com
+          - name: HOST
+            value: 0.0.0.0
+          - name: CREDS_KEY
+            secretRef: creds-key
+          - name: CREDS_IV
+            secretRef: creds-iv
+          - name: ALLOW_SOCIAL_LOGIN
+            value: TRUE
+          - name: NODE_EXTRA_CA_CERTS
+            value: /app/paychex-root.pem
+          - name: RAG_API_URL
+            value: http://conpaichateastusn2a001:8000
+          - name: RAG_USE_FULL_CONTEXT
+            value: 'true'
         resources:
           cpu: 1
           memory: 2Gi
@@ -173,8 +175,6 @@ properties:
             secretRef: rag-mongo-connection-string
           - name: REQUESTS_CA_BUNDLE
             value: /etc/ssl/certs/ca-certificates.crt
-          - name: RAG_USE_FULL_CONTEXT
-            value: 'true'
           - name: DEBUG_RAG_API
             value: 'true'
           - name: CURL_CA_BUNDLE
