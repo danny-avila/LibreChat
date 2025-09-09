@@ -3,4 +3,4 @@ include:
     file: '/gitlab-app-script.yml'
     inputs:
       app_name: "librechat-svt"
-      directory: ""
+      directory: "./"
