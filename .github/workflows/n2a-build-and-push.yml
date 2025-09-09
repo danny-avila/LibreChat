@@ -5,13 +5,9 @@ env:
     ACR_HOST: ${{ vars.REGISTRY_LOGIN_SERVER_PROD }}
     ACR_USER: ${{ secrets.REGISTRY_USERNAME_PROD }}
     ACR_PASS: ${{ secrets.REGISTRY_PASSWORD_PROD }}
-    AZURE_CONFIG_DIR: ${{ github.workspace }}/.azure-cli-tmp
 
 on:
   workflow_dispatch:
-  #push:
-  #  branches:
-  #    - main
 
 jobs:
     build_and_push:
@@ -26,9 +22,6 @@ jobs:
                 rm -rf .dockerignore |
                 touch .dockerignore && chmod 755 .dockerignore |
                 cat .paychex.dockerignore >> .dockerignore
-
-            - name: Prepare Azure CLI config dir
-              run: mkdir -p "$AZURE_CONFIG_DIR"
 
             - name: log in to ACR
               uses: azure/docker-login@v1
