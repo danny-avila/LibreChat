@@ -11,7 +11,7 @@ on:
 
 jobs:
     build_and_push:
-        runs-on: [self-hosted, nonprod]
+        runs-on: paychex-aiplatform-arc-nonprod
         steps:
             - uses: actions/checkout@v3
 
