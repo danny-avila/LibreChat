@@ -1,0 +1,6 @@
+include:
+  - project: 'llm/ci-templates'
+    file: '/gitlab-app-script.yml'
+    inputs:
+      app_name: "librechat-svt"
+      directory: "."
