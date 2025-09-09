@@ -61,3 +61,8 @@ export const visibleArtifacts = atom<Record<string, Artifact | undefined> | null
     },
   ] as const,
 });
+
+export const uiResourcesState = atom<Record<string, any> | null>({
+  key: 'uiResourcesState',
+  default: null,
+});

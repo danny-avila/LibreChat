@@ -5,6 +5,10 @@ import { Tools } from 'librechat-data-provider';
 import ToolCall from '../ToolCall';
 
 // Mock dependencies
+const mockStoreUIResourcesFromAttachments = jest.fn();
+const mockGetUIResourceById = jest.fn();
+const mockClearUIResources = jest.fn();
+
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string, values?: any) => {
     const translations: Record<string, string> = {
@@ -21,6 +25,12 @@ jest.mock('~/hooks', () => ({
     return translations[key] || key;
   },
   useProgress: (initialProgress: number) => (initialProgress >= 1 ? 1 : initialProgress),
+  useUIResources: () => ({
+    uiResources: {},
+    storeUIResourcesFromAttachments: mockStoreUIResourcesFromAttachments,
+    getUIResourceById: mockGetUIResourceById,
+    clearUIResources: mockClearUIResources,
+  }),
 }));
 
 jest.mock('~/components/Chat/Messages/Content/MessageContent', () => ({
@@ -84,23 +94,30 @@ describe('ToolCall', () => {
     return render(<RecoilRoot>{component}</RecoilRoot>);
   };
 
+  const createAttachment = (overrides = {}) => ({
+    type: Tools.ui_resources,
+    messageId: 'msg123',
+    toolCallId: 'tool456',
+    conversationId: 'conv789',
+    filename: 'test.json',
+    filepath: '/test/test.json',
+    expiresAt: Date.now() + 3600000, // 1 hour from now
+    [Tools.ui_resources]: {
+      '0': { type: 'button', label: 'Click me' },
+    },
+    ...overrides,
+  });
+
   beforeEach(() => {
     jest.clearAllMocks();
+    mockStoreUIResourcesFromAttachments.mockClear();
+    mockGetUIResourceById.mockClear();
+    mockClearUIResources.mockClear();
   });
 
   describe('attachments prop passing', () => {
     it('should pass attachments to ToolCallInfo when provided', () => {
-      const attachments = [
-        {
-          type: Tools.ui_resources,
-          messageId: 'msg123',
-          toolCallId: 'tool456',
-          conversationId: 'conv789',
-          [Tools.ui_resources]: {
-            '0': { type: 'button', label: 'Click me' },
-          },
-        },
-      ];
+      const attachments = [createAttachment()];
 
       renderWithRecoil(<ToolCall {...mockProps} attachments={attachments} />);
 
@@ -111,6 +128,36 @@ describe('ToolCall', () => {
 
       const attachmentsData = toolCallInfo.getAttribute('data-attachments');
       expect(attachmentsData).toBe(JSON.stringify(attachments));
+    });
+
+    it('should call storeUIResourcesFromAttachments when tool completes with attachments', () => {
+      const attachments = [createAttachment()];
+
+      renderWithRecoil(
+        <ToolCall
+          {...mockProps}
+          attachments={attachments}
+          output="Test output"
+          isSubmitting={false}
+        />,
+      );
+
+      expect(mockStoreUIResourcesFromAttachments).toHaveBeenCalledWith(attachments);
+    });
+
+    it('should not call storeUIResourcesFromAttachments when still submitting', () => {
+      const attachments = [createAttachment()];
+
+      renderWithRecoil(
+        <ToolCall
+          {...mockProps}
+          attachments={attachments}
+          output="Test output"
+          isSubmitting={true} // Still submitting
+        />,
+      );
+
+      expect(mockStoreUIResourcesFromAttachments).not.toHaveBeenCalled();
     });
 
     it('should pass empty array when no attachments', () => {
@@ -125,16 +172,15 @@ describe('ToolCall', () => {
 
     it('should pass multiple attachments of different types', () => {
       const attachments = [
-        {
-          type: Tools.ui_resources,
+        createAttachment({
           messageId: 'msg1',
           toolCallId: 'tool1',
           conversationId: 'conv1',
           [Tools.ui_resources]: {
             '0': { type: 'form', fields: [] },
           },
-        },
-        {
+        }),
+        createAttachment({
           type: Tools.web_search,
           messageId: 'msg2',
           toolCallId: 'tool2',
@@ -142,7 +188,8 @@ describe('ToolCall', () => {
           [Tools.web_search]: {
             results: ['result1', 'result2'],
           },
-        },
+          [Tools.ui_resources]: undefined,
+        }),
       ];
 
       renderWithRecoil(<ToolCall {...mockProps} attachments={attachments} />);
@@ -158,15 +205,11 @@ describe('ToolCall', () => {
   describe('attachment group rendering', () => {
     it('should render AttachmentGroup when attachments are provided', () => {
       const attachments = [
-        {
-          type: Tools.ui_resources,
-          messageId: 'msg123',
-          toolCallId: 'tool456',
-          conversationId: 'conv789',
+        createAttachment({
           [Tools.ui_resources]: {
             '0': { type: 'chart', data: [] },
           },
-        },
+        }),
       ];
 
       renderWithRecoil(<ToolCall {...mockProps} attachments={attachments} />);
@@ -207,15 +250,11 @@ describe('ToolCall', () => {
 
     it('should pass all required props to ToolCallInfo', () => {
       const attachments = [
-        {
-          type: Tools.ui_resources,
-          messageId: 'msg123',
-          toolCallId: 'tool456',
-          conversationId: 'conv789',
+        createAttachment({
           [Tools.ui_resources]: {
             '0': { type: 'button', label: 'Test' },
           },
-        },
+        }),
       ];
 
       // Use a name with domain separator (_action_) and domain separator (---)
@@ -290,9 +329,9 @@ describe('ToolCall', () => {
         <ToolCall
           {...mockProps}
           auth="https://auth.example.com"
-          authDomain="example.com"
-          progress={0.5}
-          cancelled={true}
+          initialProgress={0.5}
+          // Note: cancelled state is determined by (!isSubmitting && progress < 1) || error === true
+          isSubmitting={false}
         />,
       );
 
@@ -304,9 +343,7 @@ describe('ToolCall', () => {
         <ToolCall
           {...mockProps}
           auth="https://auth.example.com"
-          authDomain="example.com"
-          progress={1}
-          cancelled={false}
+          initialProgress={1} // Complete progress
         />,
       );
 
@@ -316,7 +353,7 @@ describe('ToolCall', () => {
 
   describe('edge cases', () => {
     it('should handle undefined args', () => {
-      renderWithRecoil(<ToolCall {...mockProps} args={undefined} />);
+      renderWithRecoil(<ToolCall {...mockProps} args={''} />);
 
       fireEvent.click(screen.getByText('Completed testFunction'));
 
@@ -336,7 +373,7 @@ describe('ToolCall', () => {
     });
 
     it('should handle missing domain', () => {
-      renderWithRecoil(<ToolCall {...mockProps} domain={undefined} authDomain={undefined} />);
+      renderWithRecoil(<ToolCall {...mockProps} />);
 
       fireEvent.click(screen.getByText('Completed testFunction'));
 
@@ -347,11 +384,7 @@ describe('ToolCall', () => {
 
     it('should handle complex nested attachments', () => {
       const complexAttachments = [
-        {
-          type: Tools.ui_resources,
-          messageId: 'msg123',
-          toolCallId: 'tool456',
-          conversationId: 'conv789',
+        createAttachment({
           [Tools.ui_resources]: {
             '0': {
               type: 'nested',
@@ -364,7 +397,7 @@ describe('ToolCall', () => {
               },
             },
           },
-        },
+        }),
       ];
 
       renderWithRecoil(<ToolCall {...mockProps} attachments={complexAttachments} />);
