@@ -46,9 +46,13 @@ jobs:
                 github_token: ${{ secrets.CROSS_REPO_PAT }}
                 ref: 'main'
 
+            - name: Login to Azure CLI
+              uses: azure/login@v2
+              with:
+                creds: ${{secrets.AZURE_CREDENTIALS_NONPROD}}
+            
             - name: Update Azure Container App
               run: |
-                az login --identity
                 az account set --subscription "${{ secrets.AZURE_NONPROD_SUBSCRIPTION_ID }}"
                 az containerapp create \
                   --name conpaichateastusn2a001 \
