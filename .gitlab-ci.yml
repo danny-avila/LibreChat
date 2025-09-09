@@ -1,7 +1,3 @@
-spec:
-  inputs:
-    app_name: "librechat-svt"
----
 include:
   - project: 'aurora/pipelines/includes'
     ref: v1
@@ -14,17 +10,17 @@ stages:
   - post build app
   - deploy
 
-"build docker $[[ inputs.app_name ]]":
+"build docker librechat-svt":
   stage: build
   tags:
     - k8s
   extends:
     - .buildkit_build_image
   variables:
-    IMAGE: "${AURORA_HARBOR_URI}/llm/$[[ inputs.app_name ]]:$CI_COMMIT_SHORT_SHA"
+    IMAGE: "${AURORA_HARBOR_URI}/llm/librechat-svt:$CI_COMMIT_SHORT_SHA"
     BUILDKIT_EXTRA_ARGS: --opt build-arg:version=$CI_COMMIT_SHORT_SHA
 
-"release image STAGE $[[ inputs.app_name ]]":
+"release image STAGE librechat-svt":
   stage: deploy
   image:
     name: gcr.io/go-containerregistry/crane:debug
@@ -33,7 +29,7 @@ stages:
     - k8s
   when: manual
   needs:
-    - "build docker $[[ inputs.app_name ]]"
+    - "build docker librechat-svt"
   script:
     - echo "$AURORA_HARBOR_PASS" | crane auth login -u "$AURORA_HARBOR_USER" --password-stdin "$AURORA_HARBOR_URI"
     - >
@@ -41,9 +37,9 @@ stages:
       "$DOCKER_IMAGE":"$CI_COMMIT_SHORT_SHA"
       "dev-$CI_COMMIT_SHORT_SHA-$(date +%s)"
   variables:
-    DOCKER_IMAGE: "${AURORA_HARBOR_URI}/llm/$[[ inputs.app_name ]]"
+    DOCKER_IMAGE: "${AURORA_HARBOR_URI}/llm/librechat-svt"
 
-"release image PROD $[[ inputs.app_name ]]":
+"release image PROD librechat-svt":
   stage: deploy
   image:
     name: gcr.io/go-containerregistry/crane:debug
@@ -52,19 +48,11 @@ stages:
     - k8s
   rules:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
-      changes:
-        paths:
-          - $[[ inputs.directory ]]/**/*
-          - CI/**/*
       when: manual
     - if: $CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH
-      changes:
-        paths:
-          - $[[ inputs.directory ]]/**/*
-          - CI/**/*
       when: never
   needs:
-    - "build docker $[[ inputs.app_name ]]"
+    - "build docker librechat-svt"
   script:
     - echo "$AURORA_HARBOR_PASS" | crane auth login -u "$AURORA_HARBOR_USER" --password-stdin "$AURORA_HARBOR_URI"
     - >
@@ -72,4 +60,4 @@ stages:
       "$DOCKER_IMAGE":"$CI_COMMIT_SHORT_SHA"
       "prod-$CI_COMMIT_SHORT_SHA-$(date +%s)"
   variables:
-    DOCKER_IMAGE: "${AURORA_HARBOR_URI}/llm/$[[ inputs.app_name ]]"
+    DOCKER_IMAGE: "${AURORA_HARBOR_URI}/llm/librechat-svt"
