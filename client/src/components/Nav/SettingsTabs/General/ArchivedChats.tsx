@@ -287,15 +287,15 @@ export default function ArchivedChatsTable() {
           <DataTable
             columns={columns}
             data={allConversations}
+            isLoading={isLoading}
+            enableSearch={!!isSearchEnabled}
             filterColumn="title"
             onFilterChange={onFilterChange}
             filterValue={searchInput}
             fetchNextPage={handleFetchNextPage}
             hasNextPage={hasNextPage}
             isFetchingNextPage={isFetchingNextPage}
-            isLoading={isLoading}
             showCheckboxes={false}
-            enableSearch={!!isSearchEnabled}
             onSortChange={handleSort}
             sortBy={sortBy}
             sortDirection={sortDirection}

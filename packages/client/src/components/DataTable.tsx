@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState, memo, useMemo } from 'react';
-import { ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
+import { ArrowUp, ArrowDownUp } from 'lucide-react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   Row,
@@ -54,26 +54,6 @@ const SelectionCheckbox = memo(
 );
 
 SelectionCheckbox.displayName = 'SelectionCheckbox';
-
-interface DataTableProps<TData, TValue> {
-  columns: TableColumn<TData, TValue>[];
-  data: TData[];
-  onDelete?: (selectedRows: TData[]) => Promise<void>;
-  filterColumn?: string;
-  defaultSort?: SortingState;
-  columnVisibilityMap?: Record<string, string>;
-  className?: string;
-  pageSize?: number;
-  isFetchingNextPage?: boolean;
-  hasNextPage?: boolean;
-  fetchNextPage?: (options?: unknown) => Promise<unknown>;
-  enableRowSelection?: boolean;
-  showCheckboxes?: boolean;
-  onFilterChange?: (value: string) => void;
-  filterValue?: string;
-  isLoading?: boolean;
-  enableSearch?: boolean;
-}
 
 const TableRowComponent = <TData, TValue>({
   row,
@@ -207,34 +187,64 @@ const DeleteButton = memo(
   },
 );
 
+interface DataTableProps<TData, TValue> {
+  columns: TableColumn<TData, TValue>[];
+  data: TData[];
+
+  className?: string;
+  isLoading?: boolean;
+
+  enableRowSelection?: boolean;
+  showCheckboxes?: boolean;
+  onDelete?: (selectedRows: TData[]) => Promise<void>;
+
+  enableSearch?: boolean;
+  filterColumn?: string;
+  filterValue?: string;
+  onFilterChange?: (value: string) => void;
+
+  defaultSort?: SortingState;
+  columnVisibilityMap?: Record<string, string>;
+
+  pageSize?: number;
+  isFetchingNextPage?: boolean;
+  hasNextPage?: boolean;
+  fetchNextPage?: (options?: unknown) => Promise<unknown>;
+}
+
 export default function DataTable<TData, TValue>({
   columns,
   data,
-  onDelete,
-  filterColumn,
-  defaultSort = [],
+
   className = '',
+  isLoading,
+
+  enableRowSelection = true,
+  showCheckboxes = true,
+  onDelete,
+
+  enableSearch = true,
+  filterColumn,
+  filterValue,
+  onFilterChange,
+
+  defaultSort = [],
+
   isFetchingNextPage = false,
   hasNextPage = false,
   fetchNextPage,
-  enableRowSelection = true,
-  showCheckboxes = true,
-  onFilterChange,
-  filterValue,
-  isLoading,
-  enableSearch = true,
 }: DataTableProps<TData, TValue>) {
   const localize = useLocalize();
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const tableContainerRef = useRef<HTMLDivElement>(null);
 
-  const [isDeleting, setIsDeleting] = useState(false);
-  const [rowSelection, setRowSelection] = useState<Record<string, boolean>>({});
-  const [sorting, setSorting] = useState<SortingState>(defaultSort);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
-  const [searchTerm, setSearchTerm] = useState(filterValue ?? '');
+  const [isDeleting, setIsDeleting] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
+  const [rowSelection, setRowSelection] = useState<Record<string, boolean>>({});
+  const [searchTerm, setSearchTerm] = useState(filterValue ?? '');
+  const [sorting, setSorting] = useState<SortingState>(defaultSort);
 
   const tableColumns = useMemo(() => {
     if (!enableRowSelection || !showCheckboxes) {
@@ -431,12 +441,16 @@ export default function DataTable<TData, TValue>({
                             : flexRender(header.column.columnDef.header, header.getContext())}
                         </span>
                         {canSort && (
-                          <span className="ml-1">
+                          <span className="ml-1 transition-transform duration-200 ease-in-out">
                             {sortDir === false && (
-                              <ChevronsUpDown className="h-4 w-4 text-muted-foreground" />
+                              <ArrowDownUp className="h-4 w-4 text-muted-foreground hover:rotate-180" />
                             )}
-                            {sortDir === 'asc' && <ChevronUp className="h-4 w-4 text-primary" />}
-                            {sortDir === 'desc' && <ChevronDown className="h-4 w-4 text-primary" />}
+                            {sortDir === 'asc' && (
+                              <ArrowUp className="h-4 w-4 rotate-0 text-primary" />
+                            )}
+                            {sortDir === 'desc' && (
+                              <ArrowUp className="h-4 w-4 rotate-180 text-primary" />
+                            )}
                           </span>
                         )}
                       </div>
