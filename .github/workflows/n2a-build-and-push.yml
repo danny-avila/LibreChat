@@ -51,10 +51,12 @@ jobs:
               with:
                 creds: ${{secrets.AZURE_CREDENTIALS_NONPROD}}
             
-            - name: Update Azure Container App
-              run: |
-                az account set --subscription "${{ secrets.AZURE_NONPROD_SUBSCRIPTION_ID }}"
-                az containerapp create \
-                  --name conpaichateastusn2a001 \
-                  --resource-group rg-playai-eastus-n2a-001 \
-                  --yaml $GITHUB_WORKSPACE/az_container_app_definitions/n2a_container_app_definition.yml
+            - name: Azure CLI script
+              uses: azure/cli@v2
+              with:
+                  inlineScript: |
+                    az account set --subscription "${{ secrets.AZURE_NONPROD_SUBSCRIPTION_ID }}"
+                    az containerapp create \
+                      --name conpaichateastusn2a001 \
+                      --resource-group rg-playai-eastus-n2a-001 \
+                      --yaml $GITHUB_WORKSPACE/az_container_app_definitions/n2a_container_app_definition.yml
