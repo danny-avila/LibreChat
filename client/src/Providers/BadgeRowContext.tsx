@@ -23,7 +23,6 @@ interface BadgeRowContextType {
   codeInterpreter: ReturnType<typeof useToolToggle>;
   codeApiKeyForm: ReturnType<typeof useCodeApiKeyForm>;
   searchApiKeyForm: ReturnType<typeof useSearchApiKeyForm>;
-  // MCP Server Manager fields
   mcpServerManager: ReturnType<typeof useMCPServerManager>;
 }
 
