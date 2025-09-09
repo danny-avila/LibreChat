@@ -1,10 +1,11 @@
-const { SystemRoles } = require('librechat-data-provider');
-const { HttpsProxyAgent } = require('https-proxy-agent');
-const { Strategy: JwtStrategy, ExtractJwt } = require('passport-jwt');
-const { updateUser, findUser } = require('~/models');
-const { logger } = require('~/config');
 const jwksRsa = require('jwks-rsa');
-const { isEnabled } = require('~/server/utils');
+const { logger } = require('@librechat/data-schemas');
+const { HttpsProxyAgent } = require('https-proxy-agent');
+const { SystemRoles } = require('librechat-data-provider');
+const { Strategy: JwtStrategy, ExtractJwt } = require('passport-jwt');
+const { isEnabled, findOpenIDUser } = require('@librechat/api');
+const { updateUser, findUser } = require('~/models');
+
 /**
  * @function openIdJwtLogin
  * @param {import('openid-client').Configuration} openIdConfig - Configuration object for the JWT strategy.
@@ -13,6 +14,14 @@ const { isEnabled } = require('~/server/utils');
  * It uses the jwks-rsa library to retrieve the signing key from a JWKS endpoint.
  * The strategy extracts the JWT from the Authorization header as a Bearer token.
  * The JWT is then verified using the signing key, and the user is retrieved from the database.
+ *
+ * Includes email fallback mechanism:
+ * 1. Primary lookup: Search user by openidId (sub claim)
+ * 2. Fallback lookup: If not found, search by email claim
+ * 3. User migration: If found by email without openidId, migrate the user by adding openidId
+ * 4. Provider validation: Ensures users registered with other providers cannot use OpenID
+ *
+ * This enables seamless migration for existing users when SharePoint integration is enabled.
  */
 const openIdJwtLogin = (openIdConfig) => {
   let jwksRsaOptions = {
@@ -34,19 +43,41 @@ const openIdJwtLogin = (openIdConfig) => {
     },
     async (payload, done) => {
       try {
-        const user = await findUser({ openidId: payload?.sub });
+        const { user, error, migration } = await findOpenIDUser({
+          openidId: payload?.sub,
+          email: payload?.email,
+          strategyName: 'openIdJwtLogin',
+          findUser,
+        });
+
+        if (error) {
+          done(null, false, { message: error });
+          return;
+        }
 
         if (user) {
           user.id = user._id.toString();
+
+          const updateData = {};
+          if (migration) {
+            updateData.provider = 'openid';
+            updateData.openidId = payload?.sub;
+          }
           if (!user.role) {
             user.role = SystemRoles.USER;
-            await updateUser(user.id, { role: user.role });
+            updateData.role = user.role;
           }
+
+          if (Object.keys(updateData).length > 0) {
+            await updateUser(user.id, updateData);
+          }
+
           done(null, user);
         } else {
           logger.warn(
             '[openIdJwtLogin] openId JwtStrategy => no user found with the sub claims: ' +
-              payload?.sub,
+              payload?.sub +
+              (payload?.email ? ' or email: ' + payload.email : ''),
           );
           done(null, false);
         }

@@ -2,11 +2,10 @@ import { useState, memo } from 'react';
 import { useRecoilState } from 'recoil';
 import * as Select from '@ariakit/react/select';
 import { FileText, LogOut } from 'lucide-react';
-import { LinkIcon, GearIcon, DropdownMenuSeparator, UserIcon } from '@librechat/client';
+import { LinkIcon, GearIcon, DropdownMenuSeparator, Avatar } from '@librechat/client';
 import { useGetStartupConfig, useGetUserBalance } from '~/data-provider';
 import FilesView from '~/components/Chat/Input/Files/FilesView';
 import { useAuthContext } from '~/hooks/AuthContext';
-import useAvatar from '~/hooks/Messages/useAvatar';
 import { useLocalize } from '~/hooks';
 import Settings from './Settings';
 import store from '~/store';
@@ -21,9 +20,6 @@ function AccountSettings() {
   const [showSettings, setShowSettings] = useState(false);
   const [showFiles, setShowFiles] = useRecoilState(store.showFiles);
 
-  const avatarSrc = useAvatar(user);
-  const avatarSeed = user?.avatar || user?.name || user?.username || '';
-
   return (
     <Select.SelectProvider>
       <Select.Select
@@ -33,26 +29,7 @@ function AccountSettings() {
       >
         <div className="-ml-0.9 -mt-0.8 h-8 w-8 flex-shrink-0">
           <div className="relative flex">
-            {avatarSeed.length === 0 ? (
-              <div
-                style={{
-                  backgroundColor: 'rgb(121, 137, 255)',
-                  width: '32px',
-                  height: '32px',
-                  boxShadow: 'rgba(240, 246, 252, 0.1) 0px 0px 0px 1px',
-                }}
-                className="relative flex items-center justify-center rounded-full p-1 text-text-primary"
-                aria-hidden="true"
-              >
-                <UserIcon />
-              </div>
-            ) : (
-              <img
-                className="rounded-full"
-                src={(user?.avatar ?? '') || avatarSrc}
-                alt={`${user?.name || user?.username || user?.email || ''}'s avatar`}
-              />
-            )}
+            <Avatar user={user} size={32} />
           </div>
         </div>
         <div

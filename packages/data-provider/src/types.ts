@@ -164,11 +164,12 @@ export type TCategory = {
   id?: string;
   value: string;
   label: string;
+  description?: string;
+  custom?: boolean;
 };
 
 export type TMarketplaceCategory = TCategory & {
   count: number;
-  description?: string;
 };
 
 export type TError = {
@@ -535,8 +536,10 @@ export type TPromptsWithFilterRequest = {
 
 export type TPromptGroupsWithFilterRequest = {
   category: string;
-  pageNumber: string;
-  pageSize: string | number;
+  pageNumber?: string; // Made optional for cursor-based pagination
+  pageSize?: string | number;
+  limit?: string | number; // For cursor-based pagination
+  cursor?: string; // For cursor-based pagination
   before?: string | null;
   after?: string | null;
   order?: 'asc' | 'desc';
@@ -549,6 +552,8 @@ export type PromptGroupListResponse = {
   pageNumber: string;
   pageSize: string | number;
   pages: string | number;
+  has_more: boolean; // Added for cursor-based pagination
+  after: string | null; // Added for cursor-based pagination
 };
 
 export type PromptGroupListData = InfiniteData<PromptGroupListResponse>;

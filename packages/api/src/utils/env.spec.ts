@@ -1,7 +1,18 @@
-import { resolveHeaders } from './env';
-import type { TUser } from 'librechat-data-provider';
+import { resolveHeaders, processMCPEnv } from './env';
+import { TokenExchangeMethodEnum } from 'librechat-data-provider';
+import type { TUser, MCPOptions } from 'librechat-data-provider';
 
-// Helper function to create test user objects
+function isStdioOptions(options: MCPOptions): options is Extract<MCPOptions, { type?: 'stdio' }> {
+  return !options.type || options.type === 'stdio';
+}
+
+function isStreamableHTTPOptions(
+  options: MCPOptions,
+): options is Extract<MCPOptions, { type: 'streamable-http' | 'http' }> {
+  return options.type === 'streamable-http' || options.type === 'http';
+}
+
+/** Helper function to create test user objects */
 function createTestUser(overrides: Partial<TUser> = {}): TUser {
   return {
     id: 'test-user-id',
@@ -19,13 +30,11 @@ function createTestUser(overrides: Partial<TUser> = {}): TUser {
 
 describe('resolveHeaders', () => {
   beforeEach(() => {
-    // Set up test environment variables
     process.env.TEST_API_KEY = 'test-api-key-value';
     process.env.ANOTHER_SECRET = 'another-secret-value';
   });
 
   afterEach(() => {
-    // Clean up environment variables
     delete process.env.TEST_API_KEY;
     delete process.env.ANOTHER_SECRET;
   });
@@ -141,7 +150,7 @@ describe('resolveHeaders', () => {
     const user = createTestUser({
       id: 'user-123',
       email: 'test@example.com',
-      username: undefined, // explicitly set to undefined
+      username: undefined,
     });
 
     const headers = {
@@ -154,8 +163,8 @@ describe('resolveHeaders', () => {
 
     expect(result).toEqual({
       'User-Email': 'test@example.com',
-      'User-Username': '', // Empty string for missing field
-      'Non-Existent': '{{LIBRECHAT_USER_NONEXISTENT}}', // Unchanged for non-existent field
+      'User-Username': '',
+      'Non-Existent': '{{LIBRECHAT_USER_NONEXISTENT}}',
     });
   });
 
@@ -206,7 +215,7 @@ describe('resolveHeaders', () => {
   it('should handle boolean user fields', () => {
     const user = createTestUser({
       id: 'user-123',
-      // Note: TUser doesn't have these boolean fields, so we'll test with string fields
+
       role: 'admin',
     });
 
@@ -281,13 +290,11 @@ describe('resolveHeaders', () => {
 
     const result = resolveHeaders({ headers: originalHeaders, user });
 
-    // Verify the result is processed
     expect(result).toEqual({
       Authorization: 'test-api-key-value',
       'User-Id': 'user-123',
     });
 
-    // Verify the original object is unchanged
     expect(originalHeaders).toEqual({
       Authorization: '${TEST_API_KEY}',
       'User-Id': '{{LIBRECHAT_USER_ID}}',
@@ -317,7 +324,6 @@ describe('resolveHeaders', () => {
     });
   });
 
-  // Additional comprehensive tests for all user field placeholders
   it('should replace all allowed user field placeholders', () => {
     const user = {
       id: 'abc',
@@ -438,5 +444,334 @@ describe('resolveHeaders', () => {
     const headers = { 'X-Conversation': '{{LIBRECHAT_BODY_CONVERSATIONID}}' };
     const result = resolveHeaders({ headers, body });
     expect(result['X-Conversation']).toBe('conv-123');
+  });
+});
+
+describe('processMCPEnv', () => {
+  beforeEach(() => {
+    process.env.TEST_API_KEY = 'test-api-key-value';
+    process.env.ANOTHER_SECRET = 'another-secret-value';
+    process.env.OAUTH_CLIENT_ID = 'oauth-client-id-value';
+    process.env.OAUTH_CLIENT_SECRET = 'oauth-client-secret-value';
+    process.env.MCP_SERVER_URL = 'https://mcp.example.com';
+  });
+
+  afterEach(() => {
+    delete process.env.TEST_API_KEY;
+    delete process.env.ANOTHER_SECRET;
+    delete process.env.OAUTH_CLIENT_ID;
+    delete process.env.OAUTH_CLIENT_SECRET;
+    delete process.env.MCP_SERVER_URL;
+  });
+
+  it('should return null/undefined as-is', () => {
+    expect(processMCPEnv({ options: null as unknown as MCPOptions })).toBeNull();
+    expect(processMCPEnv({ options: undefined as unknown as MCPOptions })).toBeUndefined();
+  });
+
+  it('should process stdio type MCP options with env and args', () => {
+    const options: MCPOptions = {
+      type: 'stdio',
+      command: 'mcp-server',
+      env: {
+        API_KEY: '${TEST_API_KEY}',
+        SECRET: '${ANOTHER_SECRET}',
+        PLAIN_VALUE: 'plain-text',
+      },
+      args: ['--key', '${TEST_API_KEY}', '--url', '${MCP_SERVER_URL}'],
+    };
+
+    const result = processMCPEnv({ options });
+
+    expect(result).toEqual({
+      type: 'stdio',
+      command: 'mcp-server',
+      env: {
+        API_KEY: 'test-api-key-value',
+        SECRET: 'another-secret-value',
+        PLAIN_VALUE: 'plain-text',
+      },
+      args: ['--key', 'test-api-key-value', '--url', 'https://mcp.example.com'],
+    });
+  });
+
+  it('should process WebSocket type MCP options with url', () => {
+    const options: MCPOptions = {
+      type: 'websocket',
+      url: '${MCP_SERVER_URL}/ws',
+    };
+
+    const result = processMCPEnv({ options });
+
+    expect(result).toEqual({
+      type: 'websocket',
+      url: 'https://mcp.example.com/ws',
+    });
+  });
+
+  it('should process OAuth configuration with environment variables', () => {
+    const options: MCPOptions = {
+      type: 'streamable-http',
+      url: '${MCP_SERVER_URL}/api',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      oauth: {
+        authorization_url: 'https://auth.example.com/authorize',
+        token_url: 'https://auth.example.com/token',
+        client_id: '${OAUTH_CLIENT_ID}',
+        client_secret: '${OAUTH_CLIENT_SECRET}',
+        scope: 'read:data write:data',
+        redirect_uri: 'http://localhost:3000/callback',
+        token_exchange_method: TokenExchangeMethodEnum.DefaultPost,
+      },
+    };
+
+    const result = processMCPEnv({ options });
+
+    expect(result).toEqual({
+      type: 'streamable-http',
+      url: 'https://mcp.example.com/api',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      oauth: {
+        authorization_url: 'https://auth.example.com/authorize',
+        token_url: 'https://auth.example.com/token',
+        client_id: 'oauth-client-id-value',
+        client_secret: 'oauth-client-secret-value',
+        scope: 'read:data write:data',
+        redirect_uri: 'http://localhost:3000/callback',
+        token_exchange_method: TokenExchangeMethodEnum.DefaultPost,
+      },
+    });
+  });
+
+  it('should process user field placeholders in all fields', () => {
+    const user = createTestUser({
+      id: 'user-123',
+      email: 'test@example.com',
+      username: 'testuser',
+      role: 'admin',
+    });
+
+    const options: MCPOptions = {
+      type: 'stdio',
+      command: 'mcp-server',
+      env: {
+        USER_ID: '{{LIBRECHAT_USER_ID}}',
+        USER_EMAIL: '{{LIBRECHAT_USER_EMAIL}}',
+        USER_ROLE: '{{LIBRECHAT_USER_ROLE}}',
+      },
+      args: ['--user', '{{LIBRECHAT_USER_USERNAME}}', '--id', '{{LIBRECHAT_USER_ID}}'],
+    };
+
+    const result = processMCPEnv({ options, user });
+
+    expect(result).toEqual({
+      type: 'stdio',
+      command: 'mcp-server',
+      env: {
+        USER_ID: 'user-123',
+        USER_EMAIL: 'test@example.com',
+        USER_ROLE: 'admin',
+      },
+      args: ['--user', 'testuser', '--id', 'user-123'],
+    });
+  });
+
+  it('should process custom user variables', () => {
+    const customUserVars = {
+      CUSTOM_TOKEN: 'user-specific-token',
+      REGION: 'us-west-1',
+    };
+
+    const options: MCPOptions = {
+      type: 'sse',
+      url: 'https://sse.example.com/{{REGION}}',
+      headers: {
+        Authorization: 'Bearer {{CUSTOM_TOKEN}}',
+        'X-Region': '{{REGION}}',
+      },
+    };
+
+    const result = processMCPEnv({ options, customUserVars });
+
+    expect(result).toEqual({
+      type: 'sse',
+      url: 'https://sse.example.com/us-west-1',
+      headers: {
+        Authorization: 'Bearer user-specific-token',
+        'X-Region': 'us-west-1',
+      },
+    });
+  });
+
+  it('should process body placeholders in all fields', () => {
+    const body = {
+      conversationId: 'conv-123',
+      parentMessageId: 'parent-456',
+      messageId: 'msg-789',
+    };
+
+    const options: MCPOptions = {
+      type: 'streamable-http',
+      url: 'https://api.example.com/conversations/{{LIBRECHAT_BODY_CONVERSATIONID}}',
+      headers: {
+        'X-Parent-Message': '{{LIBRECHAT_BODY_PARENTMESSAGEID}}',
+        'X-Message-Id': '{{LIBRECHAT_BODY_MESSAGEID}}',
+      },
+    };
+
+    const result = processMCPEnv({ options, body });
+
+    expect(result).toEqual({
+      type: 'streamable-http',
+      url: 'https://api.example.com/conversations/conv-123',
+      headers: {
+        'X-Parent-Message': 'parent-456',
+        'X-Message-Id': 'msg-789',
+      },
+    });
+  });
+
+  it('should handle mixed placeholders in OAuth configuration', () => {
+    const user = createTestUser({
+      id: 'user-123',
+      email: 'test@example.com',
+    });
+    const customUserVars = {
+      TENANT_ID: 'tenant-456',
+    };
+    const body = {
+      conversationId: 'conv-789',
+    };
+
+    const options: MCPOptions = {
+      type: 'streamable-http',
+      url: '${MCP_SERVER_URL}',
+      oauth: {
+        authorization_url: 'https://auth.example.com/{{TENANT_ID}}/authorize',
+        token_url: 'https://auth.example.com/{{TENANT_ID}}/token',
+        client_id: '${OAUTH_CLIENT_ID}',
+        client_secret: '${OAUTH_CLIENT_SECRET}',
+        scope: 'user:{{LIBRECHAT_USER_ID}} conversation:{{LIBRECHAT_BODY_CONVERSATIONID}}',
+        redirect_uri: 'http://localhost:3000/user/{{LIBRECHAT_USER_EMAIL}}/callback',
+      },
+    };
+
+    const result = processMCPEnv({ options, user, customUserVars, body });
+
+    expect(result).toEqual({
+      type: 'streamable-http',
+      url: 'https://mcp.example.com',
+      oauth: {
+        authorization_url: 'https://auth.example.com/tenant-456/authorize',
+        token_url: 'https://auth.example.com/tenant-456/token',
+        client_id: 'oauth-client-id-value',
+        client_secret: 'oauth-client-secret-value',
+        scope: 'user:user-123 conversation:conv-789',
+        redirect_uri: 'http://localhost:3000/user/test@example.com/callback',
+      },
+    });
+  });
+
+  it('should not modify non-string OAuth values', () => {
+    const options: MCPOptions = {
+      type: 'streamable-http',
+      url: 'https://api.example.com',
+      oauth: {
+        client_id: '${OAUTH_CLIENT_ID}',
+        token_exchange_method: TokenExchangeMethodEnum.DefaultPost,
+        scope: 'read:data write:data',
+        grant_types_supported: ['authorization_code', 'refresh_token'],
+        token_endpoint_auth_methods_supported: ['client_secret_basic'],
+      },
+    };
+
+    const result = processMCPEnv({ options });
+
+    if (isStreamableHTTPOptions(result) && result.oauth) {
+      expect(result.oauth).toEqual({
+        client_id: 'oauth-client-id-value',
+        token_exchange_method: TokenExchangeMethodEnum.DefaultPost,
+        scope: 'read:data write:data',
+        grant_types_supported: ['authorization_code', 'refresh_token'],
+        token_endpoint_auth_methods_supported: ['client_secret_basic'],
+      });
+    } else {
+      throw new Error('Expected streamable-http options with oauth');
+    }
+  });
+
+  it('should handle missing OAuth values gracefully', () => {
+    const options: MCPOptions = {
+      type: 'streamable-http',
+      url: 'https://api.example.com',
+      oauth: {
+        client_id: '${OAUTH_CLIENT_ID}',
+        client_secret: undefined,
+        scope: null as unknown as string,
+      },
+    };
+
+    const result = processMCPEnv({ options });
+
+    expect(result.oauth).toEqual({
+      client_id: 'oauth-client-id-value',
+      client_secret: undefined,
+      scope: null,
+    });
+  });
+
+  it('should not modify the original options object', () => {
+    const originalOptions: MCPOptions = {
+      type: 'stdio',
+      command: 'mcp-server',
+      env: {
+        API_KEY: '${TEST_API_KEY}',
+      },
+      args: ['--key', '${TEST_API_KEY}'],
+    };
+
+    const result = processMCPEnv({ options: originalOptions });
+
+    if (isStdioOptions(result)) {
+      expect(result.env?.API_KEY).toBe('test-api-key-value');
+      expect(result.args[1]).toBe('test-api-key-value');
+    } else {
+      throw new Error('Expected stdio options');
+    }
+
+    if (isStdioOptions(originalOptions)) {
+      expect(originalOptions.env?.API_KEY).toBe('${TEST_API_KEY}');
+      expect(originalOptions.args[1]).toBe('${TEST_API_KEY}');
+    }
+  });
+
+  it('should handle all placeholder types in a single value', () => {
+    const user = createTestUser({ id: 'user-123' });
+    const customUserVars = { CUSTOM_VAR: 'custom-value' };
+    const body = { conversationId: 'conv-456' };
+
+    const options: MCPOptions = {
+      type: 'stdio',
+      command: 'mcp-server',
+      args: [],
+      env: {
+        COMPLEX_VALUE:
+          'User: {{LIBRECHAT_USER_ID}}, Custom: {{CUSTOM_VAR}}, Body: {{LIBRECHAT_BODY_CONVERSATIONID}}, Env: ${TEST_API_KEY}',
+      },
+    };
+
+    const result = processMCPEnv({ options, user, customUserVars, body });
+
+    if (isStdioOptions(result)) {
+      expect(result.env?.COMPLEX_VALUE).toBe(
+        'User: user-123, Custom: custom-value, Body: conv-456, Env: test-api-key-value',
+      );
+    } else {
+      throw new Error('Expected stdio options');
+    }
   });
 });

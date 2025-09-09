@@ -619,14 +619,14 @@ export const tConversationSchema = z.object({
   userLabel: z.string().optional(),
   model: z.string().nullable().optional(),
   promptPrefix: z.string().nullable().optional(),
-  temperature: z.number().optional(),
+  temperature: z.number().nullable().optional(),
   topP: z.number().optional(),
   topK: z.number().optional(),
   top_p: z.number().optional(),
   frequency_penalty: z.number().optional(),
   presence_penalty: z.number().optional(),
   parentMessageId: z.string().optional(),
-  maxOutputTokens: coerceNumber.optional(),
+  maxOutputTokens: coerceNumber.nullable().optional(),
   maxContextTokens: coerceNumber.optional(),
   max_tokens: coerceNumber.optional(),
   /* Anthropic */
@@ -634,6 +634,7 @@ export const tConversationSchema = z.object({
   system: z.string().optional(),
   thinking: z.boolean().optional(),
   thinkingBudget: coerceNumber.optional(),
+  stream: z.boolean().optional(),
   /* artifacts */
   artifacts: z.string().optional(),
   /* google */
@@ -680,6 +681,8 @@ export const tConversationSchema = z.object({
   iconURL: z.string().nullable().optional(),
   /* temporary chat */
   expiredAt: z.string().nullable().optional(),
+  /* file token limits */
+  fileTokenLimit: coerceNumber.optional(),
   /** @deprecated */
   resendImages: z.boolean().optional(),
   /** @deprecated */
@@ -794,6 +797,8 @@ export const tQueryParamsSchema = tConversationSchema
      * https://platform.openai.com/docs/api-reference/runs/createRun#runs-createrun-instructions
      * */
     instructions: true,
+    /** @endpoints openAI, google, anthropic */
+    fileTokenLimit: true,
   })
   .merge(
     z.object({
@@ -850,6 +855,7 @@ export const googleBaseSchema = tConversationSchema.pick({
   thinking: true,
   thinkingBudget: true,
   web_search: true,
+  fileTokenLimit: true,
   iconURL: true,
   greeting: true,
   spec: true,
@@ -1101,6 +1107,7 @@ export const openAIBaseSchema = tConversationSchema.pick({
   useResponsesApi: true,
   web_search: true,
   disableStreaming: true,
+  fileTokenLimit: true,
 });
 
 export const openAISchema = openAIBaseSchema
@@ -1145,6 +1152,9 @@ export const anthropicBaseSchema = tConversationSchema.pick({
   spec: true,
   maxContextTokens: true,
   web_search: true,
+  fileTokenLimit: true,
+  stop: true,
+  stream: true,
 });
 
 export const anthropicSchema = anthropicBaseSchema
