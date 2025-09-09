@@ -177,7 +177,10 @@ const updateUserPluginsController = async (req, res) => {
           // if the MCP server uses OAuth, perform a full cleanup and token revocation
           await maybeUninstallOAuthMCP(user.id, pluginKey, appConfig);
         } catch (error) {
-          logger.error(`Error uninstalling OAuth MCP for ${pluginKey}:`, error);
+          logger.error(
+            `[updateUserPluginsController] Error uninstalling OAuth MCP for ${pluginKey}:`,
+            error,
+          );
         }
       } else {
         // This handles:
