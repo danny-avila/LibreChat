@@ -15,6 +15,7 @@ import {
 import type { DropTargetMonitor } from 'react-dnd';
 import type * as t from 'librechat-data-provider';
 import store, { ephemeralAgentByConvoId } from '~/store';
+import { useAgentToolPermissions } from '~/hooks';
 import useFileHandling from './useFileHandling';
 
 export default function useDragHelpers() {
@@ -22,6 +23,8 @@ export default function useDragHelpers() {
   const [showModal, setShowModal] = useState(false);
   const [draggedFiles, setDraggedFiles] = useState<File[]>([]);
   const conversation = useRecoilValue(store.conversationByIndex(0)) || undefined;
+  const agentId = conversation?.agent_id ?? '';
+  const { fileSearchAllowedByAgent, codeAllowedByAgent } = useAgentToolPermissions(agentId);
   const setEphemeralAgent = useSetRecoilState(
     ephemeralAgentByConvoId(conversation?.conversationId ?? Constants.NEW_CONVO),
   );
@@ -64,7 +67,18 @@ export default function useDragHelpers() {
         const fileSearchEnabled = capabilities.includes(AgentCapabilities.file_search) === true;
         const codeEnabled = capabilities.includes(AgentCapabilities.execute_code) === true;
         const ocrEnabled = capabilities.includes(AgentCapabilities.ocr) === true;
-        if (!codeEnabled && !fileSearchEnabled && !ocrEnabled) {
+
+        /** Determine if dragged files are all images (enables the base image option) */
+        const allImages = item.files.every((f) => f.type?.startsWith('image/'));
+
+        const shouldShowModal =
+          allImages ||
+          (fileSearchEnabled && fileSearchAllowedByAgent) ||
+          (codeEnabled && codeAllowedByAgent) ||
+          ocrEnabled;
+
+        if (!shouldShowModal) {
+          // Fallback: directly handle files without showing modal
           handleFiles(item.files);
           return;
         }
