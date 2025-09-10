@@ -78,11 +78,9 @@ export default function useDragHelpers() {
       let fileSearchAllowedByAgent = true;
       let codeAllowedByAgent = true;
 
-      if (agentId) {
-        /** Get agent data from cache */
-        const agentsMap = queryClient.getQueryData<Record<string, t.Agent>>([QueryKeys.agents]);
-        const agent = agentsMap?.[agentId];
-
+      if (agentId && agentId !== Constants.EPHEMERAL_AGENT_ID) {
+        /** Agent data from cache */
+        const agent = queryClient.getQueryData<t.Agent>([QueryKeys.agent, agentId]);
         if (agent) {
           const agentTools = agent.tools as string[] | undefined;
           fileSearchAllowedByAgent = agentTools?.includes(Tools.file_search) ?? false;
