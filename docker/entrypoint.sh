@@ -17,6 +17,20 @@ fi
 
 export HOST=${HOST:-0.0.0.0}
 
+# Auto-detect Ollama if not provided
+if [ -z "${OLLAMA_BASE_URL:-}" ]; then
+  for url in \
+    "http://ollama:11434" \
+    "http://host.docker.internal:11434" \
+    "http://127.0.0.1:11434"; do
+    if curl -fsS --max-time 2 "$url/api/tags" >/dev/null 2>&1; then
+      export OLLAMA_BASE_URL="$url"
+      echo "[entrypoint] Detected Ollama at $url" >&2
+      break
+    fi
+  done
+fi
+
 # If no MONGO_URI provided, start embedded mongod and set it
 if [ -z "${MONGO_URI:-}" ]; then
   echo "[entrypoint] No MONGO_URI provided, starting embedded MongoDB at ${DB_PATH}" >&2
