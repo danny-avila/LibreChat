@@ -1,9 +1,10 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback, useRef } from 'react';
 import { useDrop } from 'react-dnd';
 import { NativeTypes } from 'react-dnd-html5-backend';
 import { useQueryClient } from '@tanstack/react-query';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
 import {
+  Tools,
   QueryKeys,
   Constants,
   EModelEndpoint,
@@ -15,7 +16,6 @@ import {
 import type { DropTargetMonitor } from 'react-dnd';
 import type * as t from 'librechat-data-provider';
 import store, { ephemeralAgentByConvoId } from '~/store';
-import { useAgentToolPermissions } from '~/hooks';
 import useFileHandling from './useFileHandling';
 
 export default function useDragHelpers() {
@@ -23,24 +23,9 @@ export default function useDragHelpers() {
   const [showModal, setShowModal] = useState(false);
   const [draggedFiles, setDraggedFiles] = useState<File[]>([]);
   const conversation = useRecoilValue(store.conversationByIndex(0)) || undefined;
-  const agentId = conversation?.agent_id ?? '';
-  const { fileSearchAllowedByAgent, codeAllowedByAgent } = useAgentToolPermissions(agentId);
   const setEphemeralAgent = useSetRecoilState(
     ephemeralAgentByConvoId(conversation?.conversationId ?? Constants.NEW_CONVO),
   );
-
-  const handleOptionSelect = (toolResource: EToolResources | undefined) => {
-    /** File search is not automatically enabled to simulate legacy behavior */
-    if (toolResource && toolResource !== EToolResources.file_search) {
-      setEphemeralAgent((prev) => ({
-        ...prev,
-        [toolResource]: true,
-      }));
-    }
-    handleFiles(draggedFiles, toolResource);
-    setShowModal(false);
-    setDraggedFiles([]);
-  };
 
   const isAssistants = useMemo(
     () => isAssistantsEndpoint(conversation?.endpoint),
@@ -51,47 +36,95 @@ export default function useDragHelpers() {
     overrideEndpoint: isAssistants ? undefined : EModelEndpoint.agents,
   });
 
+  const handleOptionSelect = useCallback(
+    (toolResource: EToolResources | undefined) => {
+      /** File search is not automatically enabled to simulate legacy behavior */
+      if (toolResource && toolResource !== EToolResources.file_search) {
+        setEphemeralAgent((prev) => ({
+          ...prev,
+          [toolResource]: true,
+        }));
+      }
+      handleFiles(draggedFiles, toolResource);
+      setShowModal(false);
+      setDraggedFiles([]);
+    },
+    [draggedFiles, handleFiles, setEphemeralAgent],
+  );
+
+  /** Use refs to avoid re-creating the drop handler */
+  const handleFilesRef = useRef(handleFiles);
+  const conversationRef = useRef(conversation);
+
+  handleFilesRef.current = handleFiles;
+  conversationRef.current = conversation;
+
+  const handleDrop = useCallback(
+    (item: { files: File[] }) => {
+      if (isAssistants) {
+        handleFilesRef.current(item.files);
+        return;
+      }
+
+      const endpointsConfig = queryClient.getQueryData<t.TEndpointsConfig>([QueryKeys.endpoints]);
+      const agentsConfig = endpointsConfig?.[EModelEndpoint.agents];
+      const capabilities = agentsConfig?.capabilities ?? defaultAgentCapabilities;
+      const fileSearchEnabled = capabilities.includes(AgentCapabilities.file_search) === true;
+      const codeEnabled = capabilities.includes(AgentCapabilities.execute_code) === true;
+      const ocrEnabled = capabilities.includes(AgentCapabilities.ocr) === true;
+
+      /** Get agent permissions at drop time */
+      const agentId = conversationRef.current?.agent_id;
+      let fileSearchAllowedByAgent = true;
+      let codeAllowedByAgent = true;
+
+      if (agentId && agentId !== Constants.EPHEMERAL_AGENT_ID) {
+        /** Agent data from cache */
+        const agent = queryClient.getQueryData<t.Agent>([QueryKeys.agent, agentId]);
+        if (agent) {
+          const agentTools = agent.tools as string[] | undefined;
+          fileSearchAllowedByAgent = agentTools?.includes(Tools.file_search) ?? false;
+          codeAllowedByAgent = agentTools?.includes(Tools.execute_code) ?? false;
+        } else {
+          /** If agent exists but not found, disallow */
+          fileSearchAllowedByAgent = false;
+          codeAllowedByAgent = false;
+        }
+      }
+
+      /** Determine if dragged files are all images (enables the base image option) */
+      const allImages = item.files.every((f) => f.type?.startsWith('image/'));
+
+      const shouldShowModal =
+        allImages ||
+        (fileSearchEnabled && fileSearchAllowedByAgent) ||
+        (codeEnabled && codeAllowedByAgent) ||
+        ocrEnabled;
+
+      if (!shouldShowModal) {
+        // Fallback: directly handle files without showing modal
+        handleFilesRef.current(item.files);
+        return;
+      }
+      setDraggedFiles(item.files);
+      setShowModal(true);
+    },
+    [isAssistants, queryClient],
+  );
+
   const [{ canDrop, isOver }, drop] = useDrop(
     () => ({
       accept: [NativeTypes.FILE],
-      drop(item: { files: File[] }) {
-        console.log('drop', item.files);
-        if (isAssistants) {
-          handleFiles(item.files);
-          return;
-        }
-
-        const endpointsConfig = queryClient.getQueryData<t.TEndpointsConfig>([QueryKeys.endpoints]);
-        const agentsConfig = endpointsConfig?.[EModelEndpoint.agents];
-        const capabilities = agentsConfig?.capabilities ?? defaultAgentCapabilities;
-        const fileSearchEnabled = capabilities.includes(AgentCapabilities.file_search) === true;
-        const codeEnabled = capabilities.includes(AgentCapabilities.execute_code) === true;
-        const ocrEnabled = capabilities.includes(AgentCapabilities.ocr) === true;
-
-        /** Determine if dragged files are all images (enables the base image option) */
-        const allImages = item.files.every((f) => f.type?.startsWith('image/'));
-
-        const shouldShowModal =
-          allImages ||
-          (fileSearchEnabled && fileSearchAllowedByAgent) ||
-          (codeEnabled && codeAllowedByAgent) ||
-          ocrEnabled;
-
-        if (!shouldShowModal) {
-          // Fallback: directly handle files without showing modal
-          handleFiles(item.files);
-          return;
-        }
-        setDraggedFiles(item.files);
-        setShowModal(true);
-      },
+      drop: handleDrop,
       canDrop: () => true,
-      collect: (monitor: DropTargetMonitor) => ({
-        isOver: monitor.isOver(),
-        canDrop: monitor.canDrop(),
-      }),
+      collect: (monitor: DropTargetMonitor) => {
+        /** Optimize collect to reduce re-renders */
+        const isOver = monitor.isOver();
+        const canDrop = monitor.canDrop();
+        return { isOver, canDrop };
+      },
     }),
-    [handleFiles],
+    [handleDrop],
   );
 
   return {
