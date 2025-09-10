@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { PermissionBits } from 'librechat-data-provider';
 import type { TAgentsMap } from 'librechat-data-provider';
 import { useListAgentsQuery } from '~/data-provider';
+import { useFavoriteAgentsQuery } from '~/data-provider/Agents/queries';
 import { mapAgents } from '~/utils';
 
 export default function useAgentsMap({
@@ -16,6 +17,9 @@ export default function useAgentsMap({
       enabled: isAuthenticated,
     },
   );
+
+  // Preload favorites into cache by requesting them; combining happens in UI layer
+  useFavoriteAgentsQuery({ enabled: isAuthenticated });
 
   const agentsMap = useMemo<TAgentsMap | undefined>(() => {
     return mappedAgents !== null ? mappedAgents : undefined;
