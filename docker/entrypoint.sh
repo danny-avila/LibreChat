@@ -44,14 +44,14 @@ if [ -z "${OLLAMA_BASE_URL:-}" ]; then
   if [ -z "${OLLAMA_BASE_URL:-}" ] && [ -r /proc/net/route ]; then
     GW_HEX=$(awk '$2=="00000000" {print $3; exit}' /proc/net/route || true)
     if [ -n "$GW_HEX" ]; then
-      GW_IP=$(python3 - <<'PY'
+      GW_IP=$(printf '%s' "$GW_HEX" | python3 - <<'PY'
 import sys
 gw_hex = sys.stdin.read().strip()
 if gw_hex:
-  parts = [str(int(gw_hex[i:i+2], 16)) for i in (6,4,2,0)]
-  print('.'.join(parts))
+    parts = [str(int(gw_hex[i:i+2], 16)) for i in (6,4,2,0)]
+    print('.'.join(parts))
 PY
-<<< "$GW_HEX")
+)
       if [ -n "$GW_IP" ]; then
         url="http://$GW_IP:11434"
         if curl -fsS --max-time 2 "$url/api/tags" >/dev/null 2>&1; then
