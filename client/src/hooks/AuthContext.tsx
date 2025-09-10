@@ -20,6 +20,7 @@ import {
   useLogoutUserMutation,
   useRefreshTokenMutation,
 } from '~/data-provider';
+import { useGetStartupConfig } from '~/data-provider';
 import { TAuthConfig, TUserContext, TAuthContext, TResError } from '~/common';
 import useTimeout from './useTimeout';
 import store from '~/store';
@@ -47,6 +48,7 @@ const AuthContextProvider = ({
   });
 
   const navigate = useNavigate();
+  const { data: startupConfig } = useGetStartupConfig();
 
   const setUserContext = useMemo(
     () =>
@@ -91,7 +93,9 @@ const AuthContextProvider = ({
     onError: (error: TResError | unknown) => {
       const resError = error as TResError;
       doSetError(resError.message);
-      navigate('/login', { replace: true });
+      if (!startupConfig?.authDisabled) {
+        navigate('/login', { replace: true });
+      }
     },
   });
   const logoutUser = useLogoutUserMutation({
@@ -143,7 +147,7 @@ const AuthContextProvider = ({
           setUserContext({ token, isAuthenticated: true, user });
         } else {
           console.log('Token is not present. User is not authenticated.');
-          if (authConfig?.test === true) {
+          if (authConfig?.test === true || startupConfig?.authDisabled) {
             return;
           }
           navigate('/login');
@@ -151,20 +155,22 @@ const AuthContextProvider = ({
       },
       onError: (error) => {
         console.log('refreshToken mutation error:', error);
-        if (authConfig?.test === true) {
+        if (authConfig?.test === true || startupConfig?.authDisabled) {
           return;
         }
         navigate('/login');
       },
     });
-  }, []);
+  }, [authConfig?.test, navigate, refreshToken, setUserContext, startupConfig?.authDisabled]);
 
   useEffect(() => {
     if (userQuery.data) {
       setUser(userQuery.data);
     } else if (userQuery.isError) {
       doSetError((userQuery.error as Error).message);
-      navigate('/login', { replace: true });
+      if (!startupConfig?.authDisabled) {
+        navigate('/login', { replace: true });
+      }
     }
     if (error != null && error && isAuthenticated) {
       doSetError(undefined);
@@ -183,6 +189,7 @@ const AuthContextProvider = ({
     navigate,
     silentRefresh,
     setUserContext,
+    startupConfig?.authDisabled,
   ]);
 
   useEffect(() => {

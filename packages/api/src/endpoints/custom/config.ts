@@ -17,14 +17,18 @@ export function loadCustomEndpointsConfig(
   const customEndpointsConfig: TCustomEndpointsConfig = {};
 
   if (Array.isArray(customEndpoints)) {
-    const filteredEndpoints = customEndpoints.filter(
-      (endpoint) =>
+    const filteredEndpoints = customEndpoints.filter((endpoint) => {
+      const hasRequired =
         endpoint.baseURL &&
-        endpoint.apiKey &&
         endpoint.name &&
         endpoint.models &&
-        (endpoint.models.fetch || endpoint.models.default),
-    );
+        (endpoint.models.fetch || endpoint.models.default);
+      if (!hasRequired) return false;
+      // Allow Ollama without apiKey
+      const isOllama = typeof endpoint.name === 'string' &&
+        normalizeEndpointName(endpoint.name) === 'ollama';
+      return isOllama || !!endpoint.apiKey;
+    });
 
     for (let i = 0; i < filteredEndpoints.length; i++) {
       const endpoint = filteredEndpoints[i] as TEndpoint;

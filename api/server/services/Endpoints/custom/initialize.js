@@ -35,6 +35,7 @@ const initializeClient = async ({ req, res, endpointOption, optionsOnly, overrid
 
   const CUSTOM_API_KEY = extractEnvVariable(endpointConfig.apiKey);
   const CUSTOM_BASE_URL = extractEnvVariable(endpointConfig.baseURL);
+  const isOllama = (endpoint || '').toLowerCase() === Providers.OLLAMA;
 
   /** Intentionally excludes passing `body`, i.e. `req.body`, as
    *  values may not be accurate until `AgentClient` is initialized
@@ -44,15 +45,15 @@ const initializeClient = async ({ req, res, endpointOption, optionsOnly, overrid
     user: req.user,
   });
 
-  if (CUSTOM_API_KEY.match(envVarRegex)) {
+  if (!isOllama && CUSTOM_API_KEY?.match?.(envVarRegex)) {
     throw new Error(`Missing API Key for ${endpoint}.`);
   }
 
-  if (CUSTOM_BASE_URL.match(envVarRegex)) {
+  if (CUSTOM_BASE_URL?.match?.(envVarRegex)) {
     throw new Error(`Missing Base URL for ${endpoint}.`);
   }
 
-  const userProvidesKey = isUserProvided(CUSTOM_API_KEY);
+  const userProvidesKey = isOllama ? false : isUserProvided(CUSTOM_API_KEY);
   const userProvidesURL = isUserProvided(CUSTOM_BASE_URL);
 
   let userValues = null;
@@ -80,7 +81,7 @@ const initializeClient = async ({ req, res, endpointOption, optionsOnly, overrid
     );
   }
 
-  if (!apiKey) {
+  if (!apiKey && !isOllama) {
     throw new Error(`${endpoint} API key not provided.`);
   }
 
@@ -178,7 +179,7 @@ const initializeClient = async ({ req, res, endpointOption, optionsOnly, overrid
     };
   }
 
-  const client = new OpenAIClient(apiKey, clientOptions);
+  const client = new OpenAIClient(apiKey || '', clientOptions);
   return {
     client,
     openAIApiKey: apiKey,

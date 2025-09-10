@@ -33,14 +33,18 @@ async function loadConfigModels(req) {
     return modelsConfig;
   }
 
-  const customEndpoints = appConfig.endpoints[EModelEndpoint.custom].filter(
-    (endpoint) =>
+  const customEndpoints = appConfig.endpoints[EModelEndpoint.custom].filter((endpoint) => {
+    const hasRequired =
       endpoint.baseURL &&
-      endpoint.apiKey &&
       endpoint.name &&
       endpoint.models &&
-      (endpoint.models.fetch || endpoint.models.default),
-  );
+      (endpoint.models.fetch || endpoint.models.default);
+    if (!hasRequired) return false;
+    const isOllama = typeof endpoint.name === 'string' &&
+      endpoint.name.toLowerCase().startsWith('ollama');
+    // Allow Ollama without apiKey
+    return isOllama || !!endpoint.apiKey;
+  });
 
   /**
    * @type {Record<string, Promise<string[]>>}

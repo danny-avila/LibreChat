@@ -1,4 +1,4 @@
-name: Docker Image CI for GHCR
+name: Publish GHCR Image (Multi-Arch)
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
 
 permissions:
   contents: read
-  packages: write   # needed to push to GHCR
+  packages: write
 
 jobs:
   build_and_publish:
@@ -16,8 +16,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build and push the image
-        run: |
-          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-          docker build . -t ghcr.io/neomint-research/librechatneo:latest
-          docker push ghcr.io/neomint-research/librechatneo:latest
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push (linux/amd64,linux/arm64)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: |
+            ghcr.io/neomint-research/librechatneo:latest

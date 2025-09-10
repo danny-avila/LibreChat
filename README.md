@@ -214,3 +214,12 @@ We thank [Locize](https://locize.com) for their translation management tools tha
     <img src="https://github.com/user-attachments/assets/d6b70894-6064-475e-bb65-92a9e23e0077" alt="Locize Logo" height="50">
   </a>
 </p>
+## Local No-Auth Mode
+
+- Default: When running locally (non-production), authentication is disabled by default. You can use LibreChat immediately without creating an account or logging in.
+- Default User: Requests run under a single local user named "Minty".
+- Override via env vars (optional):
+  - `DISABLE_AUTH=false` to re-enable auth
+  - `SINGLE_USER_NAME` (default: `Minty`)
+  - `SINGLE_USER_EMAIL` (default: `minty@localhost`)
+  - `SINGLE_USER_ID` (default: `000000000000000000000001`)

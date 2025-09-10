@@ -39,6 +39,9 @@ async function loadModels(req) {
 
 async function modelController(req, res) {
   try {
+    // Always refresh models so new Ollama tags show up after a browser reload
+    const cache = getLogStores(CacheKeys.CONFIG_STORE);
+    await cache.delete(CacheKeys.MODELS_CONFIG);
     const modelConfig = await loadModels(req);
     res.send(modelConfig);
   } catch (error) {

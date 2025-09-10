@@ -34,6 +34,11 @@ const trusted_proxy = Number(TRUST_PROXY) || 1; /* trust first proxy by default 
 const app = express();
 
 const startServer = async () => {
+  // Default to no-auth unless explicitly disabled via env
+  if (process.env.DISABLE_AUTH == null) {
+    process.env.DISABLE_AUTH = 'true';
+  }
+
   if (typeof Bun !== 'undefined') {
     axios.defaults.headers.common['Accept-Encoding'] = 'gzip';
   }

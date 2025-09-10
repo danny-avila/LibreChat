@@ -55,6 +55,39 @@ const loadEndpoints = (config, agentsDefaults) => {
     }
   });
 
+  // Auto-add Ollama endpoint if not configured explicitly
+  // Enables model auto-discovery after pulling models in a local/docker setup
+  if (endpoints?.[EModelEndpoint.custom]) {
+    const custom = Array.isArray(loadedEndpoints[EModelEndpoint.custom])
+      ? loadedEndpoints[EModelEndpoint.custom]
+      : endpoints[EModelEndpoint.custom];
+    const hasOllama = Array.isArray(custom)
+      ? custom.some((e) => typeof e?.name === 'string' && e.name.toLowerCase().startsWith('ollama'))
+      : false;
+    if (!hasOllama) {
+      const baseURL = process.env.OLLAMA_BASE_URL || 'http://ollama:11434';
+      const ollamaEndpoint = {
+        name: 'ollama',
+        baseURL,
+        models: { default: [], fetch: true },
+        modelDisplayLabel: 'Ollama',
+      };
+      loadedEndpoints[EModelEndpoint.custom] = Array.isArray(custom)
+        ? [...custom, ollamaEndpoint]
+        : [ollamaEndpoint];
+    }
+  } else {
+    const baseURL = process.env.OLLAMA_BASE_URL || 'http://ollama:11434';
+    loadedEndpoints[EModelEndpoint.custom] = [
+      {
+        name: 'ollama',
+        baseURL,
+        models: { default: [], fetch: true },
+        modelDisplayLabel: 'Ollama',
+      },
+    ];
+  }
+
   if (endpoints?.all) {
     loadedEndpoints.all = endpoints.all;
   }

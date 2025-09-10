@@ -8,8 +8,8 @@ function getSingleUser() {
   return {
     id: DEFAULT_ID,
     _id: DEFAULT_ID,
-    email: process.env.SINGLE_USER_EMAIL || 'single-user@localhost',
-    name: process.env.SINGLE_USER_NAME || 'Single User',
+    email: process.env.SINGLE_USER_EMAIL || 'minty@localhost',
+    name: process.env.SINGLE_USER_NAME || 'Minty',
     provider: 'local',
     role: process.env.SINGLE_USER_ROLE || SystemRoles.USER,
     emailVerified: true,
@@ -17,4 +17,3 @@ function getSingleUser() {
 }
 
 module.exports = { getSingleUser };
-

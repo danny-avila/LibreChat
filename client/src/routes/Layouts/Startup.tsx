@@ -22,20 +22,20 @@ export default function StartupLayout({ isAuthenticated }: { isAuthenticated?: b
     isFetching,
     error: startupConfigError,
   } = useGetStartupConfig({
-    enabled: isAuthenticated ? startupConfig === null : true,
+    enabled: true,
   });
   const localize = useLocalize();
   const navigate = useNavigate();
   const location = useLocation();
 
   useEffect(() => {
-    if (isAuthenticated) {
+    if (isAuthenticated || data?.authDisabled) {
       navigate('/c/new', { replace: true });
     }
     if (data) {
       setStartupConfig(data);
     }
-  }, [isAuthenticated, navigate, data]);
+  }, [isAuthenticated, data, navigate]);
 
   useEffect(() => {
     document.title = startupConfig?.appTitle || 'LibreChat';
