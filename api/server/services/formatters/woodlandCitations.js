@@ -4,8 +4,10 @@
 
 const allowList = new Set([
   'airtable.com',
+  // Base domain covers website and subdomains such as support.cyclonerake.com
   'cyclonerake.com',
-  'cyclopedia.cyclonerake.com',
+  // Kept for back-compat; optional explicit subdomain entry
+  'support.cyclonerake.com',
 ]);
 
 function isAllowedUrl(u) {
@@ -23,9 +25,29 @@ function isAllowedUrl(u) {
   }
 }
 
+// Extracts the first allowed URL found in a block of text
+function extractAllowedUrl(text) {
+  if (typeof text !== 'string' || !text) return undefined;
+  // Basic http/https URL matcher
+  const urlRegex = /(https?:\/\/[^\s)]+)[)\]\s]?/gi;
+  let match;
+  while ((match = urlRegex.exec(text)) !== null) {
+    const candidate = match[1];
+    if (isAllowedUrl(candidate)) return candidate;
+  }
+  return undefined;
+}
+
 function urlFromHit(hit) {
   const u = hit?.url;
-  return typeof u === 'string' && u && isAllowedUrl(u) ? u : undefined;
+  if (typeof u === 'string' && u && isAllowedUrl(u)) return u;
+  // Fallback: scan chunk/text/snippet for the first allowed URL
+  return (
+    extractAllowedUrl(hit?.chunk) ||
+    extractAllowedUrl(hit?.text) ||
+    extractAllowedUrl(hit?.snippet) ||
+    undefined
+  );
 }
 
 function shortSummary(hit) {
@@ -81,9 +103,9 @@ function buildCitations({ airtable = [], cyclopedia = [], website = [] }) {
 
 module.exports = {
   isAllowedUrl,
+  extractAllowedUrl,
   urlFromHit,
   shortSummary,
   classifySource,
   buildCitations,
 };
-
