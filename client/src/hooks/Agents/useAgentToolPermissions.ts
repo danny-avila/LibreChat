@@ -26,9 +26,7 @@ export default function useAgentToolPermissions(
   }, [agentId, agentsMap]);
 
   // Query for agent data from the API
-  const { data: agentData } = useGetAgentByIdQuery(agentId ?? '', {
-    enabled: !!agentId,
-  });
+  const { data: agentData } = useGetAgentByIdQuery(agentId);
 
   // Get tools from either the API data or the agents map
   const tools = useMemo(
