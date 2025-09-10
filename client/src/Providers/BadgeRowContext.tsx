@@ -3,12 +3,14 @@ import { useSetRecoilState } from 'recoil';
 import { Tools, Constants, LocalStorageKeys, AgentCapabilities } from 'librechat-data-provider';
 import type { TAgentsEndpoint } from 'librechat-data-provider';
 import {
+  useMCPServerManager,
   useSearchApiKeyForm,
   useGetAgentsConfig,
   useCodeApiKeyForm,
   useGetMCPTools,
   useToolToggle,
 } from '~/hooks';
+import { getTimestampedValue, setTimestamp } from '~/utils/timestamps';
 import { ephemeralAgentByConvoId } from '~/store';
 
 interface BadgeRowContextType {
@@ -21,6 +23,7 @@ interface BadgeRowContextType {
   codeInterpreter: ReturnType<typeof useToolToggle>;
   codeApiKeyForm: ReturnType<typeof useCodeApiKeyForm>;
   searchApiKeyForm: ReturnType<typeof useSearchApiKeyForm>;
+  mcpServerManager: ReturnType<typeof useMCPServerManager>;
 }
 
 const BadgeRowContext = createContext<BadgeRowContextType | undefined>(undefined);
@@ -62,16 +65,15 @@ export default function BadgeRowProvider({
       hasInitializedRef.current = true;
       lastKeyRef.current = key;
 
-      // Load all localStorage values
       const codeToggleKey = `${LocalStorageKeys.LAST_CODE_TOGGLE_}${key}`;
       const webSearchToggleKey = `${LocalStorageKeys.LAST_WEB_SEARCH_TOGGLE_}${key}`;
       const fileSearchToggleKey = `${LocalStorageKeys.LAST_FILE_SEARCH_TOGGLE_}${key}`;
       const artifactsToggleKey = `${LocalStorageKeys.LAST_ARTIFACTS_TOGGLE_}${key}`;
 
-      const codeToggleValue = localStorage.getItem(codeToggleKey);
-      const webSearchToggleValue = localStorage.getItem(webSearchToggleKey);
-      const fileSearchToggleValue = localStorage.getItem(fileSearchToggleKey);
-      const artifactsToggleValue = localStorage.getItem(artifactsToggleKey);
+      const codeToggleValue = getTimestampedValue(codeToggleKey);
+      const webSearchToggleValue = getTimestampedValue(webSearchToggleKey);
+      const fileSearchToggleValue = getTimestampedValue(fileSearchToggleKey);
+      const artifactsToggleValue = getTimestampedValue(artifactsToggleKey);
 
       const initialValues: Record<string, any> = {};
 
@@ -107,15 +109,37 @@ export default function BadgeRowProvider({
         }
       }
 
-      // Always set values for all tools (use defaults if not in localStorage)
-      // If ephemeralAgent is null, create a new object with just our tool values
-      setEphemeralAgent((prev) => ({
-        ...(prev || {}),
+      /**
+       * Always set values for all tools (use defaults if not in `localStorage`)
+       * If `ephemeralAgent` is `null`, create a new object with just our tool values
+       */
+      const finalValues = {
         [Tools.execute_code]: initialValues[Tools.execute_code] ?? false,
         [Tools.web_search]: initialValues[Tools.web_search] ?? false,
         [Tools.file_search]: initialValues[Tools.file_search] ?? false,
         [AgentCapabilities.artifacts]: initialValues[AgentCapabilities.artifacts] ?? false,
+      };
+
+      setEphemeralAgent((prev) => ({
+        ...(prev || {}),
+        ...finalValues,
       }));
+
+      Object.entries(finalValues).forEach(([toolKey, value]) => {
+        if (value !== false) {
+          let storageKey = artifactsToggleKey;
+          if (toolKey === Tools.execute_code) {
+            storageKey = codeToggleKey;
+          } else if (toolKey === Tools.web_search) {
+            storageKey = webSearchToggleKey;
+          } else if (toolKey === Tools.file_search) {
+            storageKey = fileSearchToggleKey;
+          }
+          // Store the value and set timestamp for existing values
+          localStorage.setItem(storageKey, JSON.stringify(value));
+          setTimestamp(storageKey);
+        }
+      });
     }
   }, [key, isSubmitting, setEphemeralAgent]);
 
@@ -165,6 +189,8 @@ export default function BadgeRowProvider({
     isAuthenticated: true,
   });
 
+  const mcpServerManager = useMCPServerManager({ conversationId });
+
   const mcpServerNames = useMemo(() => {
     return (mcpToolDetails ?? []).map((tool) => tool.name);
   }, [mcpToolDetails]);
@@ -179,6 +205,7 @@ export default function BadgeRowProvider({
     codeApiKeyForm,
     codeInterpreter,
     searchApiKeyForm,
+    mcpServerManager,
   };
 
   return <BadgeRowContext.Provider value={value}>{children}</BadgeRowContext.Provider>;
