@@ -55,6 +55,7 @@ jobs:
               uses: azure/cli@v2
               with:
                   inlineScript: |
+                    az login --service-principal -u ${{secrets.ARC_RUNNER_SP_CLIENT_ID_NONPROD}} -p ${{secrets.ARC_RUNNER_SP_CLIENT_SECRET_NONPROD}} --tenant ${{secrets.AZURE_TENANT_ID}}
                     az account set --subscription "${{ secrets.AZURE_NONPROD_SUBSCRIPTION_ID }}"
                     az containerapp create \
                       --name conpaichateastusn2a001 \
