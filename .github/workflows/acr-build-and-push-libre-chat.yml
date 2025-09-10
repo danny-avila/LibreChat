@@ -1,0 +1,40 @@
+name: Build and Push MIA - LibreChat Container to ACR
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          enable-AzPSSession: true
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./
+          file: ./Dockerfile.multi
+          push: true
+          tags: |
+            ${{ vars.ACR_REGISTRY_SERVER }}/mia-libre-chat:${{ github.sha }}
+            ${{ vars.ACR_REGISTRY_SERVER }}/mia-libre-chat:latest
+
+
+  # - name: Build and push Docker image
+  #       run: |
+  #         az acr login --name ${{ secrets.ACR_NAME }}
+  #         docker build -f ./Dockerfile.multi -t ${{ secrets.ACR_NAME }}.azurecr.io/mia-libre-chat:${{ github.sha }} .
+  #         docker push ${{ secrets.ACR_NAME }}.azurecr.io/mia-libre-chat:${{ github.sha }}
