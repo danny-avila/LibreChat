@@ -7,6 +7,9 @@ on:
       - feat/MIA-85-librechat-build-pipeline-gh-action
   workflow_dispatch:
 
+permissions:
+  id-token: write
+
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
