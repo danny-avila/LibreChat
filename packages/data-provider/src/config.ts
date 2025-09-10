@@ -1826,9 +1826,7 @@ export const CohereConstants = {
    * Cohere API Endpoint, for special handling
    * Uses COHERE_API_URL environment variable if set, otherwise defaults to official API
    */
-  get API_URL(): string {
-    return process.env.COHERE_API_URL || 'https://api.cohere.ai/v1';
-  },
+  API_URL: process.env.COHERE_API_URL || 'https://api.cohere.ai/v1',
   /**
    * Role for "USER" messages
    */
