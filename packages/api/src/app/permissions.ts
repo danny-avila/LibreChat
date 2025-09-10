@@ -111,14 +111,20 @@ export async function updateInterfacePermissions({
       const permTypeExists = existingPermissions?.[permType];
       const isExplicitlyConfigured =
         interfaceConfig && hasExplicitConfig(interfaceConfig, permType);
+      const isMemoryDisabled =
+        permType === PermissionTypes.MEMORIES && isMemoryExplicitlyDisabled === true;
 
       // Only update if: doesn't exist OR explicitly configured
-      if (!permTypeExists || isExplicitlyConfigured) {
+      if (!permTypeExists || isExplicitlyConfigured || isMemoryDisabled) {
         permissionsToUpdate[permType] = permissions;
         if (!permTypeExists) {
           logger.debug(`Role '${roleName}': Setting up default permissions for '${permType}'`);
         } else if (isExplicitlyConfigured) {
           logger.debug(`Role '${roleName}': Applying explicit config for '${permType}'`);
+        } else if (isMemoryDisabled) {
+          logger.debug(
+            `Role '${roleName}': Disabling memories as it is explicitly disabled in config`,
+          );
         }
       } else {
         logger.debug(`Role '${roleName}': Preserving existing permissions for '${permType}'`);
