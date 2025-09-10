@@ -26,12 +26,17 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
           enable-AzPSSession: true
 
+      - name: Login to ACR
+        run: |
+          az acr login --name ${{ vars.ACR_NAME }}
+
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
           context: ./
           file: ./Dockerfile.multi
           push: true
+          registries: ${{ vars.ACR_REGISTRY_SERVER }}
           tags: |
             ${{ vars.ACR_REGISTRY_SERVER }}/mia-libre-chat:${{ github.sha }}
             ${{ vars.ACR_REGISTRY_SERVER }}/mia-libre-chat:latest
