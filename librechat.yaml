@@ -17,6 +17,7 @@ interface:
   runCode: false 
   webSearch: false 
   fileSearch: false
+  modelSelect: false
   sidePanel : true # Enable/disable the side panel (default: false)
   # MCP Servers UI configuration
   mcpServers:
