@@ -19,6 +19,7 @@ import ShareRoute from './ShareRoute';
 import ChatRoute from './ChatRoute';
 import Search from './Search';
 import Root from './Root';
+import { MarketplaceProvider } from '../components/Agents/MarketplaceContext';
 
 const AuthLayout = () => (
   <AuthContextProvider>
@@ -112,11 +113,19 @@ export const router = createBrowserRouter(
             },
             {
               path: 'agents',
-              element: <AgentMarketplace />,
+              element: (
+                <MarketplaceProvider>
+                  <AgentMarketplace />
+                </MarketplaceProvider>
+              ),
             },
             {
               path: 'agents/:category',
-              element: <AgentMarketplace />,
+              element: (
+                <MarketplaceProvider>
+                  <AgentMarketplace />
+                </MarketplaceProvider>
+              ),
             },
           ],
         },
