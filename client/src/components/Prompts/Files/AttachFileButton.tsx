@@ -1,13 +1,17 @@
 import * as Ariakit from '@ariakit/react';
-import { EToolResources } from 'librechat-data-provider';
 import React, { useRef, useState, useMemo, useCallback } from 'react';
+import { EToolResources, defaultAgentCapabilities } from 'librechat-data-provider';
 import { FileSearch, ImageUpIcon, TerminalSquareIcon, FileType2Icon } from 'lucide-react';
 import { FileUpload, DropdownPopup, AttachmentIcon, SharePointIcon } from '@librechat/client';
-import useSharePointFileHandling from '~/hooks/Files/useSharePointFileHandling';
+import {
+  useLocalize,
+  useAgentCapabilities,
+  useGetAgentsConfig,
+  useSharePointFileHandling,
+} from '~/hooks';
 import { SharePointPickerDialog } from '~/components/SharePoint';
 import { useGetStartupConfig } from '~/data-provider';
 import { MenuItemProps } from '~/common';
-import { useLocalize } from '~/hooks';
 
 interface AttachFileButtonProps {
   handleFileChange?: (event: React.ChangeEvent<HTMLInputElement>, toolResource?: string) => void;
@@ -27,6 +31,8 @@ const AttachFileButton = ({ handleFileChange, disabled }: AttachFileButtonProps)
   });
   const { data: startupConfig } = useGetStartupConfig();
   const sharePointEnabled = startupConfig?.sharePointFilePickerEnabled;
+  const { agentsConfig } = useGetAgentsConfig();
+  const capabilities = useAgentCapabilities(agentsConfig?.capabilities ?? defaultAgentCapabilities);
 
   const handleUploadClick = useCallback((isImage?: boolean) => {
     if (!inputRef.current) {
@@ -49,31 +55,41 @@ const AttachFileButton = ({ handleFileChange, disabled }: AttachFileButtonProps)
           },
           icon: <ImageUpIcon className="icon-md" />,
         },
-        {
+      ];
+
+      if (capabilities.ocrEnabled) {
+        items.push({
           label: localize('com_ui_upload_ocr_text'),
           onClick: () => {
             setToolResource(EToolResources.ocr);
             onAction();
           },
           icon: <FileType2Icon className="icon-md" />,
-        },
-        {
+        });
+      }
+
+      if (capabilities.fileSearchEnabled) {
+        items.push({
           label: localize('com_ui_upload_file_search'),
           onClick: () => {
             setToolResource(EToolResources.file_search);
             onAction();
           },
           icon: <FileSearch className="icon-md" />,
-        },
-        {
+        });
+      }
+
+      if (capabilities.codeEnabled) {
+        items.push({
           label: localize('com_ui_upload_code_files'),
           onClick: () => {
             setToolResource(EToolResources.execute_code);
             onAction();
           },
           icon: <TerminalSquareIcon className="icon-md" />,
-        },
-      ];
+        });
+      }
+
       return items;
     };
 
@@ -93,7 +109,7 @@ const AttachFileButton = ({ handleFileChange, disabled }: AttachFileButtonProps)
     }
 
     return localItems;
-  }, [localize, handleUploadClick, sharePointEnabled, setIsSharePointDialogOpen]);
+  }, [capabilities, localize, handleUploadClick, sharePointEnabled, setIsSharePointDialogOpen]);
 
   const menuTrigger = (
     <Ariakit.MenuButton
