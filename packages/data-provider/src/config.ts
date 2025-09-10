@@ -1220,14 +1220,6 @@ export enum CacheKeys {
    */
   TOKEN_CONFIG = 'TOKEN_CONFIG',
   /**
-   * Key for the librechat yaml config cache.
-   */
-  LIBRECHAT_YAML_CONFIG = 'LIBRECHAT_YAML_CONFIG',
-  /**
-   * Key for the static config namespace.
-   */
-  STATIC_CONFIG = 'STATIC_CONFIG',
-  /**
    * Key for the app config namespace.
    */
   APP_CONFIG = 'APP_CONFIG',
