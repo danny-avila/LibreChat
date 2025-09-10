@@ -391,7 +391,7 @@ class GoogleClient extends BaseClient {
     return files;
   }
 
-  /**
+  /**`
    * Builds the augmented prompt for attachments
    * TODO: Add File API Support
    * @param {TMessage[]} messages
@@ -844,16 +844,16 @@ Keep responses brief and use enums from the schema.`;
             stream: false,
             abortController: analysisAbortController,
             format: 'json',
-            onProgress: onProgress ? (chunk) => {
-              try {
-                onProgress(chunk);
-              } catch (error) {
-                logger.error('Error in analysis progress callback:', error);
-              }
-            } : undefined
+            // onProgress: onProgress ? (chunk) => {
+            //   try {
+            //     onProgress(chunk);
+            //   } catch (error) {
+            //     logger.error('Error in analysis progress callback:', error);
+            //   }
+            // } : undefined
+            onProgress: ()=>{}// Hide analysis phase from frontend
           }
         );
-        
         // Clean up the abort controller
         analysisAbortController.abort();
         
@@ -1016,7 +1016,7 @@ Keep responses brief and use enums from the schema.`;
           generationConfig: googleGenConfigSchema.parse(this.modelOptions),
         };
 
-        const promptPrefix = (this.systemMessage ?? '').trim();
+        const promptPrefix = (this._internalSystemInstructions || this.systemMessage || '').trim();
         if (promptPrefix.length) {
           requestOptions.systemInstruction = {
             parts: [
@@ -1074,6 +1074,9 @@ Keep responses brief and use enums from the schema.`;
 
       if (!this.isVisionModel && context && messages?.length > 0) {
         messages.unshift(new SystemMessage(context));
+      } else if (!this.isVisionModel && this.systemMessage && messages?.length > 0) {
+        // Apply stored system instructions silently for Vertex path when no explicit context
+        messages.unshift(new SystemMessage(this.systemMessage));
       }
 
       /** @type {import('@langchain/core/messages').AIMessageChunk['usage_metadata']} */
@@ -1373,18 +1376,18 @@ Keep responses brief and use enums from the schema.`;
       logger.debug('Input analysis:', analysis);
 
       // Prepare the enhanced payload with system instructions
-      // Convert system message to user message format for Google's API
-      // store system instructions silently
-this.systemMessage = analysis.system_instructions;  
-      
+      // Store system instructions silently; do not inject into the outgoing payload
+this._internalSystemInstructions = (this.augmentedPrompt || '') + analysis.system_instructions;
+
+
       // Ensure all messages have valid roles for Google's API
-      const enhancedPayload = [
-        systemMessage,
-        ...payload.map(msg => ({
+      // Do NOT push system instructions as a normal message to avoid streaming them to the user
+      const enhancedPayload = payload
+        .map((msg) => ({
           ...msg,
-          role: msg.role === 'assistant' ? 'model' : 'user'  // Convert 'assistant' to 'model'
+          role: msg.role === 'assistant' ? 'model' : 'user', // Convert 'assistant' to 'model'
         }))
-      ].filter(msg => msg.role === 'user' || msg.role === 'model');  // Only include valid roles
+        .filter((msg) => msg.role === 'user' || msg.role === 'model'); // Only include valid roles
 
       // Step 2: Generate the response using the full model
       console.log('[GoogleClient] Starting generation phase with full model...');
