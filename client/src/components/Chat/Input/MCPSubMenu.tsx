@@ -4,27 +4,27 @@ import { ChevronRight } from 'lucide-react';
 import { PinIcon, MCPIcon } from '@librechat/client';
 import MCPServerStatusIcon from '~/components/MCP/MCPServerStatusIcon';
 import MCPConfigDialog from '~/components/MCP/MCPConfigDialog';
-import { useMCPServerManager } from '~/hooks';
+import { useBadgeRowContext } from '~/Providers';
 import { cn } from '~/utils';
 
 interface MCPSubMenuProps {
   placeholder?: string;
-  conversationId?: string | null;
 }
 
 const MCPSubMenu = React.forwardRef<HTMLDivElement, MCPSubMenuProps>(
-  ({ placeholder, conversationId, ...props }, ref) => {
+  ({ placeholder, ...props }, ref) => {
+    const { mcpServerManager } = useBadgeRowContext();
     const {
-      configuredServers,
-      mcpValues,
       isPinned,
+      mcpValues,
       setIsPinned,
+      isInitializing,
       placeholderText,
+      configuredServers,
+      getConfigDialogProps,
       toggleServerSelection,
       getServerStatusIconProps,
-      getConfigDialogProps,
-      isInitializing,
-    } = useMCPServerManager({ conversationId });
+    } = mcpServerManager;
 
     const menuStore = Ariakit.useMenuStore({
       focusLoop: true,
