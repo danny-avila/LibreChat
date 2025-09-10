@@ -15,6 +15,13 @@ jobs:
         steps:
             - uses: actions/checkout@v3
 
+            - name: Azure CLI script
+              uses: azure/cli@v2
+              with:
+                  inlineScript: |
+                    az login --service-principal -u ${{secrets.ARC_RUNNER_SP_CLIENT_ID_NONPROD}} -p ${{secrets.ARC_RUNNER_SP_CLIENT_SECRET_NONPROD}} --tenant ${{secrets.AZURE_TENANT_ID}}
+                    az account set --subscription "${{ secrets.AZURE_NONPROD_SUBSCRIPTION_ID }}"
+
             - name: Create Config File
               run: |
                 touch librechat.yaml && chmod 755 librechat.yaml |
@@ -46,11 +53,6 @@ jobs:
                 github_token: ${{ secrets.CROSS_REPO_PAT }}
                 ref: 'main'
 
-            - name: Login to Azure CLI
-              uses: azure/login@v2
-              with:
-                creds: ${{secrets.AZURE_CREDENTIALS_NONPROD}}
-            
             - name: Azure CLI script
               uses: azure/cli@v2
               with:
