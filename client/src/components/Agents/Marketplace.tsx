@@ -427,7 +427,7 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
                       category={displayCategory}
                       searchQuery={searchQuery}
                       onSelectAgent={handleAgentSelect}
-                      scrollElement={scrollContainerRef.current}
+                      scrollElementRef={scrollContainerRef}
                     />
                   </div>
 
@@ -507,7 +507,7 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
                         category={nextCategory}
                         searchQuery={searchQuery}
                         onSelectAgent={handleAgentSelect}
-                        scrollElement={scrollContainerRef.current}
+                        scrollElementRef={scrollContainerRef}
                       />
                     </div>
                   )}
