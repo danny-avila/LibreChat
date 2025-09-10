@@ -9,6 +9,9 @@ env:
 on:
   workflow_dispatch:
 
+permissions:
+  id-token: write
+
 jobs:
     build_and_push:
         runs-on: paychex-ai-platform-arc-nonprod
