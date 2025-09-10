@@ -23,7 +23,7 @@ jobs:
               with:
                   inlineScript: |
                     az login --service-principal -u ${{secrets.ARC_RUNNER_SP_CLIENT_ID_NONPROD}} -p ${{secrets.ARC_RUNNER_SP_CLIENT_SECRET_NONPROD}} --tenant ${{secrets.AZURE_TENANT_ID}}
-                    az account set --subscription "${{ secrets.AZURE_NONPROD_SUBSCRIPTION_ID }}"
+                    az account set --subscription ${{vars.AZURE_SUBSCRIPTION_NAME_NONPROD}}
 
             - name: Create Config File
               run: |
