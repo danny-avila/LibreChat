@@ -40,10 +40,3 @@ jobs:
           tags: |
             ${{ vars.ACR_REGISTRY_SERVER }}/mia-libre-chat:${{ github.sha }}
             ${{ vars.ACR_REGISTRY_SERVER }}/mia-libre-chat:latest
-
-
-  # - name: Build and push Docker image
-  #       run: |
-  #         az acr login --name ${{ secrets.ACR_NAME }}
-  #         docker build -f ./Dockerfile.multi -t ${{ secrets.ACR_NAME }}.azurecr.io/mia-libre-chat:${{ github.sha }} .
-  #         docker push ${{ secrets.ACR_NAME }}.azurecr.io/mia-libre-chat:${{ github.sha }}
