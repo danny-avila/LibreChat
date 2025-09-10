@@ -11,7 +11,13 @@ import {
   SharePointIcon,
 } from '@librechat/client';
 import type { EndpointFileConfig } from 'librechat-data-provider';
-import { useLocalize, useGetAgentsConfig, useFileHandling, useAgentCapabilities } from '~/hooks';
+import {
+  useAgentToolPermissions,
+  useAgentCapabilities,
+  useGetAgentsConfig,
+  useFileHandling,
+  useLocalize,
+} from '~/hooks';
 import useSharePointFileHandling from '~/hooks/Files/useSharePointFileHandling';
 import { SharePointPickerDialog } from '~/components/SharePoint';
 import { useGetStartupConfig } from '~/data-provider';
@@ -21,11 +27,17 @@ import { cn } from '~/utils';
 
 interface AttachFileMenuProps {
   conversationId: string;
+  agentId?: string | null;
   disabled?: boolean | null;
   endpointFileConfig?: EndpointFileConfig;
 }
 
-const AttachFileMenu = ({ disabled, conversationId, endpointFileConfig }: AttachFileMenuProps) => {
+const AttachFileMenu = ({
+  agentId,
+  disabled,
+  conversationId,
+  endpointFileConfig,
+}: AttachFileMenuProps) => {
   const localize = useLocalize();
   const isUploadDisabled = disabled ?? false;
   const inputRef = useRef<HTMLInputElement>(null);
@@ -51,6 +63,8 @@ const AttachFileMenu = ({ disabled, conversationId, endpointFileConfig }: Attach
    * Use definition for agents endpoint for ephemeral agents
    * */
   const capabilities = useAgentCapabilities(agentsConfig?.capabilities ?? defaultAgentCapabilities);
+
+  const { fileSearchAllowedByAgent, codeAllowedByAgent } = useAgentToolPermissions(agentId);
 
   const handleUploadClick = (isImage?: boolean) => {
     if (!inputRef.current) {
@@ -86,7 +100,7 @@ const AttachFileMenu = ({ disabled, conversationId, endpointFileConfig }: Attach
         });
       }
 
-      if (capabilities.fileSearchEnabled) {
+      if (capabilities.fileSearchEnabled && fileSearchAllowedByAgent) {
         items.push({
           label: localize('com_ui_upload_file_search'),
           onClick: () => {
@@ -101,7 +115,7 @@ const AttachFileMenu = ({ disabled, conversationId, endpointFileConfig }: Attach
         });
       }
 
-      if (capabilities.codeEnabled) {
+      if (capabilities.codeEnabled && codeAllowedByAgent) {
         items.push({
           label: localize('com_ui_upload_code_files'),
           onClick: () => {
@@ -142,6 +156,8 @@ const AttachFileMenu = ({ disabled, conversationId, endpointFileConfig }: Attach
     setToolResource,
     setEphemeralAgent,
     sharePointEnabled,
+    codeAllowedByAgent,
+    fileSearchAllowedByAgent,
     setIsSharePointDialogOpen,
   ]);
 
