@@ -15,18 +15,18 @@ const socialLogin =
       });
 
       const appConfig = await getAppConfig();
-      const existingUser = await findUser({ email: email.trim() });
-      const ALLOW_SOCIAL_REGISTRATION = isEnabled(process.env.ALLOW_SOCIAL_REGISTRATION);
 
-      if (!existingUser && !isEmailDomainAllowed(email, appConfig?.registration?.allowedDomains)) {
+      if (!isEmailDomainAllowed(email, appConfig?.registration?.allowedDomains)) {
         logger.error(
-          `[${provider}Login] Registration blocked - email domain not allowed [Email: ${email}]`,
+          `[${provider}Login] Authentication blocked - email domain not allowed [Email: ${email}]`,
         );
         const error = new Error(ErrorTypes.AUTH_FAILED);
         error.code = ErrorTypes.AUTH_FAILED;
-        error.message = 'Email domain not allowed for registration';
+        error.message = 'Email domain not allowed';
         return cb(error);
       }
+
+      const existingUser = await findUser({ email: email.trim() });
 
       if (existingUser?.provider === provider) {
         await handleExistingUser(existingUser, avatarUrl, appConfig);
@@ -41,20 +41,29 @@ const socialLogin =
         return cb(error);
       }
 
-      if (ALLOW_SOCIAL_REGISTRATION) {
-        const newUser = await createSocialUser({
-          email,
-          avatarUrl,
-          provider,
-          providerKey: `${provider}Id`,
-          providerId: id,
-          username,
-          name,
-          emailVerified,
-          appConfig,
-        });
-        return cb(null, newUser);
+      const ALLOW_SOCIAL_REGISTRATION = isEnabled(process.env.ALLOW_SOCIAL_REGISTRATION);
+      if (!ALLOW_SOCIAL_REGISTRATION) {
+        logger.error(
+          `[${provider}Login] Registration blocked - social registration is disabled [Email: ${email}]`,
+        );
+        const error = new Error(ErrorTypes.AUTH_FAILED);
+        error.code = ErrorTypes.AUTH_FAILED;
+        error.message = 'Social registration is disabled';
+        return cb(error);
       }
+
+      const newUser = await createSocialUser({
+        email,
+        avatarUrl,
+        provider,
+        providerKey: `${provider}Id`,
+        providerId: id,
+        username,
+        name,
+        emailVerified,
+        appConfig,
+      });
+      return cb(null, newUser);
     } catch (err) {
       logger.error(`[${provider}Login]`, err);
       return cb(err);
