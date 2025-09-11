@@ -4,6 +4,7 @@ const { logger } = require('@librechat/data-schemas');
 const { isEnabled, getBalanceConfig } = require('@librechat/api');
 const { SystemRoles, ErrorTypes } = require('librechat-data-provider');
 const { createUser, findUser, updateUser, countUsers } = require('~/models');
+const { isEmailDomainAllowed } = require('~/server/services/domains');
 const { getAppConfig } = require('~/server/services/Config');
 
 const {
@@ -124,6 +125,15 @@ const ldapLogin = new LdapStrategy(ldapOptions, async (userinfo, done) => {
     if (!user) {
       const isFirstRegisteredUser = (await countUsers()) === 0;
       const role = isFirstRegisteredUser ? SystemRoles.ADMIN : SystemRoles.USER;
+      const appConfig = await getAppConfig({ role });
+
+      if (!isEmailDomainAllowed(mail, appConfig?.registration?.allowedDomains)) {
+        logger.error(
+          `[LDAP Strategy] Registration blocked - email domain not allowed [Email: ${mail}]`,
+        );
+        return done(null, false, { message: 'Email domain not allowed for registration' });
+      }
+
       user = {
         provider: 'ldap',
         ldapId,
@@ -133,7 +143,6 @@ const ldapLogin = new LdapStrategy(ldapOptions, async (userinfo, done) => {
         name: fullName,
         role,
       };
-      const appConfig = await getAppConfig({ role: user?.role });
       const balanceConfig = getBalanceConfig(appConfig);
       const userId = await createUser(user, balanceConfig);
       user._id = userId;
