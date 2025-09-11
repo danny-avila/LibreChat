@@ -1,13 +1,7 @@
 /* eslint-disable react-hooks/rules-of-hooks */
-import { ArrowUpDown, Database } from 'lucide-react';
+import { Database } from 'lucide-react';
 import { FileSources, FileContext } from 'librechat-data-provider';
-import {
-  Button,
-  Checkbox,
-  OpenAIMinimalIcon,
-  AzureMinimalIcon,
-  useMediaQuery,
-} from '@librechat/client';
+import { Checkbox, OpenAIMinimalIcon, AzureMinimalIcon, useMediaQuery } from '@librechat/client';
 import type { ColumnDef } from '@tanstack/react-table';
 import type { TFile } from 'librechat-data-provider';
 import ImagePreview from '~/components/Chat/Input/Files/ImagePreview';
