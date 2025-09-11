@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - feat/MIA-85-librechat-build-pipeline-gh-action
   workflow_dispatch:
 
 permissions:
