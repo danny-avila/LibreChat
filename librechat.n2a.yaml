@@ -5,7 +5,7 @@ interface:
 endpoints:
   azureOpenAI:
     # Endpoint-level configuration
-    titleModel: "gpt-4o"
+    titleModel: "gpt-4o-mini"
     plugins: false
     assistants: false
     groups:
