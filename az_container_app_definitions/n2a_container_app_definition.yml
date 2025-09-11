@@ -143,6 +143,10 @@ properties:
             value: http://conpaichateastusn2a001:8000
           - name: RAG_USE_FULL_CONTEXT
             value: TRUE
+          - name: CONSOLE_JSON
+            value: TRUE
+          - name: DEBUG_LOGGING
+            value: TRUE
         resources:
           cpu: 1
           memory: 2Gi
