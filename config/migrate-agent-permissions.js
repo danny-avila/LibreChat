@@ -1,8 +1,8 @@
 const path = require('path');
 const { logger } = require('@librechat/data-schemas');
+const { ensureRequiredCollectionsExist } = require('@librechat/api');
 const { AccessRoleIds, ResourceType, PrincipalType } = require('librechat-data-provider');
 const { GLOBAL_PROJECT_NAME } = require('librechat-data-provider').Constants;
-const { ensureRequiredCollectionsExist } = require('@librechat/api');
 
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
 const connect = require('./connect');
