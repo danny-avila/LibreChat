@@ -15,6 +15,7 @@ const {
   getBalanceConfig,
 } = require('@librechat/api');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
+const { isEmailDomainAllowed } = require('~/server/services/domains');
 const { findUser, createUser, updateUser } = require('~/models');
 const { getAppConfig } = require('~/server/services/Config');
 const getLogStores = require('~/cache/getLogStores');
@@ -400,6 +401,13 @@ async function setupOpenId() {
 
           const appConfig = await getAppConfig();
           if (!user) {
+            if (!isEmailDomainAllowed(userinfo.email, appConfig?.registration?.allowedDomains)) {
+              logger.error(
+                `[OpenID Strategy] Registration blocked - email domain not allowed [Email: ${userinfo.email}]`,
+              );
+              return done(null, false, { message: 'Email domain not allowed for registration' });
+            }
+
             user = {
               provider: 'openid',
               openidId: userinfo.sub,
