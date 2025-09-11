@@ -1,5 +1,7 @@
 const crypto = require('crypto');
 const fetch = require('node-fetch');
+const { logger } = require('@librechat/data-schemas');
+const { getBalanceConfig } = require('@librechat/api');
 const {
   supportsBalanceCheck,
   isAgentsEndpoint,
@@ -15,7 +17,6 @@ const { checkBalance } = require('~/models/balanceMethods');
 const { truncateToolCallOutputs } = require('./prompts');
 const { getFiles } = require('~/models/File');
 const TextStream = require('./TextStream');
-const { logger } = require('~/config');
 
 class BaseClient {
   constructor(apiKey, options = {}) {
@@ -37,6 +38,8 @@ class BaseClient {
     this.conversationId;
     /** @type {string} */
     this.responseMessageId;
+    /** @type {string} */
+    this.parentMessageId;
     /** @type {TAttachment[]} */
     this.attachments;
     /** The key for the usage object's input tokens
@@ -110,13 +113,15 @@ class BaseClient {
    * If a correction to the token usage is needed, the method should return an object with the corrected token counts.
    * Should only be used if `recordCollectedUsage` was not used instead.
    * @param {string} [model]
+   * @param {AppConfig['balance']} [balance]
    * @param {number} promptTokens
    * @param {number} completionTokens
    * @returns {Promise<void>}
    */
-  async recordTokenUsage({ model, promptTokens, completionTokens }) {
+  async recordTokenUsage({ model, balance, promptTokens, completionTokens }) {
     logger.debug('[BaseClient] `recordTokenUsage` not implemented.', {
       model,
+      balance,
       promptTokens,
       completionTokens,
     });
@@ -185,7 +190,8 @@ class BaseClient {
     this.user = user;
     const saveOptions = this.getSaveOptions();
     this.abortController = opts.abortController ?? new AbortController();
-    const conversationId = overrideConvoId ?? opts.conversationId ?? crypto.randomUUID();
+    const requestConvoId = overrideConvoId ?? opts.conversationId;
+    const conversationId = requestConvoId ?? crypto.randomUUID();
     const parentMessageId = opts.parentMessageId ?? Constants.NO_PARENT;
     const userMessageId =
       overrideUserMessageId ?? opts.overrideParentMessageId ?? crypto.randomUUID();
@@ -210,11 +216,12 @@ class BaseClient {
       ...opts,
       user,
       head,
+      saveOptions,
+      userMessageId,
+      requestConvoId,
       conversationId,
       parentMessageId,
-      userMessageId,
       responseMessageId,
-      saveOptions,
     };
   }
 
@@ -233,11 +240,12 @@ class BaseClient {
     const {
       user,
       head,
+      saveOptions,
+      userMessageId,
+      requestConvoId,
       conversationId,
       parentMessageId,
-      userMessageId,
       responseMessageId,
-      saveOptions,
     } = await this.setMessageOptions(opts);
 
     const userMessage = opts.isEdited
@@ -259,7 +267,8 @@ class BaseClient {
     }
 
     if (typeof opts?.onStart === 'function') {
-      opts.onStart(userMessage, responseMessageId);
+      const isNewConvo = !requestConvoId && parentMessageId === Constants.NO_PARENT;
+      opts.onStart(userMessage, responseMessageId, isNewConvo);
     }
 
     return {
@@ -565,6 +574,7 @@ class BaseClient {
   }
 
   async sendMessage(message, opts = {}) {
+    const appConfig = this.options.req?.config;
     /** @type {Promise<TMessage>} */
     let userMessagePromise;
     const { user, head, isEdited, conversationId, responseMessageId, saveOptions, userMessage } =
@@ -614,15 +624,19 @@ class BaseClient {
       this.currentMessages.push(userMessage);
     }
 
+    /**
+     * When the userMessage is pushed to currentMessages, the parentMessage is the userMessageId.
+     * this only matters when buildMessages is utilizing the parentMessageId, and may vary on implementation
+     */
+    const parentMessageId = isEdited ? head : userMessage.messageId;
+    this.parentMessageId = parentMessageId;
     let {
       prompt: payload,
       tokenCountMap,
       promptTokens,
     } = await this.buildMessages(
       this.currentMessages,
-      // When the userMessage is pushed to currentMessages, the parentMessage is the userMessageId.
-      // this only matters when buildMessages is utilizing the parentMessageId, and may vary on implementation
-      isEdited ? head : userMessage.messageId,
+      parentMessageId,
       this.getBuildMessagesOptions(opts),
       opts,
     );
@@ -647,9 +661,9 @@ class BaseClient {
       }
     }
 
-    const balance = this.options.req?.app?.locals?.balance;
+    const balanceConfig = getBalanceConfig(appConfig);
     if (
-      balance?.enabled &&
+      balanceConfig?.enabled &&
       supportsBalanceCheck[this.options.endpointType ?? this.options.endpoint]
     ) {
       await checkBalance({
@@ -748,6 +762,7 @@ class BaseClient {
           usage,
           promptTokens,
           completionTokens,
+          balance: balanceConfig,
           model: responseMessage.model,
         });
       }

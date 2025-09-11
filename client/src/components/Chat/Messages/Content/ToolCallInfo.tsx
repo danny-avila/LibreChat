@@ -1,5 +1,8 @@
 import React from 'react';
 import { useLocalize } from '~/hooks';
+import { UIResourceRenderer } from '@mcp-ui/client';
+import UIResourceCarousel from './UIResourceCarousel';
+import type { UIResource } from '~/common';
 
 function OptimizedCodeBlock({ text, maxHeight = 320 }: { text: string; maxHeight?: number }) {
   return (
@@ -51,6 +54,26 @@ export default function ToolCallInfo({
         : localize('com_assistants_attempt_info');
   }
 
+  // Extract ui_resources from the output to display them in the UI
+  let uiResources: UIResource[] = [];
+  if (output?.includes('ui_resources')) {
+    try {
+      const parsedOutput = JSON.parse(output);
+      const uiResourcesItem = parsedOutput.find(
+        (contentItem) => contentItem.metadata?.type === 'ui_resources',
+      );
+      if (uiResourcesItem?.metadata?.data) {
+        uiResources = uiResourcesItem.metadata.data;
+        output = JSON.stringify(
+          parsedOutput.filter((contentItem) => contentItem.metadata?.type !== 'ui_resources'),
+        );
+      }
+    } catch (error) {
+      // If JSON parsing fails, keep original output
+      console.error('Failed to parse output:', error);
+    }
+  }
+
   return (
     <div className="w-full p-2">
       <div style={{ opacity: 1 }}>
@@ -65,6 +88,26 @@ export default function ToolCallInfo({
             </div>
             <div>
               <OptimizedCodeBlock text={formatText(output)} maxHeight={250} />
+            </div>
+            {uiResources.length > 0 && (
+              <div className="my-2 text-sm font-medium text-text-primary">
+                {localize('com_ui_ui_resources')}
+              </div>
+            )}
+            <div>
+              {uiResources.length > 1 && <UIResourceCarousel uiResources={uiResources} />}
+
+              {uiResources.length === 1 && (
+                <UIResourceRenderer
+                  resource={uiResources[0]}
+                  onUIAction={async (result) => {
+                    console.log('Action:', result);
+                  }}
+                  htmlProps={{
+                    autoResizeIframe: { width: true, height: true },
+                  }}
+                />
+              )}
             </div>
           </>
         )}

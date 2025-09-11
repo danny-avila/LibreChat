@@ -1,75 +1,108 @@
-import { useRecoilState, useRecoilValue } from 'recoil';
-import { useMemo, useRef, useEffect, useCallback } from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import { useRecoilState } from 'recoil';
 import { usePromptGroupsInfiniteQuery } from '~/data-provider';
-import debounce from 'lodash/debounce';
 import store from '~/store';
-import { useQueryClient } from '@tanstack/react-query';
-import { QueryKeys } from 'librechat-data-provider';
 
 export default function usePromptGroupsNav() {
-  const queryClient = useQueryClient();
-  const category = useRecoilValue(store.promptsCategory);
+  const [pageSize] = useRecoilState(store.promptsPageSize);
+  const [category] = useRecoilState(store.promptsCategory);
   const [name, setName] = useRecoilState(store.promptsName);
-  const [pageSize, setPageSize] = useRecoilState(store.promptsPageSize);
-  const [pageNumber, setPageNumber] = useRecoilState(store.promptsPageNumber);
 
-  const maxPageNumberReached = useRef(1);
+  // Track current page index and cursor history
+  const [currentPageIndex, setCurrentPageIndex] = useState(0);
+  const cursorHistoryRef = useRef<Array<string | null>>([null]); // Start with null for first page
 
-  useEffect(() => {
-    if (pageNumber > 1 && pageNumber > maxPageNumberReached.current) {
-      maxPageNumberReached.current = pageNumber;
-    }
-  }, [pageNumber]);
+  const prevFiltersRef = useRef({ name, category });
 
   const groupsQuery = usePromptGroupsInfiniteQuery({
     name,
     pageSize,
     category,
-    pageNumber: pageNumber + '',
   });
 
-  useEffect(() => {
-    maxPageNumberReached.current = 1;
-    setPageNumber(1);
-    queryClient.resetQueries([QueryKeys.promptGroups, name, category, pageSize]);
-  }, [pageSize, name, category, setPageNumber]);
+  // Get the current page data
+  const currentPageData = useMemo(() => {
+    if (!groupsQuery.data?.pages || groupsQuery.data.pages.length === 0) {
+      return null;
+    }
+    // Ensure we don't go out of bounds
+    const pageIndex = Math.min(currentPageIndex, groupsQuery.data.pages.length - 1);
+    return groupsQuery.data.pages[pageIndex];
+  }, [groupsQuery.data?.pages, currentPageIndex]);
 
+  // Get prompt groups for current page
   const promptGroups = useMemo(() => {
-    return groupsQuery.data?.pages[pageNumber - 1 + '']?.promptGroups || [];
-  }, [groupsQuery.data, pageNumber]);
+    return currentPageData?.promptGroups || [];
+  }, [currentPageData]);
 
-  const nextPage = () => {
-    setPageNumber((prev) => prev + 1);
-    groupsQuery.hasNextPage && groupsQuery.fetchNextPage();
-  };
+  // Calculate pagination state
+  const hasNextPage = useMemo(() => {
+    if (!currentPageData) return false;
 
-  const prevPage = () => {
-    setPageNumber((prev) => prev - 1);
-    groupsQuery.hasPreviousPage && groupsQuery.fetchPreviousPage();
-  };
+    // If we're not on the last loaded page, we have a next page
+    if (currentPageIndex < (groupsQuery.data?.pages?.length || 0) - 1) {
+      return true;
+    }
 
-  const isFetching = groupsQuery.isFetchingNextPage;
-  const hasNextPage = !!groupsQuery.hasNextPage || maxPageNumberReached.current > pageNumber;
-  const hasPreviousPage = !!groupsQuery.hasPreviousPage || pageNumber > 1;
+    // If we're on the last loaded page, check if there are more from backend
+    return currentPageData.has_more || false;
+  }, [currentPageData, currentPageIndex, groupsQuery.data?.pages?.length]);
 
-  const debouncedSetName = useCallback(
-    debounce((nextValue: string) => {
-      setName(nextValue);
-    }, 850),
-    [setName],
-  );
+  const hasPreviousPage = currentPageIndex > 0;
+  const currentPage = currentPageIndex + 1;
+  const totalPages = hasNextPage ? currentPage + 1 : currentPage;
+
+  // Navigate to next page
+  const nextPage = useCallback(async () => {
+    if (!hasNextPage) return;
+
+    const nextPageIndex = currentPageIndex + 1;
+
+    // Check if we need to load more data
+    if (nextPageIndex >= (groupsQuery.data?.pages?.length || 0)) {
+      // We need to fetch the next page
+      const result = await groupsQuery.fetchNextPage();
+      if (result.isSuccess && result.data?.pages) {
+        // Update cursor history with the cursor for the next page
+        const lastPage = result.data.pages[result.data.pages.length - 2]; // Get the page before the newly fetched one
+        if (lastPage?.after && !cursorHistoryRef.current.includes(lastPage.after)) {
+          cursorHistoryRef.current.push(lastPage.after);
+        }
+      }
+    }
+
+    setCurrentPageIndex(nextPageIndex);
+  }, [currentPageIndex, hasNextPage, groupsQuery]);
+
+  // Navigate to previous page
+  const prevPage = useCallback(() => {
+    if (!hasPreviousPage) return;
+    setCurrentPageIndex(currentPageIndex - 1);
+  }, [currentPageIndex, hasPreviousPage]);
+
+  // Reset when filters change
+  useEffect(() => {
+    const filtersChanged =
+      prevFiltersRef.current.name !== name || prevFiltersRef.current.category !== category;
+
+    if (filtersChanged) {
+      setCurrentPageIndex(0);
+      cursorHistoryRef.current = [null];
+      prevFiltersRef.current = { name, category };
+    }
+  }, [name, category]);
 
   return {
-    name,
-    setName: debouncedSetName,
+    promptGroups,
+    groupsQuery,
+    currentPage,
+    totalPages,
+    hasNextPage,
+    hasPreviousPage,
     nextPage,
     prevPage,
-    isFetching,
-    pageSize,
-    setPageSize,
-    hasNextPage,
-    groupsQuery,
-    promptGroups,
-    hasPreviousPage,
+    isFetching: groupsQuery.isFetching,
+    name,
+    setName,
   };
 }

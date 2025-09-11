@@ -1,24 +1,15 @@
-import { useEffect, useState, type FC } from 'react';
+import { type FC } from 'react';
 import { CrossCircledIcon } from '@radix-ui/react-icons';
-import type { TConversation } from 'librechat-data-provider';
 import { useBookmarkContext } from '~/Providers/BookmarkContext';
 import { BookmarkItems, BookmarkItem } from '~/components/Bookmarks';
 import { useLocalize } from '~/hooks';
 
 const BookmarkNavItems: FC<{
-  conversation: TConversation;
   tags: string[];
   setTags: (tags: string[]) => void;
-}> = ({ conversation, tags = [], setTags }) => {
-  const [currentConversation, setCurrentConversation] = useState<TConversation>();
+}> = ({ tags = [], setTags }) => {
   const { bookmarks } = useBookmarkContext();
   const localize = useLocalize();
-
-  useEffect(() => {
-    if (!currentConversation) {
-      setCurrentConversation(conversation);
-    }
-  }, [conversation, currentConversation]);
 
   const getUpdatedSelected = (tag: string) => {
     if (tags.some((selectedTag) => selectedTag === tag)) {

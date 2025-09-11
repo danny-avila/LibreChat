@@ -7,7 +7,9 @@ import {
   Tools,
   Constants,
   SystemRoles,
+  ResourceType,
   EModelEndpoint,
+  PermissionBits,
   isAssistantsEndpoint,
 } from 'librechat-data-provider';
 import type { AgentForm, StringOption } from '~/common';
@@ -15,8 +17,10 @@ import {
   useCreateAgentMutation,
   useUpdateAgentMutation,
   useGetAgentByIdQuery,
+  useGetExpandedAgentByIdQuery,
 } from '~/data-provider';
 import { createProviderOption, getDefaultAgentFormValues } from '~/utils';
+import { useResourcePermissions } from '~/hooks/useResourcePermissions';
 import { useSelectAgent, useLocalize, useAuthContext } from '~/hooks';
 import { useAgentPanelContext } from '~/Providers/AgentPanelContext';
 import AgentPanelSkeleton from './AgentPanelSkeleton';
@@ -43,13 +47,29 @@ export default function AgentPanel() {
   const { onSelect: onSelectAgent } = useSelectAgent();
 
   const modelsQuery = useGetModelsQuery();
-  const agentQuery = useGetAgentByIdQuery(current_agent_id ?? '', {
-    enabled: !!(current_agent_id ?? '') && current_agent_id !== Constants.EPHEMERAL_AGENT_ID,
+  const basicAgentQuery = useGetAgentByIdQuery(current_agent_id);
+
+  const { hasPermission, isLoading: permissionsLoading } = useResourcePermissions(
+    ResourceType.AGENT,
+    basicAgentQuery.data?._id || '',
+  );
+
+  const canEdit = hasPermission(PermissionBits.EDIT);
+
+  const expandedAgentQuery = useGetExpandedAgentByIdQuery(current_agent_id ?? '', {
+    enabled:
+      !!(current_agent_id ?? '') &&
+      current_agent_id !== Constants.EPHEMERAL_AGENT_ID &&
+      canEdit &&
+      !permissionsLoading,
   });
+
+  const agentQuery = canEdit && expandedAgentQuery.data ? expandedAgentQuery : basicAgentQuery;
 
   const models = useMemo(() => modelsQuery.data ?? {}, [modelsQuery.data]);
   const methods = useForm<AgentForm>({
     defaultValues: getDefaultAgentFormValues(),
+    mode: 'onChange',
   });
 
   const { control, handleSubmit, reset } = methods;
@@ -156,6 +176,8 @@ export default function AgentPanel() {
         end_after_tools,
         hide_sequential_outputs,
         recursion_limit,
+        category,
+        support_contact,
       } = data;
 
       const model = _model ?? '';
@@ -178,6 +200,8 @@ export default function AgentPanel() {
             end_after_tools,
             hide_sequential_outputs,
             recursion_limit,
+            category,
+            support_contact,
           },
         });
         return;
@@ -186,6 +210,12 @@ export default function AgentPanel() {
       if (!provider || !model) {
         return showToast({
           message: localize('com_agents_missing_provider_model'),
+          status: 'error',
+        });
+      }
+      if (!name) {
+        return showToast({
+          message: localize('com_agents_missing_name'),
           status: 'error',
         });
       }
@@ -203,6 +233,8 @@ export default function AgentPanel() {
         end_after_tools,
         hide_sequential_outputs,
         recursion_limit,
+        category,
+        support_contact,
       });
     },
     [agent_id, create, update, showToast, localize],
@@ -215,19 +247,16 @@ export default function AgentPanel() {
   }, [agent_id, onSelectAgent]);
 
   const canEditAgent = useMemo(() => {
-    const canEdit =
-      (agentQuery.data?.isCollaborative ?? false)
-        ? true
-        : agentQuery.data?.author === user?.id || user?.role === SystemRoles.ADMIN;
+    if (!agentQuery.data?.id) {
+      return true;
+    }
 
-    return agentQuery.data?.id != null && agentQuery.data.id ? canEdit : true;
-  }, [
-    agentQuery.data?.isCollaborative,
-    agentQuery.data?.author,
-    agentQuery.data?.id,
-    user?.id,
-    user?.role,
-  ]);
+    if (user?.role === SystemRoles.ADMIN) {
+      return true;
+    }
+
+    return canEdit;
+  }, [agentQuery.data?.id, user?.role, canEdit]);
 
   return (
     <FormProvider {...methods}>
@@ -236,7 +265,7 @@ export default function AgentPanel() {
         className="scrollbar-gutter-stable h-auto w-full flex-shrink-0 overflow-x-hidden"
         aria-label="Agent configuration form"
       >
-        <div className="mt-2 flex w-full flex-wrap gap-2">
+        <div className="mx-1 mt-2 flex w-full flex-wrap gap-2">
           <div className="w-full">
             <AgentSelect
               createMutation={create}

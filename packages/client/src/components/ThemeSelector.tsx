@@ -1,6 +1,6 @@
 import { useContext, useCallback, useEffect, useState } from 'react';
 import { Sun, Moon, Monitor } from 'lucide-react';
-import { ThemeContext } from '../theme';
+import { ThemeContext, isDark } from '../theme';
 
 declare global {
   interface Window {
@@ -17,7 +17,7 @@ const Theme = ({ theme, onChange }: { theme: string; onChange: (value: string) =
     light: <Sun />,
   };
 
-  const nextTheme = theme === 'dark' ? 'light' : 'dark';
+  const nextTheme = isDark(theme) ? 'light' : 'dark';
   const label = `Switch to ${nextTheme} theme`;
 
   useEffect(() => {
@@ -65,7 +65,7 @@ const ThemeSelector = ({ returnThemeOnly }: { returnThemeOnly?: boolean }) => {
       window.lastThemeChange = now;
 
       setTheme(value);
-      setAnnouncement(value === 'dark' ? 'Dark theme enabled' : 'Light theme enabled');
+      setAnnouncement(isDark(value) ? 'Dark theme enabled' : 'Light theme enabled');
     },
     [setTheme],
   );

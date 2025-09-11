@@ -1,5 +1,5 @@
 export type JsonSchemaType = {
-  type: 'string' | 'number' | 'boolean' | 'array' | 'object';
+  type: 'string' | 'number' | 'integer' | 'float' | 'boolean' | 'array' | 'object';
   enum?: string[];
   items?: JsonSchemaType;
   properties?: Record<string, JsonSchemaType>;

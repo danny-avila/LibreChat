@@ -182,7 +182,7 @@ export default function useEventHandlers({
   const { token } = useAuthContext();
 
   const contentHandler = useContentHandler({ setMessages, getMessages });
-  const stepHandler = useStepHandler({
+  const { stepHandler, clearStepMaps } = useStepHandler({
     setMessages,
     getMessages,
     announcePolite,
@@ -444,6 +444,21 @@ export default function useEventHandlers({
         isTemporary = false,
       } = submission;
 
+      if (responseMessage?.attachments && responseMessage.attachments.length > 0) {
+        // Process each attachment through the attachmentHandler
+        responseMessage.attachments.forEach((attachment) => {
+          const attachmentData = {
+            ...attachment,
+            messageId: responseMessage.messageId,
+          };
+
+          attachmentHandler({
+            data: attachmentData,
+            submission: submission as EventSubmission,
+          });
+        });
+      }
+
       setShowStopButton(false);
       setCompleted((prev) => new Set(prev.add(submission.initialResponse.messageId)));
 
@@ -465,12 +480,13 @@ export default function useEventHandlers({
         queryClient.setQueryData<TMessage[]>([QueryKeys.messages, id], _messages);
       };
 
-      /** Handle edge case where stream is cancelled before any response, which creates a blank page */
-      if (
-        !conversation.conversationId &&
+      const hasNoResponse =
         responseMessage?.content?.[0]?.['text']?.value ===
-          submission.initialResponse?.content?.[0]?.['text']?.value
-      ) {
+          submission.initialResponse?.content?.[0]?.['text']?.value ||
+        !!responseMessage?.content?.[0]?.['tool_call']?.auth;
+
+      /** Handle edge case where stream is cancelled before any response, which creates a blank page */
+      if (!conversation.conversationId && hasNoResponse) {
         const currentConvoId =
           (submissionConvo.conversationId ?? conversation.conversationId) || Constants.NEW_CONVO;
         if (isNewConvo && submissionConvo.conversationId) {
@@ -576,6 +592,7 @@ export default function useEventHandlers({
       setShowStopButton,
       location.pathname,
       applyAgentTemplate,
+      attachmentHandler,
     ],
   );
 
@@ -790,6 +807,7 @@ export default function useEventHandlers({
   );
 
   return {
+    clearStepMaps,
     stepHandler,
     syncHandler,
     finalHandler,

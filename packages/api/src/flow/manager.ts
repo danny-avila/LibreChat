@@ -241,4 +241,19 @@ export class FlowStateManager<T = unknown> {
       throw error;
     }
   }
+
+  /**
+   * Deletes a flow state
+   */
+  async deleteFlow(flowId: string, type: string): Promise<boolean> {
+    const flowKey = this.getFlowKey(flowId, type);
+    try {
+      await this.keyv.delete(flowKey);
+      logger.debug(`[${flowKey}] Flow deleted`);
+      return true;
+    } catch (error) {
+      logger.error(`[${flowKey}] Error deleting flow:`, error);
+      return false;
+    }
+  }
 }

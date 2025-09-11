@@ -1,3 +1,6 @@
+import { Providers } from '@librechat/agents';
+import { AuthType } from 'librechat-data-provider';
+
 /**
  * Checks if the given value is truthy by being either the boolean `true` or a string
  * that case-insensitively matches 'true'.
@@ -31,7 +34,7 @@ export function isEnabled(value?: string | boolean | null | undefined): boolean 
  * @param value - The value to check.
  * @returns - Returns true if the value is 'user_provided', otherwise false.
  */
-export const isUserProvided = (value?: string): boolean => value === 'user_provided';
+export const isUserProvided = (value?: string): boolean => value === AuthType.USER_PROVIDED;
 
 /**
  * @param values
@@ -45,4 +48,12 @@ export function optionalChainWithEmptyCheck(
     }
   }
   return values[values.length - 1];
+}
+
+/**
+ * Normalize the endpoint name to system-expected value.
+ * @param name
+ */
+export function normalizeEndpointName(name = ''): string {
+  return name.toLowerCase() === Providers.OLLAMA ? Providers.OLLAMA : name;
 }

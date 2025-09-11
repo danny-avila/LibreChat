@@ -3,7 +3,7 @@ const bcrypt = require('bcryptjs');
 /**
  * Compares the provided password with the user's password.
  *
- * @param {MongoUser} user - The user to compare the password for.
+ * @param {IUser} user - The user to compare the password for.
  * @param {string} candidatePassword - The password to test against the user's password.
  * @returns {Promise<boolean>} A promise that resolves to a boolean indicating if the password matches.
  */

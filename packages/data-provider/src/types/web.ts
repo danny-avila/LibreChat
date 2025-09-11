@@ -34,7 +34,7 @@ export type ValidSource = ProcessedOrganic | ProcessedTopStory;
 
 export type ResultReference = {
   link: string;
-  type: 'link' | 'image' | 'video';
+  type: 'link' | 'image' | 'video' | 'file';
   title?: string;
   attribution?: string;
 };
@@ -178,6 +178,7 @@ export interface SearchToolConfig extends SearchConfig, ProcessSourcesConfig, Fi
   logger?: Logger;
   safeSearch?: SafeSearchLevel;
   jinaApiKey?: string;
+  jinaApiUrl?: string;
   cohereApiKey?: string;
   rerankerType?: RerankerType;
   onSearchResults?: (results: SearchResult, runnableConfig?: RunnableConfig) => void;

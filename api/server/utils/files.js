@@ -44,4 +44,24 @@ const getBufferMetadata = async (buffer) => {
   };
 };
 
-module.exports = { determineFileType, getBufferMetadata };
+/**
+ * Removes UUID prefix from filename for clean display
+ * Pattern: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx__filename.ext
+ * @param {string} fileName - The filename to clean
+ * @returns {string} - The cleaned filename without UUID prefix
+ */
+const cleanFileName = (fileName) => {
+  if (!fileName) {
+    return fileName;
+  }
+
+  // Remove UUID pattern: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx__
+  const cleaned = fileName.replace(
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}__/i,
+    '',
+  );
+
+  return cleaned;
+};
+
+module.exports = { determineFileType, getBufferMetadata, cleanFileName };

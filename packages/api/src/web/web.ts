@@ -21,6 +21,7 @@ export function loadWebSearchConfig(
   const firecrawlApiKey = config?.firecrawlApiKey ?? '${FIRECRAWL_API_KEY}';
   const firecrawlApiUrl = config?.firecrawlApiUrl ?? '${FIRECRAWL_API_URL}';
   const jinaApiKey = config?.jinaApiKey ?? '${JINA_API_KEY}';
+  const jinaApiUrl = config?.jinaApiUrl ?? '${JINA_API_URL}';
   const cohereApiKey = config?.cohereApiKey ?? '${COHERE_API_KEY}';
   const safeSearch = config?.safeSearch ?? SafeSearchTypes.MODERATE;
 
@@ -28,6 +29,7 @@ export function loadWebSearchConfig(
     ...config,
     safeSearch,
     jinaApiKey,
+    jinaApiUrl,
     cohereApiKey,
     serperApiKey,
     searxngInstanceUrl,
@@ -44,6 +46,7 @@ export type TWebSearchKeys =
   | 'firecrawlApiKey'
   | 'firecrawlApiUrl'
   | 'jinaApiKey'
+  | 'jinaApiUrl'
   | 'cohereApiKey';
 
 export type TWebSearchCategories =
@@ -70,7 +73,11 @@ export const webSearchAuth = {
     },
   },
   rerankers: {
-    jina: { jinaApiKey: 1 as const },
+    jina: {
+      jinaApiKey: 1 as const,
+      /** Optional (0) */
+      jinaApiUrl: 0 as const,
+    },
     cohere: { cohereApiKey: 1 as const },
   },
 };

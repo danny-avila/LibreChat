@@ -270,8 +270,12 @@ const getStrategyFunctions = (fileSource) => {
     return azureMistralOCRStrategy();
   } else if (fileSource === FileSources.vertexai_mistral_ocr) {
     return vertexMistralOCRStrategy();
+  } else if (fileSource === FileSources.text) {
+    return localStrategy(); // Text files use local strategy
   } else {
-    throw new Error('Invalid file source');
+    throw new Error(
+      `Invalid file source: ${fileSource}. Available sources: ${Object.values(FileSources).join(', ')}`,
+    );
   }
 };
 

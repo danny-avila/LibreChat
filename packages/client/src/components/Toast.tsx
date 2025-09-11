@@ -1,5 +1,5 @@
 import * as RadixToast from '@radix-ui/react-toast';
-import { NotificationSeverity } from '~/common/types';
+import { NotificationSeverity } from '~/common';
 import { useToast } from '~/hooks';
 
 export function Toast() {

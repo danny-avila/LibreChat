@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import type { ModelSelectorProps } from '~/common';
 import { ModelSelectorProvider, useModelSelectorContext } from './ModelSelectorContext';
+import { ModelSelectorChatProvider } from './ModelSelectorChatContext';
 import { renderModelSpecs, renderEndpoints, renderSearchResults } from './components';
 import { getSelectedIcon, getDisplayValue } from './utils';
 import { CustomMenu as Menu } from './CustomMenu';
@@ -12,6 +13,7 @@ function ModelSelectorContent() {
 
   const {
     // LibreChat
+    agentsMap,
     modelSpecs,
     mappedEndpoints,
     endpointsConfig,
@@ -43,11 +45,12 @@ function ModelSelectorContent() {
     () =>
       getDisplayValue({
         localize,
+        agentsMap,
         modelSpecs,
         selectedValues,
         mappedEndpoints,
       }),
-    [localize, modelSpecs, selectedValues, mappedEndpoints],
+    [localize, agentsMap, modelSpecs, selectedValues, mappedEndpoints],
   );
 
   const trigger = (
@@ -100,8 +103,10 @@ function ModelSelectorContent() {
 
 export default function ModelSelector({ startupConfig }: ModelSelectorProps) {
   return (
-    <ModelSelectorProvider startupConfig={startupConfig}>
-      <ModelSelectorContent />
-    </ModelSelectorProvider>
+    <ModelSelectorChatProvider>
+      <ModelSelectorProvider startupConfig={startupConfig}>
+        <ModelSelectorContent />
+      </ModelSelectorProvider>
+    </ModelSelectorChatProvider>
   );
 }

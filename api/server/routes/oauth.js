@@ -1,18 +1,20 @@
 // file deepcode ignore NoRateLimitingForLogin: Rate limiting is handled by the `loginLimiter` middleware
 const express = require('express');
 const passport = require('passport');
-const { isEnabled } = require('@librechat/api');
 const { randomState } = require('openid-client');
 const { logger } = require('@librechat/data-schemas');
 const { ErrorTypes } = require('librechat-data-provider');
-const {
-  checkBan,
-  logHeaders,
-  loginLimiter,
-  setBalanceConfig,
-  checkDomainAllowed,
-} = require('~/server/middleware');
+const { isEnabled, createSetBalanceConfig } = require('@librechat/api');
+const { checkDomainAllowed, loginLimiter, logHeaders, checkBan } = require('~/server/middleware');
+const { syncUserEntraGroupMemberships } = require('~/server/services/PermissionService');
 const { setAuthTokens, setOpenIDAuthTokens } = require('~/server/services/AuthService');
+const { getAppConfig } = require('~/server/services/Config');
+const { Balance } = require('~/db/models');
+
+const setBalanceConfig = createSetBalanceConfig({
+  getAppConfig,
+  Balance,
+});
 
 const router = express.Router();
 
@@ -24,9 +26,12 @@ const domains = {
 router.use(logHeaders);
 router.use(loginLimiter);
 
-const oauthHandler = async (req, res) => {
+const oauthHandler = async (req, res, next) => {
   try {
-    await checkDomainAllowed(req, res);
+    if (res.headersSent) {
+      return;
+    }
+
     await checkBan(req, res);
     if (req.banned) {
       return;
@@ -36,13 +41,15 @@ const oauthHandler = async (req, res) => {
       req.user.provider == 'openid' &&
       isEnabled(process.env.OPENID_REUSE_TOKENS) === true
     ) {
-      setOpenIDAuthTokens(req.user.tokenset, res);
+      await syncUserEntraGroupMemberships(req.user, req.user.tokenset.access_token);
+      setOpenIDAuthTokens(req.user.tokenset, res, req.user._id.toString());
     } else {
       await setAuthTokens(req.user._id, res);
     }
     res.redirect(domains.client);
   } catch (err) {
     logger.error('Error in setting authentication tokens:', err);
+    next(err);
   }
 };
 
@@ -76,6 +83,7 @@ router.get(
     scope: ['openid', 'profile', 'email'],
   }),
   setBalanceConfig,
+  checkDomainAllowed,
   oauthHandler,
 );
 
@@ -101,6 +109,7 @@ router.get(
     profileFields: ['id', 'email', 'name'],
   }),
   setBalanceConfig,
+  checkDomainAllowed,
   oauthHandler,
 );
 
@@ -122,6 +131,7 @@ router.get(
     session: false,
   }),
   setBalanceConfig,
+  checkDomainAllowed,
   oauthHandler,
 );
 
@@ -145,6 +155,7 @@ router.get(
     scope: ['user:email', 'read:user'],
   }),
   setBalanceConfig,
+  checkDomainAllowed,
   oauthHandler,
 );
 
@@ -168,6 +179,7 @@ router.get(
     scope: ['identify', 'email'],
   }),
   setBalanceConfig,
+  checkDomainAllowed,
   oauthHandler,
 );
 
@@ -189,6 +201,7 @@ router.post(
     session: false,
   }),
   setBalanceConfig,
+  checkDomainAllowed,
   oauthHandler,
 );
 

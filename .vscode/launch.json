@@ -8,7 +8,8 @@
       "skipFiles": ["<node_internals>/**"],
       "program": "${workspaceFolder}/api/server/index.js",
       "env": {
-        "NODE_ENV": "production"
+        "NODE_ENV": "production",
+        "NODE_TLS_REJECT_UNAUTHORIZED": "0"
       },
       "console": "integratedTerminal",
       "envFile": "${workspaceFolder}/.env"

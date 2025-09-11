@@ -643,4 +643,68 @@ export class MCPOAuthHandler {
       throw error;
     }
   }
+
+  /**
+   * Revokes OAuth tokens at the authorization server (RFC 7009)
+   */
+  public static async revokeOAuthToken(
+    serverName: string,
+    token: string,
+    tokenType: 'refresh' | 'access',
+    metadata: {
+      serverUrl: string;
+      clientId: string;
+      clientSecret: string;
+      revocationEndpoint?: string;
+      revocationEndpointAuthMethodsSupported?: string[];
+    },
+  ): Promise<void> {
+    // build the revoke URL, falling back to the server URL + /revoke if no revocation endpoint is provided
+    const revokeUrl: URL =
+      metadata.revocationEndpoint != null
+        ? new URL(metadata.revocationEndpoint)
+        : new URL('/revoke', metadata.serverUrl);
+
+    // detect auth method to use
+    const authMethods = metadata.revocationEndpointAuthMethodsSupported ?? [
+      'client_secret_basic', // RFC 8414 (https://datatracker.ietf.org/doc/html/rfc8414)
+    ];
+    const usesBasicAuth = authMethods.includes('client_secret_basic');
+    const usesClientSecretPost = authMethods.includes('client_secret_post');
+
+    // init the request headers
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/x-www-form-urlencoded',
+    };
+
+    // init the request body
+    const body = new URLSearchParams({ token });
+    body.set('token_type_hint', tokenType === 'refresh' ? 'refresh_token' : 'access_token');
+
+    // process auth method
+    if (usesBasicAuth) {
+      // encode the client id and secret and add to the headers
+      const credentials = Buffer.from(`${metadata.clientId}:${metadata.clientSecret}`).toString(
+        'base64',
+      );
+      headers['Authorization'] = `Basic ${credentials}`;
+    } else if (usesClientSecretPost) {
+      // add the client id and secret to the body
+      body.set('client_secret', metadata.clientSecret);
+      body.set('client_id', metadata.clientId);
+    }
+
+    // perform the revoke request
+    logger.info(`[MCPOAuth] Revoking tokens for ${serverName} via ${revokeUrl.toString()}`);
+    const response = await fetch(revokeUrl, {
+      method: 'POST',
+      body: body.toString(),
+      headers,
+    });
+
+    if (!response.ok) {
+      logger.error(`[MCPOAuth] Token revocation failed for ${serverName}: HTTP ${response.status}`);
+      throw new Error(`Token revocation failed: HTTP ${response.status}`);
+    }
+  }
 }

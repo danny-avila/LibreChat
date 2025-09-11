@@ -16,14 +16,7 @@ export default function VersionPanel() {
 
   const selectedAgentId = agent_id ?? '';
 
-  const {
-    data: agent,
-    isLoading,
-    error,
-    refetch,
-  } = useGetAgentByIdQuery(selectedAgentId, {
-    enabled: !!selectedAgentId && selectedAgentId !== '',
-  });
+  const { data: agent, isLoading, error, refetch } = useGetAgentByIdQuery(selectedAgentId);
 
   const revertAgentVersion = useRevertAgentVersionMutation({
     onSuccess: () => {

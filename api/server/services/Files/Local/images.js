@@ -13,8 +13,7 @@ const { updateUser, updateFile } = require('~/models');
  *
  * The original image is deleted after conversion.
  * @param {Object} params - The params object.
- * @param {Object} params.req - The request object from Express. It should have a `user` property with an `id`
- *                       representing the user, and an `app.locals.paths` object with an `imageOutput` path.
+ * @param {Object} params.req - The request object from Express. It should have a `user` property with an `id` representing the user
  * @param {Express.Multer.File} params.file - The file object, which is part of the request. The file object should
  *                                     have a `path` property that points to the location of the uploaded file.
  * @param {string} params.file_id - The file ID.
@@ -29,6 +28,7 @@ const { updateUser, updateFile } = require('~/models');
  *            - height: The height of the converted image.
  */
 async function uploadLocalImage({ req, file, file_id, endpoint, resolution = 'high' }) {
+  const appConfig = req.config;
   const inputFilePath = file.path;
   const inputBuffer = await fs.promises.readFile(inputFilePath);
   const {
@@ -38,7 +38,7 @@ async function uploadLocalImage({ req, file, file_id, endpoint, resolution = 'hi
   } = await resizeImageBuffer(inputBuffer, resolution, endpoint);
   const extension = path.extname(inputFilePath);
 
-  const { imageOutput } = req.app.locals.paths;
+  const { imageOutput } = appConfig.paths;
   const userPath = path.join(imageOutput, req.user.id);
 
   if (!fs.existsSync(userPath)) {
@@ -47,7 +47,7 @@ async function uploadLocalImage({ req, file, file_id, endpoint, resolution = 'hi
 
   const fileName = `${file_id}__${path.basename(inputFilePath)}`;
   const newPath = path.join(userPath, fileName);
-  const targetExtension = `.${req.app.locals.imageOutputType}`;
+  const targetExtension = `.${appConfig.imageOutputType}`;
 
   if (extension.toLowerCase() === targetExtension) {
     const bytes = Buffer.byteLength(resizedBuffer);
@@ -57,7 +57,7 @@ async function uploadLocalImage({ req, file, file_id, endpoint, resolution = 'hi
   }
 
   const outputFilePath = newPath.replace(extension, targetExtension);
-  const data = await sharp(resizedBuffer).toFormat(req.app.locals.imageOutputType).toBuffer();
+  const data = await sharp(resizedBuffer).toFormat(appConfig.imageOutputType).toBuffer();
   await fs.promises.writeFile(outputFilePath, data);
   const bytes = Buffer.byteLength(data);
   const filepath = path.posix.join('/', 'images', req.user.id, path.basename(outputFilePath));
@@ -90,7 +90,8 @@ function encodeImage(imagePath) {
  * @returns {Promise<[MongoFile, string]>} - A promise that resolves to an array of results from updateFile and encodeImage.
  */
 async function prepareImagesLocal(req, file) {
-  const { publicPath, imageOutput } = req.app.locals.paths;
+  const appConfig = req.config;
+  const { publicPath, imageOutput } = appConfig.paths;
   const userPath = path.join(imageOutput, req.user.id);
 
   if (!fs.existsSync(userPath)) {

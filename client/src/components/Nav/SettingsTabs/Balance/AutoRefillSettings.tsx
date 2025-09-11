@@ -1,6 +1,5 @@
 import React from 'react';
-import { Label } from '@librechat/client';
-import HoverCardSettings from '~/components/Nav/SettingsTabs/HoverCardSettings';
+import { Label, InfoHoverCard, ESide } from '@librechat/client';
 import { TranslationKeys, useLocalize } from '~/hooks';
 
 interface AutoRefillSettingsProps {
@@ -48,6 +47,56 @@ const addIntervalToDate = (
   return result;
 };
 
+/**
+ * Calculates the next future refill date.
+ * This function determines how many intervals have passed since the base date
+ * and advances to the next eligible date. It correctly handles both fixed-duration
+ * intervals (e.g., days, weeks) and variable-duration intervals (e.g., months).
+ *
+ * @param {Date} baseDate - The starting date for the calculation (e.g., the last refill date).
+ * @param {number} value - The numeric value of the interval (e.g., 7 for 7 days).
+ * @param {'seconds'|'minutes'|'hours'|'days'|'weeks'|'months'} unit - The unit of time for the interval.
+ * @returns {Date} The next calculated future refill date.
+ */
+function getNextFutureInterval(
+  baseDate: Date,
+  value: number,
+  unit: 'seconds' | 'minutes' | 'hours' | 'days' | 'weeks' | 'months',
+): Date {
+  const now = new Date();
+
+  if (baseDate > now) {
+    return addIntervalToDate(baseDate, value, unit);
+  }
+
+  if (unit === 'months') {
+    let nextRefillDate = new Date(baseDate);
+    while (nextRefillDate <= now) {
+      nextRefillDate = addIntervalToDate(nextRefillDate, value, unit);
+    }
+    return nextRefillDate;
+  }
+
+  const intervalInMs = {
+    seconds: value * 1000,
+    minutes: value * 1000 * 60,
+    hours: value * 1000 * 60 * 60,
+    days: value * 1000 * 60 * 60 * 24,
+    weeks: value * 1000 * 60 * 60 * 24 * 7,
+  }[unit];
+
+  if (intervalInMs <= 0) {
+    return addIntervalToDate(baseDate, value, unit);
+  }
+
+  const timeSinceBase = now.getTime() - baseDate.getTime();
+  const intervalsPassed = Math.floor(timeSinceBase / intervalInMs);
+  const intervalsToNext = intervalsPassed + 1;
+  const nextRefillTime = baseDate.getTime() + intervalsToNext * intervalInMs;
+
+  return new Date(nextRefillTime);
+}
+
 const AutoRefillSettings: React.FC<AutoRefillSettingsProps> = ({
   lastRefill,
   refillAmount,
@@ -58,7 +107,7 @@ const AutoRefillSettings: React.FC<AutoRefillSettingsProps> = ({
 
   const lastRefillDate = lastRefill ? new Date(lastRefill) : null;
   const nextRefill = lastRefillDate
-    ? addIntervalToDate(lastRefillDate, refillIntervalValue, refillIntervalUnit)
+    ? getNextFutureInterval(lastRefillDate, refillIntervalValue, refillIntervalUnit)
     : null;
 
   // Return the localized unit based on singular/plural values
@@ -114,7 +163,7 @@ const AutoRefillSettings: React.FC<AutoRefillSettingsProps> = ({
         {/* Left Section: Label */}
         <div className="flex items-center space-x-2">
           <Label className="font-light">{localize('com_nav_balance_next_refill')}</Label>
-          <HoverCardSettings side="bottom" text="com_nav_balance_next_refill_info" />
+          <InfoHoverCard side={ESide.Bottom} text={localize('com_nav_balance_next_refill_info')} />
         </div>
 
         {/* Right Section: tokenCredits Value */}

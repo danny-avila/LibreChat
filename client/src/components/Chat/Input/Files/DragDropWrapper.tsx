@@ -17,7 +17,8 @@ export default function DragDropWrapper({ children, className }: DragDropWrapper
   return (
     <div ref={drop} className={cn('relative flex h-full w-full', className)}>
       {children}
-      {isActive && <DragDropOverlay />}
+      {/** Always render overlay to avoid mount/unmount overhead */}
+      <DragDropOverlay isActive={isActive} />
       <DragDropModal
         files={draggedFiles}
         isVisible={showModal}

@@ -109,7 +109,6 @@ export type DeleteActionOptions = MutationOptions<void, DeleteActionVariables>;
 export type AgentAvatarVariables = {
   agent_id: string;
   formData: FormData;
-  postCreation?: boolean;
 };
 
 export type UpdateAgentActionVariables = {
@@ -274,6 +273,7 @@ export type UpdatePermVars<T> = {
 export type UpdatePromptPermVars = UpdatePermVars<p.TPromptPermissions>;
 export type UpdateMemoryPermVars = UpdatePermVars<p.TMemoryPermissions>;
 export type UpdateAgentPermVars = UpdatePermVars<p.TAgentPermissions>;
+export type UpdatePeoplePickerPermVars = UpdatePermVars<p.TPeoplePickerPermissions>;
 
 export type UpdatePermResponse = r.TRole;
 
@@ -294,6 +294,22 @@ export type UpdateMemoryPermOptions = MutationOptions<
 export type UpdateAgentPermOptions = MutationOptions<
   UpdatePermResponse,
   UpdateAgentPermVars,
+  unknown,
+  types.TError | null | undefined
+>;
+
+export type UpdatePeoplePickerPermOptions = MutationOptions<
+  UpdatePermResponse,
+  UpdatePeoplePickerPermVars,
+  unknown,
+  types.TError | null | undefined
+>;
+
+export type UpdateMarketplacePermVars = UpdatePermVars<p.TMarketplacePermissions>;
+
+export type UpdateMarketplacePermOptions = MutationOptions<
+  UpdatePermResponse,
+  UpdateMarketplacePermVars,
   unknown,
   types.TError | null | undefined
 >;

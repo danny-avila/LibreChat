@@ -1,4 +1,13 @@
-jest.mock('~/cache/getLogStores');
+jest.mock('~/cache/getLogStores', () => ({
+  getLogStores: jest.fn().mockReturnValue({
+    get: jest.fn().mockResolvedValue({
+      openAI: { apiKey: 'test-key' },
+    }),
+    set: jest.fn(),
+    delete: jest.fn(),
+  }),
+}));
+
 const { EModelEndpoint, ErrorTypes, validateAzureGroups } = require('librechat-data-provider');
 const { getUserKey, getUserKeyValues } = require('~/server/services/UserService');
 const initializeClient = require('./initialize');
@@ -10,6 +19,38 @@ jest.mock('~/server/services/UserService', () => ({
   getUserKeyValues: jest.fn(),
   checkUserKeyExpiry: jest.requireActual('~/server/services/UserService').checkUserKeyExpiry,
 }));
+
+const mockAppConfig = {
+  endpoints: {
+    openAI: {
+      apiKey: 'test-key',
+    },
+    azureOpenAI: {
+      apiKey: 'test-azure-key',
+      modelNames: ['gpt-4-vision-preview', 'gpt-3.5-turbo', 'gpt-4'],
+      modelGroupMap: {
+        'gpt-4-vision-preview': {
+          group: 'librechat-westus',
+          deploymentName: 'gpt-4-vision-preview',
+          version: '2024-02-15-preview',
+        },
+      },
+      groupMap: {
+        'librechat-westus': {
+          apiKey: 'WESTUS_API_KEY',
+          instanceName: 'librechat-westus',
+          version: '2023-12-01-preview',
+          models: {
+            'gpt-4-vision-preview': {
+              deploymentName: 'gpt-4-vision-preview',
+              version: '2024-02-15-preview',
+            },
+          },
+        },
+      },
+    },
+  },
+};
 
 describe('initializeClient', () => {
   // Set up environment variables
@@ -79,7 +120,7 @@ describe('initializeClient', () => {
     },
   ];
 
-  const { modelNames, modelGroupMap, groupMap } = validateAzureGroups(validAzureConfigs);
+  const { modelNames } = validateAzureGroups(validAzureConfigs);
 
   beforeEach(() => {
     jest.resetModules(); // Clears the cache
@@ -99,6 +140,7 @@ describe('initializeClient', () => {
       body: { key: null, endpoint: EModelEndpoint.openAI },
       user: { id: '123' },
       app,
+      config: mockAppConfig,
     };
     const res = {};
     const endpointOption = {};
@@ -112,25 +154,30 @@ describe('initializeClient', () => {
   test('should initialize client with Azure credentials when endpoint is azureOpenAI', async () => {
     process.env.AZURE_API_KEY = 'test-azure-api-key';
     (process.env.AZURE_OPENAI_API_INSTANCE_NAME = 'some-value'),
-    (process.env.AZURE_OPENAI_API_DEPLOYMENT_NAME = 'some-value'),
-    (process.env.AZURE_OPENAI_API_VERSION = 'some-value'),
-    (process.env.AZURE_OPENAI_API_COMPLETIONS_DEPLOYMENT_NAME = 'some-value'),
-    (process.env.AZURE_OPENAI_API_EMBEDDINGS_DEPLOYMENT_NAME = 'some-value'),
-    (process.env.OPENAI_API_KEY = 'test-openai-api-key');
+      (process.env.AZURE_OPENAI_API_DEPLOYMENT_NAME = 'some-value'),
+      (process.env.AZURE_OPENAI_API_VERSION = 'some-value'),
+      (process.env.AZURE_OPENAI_API_COMPLETIONS_DEPLOYMENT_NAME = 'some-value'),
+      (process.env.AZURE_OPENAI_API_EMBEDDINGS_DEPLOYMENT_NAME = 'some-value'),
+      (process.env.OPENAI_API_KEY = 'test-openai-api-key');
     process.env.DEBUG_OPENAI = 'false';
     process.env.OPENAI_SUMMARIZE = 'false';
 
     const req = {
-      body: { key: null, endpoint: 'azureOpenAI' },
+      body: {
+        key: null,
+        endpoint: 'azureOpenAI',
+        model: 'gpt-4-vision-preview',
+      },
       user: { id: '123' },
       app,
+      config: mockAppConfig,
     };
     const res = {};
-    const endpointOption = { modelOptions: { model: 'test-model' } };
+    const endpointOption = {};
 
     const client = await initializeClient({ req, res, endpointOption });
 
-    expect(client.openAIApiKey).toBe('test-azure-api-key');
+    expect(client.openAIApiKey).toBe('WESTUS_API_KEY');
     expect(client.client).toBeInstanceOf(OpenAIClient);
   });
 
@@ -142,6 +189,7 @@ describe('initializeClient', () => {
       body: { key: null, endpoint: EModelEndpoint.openAI },
       user: { id: '123' },
       app,
+      config: mockAppConfig,
     };
     const res = {};
     const endpointOption = {};
@@ -159,6 +207,7 @@ describe('initializeClient', () => {
       body: { key: null, endpoint: EModelEndpoint.openAI },
       user: { id: '123' },
       app,
+      config: mockAppConfig,
     };
     const res = {};
     const endpointOption = {};
@@ -177,6 +226,7 @@ describe('initializeClient', () => {
       body: { key: null, endpoint: EModelEndpoint.openAI },
       user: { id: '123' },
       app,
+      config: mockAppConfig,
     };
     const res = {};
     const endpointOption = {};
@@ -198,6 +248,7 @@ describe('initializeClient', () => {
       body: { key: expiresAt, endpoint: EModelEndpoint.openAI },
       user: { id: '123' },
       app,
+      config: mockAppConfig,
     };
     const res = {};
     const endpointOption = {};
@@ -216,6 +267,7 @@ describe('initializeClient', () => {
       body: { key: null, endpoint: EModelEndpoint.openAI },
       user: { id: '123' },
       app,
+      config: mockAppConfig,
     };
     const res = {};
     const endpointOption = {};
@@ -236,6 +288,7 @@ describe('initializeClient', () => {
         id: '123',
       },
       app,
+      config: mockAppConfig,
     };
 
     const res = {};
@@ -260,6 +313,7 @@ describe('initializeClient', () => {
       body: { key: invalidKey, endpoint: EModelEndpoint.openAI },
       user: { id: '123' },
       app,
+      config: mockAppConfig,
     };
     const res = {};
     const endpointOption = {};
@@ -281,6 +335,7 @@ describe('initializeClient', () => {
       body: { key: new Date(Date.now() + 10000).toISOString(), endpoint: EModelEndpoint.openAI },
       user: { id: '123' },
       app,
+      config: mockAppConfig,
     };
     const res = {};
     const endpointOption = {};
@@ -291,7 +346,7 @@ describe('initializeClient', () => {
       let userValues = getUserKey();
       try {
         userValues = JSON.parse(userValues);
-      } catch (e) {
+      } catch {
         throw new Error(
           JSON.stringify({
             type: ErrorTypes.INVALID_USER_KEY,
@@ -307,6 +362,9 @@ describe('initializeClient', () => {
   });
 
   test('should initialize client correctly for Azure OpenAI with valid configuration', async () => {
+    // Set up Azure environment variables
+    process.env.WESTUS_API_KEY = 'test-westus-key';
+
     const req = {
       body: {
         key: null,
@@ -314,15 +372,7 @@ describe('initializeClient', () => {
         model: modelNames[0],
       },
       user: { id: '123' },
-      app: {
-        locals: {
-          [EModelEndpoint.azureOpenAI]: {
-            modelNames,
-            modelGroupMap,
-            groupMap,
-          },
-        },
-      },
+      config: mockAppConfig,
     };
     const res = {};
     const endpointOption = {};
@@ -340,6 +390,7 @@ describe('initializeClient', () => {
       body: { key: null, endpoint: EModelEndpoint.openAI },
       user: { id: '123' },
       app,
+      config: mockAppConfig,
     };
     const res = {};
     const endpointOption = {};
@@ -362,6 +413,7 @@ describe('initializeClient', () => {
         id: '123',
       },
       app,
+      config: mockAppConfig,
     };
     const res = {};
     const endpointOption = {};

@@ -19,7 +19,7 @@ function ResetPassword() {
   const [params] = useSearchParams();
   const password = watch('password');
   const resetPassword = useResetPasswordMutation();
-  const { setError, setHeaderText } = useOutletContext<TLoginLayoutContext>();
+  const { setError, setHeaderText, startupConfig } = useOutletContext<TLoginLayoutContext>();
 
   const onSubmit = (data: TResetPassword) => {
     resetPassword.mutate(data, {
@@ -83,7 +83,7 @@ function ResetPassword() {
             {...register('password', {
               required: localize('com_auth_password_required'),
               minLength: {
-                value: 8,
+                value: startupConfig?.minPasswordLength || 8,
                 message: localize('com_auth_password_min_length'),
               },
               maxLength: {

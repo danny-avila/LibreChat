@@ -1,5 +1,5 @@
 import { Providers } from '@librechat/agents';
-import { googleSettings, AuthKeys } from 'librechat-data-provider';
+import { googleSettings, AuthKeys, removeNullishValues } from 'librechat-data-provider';
 import type { GoogleClientOptions, VertexAIClientOptions } from '@librechat/agents';
 import type { GoogleAIToolType } from '@langchain/google-common';
 import type * as t from '~/types';
@@ -112,11 +112,15 @@ export function getGoogleConfig(
     ...modelOptions
   } = options.modelOptions || {};
 
-  const llmConfig: GoogleClientOptions | VertexAIClientOptions = {
+  const llmConfig: GoogleClientOptions | VertexAIClientOptions = removeNullishValues({
     ...(modelOptions || {}),
     model: modelOptions?.model ?? '',
     maxRetries: 2,
-  };
+    topP: modelOptions?.topP ?? undefined,
+    topK: modelOptions?.topK ?? undefined,
+    temperature: modelOptions?.temperature ?? undefined,
+    maxOutputTokens: modelOptions?.maxOutputTokens ?? undefined,
+  });
 
   /** Used only for Safety Settings */
   llmConfig.safetySettings = getSafetySettings(llmConfig.model);

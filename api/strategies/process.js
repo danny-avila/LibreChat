@@ -1,24 +1,25 @@
+const { getBalanceConfig } = require('@librechat/api');
 const { FileSources } = require('librechat-data-provider');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { resizeAvatar } = require('~/server/services/Files/images/avatar');
 const { updateUser, createUser, getUserById } = require('~/models');
-const { getBalanceConfig } = require('~/server/services/Config');
 
 /**
  * Updates the avatar URL of an existing user. If the user's avatar URL does not include the query parameter
  * '?manual=true', it updates the user's avatar with the provided URL. For local file storage, it directly updates
  * the avatar URL, while for other storage types, it processes the avatar URL using the specified file strategy.
  *
- * @param {MongoUser} oldUser - The existing user object that needs to be updated.
+ * @param {IUser} oldUser - The existing user object that needs to be updated.
  * @param {string} avatarUrl - The new avatar URL to be set for the user.
+ * @param {AppConfig} appConfig - The application configuration object.
  *
  * @returns {Promise<void>}
  *          The function updates the user's avatar and saves the user object. It does not return any value.
  *
  * @throws {Error} Throws an error if there's an issue saving the updated user object.
  */
-const handleExistingUser = async (oldUser, avatarUrl) => {
-  const fileStrategy = process.env.CDN_PROVIDER;
+const handleExistingUser = async (oldUser, avatarUrl, appConfig) => {
+  const fileStrategy = appConfig?.fileStrategy ?? process.env.CDN_PROVIDER;
   const isLocal = fileStrategy === FileSources.local;
 
   let updatedAvatar = false;
@@ -55,6 +56,7 @@ const handleExistingUser = async (oldUser, avatarUrl) => {
  * @param {string} params.providerId - The provider-specific ID of the user.
  * @param {string} params.username - The username of the new user.
  * @param {string} params.name - The name of the new user.
+ * @param {AppConfig} appConfig - The application configuration object.
  * @param {boolean} [params.emailVerified=false] - Optional. Indicates whether the user's email is verified. Defaults to false.
  *
  * @returns {Promise<User>}
@@ -70,6 +72,7 @@ const createSocialUser = async ({
   providerId,
   username,
   name,
+  appConfig,
   emailVerified,
 }) => {
   const update = {
@@ -82,9 +85,9 @@ const createSocialUser = async ({
     emailVerified,
   };
 
-  const balanceConfig = await getBalanceConfig();
+  const balanceConfig = getBalanceConfig(appConfig);
   const newUserId = await createUser(update, balanceConfig);
-  const fileStrategy = process.env.CDN_PROVIDER;
+  const fileStrategy = appConfig?.fileStrategy ?? process.env.CDN_PROVIDER;
   const isLocal = fileStrategy === FileSources.local;
 
   if (!isLocal) {

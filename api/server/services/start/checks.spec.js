@@ -1,11 +1,10 @@
-// Mock librechat-data-provider
 jest.mock('librechat-data-provider', () => ({
   ...jest.requireActual('librechat-data-provider'),
   extractVariableName: jest.fn(),
 }));
 
-// Mock the config logger
-jest.mock('~/config', () => ({
+jest.mock('@librechat/data-schemas', () => ({
+  ...jest.requireActual('@librechat/data-schemas'),
   logger: {
     debug: jest.fn(),
     warn: jest.fn(),
@@ -13,7 +12,7 @@ jest.mock('~/config', () => ({
 }));
 
 const { checkWebSearchConfig } = require('./checks');
-const { logger } = require('~/config');
+const { logger } = require('@librechat/data-schemas');
 const { extractVariableName } = require('librechat-data-provider');
 
 describe('checkWebSearchConfig', () => {

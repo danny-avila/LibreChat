@@ -1,10 +1,10 @@
 const jwt = require('jsonwebtoken');
 const mongoose = require('mongoose');
+const { isEnabled } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 const { Strategy: AppleStrategy } = require('passport-apple');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const { createSocialUser, handleExistingUser } = require('./process');
-const { isEnabled } = require('~/server/utils');
 const socialLogin = require('./socialLogin');
 const { findUser } = require('~/models');
 const { User } = require('~/db/models');
@@ -17,6 +17,8 @@ jest.mock('@librechat/data-schemas', () => {
     logger: {
       error: jest.fn(),
       debug: jest.fn(),
+      info: jest.fn(),
+      warn: jest.fn(),
     },
   };
 });
@@ -24,11 +26,18 @@ jest.mock('./process', () => ({
   createSocialUser: jest.fn(),
   handleExistingUser: jest.fn(),
 }));
-jest.mock('~/server/utils', () => ({
+jest.mock('@librechat/api', () => ({
+  ...jest.requireActual('@librechat/api'),
   isEnabled: jest.fn(),
 }));
 jest.mock('~/models', () => ({
   findUser: jest.fn(),
+}));
+jest.mock('~/server/services/Config', () => ({
+  getAppConfig: jest.fn().mockResolvedValue({
+    fileStrategy: 'local',
+    balance: { enabled: false },
+  }),
 }));
 
 describe('Apple Login Strategy', () => {
@@ -288,7 +297,14 @@ describe('Apple Login Strategy', () => {
 
       expect(mockVerifyCallback).toHaveBeenCalledWith(null, existingUser);
       expect(existingUser.avatarUrl).toBeNull(); // As per getProfileDetails
-      expect(handleExistingUser).toHaveBeenCalledWith(existingUser, null);
+      expect(handleExistingUser).toHaveBeenCalledWith(
+        existingUser,
+        null,
+        expect.objectContaining({
+          fileStrategy: 'local',
+          balance: { enabled: false },
+        }),
+      );
     });
 
     it('should handle missing idToken gracefully', async () => {

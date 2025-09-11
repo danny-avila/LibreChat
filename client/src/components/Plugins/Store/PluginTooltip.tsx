@@ -12,7 +12,7 @@ function PluginTooltip({ content, position }: TPluginTooltipProps) {
       <HoverCardContent side={position} className="w-80 ">
         <div className="space-y-2">
           <div className="text-sm text-gray-600 dark:text-gray-300">
-            <div dangerouslySetInnerHTML={{ __html: content }} />
+            {content}
           </div>
         </div>
       </HoverCardContent>

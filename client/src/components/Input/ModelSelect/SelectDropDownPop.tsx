@@ -1,10 +1,10 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useMultiSearch } from '@librechat/client';
 import { Root, Trigger, Content, Portal } from '@radix-ui/react-popover';
-import MenuItem from '~/components/Chat/Menus/UI/MenuItem';
 import type { Option } from '~/common';
+import MenuItem from '~/components/Chat/Menus/UI/MenuItem';
 import { useLocalize } from '~/hooks';
-import { cn } from '~/utils/';
+import { cn } from '~/utils';
 
 type SelectDropDownProps = {
   id?: string;
@@ -32,6 +32,7 @@ function SelectDropDownPop({
   footer,
 }: SelectDropDownProps) {
   const localize = useLocalize();
+  const [open, setOpen] = useState(false);
   const transitionProps = { className: 'top-full mt-3' };
   if (showAbove) {
     transitionProps.className = 'bottom-full mb-3';
@@ -54,8 +55,13 @@ function SelectDropDownPop({
   const hasSearchRender = Boolean(searchRender);
   const options = hasSearchRender ? filteredValues : availableValues;
 
+  const handleSelect = (selectedValue: string) => {
+    setValue(selectedValue);
+    setOpen(false);
+  };
+
   return (
-    <Root>
+    <Root open={open} onOpenChange={setOpen}>
       <div className={'flex items-center justify-center gap-2'}>
         <div className={'relative w-full'}>
           <Trigger asChild>
@@ -108,19 +114,32 @@ function SelectDropDownPop({
               side="bottom"
               align="start"
               className={cn(
-                'mr-3 mt-2 max-h-[52vh] w-full max-w-[85vw] overflow-hidden overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-700 dark:text-white sm:max-w-full lg:max-h-[52vh]',
+                'z-50 mr-3 mt-2 max-h-[52vh] w-full max-w-[85vw] overflow-hidden overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-700 dark:text-white sm:max-w-full lg:max-h-[52vh]',
                 hasSearchRender && 'relative',
               )}
             >
               {searchRender}
               {options.map((option) => {
+                if (typeof option === 'string') {
+                  return (
+                    <MenuItem
+                      key={option}
+                      title={option}
+                      value={option}
+                      selected={!!(value && value === option)}
+                      onClick={() => handleSelect(option)}
+                    />
+                  );
+                }
                 return (
                   <MenuItem
-                    key={option}
-                    title={option}
-                    value={option}
-                    selected={!!(value && value === option)}
-                    onClick={() => setValue(option)}
+                    key={option.value}
+                    title={option.label}
+                    description={option.description}
+                    value={option.value}
+                    icon={option.icon}
+                    selected={!!(value && value === option.value)}
+                    onClick={() => handleSelect(option.value)}
                   />
                 );
               })}

@@ -5,22 +5,9 @@ import { Constants, LocalStorageKeys } from 'librechat-data-provider';
 import type { VerifyToolAuthResponse } from 'librechat-data-provider';
 import type { UseQueryOptions } from '@tanstack/react-query';
 import { useVerifyAgentToolAuth } from '~/data-provider';
+import { setTimestamp } from '~/utils/timestamps';
 import useLocalStorage from '~/hooks/useLocalStorageAlt';
 import { ephemeralAgentByConvoId } from '~/store';
-
-const storageCondition = (value: unknown, rawCurrentValue?: string | null) => {
-  if (rawCurrentValue) {
-    try {
-      const currentValue = rawCurrentValue?.trim() ?? '';
-      if (currentValue === 'true' && value === false) {
-        return true;
-      }
-    } catch (e) {
-      console.error(e);
-    }
-  }
-  return value !== undefined && value !== null;
-};
 
 type ToolValue = boolean | string;
 
@@ -39,7 +26,7 @@ interface UseToolToggleOptions {
 
 export function useToolToggle({
   conversationId,
-  toolKey,
+  toolKey: _toolKey,
   localStorageKey,
   isAuthenticated: externalIsAuthenticated,
   setIsDialogOpen,
@@ -62,13 +49,8 @@ export function useToolToggle({
     [externalIsAuthenticated, authConfig, authQuery.data?.authenticated],
   );
 
-  // Keep localStorage in sync
-  const [, setLocalStorageValue] = useLocalStorage<ToolValue>(
-    `${localStorageKey}${key}`,
-    false,
-    undefined,
-    storageCondition,
-  );
+  const toolKey = useMemo(() => _toolKey, [_toolKey]);
+  const storageKey = useMemo(() => `${localStorageKey}${key}`, [localStorageKey, key]);
 
   // The actual current value comes from ephemeralAgent
   const toolValue = useMemo(() => {
@@ -83,13 +65,14 @@ export function useToolToggle({
     return toolValue === true;
   }, [toolValue]);
 
-  // Sync to localStorage when ephemeralAgent changes
+  // Sync to localStorage with timestamps when ephemeralAgent changes
   useEffect(() => {
     const value = ephemeralAgent?.[toolKey];
     if (value !== undefined) {
-      setLocalStorageValue(value);
+      localStorage.setItem(storageKey, JSON.stringify(value));
+      setTimestamp(storageKey);
     }
-  }, [ephemeralAgent, toolKey, setLocalStorageValue]);
+  }, [ephemeralAgent, toolKey, storageKey]);
 
   const [isPinned, setIsPinned] = useLocalStorage<boolean>(`${localStorageKey}pinned`, false);
 
@@ -98,6 +81,10 @@ export function useToolToggle({
       if (isAuthenticated !== undefined && !isAuthenticated && setIsDialogOpen) {
         setIsDialogOpen(true);
         e?.preventDefault?.();
+        setEphemeralAgent((prev) => ({
+          ...(prev || {}),
+          [toolKey]: false,
+        }));
         return;
       }
 

@@ -1,26 +1,12 @@
+const { MCPManager, FlowStateManager } = require('@librechat/api');
 const { EventSource } = require('eventsource');
 const { Time } = require('librechat-data-provider');
-const { MCPManager, FlowStateManager } = require('@librechat/api');
 const logger = require('./winston');
 
 global.EventSource = EventSource;
 
 /** @type {MCPManager} */
-let mcpManager = null;
 let flowManager = null;
-
-/**
- * @param {string} [userId] - Optional user ID, to avoid disconnecting the current user.
- * @returns {MCPManager}
- */
-function getMCPManager(userId) {
-  if (!mcpManager) {
-    mcpManager = MCPManager.getInstance();
-  } else {
-    mcpManager.checkIdleConnections(userId);
-  }
-  return mcpManager;
-}
 
 /**
  * @param {Keyv} flowsCache
@@ -37,6 +23,7 @@ function getFlowStateManager(flowsCache) {
 
 module.exports = {
   logger,
-  getMCPManager,
+  createMCPManager: MCPManager.createInstance,
+  getMCPManager: MCPManager.getInstance,
   getFlowStateManager,
 };

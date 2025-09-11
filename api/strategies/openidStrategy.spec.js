@@ -13,6 +13,11 @@ jest.mock('~/server/services/Files/strategies', () => ({
   })),
 }));
 jest.mock('~/server/services/Config', () => ({
+  getAppConfig: jest.fn().mockResolvedValue({}),
+}));
+jest.mock('@librechat/api', () => ({
+  ...jest.requireActual('@librechat/api'),
+  isEnabled: jest.fn(() => false),
   getBalanceConfig: jest.fn(() => ({
     enabled: false,
   })),
@@ -22,14 +27,11 @@ jest.mock('~/models', () => ({
   createUser: jest.fn(),
   updateUser: jest.fn(),
 }));
-jest.mock('@librechat/api', () => ({
-  ...jest.requireActual('@librechat/api'),
-  isEnabled: jest.fn(() => false),
-}));
 jest.mock('@librechat/data-schemas', () => ({
   ...jest.requireActual('@librechat/api'),
   logger: {
     info: jest.fn(),
+    warn: jest.fn(),
     debug: jest.fn(),
     error: jest.fn(),
   },

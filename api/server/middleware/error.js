@@ -82,7 +82,7 @@ const sendError = async (req, res, options, callback) => {
 
 /**
  * Sends the response based on whether headers have been sent or not.
- * @param {Express.Request} req - The server response.
+ * @param {ServerRequest} req - The server response.
  * @param {Express.Response} res - The server response.
  * @param {Object} data - The data to be sent.
  * @param {string} [errorMessage] - The error message, if any.

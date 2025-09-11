@@ -26,10 +26,6 @@ function AgentPanelSwitchWithContext() {
     }
   }, [setCurrentAgentId, conversation?.agent_id]);
 
-  if (!conversation?.endpoint) {
-    return null;
-  }
-
   if (activePanel === Panel.actions) {
     return <ActionsPanel />;
   }

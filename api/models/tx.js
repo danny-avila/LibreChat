@@ -1,4 +1,4 @@
-const { matchModelName } = require('../utils/tokens');
+const { matchModelName } = require('@librechat/api');
 const defaultRate = 6;
 
 /**

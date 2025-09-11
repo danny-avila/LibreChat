@@ -48,11 +48,14 @@ if (cacheConfig.USE_REDIS) {
   };
 
   ioredisClient =
-    urls.length === 1
+    urls.length === 1 && !cacheConfig.USE_REDIS_CLUSTER
       ? new IoRedis(cacheConfig.REDIS_URI, redisOptions)
       : new IoRedis.Cluster(
           urls.map((url) => ({ host: url.hostname, port: parseInt(url.port, 10) || 6379 })),
           {
+            ...(cacheConfig.REDIS_USE_ALTERNATIVE_DNS_LOOKUP
+              ? { dnsLookup: (address, callback) => callback(null, address) }
+              : {}),
             redisOptions,
             clusterRetryStrategy: (times) => {
               if (
@@ -148,7 +151,7 @@ if (cacheConfig.USE_REDIS) {
   };
 
   keyvRedisClient =
-    urls.length === 1
+    urls.length === 1 && !cacheConfig.USE_REDIS_CLUSTER
       ? createClient({ url: cacheConfig.REDIS_URI, ...redisOptions })
       : createCluster({
           rootNodes: urls.map((url) => ({ url: url.href })),

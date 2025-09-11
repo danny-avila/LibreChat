@@ -4,6 +4,7 @@ const {
   checkBan,
   requireJwtAuth,
   messageIpLimiter,
+  configMiddleware,
   concurrentLimiter,
   messageUserLimiter,
 } = require('~/server/middleware');
@@ -22,6 +23,8 @@ router.use(uaParser);
 router.use('/', v1);
 
 const chatRouter = express.Router();
+chatRouter.use(configMiddleware);
+
 if (isEnabled(LIMIT_CONCURRENT_MESSAGES)) {
   chatRouter.use(concurrentLimiter);
 }

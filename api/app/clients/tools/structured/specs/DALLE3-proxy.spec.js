@@ -1,42 +1,8 @@
 const DALLE3 = require('../DALLE3');
 const { ProxyAgent } = require('undici');
 
+jest.mock('tiktoken');
 const processFileURL = jest.fn();
-
-jest.mock('~/server/services/Files/images', () => ({
-  getImageBasename: jest.fn().mockImplementation((url) => {
-    const parts = url.split('/');
-    const lastPart = parts.pop();
-    const imageExtensionRegex = /\.(jpg|jpeg|png|gif|bmp|tiff|svg)$/i;
-    if (imageExtensionRegex.test(lastPart)) {
-      return lastPart;
-    }
-    return '';
-  }),
-}));
-
-jest.mock('fs', () => {
-  return {
-    existsSync: jest.fn(),
-    mkdirSync: jest.fn(),
-    promises: {
-      writeFile: jest.fn(),
-      readFile: jest.fn(),
-      unlink: jest.fn(),
-    },
-  };
-});
-
-jest.mock('path', () => {
-  return {
-    resolve: jest.fn(),
-    join: jest.fn(),
-    relative: jest.fn(),
-    extname: jest.fn().mockImplementation((filename) => {
-      return filename.slice(filename.lastIndexOf('.'));
-    }),
-  };
-});
 
 describe('DALLE3 Proxy Configuration', () => {
   let originalEnv;
