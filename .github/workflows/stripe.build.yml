@@ -3,24 +3,15 @@ name: Stripe Build Librechat Image
 on:
   # Manual trigger
   workflow_dispatch:
-  
-  # Automatic trigger on new commits to develop branch
+
+  # Automatic trigger on new commits on any branch
   push:
     branches:
-      - develop
-  # Trigger builds for PRs targeting develop branch
-  pull_request:
-    branches:
-      - develop
+      - '**'
+
 jobs:
   build:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        include:
-          - target: node
-            file: Dockerfile
-            image_name: librechat
 
     steps:
       - name: Checkout
@@ -66,11 +57,11 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: ${{ matrix.file }}
+          file: Dockerfile
           push: true
           tags: |
             stripe/librechat:${{ github.sha }}
             stripe/librechat:${{ env.SANITIZED_REF_NAME }}-${{ github.sha }}
-            stripe/librechat:latest
-          platforms: linux/amd64,linux/arm64
-          target: ${{ matrix.target }}
+            ${{ github.ref_name == 'develop' && 'stripe/librechat:latest' || '' }}
+          platforms: linux/arm64
+          target: node
