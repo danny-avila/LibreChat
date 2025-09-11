@@ -7,7 +7,7 @@ import {
   WebSocketOptionsSchema,
   StreamableHTTPOptionsSchema,
 } from 'librechat-data-provider';
-import type { TPlugin, TUser } from 'librechat-data-provider';
+import type { UIResource, TPlugin, TUser } from 'librechat-data-provider';
 import type * as t from '@modelcontextprotocol/sdk/types.js';
 import type { TokenMethods } from '@librechat/data-schemas';
 import type { FlowStateManager } from '~/flow/manager';
@@ -121,13 +121,6 @@ export type Artifacts =
   | undefined;
 
 export type FormattedContentResult = [string | FormattedContent[], undefined | Artifacts];
-
-export type UIResource = {
-  uri: string;
-  mimeType: string;
-  text: string;
-  [key: string]: unknown;
-};
 
 export type ImageFormatter = (item: ImageContent) => FormattedContent;
 

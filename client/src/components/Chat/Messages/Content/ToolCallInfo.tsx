@@ -3,8 +3,7 @@ import { useLocalize } from '~/hooks';
 import { Tools } from 'librechat-data-provider';
 import { UIResourceRenderer } from '@mcp-ui/client';
 import UIResourceCarousel from './UIResourceCarousel';
-import type { TAttachment } from 'librechat-data-provider';
-import type { UIResource } from '~/common';
+import type { TAttachment, UIResource } from 'librechat-data-provider';
 
 function OptimizedCodeBlock({ text, maxHeight = 320 }: { text: string; maxHeight?: number }) {
   return (
