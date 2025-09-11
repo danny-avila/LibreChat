@@ -157,6 +157,13 @@ export class MCPConnection extends EventEmitter {
       input: UndiciRequestInfo,
       init?: UndiciRequestInit,
     ): Promise<UndiciResponse> {
+      // <stripe>
+      // @ts-expect-error manually override fetch
+      const undiciFetch: (
+        input: UndiciRequestInfo,
+        init?: UndiciRequestInit,
+      ) => Promise<UndiciResponse> = fetch;
+      // </stripe>
       const requestHeaders = getHeaders();
       const effectiveTimeout = timeout || DEFAULT_TIMEOUT;
       const agent = new Agent({
