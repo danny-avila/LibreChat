@@ -15,18 +15,19 @@ const socialLogin =
       });
 
       const appConfig = await getAppConfig();
-      const existingUser = await findUser({ email: email.trim() });
-      const ALLOW_SOCIAL_REGISTRATION = isEnabled(process.env.ALLOW_SOCIAL_REGISTRATION);
 
-      if (!existingUser && !isEmailDomainAllowed(email, appConfig?.registration?.allowedDomains)) {
+      if (!isEmailDomainAllowed(email, appConfig?.registration?.allowedDomains)) {
         logger.error(
-          `[${provider}Login] Registration blocked - email domain not allowed [Email: ${email}]`,
+          `[${provider}Login] Authentication blocked - email domain not allowed [Email: ${email}]`,
         );
         const error = new Error(ErrorTypes.AUTH_FAILED);
         error.code = ErrorTypes.AUTH_FAILED;
-        error.message = 'Email domain not allowed for registration';
+        error.message = 'Email domain not allowed';
         return cb(error);
       }
+
+      const existingUser = await findUser({ email: email.trim() });
+      const ALLOW_SOCIAL_REGISTRATION = isEnabled(process.env.ALLOW_SOCIAL_REGISTRATION);
 
       if (existingUser?.provider === provider) {
         await handleExistingUser(existingUser, avatarUrl, appConfig);
