@@ -1046,6 +1046,7 @@
   "com_ui_oauth_error_title": "Authentication Failed",
   "com_ui_oauth_success_description": "Your authentication was successful. This window will close in",
   "com_ui_oauth_success_title": "Authentication Successful",
+  "com_ui_oauth_revoke": "Revoke",
   "com_ui_of": "of",
   "com_ui_off": "Off",
   "com_ui_offline": "Offline",
