@@ -562,3 +562,884 @@ describe('Prompt ACL Permissions', () => {
     });
   });
 });
+
+describe('Prompt Model - File Attachments', () => {
+  describe('Creating Prompts with tool_resources', () => {
+    it('should create a prompt with file attachments in tool_resources', async () => {
+      const testGroup = await PromptGroup.create({
+        name: 'Attachment Test Group',
+        category: 'testing',
+        author: testUsers.owner._id,
+        authorName: testUsers.owner.name,
+        productionId: new mongoose.Types.ObjectId(),
+      });
+
+      const promptData = {
+        prompt: {
+          prompt: 'Test prompt with file attachments',
+          type: 'text',
+          groupId: testGroup._id,
+          tool_resources: {
+            file_search: {
+              file_ids: ['file-1', 'file-2'],
+            },
+            execute_code: {
+              file_ids: ['file-3'],
+            },
+            image_edit: {
+              file_ids: ['file-4'],
+            },
+          },
+        },
+        author: testUsers.owner._id,
+      };
+
+      const result = await promptFns.savePrompt(promptData);
+
+      expect(result.prompt).toBeTruthy();
+      expect(result.prompt.tool_resources).toEqual({
+        file_search: {
+          file_ids: ['file-1', 'file-2'],
+        },
+        execute_code: {
+          file_ids: ['file-3'],
+        },
+        image_edit: {
+          file_ids: ['file-4'],
+        },
+      });
+
+      const savedPrompt = await Prompt.findById(result.prompt._id);
+      expect(savedPrompt.tool_resources).toEqual(promptData.prompt.tool_resources);
+    });
+
+    it('should create a prompt without tool_resources when none provided', async () => {
+      const testGroup = await PromptGroup.create({
+        name: 'No Attachment Test Group',
+        category: 'testing',
+        author: testUsers.owner._id,
+        authorName: testUsers.owner.name,
+        productionId: new mongoose.Types.ObjectId(),
+      });
+
+      const promptData = {
+        prompt: {
+          prompt: 'Test prompt without attachments',
+          type: 'text',
+          groupId: testGroup._id,
+        },
+        author: testUsers.owner._id,
+      };
+
+      const result = await promptFns.savePrompt(promptData);
+
+      expect(result.prompt).toBeTruthy();
+      expect(result.prompt.tool_resources).toEqual({});
+
+      const savedPrompt = await Prompt.findById(result.prompt._id);
+      expect(savedPrompt.tool_resources).toEqual({});
+    });
+
+    it('should create a prompt group with tool_resources', async () => {
+      const saveData = {
+        prompt: {
+          type: 'text',
+          prompt: 'Test prompt with file attachments',
+          tool_resources: {
+            file_search: {
+              file_ids: ['file-1', 'file-2'],
+            },
+            ocr: {
+              file_ids: ['file-3'],
+            },
+          },
+        },
+        group: {
+          name: 'Test Prompt Group with Attachments',
+          category: 'test-category',
+          oneliner: 'Test description',
+        },
+        author: testUsers.owner._id,
+        authorName: testUsers.owner.name,
+      };
+
+      const result = await promptFns.createPromptGroup(saveData);
+
+      expect(result.prompt).toBeTruthy();
+      expect(result.group).toBeTruthy();
+      expect(result.prompt.tool_resources).toEqual({
+        file_search: {
+          file_ids: ['file-1', 'file-2'],
+        },
+        ocr: {
+          file_ids: ['file-3'],
+        },
+      });
+
+      expect(result.group.productionPrompt.tool_resources).toEqual(result.prompt.tool_resources);
+    });
+  });
+
+  describe('Retrieving Prompts with tool_resources', () => {
+    let testGroup;
+    let testPrompt;
+
+    beforeEach(async () => {
+      testGroup = await PromptGroup.create({
+        name: 'Retrieval Test Group',
+        category: 'testing',
+        author: testUsers.owner._id,
+        authorName: testUsers.owner.name,
+        productionId: new mongoose.Types.ObjectId(),
+      });
+
+      testPrompt = await Prompt.create({
+        prompt: 'Test prompt with attachments for retrieval',
+        type: 'text',
+        author: testUsers.owner._id,
+        groupId: testGroup._id,
+        tool_resources: {
+          file_search: {
+            file_ids: ['file-1', 'file-2'],
+          },
+          execute_code: {
+            file_ids: ['file-3'],
+          },
+        },
+      });
+    });
+
+    afterEach(async () => {
+      await Prompt.deleteMany({});
+      await PromptGroup.deleteMany({});
+    });
+
+    it('should retrieve a prompt with tool_resources', async () => {
+      const result = await promptFns.getPrompt({ _id: testPrompt._id });
+
+      expect(result).toBeTruthy();
+      expect(result.tool_resources).toEqual({
+        file_search: {
+          file_ids: ['file-1', 'file-2'],
+        },
+        execute_code: {
+          file_ids: ['file-3'],
+        },
+      });
+    });
+
+    it('should retrieve prompts with tool_resources by groupId', async () => {
+      const result = await promptFns.getPrompts({ groupId: testGroup._id });
+
+      expect(result).toBeTruthy();
+      expect(Array.isArray(result)).toBe(true);
+      expect(result.length).toBe(1);
+      expect(result[0].tool_resources).toEqual({
+        file_search: {
+          file_ids: ['file-1', 'file-2'],
+        },
+        execute_code: {
+          file_ids: ['file-3'],
+        },
+      });
+    });
+
+    it('should handle prompts without tool_resources', async () => {
+      const promptWithoutAttachments = await Prompt.create({
+        prompt: 'Test prompt without attachments',
+        type: 'text',
+        author: testUsers.owner._id,
+        groupId: testGroup._id,
+      });
+
+      const result = await promptFns.getPrompt({ _id: promptWithoutAttachments._id });
+
+      expect(result).toBeTruthy();
+      expect(result.tool_resources).toBeUndefined();
+    });
+  });
+
+  describe('Updating Prompts with tool_resources', () => {
+    let testGroup;
+
+    beforeEach(async () => {
+      testGroup = await PromptGroup.create({
+        name: 'Update Test Group',
+        category: 'testing',
+        author: testUsers.owner._id,
+        authorName: testUsers.owner.name,
+        productionId: new mongoose.Types.ObjectId(),
+      });
+
+      await Prompt.create({
+        prompt: 'Original prompt',
+        type: 'text',
+        author: testUsers.owner._id,
+        groupId: testGroup._id,
+        tool_resources: {
+          file_search: {
+            file_ids: ['file-1'],
+          },
+        },
+      });
+    });
+
+    afterEach(async () => {
+      await Prompt.deleteMany({});
+      await PromptGroup.deleteMany({});
+    });
+
+    it('should update prompt with new tool_resources', async () => {
+      const updatedPromptData = {
+        prompt: {
+          prompt: 'Updated prompt with new attachments',
+          type: 'text',
+          groupId: testGroup._id,
+          tool_resources: {
+            file_search: {
+              file_ids: ['file-1', 'file-2'],
+            },
+            execute_code: {
+              file_ids: ['file-3'],
+            },
+          },
+        },
+        author: testUsers.owner._id,
+      };
+
+      const result = await promptFns.savePrompt(updatedPromptData);
+
+      expect(result.prompt).toBeTruthy();
+      expect(result.prompt.tool_resources).toEqual({
+        file_search: {
+          file_ids: ['file-1', 'file-2'],
+        },
+        execute_code: {
+          file_ids: ['file-3'],
+        },
+      });
+    });
+
+    it('should update prompt to remove tool_resources', async () => {
+      const updatedPromptData = {
+        prompt: {
+          prompt: 'Updated prompt without attachments',
+          type: 'text',
+          groupId: testGroup._id,
+          // No tool_resources field
+        },
+        author: testUsers.owner._id,
+      };
+
+      const result = await promptFns.savePrompt(updatedPromptData);
+
+      expect(result.prompt).toBeTruthy();
+      expect(result.prompt.tool_resources).toEqual({});
+    });
+  });
+
+  describe('Deleting Prompts with tool_resources', () => {
+    let testGroup;
+    let testPrompt;
+
+    beforeEach(async () => {
+      testGroup = await PromptGroup.create({
+        name: 'Deletion Test Group',
+        category: 'testing',
+        author: testUsers.owner._id,
+        authorName: testUsers.owner.name,
+        productionId: new mongoose.Types.ObjectId(),
+      });
+
+      testPrompt = await Prompt.create({
+        prompt: 'Prompt to be deleted',
+        type: 'text',
+        author: testUsers.owner._id,
+        groupId: testGroup._id,
+        tool_resources: {
+          file_search: {
+            file_ids: ['file-1', 'file-2'],
+          },
+          execute_code: {
+            file_ids: ['file-3'],
+          },
+        },
+      });
+    });
+
+    afterEach(async () => {
+      await Prompt.deleteMany({});
+      await PromptGroup.deleteMany({});
+    });
+
+    it('should delete a prompt with tool_resources', async () => {
+      const result = await promptFns.deletePrompt({
+        promptId: testPrompt._id,
+        groupId: testGroup._id,
+        author: testUsers.owner._id,
+        role: SystemRoles.USER,
+      });
+
+      expect(result.prompt).toBe('Prompt deleted successfully');
+
+      const deletedPrompt = await Prompt.findById(testPrompt._id);
+      expect(deletedPrompt).toBeNull();
+    });
+
+    it('should delete prompt group when last prompt with tool_resources is deleted', async () => {
+      const result = await promptFns.deletePrompt({
+        promptId: testPrompt._id,
+        groupId: testGroup._id,
+        author: testUsers.owner._id,
+        role: SystemRoles.USER,
+      });
+
+      expect(result.prompt).toBe('Prompt deleted successfully');
+      expect(result.promptGroup).toBeTruthy();
+      expect(result.promptGroup.message).toBe('Prompt group deleted successfully');
+
+      const deletedPrompt = await Prompt.findById(testPrompt._id);
+      const deletedGroup = await PromptGroup.findById(testGroup._id);
+      expect(deletedPrompt).toBeNull();
+      expect(deletedGroup).toBeNull();
+    });
+  });
+
+  describe('Making Prompts Production with tool_resources', () => {
+    let testGroup;
+    let testPrompt;
+
+    beforeEach(async () => {
+      testGroup = await PromptGroup.create({
+        name: 'Production Test Group',
+        category: 'testing',
+        author: testUsers.owner._id,
+        authorName: testUsers.owner.name,
+        productionId: new mongoose.Types.ObjectId(),
+      });
+
+      testPrompt = await Prompt.create({
+        prompt: 'Prompt to be made production',
+        type: 'text',
+        author: testUsers.owner._id,
+        groupId: testGroup._id,
+        tool_resources: {
+          file_search: {
+            file_ids: ['file-1', 'file-2'],
+          },
+          image_edit: {
+            file_ids: ['file-3'],
+          },
+        },
+      });
+    });
+
+    afterEach(async () => {
+      await Prompt.deleteMany({});
+      await PromptGroup.deleteMany({});
+    });
+
+    it('should make a prompt with tool_resources production', async () => {
+      const result = await promptFns.makePromptProduction(testPrompt._id.toString());
+
+      expect(result.message).toBe('Prompt production made successfully');
+
+      const updatedGroup = await PromptGroup.findById(testGroup._id);
+      expect(updatedGroup.productionId.toString()).toBe(testPrompt._id.toString());
+    });
+
+    it('should return error message when prompt not found', async () => {
+      const nonExistentId = new mongoose.Types.ObjectId().toString();
+
+      const result = await promptFns.makePromptProduction(nonExistentId);
+      expect(result.message).toBe('Error making prompt production');
+    });
+  });
+
+  describe('Prompt Groups with tool_resources projection', () => {
+    let testGroup;
+    let testPrompt;
+
+    beforeEach(async () => {
+      testGroup = await PromptGroup.create({
+        name: 'Projection Test Group',
+        category: 'testing',
+        author: testUsers.owner._id,
+        authorName: testUsers.owner.name,
+        productionId: new mongoose.Types.ObjectId(),
+      });
+
+      testPrompt = await Prompt.create({
+        prompt: 'Test prompt for projection',
+        type: 'text',
+        author: testUsers.owner._id,
+        groupId: testGroup._id,
+        tool_resources: {
+          file_search: {
+            file_ids: ['file-1'],
+          },
+          execute_code: {
+            file_ids: ['file-2', 'file-3'],
+          },
+        },
+      });
+
+      await PromptGroup.findByIdAndUpdate(testGroup._id, {
+        productionId: testPrompt._id,
+      });
+    });
+
+    afterEach(async () => {
+      await Prompt.deleteMany({});
+      await PromptGroup.deleteMany({});
+    });
+
+    it('should include tool_resources in prompt group projection', async () => {
+      const mockReq = { user: { id: testUsers.owner._id } };
+      const filter = {
+        pageNumber: 1,
+        pageSize: 10,
+        category: 'testing',
+      };
+
+      const result = await promptFns.getPromptGroups(mockReq, filter);
+
+      expect(result.promptGroups).toBeTruthy();
+      expect(Array.isArray(result.promptGroups)).toBe(true);
+      expect(result.promptGroups.length).toBeGreaterThan(0);
+
+      const foundGroup = result.promptGroups.find(
+        (group) => group._id.toString() === testGroup._id.toString(),
+      );
+      expect(foundGroup).toBeTruthy();
+      expect(foundGroup.productionPrompt.tool_resources).toEqual({
+        file_search: {
+          file_ids: ['file-1'],
+        },
+        execute_code: {
+          file_ids: ['file-2', 'file-3'],
+        },
+      });
+    });
+  });
+
+  describe('Error handling with tool_resources', () => {
+    it('should handle errors when creating prompt with tool_resources', async () => {
+      const invalidPromptData = {
+        prompt: {
+          prompt: 'Test prompt',
+          type: 'text',
+          groupId: 'invalid-id',
+          tool_resources: {
+            file_search: {
+              file_ids: ['file-1'],
+            },
+          },
+        },
+        author: testUsers.owner._id,
+      };
+
+      const result = await promptFns.savePrompt(invalidPromptData);
+
+      expect(result.message).toBe('Error saving prompt');
+    });
+
+    it('should handle errors when retrieving prompt with tool_resources', async () => {
+      const result = await promptFns.getPrompt({ _id: 'invalid-id' });
+
+      expect(result.message).toBe('Error getting prompt');
+    });
+  });
+
+  describe('Edge Cases - File Attachment Scenarios', () => {
+    let testGroup;
+    let testPrompt;
+
+    beforeEach(async () => {
+      testGroup = await PromptGroup.create({
+        name: 'Edge Case Test Group',
+        category: 'testing',
+        author: testUsers.owner._id,
+        authorName: testUsers.owner.name,
+        productionId: new mongoose.Types.ObjectId(),
+      });
+
+      testPrompt = await Prompt.create({
+        prompt: 'Test prompt with file attachments for edge cases',
+        type: 'text',
+        author: testUsers.owner._id,
+        groupId: testGroup._id,
+        tool_resources: {
+          file_search: {
+            file_ids: ['file-1', 'file-2', 'file-3'],
+          },
+          execute_code: {
+            file_ids: ['file-4'],
+          },
+          image_edit: {
+            file_ids: ['file-5', 'file-6'],
+          },
+        },
+      });
+    });
+
+    afterEach(async () => {
+      await Prompt.deleteMany({});
+      await PromptGroup.deleteMany({});
+    });
+
+    describe('Orphaned File References', () => {
+      it('should maintain prompt functionality when referenced files are deleted', async () => {
+        const result = await promptFns.getPrompt({ _id: testPrompt._id });
+
+        expect(result).toBeTruthy();
+        expect(result.tool_resources).toEqual({
+          file_search: {
+            file_ids: ['file-1', 'file-2', 'file-3'],
+          },
+          execute_code: {
+            file_ids: ['file-4'],
+          },
+          image_edit: {
+            file_ids: ['file-5', 'file-6'],
+          },
+        });
+
+        expect(result.prompt).toBe('Test prompt with file attachments for edge cases');
+        expect(result.type).toBe('text');
+      });
+
+      it('should handle prompts with empty file_ids arrays', async () => {
+        const promptWithEmptyFileIds = await Prompt.create({
+          prompt: 'Prompt with empty file_ids',
+          type: 'text',
+          author: testUsers.owner._id,
+          groupId: testGroup._id,
+          tool_resources: {
+            file_search: {
+              file_ids: [],
+            },
+            execute_code: {
+              file_ids: [],
+            },
+          },
+        });
+
+        const result = await promptFns.getPrompt({ _id: promptWithEmptyFileIds._id });
+
+        expect(result).toBeTruthy();
+        expect(result.tool_resources).toEqual({
+          file_search: {
+            file_ids: [],
+          },
+          execute_code: {
+            file_ids: [],
+          },
+        });
+      });
+
+      it('should handle prompts with null/undefined file_ids', async () => {
+        const promptWithNullFileIds = await Prompt.create({
+          prompt: 'Prompt with null file_ids',
+          type: 'text',
+          author: testUsers.owner._id,
+          groupId: testGroup._id,
+          tool_resources: {
+            file_search: {
+              file_ids: null,
+            },
+            execute_code: {
+              file_ids: undefined,
+            },
+          },
+        });
+
+        const result = await promptFns.getPrompt({ _id: promptWithNullFileIds._id });
+
+        expect(result).toBeTruthy();
+        expect(result.tool_resources).toEqual({
+          file_search: {
+            file_ids: null,
+          },
+        });
+      });
+    });
+
+    describe('Invalid File References', () => {
+      it('should handle prompts with malformed file_ids', async () => {
+        const promptWithMalformedIds = await Prompt.create({
+          prompt: 'Prompt with malformed file_ids',
+          type: 'text',
+          author: testUsers.owner._id,
+          groupId: testGroup._id,
+          tool_resources: {
+            file_search: {
+              file_ids: ['', null, undefined, 'invalid-id', 'file-valid'],
+            },
+            execute_code: {
+              file_ids: [123, {}, []],
+            },
+          },
+        });
+
+        const result = await promptFns.getPrompt({ _id: promptWithMalformedIds._id });
+
+        expect(result).toBeTruthy();
+        expect(result.tool_resources).toEqual({
+          file_search: {
+            file_ids: ['', null, null, 'invalid-id', 'file-valid'],
+          },
+          execute_code: {
+            file_ids: [123, {}, []],
+          },
+        });
+      });
+
+      it('should handle prompts with duplicate file_ids', async () => {
+        const promptWithDuplicates = await Prompt.create({
+          prompt: 'Prompt with duplicate file_ids',
+          type: 'text',
+          author: testUsers.owner._id,
+          groupId: testGroup._id,
+          tool_resources: {
+            file_search: {
+              file_ids: ['file-1', 'file-2', 'file-1', 'file-3', 'file-2'],
+            },
+          },
+        });
+
+        const result = await promptFns.getPrompt({ _id: promptWithDuplicates._id });
+
+        expect(result).toBeTruthy();
+        expect(result.tool_resources).toEqual({
+          file_search: {
+            file_ids: ['file-1', 'file-2', 'file-1', 'file-3', 'file-2'],
+          },
+        });
+      });
+    });
+
+    describe('Tool Resource Edge Cases', () => {
+      it('should handle prompts with unknown tool resource types', async () => {
+        const promptWithUnknownTools = await Prompt.create({
+          prompt: 'Prompt with unknown tool resources',
+          type: 'text',
+          author: testUsers.owner._id,
+          groupId: testGroup._id,
+          tool_resources: {
+            unknown_tool: {
+              file_ids: ['file-1'],
+            },
+            another_unknown: {
+              file_ids: ['file-2', 'file-3'],
+            },
+            file_search: {
+              file_ids: ['file-4'],
+            },
+          },
+        });
+
+        const result = await promptFns.getPrompt({ _id: promptWithUnknownTools._id });
+
+        expect(result).toBeTruthy();
+        expect(result.tool_resources).toEqual({
+          unknown_tool: {
+            file_ids: ['file-1'],
+          },
+          another_unknown: {
+            file_ids: ['file-2', 'file-3'],
+          },
+          file_search: {
+            file_ids: ['file-4'],
+          },
+        });
+      });
+
+      it('should handle prompts with malformed tool_resources structure', async () => {
+        const promptWithMalformedTools = await Prompt.create({
+          prompt: 'Prompt with malformed tool_resources',
+          type: 'text',
+          author: testUsers.owner._id,
+          groupId: testGroup._id,
+          tool_resources: {
+            file_search: 'not-an-object',
+            execute_code: {
+              file_ids: 'not-an-array',
+            },
+            image_edit: {
+              wrong_property: ['file-1'],
+            },
+          },
+        });
+
+        const result = await promptFns.getPrompt({ _id: promptWithMalformedTools._id });
+
+        expect(result).toBeTruthy();
+        expect(result.tool_resources).toEqual({
+          file_search: 'not-an-object',
+          execute_code: {
+            file_ids: 'not-an-array',
+          },
+          image_edit: {
+            wrong_property: ['file-1'],
+          },
+        });
+      });
+    });
+
+    describe('Prompt Deletion vs File Persistence', () => {
+      it('should delete prompt but preserve file references in tool_resources', async () => {
+        const beforeDelete = await promptFns.getPrompt({ _id: testPrompt._id });
+        expect(beforeDelete.tool_resources).toEqual({
+          file_search: {
+            file_ids: ['file-1', 'file-2', 'file-3'],
+          },
+          execute_code: {
+            file_ids: ['file-4'],
+          },
+          image_edit: {
+            file_ids: ['file-5', 'file-6'],
+          },
+        });
+
+        const result = await promptFns.deletePrompt({
+          promptId: testPrompt._id,
+          groupId: testGroup._id,
+          author: testUsers.owner._id,
+          role: SystemRoles.USER,
+        });
+
+        expect(result.prompt).toBe('Prompt deleted successfully');
+
+        const deletedPrompt = await Prompt.findById(testPrompt._id);
+        expect(deletedPrompt).toBeNull();
+      });
+
+      it('should handle prompt deletion when tool_resources contain non-existent files', async () => {
+        const promptWithNonExistentFiles = await Prompt.create({
+          prompt: 'Prompt with non-existent file references',
+          type: 'text',
+          author: testUsers.owner._id,
+          groupId: testGroup._id,
+          tool_resources: {
+            file_search: {
+              file_ids: ['non-existent-file-1', 'non-existent-file-2'],
+            },
+          },
+        });
+
+        const result = await promptFns.deletePrompt({
+          promptId: promptWithNonExistentFiles._id,
+          groupId: testGroup._id,
+          author: testUsers.owner._id,
+          role: SystemRoles.USER,
+        });
+
+        expect(result.prompt).toBe('Prompt deleted successfully');
+
+        const deletedPrompt = await Prompt.findById(promptWithNonExistentFiles._id);
+        expect(deletedPrompt).toBeNull();
+      });
+    });
+
+    describe('Large File Collections', () => {
+      it('should handle prompts with many file attachments', async () => {
+        const manyFileIds = Array.from({ length: 100 }, (_, i) => `file-${i + 1}`);
+
+        const promptWithManyFiles = await Prompt.create({
+          prompt: 'Prompt with many file attachments',
+          type: 'text',
+          author: testUsers.owner._id,
+          groupId: testGroup._id,
+          tool_resources: {
+            file_search: {
+              file_ids: manyFileIds.slice(0, 50),
+            },
+            execute_code: {
+              file_ids: manyFileIds.slice(50, 100),
+            },
+          },
+        });
+
+        const result = await promptFns.getPrompt({ _id: promptWithManyFiles._id });
+
+        expect(result).toBeTruthy();
+        expect(result.tool_resources.file_search.file_ids).toHaveLength(50);
+        expect(result.tool_resources.execute_code.file_ids).toHaveLength(50);
+        expect(result.tool_resources.file_search.file_ids[0]).toBe('file-1');
+        expect(result.tool_resources.execute_code.file_ids[49]).toBe('file-100');
+      });
+
+      it('should handle prompts with very long file_ids', async () => {
+        const longFileId = 'a'.repeat(1000);
+
+        const promptWithLongFileId = await Prompt.create({
+          prompt: 'Prompt with very long file ID',
+          type: 'text',
+          author: testUsers.owner._id,
+          groupId: testGroup._id,
+          tool_resources: {
+            file_search: {
+              file_ids: [longFileId],
+            },
+          },
+        });
+
+        const result = await promptFns.getPrompt({ _id: promptWithLongFileId._id });
+
+        expect(result).toBeTruthy();
+        expect(result.tool_resources.file_search.file_ids[0]).toBe(longFileId);
+        expect(result.tool_resources.file_search.file_ids[0].length).toBe(1000);
+      });
+    });
+
+    describe('Concurrent Operations', () => {
+      it('should handle concurrent updates to prompts with tool_resources', async () => {
+        const concurrentPrompts = await Promise.all([
+          Prompt.create({
+            prompt: 'Concurrent prompt 1',
+            type: 'text',
+            author: testUsers.owner._id,
+            groupId: testGroup._id,
+            tool_resources: {
+              file_search: {
+                file_ids: ['shared-file-1', 'unique-file-1'],
+              },
+            },
+          }),
+          Prompt.create({
+            prompt: 'Concurrent prompt 2',
+            type: 'text',
+            author: testUsers.owner._id,
+            groupId: testGroup._id,
+            tool_resources: {
+              file_search: {
+                file_ids: ['shared-file-1', 'unique-file-2'],
+              },
+            },
+          }),
+          Prompt.create({
+            prompt: 'Concurrent prompt 3',
+            type: 'text',
+            author: testUsers.owner._id,
+            groupId: testGroup._id,
+            tool_resources: {
+              file_search: {
+                file_ids: ['shared-file-1', 'unique-file-3'],
+              },
+            },
+          }),
+        ]);
+
+        expect(concurrentPrompts).toHaveLength(3);
+        concurrentPrompts.forEach((prompt, index) => {
+          expect(prompt.tool_resources.file_search.file_ids).toContain('shared-file-1');
+          expect(prompt.tool_resources.file_search.file_ids).toContain(`unique-file-${index + 1}`);
+        });
+
+        const retrievedPrompts = await promptFns.getPrompts({ groupId: testGroup._id });
+        expect(retrievedPrompts.length).toBeGreaterThanOrEqual(3);
+      });
+    });
+  });
+});
