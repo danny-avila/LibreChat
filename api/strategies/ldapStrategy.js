@@ -122,17 +122,17 @@ const ldapLogin = new LdapStrategy(ldapOptions, async (userinfo, done) => {
       );
     }
 
+    const appConfig = await getAppConfig();
+    if (!isEmailDomainAllowed(mail, appConfig?.registration?.allowedDomains)) {
+      logger.error(
+        `[LDAP Strategy] Authentication blocked - email domain not allowed [Email: ${mail}]`,
+      );
+      return done(null, false, { message: 'Email domain not allowed' });
+    }
+
     if (!user) {
       const isFirstRegisteredUser = (await countUsers()) === 0;
       const role = isFirstRegisteredUser ? SystemRoles.ADMIN : SystemRoles.USER;
-      const appConfig = await getAppConfig({ role });
-
-      if (!isEmailDomainAllowed(mail, appConfig?.registration?.allowedDomains)) {
-        logger.error(
-          `[LDAP Strategy] Registration blocked - email domain not allowed [Email: ${mail}]`,
-        );
-        return done(null, false, { message: 'Email domain not allowed for registration' });
-      }
 
       user = {
         provider: 'ldap',
