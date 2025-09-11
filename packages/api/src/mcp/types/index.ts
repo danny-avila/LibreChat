@@ -8,7 +8,7 @@ import {
   StreamableHTTPOptionsSchema,
   Tools,
 } from 'librechat-data-provider';
-import type { UIResource, TPlugin, TUser } from 'librechat-data-provider';
+import type { SearchResultData, UIResource, TPlugin, TUser } from 'librechat-data-provider';
 import type * as t from '@modelcontextprotocol/sdk/types.js';
 import type { TokenMethods } from '@librechat/data-schemas';
 import type { FlowStateManager } from '~/flow/manager';
@@ -133,7 +133,7 @@ export type Artifacts =
         sources: FileSearchSource[];
         fileCitations?: boolean;
       };
-      [Tools.web_search]?: import('librechat-data-provider').SearchResultData;
+      [Tools.web_search]?: SearchResultData;
       files?: Array<{ id: string; name: string }>;
       session_id?: string;
       file_ids?: string[];
@@ -144,10 +144,7 @@ export type FormattedContentResult = [string | FormattedContent[], undefined | A
 
 export type ImageFormatter = (item: ImageContent) => FormattedContent;
 
-export type FormattedToolResponse = [
-  string | FormattedContent[],
-  { content: FormattedContent[] } | undefined,
-];
+export type FormattedToolResponse = FormattedContentResult;
 
 export type ParsedServerConfig = MCPOptions & {
   url?: string;
