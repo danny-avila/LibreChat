@@ -1,5 +1,7 @@
 version: 1.0.0
 cache: true
+interface:
+  agents: false
 endpoints:
   azureOpenAI:
     # Endpoint-level configuration
