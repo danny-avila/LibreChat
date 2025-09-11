@@ -848,7 +848,7 @@
   "com_ui_download_backup": "Download Backup Codes",
   "com_ui_download_backup_tooltip": "Before you continue, download your backup codes. You will need them to regain access if you lose your authenticator device",
   "com_ui_download_error": "Error downloading file. The file may have been deleted.",
-  "com_ui_drag_drop": "something needs to go here. was empty",
+  "com_ui_drag_drop": "Drop any file here to add it to the conversation",
   "com_ui_dropdown_variables": "Dropdown variables:",
   "com_ui_dropdown_variables_info": "Create custom dropdown menus for your prompts: `{{variable_name:option1|option2|option3}}`",
   "com_ui_duplicate": "Duplicate",
