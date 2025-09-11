@@ -1,7 +1,8 @@
 import { logger } from '@librechat/data-schemas';
 import { AccessRoleIds, ResourceType, PrincipalType, Constants } from 'librechat-data-provider';
+import { ensureRequiredCollectionsExist } from '../db/utils';
 import type { AccessRoleMethods, IAgent } from '@librechat/data-schemas';
-import type { Model, Mongoose, mongo } from 'mongoose';
+import type { Model, Mongoose } from 'mongoose';
 
 const { GLOBAL_PROJECT_NAME } = Constants;
 
@@ -54,31 +55,9 @@ export async function checkAgentPermissionsMigration({
   logger.debug('Checking if agent permissions migration is needed');
 
   try {
-    /** Ensurse `aclentries` collection exists for DocumentDB compatibility */
-    async function ensureCollectionExists(db: mongo.Db, collectionName: string) {
-      try {
-        const collections = await db.listCollections({ name: collectionName }).toArray();
-        if (collections.length === 0) {
-          await db.createCollection(collectionName);
-          logger.info(`Created collection: ${collectionName}`);
-        } else {
-          logger.debug(`Collection already exists: ${collectionName}`);
-        }
-      } catch (error) {
-        logger.error(`'Failed to check/create "${collectionName}" collection:`, error);
-        // If listCollections fails, try alternative approach
-        try {
-          // Try to access the collection directly - this will create it in MongoDB if it doesn't exist
-          await db.collection(collectionName).findOne({}, { projection: { _id: 1 } });
-        } catch (createError) {
-          logger.error(`Could not ensure collection ${collectionName} exists:`, createError);
-        }
-      }
-    }
-
     const db = mongoose.connection.db;
     if (db) {
-      await ensureCollectionExists(db, 'aclentries');
+      await ensureRequiredCollectionsExist(db);
     }
 
     // Verify required roles exist
