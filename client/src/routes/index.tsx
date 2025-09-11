@@ -34,11 +34,6 @@ const baseHref = baseEl?.getAttribute('href') || '/';
 export const router = createBrowserRouter(
   [
     {
-      path: 'share/:shareId',
-      element: <ShareRoute />,
-      errorElement: <RouteErrorBoundary />,
-    },
-    {
       path: 'oauth',
       errorElement: <RouteErrorBoundary />,
       children: [
@@ -99,6 +94,11 @@ export const router = createBrowserRouter(
           path: '/',
           element: <Root />,
           children: [
+            {
+              path: 'share/:shareId',
+              element: <ShareRoute />,
+              errorElement: <RouteErrorBoundary />,
+            },
             {
               index: true,
               element: <Navigate to="/c/new" replace={true} />,

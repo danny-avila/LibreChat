@@ -62,7 +62,7 @@ function SharedView() {
   return (
     <ShareContext.Provider value={{ isSharedConvo: true }}>
       <main
-        className="relative flex w-full grow overflow-hidden dark:bg-surface-secondary"
+        className="relative flex w-full grow dark:bg-surface-secondary"
         style={{ paddingBottom: '50px' }}
       >
         <div className="transition-width relative flex h-full w-full flex-1 flex-col items-stretch overflow-hidden pt-0 dark:bg-surface-secondary">

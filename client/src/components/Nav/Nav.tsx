@@ -199,6 +199,7 @@ const Nav = memo(
           style={{
             width: navVisible ? navWidth : '0px',
             transform: navVisible ? 'translateX(0)' : 'translateX(-100%)',
+            position: 'fixed',
           }}
         >
           <div className="h-full w-[320px] md:w-[260px]">
