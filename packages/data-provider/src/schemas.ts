@@ -556,9 +556,9 @@ export type TAttachmentMetadata = {
   type?: Tools;
   messageId: string;
   toolCallId: string;
+  [Tools.memory]?: MemoryArtifact;
   [Tools.web_search]?: SearchResultData;
   [Tools.file_search]?: SearchResultData;
-  [Tools.memory]?: MemoryArtifact;
 };
 
 export type TAttachment =
