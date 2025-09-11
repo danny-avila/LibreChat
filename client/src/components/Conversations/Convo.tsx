@@ -148,7 +148,7 @@ export default function Conversation({
   };
 
   const isConversationSelected = isSelected(conversationId || '');
-  const showCheckbox = isSelectionMode || isConversationSelected;
+  const showCheckbox = isConversationSelected;
 
   return (
     <div
@@ -181,7 +181,7 @@ export default function Conversation({
       {/* Checkbox overlay - positioned absolutely to not affect layout */}
       <div 
         className={cn(
-          "absolute left-2 top-1/2 z-10 flex h-6 w-6 -translate-y-1/2 items-center justify-center bg-surface-primary shadow-md transition-opacity duration-200",
+          "absolute left-2 top-1/2 z-10 flex h-6 w-6 -translate-y-1/2 items-center justify-center shadow-md transition-opacity duration-200",
           showCheckbox || isSelectionMode
             ? "opacity-100"
             : "opacity-0 group-hover:opacity-100"
@@ -192,7 +192,7 @@ export default function Conversation({
           checked={isConversationSelected}
           onChange={() => {}}
           onClick={handleCheckboxClick}
-          className="h-4 w-4 cursor-pointer rounded border-2 border-border-medium bg-surface-primary text-blue-600 focus:ring-2 focus:ring-blue-500 hover:border-blue-400"
+          className="h-4 w-4 cursor-pointer rounded border-2 border-border-medium text-blue-600 focus:ring-2 focus:ring-blue-500 hover:border-blue-400"
           aria-label={localize('com_ui_select_conversation')}
         />
       </div>
