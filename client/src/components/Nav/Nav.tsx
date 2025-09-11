@@ -13,6 +13,7 @@ import {
 } from '~/hooks';
 import { useConversationsInfiniteQuery } from '~/data-provider';
 import { Conversations } from '~/components/Conversations';
+import { BulkSelectProvider } from '~/components/Conversations/BulkSelectContext';
 import SearchBar from './SearchBar';
 import NewChat from './NewChat';
 import { cn } from '~/utils';
@@ -21,6 +22,7 @@ import store from '~/store';
 const BookmarkNav = lazy(() => import('./Bookmarks/BookmarkNav'));
 const AccountSettings = lazy(() => import('./AccountSettings'));
 const AgentMarketplaceButton = lazy(() => import('./AgentMarketplaceButton'));
+const BulkDeleteButton = lazy(() => import('./BulkDeleteButton'));
 
 const NAV_WIDTH_DESKTOP = '260px';
 const NAV_WIDTH_MOBILE = '320px';
@@ -159,6 +161,9 @@ const Nav = memo(
       () => (
         <>
           <Suspense fallback={null}>
+            <BulkDeleteButton isSmallScreen={isSmallScreen} retainView={moveToTop} />
+          </Suspense>
+          <Suspense fallback={null}>
             <AgentMarketplaceButton isSmallScreen={isSmallScreen} toggleNav={toggleNavVisible} />
           </Suspense>
           {hasAccessToBookmarks && (
@@ -171,7 +176,7 @@ const Nav = memo(
           )}
         </>
       ),
-      [hasAccessToBookmarks, tags, isSmallScreen, toggleNavVisible],
+      [hasAccessToBookmarks, tags, isSmallScreen, toggleNavVisible, moveToTop],
     );
 
     const [isSearchLoading, setIsSearchLoading] = useState(
@@ -189,7 +194,7 @@ const Nav = memo(
     }, [search.query, search.isTyping, isLoading, isFetching]);
 
     return (
-      <>
+      <BulkSelectProvider>
         <div
           data-testid="nav"
           className={cn(
@@ -239,7 +244,7 @@ const Nav = memo(
           </div>
         </div>
         {isSmallScreen && <NavMask navVisible={navVisible} toggleNavVisible={toggleNavVisible} />}
-      </>
+      </BulkSelectProvider>
     );
   },
 );
