@@ -6,6 +6,7 @@ import {
   StdioOptionsSchema,
   WebSocketOptionsSchema,
   StreamableHTTPOptionsSchema,
+  Tools,
 } from 'librechat-data-provider';
 import type { UIResource, TPlugin, TUser } from 'librechat-data-provider';
 import type * as t from '@modelcontextprotocol/sdk/types.js';
@@ -111,12 +112,31 @@ export type FormattedContent =
       };
     };
 
+export type FileSearchSource = {
+  fileId: string;
+  relevance: number;
+  fileName?: string;
+  metadata?: {
+    storageType?: string;
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+};
+
 export type Artifacts =
   | {
       content?: FormattedContent[];
-      ui_resources?: {
+      [Tools.ui_resources]?: {
         data: UIResource[];
       };
+      [Tools.file_search]?: {
+        sources: FileSearchSource[];
+        fileCitations?: boolean;
+      };
+      [Tools.web_search]?: import('librechat-data-provider').SearchResultData;
+      files?: Array<{ id: string; name: string }>;
+      session_id?: string;
+      file_ids?: string[];
     }
   | undefined;
 

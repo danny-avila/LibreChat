@@ -176,7 +176,7 @@ describe('ToolCallInfo', () => {
           toolCallId: 'tool456',
           conversationId: 'conv789',
           [Tools.web_search]: {
-            results: ['result1', 'result2'],
+            organic: [],
           },
         },
       ];

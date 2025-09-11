@@ -575,7 +575,10 @@ export type TAttachment =
   | (TFile & TAttachmentMetadata)
   | (Pick<TFile, 'filename' | 'filepath' | 'conversationId'> & {
       expiresAt: number;
-    } & TAttachmentMetadata);
+    } & TAttachmentMetadata)
+  | (Partial<Pick<TFile, 'filename' | 'filepath'>> &
+      Pick<TFile, 'conversationId'> &
+      TAttachmentMetadata);
 
 export type TMessage = z.input<typeof tMessageSchema> & {
   children?: TMessage[];
