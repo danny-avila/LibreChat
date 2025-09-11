@@ -157,12 +157,11 @@ describe('cacheConfig', () => {
 
   describe('FORCED_IN_MEMORY_CACHE_NAMESPACES validation', () => {
     test('should parse comma-separated cache keys correctly', () => {
-      process.env.FORCED_IN_MEMORY_CACHE_NAMESPACES = ' ROLES, STATIC_CONFIG ,MESSAGES ';
+      process.env.FORCED_IN_MEMORY_CACHE_NAMESPACES = ' ROLES, MESSAGES ';
 
       const { cacheConfig } = require('./cacheConfig');
       expect(cacheConfig.FORCED_IN_MEMORY_CACHE_NAMESPACES).toEqual([
         'ROLES',
-        'STATIC_CONFIG',
         'MESSAGES',
       ]);
     });

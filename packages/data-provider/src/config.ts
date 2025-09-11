@@ -577,6 +577,7 @@ export const interfaceSchema = z
 
 export type TInterfaceConfig = z.infer<typeof interfaceSchema>;
 export type TBalanceConfig = z.infer<typeof balanceSchema>;
+export type TTransactionsConfig = z.infer<typeof transactionsSchema>;
 
 export const turnstileOptionsSchema = z
   .object({
@@ -601,6 +602,7 @@ export type TStartupConfig = {
   interface?: TInterfaceConfig;
   turnstile?: TTurnstileConfig;
   balance?: TBalanceConfig;
+  transactions?: TTransactionsConfig;
   discordLoginEnabled: boolean;
   facebookLoginEnabled: boolean;
   githubLoginEnabled: boolean;
@@ -706,6 +708,7 @@ export const webSearchSchema = z.object({
   firecrawlApiKey: z.string().optional().default('${FIRECRAWL_API_KEY}'),
   firecrawlApiUrl: z.string().optional().default('${FIRECRAWL_API_URL}'),
   jinaApiKey: z.string().optional().default('${JINA_API_KEY}'),
+  jinaApiUrl: z.string().optional().default('${JINA_API_URL}'),
   cohereApiKey: z.string().optional().default('${COHERE_API_KEY}'),
   searchProvider: z.nativeEnum(SearchProviders).optional(),
   scraperType: z.nativeEnum(ScraperTypes).optional(),
@@ -768,6 +771,10 @@ export const balanceSchema = z.object({
   refillAmount: z.number().optional().default(10000),
 });
 
+export const transactionsSchema = z.object({
+  enabled: z.boolean().optional().default(true),
+});
+
 export const memorySchema = z.object({
   disabled: z.boolean().optional(),
   validKeys: z.array(z.string()).optional(),
@@ -821,6 +828,7 @@ export const configSchema = z.object({
     })
     .default({ socialLogins: defaultSocialLogins }),
   balance: balanceSchema.optional(),
+  transactions: transactionsSchema.optional(),
   speech: z
     .object({
       tts: ttsSchema.optional(),
@@ -1211,14 +1219,6 @@ export enum CacheKeys {
    * Key for accessing the model token config cache.
    */
   TOKEN_CONFIG = 'TOKEN_CONFIG',
-  /**
-   * Key for the librechat yaml config cache.
-   */
-  LIBRECHAT_YAML_CONFIG = 'LIBRECHAT_YAML_CONFIG',
-  /**
-   * Key for the static config namespace.
-   */
-  STATIC_CONFIG = 'STATIC_CONFIG',
   /**
    * Key for the app config namespace.
    */

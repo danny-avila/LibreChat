@@ -47,11 +47,7 @@ export default function AgentPanel() {
   const { onSelect: onSelectAgent } = useSelectAgent();
 
   const modelsQuery = useGetModelsQuery();
-
-  // Basic agent query for initial permission check
-  const basicAgentQuery = useGetAgentByIdQuery(current_agent_id ?? '', {
-    enabled: !!(current_agent_id ?? '') && current_agent_id !== Constants.EPHEMERAL_AGENT_ID,
-  });
+  const basicAgentQuery = useGetAgentByIdQuery(current_agent_id);
 
   const { hasPermission, isLoading: permissionsLoading } = useResourcePermissions(
     ResourceType.AGENT,
