@@ -220,18 +220,8 @@ export class MCPConnectionFactory {
 
     connection.on('oauthRequired', oauthHandler);
 
-    /** Handler reference for cleanup when connection state changes to disconnected */
-    const cleanupHandler = (state: string) => {
-      if (state === 'disconnected') {
-        connection.removeListener('oauthRequired', oauthHandler);
-        connection.removeListener('connectionChange', cleanupHandler);
-      }
-    };
-    connection.on('connectionChange', cleanupHandler);
-
     return () => {
       connection.removeListener('oauthRequired', oauthHandler);
-      connection.removeListener('connectionChange', cleanupHandler);
     };
   }
 
