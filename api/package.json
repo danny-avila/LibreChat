@@ -56,7 +56,7 @@
     "@modelcontextprotocol/sdk": "^1.17.1",
     "@node-saml/passport-saml": "^5.1.0",
     "@waylaidwanderer/fetch-event-source": "^3.0.1",
-    "axios": "^1.8.2",
+    "axios": "^1.12.1",
     "bcryptjs": "^2.4.3",
     "compression": "^1.8.1",
     "connect-redis": "^8.1.0",
