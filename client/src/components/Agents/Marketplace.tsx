@@ -197,21 +197,21 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
    */
   const handleSearch = (query: string) => {
     const newParams = new URLSearchParams(searchParams);
+    const currentCategory = displayCategory;
+
     if (query.trim()) {
       newParams.set('q', query.trim());
-      // Switch to "all" category when starting a new search
-      navigate(`/agents/all?${newParams.toString()}`);
     } else {
       newParams.delete('q');
-      // Preserve current category when clearing search
-      const currentCategory = displayCategory;
-      if (currentCategory === 'promoted') {
-        navigate(`/agents${newParams.toString() ? `?${newParams.toString()}` : ''}`);
-      } else {
-        navigate(
-          `/agents/${currentCategory}${newParams.toString() ? `?${newParams.toString()}` : ''}`,
-        );
-      }
+    }
+
+    // Always preserve current category when searching or clearing search
+    if (currentCategory === 'promoted') {
+      navigate(`/agents${newParams.toString() ? `?${newParams.toString()}` : ''}`);
+    } else {
+      navigate(
+        `/agents/${currentCategory}${newParams.toString() ? `?${newParams.toString()}` : ''}`,
+      );
     }
   };
 
