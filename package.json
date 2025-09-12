@@ -1,6 +1,6 @@
 {
   "name": "LibreChat",
-  "version": "v0.8.0-rc3",
+  "version": "v0.8.0-rc4",
   "description": "",
   "workspaces": [
     "api",
@@ -100,6 +100,7 @@
     "@microsoft/eslint-formatter-sarif": "^3.1.0",
     "@playwright/test": "^1.50.1",
     "@types/react-virtualized": "^9.22.0",
+    "caniuse-lite": "^1.0.30001741",
     "cross-env": "^7.0.3",
     "elliptic": "^6.6.1",
     "eslint": "^9.20.1",
@@ -124,7 +125,7 @@
   },
   "overrides": {
     "@langchain/openai": "0.5.18",
-    "axios": "1.8.2",
+    "axios": "1.12.1",
     "elliptic": "^6.6.1",
     "form-data": "^4.0.4",
     "mdast-util-gfm-autolink-literal": "2.0.0",

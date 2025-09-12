@@ -1,7 +1,7 @@
 import { logger } from '@librechat/data-schemas';
 import type { OAuthClientInformation } from '@modelcontextprotocol/sdk/shared/auth.js';
 import type { TokenMethods } from '@librechat/data-schemas';
-import type { MCPOAuthTokens, MCPOAuthFlowMetadata } from '~/mcp/oauth';
+import type { MCPOAuthTokens, MCPOAuthFlowMetadata, OAuthMetadata } from '~/mcp/oauth';
 import type { FlowStateManager } from '~/flow/manager';
 import type { FlowMetadata } from '~/flow/types';
 import type * as t from './types';
@@ -74,9 +74,23 @@ export class MCPConnectionFactory {
       oauthTokens,
     });
 
-    if (this.useOAuth) this.handleOAuthEvents(connection);
-    await this.attemptToConnect(connection);
-    return connection;
+    let cleanupOAuthHandlers: (() => void) | null = null;
+    if (this.useOAuth) {
+      cleanupOAuthHandlers = this.handleOAuthEvents(connection);
+    }
+
+    try {
+      await this.attemptToConnect(connection);
+      if (cleanupOAuthHandlers) {
+        cleanupOAuthHandlers();
+      }
+      return connection;
+    } catch (error) {
+      if (cleanupOAuthHandlers) {
+        cleanupOAuthHandlers();
+      }
+      throw error;
+    }
   }
 
   /** Retrieves existing OAuth tokens from storage or returns null */
@@ -133,8 +147,8 @@ export class MCPConnectionFactory {
   }
 
   /** Sets up OAuth event handlers for the connection */
-  protected handleOAuthEvents(connection: MCPConnection): void {
-    connection.on('oauthRequired', async (data) => {
+  protected handleOAuthEvents(connection: MCPConnection): () => void {
+    const oauthHandler = async (data: { serverUrl?: string }) => {
       logger.info(`${this.logPrefix} oauthRequired event received`);
 
       // If we just want to initiate OAuth and return, handle it differently
@@ -186,6 +200,7 @@ export class MCPConnectionFactory {
             updateToken: this.tokenMethods.updateToken,
             findToken: this.tokenMethods.findToken,
             clientInfo: result.clientInfo,
+            metadata: result.metadata,
           });
           logger.info(`${this.logPrefix} OAuth tokens saved to storage`);
         } catch (error) {
@@ -201,7 +216,13 @@ export class MCPConnectionFactory {
         logger.warn(`${this.logPrefix} OAuth failed, emitting oauthFailed event`);
         connection.emit('oauthFailed', new Error('OAuth authentication failed'));
       }
-    });
+    };
+
+    connection.on('oauthRequired', oauthHandler);
+
+    return () => {
+      connection.removeListener('oauthRequired', oauthHandler);
+    };
   }
 
   /** Attempts to establish connection with timeout handling */
@@ -284,6 +305,7 @@ export class MCPConnectionFactory {
   protected async handleOAuthRequired(): Promise<{
     tokens: MCPOAuthTokens | null;
     clientInfo?: OAuthClientInformation;
+    metadata?: OAuthMetadata;
   } | null> {
     const serverUrl = (this.serverConfig as t.SSEOptions | t.StreamableHTTPOptions).url;
     logger.debug(`${this.logPrefix} \`handleOAuthRequired\` called with serverUrl: ${serverUrl}`);
@@ -359,8 +381,13 @@ export class MCPConnectionFactory {
 
       /** Client information from the flow metadata */
       const clientInfo = flowMetadata?.clientInfo;
+      const metadata = flowMetadata?.metadata;
 
-      return { tokens, clientInfo };
+      return {
+        tokens,
+        clientInfo,
+        metadata,
+      };
     } catch (error) {
       logger.error(`${this.logPrefix} Failed to complete OAuth flow for ${this.serverName}`, error);
       return null;
