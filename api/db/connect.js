@@ -1,4 +1,8 @@
-require('dotenv').config();
+// <Stripe> Patch to allow different paths to the .env file
+// If process.env.ENV_FILE is unset, fallback to default behavior.
+require('../server/stripe/dotenv');
+// </Stripe>
+
 const { isEnabled } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 
