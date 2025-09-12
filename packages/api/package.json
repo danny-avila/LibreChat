@@ -76,7 +76,7 @@
     "@librechat/agents": "^2.4.79",
     "@librechat/data-schemas": "*",
     "@modelcontextprotocol/sdk": "^1.17.1",
-    "axios": "^1.8.2",
+    "axios": "^1.12.1",
     "diff": "^7.0.0",
     "eventsource": "^3.0.2",
     "express": "^4.21.2",
