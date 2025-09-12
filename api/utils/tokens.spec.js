@@ -1,11 +1,12 @@
 const { EModelEndpoint } = require('librechat-data-provider');
 const {
-  maxOutputTokensMap,
-  getModelMaxTokens,
-  processModelData,
-  matchModelName,
   maxTokensMap,
-} = require('./tokens');
+  matchModelName,
+  processModelData,
+  getModelMaxTokens,
+  maxOutputTokensMap,
+  findMatchingPattern,
+} = require('@librechat/api');
 
 describe('getModelMaxTokens', () => {
   test('should return correct tokens for exact match', () => {
@@ -393,7 +394,7 @@ describe('getModelMaxTokens', () => {
   });
 
   test('should return correct max output tokens for GPT-5 models', () => {
-    const { getModelMaxOutputTokens } = require('./tokens');
+    const { getModelMaxOutputTokens } = require('@librechat/api');
     ['gpt-5', 'gpt-5-mini', 'gpt-5-nano'].forEach((model) => {
       expect(getModelMaxOutputTokens(model)).toBe(maxOutputTokensMap[EModelEndpoint.openAI][model]);
       expect(getModelMaxOutputTokens(model, EModelEndpoint.openAI)).toBe(
@@ -406,7 +407,7 @@ describe('getModelMaxTokens', () => {
   });
 
   test('should return correct max output tokens for GPT-OSS models', () => {
-    const { getModelMaxOutputTokens } = require('./tokens');
+    const { getModelMaxOutputTokens } = require('@librechat/api');
     ['gpt-oss-20b', 'gpt-oss-120b'].forEach((model) => {
       expect(getModelMaxOutputTokens(model)).toBe(maxOutputTokensMap[EModelEndpoint.openAI][model]);
       expect(getModelMaxOutputTokens(model, EModelEndpoint.openAI)).toBe(
@@ -749,8 +750,12 @@ describe('Grok Model Tests - Tokens', () => {
 
 describe('Claude Model Tests', () => {
   it('should return correct context length for Claude 4 models', () => {
-    expect(getModelMaxTokens('claude-sonnet-4')).toBe(200000);
-    expect(getModelMaxTokens('claude-opus-4')).toBe(200000);
+    expect(getModelMaxTokens('claude-sonnet-4')).toBe(
+      maxTokensMap[EModelEndpoint.anthropic]['claude-sonnet-4'],
+    );
+    expect(getModelMaxTokens('claude-opus-4')).toBe(
+      maxTokensMap[EModelEndpoint.anthropic]['claude-opus-4'],
+    );
   });
 
   it('should handle Claude 4 model name variations with different prefixes and suffixes', () => {
@@ -772,7 +777,8 @@ describe('Claude Model Tests', () => {
     ];
 
     modelVariations.forEach((model) => {
-      expect(getModelMaxTokens(model)).toBe(200000);
+      const modelKey = findMatchingPattern(model, maxTokensMap[EModelEndpoint.anthropic]);
+      expect(getModelMaxTokens(model)).toBe(maxTokensMap[EModelEndpoint.anthropic][modelKey]);
     });
   });
 

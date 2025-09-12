@@ -14,6 +14,7 @@ describe('cacheConfig', () => {
     delete process.env.REDIS_KEY_PREFIX_VAR;
     delete process.env.REDIS_KEY_PREFIX;
     delete process.env.USE_REDIS;
+    delete process.env.USE_REDIS_CLUSTER;
     delete process.env.REDIS_PING_INTERVAL;
     delete process.env.FORCED_IN_MEMORY_CACHE_NAMESPACES;
 
@@ -101,6 +102,38 @@ describe('cacheConfig', () => {
     });
   });
 
+  describe('USE_REDIS_CLUSTER configuration', () => {
+    test('should default to false when USE_REDIS_CLUSTER is not set', () => {
+      const { cacheConfig } = require('./cacheConfig');
+      expect(cacheConfig.USE_REDIS_CLUSTER).toBe(false);
+    });
+
+    test('should be false when USE_REDIS_CLUSTER is set to false', () => {
+      process.env.USE_REDIS_CLUSTER = 'false';
+
+      const { cacheConfig } = require('./cacheConfig');
+      expect(cacheConfig.USE_REDIS_CLUSTER).toBe(false);
+    });
+
+    test('should be true when USE_REDIS_CLUSTER is set to true', () => {
+      process.env.USE_REDIS_CLUSTER = 'true';
+
+      const { cacheConfig } = require('./cacheConfig');
+      expect(cacheConfig.USE_REDIS_CLUSTER).toBe(true);
+    });
+
+    test('should work with USE_REDIS enabled and REDIS_URI set', () => {
+      process.env.USE_REDIS_CLUSTER = 'true';
+      process.env.USE_REDIS = 'true';
+      process.env.REDIS_URI = 'redis://localhost:6379';
+
+      const { cacheConfig } = require('./cacheConfig');
+      expect(cacheConfig.USE_REDIS_CLUSTER).toBe(true);
+      expect(cacheConfig.USE_REDIS).toBe(true);
+      expect(cacheConfig.REDIS_URI).toBe('redis://localhost:6379');
+    });
+  });
+
   describe('REDIS_CA file reading', () => {
     test('should be null when REDIS_CA is not set', () => {
       const { cacheConfig } = require('./cacheConfig');
@@ -124,12 +157,11 @@ describe('cacheConfig', () => {
 
   describe('FORCED_IN_MEMORY_CACHE_NAMESPACES validation', () => {
     test('should parse comma-separated cache keys correctly', () => {
-      process.env.FORCED_IN_MEMORY_CACHE_NAMESPACES = ' ROLES, STATIC_CONFIG ,MESSAGES ';
+      process.env.FORCED_IN_MEMORY_CACHE_NAMESPACES = ' ROLES, MESSAGES ';
 
       const { cacheConfig } = require('./cacheConfig');
       expect(cacheConfig.FORCED_IN_MEMORY_CACHE_NAMESPACES).toEqual([
         'ROLES',
-        'STATIC_CONFIG',
         'MESSAGES',
       ]);
     });

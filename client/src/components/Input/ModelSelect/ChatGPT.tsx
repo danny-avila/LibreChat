@@ -1,6 +1,7 @@
-import { SelectDropDown, SelectDropDownPop } from '@librechat/client';
+import { SelectDropDown } from '@librechat/client';
 import type { TModelSelectProps } from '~/common';
-import { cn, cardStyle } from '~/utils/';
+import SelectDropDownPop from '~/components/Input/ModelSelect/SelectDropDownPop';
+import { cn, cardStyle } from '~/utils';
 
 export default function ChatGPT({
   conversation,

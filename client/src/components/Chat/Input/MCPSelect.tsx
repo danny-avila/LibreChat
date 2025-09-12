@@ -1,21 +1,21 @@
 import React, { memo, useCallback } from 'react';
 import { MultiSelect, MCPIcon } from '@librechat/client';
 import MCPServerStatusIcon from '~/components/MCP/MCPServerStatusIcon';
-import { useMCPServerManager } from '~/hooks/MCP/useMCPServerManager';
 import MCPConfigDialog from '~/components/MCP/MCPConfigDialog';
+import { useBadgeRowContext } from '~/Providers';
 
-function MCPSelect() {
+function MCPSelectContent() {
+  const { conversationId, mcpServerManager } = useBadgeRowContext();
   const {
-    configuredServers,
-    mcpValues,
-    isPinned,
-    placeholderText,
-    batchToggleServers,
-    getServerStatusIconProps,
-    getConfigDialogProps,
-    isInitializing,
     localize,
-  } = useMCPServerManager();
+    mcpValues,
+    isInitializing,
+    placeholderText,
+    configuredServers,
+    batchToggleServers,
+    getConfigDialogProps,
+    getServerStatusIconProps,
+  } = mcpServerManager;
 
   const renderSelectedValues = useCallback(
     (values: string[], placeholder?: string) => {
@@ -68,14 +68,6 @@ function MCPSelect() {
     [getServerStatusIconProps, isInitializing],
   );
 
-  if ((!mcpValues || mcpValues.length === 0) && !isPinned) {
-    return null;
-  }
-
-  if (!configuredServers || configuredServers.length === 0) {
-    return null;
-  }
-
   const configDialogProps = getConfigDialogProps();
 
   return (
@@ -93,9 +85,22 @@ function MCPSelect() {
         selectItemsClassName="border border-blue-600/50 bg-blue-500/10 hover:bg-blue-700/10"
         selectClassName="group relative inline-flex items-center justify-center md:justify-start gap-1.5 rounded-full border border-border-medium text-sm font-medium transition-all md:w-full size-9 p-2 md:p-3 bg-transparent shadow-sm hover:bg-surface-hover hover:shadow-md active:shadow-inner"
       />
-      {configDialogProps && <MCPConfigDialog {...configDialogProps} />}
+      {configDialogProps && (
+        <MCPConfigDialog {...configDialogProps} conversationId={conversationId} />
+      )}
     </>
   );
+}
+
+function MCPSelect() {
+  const { mcpServerManager } = useBadgeRowContext();
+  const { configuredServers } = mcpServerManager;
+
+  if (!configuredServers || configuredServers.length === 0) {
+    return null;
+  }
+
+  return <MCPSelectContent />;
 }
 
 export default memo(MCPSelect);
