@@ -428,4 +428,29 @@ describe('initializeClient', () => {
     expect(result.openAIApiKey).toBe('test');
     expect(result.client.options.reverseProxyUrl).toBe('https://user-provided-url.com');
   });
+
+  test('should use Entra ID authentication when AZURE_OPENAI_USE_ENTRA_ID is enabled', async () => {
+    process.env.AZURE_OPENAI_USE_ENTRA_ID = 'true';
+    process.env.AZURE_API_KEY = 'test-azure-api-key';
+    process.env.AZURE_OPENAI_API_INSTANCE_NAME = 'test-instance';
+    process.env.AZURE_OPENAI_API_DEPLOYMENT_NAME = 'test-deployment';
+    process.env.AZURE_OPENAI_API_VERSION = '2024-12-01-preview';
+
+    const req = {
+      body: {
+        key: null,
+        endpoint: EModelEndpoint.azureOpenAI,
+        model: 'gpt-4-vision-preview',
+      },
+      user: { id: '123' },
+      app: { locals: {} },
+      config: mockAppConfig,
+    };
+    const res = {};
+    const endpointOption = {};
+
+    const result = await initializeClient({ req, res, endpointOption });
+
+    expect(result.openAIApiKey).toBeTruthy();
+  });
 });

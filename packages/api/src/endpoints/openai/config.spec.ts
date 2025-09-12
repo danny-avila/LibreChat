@@ -1549,4 +1549,22 @@ describe('getOpenAIConfig', () => {
       });
     });
   });
+
+  describe('Entra ID Authentication', () => {
+    it('should handle Entra ID authentication in Azure configuration', () => {
+      const azure = {
+        azureOpenAIApiInstanceName: 'test-instance',
+        azureOpenAIApiDeploymentName: 'test-deployment',
+        azureOpenAIApiVersion: '2023-05-15',
+        azureOpenAIApiKey: 'entra-id-placeholder',
+      };
+
+      const result = getOpenAIConfig(mockApiKey, { azure });
+
+      expect(result.llmConfig).toMatchObject({
+        ...azure,
+        model: 'test-deployment',
+      });
+    });
+  });
 });

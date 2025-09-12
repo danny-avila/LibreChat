@@ -1,4 +1,4 @@
-const { isUserProvided } = require('@librechat/api');
+const { isUserProvided, shouldUseEntraId } = require('@librechat/api');
 const { EModelEndpoint } = require('librechat-data-provider');
 const { generateConfig } = require('~/server/utils/handleText');
 
@@ -17,23 +17,28 @@ const {
   AZURE_ASSISTANTS_BASE_URL,
 } = process.env ?? {};
 
+// Note: For Entra ID, we can't determine the actual token here since this is synchronous
+// The actual token will be obtained in the initialize functions.
+// Still we need to set a placeholder token to avoid errors.
+const finalAzureOpenAIApiKey = shouldUseEntraId() ? 'entra-id-placeholder' : azureOpenAIApiKey;
+
 const useAzurePlugins = !!PLUGINS_USE_AZURE;
 
 const userProvidedOpenAI = useAzurePlugins
-  ? isUserProvided(azureOpenAIApiKey)
+  ? isUserProvided(finalAzureOpenAIApiKey)
   : isUserProvided(openAIApiKey);
 
 module.exports = {
   config: {
     openAIApiKey,
-    azureOpenAIApiKey,
+    azureOpenAIApiKey: finalAzureOpenAIApiKey,
     useAzurePlugins,
     userProvidedOpenAI,
     googleKey,
     [EModelEndpoint.anthropic]: generateConfig(anthropicApiKey),
     [EModelEndpoint.chatGPTBrowser]: generateConfig(chatGPTToken),
     [EModelEndpoint.openAI]: generateConfig(openAIApiKey, OPENAI_REVERSE_PROXY),
-    [EModelEndpoint.azureOpenAI]: generateConfig(azureOpenAIApiKey, AZURE_OPENAI_BASEURL),
+    [EModelEndpoint.azureOpenAI]: generateConfig(finalAzureOpenAIApiKey, AZURE_OPENAI_BASEURL),
     [EModelEndpoint.assistants]: generateConfig(
       assistantsApiKey,
       ASSISTANTS_BASE_URL,
