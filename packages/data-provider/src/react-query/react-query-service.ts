@@ -77,6 +77,23 @@ export const useGetConversationByIdQuery = (
   );
 };
 
+export const useGetModelCostsQuery = (
+  modelHistory: Array<{ model: string; endpoint: string }>,
+  config?: UseQueryOptions<t.TModelCosts>,
+): QueryObserverResult<t.TModelCosts> => {
+  return useQuery<t.TModelCosts>(
+    [QueryKeys.modelCosts, modelHistory],
+    () => dataService.getModelCosts(modelHistory),
+    {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      enabled: !!modelHistory && modelHistory.length > 0,
+      ...config,
+    },
+  );
+};
+
 //This isn't ideal because its just a query and we're using mutation, but it was the only way
 //to make it work with how the Chat component is structured
 export const useGetConversationByIdMutation = (id: string): UseMutationResult<s.TConversation> => {

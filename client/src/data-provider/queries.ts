@@ -32,20 +32,6 @@ import type {
 } from 'librechat-data-provider';
 import type { ConversationCursorData } from '~/utils/convos';
 import { findConversationInInfinite } from '~/utils';
-type TConversationCosts = {
-  conversationId: string;
-  totals: {
-    prompt: { usd: number; tokenCount: number };
-    completion: { usd: number; tokenCount: number };
-    total: { usd: number; tokenCount: number };
-  };
-  perMessage: Array<{
-    messageId: string;
-    tokenType: 'prompt' | 'completion';
-    tokenCount: number;
-    usd: number;
-  }>;
-};
 
 export const useGetPresetsQuery = (
   config?: UseQueryOptions<TPreset[]>,
@@ -85,25 +71,6 @@ export const useGetConvoIdQuery = (
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,
       refetchOnMount: false,
-      ...config,
-    },
-  );
-};
-
-export const useGetConversationCosts = (
-  conversationId: string,
-  config?: UseQueryOptions<TConversationCosts>,
-): QueryObserverResult<TConversationCosts> => {
-  return useQuery<TConversationCosts>(
-    [QueryKeys.conversation, conversationId, 'costs'],
-    () => {
-      return dataService.getConversationCosts(conversationId) as unknown as TConversationCosts;
-    },
-    {
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
-      refetchOnMount: false,
-      enabled: !!conversationId && conversationId !== 'new',
       ...config,
     },
   );
