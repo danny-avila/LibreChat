@@ -518,6 +518,7 @@ export const tMessageSchema = z.object({
   overrideParentMessageId: z.string().nullable().optional(),
   bg: z.string().nullable().optional(),
   model: z.string().nullable().optional(),
+  targetModel: z.string().nullable().optional(),
   title: z.string().nullable().or(z.literal('New Chat')).default('New Chat'),
   sender: z.string().optional(),
   text: z.string(),

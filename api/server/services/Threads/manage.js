@@ -88,6 +88,7 @@ async function saveUserMessage(req, params) {
     parentMessageId: params.parentMessageId ?? Constants.NO_PARENT,
     /* For messages, use the assistant_id instead of model */
     model: params.assistant_id,
+    targetModel: params.model,
     thread_id: params.thread_id,
     sender: 'User',
     text: params.text,

@@ -26,6 +26,10 @@ const messageSchema: Schema<IMessage> = new Schema(
       type: String,
       default: null,
     },
+    targetModel: {
+      type: String,
+      default: null,
+    },
     endpoint: {
       type: String,
     },
