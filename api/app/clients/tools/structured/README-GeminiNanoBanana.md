@@ -25,9 +25,10 @@ This tool enables agents to generate images using Google's Vertex AI Gemini 2.5 
 
 ### Configuration
 
-The tool uses **hardcoded credentials** from `api/data/auth.json`. No environment variables needed!
+The tool uses **credentials** from `api/data/auth.json` following the same pattern as other Google service integrations.
 
-- **Credentials Path**: `./api/data/auth.json` (automatically detected)
+- **Credentials Path**: `api/data/auth.json` (automatically detected via `__dirname` resolution)
+- **Environment Override**: Set `GOOGLE_SERVICE_KEY_FILE` environment variable to use a different path
 - **Project ID**: Automatically extracted from the credentials file
 - **Location**: `global` (hardcoded)
 

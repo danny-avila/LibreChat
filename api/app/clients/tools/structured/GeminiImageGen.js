@@ -7,6 +7,7 @@ const { FileContext, ContentTypes, FileSources } = require('librechat-data-provi
 const { logger } = require('@librechat/data-schemas');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { getFiles } = require('~/models/File');
+const { GoogleGenAI } = require('@google/genai');
 
 const displayMessage =
   "Gemini displayed an image. All generated images are already plainly visible, so don't repeat the descriptions in detail. Do not list download links as they are available in the UI already. The user may download the images by clicking on them, but do not mention anything about downloading to the user.";
@@ -153,8 +154,10 @@ Guidelines:
       return;
     }
 
-    // Hardcoded path to auth.json
-    const credentialsPath = path.resolve('./data/auth.json');
+    // Use same pattern as other Google service integrations
+    const credentialsPath =
+      process.env.GOOGLE_SERVICE_KEY_FILE ||
+      path.join(__dirname, '../../../..', 'data', 'auth.json');
     if (!fs.existsSync(credentialsPath)) {
       throw new Error(`Google credentials file not found at: ${credentialsPath}`);
     }
@@ -237,17 +240,13 @@ Guidelines:
 
   async initializeGeminiVertexAI() {
     try {
-      // Hardcoded path to auth.json
-      const credentialsPath = path.resolve('./data/auth.json');
+      // Use same pattern as other Google service integrations
+      const credentialsPath =
+        process.env.GOOGLE_SERVICE_KEY_FILE ||
+        path.join(__dirname, '../../../..', 'data', 'auth.json');
 
       // Set environment variables for Vertex AI (required by Google GenAI library)
-      process.env.GOOGLE_CLOUD_PROJECT = 'hingegpt';
-      process.env.GOOGLE_CLOUD_LOCATION = 'global';
-      process.env.GOOGLE_GENAI_USE_VERTEXAI = 'True';
       process.env.GOOGLE_APPLICATION_CREDENTIALS = credentialsPath;
-
-      // Import Google GenAI SDK
-      const { GoogleGenAI } = require('@google/genai');
 
       // Load service account credentials
       const serviceKey = JSON.parse(fs.readFileSync(credentialsPath, 'utf8'));
