@@ -1,4 +1,7 @@
+import { Tools } from 'librechat-data-provider';
+import type { UIResource } from 'librechat-data-provider';
 import type * as t from './types';
+
 const RECOGNIZED_PROVIDERS = new Set([
   'google',
   'anthropic',
@@ -111,7 +114,7 @@ export function formatToolContent(
   const formattedContent: t.FormattedContent[] = [];
   const imageUrls: t.FormattedContent[] = [];
   let currentTextBlock = '';
-  const uiResources: t.UIResource[] = [];
+  const uiResources: UIResource[] = [];
 
   type ContentHandler = undefined | ((item: t.ToolContentPart) => void);
 
@@ -144,8 +147,7 @@ export function formatToolContent(
 
     resource: (item) => {
       if (item.resource.uri.startsWith('ui://')) {
-        uiResources.push(item.resource as t.UIResource);
-        return;
+        uiResources.push(item.resource as UIResource);
       }
 
       const resourceText = [];
@@ -182,18 +184,14 @@ export function formatToolContent(
     formattedContent.push({ type: 'text', text: currentTextBlock });
   }
 
-  if (uiResources.length) {
-    formattedContent.push({
-      type: 'text',
-      metadata: {
-        type: 'ui_resources',
-        data: uiResources,
-      },
-      text: '',
-    });
+  let artifacts: t.Artifacts = undefined;
+  if (imageUrls.length || uiResources.length) {
+    artifacts = {
+      ...(imageUrls.length && { content: imageUrls }),
+      ...(uiResources.length && { [Tools.ui_resources]: { data: uiResources } }),
+    };
   }
 
-  const artifacts = imageUrls.length ? { content: imageUrls } : undefined;
   if (CONTENT_ARRAY_PROVIDERS.has(provider)) {
     return [formattedContent, artifacts];
   }
