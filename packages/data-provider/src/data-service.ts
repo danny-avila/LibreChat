@@ -697,8 +697,10 @@ export function getMessagesByConvoId(conversationId: string): Promise<s.TMessage
   return request.get(endpoints.messages({ conversationId }));
 }
 
-export function getConversationCosts(conversationId: string): Promise<t.TConversationCosts> {
-  return request.get(endpoints.conversationCosts(conversationId));
+export function getModelCosts(
+  modelHistory: Array<{ model: string; endpoint: string }>,
+): Promise<t.TModelCosts> {
+  return request.post(endpoints.costs(), { modelHistory });
 }
 
 export function getPrompt(id: string): Promise<{ prompt: t.TPrompt }> {
