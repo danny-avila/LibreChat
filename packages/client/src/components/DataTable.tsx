@@ -173,19 +173,33 @@ const deepEqual = (a: unknown, b: unknown): boolean => {
   if (typeof a !== typeof b) return false;
 
   if (typeof a === 'object') {
-    const keysA = Object.keys(a as Record<string, unknown>);
-    const keysB = Object.keys(b as Record<string, unknown>);
-    if (keysA.length !== keysB.length) return false;
-
-    for (const key of keysA) {
-      if (
-        !keysB.includes(key) ||
-        !deepEqual((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key])
-      ) {
-        return false;
+    // Handle arrays
+    if (Array.isArray(a) && Array.isArray(b)) {
+      if (a.length !== b.length) return false;
+      for (let i = 0; i < a.length; i++) {
+        if (!deepEqual(a[i], b[i])) return false;
       }
+      return true;
     }
-    return true;
+
+    // Handle non-array objects
+    if (!Array.isArray(a) && !Array.isArray(b)) {
+      const keysA = Object.keys(a as Record<string, unknown>);
+      const keysB = Object.keys(b as Record<string, unknown>);
+      if (keysA.length !== keysB.length) return false;
+
+      for (const key of keysA) {
+        if (
+          !keysB.includes(key) ||
+          !deepEqual((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key])
+        ) {
+          return false;
+        }
+      }
+      return true;
+    }
+
+    return false;
   }
 
   return false;
@@ -211,7 +225,8 @@ const SelectionCheckbox = memo(
         }
         e.stopPropagation();
       }}
-      className={`flex h-full ${DATA_TABLE_CONSTANTS.CHECKBOX_WIDTH} items-center justify-center`}
+      className={`flex h-full items-center justify-center`}
+      style={{ width: DATA_TABLE_CONSTANTS.CHECKBOX_WIDTH }}
       onClick={(e) => {
         e.stopPropagation();
         onChange(!checked);
@@ -224,12 +239,15 @@ const SelectionCheckbox = memo(
 
 SelectionCheckbox.displayName = 'SelectionCheckbox';
 
-// Memoized column style computation
+// Memoized column style computation - Fixed: Stable keying for columns without explicit id
 const useColumnStyles = <TData, TValue>(
   columns: TableColumn<TData, TValue>[],
   isSmallScreen: boolean,
 ) => {
   return useMemo(() => {
+    const keyFor = (column: TableColumn<TData, TValue>) =>
+      column.id ?? (column as any).accessorKey ?? '';
+
     const getColumnStyle = (column: TableColumn<TData, TValue>): React.CSSProperties => ({
       width: isSmallScreen ? column?.meta?.mobileSize : column?.meta?.size,
       minWidth: column?.meta?.minWidth,
@@ -238,8 +256,9 @@ const useColumnStyles = <TData, TValue>(
 
     return columns.reduce(
       (acc, column) => {
-        if (column.id) {
-          acc[column.id] = getColumnStyle(column);
+        const key = keyFor(column);
+        if (key) {
+          acc[key] = getColumnStyle(column);
         }
         return acc;
       },
@@ -349,19 +368,18 @@ const DeleteButton = memo(
         variant="outline"
         onClick={onDelete}
         disabled={disabled}
+        style={{ minWidth: DATA_TABLE_CONSTANTS.DELETE_BUTTON_MIN_WIDTH }}
         className={cn(
-          `min-w-[${DATA_TABLE_CONSTANTS.DELETE_BUTTON_MIN_WIDTH}] transition-all ${DATA_TABLE_CONSTANTS.ROW_TRANSITION_DURATION} hover:border-red-300 hover:bg-red-50 dark:hover:bg-red-950/20`,
+          `transition-all hover:border-red-300 hover:bg-red-50 dark:hover:bg-red-950/20`,
           isSmallScreen && 'px-2 py-1',
         )}
         aria-label={isDeleting ? 'Deleting selected rows' : 'Delete selected rows'}
       >
         {isDeleting ? (
-          <Spinner className={`size-${DATA_TABLE_CONSTANTS.LOADING_INDICATOR_SIZE}`} />
+          <Spinner className="h-4 w-4" />
         ) : (
           <>
-            <TrashIcon
-              className={`size-${DATA_TABLE_CONSTANTS.TRASH_ICON_SIZE} text-red-500 sm:size-4`}
-            />
+            <TrashIcon className="h-4 w-4 text-red-500 sm:h-4 sm:w-4" />
             {!isSmallScreen && <span className="ml-2">Delete</span>}
           </>
         )}
@@ -649,7 +667,7 @@ export default function DataTable<TData, TValue>({
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
   const [columnPinning, setColumnPinning] = useState<ColumnPinningState>({});
   const [optimizedRowSelection, setOptimizedRowSelection] = useOptimizedRowSelection();
-  const [term, setTerm] = useState('');
+  const [term, setTerm] = useState(filterValue ?? '');
   const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState<Error | null>(null);
   const [isSearching, setIsSearching] = useState(false);
@@ -670,6 +688,16 @@ export default function DataTable<TData, TValue>({
 
   // Mount tracking for cleanup - Fixed: Declare mountedRef before any callback that uses it
   const mountedRef = useRef(true);
+
+  // Sync internal sorting with defaultSort changes
+  useEffect(() => {
+    if (!sorting) setInternalSorting(defaultSort);
+  }, [defaultSort, sorting]);
+
+  // Keep search input in sync with external filterValue
+  useEffect(() => {
+    setTerm(filterValue ?? '');
+  }, [filterValue]);
 
   // Sorting handler: call external callback if provided, otherwise use internal state
   const handleSortingChangeInternal = useCallback(
@@ -746,7 +774,8 @@ export default function DataTable<TData, TValue>({
       id: 'select',
       header: ({ table }: { table: TTable<TData> }) => (
         <div
-          className={`flex h-full ${DATA_TABLE_CONSTANTS.CHECKBOX_WIDTH} items-center justify-center`}
+          className={`flex h-full items-center justify-center`}
+          style={{ width: DATA_TABLE_CONSTANTS.CHECKBOX_WIDTH }}
         >
           <Checkbox
             checked={
@@ -777,16 +806,26 @@ export default function DataTable<TData, TValue>({
   // Memoized column styles for performance
   const columnStyles = useColumnStyles(tableColumns as TableColumn<TData, TValue>[], isSmallScreen);
 
-  // Set CSS variables for column sizing - Fixed: Add SSR guard
+  // Set CSS variables for column sizing with hash optimization
+  const columnSizesHashRef = useRef<string>('');
   useLayoutEffect(() => {
     if (typeof window === 'undefined' || !tableContainerRef.current) return;
 
-    tableColumns.forEach((column, index) => {
-      if (column.id) {
-        const size = columnStyles[column.id]?.width || 'auto';
-        tableContainerRef.current!.style.setProperty(`--col-${index}-size`, `${size}`);
-      }
-    });
+    // Calculate hash of column sizes to avoid unnecessary DOM writes
+    const sizesHash = tableColumns
+      .map((col, index) => `${index}:${columnStyles[col.id!]?.width || 'auto'}`)
+      .join('|');
+
+    if (sizesHash !== columnSizesHashRef.current) {
+      columnSizesHashRef.current = sizesHash;
+
+      tableColumns.forEach((column, index) => {
+        if (column.id) {
+          const size = columnStyles[column.id]?.width || 'auto';
+          tableContainerRef.current!.style.setProperty(`--col-${index}-size`, `${size}`);
+        }
+      });
+    }
   }, [tableColumns, columnStyles]);
 
   // Memoized row data with stable references
@@ -831,7 +870,11 @@ export default function DataTable<TData, TValue>({
   const measuredHeightsRef = useRef<number[]>([]);
   const rowVirtualizer = useVirtualizer({
     count: rows.length,
-    getScrollElement: () => tableContainerRef.current,
+    getScrollElement: () => {
+      // SSR safety: return null during SSR
+      if (typeof window === 'undefined') return null;
+      return tableContainerRef.current;
+    },
     estimateSize: useCallback(() => {
       const heights = measuredHeightsRef.current;
       if (heights.length > 0) {
@@ -880,9 +923,12 @@ export default function DataTable<TData, TValue>({
     [virtualRows, rows],
   );
 
-  // Fixed: Infinite scrolling with simplified trigger logic and removed accidental local mountedRef
+  // Fixed: Infinite scrolling with early return pattern and always attached listener
   const handleScrollInternal = useCallback(async () => {
     if (!mountedRef.current || !tableContainerRef.current) return;
+
+    // Early return if conditions not met
+    if (!hasNextPage || isFetchingNextPage) return;
 
     const scrollElement = tableContainerRef.current;
     const clientHeight = scrollElement.clientHeight;
@@ -903,20 +949,29 @@ export default function DataTable<TData, TValue>({
         onError?.(sanitizedError);
       }
     }
-  }, [fetchNextPage, totalSize, virtualRows, onError, sanitizeError]);
+  }, [
+    fetchNextPage,
+    totalSize,
+    virtualRows,
+    onError,
+    sanitizeError,
+    hasNextPage,
+    isFetchingNextPage,
+  ]);
 
   const throttledHandleScroll = useMemo(
     () => throttle(handleScrollInternal, DATA_TABLE_CONSTANTS.SCROLL_THROTTLE_MS),
     [handleScrollInternal],
   );
 
+  // Always attach scroll listener, early return in handler
   useEffect(() => {
     const scrollElement = tableContainerRef.current;
-    if (!scrollElement || !hasNextPage || isFetchingNextPage) return;
+    if (!scrollElement) return;
 
     scrollElement.addEventListener('scroll', throttledHandleScroll, { passive: true });
     return () => scrollElement.removeEventListener('scroll', throttledHandleScroll);
-  }, [throttledHandleScroll, hasNextPage, isFetchingNextPage]);
+  }, [throttledHandleScroll]);
 
   // Resize observer for virtualizer revalidation
   const handleWindowResize = useCallback(() => {
@@ -1084,11 +1139,13 @@ export default function DataTable<TData, TValue>({
     >
       {/* Accessible live region for loading announcements */}
       <div aria-live="polite" aria-atomic="true" className="sr-only">
-        {isFetchingNextPage
-          ? 'Loading more rows'
-          : hasNextPage
-            ? 'More rows available'
-            : 'All rows loaded'}
+        {isSearching
+          ? 'Searching...'
+          : isFetchingNextPage
+            ? 'Loading more rows'
+            : hasNextPage
+              ? 'More rows available'
+              : 'All rows loaded'}
       </div>
 
       {/* Error display - kept outside boundary for non-rendering errors */}
@@ -1114,7 +1171,10 @@ export default function DataTable<TData, TValue>({
         )}
 
         {shouldShowSearch && (
-          <div className={`relative ${DATA_TABLE_CONSTANTS.SEARCH_INPUT_MIN_WIDTH} flex-1`}>
+          <div
+            className={`relative flex-1`}
+            style={{ minWidth: DATA_TABLE_CONSTANTS.SEARCH_INPUT_MIN_WIDTH }}
+          >
             <AnimatedSearchInput
               value={term}
               onChange={(e) => {
@@ -1140,18 +1200,25 @@ export default function DataTable<TData, TValue>({
           ref={tableContainerRef}
           className={cn(
             `relative h-[calc(100vh-20rem)] max-w-full overflow-auto rounded-md border border-black/10 dark:border-white/10`,
-            `transition-all ${DATA_TABLE_CONSTANTS.ROW_TRANSITION_DURATION} ease-out`,
+            `transition-all ease-out`,
             'scrollbar-thin scrollbar-track-transparent scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600',
             isRefreshing && 'bg-surface-secondary/30',
           )}
+          style={{
+            minWidth: DATA_TABLE_CONSTANTS.TABLE_MIN_WIDTH,
+            transitionDuration: DATA_TABLE_CONSTANTS.ROW_TRANSITION_DURATION,
+          }}
           role="grid"
           aria-label="Data grid"
           aria-rowcount={data.length}
-          aria-busy={isLoading || isFetchingNextPage}
+          aria-busy={isLoading || isFetching || isFetchingNextPage}
         >
           <Table
-            className={`w-full min-w-[${DATA_TABLE_CONSTANTS.TABLE_MIN_WIDTH}] table-fixed border-separate border-spacing-0`}
-            style={{ borderCollapse: 'separate' }}
+            className="w-full table-fixed border-separate border-spacing-0"
+            style={{
+              borderCollapse: 'separate',
+              minWidth: DATA_TABLE_CONSTANTS.TABLE_MIN_WIDTH,
+            }}
           >
             <TableHeader className="sticky top-0 z-50 bg-surface-secondary backdrop-blur-sm">
               {headerGroups.map((headerGroup) => (
@@ -1187,7 +1254,7 @@ export default function DataTable<TData, TValue>({
                             : undefined
                         }
                         className={cn(
-                          'relative whitespace-nowrap bg-surface-secondary px-2 py-2 text-left text-sm font-medium text-text-secondary transition-colors duration-200 sm:px-4',
+                          'group relative whitespace-nowrap bg-surface-secondary px-2 py-2 text-left text-sm font-medium text-text-secondary transition-colors duration-200 sm:px-4',
                           canSort &&
                             'cursor-pointer hover:bg-surface-hover focus-visible:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary',
                         )}
@@ -1196,6 +1263,7 @@ export default function DataTable<TData, TValue>({
                           ...getCommonPinningStyles(header.column, table),
                         }}
                         role="columnheader"
+                        scope="col"
                         tabIndex={canSort ? 0 : -1}
                         aria-sort={ariaSort}
                       >
@@ -1224,6 +1292,7 @@ export default function DataTable<TData, TValue>({
                             <div className="mt-1 flex justify-center gap-1">
                               {header.column.getIsPinned() !== 'left' && (
                                 <button
+                                  type="button"
                                   className="rounded border px-1 text-xs hover:bg-surface-hover"
                                   onClick={(e) => {
                                     e.stopPropagation();
@@ -1236,6 +1305,7 @@ export default function DataTable<TData, TValue>({
                               )}
                               {header.column.getIsPinned() && (
                                 <button
+                                  type="button"
                                   className="rounded border px-1 text-xs hover:bg-surface-hover"
                                   onClick={(e) => {
                                     e.stopPropagation();
@@ -1248,6 +1318,7 @@ export default function DataTable<TData, TValue>({
                               )}
                               {header.column.getIsPinned() !== 'right' && (
                                 <button
+                                  type="button"
                                   className="rounded border px-1 text-xs hover:bg-surface-hover"
                                   onClick={(e) => {
                                     e.stopPropagation();
@@ -1322,7 +1393,7 @@ export default function DataTable<TData, TValue>({
                   <TableCell colSpan={tableColumns.length} className="p-4" role="gridcell">
                     <div className="flex h-full items-center justify-center">
                       {isFetchingNextPage ? (
-                        <Spinner className="size-4" aria-label="Loading more data" />
+                        <Spinner className="h-4 w-4" aria-label="Loading more data" />
                       ) : (
                         hasNextPage && <div className="h-6" />
                       )}
