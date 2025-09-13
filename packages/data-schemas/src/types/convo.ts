@@ -11,6 +11,7 @@ export interface IConversation extends Document {
   endpoint?: string;
   endpointType?: string;
   model?: string;
+  modelHistory?: Array<{ model: string; endpoint: string }>;
   region?: string;
   chatGptLabel?: string;
   examples?: unknown[];

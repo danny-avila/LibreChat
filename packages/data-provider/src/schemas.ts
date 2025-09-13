@@ -631,6 +631,7 @@ export const tConversationSchema = z.object({
   modelLabel: z.string().nullable().optional(),
   userLabel: z.string().optional(),
   model: z.string().nullable().optional(),
+  modelHistory: z.array(z.object({ model: z.string(), endpoint: z.string() })).optional(),
   promptPrefix: z.string().nullable().optional(),
   temperature: z.number().nullable().optional(),
   topP: z.number().optional(),
