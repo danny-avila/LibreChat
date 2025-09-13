@@ -7,11 +7,13 @@ import React, {
   memo,
   useMemo,
   startTransition,
+  CSSProperties,
 } from 'react';
 import { ArrowUp, ArrowDownUp } from 'lucide-react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   Row,
+  Column,
   ColumnDef,
   flexRender,
   SortingState,
@@ -21,6 +23,7 @@ import {
   getSortedRowModel,
   ColumnFiltersState,
   getFilteredRowModel,
+  ColumnPinningState,
 } from '@tanstack/react-table';
 import type { Table as TTable } from '@tanstack/react-table';
 import { Table, TableRow, TableBody, TableCell, TableHead, TableHeader } from './Table';
@@ -76,6 +79,61 @@ export const DATA_TABLE_CONSTANTS = {
 // Static skeleton widths for performance - avoids random computation on every render
 const STATIC_SKELETON_WIDTHS = [20, 40, 60, 80, 100, 120, 140, 160, 180, 200, 220, 240];
 
+// Column pinning utility - applies sticky positioning for pinned columns
+const getCommonPinningStyles = <TData,>(
+  column: Column<TData>,
+  table: TTable<TData>,
+): CSSProperties => {
+  const isPinned = column.getIsPinned();
+
+  if (!isPinned) {
+    return {
+      position: 'relative',
+      width: column.getSize(),
+      zIndex: 0,
+    };
+  }
+
+  const leftPinnedColumns = table.getLeftLeafColumns();
+  const rightPinnedColumns = table.getRightLeafColumns();
+
+  const isLastLeftPinnedColumn =
+    isPinned === 'left' &&
+    leftPinnedColumns.length > 0 &&
+    leftPinnedColumns[leftPinnedColumns.length - 1].id === column.id;
+
+  const isFirstRightPinnedColumn =
+    isPinned === 'right' && rightPinnedColumns.length > 0 && rightPinnedColumns[0].id === column.id;
+
+  let boxShadow: string | undefined;
+  if (isLastLeftPinnedColumn) {
+    boxShadow = '-4px 0 4px -4px rgba(0, 0, 0, 0.1) inset';
+  } else if (isFirstRightPinnedColumn) {
+    boxShadow = '4px 0 4px -4px rgba(0, 0, 0, 0.1) inset';
+  }
+
+  // Calculate offset for pinned position
+  let offset = 0;
+  if (isPinned === 'left') {
+    const columnIndex = leftPinnedColumns.findIndex((col) => col.id === column.id);
+    offset = leftPinnedColumns.slice(0, columnIndex).reduce((sum, col) => sum + col.getSize(), 0);
+  } else if (isPinned === 'right') {
+    const columnIndex = rightPinnedColumns.findIndex((col) => col.id === column.id);
+    offset = rightPinnedColumns.slice(columnIndex + 1).reduce((sum, col) => sum + col.getSize(), 0);
+  }
+
+  return {
+    boxShadow,
+    left: isPinned === 'left' ? `${offset}px` : undefined,
+    right: isPinned === 'right' ? `${offset}px` : undefined,
+    opacity: 0.95,
+    position: 'sticky',
+    width: column.getSize(),
+    zIndex: 1,
+    backgroundColor: 'var(--surface-secondary)',
+  };
+};
+
 type TableColumn<TData, TValue> = ColumnDef<TData, TValue> & {
   meta?: {
     size?: string | number;
@@ -84,12 +142,12 @@ type TableColumn<TData, TValue> = ColumnDef<TData, TValue> & {
   };
 };
 
-// Throttle utility for performance optimization
-const throttle = <T extends (...args: any[]) => any>(fn: T, delay: number): T => {
-  let timeoutId: NodeJS.Timeout | null = null;
+// Throttle utility for performance optimization - Fixed: Use DOM-safe timeout type
+const throttle = <T extends (...args: unknown[]) => unknown>(fn: T, delay: number): T => {
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
   let lastExecTime = 0;
 
-  return ((...args: any[]) => {
+  return ((...args: Parameters<T>) => {
     const currentTime = Date.now();
 
     if (currentTime - lastExecTime > delay) {
@@ -109,18 +167,21 @@ const throttle = <T extends (...args: any[]) => any>(fn: T, delay: number): T =>
 };
 
 // Deep comparison utility for objects
-const deepEqual = (a: any, b: any): boolean => {
+const deepEqual = (a: unknown, b: unknown): boolean => {
   if (a === b) return true;
   if (a == null || b == null) return false;
   if (typeof a !== typeof b) return false;
 
   if (typeof a === 'object') {
-    const keysA = Object.keys(a);
-    const keysB = Object.keys(b);
+    const keysA = Object.keys(a as Record<string, unknown>);
+    const keysB = Object.keys(b as Record<string, unknown>);
     if (keysA.length !== keysB.length) return false;
 
     for (const key of keysA) {
-      if (!keysB.includes(key) || !deepEqual(a[key], b[key])) {
+      if (
+        !keysB.includes(key) ||
+        !deepEqual((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key])
+      ) {
         return false;
       }
     }
@@ -187,14 +248,16 @@ const useColumnStyles = <TData, TValue>(
   }, [columns, isSmallScreen]);
 };
 
-const TableRowComponent = <TData, TValue>({
+const TableRowComponent = <TData,>({
   row,
   columnStyles,
+  table,
   index,
   virtualIndex,
 }: {
   row: Row<TData>;
   columnStyles: Record<string, React.CSSProperties>;
+  table: TTable<TData>;
   index: number;
   virtualIndex?: number;
 }) => {
@@ -248,7 +311,10 @@ const TableRowComponent = <TData, TValue>({
           <TableCell
             key={cell.id}
             className="w-0 max-w-0 px-2 py-1 align-middle text-xs transition-colors duration-200 sm:px-4 sm:py-2 sm:text-sm"
-            style={columnStyles[cell.column.id] || {}}
+            style={{
+              ...columnStyles[cell.column.id],
+              ...getCommonPinningStyles(cell.column, table),
+            }}
           >
             <div className="overflow-hidden text-ellipsis whitespace-nowrap">
               {flexRender(cell.column.columnDef.cell, cell.getContext())}
@@ -365,11 +431,13 @@ SkeletonRows.displayName = 'SkeletonRows';
  *   selection: { enableRowSelection: true, showCheckboxes: false },
  *   search: { enableSearch: true, debounce: 500, filterColumn: 'name' },
  *   skeleton: { count: 5 },
- *   virtualization: { overscan: 15 }
+ *   virtualization: { overscan: 15 },
+ *   pinning: { enableColumnPinning: true }
  * };
  *
  * Defaults: enableRowSelection: true, showCheckboxes: true, enableSearch: true,
- * skeleton.count: 10, virtualization.overscan: 10, search.debounce: 300
+ * skeleton.count: 10, virtualization.overscan: 10, search.debounce: 300,
+ * pinning.enableColumnPinning: false
  */
 interface DataTableConfig {
   /**
@@ -447,6 +515,20 @@ interface DataTableConfig {
      * @default 10
      */
     overscan?: number;
+  };
+
+  /**
+   * Column pinning configuration for sticky column behavior.
+   * Controls whether columns can be pinned to left or right side of the table.
+   */
+  pinning?: {
+    /**
+     * Enable column pinning functionality.
+     * When true, columns can be pinned to the left or right side of the table.
+     * Pinned columns remain visible during horizontal scrolling.
+     * @default false
+     */
+    enableColumnPinning?: boolean;
   };
 }
 
@@ -543,6 +625,7 @@ export default function DataTable<TData, TValue>({
       skeletonCount: config?.skeleton?.count ?? 10,
       overscan: config?.virtualization?.overscan ?? DATA_TABLE_CONSTANTS.OVERS_CAN,
       debounceDelay: config?.search?.debounce ?? DATA_TABLE_CONSTANTS.SEARCH_DEBOUNCE_MS,
+      enableColumnPinning: config?.pinning?.enableColumnPinning ?? false,
     };
   }, [config]);
 
@@ -554,6 +637,7 @@ export default function DataTable<TData, TValue>({
     skeletonCount,
     overscan,
     debounceDelay,
+    enableColumnPinning,
   } = tableConfig;
 
   const localize = useLocalize();
@@ -563,6 +647,7 @@ export default function DataTable<TData, TValue>({
   // State management
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
+  const [columnPinning, setColumnPinning] = useState<ColumnPinningState>({});
   const [optimizedRowSelection, setOptimizedRowSelection] = useOptimizedRowSelection();
   const [term, setTerm] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
@@ -582,6 +667,9 @@ export default function DataTable<TData, TValue>({
   // External sorting support: use provided sorting state, fall back to internal
   const [internalSorting, setInternalSorting] = useState<SortingState>(defaultSort);
   const finalSorting = sorting ?? internalSorting;
+
+  // Mount tracking for cleanup - Fixed: Declare mountedRef before any callback that uses it
+  const mountedRef = useRef(true);
 
   // Sorting handler: call external callback if provided, otherwise use internal state
   const handleSortingChangeInternal = useCallback(
@@ -631,6 +719,13 @@ export default function DataTable<TData, TValue>({
       filterValue,
       sortingLength: sorting?.length || 0,
     };
+
+    // Search UX warning for missing filterColumn
+    if (enableSearch && !filterColumn && onFilterChange) {
+      console.warn(
+        'DataTable: enableSearch is true but filterColumn is missing. Search will be hidden.',
+      );
+    }
   }
 
   const sanitizeError = useCallback((err: Error): string => {
@@ -680,18 +775,18 @@ export default function DataTable<TData, TValue>({
   }, [columns, enableRowSelection, showCheckboxes]);
 
   // Memoized column styles for performance
-  const columnStyles = useColumnStyles(tableColumns, isSmallScreen);
+  const columnStyles = useColumnStyles(tableColumns as TableColumn<TData, TValue>[], isSmallScreen);
 
-  // Set CSS variables for column sizing
+  // Set CSS variables for column sizing - Fixed: Add SSR guard
   useLayoutEffect(() => {
-    if (tableContainerRef.current) {
-      tableColumns.forEach((column, index) => {
-        if (column.id) {
-          const size = columnStyles[column.id]?.width || 'auto';
-          tableContainerRef.current!.style.setProperty(`--col-${index}-size`, `${size}`);
-        }
-      });
-    }
+    if (typeof window === 'undefined' || !tableContainerRef.current) return;
+
+    tableColumns.forEach((column, index) => {
+      if (column.id) {
+        const size = columnStyles[column.id]?.width || 'auto';
+        tableContainerRef.current!.style.setProperty(`--col-${index}-size`, `${size}`);
+      }
+    });
   }, [tableColumns, columnStyles]);
 
   // Memoized row data with stable references
@@ -699,7 +794,7 @@ export default function DataTable<TData, TValue>({
     return data.map((item, index) => ({
       ...item,
       _index: index,
-      _id: (item as any)?.id || index,
+      _id: (item as Record<string, unknown>)?.id || index,
     }));
   }, [data]);
 
@@ -712,31 +807,25 @@ export default function DataTable<TData, TValue>({
     getFilteredRowModel: getFilteredRowModel(),
     enableRowSelection,
     enableMultiRowSelection: true,
+    enableColumnPinning,
     state: {
       sorting: finalSorting,
       columnFilters,
       columnVisibility,
+      columnPinning,
       rowSelection: optimizedRowSelection,
     },
     onSortingChange: handleSortingChange,
     onColumnFiltersChange: setColumnFilters,
     onColumnVisibilityChange: setColumnVisibility,
+    onColumnPinningChange: setColumnPinning,
     onRowSelectionChange: setOptimizedRowSelection,
   });
 
   const { rows } = table.getRowModel();
 
-  // Memoized header groups for performance
-  const memoizedHeaderGroups = useMemo(
-    () => table.getHeaderGroups(),
-    [
-      table
-        .getAllColumns()
-        .map((c) => c.id)
-        .join(','),
-      finalSorting,
-    ],
-  );
+  // Fixed: Simplify header groups - React Table already memoizes internally
+  const headerGroups = table.getHeaderGroups();
 
   // Virtual scrolling setup with optimized height measurement
   const measuredHeightsRef = useRef<number[]>([]);
@@ -752,23 +841,26 @@ export default function DataTable<TData, TValue>({
       return DATA_TABLE_CONSTANTS.ROW_HEIGHT_ESTIMATE;
     }, []),
     overscan,
+    // Fixed: Optimize measureElement to avoid duplicate getBoundingClientRect calls
     measureElement: (el) => {
-      if (el) {
-        const height = el.getBoundingClientRect().height;
-        // Memory management for measured heights
-        measuredHeightsRef.current = [
-          ...measuredHeightsRef.current.slice(-DATA_TABLE_CONSTANTS.MEASURED_HEIGHTS_TRIM + 1),
-          height,
-        ];
+      if (!el) return DATA_TABLE_CONSTANTS.ROW_HEIGHT_ESTIMATE;
 
-        // Trim if exceeds max
-        if (measuredHeightsRef.current.length > DATA_TABLE_CONSTANTS.MAX_MEASURED_HEIGHTS) {
-          measuredHeightsRef.current = measuredHeightsRef.current.slice(
-            -DATA_TABLE_CONSTANTS.MEASURED_HEIGHTS_TRIM,
-          );
-        }
+      const height = el.getBoundingClientRect().height;
+
+      // Memory management for measured heights
+      measuredHeightsRef.current = [
+        ...measuredHeightsRef.current.slice(-DATA_TABLE_CONSTANTS.MEASURED_HEIGHTS_TRIM + 1),
+        height,
+      ];
+
+      // Trim if exceeds max
+      if (measuredHeightsRef.current.length > DATA_TABLE_CONSTANTS.MAX_MEASURED_HEIGHTS) {
+        measuredHeightsRef.current = measuredHeightsRef.current.slice(
+          -DATA_TABLE_CONSTANTS.MEASURED_HEIGHTS_TRIM,
+        );
       }
-      return el?.getBoundingClientRect().height ?? DATA_TABLE_CONSTANTS.ROW_HEIGHT_ESTIMATE;
+
+      return height;
     },
   });
 
@@ -788,21 +880,19 @@ export default function DataTable<TData, TValue>({
     [virtualRows, rows],
   );
 
-  // Infinite scrolling with throttled handler
+  // Fixed: Infinite scrolling with simplified trigger logic and removed accidental local mountedRef
   const handleScrollInternal = useCallback(async () => {
-    const mountedRef = { current: true };
     if (!mountedRef.current || !tableContainerRef.current) return;
 
     const scrollElement = tableContainerRef.current;
-    const element = scrollElement.getBoundingClientRect();
-    const scrollTop = scrollElement.scrollTop;
     const clientHeight = scrollElement.clientHeight;
     const virtualEnd = virtualRows.length > 0 ? virtualRows[virtualRows.length - 1].end : 0;
 
-    if (
-      totalSize - virtualEnd <= clientHeight * DATA_TABLE_CONSTANTS.INFINITE_SCROLL_THRESHOLD ||
-      (element.bottom - window.innerHeight < 100 && scrollTop + clientHeight >= totalSize - 100)
-    ) {
+    // Simplified condition: check distance to virtual end
+    const nearEnd =
+      totalSize - virtualEnd <= clientHeight * DATA_TABLE_CONSTANTS.INFINITE_SCROLL_THRESHOLD;
+
+    if (nearEnd) {
       try {
         await fetchNextPage?.();
       } catch (err) {
@@ -834,6 +924,8 @@ export default function DataTable<TData, TValue>({
   }, [rowVirtualizer]);
 
   useEffect(() => {
+    if (typeof window === 'undefined') return;
+
     const scrollElement = tableContainerRef.current;
     if (!scrollElement) return;
 
@@ -852,8 +944,6 @@ export default function DataTable<TData, TValue>({
     };
   }, [rowVirtualizer, handleWindowResize, throttledHandleScroll]);
 
-  // Mount tracking for cleanup
-  const mountedRef = useRef(true);
   useLayoutEffect(() => {
     mountedRef.current = true;
     return () => {
@@ -863,6 +953,8 @@ export default function DataTable<TData, TValue>({
 
   // Dynamic measurement optimization
   useLayoutEffect(() => {
+    if (typeof window === 'undefined') return;
+
     if (mountedRef.current && tableContainerRef.current && virtualRows.length > 0) {
       requestAnimationFrame(() => {
         if (mountedRef.current) {
@@ -885,6 +977,7 @@ export default function DataTable<TData, TValue>({
     isSmallScreen,
     virtualRowsWithStableKeys.length,
     virtualRowsWithStableKeys,
+    virtualRows.length,
   ]);
 
   // Search effect with optimized state updates
@@ -919,6 +1012,7 @@ export default function DataTable<TData, TValue>({
     setError(null);
 
     try {
+      const selectedRowsLength = table.getFilteredSelectedRowModel().rows.length;
       let selectedRows = table.getFilteredSelectedRowModel().rows.map((r) => r.original);
 
       // Validation
@@ -932,10 +1026,7 @@ export default function DataTable<TData, TValue>({
         (row): row is TData => typeof row === 'object' && row !== null,
       );
 
-      if (
-        selectedRows.length !== table.getFilteredSelectedRowModel().rows.length &&
-        process.env.NODE_ENV === 'development'
-      ) {
+      if (selectedRows.length !== selectedRowsLength && process.env.NODE_ENV === 'development') {
         console.warn('DataTable: Invalid row data detected and filtered out during deletion.');
       }
 
@@ -967,11 +1058,11 @@ export default function DataTable<TData, TValue>({
     }
   }, [onReset, rowVirtualizer]);
 
-  // Memoized computed values
-  const selectedCount = useMemo(
-    () => table.getFilteredSelectedRowModel().rows.length,
-    [table.getFilteredSelectedRowModel().rows.length],
-  );
+  // Fixed: Derive selected count from stable table state instead of re-calling getFilteredSelectedRowModel
+  const selectedCount = useMemo(() => {
+    const selection = table.getState().rowSelection;
+    return Object.keys(selection).length;
+  }, [table.getState().rowSelection]);
 
   const shouldShowSearch = useMemo(
     () => enableSearch && filterColumn && table.getColumn(filterColumn),
@@ -991,6 +1082,15 @@ export default function DataTable<TData, TValue>({
       role="region"
       aria-label="Data table"
     >
+      {/* Accessible live region for loading announcements */}
+      <div aria-live="polite" aria-atomic="true" className="sr-only">
+        {isFetchingNextPage
+          ? 'Loading more rows'
+          : hasNextPage
+            ? 'More rows available'
+            : 'All rows loaded'}
+      </div>
+
       {/* Error display - kept outside boundary for non-rendering errors */}
       {error && (
         <div className="rounded-md bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950/20 dark:text-red-400">
@@ -1051,9 +1151,10 @@ export default function DataTable<TData, TValue>({
         >
           <Table
             className={`w-full min-w-[${DATA_TABLE_CONSTANTS.TABLE_MIN_WIDTH}] table-fixed border-separate border-spacing-0`}
+            style={{ borderCollapse: 'separate' }}
           >
             <TableHeader className="sticky top-0 z-50 bg-surface-secondary backdrop-blur-sm">
-              {memoizedHeaderGroups.map((headerGroup) => (
+              {headerGroups.map((headerGroup) => (
                 <TableRow key={headerGroup.id} className="border-b border-border-light" role="row">
                   {headerGroup.headers.map((header) => {
                     const sortDir = header.column.getIsSorted();
@@ -1074,12 +1175,26 @@ export default function DataTable<TData, TValue>({
                       <TableHead
                         key={header.id}
                         onClick={canSort ? header.column.getToggleSortingHandler() : undefined}
+                        // Fixed: Add keyboard activation for sorting
+                        onKeyDown={
+                          canSort
+                            ? (e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  e.preventDefault();
+                                  header.column.toggleSorting();
+                                }
+                              }
+                            : undefined
+                        }
                         className={cn(
                           'relative whitespace-nowrap bg-surface-secondary px-2 py-2 text-left text-sm font-medium text-text-secondary transition-colors duration-200 sm:px-4',
                           canSort &&
                             'cursor-pointer hover:bg-surface-hover focus-visible:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary',
                         )}
-                        style={columnStyles[header.column.id] || {}}
+                        style={{
+                          ...columnStyles[header.column.id],
+                          ...getCommonPinningStyles(header.column, table),
+                        }}
                         role="columnheader"
                         tabIndex={canSort ? 0 : -1}
                         aria-sort={ariaSort}
@@ -1102,6 +1217,49 @@ export default function DataTable<TData, TValue>({
                             </span>
                           )}
                         </div>
+                        {/* Column pinning controls */}
+                        {enableColumnPinning &&
+                          !header.isPlaceholder &&
+                          header.column.getCanPin() && (
+                            <div className="mt-1 flex justify-center gap-1">
+                              {header.column.getIsPinned() !== 'left' && (
+                                <button
+                                  className="rounded border px-1 text-xs hover:bg-surface-hover"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    header.column.pin('left');
+                                  }}
+                                  title="Pin to left"
+                                >
+                                  ←
+                                </button>
+                              )}
+                              {header.column.getIsPinned() && (
+                                <button
+                                  className="rounded border px-1 text-xs hover:bg-surface-hover"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    header.column.pin(false);
+                                  }}
+                                  title="Unpin"
+                                >
+                                  ×
+                                </button>
+                              )}
+                              {header.column.getIsPinned() !== 'right' && (
+                                <button
+                                  className="rounded border px-1 text-xs hover:bg-surface-hover"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    header.column.pin('right');
+                                  }}
+                                  title="Pin to right"
+                                >
+                                  →
+                                </button>
+                              )}
+                            </div>
+                          )}
                       </TableHead>
                     );
                   })}
@@ -1130,6 +1288,7 @@ export default function DataTable<TData, TValue>({
                       key={virtualRow.stableKey}
                       row={row}
                       columnStyles={columnStyles}
+                      table={table}
                       index={virtualRow.index}
                       virtualIndex={virtualRow.index}
                     />

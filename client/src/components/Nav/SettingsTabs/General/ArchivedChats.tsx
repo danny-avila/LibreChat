@@ -27,12 +27,15 @@ import { NotificationSeverity } from '~/common';
 import { useLocalize } from '~/hooks';
 import { formatDate } from '~/utils';
 
-const DEFAULT_PARAMS: ConversationListParams = {
+const DEFAULT_PARAMS = {
   isArchived: true,
   sortBy: 'createdAt',
   sortDirection: 'desc',
   search: '',
-};
+} as const satisfies ConversationListParams;
+
+type SortKey = 'createdAt' | 'title';
+const isSortKey = (v: string): v is SortKey => v === 'createdAt' || v === 'title';
 
 const defaultSort: SortingState = [
   {
@@ -42,6 +45,7 @@ const defaultSort: SortingState = [
 ];
 
 // Define the table column type for better type safety
+// (kept from your original code)
 type TableColumn<TData, TValue> = ColumnDef<TData, TValue> & {
   meta?: {
     size?: string | number;
@@ -82,26 +86,36 @@ export default function ArchivedChatsTable() {
     }));
   }, []);
 
+  // Robust against stale state; keeps UI sort in sync with backend defaults
   const handleSortingChange = useCallback(
     (updater: SortingState | ((old: SortingState) => SortingState)) => {
-      const newSorting = typeof updater === 'function' ? updater(sorting) : updater;
-      setSorting(newSorting);
-      const sortDescriptor = newSorting[0];
-      if (sortDescriptor) {
-        setQueryParams((prev) => ({
-          ...prev,
-          sortBy: sortDescriptor.id as 'createdAt' | 'title',
-          sortDirection: sortDescriptor.desc ? 'desc' : 'asc',
-        }));
-      } else {
-        setQueryParams((prev) => ({
-          ...prev,
-          sortBy: 'createdAt',
-          sortDirection: 'desc',
-        }));
-      }
+      setSorting((prev) => {
+        const next = typeof updater === 'function' ? updater(prev) : updater;
+
+        // If user clears sorting, fall back to default both in UI and query
+        const coerced = next.length === 0 ? defaultSort : next;
+        const primary = coerced[0];
+
+        setQueryParams((p) => {
+          if (primary && isSortKey(primary.id)) {
+            return {
+              ...p,
+              sortBy: primary.id,
+              sortDirection: primary.desc ? 'desc' : 'asc',
+            };
+          }
+          // Fallback if id isn't one of the permitted keys
+          return {
+            ...p,
+            sortBy: 'createdAt',
+            sortDirection: 'desc',
+          };
+        });
+
+        return coerced;
+      });
     },
-    [sorting],
+    [setQueryParams, setSorting],
   );
 
   const handleError = useCallback(
@@ -316,6 +330,29 @@ export default function ArchivedChatsTable() {
             onError={handleError}
           />
         </OGDialogContent>
+      </OGDialog>
+      <OGDialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen}>
+        <OGDialogTemplate
+          showCloseButton={false}
+          title={localize('com_ui_delete_archived_chats')}
+          className="w-11/12 max-w-md"
+          main={
+            <div className="flex w-full flex-col items-center gap-2">
+              <div className="grid w-full items-center gap-2">
+                <Label className="text-left text-sm font-medium">
+                  {localize('com_ui_delete_confirm')} <strong>{deleteRow?.title}</strong>
+                </Label>
+              </div>
+            </div>
+          }
+          selection={{
+            selectHandler: confirmDelete,
+            selectClasses: `bg-red-700 dark:bg-red-600 hover:bg-red-800 dark:hover:bg-red-800 text-white ${
+              deleteMutation.isLoading ? 'cursor-not-allowed opacity-80' : ''
+            }`,
+            selectText: deleteMutation.isLoading ? <Spinner /> : localize('com_ui_delete'),
+          }}
+        />
       </OGDialog>
     </div>
   );

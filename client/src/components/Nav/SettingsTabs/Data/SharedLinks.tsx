@@ -1,5 +1,4 @@
 import { useCallback, useState, useMemo } from 'react';
-import { useRecoilValue } from 'recoil';
 import { Link } from 'react-router-dom';
 import { TrashIcon, MessageSquare } from 'lucide-react';
 import type { SharedLinkItem, SharedLinksListParams } from 'librechat-data-provider';
@@ -94,10 +93,6 @@ export default function SharedLinks() {
       );
 
       if (validRows.length === 0) {
-        showToast({
-          message: localize('com_ui_no_valid_items'),
-          severity: NotificationSeverity.WARNING,
-        });
         return;
       }
 
@@ -187,11 +182,7 @@ export default function SharedLinks() {
       },
       {
         accessorKey: 'actions',
-        header: () => (
-          <Label className="px-2 py-0 text-xs hover:bg-surface-hover sm:px-2 sm:py-2 sm:text-sm">
-            {localize('com_assistants_actions')}
-          </Label>
-        ),
+        header: () => <Label>{localize('com_assistants_actions')}</Label>,
         meta: {
           size: '7%',
           mobileSize: '25%',
@@ -244,14 +235,25 @@ export default function SharedLinks() {
             columns={columns}
             data={allLinks}
             onDelete={handleDelete}
-            config={{ skeleton: { count: 10 }, search: { filterColumn: 'title' } }}
+            config={{
+              skeleton: { count: 10 },
+              search: {
+                filterColumn: 'title',
+                enableSearch: true,
+                debounce: 300,
+              },
+              selection: {
+                enableRowSelection: true,
+                showCheckboxes: true,
+              },
+            }}
             hasNextPage={hasNextPage}
             isFetchingNextPage={isFetchingNextPage}
             isFetching={isFetching}
             fetchNextPage={handleFetchNextPage}
             onFilterChange={handleFilterChange}
             isLoading={isLoading}
-            onSortChange={handleSort}
+            onSortingChange={handleSort}
             sortBy={queryParams.sortBy}
             sortDirection={queryParams.sortDirection}
           />
