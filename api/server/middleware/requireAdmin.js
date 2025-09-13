@@ -1,5 +1,5 @@
+const { logger } = require('@librechat/data-schemas');
 const { SystemRoles } = require('librechat-data-provider');
-const { logger } = require('~/config');
 
 /**
  * Middleware to check if authenticated user has admin role
