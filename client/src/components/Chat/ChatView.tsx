@@ -7,9 +7,9 @@ import { Constants, buildTree } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
 import type { ChatFormValues } from '~/common';
 import { ChatContext, AddedChatContext, useFileMapContext, ChatFormProvider } from '~/Providers';
-import { useGetMessagesByConvoId, useGetConversationCosts } from '~/data-provider';
 import { useChatHelpers, useAddedResponse, useSSE } from '~/hooks';
 import ConversationStarters from './Input/ConversationStarters';
+import { useGetMessagesByConvoId } from '~/data-provider';
 import MessagesView from './Messages/MessagesView';
 import Presentation from './Presentation';
 import ChatForm from './Input/ChatForm';
@@ -30,7 +30,13 @@ function LoadingSpinner() {
   );
 }
 
-function ChatView({ index = 0 }: { index?: number }) {
+function ChatView({
+  index = 0,
+  modelCosts,
+}: {
+  index?: number;
+  modelCosts?: { modelCostTable: Record<string, { prompt: number; completion: number }> };
+}) {
   const { conversationId } = useParams();
   const rootSubmission = useRecoilValue(store.submissionByIndex(index));
   const addedSubmission = useRecoilValue(store.submissionByIndex(index + 1));
@@ -51,13 +57,6 @@ function ChatView({ index = 0 }: { index?: number }) {
     ),
     enabled: !!fileMap,
   });
-
-  const { data: conversationCosts } = useGetConversationCosts(
-    conversationId && conversationId !== Constants.NEW_CONVO ? conversationId : '',
-    {
-      enabled: !!conversationId && conversationId !== Constants.NEW_CONVO && conversationId !== '',
-    },
-  );
 
   const chatHelpers = useChatHelpers(index, conversationId);
   const addedChatHelpers = useAddedResponse({ rootIndex: index });
@@ -138,15 +137,14 @@ function ChatView({ index = 0 }: { index?: number }) {
         messagesTree={messagesTree}
         costBar={
           !isLandingPage &&
-          conversationCosts &&
-          conversationCosts.totals && (
+          modelCosts && (
             <CostBar
-              conversationCosts={conversationCosts}
+              messagesTree={messagesTree}
+              modelCosts={modelCosts}
               showCostBar={showCostBar && !isStreaming}
             />
           )
         }
-        costs={conversationCosts}
       />
     );
   } else {

@@ -1,18 +1,72 @@
+import { useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
 import { ArrowIcon } from '@librechat/client';
-import type { TConversationCosts } from 'librechat-data-provider';
+import { TModelCosts, TMessage } from 'librechat-data-provider';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
 
 interface CostBarProps {
-  conversationCosts: TConversationCosts;
+  messagesTree: TMessage[];
+  modelCosts: TModelCosts;
   showCostBar: boolean;
 }
 
-export default function CostBar({ conversationCosts, showCostBar }: CostBarProps) {
+export default function CostBar({ messagesTree, modelCosts, showCostBar }: CostBarProps) {
   const localize = useLocalize();
   const showCostTracking = useRecoilValue(store.showCostTracking);
+
+  const conversationCosts = useMemo(() => {
+    if (!modelCosts?.modelCostTable || !messagesTree) {
+      return null;
+    }
+
+    let totalPromptTokens = 0;
+    let totalCompletionTokens = 0;
+    let totalPromptUSD = 0;
+    let totalCompletionUSD = 0;
+
+    const flattenMessages = (messages: TMessage[]) => {
+      const flattened: TMessage[] = [];
+      messages.forEach((message: TMessage) => {
+        flattened.push(message);
+        if (message.children && message.children.length > 0) {
+          flattened.push(...flattenMessages(message.children));
+        }
+      });
+      return flattened;
+    };
+
+    const allMessages = flattenMessages(messagesTree);
+
+    allMessages.forEach((message) => {
+      if (!message.tokenCount) {
+        return null;
+      }
+
+      const modelToUse = message.isCreatedByUser ? message.targetModel : message.model;
+
+      const modelPricing = modelCosts.modelCostTable[modelToUse];
+      if (message.isCreatedByUser) {
+        totalPromptTokens += message.tokenCount;
+        totalPromptUSD += (message.tokenCount / 1000000) * modelPricing.prompt;
+      } else {
+        totalCompletionTokens += message.tokenCount;
+        totalCompletionUSD += (message.tokenCount / 1000000) * modelPricing.completion;
+      }
+    });
+
+    const totalTokens = totalPromptTokens + totalCompletionTokens;
+    const totalUSD = totalPromptUSD + totalCompletionUSD;
+
+    return {
+      totals: {
+        prompt: { tokenCount: totalPromptTokens, usd: totalPromptUSD },
+        completion: { tokenCount: totalCompletionTokens, usd: totalCompletionUSD },
+        total: { tokenCount: totalTokens, usd: totalUSD },
+      },
+    };
+  }, [modelCosts, messagesTree]);
 
   if (!showCostTracking || !conversationCosts || !conversationCosts.totals) {
     return null;
