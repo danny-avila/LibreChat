@@ -1,5 +1,4 @@
-import { useCallback, useState, useMemo, useEffect, useRef } from 'react';
-import debounce from 'lodash/debounce';
+import { useCallback, useState, useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
 import { Link } from 'react-router-dom';
 import { TrashIcon, MessageSquare } from 'lucide-react';
@@ -22,7 +21,6 @@ import { useDeleteSharedLinkMutation, useSharedLinksQuery } from '~/data-provide
 import { NotificationSeverity } from '~/common';
 import { useLocalize } from '~/hooks';
 import { formatDate } from '~/utils';
-import store from '~/store';
 
 const DEFAULT_PARAMS: SharedLinksListParams = {
   pageSize: 25,
@@ -36,37 +34,19 @@ export default function SharedLinks() {
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
-  const isSearchEnabled = useRecoilValue(store.search);
   const [queryParams, setQueryParams] = useState<SharedLinksListParams>(DEFAULT_PARAMS);
   const [deleteRow, setDeleteRow] = useState<SharedLinkItem | null>(null);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
-  const prevSortRef = useRef({
-    sortBy: DEFAULT_PARAMS.sortBy,
-    sortDirection: DEFAULT_PARAMS.sortDirection,
-  });
 
-  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, refetch, isLoading } =
+  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isFetching, refetch, isLoading } =
     useSharedLinksQuery(queryParams, {
       enabled: isOpen,
+      keepPreviousData: true,
       staleTime: 30 * 1000,
-      cacheTime: 5 * 60 * 1000,
       refetchOnWindowFocus: false,
       refetchOnMount: false,
-      keepPreviousData: false,
     });
-
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const { sortBy, sortDirection } = queryParams;
-    const prevSort = prevSortRef.current;
-
-    if (sortBy !== prevSort.sortBy || sortDirection !== prevSort.sortDirection) {
-      refetch();
-      prevSortRef.current = { sortBy, sortDirection };
-    }
-  }, [queryParams, isOpen, refetch]);
 
   const handleSort = useCallback((sortField: string, sortOrder: 'asc' | 'desc') => {
     setQueryParams((prev) => ({
@@ -83,17 +63,6 @@ export default function SharedLinks() {
       search: encodedValue,
     }));
   }, []);
-
-  const debouncedFilterChange = useMemo(
-    () => debounce(handleFilterChange, 500), // Increased debounce time to 500ms
-    [handleFilterChange],
-  );
-
-  useEffect(() => {
-    return () => {
-      debouncedFilterChange.cancel();
-    };
-  }, [debouncedFilterChange]);
 
   const allLinks = useMemo(() => {
     if (!data?.pages) {
@@ -275,15 +244,13 @@ export default function SharedLinks() {
             columns={columns}
             data={allLinks}
             onDelete={handleDelete}
-            filterColumn="title"
+            config={{ skeleton: { count: 10 }, search: { filterColumn: 'title' } }}
             hasNextPage={hasNextPage}
             isFetchingNextPage={isFetchingNextPage}
+            isFetching={isFetching}
             fetchNextPage={handleFetchNextPage}
-            showCheckboxes={false}
-            onFilterChange={debouncedFilterChange}
-            filterValue={queryParams.search}
+            onFilterChange={handleFilterChange}
             isLoading={isLoading}
-            enableSearch={!!isSearchEnabled}
             onSortChange={handleSort}
             sortBy={queryParams.sortBy}
             sortDirection={queryParams.sortDirection}

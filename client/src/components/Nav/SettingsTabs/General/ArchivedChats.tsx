@@ -1,7 +1,6 @@
-import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import debounce from 'lodash/debounce';
-import { useRecoilValue } from 'recoil';
+import { useState, useCallback, useMemo } from 'react';
 import { TrashIcon, ArchiveRestore } from 'lucide-react';
+import type { ColumnDef, SortingState } from '@tanstack/react-table';
 import {
   Button,
   OGDialog,
@@ -27,7 +26,6 @@ import { MinimalIcon } from '~/components/Endpoints';
 import { NotificationSeverity } from '~/common';
 import { useLocalize } from '~/hooks';
 import { formatDate } from '~/utils';
-import store from '~/store';
 
 const DEFAULT_PARAMS: ConversationListParams = {
   isArchived: true,
@@ -36,82 +34,86 @@ const DEFAULT_PARAMS: ConversationListParams = {
   search: '',
 };
 
-type SortField = 'title' | 'createdAt';
+const defaultSort: SortingState = [
+  {
+    id: 'createdAt',
+    desc: true,
+  },
+];
+
+// Define the table column type for better type safety
+type TableColumn<TData, TValue> = ColumnDef<TData, TValue> & {
+  meta?: {
+    size?: string | number;
+    mobileSize?: string | number;
+    minWidth?: string | number;
+  };
+};
 
 export default function ArchivedChatsTable() {
   const localize = useLocalize();
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const { showToast } = useToastContext();
-  const isSearchEnabled = useRecoilValue(store.search);
 
   const [isOpen, setIsOpen] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const [deleteRow, setDeleteRow] = useState<TConversation | null>(null);
   const [unarchivingId, setUnarchivingId] = useState<string | null>(null);
-  const prevSortRef = useRef({
-    sortBy: DEFAULT_PARAMS.sortBy,
-    sortDirection: DEFAULT_PARAMS.sortDirection,
-  });
 
   const [queryParams, setQueryParams] = useState<ConversationListParams>(DEFAULT_PARAMS);
-  const [searchInput, setSearchInput] = useState('');
+  const [sorting, setSorting] = useState<SortingState>(defaultSort);
+  const [searchValue, setSearchValue] = useState('');
 
-  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, refetch, isLoading } =
+  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isFetching, refetch, isLoading } =
     useConversationsInfiniteQuery(queryParams, {
       enabled: isOpen,
+      keepPreviousData: true,
       staleTime: 30 * 1000,
-      cacheTime: 5 * 60 * 1000,
       refetchOnWindowFocus: false,
       refetchOnMount: false,
-      keepPreviousData: false,
     });
 
-  const handleSort = useCallback((field: string, direction: 'asc' | 'desc') => {
+  const handleSearchChange = useCallback((value: string) => {
+    const trimmedValue = value.trim();
+    setSearchValue(trimmedValue);
     setQueryParams((prev) => ({
       ...prev,
-      sortBy: field as SortField,
-      sortDirection: direction,
+      search: trimmedValue,
     }));
   }, []);
 
-  // Trigger refetch when sort parameters change
-  useEffect(() => {
-    if (!isOpen) return; // Only refetch if dialog is open
-
-    const { sortBy, sortDirection } = queryParams;
-    const prevSort = prevSortRef.current;
-
-    if (sortBy !== prevSort.sortBy || sortDirection !== prevSort.sortDirection) {
-      console.log('Sort changed, refetching...', { from: prevSort, to: { sortBy, sortDirection } });
-      refetch();
-      prevSortRef.current = { sortBy, sortDirection };
-    }
-  }, [queryParams, isOpen, refetch]);
-
-  const debouncedApplySearch = useMemo(
-    () =>
-      debounce((value: string) => {
+  const handleSortingChange = useCallback(
+    (updater: SortingState | ((old: SortingState) => SortingState)) => {
+      const newSorting = typeof updater === 'function' ? updater(sorting) : updater;
+      setSorting(newSorting);
+      const sortDescriptor = newSorting[0];
+      if (sortDescriptor) {
         setQueryParams((prev) => ({
           ...prev,
-          search: encodeURIComponent(value.trim()),
+          sortBy: sortDescriptor.id as 'createdAt' | 'title',
+          sortDirection: sortDescriptor.desc ? 'desc' : 'asc',
         }));
-      }, 500), // Increased debounce time to 500ms for better UX
-    [],
-  );
-
-  const onFilterChange = useCallback(
-    (value: string) => {
-      setSearchInput(value);
-      debouncedApplySearch(value);
+      } else {
+        setQueryParams((prev) => ({
+          ...prev,
+          sortBy: 'createdAt',
+          sortDirection: 'desc',
+        }));
+      }
     },
-    [debouncedApplySearch],
+    [sorting],
   );
 
-  useEffect(() => {
-    return () => {
-      debouncedApplySearch.cancel();
-    };
-  }, [debouncedApplySearch]);
+  const handleError = useCallback(
+    (error: Error) => {
+      console.error('DataTable error:', error);
+      showToast({
+        message: localize('com_ui_unarchive_error'),
+        severity: NotificationSeverity.ERROR,
+      });
+    },
+    [showToast, localize],
+  );
 
   const allConversations = useMemo(() => {
     if (!data?.pages) return [];
@@ -149,26 +151,21 @@ export default function ArchivedChatsTable() {
 
   const handleFetchNextPage = useCallback(async () => {
     if (!hasNextPage || isFetchingNextPage) return;
-
-    try {
-      await fetchNextPage();
-    } catch (error) {
-      console.error('Failed to fetch next page:', error);
-      showToast({
-        message: localize('com_ui_unarchive_error'),
-        severity: NotificationSeverity.ERROR,
-      });
-    }
-  }, [fetchNextPage, hasNextPage, isFetchingNextPage, showToast, localize]);
+    await fetchNextPage();
+  }, [fetchNextPage, hasNextPage, isFetchingNextPage]);
 
   const confirmDelete = useCallback(() => {
-    if (!deleteRow?.conversationId) return;
+    if (!deleteRow?.conversationId) {
+      showToast({
+        message: localize('com_ui_convo_delete_error'),
+        severity: NotificationSeverity.WARNING,
+      });
+      return;
+    }
     deleteMutation.mutate({ conversationId: deleteRow.conversationId });
-  }, [deleteMutation, deleteRow]);
+  }, [deleteMutation, deleteRow, localize, showToast]);
 
-  const { sortBy, sortDirection } = queryParams;
-
-  const columns = useMemo(
+  const columns: TableColumn<TConversation, any>[] = useMemo(
     () => [
       {
         accessorKey: 'title',
@@ -178,26 +175,29 @@ export default function ArchivedChatsTable() {
         cell: ({ row }) => {
           const { conversationId, title } = row.original;
           return (
-            <button
-              type="button"
-              className="flex items-center gap-2 truncate"
-              onClick={() => window.open(`/c/${conversationId}`, '_blank')}
+            <a
+              href={`/c/${conversationId}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 truncate underline"
+              aria-label={localize('com_ui_open_conversation', { 0: title })}
             >
               <MinimalIcon
                 endpoint={row.original.endpoint}
                 size={28}
                 isCreatedByUser={false}
                 iconClassName="size-4"
+                aria-hidden="true"
               />
-              <span className="underline">{title}</span>
-            </button>
+              <span>{title}</span>
+            </a>
           );
         },
         meta: {
           size: isSmallScreen ? '70%' : '50%',
           mobileSize: '70%',
-          enableSorting: true,
         },
+        enableSorting: true,
       },
       {
         accessorKey: 'createdAt',
@@ -208,11 +208,11 @@ export default function ArchivedChatsTable() {
         meta: {
           size: isSmallScreen ? '30%' : '35%',
           mobileSize: '30%',
-          enableSorting: true,
         },
+        enableSorting: true,
       },
       {
-        accessorKey: 'actions',
+        id: 'actions',
         header: () => (
           <Label className="px-2 py-0 text-xs sm:px-2 sm:py-2 sm:text-sm">
             {localize('com_assistants_actions')}
@@ -220,6 +220,7 @@ export default function ArchivedChatsTable() {
         ),
         cell: ({ row }) => {
           const conversation = row.original;
+          const { title } = conversation;
           const isRowUnarchiving = unarchivingId === conversation.conversationId;
 
           return (
@@ -231,13 +232,16 @@ export default function ArchivedChatsTable() {
                     variant="ghost"
                     className="h-8 w-8 p-0 hover:bg-surface-hover"
                     onClick={() => {
-                      setUnarchivingId(conversation.conversationId);
+                      const conversationId = conversation.conversationId;
+                      if (!conversationId) return;
+                      setUnarchivingId(conversationId);
                       unarchiveMutation.mutate(
-                        { conversationId: conversation.conversationId, isArchived: false },
+                        { conversationId, isArchived: false },
                         { onSettled: () => setUnarchivingId(null) },
                       );
                     }}
                     disabled={isRowUnarchiving}
+                    aria-label={localize('com_ui_unarchive_conversation_title', { 0: title })}
                   >
                     {isRowUnarchiving ? <Spinner /> : <ArchiveRestore className="size-4" />}
                   </Button>
@@ -253,6 +257,7 @@ export default function ArchivedChatsTable() {
                       setDeleteRow(row.original);
                       setIsDeleteOpen(true);
                     }}
+                    aria-label={localize('com_ui_delete_conversation_title', { 0: title })}
                   >
                     <TrashIcon className="size-4" />
                   </Button>
@@ -264,11 +269,11 @@ export default function ArchivedChatsTable() {
         meta: {
           size: '15%',
           mobileSize: '25%',
-          enableSorting: false,
         },
+        enableSorting: false,
       },
     ],
-    [isSmallScreen, localize, unarchivingId, unarchiveMutation],
+    [isSmallScreen, localize, unarchiveMutation, unarchivingId],
   );
 
   return (
@@ -288,42 +293,29 @@ export default function ArchivedChatsTable() {
             columns={columns}
             data={allConversations}
             isLoading={isLoading}
-            enableSearch={!!isSearchEnabled}
-            filterColumn="title"
-            onFilterChange={onFilterChange}
-            filterValue={searchInput}
+            isFetching={isFetching}
+            config={{
+              skeleton: { count: 10 },
+              search: {
+                filterColumn: 'title',
+                enableSearch: true,
+                debounce: 300,
+              },
+              selection: {
+                enableRowSelection: false,
+                showCheckboxes: false,
+              },
+            }}
+            filterValue={searchValue}
+            onFilterChange={handleSearchChange}
             fetchNextPage={handleFetchNextPage}
             hasNextPage={hasNextPage}
             isFetchingNextPage={isFetchingNextPage}
-            showCheckboxes={false}
-            onSortChange={handleSort}
-            sortBy={sortBy}
-            sortDirection={sortDirection}
+            sorting={sorting}
+            onSortingChange={handleSortingChange}
+            onError={handleError}
           />
         </OGDialogContent>
-      </OGDialog>
-      <OGDialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen}>
-        <OGDialogTemplate
-          showCloseButton={false}
-          title={localize('com_ui_delete_archived_chats')}
-          className="w-11/12 max-w-md"
-          main={
-            <div className="flex w-full flex-col items-center gap-2">
-              <div className="grid w-full items-center gap-2">
-                <Label className="text-left text-sm font-medium">
-                  {localize('com_ui_delete_confirm')} <strong>{deleteRow?.title}</strong>
-                </Label>
-              </div>
-            </div>
-          }
-          selection={{
-            selectHandler: confirmDelete,
-            selectClasses: `bg-red-700 dark:bg-red-600 hover:bg-red-800 dark:hover:bg-red-800 text-white ${
-              deleteMutation.isLoading ? 'cursor-not-allowed opacity-80' : ''
-            }`,
-            selectText: deleteMutation.isLoading ? <Spinner /> : localize('com_ui_delete'),
-          }}
-        />
       </OGDialog>
     </div>
   );

@@ -1062,7 +1062,6 @@
   "com_ui_no_read_access": "You don't have permission to view memories",
   "com_ui_no_results_found": "No results found",
   "com_ui_no_terms_content": "No terms and conditions content to display",
-  "com_ui_no_valid_items": "something needs to go here. was empty",
   "com_ui_none": "None",
   "com_ui_not_used": "Not Used",
   "com_ui_nothing_found": "Nothing found",
@@ -1332,5 +1331,10 @@
   "com_ui_zoom_in": "Zoom in",
   "com_ui_zoom_level": "Zoom level",
   "com_ui_zoom_out": "Zoom out",
+  "com_ui_add_anything": "Add anything",
+  "com_ui_drag_and_drop": "Drop any file here to add it to the conversation",
+  "com_ui_open_conversation": "Open conversation {{0}}",
+  "com_ui_delete_conversation_title": "Delete conversation {{0}}",
+  "com_ui_unarchive_conversation_title": "Unarchive conversation {{0}}",
   "com_user_message": "You"
 }
