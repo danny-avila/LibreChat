@@ -834,7 +834,7 @@
   "com_ui_delete_tool": "Delete Tool",
   "com_ui_delete_tool_confirm": "Are you sure you want to delete this tool?",
   "com_ui_delete_tool_error": "Error while deleting the tool: {{error}}",
-  "com_ui_delete_tool_success": "Tool deleted successfully",
+  "com_ui_delete_tool_save_reminder": "Tool removed. Save the agent to apply changes.",
   "com_ui_deleted": "Deleted",
   "com_ui_deleting_file": "Deleting file...",
   "com_ui_descending": "Desc",

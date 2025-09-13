@@ -552,20 +552,33 @@ export type MemoryArtifact = {
   type: 'update' | 'delete' | 'error';
 };
 
+export type UIResource = {
+  type?: string;
+  data?: unknown;
+  uri?: string;
+  mimeType?: string;
+  text?: string;
+  [key: string]: unknown;
+};
+
 export type TAttachmentMetadata = {
   type?: Tools;
   messageId: string;
   toolCallId: string;
+  [Tools.memory]?: MemoryArtifact;
+  [Tools.ui_resources]?: UIResource[];
   [Tools.web_search]?: SearchResultData;
   [Tools.file_search]?: SearchResultData;
-  [Tools.memory]?: MemoryArtifact;
 };
 
 export type TAttachment =
   | (TFile & TAttachmentMetadata)
   | (Pick<TFile, 'filename' | 'filepath' | 'conversationId'> & {
       expiresAt: number;
-    } & TAttachmentMetadata);
+    } & TAttachmentMetadata)
+  | (Partial<Pick<TFile, 'filename' | 'filepath'>> &
+      Pick<TFile, 'conversationId'> &
+      TAttachmentMetadata);
 
 export type TMessage = z.input<typeof tMessageSchema> & {
   children?: TMessage[];
