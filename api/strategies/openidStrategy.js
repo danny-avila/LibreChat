@@ -282,6 +282,215 @@ function convertToUsername(input, defaultValue = '') {
 }
 
 /**
+ * Process OpenID authentication tokenset and userinfo
+ * This is the core logic extracted from the passport strategy callback
+ * Can be reused by both the passport strategy and proxy authentication
+ *
+ * @param {Object} tokenset - The OpenID tokenset containing access_token, id_token, etc.
+ * @param {Object} additionalUserinfo - Additional userinfo to merge with token claims
+ * @returns {Promise<Object>} The authenticated user object with tokenset
+ */
+async function processOpenIDAuth(tokenset, additionalUserinfo = {}) {
+  const claims = tokenset.claims ? tokenset.claims() : tokenset;
+  const userinfo = {
+    ...claims,
+    ...additionalUserinfo,
+  };
+
+  // Get userinfo from provider if we have access_token and haven't already
+  if (tokenset.access_token && !additionalUserinfo.sub) {
+    const providerUserinfo = await getUserInfo(openidConfig, tokenset.access_token, claims.sub);
+    Object.assign(userinfo, providerUserinfo);
+  }
+
+  const appConfig = await getAppConfig();
+  if (!isEmailDomainAllowed(userinfo.email, appConfig?.registration?.allowedDomains)) {
+    logger.error(
+      `[OpenID Auth] Authentication blocked - email domain not allowed [Email: ${userinfo.email}]`,
+    );
+    throw new Error('Email domain not allowed');
+  }
+
+  const result = await findOpenIDUser({
+    openidId: claims.sub || userinfo.sub,
+    email: claims.email || userinfo.email,
+    strategyName: 'openidStrategy',
+    findUser,
+  });
+  let user = result.user;
+  const error = result.error;
+
+  if (error) {
+    throw new Error(ErrorTypes.AUTH_FAILED);
+  }
+
+  const fullName = getFullName(userinfo);
+
+  // Check required role if configured
+  const requiredRole = process.env.OPENID_REQUIRED_ROLE;
+  if (requiredRole) {
+    const requiredRoleParameterPath = process.env.OPENID_REQUIRED_ROLE_PARAMETER_PATH;
+    const requiredRoleTokenKind = process.env.OPENID_REQUIRED_ROLE_TOKEN_KIND;
+
+    let decodedToken = '';
+    if (requiredRoleTokenKind === 'access' && tokenset.access_token) {
+      decodedToken = jwtDecode(tokenset.access_token);
+    } else if (requiredRoleTokenKind === 'id' && tokenset.id_token) {
+      decodedToken = jwtDecode(tokenset.id_token);
+    } else if (userinfo.roles) {
+      // If roles are already in userinfo, use them directly
+      const roles = Array.isArray(userinfo.roles) ? userinfo.roles : [userinfo.roles];
+      if (!roles.includes(requiredRole)) {
+        throw new Error(`You must have the "${requiredRole}" role to log in.`);
+      }
+    } else if (requiredRoleParameterPath) {
+      const pathParts = requiredRoleParameterPath.split('.');
+      let found = true;
+      let roles = pathParts.reduce((o, key) => {
+        if (o === null || o === undefined || !(key in o)) {
+          found = false;
+          return [];
+        }
+        return o[key];
+      }, decodedToken);
+
+      if (!found) {
+        logger.error(
+          `[OpenID Auth] Key '${requiredRoleParameterPath}' not found in ${requiredRoleTokenKind} token!`,
+        );
+      }
+
+      if (!roles.includes(requiredRole)) {
+        throw new Error(`You must have the "${requiredRole}" role to log in.`);
+      }
+    }
+  }
+
+  let username = '';
+  if (process.env.OPENID_USERNAME_CLAIM) {
+    username = userinfo[process.env.OPENID_USERNAME_CLAIM];
+  } else {
+    username = convertToUsername(
+      userinfo.preferred_username || userinfo.username || userinfo.email,
+    );
+  }
+
+  if (!user) {
+    user = {
+      provider: 'openid',
+      openidId: userinfo.sub,
+      username,
+      email: userinfo.email || '',
+      emailVerified: userinfo.email_verified || false,
+      name: fullName,
+      idOnTheSource: userinfo.oid,
+    };
+
+    const balanceConfig = getBalanceConfig(appConfig);
+    user = await createUser(user, balanceConfig, true, true);
+  } else {
+    user.provider = 'openid';
+    user.openidId = userinfo.sub;
+    user.username = username;
+    user.name = fullName;
+    user.idOnTheSource = userinfo.oid;
+  }
+
+  // Handle avatar
+  if (!!userinfo && userinfo.picture && !user.avatar?.includes('manual=true')) {
+    const imageUrl = userinfo.picture;
+    let fileName;
+    if (crypto) {
+      fileName = (await hashToken(userinfo.sub)) + '.png';
+    } else {
+      fileName = userinfo.sub + '.png';
+    }
+
+    const imageBuffer = await downloadImage(
+      imageUrl,
+      openidConfig,
+      tokenset.access_token,
+      userinfo.sub,
+    );
+    if (imageBuffer) {
+      const { saveBuffer } = getStrategyFunctions(
+        appConfig?.fileStrategy ?? process.env.CDN_PROVIDER,
+      );
+      const imagePath = await saveBuffer({
+        fileName,
+        userId: user._id.toString(),
+        buffer: imageBuffer,
+      });
+      user.avatar = imagePath ?? '';
+    }
+  }
+
+  user = await updateUser(user._id, user);
+
+  logger.info(
+    `[OpenID Auth] login success openidId: ${user.openidId} | email: ${user.email} | username: ${user.username}`,
+    {
+      user: {
+        openidId: user.openidId,
+        username: user.username,
+        email: user.email,
+        name: user.name,
+      },
+    },
+  );
+
+  return { ...user, tokenset };
+}
+
+function createOpenIDCallback() {
+  return async (tokenset, done) => {
+    try {
+      const user = await processOpenIDAuth(tokenset);
+      done(null, user);
+    } catch (err) {
+      if (err.message === 'Email domain not allowed') {
+        return done(null, false, { message: err.message });
+      }
+      if (err.message === ErrorTypes.AUTH_FAILED) {
+        return done(null, false, { message: err.message });
+      }
+      if (err.message && err.message.includes('role to log in')) {
+        return done(null, false, { message: err.message });
+      }
+      logger.error('[openidStrategy] login failed', err);
+      done(err);
+    }
+  };
+}
+
+/**
+ * Sets up the OpenID strategy specifically for admin authentication.
+ * @param {Configuration} openidConfig
+ */
+const setupOpenIdAdmin = (openidConfig) => {
+  try {
+    if (!openidConfig) {
+      throw new Error('OpenID configuration not initialized');
+    }
+
+    const openidAdminLogin = new CustomOpenIDStrategy(
+      {
+        config: openidConfig,
+        scope: process.env.OPENID_SCOPE,
+        usePKCE: isEnabled(process.env.OPENID_USE_PKCE),
+        clockTolerance: process.env.OPENID_CLOCK_TOLERANCE || 300,
+        callbackURL: process.env.DOMAIN_SERVER + '/api/admin/oauth/openid/callback',
+      },
+      createOpenIDCallback(),
+    );
+
+    passport.use('openidAdmin', openidAdminLogin);
+  } catch (err) {
+    logger.error('[openidStrategy] setupOpenIdAdmin', err);
+  }
+};
+
+/**
  * Sets up the OpenID strategy for authentication.
  * This function configures the OpenID client, handles proxy settings,
  * and defines the OpenID strategy for Passport.js.
@@ -318,10 +527,6 @@ async function setupOpenId() {
       },
     );
 
-    const requiredRole = process.env.OPENID_REQUIRED_ROLE;
-    const requiredRoleParameterPath = process.env.OPENID_REQUIRED_ROLE_PARAMETER_PATH;
-    const requiredRoleTokenKind = process.env.OPENID_REQUIRED_ROLE_TOKEN_KIND;
-    const usePKCE = isEnabled(process.env.OPENID_USE_PKCE);
     logger.info(`[openidStrategy] OpenID authentication configuration`, {
       generateNonce: shouldGenerateNonce,
       reason: shouldGenerateNonce
@@ -335,159 +540,19 @@ async function setupOpenId() {
         scope: process.env.OPENID_SCOPE,
         callbackURL: process.env.DOMAIN_SERVER + process.env.OPENID_CALLBACK_URL,
         clockTolerance: process.env.OPENID_CLOCK_TOLERANCE || 300,
-        usePKCE,
+        usePKCE: isEnabled(process.env.OPENID_USE_PKCE),
       },
-      async (tokenset, done) => {
-        try {
-          const claims = tokenset.claims();
-          const userinfo = {
-            ...claims,
-            ...(await getUserInfo(openidConfig, tokenset.access_token, claims.sub)),
-          };
-
-          const appConfig = await getAppConfig();
-          if (!isEmailDomainAllowed(userinfo.email, appConfig?.registration?.allowedDomains)) {
-            logger.error(
-              `[OpenID Strategy] Authentication blocked - email domain not allowed [Email: ${userinfo.email}]`,
-            );
-            return done(null, false, { message: 'Email domain not allowed' });
-          }
-
-          const result = await findOpenIDUser({
-            openidId: claims.sub,
-            email: claims.email,
-            strategyName: 'openidStrategy',
-            findUser,
-          });
-          let user = result.user;
-          const error = result.error;
-
-          if (error) {
-            return done(null, false, {
-              message: ErrorTypes.AUTH_FAILED,
-            });
-          }
-
-          const fullName = getFullName(userinfo);
-
-          if (requiredRole) {
-            let decodedToken = '';
-            if (requiredRoleTokenKind === 'access') {
-              decodedToken = jwtDecode(tokenset.access_token);
-            } else if (requiredRoleTokenKind === 'id') {
-              decodedToken = jwtDecode(tokenset.id_token);
-            }
-            const pathParts = requiredRoleParameterPath.split('.');
-            let found = true;
-            let roles = pathParts.reduce((o, key) => {
-              if (o === null || o === undefined || !(key in o)) {
-                found = false;
-                return [];
-              }
-              return o[key];
-            }, decodedToken);
-
-            if (!found) {
-              logger.error(
-                `[openidStrategy] Key '${requiredRoleParameterPath}' not found in ${requiredRoleTokenKind} token!`,
-              );
-            }
-
-            if (!roles.includes(requiredRole)) {
-              return done(null, false, {
-                message: `You must have the "${requiredRole}" role to log in.`,
-              });
-            }
-          }
-
-          let username = '';
-          if (process.env.OPENID_USERNAME_CLAIM) {
-            username = userinfo[process.env.OPENID_USERNAME_CLAIM];
-          } else {
-            username = convertToUsername(
-              userinfo.preferred_username || userinfo.username || userinfo.email,
-            );
-          }
-
-          if (!user) {
-            user = {
-              provider: 'openid',
-              openidId: userinfo.sub,
-              username,
-              email: userinfo.email || '',
-              emailVerified: userinfo.email_verified || false,
-              name: fullName,
-              idOnTheSource: userinfo.oid,
-            };
-
-            const balanceConfig = getBalanceConfig(appConfig);
-            user = await createUser(user, balanceConfig, true, true);
-          } else {
-            user.provider = 'openid';
-            user.openidId = userinfo.sub;
-            user.username = username;
-            user.name = fullName;
-            user.idOnTheSource = userinfo.oid;
-          }
-
-          if (!!userinfo && userinfo.picture && !user.avatar?.includes('manual=true')) {
-            /** @type {string | undefined} */
-            const imageUrl = userinfo.picture;
-
-            let fileName;
-            if (crypto) {
-              fileName = (await hashToken(userinfo.sub)) + '.png';
-            } else {
-              fileName = userinfo.sub + '.png';
-            }
-
-            const imageBuffer = await downloadImage(
-              imageUrl,
-              openidConfig,
-              tokenset.access_token,
-              userinfo.sub,
-            );
-            if (imageBuffer) {
-              const { saveBuffer } = getStrategyFunctions(
-                appConfig?.fileStrategy ?? process.env.CDN_PROVIDER,
-              );
-              const imagePath = await saveBuffer({
-                fileName,
-                userId: user._id.toString(),
-                buffer: imageBuffer,
-              });
-              user.avatar = imagePath ?? '';
-            }
-          }
-
-          user = await updateUser(user._id, user);
-
-          logger.info(
-            `[openidStrategy] login success openidId: ${user.openidId} | email: ${user.email} | username: ${user.username} `,
-            {
-              user: {
-                openidId: user.openidId,
-                username: user.username,
-                email: user.email,
-                name: user.name,
-              },
-            },
-          );
-
-          done(null, { ...user, tokenset });
-        } catch (err) {
-          logger.error('[openidStrategy] login failed', err);
-          done(err);
-        }
-      },
+      createOpenIDCallback(),
     );
     passport.use('openid', openidLogin);
+    setupOpenIdAdmin(openidConfig);
     return openidConfig;
   } catch (err) {
     logger.error('[openidStrategy]', err);
     return null;
   }
 }
+
 /**
  * @function getOpenIdConfig
  * @description Returns the OpenID client instance.
