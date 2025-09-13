@@ -211,6 +211,7 @@ export default function ToolCall({
                 domain={authDomain || (domain ?? '')}
                 function_name={function_name}
                 pendingAuth={authDomain.length > 0 && !cancelled && progress < 1}
+                attachments={attachments}
               />
             )}
           </div>
