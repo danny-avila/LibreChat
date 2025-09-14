@@ -239,6 +239,7 @@ export type AgentPanelContextType = {
   setActivePanel: React.Dispatch<React.SetStateAction<Panel>>;
   setCurrentAgentId: React.Dispatch<React.SetStateAction<string | undefined>>;
   agent_id?: string;
+  startupConfig?: t.TStartupConfig | null;
   agentsConfig?: t.TAgentsEndpoint | null;
   endpointsConfig?: t.TEndpointsConfig | null;
   /** Pre-computed MCP server information indexed by server key */
@@ -641,10 +642,3 @@ declare global {
     google_tag_manager?: unknown;
   }
 }
-
-export type UIResource = {
-  uri: string;
-  mimeType: string;
-  text: string;
-  [key: string]: unknown;
-};

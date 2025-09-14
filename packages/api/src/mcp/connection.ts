@@ -1,4 +1,5 @@
 import { EventEmitter } from 'events';
+import { fetch as undiciFetch, Agent } from 'undici';
 import {
   StdioClientTransport,
   getDefaultEnvironment,
@@ -11,9 +12,16 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { logger } from '@librechat/data-schemas';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js';
+import type {
+  RequestInit as UndiciRequestInit,
+  RequestInfo as UndiciRequestInfo,
+  Response as UndiciResponse,
+} from 'undici';
 import type { MCPOAuthTokens } from './oauth/types';
 import { mcpConfig } from './mcpConfig';
 import type * as t from './types';
+
+type FetchLike = (url: string | URL, init?: RequestInit) => Promise<Response>;
 
 function isStdioOptions(options: t.MCPOptions): options is t.StdioOptions {
   return 'command' in options;
@@ -57,6 +65,7 @@ function isStreamableHTTPOptions(options: t.MCPOptions): options is t.Streamable
 }
 
 const FIVE_MINUTES = 5 * 60 * 1000;
+const DEFAULT_TIMEOUT = 60000;
 
 interface MCPConnectionParams {
   serverName: string;
@@ -137,15 +146,25 @@ export class MCPConnection extends EventEmitter {
    * This helps prevent memory leaks by only passing necessary dependencies.
    *
    * @param getHeaders Function to retrieve request headers
+   * @param timeout Timeout value for the agent (in milliseconds)
    * @returns A fetch function that merges headers appropriately
    */
   private createFetchFunction(
     getHeaders: () => Record<string, string> | null | undefined,
-  ): (input: RequestInfo | URL, init?: RequestInit) => Promise<Response> {
-    return function customFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+    timeout?: number,
+  ): (input: UndiciRequestInfo, init?: UndiciRequestInit) => Promise<UndiciResponse> {
+    return function customFetch(
+      input: UndiciRequestInfo,
+      init?: UndiciRequestInit,
+    ): Promise<UndiciResponse> {
       const requestHeaders = getHeaders();
+      const effectiveTimeout = timeout || DEFAULT_TIMEOUT;
+      const agent = new Agent({
+        bodyTimeout: effectiveTimeout,
+        headersTimeout: effectiveTimeout,
+      });
       if (!requestHeaders) {
-        return fetch(input, init);
+        return undiciFetch(input, { ...init, dispatcher: agent });
       }
 
       let initHeaders: Record<string, string> = {};
@@ -159,12 +178,13 @@ export class MCPConnection extends EventEmitter {
         }
       }
 
-      return fetch(input, {
+      return undiciFetch(input, {
         ...init,
         headers: {
           ...initHeaders,
           ...requestHeaders,
         },
+        dispatcher: agent,
       });
     };
   }
@@ -227,6 +247,7 @@ export class MCPConnection extends EventEmitter {
             headers['Authorization'] = `Bearer ${this.oauthTokens.access_token}`;
           }
 
+          const timeoutValue = this.timeout || DEFAULT_TIMEOUT;
           const transport = new SSEClientTransport(url, {
             requestInit: {
               headers,
@@ -235,13 +256,21 @@ export class MCPConnection extends EventEmitter {
             eventSourceInit: {
               fetch: (url, init) => {
                 const fetchHeaders = new Headers(Object.assign({}, init?.headers, headers));
-                return fetch(url, {
+                const agent = new Agent({
+                  bodyTimeout: timeoutValue,
+                  headersTimeout: timeoutValue,
+                });
+                return undiciFetch(url, {
                   ...init,
+                  dispatcher: agent,
                   headers: fetchHeaders,
                 });
               },
             },
-            fetch: this.createFetchFunction(this.getRequestHeaders.bind(this)),
+            fetch: this.createFetchFunction(
+              this.getRequestHeaders.bind(this),
+              this.timeout,
+            ) as unknown as FetchLike,
           });
 
           transport.onclose = () => {
@@ -279,7 +308,10 @@ export class MCPConnection extends EventEmitter {
               headers,
               signal: abortController.signal,
             },
-            fetch: this.createFetchFunction(this.getRequestHeaders.bind(this)),
+            fetch: this.createFetchFunction(
+              this.getRequestHeaders.bind(this),
+              this.timeout,
+            ) as unknown as FetchLike,
           });
 
           transport.onclose = () => {

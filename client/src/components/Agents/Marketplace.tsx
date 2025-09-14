@@ -11,7 +11,6 @@ import { useDocumentTitle, useHasAccess, useLocalize, TranslationKeys } from '~/
 import { useGetEndpointsQuery, useGetAgentCategoriesQuery } from '~/data-provider';
 import MarketplaceAdminSettings from './MarketplaceAdminSettings';
 import { SidePanelProvider, useChatContext } from '~/Providers';
-import { MarketplaceProvider } from './MarketplaceContext';
 import { SidePanelGroup } from '~/components/SidePanel';
 import { OpenSidebar } from '~/components/Chat/Menus';
 import CategoryTabs from './CategoryTabs';
@@ -198,21 +197,21 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
    */
   const handleSearch = (query: string) => {
     const newParams = new URLSearchParams(searchParams);
+    const currentCategory = displayCategory;
+
     if (query.trim()) {
       newParams.set('q', query.trim());
-      // Switch to "all" category when starting a new search
-      navigate(`/agents/all?${newParams.toString()}`);
     } else {
       newParams.delete('q');
-      // Preserve current category when clearing search
-      const currentCategory = displayCategory;
-      if (currentCategory === 'promoted') {
-        navigate(`/agents${newParams.toString() ? `?${newParams.toString()}` : ''}`);
-      } else {
-        navigate(
-          `/agents/${currentCategory}${newParams.toString() ? `?${newParams.toString()}` : ''}`,
-        );
-      }
+    }
+
+    // Always preserve current category when searching or clearing search
+    if (currentCategory === 'promoted') {
+      navigate(`/agents${newParams.toString() ? `?${newParams.toString()}` : ''}`);
+    } else {
+      navigate(
+        `/agents/${currentCategory}${newParams.toString() ? `?${newParams.toString()}` : ''}`,
+      );
     }
   };
 
@@ -272,100 +271,176 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
   }
   return (
     <div className={`relative flex w-full grow overflow-hidden bg-presentation ${className}`}>
-      <MarketplaceProvider>
-        <SidePanelProvider>
-          <SidePanelGroup
-            defaultLayout={defaultLayout}
-            fullPanelCollapse={fullCollapse}
-            defaultCollapsed={defaultCollapsed}
-          >
-            <main className="flex h-full flex-col overflow-hidden" role="main">
-              {/* Scrollable container */}
-              <div
-                ref={scrollContainerRef}
-                className="scrollbar-gutter-stable relative flex h-full flex-col overflow-y-auto overflow-x-hidden"
-              >
-                {/* Simplified header for agents marketplace - only show nav controls when needed */}
-                {!isSmallScreen && (
-                  <div className="sticky top-0 z-20 flex items-center justify-between bg-surface-secondary p-2 font-semibold text-text-primary md:h-14">
-                    <div className="mx-1 flex items-center gap-2">
-                      {!navVisible ? (
-                        <>
-                          <OpenSidebar setNavVisible={setNavVisible} />
-                          <TooltipAnchor
-                            description={localize('com_ui_new_chat')}
-                            render={
-                              <Button
-                                size="icon"
-                                variant="outline"
-                                data-testid="agents-new-chat-button"
-                                aria-label={localize('com_ui_new_chat')}
-                                className="rounded-xl border border-border-light bg-surface-secondary p-2 hover:bg-surface-hover max-md:hidden"
-                                onClick={handleNewChat}
-                              >
-                                <NewChatIcon />
-                              </Button>
-                            }
-                          />
-                        </>
-                      ) : (
-                        // Invisible placeholder to maintain height
-                        <div className="h-10 w-10" />
-                      )}
-                    </div>
-                  </div>
-                )}
-                {/* Hero Section - scrolls away */}
-                {!isSmallScreen && (
-                  <div className="container mx-auto max-w-4xl">
-                    <div className={cn('mb-8 text-center', 'mt-12')}>
-                      <h1 className="mb-3 text-3xl font-bold tracking-tight text-text-primary md:text-5xl">
-                        {localize('com_agents_marketplace')}
-                      </h1>
-                      <p className="mx-auto mb-6 max-w-2xl text-lg text-text-secondary">
-                        {localize('com_agents_marketplace_subtitle')}
-                      </p>
-                    </div>
-                  </div>
-                )}
-                {/* Sticky wrapper for search bar and categories */}
-                <div
-                  className={cn(
-                    'sticky z-10 bg-presentation pb-4',
-                    isSmallScreen ? 'top-0' : 'top-14',
-                  )}
-                >
-                  <div className="container mx-auto max-w-4xl px-4">
-                    {/* Search bar */}
-                    <div className="mx-auto flex max-w-2xl gap-2 pb-6">
-                      <SearchBar value={searchQuery} onSearch={handleSearch} />
-                      {/* TODO: Remove this once we have a better way to handle admin settings */}
-                      {/* Admin Settings */}
-                      <MarketplaceAdminSettings />
-                    </div>
-
-                    {/* Category tabs */}
-                    <CategoryTabs
-                      categories={categoriesQuery.data || []}
-                      activeTab={displayCategory}
-                      isLoading={categoriesQuery.isLoading}
-                      onChange={handleTabChange}
-                    />
+      <SidePanelProvider>
+        <SidePanelGroup
+          defaultLayout={defaultLayout}
+          fullPanelCollapse={fullCollapse}
+          defaultCollapsed={defaultCollapsed}
+        >
+          <main className="flex h-full flex-col overflow-hidden" role="main">
+            {/* Scrollable container */}
+            <div
+              ref={scrollContainerRef}
+              className="scrollbar-gutter-stable relative flex h-full flex-col overflow-y-auto overflow-x-hidden"
+            >
+              {/* Simplified header for agents marketplace - only show nav controls when needed */}
+              {!isSmallScreen && (
+                <div className="sticky top-0 z-20 flex items-center justify-between bg-surface-secondary p-2 font-semibold text-text-primary md:h-14">
+                  <div className="mx-1 flex items-center gap-2">
+                    {!navVisible ? (
+                      <>
+                        <OpenSidebar setNavVisible={setNavVisible} />
+                        <TooltipAnchor
+                          description={localize('com_ui_new_chat')}
+                          render={
+                            <Button
+                              size="icon"
+                              variant="outline"
+                              data-testid="agents-new-chat-button"
+                              aria-label={localize('com_ui_new_chat')}
+                              className="rounded-xl border border-border-light bg-surface-secondary p-2 hover:bg-surface-hover max-md:hidden"
+                              onClick={handleNewChat}
+                            >
+                              <NewChatIcon />
+                            </Button>
+                          }
+                        />
+                      </>
+                    ) : (
+                      // Invisible placeholder to maintain height
+                      <div className="h-10 w-10" />
+                    )}
                   </div>
                 </div>
-                {/* Scrollable content area */}
-                <div className="container mx-auto max-w-4xl px-4 pb-8">
-                  {/* Two-pane animated container wrapping category header + grid */}
-                  <div className="relative overflow-hidden">
-                    {/* Current content pane */}
+              )}
+              {/* Hero Section - scrolls away */}
+              {!isSmallScreen && (
+                <div className="container mx-auto max-w-4xl">
+                  <div className={cn('mb-8 text-center', 'mt-12')}>
+                    <h1 className="mb-3 text-3xl font-bold tracking-tight text-text-primary md:text-5xl">
+                      {localize('com_agents_marketplace')}
+                    </h1>
+                    <p className="mx-auto mb-6 max-w-2xl text-lg text-text-secondary">
+                      {localize('com_agents_marketplace_subtitle')}
+                    </p>
+                  </div>
+                </div>
+              )}
+              {/* Sticky wrapper for search bar and categories */}
+              <div
+                className={cn(
+                  'sticky z-10 bg-presentation pb-4',
+                  isSmallScreen ? 'top-0' : 'top-14',
+                )}
+              >
+                <div className="container mx-auto max-w-4xl px-4">
+                  {/* Search bar */}
+                  <div className="mx-auto flex max-w-2xl gap-2 pb-6">
+                    <SearchBar value={searchQuery} onSearch={handleSearch} />
+                    {/* TODO: Remove this once we have a better way to handle admin settings */}
+                    {/* Admin Settings */}
+                    <MarketplaceAdminSettings />
+                  </div>
+
+                  {/* Category tabs */}
+                  <CategoryTabs
+                    categories={categoriesQuery.data || []}
+                    activeTab={displayCategory}
+                    isLoading={categoriesQuery.isLoading}
+                    onChange={handleTabChange}
+                  />
+                </div>
+              </div>
+              {/* Scrollable content area */}
+              <div className="container mx-auto max-w-4xl px-4 pb-8">
+                {/* Two-pane animated container wrapping category header + grid */}
+                <div className="relative overflow-hidden">
+                  {/* Current content pane */}
+                  <div
+                    className={cn(
+                      isTransitioning &&
+                        (animationDirection === 'right'
+                          ? 'motion-safe:animate-slide-out-left'
+                          : 'motion-safe:animate-slide-out-right'),
+                    )}
+                    key={`pane-current-${displayCategory}`}
+                  >
+                    {/* Category header - only show when not searching */}
+                    {!searchQuery && (
+                      <div className="mb-6 mt-6">
+                        {(() => {
+                          // Get category data for display
+                          const getCategoryData = () => {
+                            if (displayCategory === 'promoted') {
+                              return {
+                                name: localize('com_agents_top_picks'),
+                                description: localize('com_agents_recommended'),
+                              };
+                            }
+                            if (displayCategory === 'all') {
+                              return {
+                                name: localize('com_agents_all'),
+                                description: localize('com_agents_all_description'),
+                              };
+                            }
+
+                            // Find the category in the API data
+                            const categoryData = categoriesQuery.data?.find(
+                              (cat) => cat.value === displayCategory,
+                            );
+                            if (categoryData) {
+                              return {
+                                name: categoryData.label?.startsWith('com_')
+                                  ? localize(categoryData.label as TranslationKeys)
+                                  : categoryData.label,
+                                description: categoryData.description?.startsWith('com_')
+                                  ? localize(categoryData.description as TranslationKeys)
+                                  : categoryData.description || '',
+                              };
+                            }
+
+                            // Fallback for unknown categories
+                            return {
+                              name:
+                                displayCategory.charAt(0).toUpperCase() + displayCategory.slice(1),
+                              description: '',
+                            };
+                          };
+
+                          const { name, description } = getCategoryData();
+
+                          return (
+                            <div className="text-left">
+                              <h2 className="text-2xl font-bold text-text-primary">{name}</h2>
+                              {description && (
+                                <p className="mt-2 text-text-secondary">{description}</p>
+                              )}
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    )}
+
+                    {/* Agent grid */}
+                    <AgentGrid
+                      key={`grid-${displayCategory}`}
+                      category={displayCategory}
+                      searchQuery={searchQuery}
+                      onSelectAgent={handleAgentSelect}
+                      scrollElementRef={scrollContainerRef}
+                    />
+                  </div>
+
+                  {/* Next content pane, only during transition */}
+                  {isTransitioning && nextCategory && (
                     <div
                       className={cn(
-                        isTransitioning &&
-                          (animationDirection === 'right'
-                            ? 'motion-safe:animate-slide-out-left'
-                            : 'motion-safe:animate-slide-out-right'),
+                        'absolute inset-0',
+                        animationDirection === 'right'
+                          ? 'motion-safe:animate-slide-in-right'
+                          : 'motion-safe:animate-slide-in-left',
                       )}
-                      key={`pane-current-${displayCategory}`}
+                      key={`pane-next-${nextCategory}-${animationDirection}`}
                     >
                       {/* Category header - only show when not searching */}
                       {!searchQuery && (
@@ -373,13 +448,13 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
                           {(() => {
                             // Get category data for display
                             const getCategoryData = () => {
-                              if (displayCategory === 'promoted') {
+                              if (nextCategory === 'promoted') {
                                 return {
                                   name: localize('com_agents_top_picks'),
                                   description: localize('com_agents_recommended'),
                                 };
                               }
-                              if (displayCategory === 'all') {
+                              if (nextCategory === 'all') {
                                 return {
                                   name: localize('com_agents_all'),
                                   description: localize('com_agents_all_description'),
@@ -388,7 +463,7 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
 
                               // Find the category in the API data
                               const categoryData = categoriesQuery.data?.find(
-                                (cat) => cat.value === displayCategory,
+                                (cat) => cat.value === nextCategory,
                               );
                               if (categoryData) {
                                 return {
@@ -396,7 +471,9 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
                                     ? localize(categoryData.label as TranslationKeys)
                                     : categoryData.label,
                                   description: categoryData.description?.startsWith('com_')
-                                    ? localize(categoryData.description as TranslationKeys)
+                                    ? localize(
+                                        categoryData.description as Parameters<typeof localize>[0],
+                                      )
                                     : categoryData.description || '',
                                 };
                               }
@@ -404,8 +481,8 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
                               // Fallback for unknown categories
                               return {
                                 name:
-                                  displayCategory.charAt(0).toUpperCase() +
-                                  displayCategory.slice(1),
+                                  (nextCategory || '').charAt(0).toUpperCase() +
+                                  (nextCategory || '').slice(1),
                                 description: '',
                               };
                             };
@@ -426,113 +503,30 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
 
                       {/* Agent grid */}
                       <AgentGrid
-                        key={`grid-${displayCategory}`}
-                        category={displayCategory}
+                        key={`grid-${nextCategory}`}
+                        category={nextCategory}
                         searchQuery={searchQuery}
                         onSelectAgent={handleAgentSelect}
-                        scrollElement={scrollContainerRef.current}
+                        scrollElementRef={scrollContainerRef}
                       />
                     </div>
+                  )}
 
-                    {/* Next content pane, only during transition */}
-                    {isTransitioning && nextCategory && (
-                      <div
-                        className={cn(
-                          'absolute inset-0',
-                          animationDirection === 'right'
-                            ? 'motion-safe:animate-slide-in-right'
-                            : 'motion-safe:animate-slide-in-left',
-                        )}
-                        key={`pane-next-${nextCategory}-${animationDirection}`}
-                      >
-                        {/* Category header - only show when not searching */}
-                        {!searchQuery && (
-                          <div className="mb-6 mt-6">
-                            {(() => {
-                              // Get category data for display
-                              const getCategoryData = () => {
-                                if (nextCategory === 'promoted') {
-                                  return {
-                                    name: localize('com_agents_top_picks'),
-                                    description: localize('com_agents_recommended'),
-                                  };
-                                }
-                                if (nextCategory === 'all') {
-                                  return {
-                                    name: localize('com_agents_all'),
-                                    description: localize('com_agents_all_description'),
-                                  };
-                                }
-
-                                // Find the category in the API data
-                                const categoryData = categoriesQuery.data?.find(
-                                  (cat) => cat.value === nextCategory,
-                                );
-                                if (categoryData) {
-                                  return {
-                                    name: categoryData.label?.startsWith('com_')
-                                      ? localize(categoryData.label as TranslationKeys)
-                                      : categoryData.label,
-                                    description: categoryData.description?.startsWith('com_')
-                                      ? localize(
-                                          categoryData.description as Parameters<
-                                            typeof localize
-                                          >[0],
-                                        )
-                                      : categoryData.description || '',
-                                  };
-                                }
-
-                                // Fallback for unknown categories
-                                return {
-                                  name:
-                                    (nextCategory || '').charAt(0).toUpperCase() +
-                                    (nextCategory || '').slice(1),
-                                  description: '',
-                                };
-                              };
-
-                              const { name, description } = getCategoryData();
-
-                              return (
-                                <div className="text-left">
-                                  <h2 className="text-2xl font-bold text-text-primary">{name}</h2>
-                                  {description && (
-                                    <p className="mt-2 text-text-secondary">{description}</p>
-                                  )}
-                                </div>
-                              );
-                            })()}
-                          </div>
-                        )}
-
-                        {/* Agent grid */}
-                        <AgentGrid
-                          key={`grid-${nextCategory}`}
-                          category={nextCategory}
-                          searchQuery={searchQuery}
-                          onSelectAgent={handleAgentSelect}
-                          scrollElement={scrollContainerRef.current}
-                        />
-                      </div>
-                    )}
-
-                    {/* Note: Using Tailwind keyframes for slide in/out animations */}
-                  </div>
+                  {/* Note: Using Tailwind keyframes for slide in/out animations */}
                 </div>
-                {/* Agent detail dialog */}
-                {isDetailOpen && selectedAgent && (
-                  <AgentDetail
-                    agent={selectedAgent}
-                    isOpen={isDetailOpen}
-                    onClose={handleDetailClose}
-                  />
-                )}
               </div>
-            </main>
-          </SidePanelGroup>
-        </SidePanelProvider>
-      </MarketplaceProvider>
+              {/* Agent detail dialog */}
+              {isDetailOpen && selectedAgent && (
+                <AgentDetail
+                  agent={selectedAgent}
+                  isOpen={isDetailOpen}
+                  onClose={handleDetailClose}
+                />
+              )}
+            </div>
+          </main>
+        </SidePanelGroup>
+      </SidePanelProvider>
     </div>
   );
 };
