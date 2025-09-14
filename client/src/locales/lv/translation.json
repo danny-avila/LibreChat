@@ -834,7 +834,6 @@
   "com_ui_delete_tool": "Dzēst rīku",
   "com_ui_delete_tool_confirm": "Vai tiešām vēlaties dzēst šo rīku?",
   "com_ui_delete_tool_error": "Kļūda, dzēšot rīku: {{error}}",
-  "com_ui_delete_tool_success": "Rīks veiksmīgi izdzēsts",
   "com_ui_deleted": "Dzēsts",
   "com_ui_deleting_file": "Dzēšu failu...",
   "com_ui_descending": "Dilstošs",
