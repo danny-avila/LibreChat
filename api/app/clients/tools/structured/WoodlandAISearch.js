@@ -272,6 +272,8 @@ class WoodlandAISearch extends Tool {
 
     const results = await Promise.all(tasks);
 
+    // NOTE: For parts intent, indexList is ordered ['website','airtable','cyclopedia'] to ensure a View/Buy URL appears early in interleaved results.
+
     // Interleave equally across indexes
     const out = [];
     const seen = new Set();
@@ -299,6 +301,82 @@ class WoodlandAISearch extends Tool {
     return out;
   }
 
+  // Enrich results with cross-index links so the agent can always show Website (View/Buy), Airtable, and Cyclopedia URLs in tables
+  _enrichWithLinks(intent, extracted, results) {
+    try {
+      if (intent !== 'parts' || !Array.isArray(results) || results.length === 0) return results;
+
+      // Build quick lookups by part number from website & cyclopedia
+      const toArray = (x) => (Array.isArray(x) ? x : (x != null ? [x] : []));
+      const norm = (s) => (typeof s === 'string' ? s.trim().toLowerCase() : '');
+      const uniq = (arr) => Array.from(new Set(arr.filter(Boolean)));
+
+      const websiteByPart = new Map();
+      const cyclopediaByPart = new Map();
+
+      for (const d of results) {
+        const idx = d.index;
+        if (idx === 'website') {
+          const skus = new Set([...(toArray(d.skus)), d.sku]);
+          const mentioned = new Set([...(toArray(d.mentioned_parts))]);
+          const cands = uniq([...skus, ...mentioned].map(norm));
+          for (const p of cands) {
+            if (!p) continue;
+            const arr = websiteByPart.get(p) || [];
+            arr.push(d.url || d.parent_id || d.canonical_product_url);
+            websiteByPart.set(p, uniq(arr));
+          }
+        } else if (idx === 'cyclopedia') {
+          const cands = new Set([...(toArray(d.mentioned_parts))]);
+          // Fallback: try to detect part numbers mentioned in title/content
+          const text = `${d.title || ''}\n${d.content || ''}`;
+          const re = /\b\d{2}-[a-z0-9]{2}-[a-z0-9]{3,}\b/gi;
+          let m;
+          while ((m = re.exec(text)) !== null) {
+            cands.add(m[0]);
+          }
+          for (const pRaw of cands) {
+            const p = norm(pRaw);
+            if (!p) continue;
+            const arr = cyclopediaByPart.get(p) || [];
+            arr.push(d.url || d.parent_id);
+            cyclopediaByPart.set(p, uniq(arr));
+          }
+        }
+      }
+
+      // Enrich Airtable part docs with website & cyclopedia links
+      const out = results.map((d) => {
+        if (d.index !== 'airtable') return d;
+        const pn = norm(d.part_number) || (() => {
+          const m = /\b\d{2}-[a-z0-9]{2}-[a-z0-9]{3,}\b/i.exec(`${d.part_number || ''} ${d.title || ''} ${d.content || ''}`);
+          return m ? norm(m[0]) : '';
+        })();
+        if (!pn) return d;
+
+        const primaryWebsite = d.canonical_product_url || undefined;
+        const crossWebsite = websiteByPart.get(pn) || [];
+        const website_urls = uniq([primaryWebsite, ...crossWebsite]);
+
+        const crossCyclopedia = cyclopediaByPart.get(pn) || [];
+        const cyclopedia_urls = uniq(crossCyclopedia);
+
+        return {
+          ...d,
+          airtable_url: d.airtable_record_url || d.airtable_url,
+          website_urls,
+          website_url_primary: website_urls[0] || undefined,
+          cyclopedia_urls,
+        };
+      });
+
+      return out;
+    } catch (e) {
+      // If enrichment fails for any reason, return original results untouched
+      return results;
+    }
+  }
+
   // Build per-index selects/filters based on detected intent and extracted entities
   _optionsByIndexForIntent(intent, extracted = {}) {
     const opts = {};
@@ -306,21 +384,45 @@ class WoodlandAISearch extends Tool {
     const maybe = (o, sel) => (this.returnAllFields ? o : { ...o, select: sel });
 
     if (intent === 'parts') {
-      // Airtable first: only parts
+      const partNum = extracted.partNumber;
+      // Airtable: only parts
       opts.airtable = maybe({
         filter: partNum ? `(type eq 'part') and (part_number eq '${partNum}')` : `type eq 'part'`,
         orderBy: ['last_updated desc'],
       }, ['title','content','part_number','part_type','categories','canonical_product_url','last_updated','airtable_record_url','id']);
-      // Website: product pages, optionally mention part
+
+      // Website: prefer exact SKU/part hits; else fall back to product pages
       opts.website = maybe({
-        filter: partNum ? `mentioned_parts/any(p: p eq '${partNum}') or sku eq '${partNum}' or skus/any(s: s eq '${partNum}')` : `page_type eq 'product_marketing'`,
+        filter: partNum
+          ? `mentioned_parts/any(p: p eq '${partNum}') or sku eq '${partNum}' or skus/any(s: s eq '${partNum}')`
+          : `page_type eq 'product_marketing'`,
         orderBy: ['last_crawled desc'],
-      }, ['title','content','url','site','last_crawled','id']);
-      // Cyclopedia usually not primary for parts; leave minimal
+      }, ['title','content','url','site','last_crawled','sku','skus','id']);
+
+      // Cyclopedia: include even without explicit part number (typical part terms)
       opts.cyclopedia = maybe({
-        filter: partNum ? `mentioned_parts/any(p: p eq '${partNum}')` : undefined,
+        filter: partNum
+          ? `mentioned_parts/any(p: p eq '${partNum}')`
+          : `search.ismatch('part OR replacement OR install OR hose OR bag OR clamp OR key OR electric start OR troubleshooting', 'title,content', 'simple', 'any')`,
         orderBy: ['last_updated desc'],
-      }, ['title','content','url','site','page_type','breadcrumb','last_updated','id']);
+      }, ['title','content','url','site','page_type','breadcrumb','audience','last_updated','id']);
+    } else if (intent === 'compatibility') {
+      const partNum = extracted.partNumber;
+      // Airtable: DO NOT limit to type='part' so Product/Engine History can surface
+      opts.airtable = maybe({
+        orderBy: ['last_updated desc'],
+      }, ['title','content','last_updated','source_table','airtable_record_url','id']);
+
+      // Website: allow product pages and FAQs
+      opts.website = maybe({
+        orderBy: ['last_crawled desc'],
+      }, ['title','content','url','site','page_type','breadcrumb','last_crawled','id']);
+
+      // Cyclopedia: internal/troubleshooting preferred
+      opts.cyclopedia = maybe({
+        filter: `audience eq 'internal' or page_type eq 'maintenance_guide' or page_type eq 'troubleshooting'`,
+        orderBy: ['last_updated desc','section_order asc'],
+      }, ['title','content','url','site','page_type','breadcrumb','audience','last_updated','toc_items','id']);
     } else if (intent === 'sop') {
       // Cyclopedia SOP/support
       opts.cyclopedia = maybe({
@@ -358,21 +460,33 @@ class WoodlandAISearch extends Tool {
   _detectIntent(query) {
     const q = (query || '').toString().toLowerCase();
     const containsAny = (arr) => arr.some(w => q.includes(w));
-    // SKU/part pattern like 05-03-308 or 01-xx-xxx
+    const yearRegex = /\b(19|20)\d{2}\b/;
+    // e.g., 05-03-308 or 01-xx-xxx
     const partRegex = /\b\d{2}-[a-z0-9]{2}-[a-z0-9]{3,}\b/i;
     const partMatch = q.match(partRegex);
     const extracted = {};
     if (partMatch) extracted.partNumber = partMatch[0];
 
-    if (partMatch || containsAny(['part','replacement','buy','sku'])) {
-      return { intent: 'parts', indexes: ['airtable','website'], extracted };
+    // Parts / purchase signals → WEBSITE first to ensure View/Buy pages show up early; always include cyclopedia
+    if (partMatch || containsAny(['part','replacement','buy','order','sku','view/buy','add to cart','price','bag','hose','clamp','mda','key'])) {
+      return { intent: 'parts', indexes: ['website','airtable','cyclopedia'], extracted };
     }
-    if (containsAny(['how to','install','installation','guide','manual'])) {
-      return { intent: 'sop', indexes: ['cyclopedia'], extracted };
+
+    // Compatibility / fitment / engine-by-year
+    if (containsAny(['engine','fit','fits','fitment','compatible','compatibility','which engine','used in','hose size','diameter','model history','product history']) || yearRegex.test(q)) {
+      return { intent: 'compatibility', indexes: ['airtable','website','cyclopedia'], extracted };
     }
-    if (containsAny(['compare','benefits','why choose'])) {
-      return { intent: 'marketing', indexes: ['website'], extracted };
+
+    // SOP / How-to
+    if (containsAny(['how to','install','installation','guide','manual','troubleshoot','troubleshooting','winterization','sop'])) {
+      return { intent: 'sop', indexes: ['cyclopedia','airtable','website'], extracted };
     }
+
+    // Marketing / benefits
+    if (containsAny(['compare','benefits','why choose','financing','promotion','warranty'])) {
+      return { intent: 'marketing', indexes: ['website','airtable','cyclopedia'], extracted };
+    }
+
     return { intent: 'general', indexes: WoodlandAISearch.GROUPS, extracted };
   }
 
@@ -450,7 +564,8 @@ class WoodlandAISearch extends Tool {
         }
       }
 
-      return JSON.stringify(result);
+      const enriched = this._enrichWithLinks(intent, extracted, result);
+      return JSON.stringify(enriched);
     } catch (error) {
       logger.error('Azure AI Search request failed', { error: error?.message || String(error) });
       const msg = (error && (error.message || String(error))) || 'Unknown error';
