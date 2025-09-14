@@ -10,6 +10,9 @@ jest.mock('form-data', () => {
     getLength: jest.fn().mockReturnValue(100),
   }));
 });
+jest.mock('https-proxy-agent', () => ({
+  HttpsProxyAgent: jest.fn().mockImplementation((url) => ({ proxyUrl: url })),
+}));
 jest.mock('axios', () => {
   const mockAxiosInstance = {
     get: jest.fn().mockResolvedValue({ data: {} }),
@@ -44,6 +47,7 @@ jest.mock('~/utils/axios', () => ({
 
 import * as fs from 'fs';
 import axios from 'axios';
+import { HttpsProxyAgent } from 'https-proxy-agent';
 import type { Readable } from 'stream';
 import type {
   MistralFileUploadResponse,
@@ -1182,6 +1186,8 @@ describe('MistralOCR Service', () => {
 
     describe('Mixed env var and hardcoded configuration', () => {
       beforeEach(() => {
+        // Clean up any PROXY env var from previous tests
+        delete process.env.PROXY;
         const mockReadStream: MockReadStream = {
           on: jest.fn().mockImplementation(function (
             this: MockReadStream,
@@ -1711,12 +1717,25 @@ describe('MistralOCR Service', () => {
   describe('Proxy Configuration', () => {
     const originalProxy = process.env.PROXY;
 
+    beforeEach(() => {
+      // Reset the HttpsProxyAgent mock to its default implementation
+      (HttpsProxyAgent as unknown as jest.Mock).mockImplementation((url) => ({ proxyUrl: url }));
+      // Clear any previous axios mock calls
+      mockAxios.post!.mockClear();
+      mockAxios.get!.mockClear();
+      mockAxios.delete!.mockClear();
+    });
+
     afterEach(() => {
       if (originalProxy) {
         process.env.PROXY = originalProxy;
       } else {
         delete process.env.PROXY;
       }
+      // Clear mocks after each test to prevent leaking
+      mockAxios.post!.mockClear();
+      mockAxios.get!.mockClear();
+      mockAxios.delete!.mockClear();
     });
 
     describe('uploadDocumentToMistral with proxy', () => {
@@ -1778,11 +1797,9 @@ describe('MistralOCR Service', () => {
           'https://api.mistral.ai/v1/files',
           expect.anything(),
           expect.objectContaining({
-            proxy: {
-              host: 'proxy.example.com',
-              port: 8080,
-              protocol: 'http',
-            },
+            httpsAgent: expect.objectContaining({
+              proxyUrl: 'http://proxy.example.com:8080',
+            }),
           }),
         );
       });
@@ -1812,11 +1829,9 @@ describe('MistralOCR Service', () => {
           'https://api.mistral.ai/v1/files',
           expect.anything(),
           expect.objectContaining({
-            proxy: {
-              host: 'proxy.example.com',
-              port: 8080,
-              protocol: 'http',
-            },
+            httpsAgent: expect.objectContaining({
+              proxyUrl: 'http://user:pass@proxy.example.com:8080',
+            }),
           }),
         );
       });
@@ -1846,11 +1861,9 @@ describe('MistralOCR Service', () => {
           'https://api.mistral.ai/v1/files',
           expect.anything(),
           expect.objectContaining({
-            proxy: {
-              host: '::1',
-              port: 8080,
-              protocol: 'http',
-            },
+            httpsAgent: expect.objectContaining({
+              proxyUrl: 'http://[::1]:8080',
+            }),
           }),
         );
       });
@@ -1879,8 +1892,8 @@ describe('MistralOCR Service', () => {
         expect(mockAxios.post).toHaveBeenCalledWith(
           'https://api.mistral.ai/v1/files',
           expect.anything(),
-          expect.objectContaining({
-            proxy: undefined,
+          expect.not.objectContaining({
+            httpsAgent: expect.anything(),
           }),
         );
       });
@@ -1921,16 +1934,17 @@ describe('MistralOCR Service', () => {
           'https://api.mistral.ai/v1/ocr',
           expect.anything(),
           expect.objectContaining({
-            proxy: {
-              host: 'proxy.example.com',
-              port: 3128,
-              protocol: 'http',
-            },
+            httpsAgent: expect.objectContaining({
+              proxyUrl: 'http://proxy.example.com:3128',
+            }),
           }),
         );
       });
 
       it('should handle malformed proxy URLs gracefully', async () => {
+        (HttpsProxyAgent as unknown as jest.Mock).mockImplementationOnce(() => {
+          throw new Error('Invalid URL');
+        });
         process.env.PROXY = 'not-a-valid-url';
 
         const mockResponse: { data: OCRResult } = {
@@ -1953,24 +1967,12 @@ describe('MistralOCR Service', () => {
         };
         mockAxios.post!.mockResolvedValueOnce(mockResponse);
 
-        await performOCR({
-          apiKey: 'test-api-key',
-          url: 'https://document-url.com',
-        });
-
-        expect(mockLogger.error).toHaveBeenCalledWith(
-          'Error parsing proxy URL:',
-          expect.objectContaining({
-            message: expect.stringContaining('Invalid URL'),
+        await expect(
+          performOCR({
+            apiKey: 'test-api-key',
+            url: 'https://document-url.com',
           }),
-        );
-        expect(mockAxios.post).toHaveBeenCalledWith(
-          'https://api.mistral.ai/v1/ocr',
-          expect.anything(),
-          expect.objectContaining({
-            proxy: undefined,
-          }),
-        );
+        ).rejects.toThrow('Invalid URL');
       });
     });
 
@@ -2035,11 +2037,9 @@ describe('MistralOCR Service', () => {
           'https://azure.mistral.ai/v1/ocr',
           expect.anything(),
           expect.objectContaining({
-            proxy: {
-              host: 'proxy.example.com',
-              port: 8080,
-              protocol: 'http',
-            },
+            httpsAgent: expect.objectContaining({
+              proxyUrl: 'http://proxy.example.com:8080',
+            }),
           }),
         );
       });
@@ -2065,11 +2065,9 @@ describe('MistralOCR Service', () => {
         expect(mockAxios.get).toHaveBeenCalledWith(
           'https://api.mistral.ai/v1/files/file-123/url?expiry=24',
           expect.objectContaining({
-            proxy: {
-              host: 'secure-proxy.example.com',
-              port: 443,
-              protocol: 'https',
-            },
+            httpsAgent: expect.objectContaining({
+              proxyUrl: 'https://secure-proxy.example.com:443',
+            }),
           }),
         );
       });
@@ -2089,11 +2087,9 @@ describe('MistralOCR Service', () => {
         expect(mockAxios.delete).toHaveBeenCalledWith(
           'https://api.mistral.ai/v1/files/file-123',
           expect.objectContaining({
-            proxy: {
-              host: 'proxy.example.com',
-              port: 1080,
-              protocol: 'socks5',
-            },
+            httpsAgent: expect.objectContaining({
+              proxyUrl: 'socks5://proxy.example.com:1080',
+            }),
           }),
         );
       });
@@ -2103,6 +2099,18 @@ describe('MistralOCR Service', () => {
   describe('uploadAzureMistralOCR', () => {
     beforeEach(() => {
       (jest.mocked(fs).readFileSync as jest.Mock).mockReturnValue(Buffer.from('mock-file-content'));
+      // Reset the HttpsProxyAgent mock to its default implementation for Azure tests
+      (HttpsProxyAgent as unknown as jest.Mock).mockImplementation((url) => ({ proxyUrl: url }));
+      // Clean up any PROXY env var from previous tests
+      delete process.env.PROXY;
+      // Reset axios mocks completely to clear any queued responses
+      mockAxios.post!.mockReset();
+      mockAxios.get!.mockReset();
+      mockAxios.delete!.mockReset();
+      // Re-establish default resolved values
+      mockAxios.post!.mockResolvedValue({ data: {} });
+      mockAxios.get!.mockResolvedValue({ data: {} });
+      mockAxios.delete!.mockResolvedValue({ data: {} });
     });
 
     it('should process OCR using Azure Mistral with base64 encoding', async () => {
@@ -2188,6 +2196,11 @@ describe('MistralOCR Service', () => {
     });
 
     describe('Mixed env var and hardcoded configuration', () => {
+      beforeEach(() => {
+        // Clean up any PROXY env var from previous tests
+        delete process.env.PROXY;
+      });
+
       it('should preserve hardcoded baseURL when only apiKey is an env var', async () => {
         // This test demonstrates the current bug
         mockLoadAuthValues.mockResolvedValue({

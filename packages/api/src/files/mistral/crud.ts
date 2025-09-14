@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import FormData from 'form-data';
 import { logger } from '@librechat/data-schemas';
+import { HttpsProxyAgent } from 'https-proxy-agent';
 import {
   FileSources,
   envVarRegex,
@@ -9,7 +10,7 @@ import {
   extractVariableName,
 } from 'librechat-data-provider';
 import type { TCustomConfig } from 'librechat-data-provider';
-import type { AxiosError, AxiosProxyConfig } from 'axios';
+import type { AxiosError, AxiosRequestConfig } from 'axios';
 import type {
   MistralFileUploadResponse,
   MistralSignedUrlResponse,
@@ -26,39 +27,6 @@ import { loadServiceKey } from '~/utils/key';
 const axios = createAxiosInstance();
 const DEFAULT_MISTRAL_BASE_URL = 'https://api.mistral.ai/v1';
 const DEFAULT_MISTRAL_MODEL = 'mistral-ocr-latest';
-
-/**
- * Parses proxy URL and returns axios proxy configuration
- * @param proxyUrl The proxy URL string
- * @returns Axios proxy configuration or undefined if parsing fails
- */
-function getProxyConfig(proxyUrl: string | undefined): AxiosProxyConfig | undefined {
-  if (!proxyUrl) {
-    return undefined;
-  }
-
-  try {
-    const url = new URL(proxyUrl);
-    // Get port with fallback to default ports based on protocol
-    let port: number | undefined;
-    if (url.port) {
-      port = parseInt(url.port, 10);
-    } else if (url.protocol === 'https:' || url.protocol === 'wss:') {
-      port = 443;
-    } else if (url.protocol === 'http:' || url.protocol === 'ws:') {
-      port = 80;
-    }
-
-    return {
-      host: url.hostname.replace(/^\[|\]$/g, ''),
-      port: port || 0,
-      protocol: url.protocol.replace(':', ''),
-    };
-  } catch (error) {
-    logger.error('Error parsing proxy URL:', error);
-    return undefined;
-  }
-}
 
 /** Helper type for auth configuration */
 interface AuthConfig {
@@ -110,18 +78,21 @@ export async function uploadDocumentToMistral({
   const fileStream = fs.createReadStream(filePath);
   form.append('file', fileStream, { filename: actualFileName });
 
-  const proxyConfig = getProxyConfig(process.env.PROXY);
+  const config: AxiosRequestConfig = {
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      ...form.getHeaders(),
+    },
+    maxBodyLength: Infinity,
+    maxContentLength: Infinity,
+  };
+
+  if (process.env.PROXY) {
+    config.httpsAgent = new HttpsProxyAgent(process.env.PROXY);
+  }
 
   return axios
-    .post(`${baseURL}/files`, form, {
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        ...form.getHeaders(),
-      },
-      maxBodyLength: Infinity,
-      maxContentLength: Infinity,
-      proxy: proxyConfig,
-    })
+    .post(`${baseURL}/files`, form, config)
     .then((res) => res.data)
     .catch((error) => {
       throw error;
@@ -139,15 +110,18 @@ export async function getSignedUrl({
   expiry?: number;
   baseURL?: string;
 }): Promise<MistralSignedUrlResponse> {
-  const proxyConfig = getProxyConfig(process.env.PROXY);
+  const config: AxiosRequestConfig = {
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+    },
+  };
+
+  if (process.env.PROXY) {
+    config.httpsAgent = new HttpsProxyAgent(process.env.PROXY);
+  }
 
   return axios
-    .get(`${baseURL}/files/${fileId}/url?expiry=${expiry}`, {
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-      },
-      proxy: proxyConfig,
-    })
+    .get(`${baseURL}/files/${fileId}/url?expiry=${expiry}`, config)
     .then((res) => res.data)
     .catch((error) => {
       logger.error('Error fetching signed URL:', error.message);
@@ -178,7 +152,17 @@ export async function performOCR({
   documentType?: 'document_url' | 'image_url';
 }): Promise<OCRResult> {
   const documentKey = documentType === 'image_url' ? 'image_url' : 'document_url';
-  const proxyConfig = getProxyConfig(process.env.PROXY);
+
+  const config: AxiosRequestConfig = {
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+    },
+  };
+
+  if (process.env.PROXY) {
+    config.httpsAgent = new HttpsProxyAgent(process.env.PROXY);
+  }
 
   return axios
     .post(
@@ -192,13 +176,7 @@ export async function performOCR({
           [documentKey]: url,
         },
       },
-      {
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${apiKey}`,
-        },
-        proxy: proxyConfig,
-      },
+      config,
     )
     .then((res) => res.data)
     .catch((error) => {
@@ -224,15 +202,18 @@ export async function deleteMistralFile({
   apiKey: string;
   baseURL?: string;
 }): Promise<void> {
-  const proxyConfig = getProxyConfig(process.env.PROXY);
+  const config: AxiosRequestConfig = {
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+    },
+  };
+
+  if (process.env.PROXY) {
+    config.httpsAgent = new HttpsProxyAgent(process.env.PROXY);
+  }
 
   try {
-    const result = await axios.delete(`${baseURL}/files/${fileId}`, {
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-      },
-      proxy: proxyConfig,
-    });
+    const result = await axios.delete(`${baseURL}/files/${fileId}`, config);
     logger.debug(`Mistral file ${fileId} deleted successfully:`, result.data);
   } catch (error) {
     logger.error(`Error deleting Mistral file ${fileId}:`, error);
@@ -588,7 +569,15 @@ async function createJWT(serviceKey: GoogleServiceAccount): Promise<string> {
  * Exchanges JWT for access token
  */
 async function exchangeJWTForAccessToken(jwt: string): Promise<string> {
-  const proxyConfig = getProxyConfig(process.env.PROXY);
+  const config: AxiosRequestConfig = {
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+  };
+
+  if (process.env.PROXY) {
+    config.httpsAgent = new HttpsProxyAgent(process.env.PROXY);
+  }
 
   const response = await axios.post(
     'https://oauth2.googleapis.com/token',
@@ -596,12 +585,7 @@ async function exchangeJWTForAccessToken(jwt: string): Promise<string> {
       grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
       assertion: jwt,
     }),
-    {
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      proxy: proxyConfig,
-    },
+    config,
   );
 
   if (!response.data?.access_token) {
@@ -656,17 +640,20 @@ async function performGoogleVertexOCR({
     },
   });
 
-  const proxyConfig = getProxyConfig(process.env.PROXY);
+  const config: AxiosRequestConfig = {
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+      Accept: 'application/json',
+    },
+  };
+
+  if (process.env.PROXY) {
+    config.httpsAgent = new HttpsProxyAgent(process.env.PROXY);
+  }
 
   return axios
-    .post(baseURL, requestBody, {
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${accessToken}`,
-        Accept: 'application/json',
-      },
-      proxy: proxyConfig,
-    })
+    .post(baseURL, requestBody, config)
     .then((res) => {
       logger.debug('Google Vertex AI response received');
       return res.data;
