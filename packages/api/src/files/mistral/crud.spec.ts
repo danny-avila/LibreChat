@@ -1708,6 +1708,398 @@ describe('MistralOCR Service', () => {
     });
   });
 
+  describe('Proxy Configuration', () => {
+    const originalProxy = process.env.PROXY;
+
+    afterEach(() => {
+      if (originalProxy) {
+        process.env.PROXY = originalProxy;
+      } else {
+        delete process.env.PROXY;
+      }
+    });
+
+    describe('uploadDocumentToMistral with proxy', () => {
+      beforeEach(() => {
+        const mockReadStream: MockReadStream = {
+          on: jest.fn().mockImplementation(function (
+            this: MockReadStream,
+            event: string,
+            handler: () => void,
+          ) {
+            if (event === 'end') {
+              handler();
+            }
+            return this;
+          }),
+          pipe: jest.fn().mockImplementation(function (this: MockReadStream) {
+            return this;
+          }),
+          pause: jest.fn(),
+          resume: jest.fn(),
+          emit: jest.fn(),
+          once: jest.fn(),
+          destroy: jest.fn(),
+          path: '/path/to/test.pdf',
+          fd: 1,
+          flags: 'r',
+          mode: 0o666,
+          autoClose: true,
+          bytesRead: 0,
+          closed: false,
+          pending: false,
+        };
+
+        (jest.mocked(fs).createReadStream as jest.Mock).mockReturnValue(mockReadStream);
+      });
+
+      it('should use proxy configuration when PROXY env var is set', async () => {
+        process.env.PROXY = 'http://proxy.example.com:8080';
+
+        const mockResponse: { data: MistralFileUploadResponse } = {
+          data: {
+            id: 'file-proxy-123',
+            object: 'file',
+            bytes: 1024,
+            created_at: Date.now(),
+            filename: 'test.pdf',
+            purpose: 'ocr',
+          },
+        };
+        mockAxios.post!.mockResolvedValueOnce(mockResponse);
+
+        await uploadDocumentToMistral({
+          filePath: '/path/to/test.pdf',
+          fileName: 'test.pdf',
+          apiKey: 'test-api-key',
+        });
+
+        expect(mockAxios.post).toHaveBeenCalledWith(
+          'https://api.mistral.ai/v1/files',
+          expect.anything(),
+          expect.objectContaining({
+            proxy: {
+              host: 'proxy.example.com',
+              port: 8080,
+              protocol: 'http',
+            },
+          }),
+        );
+      });
+
+      it('should handle proxy URL with authentication', async () => {
+        process.env.PROXY = 'http://user:pass@proxy.example.com:8080';
+
+        const mockResponse: { data: MistralFileUploadResponse } = {
+          data: {
+            id: 'file-proxy-auth-123',
+            object: 'file',
+            bytes: 1024,
+            created_at: Date.now(),
+            filename: 'test.pdf',
+            purpose: 'ocr',
+          },
+        };
+        mockAxios.post!.mockResolvedValueOnce(mockResponse);
+
+        await uploadDocumentToMistral({
+          filePath: '/path/to/test.pdf',
+          fileName: 'test.pdf',
+          apiKey: 'test-api-key',
+        });
+
+        expect(mockAxios.post).toHaveBeenCalledWith(
+          'https://api.mistral.ai/v1/files',
+          expect.anything(),
+          expect.objectContaining({
+            proxy: {
+              host: 'proxy.example.com',
+              port: 8080,
+              protocol: 'http',
+            },
+          }),
+        );
+      });
+
+      it('should handle IPv6 proxy addresses', async () => {
+        process.env.PROXY = 'http://[::1]:8080';
+
+        const mockResponse: { data: MistralFileUploadResponse } = {
+          data: {
+            id: 'file-proxy-ipv6-123',
+            object: 'file',
+            bytes: 1024,
+            created_at: Date.now(),
+            filename: 'test.pdf',
+            purpose: 'ocr',
+          },
+        };
+        mockAxios.post!.mockResolvedValueOnce(mockResponse);
+
+        await uploadDocumentToMistral({
+          filePath: '/path/to/test.pdf',
+          fileName: 'test.pdf',
+          apiKey: 'test-api-key',
+        });
+
+        expect(mockAxios.post).toHaveBeenCalledWith(
+          'https://api.mistral.ai/v1/files',
+          expect.anything(),
+          expect.objectContaining({
+            proxy: {
+              host: '::1',
+              port: 8080,
+              protocol: 'http',
+            },
+          }),
+        );
+      });
+
+      it('should not use proxy when PROXY env var is not set', async () => {
+        delete process.env.PROXY;
+
+        const mockResponse: { data: MistralFileUploadResponse } = {
+          data: {
+            id: 'file-no-proxy-123',
+            object: 'file',
+            bytes: 1024,
+            created_at: Date.now(),
+            filename: 'test.pdf',
+            purpose: 'ocr',
+          },
+        };
+        mockAxios.post!.mockResolvedValueOnce(mockResponse);
+
+        await uploadDocumentToMistral({
+          filePath: '/path/to/test.pdf',
+          fileName: 'test.pdf',
+          apiKey: 'test-api-key',
+        });
+
+        expect(mockAxios.post).toHaveBeenCalledWith(
+          'https://api.mistral.ai/v1/files',
+          expect.anything(),
+          expect.objectContaining({
+            proxy: undefined,
+          }),
+        );
+      });
+    });
+
+    describe('performOCR with proxy', () => {
+      it('should use proxy configuration when PROXY env var is set', async () => {
+        process.env.PROXY = 'http://proxy.example.com:3128';
+
+        const mockResponse: { data: OCRResult } = {
+          data: {
+            model: 'mistral-ocr-latest',
+            pages: [
+              {
+                index: 0,
+                markdown: 'Proxy test content',
+                images: [],
+                dimensions: { dpi: 300, height: 1100, width: 850 },
+              },
+            ],
+            document_annotation: '',
+            usage_info: {
+              pages_processed: 1,
+              doc_size_bytes: 1024,
+            },
+          },
+        };
+        mockAxios.post!.mockResolvedValueOnce(mockResponse);
+
+        await performOCR({
+          apiKey: 'test-api-key',
+          url: 'https://document-url.com',
+          model: 'mistral-ocr-latest',
+          documentType: 'document_url',
+        });
+
+        expect(mockAxios.post).toHaveBeenCalledWith(
+          'https://api.mistral.ai/v1/ocr',
+          expect.anything(),
+          expect.objectContaining({
+            proxy: {
+              host: 'proxy.example.com',
+              port: 3128,
+              protocol: 'http',
+            },
+          }),
+        );
+      });
+
+      it('should handle malformed proxy URLs gracefully', async () => {
+        process.env.PROXY = 'not-a-valid-url';
+
+        const mockResponse: { data: OCRResult } = {
+          data: {
+            model: 'mistral-ocr-latest',
+            pages: [
+              {
+                index: 0,
+                markdown: 'Test content',
+                images: [],
+                dimensions: { dpi: 300, height: 1100, width: 850 },
+              },
+            ],
+            document_annotation: '',
+            usage_info: {
+              pages_processed: 1,
+              doc_size_bytes: 1024,
+            },
+          },
+        };
+        mockAxios.post!.mockResolvedValueOnce(mockResponse);
+
+        await performOCR({
+          apiKey: 'test-api-key',
+          url: 'https://document-url.com',
+        });
+
+        expect(mockLogger.error).toHaveBeenCalledWith(
+          'Error parsing proxy URL:',
+          expect.objectContaining({
+            message: expect.stringContaining('Invalid URL'),
+          }),
+        );
+        expect(mockAxios.post).toHaveBeenCalledWith(
+          'https://api.mistral.ai/v1/ocr',
+          expect.anything(),
+          expect.objectContaining({
+            proxy: undefined,
+          }),
+        );
+      });
+    });
+
+    describe('Azure Mistral OCR with proxy', () => {
+      beforeEach(() => {
+        (jest.mocked(fs).readFileSync as jest.Mock).mockReturnValue(
+          Buffer.from('mock-file-content'),
+        );
+      });
+
+      it('should use proxy for Azure Mistral OCR requests', async () => {
+        process.env.PROXY = 'http://proxy.example.com:8080';
+
+        mockLoadAuthValues.mockResolvedValue({
+          OCR_API_KEY: 'azure-api-key',
+          OCR_BASEURL: 'https://azure.mistral.ai/v1',
+        });
+
+        mockAxios.post!.mockResolvedValueOnce({
+          data: {
+            model: 'mistral-ocr-latest',
+            pages: [
+              {
+                index: 0,
+                markdown: 'Azure OCR with proxy',
+                images: [],
+                dimensions: { dpi: 300, height: 1100, width: 850 },
+              },
+            ],
+            document_annotation: '',
+            usage_info: {
+              pages_processed: 1,
+              doc_size_bytes: 1024,
+            },
+          },
+        });
+
+        const req = {
+          user: { id: 'user123' },
+          config: {
+            ocr: {
+              apiKey: '${OCR_API_KEY}',
+              baseURL: '${OCR_BASEURL}',
+              mistralModel: 'mistral-ocr-latest',
+            },
+          },
+        } as unknown as ServerRequest;
+
+        const file = {
+          path: '/tmp/upload/azure-file.pdf',
+          originalname: 'azure-document.pdf',
+          mimetype: 'application/pdf',
+        } as Express.Multer.File;
+
+        await uploadAzureMistralOCR({
+          req,
+          file,
+          loadAuthValues: mockLoadAuthValues,
+        });
+
+        expect(mockAxios.post).toHaveBeenCalledWith(
+          'https://azure.mistral.ai/v1/ocr',
+          expect.anything(),
+          expect.objectContaining({
+            proxy: {
+              host: 'proxy.example.com',
+              port: 8080,
+              protocol: 'http',
+            },
+          }),
+        );
+      });
+    });
+
+    describe('getSignedUrl with proxy', () => {
+      it('should use proxy configuration when PROXY env var is set', async () => {
+        process.env.PROXY = 'https://secure-proxy.example.com:443';
+
+        const mockResponse: { data: MistralSignedUrlResponse } = {
+          data: {
+            url: 'https://signed-url.com',
+            expires_at: Date.now() + 86400000,
+          },
+        };
+        mockAxios.get!.mockResolvedValueOnce(mockResponse);
+
+        await getSignedUrl({
+          fileId: 'file-123',
+          apiKey: 'test-api-key',
+        });
+
+        expect(mockAxios.get).toHaveBeenCalledWith(
+          'https://api.mistral.ai/v1/files/file-123/url?expiry=24',
+          expect.objectContaining({
+            proxy: {
+              host: 'secure-proxy.example.com',
+              port: 443,
+              protocol: 'https',
+            },
+          }),
+        );
+      });
+    });
+
+    describe('deleteMistralFile with proxy', () => {
+      it('should use proxy configuration when PROXY env var is set', async () => {
+        process.env.PROXY = 'socks5://proxy.example.com:1080';
+
+        mockAxios.delete!.mockResolvedValueOnce({ data: {} });
+
+        await deleteMistralFile({
+          fileId: 'file-123',
+          apiKey: 'test-api-key',
+        });
+
+        expect(mockAxios.delete).toHaveBeenCalledWith(
+          'https://api.mistral.ai/v1/files/file-123',
+          expect.objectContaining({
+            proxy: {
+              host: 'proxy.example.com',
+              port: 1080,
+              protocol: 'socks5',
+            },
+          }),
+        );
+      });
+    });
+  });
+
   describe('uploadAzureMistralOCR', () => {
     beforeEach(() => {
       (jest.mocked(fs).readFileSync as jest.Mock).mockReturnValue(Buffer.from('mock-file-content'));
