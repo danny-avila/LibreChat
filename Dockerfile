@@ -17,6 +17,9 @@ RUN uv --version
 RUN mkdir -p /app && chown node:node /app
 WORKDIR /app
 
+# Bake librechat.yaml into the image
+COPY librechat.yaml /app/librechat.yaml
+
 USER node
 
 COPY --chown=node:node package.json package-lock.json ./
