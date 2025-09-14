@@ -358,7 +358,7 @@ const resetPassword = async (userId, token, password) => {
 /**
  * Set Auth Tokens
  * @param {String | ObjectId} userId
- * @param {Object} res
+ * @param {ServerResponse} res
  * @param {ISession | null} [session=null]
  * @returns
  */
