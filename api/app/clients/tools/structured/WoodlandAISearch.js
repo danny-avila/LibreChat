@@ -80,6 +80,14 @@ class WoodlandAISearch extends Tool {
     // Always return all fields unless explicitly disabled
     this.returnAllFields = String(this._env(fields.AZURE_AI_SEARCH_RETURN_ALL_FIELDS, process.env.AZURE_AI_SEARCH_RETURN_ALL_FIELDS || 'true')).toLowerCase() === 'true';
 
+    // Governance / guardrail flags
+    this.enforceReviewedOnly = String(this._env(fields.AZURE_AI_SEARCH_ENFORCE_REVIEWED_ONLY, process.env.AZURE_AI_SEARCH_ENFORCE_REVIEWED_ONLY || 'true')).toLowerCase() === 'true';
+    // Comma-separated domains to allow for Website results (e.g., "www.cyclonerake.com")
+    this.websiteDomainAllowlist = (this._env(fields.AZURE_AI_SEARCH_WEBSITE_DOMAIN_ALLOWLIST, process.env.AZURE_AI_SEARCH_WEBSITE_DOMAIN_ALLOWLIST) || 'www.cyclonerake.com')
+      .split(',')
+      .map(s => s.trim())
+      .filter(Boolean);
+
     // Initialize one SearchClient per index
     const credential = new AzureKeyCredential(this.apiKey);
     this.clients = {
@@ -104,13 +112,29 @@ class WoodlandAISearch extends Tool {
       semanticConfiguration: this.semanticConfiguration,
       queryLanguage: this.queryLanguage,
       scoringProfile: this.scoringProfile,
-      hardFilter: this.hardFilter
+      hardFilter: this.hardFilter,
+      enforceReviewedOnly: this.enforceReviewedOnly,
+      websiteDomainAllowlist: this.websiteDomainAllowlist,
     });
   }
 
   // Utility to generate a stable key for deduplication
   _keyOf(d) {
     return d?.url || d?.id || d?.record_id || d?.key || JSON.stringify(d);
+  }
+
+  _andFilter(a, b) {
+    if (!a && !b) return undefined;
+    if (!a) return b;
+    if (!b) return a;
+    return `(${a}) and (${b})`;
+  }
+
+  _withReviewed(filter) {
+    if (!this.enforceReviewedOnly) return filter;
+    // All three indexes expose a boolean 'reviewed' field in our data
+    const reviewedClause = `reviewed eq true`;
+    return this._andFilter(filter, reviewedClause);
   }
 
   _sanitizeSearchOptions(opts) {
@@ -361,12 +385,14 @@ class WoodlandAISearch extends Tool {
         const crossCyclopedia = cyclopediaByPart.get(pn) || [];
         const cyclopedia_urls = uniq(crossCyclopedia);
 
+        // Include any Airtable-attached Doc360 URL as an authoritative Cyclopedia link
         return {
           ...d,
           airtable_url: d.airtable_record_url || d.airtable_url,
           website_urls,
           website_url_primary: website_urls[0] || undefined,
-          cyclopedia_urls,
+          // Include any Airtable-attached Doc360 URL as an authoritative Cyclopedia link
+          cyclopedia_urls: uniq([d.doc360_url, ...cyclopedia_urls].filter(Boolean)),
         };
       });
 
@@ -383,74 +409,97 @@ class WoodlandAISearch extends Tool {
     const partNum = extracted.partNumber;
     const maybe = (o, sel) => (this.returnAllFields ? o : { ...o, select: sel });
 
+    // Helper to constrain Website results to allowlisted domains
+    const websiteDomainFilter = this.websiteDomainAllowlist.length
+      ? this.websiteDomainAllowlist.map(d => `site eq '${d}'`).join(' or ')
+      : undefined;
+
     if (intent === 'parts') {
-      const partNum = extracted.partNumber;
-      // Airtable: only parts
+      // Airtable: only parts, reviewed only
       opts.airtable = maybe({
-        filter: partNum ? `(type eq 'part') and (part_number eq '${partNum}')` : `type eq 'part'`,
+        filter: this._withReviewed(partNum ? `(type eq 'part') and (part_number eq '${partNum}')` : `type eq 'part'`),
         orderBy: ['last_updated desc'],
-      }, ['title','content','part_number','part_type','categories','canonical_product_url','last_updated','airtable_record_url','id']);
+      }, ['title','content','part_number','part_type','categories','canonical_product_url','last_updated','airtable_record_url','doc360_url','id']);
 
-      // Website: prefer exact SKU/part hits; else fall back to product pages
+      // Website: prefer exact SKU/part hits; else fall back to product pages, reviewed only, allowlist
+      const websiteFilterBase = partNum
+        ? `mentioned_parts/any(p: p eq '${partNum}') or sku eq '${partNum}' or skus/any(s: s eq '${partNum}')`
+        : `page_type eq 'product_marketing' or page_type eq 'other'`;
+      const websiteFilter = this._withReviewed(this._andFilter(websiteFilterBase, websiteDomainFilter));
       opts.website = maybe({
-        filter: partNum
-          ? `mentioned_parts/any(p: p eq '${partNum}') or sku eq '${partNum}' or skus/any(s: s eq '${partNum}')`
-          : `page_type eq 'product_marketing'`,
+        filter: websiteFilter,
         orderBy: ['last_crawled desc'],
-      }, ['title','content','url','site','last_crawled','sku','skus','id']);
+      }, ['title','content','url','site','last_crawled','sku','skus','mentioned_parts','id']);
 
-      // Cyclopedia: include even without explicit part number (typical part terms)
+      // Cyclopedia: include even without explicit part number, reviewed only
+      const cycloBase = partNum
+        ? `mentioned_parts/any(p: p eq '${partNum}')`
+        : `search.ismatch('part OR replacement OR install OR hose OR bag OR clamp OR key OR electric start OR troubleshooting', 'title,content', 'simple', 'any')`;
       opts.cyclopedia = maybe({
-        filter: partNum
-          ? `mentioned_parts/any(p: p eq '${partNum}')`
-          : `search.ismatch('part OR replacement OR install OR hose OR bag OR clamp OR key OR electric start OR troubleshooting', 'title,content', 'simple', 'any')`,
+        filter: this._withReviewed(cycloBase),
         orderBy: ['last_updated desc'],
-      }, ['title','content','url','site','page_type','breadcrumb','audience','last_updated','id']);
+      }, ['title','content','url','site','page_type','breadcrumb','audience','last_updated','mentioned_parts','id']);
     } else if (intent === 'compatibility') {
-      const partNum = extracted.partNumber;
-      // Airtable: DO NOT limit to type='part' so Product/Engine History can surface
+      // Airtable: reviewed only
       opts.airtable = maybe({
+        filter: this._withReviewed(undefined),
         orderBy: ['last_updated desc'],
-      }, ['title','content','last_updated','source_table','airtable_record_url','id']);
+      }, ['title','content','last_updated','source_table','airtable_record_url','doc360_url','id']);
 
-      // Website: allow product pages and FAQs
+      // Website: reviewed only, allowlist
       opts.website = maybe({
+        filter: this._withReviewed(websiteDomainFilter),
         orderBy: ['last_crawled desc'],
       }, ['title','content','url','site','page_type','breadcrumb','last_crawled','id']);
 
-      // Cyclopedia: internal/troubleshooting preferred
+      // Cyclopedia: reviewed only
       opts.cyclopedia = maybe({
-        filter: `audience eq 'internal' or page_type eq 'maintenance_guide' or page_type eq 'troubleshooting'`,
+        filter: this._withReviewed(`audience eq 'internal' or page_type eq 'maintenance_guide' or page_type eq 'troubleshooting'`),
         orderBy: ['last_updated desc','section_order asc'],
       }, ['title','content','url','site','page_type','breadcrumb','audience','last_updated','toc_items','id']);
     } else if (intent === 'sop') {
-      // Cyclopedia SOP/support
+      // Cyclopedia SOP/support, reviewed only
       opts.cyclopedia = maybe({
-        filter: `audience eq 'internal' or page_type eq 'maintenance_guide'`,
+        filter: this._withReviewed(`audience eq 'internal' or page_type eq 'maintenance_guide'`),
         orderBy: ['last_updated desc','section_order asc'],
       }, ['title','content','url','site','page_type','breadcrumb','audience','last_updated','toc_items','id']);
-      // Airtable support
+      // Airtable support, reviewed only
       opts.airtable = maybe({
-        filter: `type eq 'support'`,
+        filter: this._withReviewed(`type eq 'support'`),
         orderBy: ['last_updated desc'],
       }, ['title','content','last_updated','type','source_table','airtable_record_url','doc360_url','id']);
-      // Website generic
+      // Website generic, reviewed only, allowlist
       opts.website = maybe({
+        filter: this._withReviewed(websiteDomainFilter),
         orderBy: ['last_crawled desc'],
       }, ['title','content','url','site','page_type','breadcrumb','last_crawled','id']);
     } else if (intent === 'marketing') {
       opts.website = maybe({
-        filter: `page_type eq 'product_marketing'`,
+        filter: this._withReviewed(this._andFilter(`page_type eq 'product_marketing'`, websiteDomainFilter)),
         orderBy: ['last_crawled desc'],
       }, ['title','content','url','site','page_type','headings','breadcrumb','last_crawled','id']);
-      // Supplementary indexes, loose filters
-      opts.airtable = maybe({ orderBy: ['last_updated desc'] }, ['title','content','last_updated','source_table','airtable_record_url','id']);
-      opts.cyclopedia = maybe({ orderBy: ['last_updated desc'] }, ['title','content','url','site','page_type','breadcrumb','last_updated','id']);
+      opts.airtable = maybe({
+        filter: this._withReviewed(undefined),
+        orderBy: ['last_updated desc'],
+      }, ['title','content','last_updated','source_table','airtable_record_url','id']);
+      opts.cyclopedia = maybe({
+        filter: this._withReviewed(undefined),
+        orderBy: ['last_updated desc'],
+      }, ['title','content','url','site','page_type','breadcrumb','last_updated','id']);
     } else {
       // general
-      opts.airtable = maybe({ orderBy: ['last_updated desc'] }, ['title','content','last_updated','airtable_record_url','id']);
-      opts.website = maybe({ orderBy: ['last_crawled desc'] }, ['title','content','url','site','last_crawled','id']);
-      opts.cyclopedia = maybe({ orderBy: ['last_updated desc'] }, ['title','content','url','site','page_type','last_updated','id']);
+      opts.airtable = maybe({
+        filter: this._withReviewed(undefined),
+        orderBy: ['last_updated desc'],
+      }, ['title','content','last_updated','airtable_record_url','id']);
+      opts.website = maybe({
+        filter: this._withReviewed(websiteDomainFilter),
+        orderBy: ['last_crawled desc'],
+      }, ['title','content','url','site','last_crawled','id']);
+      opts.cyclopedia = maybe({
+        filter: this._withReviewed(undefined),
+        orderBy: ['last_updated desc'],
+      }, ['title','content','url','site','page_type','last_updated','id']);
     }
 
     return opts;
@@ -565,7 +614,10 @@ class WoodlandAISearch extends Tool {
       }
 
       const enriched = this._enrichWithLinks(intent, extracted, result);
-      return JSON.stringify(enriched);
+      const payload = Array.isArray(enriched) ? enriched : result;
+      // Attach a governance hint (non-breaking) for downstream renderers
+      const wrapped = { results: payload, governance: { reviewedOnly: this.enforceReviewedOnly, websiteDomains: this.websiteDomainAllowlist } };
+      return JSON.stringify(wrapped);
     } catch (error) {
       logger.error('Azure AI Search request failed', { error: error?.message || String(error) });
       const msg = (error && (error.message || String(error))) || 'Unknown error';
