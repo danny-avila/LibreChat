@@ -31,6 +31,7 @@ export * from './InputOTP';
 export * from './MultiSearch';
 export * from './Resizable';
 export * from './Select';
+export { default as DataTableErrorBoundary } from './DataTable/DataTableErrorBoundary';
 export { default as Radio } from './Radio';
 export { default as Badge } from './Badge';
 export { default as Avatar } from './Avatar';

@@ -12,7 +12,6 @@ import {
   Label,
   TooltipAnchor,
   Spinner,
-  DataTable,
   useToastContext,
   useMediaQuery,
 } from '@librechat/client';
@@ -26,6 +25,7 @@ import { MinimalIcon } from '~/components/Endpoints';
 import { NotificationSeverity } from '~/common';
 import { useLocalize } from '~/hooks';
 import { formatDate } from '~/utils';
+import DataTable from './DataTable';
 
 const DEFAULT_PARAMS = {
   isArchived: true,
@@ -44,13 +44,12 @@ const defaultSort: SortingState = [
   },
 ];
 
-// Define the table column type for better type safety
-// (kept from your original code)
 type TableColumn<TData, TValue> = ColumnDef<TData, TValue> & {
   meta?: {
     size?: string | number;
     mobileSize?: string | number;
     minWidth?: string | number;
+    priority?: number;
   };
 };
 
@@ -86,36 +85,41 @@ export default function ArchivedChatsTable() {
     }));
   }, []);
 
-  // Robust against stale state; keeps UI sort in sync with backend defaults
   const handleSortingChange = useCallback(
     (updater: SortingState | ((old: SortingState) => SortingState)) => {
       setSorting((prev) => {
         const next = typeof updater === 'function' ? updater(prev) : updater;
 
-        // If user clears sorting, fall back to default both in UI and query
-        const coerced = next.length === 0 ? defaultSort : next;
+        const coerced = next;
         const primary = coerced[0];
 
         setQueryParams((p) => {
-          if (primary && isSortKey(primary.id)) {
+          const newParams = (() => {
+            if (primary && isSortKey(primary.id)) {
+              return {
+                ...p,
+                sortBy: primary.id,
+                sortDirection: primary.desc ? 'desc' : 'asc',
+              };
+            }
             return {
               ...p,
-              sortBy: primary.id,
-              sortDirection: primary.desc ? 'desc' : 'asc',
+              sortBy: 'createdAt',
+              sortDirection: 'desc',
             };
-          }
-          // Fallback if id isn't one of the permitted keys
-          return {
-            ...p,
-            sortBy: 'createdAt',
-            sortDirection: 'desc',
-          };
+          })();
+
+          setTimeout(() => {
+            refetch();
+          }, 0);
+
+          return newParams;
         });
 
         return coerced;
       });
     },
-    [setQueryParams, setSorting],
+    [setQueryParams, setSorting, refetch],
   );
 
   const handleError = useCallback(
@@ -189,13 +193,7 @@ export default function ArchivedChatsTable() {
         cell: ({ row }) => {
           const { conversationId, title } = row.original;
           return (
-            <a
-              href={`/c/${conversationId}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-2 truncate underline"
-              aria-label={localize('com_ui_open_conversation', { 0: title })}
-            >
+            <div className="flex items-center gap-2">
               <MinimalIcon
                 endpoint={row.original.endpoint}
                 size={28}
@@ -203,13 +201,21 @@ export default function ArchivedChatsTable() {
                 iconClassName="size-4"
                 aria-hidden="true"
               />
-              <span>{title}</span>
-            </a>
+              <a
+                href={`/c/${conversationId}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center truncate underline"
+                aria-label={localize('com_ui_open_conversation', { 0: title })}
+              >
+                {title}
+              </a>
+            </div>
           );
         },
         meta: {
-          size: isSmallScreen ? '70%' : '50%',
-          mobileSize: '70%',
+          priority: 3,
+          minWidth: 'min-content',
         },
         enableSorting: true,
       },
@@ -220,8 +226,8 @@ export default function ArchivedChatsTable() {
         ),
         cell: ({ row }) => formatDate(row.original.createdAt?.toString() ?? '', isSmallScreen),
         meta: {
-          size: isSmallScreen ? '30%' : '35%',
-          mobileSize: '30%',
+          priority: 2,
+          minWidth: '80px',
         },
         enableSorting: true,
       },
@@ -265,7 +271,7 @@ export default function ArchivedChatsTable() {
                 description={localize('com_ui_delete')}
                 render={
                   <Button
-                    variant="ghost"
+                    variant="destructive"
                     className="h-8 w-8 p-0 hover:bg-surface-hover"
                     onClick={() => {
                       setDeleteRow(row.original);
@@ -281,8 +287,8 @@ export default function ArchivedChatsTable() {
           );
         },
         meta: {
-          size: '15%',
-          mobileSize: '25%',
+          priority: 1,
+          minWidth: '120px',
         },
         enableSorting: false,
       },
