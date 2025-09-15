@@ -1,6 +1,6 @@
 {
   "name": "LibreChat",
-  "version": "v0.8.0-rc3",
+  "version": "v0.8.0-rc4",
   "description": "",
   "workspaces": [
     "api",
@@ -125,7 +125,7 @@
   },
   "overrides": {
     "@langchain/openai": "0.5.18",
-    "axios": "1.8.2",
+    "axios": "1.12.1",
     "elliptic": "^6.6.1",
     "form-data": "^4.0.4",
     "mdast-util-gfm-autolink-literal": "2.0.0",
