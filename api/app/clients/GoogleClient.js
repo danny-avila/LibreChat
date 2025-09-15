@@ -796,10 +796,19 @@ class GoogleClient extends BaseClient {
       .substring(0, 500);
     const truncated = userInput.length > 500 ? '...' : '';
     
-    const analysisPrompt = `Analyze this input and respond in JSON format. If the request is ambiguous (like about creating an app without specifying aspect), ask for clarification:
+    // const analysisPrompt = `Analyze this input and respond in JSON format. If the request is ambiguous (like about creating an app without specifying aspect), ask for clarification:
+    const hasContext = metadata.hasAskedClarification || metadata.previousResponse || metadata.clarificationRound > 0;
+    // NEW: Include conversation history
+const recentHistory = metadata.conversationHistory ? 
+metadata.conversationHistory.slice(-2).map(msg => `${msg.role}: ${msg.text}`).join('\n') : '';
 
-Input: "${cleanInput}${truncated}"
+const analysisPrompt = `Analyze this input considering the conversation context:
+
+${recentHistory ? `Recent conversation:\n${recentHistory}\n` : ''}
+Current input: "${cleanInput}${truncated}"
 Context: ${metadata.skillLevel ? `Skill: ${metadata.skillLevel}` : ''} ${metadata.previousContext ? '| Has context' : ''}
+
+${hasContext ? 'The user has already provided clarification or this is a follow-up. Use the conversation context to understand what they\'re referring to.' : 'If the request is very ambiguous, ask for clarification:'}
 
 First, determine if the request is about:
 1. Technical implementation (UI/UX, backend, infrastructure)
@@ -823,7 +832,6 @@ Then respond with a JSON object containing:
 - risk_flags: string[] (optional)
 
 Keep responses brief and use enums from the schema.`;
-    
     try {
       // Use a lightweight model for analysis
       const originalModel = this.modelOptions.model;
@@ -1323,7 +1331,55 @@ Keep responses brief and use enums from the schema.`;
   getBuildMessagesOptions() {
     // logger.debug('GoogleClient doesn\'t use getBuildMessagesOptions');
   }
+/**
+ * Uses AI to generate a contextual follow-up question based on the response
+ * @param {Object} analysis - The input analysis object
+ * @param {string} userInput - The original user input
+ * @param {string} response - The generated response
+ * @returns {Promise<string|null>} Follow-up question or null
+ */
+async generateFollowUpQuestion(analysis, userInput, response) {
+  // Don't add follow-up if this was already a clarification
+  if (analysis.needs_clarification) {
+    return null;
+  }
 
+  try {
+    const originalModel = this.modelOptions.model;
+    this.modelOptions.model = 'gemini-2.5-flash';
+    
+    const followUpPrompt = `Generate a contextual follow-up question based on this interaction:
+
+User asked: "${userInput.substring(0, 200)}"
+I provided: "${response.substring(0, 300)}..."
+
+After providing your response to the user's query, always include 3 related follow-up questions at the end. These questions should be relevant to the topic discussed and help guide the user to explore the subject further. Format the questions with phrases like "Should I...", "Would you like me to...", "Do you want to...", or similar inquiry patterns. Present these questions in a clear, bulleted list after your main response.
+
+Be specific to the actual content and context provided. One question only.`;
+
+    const followUpResponse = await this.getCompletion(
+      [
+        {
+          role: 'user',
+          parts: [{ text: followUpPrompt }],
+        },
+      ],
+      { 
+        stream: false,
+        abortController: new AbortController(),
+        onProgress: () => {}
+      }
+    );
+
+    this.modelOptions.model = originalModel;
+    console.log("Followup response by model-->>",followUpResponse.trim())
+    return followUpResponse.trim();
+    
+  } catch (error) {
+    logger.error('Error generating follow-up question:', error);
+    return null;
+  }
+}
   /**
    * Sends a completion request, optionally using a two-step process:
    * 1. Analyze the input with a lightweight model
@@ -1369,11 +1425,43 @@ Keep responses brief and use enums from the schema.`;
       }
       
       // Pass the safeOnProgress callback to analyzeInput
-      const analysis = await this.analyzeInput(userInput, metadata, safeOnProgress);
-      console.log('[GoogleClient] Analysis complete. Intent:', analysis.intent);
-      
-      // Log analysis for debugging
-      logger.debug('Input analysis:', analysis);
+      // Track clarification rounds properly
+const clarificationRound = metadata.clarificationRound || 0;
+const enhancedMetadata = {
+    ...metadata,
+    clarificationRound,
+    previousResponse: opts.previousResponse,
+    hasAskedClarification: clarificationRound > 0
+};
+
+// const analysis = await this.analyzeInput(userInput, enhancedMetadata, safeOnProgress);
+const conversationHistory = payload.slice(-3).map(msg => ({
+  role: msg.role,
+  text: msg.parts?.[0]?.text || ''
+}));
+
+const analysis = await this.analyzeInput(userInput, {
+  ...enhancedMetadata,
+  conversationHistory
+}, safeOnProgress);
+console.log('[GoogleClient] Analysis complete. Intent:', analysis.intent);
+
+// Log analysis for debugging
+logger.debug('Input analysis:', analysis);
+
+// Only ask for clarification on the first unclear message
+// if (analysis.needs_clarification && analysis.clarification_question && clarificationRound === 0) {
+//   return analysis.clarification_question;
+// }
+
+const shouldAskClarification = analysis.needs_clarification && 
+                              analysis.clarification_question && 
+                              !recentHistory.includes('clarification') &&
+                              conversationHistory.length <= 2; // Only ask early in conversation
+
+if (shouldAskClarification) {
+  return analysis.clarification_question;
+}
 
       // Prepare the enhanced payload with system instructions
       // Store system instructions silently; do not inject into the outgoing payload
@@ -1415,13 +1503,21 @@ this._internalSystemInstructions = (this.augmentedPrompt || '') + analysis.syste
       );
       console.log('[GoogleClient] Generation complete. Response length:', response.length);
 
-      return response.trim();
+      // return response.trim();
+      // Generate AI-powered follow-up question
+      const followUpQuestion = await this.generateFollowUpQuestion(analysis, userInput, response);
+      const finalResponse = followUpQuestion ? 
+      `${response.trim()}\n\n${followUpQuestion}` : 
+      response.trim();
+      return finalResponse;
     } catch (error) {
       logger.error('Error in two-step completion:', error);
       // Fall back to direct completion if two-step fails
       return (await this.getCompletion(payload, { ...opts, stream: false })).trim();
     }
   }
+
+  
 
   getEncoding() {
     return 'cl100k_base';
