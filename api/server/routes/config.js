@@ -1,9 +1,14 @@
 const express = require('express');
-const { isEnabled } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
-const { CacheKeys, defaultSocialLogins, Constants } = require('librechat-data-provider');
-const { getCustomConfig } = require('~/server/services/Config/getCustomConfig');
+const { isEnabled, getBalanceConfig } = require('@librechat/api');
+const {
+  Constants,
+  CacheKeys,
+  removeNullishValues,
+  defaultSocialLogins,
+} = require('librechat-data-provider');
 const { getLdapConfig } = require('~/server/services/Config/ldap');
+const { getAppConfig } = require('~/server/services/Config/app');
 const { getProjectByName } = require('~/models/Project');
 const { getMCPManager } = require('~/config');
 const { getLogStores } = require('~/cache');
@@ -43,6 +48,8 @@ router.get('/', async function (req, res) {
   const ldap = getLdapConfig();
 
   try {
+    const appConfig = await getAppConfig({ role: req.user?.role });
+
     const isOpenIdEnabled =
       !!process.env.OPENID_CLIENT_ID &&
       !!process.env.OPENID_CLIENT_SECRET &&
@@ -55,10 +62,12 @@ router.get('/', async function (req, res) {
       !!process.env.SAML_CERT &&
       !!process.env.SAML_SESSION_SECRET;
 
+    const balanceConfig = getBalanceConfig(appConfig);
+
     /** @type {TStartupConfig} */
     const payload = {
       appTitle: process.env.APP_TITLE || 'LibreChat',
-      socialLogins: req.app.locals.socialLogins ?? defaultSocialLogins,
+      socialLogins: appConfig?.registration?.socialLogins ?? defaultSocialLogins,
       discordLoginEnabled: !!process.env.DISCORD_CLIENT_ID && !!process.env.DISCORD_CLIENT_SECRET,
       facebookLoginEnabled:
         !!process.env.FACEBOOK_CLIENT_ID && !!process.env.FACEBOOK_CLIENT_SECRET,
@@ -91,10 +100,10 @@ router.get('/', async function (req, res) {
         isEnabled(process.env.SHOW_BIRTHDAY_ICON) ||
         process.env.SHOW_BIRTHDAY_ICON === '',
       helpAndFaqURL: process.env.HELP_AND_FAQ_URL || 'https://librechat.ai',
-      interface: req.app.locals.interfaceConfig,
-      turnstile: req.app.locals.turnstileConfig,
-      modelSpecs: req.app.locals.modelSpecs,
-      balance: req.app.locals.balance,
+      interface: appConfig?.interfaceConfig,
+      turnstile: appConfig?.turnstileConfig,
+      modelSpecs: appConfig?.modelSpecs,
+      balance: balanceConfig,
       sharedLinksEnabled,
       publicSharedLinksEnabled,
       analyticsGtmId: process.env.ANALYTICS_GTM_ID,
@@ -108,28 +117,42 @@ router.get('/', async function (req, res) {
       openidReuseTokens,
     };
 
-    payload.mcpServers = {};
-    const config = await getCustomConfig();
-    if (config?.mcpServers != null) {
+    const minPasswordLength = parseInt(process.env.MIN_PASSWORD_LENGTH, 10);
+    if (minPasswordLength && !isNaN(minPasswordLength)) {
+      payload.minPasswordLength = minPasswordLength;
+    }
+
+    const getMCPServers = () => {
       try {
+        if (appConfig?.mcpConfig == null) {
+          return;
+        }
         const mcpManager = getMCPManager();
+        if (!mcpManager) {
+          return;
+        }
+        const mcpServers = mcpManager.getAllServers();
+        if (!mcpServers) return;
         const oauthServers = mcpManager.getOAuthServers();
-        for (const serverName in config.mcpServers) {
-          const serverConfig = config.mcpServers[serverName];
-          payload.mcpServers[serverName] = {
+        for (const serverName in mcpServers) {
+          if (!payload.mcpServers) {
+            payload.mcpServers = {};
+          }
+          const serverConfig = mcpServers[serverName];
+          payload.mcpServers[serverName] = removeNullishValues({
             startup: serverConfig?.startup,
             chatMenu: serverConfig?.chatMenu,
             isOAuth: oauthServers?.has(serverName),
-            customUserVars: serverConfig?.customUserVars || {},
-          };
+            customUserVars: serverConfig?.customUserVars,
+          });
         }
-      } catch (err) {
-        logger.error('Error loading MCP servers', err);
+      } catch (error) {
+        logger.error('Error loading MCP servers', error);
       }
-    }
+    };
 
-    /** @type {TCustomConfig['webSearch']} */
-    const webSearchConfig = req.app.locals.webSearch;
+    getMCPServers();
+    const webSearchConfig = appConfig?.webSearch;
     if (
       webSearchConfig != null &&
       (webSearchConfig.searchProvider ||

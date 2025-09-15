@@ -10,10 +10,24 @@ const {
   conflictingAzureVariables,
 } = require('librechat-data-provider');
 
+jest.mock('@librechat/data-schemas', () => ({
+  ...jest.requireActual('@librechat/data-schemas'),
+  logger: {
+    info: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn(),
+    debug: jest.fn(),
+  },
+}));
+
 const AppService = require('./AppService');
 
-jest.mock('./Config/loadCustomConfig', () => {
-  return jest.fn(() =>
+jest.mock('./Files/Firebase/initialize', () => ({
+  initializeFirebase: jest.fn(),
+}));
+
+jest.mock('./Config/loadCustomConfig', () =>
+  jest.fn(() =>
     Promise.resolve({
       registration: { socialLogins: ['testLogin'] },
       fileStrategy: 'testStrategy',
@@ -21,40 +35,10 @@ jest.mock('./Config/loadCustomConfig', () => {
         enabled: true,
       },
     }),
-  );
-});
-jest.mock('./Files/Firebase/initialize', () => ({
-  initializeFirebase: jest.fn(),
-}));
-jest.mock('~/models', () => ({
-  initializeRoles: jest.fn(),
-  seedDefaultRoles: jest.fn(),
-  ensureDefaultCategories: jest.fn(),
-}));
-jest.mock('~/models/Role', () => ({
-  updateAccessPermissions: jest.fn(),
-  getRoleByName: jest.fn().mockResolvedValue(null),
-}));
-jest.mock('./Config', () => ({
-  setCachedTools: jest.fn(),
-  getCachedTools: jest.fn().mockResolvedValue({
-    ExampleTool: {
-      type: 'function',
-      function: {
-        description: 'Example tool function',
-        name: 'exampleFunction',
-        parameters: {
-          type: 'object',
-          properties: {
-            param1: { type: 'string', description: 'An example parameter' },
-          },
-          required: ['param1'],
-        },
-      },
-    },
-  }),
-}));
-jest.mock('./ToolService', () => ({
+  ),
+);
+
+jest.mock('./start/tools', () => ({
   loadAndFormatTools: jest.fn().mockReturnValue({
     ExampleTool: {
       type: 'function',
@@ -116,70 +100,82 @@ const azureGroups = [
   },
 ];
 
+jest.mock('./start/checks', () => ({
+  ...jest.requireActual('./start/checks'),
+  checkHealth: jest.fn(),
+}));
+
 describe('AppService', () => {
-  let app;
   const mockedTurnstileConfig = {
     siteKey: 'default-site-key',
     options: {},
   };
+  const loadCustomConfig = require('./Config/loadCustomConfig');
 
   beforeEach(() => {
-    app = { locals: {} };
     process.env.CDN_PROVIDER = undefined;
+    jest.clearAllMocks();
   });
 
-  it('should correctly assign process.env and app.locals based on custom config', async () => {
-    await AppService(app);
+  it('should correctly assign process.env and initialize app config based on custom config', async () => {
+    const result = await AppService();
 
     expect(process.env.CDN_PROVIDER).toEqual('testStrategy');
 
-    expect(app.locals).toEqual({
-      config: expect.objectContaining({
+    expect(result).toEqual(
+      expect.objectContaining({
+        config: expect.objectContaining({
+          fileStrategy: 'testStrategy',
+        }),
+        registration: expect.objectContaining({
+          socialLogins: ['testLogin'],
+        }),
         fileStrategy: 'testStrategy',
+        interfaceConfig: expect.objectContaining({
+          endpointsMenu: true,
+          modelSelect: true,
+          parameters: true,
+          sidePanel: true,
+          presets: true,
+        }),
+        mcpConfig: null,
+        turnstileConfig: mockedTurnstileConfig,
+        modelSpecs: undefined,
+        paths: expect.anything(),
+        ocr: expect.anything(),
+        imageOutputType: expect.any(String),
+        fileConfig: undefined,
+        secureImageLinks: undefined,
+        balance: { enabled: true },
+        filteredTools: undefined,
+        includedTools: undefined,
+        webSearch: expect.objectContaining({
+          safeSearch: 1,
+          jinaApiKey: '${JINA_API_KEY}',
+          jinaApiUrl: '${JINA_API_URL}',
+          cohereApiKey: '${COHERE_API_KEY}',
+          serperApiKey: '${SERPER_API_KEY}',
+          searxngApiKey: '${SEARXNG_API_KEY}',
+          firecrawlApiKey: '${FIRECRAWL_API_KEY}',
+          firecrawlApiUrl: '${FIRECRAWL_API_URL}',
+          searxngInstanceUrl: '${SEARXNG_INSTANCE_URL}',
+        }),
+        memory: undefined,
+        endpoints: expect.objectContaining({
+          agents: expect.objectContaining({
+            disableBuilder: false,
+            capabilities: expect.arrayContaining([...defaultAgentCapabilities]),
+            maxCitations: 30,
+            maxCitationsPerFile: 7,
+            minRelevanceScore: 0.45,
+          }),
+        }),
       }),
-      socialLogins: ['testLogin'],
-      fileStrategy: 'testStrategy',
-      interfaceConfig: expect.objectContaining({
-        endpointsMenu: true,
-        modelSelect: true,
-        parameters: true,
-        sidePanel: true,
-        presets: true,
-      }),
-      mcpConfig: null,
-      turnstileConfig: mockedTurnstileConfig,
-      modelSpecs: undefined,
-      paths: expect.anything(),
-      ocr: expect.anything(),
-      imageOutputType: expect.any(String),
-      fileConfig: undefined,
-      secureImageLinks: undefined,
-      balance: { enabled: true },
-      filteredTools: undefined,
-      includedTools: undefined,
-      webSearch: {
-        safeSearch: 1,
-        jinaApiKey: '${JINA_API_KEY}',
-        cohereApiKey: '${COHERE_API_KEY}',
-        serperApiKey: '${SERPER_API_KEY}',
-        searxngApiKey: '${SEARXNG_API_KEY}',
-        firecrawlApiKey: '${FIRECRAWL_API_KEY}',
-        firecrawlApiUrl: '${FIRECRAWL_API_URL}',
-        searxngInstanceUrl: '${SEARXNG_INSTANCE_URL}',
-      },
-      memory: undefined,
-      agents: {
-        disableBuilder: false,
-        capabilities: expect.arrayContaining([...defaultAgentCapabilities]),
-        maxCitations: 30,
-        maxCitationsPerFile: 7,
-        minRelevanceScore: 0.45,
-      },
-    });
+    );
   });
 
   it('should log a warning if the config version is outdated', async () => {
-    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
+    loadCustomConfig.mockImplementationOnce(() =>
       Promise.resolve({
         version: '0.9.0', // An outdated version for this test
         registration: { socialLogins: ['testLogin'] },
@@ -187,50 +183,62 @@ describe('AppService', () => {
       }),
     );
 
-    await AppService(app);
+    await AppService();
 
-    const { logger } = require('~/config');
+    const { logger } = require('@librechat/data-schemas');
     expect(logger.info).toHaveBeenCalledWith(expect.stringContaining('Outdated Config version'));
   });
 
   it('should change the `imageOutputType` based on config value', async () => {
-    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
+    loadCustomConfig.mockImplementationOnce(() =>
       Promise.resolve({
         version: '0.10.0',
         imageOutputType: EImageOutputType.WEBP,
       }),
     );
 
-    await AppService(app);
-    expect(app.locals.imageOutputType).toEqual(EImageOutputType.WEBP);
+    const result = await AppService();
+    expect(result).toEqual(
+      expect.objectContaining({
+        imageOutputType: EImageOutputType.WEBP,
+      }),
+    );
   });
 
   it('should default to `PNG` `imageOutputType` with no provided type', async () => {
-    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
+    loadCustomConfig.mockImplementationOnce(() =>
       Promise.resolve({
         version: '0.10.0',
       }),
     );
 
-    await AppService(app);
-    expect(app.locals.imageOutputType).toEqual(EImageOutputType.PNG);
+    const result = await AppService();
+    expect(result).toEqual(
+      expect.objectContaining({
+        imageOutputType: EImageOutputType.PNG,
+      }),
+    );
   });
 
   it('should default to `PNG` `imageOutputType` with no provided config', async () => {
-    require('./Config/loadCustomConfig').mockImplementationOnce(() => Promise.resolve(undefined));
+    loadCustomConfig.mockImplementationOnce(() => Promise.resolve(undefined));
 
-    await AppService(app);
-    expect(app.locals.imageOutputType).toEqual(EImageOutputType.PNG);
+    const result = await AppService();
+    expect(result).toEqual(
+      expect.objectContaining({
+        imageOutputType: EImageOutputType.PNG,
+      }),
+    );
   });
 
   it('should initialize Firebase when fileStrategy is firebase', async () => {
-    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
+    loadCustomConfig.mockImplementationOnce(() =>
       Promise.resolve({
         fileStrategy: FileSources.firebase,
       }),
     );
 
-    await AppService(app);
+    await AppService();
 
     const { initializeFirebase } = require('./Files/Firebase/initialize');
     expect(initializeFirebase).toHaveBeenCalled();
@@ -239,10 +247,9 @@ describe('AppService', () => {
   });
 
   it('should load and format tools accurately with defined structure', async () => {
-    const { loadAndFormatTools } = require('./ToolService');
-    const { setCachedTools, getCachedTools } = require('./Config');
+    const { loadAndFormatTools } = require('./start/tools');
 
-    await AppService(app);
+    const result = await AppService();
 
     expect(loadAndFormatTools).toHaveBeenCalledWith({
       adminFilter: undefined,
@@ -250,31 +257,9 @@ describe('AppService', () => {
       directory: expect.anything(),
     });
 
-    // Verify setCachedTools was called with the tools
-    expect(setCachedTools).toHaveBeenCalledWith(
-      {
-        ExampleTool: {
-          type: 'function',
-          function: {
-            description: 'Example tool function',
-            name: 'exampleFunction',
-            parameters: {
-              type: 'object',
-              properties: {
-                param1: { type: 'string', description: 'An example parameter' },
-              },
-              required: ['param1'],
-            },
-          },
-        },
-      },
-      { isGlobal: true },
-    );
-
-    // Verify we can retrieve the tools from cache
-    const cachedTools = await getCachedTools({ includeGlobal: true });
-    expect(cachedTools.ExampleTool).toBeDefined();
-    expect(cachedTools.ExampleTool).toEqual({
+    // Verify tools are included in the returned config
+    expect(result.availableTools).toBeDefined();
+    expect(result.availableTools.ExampleTool).toEqual({
       type: 'function',
       function: {
         description: 'Example tool function',
@@ -291,7 +276,7 @@ describe('AppService', () => {
   });
 
   it('should correctly configure Assistants endpoint based on custom config', async () => {
-    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
+    loadCustomConfig.mockImplementationOnce(() =>
       Promise.resolve({
         endpoints: {
           [EModelEndpoint.assistants]: {
@@ -305,22 +290,25 @@ describe('AppService', () => {
       }),
     );
 
-    await AppService(app);
+    const result = await AppService();
 
-    expect(app.locals).toHaveProperty(EModelEndpoint.assistants);
-    expect(app.locals[EModelEndpoint.assistants]).toEqual(
+    expect(result).toEqual(
       expect.objectContaining({
-        disableBuilder: true,
-        pollIntervalMs: 5000,
-        timeoutMs: 30000,
-        supportedIds: expect.arrayContaining(['id1', 'id2']),
-        privateAssistants: false,
+        endpoints: expect.objectContaining({
+          [EModelEndpoint.assistants]: expect.objectContaining({
+            disableBuilder: true,
+            pollIntervalMs: 5000,
+            timeoutMs: 30000,
+            supportedIds: expect.arrayContaining(['id1', 'id2']),
+            privateAssistants: false,
+          }),
+        }),
       }),
     );
   });
 
   it('should correctly configure Agents endpoint based on custom config', async () => {
-    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
+    loadCustomConfig.mockImplementationOnce(() =>
       Promise.resolve({
         endpoints: {
           [EModelEndpoint.agents]: {
@@ -334,36 +322,45 @@ describe('AppService', () => {
       }),
     );
 
-    await AppService(app);
+    const result = await AppService();
 
-    expect(app.locals).toHaveProperty(EModelEndpoint.agents);
-    expect(app.locals[EModelEndpoint.agents]).toEqual(
+    expect(result).toEqual(
       expect.objectContaining({
-        disableBuilder: true,
-        recursionLimit: 10,
-        maxRecursionLimit: 20,
-        allowedProviders: expect.arrayContaining(['openai', 'anthropic']),
-        capabilities: expect.arrayContaining([AgentCapabilities.tools, AgentCapabilities.actions]),
+        endpoints: expect.objectContaining({
+          [EModelEndpoint.agents]: expect.objectContaining({
+            disableBuilder: true,
+            recursionLimit: 10,
+            maxRecursionLimit: 20,
+            allowedProviders: expect.arrayContaining(['openai', 'anthropic']),
+            capabilities: expect.arrayContaining([
+              AgentCapabilities.tools,
+              AgentCapabilities.actions,
+            ]),
+          }),
+        }),
       }),
     );
   });
 
   it('should configure Agents endpoint with defaults when no config is provided', async () => {
-    require('./Config/loadCustomConfig').mockImplementationOnce(() => Promise.resolve({}));
+    loadCustomConfig.mockImplementationOnce(() => Promise.resolve({}));
 
-    await AppService(app);
+    const result = await AppService();
 
-    expect(app.locals).toHaveProperty(EModelEndpoint.agents);
-    expect(app.locals[EModelEndpoint.agents]).toEqual(
+    expect(result).toEqual(
       expect.objectContaining({
-        disableBuilder: false,
-        capabilities: expect.arrayContaining([...defaultAgentCapabilities]),
+        endpoints: expect.objectContaining({
+          [EModelEndpoint.agents]: expect.objectContaining({
+            disableBuilder: false,
+            capabilities: expect.arrayContaining([...defaultAgentCapabilities]),
+          }),
+        }),
       }),
     );
   });
 
   it('should configure Agents endpoint with defaults when endpoints exist but agents is not defined', async () => {
-    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
+    loadCustomConfig.mockImplementationOnce(() =>
       Promise.resolve({
         endpoints: {
           [EModelEndpoint.openAI]: {
@@ -373,20 +370,26 @@ describe('AppService', () => {
       }),
     );
 
-    await AppService(app);
+    const result = await AppService();
 
-    expect(app.locals).toHaveProperty(EModelEndpoint.agents);
-    expect(app.locals[EModelEndpoint.agents]).toEqual(
+    expect(result).toEqual(
       expect.objectContaining({
-        disableBuilder: false,
-        capabilities: expect.arrayContaining([...defaultAgentCapabilities]),
+        endpoints: expect.objectContaining({
+          [EModelEndpoint.agents]: expect.objectContaining({
+            disableBuilder: false,
+            capabilities: expect.arrayContaining([...defaultAgentCapabilities]),
+          }),
+          [EModelEndpoint.openAI]: expect.objectContaining({
+            titleConvo: true,
+          }),
+        }),
       }),
     );
   });
 
   it('should correctly configure minimum Azure OpenAI Assistant values', async () => {
     const assistantGroups = [azureGroups[0], { ...azureGroups[1], assistants: true }];
-    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
+    loadCustomConfig.mockImplementationOnce(() =>
       Promise.resolve({
         endpoints: {
           [EModelEndpoint.azureOpenAI]: {
@@ -400,13 +403,24 @@ describe('AppService', () => {
     process.env.WESTUS_API_KEY = 'westus-key';
     process.env.EASTUS_API_KEY = 'eastus-key';
 
-    await AppService(app);
-    expect(app.locals).toHaveProperty(EModelEndpoint.azureAssistants);
-    expect(app.locals[EModelEndpoint.azureAssistants].capabilities.length).toEqual(3);
+    const result = await AppService();
+    expect(result).toEqual(
+      expect.objectContaining({
+        endpoints: expect.objectContaining({
+          [EModelEndpoint.azureAssistants]: expect.objectContaining({
+            capabilities: expect.arrayContaining([
+              expect.any(String),
+              expect.any(String),
+              expect.any(String),
+            ]),
+          }),
+        }),
+      }),
+    );
   });
 
   it('should correctly configure Azure OpenAI endpoint based on custom config', async () => {
-    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
+    loadCustomConfig.mockImplementationOnce(() =>
       Promise.resolve({
         endpoints: {
           [EModelEndpoint.azureOpenAI]: {
@@ -419,18 +433,20 @@ describe('AppService', () => {
     process.env.WESTUS_API_KEY = 'westus-key';
     process.env.EASTUS_API_KEY = 'eastus-key';
 
-    await AppService(app);
-
-    expect(app.locals).toHaveProperty(EModelEndpoint.azureOpenAI);
-    const azureConfig = app.locals[EModelEndpoint.azureOpenAI];
-    expect(azureConfig).toHaveProperty('modelNames');
-    expect(azureConfig).toHaveProperty('modelGroupMap');
-    expect(azureConfig).toHaveProperty('groupMap');
+    const result = await AppService();
 
     const { modelNames, modelGroupMap, groupMap } = validateAzureGroups(azureGroups);
-    expect(azureConfig.modelNames).toEqual(modelNames);
-    expect(azureConfig.modelGroupMap).toEqual(modelGroupMap);
-    expect(azureConfig.groupMap).toEqual(groupMap);
+    expect(result).toEqual(
+      expect.objectContaining({
+        endpoints: expect.objectContaining({
+          [EModelEndpoint.azureOpenAI]: expect.objectContaining({
+            modelNames,
+            modelGroupMap,
+            groupMap,
+          }),
+        }),
+      }),
+    );
   });
 
   it('should not modify FILE_UPLOAD environment variables without rate limits', async () => {
@@ -442,7 +458,7 @@ describe('AppService', () => {
 
     const initialEnv = { ...process.env };
 
-    await AppService(app);
+    await AppService();
 
     // Expect environment variables to remain unchanged
     expect(process.env.FILE_UPLOAD_IP_MAX).toEqual(initialEnv.FILE_UPLOAD_IP_MAX);
@@ -464,11 +480,9 @@ describe('AppService', () => {
       },
     };
 
-    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
-      Promise.resolve(rateLimitsConfig),
-    );
+    loadCustomConfig.mockImplementationOnce(() => Promise.resolve(rateLimitsConfig));
 
-    await AppService(app);
+    await AppService();
 
     // Verify that process.env has been updated according to the rate limits config
     expect(process.env.FILE_UPLOAD_IP_MAX).toEqual('100');
@@ -484,7 +498,7 @@ describe('AppService', () => {
     process.env.FILE_UPLOAD_USER_MAX = 'initialUserMax';
     process.env.FILE_UPLOAD_USER_WINDOW = 'initialUserWindow';
 
-    await AppService(app);
+    await AppService();
 
     // Verify that process.env falls back to the initial values
     expect(process.env.FILE_UPLOAD_IP_MAX).toEqual('initialMax');
@@ -502,7 +516,7 @@ describe('AppService', () => {
 
     const initialEnv = { ...process.env };
 
-    await AppService(app);
+    await AppService();
 
     // Expect environment variables to remain unchanged
     expect(process.env.IMPORT_IP_MAX).toEqual(initialEnv.IMPORT_IP_MAX);
@@ -524,11 +538,9 @@ describe('AppService', () => {
       },
     };
 
-    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
-      Promise.resolve(importLimitsConfig),
-    );
+    loadCustomConfig.mockImplementationOnce(() => Promise.resolve(importLimitsConfig));
 
-    await AppService(app);
+    await AppService();
 
     // Verify that process.env has been updated according to the rate limits config
     expect(process.env.IMPORT_IP_MAX).toEqual('150');
@@ -544,7 +556,7 @@ describe('AppService', () => {
     process.env.IMPORT_USER_MAX = 'initialUserMax';
     process.env.IMPORT_USER_WINDOW = 'initialUserWindow';
 
-    await AppService(app);
+    await AppService();
 
     // Verify that process.env falls back to the initial values
     expect(process.env.IMPORT_IP_MAX).toEqual('initialMax');
@@ -554,7 +566,7 @@ describe('AppService', () => {
   });
 
   it('should correctly configure endpoint with titlePrompt, titleMethod, and titlePromptTemplate', async () => {
-    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
+    loadCustomConfig.mockImplementationOnce(() =>
       Promise.resolve({
         endpoints: {
           [EModelEndpoint.openAI]: {
@@ -581,43 +593,40 @@ describe('AppService', () => {
       }),
     );
 
-    await AppService(app);
+    const result = await AppService();
 
-    // Check OpenAI endpoint configuration
-    expect(app.locals).toHaveProperty(EModelEndpoint.openAI);
-    expect(app.locals[EModelEndpoint.openAI]).toEqual(
+    expect(result).toEqual(
       expect.objectContaining({
-        titleConvo: true,
-        titleModel: 'gpt-3.5-turbo',
-        titleMethod: 'structured',
-        titlePrompt: 'Custom title prompt for conversation',
-        titlePromptTemplate: 'Summarize this conversation: {{conversation}}',
-      }),
-    );
-
-    // Check Assistants endpoint configuration
-    expect(app.locals).toHaveProperty(EModelEndpoint.assistants);
-    expect(app.locals[EModelEndpoint.assistants]).toMatchObject({
-      titleMethod: 'functions',
-      titlePrompt: 'Generate a title for this assistant conversation',
-      titlePromptTemplate: 'Assistant conversation template: {{messages}}',
-    });
-
-    // Check Azure OpenAI endpoint configuration
-    expect(app.locals).toHaveProperty(EModelEndpoint.azureOpenAI);
-    expect(app.locals[EModelEndpoint.azureOpenAI]).toEqual(
-      expect.objectContaining({
-        titleConvo: true,
-        titleMethod: 'completion',
-        titleModel: 'gpt-4',
-        titlePrompt: 'Azure title prompt',
-        titlePromptTemplate: 'Azure conversation: {{context}}',
+        endpoints: expect.objectContaining({
+          // Check OpenAI endpoint configuration
+          [EModelEndpoint.openAI]: expect.objectContaining({
+            titleConvo: true,
+            titleModel: 'gpt-3.5-turbo',
+            titleMethod: 'structured',
+            titlePrompt: 'Custom title prompt for conversation',
+            titlePromptTemplate: 'Summarize this conversation: {{conversation}}',
+          }),
+          // Check Assistants endpoint configuration
+          [EModelEndpoint.assistants]: expect.objectContaining({
+            titleMethod: 'functions',
+            titlePrompt: 'Generate a title for this assistant conversation',
+            titlePromptTemplate: 'Assistant conversation template: {{messages}}',
+          }),
+          // Check Azure OpenAI endpoint configuration
+          [EModelEndpoint.azureOpenAI]: expect.objectContaining({
+            titleConvo: true,
+            titleMethod: 'completion',
+            titleModel: 'gpt-4',
+            titlePrompt: 'Azure title prompt',
+            titlePromptTemplate: 'Azure conversation: {{context}}',
+          }),
+        }),
       }),
     );
   });
 
   it('should configure Agent endpoint with title generation settings', async () => {
-    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
+    loadCustomConfig.mockImplementationOnce(() =>
       Promise.resolve({
         endpoints: {
           [EModelEndpoint.agents]: {
@@ -634,23 +643,31 @@ describe('AppService', () => {
       }),
     );
 
-    await AppService(app);
+    const result = await AppService();
 
-    expect(app.locals).toHaveProperty(EModelEndpoint.agents);
-    expect(app.locals[EModelEndpoint.agents]).toMatchObject({
-      disableBuilder: false,
-      titleConvo: true,
-      titleModel: 'gpt-4',
-      titleMethod: 'structured',
-      titlePrompt: 'Generate a descriptive title for this agent conversation',
-      titlePromptTemplate: 'Agent conversation summary: {{content}}',
-      recursionLimit: 15,
-      capabilities: expect.arrayContaining([AgentCapabilities.tools, AgentCapabilities.actions]),
-    });
+    expect(result).toEqual(
+      expect.objectContaining({
+        endpoints: expect.objectContaining({
+          [EModelEndpoint.agents]: expect.objectContaining({
+            disableBuilder: false,
+            titleConvo: true,
+            titleModel: 'gpt-4',
+            titleMethod: 'structured',
+            titlePrompt: 'Generate a descriptive title for this agent conversation',
+            titlePromptTemplate: 'Agent conversation summary: {{content}}',
+            recursionLimit: 15,
+            capabilities: expect.arrayContaining([
+              AgentCapabilities.tools,
+              AgentCapabilities.actions,
+            ]),
+          }),
+        }),
+      }),
+    );
   });
 
   it('should handle missing title configuration options with defaults', async () => {
-    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
+    loadCustomConfig.mockImplementationOnce(() =>
       Promise.resolve({
         endpoints: {
           [EModelEndpoint.openAI]: {
@@ -661,20 +678,26 @@ describe('AppService', () => {
       }),
     );
 
-    await AppService(app);
+    const result = await AppService();
 
-    expect(app.locals).toHaveProperty(EModelEndpoint.openAI);
-    expect(app.locals[EModelEndpoint.openAI]).toMatchObject({
-      titleConvo: true,
-    });
-    // Check that the optional fields are undefined when not provided
-    expect(app.locals[EModelEndpoint.openAI].titlePrompt).toBeUndefined();
-    expect(app.locals[EModelEndpoint.openAI].titlePromptTemplate).toBeUndefined();
-    expect(app.locals[EModelEndpoint.openAI].titleMethod).toBeUndefined();
+    expect(result).toEqual(
+      expect.objectContaining({
+        endpoints: expect.objectContaining({
+          [EModelEndpoint.openAI]: expect.objectContaining({
+            titleConvo: true,
+          }),
+        }),
+      }),
+    );
+
+    // Verify that optional fields are not set when not provided
+    expect(result.endpoints[EModelEndpoint.openAI].titlePrompt).toBeUndefined();
+    expect(result.endpoints[EModelEndpoint.openAI].titlePromptTemplate).toBeUndefined();
+    expect(result.endpoints[EModelEndpoint.openAI].titleMethod).toBeUndefined();
   });
 
   it('should correctly configure titleEndpoint when specified', async () => {
-    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
+    loadCustomConfig.mockImplementationOnce(() =>
       Promise.resolve({
         endpoints: {
           [EModelEndpoint.openAI]: {
@@ -691,27 +714,30 @@ describe('AppService', () => {
       }),
     );
 
-    await AppService(app);
+    const result = await AppService();
 
-    // Check OpenAI endpoint has titleEndpoint
-    expect(app.locals).toHaveProperty(EModelEndpoint.openAI);
-    expect(app.locals[EModelEndpoint.openAI]).toMatchObject({
-      titleConvo: true,
-      titleModel: 'gpt-3.5-turbo',
-      titleEndpoint: EModelEndpoint.anthropic,
-      titlePrompt: 'Generate a concise title',
-    });
-
-    // Check Agents endpoint has titleEndpoint
-    expect(app.locals).toHaveProperty(EModelEndpoint.agents);
-    expect(app.locals[EModelEndpoint.agents]).toMatchObject({
-      titleEndpoint: 'custom-provider',
-      titleMethod: 'structured',
-    });
+    expect(result).toEqual(
+      expect.objectContaining({
+        endpoints: expect.objectContaining({
+          // Check OpenAI endpoint has titleEndpoint
+          [EModelEndpoint.openAI]: expect.objectContaining({
+            titleConvo: true,
+            titleModel: 'gpt-3.5-turbo',
+            titleEndpoint: EModelEndpoint.anthropic,
+            titlePrompt: 'Generate a concise title',
+          }),
+          // Check Agents endpoint has titleEndpoint
+          [EModelEndpoint.agents]: expect.objectContaining({
+            titleEndpoint: 'custom-provider',
+            titleMethod: 'structured',
+          }),
+        }),
+      }),
+    );
   });
 
   it('should correctly configure all endpoint when specified', async () => {
-    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
+    loadCustomConfig.mockImplementationOnce(() =>
       Promise.resolve({
         endpoints: {
           all: {
@@ -731,39 +757,42 @@ describe('AppService', () => {
       }),
     );
 
-    await AppService(app);
+    const result = await AppService();
 
-    // Check that 'all' endpoint config is loaded
-    expect(app.locals).toHaveProperty('all');
-    expect(app.locals.all).toMatchObject({
-      titleConvo: true,
-      titleModel: 'gpt-4o-mini',
-      titleMethod: 'structured',
-      titlePrompt: 'Default title prompt for all endpoints',
-      titlePromptTemplate: 'Default template: {{conversation}}',
-      titleEndpoint: EModelEndpoint.anthropic,
-      streamRate: 50,
-    });
-
-    // Check that OpenAI endpoint has its own config
-    expect(app.locals).toHaveProperty(EModelEndpoint.openAI);
-    expect(app.locals[EModelEndpoint.openAI]).toMatchObject({
-      titleConvo: true,
-      titleModel: 'gpt-3.5-turbo',
-    });
+    expect(result).toEqual(
+      expect.objectContaining({
+        // Check that 'all' endpoint config is loaded
+        endpoints: expect.objectContaining({
+          all: expect.objectContaining({
+            titleConvo: true,
+            titleModel: 'gpt-4o-mini',
+            titleMethod: 'structured',
+            titlePrompt: 'Default title prompt for all endpoints',
+            titlePromptTemplate: 'Default template: {{conversation}}',
+            titleEndpoint: EModelEndpoint.anthropic,
+            streamRate: 50,
+          }),
+          // Check that OpenAI endpoint has its own config
+          [EModelEndpoint.openAI]: expect.objectContaining({
+            titleConvo: true,
+            titleModel: 'gpt-3.5-turbo',
+          }),
+        }),
+      }),
+    );
   });
 });
 
-describe('AppService updating app.locals and issuing warnings', () => {
-  let app;
+describe('AppService updating app config and issuing warnings', () => {
   let initialEnv;
+  const loadCustomConfig = require('./Config/loadCustomConfig');
 
   beforeEach(() => {
     // Store initial environment variables to restore them after each test
     initialEnv = { ...process.env };
 
-    app = { locals: {} };
     process.env.CDN_PROVIDER = undefined;
+    jest.clearAllMocks();
   });
 
   afterEach(() => {
@@ -771,26 +800,29 @@ describe('AppService updating app.locals and issuing warnings', () => {
     process.env = { ...initialEnv };
   });
 
-  it('should update app.locals with default values if loadCustomConfig returns undefined', async () => {
+  it('should initialize app config with default values if loadCustomConfig returns undefined', async () => {
     // Mock loadCustomConfig to return undefined
-    require('./Config/loadCustomConfig').mockImplementationOnce(() => Promise.resolve(undefined));
+    loadCustomConfig.mockImplementationOnce(() => Promise.resolve(undefined));
 
-    await AppService(app);
+    const result = await AppService();
 
-    expect(app.locals).toBeDefined();
-    expect(app.locals.paths).toBeDefined();
-    expect(app.locals.config).toEqual({});
-    expect(app.locals.fileStrategy).toEqual(FileSources.local);
-    expect(app.locals.socialLogins).toEqual(defaultSocialLogins);
-    expect(app.locals.balance).toEqual(
+    expect(result).toEqual(
       expect.objectContaining({
-        enabled: false,
-        startBalance: undefined,
+        paths: expect.anything(),
+        config: {},
+        fileStrategy: FileSources.local,
+        registration: expect.objectContaining({
+          socialLogins: defaultSocialLogins,
+        }),
+        balance: expect.objectContaining({
+          enabled: false,
+          startBalance: undefined,
+        }),
       }),
     );
   });
 
-  it('should update app.locals with values from loadCustomConfig', async () => {
+  it('should initialize app config with values from loadCustomConfig', async () => {
     // Mock loadCustomConfig to return a specific config object with a complete balance config
     const customConfig = {
       fileStrategy: 'firebase',
@@ -804,21 +836,24 @@ describe('AppService updating app.locals and issuing warnings', () => {
         refillAmount: 5000,
       },
     };
-    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
-      Promise.resolve(customConfig),
+    loadCustomConfig.mockImplementationOnce(() => Promise.resolve(customConfig));
+
+    const result = await AppService();
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        paths: expect.anything(),
+        config: customConfig,
+        fileStrategy: customConfig.fileStrategy,
+        registration: expect.objectContaining({
+          socialLogins: customConfig.registration.socialLogins,
+        }),
+        balance: customConfig.balance,
+      }),
     );
-
-    await AppService(app);
-
-    expect(app.locals).toBeDefined();
-    expect(app.locals.paths).toBeDefined();
-    expect(app.locals.config).toEqual(customConfig);
-    expect(app.locals.fileStrategy).toEqual(customConfig.fileStrategy);
-    expect(app.locals.socialLogins).toEqual(customConfig.registration.socialLogins);
-    expect(app.locals.balance).toEqual(customConfig.balance);
   });
 
-  it('should apply the assistants endpoint configuration correctly to app.locals', async () => {
+  it('should apply the assistants endpoint configuration correctly to app config', async () => {
     const mockConfig = {
       endpoints: {
         assistants: {
@@ -829,18 +864,25 @@ describe('AppService updating app.locals and issuing warnings', () => {
         },
       },
     };
-    require('./Config/loadCustomConfig').mockImplementationOnce(() => Promise.resolve(mockConfig));
+    loadCustomConfig.mockImplementationOnce(() => Promise.resolve(mockConfig));
 
-    const app = { locals: {} };
-    await AppService(app);
+    const result = await AppService();
 
-    expect(app.locals).toHaveProperty('assistants');
-    const { assistants } = app.locals;
-    expect(assistants.disableBuilder).toBe(true);
-    expect(assistants.pollIntervalMs).toBe(5000);
-    expect(assistants.timeoutMs).toBe(30000);
-    expect(assistants.supportedIds).toEqual(['id1', 'id2']);
-    expect(assistants.excludedIds).toBeUndefined();
+    expect(result).toEqual(
+      expect.objectContaining({
+        endpoints: expect.objectContaining({
+          assistants: expect.objectContaining({
+            disableBuilder: true,
+            pollIntervalMs: 5000,
+            timeoutMs: 30000,
+            supportedIds: ['id1', 'id2'],
+          }),
+        }),
+      }),
+    );
+
+    // Verify excludedIds is undefined when not provided
+    expect(result.endpoints.assistants.excludedIds).toBeUndefined();
   });
 
   it('should log a warning when both supportedIds and excludedIds are provided', async () => {
@@ -855,12 +897,11 @@ describe('AppService updating app.locals and issuing warnings', () => {
         },
       },
     };
-    require('./Config/loadCustomConfig').mockImplementationOnce(() => Promise.resolve(mockConfig));
+    loadCustomConfig.mockImplementationOnce(() => Promise.resolve(mockConfig));
 
-    const app = { locals: {} };
-    await require('./AppService')(app);
+    await AppService();
 
-    const { logger } = require('~/config');
+    const { logger } = require('@librechat/data-schemas');
     expect(logger.warn).toHaveBeenCalledWith(
       expect.stringContaining(
         "The 'assistants' endpoint has both 'supportedIds' and 'excludedIds' defined.",
@@ -877,12 +918,11 @@ describe('AppService updating app.locals and issuing warnings', () => {
         },
       },
     };
-    require('./Config/loadCustomConfig').mockImplementationOnce(() => Promise.resolve(mockConfig));
+    loadCustomConfig.mockImplementationOnce(() => Promise.resolve(mockConfig));
 
-    const app = { locals: {} };
-    await require('./AppService')(app);
+    await AppService();
 
-    const { logger } = require('~/config');
+    const { logger } = require('@librechat/data-schemas');
     expect(logger.warn).toHaveBeenCalledWith(
       expect.stringContaining(
         "The 'assistants' endpoint has both 'privateAssistants' and 'supportedIds' or 'excludedIds' defined.",
@@ -891,7 +931,7 @@ describe('AppService updating app.locals and issuing warnings', () => {
   });
 
   it('should issue expected warnings when loading Azure Groups with deprecated Environment Variables', async () => {
-    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
+    loadCustomConfig.mockImplementationOnce(() =>
       Promise.resolve({
         endpoints: {
           [EModelEndpoint.azureOpenAI]: {
@@ -905,10 +945,9 @@ describe('AppService updating app.locals and issuing warnings', () => {
       process.env[varInfo.key] = 'test';
     });
 
-    const app = { locals: {} };
-    await require('./AppService')(app);
+    await AppService();
 
-    const { logger } = require('~/config');
+    const { logger } = require('@librechat/data-schemas');
     deprecatedAzureVariables.forEach(({ key, description }) => {
       expect(logger.warn).toHaveBeenCalledWith(
         `The \`${key}\` environment variable (related to ${description}) should not be used in combination with the \`azureOpenAI\` endpoint configuration, as you will experience conflicts and errors.`,
@@ -917,7 +956,7 @@ describe('AppService updating app.locals and issuing warnings', () => {
   });
 
   it('should issue expected warnings when loading conflicting Azure Envrionment Variables', async () => {
-    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
+    loadCustomConfig.mockImplementationOnce(() =>
       Promise.resolve({
         endpoints: {
           [EModelEndpoint.azureOpenAI]: {
@@ -931,10 +970,9 @@ describe('AppService updating app.locals and issuing warnings', () => {
       process.env[varInfo.key] = 'test';
     });
 
-    const app = { locals: {} };
-    await require('./AppService')(app);
+    await AppService();
 
-    const { logger } = require('~/config');
+    const { logger } = require('@librechat/data-schemas');
     conflictingAzureVariables.forEach(({ key }) => {
       expect(logger.warn).toHaveBeenCalledWith(
         `The \`${key}\` environment variable should not be used in combination with the \`azureOpenAI\` endpoint configuration, as you may experience with the defined placeholders for mapping to the current model grouping using the same name.`,
@@ -953,22 +991,25 @@ describe('AppService updating app.locals and issuing warnings', () => {
       },
     };
 
-    require('./Config/loadCustomConfig').mockImplementationOnce(() => Promise.resolve(mockConfig));
+    loadCustomConfig.mockImplementationOnce(() => Promise.resolve(mockConfig));
 
     // Set actual environment variables with different values
     process.env.OCR_API_KEY_CUSTOM_VAR_NAME = 'actual-api-key';
     process.env.OCR_BASEURL_CUSTOM_VAR_NAME = 'https://actual-ocr-url.com';
 
-    // Initialize app
-    const app = { locals: {} };
-    await AppService(app);
+    const result = await AppService();
 
     // Verify that the raw string references were preserved and not interpolated
-    expect(app.locals.ocr).toBeDefined();
-    expect(app.locals.ocr.apiKey).toEqual('${OCR_API_KEY_CUSTOM_VAR_NAME}');
-    expect(app.locals.ocr.baseURL).toEqual('${OCR_BASEURL_CUSTOM_VAR_NAME}');
-    expect(app.locals.ocr.strategy).toEqual('mistral_ocr');
-    expect(app.locals.ocr.mistralModel).toEqual('mistral-medium');
+    expect(result).toEqual(
+      expect.objectContaining({
+        ocr: expect.objectContaining({
+          apiKey: '${OCR_API_KEY_CUSTOM_VAR_NAME}',
+          baseURL: '${OCR_BASEURL_CUSTOM_VAR_NAME}',
+          strategy: 'mistral_ocr',
+          mistralModel: 'mistral-medium',
+        }),
+      }),
+    );
   });
 
   it('should correctly configure peoplePicker permissions when specified', async () => {
@@ -982,17 +1023,21 @@ describe('AppService updating app.locals and issuing warnings', () => {
       },
     };
 
-    require('./Config/loadCustomConfig').mockImplementationOnce(() => Promise.resolve(mockConfig));
+    loadCustomConfig.mockImplementationOnce(() => Promise.resolve(mockConfig));
 
-    const app = { locals: {} };
-    await AppService(app);
+    const result = await AppService();
 
     // Check that interface config includes the permissions
-    expect(app.locals.interfaceConfig.peoplePicker).toBeDefined();
-    expect(app.locals.interfaceConfig.peoplePicker).toMatchObject({
-      users: true,
-      groups: true,
-      roles: true,
-    });
+    expect(result).toEqual(
+      expect.objectContaining({
+        interfaceConfig: expect.objectContaining({
+          peoplePicker: expect.objectContaining({
+            users: true,
+            groups: true,
+            roles: true,
+          }),
+        }),
+      }),
+    );
   });
 });

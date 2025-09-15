@@ -1,5 +1,11 @@
 import { useQuery, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
-import { QueryKeys, dataService, EModelEndpoint, PermissionBits } from 'librechat-data-provider';
+import {
+  Constants,
+  QueryKeys,
+  dataService,
+  EModelEndpoint,
+  PermissionBits,
+} from 'librechat-data-provider';
 import type {
   QueryObserverResult,
   UseQueryOptions,
@@ -64,20 +70,27 @@ export const useListAgentsQuery = <TData = t.AgentListResponse>(
  * Hook for retrieving basic details about a single agent (VIEW permission)
  */
 export const useGetAgentByIdQuery = (
-  agent_id: string,
+  agent_id: string | null | undefined,
   config?: UseQueryOptions<t.Agent>,
 ): QueryObserverResult<t.Agent> => {
+  const isValidAgentId = !!(
+    agent_id &&
+    agent_id !== '' &&
+    agent_id !== Constants.EPHEMERAL_AGENT_ID
+  );
+
   return useQuery<t.Agent>(
     [QueryKeys.agent, agent_id],
     () =>
       dataService.getAgentById({
-        agent_id,
+        agent_id: agent_id as string,
       }),
     {
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,
       refetchOnMount: false,
       retry: false,
+      enabled: isValidAgentId && (config?.enabled ?? true),
       ...config,
     },
   );

@@ -88,6 +88,10 @@ export default function ToolCall({
       const url = new URL(authURL);
       return url.hostname;
     } catch (e) {
+      logger.error(
+        'client/src/components/Chat/Messages/Content/ToolCall.tsx - Failed to parse auth URL',
+        e,
+      );
       return '';
     }
   }, [auth]);
@@ -207,6 +211,7 @@ export default function ToolCall({
                 domain={authDomain || (domain ?? '')}
                 function_name={function_name}
                 pendingAuth={authDomain.length > 0 && !cancelled && progress < 1}
+                attachments={attachments}
               />
             )}
           </div>

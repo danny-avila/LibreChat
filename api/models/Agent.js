@@ -109,6 +109,13 @@ const loadEphemeralAgent = async ({ req, agent_id, endpoint, model_parameters: _
         mcp_prompts.push(promptKey);
       }
     }
+
+    for (const mcpServer of mcpServers) {
+      if (addedServers.has(mcpServer)) {
+        continue;
+      }
+      tools.push(`${mcp_all}${mcp_delimiter}${mcpServer}`);
+    }
   }
 
   const instructions = req.body.promptPrefix;
@@ -694,7 +701,7 @@ const getListAgents = async (searchParameter) => {
  * This function also updates the corresponding projects to include or exclude the agent ID.
  *
  * @param {Object} params - Parameters for updating the agent's projects.
- * @param {MongoUser} params.user - Parameters for updating the agent's projects.
+ * @param {IUser} params.user - Parameters for updating the agent's projects.
  * @param {string} params.agentId - The ID of the agent to update.
  * @param {string[]} [params.projectIds] - Array of project IDs to add to the agent.
  * @param {string[]} [params.removeProjectIds] - Array of project IDs to remove from the agent.

@@ -1,5 +1,6 @@
 const path = require('path');
 const { logger } = require('@librechat/data-schemas');
+const { ensureRequiredCollectionsExist } = require('@librechat/api');
 const { AccessRoleIds, ResourceType, PrincipalType } = require('librechat-data-provider');
 const { GLOBAL_PROJECT_NAME } = require('librechat-data-provider').Constants;
 
@@ -15,6 +16,13 @@ async function migrateAgentPermissionsEnhanced({ dryRun = true, batchSize = 100 
   await connect();
 
   logger.info('Starting Enhanced Agent Permissions Migration', { dryRun, batchSize });
+
+  const mongoose = require('mongoose');
+  /** @type {import('mongoose').mongo.Db | undefined} */
+  const db = mongoose.connection.db;
+  if (db) {
+    await ensureRequiredCollectionsExist(db);
+  }
 
   // Verify required roles exist
   const ownerRole = await findRoleByIdentifier(AccessRoleIds.AGENT_OWNER);
@@ -100,12 +108,19 @@ async function migrateAgentPermissionsEnhanced({ dryRun = true, batchSize = 100 
     }
   });
 
-  logger.info('Agent categorization:', {
-    globalEditAccess: categories.globalEditAccess.length,
-    globalViewAccess: categories.globalViewAccess.length,
-    privateAgents: categories.privateAgents.length,
-    total: agentsToMigrate.length,
-  });
+  logger.info(
+    'Agent categorization:\n' +
+      JSON.stringify(
+        {
+          globalEditAccess: categories.globalEditAccess.length,
+          globalViewAccess: categories.globalViewAccess.length,
+          privateAgents: categories.privateAgents.length,
+          total: agentsToMigrate.length,
+        },
+        null,
+        2,
+      ),
+  );
 
   if (dryRun) {
     return {

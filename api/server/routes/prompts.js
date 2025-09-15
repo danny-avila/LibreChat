@@ -209,7 +209,7 @@ router.get('/all', async (req, res) => {
 router.get('/groups', async (req, res) => {
   try {
     const userId = req.user.id;
-    const { pageSize, pageNumber, limit, cursor, name, category, ...otherFilters } = req.query;
+    const { pageSize, limit, cursor, name, category, ...otherFilters } = req.query;
 
     const { filter, searchShared, searchSharedOnly } = buildPromptGroupFilter({
       name,
@@ -222,6 +222,13 @@ router.get('/groups', async (req, res) => {
 
     if (pageSize && !limit) {
       actualLimit = parseInt(pageSize, 10);
+    }
+
+    if (
+      actualCursor &&
+      (actualCursor === 'undefined' || actualCursor === 'null' || actualCursor.length === 0)
+    ) {
+      actualCursor = null;
     }
 
     let accessibleIds = await findAccessibleResources({
@@ -243,6 +250,7 @@ router.get('/groups', async (req, res) => {
       publicPromptGroupIds: publiclyAccessibleIds,
     });
 
+    // Cursor-based pagination only
     const result = await getListPromptGroupsByAccess({
       accessibleIds: filteredAccessibleIds,
       otherParams: filter,
@@ -251,19 +259,21 @@ router.get('/groups', async (req, res) => {
     });
 
     if (!result) {
-      const emptyResponse = createEmptyPromptGroupsResponse({ pageNumber, pageSize, actualLimit });
+      const emptyResponse = createEmptyPromptGroupsResponse({
+        pageNumber: '1',
+        pageSize: actualLimit,
+        actualLimit,
+      });
       return res.status(200).send(emptyResponse);
     }
 
     const { data: promptGroups = [], has_more = false, after = null } = result;
-
     const groupsWithPublicFlag = markPublicPromptGroups(promptGroups, publiclyAccessibleIds);
 
     const response = formatPromptGroupsResponse({
       promptGroups: groupsWithPublicFlag,
-      pageNumber,
-      pageSize,
-      actualLimit,
+      pageNumber: '1', // Always 1 for cursor-based pagination
+      pageSize: actualLimit.toString(),
       hasMore: has_more,
       after,
     });
@@ -477,7 +487,7 @@ router.get('/', async (req, res) => {
 /**
  * Deletes a prompt
  *
- * @param {Express.Request} req - The request object.
+ * @param {ServerRequest} req - The request object.
  * @param {TDeletePromptVariables} req.params - The request parameters
  * @param {import('mongoose').ObjectId} req.params.promptId - The prompt ID
  * @param {Express.Response} res - The response object.
