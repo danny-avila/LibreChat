@@ -15,6 +15,8 @@ const {
 const { removeAllPermissions } = require('~/server/services/PermissionService');
 const { PromptGroup, Prompt } = require('~/db/models');
 const { escapeRegExp } = require('~/server/utils');
+const { getCachedPrompts, getServerMCPPrompt } = require('~/server/services/Config');
+const { getMCPManager } = require('~/config');
 
 /**
  * Create a pipeline for the aggregation to get prompt groups
@@ -121,6 +123,9 @@ const getAllPromptGroups = async (req, filter) => {
     } else if (query.category === SystemCategories.SHARED_PROMPTS) {
       searchSharedOnly = true;
       delete query.category;
+    } else if (query.category === SystemCategories.MCP_PROMPTS) {
+      searchSharedOnly = false;
+      delete query.category;
     }
 
     let combinedQuery = query;
@@ -170,9 +175,14 @@ const getPromptGroups = async (req, filter) => {
     } else if (query.category === SystemCategories.SHARED_PROMPTS) {
       searchSharedOnly = true;
       delete query.category;
+    } else if (query.category === SystemCategories.MCP_PROMPTS) {
+      searchSharedOnly = false;
+      delete query.category;
     }
 
     let combinedQuery = query;
+
+    const mcpPrompts = await getCachedPrompts({ isGlobal: true });
 
     if (searchShared) {
       // const projects = req.user.projects || []; // TODO: handle multiple projects
@@ -528,6 +538,27 @@ module.exports = {
     } catch (error) {
       logger.error('Error getting prompt group', error);
       return { message: 'Error getting prompt group' };
+    }
+  },
+  getMCPPromptGroup: async (serverName, promptName) => {
+    logger.debug("getMCPPromptGroup", serverName, promptName)
+    try {
+      const mcpManager = getMCPManager();
+      return await getServerMCPPrompt(mcpManager, serverName, promptName);
+    } catch (error) {
+      logger.error('Error getting mcp prompt group', error);
+      return { message: 'Error getting mcp prompt group' };
+    }
+  },
+  getMCPPrompt: async (serverName, promptName, userId, combinedNames) => {
+    logger.debug("getMCPPrompt", serverName, promptName)
+    try {
+      let options = { userId, serverName, promptName };
+      let cachedPrompt = await getCachedPrompts(options);
+      return cachedPrompt[combinedNames];
+    } catch (error) {
+      logger.error('Error getting mcp prompt group', error);
+      return { message: 'Error getting mcp prompt group' };
     }
   },
   /**

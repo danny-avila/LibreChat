@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 const crypto = require('node:crypto');
 const { logger } = require('@librechat/data-schemas');
 const { ResourceType, SystemRoles, Tools, actionDelimiter } = require('librechat-data-provider');
-const { GLOBAL_PROJECT_NAME, EPHEMERAL_AGENT_ID, mcp_delimiter } =
+const { GLOBAL_PROJECT_NAME, EPHEMERAL_AGENT_ID, mcp_all, mcp_delimiter } =
   require('librechat-data-provider').Constants;
 const {
   removeAgentFromAllProjects,
@@ -11,7 +11,7 @@ const {
   getProjectByName,
 } = require('./Project');
 const { removeAllPermissions } = require('~/server/services/PermissionService');
-const { getCachedTools } = require('~/server/services/Config');
+const { getCachedTools, getCachedPrompts } = require('~/server/services/Config');
 const { getActions } = require('./Action');
 const { Agent } = require('~/db/models');
 
@@ -63,11 +63,13 @@ const loadEphemeralAgent = async ({ req, agent_id, endpoint, model_parameters: _
   const { model, ...model_parameters } = _m;
   /** @type {Record<string, FunctionTool>} */
   const availableTools = await getCachedTools({ userId: req.user.id, includeGlobal: true });
+  const availablePrompts = await getCachedPrompts({ userId: req.user.id, includeGlobal: true });
   /** @type {TEphemeralAgent | null} */
   const ephemeralAgent = req.body.ephemeralAgent;
   const mcpServers = new Set(ephemeralAgent?.mcp);
   /** @type {string[]} */
   const tools = [];
+  const mcp_prompts = [];
   if (ephemeralAgent?.execute_code === true) {
     tools.push(Tools.execute_code);
   }
@@ -78,6 +80,7 @@ const loadEphemeralAgent = async ({ req, agent_id, endpoint, model_parameters: _
     tools.push(Tools.web_search);
   }
 
+  const addedServers = new Set();
   if (mcpServers.size > 0) {
     for (const toolName of Object.keys(availableTools)) {
       if (!toolName.includes(mcp_delimiter)) {
@@ -85,7 +88,25 @@ const loadEphemeralAgent = async ({ req, agent_id, endpoint, model_parameters: _
       }
       const mcpServer = toolName.split(mcp_delimiter)?.[1];
       if (mcpServer && mcpServers.has(mcpServer)) {
+        addedServers.add(mcpServer);
         tools.push(toolName);
+      }
+    }
+
+    for (const mcpServer of mcpServers) {
+      if (addedServers.has(mcpServer)) {
+        continue;
+      }
+      tools.push(`${mcp_all}${mcp_delimiter}${mcpServer}`);
+    }
+
+    for (const promptKey of Object.keys(availablePrompts)) {
+      if (!promptKey.includes(mcp_delimiter)) {
+        continue;
+      }
+      const mcpServer = promptKey.split(mcp_delimiter)?.[1];
+      if (mcpServer && mcpServers.has(mcpServer)) {
+        mcp_prompts.push(promptKey);
       }
     }
   }
@@ -98,6 +119,7 @@ const loadEphemeralAgent = async ({ req, agent_id, endpoint, model_parameters: _
     model_parameters,
     model,
     tools,
+    mcp_prompts,
   };
 
   if (ephemeralAgent?.artifacts != null && ephemeralAgent.artifacts) {
