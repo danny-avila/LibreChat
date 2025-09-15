@@ -50,7 +50,7 @@ async function shouldAttemptReconnect(mcpManager, userId, serverName) {
   // if the server is already connected, don't attempt to reconnect
   const existingConnections = mcpManager.getUserConnections(userId);
   if (existingConnections?.has(serverName)) {
-    const isConnected = existingConnections.get(serverName)?.isConnected();
+    const isConnected = await existingConnections.get(serverName)?.isConnected();
     if (isConnected) {
       return false;
     }
