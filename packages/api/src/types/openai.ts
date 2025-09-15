@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { openAISchema, EModelEndpoint } from 'librechat-data-provider';
-import type { TEndpointOption, TAzureConfig, TEndpoint } from 'librechat-data-provider';
+import type { TEndpointOption, TAzureConfig, TEndpoint, TConfig } from 'librechat-data-provider';
 import type { BindToolsInput } from '@langchain/core/language_models/chat_models';
 import type { OpenAIClientOptions, Providers } from '@librechat/agents';
 import type { AzureOptions } from './azure';
@@ -8,37 +8,43 @@ import type { AppConfig } from './config';
 
 export type OpenAIParameters = z.infer<typeof openAISchema>;
 
+export type OpenAIModelOptions = Partial<OpenAIParameters>;
+
 /**
  * Configuration options for the getLLMConfig function
  */
 export interface OpenAIConfigOptions {
-  modelOptions?: Partial<OpenAIParameters>;
+  modelOptions?: OpenAIModelOptions;
   directEndpoint?: boolean;
-  reverseProxyUrl?: string;
+  reverseProxyUrl?: string | null;
   defaultQuery?: Record<string, string | undefined>;
   headers?: Record<string, string>;
-  proxy?: string;
-  azure?: AzureOptions;
+  proxy?: string | null;
+  azure?: false | AzureOptions;
   streaming?: boolean;
   addParams?: Record<string, unknown>;
   dropParams?: string[];
+  customParams?: Partial<TConfig['customParams']>;
 }
 
 export type OpenAIConfiguration = OpenAIClientOptions['configuration'];
 
-export type ClientOptions = OpenAIClientOptions & {
+export type OAIClientOptions = OpenAIClientOptions & {
   include_reasoning?: boolean;
 };
 
 /**
  * Return type for getLLMConfig function
  */
-export interface LLMConfigResult {
-  llmConfig: ClientOptions;
-  configOptions: OpenAIConfiguration;
-  tools?: BindToolsInput[];
+export interface LLMConfigResult<T = OAIClientOptions> {
+  llmConfig: T;
   provider?: Providers;
+  tools?: BindToolsInput[];
 }
+
+export type OpenAIConfigResult = LLMConfigResult<OAIClientOptions> & {
+  configOptions?: OpenAIConfiguration;
+};
 
 /**
  * Interface for user values retrieved from the database

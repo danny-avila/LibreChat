@@ -187,4 +187,195 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
       );
     });
   });
+
+  describe('revokeOAuthToken', () => {
+    const mockServerName = 'test-server';
+    const mockToken = 'test-token-12345';
+
+    const originalFetch = global.fetch;
+    const mockFetch = jest.fn() as unknown as jest.MockedFunction<typeof fetch>;
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+      global.fetch = mockFetch;
+    });
+
+    afterEach(() => {
+      mockFetch.mockClear();
+    });
+
+    afterAll(() => {
+      global.fetch = originalFetch;
+    });
+
+    it('should successfully revoke an access token with client_secret_basic auth', async () => {
+      const metadata = {
+        serverUrl: 'https://auth.example.com',
+        clientId: 'test-client-id',
+        clientSecret: 'test-client-secret',
+        revocationEndpoint: 'https://auth.example.com/oauth/revoke',
+        revocationEndpointAuthMethodsSupported: ['client_secret_basic'],
+      };
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+      } as Response);
+
+      await MCPOAuthHandler.revokeOAuthToken(mockServerName, mockToken, 'access', metadata);
+
+      expect(mockFetch).toHaveBeenCalledWith(new URL('https://auth.example.com/oauth/revoke'), {
+        method: 'POST',
+        body: 'token=test-token-12345&token_type_hint=access_token',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          Authorization: `Basic ${Buffer.from('test-client-id:test-client-secret').toString('base64')}`,
+        },
+      });
+    });
+
+    it('should successfully revoke a refresh token with client_secret_basic auth', async () => {
+      const metadata = {
+        serverUrl: 'https://auth.example.com',
+        clientId: 'test-client-id',
+        clientSecret: 'test-client-secret',
+        revocationEndpoint: 'https://auth.example.com/oauth/revoke',
+        revocationEndpointAuthMethodsSupported: ['client_secret_basic'],
+      };
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+      } as Response);
+
+      await MCPOAuthHandler.revokeOAuthToken(mockServerName, mockToken, 'refresh', metadata);
+
+      expect(mockFetch).toHaveBeenCalledWith(new URL('https://auth.example.com/oauth/revoke'), {
+        method: 'POST',
+        body: 'token=test-token-12345&token_type_hint=refresh_token',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          Authorization: `Basic ${Buffer.from('test-client-id:test-client-secret').toString('base64')}`,
+        },
+      });
+    });
+
+    it('should successfully revoke an access token with client_secret_post auth', async () => {
+      const metadata = {
+        serverUrl: 'https://auth.example.com',
+        clientId: 'test-client-id',
+        clientSecret: 'test-client-secret',
+        revocationEndpoint: 'https://auth.example.com/oauth/revoke',
+        revocationEndpointAuthMethodsSupported: ['client_secret_post'],
+      };
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+      } as Response);
+
+      await MCPOAuthHandler.revokeOAuthToken(mockServerName, mockToken, 'access', metadata);
+
+      expect(mockFetch).toHaveBeenCalledWith(new URL('https://auth.example.com/oauth/revoke'), {
+        method: 'POST',
+        body: 'token=test-token-12345&token_type_hint=access_token&client_secret=test-client-secret&client_id=test-client-id',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+      });
+    });
+
+    it('should fallback to /revoke endpoint when revocationEndpoint is not provided', async () => {
+      const metadata = {
+        serverUrl: 'https://auth.example.com',
+        clientId: 'test-client-id',
+        clientSecret: 'test-client-secret',
+      };
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+      } as Response);
+
+      await MCPOAuthHandler.revokeOAuthToken(mockServerName, mockToken, 'refresh', metadata);
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        new URL('https://auth.example.com/revoke'),
+        expect.any(Object),
+      );
+    });
+
+    it('should default to client_secret_basic auth when revocationEndpointAuthMethodsSupported is not provided', async () => {
+      const metadata = {
+        serverUrl: 'https://auth.example.com',
+        clientId: 'test-client-id',
+        clientSecret: 'test-client-secret',
+        revocationEndpoint: 'https://auth.example.com/oauth/revoke',
+      };
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+      } as Response);
+
+      await MCPOAuthHandler.revokeOAuthToken(mockServerName, mockToken, 'refresh', metadata);
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.any(URL),
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            Authorization: expect.stringMatching(/^Basic /),
+          }),
+        }),
+      );
+    });
+
+    it('should throw an error when the revocation request fails', async () => {
+      const metadata = {
+        serverUrl: 'https://auth.example.com',
+        clientId: 'test-client-id',
+        clientSecret: 'test-client-secret',
+        revocationEndpoint: 'https://auth.example.com/oauth/revoke',
+      };
+
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 418,
+      } as Response);
+
+      await expect(
+        MCPOAuthHandler.revokeOAuthToken(mockServerName, mockToken, 'refresh', metadata),
+      ).rejects.toThrow('Token revocation failed: HTTP 418');
+    });
+
+    it('should prioritize client_secret_basic over other auth methods', async () => {
+      const metadata = {
+        serverUrl: 'https://auth.example.com',
+        clientId: 'test-client-id',
+        clientSecret: 'test-client-secret',
+        revocationEndpoint: 'https://auth.example.com/oauth/revoke',
+        revocationEndpointAuthMethodsSupported: [
+          'client_secret_post',
+          'client_secret_basic',
+          'some_other_method',
+        ],
+      };
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+      } as Response);
+
+      await MCPOAuthHandler.revokeOAuthToken(mockServerName, mockToken, 'refresh', metadata);
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.any(URL),
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            Authorization: expect.stringMatching(/^Basic /),
+          }),
+        }),
+      );
+    });
+  });
 });

@@ -17,6 +17,7 @@ import type {
   MCPOAuthTokens,
   OAuthMetadata,
 } from './types';
+import { sanitizeUrlForLogging } from '~/mcp/utils';
 
 /** Type for the OAuth metadata from the SDK */
 type SDKOAuthMetadata = Parameters<typeof registerClient>[1]['metadata'];
@@ -33,7 +34,9 @@ export class MCPOAuthHandler {
     resourceMetadata?: OAuthProtectedResourceMetadata;
     authServerUrl: URL;
   }> {
-    logger.debug(`[MCPOAuth] discoverMetadata called with serverUrl: ${serverUrl}`);
+    logger.debug(
+      `[MCPOAuth] discoverMetadata called with serverUrl: ${sanitizeUrlForLogging(serverUrl)}`,
+    );
 
     let authServerUrl = new URL(serverUrl);
     let resourceMetadata: OAuthProtectedResourceMetadata | undefined;
@@ -60,11 +63,15 @@ export class MCPOAuthHandler {
     }
 
     // Discover OAuth metadata
-    logger.debug(`[MCPOAuth] Discovering OAuth metadata from ${authServerUrl}`);
+    logger.debug(
+      `[MCPOAuth] Discovering OAuth metadata from ${sanitizeUrlForLogging(authServerUrl)}`,
+    );
     const rawMetadata = await discoverAuthorizationServerMetadata(authServerUrl);
 
     if (!rawMetadata) {
-      logger.error(`[MCPOAuth] Failed to discover OAuth metadata from ${authServerUrl}`);
+      logger.error(
+        `[MCPOAuth] Failed to discover OAuth metadata from ${sanitizeUrlForLogging(authServerUrl)}`,
+      );
       throw new Error('Failed to discover OAuth metadata');
     }
 
@@ -88,12 +95,15 @@ export class MCPOAuthHandler {
     resourceMetadata?: OAuthProtectedResourceMetadata,
     redirectUri?: string,
   ): Promise<OAuthClientInformation> {
-    logger.debug(`[MCPOAuth] Starting client registration for ${serverUrl}, server metadata:`, {
-      grant_types_supported: metadata.grant_types_supported,
-      response_types_supported: metadata.response_types_supported,
-      token_endpoint_auth_methods_supported: metadata.token_endpoint_auth_methods_supported,
-      scopes_supported: metadata.scopes_supported,
-    });
+    logger.debug(
+      `[MCPOAuth] Starting client registration for ${sanitizeUrlForLogging(serverUrl)}, server metadata:`,
+      {
+        grant_types_supported: metadata.grant_types_supported,
+        response_types_supported: metadata.response_types_supported,
+        token_endpoint_auth_methods_supported: metadata.token_endpoint_auth_methods_supported,
+        scopes_supported: metadata.scopes_supported,
+      },
+    );
 
     /** Client metadata based on what the server supports */
     const clientMetadata = {
@@ -114,7 +124,9 @@ export class MCPOAuthHandler {
         `[MCPOAuth] Server ${serverUrl} supports \`refresh_token\` grant type, adding to request`,
       );
     } else {
-      logger.debug(`[MCPOAuth] Server ${serverUrl} does not support \`refresh_token\` grant type`);
+      logger.debug(
+        `[MCPOAuth] Server ${sanitizeUrlForLogging(serverUrl)} does not support \`refresh_token\` grant type`,
+      );
     }
     clientMetadata.grant_types = requestedGrantTypes;
 
@@ -139,19 +151,25 @@ export class MCPOAuthHandler {
       clientMetadata.scope = availableScopes.join(' ');
     }
 
-    logger.debug(`[MCPOAuth] Registering client for ${serverUrl} with metadata:`, clientMetadata);
+    logger.debug(
+      `[MCPOAuth] Registering client for ${sanitizeUrlForLogging(serverUrl)} with metadata:`,
+      clientMetadata,
+    );
 
     const clientInfo = await registerClient(serverUrl, {
       metadata: metadata as unknown as SDKOAuthMetadata,
       clientMetadata,
     });
 
-    logger.debug(`[MCPOAuth] Client registered successfully for ${serverUrl}:`, {
-      client_id: clientInfo.client_id,
-      has_client_secret: !!clientInfo.client_secret,
-      grant_types: clientInfo.grant_types,
-      scope: clientInfo.scope,
-    });
+    logger.debug(
+      `[MCPOAuth] Client registered successfully for ${sanitizeUrlForLogging(serverUrl)}:`,
+      {
+        client_id: clientInfo.client_id,
+        has_client_secret: !!clientInfo.client_secret,
+        grant_types: clientInfo.grant_types,
+        scope: clientInfo.scope,
+      },
+    );
 
     return clientInfo;
   }
@@ -165,7 +183,9 @@ export class MCPOAuthHandler {
     userId: string,
     config: MCPOptions['oauth'] | undefined,
   ): Promise<{ authorizationUrl: string; flowId: string; flowMetadata: MCPOAuthFlowMetadata }> {
-    logger.debug(`[MCPOAuth] initiateOAuthFlow called for ${serverName} with URL: ${serverUrl}`);
+    logger.debug(
+      `[MCPOAuth] initiateOAuthFlow called for ${serverName} with URL: ${sanitizeUrlForLogging(serverUrl)}`,
+    );
 
     const flowId = this.generateFlowId(userId, serverName);
     const state = this.generateState();
@@ -226,7 +246,9 @@ export class MCPOAuthHandler {
           metadata,
         };
 
-        logger.debug(`[MCPOAuth] Authorization URL generated: ${authorizationUrl.toString()}`);
+        logger.debug(
+          `[MCPOAuth] Authorization URL generated: ${sanitizeUrlForLogging(authorizationUrl.toString())}`,
+        );
         return {
           authorizationUrl: authorizationUrl.toString(),
           flowId,
@@ -234,10 +256,14 @@ export class MCPOAuthHandler {
         };
       }
 
-      logger.debug(`[MCPOAuth] Starting auto-discovery of OAuth metadata from ${serverUrl}`);
+      logger.debug(
+        `[MCPOAuth] Starting auto-discovery of OAuth metadata from ${sanitizeUrlForLogging(serverUrl)}`,
+      );
       const { metadata, resourceMetadata, authServerUrl } = await this.discoverMetadata(serverUrl);
 
-      logger.debug(`[MCPOAuth] OAuth metadata discovered, auth server URL: ${authServerUrl}`);
+      logger.debug(
+        `[MCPOAuth] OAuth metadata discovered, auth server URL: ${sanitizeUrlForLogging(authServerUrl)}`,
+      );
 
       /** Dynamic client registration based on the discovered metadata */
       const redirectUri = config?.redirect_uri || this.getDefaultRedirectUri(serverName);
@@ -276,7 +302,9 @@ export class MCPOAuthHandler {
         codeVerifier = authResult.codeVerifier;
 
         logger.debug(`[MCPOAuth] startAuthorization completed successfully`);
-        logger.debug(`[MCPOAuth] Authorization URL: ${authorizationUrl.toString()}`);
+        logger.debug(
+          `[MCPOAuth] Authorization URL: ${sanitizeUrlForLogging(authorizationUrl.toString())}`,
+        );
 
         /** Add state parameter with flowId to the authorization URL */
         authorizationUrl.searchParams.set('state', flowId);
@@ -515,7 +543,7 @@ export class MCPOAuthHandler {
           body.append('client_id', metadata.clientInfo.client_id);
         }
 
-        logger.debug(`[MCPOAuth] Refresh request to: ${tokenUrl}`, {
+        logger.debug(`[MCPOAuth] Refresh request to: ${sanitizeUrlForLogging(tokenUrl)}`, {
           body: body.toString(),
           headers,
         });
@@ -641,6 +669,72 @@ export class MCPOAuthHandler {
     } catch (error) {
       logger.error(`[MCPOAuth] Failed to refresh tokens for ${metadata.serverName}`, error);
       throw error;
+    }
+  }
+
+  /**
+   * Revokes OAuth tokens at the authorization server (RFC 7009)
+   */
+  public static async revokeOAuthToken(
+    serverName: string,
+    token: string,
+    tokenType: 'refresh' | 'access',
+    metadata: {
+      serverUrl: string;
+      clientId: string;
+      clientSecret: string;
+      revocationEndpoint?: string;
+      revocationEndpointAuthMethodsSupported?: string[];
+    },
+  ): Promise<void> {
+    // build the revoke URL, falling back to the server URL + /revoke if no revocation endpoint is provided
+    const revokeUrl: URL =
+      metadata.revocationEndpoint != null
+        ? new URL(metadata.revocationEndpoint)
+        : new URL('/revoke', metadata.serverUrl);
+
+    // detect auth method to use
+    const authMethods = metadata.revocationEndpointAuthMethodsSupported ?? [
+      'client_secret_basic', // RFC 8414 (https://datatracker.ietf.org/doc/html/rfc8414)
+    ];
+    const usesBasicAuth = authMethods.includes('client_secret_basic');
+    const usesClientSecretPost = authMethods.includes('client_secret_post');
+
+    // init the request headers
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/x-www-form-urlencoded',
+    };
+
+    // init the request body
+    const body = new URLSearchParams({ token });
+    body.set('token_type_hint', tokenType === 'refresh' ? 'refresh_token' : 'access_token');
+
+    // process auth method
+    if (usesBasicAuth) {
+      // encode the client id and secret and add to the headers
+      const credentials = Buffer.from(`${metadata.clientId}:${metadata.clientSecret}`).toString(
+        'base64',
+      );
+      headers['Authorization'] = `Basic ${credentials}`;
+    } else if (usesClientSecretPost) {
+      // add the client id and secret to the body
+      body.set('client_secret', metadata.clientSecret);
+      body.set('client_id', metadata.clientId);
+    }
+
+    // perform the revoke request
+    logger.info(
+      `[MCPOAuth] Revoking tokens for ${serverName} via ${sanitizeUrlForLogging(revokeUrl.toString())}`,
+    );
+    const response = await fetch(revokeUrl, {
+      method: 'POST',
+      body: body.toString(),
+      headers,
+    });
+
+    if (!response.ok) {
+      logger.error(`[MCPOAuth] Token revocation failed for ${serverName}: HTTP ${response.status}`);
+      throw new Error(`Token revocation failed: HTTP ${response.status}`);
     }
   }
 }

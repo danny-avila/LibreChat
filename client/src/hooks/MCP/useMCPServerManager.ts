@@ -25,9 +25,8 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
   const queryClient = useQueryClient();
   const { showToast } = useToastContext();
   const { mcpToolDetails } = useGetMCPTools();
-  const mcpSelect = useMCPSelect({ conversationId });
   const { data: startupConfig } = useGetStartupConfig();
-  const { mcpValues, setMCPValues, isPinned, setIsPinned } = mcpSelect;
+  const { mcpValues, setMCPValues, isPinned, setIsPinned } = useMCPSelect({ conversationId });
 
   const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
   const [selectedToolForConfig, setSelectedToolForConfig] = useState<TPlugin | null>(null);

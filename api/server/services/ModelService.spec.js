@@ -11,8 +11,8 @@ const {
   getAnthropicModels,
 } = require('./ModelService');
 
-jest.mock('~/utils', () => {
-  const originalUtils = jest.requireActual('~/utils');
+jest.mock('@librechat/api', () => {
+  const originalUtils = jest.requireActual('@librechat/api');
   return {
     ...originalUtils,
     processModelData: jest.fn((...args) => {
@@ -108,7 +108,7 @@ describe('fetchModels with createTokenConfig true', () => {
 
   beforeEach(() => {
     // Clears the mock's history before each test
-    const _utils = require('~/utils');
+    const _utils = require('@librechat/api');
     axios.get.mockResolvedValue({ data });
   });
 
@@ -120,7 +120,7 @@ describe('fetchModels with createTokenConfig true', () => {
       createTokenConfig: true,
     });
 
-    const { processModelData } = require('~/utils');
+    const { processModelData } = require('@librechat/api');
     expect(processModelData).toHaveBeenCalled();
     expect(processModelData).toHaveBeenCalledWith(data);
   });
