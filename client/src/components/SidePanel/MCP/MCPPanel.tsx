@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { ChevronLeft } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Button, useToastContext } from '@librechat/client';
@@ -25,6 +25,29 @@ function MCPPanelContent() {
   const [selectedServerNameForEditing, setSelectedServerNameForEditing] = useState<string | null>(
     null,
   );
+
+  // Check if any connections are in 'connecting' state
+  const hasConnectingServers = useMemo(() => {
+    if (!connectionStatus) {
+      return false;
+    }
+    return Object.values(connectionStatus).some(
+      (status) => status?.connectionState === 'connecting',
+    );
+  }, [connectionStatus]);
+
+  // Set up polling when servers are connecting
+  useEffect(() => {
+    if (!hasConnectingServers) {
+      return;
+    }
+
+    const intervalId = setInterval(() => {
+      queryClient.invalidateQueries([QueryKeys.mcpConnectionStatus]);
+    }, 1000);
+
+    return () => clearInterval(intervalId);
+  }, [hasConnectingServers, queryClient]);
 
   const updateUserPluginsMutation = useUpdateUserPluginsMutation({
     onSuccess: async () => {

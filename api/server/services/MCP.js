@@ -538,13 +538,20 @@ async function getServerConnectionStatus(
   const baseConnectionState = getConnectionState();
   let finalConnectionState = baseConnectionState;
 
+  // connection state overrides specific to OAuth servers
   if (baseConnectionState === 'disconnected' && oauthServers.has(serverName)) {
-    const { hasActiveFlow, hasFailedFlow } = await checkOAuthFlowStatus(userId, serverName);
-
-    if (hasFailedFlow) {
-      finalConnectionState = 'error';
-    } else if (hasActiveFlow) {
+    // check if server is actively being reconnected
+    const mcpManager = getMCPManager();
+    if (mcpManager.isReconnecting(userId, serverName)) {
       finalConnectionState = 'connecting';
+    } else {
+      const { hasActiveFlow, hasFailedFlow } = await checkOAuthFlowStatus(userId, serverName);
+
+      if (hasFailedFlow) {
+        finalConnectionState = 'error';
+      } else if (hasActiveFlow) {
+        finalConnectionState = 'connecting';
+      }
     }
   }
 
