@@ -144,6 +144,10 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
           `[MCP OAuth] Successfully reconnected ${serverName} for user ${flowState.userId}`,
         );
 
+        // clear any previous failed reconnection attempts and reconnecting state now that we've successfully connected
+        mcpManager.clearFailedReconnect(flowState.userId, serverName);
+        mcpManager.clearReconnectingState(flowState.userId, serverName);
+
         const tools = await userConnection.fetchTools();
         await updateMCPUserTools({
           userId: flowState.userId,

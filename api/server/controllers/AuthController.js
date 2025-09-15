@@ -13,6 +13,7 @@ const {
 const { findUser, getUserById, deleteAllUserSessions, findSession } = require('~/models');
 const { getOpenIdConfig } = require('~/strategies');
 const { getGraphApiToken } = require('~/server/services/GraphTokenService');
+const { reconnectOAuthMCPServers } = require('~/server/services/MCP/reconnectOAuthServers');
 
 const registrationController = async (req, res) => {
   try {
@@ -104,6 +105,12 @@ const refreshController = async (req, res) => {
 
     if (session && session.expiration > new Date()) {
       const token = await setAuthTokens(userId, res, session._id);
+
+      // trigger OAuth MCP server reconnection asynchronously (best effort)
+      void reconnectOAuthMCPServers(userId).catch((err) => {
+        logger.error('Error reconnecting OAuth MCP servers:', err);
+      });
+
       res.status(200).send({ token, user });
     } else if (req?.query?.retry) {
       // Retrying from a refresh token request that failed (401)
