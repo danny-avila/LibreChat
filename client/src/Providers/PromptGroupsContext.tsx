@@ -1,8 +1,12 @@
 import React, { createContext, useContext, ReactNode, useMemo } from 'react';
-import type { TPromptGroup } from 'librechat-data-provider';
+import type {
+  TPromptGroup,
+  MCPPromptResponseArray,
+  MCPPromptResponse,
+} from 'librechat-data-provider';
 import type { PromptOption } from '~/common';
 import CategoryIcon from '~/components/Prompts/Groups/CategoryIcon';
-import { useGetAllPromptGroups } from '~/data-provider';
+import { useGetAllMCPPrompts, useGetAllPromptGroups } from '~/data-provider';
 import { usePromptGroupsNav } from '~/hooks';
 import { mapPromptGroups } from '~/utils';
 
@@ -18,6 +22,10 @@ type PromptGroupsContextType =
       allPromptGroups: {
         data: AllPromptGroupsData;
         isLoading: boolean;
+      };
+      mcpPromptsResponse: {
+        mcpData: MCPPromptResponse[];
+        mcpIsLoading: boolean;
       };
     })
   | null;
@@ -51,16 +59,53 @@ export const PromptGroupsProvider = ({ children }: { children: ReactNode }) => {
     },
   });
 
-  const contextValue = useMemo(
-    () => ({
+  const { data: mcpPromptsData, isLoading: mcpIsLoading } = useGetAllMCPPrompts({
+    select: (data: MCPPromptResponseArray): MCPPromptResponse[] => {
+      const allPrompts = Object.entries(data).map(([key, prompt]) => {
+        const typedPrompt = prompt as MCPPromptResponse;
+        const serverName = typedPrompt.mcpServerName
+          ? typedPrompt.mcpServerName
+          : key.split('_mcp_')[1];
+        return {
+          name: typedPrompt.name,
+          description: typedPrompt.description ?? '',
+          promptKey: typedPrompt.name + '_mcp_' + typedPrompt.mcpServerName,
+          mcpServerName: typedPrompt.mcpServerName ?? serverName,
+          category: 'mcpServer',
+          authorName: 'MCP Server',
+          arguments: typedPrompt.arguments,
+        };
+      });
+
+      if (promptGroupsNav.name) {
+        const codePrompts = allPrompts.filter((prompt) => {
+          const hasCodeInName = prompt.name
+            .toLowerCase()
+            .includes(promptGroupsNav.name.toLowerCase());
+          console.log(`Filtering "${prompt.name}" (name defined):`, hasCodeInName);
+          return hasCodeInName;
+        });
+        console.log("Filtered prompts (name is defined):", codePrompts);
+        return codePrompts;
+      } else {
+        return allPrompts;
+      }
+    },
+  });
+
+  const contextValue = useMemo(() => {
+    return {
       ...promptGroupsNav,
       allPromptGroups: {
         data: allGroupsData,
         isLoading: isLoadingAll,
       },
-    }),
-    [promptGroupsNav, allGroupsData, isLoadingAll],
-  );
+      mcpPromptsResponse: {
+        mcpData: mcpPromptsData ?? [],
+        mcpIsLoading: mcpIsLoading,
+      },
+    };
+  }, [promptGroupsNav, allGroupsData, mcpPromptsData, isLoadingAll, mcpIsLoading]);
 
   return (
     <PromptGroupsContext.Provider value={contextValue}>{children}</PromptGroupsContext.Provider>

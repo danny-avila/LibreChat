@@ -23,6 +23,10 @@ function AgentPanelSwitchWithContext() {
     const agent_id = conversation?.agent_id ?? '';
     if (agent_id) {
       setCurrentAgentId(agent_id);
+    } else {
+      const localStorageAgent = localStorage.getItem('agent-selected');
+      setCurrentAgentId(localStorageAgent || undefined);
+      localStorage.removeItem('agent-selected');
     }
   }, [setCurrentAgentId, conversation?.agent_id]);
 

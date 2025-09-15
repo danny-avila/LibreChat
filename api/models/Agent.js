@@ -109,13 +109,6 @@ const loadEphemeralAgent = async ({ req, agent_id, endpoint, model_parameters: _
         mcp_prompts.push(promptKey);
       }
     }
-
-    for (const mcpServer of mcpServers) {
-      if (addedServers.has(mcpServer)) {
-        continue;
-      }
-      tools.push(`${mcp_all}${mcp_delimiter}${mcpServer}`);
-    }
   }
 
   const instructions = req.body.promptPrefix;

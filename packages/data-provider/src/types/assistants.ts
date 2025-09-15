@@ -92,6 +92,7 @@ export type Assistant = {
   name: string | null;
   object: string;
   tools?: FunctionTool[];
+  mcp_prompts?: string[];
   tool_resources?: ToolResources;
 };
 
@@ -106,6 +107,7 @@ export type AssistantCreateParams = {
   metadata?: Metadata | null;
   name?: string | null;
   tools?: Array<FunctionTool | string>;
+  mcp_prompts?: string[];
   endpoint: AssistantsEndpoint;
   version: number | string;
   append_current_datetime?: boolean;
@@ -120,6 +122,7 @@ export type AssistantUpdateParams = {
   metadata?: Metadata | null;
   name?: string | null;
   tools?: Array<FunctionTool | string>;
+  mcp_prompts?: string[];
   tool_resources?: ToolResources;
   endpoint: AssistantsEndpoint;
   append_current_datetime?: boolean;
@@ -154,7 +157,7 @@ export type File = {
 
 /* Agent types */
 
-export type AgentParameterValue = number | string | null;
+export type AgentParameterValue = number | string | boolean | null;
 
 export type AgentModelParameters = {
   model?: string;
@@ -216,6 +219,7 @@ export type Agent = {
   instructions: string | null;
   additional_instructions?: string | null;
   tools?: string[];
+  mcp_prompts?: string[];
   projectIds?: string[];
   tool_kwargs?: Record<string, unknown>;
   metadata?: Record<string, unknown>;
@@ -246,6 +250,7 @@ export type AgentCreateParams = {
   file_ids?: string[];
   instructions?: string | null;
   tools?: Array<FunctionTool | string>;
+  mcp_prompts?: string[];
   provider: AgentProvider;
   model: string | null;
   model_parameters: AgentModelParameters;
@@ -267,6 +272,7 @@ export type AgentUpdateParams = {
   file_ids?: string[];
   instructions?: string | null;
   tools?: Array<FunctionTool | string>;
+  mcp_prompts?: string[];
   tool_resources?: ToolResources;
   provider?: AgentProvider;
   model?: string | null;

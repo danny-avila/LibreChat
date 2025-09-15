@@ -3,7 +3,11 @@ import { AutoSizer, List } from 'react-virtualized';
 import { Spinner, useCombobox } from '@librechat/client';
 import { useSetRecoilState, useRecoilValue } from 'recoil';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
-import type { TPromptGroup } from 'librechat-data-provider';
+import type {
+  TPromptGroup,
+  MCPPromptResponseArray,
+  MCPPromptResponse,
+} from 'librechat-data-provider';
 import type { PromptOption } from '~/common';
 import { removeCharIfLast, detectVariables } from '~/utils';
 import VariableDialog from '~/components/Prompts/Groups/VariableDialog';
@@ -11,6 +15,8 @@ import { usePromptGroupsContext } from '~/Providers';
 import { useLocalize, useHasAccess } from '~/hooks';
 import MentionItem from './MentionItem';
 import store from '~/store';
+import CategoryIcon from '~/components/Prompts/Groups/CategoryIcon';
+import { useGetAllMCPPrompts } from '~/data-provider';
 
 const commandChar = '/';
 
@@ -61,6 +67,28 @@ function PromptsCommand({
 
   const { allPromptGroups } = usePromptGroupsContext();
   const { data, isLoading } = allPromptGroups;
+// Get MCP prompts directly here
+  const { data: mcpPromptsData, isLoading: mcpIsLoading } = useGetAllMCPPrompts({
+    select: (data: MCPPromptResponseArray): MCPPromptResponse[] => {
+      if (!data || typeof data !== 'object') {
+        return [];
+      }
+
+      return Object.entries(data).map(([key, prompt]) => {
+        const typedPrompt = prompt as MCPPromptResponse;
+        const serverName = typedPrompt.mcpServerName || key.split('_mcp_')[1] || 'unknown';
+        return {
+          name: typedPrompt.name,
+          description: typedPrompt.description ?? '',
+          mcpServerName: serverName,
+          promptKey: typedPrompt.name + '_mcp_' + serverName,
+          category: 'mcpServer',
+          authorName: 'MCP Server',
+          arguments: typedPrompt.arguments,
+        };
+      });
+    },
+  });
 
   const [activeIndex, setActiveIndex] = useState(0);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -69,8 +97,46 @@ function PromptsCommand({
   const [variableGroup, setVariableGroup] = useState<TPromptGroup | null>(null);
   const setShowPromptsPopover = useSetRecoilState(store.showPromptsPopoverFamily(index));
 
-  const prompts = useMemo(() => data?.promptGroups, [data]);
-  const promptsMap = useMemo(() => data?.promptsMap, [data]);
+  const prompts = useMemo(() => {
+    const regularPrompts = data?.promptGroups || [];
+
+    // Convert MCP prompts to PromptOption format
+    const mcpPromptOptions: PromptOption[] = (mcpPromptsData || []).map((mcpPrompt) => ({
+      id: mcpPrompt.promptKey,
+      type: 'prompt',
+      value: mcpPrompt.name,
+      label: `On MCP Server: ${mcpPrompt?.mcpServerName || mcpPrompt.promptKey.split('_mcp_')[1]}`,
+      description: mcpPrompt.description,
+      icon: <CategoryIcon category="mcpServer" className="h-5 w-5" />,
+      mcpData: mcpPrompt,
+    }));
+
+    return [...regularPrompts, ...mcpPromptOptions];
+  }, [data?.promptGroups, mcpPromptsData]);
+
+  // Create promptsMap including MCP prompts
+  const promptsMap = useMemo(() => {
+    const regularMap = data?.promptsMap || {};
+
+    // Add MCP prompts to the map
+    const mcpMap: Record<string, any> = {};
+    (mcpPromptsData || []).forEach((mcpPrompt) => {
+      mcpMap[mcpPrompt.promptKey] = {
+        _id: mcpPrompt.promptKey,
+        name: mcpPrompt.name,
+        productionPrompt: {
+          prompt: mcpPrompt.description,
+        },
+        category: 'mcpServer',
+        mcpData: mcpPrompt,
+      };
+    });
+
+    return { ...regularMap, ...mcpMap };
+  }, [data?.promptsMap, mcpPromptsData]);
+
+  // Use combined loading state
+  const isAnyLoading = isLoading || mcpIsLoading;
 
   const { open, setOpen, searchValue, setSearchValue, matches } = useCombobox({
     value: '',
@@ -93,6 +159,11 @@ function PromptsCommand({
 
       const group = promptsMap?.[mention.id];
       if (!group) {
+        return;
+      }
+
+      if (group.mcpData) {
+        submitPrompt(group.mcpData.description || group.mcpData.name);
         return;
       }
 

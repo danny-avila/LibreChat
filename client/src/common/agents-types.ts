@@ -32,6 +32,7 @@ export type AgentForm = {
   model: string | null;
   model_parameters: AgentModelParameters;
   tools?: string[];
+  mcp_prompts?: string[];
   provider?: AgentProvider | OptionWithIcon;
   agent_ids?: string[];
   [AgentCapabilities.artifacts]?: ArtifactModes | string;

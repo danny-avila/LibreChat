@@ -182,8 +182,8 @@ export default function AgentTool({
           >
             <AccordionPrimitive.Header asChild>
               <AccordionPrimitive.Trigger asChild>
-                <button
-                  type="button"
+               <div
+                  role="button"
                   className={cn(
                     'flex grow items-center gap-1 rounded bg-transparent p-0 text-left transition-colors',
                     'focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1',
@@ -270,8 +270,8 @@ export default function AgentTool({
                         )}
                       >
                         <OGDialogTrigger asChild>
-                          <button
-                            type="button"
+                         <div
+                            role="button"
                             className={cn(
                               'flex h-7 w-7 items-center justify-center rounded transition-colors duration-200',
                               'hover:bg-gray-200 dark:hover:bg-gray-700',
@@ -284,12 +284,12 @@ export default function AgentTool({
                             onFocus={() => setIsFocused(true)}
                           >
                             <TrashIcon className="h-4 w-4" />
-                          </button>
+                          </div>
                         </OGDialogTrigger>
                       </div>
                     </div>
                   </div>
-                </button>
+                </div>
               </AccordionPrimitive.Trigger>
             </AccordionPrimitive.Header>
           </div>

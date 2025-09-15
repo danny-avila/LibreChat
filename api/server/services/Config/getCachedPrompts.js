@@ -28,7 +28,6 @@ async function getMCPPrompts(mcpManager) {
 
   let availablePrompts = {};
   const connectionPromises = Array.from(mcpManager.connection).map(async ([key, connection]) => {
-    console.log(`Processing connection: ${key}`);
     let serverName = key;
     try {
       console.log(`Fetching prompts for: ${serverName}`);

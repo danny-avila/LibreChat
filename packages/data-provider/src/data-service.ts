@@ -160,6 +160,18 @@ export const getMCPAuthValues = (serverName: string): Promise<q.MCPAuthValuesRes
   return request.get(endpoints.mcpAuthValues(serverName));
 };
 
+export function getMCPPromptGroup(serverName: string): Promise<q.TMCPPromptArgument> {
+  return request.get(endpoints.mcpPromptGroup(serverName));
+}
+
+export function getMCPPrompt(serverName: string): Promise<q.MCPPromptResponse> {
+  return request.get(endpoints.mcpPrompt(serverName));
+}
+
+export function allMCPPrompts(): Promise<q.MCPPromptResponseArray> {
+  return request.get(endpoints.getAllMCPPrompts());
+}
+
 export function cancelMCPOAuth(serverName: string): Promise<m.CancelMCPOAuthResponse> {
   return request.post(endpoints.cancelMCPOAuth(serverName), {});
 }

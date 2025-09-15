@@ -2,7 +2,12 @@ import React from 'react';
 import { format } from 'date-fns';
 import { Layers3, Crown, Zap } from 'lucide-react';
 import { Tag, TooltipAnchor, Label } from '@librechat/client';
-import type { TPrompt, TPromptGroup } from 'librechat-data-provider';
+import type {
+  TMCPPromptArgument,
+  TPrompt,
+  TPromptGroup,
+  MCPPromptResponse,
+} from 'librechat-data-provider';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -82,6 +87,7 @@ const VersionTags = ({ tags }: { tags: string[] }) => {
 
 const VersionCard = ({
   prompt,
+  mcpPrompt,
   index,
   isSelected,
   totalVersions,
@@ -90,6 +96,7 @@ const VersionCard = ({
   tags,
 }: {
   prompt: TPrompt;
+  mcpPrompt?: MCPPromptResponse;
   index: number;
   isSelected: boolean;
   totalVersions: number;
@@ -137,11 +144,13 @@ const VersionCard = ({
 
 const PromptVersions = ({
   prompts,
+  mcpPrompts,
   group,
   selectionIndex,
   setSelectionIndex,
 }: {
   prompts: TPrompt[];
+  mcpPrompts?: MCPPromptResponse[];
   group?: TPromptGroup;
   selectionIndex: number;
   setSelectionIndex: React.Dispatch<React.SetStateAction<number>>;
@@ -182,6 +191,37 @@ const PromptVersions = ({
             />
           );
         })}
+        {mcpPrompts &&
+          mcpPrompts.map((mcpPrompts: MCPPromptResponse, index: number) => {
+            if (!mcpPrompts) {
+              return null;
+            }
+            const tags: string[] = [];
+
+            if (index === 0) {
+              tags.push('latest');
+            }
+
+            if (mcpPrompts.name === group?.productionId) {
+              tags.push('production');
+            }
+
+            const mcpLength = Object.keys(mcpPrompts).length;
+
+            return (
+              <VersionCard
+                key={mcpPrompts.name}
+                mcpPrompt={mcpPrompts}
+                prompt={[] as unknown as TPrompt}
+                index={index}
+                isSelected={index === selectionIndex}
+                totalVersions={mcpLength}
+                onClick={() => setSelectionIndex(index)}
+                authorName={'MCP Server'}
+                tags={tags}
+              />
+            );
+          })}
       </div>
     </section>
   );

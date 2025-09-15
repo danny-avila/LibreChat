@@ -2,7 +2,12 @@ import React, { createContext, useContext, useState, useMemo } from 'react';
 import { Constants, EModelEndpoint } from 'librechat-data-provider';
 import type { MCP, Action, TPlugin, AgentToolType } from 'librechat-data-provider';
 import type { AgentPanelContextType, MCPServerInfo } from '~/common';
-import { useAvailableToolsQuery, useGetActionsQuery, useGetStartupConfig } from '~/data-provider';
+import {
+  useAvailableToolsQuery,
+  useGetActionsQuery,
+  useGetAllMCPPrompts,
+  useGetStartupConfig,
+} from '~/data-provider';
 import { useLocalize, useGetAgentsConfig, useMCPConnectionStatus } from '~/hooks';
 import { Panel } from '~/common';
 
@@ -35,6 +40,25 @@ export function AgentPanelProvider({ children }: { children: React.ReactNode }) 
   const { data: pluginTools } = useAvailableToolsQuery(EModelEndpoint.agents, {
     enabled: !!agent_id,
   });
+
+  const { data: allMCPPrompts } = useGetAllMCPPrompts();
+
+  const mcp_prompts = Object.values(allMCPPrompts || {}).map((prompt) => {
+    const p = prompt as {
+      name: string;
+      arguments: any;
+      mcpServerName: string;
+      description?: string;
+    };
+    return {
+      name: p.name,
+      arguments: p.arguments,
+      mcpServerName: p.mcpServerName,
+      promptKey: p.name + '_mcp_' + p.mcpServerName,
+      description: p.description,
+    };
+  });
+
 
   const { data: startupConfig } = useGetStartupConfig();
   const mcpServerNames = useMemo(
@@ -131,6 +155,7 @@ export function AgentPanelProvider({ children }: { children: React.ReactNode }) 
   const value: AgentPanelContextType = {
     mcp,
     mcps,
+    mcp_prompts,
     action,
     setMcp,
     actions,

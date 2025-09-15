@@ -550,7 +550,6 @@ router.get('/mcp-prompts', requireJwtAuth, async (req, res) => {
       });
       //logger.debug("cachedPrompts", cachedPrompts);
       if (cachedPrompts && Object.keys(cachedPrompts).length > 0) {
-        logger.debug("[MCP Get Prompts] Returning cached prompts for user", user.id);
         return res.json(cachedPrompts);
       }
     } catch (cacheError) {

@@ -446,6 +446,7 @@ const PromptForm = () => {
                       name="prompt"
                       isEditing={isEditing}
                       setIsEditing={(value) => canEdit && setIsEditing(value)}
+                      promptValue={group?.productionPrompt?.prompt || promptText}
                     />
                     <PromptVariables promptText={promptText} />
                     <Description

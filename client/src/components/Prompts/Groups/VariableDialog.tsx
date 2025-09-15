@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
-import type { TPromptGroup } from 'librechat-data-provider';
+import type { MCPPromptResponse, TPromptGroup } from 'librechat-data-provider';
 import { OGDialog, OGDialogTitle, OGDialogContent } from '@librechat/client';
 import { detectVariables } from '~/utils';
 import VariableForm from './VariableForm';
@@ -8,19 +8,36 @@ import VariableForm from './VariableForm';
 interface VariableDialogProps extends Omit<DialogPrimitive.DialogProps, 'onOpenChange'> {
   onClose: () => void;
   group: TPromptGroup | null;
+  mcpPrompt: MCPPromptResponse;
+  mcp;
 }
 
-const VariableDialog: React.FC<VariableDialogProps> = ({ open, onClose, group }) => {
+const VariableDialog: React.FC<VariableDialogProps> = ({
+  open,
+  onClose,
+  group,
+  mcpPrompt,
+  mcp,
+}) => {
   const handleOpenChange = (open: boolean) => {
     if (!open) {
       onClose();
     }
   };
-
-  const hasVariables = useMemo(
-    () => detectVariables(group?.productionPrompt?.prompt ?? ''),
-    [group?.productionPrompt?.prompt],
-  );
+  let hasVariables;
+  if (mcp) {
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    hasVariables = useMemo(
+      () => detectVariables(mcpPrompt?.description ?? ''),
+      [mcpPrompt?.description],
+    );
+  } else {
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    hasVariables = useMemo(
+      () => detectVariables(group?.productionPrompt?.prompt ?? ''),
+      [group?.productionPrompt?.prompt],
+    );
+  }
   if (!group) {
     return null;
   }
@@ -28,12 +45,12 @@ const VariableDialog: React.FC<VariableDialogProps> = ({ open, onClose, group })
   if (!hasVariables) {
     return null;
   }
-
+  const groupName = group?.name ?? mcpPrompt?.name;
   return (
     <OGDialog open={open} onOpenChange={handleOpenChange}>
       <OGDialogContent className="max-h-[90vh] max-w-full overflow-y-auto bg-white dark:border-gray-700 dark:bg-gray-850 dark:text-gray-300 md:max-w-[60vw]">
-        <OGDialogTitle>{group.name}</OGDialogTitle>
-        <VariableForm group={group} onClose={onClose} />
+        <OGDialogTitle>{groupName}</OGDialogTitle>
+        <VariableForm group={group} mcpPrompt={mcpPrompt} mcp={mcp} onClose={onClose} />
       </OGDialogContent>
     </OGDialog>
   );

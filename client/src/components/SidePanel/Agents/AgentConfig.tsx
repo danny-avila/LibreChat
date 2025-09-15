@@ -17,19 +17,22 @@ import useAgentCapabilities from '~/hooks/Agents/useAgentCapabilities';
 import { useFileMapContext, useAgentPanelContext } from '~/Providers';
 import AgentCategorySelector from './AgentCategorySelector';
 import Action from '~/components/SidePanel/Builder/Action';
-import { useLocalize, useVisibleTools } from '~/hooks';
-import { useGetAgentFiles } from '~/data-provider';
+import { useGetAgentFiles, useGetAllMCPPrompts } from '~/data-provider';
 import { icons } from '~/hooks/Endpoint/Icons';
 import Instructions from './Instructions';
 import AgentAvatar from './AgentAvatar';
 import FileContext from './FileContext';
 import SearchForm from './Search/Form';
+import { useLocalize, useVisibleTools, useCustomLink } from '~/hooks';
 import FileSearch from './FileSearch';
 import Artifacts from './Artifacts';
 import AgentTool from './AgentTool';
+import AgentPrompt from './AgentPrompt';
 import CodeForm from './Code/Form';
 import MCPTools from './MCPTools';
 import { Panel } from '~/common';
+import { useSetRecoilState } from 'recoil';
+import store from '~/store';
 
 const labelClass = 'mb-2 text-token-text-primary block font-medium';
 const inputClass = cn(
@@ -64,9 +67,25 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
   const model = useWatch({ control, name: 'model' });
   const agent = useWatch({ control, name: 'agent' });
   const tools = useWatch({ control, name: 'tools' });
+  const mcp_prompts = useWatch({ control, name: 'mcp_prompts' });
   const agent_id = useWatch({ control, name: 'id' });
 
+  const setPromptsName = useSetRecoilState(store.promptsName);
+  const setPromptsCategory = useSetRecoilState(store.promptsCategory);
+  const clickCallback = useCallback(() => {
+    setPromptsName('');
+    setPromptsCategory('');
+  }, [setPromptsName, setPromptsCategory]);
+  const customLink = useCustomLink('/d/prompts/?agentAdd=true', clickCallback);
+  const clickHandler = (e: React.MouseEvent<HTMLButtonElement>) => {
+    localStorage.setItem('agent-mcpPrompts', currentMCPPrompts ? JSON.stringify(currentMCPPrompts) : '');
+    customLink(e as unknown as React.MouseEvent<HTMLAnchorElement>);
+  };
+
   const { data: agentFiles = [] } = useGetAgentFiles(agent_id);
+
+  const { data: mcpPrompts = [] } = useGetAllMCPPrompts();
+  let currentMCPPrompts: string[] = [];
 
   const mergedFileMap = useMemo(() => {
     const newFileMap = { ...fileMap };
@@ -178,6 +197,37 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
   }
 
   const { toolIds, mcpServerNames } = useVisibleTools(tools, allTools, mcpServersMap);
+  const selectedToolIds = tools ?? [];
+  const visibleToolIds = new Set(selectedToolIds);
+
+  // Check what group parent tools should be shown if any subtool is present
+  Object.entries(allTools ?? {}).forEach(([toolId, toolObj]) => {
+    if (toolObj.tools?.length) {
+      // if any subtool of this group is selected, ensure group parent tool rendered
+      if (toolObj.tools.some((st) => selectedToolIds.includes(st.tool_id))) {
+        visibleToolIds.add(toolId);
+      }
+    }
+  });
+  const savedPrompts = localStorage.getItem('agent-prompts');
+  const selectedPromptIds = mcp_prompts ?? [];
+  const visiblePromptIds = new Set(selectedPromptIds);
+  // Check what group parent tools should be shown if any subtool is present
+  Object.entries(mcpPrompts ?? {}).forEach(([promptId, promptObj]) => {
+    if (promptObj.promptKey.length) {
+      // Check if the single promptKey is in visiblePromptIds
+      if (visiblePromptIds.has(promptObj.promptKey)) {
+        visiblePromptIds.add(promptId);
+      } else if (savedPrompts) {
+        const parsedPrompts = JSON.parse(savedPrompts);
+        if (parsedPrompts && parsedPrompts.includes(promptObj.promptKey)) {
+          visiblePromptIds.add(promptObj.promptKey);
+          visiblePromptIds.add(promptId);
+        }
+      }
+    }
+  });
+
 
   return (
     <>
@@ -258,6 +308,42 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
             {localize('com_ui_category')} <span className="text-red-500">*</span>
           </label>
           <AgentCategorySelector className="w-full" />
+        </div>
+        {/* Add Prompt */}
+        <div className="mb-4">
+          <label className={labelClass}>{localize('com_ui_prompt')}</label>
+          <div>
+            <div className="mb-1">
+              {/* // Render all visible IDs (including groups with subtools selected) */}
+              {[...visiblePromptIds].map((promptKey, key) => {
+                if (!mcpPrompts) return null;
+                const agentPrompts = mcpPrompts[promptKey];
+                if (!agentPrompts) return null;
+                currentMCPPrompts.push(agentPrompts);
+                return (
+                  <AgentPrompt
+                    key={`${promptKey}-${key}-${agent_id}`}
+                    prompt={promptKey}
+                    mcpPrompts={mcpPrompts}
+                    agent_id={agent_id}
+                  />
+                );
+              })}
+            </div>
+            <div className="mt-2 flex space-x-2">
+              <button
+                type="button"
+                onClick={clickHandler}
+                className="btn btn-neutral border-token-border-light relative h-9 w-full rounded-lg font-medium"
+                aria-haspopup="dialog"
+                tabIndex={0}
+              >
+                <div className="flex w-full items-center justify-center gap-2">
+                  {localize('com_ui_prompt_add')}
+                </div>
+              </button>
+            </div>
+          </div>
         </div>
         {/* Instructions */}
         <Instructions />

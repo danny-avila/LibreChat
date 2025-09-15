@@ -27,6 +27,7 @@ export class MCPServersRegistry {
   public oauthServers: Set<string> | null = null;
   public serverInstructions: Record<string, string> | null = null;
   public toolFunctions: t.LCAvailableTools | null = null;
+  public mcpPrompt: t.LCAvailableMCPPrompts | null = null;
   public appServerConfigs: t.MCPServers | null = null;
 
   constructor(configs: t.MCPServers) {
@@ -48,6 +49,7 @@ export class MCPServersRegistry {
     this.setServerInstructions();
     this.setAppServerConfigs();
     await this.setAppToolFunctions();
+    await this.setAppMCPPrompts();
 
     this.connections.disconnectAll();
   }
@@ -118,6 +120,23 @@ export class MCPServersRegistry {
     this.toolFunctions = allToolFunctions;
   }
 
+  /** Builds registry of all available mcp prompt from loaded connections */
+  private async setAppMCPPrompts(): Promise<void> {
+    const connections = (await this.connections.getLoaded()).entries();
+    const allMCPPrompts: t.LCAvailableMCPPrompts = {};
+    for (const [serverName, conn] of connections) {
+      try {
+        const mcpPrompt = await this.getMCPPrompt(serverName, conn);
+          console.log("allMCPPrompts", allMCPPrompts);
+        Object.assign(allMCPPrompts, mcpPrompt);
+      } catch (error) {
+        logger.warn(`${this.prefix(serverName)} Error fetching mcp functions:`, error);
+      }
+    }
+    console.log("allMCPPrompts", allMCPPrompts);
+    this.mcpPrompt = allMCPPrompts;
+  }
+
   /** Converts server tools to LibreChat-compatible tool functions format */
   public async getToolFunctions(
     serverName: string,
@@ -139,6 +158,27 @@ export class MCPServersRegistry {
     });
 
     return toolFunctions;
+  }
+
+  public async getMCPPrompt(
+    serverName: string,
+    conn: MCPConnection,
+  ): Promise<t.LCAvailableMCPPrompts> {
+    const { prompts }: t.MCPPromptListResponse = await conn.client.listPrompts();
+    // console.log("prompts", prompts);
+    const mcpPromptList: t.LCAvailableMCPPrompts = {};
+    prompts.forEach((prompt) => {
+      const name = `${prompt.name}${CONSTANTS.mcp_delimiter}${serverName}`;
+      mcpPromptList[name] = {
+        name: prompt.name,
+        description: prompt.description || '',
+        arguments: Array.isArray(prompt.arguments) ? prompt.arguments : [],
+        mcpServerName: serverName,
+        promptKey: name,
+      };
+    });
+    console.log("mcpPromptList", mcpPromptList)
+    return mcpPromptList;
   }
 
   /** Determines if server requires OAuth if not already specified in the config */
@@ -177,6 +217,9 @@ export class MCPServersRegistry {
     if (!capabilities.tools) return;
     const tools = await conn.client.listTools();
     config.tools = tools.tools.map((tool) => tool.name).join(', ');
+    const prompts = await conn.client.listPrompts();
+    // console.log("prompts", prompts);
+    config.mcp_prompts = prompts.prompts.map((prompt) => prompt.name).join(', ');
   }
 
   // Logs server configuration summary after initialization
@@ -188,6 +231,7 @@ export class MCPServersRegistry {
     logger.info(`${prefix} OAuth Required: ${config.requiresOAuth}`);
     logger.info(`${prefix} Capabilities: ${config.capabilities}`);
     logger.info(`${prefix} Tools: ${config.tools}`);
+    logger.info(`${prefix} Prompts: ${config.mcp_prompts}`);
     logger.info(`${prefix} Server Instructions: ${config.serverInstructions}`);
     logger.info(`${prefix} -------------------------------------------------┘`);
   }

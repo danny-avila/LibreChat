@@ -1268,6 +1268,10 @@ export enum CacheKeys {
    * Key for SAML session.
    */
   SAML_SESSION = 'SAML_SESSION',
+  /**
+   * Key for MCP Prompts.
+   */
+  MCP_PROMPTS = 'MCP_PROMPTS',
 }
 
 /**
@@ -1666,6 +1670,7 @@ export enum SystemCategories {
   ALL = 'sys__all__sys',
   MY_PROMPTS = 'sys__my__prompts__sys',
   NO_CATEGORY = 'sys__no__category__sys',
+  MCP_PROMPTS = 'sys__mcp__prompts__sys',
   SHARED_PROMPTS = 'sys__shared__prompts__sys',
 }
 

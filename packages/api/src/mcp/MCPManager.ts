@@ -63,6 +63,9 @@ export class MCPManager extends UserConnectionManager {
   public getAppToolFunctions(): t.LCAvailableTools | null {
     return this.serversRegistry.toolFunctions!;
   }
+  public getAppMCPPrompts(): t.LCAvailableMCPPrompts | null {
+    return this.serversRegistry.mcpPrompt!;
+  }
   /** Returns all available tool functions from all connections available to user */
   public async getAllToolFunctions(userId: string): Promise<t.LCAvailableTools | null> {
     const allToolFunctions: t.LCAvailableTools = this.getAppToolFunctions() ?? {};

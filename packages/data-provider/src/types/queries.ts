@@ -187,3 +187,21 @@ export type GraphTokenResponse = {
   expires_in: number;
   scope: string;
 };
+export interface MCPPromptResponse {
+  name: string;
+  description: string;
+  mcpServerName: string;
+  arguments?: TMCPPromptArgument[];
+  promptKey: string;
+}
+export type MCPPromptResponseArray = TMCPPromptArgument[];
+export interface TMCPPromptArgument {
+  name: string;
+  mcpServerName: string;
+  category: 'mcpServer';
+  description: string;
+  required?: boolean;
+  author?: string;
+  authorName: 'MCP Server';
+  promptKey: string;
+}
