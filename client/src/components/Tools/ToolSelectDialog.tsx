@@ -125,6 +125,14 @@ function ToolSelectDialog({
     const { authConfig, authenticated = false } = availablePluginFromKey ?? {};
     if (authConfig && authConfig.length > 0 && !authenticated) {
       setShowPluginAuthForm(true);
+
+      setTimeout(() => {
+        const authField = document.querySelector('.auth-field') as HTMLInputElement;
+
+        if (authField) {
+          authField.focus();
+        }
+      }, 100);
     } else {
       handleInstall({
         pluginKey,
