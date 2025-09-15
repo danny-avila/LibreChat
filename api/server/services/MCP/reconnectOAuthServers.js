@@ -14,11 +14,14 @@ const DEFAULT_CONNECTION_TIMEOUT_MS = 10_000; // ms
  * @returns {Promise<void>}
  */
 async function reconnectOAuthMCPServers(userId) {
-  if (!userId) {
+  if (userId == null) {
     return;
   }
 
   const mcpManager = getMCPManager();
+  if (mcpManager == null) {
+    return;
+  }
 
   // 1. derive the servers to reconnect
   const serversToReconnect = [];
@@ -36,7 +39,7 @@ async function reconnectOAuthMCPServers(userId) {
 
   // 3. attempt to reconnect the servers
   for (const serverName of serversToReconnect) {
-    void tryReconnectOAuthMCPServer(userId, serverName);
+    void tryReconnectOAuthMCPServer(mcpManager, userId, serverName);
   }
 }
 
@@ -61,7 +64,7 @@ async function shouldAttemptReconnect(mcpManager, userId, serverName) {
     type: 'mcp_oauth',
     identifier: `mcp:${serverName}`,
   });
-  if (!accessToken) {
+  if (accessToken == null) {
     return false;
   }
 
@@ -75,12 +78,11 @@ async function shouldAttemptReconnect(mcpManager, userId, serverName) {
   return true;
 }
 
-async function tryReconnectOAuthMCPServer(userId, serverName) {
+async function tryReconnectOAuthMCPServer(mcpManager, userId, serverName) {
   const logPrefix = `[tryReconnectOAuthMCPServer][User: ${userId}][${serverName}]`;
 
   logger.info(`${logPrefix} Attempting reconnection`);
 
-  const mcpManager = getMCPManager();
   const config = mcpManager.getRawConfig(serverName);
   const flowManager = getFlowStateManager(getLogStores(CacheKeys.FLOWS));
 
