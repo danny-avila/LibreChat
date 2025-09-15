@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useMemo, useRef } from 'react';
+import React, { createContext, useContext, useEffect, useRef } from 'react';
 import { useSetRecoilState } from 'recoil';
 import { Tools, Constants, LocalStorageKeys, AgentCapabilities } from 'librechat-data-provider';
 import type { TAgentsEndpoint } from 'librechat-data-provider';
@@ -7,7 +7,6 @@ import {
   useSearchApiKeyForm,
   useGetAgentsConfig,
   useCodeApiKeyForm,
-  useGetMCPTools,
   useToolToggle,
 } from '~/hooks';
 import { getTimestampedValue, setTimestamp } from '~/utils/timestamps';
@@ -15,7 +14,6 @@ import { ephemeralAgentByConvoId } from '~/store';
 
 interface BadgeRowContextType {
   conversationId?: string | null;
-  mcpServerNames?: string[] | null;
   agentsConfig?: TAgentsEndpoint | null;
   webSearch: ReturnType<typeof useToolToggle>;
   artifacts: ReturnType<typeof useToolToggle>;
@@ -49,7 +47,6 @@ export default function BadgeRowProvider({
 }: BadgeRowProviderProps) {
   const lastKeyRef = useRef<string>('');
   const hasInitializedRef = useRef(false);
-  const { mcpToolDetails } = useGetMCPTools();
   const { agentsConfig } = useGetAgentsConfig();
   const key = conversationId ?? Constants.NEW_CONVO;
 
@@ -191,16 +188,11 @@ export default function BadgeRowProvider({
 
   const mcpServerManager = useMCPServerManager({ conversationId });
 
-  const mcpServerNames = useMemo(() => {
-    return (mcpToolDetails ?? []).map((tool) => tool.name);
-  }, [mcpToolDetails]);
-
   const value: BadgeRowContextType = {
     webSearch,
     artifacts,
     fileSearch,
     agentsConfig,
-    mcpServerNames,
     conversationId,
     codeApiKeyForm,
     codeInterpreter,

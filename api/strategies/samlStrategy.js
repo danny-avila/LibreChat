@@ -7,6 +7,7 @@ const { ErrorTypes } = require('librechat-data-provider');
 const { hashToken, logger } = require('@librechat/data-schemas');
 const { Strategy: SamlStrategy } = require('@node-saml/passport-saml');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
+const { isEmailDomainAllowed } = require('~/server/services/domains');
 const { findUser, createUser, updateUser } = require('~/models');
 const { getAppConfig } = require('~/server/services/Config');
 const paths = require('~/config/paths');
@@ -192,16 +193,25 @@ async function setupSaml() {
           logger.info(`[samlStrategy] SAML authentication received for NameID: ${profile.nameID}`);
           logger.debug('[samlStrategy] SAML profile:', profile);
 
+          const userEmail = getEmail(profile) || '';
+          const appConfig = await getAppConfig();
+
+          if (!isEmailDomainAllowed(userEmail, appConfig?.registration?.allowedDomains)) {
+            logger.error(
+              `[SAML Strategy] Authentication blocked - email domain not allowed [Email: ${userEmail}]`,
+            );
+            return done(null, false, { message: 'Email domain not allowed' });
+          }
+
           let user = await findUser({ samlId: profile.nameID });
           logger.info(
             `[samlStrategy] User ${user ? 'found' : 'not found'} with SAML ID: ${profile.nameID}`,
           );
 
           if (!user) {
-            const email = getEmail(profile) || '';
-            user = await findUser({ email });
+            user = await findUser({ email: userEmail });
             logger.info(
-              `[samlStrategy] User ${user ? 'found' : 'not found'} with email: ${profile.email}`,
+              `[samlStrategy] User ${user ? 'found' : 'not found'} with email: ${userEmail}`,
             );
           }
 
@@ -220,13 +230,12 @@ async function setupSaml() {
             getUserName(profile) || getGivenName(profile) || getEmail(profile),
           );
 
-          const appConfig = await getAppConfig();
           if (!user) {
             user = {
               provider: 'saml',
               samlId: profile.nameID,
               username,
-              email: getEmail(profile) || '',
+              email: userEmail,
               emailVerified: true,
               name: fullName,
             };
