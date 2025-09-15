@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 
 test.describe('Settings suite', () => {
   test('Last OpenAI settings', async ({ page }) => {
-    await page.goto('http://localhost:3080/', { timeout: 5000 });
+    await page.goto('/', { timeout: 5000 });
     await page.evaluate(() =>
       window.localStorage.setItem(
         'lastConversationSetup',
@@ -15,7 +15,7 @@ test.describe('Settings suite', () => {
         }),
       ),
     );
-    await page.goto('http://localhost:3080/', { timeout: 5000 });
+    await page.goto('/', { timeout: 5000 });
 
     const initialLocalStorage = await page.evaluate(() => window.localStorage);
     const lastConvoSetup = JSON.parse(initialLocalStorage.lastConversationSetup);
