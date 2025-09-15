@@ -12,6 +12,8 @@ import { useLocalize, useMCPConnectionStatus } from '~/hooks';
 import { useGetStartupConfig } from '~/data-provider';
 import MCPPanelSkeleton from './MCPPanelSkeleton';
 
+const POLL_FOR_CONNECTION_STATUS_INTERVAL = 2_000; // ms
+
 function MCPPanelContent() {
   const localize = useLocalize();
   const queryClient = useQueryClient();
@@ -44,7 +46,7 @@ function MCPPanelContent() {
 
     const intervalId = setInterval(() => {
       queryClient.invalidateQueries([QueryKeys.mcpConnectionStatus]);
-    }, 1000);
+    }, POLL_FOR_CONNECTION_STATUS_INTERVAL);
 
     return () => clearInterval(intervalId);
   }, [hasConnectingServers, queryClient]);
