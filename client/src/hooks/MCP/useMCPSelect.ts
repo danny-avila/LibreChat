@@ -21,7 +21,15 @@ export function useMCPSelect({ conversationId }: { conversationId?: string | nul
 
   // Update ephemeral agent when Jotai state changes
   useEffect(() => {
-    if (mcpValues.length > 0 && JSON.stringify(mcpValues) !== JSON.stringify(ephemeralAgent?.mcp)) {
+    if (mcpValues.length === 0 && ephemeralAgent?.mcp && ephemeralAgent.mcp.length > 0) {
+      setEphemeralAgent((prev) => ({
+        ...prev,
+        mcp: [],
+      }));
+    } else if (
+      mcpValues.length > 0 &&
+      JSON.stringify(mcpValues) !== JSON.stringify(ephemeralAgent?.mcp)
+    ) {
       setEphemeralAgent((prev) => ({
         ...prev,
         mcp: mcpValues,
