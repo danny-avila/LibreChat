@@ -65,6 +65,7 @@ function isStreamableHTTPOptions(options: t.MCPOptions): options is t.Streamable
 }
 
 const FIVE_MINUTES = 5 * 60 * 1000;
+const DEFAULT_TIMEOUT = 60000;
 
 interface MCPConnectionParams {
   serverName: string;
@@ -145,19 +146,22 @@ export class MCPConnection extends EventEmitter {
    * This helps prevent memory leaks by only passing necessary dependencies.
    *
    * @param getHeaders Function to retrieve request headers
+   * @param timeout Timeout value for the agent (in milliseconds)
    * @returns A fetch function that merges headers appropriately
    */
   private createFetchFunction(
     getHeaders: () => Record<string, string> | null | undefined,
+    timeout?: number,
   ): (input: UndiciRequestInfo, init?: UndiciRequestInit) => Promise<UndiciResponse> {
     return function customFetch(
       input: UndiciRequestInfo,
       init?: UndiciRequestInit,
     ): Promise<UndiciResponse> {
       const requestHeaders = getHeaders();
+      const effectiveTimeout = timeout || DEFAULT_TIMEOUT;
       const agent = new Agent({
-        bodyTimeout: 0,
-        headersTimeout: 0,
+        bodyTimeout: effectiveTimeout,
+        headersTimeout: effectiveTimeout,
       });
       if (!requestHeaders) {
         return undiciFetch(input, { ...init, dispatcher: agent });
@@ -243,6 +247,7 @@ export class MCPConnection extends EventEmitter {
             headers['Authorization'] = `Bearer ${this.oauthTokens.access_token}`;
           }
 
+          const timeoutValue = this.timeout || DEFAULT_TIMEOUT;
           const transport = new SSEClientTransport(url, {
             requestInit: {
               headers,
@@ -252,8 +257,8 @@ export class MCPConnection extends EventEmitter {
               fetch: (url, init) => {
                 const fetchHeaders = new Headers(Object.assign({}, init?.headers, headers));
                 const agent = new Agent({
-                  bodyTimeout: 0,
-                  headersTimeout: 0,
+                  bodyTimeout: timeoutValue,
+                  headersTimeout: timeoutValue,
                 });
                 return undiciFetch(url, {
                   ...init,
@@ -264,6 +269,7 @@ export class MCPConnection extends EventEmitter {
             },
             fetch: this.createFetchFunction(
               this.getRequestHeaders.bind(this),
+              this.timeout,
             ) as unknown as FetchLike,
           });
 
@@ -304,6 +310,7 @@ export class MCPConnection extends EventEmitter {
             },
             fetch: this.createFetchFunction(
               this.getRequestHeaders.bind(this),
+              this.timeout,
             ) as unknown as FetchLike,
           });
 

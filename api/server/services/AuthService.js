@@ -3,12 +3,12 @@ const jwt = require('jsonwebtoken');
 const { webcrypto } = require('node:crypto');
 const { logger } = require('@librechat/data-schemas');
 const { isEnabled, checkEmailConfig } = require('@librechat/api');
-const { SystemRoles, errorsToString } = require('librechat-data-provider');
+const { ErrorTypes, SystemRoles, errorsToString } = require('librechat-data-provider');
 const {
   findUser,
+  findToken,
   createUser,
   updateUser,
-  findToken,
   countUsers,
   getUserById,
   findSession,
@@ -181,6 +181,14 @@ const registerUser = async (user, additionalData = {}) => {
 
   let newUserId;
   try {
+    const appConfig = await getAppConfig();
+    if (!isEmailDomainAllowed(email, appConfig?.registration?.allowedDomains)) {
+      const errorMessage =
+        'The email address provided cannot be used. Please use a different email address.';
+      logger.error(`[registerUser] [Registration not allowed] [Email: ${user.email}]`);
+      return { status: 403, message: errorMessage };
+    }
+
     const existingUser = await findUser({ email }, 'email _id');
 
     if (existingUser) {
@@ -193,14 +201,6 @@ const registerUser = async (user, additionalData = {}) => {
       // Sleep for 1 second
       await new Promise((resolve) => setTimeout(resolve, 1000));
       return { status: 200, message: genericVerificationMessage };
-    }
-
-    const appConfig = await getAppConfig({ role: user.role });
-    if (!isEmailDomainAllowed(email, appConfig?.registration?.allowedDomains)) {
-      const errorMessage =
-        'The email address provided cannot be used. Please use a different email address.';
-      logger.error(`[registerUser] [Registration not allowed] [Email: ${user.email}]`);
-      return { status: 403, message: errorMessage };
     }
 
     //determine if this is the first registered user (not counting anonymous_user)
@@ -252,6 +252,13 @@ const registerUser = async (user, additionalData = {}) => {
  */
 const requestPasswordReset = async (req) => {
   const { email } = req.body;
+  const appConfig = await getAppConfig();
+  if (!isEmailDomainAllowed(email, appConfig?.registration?.allowedDomains)) {
+    const error = new Error(ErrorTypes.AUTH_FAILED);
+    error.code = ErrorTypes.AUTH_FAILED;
+    error.message = 'Email domain not allowed';
+    return error;
+  }
   const user = await findUser({ email }, 'email _id');
   const emailEnabled = checkEmailConfig();
 

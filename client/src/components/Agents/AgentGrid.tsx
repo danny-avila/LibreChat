@@ -13,7 +13,7 @@ interface AgentGridProps {
   category: string; // Currently selected category
   searchQuery: string; // Current search query
   onSelectAgent: (agent: t.Agent) => void; // Callback when agent is selected
-  scrollElement?: HTMLElement | null; // Parent scroll container for infinite scroll
+  scrollElementRef?: React.RefObject<HTMLElement>; // Parent scroll container ref for infinite scroll
 }
 
 /**
@@ -23,7 +23,7 @@ const AgentGrid: React.FC<AgentGridProps> = ({
   category,
   searchQuery,
   onSelectAgent,
-  scrollElement,
+  scrollElementRef,
 }) => {
   const localize = useLocalize();
 
@@ -87,7 +87,7 @@ const AgentGrid: React.FC<AgentGridProps> = ({
   // Set up infinite scroll
   const { setScrollElement } = useInfiniteScroll({
     hasNextPage,
-    isFetchingNextPage,
+    isLoading: isFetching || isFetchingNextPage,
     fetchNextPage: () => {
       if (hasNextPage && !isFetching) {
         fetchNextPage();
@@ -99,10 +99,11 @@ const AgentGrid: React.FC<AgentGridProps> = ({
 
   // Connect the scroll element when it's provided
   useEffect(() => {
+    const scrollElement = scrollElementRef?.current;
     if (scrollElement) {
       setScrollElement(scrollElement);
     }
-  }, [scrollElement, setScrollElement]);
+  }, [scrollElementRef, setScrollElement]);
 
   /**
    * Get category display name from API data or use fallback

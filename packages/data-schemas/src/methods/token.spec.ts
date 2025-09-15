@@ -118,7 +118,7 @@ describe('Token Methods - Detailed Tests', () => {
         {
           token: 'token-3',
           userId: user1Id,
-          email: 'user1@example.com',
+          email: 'user1-alt@example.com', // Different email for realistic scenario
           createdAt: new Date(),
           expiresAt: new Date(Date.now() + 3600000),
         },
@@ -164,7 +164,7 @@ describe('Token Methods - Detailed Tests', () => {
       });
 
       expect(found).toBeDefined();
-      expect(found?.token).toBe('token-1'); // Should find first matching
+      expect(found?.token).toBe('token-1'); // Should find the only token matching both criteria
     });
 
     test('should return null for non-existent token', async () => {

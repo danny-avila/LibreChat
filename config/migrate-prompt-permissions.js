@@ -1,5 +1,6 @@
 const path = require('path');
 const { logger } = require('@librechat/data-schemas');
+const { ensureRequiredCollectionsExist } = require('@librechat/api');
 const { AccessRoleIds, ResourceType, PrincipalType } = require('librechat-data-provider');
 const { GLOBAL_PROJECT_NAME } = require('librechat-data-provider').Constants;
 
@@ -16,36 +17,11 @@ async function migrateToPromptGroupPermissions({ dryRun = true, batchSize = 100 
 
   logger.info('Starting PromptGroup Permissions Migration', { dryRun, batchSize });
 
-  /** Ensurse `aclentries` collection exists for DocumentDB compatibility
-   * @param {import('mongoose').mongo.Db} db
-   * @param {string} collectionName
-   */
-  async function ensureCollectionExists(db, collectionName) {
-    try {
-      const collections = await db.listCollections({ name: collectionName }).toArray();
-      if (collections.length === 0) {
-        await db.createCollection(collectionName);
-        logger.info(`Created collection: ${collectionName}`);
-      } else {
-        logger.info(`Collection already exists: ${collectionName}`);
-      }
-    } catch (error) {
-      logger.error(`'Failed to check/create "${collectionName}" collection:`, error);
-      // If listCollections fails, try alternative approach
-      try {
-        // Try to access the collection directly - this will create it in MongoDB if it doesn't exist
-        await db.collection(collectionName).findOne({}, { projection: { _id: 1 } });
-      } catch (createError) {
-        logger.error(`Could not ensure collection ${collectionName} exists:`, createError);
-      }
-    }
-  }
-
   const mongoose = require('mongoose');
   /** @type {import('mongoose').mongo.Db | undefined} */
   const db = mongoose.connection.db;
   if (db) {
-    await ensureCollectionExists(db, 'aclentries');
+    await ensureRequiredCollectionsExist(db);
   }
 
   // Verify required roles exist

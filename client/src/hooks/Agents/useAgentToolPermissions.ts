@@ -20,24 +20,18 @@ export default function useAgentToolPermissions(
 ): AgentToolPermissionsResult {
   const agentsMap = useAgentsMapContext();
 
-  // Get the agent from the map if available
   const selectedAgent = useMemo(() => {
     return agentId != null && agentId !== '' ? agentsMap?.[agentId] : undefined;
   }, [agentId, agentsMap]);
 
-  // Query for agent data from the API
-  const { data: agentData } = useGetAgentByIdQuery(agentId ?? '', {
-    enabled: !!agentId,
-  });
+  const { data: agentData } = useGetAgentByIdQuery(agentId);
 
-  // Get tools from either the API data or the agents map
   const tools = useMemo(
     () =>
       (agentData?.tools as string[] | undefined) || (selectedAgent?.tools as string[] | undefined),
     [agentData?.tools, selectedAgent?.tools],
   );
 
-  // Determine if file_search is allowed
   const fileSearchAllowedByAgent = useMemo(() => {
     // If no agentId, allow for ephemeral agents
     if (!agentId) return true;
@@ -47,7 +41,6 @@ export default function useAgentToolPermissions(
     return tools?.includes(Tools.file_search) ?? false;
   }, [agentId, selectedAgent, tools]);
 
-  // Determine if execute_code is allowed
   const codeAllowedByAgent = useMemo(() => {
     // If no agentId, allow for ephemeral agents
     if (!agentId) return true;

@@ -22,9 +22,7 @@ export default function useSelectAgent() {
     conversation?.agent_id ?? null,
   );
 
-  const agentQuery = useGetAgentByIdQuery(selectedAgentId ?? '', {
-    enabled: !!(selectedAgentId ?? '') && selectedAgentId !== Constants.EPHEMERAL_AGENT_ID,
-  });
+  const agentQuery = useGetAgentByIdQuery(selectedAgentId);
 
   const updateConversation = useCallback(
     (agent: Partial<Agent>, template: Partial<TPreset | TConversation>) => {
