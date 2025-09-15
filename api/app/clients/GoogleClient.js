@@ -166,15 +166,26 @@ class GoogleClient extends BaseClient {
       );
     }
 
-    // Add thinking configuration
-    this.modelOptions.thinkingConfig = {
-      thinkingBudget:
-        (this.modelOptions.thinking ?? googleSettings.thinking.default)
-          ? this.modelOptions.thinkingBudget
-          : 0,
-    };
+    // Add thinking configuration only for models that support it
+    const currentModelName = this.modelOptions.model ?? this.modelOptions.modelName ?? '';
+    const supportsThinking = !/image/i.test(currentModelName);
+
+    this.modelOptions.thinkingConfig = supportsThinking &&
+      (this.modelOptions.thinking ?? googleSettings.thinking.default)
+      ? { thinkingBudget: this.modelOptions.thinkingBudget }
+      : undefined;
+    // Remove raw thinking flags in favor of thinkingConfig
     delete this.modelOptions.thinking;
     delete this.modelOptions.thinkingBudget;
+    // If thinking is enabled, topK is not supported by some Gemini models
+    // Drop it from generation config to avoid provider errors
+    if (this.modelOptions.thinkingConfig?.thinkingBudget && this.modelOptions.thinkingConfig.thinkingBudget > 0) {
+      delete this.modelOptions.topK;
+    }
+    // If model doesn't support thinking, ensure no thinkingConfig is sent
+    if (!supportsThinking) {
+      delete this.modelOptions.thinkingConfig;
+    }
 
     this.sender =
       this.options.sender ??

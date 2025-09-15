@@ -58,12 +58,15 @@ function getLLMConfig(
 
   requestOptions = configureReasoning(requestOptions, systemOptions);
 
-  if (!/claude-3[-.]7/.test(mergedOptions.model)) {
+  // Only include sampling params when thinking is not enabled
+  if (requestOptions.thinking == null || requestOptions.thinking?.type !== 'enabled') {
     requestOptions.topP = mergedOptions.topP;
-    requestOptions.topK = mergedOptions.topK;
-  } else if (requestOptions.thinking == null) {
-    requestOptions.topP = mergedOptions.topP;
-    requestOptions.topK = mergedOptions.topK;
+    const modelName = requestOptions.model ?? '';
+    const isClaudeV4Plus =
+      /claude-(?:sonnet|opus|haiku)-[4-9]/.test(modelName) ||
+      /claude-[4-9]-(?:sonnet|opus|haiku)?/.test(modelName) ||
+      /claude-4(?:-(?:sonnet|opus|haiku))?/.test(modelName);
+    requestOptions.topK = isClaudeV4Plus ? undefined : mergedOptions.topK;
   }
 
   const supportsCacheControl =

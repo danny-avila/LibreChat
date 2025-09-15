@@ -785,12 +785,23 @@ class AnthropicClient extends BaseClient {
       thinkingBudget: this.options.thinkingBudget,
     });
 
-    if (!/claude-3[-.]7/.test(model)) {
-      requestOptions.top_p = top_p;
-      requestOptions.top_k = top_k;
-    } else if (requestOptions.thinking == null) {
-      requestOptions.topP = top_p;
-      requestOptions.topK = top_k;
+    // Only include sampling params when thinking is not enabled
+    if (requestOptions.thinking == null || requestOptions.thinking?.type !== 'enabled') {
+      const isClaudeV4Plus =
+        /claude-(?:sonnet|opus|haiku)-[4-9]/.test(model) ||
+        /claude-[4-9]-(?:sonnet|opus|haiku)?/.test(model) ||
+        /claude-4(?:-(?:sonnet|opus|haiku))?/.test(model);
+      if (!/claude-3[-.]7/.test(model)) {
+        requestOptions.top_p = top_p;
+        if (!isClaudeV4Plus) {
+          requestOptions.top_k = top_k;
+        }
+      } else {
+        requestOptions.topP = top_p;
+        if (!isClaudeV4Plus) {
+          requestOptions.topK = top_k;
+        }
+      }
     }
 
     if (this.systemMessage && this.supportsCacheControl === true) {

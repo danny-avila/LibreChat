@@ -1,5 +1,18 @@
 [
   {
+    "name": "Perplexity",
+    "pluginKey": "perplexity_search",
+    "description": "Perplexity Sonar web research API. Delivers concise answers with cited sources.",
+    "icon": "https://www.perplexity.ai/favicon.ico",
+    "authConfig": [
+      {
+        "authField": "PERPLEXITY_API_KEY||PPLX_API_KEY",
+        "label": "Perplexity API Key",
+        "description": "Use either PERPLEXITY_API_KEY or PPLX_API_KEY from your Perplexity account."
+      }
+    ]
+  },
+  {
     "name": "Traversaal",
     "pluginKey": "traversaal_search",
     "description": "Traversaal is a robust search API tailored for LLM Agents. Get an API key here: https://api.traversaal.ai",
@@ -183,7 +196,7 @@
     "name": "Flux",
     "pluginKey": "flux",
     "description": "Generate images using text with the Flux API.",
-    "icon": "https://blackforestlabs.ai/wp-content/uploads/2024/07/bfl_logo_retraced_blk.png",
+    "icon": "https://cdn.prod.website-files.com/6699ab3ebda8e25d1d628c47/66b49df88da05fa091abe00f_logo.png",
     "isAuthRequired": "true",
     "authConfig": [
       {

@@ -10,6 +10,7 @@ const StructuredACS = require('./structured/AzureAISearch');
 const StructuredSD = require('./structured/StableDiffusion');
 const GoogleSearchAPI = require('./structured/GoogleSearch');
 const TraversaalSearch = require('./structured/TraversaalSearch');
+const PerplexitySearch = require('./structured/PerplexitySearch');
 const createOpenAIImageTools = require('./structured/OpenAIImageTools');
 const TavilySearchResults = require('./structured/TavilySearchResults');
 
@@ -23,6 +24,7 @@ module.exports = {
   StructuredACS,
   GoogleSearchAPI,
   TraversaalSearch,
+  PerplexitySearch,
   StructuredWolfram,
   createYouTubeTools,
   TavilySearchResults,

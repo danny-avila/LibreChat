@@ -24,6 +24,7 @@ const {
   StructuredACS,
   TraversaalSearch,
   StructuredWolfram,
+  PerplexitySearch,
   createYouTubeTools,
   TavilySearchResults,
   createOpenAIImageTools,
@@ -170,6 +171,7 @@ const loadTools = async ({
     'stable-diffusion': StructuredSD,
     'azure-ai-search': StructuredACS,
     traversaal_search: TraversaalSearch,
+    perplexity_search: PerplexitySearch,
     tavily_search_results_json: TavilySearchResults,
   };
 

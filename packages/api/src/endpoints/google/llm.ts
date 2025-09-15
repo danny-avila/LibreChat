@@ -148,8 +148,10 @@ export function getGoogleConfig(
     );
   }
 
+  const modelName = (llmConfig.model ?? '').toLowerCase();
+  const supportsThinking = !modelName.includes('image');
   const shouldEnableThinking =
-    thinking && thinkingBudget != null && (thinkingBudget > 0 || thinkingBudget === -1);
+    supportsThinking && thinking && thinkingBudget != null && (thinkingBudget > 0 || thinkingBudget === -1);
 
   if (shouldEnableThinking && provider === Providers.GOOGLE) {
     (llmConfig as GoogleClientOptions).thinkingConfig = {
@@ -161,6 +163,13 @@ export function getGoogleConfig(
       ? thinkingBudget
       : googleSettings.thinkingBudget.default;
     (llmConfig as VertexAIClientOptions).includeThoughts = Boolean(thinking);
+  }
+
+  // Ensure we don't attach any thinking fields for unsupported models
+  if (!supportsThinking) {
+    delete (llmConfig as GoogleClientOptions).thinkingConfig;
+    delete (llmConfig as VertexAIClientOptions).thinkingBudget;
+    delete (llmConfig as VertexAIClientOptions).includeThoughts;
   }
 
   /*
