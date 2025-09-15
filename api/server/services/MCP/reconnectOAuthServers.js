@@ -4,6 +4,8 @@ const { getMCPManager, getFlowStateManager } = require('~/config');
 const { CacheKeys } = require('librechat-data-provider');
 const { getLogStores } = require('~/cache');
 
+const DEFAULT_CONNECTION_TIMEOUT_MS = 10_000; // ms
+
 /**
  * Attempts to reconnect OAuth MCP servers for a user on login/refresh
  * This is a best-effort operation that runs asynchronously
@@ -34,10 +36,7 @@ async function reconnectOAuthMCPServers(userId) {
 
   // 3. attempt to reconnect the servers
   for (const serverName of serversToReconnect) {
-    logger.debug(
-      `[reconnectOAuthMCPServers][User: ${userId}][${serverName}] Attempting reconnection`,
-    );
-    void tryReconnectServer(userId, serverName);
+    void tryReconnectOAuthMCPServer(userId, serverName);
   }
 }
 
@@ -70,10 +69,13 @@ async function shouldAttemptReconnect(mcpManager, userId, serverName) {
   return true;
 }
 
-async function tryReconnectServer(userId, serverName) {
-  const logPrefix = `[tryReconnectServer][User: ${userId}][${serverName}]`;
+async function tryReconnectOAuthMCPServer(userId, serverName) {
+  const logPrefix = `[tryReconnectOAuthMCPServer][User: ${userId}][${serverName}]`;
+
+  logger.info(`${logPrefix} Attempting reconnection`);
 
   const mcpManager = getMCPManager();
+  const config = mcpManager.getRawConfig(serverName);
   const flowManager = getFlowStateManager(getLogStores(CacheKeys.FLOWS));
 
   function cleanupOnFailedReconnect() {
@@ -83,8 +85,6 @@ async function tryReconnectServer(userId, serverName) {
   }
 
   try {
-    logger.debug(`${logPrefix} Starting reconnection attempt`);
-
     // attempt to get connection (this will use existing tokens and refresh if needed)
     const connection = await mcpManager.getUserConnection({
       serverName,
@@ -94,15 +94,17 @@ async function tryReconnectServer(userId, serverName) {
       // don't force new connection, let it reuse existing or create new as needed
       forceNew: false,
       // set a reasonable timeout for reconnection attempts
-      connectionTimeout: 10_000,
+      connectionTimeout: config?.initTimeout ?? DEFAULT_CONNECTION_TIMEOUT_MS,
       // don't trigger OAuth flow during reconnection
       returnOnOAuth: true,
     });
 
     if (connection && (await connection.isConnected())) {
+      logger.info(`${logPrefix} Successfully reconnected`);
       mcpManager.clearFailedReconnect(userId, serverName);
       mcpManager.clearReconnectingState(userId, serverName);
     } else {
+      logger.warn(`${logPrefix} Failed to reconnect`);
       await connection?.disconnect();
       cleanupOnFailedReconnect();
     }
