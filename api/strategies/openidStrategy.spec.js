@@ -126,6 +126,7 @@ describe('setupOpenId', () => {
     process.env.OPENID_REQUIRED_ROLE_PARAMETER_PATH = 'roles';
     process.env.OPENID_REQUIRED_ROLE_TOKEN_KIND = 'id';
     delete process.env.OPENID_USERNAME_CLAIM;
+    delete process.env.OPENID_EMAIL_CLAIM;
     delete process.env.OPENID_NAME_CLAIM;
     delete process.env.PROXY;
     delete process.env.OPENID_USE_PKCE;
@@ -233,6 +234,24 @@ describe('setupOpenId', () => {
     expect(user.username).toBe(userinfo.sub);
     expect(createUser).toHaveBeenCalledWith(
       expect.objectContaining({ username: userinfo.sub }),
+      { enabled: false },
+      true,
+      true,
+    );
+  });
+
+  it('should override email with OPENID_EMAIL_CLAIM when set', async () => {
+    // Arrange – set OPENID_EMAIL_CLAIM so that the preferred_username claim is used
+    process.env.OPENID_EMAIL_CLAIM = 'preferred_username';
+    const userinfo = tokenset.claims();
+
+    // Act
+    const { user } = await validate(tokenset);
+
+    // Assert – username should equal the sub (converted as-is)
+    expect(user.email).toBe(userinfo.preferred_username);
+    expect(createUser).toHaveBeenCalledWith(
+      expect.objectContaining({ email: userinfo.preferred_username }),
       { enabled: false },
       true,
       true,
