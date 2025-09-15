@@ -296,4 +296,34 @@ Please follow these instructions when using tools from the respective MCP server
       throw error;
     }
   }
+
+  /** Check if a server is currently reconnecting for a user */
+  public isReconnecting(userId: string, serverName: string): boolean {
+    return this.oauthReconnectTracker.isReconnecting(userId, serverName);
+  }
+
+  /** Mark a server as reconnecting for a user */
+  public markAsReconnecting(userId: string, serverName: string): void {
+    this.oauthReconnectTracker.markAsReconnecting(userId, serverName);
+  }
+
+  /** Clear reconnecting state for a server */
+  public clearReconnectingState(userId: string, serverName: string): void {
+    this.oauthReconnectTracker.clearReconnectingState(userId, serverName);
+  }
+
+  /** Record a failed reconnection attempt */
+  public recordFailedReconnect(userId: string, serverName: string): void {
+    this.oauthReconnectTracker.recordFailedReconnect(userId, serverName);
+  }
+
+  /** Clear failed reconnection attempt record */
+  public clearFailedReconnect(userId: string, serverName: string): void {
+    this.oauthReconnectTracker.clearFailedReconnect(userId, serverName);
+  }
+
+  /** Check if reconnection should be attempted */
+  public shouldAttemptReconnect(userId: string, serverName: string): boolean {
+    return this.oauthReconnectTracker.shouldAttemptReconnect(userId, serverName);
+  }
 }

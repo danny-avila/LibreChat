@@ -2,6 +2,7 @@ import { logger } from '@librechat/data-schemas';
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
 import { MCPServersRegistry } from '~/mcp/MCPServersRegistry';
+import { OAuthReconnectTracker } from '~/mcp/oauth/OAuthReconnectTracker';
 import { MCPConnection } from './connection';
 import type * as t from './types';
 
@@ -14,6 +15,7 @@ import type * as t from './types';
  */
 export abstract class UserConnectionManager {
   protected readonly serversRegistry: MCPServersRegistry;
+  protected readonly oauthReconnectTracker: OAuthReconnectTracker;
   protected userConnections: Map<string, Map<string, MCPConnection>> = new Map();
   /** Last activity timestamp for users (not per server) */
   protected userLastActivity: Map<string, number> = new Map();
@@ -21,6 +23,7 @@ export abstract class UserConnectionManager {
 
   constructor(serverConfigs: t.MCPServers) {
     this.serversRegistry = new MCPServersRegistry(serverConfigs);
+    this.oauthReconnectTracker = new OAuthReconnectTracker();
   }
 
   /** fetches am MCP Server config from the registry */
