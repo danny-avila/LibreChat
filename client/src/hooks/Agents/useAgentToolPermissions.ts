@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Tools } from 'librechat-data-provider';
+import { Tools, Constants } from 'librechat-data-provider';
 import { useGetAgentByIdQuery } from '~/data-provider';
 import { useAgentsMapContext } from '~/Providers';
 
@@ -7,6 +7,10 @@ interface AgentToolPermissionsResult {
   fileSearchAllowedByAgent: boolean;
   codeAllowedByAgent: boolean;
   tools: string[] | undefined;
+}
+
+function isEphemeralAgent(agentId: string | null | undefined): boolean {
+  return agentId == null || agentId === '' || agentId === Constants.EPHEMERAL_AGENT_ID;
 }
 
 /**
@@ -33,8 +37,8 @@ export default function useAgentToolPermissions(
   );
 
   const fileSearchAllowedByAgent = useMemo(() => {
-    // If no agentId, allow for ephemeral agents
-    if (!agentId) return true;
+    // Allow for ephemeral agents
+    if (isEphemeralAgent(agentId)) return true;
     // If agentId exists but agent not found, disallow
     if (!selectedAgent) return false;
     // Check if the agent has the file_search tool
@@ -42,8 +46,8 @@ export default function useAgentToolPermissions(
   }, [agentId, selectedAgent, tools]);
 
   const codeAllowedByAgent = useMemo(() => {
-    // If no agentId, allow for ephemeral agents
-    if (!agentId) return true;
+    // Allow for ephemeral agents
+    if (isEphemeralAgent(agentId)) return true;
     // If agentId exists but agent not found, disallow
     if (!selectedAgent) return false;
     // Check if the agent has the execute_code tool
