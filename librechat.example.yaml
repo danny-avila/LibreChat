@@ -167,7 +167,15 @@ interface:
     groups: true
     roles: true
   marketplace:
-    use: false
+    use: false 
+    categories:
+      enableDefaultCategories: false
+        # list:
+        #     - value: "Education"
+        #       description: "Educational agents."
+        #     - value: "Productivity"
+        #       description: "Productivity agents."
+
   fileCitations: true
   # Tools pinned to the prompt bar by default for all users.
   # Only seeds the initial state — once a user pins/unpins a tool, their choice is kept.
