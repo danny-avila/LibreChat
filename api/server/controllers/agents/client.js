@@ -7,8 +7,12 @@ const {
   createRun,
   Tokenizer,
   checkAccess,
+  logAxiosError,
+  resolveHeaders,
+  getBalanceConfig,
   memoryInstructions,
   formatContentStrings,
+  getTransactionsConfig,
   createMemoryProcessor,
 } = require('@librechat/api');
 const {
@@ -33,18 +37,13 @@ const {
   bedrockInputSchema,
   removeNullishValues,
 } = require('librechat-data-provider');
-const {
-  findPluginAuthsByKeys,
-  getFormattedMemories,
-  deleteMemory,
-  setMemory,
-} = require('~/models');
-const { getMCPAuthMap, checkCapability, hasCustomUserVars } = require('~/server/services/Config');
 const { addCacheControl, createContextHandlers } = require('~/app/clients/prompts');
 const { initializeAgent } = require('~/server/services/Endpoints/agents/agent');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
+const { getFormattedMemories, deleteMemory, setMemory } = require('~/models');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const { getProviderConfig } = require('~/server/services/Endpoints');
+const { checkCapability } = require('~/server/services/Config');
 const BaseClient = require('~/app/clients/BaseClient');
 const { getRoleByName } = require('~/models/Role');
 const { loadAgent } = require('~/models/Agent');
@@ -90,11 +89,10 @@ function createTokenCounter(encoding) {
 }
 
 function logToolError(graph, error, toolId) {
-  logger.error(
-    '[api/server/controllers/agents/client.js #chatCompletion] Tool Error',
+  logAxiosError({
     error,
-    toolId,
-  );
+    message: `[api/server/controllers/agents/client.js #chatCompletion] Tool Error "${toolId}"`,
+  });
 }
 
 class AgentClient extends BaseClient {
@@ -403,6 +401,34 @@ class AgentClient extends BaseClient {
   }
 
   /**
+   * Creates a promise that resolves with the memory promise result or undefined after a timeout
+   * @param {Promise<(TAttachment | null)[] | undefined>} memoryPromise - The memory promise to await
+   * @param {number} timeoutMs - Timeout in milliseconds (default: 3000)
+   * @returns {Promise<(TAttachment | null)[] | undefined>}
+   */
+  async awaitMemoryWithTimeout(memoryPromise, timeoutMs = 3000) {
+    if (!memoryPromise) {
+      return;
+    }
+
+    try {
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Memory processing timeout')), timeoutMs),
+      );
+
+      const attachments = await Promise.race([memoryPromise, timeoutPromise]);
+      return attachments;
+    } catch (error) {
+      if (error.message === 'Memory processing timeout') {
+        logger.warn('[AgentClient] Memory processing timed out after 3 seconds');
+      } else {
+        logger.error('[AgentClient] Error processing memory:', error);
+      }
+      return;
+    }
+  }
+
+  /**
    * @returns {Promise<string | undefined>}
    */
   async useMemory() {
@@ -423,8 +449,8 @@ class AgentClient extends BaseClient {
       );
       return;
     }
-    /** @type {TCustomConfig['memory']} */
-    const memoryConfig = this.options.req?.app?.locals?.memory;
+    const appConfig = this.options.req.config;
+    const memoryConfig = appConfig.memory;
     if (!memoryConfig || memoryConfig.disabled === true) {
       return;
     }
@@ -432,7 +458,7 @@ class AgentClient extends BaseClient {
     /** @type {Agent} */
     let prelimAgent;
     const allowedProviders = new Set(
-      this.options.req?.app?.locals?.[EModelEndpoint.agents]?.allowedProviders,
+      appConfig?.endpoints?.[EModelEndpoint.agents]?.allowedProviders,
     );
     try {
       if (memoryConfig.agent?.id != null && memoryConfig.agent.id !== this.options.agent.id) {
@@ -554,8 +580,8 @@ class AgentClient extends BaseClient {
       if (this.processMemory == null) {
         return;
       }
-      /** @type {TCustomConfig['memory']} */
-      const memoryConfig = this.options.req?.app?.locals?.memory;
+      const appConfig = this.options.req.config;
+      const memoryConfig = appConfig.memory;
       const messageWindowSize = memoryConfig?.messageWindowSize ?? 5;
 
       let messagesToProcess = [...messages];
@@ -587,6 +613,7 @@ class AgentClient extends BaseClient {
     await this.chatCompletion({
       payload,
       onProgress: opts.onProgress,
+      userMCPAuthMap: opts.userMCPAuthMap,
       abortController: opts.abortController,
     });
     return this.contentParts;
@@ -596,9 +623,17 @@ class AgentClient extends BaseClient {
    * @param {Object} params
    * @param {string} [params.model]
    * @param {string} [params.context='message']
+   * @param {AppConfig['balance']} [params.balance]
+   * @param {AppConfig['transactions']} [params.transactions]
    * @param {UsageMetadata[]} [params.collectedUsage=this.collectedUsage]
    */
-  async recordCollectedUsage({ model, context = 'message', collectedUsage = this.collectedUsage }) {
+  async recordCollectedUsage({
+    model,
+    balance,
+    transactions,
+    context = 'message',
+    collectedUsage = this.collectedUsage,
+  }) {
     if (!collectedUsage || !collectedUsage.length) {
       return;
     }
@@ -620,6 +655,8 @@ class AgentClient extends BaseClient {
 
       const txMetadata = {
         context,
+        balance,
+        transactions,
         conversationId: this.conversationId,
         user: this.user ?? this.options.req.user?.id,
         endpointTokenConfig: this.options.endpointTokenConfig,
@@ -719,7 +756,13 @@ class AgentClient extends BaseClient {
     return currentMessageTokens > 0 ? currentMessageTokens : originalEstimate;
   }
 
-  async chatCompletion({ payload, abortController = null }) {
+  /**
+   * @param {object} params
+   * @param {string | ChatCompletionMessageParam[]} params.payload
+   * @param {Record<string, Record<string, string>>} [params.userMCPAuthMap]
+   * @param {AbortController} [params.abortController]
+   */
+  async chatCompletion({ payload, userMCPAuthMap, abortController = null }) {
     /** @type {Partial<GraphRunnableConfig>} */
     let config;
     /** @type {ReturnType<createRun>} */
@@ -731,8 +774,9 @@ class AgentClient extends BaseClient {
         abortController = new AbortController();
       }
 
-      /** @type {TCustomConfig['endpoints']['agents']} */
-      const agentsEConfig = this.options.req.app.locals[EModelEndpoint.agents];
+      const appConfig = this.options.req.config;
+      /** @type {AppConfig['endpoints']['agents']} */
+      const agentsEConfig = appConfig.endpoints?.[EModelEndpoint.agents];
 
       config = {
         configurable: {
@@ -740,6 +784,11 @@ class AgentClient extends BaseClient {
           last_agent_index: this.agentConfigs?.size ?? 0,
           user_id: this.user ?? this.options.req.user?.id,
           hide_sequential_outputs: this.options.agent.hide_sequential_outputs,
+          requestBody: {
+            messageId: this.responseMessageId,
+            conversationId: this.conversationId,
+            parentMessageId: this.parentMessageId,
+          },
           user: this.options.req.user,
         },
         recursionLimit: agentsEConfig?.recursionLimit ?? 25,
@@ -810,7 +859,7 @@ class AgentClient extends BaseClient {
 
         if (noSystemMessages === true && systemContent?.length) {
           const latestMessageContent = _messages.pop().content;
-          if (typeof latestMessage !== 'string') {
+          if (typeof latestMessageContent !== 'string') {
             latestMessageContent[0].text = [systemContent, latestMessageContent[0].text].join('\n');
             _messages.push(new HumanMessage({ content: latestMessageContent }));
           } else {
@@ -823,16 +872,25 @@ class AgentClient extends BaseClient {
         if (agent.useLegacyContent === true) {
           messages = formatContentStrings(messages);
         }
-        if (
-          agent.model_parameters?.clientOptions?.defaultHeaders?.['anthropic-beta']?.includes(
-            'prompt-caching',
-          )
-        ) {
+        const defaultHeaders =
+          agent.model_parameters?.clientOptions?.defaultHeaders ??
+          agent.model_parameters?.configuration?.defaultHeaders;
+        if (defaultHeaders?.['anthropic-beta']?.includes('prompt-caching')) {
           messages = addCacheControl(messages);
         }
 
         if (i === 0) {
           memoryPromise = this.runMemory(messages);
+        }
+
+        /** Resolve request-based headers for Custom Endpoints. Note: if this is added to
+         *  non-custom endpoints, needs consideration of varying provider header configs.
+         */
+        if (agent.model_parameters?.configuration?.defaultHeaders != null) {
+          agent.model_parameters.configuration.defaultHeaders = resolveHeaders({
+            headers: agent.model_parameters.configuration.defaultHeaders,
+            body: config.configurable.requestBody,
+          });
         }
 
         run = await createRun({
@@ -870,21 +928,9 @@ class AgentClient extends BaseClient {
           run.Graph.contentData = contentData;
         }
 
-        try {
-          if (await hasCustomUserVars()) {
-            config.configurable.userMCPAuthMap = await getMCPAuthMap({
-              tools: agent.tools,
-              userId: this.options.req.user.id,
-              findPluginAuthsByKeys,
-            });
-          }
-        } catch (err) {
-          logger.error(
-            `[api/server/controllers/agents/client.js #chatCompletion] Error getting custom user vars for agent ${agent.id}`,
-            err,
-          );
+        if (userMCPAuthMap != null) {
+          config.configurable.userMCPAuthMap = userMCPAuthMap;
         }
-
         await run.processStream({ messages }, config, {
           keepContent: i !== 0,
           tokenCounter: createTokenCounter(this.getEncoding()),
@@ -1002,13 +1048,18 @@ class AgentClient extends BaseClient {
       });
 
       try {
-        if (memoryPromise) {
-          const attachments = await memoryPromise;
-          if (attachments && attachments.length > 0) {
-            this.artifactPromises.push(...attachments);
-          }
+        const attachments = await this.awaitMemoryWithTimeout(memoryPromise);
+        if (attachments && attachments.length > 0) {
+          this.artifactPromises.push(...attachments);
         }
-        await this.recordCollectedUsage({ context: 'message' });
+
+        const balanceConfig = getBalanceConfig(appConfig);
+        const transactionsConfig = getTransactionsConfig(appConfig);
+        await this.recordCollectedUsage({
+          context: 'message',
+          balance: balanceConfig,
+          transactions: transactionsConfig,
+        });
       } catch (err) {
         logger.error(
           '[api/server/controllers/agents/client.js #chatCompletion] Error recording collected usage',
@@ -1016,11 +1067,9 @@ class AgentClient extends BaseClient {
         );
       }
     } catch (err) {
-      if (memoryPromise) {
-        const attachments = await memoryPromise;
-        if (attachments && attachments.length > 0) {
-          this.artifactPromises.push(...attachments);
-        }
+      const attachments = await this.awaitMemoryWithTimeout(memoryPromise);
+      if (attachments && attachments.length > 0) {
+        this.artifactPromises.push(...attachments);
       }
       logger.error(
         '[api/server/controllers/agents/client.js #sendCompletion] Operation aborted',
@@ -1051,19 +1100,21 @@ class AgentClient extends BaseClient {
     }
     const { handleLLMEnd, collected: collectedMetadata } = createMetadataAggregator();
     const { req, res, agent } = this.options;
+    const appConfig = req.config;
     let endpoint = agent.endpoint;
 
     /** @type {import('@librechat/agents').ClientOptions} */
     let clientOptions = {
-      maxTokens: 75,
       model: agent.model || agent.model_parameters.model,
     };
 
-    let titleProviderConfig = await getProviderConfig(endpoint);
+    let titleProviderConfig = getProviderConfig({ provider: endpoint, appConfig });
 
     /** @type {TEndpoint | undefined} */
     const endpointConfig =
-      req.app.locals.all ?? req.app.locals[endpoint] ?? titleProviderConfig.customEndpointConfig;
+      appConfig.endpoints?.all ??
+      appConfig.endpoints?.[endpoint] ??
+      titleProviderConfig.customEndpointConfig;
     if (!endpointConfig) {
       logger.warn(
         '[api/server/controllers/agents/client.js #titleConvo] Error getting endpoint config',
@@ -1072,7 +1123,10 @@ class AgentClient extends BaseClient {
 
     if (endpointConfig?.titleEndpoint && endpointConfig.titleEndpoint !== endpoint) {
       try {
-        titleProviderConfig = await getProviderConfig(endpointConfig.titleEndpoint);
+        titleProviderConfig = getProviderConfig({
+          provider: endpointConfig.titleEndpoint,
+          appConfig,
+        });
         endpoint = endpointConfig.titleEndpoint;
       } catch (error) {
         logger.warn(
@@ -1081,7 +1135,7 @@ class AgentClient extends BaseClient {
         );
         // Fall back to original provider config
         endpoint = agent.endpoint;
-        titleProviderConfig = await getProviderConfig(endpoint);
+        titleProviderConfig = getProviderConfig({ provider: endpoint, appConfig });
       }
     }
 
@@ -1122,11 +1176,14 @@ class AgentClient extends BaseClient {
       clientOptions.configuration = options.configOptions;
     }
 
-    // Ensure maxTokens is set for non-o1 models
-    if (!/\b(o\d)\b/i.test(clientOptions.model) && !clientOptions.maxTokens) {
-      clientOptions.maxTokens = 75;
-    } else if (/\b(o\d)\b/i.test(clientOptions.model) && clientOptions.maxTokens != null) {
+    if (clientOptions.maxTokens != null) {
       delete clientOptions.maxTokens;
+    }
+    if (clientOptions?.modelKwargs?.max_completion_tokens != null) {
+      delete clientOptions.modelKwargs.max_completion_tokens;
+    }
+    if (clientOptions?.modelKwargs?.max_output_tokens != null) {
+      delete clientOptions.modelKwargs.max_output_tokens;
     }
 
     clientOptions = Object.assign(
@@ -1141,6 +1198,20 @@ class AgentClient extends BaseClient {
         endpointConfig?.titleMethod === TitleMethod.STRUCTURED)
     ) {
       clientOptions.json = true;
+    }
+
+    /** Resolve request-based headers for Custom Endpoints. Note: if this is added to
+     *  non-custom endpoints, needs consideration of varying provider header configs.
+     */
+    if (clientOptions?.configuration?.defaultHeaders != null) {
+      clientOptions.configuration.defaultHeaders = resolveHeaders({
+        headers: clientOptions.configuration.defaultHeaders,
+        body: {
+          messageId: this.responseMessageId,
+          conversationId: this.conversationId,
+          parentMessageId: this.parentMessageId,
+        },
+      });
     }
 
     try {
@@ -1181,10 +1252,14 @@ class AgentClient extends BaseClient {
         };
       });
 
+      const balanceConfig = getBalanceConfig(appConfig);
+      const transactionsConfig = getTransactionsConfig(appConfig);
       await this.recordCollectedUsage({
-        model: clientOptions.model,
-        context: 'title',
         collectedUsage,
+        context: 'title',
+        model: clientOptions.model,
+        balance: balanceConfig,
+        transactions: transactionsConfig,
       }).catch((err) => {
         logger.error(
           '[api/server/controllers/agents/client.js #titleConvo] Error recording collected usage',
@@ -1203,17 +1278,26 @@ class AgentClient extends BaseClient {
    * @param {object} params
    * @param {number} params.promptTokens
    * @param {number} params.completionTokens
-   * @param {OpenAIUsageMetadata} [params.usage]
    * @param {string} [params.model]
+   * @param {OpenAIUsageMetadata} [params.usage]
+   * @param {AppConfig['balance']} [params.balance]
    * @param {string} [params.context='message']
    * @returns {Promise<void>}
    */
-  async recordTokenUsage({ model, promptTokens, completionTokens, usage, context = 'message' }) {
+  async recordTokenUsage({
+    model,
+    usage,
+    balance,
+    promptTokens,
+    completionTokens,
+    context = 'message',
+  }) {
     try {
       await spendTokens(
         {
           model,
           context,
+          balance,
           conversationId: this.conversationId,
           user: this.user ?? this.options.req.user?.id,
           endpointTokenConfig: this.options.endpointTokenConfig,
@@ -1230,6 +1314,7 @@ class AgentClient extends BaseClient {
         await spendTokens(
           {
             model,
+            balance,
             context: 'reasoning',
             conversationId: this.conversationId,
             user: this.user ?? this.options.req.user?.id,

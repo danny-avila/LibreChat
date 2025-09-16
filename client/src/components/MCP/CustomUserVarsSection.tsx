@@ -16,7 +16,6 @@ interface CustomUserVarsSectionProps {
   onRevoke: () => void;
   isSubmitting?: boolean;
 }
-
 interface AuthFieldProps {
   name: string;
   config: CustomUserVarConfig;
@@ -32,13 +31,14 @@ function AuthField({ name, config, hasValue, control, errors }: AuthFieldProps) 
     <div className="space-y-2">
       <div className="flex items-center justify-between">
         <TooltipAnchor
+          enableHTML={true}
           description={config.description || ''}
           render={
             <div className="flex items-center gap-2">
               <Label htmlFor={name} className="text-sm font-medium">
                 {config.title}
               </Label>
-              <CircleHelpIcon className="h-5 w-5 text-text-tertiary" />
+              <CircleHelpIcon className="h-6 w-6 cursor-help text-text-secondary transition-colors hover:text-text-primary" />
             </div>
           }
         />
@@ -68,7 +68,7 @@ function AuthField({ name, config, hasValue, control, errors }: AuthFieldProps) 
                 ? localize('com_ui_mcp_update_var', { 0: config.title })
                 : localize('com_ui_mcp_enter_var', { 0: config.title })
             }
-            className="w-full shadow-sm sm:text-sm"
+            className="w-full rounded border border-border-medium bg-transparent px-2 py-1 text-text-primary placeholder:text-text-secondary focus:outline-none sm:text-sm"
           />
         )}
       />
@@ -78,23 +78,22 @@ function AuthField({ name, config, hasValue, control, errors }: AuthFieldProps) 
 }
 
 export default function CustomUserVarsSection({
-  serverName,
   fields,
   onSave,
   onRevoke,
+  serverName,
   isSubmitting = false,
 }: CustomUserVarsSectionProps) {
   const localize = useLocalize();
 
-  // Fetch auth value flags for the server
   const { data: authValuesData } = useMCPAuthValuesQuery(serverName, {
     enabled: !!serverName,
   });
 
   const {
+    reset,
     control,
     handleSubmit,
-    reset,
     formState: { errors },
   } = useForm<Record<string, string>>({
     defaultValues: useMemo(() => {
@@ -139,10 +138,20 @@ export default function CustomUserVarsSection({
       </form>
 
       <div className="flex justify-end gap-2">
-        <Button onClick={handleRevokeClick} variant="destructive" disabled={isSubmitting}>
+        <Button
+          type="button"
+          variant="destructive"
+          disabled={isSubmitting}
+          onClick={handleRevokeClick}
+        >
           {localize('com_ui_revoke')}
         </Button>
-        <Button onClick={handleSubmit(onFormSubmit)} variant="submit" disabled={isSubmitting}>
+        <Button
+          type="button"
+          variant="submit"
+          disabled={isSubmitting}
+          onClick={handleSubmit(onFormSubmit)}
+        >
           {isSubmitting ? localize('com_ui_saving') : localize('com_ui_save')}
         </Button>
       </div>

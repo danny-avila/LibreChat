@@ -11,6 +11,7 @@ const {
   handleToolCalls,
   ChatModelStreamHandler,
 } = require('@librechat/agents');
+const { processFileCitations } = require('~/server/services/Files/Citations');
 const { processCodeOutput } = require('~/server/services/Files/Code/process');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { saveBase64Image } = require('~/server/services/Files/process');
@@ -236,6 +237,56 @@ function createToolEndCallback({ req, res, artifactPromises }) {
 
     if (!output.artifact) {
       return;
+    }
+
+    if (output.artifact[Tools.file_search]) {
+      artifactPromises.push(
+        (async () => {
+          const user = req.user;
+          const attachment = await processFileCitations({
+            user,
+            metadata,
+            appConfig: req.config,
+            toolArtifact: output.artifact,
+            toolCallId: output.tool_call_id,
+          });
+          if (!attachment) {
+            return null;
+          }
+          if (!res.headersSent) {
+            return attachment;
+          }
+          res.write(`event: attachment\ndata: ${JSON.stringify(attachment)}\n\n`);
+          return attachment;
+        })().catch((error) => {
+          logger.error('Error processing file citations:', error);
+          return null;
+        }),
+      );
+    }
+
+    // TODO: a lot of duplicated code in createToolEndCallback
+    // we should refactor this to use a helper function in a follow-up PR
+    if (output.artifact[Tools.ui_resources]) {
+      artifactPromises.push(
+        (async () => {
+          const attachment = {
+            type: Tools.ui_resources,
+            messageId: metadata.run_id,
+            toolCallId: output.tool_call_id,
+            conversationId: metadata.thread_id,
+            [Tools.ui_resources]: output.artifact[Tools.ui_resources].data,
+          };
+          if (!res.headersSent) {
+            return attachment;
+          }
+          res.write(`event: attachment\ndata: ${JSON.stringify(attachment)}\n\n`);
+          return attachment;
+        })().catch((error) => {
+          logger.error('Error processing artifact content:', error);
+          return null;
+        }),
+      );
     }
 
     if (output.artifact[Tools.web_search]) {

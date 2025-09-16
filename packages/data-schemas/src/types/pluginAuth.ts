@@ -18,6 +18,7 @@ export interface PluginAuthQuery {
 export interface FindPluginAuthParams {
   userId: string;
   authField: string;
+  pluginKey?: string;
 }
 
 export interface FindPluginAuthsByKeysParams {

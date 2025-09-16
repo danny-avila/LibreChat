@@ -29,7 +29,6 @@ export default function Artifacts() {
     isMermaid,
     setActiveTab,
     currentIndex,
-    isSubmitting,
     cycleArtifact,
     currentArtifact,
     orderedArtifactIds,
@@ -116,7 +115,6 @@ export default function Artifacts() {
           <ArtifactTabs
             isMermaid={isMermaid}
             artifact={currentArtifact}
-            isSubmitting={isSubmitting}
             editorRef={editorRef as React.MutableRefObject<CodeEditorRef>}
             previewRef={previewRef as React.MutableRefObject<SandpackPreviewRef>}
           />

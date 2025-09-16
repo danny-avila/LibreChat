@@ -60,6 +60,7 @@
   --font-size-base: 1rem;
   --font-size-lg: 1.125rem;
   --font-size-xl: 1.25rem;
+  --markdown-font-size: 1rem;
 }
 html {
   --brand-purple: #ab68ff;
@@ -2798,4 +2799,19 @@ html {
 
 .custom-style-2 {
   padding: 12px;
+}
+
+/* Hide scrollbar for Chrome, Safari and Opera */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Hide scrollbar for IE, Edge and Firefox */
+.no-scrollbar {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
+
+.sharepoint-picker-bg{
+  background-color: #F5F5F5;
 }

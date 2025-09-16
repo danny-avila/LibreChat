@@ -1,10 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { v4 } from 'uuid';
+import { useSetRecoilState } from 'recoil';
 import { useToastContext } from '@librechat/client';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   QueryKeys,
+  Constants,
   EModelEndpoint,
+  EToolResources,
   mergeFileConfig,
   isAgentsEndpoint,
   isAssistantsEndpoint,
@@ -19,6 +22,7 @@ import useLocalize, { TranslationKeys } from '~/hooks/useLocalize';
 import { useDelayedUploadToast } from './useDelayedUploadToast';
 import { processFileForUpload } from '~/utils/heicConverter';
 import { useChatContext } from '~/Providers/ChatContext';
+import { ephemeralAgentByConvoId } from '~/store';
 import { logger, validateFiles } from '~/utils';
 import useClientResize from './useClientResize';
 import useUpdateFiles from './useUpdateFiles';
@@ -39,6 +43,9 @@ const useFileHandling = (params?: UseFileHandling) => {
   const abortControllerRef = useRef<AbortController | null>(null);
   const { startUploadTimer, clearUploadTimer } = useDelayedUploadToast();
   const { files, setFiles, setFilesLoading, conversation } = useChatContext();
+  const setEphemeralAgent = useSetRecoilState(
+    ephemeralAgentByConvoId(conversation?.conversationId ?? Constants.NEW_CONVO),
+  );
   const setError = (error: string) => setErrors((prevErrors) => [...prevErrors, error]);
   const { addFile, replaceFile, updateFileById, deleteFileById } = useUpdateFiles(
     params?.fileSetter ?? setFiles,
@@ -133,12 +140,23 @@ const useFileHandling = (params?: UseFileHandling) => {
         const error = _error as TError | undefined;
         console.log('upload error', error);
         const file_id = body.get('file_id');
+        const tool_resource = body.get('tool_resource');
+        if (tool_resource === EToolResources.execute_code) {
+          setEphemeralAgent((prev) => ({
+            ...prev,
+            [EToolResources.execute_code]: false,
+          }));
+        }
         clearUploadTimer(file_id as string);
         deleteFileById(file_id as string);
-        const errorMessage =
-          error?.code === 'ERR_CANCELED'
-            ? 'com_error_files_upload_canceled'
-            : (error?.response?.data?.message ?? 'com_error_files_upload');
+
+        let errorMessage = 'com_error_files_upload';
+
+        if (error?.code === 'ERR_CANCELED') {
+          errorMessage = 'com_error_files_upload_canceled';
+        } else if (error?.response?.data?.message) {
+          errorMessage = error.response.data.message;
+        }
         setError(errorMessage);
       },
     },
@@ -256,6 +274,8 @@ const useFileHandling = (params?: UseFileHandling) => {
           fileConfig?.endpoints?.default ??
           defaultFileConfig.endpoints[endpoint] ??
           defaultFileConfig.endpoints.default,
+        toolResource: _toolResource,
+        fileConfig: fileConfig,
       });
     } catch (error) {
       console.error('file validation error', error);

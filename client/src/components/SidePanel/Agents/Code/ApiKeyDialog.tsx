@@ -65,7 +65,7 @@ export default function ApiKeyDialog({
                 {languageIcons.map((icon) => (
                   <div key={icon} className="h-6 w-6">
                     <img
-                      src={`/assets/${icon}`}
+                      src={`assets/${icon}`}
                       alt=""
                       className="h-full w-full object-contain opacity-[0.85] dark:invert"
                     />

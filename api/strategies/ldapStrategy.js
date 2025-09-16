@@ -1,10 +1,11 @@
 const fs = require('fs');
 const LdapStrategy = require('passport-ldapauth');
-const { SystemRoles } = require('librechat-data-provider');
 const { logger } = require('@librechat/data-schemas');
+const { isEnabled, getBalanceConfig } = require('@librechat/api');
+const { SystemRoles, ErrorTypes } = require('librechat-data-provider');
 const { createUser, findUser, updateUser, countUsers } = require('~/models');
-const { getBalanceConfig } = require('~/server/services/Config');
-const { isEnabled } = require('~/server/utils');
+const { isEmailDomainAllowed } = require('~/server/services/domains');
+const { getAppConfig } = require('~/server/services/Config');
 
 const {
   LDAP_URL,
@@ -90,6 +91,14 @@ const ldapLogin = new LdapStrategy(ldapOptions, async (userinfo, done) => {
       (LDAP_ID && userinfo[LDAP_ID]) || userinfo.uid || userinfo.sAMAccountName || userinfo.mail;
 
     let user = await findUser({ ldapId });
+    if (user && user.provider !== 'ldap') {
+      logger.info(
+        `[ldapStrategy] User ${user.email} already exists with provider ${user.provider}`,
+      );
+      return done(null, false, {
+        message: ErrorTypes.AUTH_FAILED,
+      });
+    }
 
     const fullNameAttributes = LDAP_FULL_NAME && LDAP_FULL_NAME.split(',');
     const fullName =
@@ -113,8 +122,18 @@ const ldapLogin = new LdapStrategy(ldapOptions, async (userinfo, done) => {
       );
     }
 
+    const appConfig = await getAppConfig();
+    if (!isEmailDomainAllowed(mail, appConfig?.registration?.allowedDomains)) {
+      logger.error(
+        `[LDAP Strategy] Authentication blocked - email domain not allowed [Email: ${mail}]`,
+      );
+      return done(null, false, { message: 'Email domain not allowed' });
+    }
+
     if (!user) {
       const isFirstRegisteredUser = (await countUsers()) === 0;
+      const role = isFirstRegisteredUser ? SystemRoles.ADMIN : SystemRoles.USER;
+
       user = {
         provider: 'ldap',
         ldapId,
@@ -122,9 +141,9 @@ const ldapLogin = new LdapStrategy(ldapOptions, async (userinfo, done) => {
         email: mail,
         emailVerified: true, // The ldap server administrator should verify the email
         name: fullName,
-        role: isFirstRegisteredUser ? SystemRoles.ADMIN : SystemRoles.USER,
+        role,
       };
-      const balanceConfig = await getBalanceConfig();
+      const balanceConfig = getBalanceConfig(appConfig);
       const userId = await createUser(user, balanceConfig);
       user._id = userId;
     } else {

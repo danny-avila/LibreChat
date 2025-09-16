@@ -9,6 +9,24 @@ const {
 const { disposeClient, clientRegistry, requestDataMap } = require('~/server/cleanup');
 const { saveMessage } = require('~/models');
 
+function createCloseHandler(abortController) {
+  return function (manual) {
+    if (!manual) {
+      logger.debug('[AgentController] Request closed');
+    }
+    if (!abortController) {
+      return;
+    } else if (abortController.signal.aborted) {
+      return;
+    } else if (abortController.requestCompleted) {
+      return;
+    }
+
+    abortController.abort();
+    logger.debug('[AgentController] Request aborted on close');
+  };
+}
+
 const AgentController = async (req, res, next, initializeClient, addTitle) => {
   let {
     text,
@@ -31,7 +49,6 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
   let userMessagePromise;
   let getAbortData;
   let client = null;
-  // Initialize as an array
   let cleanupHandlers = [];
 
   const newConvo = !conversationId;
@@ -62,9 +79,7 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
   // Create a function to handle final cleanup
   const performCleanup = () => {
     logger.debug('[AgentController] Performing cleanup');
-    // Make sure cleanupHandlers is an array before iterating
     if (Array.isArray(cleanupHandlers)) {
-      // Execute all cleanup handlers
       for (const handler of cleanupHandlers) {
         try {
           if (typeof handler === 'function') {
@@ -105,8 +120,33 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
   };
 
   try {
-    /** @type {{ client: TAgentClient }} */
-    const result = await initializeClient({ req, res, endpointOption });
+    let prelimAbortController = new AbortController();
+    const prelimCloseHandler = createCloseHandler(prelimAbortController);
+    res.on('close', prelimCloseHandler);
+    const removePrelimHandler = (manual) => {
+      try {
+        prelimCloseHandler(manual);
+        res.removeListener('close', prelimCloseHandler);
+      } catch (e) {
+        logger.error('[AgentController] Error removing close listener', e);
+      }
+    };
+    cleanupHandlers.push(removePrelimHandler);
+    /** @type {{ client: TAgentClient; userMCPAuthMap?: Record<string, Record<string, string>> }} */
+    const result = await initializeClient({
+      req,
+      res,
+      endpointOption,
+      signal: prelimAbortController.signal,
+    });
+    if (prelimAbortController.signal?.aborted) {
+      prelimAbortController = null;
+      throw new Error('Request was aborted before initialization could complete');
+    } else {
+      prelimAbortController = null;
+      removePrelimHandler(true);
+      cleanupHandlers.pop();
+    }
     client = result.client;
 
     // Register client with finalization registry if available
@@ -138,22 +178,7 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
     };
 
     const { abortController, onStart } = createAbortController(req, res, getAbortData, getReqData);
-
-    // Simple handler to avoid capturing scope
-    const closeHandler = () => {
-      logger.debug('[AgentController] Request closed');
-      if (!abortController) {
-        return;
-      } else if (abortController.signal.aborted) {
-        return;
-      } else if (abortController.requestCompleted) {
-        return;
-      }
-
-      abortController.abort();
-      logger.debug('[AgentController] Request aborted on close');
-    };
-
+    const closeHandler = createCloseHandler(abortController);
     res.on('close', closeHandler);
     cleanupHandlers.push(() => {
       try {
@@ -175,6 +200,7 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
       abortController,
       overrideParentMessageId,
       isEdited: !!editedContent,
+      userMCPAuthMap: result.userMCPAuthMap,
       responseMessageId: editedResponseMessageId,
       progressOptions: {
         res,
@@ -232,6 +258,26 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
           { context: 'api/server/controllers/agents/request.js - response end' },
         );
       }
+    }
+    // Edge case: sendMessage completed but abort happened during sendCompletion
+    // We need to ensure a final event is sent
+    else if (!res.headersSent && !res.finished) {
+      logger.debug(
+        '[AgentController] Handling edge case: `sendMessage` completed but aborted during `sendCompletion`',
+      );
+
+      const finalResponse = { ...response };
+      finalResponse.error = true;
+
+      sendEvent(res, {
+        final: true,
+        conversation,
+        title: conversation.title,
+        requestMessage: userMessage,
+        responseMessage: finalResponse,
+        error: { message: 'Request was aborted during completion' },
+      });
+      res.end();
     }
 
     // Save user message if needed

@@ -1,34 +1,35 @@
 import React from 'react';
 import { RefreshCw } from 'lucide-react';
 import { Button, Spinner } from '@librechat/client';
-import { useMCPServerManager } from '~/hooks/MCP/useMCPServerManager';
-import { useLocalize } from '~/hooks';
+import { useLocalize, useMCPServerManager, useMCPConnectionStatus } from '~/hooks';
+import { useGetStartupConfig } from '~/data-provider';
 
 interface ServerInitializationSectionProps {
   sidePanel?: boolean;
   serverName: string;
   requiresOAuth: boolean;
   hasCustomUserVars?: boolean;
+  conversationId?: string | null;
 }
 
 export default function ServerInitializationSection({
-  sidePanel = false,
   serverName,
   requiresOAuth,
+  conversationId,
+  sidePanel = false,
   hasCustomUserVars = false,
 }: ServerInitializationSectionProps) {
   const localize = useLocalize();
 
-  const {
-    initializeServer,
-    connectionStatus,
-    cancelOAuthFlow,
-    isInitializing,
-    isCancellable,
-    getOAuthUrl,
-  } = useMCPServerManager();
+  const { initializeServer, cancelOAuthFlow, isInitializing, isCancellable, getOAuthUrl } =
+    useMCPServerManager({ conversationId });
 
-  const serverStatus = connectionStatus[serverName];
+  const { data: startupConfig } = useGetStartupConfig();
+  const { connectionStatus } = useMCPConnectionStatus({
+    enabled: !!startupConfig?.mcpServers && Object.keys(startupConfig.mcpServers).length > 0,
+  });
+
+  const serverStatus = connectionStatus?.[serverName];
   const isConnected = serverStatus?.connectionState === 'connected';
   const canCancel = isCancellable(serverName);
   const isServerInitializing = isInitializing(serverName);
@@ -69,13 +70,18 @@ export default function ServerInitializationSection({
   const isReinit = shouldShowReinit;
   const outerClass = isReinit ? 'flex justify-start' : 'flex justify-end';
   const buttonVariant = isReinit ? undefined : 'default';
-  const buttonText = isServerInitializing
-    ? localize('com_ui_loading')
-    : isReinit
-      ? localize('com_ui_reinitialize')
-      : requiresOAuth
-        ? localize('com_ui_authenticate')
-        : localize('com_ui_mcp_initialize');
+
+  let buttonText = '';
+  if (isServerInitializing) {
+    buttonText = localize('com_ui_loading');
+  } else if (isReinit) {
+    buttonText = localize('com_ui_reinitialize');
+  } else if (requiresOAuth) {
+    buttonText = localize('com_ui_authenticate');
+  } else {
+    buttonText = localize('com_ui_mcp_initialize');
+  }
+
   const icon = isServerInitializing ? (
     <Spinner className="h-4 w-4" />
   ) : (
