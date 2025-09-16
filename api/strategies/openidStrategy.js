@@ -371,6 +371,10 @@ async function setupOpenId() {
           const fullName = getFullName(userinfo);
 
           if (requiredRole) {
+            const requiredRoles = requiredRole
+              .split(',')
+              .map((role) => role.trim())
+              .filter(Boolean);
             let decodedToken = '';
             if (requiredRoleTokenKind === 'access') {
               decodedToken = jwtDecode(tokenset.access_token);
@@ -393,9 +397,13 @@ async function setupOpenId() {
               );
             }
 
-            if (!roles.includes(requiredRole)) {
+            if (!requiredRoles.some((role) => roles.includes(role))) {
+              const rolesList =
+                requiredRoles.length === 1
+                  ? `"${requiredRoles[0]}"`
+                  : `one of: ${requiredRoles.map((r) => `"${r}"`).join(', ')}`;
               return done(null, false, {
-                message: `You must have the "${requiredRole}" role to log in.`,
+                message: `You must have ${rolesList} role to log in.`,
               });
             }
           }
