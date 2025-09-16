@@ -1,9 +1,10 @@
+const { getLLMConfig } = require('@librechat/api');
 const { EModelEndpoint } = require('librechat-data-provider');
 const { getUserKey, checkUserKeyExpiry } = require('~/server/services/UserService');
-const { getLLMConfig } = require('~/server/services/Endpoints/anthropic/llm');
 const AnthropicClient = require('~/app/clients/AnthropicClient');
 
 const initializeClient = async ({ req, res, endpointOption, overrideModel, optionsOnly }) => {
+  const appConfig = req.config;
   const { ANTHROPIC_API_KEY, ANTHROPIC_REVERSE_PROXY, PROXY } = process.env;
   const expiresAt = req.body.key;
   const isUserProvided = ANTHROPIC_API_KEY === 'user_provided';
@@ -23,15 +24,14 @@ const initializeClient = async ({ req, res, endpointOption, overrideModel, optio
   let clientOptions = {};
 
   /** @type {undefined | TBaseEndpoint} */
-  const anthropicConfig = req.app.locals[EModelEndpoint.anthropic];
+  const anthropicConfig = appConfig.endpoints?.[EModelEndpoint.anthropic];
 
   if (anthropicConfig) {
     clientOptions.streamRate = anthropicConfig.streamRate;
     clientOptions.titleModel = anthropicConfig.titleModel;
   }
 
-  /** @type {undefined | TBaseEndpoint} */
-  const allConfig = req.app.locals.all;
+  const allConfig = appConfig.endpoints?.all;
   if (allConfig) {
     clientOptions.streamRate = allConfig.streamRate;
   }
@@ -40,7 +40,6 @@ const initializeClient = async ({ req, res, endpointOption, overrideModel, optio
     clientOptions = Object.assign(
       {
         proxy: PROXY ?? null,
-        userId: req.user.id,
         reverseProxyUrl: ANTHROPIC_REVERSE_PROXY ?? null,
         modelOptions: endpointOption?.model_parameters ?? {},
       },
@@ -49,6 +48,7 @@ const initializeClient = async ({ req, res, endpointOption, overrideModel, optio
     if (overrideModel) {
       clientOptions.modelOptions.model = overrideModel;
     }
+    clientOptions.modelOptions.user = req.user.id;
     return getLLMConfig(anthropicApiKey, clientOptions);
   }
 

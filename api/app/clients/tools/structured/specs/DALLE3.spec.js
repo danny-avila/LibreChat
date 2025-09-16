@@ -1,9 +1,8 @@
 const OpenAI = require('openai');
+const { logger } = require('@librechat/data-schemas');
 const DALLE3 = require('../DALLE3');
-const logger = require('~/config/winston');
 
 jest.mock('openai');
-
 jest.mock('@librechat/data-schemas', () => {
   return {
     logger: {
@@ -25,25 +24,6 @@ jest.mock('tiktoken', () => {
 });
 
 const processFileURL = jest.fn();
-
-jest.mock('~/server/services/Files/images', () => ({
-  getImageBasename: jest.fn().mockImplementation((url) => {
-    // Split the URL by '/'
-    const parts = url.split('/');
-
-    // Get the last part of the URL
-    const lastPart = parts.pop();
-
-    // Check if the last part of the URL matches the image extension regex
-    const imageExtensionRegex = /\.(jpg|jpeg|png|gif|bmp|tiff|svg)$/i;
-    if (imageExtensionRegex.test(lastPart)) {
-      return lastPart;
-    }
-
-    // If the regex test fails, return an empty string
-    return '';
-  }),
-}));
 
 const generate = jest.fn();
 OpenAI.mockImplementation(() => ({

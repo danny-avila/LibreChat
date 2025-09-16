@@ -1,5 +1,6 @@
 const path = require('path');
 const { logger } = require('@librechat/data-schemas');
+const { ensureRequiredCollectionsExist } = require('@librechat/api');
 const { AccessRoleIds, ResourceType, PrincipalType } = require('librechat-data-provider');
 const { GLOBAL_PROJECT_NAME } = require('librechat-data-provider').Constants;
 
@@ -15,6 +16,13 @@ async function migrateToPromptGroupPermissions({ dryRun = true, batchSize = 100 
   await connect();
 
   logger.info('Starting PromptGroup Permissions Migration', { dryRun, batchSize });
+
+  const mongoose = require('mongoose');
+  /** @type {import('mongoose').mongo.Db | undefined} */
+  const db = mongoose.connection.db;
+  if (db) {
+    await ensureRequiredCollectionsExist(db);
+  }
 
   // Verify required roles exist
   const ownerRole = await findRoleByIdentifier(AccessRoleIds.PROMPTGROUP_OWNER);
@@ -91,11 +99,18 @@ async function migrateToPromptGroupPermissions({ dryRun = true, batchSize = 100 
     }
   });
 
-  logger.info('PromptGroup categorization:', {
-    globalViewAccess: categories.globalViewAccess.length,
-    privateGroups: categories.privateGroups.length,
-    total: promptGroupsToMigrate.length,
-  });
+  logger.info(
+    'PromptGroup categorization:\n' +
+      JSON.stringify(
+        {
+          globalViewAccess: categories.globalViewAccess.length,
+          privateGroups: categories.privateGroups.length,
+          total: promptGroupsToMigrate.length,
+        },
+        null,
+        2,
+      ),
+  );
 
   if (dryRun) {
     return {

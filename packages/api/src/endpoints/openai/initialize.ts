@@ -1,15 +1,15 @@
 import { ErrorTypes, EModelEndpoint, mapModelToAzureConfig } from 'librechat-data-provider';
 import type {
-  UserKeyValues,
+  InitializeOpenAIOptionsParams,
   OpenAIOptionsResult,
   OpenAIConfigOptions,
-  InitializeOpenAIOptionsParams,
+  UserKeyValues,
 } from '~/types';
 import { createHandleLLMNewToken } from '~/utils/generators';
 import { getAzureCredentials } from '~/utils/azure';
 import { isUserProvided } from '~/utils/common';
 import { resolveHeaders } from '~/utils/env';
-import { getOpenAIConfig } from './llm';
+import { getOpenAIConfig } from './config';
 
 /**
  * Initializes OpenAI options for agent usage. This function always returns configuration
@@ -21,6 +21,7 @@ import { getOpenAIConfig } from './llm';
  */
 export const initializeOpenAI = async ({
   req,
+  appConfig,
   overrideModel,
   endpointOption,
   overrideEndpoint,
@@ -71,7 +72,7 @@ export const initializeOpenAI = async ({
   };
 
   const isAzureOpenAI = endpoint === EModelEndpoint.azureOpenAI;
-  const azureConfig = isAzureOpenAI && req.app.locals[EModelEndpoint.azureOpenAI];
+  const azureConfig = isAzureOpenAI && appConfig.endpoints?.[EModelEndpoint.azureOpenAI];
 
   if (isAzureOpenAI && azureConfig) {
     const { modelGroupMap, groupMap } = azureConfig;
@@ -114,7 +115,7 @@ export const initializeOpenAI = async ({
   } else if (isAzureOpenAI) {
     clientOptions.azure =
       userProvidesKey && userValues?.apiKey ? JSON.parse(userValues.apiKey) : getAzureCredentials();
-    apiKey = clientOptions.azure?.azureOpenAIApiKey;
+    apiKey = clientOptions.azure ? clientOptions.azure.azureOpenAIApiKey : undefined;
   }
 
   if (userProvidesKey && !apiKey) {
@@ -142,8 +143,8 @@ export const initializeOpenAI = async ({
 
   const options = getOpenAIConfig(apiKey, finalClientOptions, endpoint);
 
-  const openAIConfig = req.app.locals[EModelEndpoint.openAI];
-  const allConfig = req.app.locals.all;
+  const openAIConfig = appConfig.endpoints?.[EModelEndpoint.openAI];
+  const allConfig = appConfig.endpoints?.all;
   const azureRate = modelName?.includes('gpt-4') ? 30 : 17;
 
   let streamRate: number | undefined;

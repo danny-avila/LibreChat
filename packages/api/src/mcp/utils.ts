@@ -31,3 +31,17 @@ export function normalizeServerName(serverName: string): string {
 
   return normalized;
 }
+
+/**
+ * Sanitizes a URL by removing query parameters to prevent credential leakage in logs.
+ * @param url - The URL to sanitize (string or URL object)
+ * @returns The sanitized URL string without query parameters
+ */
+export function sanitizeUrlForLogging(url: string | URL): string {
+  try {
+    const urlObj = typeof url === 'string' ? new URL(url) : url;
+    return `${urlObj.protocol}//${urlObj.host}${urlObj.pathname}`;
+  } catch {
+    return '[invalid URL]';
+  }
+}

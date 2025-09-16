@@ -54,6 +54,11 @@ export class MCPManager extends UserConnectionManager {
     return this.serversRegistry.oauthServers!;
   }
 
+  /** Get all servers */
+  public getAllServers(): t.MCPServers | null {
+    return this.serversRegistry.rawConfigs!;
+  }
+
   /** Returns all available tool functions from app-level connections */
   public getAppToolFunctions(): t.LCAvailableTools | null {
     return this.serversRegistry.toolFunctions!;
@@ -275,6 +280,7 @@ Please follow these instructions when using tools from the respective MCP server
         CallToolResultSchema,
         {
           timeout: connection.timeout,
+          resetTimeoutOnProgress: true,
           ...options,
         },
       );

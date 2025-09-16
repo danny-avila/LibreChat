@@ -2,7 +2,13 @@ import React, { useMemo } from 'react';
 import { OGDialog, OGDialogTemplate } from '@librechat/client';
 import { ImageUpIcon, FileSearch, TerminalSquareIcon, FileType2Icon } from 'lucide-react';
 import { EToolResources, defaultAgentCapabilities } from 'librechat-data-provider';
-import { useLocalize, useGetAgentsConfig, useAgentCapabilities } from '~/hooks';
+import {
+  useAgentToolPermissions,
+  useAgentCapabilities,
+  useGetAgentsConfig,
+  useLocalize,
+} from '~/hooks';
+import { useChatContext } from '~/Providers';
 
 interface DragDropModalProps {
   onOptionSelect: (option: EToolResources | undefined) => void;
@@ -26,6 +32,11 @@ const DragDropModal = ({ onOptionSelect, setShowModal, files, isVisible }: DragD
    * Use definition for agents endpoint for ephemeral agents
    * */
   const capabilities = useAgentCapabilities(agentsConfig?.capabilities ?? defaultAgentCapabilities);
+  const { conversation } = useChatContext();
+  const { fileSearchAllowedByAgent, codeAllowedByAgent } = useAgentToolPermissions(
+    conversation?.agent_id,
+  );
+
   const options = useMemo(() => {
     const _options: FileOption[] = [
       {
@@ -35,14 +46,14 @@ const DragDropModal = ({ onOptionSelect, setShowModal, files, isVisible }: DragD
         condition: files.every((file) => file.type?.startsWith('image/')),
       },
     ];
-    if (capabilities.fileSearchEnabled) {
+    if (capabilities.fileSearchEnabled && fileSearchAllowedByAgent) {
       _options.push({
         label: localize('com_ui_upload_file_search'),
         value: EToolResources.file_search,
         icon: <FileSearch className="icon-md" />,
       });
     }
-    if (capabilities.codeEnabled) {
+    if (capabilities.codeEnabled && codeAllowedByAgent) {
       _options.push({
         label: localize('com_ui_upload_code_files'),
         value: EToolResources.execute_code,
@@ -58,7 +69,7 @@ const DragDropModal = ({ onOptionSelect, setShowModal, files, isVisible }: DragD
     }
 
     return _options;
-  }, [capabilities, files, localize]);
+  }, [capabilities, files, localize, fileSearchAllowedByAgent, codeAllowedByAgent]);
 
   if (!isVisible) {
     return null;
