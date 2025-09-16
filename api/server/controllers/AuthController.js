@@ -13,7 +13,7 @@ const {
 const { findUser, getUserById, deleteAllUserSessions, findSession } = require('~/models');
 const { getOpenIdConfig } = require('~/strategies');
 const { getGraphApiToken } = require('~/server/services/GraphTokenService');
-const { reconnectOAuthMCPServers } = require('~/server/services/MCP/reconnectOAuthServers');
+const { getOAuthReconnectionManager } = require('~/config');
 
 const registrationController = async (req, res) => {
   try {
@@ -110,9 +110,11 @@ const refreshController = async (req, res) => {
       const token = await setAuthTokens(userId, res, session);
 
       // trigger OAuth MCP server reconnection asynchronously (best effort)
-      void reconnectOAuthMCPServers(userId).catch((err) => {
-        logger.error('Error reconnecting OAuth MCP servers:', err);
-      });
+      void getOAuthReconnectionManager()
+        .reconnectServers(userId)
+        .catch((err) => {
+          logger.error('Error reconnecting OAuth MCP servers:', err);
+        });
 
       res.status(200).send({ token, user });
     } else if (req?.query?.retry) {

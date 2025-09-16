@@ -31,6 +31,7 @@ jest.mock('./Config', () => ({
 jest.mock('~/config', () => ({
   getMCPManager: jest.fn(),
   getFlowStateManager: jest.fn(),
+  getOAuthReconnectionManager: jest.fn(),
 }));
 
 jest.mock('~/cache', () => ({
@@ -48,6 +49,7 @@ describe('tests for the new helper functions used by the MCP connection status e
   let mockGetMCPManager;
   let mockGetFlowStateManager;
   let mockGetLogStores;
+  let mockGetOAuthReconnectionManager;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -56,6 +58,7 @@ describe('tests for the new helper functions used by the MCP connection status e
     mockGetMCPManager = require('~/config').getMCPManager;
     mockGetFlowStateManager = require('~/config').getFlowStateManager;
     mockGetLogStores = require('~/cache').getLogStores;
+    mockGetOAuthReconnectionManager = require('~/config').getOAuthReconnectionManager;
   });
 
   describe('getMCPSetupData', () => {
@@ -74,7 +77,6 @@ describe('tests for the new helper functions used by the MCP connection status e
         getAllConnections: jest.fn(() => new Map()),
         getUserConnections: jest.fn(() => new Map()),
         getOAuthServers: jest.fn(() => new Set()),
-        isReconnecting: jest.fn(() => false),
       });
     });
 
@@ -89,7 +91,6 @@ describe('tests for the new helper functions used by the MCP connection status e
         getAllConnections: jest.fn(() => mockAppConnections),
         getUserConnections: jest.fn(() => mockUserConnections),
         getOAuthServers: jest.fn(() => mockOAuthServers),
-        isReconnecting: jest.fn(() => false),
       };
       mockGetMCPManager.mockReturnValue(mockMCPManager);
 
@@ -121,7 +122,6 @@ describe('tests for the new helper functions used by the MCP connection status e
         getAllConnections: jest.fn(() => null),
         getUserConnections: jest.fn(() => null),
         getOAuthServers: jest.fn(() => null),
-        isReconnecting: jest.fn(() => false),
       };
       mockGetMCPManager.mockReturnValue(mockMCPManager);
 
@@ -357,6 +357,12 @@ describe('tests for the new helper functions used by the MCP connection status e
       const userConnections = new Map();
       const oauthServers = new Set([mockServerName]);
 
+      // Mock OAuthReconnectionManager
+      const mockOAuthReconnectionManager = {
+        isReconnecting: jest.fn(() => false),
+      };
+      mockGetOAuthReconnectionManager.mockReturnValue(mockOAuthReconnectionManager);
+
       const result = await getServerConnectionStatus(
         mockUserId,
         mockServerName,
@@ -372,6 +378,12 @@ describe('tests for the new helper functions used by the MCP connection status e
       const appConnections = new Map();
       const userConnections = new Map();
       const oauthServers = new Set([mockServerName]);
+
+      // Mock OAuthReconnectionManager
+      const mockOAuthReconnectionManager = {
+        isReconnecting: jest.fn(() => false),
+      };
+      mockGetOAuthReconnectionManager.mockReturnValue(mockOAuthReconnectionManager);
 
       // Mock flow state to return failed flow
       const mockFlowManager = {
@@ -404,6 +416,12 @@ describe('tests for the new helper functions used by the MCP connection status e
       const userConnections = new Map();
       const oauthServers = new Set([mockServerName]);
 
+      // Mock OAuthReconnectionManager
+      const mockOAuthReconnectionManager = {
+        isReconnecting: jest.fn(() => false),
+      };
+      mockGetOAuthReconnectionManager.mockReturnValue(mockOAuthReconnectionManager);
+
       // Mock flow state to return active flow
       const mockFlowManager = {
         getFlowState: jest.fn(() => ({
@@ -435,6 +453,12 @@ describe('tests for the new helper functions used by the MCP connection status e
       const userConnections = new Map();
       const oauthServers = new Set([mockServerName]);
 
+      // Mock OAuthReconnectionManager
+      const mockOAuthReconnectionManager = {
+        isReconnecting: jest.fn(() => false),
+      };
+      mockGetOAuthReconnectionManager.mockReturnValue(mockOAuthReconnectionManager);
+
       // Mock flow state to return no flow
       const mockFlowManager = {
         getFlowState: jest.fn(() => null),
@@ -462,11 +486,11 @@ describe('tests for the new helper functions used by the MCP connection status e
       const userConnections = new Map();
       const oauthServers = new Set([mockServerName]);
 
-      // Mock MCPManager to return true for isReconnecting
-      const mockMCPManager = {
+      // Mock OAuthReconnectionManager to return true for isReconnecting
+      const mockOAuthReconnectionManager = {
         isReconnecting: jest.fn(() => true),
       };
-      mockGetMCPManager.mockReturnValue(mockMCPManager);
+      mockGetOAuthReconnectionManager.mockReturnValue(mockOAuthReconnectionManager);
 
       const result = await getServerConnectionStatus(
         mockUserId,
@@ -480,7 +504,10 @@ describe('tests for the new helper functions used by the MCP connection status e
         requiresOAuth: true,
         connectionState: 'connecting',
       });
-      expect(mockMCPManager.isReconnecting).toHaveBeenCalledWith(mockUserId, mockServerName);
+      expect(mockOAuthReconnectionManager.isReconnecting).toHaveBeenCalledWith(
+        mockUserId,
+        mockServerName,
+      );
     });
 
     it('should not check OAuth flow status when server is connected', async () => {

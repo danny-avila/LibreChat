@@ -1,4 +1,4 @@
-const { MCPManager, FlowStateManager } = require('@librechat/api');
+const { MCPManager, FlowStateManager, OAuthReconnectionManager } = require('@librechat/api');
 const { EventSource } = require('eventsource');
 const { Time } = require('librechat-data-provider');
 const logger = require('./winston');
@@ -26,4 +26,6 @@ module.exports = {
   createMCPManager: MCPManager.createInstance,
   getMCPManager: MCPManager.getInstance,
   getFlowStateManager,
+  createOAuthReconnectionManager: OAuthReconnectionManager.createInstance,
+  getOAuthReconnectionManager: OAuthReconnectionManager.getInstance,
 };

@@ -17,6 +17,7 @@ const { jwtLogin, ldapLogin, passportLogin } = require('~/strategies');
 const { updateInterfacePermissions } = require('~/models/interface');
 const { checkMigrations } = require('./services/start/migration');
 const initializeMCPs = require('./services/initializeMCPs');
+const initializeOAuthReconnectManager = require('./services/initializeOAuthReconnectManager');
 const configureSocialLogins = require('./socialLogins');
 const { getAppConfig } = require('./services/Config');
 const staticCache = require('./utils/staticCache');
@@ -154,7 +155,7 @@ const startServer = async () => {
     res.send(updatedIndexHtml);
   });
 
-  app.listen(port, host, () => {
+  app.listen(port, host, async () => {
     if (host === '0.0.0.0') {
       logger.info(
         `Server listening on all interfaces at port ${port}. Use http://localhost:${port} to access it`,
@@ -163,7 +164,9 @@ const startServer = async () => {
       logger.info(`Server listening at http://${host == '0.0.0.0' ? 'localhost' : host}:${port}`);
     }
 
-    initializeMCPs().then(() => checkMigrations());
+    await initializeMCPs();
+    await initializeOAuthReconnectManager();
+    await checkMigrations();
   });
 };
 

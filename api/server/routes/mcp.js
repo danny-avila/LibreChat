@@ -6,7 +6,7 @@ const { findToken, updateToken, createToken, deleteTokens } = require('~/models'
 const { updateMCPUserTools } = require('~/server/services/Config/mcpToolsCache');
 const { getUserPluginAuthValue } = require('~/server/services/PluginService');
 const { CacheKeys, Constants } = require('librechat-data-provider');
-const { getMCPManager, getFlowStateManager } = require('~/config');
+const { getMCPManager, getFlowStateManager, getOAuthReconnectionManager } = require('~/config');
 const { reinitMCPServer } = require('~/server/services/Tools/mcp');
 const { requireJwtAuth } = require('~/server/middleware');
 const { findPluginAuthsByKeys } = require('~/models');
@@ -144,9 +144,9 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
           `[MCP OAuth] Successfully reconnected ${serverName} for user ${flowState.userId}`,
         );
 
-        // clear any previous failed reconnection attempts and reconnecting state now that we've successfully connected
-        mcpManager.clearFailedReconnect(flowState.userId, serverName);
-        mcpManager.clearReconnectingState(flowState.userId, serverName);
+        // clear any reconnection attempts
+        const oauthReconnectionManager = getOAuthReconnectionManager();
+        oauthReconnectionManager.clearReconnection(flowState.userId, serverName);
 
         const tools = await userConnection.fetchTools();
         await updateMCPUserTools({
