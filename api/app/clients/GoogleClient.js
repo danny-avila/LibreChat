@@ -260,7 +260,7 @@ class GoogleClient extends BaseClient {
       // Ensure we properly combine the prompt prefix with the artifacts prompt
       promptPrefix = promptPrefix ? `${promptPrefix}\n\n${this.options.artifactsPrompt}` : this.options.artifactsPrompt;
     }
-        promptPrefix = buildSystemInstruction(promptPrefix);
+        // promptPrefix = buildSystemInstruction(promptPrefix);
 
 
     this.systemMessage = promptPrefix;
@@ -1348,14 +1348,14 @@ async generateFollowUpQuestion(analysis, userInput, response) {
     const originalModel = this.modelOptions.model;
     this.modelOptions.model = 'gemini-2.5-flash';
     
-    const followUpPrompt = `Generate a contextual follow-up question based on this interaction:
+    const followUpPrompt = `Based on this conversation, generate ONLY a single follow-up question:
 
 User asked: "${userInput.substring(0, 200)}"
-I provided: "${response.substring(0, 300)}..."
+Response given: "${response.substring(0, 300)}..."
 
-After providing your response to the user's query, always include 3 related follow-up questions at the end. These questions should be relevant to the topic discussed and help guide the user to explore the subject further. Format the questions with phrases like "Should I...", "Would you like me to...", "Do you want to...", or similar inquiry patterns. Present these questions in a clear, bulleted list after your main response.
+Generate ONE contextual follow-up question that would help the user explore this topic further. Use phrases like "Would you like me to...", "Should I...", "Do you want to...", or "Would it help if I...".
 
-Be specific to the actual content and context provided. One question only.`;
+Return ONLY the question, nothing else. No explanations, no additional text, just the question.`;
 
     const followUpResponse = await this.getCompletion(
       [
@@ -1454,10 +1454,7 @@ logger.debug('Input analysis:', analysis);
 //   return analysis.clarification_question;
 // }
 
-const shouldAskClarification = analysis.needs_clarification && 
-                              analysis.clarification_question && 
-                              !recentHistory.includes('clarification') &&
-                              conversationHistory.length <= 2; // Only ask early in conversation
+const shouldAskClarification = analysis.needs_clarification && analysis.clarification_question;
 
 if (shouldAskClarification) {
   return analysis.clarification_question;
