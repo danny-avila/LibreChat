@@ -1,3 +1,6 @@
+# stripe
+docker-compose.stripe.*
+
 ### node etc ###
 
 # Logs
@@ -138,5 +141,4 @@ helm/**/.values.yaml
 /.tabnine/
 /.codeium
 
-# stripe 
-docker-compose.stripe.*
+*.local.md

@@ -1,3 +1,4 @@
+/** v0.8.0-rc4 */
 module.exports = {
   roots: ['<rootDir>/src'],
   testEnvironment: 'jsdom',
@@ -28,7 +29,8 @@ module.exports = {
       'jest-file-loader',
     '^test/(.*)$': '<rootDir>/test/$1',
     '^~/(.*)$': '<rootDir>/src/$1',
-    '^librechat-data-provider/react-query$': '<rootDir>/../node_modules/librechat-data-provider/src/react-query',
+    '^librechat-data-provider/react-query$':
+      '<rootDir>/../node_modules/librechat-data-provider/src/react-query',
   },
   restoreMocks: true,
   testResultsProcessor: 'jest-junit',
