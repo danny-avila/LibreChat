@@ -85,7 +85,7 @@ const Part = memo(
 
       const isToolCall =
         'args' in toolCall && (!toolCall.type || toolCall.type === ToolCallTypes.TOOL_CALL);
-      if (isToolCall && toolCall.name === Tools.execute_code && toolCall.args) {
+      if (isToolCall && toolCall.name === Tools.execute_code) {
         return (
           <ExecuteCode
             attachments={attachments}
