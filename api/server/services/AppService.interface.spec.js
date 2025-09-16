@@ -1,13 +1,4 @@
-jest.mock('~/models', () => ({
-  initializeRoles: jest.fn(),
-}));
-jest.mock('~/models/Role', () => ({
-  updateAccessPermissions: jest.fn(),
-  getRoleByName: jest.fn(),
-  updateRoleByName: jest.fn(),
-}));
-
-jest.mock('~/config', () => ({
+jest.mock('@librechat/data-schemas', () => ({
   logger: {
     info: jest.fn(),
     warn: jest.fn(),
@@ -15,11 +6,11 @@ jest.mock('~/config', () => ({
   },
 }));
 
-jest.mock('./Config/loadCustomConfig', () => jest.fn());
-jest.mock('./start/interface', () => ({
+jest.mock('@librechat/api', () => ({
+  ...jest.requireActual('@librechat/api'),
   loadDefaultInterface: jest.fn(),
 }));
-jest.mock('./ToolService', () => ({
+jest.mock('./start/tools', () => ({
   loadAndFormatTools: jest.fn().mockReturnValue({}),
 }));
 jest.mock('./start/checks', () => ({
@@ -30,15 +21,15 @@ jest.mock('./start/checks', () => ({
   checkWebSearchConfig: jest.fn(),
 }));
 
+jest.mock('./Config/loadCustomConfig', () => jest.fn());
+
 const AppService = require('./AppService');
-const { loadDefaultInterface } = require('./start/interface');
+const { loadDefaultInterface } = require('@librechat/api');
 
 describe('AppService interface configuration', () => {
-  let app;
   let mockLoadCustomConfig;
 
   beforeEach(() => {
-    app = { locals: {} };
     jest.resetModules();
     jest.clearAllMocks();
     mockLoadCustomConfig = require('./Config/loadCustomConfig');
@@ -48,10 +39,16 @@ describe('AppService interface configuration', () => {
     mockLoadCustomConfig.mockResolvedValue({});
     loadDefaultInterface.mockResolvedValue({ prompts: true, bookmarks: true });
 
-    await AppService(app);
+    const result = await AppService();
 
-    expect(app.locals.interfaceConfig.prompts).toBe(true);
-    expect(app.locals.interfaceConfig.bookmarks).toBe(true);
+    expect(result).toEqual(
+      expect.objectContaining({
+        interfaceConfig: expect.objectContaining({
+          prompts: true,
+          bookmarks: true,
+        }),
+      }),
+    );
     expect(loadDefaultInterface).toHaveBeenCalled();
   });
 
@@ -59,10 +56,16 @@ describe('AppService interface configuration', () => {
     mockLoadCustomConfig.mockResolvedValue({ interface: { prompts: false, bookmarks: false } });
     loadDefaultInterface.mockResolvedValue({ prompts: false, bookmarks: false });
 
-    await AppService(app);
+    const result = await AppService();
 
-    expect(app.locals.interfaceConfig.prompts).toBe(false);
-    expect(app.locals.interfaceConfig.bookmarks).toBe(false);
+    expect(result).toEqual(
+      expect.objectContaining({
+        interfaceConfig: expect.objectContaining({
+          prompts: false,
+          bookmarks: false,
+        }),
+      }),
+    );
     expect(loadDefaultInterface).toHaveBeenCalled();
   });
 
@@ -70,10 +73,17 @@ describe('AppService interface configuration', () => {
     mockLoadCustomConfig.mockResolvedValue({});
     loadDefaultInterface.mockResolvedValue({});
 
-    await AppService(app);
+    const result = await AppService();
 
-    expect(app.locals.interfaceConfig.prompts).toBeUndefined();
-    expect(app.locals.interfaceConfig.bookmarks).toBeUndefined();
+    expect(result).toEqual(
+      expect.objectContaining({
+        interfaceConfig: expect.anything(),
+      }),
+    );
+
+    // Verify that prompts and bookmarks are undefined when not provided
+    expect(result.interfaceConfig.prompts).toBeUndefined();
+    expect(result.interfaceConfig.bookmarks).toBeUndefined();
     expect(loadDefaultInterface).toHaveBeenCalled();
   });
 
@@ -81,10 +91,108 @@ describe('AppService interface configuration', () => {
     mockLoadCustomConfig.mockResolvedValue({ interface: { prompts: true, bookmarks: false } });
     loadDefaultInterface.mockResolvedValue({ prompts: true, bookmarks: false });
 
-    await AppService(app);
+    const result = await AppService();
 
-    expect(app.locals.interfaceConfig.prompts).toBe(true);
-    expect(app.locals.interfaceConfig.bookmarks).toBe(false);
+    expect(result).toEqual(
+      expect.objectContaining({
+        interfaceConfig: expect.objectContaining({
+          prompts: true,
+          bookmarks: false,
+        }),
+      }),
+    );
     expect(loadDefaultInterface).toHaveBeenCalled();
+  });
+
+  it('should correctly configure peoplePicker permissions including roles', async () => {
+    mockLoadCustomConfig.mockResolvedValue({
+      interface: {
+        peoplePicker: {
+          users: true,
+          groups: true,
+          roles: true,
+        },
+      },
+    });
+    loadDefaultInterface.mockResolvedValue({
+      peoplePicker: {
+        users: true,
+        groups: true,
+        roles: true,
+      },
+    });
+
+    const result = await AppService();
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        interfaceConfig: expect.objectContaining({
+          peoplePicker: expect.objectContaining({
+            users: true,
+            groups: true,
+            roles: true,
+          }),
+        }),
+      }),
+    );
+    expect(loadDefaultInterface).toHaveBeenCalled();
+  });
+
+  it('should handle mixed peoplePicker permissions', async () => {
+    mockLoadCustomConfig.mockResolvedValue({
+      interface: {
+        peoplePicker: {
+          users: true,
+          groups: false,
+          roles: true,
+        },
+      },
+    });
+    loadDefaultInterface.mockResolvedValue({
+      peoplePicker: {
+        users: true,
+        groups: false,
+        roles: true,
+      },
+    });
+
+    const result = await AppService();
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        interfaceConfig: expect.objectContaining({
+          peoplePicker: expect.objectContaining({
+            users: true,
+            groups: false,
+            roles: true,
+          }),
+        }),
+      }),
+    );
+  });
+
+  it('should set default peoplePicker permissions when not provided', async () => {
+    mockLoadCustomConfig.mockResolvedValue({});
+    loadDefaultInterface.mockResolvedValue({
+      peoplePicker: {
+        users: true,
+        groups: true,
+        roles: true,
+      },
+    });
+
+    const result = await AppService();
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        interfaceConfig: expect.objectContaining({
+          peoplePicker: expect.objectContaining({
+            users: true,
+            groups: true,
+            roles: true,
+          }),
+        }),
+      }),
+    );
   });
 });

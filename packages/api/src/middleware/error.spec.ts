@@ -15,6 +15,7 @@ jest.mock('@librechat/data-schemas', () => ({
 describe('ErrorController', () => {
   let mockReq: Request;
   let mockRes: Response;
+  let mockNext: jest.Mock;
 
   beforeEach(() => {
     mockReq = {
@@ -25,6 +26,7 @@ describe('ErrorController', () => {
       send: jest.fn(),
     } as unknown as Response;
     (logger.error as jest.Mock).mockClear();
+    mockNext = jest.fn();
   });
 
   describe('ValidationError handling', () => {
@@ -37,7 +39,7 @@ describe('ErrorController', () => {
         },
       } as ValidationError;
 
-      ErrorController(validationError, mockReq, mockRes);
+      ErrorController(validationError, mockReq, mockRes, mockNext);
 
       expect(mockRes.status).toHaveBeenCalledWith(400);
       expect(mockRes.send).toHaveBeenCalledWith({
@@ -57,7 +59,7 @@ describe('ErrorController', () => {
         },
       } as ValidationError;
 
-      ErrorController(validationError, mockReq, mockRes);
+      ErrorController(validationError, mockReq, mockRes, mockNext);
 
       expect(mockRes.status).toHaveBeenCalledWith(400);
       expect(mockRes.send).toHaveBeenCalledWith({
@@ -73,7 +75,7 @@ describe('ErrorController', () => {
         errors: {},
       } as ValidationError;
 
-      ErrorController(validationError, mockReq, mockRes);
+      ErrorController(validationError, mockReq, mockRes, mockNext);
 
       expect(mockRes.status).toHaveBeenCalledWith(400);
       expect(mockRes.send).toHaveBeenCalledWith({
@@ -94,7 +96,7 @@ describe('ErrorController', () => {
           'E11000 duplicate key error collection: test.users index: email_1 dup key: { email: "test@example.com" }',
       } as MongoServerError;
 
-      ErrorController(duplicateKeyError, mockReq, mockRes);
+      ErrorController(duplicateKeyError, mockReq, mockRes, mockNext);
 
       expect(mockRes.status).toHaveBeenCalledWith(409);
       expect(mockRes.send).toHaveBeenCalledWith({
@@ -116,7 +118,7 @@ describe('ErrorController', () => {
           'E11000 duplicate key error collection: test.users index: email_1 dup key: { email: "test@example.com" }',
       } as MongoServerError;
 
-      ErrorController(duplicateKeyError, mockReq, mockRes);
+      ErrorController(duplicateKeyError, mockReq, mockRes, mockNext);
 
       expect(mockRes.status).toHaveBeenCalledWith(409);
       expect(mockRes.send).toHaveBeenCalledWith({
@@ -138,7 +140,7 @@ describe('ErrorController', () => {
           'E11000 duplicate key error collection: test.users index: email_1 dup key: { email: "test@example.com" }',
       } as MongoServerError;
 
-      ErrorController(duplicateKeyError, mockReq, mockRes);
+      ErrorController(duplicateKeyError, mockReq, mockRes, mockNext);
 
       expect(mockRes.status).toHaveBeenCalledWith(409);
       expect(mockRes.send).toHaveBeenCalledWith({
@@ -155,7 +157,7 @@ describe('ErrorController', () => {
         body: 'Invalid JSON syntax',
       } as CustomError;
 
-      ErrorController(syntaxError, mockReq, mockRes);
+      ErrorController(syntaxError, mockReq, mockRes, mockNext);
 
       expect(mockRes.status).toHaveBeenCalledWith(400);
       expect(mockRes.send).toHaveBeenCalledWith('Invalid JSON syntax');
@@ -167,7 +169,7 @@ describe('ErrorController', () => {
         body: { error: 'Unprocessable entity' },
       } as CustomError;
 
-      ErrorController(customError, mockReq, mockRes);
+      ErrorController(customError, mockReq, mockRes, mockNext);
 
       expect(mockRes.status).toHaveBeenCalledWith(422);
       expect(mockRes.send).toHaveBeenCalledWith({ error: 'Unprocessable entity' });
@@ -178,7 +180,7 @@ describe('ErrorController', () => {
         statusCode: 400,
       } as CustomError;
 
-      ErrorController(partialError, mockReq, mockRes);
+      ErrorController(partialError, mockReq, mockRes, mockNext);
 
       expect(mockRes.status).toHaveBeenCalledWith(500);
       expect(mockRes.send).toHaveBeenCalledWith('An unknown error occurred.');
@@ -189,7 +191,7 @@ describe('ErrorController', () => {
         body: 'Some error message',
       } as CustomError;
 
-      ErrorController(partialError, mockReq, mockRes);
+      ErrorController(partialError, mockReq, mockRes, mockNext);
 
       expect(mockRes.status).toHaveBeenCalledWith(500);
       expect(mockRes.send).toHaveBeenCalledWith('An unknown error occurred.');
@@ -200,7 +202,7 @@ describe('ErrorController', () => {
     it('should handle unknown errors', () => {
       const unknownError = new Error('Some unknown error');
 
-      ErrorController(unknownError, mockReq, mockRes);
+      ErrorController(unknownError, mockReq, mockRes, mockNext);
 
       expect(mockRes.status).toHaveBeenCalledWith(500);
       expect(mockRes.send).toHaveBeenCalledWith('An unknown error occurred.');
@@ -213,7 +215,7 @@ describe('ErrorController', () => {
         message: 'Some MongoDB error',
       } as MongoServerError;
 
-      ErrorController(mongoError, mockReq, mockRes);
+      ErrorController(mongoError, mockReq, mockRes, mockNext);
 
       expect(mockRes.status).toHaveBeenCalledWith(500);
       expect(mockRes.send).toHaveBeenCalledWith('An unknown error occurred.');
@@ -223,7 +225,7 @@ describe('ErrorController', () => {
     it('should handle generic errors', () => {
       const genericError = new Error('Test error');
 
-      ErrorController(genericError, mockReq, mockRes);
+      ErrorController(genericError, mockReq, mockRes, mockNext);
 
       expect(mockRes.status).toHaveBeenCalledWith(500);
       expect(mockRes.send).toHaveBeenCalledWith('An unknown error occurred.');
@@ -254,7 +256,7 @@ describe('ErrorController', () => {
 
       const testError = new Error('Test error');
 
-      ErrorController(testError, mockReq, freshMockRes);
+      ErrorController(testError, mockReq, freshMockRes, mockNext);
 
       expect(freshMockRes.status).toHaveBeenCalledWith(500);
       expect(freshMockRes.send).toHaveBeenCalledWith('Processing error in ErrorController.');

@@ -20,8 +20,9 @@ const validateAuthor = async ({ req, openai, overrideEndpoint, overrideAssistant
   const assistant_id =
     overrideAssistantId ?? req.params.id ?? req.body.assistant_id ?? req.query.assistant_id;
 
+  const appConfig = req.config;
   /** @type {Partial<TAssistantEndpoint>} */
-  const assistantsConfig = req.app.locals?.[endpoint];
+  const assistantsConfig = appConfig.endpoints?.[endpoint];
   if (!assistantsConfig) {
     return;
   }

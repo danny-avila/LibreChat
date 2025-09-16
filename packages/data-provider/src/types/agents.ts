@@ -335,7 +335,7 @@ export type ActionMetadataRuntime = ActionMetadata & {
 export type MCP = {
   mcp_id: string;
   metadata: MCPMetadata;
-} & ({ assistant_id: string; agent_id?: never } | { assistant_id?: never; agent_id: string });
+} & ({ assistant_id: string; agent_id?: never } | { assistant_id?: never; agent_id?: string });
 
 export type MCPMetadata = Omit<ActionMetadata, 'auth'> & {
   name?: string;
@@ -352,6 +352,6 @@ export type MCPAuth = ActionAuth;
 export type AgentToolType = {
   tool_id: string;
   metadata: ToolMetadata;
-} & ({ assistant_id: string; agent_id?: never } | { assistant_id?: never; agent_id: string });
+} & ({ assistant_id: string; agent_id?: never } | { assistant_id?: never; agent_id?: string });
 
 export type ToolMetadata = TPlugin;

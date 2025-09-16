@@ -48,6 +48,7 @@ class Files {
 }
 
 const initializeClient = async ({ req, res, version, endpointOption, initAppClient = false }) => {
+  const appConfig = req.config;
   const { PROXY, OPENAI_ORGANIZATION, AZURE_ASSISTANTS_API_KEY, AZURE_ASSISTANTS_BASE_URL } =
     process.env;
 
@@ -81,7 +82,7 @@ const initializeClient = async ({ req, res, version, endpointOption, initAppClie
   };
 
   /** @type {TAzureConfig | undefined} */
-  const azureConfig = req.app.locals[EModelEndpoint.azureOpenAI];
+  const azureConfig = appConfig.endpoints?.[EModelEndpoint.azureOpenAI];
 
   /** @type {AzureOptions | undefined} */
   let azureOptions;
@@ -109,14 +110,14 @@ const initializeClient = async ({ req, res, version, endpointOption, initAppClie
 
     apiKey = azureOptions.azureOpenAIApiKey;
     opts.defaultQuery = { 'api-version': azureOptions.azureOpenAIApiVersion };
-    opts.defaultHeaders = resolveHeaders(
-      {
+    opts.defaultHeaders = resolveHeaders({
+      headers: {
         ...headers,
         'api-key': apiKey,
         'OpenAI-Beta': `assistants=${version}`,
       },
-      req.user,
-    );
+      user: req.user,
+    });
     opts.model = azureOptions.azureOpenAIApiDeploymentName;
 
     if (initAppClient) {
