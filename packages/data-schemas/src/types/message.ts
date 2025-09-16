@@ -7,6 +7,7 @@ export interface IMessage extends Document {
   conversationId: string;
   user: string;
   model?: string;
+  targetModel?: string;
   endpoint?: string;
   conversationSignature?: string;
   clientId?: string;

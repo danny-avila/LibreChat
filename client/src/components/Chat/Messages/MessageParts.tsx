@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
-import type { TMessageContentParts } from 'librechat-data-provider';
+import type { TMessageContentParts, TConversationCosts } from 'librechat-data-provider';
 import type { TMessageProps, TMessageIcon } from '~/common';
 import { useMessageHelpers, useLocalize, useAttachments } from '~/hooks';
 import MessageIcon from '~/components/Chat/Messages/MessageIcon';
@@ -12,10 +12,17 @@ import SubRow from './SubRow';
 import { cn } from '~/utils';
 import store from '~/store';
 
-export default function Message(props: TMessageProps) {
+export default function Message(props: TMessageProps & { costs?: TConversationCosts }) {
   const localize = useLocalize();
-  const { message, siblingIdx, siblingCount, setSiblingIdx, currentEditId, setCurrentEditId } =
-    props;
+  const {
+    message,
+    siblingIdx,
+    siblingCount,
+    setSiblingIdx,
+    currentEditId,
+    setCurrentEditId,
+    costs,
+  } = props;
   const { attachments, searchResults } = useAttachments({
     messageId: message?.messageId,
     attachments: message?.attachments,
@@ -164,6 +171,7 @@ export default function Message(props: TMessageProps) {
         messagesTree={children ?? []}
         currentEditId={currentEditId}
         setCurrentEditId={setCurrentEditId}
+        costs={costs}
       />
     </>
   );

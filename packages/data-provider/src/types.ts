@@ -653,3 +653,15 @@ export type TBalanceResponse = {
   lastRefill?: Date;
   refillAmount?: number;
 };
+
+export type TConversationCosts = {
+  totals: {
+    prompt: { usd: number; tokenCount: number };
+    completion: { usd: number; tokenCount: number };
+    total: { usd: number; tokenCount: number };
+  };
+};
+
+export type TModelCosts = {
+  modelCostTable: Record<string, { prompt: number; completion: number }>;
+};

@@ -155,4 +155,14 @@ export const conversationPreset = {
   verbosity: {
     type: String,
   },
+  /** Track all unique models used in this conversation with their endpoints */
+  modelHistory: {
+    type: [
+      {
+        model: { type: String, required: true },
+        endpoint: { type: String, required: true },
+      },
+    ],
+    default: [],
+  },
 };

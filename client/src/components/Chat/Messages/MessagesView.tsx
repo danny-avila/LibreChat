@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useRecoilValue } from 'recoil';
 import { CSSTransition } from 'react-transition-group';
-import type { TMessage } from 'librechat-data-provider';
+import type { TMessage, TConversationCosts } from 'librechat-data-provider';
 import { useScreenshot, useMessageScrolling, useLocalize } from '~/hooks';
 import ScrollToBottom from '~/components/Messages/ScrollToBottom';
 import MultiMessage from './MultiMessage';
@@ -10,8 +10,12 @@ import store from '~/store';
 
 export default function MessagesView({
   messagesTree: _messagesTree,
+  costBar,
+  costs,
 }: {
   messagesTree?: TMessage[] | null;
+  costBar?: React.ReactNode;
+  costs?: TConversationCosts;
 }) {
   const localize = useLocalize();
   const fontSize = useRecoilValue(store.fontSize);
@@ -44,7 +48,7 @@ export default function MessagesView({
               width: '100%',
             }}
           >
-            <div className="flex flex-col pb-9 dark:bg-transparent">
+            <div className="flex flex-col dark:bg-transparent">
               {(_messagesTree && _messagesTree.length == 0) || _messagesTree === null ? (
                 <div
                   className={cn(
@@ -63,17 +67,24 @@ export default function MessagesView({
                       messageId={conversationId ?? null}
                       setCurrentEditId={setCurrentEditId}
                       currentEditId={currentEditId ?? null}
+                      costs={costs}
                     />
                   </div>
                 </>
               )}
               <div
                 id="messages-end"
-                className="group h-0 w-full flex-shrink-0"
+                className="group h-1 w-full flex-shrink-0 pb-7"
                 ref={messagesEndRef}
               />
             </div>
           </div>
+
+          {costBar && (
+            <div className="pointer-events-none absolute bottom-2 left-1/2 z-10 -translate-x-1/2">
+              {costBar}
+            </div>
+          )}
 
           <CSSTransition
             in={showScrollButton && scrollButtonPreference}

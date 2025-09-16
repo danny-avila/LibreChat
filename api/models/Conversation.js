@@ -112,8 +112,17 @@ module.exports = {
         update.expiredAt = null;
       }
 
-      /** @type {{ $set: Partial<TConversation>; $unset?: Record<keyof TConversation, number> }} */
+      /** @type {{ $set: Partial<TConversation>; $addToSet?: Record<string, any>; $unset?: Record<keyof TConversation, number> }} */
       const updateOperation = { $set: update };
+
+      if (convo.model && convo.endpoint) {
+        updateOperation.$addToSet = {
+          modelHistory: {
+            model: convo.model,
+            endpoint: convo.endpoint,
+          },
+        };
+      }
       if (metadata && metadata.unsetFields && Object.keys(metadata.unsetFields).length > 0) {
         updateOperation.$unset = metadata.unsetFields;
       }

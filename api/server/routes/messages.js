@@ -11,6 +11,7 @@ const {
 } = require('~/models');
 const { findAllArtifacts, replaceArtifactContent } = require('~/server/services/Artifacts/update');
 const { requireJwtAuth, validateMessageReq } = require('~/server/middleware');
+const { tokenValues, getValueKey, defaultRate } = require('~/models/tx');
 const { cleanUpPrimaryKeyValue } = require('~/lib/utils/misc');
 const { getConvosQueried } = require('~/models/Conversation');
 const { countTokens } = require('~/server/utils');
@@ -156,6 +157,41 @@ router.post('/artifact/:messageId', async (req, res) => {
     });
   } catch (error) {
     logger.error('Error editing artifact:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * POST /costs
+ * Get cost information for models in modelHistory array
+ */
+router.post('/costs', async (req, res) => {
+  try {
+    const { modelHistory } = req.body;
+
+    if (!Array.isArray(modelHistory)) {
+      return res.status(400).json({ error: 'modelHistory must be an array' });
+    }
+
+    const modelCostTable = {};
+
+    modelHistory.forEach((modelEntry) => {
+      if (modelEntry && typeof modelEntry === 'object' && modelEntry.model && modelEntry.endpoint) {
+        const { model, endpoint } = modelEntry;
+
+        const valueKey = getValueKey(model, endpoint);
+        const pricing = tokenValues[valueKey];
+
+        modelCostTable[model] = {
+          prompt: pricing?.prompt ?? defaultRate,
+          completion: pricing?.completion ?? defaultRate,
+        };
+      }
+    });
+
+    res.status(200).json({ modelCostTable });
+  } catch (error) {
+    logger.error('Error fetching model costs:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

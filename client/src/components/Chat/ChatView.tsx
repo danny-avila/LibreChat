@@ -1,4 +1,4 @@
-import { memo, useCallback } from 'react';
+import { memo, useCallback, useState, useEffect, useRef } from 'react';
 import { useRecoilValue } from 'recoil';
 import { useForm } from 'react-hook-form';
 import { Spinner } from '@librechat/client';
@@ -13,6 +13,7 @@ import { useGetMessagesByConvoId } from '~/data-provider';
 import MessagesView from './Messages/MessagesView';
 import Presentation from './Presentation';
 import ChatForm from './Input/ChatForm';
+import CostBar from './CostBar';
 import Landing from './Landing';
 import Header from './Header';
 import Footer from './Footer';
@@ -29,13 +30,22 @@ function LoadingSpinner() {
   );
 }
 
-function ChatView({ index = 0 }: { index?: number }) {
+function ChatView({
+  index = 0,
+  modelCosts,
+}: {
+  index?: number;
+  modelCosts?: { modelCostTable: Record<string, { prompt: number; completion: number }> };
+}) {
   const { conversationId } = useParams();
   const rootSubmission = useRecoilValue(store.submissionByIndex(index));
   const addedSubmission = useRecoilValue(store.submissionByIndex(index + 1));
   const centerFormOnLanding = useRecoilValue(store.centerFormOnLanding);
 
   const fileMap = useFileMapContext();
+
+  const [showCostBar, setShowCostBar] = useState(false);
+  const lastScrollY = useRef(0);
 
   const { data: messagesTree = null, isLoading } = useGetMessagesByConvoId(conversationId ?? '', {
     select: useCallback(
@@ -54,6 +64,58 @@ function ChatView({ index = 0 }: { index?: number }) {
   useSSE(rootSubmission, chatHelpers, false);
   useSSE(addedSubmission, addedChatHelpers, true);
 
+  const checkIfAtBottom = useCallback(
+    (container: HTMLElement) => {
+      const currentScrollY = container.scrollTop;
+      const scrollHeight = container.scrollHeight;
+      const clientHeight = container.clientHeight;
+
+      const distanceFromBottom = scrollHeight - currentScrollY - clientHeight;
+      const isAtBottom = distanceFromBottom < 10;
+
+      const isStreaming = chatHelpers.isSubmitting || addedChatHelpers.isSubmitting;
+      setShowCostBar(isAtBottom && !isStreaming);
+      lastScrollY.current = currentScrollY;
+    },
+    [chatHelpers.isSubmitting, addedChatHelpers.isSubmitting],
+  );
+
+  useEffect(() => {
+    const handleScroll = (event: Event) => {
+      const target = event.target as HTMLElement;
+      checkIfAtBottom(target);
+    };
+
+    const findAndAttachScrollListener = () => {
+      const messagesContainer = document.querySelector('[class*="scrollbar-gutter-stable"]');
+      if (messagesContainer) {
+        checkIfAtBottom(messagesContainer as HTMLElement);
+
+        messagesContainer.addEventListener('scroll', handleScroll, { passive: true });
+        return () => {
+          messagesContainer.removeEventListener('scroll', handleScroll);
+        };
+      }
+      setTimeout(findAndAttachScrollListener, 100);
+    };
+
+    const cleanup = findAndAttachScrollListener();
+
+    return cleanup;
+  }, [messagesTree, checkIfAtBottom]);
+
+  useEffect(() => {
+    const isStreaming = chatHelpers.isSubmitting || addedChatHelpers.isSubmitting;
+    if (isStreaming) {
+      setShowCostBar(false);
+    } else {
+      const messagesContainer = document.querySelector('[class*="scrollbar-gutter-stable"]');
+      if (messagesContainer) {
+        checkIfAtBottom(messagesContainer as HTMLElement);
+      }
+    }
+  }, [chatHelpers.isSubmitting, addedChatHelpers.isSubmitting, checkIfAtBottom]);
+
   const methods = useForm<ChatFormValues>({
     defaultValues: { text: '' },
   });
@@ -69,7 +131,22 @@ function ChatView({ index = 0 }: { index?: number }) {
   } else if ((isLoading || isNavigating) && !isLandingPage) {
     content = <LoadingSpinner />;
   } else if (!isLandingPage) {
-    content = <MessagesView messagesTree={messagesTree} />;
+    const isStreaming = chatHelpers.isSubmitting || addedChatHelpers.isSubmitting;
+    content = (
+      <MessagesView
+        messagesTree={messagesTree}
+        costBar={
+          !isLandingPage &&
+          modelCosts && (
+            <CostBar
+              messagesTree={messagesTree}
+              modelCosts={modelCosts}
+              showCostBar={showCostBar && !isStreaming}
+            />
+          )
+        }
+      />
+    );
   } else {
     content = <Landing centerFormOnLanding={centerFormOnLanding} />;
   }

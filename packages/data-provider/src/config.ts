@@ -51,6 +51,7 @@ export const excludedKeys = new Set([
   '_id',
   'tools',
   'model',
+  'modelHistory',
   'files',
   'spec',
   'disableParams',

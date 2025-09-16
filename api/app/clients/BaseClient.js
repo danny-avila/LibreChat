@@ -233,6 +233,7 @@ class BaseClient {
       sender: 'User',
       text,
       isCreatedByUser: true,
+      targetModel: this.modelOptions?.model ?? this.model,
     };
   }
 
