@@ -1,8 +1,8 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
-import UIResourceCarousel from '../UIResourceCarousel';
-import type { UIResource } from '~/common';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import type { UIResource } from 'librechat-data-provider';
+import UIResourceCarousel from '~/components/Chat/Messages/Content/UIResourceCarousel';
 
 // Mock the UIResourceRenderer component
 jest.mock('@mcp-ui/client', () => ({

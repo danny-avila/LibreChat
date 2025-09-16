@@ -7,6 +7,7 @@ import type { JsonSchemaType } from '~/types';
 import type * as t from '~/mcp/types';
 import { ConnectionsRepository } from '~/mcp/ConnectionsRepository';
 import { detectOAuthRequirement } from '~/mcp/oauth';
+import { sanitizeUrlForLogging } from '~/mcp/utils';
 import { processMCPEnv } from '~/utils';
 import { CONSTANTS } from '~/mcp/enum';
 
@@ -183,7 +184,7 @@ export class MCPServersRegistry {
     const prefix = this.prefix(serverName);
     const config = this.parsedConfigs[serverName];
     logger.info(`${prefix} -------------------------------------------------┐`);
-    logger.info(`${prefix} URL: ${config.url}`);
+    logger.info(`${prefix} URL: ${config.url ? sanitizeUrlForLogging(config.url) : 'N/A'}`);
     logger.info(`${prefix} OAuth Required: ${config.requiresOAuth}`);
     logger.info(`${prefix} Capabilities: ${config.capabilities}`);
     logger.info(`${prefix} Tools: ${config.tools}`);

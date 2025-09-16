@@ -115,6 +115,17 @@ imagePullSecrets: []
 nameOverride: ""
 fullnameOverride: ""
 
+# This section builds out the service account more information can be found here: https://kubernetes.io/docs/concepts/security/service-accounts/
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  # Automatically mount a ServiceAccount's API credentials?
+  automount: true
+  # Annotations to add to the service account
+  annotations: {}
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
 
 lifecycle: {}
 # # base for adding a custom banner // see https://github.com/danny-avila/LibreChat/pull/3952 for an example

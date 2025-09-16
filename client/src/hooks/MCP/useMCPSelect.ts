@@ -1,5 +1,6 @@
 import { useCallback, useEffect } from 'react';
 import { useAtom } from 'jotai';
+import isEqual from 'lodash/isEqual';
 import { useRecoilState } from 'recoil';
 import { Constants, LocalStorageKeys } from 'librechat-data-provider';
 import { ephemeralAgentByConvoId, mcpValuesAtomFamily, mcpPinnedAtom } from '~/store';
@@ -19,15 +20,14 @@ export function useMCPSelect({ conversationId }: { conversationId?: string | nul
     }
   }, [ephemeralAgent?.mcp, setMCPValuesRaw]);
 
-  // Update ephemeral agent when Jotai state changes
   useEffect(() => {
-    if (mcpValues.length > 0 && JSON.stringify(mcpValues) !== JSON.stringify(ephemeralAgent?.mcp)) {
-      setEphemeralAgent((prev) => ({
-        ...prev,
-        mcp: mcpValues,
-      }));
-    }
-  }, [mcpValues, ephemeralAgent?.mcp, setEphemeralAgent]);
+    setEphemeralAgent((prev) => {
+      if (!isEqual(prev?.mcp, mcpValues)) {
+        return { ...(prev ?? {}), mcp: mcpValues };
+      }
+      return prev;
+    });
+  }, [mcpValues, setEphemeralAgent]);
 
   useEffect(() => {
     const mcpStorageKey = `${LocalStorageKeys.LAST_MCP_}${key}`;

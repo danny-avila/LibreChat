@@ -4,7 +4,6 @@ import { ChevronDown } from 'lucide-react';
 import { useFormContext } from 'react-hook-form';
 import { Constants } from 'librechat-data-provider';
 import * as AccordionPrimitive from '@radix-ui/react-accordion';
-import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
 import {
   Label,
   Checkbox,
@@ -14,20 +13,18 @@ import {
   AccordionItem,
   CircleHelpIcon,
   OGDialogTrigger,
-  useToastContext,
   AccordionContent,
   OGDialogTemplate,
 } from '@librechat/client';
 import type { AgentForm, MCPServerInfo } from '~/common';
+import { useLocalize, useMCPServerManager, useRemoveMCPTool } from '~/hooks';
 import MCPServerStatusIcon from '~/components/MCP/MCPServerStatusIcon';
 import MCPConfigDialog from '~/components/MCP/MCPConfigDialog';
-import { useLocalize, useMCPServerManager } from '~/hooks';
 import { cn } from '~/utils';
 
 export default function MCPTool({ serverInfo }: { serverInfo?: MCPServerInfo }) {
   const localize = useLocalize();
-  const { showToast } = useToastContext();
-  const updateUserPlugins = useUpdateUserPluginsMutation();
+  const { removeTool } = useRemoveMCPTool();
   const { getValues, setValue } = useFormContext<AgentForm>();
   const { getServerStatusIconProps, getConfigDialogProps } = useMCPServerManager();
 
@@ -54,36 +51,6 @@ export default function MCPTool({ serverInfo }: { serverInfo?: MCPServerInfo }) 
       (t: string) => !serverInfo?.tools?.some((st) => st.tool_id === t),
     );
     setValue('tools', [...otherTools, ...newSelectedTools]);
-  };
-
-  const removeTool = (serverName: string) => {
-    if (!serverName) {
-      return;
-    }
-    updateUserPlugins.mutate(
-      {
-        pluginKey: `${Constants.mcp_prefix}${serverName}`,
-        action: 'uninstall',
-        auth: {},
-        isEntityTool: true,
-      },
-      {
-        onError: (error: unknown) => {
-          showToast({ message: `Error while deleting the tool: ${error}`, status: 'error' });
-        },
-        onSuccess: () => {
-          const currentTools = getValues('tools');
-          const remainingToolIds =
-            currentTools?.filter(
-              (currentToolId) =>
-                currentToolId !== serverName &&
-                !currentToolId.endsWith(`${Constants.mcp_delimiter}${serverName}`),
-            ) || [];
-          setValue('tools', remainingToolIds);
-          showToast({ message: 'Tool deleted successfully', status: 'success' });
-        },
-      },
-    );
   };
 
   const selectedTools = getSelectedTools();

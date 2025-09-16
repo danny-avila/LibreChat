@@ -1,5 +1,6 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+
 import '@testing-library/jest-dom';
 import AgentGrid from '../AgentGrid';
 import type t from 'librechat-data-provider';
@@ -80,6 +81,115 @@ jest.mock('../AgentCard', () => ({
 import { useMarketplaceAgentsInfiniteQuery } from '~/data-provider/Agents';
 
 const mockUseMarketplaceAgentsInfiniteQuery = jest.mocked(useMarketplaceAgentsInfiniteQuery);
+
+// Helper to create mock API response
+const createMockResponse = (
+  agentIds: string[],
+  hasMore: boolean,
+  afterCursor?: string,
+): t.AgentListResponse => ({
+  object: 'list',
+  data: agentIds.map(
+    (id) =>
+      ({
+        id,
+        name: `Agent ${id}`,
+        description: `Description for ${id}`,
+        created_at: Date.now(),
+        model: 'gpt-4',
+        tools: [],
+        instructions: '',
+        avatar: null,
+        provider: 'openai',
+        model_parameters: {
+          temperature: 0.7,
+          top_p: 1,
+          frequency_penalty: 0,
+          presence_penalty: 0,
+          maxContextTokens: 2000,
+          max_context_tokens: 2000,
+          max_output_tokens: 2000,
+        },
+      }) as t.Agent,
+  ),
+  first_id: agentIds[0] || '',
+  last_id: agentIds[agentIds.length - 1] || '',
+  has_more: hasMore,
+  after: afterCursor,
+});
+
+// Helper to setup mock viewport
+const setupViewport = (scrollHeight: number, clientHeight: number) => {
+  const listeners: { [key: string]: EventListener[] } = {};
+  return {
+    scrollHeight,
+    clientHeight,
+    scrollTop: 0,
+    addEventListener: jest.fn((event: string, listener: EventListener) => {
+      if (!listeners[event]) {
+        listeners[event] = [];
+      }
+      listeners[event].push(listener);
+    }),
+    removeEventListener: jest.fn((event: string, listener: EventListener) => {
+      if (listeners[event]) {
+        listeners[event] = listeners[event].filter((l) => l !== listener);
+      }
+    }),
+    dispatchEvent: jest.fn((event: Event) => {
+      const eventListeners = listeners[event.type];
+      if (eventListeners) {
+        eventListeners.forEach((listener) => listener(event));
+      }
+      return true;
+    }),
+  } as unknown as HTMLElement;
+};
+
+// Helper to create mock infinite query return value
+const createMockInfiniteQuery = (
+  pages: t.AgentListResponse[],
+  options?: {
+    isLoading?: boolean;
+    hasNextPage?: boolean;
+    fetchNextPage?: jest.Mock;
+    isFetchingNextPage?: boolean;
+  },
+) =>
+  ({
+    data: {
+      pages,
+      pageParams: pages.map((_, i) => (i === 0 ? undefined : `cursor-${i * 6}`)),
+    },
+    isLoading: options?.isLoading ?? false,
+    error: null,
+    isFetching: false,
+    hasNextPage: options?.hasNextPage ?? pages[pages.length - 1]?.has_more ?? false,
+    isFetchingNextPage: options?.isFetchingNextPage ?? false,
+    fetchNextPage: options?.fetchNextPage ?? jest.fn(),
+    refetch: jest.fn(),
+    // Add missing required properties for UseInfiniteQueryResult
+    isError: false,
+    isLoadingError: false,
+    isRefetchError: false,
+    isSuccess: true,
+    status: 'success' as const,
+    dataUpdatedAt: Date.now(),
+    errorUpdateCount: 0,
+    errorUpdatedAt: 0,
+    failureCount: 0,
+    failureReason: null,
+    fetchStatus: 'idle' as const,
+    isFetched: true,
+    isFetchedAfterMount: true,
+    isInitialLoading: false,
+    isPaused: false,
+    isPlaceholderData: false,
+    isPending: false,
+    isRefetching: false,
+    isStale: false,
+    remove: jest.fn(),
+  }) as any;
 
 describe('AgentGrid Integration with useGetMarketplaceAgentsQuery', () => {
   const mockOnSelectAgent = jest.fn();
@@ -343,6 +453,15 @@ describe('AgentGrid Integration with useGetMarketplaceAgentsQuery', () => {
   });
 
   describe('Infinite Scroll Functionality', () => {
+    beforeEach(() => {
+      // Silence console.log in tests
+      jest.spyOn(console, 'log').mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+      jest.restoreAllMocks();
+    });
+
     it('should show loading indicator when fetching next page', () => {
       mockUseMarketplaceAgentsInfiniteQuery.mockReturnValue({
         ...defaultMockQueryResult,
@@ -395,6 +514,359 @@ describe('AgentGrid Integration with useGetMarketplaceAgentsQuery', () => {
       );
 
       expect(screen.queryByText("You've reached the end of the results")).not.toBeInTheDocument();
+    });
+
+    describe('Auto-fetch to fill viewport', () => {
+      it('should NOT auto-fetch when viewport is filled (5 agents, has_more=false)', async () => {
+        const mockResponse = createMockResponse(['1', '2', '3', '4', '5'], false);
+        const fetchNextPage = jest.fn();
+
+        mockUseMarketplaceAgentsInfiniteQuery.mockReturnValue(
+          createMockInfiniteQuery([mockResponse], { fetchNextPage }),
+        );
+
+        const scrollElement = setupViewport(500, 1000); // Content smaller than viewport
+        const scrollElementRef = { current: scrollElement };
+        const Wrapper = createWrapper();
+
+        render(
+          <Wrapper>
+            <AgentGrid
+              category="all"
+              searchQuery=""
+              onSelectAgent={mockOnSelectAgent}
+              scrollElementRef={scrollElementRef}
+            />
+          </Wrapper>,
+        );
+
+        // Wait for initial render
+        await waitFor(() => {
+          expect(screen.getAllByRole('gridcell')).toHaveLength(5);
+        });
+
+        // Wait to ensure no auto-fetch happens
+        await act(async () => {
+          await new Promise((resolve) => setTimeout(resolve, 200));
+        });
+
+        // fetchNextPage should NOT be called since has_more is false
+        expect(fetchNextPage).not.toHaveBeenCalled();
+      });
+
+      it('should auto-fetch when viewport not filled (7 agents, big viewport)', async () => {
+        const firstPage = createMockResponse(['1', '2', '3', '4', '5', '6'], true, 'cursor-6');
+        const secondPage = createMockResponse(['7'], false);
+        let currentPages = [firstPage];
+        const fetchNextPage = jest.fn();
+
+        // Mock that updates pages when fetchNextPage is called
+        mockUseMarketplaceAgentsInfiniteQuery.mockImplementation(() =>
+          createMockInfiniteQuery(currentPages, {
+            fetchNextPage: jest.fn().mockImplementation(() => {
+              fetchNextPage();
+              currentPages = [firstPage, secondPage];
+              return Promise.resolve();
+            }),
+            hasNextPage: true,
+          }),
+        );
+
+        const scrollElement = setupViewport(400, 1200); // Large viewport (content < viewport)
+        const scrollElementRef = { current: scrollElement };
+        const Wrapper = createWrapper();
+
+        const { rerender } = render(
+          <Wrapper>
+            <AgentGrid
+              category="all"
+              searchQuery=""
+              onSelectAgent={mockOnSelectAgent}
+              scrollElementRef={scrollElementRef}
+            />
+          </Wrapper>,
+        );
+
+        // Wait for initial 6 agents
+        await waitFor(() => {
+          expect(screen.getAllByRole('gridcell')).toHaveLength(6);
+        });
+
+        // Wait for ResizeObserver and auto-fetch to trigger
+        await act(async () => {
+          await new Promise((resolve) => setTimeout(resolve, 150));
+        });
+
+        // Auto-fetch should have been triggered (multiple times due to reliability checks)
+        expect(fetchNextPage).toHaveBeenCalled();
+        expect(fetchNextPage.mock.calls.length).toBeGreaterThanOrEqual(1);
+
+        // Update mock data and re-render
+        currentPages = [firstPage, secondPage];
+        rerender(
+          <Wrapper>
+            <AgentGrid
+              category="all"
+              searchQuery=""
+              onSelectAgent={mockOnSelectAgent}
+              scrollElementRef={scrollElementRef}
+            />
+          </Wrapper>,
+        );
+
+        // Should now show all 7 agents
+        await waitFor(() => {
+          expect(screen.getAllByRole('gridcell')).toHaveLength(7);
+        });
+      });
+
+      it('should NOT auto-fetch when viewport is filled (7 agents, small viewport)', async () => {
+        const firstPage = createMockResponse(['1', '2', '3', '4', '5', '6'], true, 'cursor-6');
+        const fetchNextPage = jest.fn();
+
+        mockUseMarketplaceAgentsInfiniteQuery.mockReturnValue(
+          createMockInfiniteQuery([firstPage], { fetchNextPage, hasNextPage: true }),
+        );
+
+        const scrollElement = setupViewport(1200, 600); // Small viewport, content fills it
+        const scrollElementRef = { current: scrollElement };
+        const Wrapper = createWrapper();
+
+        render(
+          <Wrapper>
+            <AgentGrid
+              category="all"
+              searchQuery=""
+              onSelectAgent={mockOnSelectAgent}
+              scrollElementRef={scrollElementRef}
+            />
+          </Wrapper>,
+        );
+
+        // Wait for initial 6 agents
+        await waitFor(() => {
+          expect(screen.getAllByRole('gridcell')).toHaveLength(6);
+        });
+
+        // Wait to ensure no auto-fetch happens
+        await act(async () => {
+          await new Promise((resolve) => setTimeout(resolve, 200));
+        });
+
+        // Should NOT auto-fetch since viewport is filled
+        expect(fetchNextPage).not.toHaveBeenCalled();
+      });
+
+      it('should auto-fetch once to fill viewport then stop (20 agents)', async () => {
+        const allPages = [
+          createMockResponse(['1', '2', '3', '4', '5', '6'], true, 'cursor-6'),
+          createMockResponse(['7', '8', '9', '10', '11', '12'], true, 'cursor-12'),
+          createMockResponse(['13', '14', '15', '16', '17', '18'], true, 'cursor-18'),
+          createMockResponse(['19', '20'], false),
+        ];
+
+        let currentPages = [allPages[0]];
+        let fetchCount = 0;
+        const fetchNextPage = jest.fn();
+
+        mockUseMarketplaceAgentsInfiniteQuery.mockImplementation(() =>
+          createMockInfiniteQuery(currentPages, {
+            fetchNextPage: jest.fn().mockImplementation(() => {
+              fetchCount++;
+              fetchNextPage();
+              if (currentPages.length < 2) {
+                currentPages = allPages.slice(0, 2);
+              }
+              return Promise.resolve();
+            }),
+            hasNextPage: currentPages.length < 2,
+          }),
+        );
+
+        const scrollElement = setupViewport(600, 1000); // Viewport fits ~12 agents
+        const scrollElementRef = { current: scrollElement };
+        const Wrapper = createWrapper();
+
+        const { rerender } = render(
+          <Wrapper>
+            <AgentGrid
+              category="all"
+              searchQuery=""
+              onSelectAgent={mockOnSelectAgent}
+              scrollElementRef={scrollElementRef}
+            />
+          </Wrapper>,
+        );
+
+        // Wait for initial 6 agents
+        await waitFor(() => {
+          expect(screen.getAllByRole('gridcell')).toHaveLength(6);
+        });
+
+        // Should auto-fetch to fill viewport
+        await waitFor(
+          () => {
+            expect(fetchNextPage).toHaveBeenCalledTimes(1);
+          },
+          { timeout: 500 },
+        );
+
+        // Simulate viewport being filled after 12 agents
+        Object.defineProperty(scrollElement, 'scrollHeight', {
+          value: 1200,
+          writable: true,
+          configurable: true,
+        });
+
+        currentPages = allPages.slice(0, 2);
+        rerender(
+          <Wrapper>
+            <AgentGrid
+              category="all"
+              searchQuery=""
+              onSelectAgent={mockOnSelectAgent}
+              scrollElementRef={scrollElementRef}
+            />
+          </Wrapper>,
+        );
+
+        // Should show 12 agents
+        await waitFor(() => {
+          expect(screen.getAllByRole('gridcell')).toHaveLength(12);
+        });
+
+        // Wait to ensure no additional auto-fetch
+        await act(async () => {
+          await new Promise((resolve) => setTimeout(resolve, 200));
+        });
+
+        // Should only have fetched once (to fill viewport)
+        expect(fetchCount).toBe(1);
+        expect(fetchNextPage).toHaveBeenCalledTimes(1);
+      });
+
+      it('should auto-fetch when viewport resizes to be taller (window resize)', async () => {
+        const firstPage = createMockResponse(['1', '2', '3', '4', '5', '6'], true, 'cursor-6');
+        const secondPage = createMockResponse(['7', '8', '9', '10', '11', '12'], true, 'cursor-12');
+        let currentPages = [firstPage];
+        const fetchNextPage = jest.fn();
+        let resizeObserverCallback: ResizeObserverCallback | null = null;
+
+        // Mock that updates pages when fetchNextPage is called
+        mockUseMarketplaceAgentsInfiniteQuery.mockImplementation(() =>
+          createMockInfiniteQuery(currentPages, {
+            fetchNextPage: jest.fn().mockImplementation(() => {
+              fetchNextPage();
+              if (currentPages.length === 1) {
+                currentPages = [firstPage, secondPage];
+              }
+              return Promise.resolve();
+            }),
+            hasNextPage: currentPages.length === 1,
+          }),
+        );
+
+        // Mock ResizeObserver to capture the callback
+        const ResizeObserverMock = jest.fn().mockImplementation((callback) => {
+          resizeObserverCallback = callback;
+          return {
+            observe: jest.fn(),
+            disconnect: jest.fn(),
+            unobserve: jest.fn(),
+          };
+        });
+        global.ResizeObserver = ResizeObserverMock as any;
+
+        // Start with a small viewport that fits the content
+        const scrollElement = setupViewport(800, 600);
+        const scrollElementRef = { current: scrollElement };
+        const Wrapper = createWrapper();
+
+        const { rerender } = render(
+          <Wrapper>
+            <AgentGrid
+              category="all"
+              searchQuery=""
+              onSelectAgent={mockOnSelectAgent}
+              scrollElementRef={scrollElementRef}
+            />
+          </Wrapper>,
+        );
+
+        // Wait for initial 6 agents
+        await waitFor(() => {
+          expect(screen.getAllByRole('gridcell')).toHaveLength(6);
+        });
+
+        // Verify ResizeObserver was set up
+        expect(ResizeObserverMock).toHaveBeenCalled();
+        expect(resizeObserverCallback).not.toBeNull();
+
+        // Initially no fetch should happen as viewport is filled
+        await act(async () => {
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        });
+        expect(fetchNextPage).not.toHaveBeenCalled();
+
+        // Simulate window resize - make viewport taller
+        Object.defineProperty(scrollElement, 'clientHeight', {
+          value: 1200, // Now taller than content
+          writable: true,
+          configurable: true,
+        });
+
+        // Trigger ResizeObserver callback to simulate resize detection
+        act(() => {
+          if (resizeObserverCallback) {
+            resizeObserverCallback(
+              [
+                {
+                  target: scrollElement,
+                  contentRect: {
+                    x: 0,
+                    y: 0,
+                    width: 800,
+                    height: 1200,
+                    top: 0,
+                    right: 800,
+                    bottom: 1200,
+                    left: 0,
+                  } as DOMRectReadOnly,
+                  borderBoxSize: [],
+                  contentBoxSize: [],
+                  devicePixelContentBoxSize: [],
+                } as ResizeObserverEntry,
+              ],
+              {} as ResizeObserver,
+            );
+          }
+        });
+
+        // Should trigger auto-fetch due to viewport now being larger than content
+        await waitFor(
+          () => {
+            expect(fetchNextPage).toHaveBeenCalledTimes(1);
+          },
+          { timeout: 500 },
+        );
+
+        // Update the component with new data
+        rerender(
+          <Wrapper>
+            <AgentGrid
+              category="all"
+              searchQuery=""
+              onSelectAgent={mockOnSelectAgent}
+              scrollElementRef={scrollElementRef}
+            />
+          </Wrapper>,
+        );
+
+        // Should now show 12 agents after fetching
+        await waitFor(() => {
+          expect(screen.getAllByRole('gridcell')).toHaveLength(12);
+        });
+      });
     });
   });
 });

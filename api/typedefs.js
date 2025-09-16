@@ -873,6 +873,13 @@
  * @typedef {import('@librechat/data-schemas').IMongoFile} MongoFile
  * @memberof typedefs
  */
+
+/**
+ * @exports ISession
+ * @typedef {import('@librechat/data-schemas').ISession} ISession
+ * @memberof typedefs
+ */
+
 /**
  * @exports IBalance
  * @typedef {import('@librechat/data-schemas').IBalance} IBalance

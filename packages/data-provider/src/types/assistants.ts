@@ -23,6 +23,7 @@ export enum Tools {
   retrieval = 'retrieval',
   function = 'function',
   memory = 'memory',
+  ui_resources = 'ui_resources',
 }
 
 export enum EToolResources {
