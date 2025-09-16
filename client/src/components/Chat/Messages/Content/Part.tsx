@@ -88,10 +88,11 @@ const Part = memo(
       if (isToolCall && toolCall.name === Tools.execute_code && toolCall.args) {
         return (
           <ExecuteCode
-            args={typeof toolCall.args === 'string' ? toolCall.args : ''}
+            attachments={attachments}
+            isSubmitting={isSubmitting}
             output={toolCall.output ?? ''}
             initialProgress={toolCall.progress ?? 0.1}
-            attachments={attachments}
+            args={typeof toolCall.args === 'string' ? toolCall.args : ''}
           />
         );
       } else if (
