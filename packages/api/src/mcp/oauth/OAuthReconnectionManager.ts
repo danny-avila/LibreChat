@@ -1,8 +1,9 @@
 import { TUser } from 'librechat-data-provider';
 import { MCPManager } from '../MCPManager';
 import { logger, TokenMethods } from '@librechat/data-schemas';
-import { FlowStateManager, MCPOAuthTokens } from '../..';
 import { OAuthReconnectionTracker } from './OAuthReconnectionTracker';
+import { FlowStateManager } from '../../flow/manager';
+import { MCPOAuthTokens } from './types';
 
 const DEFAULT_CONNECTION_TIMEOUT_MS = 10_000; // ms
 
@@ -12,7 +13,7 @@ export class OAuthReconnectionManager {
   protected readonly flowManager: FlowStateManager<MCPOAuthTokens | null>;
   protected readonly tokenMethods: TokenMethods;
 
-  private readonly reconnections: OAuthReconnectionTracker = new OAuthReconnectionTracker();
+  private readonly reconnectionsTracker: OAuthReconnectionTracker;
 
   public static getInstance(): OAuthReconnectionManager {
     if (!OAuthReconnectionManager.instance) {
@@ -24,31 +25,33 @@ export class OAuthReconnectionManager {
   public static async createInstance(
     flowManager: FlowStateManager<MCPOAuthTokens | null>,
     tokenMethods: TokenMethods,
+    reconnections?: OAuthReconnectionTracker,
   ): Promise<OAuthReconnectionManager> {
-    if (OAuthReconnectionManager.instance) {
+    if (OAuthReconnectionManager.instance != null) {
       throw new Error('OAuthReconnectionManager already initialized');
     }
-    OAuthReconnectionManager.instance = new OAuthReconnectionManager(flowManager, tokenMethods);
-    return OAuthReconnectionManager.instance;
+
+    const manager = new OAuthReconnectionManager(flowManager, tokenMethods, reconnections);
+    OAuthReconnectionManager.instance = manager;
+
+    return manager;
   }
 
   public constructor(
     flowManager: FlowStateManager<MCPOAuthTokens | null>,
     tokenMethods: TokenMethods,
+    reconnections?: OAuthReconnectionTracker,
   ) {
     this.flowManager = flowManager;
     this.tokenMethods = tokenMethods;
+    this.reconnectionsTracker = reconnections ?? new OAuthReconnectionTracker();
   }
 
   public isReconnecting(userId: string, serverName: string): boolean {
-    return this.reconnections.isActive(userId, serverName);
+    return this.reconnectionsTracker.isActive(userId, serverName);
   }
 
   public async reconnectServers(userId: string) {
-    if (userId == null) {
-      return;
-    }
-
     const mcpManager = MCPManager.getInstance();
 
     // 1. derive the servers to reconnect
@@ -62,7 +65,7 @@ export class OAuthReconnectionManager {
 
     // 2. mark the servers as reconnecting
     for (const serverName of serversToReconnect) {
-      this.reconnections.setActive(userId, serverName);
+      this.reconnectionsTracker.setActive(userId, serverName);
     }
 
     // 3. attempt to reconnect the servers
@@ -72,8 +75,8 @@ export class OAuthReconnectionManager {
   }
 
   public clearReconnection(userId: string, serverName: string) {
-    this.reconnections.removeFailed(userId, serverName);
-    this.reconnections.removeActive(userId, serverName);
+    this.reconnectionsTracker.removeFailed(userId, serverName);
+    this.reconnectionsTracker.removeActive(userId, serverName);
   }
 
   private async tryReconnect(userId: string, serverName: string) {
@@ -86,8 +89,8 @@ export class OAuthReconnectionManager {
     const config = mcpManager.getRawConfig(serverName);
 
     const cleanupOnFailedReconnect = () => {
-      this.reconnections.setFailed(userId, serverName);
-      this.reconnections.removeActive(userId, serverName);
+      this.reconnectionsTracker.setFailed(userId, serverName);
+      this.reconnectionsTracker.removeActive(userId, serverName);
       mcpManager.disconnectUserConnection(userId, serverName);
     };
 
@@ -124,7 +127,7 @@ export class OAuthReconnectionManager {
     const mcpManager = MCPManager.getInstance();
 
     // if the server has failed reconnection, don't attempt to reconnect
-    if (this.reconnections.isFailed(userId, serverName)) {
+    if (this.reconnectionsTracker.isFailed(userId, serverName)) {
       return false;
     }
 
