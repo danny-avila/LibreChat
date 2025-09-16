@@ -519,6 +519,7 @@ export const interfaceSchema = z
       .optional(),
     termsOfService: termsOfServiceSchema.optional(),
     customWelcome: z.string().optional(),
+    customErrorMessage: z.string().optional(),
     mcpServers: mcpServersSchema.optional(),
     endpointsMenu: z.boolean().optional(),
     modelSelect: z.boolean().optional(),
@@ -547,7 +548,6 @@ export const interfaceSchema = z
       })
       .optional(),
     fileSearch: z.boolean().optional(),
-    customErrorMessage: z.string().optional(),
     fileCitations: z.boolean().optional(),
   })
   .default({
