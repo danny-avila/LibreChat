@@ -211,7 +211,67 @@ describe('File Access Control', () => {
       expect(accessMap.get(fileIds[1])).toBe(false);
     });
 
-    it('should deny access when user only has VIEW permission', async () => {
+    it('should deny access when user only has VIEW permission and needs access for deletion', async () => {
+      const userId = new mongoose.Types.ObjectId();
+      const authorId = new mongoose.Types.ObjectId();
+      const agentId = uuidv4();
+      const fileIds = [uuidv4(), uuidv4()];
+
+      // Create users
+      await User.create({
+        _id: userId,
+        email: 'user@example.com',
+        emailVerified: true,
+        provider: 'local',
+      });
+
+      await User.create({
+        _id: authorId,
+        email: 'author@example.com',
+        emailVerified: true,
+        provider: 'local',
+      });
+
+      // Create agent with files
+      const agent = await createAgent({
+        id: agentId,
+        name: 'View-Only Agent',
+        author: authorId,
+        model: 'gpt-4',
+        provider: 'openai',
+        tool_resources: {
+          file_search: {
+            file_ids: fileIds,
+          },
+        },
+      });
+
+      // Grant only VIEW permission to user on the agent
+      await grantPermission({
+        principalType: PrincipalType.USER,
+        principalId: userId,
+        resourceType: ResourceType.AGENT,
+        resourceId: agent._id,
+        accessRoleId: AccessRoleIds.AGENT_VIEWER,
+        grantedBy: authorId,
+      });
+
+      // Check access for files
+      const { hasAccessToFilesViaAgent } = require('~/server/services/Files/permissions');
+      const accessMap = await hasAccessToFilesViaAgent({
+        userId: userId,
+        role: SystemRoles.USER,
+        fileIds,
+        agentId,
+        isDelete: true,
+      });
+
+      // Should have no access to any files when only VIEW permission
+      expect(accessMap.get(fileIds[0])).toBe(false);
+      expect(accessMap.get(fileIds[1])).toBe(false);
+    });
+
+    it('should grant access when user has VIEW permission', async () => {
       const userId = new mongoose.Types.ObjectId();
       const authorId = new mongoose.Types.ObjectId();
       const agentId = uuidv4();
@@ -265,9 +325,8 @@ describe('File Access Control', () => {
         agentId,
       });
 
-      // Should have no access to any files when only VIEW permission
-      expect(accessMap.get(fileIds[0])).toBe(false);
-      expect(accessMap.get(fileIds[1])).toBe(false);
+      expect(accessMap.get(fileIds[0])).toBe(true);
+      expect(accessMap.get(fileIds[1])).toBe(true);
     });
   });
 

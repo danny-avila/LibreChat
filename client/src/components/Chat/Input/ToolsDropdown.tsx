@@ -10,12 +10,12 @@ import {
   PermissionTypes,
   defaultAgentCapabilities,
 } from 'librechat-data-provider';
-import { useLocalize, useHasAccess, useAgentCapabilities, useMCPSelect } from '~/hooks';
+import { useLocalize, useHasAccess, useAgentCapabilities } from '~/hooks';
 import ArtifactsSubMenu from '~/components/Chat/Input/ArtifactsSubMenu';
 import MCPSubMenu from '~/components/Chat/Input/MCPSubMenu';
+import { useGetStartupConfig } from '~/data-provider';
 import { useBadgeRowContext } from '~/Providers';
 import { cn } from '~/utils';
-import { useGetStartupConfig } from '~/data-provider';
 
 interface ToolsDropdownProps {
   disabled?: boolean;
@@ -30,11 +30,11 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
     artifacts,
     fileSearch,
     agentsConfig,
+    mcpServerManager,
     codeApiKeyForm,
     codeInterpreter,
     searchApiKeyForm,
   } = useBadgeRowContext();
-  const mcpSelect = useMCPSelect();
   const { data: startupConfig } = useGetStartupConfig();
 
   const { codeEnabled, webSearchEnabled, artifactsEnabled, fileSearchEnabled } =
@@ -56,7 +56,6 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
   } = codeInterpreter;
   const { isPinned: isFileSearchPinned, setIsPinned: setIsFileSearchPinned } = fileSearch;
   const { isPinned: isArtifactsPinned, setIsPinned: setIsArtifactsPinned } = artifacts;
-  const { mcpServerNames } = mcpSelect;
 
   const canUseWebSearch = useHasAccess({
     permissionType: PermissionTypes.WEB_SEARCH,
@@ -287,11 +286,16 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
     });
   }
 
-  if (mcpServerNames && mcpServerNames.length > 0) {
+  const { configuredServers } = mcpServerManager;
+  if (configuredServers && configuredServers.length > 0) {
     dropdownItems.push({
       hideOnClick: false,
       render: (props) => <MCPSubMenu {...props} placeholder={mcpPlaceholder} />,
     });
+  }
+
+  if (dropdownItems.length === 0) {
+    return null;
   }
 
   const menuTrigger = (

@@ -264,7 +264,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
               handleSaveBadges={handleSaveBadges}
               setBadges={setBadges}
             />
-            <FileFormChat disableInputs={disableInputs} />
+            <FileFormChat conversation={conversation} />
             {endpoint && (
               <div className={cn('flex', isRTL ? 'flex-row-reverse' : 'flex-row')}>
                 <TextareaAutosize
@@ -312,7 +312,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
               )}
             >
               <div className={`${isRTL ? 'mr-2' : 'ml-2'}`}>
-                <AttachFileChat disableInputs={disableInputs} />
+                <AttachFileChat conversation={conversation} disableInputs={disableInputs} />
               </div>
               <BadgeRow
                 showEphemeralBadges={!isAgentsEndpoint(endpoint) && !isAssistantsEndpoint(endpoint)}

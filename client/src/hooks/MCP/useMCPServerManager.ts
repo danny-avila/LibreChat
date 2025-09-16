@@ -8,10 +8,9 @@ import {
   useReinitializeMCPServerMutation,
 } from 'librechat-data-provider/react-query';
 import type { TUpdateUserPlugins, TPlugin } from 'librechat-data-provider';
-import type { ConfigFieldDetail } from '~/components/MCP/MCPConfigDialog';
-import { useMCPConnectionStatusQuery } from '~/data-provider/Tools/queries';
+import type { ConfigFieldDetail } from '~/common';
+import { useLocalize, useMCPSelect, useGetMCPTools, useMCPConnectionStatus } from '~/hooks';
 import { useGetStartupConfig } from '~/data-provider';
-import { useLocalize, useMCPSelect } from '~/hooks';
 
 interface ServerState {
   isInitializing: boolean;
@@ -21,13 +20,13 @@ interface ServerState {
   pollInterval: NodeJS.Timeout | null;
 }
 
-export function useMCPServerManager() {
+export function useMCPServerManager({ conversationId }: { conversationId?: string | null } = {}) {
   const localize = useLocalize();
-  const { showToast } = useToastContext();
-  const mcpSelect = useMCPSelect();
-  const { data: startupConfig } = useGetStartupConfig();
-  const { mcpValues, setMCPValues, mcpToolDetails, isPinned, setIsPinned } = mcpSelect;
   const queryClient = useQueryClient();
+  const { showToast } = useToastContext();
+  const { mcpToolDetails } = useGetMCPTools();
+  const { data: startupConfig } = useGetStartupConfig();
+  const { mcpValues, setMCPValues, isPinned, setIsPinned } = useMCPSelect({ conversationId });
 
   const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
   const [selectedToolForConfig, setSelectedToolForConfig] = useState<TPlugin | null>(null);
@@ -82,15 +81,25 @@ export function useMCPServerManager() {
     return initialStates;
   });
 
-  const { data: connectionStatusData } = useMCPConnectionStatusQuery({
+  const { connectionStatus } = useMCPConnectionStatus({
     enabled: !!startupConfig?.mcpServers && Object.keys(startupConfig.mcpServers).length > 0,
   });
-  const connectionStatus = useMemo(
-    () => connectionStatusData?.connectionStatus || {},
-    [connectionStatusData?.connectionStatus],
-  );
+
+  /** Filter disconnected servers when values change, but only after initial load
+   This prevents clearing selections on page refresh when servers haven't connected yet
+   */
+  const hasInitialLoadCompleted = useRef(false);
 
   useEffect(() => {
+    if (!connectionStatus || Object.keys(connectionStatus).length === 0) {
+      return;
+    }
+
+    if (!hasInitialLoadCompleted.current) {
+      hasInitialLoadCompleted.current = true;
+      return;
+    }
+
     if (!mcpValues?.length) return;
 
     const connectedSelected = mcpValues.filter(
@@ -214,46 +223,46 @@ export function useMCPServerManager() {
   const initializeServer = useCallback(
     async (serverName: string, autoOpenOAuth: boolean = true) => {
       updateServerState(serverName, { isInitializing: true });
-
       try {
         const response = await reinitializeMutation.mutateAsync(serverName);
-
-        if (response.success) {
-          if (response.oauthRequired && response.oauthUrl) {
-            updateServerState(serverName, {
-              oauthUrl: response.oauthUrl,
-              oauthStartTime: Date.now(),
-              isCancellable: true,
-              isInitializing: true,
-            });
-
-            if (autoOpenOAuth) {
-              window.open(response.oauthUrl, '_blank', 'noopener,noreferrer');
-            }
-
-            startServerPolling(serverName);
-          } else {
-            await queryClient.refetchQueries([QueryKeys.mcpConnectionStatus]);
-
-            showToast({
-              message: localize('com_ui_mcp_initialized_success', { 0: serverName }),
-              status: 'success',
-            });
-
-            const currentValues = mcpValues ?? [];
-            if (!currentValues.includes(serverName)) {
-              setMCPValues([...currentValues, serverName]);
-            }
-
-            cleanupServerState(serverName);
-          }
-        } else {
+        if (!response.success) {
           showToast({
             message: localize('com_ui_mcp_init_failed', { 0: serverName }),
             status: 'error',
           });
           cleanupServerState(serverName);
+          return response;
         }
+
+        if (response.oauthRequired && response.oauthUrl) {
+          updateServerState(serverName, {
+            oauthUrl: response.oauthUrl,
+            oauthStartTime: Date.now(),
+            isCancellable: true,
+            isInitializing: true,
+          });
+
+          if (autoOpenOAuth) {
+            window.open(response.oauthUrl, '_blank', 'noopener,noreferrer');
+          }
+
+          startServerPolling(serverName);
+        } else {
+          await queryClient.invalidateQueries([QueryKeys.mcpConnectionStatus]);
+
+          showToast({
+            message: localize('com_ui_mcp_initialized_success', { 0: serverName }),
+            status: 'success',
+          });
+
+          const currentValues = mcpValues ?? [];
+          if (!currentValues.includes(serverName)) {
+            setMCPValues([...currentValues, serverName]);
+          }
+
+          cleanupServerState(serverName);
+        }
+        return response;
       } catch (error) {
         console.error(`[MCP Manager] Failed to initialize ${serverName}:`, error);
         showToast({
@@ -336,7 +345,7 @@ export function useMCPServerManager() {
           return;
         }
 
-        const serverStatus = connectionStatus[serverName];
+        const serverStatus = connectionStatus?.[serverName];
         if (serverStatus?.connectionState === 'connected') {
           connectedServers.push(serverName);
         } else {
@@ -366,7 +375,7 @@ export function useMCPServerManager() {
         const filteredValues = currentValues.filter((name) => name !== serverName);
         setMCPValues(filteredValues);
       } else {
-        const serverStatus = connectionStatus[serverName];
+        const serverStatus = connectionStatus?.[serverName];
         if (serverStatus?.connectionState === 'connected') {
           setMCPValues([...currentValues, serverName]);
         } else {
@@ -440,7 +449,7 @@ export function useMCPServerManager() {
   const getServerStatusIconProps = useCallback(
     (serverName: string) => {
       const tool = mcpToolDetails?.find((t) => t.name === serverName);
-      const serverStatus = connectionStatus[serverName];
+      const serverStatus = connectionStatus?.[serverName];
       const serverConfig = startupConfig?.mcpServers?.[serverName];
 
       const handleConfigClick = (e: React.MouseEvent) => {
@@ -486,12 +495,12 @@ export function useMCPServerManager() {
       };
     },
     [
+      isCancellable,
       mcpToolDetails,
+      isInitializing,
+      cancelOAuthFlow,
       connectionStatus,
       startupConfig?.mcpServers,
-      isInitializing,
-      isCancellable,
-      cancelOAuthFlow,
     ],
   );
 
@@ -517,7 +526,7 @@ export function useMCPServerManager() {
 
     return {
       serverName: selectedToolForConfig.name,
-      serverStatus: connectionStatus[selectedToolForConfig.name],
+      serverStatus: connectionStatus?.[selectedToolForConfig.name],
       isOpen: isConfigModalOpen,
       onOpenChange: handleDialogOpenChange,
       fieldsSchema,
@@ -538,7 +547,6 @@ export function useMCPServerManager() {
 
   return {
     configuredServers,
-    connectionStatus,
     initializeServer,
     cancelOAuthFlow,
     isInitializing,
@@ -547,7 +555,6 @@ export function useMCPServerManager() {
     mcpValues,
     setMCPValues,
 
-    mcpToolDetails,
     isPinned,
     setIsPinned,
     placeholderText,

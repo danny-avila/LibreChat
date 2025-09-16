@@ -37,12 +37,16 @@ import translationZh_Hans from './zh-Hans/translation.json';
 import translationZh_Hant from './zh-Hant/translation.json';
 import translationBo from './bo/translation.json';
 import translationUk from './uk/translation.json';
+import translationBs from './bs/translation.json';
+import translationNb from './nb/translation.json';
+import translationSl from './sl/translation.json';
 
 export const defaultNS = 'translation';
 
 export const resources = {
   en: { translation: translationEn },
   ar: { translation: translationAr },
+  bs: { translation: translationBs },
   ca: { translation: translationCa },
   cs: { translation: translationCs },
   'zh-Hans': { translation: translationZh_Hans },
@@ -54,6 +58,7 @@ export const resources = {
   fa: { translation: translationFa },
   fr: { translation: translationFr },
   it: { translation: translationIt },
+  nb: { translation: translationNb },
   pl: { translation: translationPl },
   'pt-BR': { translation: translationPt_BR },
   'pt-PT': { translation: translationPt_PT },
@@ -74,6 +79,7 @@ export const resources = {
   hy: { translation: translationHy },
   fi: { translation: translationFi },
   bo: { translation: translationBo },
+  sl: { translation: translationSl },
   uk: { translation: translationUk },
 } as const;
 

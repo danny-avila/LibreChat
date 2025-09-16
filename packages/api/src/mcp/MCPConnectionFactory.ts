@@ -1,11 +1,12 @@
 import { logger } from '@librechat/data-schemas';
 import type { OAuthClientInformation } from '@modelcontextprotocol/sdk/shared/auth.js';
 import type { TokenMethods } from '@librechat/data-schemas';
-import type { MCPOAuthTokens, MCPOAuthFlowMetadata } from '~/mcp/oauth';
+import type { MCPOAuthTokens, MCPOAuthFlowMetadata, OAuthMetadata } from '~/mcp/oauth';
 import type { FlowStateManager } from '~/flow/manager';
 import type { FlowMetadata } from '~/flow/types';
 import type * as t from './types';
 import { MCPTokenStorage, MCPOAuthHandler } from '~/mcp/oauth';
+import { sanitizeUrlForLogging } from './utils';
 import { MCPConnection } from './connection';
 import { processMCPEnv } from '~/utils';
 
@@ -28,6 +29,7 @@ export class MCPConnectionFactory {
   protected readonly oauthStart?: (authURL: string) => Promise<void>;
   protected readonly oauthEnd?: () => Promise<void>;
   protected readonly returnOnOAuth?: boolean;
+  protected readonly connectionTimeout?: number;
 
   /** Creates a new MCP connection with optional OAuth support */
   static async create(
@@ -47,6 +49,7 @@ export class MCPConnectionFactory {
     });
     this.serverName = basic.serverName;
     this.useOAuth = !!oauth?.useOAuth;
+    this.connectionTimeout = oauth?.connectionTimeout;
     this.logPrefix = oauth?.user
       ? `[MCP][${basic.serverName}][${oauth.user.id}]`
       : `[MCP][${basic.serverName}]`;
@@ -72,9 +75,23 @@ export class MCPConnectionFactory {
       oauthTokens,
     });
 
-    if (this.useOAuth) this.handleOAuthEvents(connection);
-    await this.attemptToConnect(connection);
-    return connection;
+    let cleanupOAuthHandlers: (() => void) | null = null;
+    if (this.useOAuth) {
+      cleanupOAuthHandlers = this.handleOAuthEvents(connection);
+    }
+
+    try {
+      await this.attemptToConnect(connection);
+      if (cleanupOAuthHandlers) {
+        cleanupOAuthHandlers();
+      }
+      return connection;
+    } catch (error) {
+      if (cleanupOAuthHandlers) {
+        cleanupOAuthHandlers();
+      }
+      throw error;
+    }
   }
 
   /** Retrieves existing OAuth tokens from storage or returns null */
@@ -82,8 +99,9 @@ export class MCPConnectionFactory {
     if (!this.tokenMethods?.findToken) return null;
 
     try {
+      const flowId = MCPOAuthHandler.generateFlowId(this.userId!, this.serverName);
       const tokens = await this.flowManager!.createFlowWithHandler(
-        `tokens:${this.userId}:${this.serverName}`,
+        flowId,
         'mcp_get_tokens',
         async () => {
           return await MCPTokenStorage.getTokens({
@@ -130,8 +148,8 @@ export class MCPConnectionFactory {
   }
 
   /** Sets up OAuth event handlers for the connection */
-  protected handleOAuthEvents(connection: MCPConnection): void {
-    connection.on('oauthRequired', async (data) => {
+  protected handleOAuthEvents(connection: MCPConnection): () => void {
+    const oauthHandler = async (data: { serverUrl?: string }) => {
       logger.info(`${this.logPrefix} oauthRequired event received`);
 
       // If we just want to initiate OAuth and return, handle it differently
@@ -183,6 +201,7 @@ export class MCPConnectionFactory {
             updateToken: this.tokenMethods.updateToken,
             findToken: this.tokenMethods.findToken,
             clientInfo: result.clientInfo,
+            metadata: result.metadata,
           });
           logger.info(`${this.logPrefix} OAuth tokens saved to storage`);
         } catch (error) {
@@ -198,12 +217,18 @@ export class MCPConnectionFactory {
         logger.warn(`${this.logPrefix} OAuth failed, emitting oauthFailed event`);
         connection.emit('oauthFailed', new Error('OAuth authentication failed'));
       }
-    });
+    };
+
+    connection.on('oauthRequired', oauthHandler);
+
+    return () => {
+      connection.removeListener('oauthRequired', oauthHandler);
+    };
   }
 
   /** Attempts to establish connection with timeout handling */
   protected async attemptToConnect(connection: MCPConnection): Promise<void> {
-    const connectTimeout = this.serverConfig.initTimeout ?? 30000;
+    const connectTimeout = this.connectionTimeout ?? this.serverConfig.initTimeout ?? 30000;
     const connectionTimeout = new Promise<void>((_, reject) =>
       setTimeout(
         () => reject(new Error(`Connection timeout after ${connectTimeout}ms`)),
@@ -281,9 +306,12 @@ export class MCPConnectionFactory {
   protected async handleOAuthRequired(): Promise<{
     tokens: MCPOAuthTokens | null;
     clientInfo?: OAuthClientInformation;
+    metadata?: OAuthMetadata;
   } | null> {
     const serverUrl = (this.serverConfig as t.SSEOptions | t.StreamableHTTPOptions).url;
-    logger.debug(`${this.logPrefix} \`handleOAuthRequired\` called with serverUrl: ${serverUrl}`);
+    logger.debug(
+      `${this.logPrefix} \`handleOAuthRequired\` called with serverUrl: ${serverUrl ? sanitizeUrlForLogging(serverUrl) : 'undefined'}`,
+    );
 
     if (!this.flowManager || !serverUrl) {
       logger.error(
@@ -347,6 +375,7 @@ export class MCPConnectionFactory {
         newFlowId,
         'mcp_oauth',
         flowMetadata as FlowMetadata,
+        this.signal,
       );
       if (typeof this.oauthEnd === 'function') {
         await this.oauthEnd();
@@ -355,8 +384,13 @@ export class MCPConnectionFactory {
 
       /** Client information from the flow metadata */
       const clientInfo = flowMetadata?.clientInfo;
+      const metadata = flowMetadata?.metadata;
 
-      return { tokens, clientInfo };
+      return {
+        tokens,
+        clientInfo,
+        metadata,
+      };
     } catch (error) {
       logger.error(`${this.logPrefix} Failed to complete OAuth flow for ${this.serverName}`, error);
       return null;

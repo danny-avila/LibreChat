@@ -1,4 +1,7 @@
+import { Tools } from 'librechat-data-provider';
+import type { UIResource } from 'librechat-data-provider';
 import type * as t from './types';
+
 const RECOGNIZED_PROVIDERS = new Set([
   'google',
   'anthropic',
@@ -111,6 +114,7 @@ export function formatToolContent(
   const formattedContent: t.FormattedContent[] = [];
   const imageUrls: t.FormattedContent[] = [];
   let currentTextBlock = '';
+  const uiResources: UIResource[] = [];
 
   type ContentHandler = undefined | ((item: t.ToolContentPart) => void);
 
@@ -142,9 +146,13 @@ export function formatToolContent(
     },
 
     resource: (item) => {
+      if (item.resource.uri.startsWith('ui://')) {
+        uiResources.push(item.resource as UIResource);
+      }
+
       const resourceText = [];
       if (item.resource.text != null && item.resource.text) {
-        resourceText.push(item.resource.text);
+        resourceText.push(`Resource Text: ${item.resource.text}`);
       }
       if (item.resource.uri.length) {
         resourceText.push(`Resource URI: ${item.resource.uri}`);
@@ -153,10 +161,10 @@ export function formatToolContent(
         resourceText.push(`Resource: ${item.resource.name}`);
       }
       if (item.resource.description) {
-        resourceText.push(`Description: ${item.resource.description}`);
+        resourceText.push(`Resource Description: ${item.resource.description}`);
       }
       if (item.resource.mimeType != null && item.resource.mimeType) {
-        resourceText.push(`Type: ${item.resource.mimeType}`);
+        resourceText.push(`Resource MIME Type: ${item.resource.mimeType}`);
       }
       currentTextBlock += (currentTextBlock ? '\n\n' : '') + resourceText.join('\n');
     },
@@ -176,7 +184,14 @@ export function formatToolContent(
     formattedContent.push({ type: 'text', text: currentTextBlock });
   }
 
-  const artifacts = imageUrls.length ? { content: imageUrls } : undefined;
+  let artifacts: t.Artifacts = undefined;
+  if (imageUrls.length || uiResources.length) {
+    artifacts = {
+      ...(imageUrls.length && { content: imageUrls }),
+      ...(uiResources.length && { [Tools.ui_resources]: { data: uiResources } }),
+    };
+  }
+
   if (CONTENT_ARRAY_PROVIDERS.has(provider)) {
     return [formattedContent, artifacts];
   }

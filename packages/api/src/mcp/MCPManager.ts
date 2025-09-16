@@ -54,9 +54,29 @@ export class MCPManager extends UserConnectionManager {
     return this.serversRegistry.oauthServers!;
   }
 
+  /** Get all servers */
+  public getAllServers(): t.MCPServers | null {
+    return this.serversRegistry.rawConfigs!;
+  }
+
   /** Returns all available tool functions from app-level connections */
   public getAppToolFunctions(): t.LCAvailableTools | null {
     return this.serversRegistry.toolFunctions!;
+  }
+  /** Returns all available tool functions from all connections available to user */
+  public async getAllToolFunctions(userId: string): Promise<t.LCAvailableTools | null> {
+    const allToolFunctions: t.LCAvailableTools = this.getAppToolFunctions() ?? {};
+    const userConnections = this.getUserConnections(userId);
+    if (!userConnections || userConnections.size === 0) {
+      return allToolFunctions;
+    }
+
+    for (const [serverName, connection] of userConnections.entries()) {
+      const toolFunctions = await this.serversRegistry.getToolFunctions(serverName, connection);
+      Object.assign(allToolFunctions, toolFunctions);
+    }
+
+    return allToolFunctions;
   }
 
   /**
@@ -101,34 +121,36 @@ ${formattedInstructions}
 Please follow these instructions when using tools from the respective MCP servers.`;
   }
 
-  /** Loads tools from all app-level connections into the manifest. */
-  public async loadManifestTools({
-    serverToolsCallback,
-    getServerTools,
-  }: {
-    flowManager: FlowStateManager<MCPOAuthTokens | null>;
-    serverToolsCallback?: (serverName: string, tools: t.LCManifestTool[]) => Promise<void>;
-    getServerTools?: (serverName: string) => Promise<t.LCManifestTool[] | undefined>;
-  }): Promise<t.LCToolManifest> {
-    const mcpTools: t.LCManifestTool[] = [];
+  private async loadAppManifestTools(): Promise<t.LCManifestTool[]> {
     const connections = await this.appConnections!.getAll();
+    return await this.loadManifestTools(connections);
+  }
+
+  private async loadUserManifestTools(userId: string): Promise<t.LCManifestTool[]> {
+    const connections = this.getUserConnections(userId);
+    return await this.loadManifestTools(connections);
+  }
+
+  public async loadAllManifestTools(userId: string): Promise<t.LCManifestTool[]> {
+    const appTools = await this.loadAppManifestTools();
+    const userTools = await this.loadUserManifestTools(userId);
+    return [...appTools, ...userTools];
+  }
+
+  /** Loads tools from all app-level connections into the manifest. */
+  private async loadManifestTools(
+    connections?: Map<string, MCPConnection> | null,
+  ): Promise<t.LCToolManifest> {
+    const mcpTools: t.LCManifestTool[] = [];
+    if (!connections || connections.size === 0) {
+      return mcpTools;
+    }
     for (const [serverName, connection] of connections.entries()) {
       try {
         if (!(await connection.isConnected())) {
           logger.warn(
             `[MCP][${serverName}] Connection not available for ${serverName} manifest tools.`,
           );
-          if (typeof getServerTools !== 'function') {
-            logger.warn(
-              `[MCP][${serverName}] No \`getServerTools\` function provided, skipping tool loading.`,
-            );
-            continue;
-          }
-          const serverTools = await getServerTools(serverName);
-          if (serverTools && serverTools.length > 0) {
-            logger.info(`[MCP][${serverName}] Loaded tools from cache for manifest`);
-            mcpTools.push(...serverTools);
-          }
           continue;
         }
 
@@ -156,9 +178,6 @@ Please follow these instructions when using tools from the respective MCP server
           }
           mcpTools.push(manifestTool);
           serverTools.push(manifestTool);
-        }
-        if (typeof serverToolsCallback === 'function') {
-          await serverToolsCallback(serverName, serverTools);
         }
       } catch (error) {
         logger.error(`[MCP][${serverName}] Error fetching tools for manifest:`, error);
@@ -261,6 +280,7 @@ Please follow these instructions when using tools from the respective MCP server
         CallToolResultSchema,
         {
           timeout: connection.timeout,
+          resetTimeoutOnProgress: true,
           ...options,
         },
       );
