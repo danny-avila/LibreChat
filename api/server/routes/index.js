@@ -18,6 +18,7 @@ const convos = require('./convos');
 const config = require('./config');
 const agents = require('./agents');
 const roles = require('./roles');
+const admin = require('./admin');
 const oauth = require('./oauth');
 const files = require('./files');
 const share = require('./share');
@@ -28,6 +29,9 @@ const keys = require('./keys');
 const user = require('./user');
 const ask = require('./ask');
 const mcp = require('./mcp');
+const userActivity = require('./userActivity');
+const logs = require('./logs');
+
 
 module.exports = {
   ask,
@@ -37,6 +41,7 @@ module.exports = {
   user,
   tags,
   roles,
+  admin,
   oauth,
   files,
   share,
@@ -60,4 +65,6 @@ module.exports = {
   categories,
   staticRoute,
   mcp,
+  userActivity,
+  logs,
 };

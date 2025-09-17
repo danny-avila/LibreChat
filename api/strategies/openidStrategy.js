@@ -12,6 +12,7 @@ const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { findUser, createUser, updateUser } = require('~/models');
 const { getBalanceConfig } = require('~/server/services/Config');
 const getLogStores = require('~/cache/getLogStores');
+const { UserActivityLog } = require('~/db/models');
 
 /**
  * @typedef {import('openid-client').ClientMetadata} ClientMetadata
@@ -406,6 +407,33 @@ async function setupOpenId() {
           }
 
           user = await updateUser(user._id, user);
+
+          // 🔹 Log login activity for Azure AD OpenID (with deduplication)
+          try {
+            const last = await UserActivityLog.findOne({
+              user: user._id,
+              action: 'LOGIN',
+            })
+              .sort({ timestamp: -1 })
+              .lean();
+
+            if (!last || Date.now() - new Date(last.timestamp).getTime() > 2000) {
+              const logEntry = await UserActivityLog.create({
+                user: user._id,
+                action: 'LOGIN',
+                timestamp: new Date(),
+              });
+              logger.info(
+                `[openidStrategy] LOGIN activity logged for user ${user._id} (${logEntry._id})`
+              );
+            } else {
+              logger.debug(
+                `[openidStrategy] Skipped duplicate LOGIN log for user ${user._id} (within 2s)`
+              );
+            }
+          } catch (logError) {
+            logger.error('[openidStrategy] Failed to log login activity:', logError);
+          }
 
           logger.info(
             `[openidStrategy] login success openidId: ${user.openidId} | email: ${user.email} | username: ${user.username} `,

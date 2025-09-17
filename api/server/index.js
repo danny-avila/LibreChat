@@ -75,7 +75,22 @@ const startServer = async () => {
   app.use(cookieParser());
 
   if (!isEnabled(DISABLE_COMPRESSION)) {
-    app.use(compression());
+    app.use(
+      compression({
+        filter: (req, res) => {
+          try {
+            // Do NOT compress SSE streams
+            if (
+              req.path === '/api/logs/queries' ||
+              req.path === '/api/user-activity/stream'
+            ) {
+              return false;
+            }
+          } catch (_) {}
+          return compression.filter(req, res);
+        },
+      }),
+    );
   } else {
     console.warn('Response compression has been disabled via DISABLE_COMPRESSION.');
   }
@@ -128,12 +143,15 @@ const startServer = async () => {
   app.use('/images/', validateImageRequest, routes.staticRoute);
   app.use('/api/share', routes.share);
   app.use('/api/roles', routes.roles);
+  app.use('/api/admin', routes.admin);
   app.use('/api/agents', routes.agents);
   app.use('/api/banner', routes.banner);
   app.use('/api/bedrock', routes.bedrock);
   app.use('/api/memories', routes.memories);
   app.use('/api/tags', routes.tags);
   app.use('/api/mcp', routes.mcp);
+  app.use('/api/user-activity', routes.userActivity);
+  app.use('/api/logs', routes.logs);
 
   app.use((req, res) => {
     res.set({

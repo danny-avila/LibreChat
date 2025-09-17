@@ -2,9 +2,13 @@ const dedent = require('dedent');
 const { EModelEndpoint, ArtifactModes } = require('librechat-data-provider');
 const { generateShadcnPrompt } = require('~/app/clients/prompts/shadcn-docs/generate');
 const { components } = require('~/app/clients/prompts/shadcn-docs/components');
+const { followupPrompt } = require('./followupPrompt');
 
 // eslint-disable-next-line no-unused-vars
-const artifactsPromptV1 = dedent`The assistant can create and reference artifacts during conversations.
+const artifactsPromptV1 = dedent`
+${followupPrompt}
+
+The assistant can create and reference artifacts during conversations.
   
 Artifacts are for substantial, self-contained content that users might modify or reuse, displayed in a separate UI window for clarity.
 
@@ -115,7 +119,10 @@ Here are some examples of correct usage of artifacts:
     </assistant_response>
   </example>
 </examples>`;
-const artifactsPrompt = dedent`The assistant can create and reference artifacts during conversations.
+const artifactsPrompt = dedent`
+${followupPrompt}
+
+The assistant can create and reference artifacts during conversations.
   
 Artifacts are for substantial, self-contained content that users might modify or reuse, displayed in a separate UI window for clarity.
 
@@ -302,7 +309,10 @@ Here are some examples of correct usage of artifacts:
   </example>
 </examples>`;
 
-const artifactsOpenAIPrompt = dedent`The assistant can create and reference artifacts during conversations.
+const artifactsOpenAIPrompt = dedent`
+${followupPrompt}
+
+The assistant can create and reference artifacts during conversations.
   
 Artifacts are for substantial, self-contained content that users might modify or reuse, displayed in a separate UI window for clarity.
 

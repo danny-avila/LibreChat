@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { MessageSquareQuote, ArrowRightToLine, Settings2, Database, Bookmark } from 'lucide-react';
+import { MessageSquareQuote, ArrowRightToLine, Settings2, Database, Bookmark, Shield } from 'lucide-react';
 import {
   isAssistantsEndpoint,
   isAgentsEndpoint,
@@ -13,6 +13,7 @@ import type { NavLink } from '~/common';
 import AgentPanelSwitch from '~/components/SidePanel/Agents/AgentPanelSwitch';
 import BookmarkPanel from '~/components/SidePanel/Bookmarks/BookmarkPanel';
 import MemoryViewer from '~/components/SidePanel/Memories/MemoryViewer';
+import AdminPanel from '~/components/SidePanel/Admin/AdminPanel';
 import PanelSwitch from '~/components/SidePanel/Builder/PanelSwitch';
 import PromptsAccordion from '~/components/Prompts/PromptsAccordion';
 import Parameters from '~/components/SidePanel/Parameters/Panel';
@@ -21,7 +22,8 @@ import MCPPanel from '~/components/SidePanel/MCP/MCPPanel';
 import { Blocks, AttachmentIcon } from '~/components/svg';
 import { useGetStartupConfig } from '~/data-provider';
 import MCPIcon from '~/components/ui/MCPIcon';
-import { useHasAccess } from '~/hooks';
+import { useAuthContext, useHasAccess } from '~/hooks';
+import { SystemRoles } from 'librechat-data-provider';
 
 export default function useSideNavLinks({
   hidePanel,
@@ -62,6 +64,7 @@ export default function useSideNavLinks({
     permissionType: PermissionTypes.AGENTS,
     permission: Permissions.CREATE,
   });
+  const { user } = useAuthContext();
   const { data: startupConfig } = useGetStartupConfig();
 
   const Links = useMemo(() => {
@@ -168,6 +171,18 @@ export default function useSideNavLinks({
       });
     }
 
+    if (user?.role === SystemRoles.ADMIN) {
+      links.push({
+        title: 'com_ui_admin',
+        label: '',
+        icon: Shield,
+        id: 'admin',
+        Component: AdminPanel,
+      });
+    }
+    
+    
+
     links.push({
       title: 'com_sidepanel_hide_panel',
       label: '',
@@ -190,6 +205,7 @@ export default function useSideNavLinks({
     hasAccessToBookmarks,
     hasAccessToCreateAgents,
     hidePanel,
+    user,
     startupConfig,
   ]);
 

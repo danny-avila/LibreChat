@@ -34,10 +34,6 @@ const genericVerificationMessage = 'Please check your email to verify your email
 
 /**
  * Logout user
- *
- * @param {ServerRequest} req
- * @param {string} refreshToken
- * @returns
  */
 const logoutUser = async (req, refreshToken) => {
   try {
@@ -67,7 +63,6 @@ const logoutUser = async (req, refreshToken) => {
 
 /**
  * Creates Token and corresponding Hash for verification
- * @returns {[string, string]}
  */
 const createTokenHash = () => {
   const token = Buffer.from(webcrypto.getRandomValues(new Uint8Array(32))).toString('hex');
@@ -77,8 +72,6 @@ const createTokenHash = () => {
 
 /**
  * Send Verification Email
- * @param {Partial<MongoUser> & { _id: ObjectId, email: string, name: string}} user
- * @returns {Promise<void>}
  */
 const sendVerificationEmail = async (user) => {
   const [verifyToken, hash] = createTokenHash();
@@ -90,7 +83,7 @@ const sendVerificationEmail = async (user) => {
     email: user.email,
     subject: 'Verify your email',
     payload: {
-      appName: process.env.APP_TITLE || 'LibreChat',
+      appName: process.env.APP_TITLE || 'Emeritus',
       name: user.name || user.username || user.email,
       verificationLink: verificationLink,
       year: new Date().getFullYear(),
@@ -111,7 +104,6 @@ const sendVerificationEmail = async (user) => {
 
 /**
  * Verify Email
- * @param {Express.Request} req
  */
 const verifyEmail = async (req) => {
   const { email, token } = req.body;
@@ -159,9 +151,6 @@ const verifyEmail = async (req) => {
 
 /**
  * Register a new user.
- * @param {MongoUser} user <email, password, name, username>
- * @param {Partial<MongoUser>} [additionalData={}]
- * @returns {Promise<{status: number, message: string, user?: MongoUser}>}
  */
 const registerUser = async (user, additionalData = {}) => {
   const { error } = registerSchema.safeParse(user);
@@ -183,13 +172,7 @@ const registerUser = async (user, additionalData = {}) => {
     const existingUser = await findUser({ email }, 'email _id');
 
     if (existingUser) {
-      logger.info(
-        'Register User - Email in use',
-        { name: 'Request params:', value: user },
-        { name: 'Existing user:', value: existingUser },
-      );
-
-      // Sleep for 1 second
+      logger.info('Register User - Email in use', { email });
       await new Promise((resolve) => setTimeout(resolve, 1000));
       return { status: 200, message: genericVerificationMessage };
     }
@@ -201,7 +184,6 @@ const registerUser = async (user, additionalData = {}) => {
       return { status: 403, message: errorMessage };
     }
 
-    //determine if this is the first registered user (not counting anonymous_user)
     const isFirstRegisteredUser = (await countUsers()) === 0;
 
     const salt = bcrypt.genSaltSync(10);
@@ -237,9 +219,7 @@ const registerUser = async (user, additionalData = {}) => {
     logger.error('[registerUser] Error in registering user:', err);
     if (newUserId) {
       const result = await deleteUserById(newUserId);
-      logger.warn(
-        `[registerUser] [Email: ${email}] [Temporary User deleted: ${JSON.stringify(result)}]`,
-      );
+      logger.warn(`[registerUser] Temp User deleted: ${JSON.stringify(result)}`);
     }
     return { status: 500, message: 'Something went wrong' };
   }
@@ -247,7 +227,6 @@ const registerUser = async (user, additionalData = {}) => {
 
 /**
  * Request password reset
- * @param {Express.Request} req
  */
 const requestPasswordReset = async (req) => {
   const { email } = req.body;
@@ -281,20 +260,16 @@ const requestPasswordReset = async (req) => {
       email: user.email,
       subject: 'Password Reset Request',
       payload: {
-        appName: process.env.APP_TITLE || 'LibreChat',
+        appName: process.env.APP_TITLE || 'Emeritus',
         name: user.name || user.username || user.email,
-        link: link,
+        link,
         year: new Date().getFullYear(),
       },
       template: 'requestPasswordReset.handlebars',
     });
-    logger.info(
-      `[requestPasswordReset] Link emailed. [Email: ${email}] [ID: ${user._id}] [IP: ${req.ip}]`,
-    );
+    logger.info(`[requestPasswordReset] Link emailed. [Email: ${email}] [ID: ${user._id}]`);
   } else {
-    logger.info(
-      `[requestPasswordReset] Link issued. [Email: ${email}] [ID: ${user._id}] [IP: ${req.ip}]`,
-    );
+    logger.info(`[requestPasswordReset] Link issued. [Email: ${email}] [ID: ${user._id}]`);
     return { link };
   }
 
@@ -305,16 +280,9 @@ const requestPasswordReset = async (req) => {
 
 /**
  * Reset Password
- *
- * @param {*} userId
- * @param {String} token
- * @param {String} password
- * @returns
  */
 const resetPassword = async (userId, token, password) => {
-  let passwordResetToken = await findToken({
-    userId,
-  });
+  let passwordResetToken = await findToken({ userId });
 
   if (!passwordResetToken) {
     return new Error('Invalid or expired password reset token');
@@ -334,7 +302,7 @@ const resetPassword = async (userId, token, password) => {
       email: user.email,
       subject: 'Password Reset Successfully',
       payload: {
-        appName: process.env.APP_TITLE || 'LibreChat',
+        appName: process.env.APP_TITLE || 'Emeritus',
         name: user.name || user.username || user.email,
         year: new Date().getFullYear(),
       },
@@ -348,12 +316,7 @@ const resetPassword = async (userId, token, password) => {
 };
 
 /**
- * Set Auth Tokens
- *
- * @param {String | ObjectId} userId
- * @param {Object} res
- * @param {String} sessionId
- * @returns
+ * Set Auth Tokens + Log Login Activity
  */
 const setAuthTokens = async (userId, res, sessionId = null) => {
   try {
@@ -387,6 +350,51 @@ const setAuthTokens = async (userId, res, sessionId = null) => {
       secure: isProduction,
       sameSite: 'strict',
     });
+
+    // 🔹 Log login activity (with deduplication)
+    try {
+      const { UserActivityLog } = require('~/db/models');
+      const { logAndBroadcastActivity } = require('~/server/services/UserActivityService');
+      
+      // Only log login for new sessions, not refreshes
+      if (!sessionId) {
+        // Get the most recent login and logout events
+        const [lastLogin, lastLogout] = await Promise.all([
+          UserActivityLog.findOne({ user: userId, action: 'LOGIN' })
+            .sort({ timestamp: -1 })
+            .lean(),
+          UserActivityLog.findOne({ 
+            user: userId, 
+            action: 'LOGOUT',
+            timestamp: { $exists: true }
+          })
+            .sort({ timestamp: -1 })
+            .lean()
+        ]);
+
+        // Log login if:
+        // 1. No previous login found, OR
+        // 2. Last logout is more recent than last login, OR
+        // 3. Last login was more than 5 minutes ago
+        const shouldLogLogin = !lastLogin || 
+          (lastLogout && new Date(lastLogout.timestamp) > new Date(lastLogin.timestamp)) ||
+          (Date.now() - new Date(lastLogin.timestamp).getTime() > 5 * 60 * 1000);
+
+        if (shouldLogLogin) {
+          await logAndBroadcastActivity(userId, 'LOGIN');
+          logger.info(`[setAuthTokens] Login activity logged for user: ${userId}`);
+        } else {
+          logger.debug(
+            `[setAuthTokens] Skipped duplicate LOGIN log for user: ${userId} (within 5m window or no logout detected)`
+          );
+        }
+      } else {
+        logger.debug(`[setAuthTokens] Session refresh for user: ${userId}, not logging login activity`);
+      }
+    } catch (logError) {
+      logger.error('[setAuthTokens] Failed to log login activity:', logError);
+    }
+
     return token;
   } catch (error) {
     logger.error('[setAuthTokens] Error in setting authentication tokens:', error);
@@ -395,13 +403,7 @@ const setAuthTokens = async (userId, res, sessionId = null) => {
 };
 
 /**
- * @function setOpenIDAuthTokens
- * Set OpenID Authentication Tokens
- * //type tokenset from openid-client
- * @param {import('openid-client').TokenEndpointResponse & import('openid-client').TokenEndpointResponseHelpers} tokenset
- * - The tokenset object containing access and refresh tokens
- * @param {Object} res - response object
- * @returns {String} - access token
+ * OpenID Token Setter
  */
 const setOpenIDAuthTokens = (tokenset, res) => {
   try {
@@ -412,14 +414,10 @@ const setOpenIDAuthTokens = (tokenset, res) => {
     const { REFRESH_TOKEN_EXPIRY } = process.env ?? {};
     const expiryInMilliseconds = REFRESH_TOKEN_EXPIRY
       ? eval(REFRESH_TOKEN_EXPIRY)
-      : 1000 * 60 * 60 * 24 * 7; // 7 days default
+      : 1000 * 60 * 60 * 24 * 7;
     const expirationDate = new Date(Date.now() + expiryInMilliseconds);
-    if (tokenset == null) {
-      logger.error('[setOpenIDAuthTokens] No tokenset found in request');
-      return;
-    }
     if (!tokenset.access_token || !tokenset.refresh_token) {
-      logger.error('[setOpenIDAuthTokens] No access or refresh token found in tokenset');
+      logger.error('[setOpenIDAuthTokens] Missing tokens in tokenset');
       return;
     }
     res.cookie('refreshToken', tokenset.refresh_token, {
@@ -443,10 +441,6 @@ const setOpenIDAuthTokens = (tokenset, res) => {
 
 /**
  * Resend Verification Email
- * @param {Object} req
- * @param {Object} req.body
- * @param {String} req.body.email
- * @returns {Promise<{status: number, message: string}>}
  */
 const resendVerificationEmail = async (req) => {
   try {
@@ -460,7 +454,6 @@ const resendVerificationEmail = async (req) => {
     }
 
     const [verifyToken, hash] = createTokenHash();
-
     const verificationLink = `${
       domains.client
     }/verify?token=${verifyToken}&email=${encodeURIComponent(user.email)}`;
@@ -469,9 +462,9 @@ const resendVerificationEmail = async (req) => {
       email: user.email,
       subject: 'Verify your email',
       payload: {
-        appName: process.env.APP_TITLE || 'LibreChat',
+        appName: process.env.APP_TITLE || 'Emeritus',
         name: user.name || user.username || user.email,
-        verificationLink: verificationLink,
+        verificationLink,
         year: new Date().getFullYear(),
       },
       template: 'verifyEmail.handlebars',

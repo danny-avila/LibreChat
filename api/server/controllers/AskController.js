@@ -11,8 +11,10 @@ const {
   requestDataMap,
 } = require('~/server/cleanup');
 const { sendMessage, createOnProgress } = require('~/server/utils');
-const { saveMessage } = require('~/models');
+const { saveMessage, getConvo } = require('~/models');
 const { logger } = require('~/config');
+const { UserActivityLog } = require('~/db/models');
+const queryLogger = require('~/server/services/QueryLogger');
 
 const AskController = async (req, res, next, initializeClient, addTitle) => {
   let {
@@ -45,7 +47,7 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
 
   const sender = getResponseSender({
     ...endpointOption,
-    model: endpointOption.modelOptions.model,
+    model: endpointOption.modelOptions?.model,
     modelDisplayLabel,
   });
   const initialConversationId = conversationId;
@@ -116,6 +118,36 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
   };
 
   try {
+    /** --- MODEL CHANGE LOGGING (compare against existing convo BEFORE request updates it) --- */
+    try {
+      const requestedModel =
+        endpointOption?.modelOptions?.model ||
+        endpointOption?.model;
+
+      if (conversationId && requestedModel) {
+        const prevConvo = await getConvo(req.user.id, conversationId);
+        const prevModel = prevConvo?.model ?? null;
+
+        if (prevModel && requestedModel && prevModel !== requestedModel) {
+          const { logAndBroadcastActivity } = require('~/server/services/UserActivityService');
+          await logAndBroadcastActivity(req.user.id, 'MODEL CHANGED', {
+            fromModel: prevModel,
+            toModel: requestedModel,
+            conversationId,
+            endpoint: endpointOption?.endpoint,
+          });
+        } else {
+          logger.debug('[AskController] No model change detected (pre-log)', {
+            prevModel,
+            requestedModel,
+          });
+        }
+      }
+    } catch (e) {
+      logger.error('[AskController] MODEL CHANGED pre-log failed:', e);
+    }
+    /** --- END MODEL CHANGE LOGGING --- */
+
     ({ client } = await initializeClient({ req, res, endpointOption }));
     if (clientRegistry && client) {
       clientRegistry.register(client, { userId }, client);
@@ -217,13 +249,7 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
       });
       res.end();
 
-      if (client?.savedMessageIds && !client.savedMessageIds.has(response.messageId)) {
-        await saveMessage(
-          req,
-          { ...finalResponseMessage, user: userId },
-          { context: 'api/server/controllers/AskController.js - response end' },
-        );
-      }
+      
     }
 
     if (!client?.skipSaveUserMessage && latestUserMessage) {

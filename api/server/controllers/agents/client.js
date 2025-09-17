@@ -36,7 +36,7 @@ const {
   createGetMCPAuthMap,
   checkCapability,
 } = require('~/server/services/Config');
-const { addCacheControl, createContextHandlers, buildSystemInstruction } = require('~/app/clients/prompts');
+const { addCacheControl, buildSystemInstruction, createContextHandlers } = require('~/app/clients/prompts');
 const { initializeAgent } = require('~/server/services/Endpoints/agents/agent');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
 const { getFormattedMemories, deleteMemory, setMemory } = require('~/models');

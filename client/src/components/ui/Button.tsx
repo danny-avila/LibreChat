@@ -18,6 +18,7 @@ const buttonVariants = cva(
         link: 'text-primary underline-offset-4 hover:underline',
         // hardcoded text color because of WCAG contrast issues (text-white)
         submit: 'bg-surface-submit text-white hover:bg-surface-submit-hover',
+        neutral: 'border border-input bg-transparent text-black hover:bg-accent hover:text-accent-foreground', // ✅ added
       },
       size: {
         default: 'h-10 px-4 py-2',

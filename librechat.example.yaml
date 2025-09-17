@@ -1,5 +1,5 @@
 # For more information, see the Configuration Guide:
-# https://www.librechat.ai/docs/configuration/librechat_yaml
+# https://www.Emeritus.ai/docs/configuration/Emeritus_yaml
 
 # Configuration version (required)
 version: 1.2.1
@@ -12,28 +12,28 @@ cache: true
 
 # Custom interface configuration
 interface:
-  customWelcome: "Welcome to LibreChat! Enjoy your experience."
+  customWelcome: "Welcome to Emeritus! Enjoy your experience."
   # Privacy policy settings
   privacyPolicy:
-    externalUrl: 'https://librechat.ai/privacy-policy'
+    externalUrl: 'https://Emeritus.ai/privacy-policy'
     openNewTab: true
 
   # Terms of service
   termsOfService:
-    externalUrl: 'https://librechat.ai/tos'
+    externalUrl: 'https://Emeritus.ai/tos'
     openNewTab: true
     modalAcceptance: true
-    modalTitle: "Terms of Service for LibreChat"
+    modalTitle: "Terms of Service for Emeritus"
     modalContent: |
-      # Terms and Conditions for LibreChat
+      # Terms and Conditions for Emeritus
 
       *Effective Date: February 18, 2024*
 
-      Welcome to LibreChat, the informational website for the open-source AI chat platform, available at https://librechat.ai. These Terms of Service ("Terms") govern your use of our website and the services we offer. By accessing or using the Website, you agree to be bound by these Terms and our Privacy Policy, accessible at https://librechat.ai//privacy.
+      Welcome to Emeritus, the informational website for the open-source AI chat platform, available at https://emeritus.org/in/. These Terms of Service ("Terms") govern your use of our website and the services we offer. By accessing or using the Website, you agree to be bound by these Terms and our Privacy Policy, accessible at https://emeritus.org/in/.
 
       ## 1. Ownership
 
-      Upon purchasing a package from LibreChat, you are granted the right to download and use the code for accessing an admin panel for LibreChat. While you own the downloaded code, you are expressly prohibited from reselling, redistributing, or otherwise transferring the code to third parties without explicit permission from LibreChat.
+      Upon purchasing a package from Emeritus, you are granted the right to download and use the code for accessing an admin panel for Emeritus. While you own the downloaded code, you are expressly prohibited from reselling, redistributing, or otherwise transferring the code to third parties without explicit permission from Emeritus.
 
       ## 2. User Data
 
@@ -57,7 +57,7 @@ interface:
 
       ## 7. Contact Information
 
-      If you have any questions about these Terms, please contact us at contact@librechat.ai.
+      If you have any questions about these Terms, please contact us at contact@Emeritus.ai.
 
       By using the Website, you acknowledge that you have read these Terms of Service and agree to be bound by them.
 
@@ -125,7 +125,7 @@ registration:
 actions:
   allowedDomains:
     - "swapi.dev"
-    - "librechat.ai"
+    - "Emeritus.ai"
     - "google.com"
 
 # Example MCP Servers Object Structure
@@ -147,8 +147,8 @@ actions:
 #     args:
 #       - -y
 #       - "@modelcontextprotocol/server-filesystem"
-#       - /home/user/LibreChat/
-#     iconPath: /home/user/LibreChat/client/public/assets/logo.svg
+#       - /home/user/Emeritus/
+#     iconPath: /home/user/Emeritus/client/public/assets/logo.svg
 #   mcp-obsidian:
 #     command: npx
 #     args:
@@ -298,7 +298,7 @@ endpoints:
 #     percentage: 100
 #     px: 1024
 # # See the Custom Configuration Guide for more information on Assistants Config:
-# # https://www.librechat.ai/docs/configuration/librechat_yaml/object_structure/assistants_endpoint
+# # https://www.Emeritus.ai/docs/configuration/Emeritus_yaml/object_structure/assistants_endpoint
 
 # Memory configuration for user memories
 # memory:

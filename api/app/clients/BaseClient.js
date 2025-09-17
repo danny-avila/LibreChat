@@ -739,7 +739,6 @@ class BaseClient {
       user,
     );
     this.savedMessageIds.add(responseMessage.messageId);
-    delete responseMessage.tokenCount;
     return responseMessage;
   }
 
@@ -1106,73 +1105,99 @@ class BaseClient {
    * @param {TMessage[]} _messages
    * @returns {Promise<TMessage[]>}
    */
+  /**
+ * @returns {Promise<TMessage[]>}
+ */
   async addPreviousAttachments(_messages) {
     if (!this.options.resendFiles) {
-      return _messages;
+    return _messages;
+  }
+
+  const seen = new Set();
+  const embeddedFiles = []; // Add this to collect embedded files
+  const attachmentsProcessed =
+    this.options.attachments && !(this.options.attachments instanceof Promise);
+  if (attachmentsProcessed) {
+    for (const attachment of this.options.attachments) {
+      seen.add(attachment.file_id);
+    }
+  }
+
+  /**
+   *
+   * @param {TMessage} message
+   */
+  const processMessage = async (message) => {
+    if (!this.message_file_map) {
+      /** @type {Record<string, MongoFile[]> */
+      this.message_file_map = {};
     }
 
-    const seen = new Set();
-    const attachmentsProcessed =
-      this.options.attachments && !(this.options.attachments instanceof Promise);
-    if (attachmentsProcessed) {
-      for (const attachment of this.options.attachments) {
-        seen.add(attachment.file_id);
-      }
-    }
-
-    /**
-     *
-     * @param {TMessage} message
-     */
-    const processMessage = async (message) => {
-      if (!this.message_file_map) {
-        /** @type {Record<string, MongoFile[]> */
-        this.message_file_map = {};
-      }
-
-      const fileIds = [];
-      for (const file of message.files) {
-        if (seen.has(file.file_id)) {
-          continue;
-        }
-        fileIds.push(file.file_id);
-        seen.add(file.file_id);
-      }
-
-      if (fileIds.length === 0) {
-        return message;
-      }
-
-      const files = await getFiles(
-        {
-          file_id: { $in: fileIds },
-        },
-        {},
-        {},
-      );
-
-      await this.addImageURLs(message, files, this.visionMode);
-
-      this.message_file_map[message.messageId] = files;
-      return message;
-    };
-
-    const promises = [];
-
-    for (const message of _messages) {
-      if (!message.files) {
-        promises.push(message);
+    const fileIds = [];
+    for (const file of message.files) {
+      if (seen.has(file.file_id)) {
         continue;
       }
-
-      promises.push(processMessage(message));
+      fileIds.push(file.file_id);
+      seen.add(file.file_id);
     }
 
-    const messages = await Promise.all(promises);
+    if (fileIds.length === 0) {
+      return message;
+    }
 
-    this.checkVisionRequest(Object.values(this.message_file_map ?? {}).flat());
-    return messages;
+    const files = await getFiles(
+      {
+        file_id: { $in: fileIds },
+      },
+      {},
+      {},
+    );
+
+    await this.addImageURLs(message, files, this.visionMode);
+
+    // Collect embedded files for context creation
+    for (const file of files) {
+      if (file.embedded && !embeddedFiles.some(f => f.file_id === file.file_id)) {
+        embeddedFiles.push(file);
+      }
+    }
+
+    this.message_file_map[message.messageId] = files;
+    return message;
+  };
+
+  const promises = [];
+
+  for (const message of _messages) {
+    if (!message.files) {
+      promises.push(message);
+      continue;
+    }
+
+    promises.push(processMessage(message));
   }
+
+  const messages = await Promise.all(promises);
+
+  this.checkVisionRequest(Object.values(this.message_file_map ?? {}).flat());
+
+  // Create context handlers if embedded files exist and no current attachments
+  if (embeddedFiles.length > 0 && !this.options.attachments) {
+    const { createContextHandlers } = require('./prompts');
+    const latestMessage = messages[messages.length - 1] || { text: '' };
+    this.contextHandlers = createContextHandlers(this.options.req, latestMessage.text);
+    
+    if (this.contextHandlers) {
+      for (const file of embeddedFiles) {
+        this.contextHandlers.processFile(file);
+      }
+    }
+  }
+
+  return messages;
+}
+
 }
 
 module.exports = BaseClient;
