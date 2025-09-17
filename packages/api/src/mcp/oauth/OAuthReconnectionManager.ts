@@ -1,9 +1,10 @@
-import { TUser } from 'librechat-data-provider';
-import { MCPManager } from '../MCPManager';
-import { logger, TokenMethods } from '@librechat/data-schemas';
+import { logger } from '@librechat/data-schemas';
+import type { TokenMethods } from '@librechat/data-schemas';
+import type { TUser } from 'librechat-data-provider';
+import type { MCPOAuthTokens } from './types';
 import { OAuthReconnectionTracker } from './OAuthReconnectionTracker';
-import { FlowStateManager } from '../../flow/manager';
-import { MCPOAuthTokens } from './types';
+import { FlowStateManager } from '~/flow/manager';
+import { MCPManager } from '~/mcp/MCPManager';
 
 const DEFAULT_CONNECTION_TIMEOUT_MS = 10_000; // ms
 
