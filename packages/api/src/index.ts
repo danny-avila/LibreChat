@@ -35,6 +35,8 @@ export * from './files';
 export * from './tools';
 /* web search */
 export * from './web';
+/* Cache */
+export * from './cache';
 /* types */
 export type * from './mcp/types';
 export type * from './flow/types';

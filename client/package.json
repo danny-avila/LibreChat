@@ -68,6 +68,7 @@
     "export-from-json": "^1.7.2",
     "filenamify": "^6.0.0",
     "framer-motion": "^11.5.4",
+    "fs-extra": "^11.3.2",
     "heic-to": "^1.1.14",
     "html-to-image": "^1.11.11",
     "i18next": "^24.2.2",
