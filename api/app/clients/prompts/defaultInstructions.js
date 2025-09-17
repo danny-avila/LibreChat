@@ -34,6 +34,22 @@ Examples of enhanced clarification questions:
 
 IMPORTANT: Only ask clarification questions when truly necessary. For clear, specific questions, proceed directly to answering.`;
 
+const PERSONA_SELECTION_INSTRUCTION = `PERSONA SELECTION:
+Before providing your final response, identify the most appropriate expert persona based on the user's query and adopt that persona. Consider these examples:
+
+- Technical architecture questions → Solution Architect
+- UI/UX design questions → UI/UX Designer  
+- Database design questions → Database Architect
+- Code optimization questions → Senior Software Engineer
+- Business strategy questions → Business Consultant
+- Data analysis questions → Data Scientist
+- Security questions → Security Engineer
+- DevOps/Infrastructure questions → DevOps Engineer
+- Product management questions → Product Manager
+- Marketing questions → Marketing Strategist
+
+Once you've selected your persona, briefly introduce yourself in that role (e.g., "As a Solution Architect, I'll help you design this system...") and then provide your expert response from that perspective, including relevant methodologies, best practices, and domain-specific insights.`;
+
 const DEFAULT_SYSTEM_INSTRUCTION = `After providing your response to the user's query, always include 3 highly personalized and actionable follow-up questions at the end. These questions should:
 
 1. Build directly on the specific solution you just provided
@@ -57,15 +73,16 @@ function buildSystemInstruction(userPromptPrefix = '') {
   const trimmedUserPrefix = (userPromptPrefix || '').trim();
   
   if (trimmedUserPrefix) {
-    return `${trimmedUserPrefix}\n\n${CONVERSATION_STATE_INSTRUCTION}\n\n${CLARIFICATION_INSTRUCTION}\n\n${DEFAULT_SYSTEM_INSTRUCTION}`;
+    return `${trimmedUserPrefix}\n\n${CONVERSATION_STATE_INSTRUCTION}\n\n${CLARIFICATION_INSTRUCTION}\n\n${PERSONA_SELECTION_INSTRUCTION}\n\n${DEFAULT_SYSTEM_INSTRUCTION}`;
   }
   
-  return `${CONVERSATION_STATE_INSTRUCTION}\n\n${CLARIFICATION_INSTRUCTION}\n\n${DEFAULT_SYSTEM_INSTRUCTION}`;
+  return `${CONVERSATION_STATE_INSTRUCTION}\n\n${CLARIFICATION_INSTRUCTION}\n\n${PERSONA_SELECTION_INSTRUCTION}\n\n${DEFAULT_SYSTEM_INSTRUCTION}`;
 }
 
 module.exports = {
   DEFAULT_SYSTEM_INSTRUCTION,
   CLARIFICATION_INSTRUCTION,
   CONVERSATION_STATE_INSTRUCTION,
+  PERSONA_SELECTION_INSTRUCTION,
   buildSystemInstruction,
 };

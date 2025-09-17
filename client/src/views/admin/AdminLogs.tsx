@@ -110,10 +110,10 @@ export default function AdminLogs() {
       if (mainContainerRef.current) {
         const windowHeight = window.innerHeight;
         const containerTop = mainContainerRef.current.getBoundingClientRect().top;
-        const paginationHeight = 60;
-        const headerHeight = 60;
-        const availableHeight = windowHeight - containerTop - paginationHeight - headerHeight;
-        mainContainerRef.current.style.minHeight = `${Math.max(400, availableHeight)}px`;
+        const paginationHeight = 80; // Increased to account for pagination
+        const bottomPadding = 20; // Additional padding at bottom
+        const availableHeight = windowHeight - containerTop - paginationHeight - bottomPadding;
+        mainContainerRef.current.style.height = `${Math.max(300, availableHeight)}px`;
       }
     };
 
@@ -304,7 +304,7 @@ export default function AdminLogs() {
       )}
 
       {/* Table with Loading Overlay */}
-      <div ref={mainContainerRef} className="relative">
+      <div ref={mainContainerRef} className="relative flex-1 min-h-0">
         {loading && (
           <div className="absolute inset-0 flex items-center justify-center bg-white bg-opacity-50 dark:bg-gray-800 dark:bg-opacity-50 z-10">
             <svg className="animate-spin h-5 w-5 text-gray-500" viewBox="0 0 24 24">
@@ -313,7 +313,7 @@ export default function AdminLogs() {
             <p className="ml-2 text-gray-500">Loading...</p>
           </div>
         )}
-        <div ref={scrollContainerRef} className="overflow-auto">
+        <div ref={scrollContainerRef} className="h-full overflow-auto">
           <DataTable
             columns={columns}
             data={rows.map((r, i) => ({ ...r, id: r._id || i }))}
@@ -331,7 +331,7 @@ export default function AdminLogs() {
       )}
 
       {/* Pagination */}
-      <div data-testid="pagination-container">
+      <div data-testid="pagination-container" className="flex-shrink-0">
         <Pagination
           page={currentPage}
           limit={itemsPerPage}
