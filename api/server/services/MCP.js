@@ -20,8 +20,8 @@ const {
   ContentTypes,
   isAssistantsEndpoint,
 } = require('librechat-data-provider');
-const { findToken, createToken, updateToken } = require('~/models');
 const { getMCPManager, getFlowStateManager, getOAuthReconnectionManager } = require('~/config');
+const { findToken, createToken, updateToken } = require('~/models');
 const { getCachedTools, getAppConfig } = require('./Config');
 const { reinitMCPServer } = require('./Tools/mcp');
 const { getLogStores } = require('~/cache');
