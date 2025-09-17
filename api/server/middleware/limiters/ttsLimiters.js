@@ -1,7 +1,7 @@
 const rateLimit = require('express-rate-limit');
 const { ViolationTypes } = require('librechat-data-provider');
 const logViolation = require('~/cache/logViolation');
-const { limiterCache } = require('~/cache/cacheFactory');
+const { limiterCache } = require('@librechat/api');
 
 const getEnvironmentVariables = () => {
   const TTS_IP_MAX = parseInt(process.env.TTS_IP_MAX) || 100;
