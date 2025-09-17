@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { v4 } from 'uuid';
 import { SSE } from 'sse.js';
-import { useSetRecoilState } from 'recoil';
+import { useSetRecoilState, useRecoilCallback } from 'recoil';
 import {
   request,
   Constants,
@@ -46,6 +46,18 @@ export default function useSSE(
 ) {
   const genTitle = useGenTitleMutation();
   const setActiveRunId = useSetRecoilState(store.activeRunFamily(runIndex));
+
+  const lockMessageTimestamp = useRecoilCallback(
+    ({ snapshot, set }) =>
+      async (messageId: string) => {
+        const currentTimestamp = await snapshot.getPromise(store.messageTimestampState(messageId));
+        if (currentTimestamp === null) {
+          // Only set timestamp if it hasn't been set already (lock on first write)
+          set(store.messageTimestampState(messageId), new Date().toISOString());
+        }
+      },
+    [],
+  );
 
   const { token, isAuthenticated } = useAuthContext();
   const [completed, setCompleted] = useState(new Set());
@@ -120,13 +132,17 @@ export default function useSSE(
 
     sse.addEventListener('message', (e: MessageEvent) => {
       const data = JSON.parse(e.data);
-
       if (data.final != null) {
         clearDraft(submission.conversation?.conversationId);
         const { plugins } = data;
         finalHandler(data, { ...submission, plugins } as EventSubmission);
         (startupConfig?.balance?.enabled ?? false) && balanceQuery.refetch();
-        console.log('final', data);
+
+        // Lock the timestamp for the response message when stream finishes
+        if (data.responseMessage?.messageId) {
+          lockMessageTimestamp(data.responseMessage.messageId);
+        }
+
         return;
       } else if (data.created != null) {
         const runId = v4();
@@ -136,6 +152,11 @@ export default function useSSE(
           ...data.message,
           overrideParentMessageId: userMessage.overrideParentMessageId,
         };
+
+        // Lock the timestamp for the user message when it's created
+        if (userMessage.messageId) {
+          lockMessageTimestamp(userMessage.messageId);
+        }
 
         createdHandler(data, { ...submission, userMessage } as EventSubmission);
       } else if (data.event != null) {
@@ -170,7 +191,6 @@ export default function useSSE(
 
     sse.addEventListener('open', () => {
       setAbortScroll(false);
-      console.log('connection is opened');
     });
 
     sse.addEventListener('cancel', async () => {
