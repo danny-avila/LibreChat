@@ -39,7 +39,7 @@ const { seedDatabase } = require('~/models');
 const routes = require('./routes');
 
 // <Stripe> Middleware to attach secure request context to each request
-const secureRequestContext = require('./stripe/secure-request-context');
+const secureRequestContext = require('./stripe/forwardedHeaders');
 // </Stripe>
 
 const { PORT, HOST, ALLOW_SOCIAL_LOGIN, DISABLE_COMPRESSION, TRUST_PROXY } = process.env ?? {};

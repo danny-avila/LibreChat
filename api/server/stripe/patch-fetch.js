@@ -1,7 +1,8 @@
 const { logger } = require('@librechat/data-schemas');
 const nodeFetch = require('node-fetch');
-const secureRequestContext = require('./secure-request-context');
+const stripeForwardedHeaders = require('./forwardedHeaders');
 const { ProxyAgent } = require('proxy-agent');
+const { redactValue } = require('./utils');
 
 /**
  * Patches the global fetch to use node-fetch instead of undici
@@ -41,11 +42,11 @@ function fetchLike(url, options = {}) {
     options = { ...options, agent: new ProxyAgent() };
   }
 
-  // Attach the secure request context to the options
-  options = secureRequestContext.attach(options);
+  // Attach stripe forwarded headers to the options
+  options = stripeForwardedHeaders.attach(options);
 
   // Log the request
-  logger.info(`[Stripe:patchFetch] fetch request ${formatRequest(url, options)}`);
+  logger.info(`[Stripe:patchFetch] CANONICAL-LIBRECHAT-FETCH-REQUEST ${formatRequest(url, options)}`);
 
   // Use node-fetch to perform the request
   return nodeFetch(url, options);
@@ -53,10 +54,6 @@ function fetchLike(url, options = {}) {
 
 module.exports = patchFetch;
 
-function redactValue(value) {
-  if (!value) return '';
-  return `[REDACTED ${value.length} CHARACTERS]`;
-}
 
 function formatRequest(url, options) {
   const fields = [];
@@ -64,7 +61,7 @@ function formatRequest(url, options) {
   fields.push(`url="${formatUrl(url)}"`);
   fields.push(`headers=${JSON.stringify(formatHeaders(options.headers || new Headers()))}`);
   if (options.body) {
-    fields.push(`body="${redactValue(options.body)}"`);
+    fields.push(`body="${redactValue('body', options.body)}"`);
   }
   return fields.join(' ');
 }
@@ -72,7 +69,7 @@ function formatRequest(url, options) {
 function formatUrl(url) {
   const urlObj = new URL(url);
   urlObj.searchParams.forEach((value, key) => {
-    urlObj.searchParams.set(key, redactValue(value));
+    urlObj.searchParams.set(key, redactValue(key, value));
   });
   return urlObj.toString();
 }
@@ -80,7 +77,7 @@ function formatUrl(url) {
 function formatHeaders(headers) {
   const obj = {};
   for (const [key, value] of headers) {
-    obj[key] = redactValue(value);
+    obj[key] = redactValue(key, value);
   }
   return obj;
 }
