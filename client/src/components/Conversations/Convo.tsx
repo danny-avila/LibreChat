@@ -11,23 +11,17 @@ import { useGetEndpointsQuery } from '~/data-provider';
 import { NotificationSeverity } from '~/common';
 import { ConvoOptions } from './ConvoOptions';
 import RenameForm from './RenameForm';
+import { cn, logger } from '~/utils';
 import ConvoLink from './ConvoLink';
-import { cn } from '~/utils';
 import store from '~/store';
 
 interface ConversationProps {
   conversation: TConversation;
   retainView: () => void;
   toggleNav: () => void;
-  isLatestConvo: boolean;
 }
 
-export default function Conversation({
-  conversation,
-  retainView,
-  toggleNav,
-  isLatestConvo,
-}: ConversationProps) {
+export default function Conversation({ conversation, retainView, toggleNav }: ConversationProps) {
   const params = useParams();
   const localize = useLocalize();
   const { showToast } = useToastContext();
@@ -84,6 +78,7 @@ export default function Conversation({
       });
       setRenaming(false);
     } catch (error) {
+      logger.error('Error renaming conversation', error);
       setTitleInput(title as string);
       showToast({
         message: localize('com_ui_rename_failed'),
