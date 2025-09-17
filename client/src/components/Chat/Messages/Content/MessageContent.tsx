@@ -3,7 +3,7 @@ import { useRecoilValue } from 'recoil';
 import { DelayedRender } from '@librechat/client';
 import type { TMessage } from 'librechat-data-provider';
 import type { TMessageContentProps, TDisplayProps } from '~/common';
-import { useMessagesSubmission, useMessagesState } from '~/Providers';
+import { useMessageContext } from '~/Providers';
 import Error from '~/components/Messages/Content/Error';
 import Thinking from '~/components/Artifacts/Thinking';
 import MarkdownLite from './MarkdownLite';
@@ -70,16 +70,11 @@ export const ErrorMessage = ({
 };
 
 const DisplayMessage = ({ text, isCreatedByUser, message, showCursor }: TDisplayProps) => {
-  const { latestMessage } = useMessagesState();
-  const { isSubmitting } = useMessagesSubmission();
+  const { isSubmitting = false, isLatestMessage = false } = useMessageContext();
   const enableUserMsgMarkdown = useRecoilValue(store.enableUserMsgMarkdown);
   const showCursorState = useMemo(
     () => showCursor === true && isSubmitting,
     [showCursor, isSubmitting],
-  );
-  const isLatestMessage = useMemo(
-    () => message.messageId === latestMessage?.messageId,
-    [message.messageId, latestMessage?.messageId],
   );
 
   let content: React.ReactElement;
