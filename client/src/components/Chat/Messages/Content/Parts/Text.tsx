@@ -1,8 +1,8 @@
 import { memo, useMemo, ReactElement } from 'react';
 import { useRecoilValue } from 'recoil';
-import { useMessageContext } from '~/Providers';
 import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
 import Markdown from '~/components/Chat/Messages/Content/Markdown';
+import { useMessageContext } from '~/Providers';
 import { cn } from '~/utils';
 import store from '~/store';
 
