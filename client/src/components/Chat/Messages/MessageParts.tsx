@@ -13,6 +13,7 @@ import HoverButtons from './HoverButtons';
 import SubRow from './SubRow';
 import { cn } from '~/utils';
 import store from '~/store';
+import Timestamp from './Timestamp';
 
 export default function Message(props: TMessageProps) {
   const localize = useLocalize();
@@ -97,7 +98,13 @@ export default function Message(props: TMessageProps) {
           <div
             id={messageId ?? ''}
             aria-label={`message-${message.depth}-${messageId}`}
-            className={cn(baseClasses.common, baseClasses.chat, 'message-render')}
+            className={cn(
+              baseClasses.common,
+              baseClasses.chat,
+              'message-render',
+              'relative',
+              'group',
+            )}
           >
             <div className="relative flex flex-shrink-0 flex-col items-center">
               <div className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full pt-0.5">
@@ -112,6 +119,7 @@ export default function Message(props: TMessageProps) {
             >
               <h2 className={cn('select-none font-semibold text-text-primary', fontSize)}>
                 {name}
+                <Timestamp message={message} />
               </h2>
               <div className="flex flex-col gap-1">
                 <div className="flex max-w-full flex-grow flex-col gap-0">

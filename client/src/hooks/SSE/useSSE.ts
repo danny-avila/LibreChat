@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { v4 } from 'uuid';
 import { SSE } from 'sse.js';
 import { useSetRecoilState } from 'recoil';
+import { useStore } from 'jotai';
 import {
   request,
   Constants,
@@ -15,6 +16,7 @@ import type { EventHandlerParams } from './useEventHandlers';
 import type { TResData } from '~/common';
 import { useGenTitleMutation, useGetStartupConfig, useGetUserBalance } from '~/data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
+import { messageTimestampAtomFamily } from '~/store';
 import useEventHandlers from './useEventHandlers';
 import store from '~/store';
 
@@ -46,6 +48,26 @@ export default function useSSE(
 ) {
   const genTitle = useGenTitleMutation();
   const setActiveRunId = useSetRecoilState(store.activeRunFamily(runIndex));
+
+  const jotaiStore = useStore();
+  const lockedTimestampsRef = useRef<Set<string>>(new Set());
+
+  const lockMessageTimestamp = useCallback(
+    (messageId: string) => {
+      if (lockedTimestampsRef.current.has(messageId)) {
+        return;
+      }
+
+      const timestampAtom = messageTimestampAtomFamily(messageId);
+      const currentTimestamp = jotaiStore.get(timestampAtom);
+
+      if (currentTimestamp === null) {
+        jotaiStore.set(timestampAtom, new Date().toISOString());
+        lockedTimestampsRef.current.add(messageId);
+      }
+    },
+    [jotaiStore],
+  );
 
   const { token, isAuthenticated } = useAuthContext();
   const [completed, setCompleted] = useState(new Set());
@@ -127,6 +149,10 @@ export default function useSSE(
         finalHandler(data, { ...submission, plugins } as EventSubmission);
         (startupConfig?.balance?.enabled ?? false) && balanceQuery.refetch();
         console.log('final', data);
+        if (data.responseMessage?.messageId) {
+          lockMessageTimestamp(data.responseMessage.messageId);
+        }
+
         return;
       } else if (data.created != null) {
         const runId = v4();
@@ -136,6 +162,10 @@ export default function useSSE(
           ...data.message,
           overrideParentMessageId: userMessage.overrideParentMessageId,
         };
+
+        if (userMessage.messageId) {
+          lockMessageTimestamp(userMessage.messageId);
+        }
 
         createdHandler(data, { ...submission, userMessage } as EventSubmission);
       } else if (data.event != null) {

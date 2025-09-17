@@ -13,6 +13,7 @@ import SubRow from '~/components/Chat/Messages/SubRow';
 import { fontSizeAtom } from '~/store/fontSize';
 import { cn, logger } from '~/utils';
 import store from '~/store';
+import Timestamp from '../Chat/Messages/Timestamp';
 
 type ContentRenderProps = {
   message?: TMessage;
@@ -138,6 +139,7 @@ const ContentRender = memo(
           conditionalClasses.cardRender,
           conditionalClasses.focus,
           'message-render',
+          'group',
         )}
         onClick={clickHandler}
         onKeyDown={(e) => {
@@ -164,7 +166,10 @@ const ContentRender = memo(
             msg.isCreatedByUser ? 'user-turn' : 'agent-turn',
           )}
         >
-          <h2 className={cn('select-none font-semibold', fontSize)}>{messageLabel}</h2>
+          <h2 className={cn('select-none font-semibold', fontSize)}>
+            {messageLabel}
+            <Timestamp message={msg} />
+          </h2>
 
           <div className="flex flex-col gap-1">
             <div className="flex max-w-full flex-grow flex-col gap-0">
