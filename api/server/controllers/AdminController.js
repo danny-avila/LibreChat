@@ -58,11 +58,37 @@ const listUsers = async (req, res) => {
         .limit(limit),
     ]);
 
+    // Get total cost for each user
+    const userIds = users.map(user => user._id);
+    const totalCosts = await Transaction.aggregate([
+      { $match: { user: { $in: userIds } } },
+      {
+        $group: {
+          _id: '$user',
+          totalCost: { $sum: '$tokenValue' }
+        }
+      }
+    ]);
+
+    // Create a map for easy lookup
+    const costMap = totalCosts.reduce((map, cost) => {
+      map[cost._id.toString()] = cost.totalCost;
+      return map;
+    }, {});
+
+    // Add total cost to each user
+    const usersWithCost = users.map(user => {
+      const sanitizedUser = sanitizeUser(user);
+      const userId = user._id.toString();
+      sanitizedUser.totalCost = costMap[userId] || 0;
+      return sanitizedUser;
+    });
+
     res.status(200).json({
       page,
       limit,
       total,
-      users: users.map(sanitizeUser),
+      users: usersWithCost,
     });
   } catch (error) {
     logger.error('[admin:listUsers]', error);

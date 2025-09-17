@@ -140,11 +140,15 @@ const updateBalance = async ({ user, incrementValue, setValues }) => {
 /** Method to calculate and set the tokenValue for a transaction */
 function calculateTokenValue(txn) {
   if (!txn.valueKey || !txn.tokenType) {
+    // For transactions without proper value key or token type, assume rawAmount is already in correct units
     txn.tokenValue = txn.rawAmount;
+    return;
   }
   const { valueKey, tokenType, model, endpointTokenConfig } = txn;
   const multiplier = Math.abs(getMultiplier({ valueKey, tokenType, model, endpointTokenConfig }));
   txn.rate = multiplier;
+  // Multipliers are USD per 1M tokens, but tokenValue is stored in micro-dollars
+  // So: tokens * (USD per 1M tokens) * (1M micro-dollars per USD) / (1M tokens) = tokens * multiplier micro-dollars
   txn.tokenValue = txn.rawAmount * multiplier;
   if (txn.context && txn.tokenType === 'completion' && txn.context === 'incomplete') {
     txn.tokenValue = Math.ceil(txn.tokenValue * cancelRate);

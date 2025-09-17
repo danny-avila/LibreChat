@@ -330,9 +330,9 @@ const UserUsage = ({ userId, from, to }: { userId: string; from?: string; to?: s
                   </div>
                 </div>
                 <div className={`rounded ${colors.light} p-2`}>
-                  <div className="text-xs text-gray-500 dark:text-gray-400">Value</div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400">Cost (USD)</div>
                   <div className={`font-medium ${colors.text}`}>
-                    {Math.round(row.tokenValue).toLocaleString()}
+                    ${Math.abs(row.tokenValue / 1000000).toFixed(4)}
                   </div>
                 </div>
               </div>
@@ -376,9 +376,9 @@ const UserUsage = ({ userId, from, to }: { userId: string; from?: string; to?: s
               </div>
             </div>
             <div className="rounded-md bg-white p-2 shadow-sm dark:bg-gray-800">
-              <span className="text-xs text-gray-500 dark:text-gray-400">Total Value</span>
+              <span className="text-xs text-gray-500 dark:text-gray-400">Total Cost (USD)</span>
               <div className="text-lg font-medium text-indigo-700 dark:text-indigo-300">
-                ${Math.round(totals.tokenValue).toLocaleString()}
+                ${Math.abs(totals.tokenValue / 1000000).toFixed(2)}
               </div>
             </div>
           </div>

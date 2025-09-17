@@ -17,6 +17,7 @@ type AdminUser = {
   name?: string;
   role?: string;
   createdAt?: string;
+  totalCost?: number;
 };
 
 export default function AdminDashboard() {
@@ -104,6 +105,19 @@ export default function AdminDashboard() {
         header: 'Name',
         cell: ({ row }: any) => row.original.name ?? '—',
         meta: { size: '180px' },
+      },
+      {
+        accessorKey: 'totalCost',
+        header: 'Total Cost (USD)',
+        cell: ({ row }: any) => {
+          const totalCost = row.original.totalCost || 0;
+          return (
+            <span className="text-xs font-medium text-gray-700 dark:text-gray-300">
+              ${Math.abs(totalCost / 1000000).toFixed(2)}
+            </span>
+          );
+        },
+        meta: { size: '140px' },
       },
       {
         accessorKey: 'role',
