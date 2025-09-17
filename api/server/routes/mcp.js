@@ -1,12 +1,12 @@
 const { Router } = require('express');
 const { logger } = require('@librechat/data-schemas');
+const { CacheKeys, Constants } = require('librechat-data-provider');
 const { MCPOAuthHandler, getUserMCPAuthMap } = require('@librechat/api');
+const { getMCPManager, getFlowStateManager, getOAuthReconnectionManager } = require('~/config');
 const { getMCPSetupData, getServerConnectionStatus } = require('~/server/services/MCP');
 const { findToken, updateToken, createToken, deleteTokens } = require('~/models');
 const { updateMCPUserTools } = require('~/server/services/Config/mcpToolsCache');
 const { getUserPluginAuthValue } = require('~/server/services/PluginService');
-const { CacheKeys, Constants } = require('librechat-data-provider');
-const { getMCPManager, getFlowStateManager } = require('~/config');
 const { reinitMCPServer } = require('~/server/services/Tools/mcp');
 const { requireJwtAuth } = require('~/server/middleware');
 const { findPluginAuthsByKeys } = require('~/models');
@@ -143,6 +143,10 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
         logger.info(
           `[MCP OAuth] Successfully reconnected ${serverName} for user ${flowState.userId}`,
         );
+
+        // clear any reconnection attempts
+        const oauthReconnectionManager = getOAuthReconnectionManager();
+        oauthReconnectionManager.clearReconnection(flowState.userId, serverName);
 
         const tools = await userConnection.fetchTools();
         await updateMCPUserTools({
