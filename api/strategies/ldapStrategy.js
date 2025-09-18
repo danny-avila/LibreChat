@@ -109,7 +109,8 @@ const ldapLogin = new LdapStrategy(ldapOptions, async (userinfo, done) => {
     const username =
       (LDAP_USERNAME && userinfo[LDAP_USERNAME]) || userinfo.givenName || userinfo.mail;
 
-    const mail = (LDAP_EMAIL && userinfo[LDAP_EMAIL]) || userinfo.mail || username + '@ldap.local';
+    let mail = (LDAP_EMAIL && userinfo[LDAP_EMAIL]) || userinfo.mail || username + '@ldap.local';
+    mail = Array.isArray(mail) ? mail[0] : mail;
 
     if (!userinfo.mail && !(LDAP_EMAIL && userinfo[LDAP_EMAIL])) {
       logger.warn(
