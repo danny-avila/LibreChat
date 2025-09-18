@@ -2,7 +2,12 @@ const { z } = require('zod');
 const fs = require('fs').promises;
 const { nanoid } = require('nanoid');
 const { logger } = require('@librechat/data-schemas');
-const { agentCreateSchema, agentUpdateSchema } = require('@librechat/api');
+const {
+  agentCreateSchema,
+  agentUpdateSchema,
+  mergeAgentOcrConversion,
+  convertOcrToContextInPlace,
+} = require('@librechat/api');
 const {
   Tools,
   Constants,
@@ -207,40 +212,7 @@ const updateAgentHandler = async (req, res) => {
     const { _id, ...updateData } = removeNullishValues(validatedData);
 
     // Convert OCR to context in incoming updateData
-    if (updateData.tool_resources?.ocr) {
-      if (!updateData.tool_resources.context) {
-        updateData.tool_resources.context = updateData.tool_resources.ocr;
-      } else {
-        // Merge OCR into existing context in updateData
-        if (updateData.tool_resources.ocr.file_ids?.length) {
-          const existingFileIds = updateData.tool_resources.context.file_ids || [];
-          const ocrFileIds = updateData.tool_resources.ocr.file_ids || [];
-          updateData.tool_resources.context.file_ids = [
-            ...new Set([...existingFileIds, ...ocrFileIds]),
-          ];
-        }
-        if (updateData.tool_resources.ocr.files?.length) {
-          const existingFiles = updateData.tool_resources.context.files || [];
-          const ocrFiles = updateData.tool_resources.ocr.files || [];
-          const filesMap = new Map();
-          [...existingFiles, ...ocrFiles].forEach((file) => {
-            if (file?.file_id) {
-              filesMap.set(file.file_id, file);
-            }
-          });
-          updateData.tool_resources.context.files = Array.from(filesMap.values());
-        }
-      }
-      delete updateData.tool_resources.ocr;
-    }
-
-    // Update tools array in incoming data: replace 'ocr' with 'context'
-    if (updateData.tools?.includes(EToolResources.ocr)) {
-      updateData.tools = updateData.tools.map((tool) =>
-        tool === EToolResources.ocr ? EToolResources.context : tool,
-      );
-      updateData.tools = [...new Set(updateData.tools)];
-    }
+    convertOcrToContextInPlace(updateData);
 
     const existingAgent = await getAgent({ id });
 
@@ -249,81 +221,12 @@ const updateAgentHandler = async (req, res) => {
     }
 
     // Convert legacy OCR tool resource to context format in existing agent
-    if (existingAgent.tool_resources?.ocr) {
-      // Convert tool_resources.ocr to tool_resources.context
-      if (!existingAgent.tool_resources.context) {
-        // Simple case: no context exists, just move ocr to context
-        existingAgent.tool_resources.context = existingAgent.tool_resources.ocr;
-      } else {
-        // Merge case: context already exists, merge both file_ids and files arrays
-
-        // Merge file_ids if they exist
-        if (existingAgent.tool_resources.ocr.file_ids?.length) {
-          const existingFileIds = existingAgent.tool_resources.context.file_ids || [];
-          const ocrFileIds = existingAgent.tool_resources.ocr.file_ids || [];
-          existingAgent.tool_resources.context.file_ids = [
-            ...new Set([...existingFileIds, ...ocrFileIds]),
-          ];
-        }
-
-        // Merge files array if it exists (already fetched files)
-        if (existingAgent.tool_resources.ocr.files?.length) {
-          const existingFiles = existingAgent.tool_resources.context.files || [];
-          const ocrFiles = existingAgent.tool_resources.ocr.files || [];
-          // Merge and deduplicate by file_id
-          const filesMap = new Map();
-          [...existingFiles, ...ocrFiles].forEach((file) => {
-            if (file?.file_id) {
-              filesMap.set(file.file_id, file);
-            }
-          });
-          existingAgent.tool_resources.context.files = Array.from(filesMap.values());
-        }
-      }
-
-      // Remove the deprecated ocr resource
-      delete existingAgent.tool_resources.ocr;
-
-      // Update tools array: replace 'ocr' with 'context'
-      if (existingAgent.tools?.includes(EToolResources.ocr)) {
-        existingAgent.tools = existingAgent.tools.map((tool) =>
-          tool === EToolResources.ocr ? EToolResources.context : tool,
-        );
-        // Remove duplicates if context already existed
-        existingAgent.tools = [...new Set(existingAgent.tools)];
-      }
-
-      // Add the conversion changes to updateData
-      // But merge with any context that might already be in updateData (from incoming OCR conversion)
-      if (updateData.tool_resources?.context && existingAgent.tool_resources.context) {
-        // Merge the contexts
-        const mergedContext = { ...existingAgent.tool_resources.context };
-
-        // Merge file_ids
-        if (updateData.tool_resources.context.file_ids?.length) {
-          const existingIds = mergedContext.file_ids || [];
-          const newIds = updateData.tool_resources.context.file_ids || [];
-          mergedContext.file_ids = [...new Set([...existingIds, ...newIds])];
-        }
-
-        // Merge files
-        if (updateData.tool_resources.context.files?.length) {
-          const existingFiles = mergedContext.files || [];
-          const newFiles = updateData.tool_resources.context.files || [];
-          const filesMap = new Map();
-          [...existingFiles, ...newFiles].forEach((file) => {
-            if (file?.file_id) {
-              filesMap.set(file.file_id, file);
-            }
-          });
-          mergedContext.files = Array.from(filesMap.values());
-        }
-
-        existingAgent.tool_resources.context = mergedContext;
-      }
-
-      updateData.tool_resources = existingAgent.tool_resources;
-      updateData.tools = existingAgent.tools;
+    const ocrConversion = mergeAgentOcrConversion(existingAgent, updateData);
+    if (ocrConversion.tool_resources) {
+      updateData.tool_resources = ocrConversion.tool_resources;
+    }
+    if (ocrConversion.tools) {
+      updateData.tools = ocrConversion.tools;
     }
 
     let updatedAgent =
