@@ -83,7 +83,9 @@ describe('primeResources', () => {
         { userId: undefined, agentId: undefined },
       );
       expect(result.attachments).toEqual(mockOcrFiles);
-      expect(result.tool_resources).toEqual(tool_resources);
+      // Context field is deleted after files are fetched and re-categorized
+      // Since the file is not embedded and has no special properties, it won't be categorized
+      expect(result.tool_resources).toEqual({});
     });
   });
 
@@ -998,6 +1000,245 @@ describe('primeResources', () => {
       // Should return empty array when attachments promise is rejected
       expect(result.attachments).toEqual([]);
       expect(result.tool_resources).toEqual({});
+    });
+  });
+
+  describe('tool_resources field deletion behavior', () => {
+    it('should not mutate the original tool_resources object', async () => {
+      const originalToolResources = {
+        [EToolResources.context]: {
+          file_ids: ['context-file-1'],
+          files: [
+            {
+              user: 'user1',
+              file_id: 'context-file-1',
+              filename: 'original.txt',
+              filepath: '/uploads/original.txt',
+              object: 'file' as const,
+              type: 'text/plain',
+              bytes: 256,
+              embedded: false,
+              usage: 0,
+            },
+          ],
+        },
+        [EToolResources.ocr]: {
+          file_ids: ['ocr-file-1'],
+        },
+      };
+
+      // Create a deep copy to compare later
+      const originalCopy = JSON.parse(JSON.stringify(originalToolResources));
+
+      const mockOcrFiles: TFile[] = [
+        {
+          user: 'user1',
+          file_id: 'ocr-file-1',
+          filename: 'document.pdf',
+          filepath: '/uploads/document.pdf',
+          object: 'file',
+          type: 'application/pdf',
+          bytes: 1024,
+          embedded: true,
+          usage: 0,
+        },
+      ];
+
+      mockGetFiles.mockResolvedValue(mockOcrFiles);
+
+      const result = await primeResources({
+        req: mockReq,
+        appConfig: mockAppConfig,
+        getFiles: mockGetFiles,
+        requestFileSet,
+        attachments: undefined,
+        tool_resources: originalToolResources,
+      });
+
+      // Original object should remain unchanged
+      expect(originalToolResources).toEqual(originalCopy);
+
+      // Result should have modifications
+      expect(result.tool_resources?.[EToolResources.ocr]).toBeUndefined();
+      expect(result.tool_resources?.[EToolResources.context]).toBeUndefined();
+      expect(result.tool_resources?.[EToolResources.file_search]).toBeDefined();
+    });
+
+    it('should delete ocr field after merging file_ids with context', async () => {
+      const mockOcrFiles: TFile[] = [
+        {
+          user: 'user1',
+          file_id: 'ocr-file-1',
+          filename: 'document.pdf',
+          filepath: '/uploads/document.pdf',
+          object: 'file',
+          type: 'application/pdf',
+          bytes: 1024,
+          embedded: true, // Will be categorized as file_search
+          usage: 0,
+        },
+      ];
+
+      mockGetFiles.mockResolvedValue(mockOcrFiles);
+
+      const tool_resources = {
+        [EToolResources.ocr]: {
+          file_ids: ['ocr-file-1'],
+        },
+        [EToolResources.context]: {
+          file_ids: ['context-file-1'],
+        },
+      };
+
+      const result = await primeResources({
+        req: mockReq,
+        appConfig: mockAppConfig,
+        getFiles: mockGetFiles,
+        requestFileSet,
+        attachments: undefined,
+        tool_resources,
+      });
+
+      // OCR field should be deleted after merging
+      expect(result.tool_resources?.[EToolResources.ocr]).toBeUndefined();
+      // Context field should also be deleted since files were fetched and re-categorized
+      expect(result.tool_resources?.[EToolResources.context]).toBeUndefined();
+      // File should be categorized as file_search based on embedded=true
+      expect(result.tool_resources?.[EToolResources.file_search]?.files).toHaveLength(1);
+      expect(result.tool_resources?.[EToolResources.file_search]?.files?.[0]?.file_id).toBe(
+        'ocr-file-1',
+      );
+
+      // Verify getFiles was called with merged file_ids
+      expect(mockGetFiles).toHaveBeenCalledWith(
+        { file_id: { $in: ['context-file-1', 'ocr-file-1'] } },
+        {},
+        {},
+        { userId: undefined, agentId: undefined },
+      );
+    });
+
+    it('should delete context field when fetching and re-categorizing files', async () => {
+      const mockContextFiles: TFile[] = [
+        {
+          user: 'user1',
+          file_id: 'context-file-1',
+          filename: 'script.py',
+          filepath: '/uploads/script.py',
+          object: 'file',
+          type: 'text/x-python',
+          bytes: 512,
+          embedded: false,
+          usage: 0,
+          metadata: {
+            fileIdentifier: 'python-script',
+          },
+        },
+        {
+          user: 'user1',
+          file_id: 'context-file-2',
+          filename: 'data.txt',
+          filepath: '/uploads/data.txt',
+          object: 'file',
+          type: 'text/plain',
+          bytes: 256,
+          embedded: true,
+          usage: 0,
+        },
+      ];
+
+      mockGetFiles.mockResolvedValue(mockContextFiles);
+
+      const tool_resources = {
+        [EToolResources.context]: {
+          file_ids: ['context-file-1', 'context-file-2'],
+        },
+      };
+
+      const result = await primeResources({
+        req: mockReq,
+        appConfig: mockAppConfig,
+        getFiles: mockGetFiles,
+        requestFileSet,
+        attachments: undefined,
+        tool_resources,
+      });
+
+      // Context field should be deleted after fetching files
+      expect(result.tool_resources?.[EToolResources.context]).toBeUndefined();
+
+      // Files should be re-categorized based on their properties
+      expect(result.tool_resources?.[EToolResources.execute_code]?.files).toHaveLength(1);
+      expect(result.tool_resources?.[EToolResources.execute_code]?.files?.[0]?.file_id).toBe(
+        'context-file-1',
+      );
+
+      expect(result.tool_resources?.[EToolResources.file_search]?.files).toHaveLength(1);
+      expect(result.tool_resources?.[EToolResources.file_search]?.files?.[0]?.file_id).toBe(
+        'context-file-2',
+      );
+    });
+
+    it('should preserve context field when context capability is disabled', async () => {
+      // Disable context capability
+      (mockAppConfig.endpoints![EModelEndpoint.agents] as TAgentsEndpoint).capabilities = [];
+
+      const tool_resources = {
+        [EToolResources.context]: {
+          file_ids: ['context-file-1'],
+        },
+      };
+
+      const result = await primeResources({
+        req: mockReq,
+        appConfig: mockAppConfig,
+        getFiles: mockGetFiles,
+        requestFileSet,
+        attachments: undefined,
+        tool_resources,
+      });
+
+      // Context field should be preserved when capability is disabled
+      expect(result.tool_resources?.[EToolResources.context]).toEqual({
+        file_ids: ['context-file-1'],
+      });
+
+      // getFiles should not have been called
+      expect(mockGetFiles).not.toHaveBeenCalled();
+    });
+
+    it('should still delete ocr field even when context capability is disabled', async () => {
+      // Disable context capability
+      (mockAppConfig.endpoints![EModelEndpoint.agents] as TAgentsEndpoint).capabilities = [];
+
+      const tool_resources = {
+        [EToolResources.ocr]: {
+          file_ids: ['ocr-file-1'],
+        },
+        [EToolResources.context]: {
+          file_ids: ['context-file-1'],
+        },
+      };
+
+      const result = await primeResources({
+        req: mockReq,
+        appConfig: mockAppConfig,
+        getFiles: mockGetFiles,
+        requestFileSet,
+        attachments: undefined,
+        tool_resources,
+      });
+
+      // OCR field should still be deleted (merged into context)
+      expect(result.tool_resources?.[EToolResources.ocr]).toBeUndefined();
+
+      // Context field should contain merged file_ids but not be processed
+      expect(result.tool_resources?.[EToolResources.context]).toEqual({
+        file_ids: ['context-file-1', 'ocr-file-1'],
+      });
+
+      // getFiles should not have been called since context is disabled
+      expect(mockGetFiles).not.toHaveBeenCalled();
     });
   });
 
