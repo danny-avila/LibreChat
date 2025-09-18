@@ -1,7 +1,7 @@
 const { logger } = require('@librechat/data-schemas');
 const { PermissionBits, hasPermissions, ResourceType } = require('librechat-data-provider');
 const { getEffectivePermissions } = require('~/server/services/PermissionService');
-const { getAgent } = require('~/models/Agent');
+const { getAgents } = require('~/models/Agent');
 const { getFiles } = require('~/models/File');
 
 /**
@@ -11,7 +11,7 @@ const { getFiles } = require('~/models/File');
 const checkAgentBasedFileAccess = async ({ userId, role, fileId }) => {
   try {
     // Find agents that have this file in their tool_resources
-    const agentsWithFile = await getAgent({
+    const agentsWithFile = await getAgents({
       $or: [
         { 'tool_resources.file_search.file_ids': fileId },
         { 'tool_resources.execute_code.file_ids': fileId },
@@ -24,7 +24,7 @@ const checkAgentBasedFileAccess = async ({ userId, role, fileId }) => {
     }
 
     // Check if user has access to any of these agents
-    for (const agent of Array.isArray(agentsWithFile) ? agentsWithFile : [agentsWithFile]) {
+    for (const agent of agentsWithFile) {
       // Check if user is the agent author
       if (agent.author && agent.author.toString() === userId) {
         logger.debug(`[fileAccess] User is author of agent ${agent.id}`);

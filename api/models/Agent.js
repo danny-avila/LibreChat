@@ -50,6 +50,14 @@ const createAgent = async (agentData) => {
 const getAgent = async (searchParameter) => await Agent.findOne(searchParameter).lean();
 
 /**
+ * Get multiple agent documents based on the provided search parameters.
+ *
+ * @param {Object} searchParameter - The search parameters to find agents.
+ * @returns {Promise<Agent[]>} Array of agent documents as plain objects.
+ */
+const getAgents = async (searchParameter) => await Agent.find(searchParameter).lean();
+
+/**
  * Load an agent based on the provided ID
  *
  * @param {Object} params
@@ -835,6 +843,7 @@ const countPromotedAgents = async () => {
 
 module.exports = {
   getAgent,
+  getAgents,
   loadAgent,
   createAgent,
   updateAgent,
