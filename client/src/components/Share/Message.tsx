@@ -76,6 +76,8 @@ export default function Message(props: TMessageProps) {
                       messageId,
                       isExpanded: false,
                       conversationId: conversation?.conversationId,
+                      isSubmitting: false, // Share view is always read-only
+                      isLatestMessage: false, // No concept of latest message in share view
                     }}
                   >
                     {/* Legacy Plugins */}

@@ -26,4 +26,5 @@ export * from './SidePanelContext';
 export * from './MCPPanelContext';
 export * from './ArtifactsContext';
 export * from './PromptGroupsContext';
+export * from './MessagesViewContext';
 export { default as BadgeRowProvider } from './BadgeRowContext';
