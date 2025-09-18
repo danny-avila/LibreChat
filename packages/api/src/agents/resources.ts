@@ -194,7 +194,7 @@ export const primeResources = async ({
           if (file?.file_id) {
             processedResourceFiles.add(`${resourceType}:${file.file_id}`);
             // Files from non-context resources should not be added to attachments from _attachments
-            if (resourceType !== EToolResources.context) {
+            if (resourceType !== EToolResources.context && resourceType !== EToolResources.ocr) {
               attachmentFileIds.add(file.file_id);
             }
           }
@@ -206,10 +206,16 @@ export const primeResources = async ({
       appConfig?.endpoints?.[EModelEndpoint.agents]?.capabilities ?? []
     ).includes(AgentCapabilities.context);
 
-    if (tool_resources[EToolResources.context]?.file_ids && isContextEnabled) {
+    const fileIds = tool_resources[EToolResources.context]?.file_ids ?? [];
+    const ocrFileIds = tool_resources[EToolResources.ocr]?.file_ids;
+    if (ocrFileIds != null) {
+      fileIds.push(...ocrFileIds);
+    }
+
+    if (fileIds.length > 0 && isContextEnabled) {
       const context = await getFiles(
         {
-          file_id: { $in: tool_resources.context.file_ids },
+          file_id: { $in: fileIds },
         },
         {},
         {},

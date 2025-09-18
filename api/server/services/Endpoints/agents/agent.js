@@ -18,7 +18,6 @@ const { getProviderConfig } = require('~/server/services/Endpoints');
 const { processFiles } = require('~/server/services/Files/process');
 const { getFiles, getToolFilesByIds } = require('~/models/File');
 const { getConvoFiles } = require('~/models/Conversation');
-const { updateAgent } = require('~/models/Agent');
 
 /**
  * @param {object} params

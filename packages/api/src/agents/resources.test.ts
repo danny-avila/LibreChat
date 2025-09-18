@@ -43,8 +43,8 @@ describe('primeResources', () => {
     requestFileSet = new Set(['file1', 'file2', 'file3']);
   });
 
-  describe('when OCR is enabled and tool_resources has OCR file_ids', () => {
-    it('should fetch OCR files and include them in attachments', async () => {
+  describe('when `context` capability is enabled and tool_resources has "context" file_ids', () => {
+    it('should fetch context files and include them in attachments', async () => {
       const mockOcrFiles: TFile[] = [
         {
           user: 'user1',
@@ -87,8 +87,8 @@ describe('primeResources', () => {
     });
   });
 
-  describe('when OCR is disabled', () => {
-    it('should not fetch OCR files even if tool_resources has OCR file_ids', async () => {
+  describe('when `context` capability is disabled', () => {
+    it('should not fetch context files even if tool_resources has context file_ids', async () => {
       (mockAppConfig.endpoints![EModelEndpoint.agents] as TAgentsEndpoint).capabilities = [];
 
       const tool_resources = {
@@ -371,8 +371,8 @@ describe('primeResources', () => {
     });
   });
 
-  describe('when both OCR and attachments are provided', () => {
-    it('should include both OCR files and attachment files', async () => {
+  describe('when both "context" files and "attachments" are provided', () => {
+    it('should include both context files and attachment files', async () => {
       const mockOcrFiles: TFile[] = [
         {
           user: 'user1',
@@ -424,7 +424,59 @@ describe('primeResources', () => {
       expect(result.attachments?.[1]?.file_id).toBe('file1');
     });
 
-    it('should prevent duplicate files when same file exists in OCR and attachments', async () => {
+    it('should include both context (as `ocr` resource) files and attachment files', async () => {
+      const mockOcrFiles: TFile[] = [
+        {
+          user: 'user1',
+          file_id: 'ocr-file-1',
+          filename: 'document.pdf',
+          filepath: '/uploads/document.pdf',
+          object: 'file',
+          type: 'application/pdf',
+          bytes: 1024,
+          embedded: false,
+          usage: 0,
+        },
+      ];
+
+      const mockAttachmentFiles: TFile[] = [
+        {
+          user: 'user1',
+          file_id: 'file1',
+          filename: 'attachment.txt',
+          filepath: '/uploads/attachment.txt',
+          object: 'file',
+          type: 'text/plain',
+          bytes: 256,
+          embedded: false,
+          usage: 0,
+        },
+      ];
+
+      mockGetFiles.mockResolvedValue(mockOcrFiles);
+      const attachments = Promise.resolve(mockAttachmentFiles);
+
+      const tool_resources = {
+        [EToolResources.ocr]: {
+          file_ids: ['ocr-file-1'],
+        },
+      };
+
+      const result = await primeResources({
+        req: mockReq,
+        appConfig: mockAppConfig,
+        getFiles: mockGetFiles,
+        requestFileSet,
+        attachments,
+        tool_resources,
+      });
+
+      expect(result.attachments).toHaveLength(2);
+      expect(result.attachments?.[0]?.file_id).toBe('ocr-file-1');
+      expect(result.attachments?.[1]?.file_id).toBe('file1');
+    });
+
+    it('should prevent duplicate files when same file exists in context tool_resource and attachments', async () => {
       const sharedFile: TFile = {
         user: 'user1',
         file_id: 'shared-file-id',
@@ -583,7 +635,7 @@ describe('primeResources', () => {
         tool_resources,
       });
 
-      // Should have 3 files total (2 from OCR + 1 unique from attachments)
+      // Should have 3 files total (2 from context files + 1 unique from attachments)
       expect(result.attachments).toHaveLength(3);
 
       // Each file should appear only once
@@ -801,7 +853,7 @@ describe('primeResources', () => {
       );
     });
 
-    it('should handle complex scenario with OCR, existing tool_resources, and attachments', async () => {
+    it('should handle complex scenario with context files, existing tool_resources, and attachments', async () => {
       const ocrFile: TFile = {
         user: 'user1',
         file_id: 'ocr-file',
@@ -843,7 +895,7 @@ describe('primeResources', () => {
         width: 600,
       };
 
-      mockGetFiles.mockResolvedValue([ocrFile, existingFile]); // OCR returns both files
+      mockGetFiles.mockResolvedValue([ocrFile, existingFile]); // context returns both files
       const attachments = Promise.resolve([existingFile, ocrFile, newFile]); // Attachments has duplicates
 
       const existingToolResources = {
@@ -899,7 +951,7 @@ describe('primeResources', () => {
       const attachments = Promise.resolve(mockFiles);
       const error = new Error('Test error');
 
-      // Mock getFiles to throw an error when called for OCR
+      // Mock getFiles to throw an error when called for context
       mockGetFiles.mockRejectedValue(error);
 
       const tool_resources = {
@@ -968,7 +1020,7 @@ describe('primeResources', () => {
       });
 
       expect(mockGetFiles).not.toHaveBeenCalled();
-      // When appConfig agents endpoint is missing, OCR is disabled
+      // When appConfig agents endpoint is missing, context is disabled
       // and no attachments are provided, the function returns undefined
       expect(result.attachments).toBeUndefined();
     });
