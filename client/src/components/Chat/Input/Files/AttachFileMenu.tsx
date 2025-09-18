@@ -94,11 +94,11 @@ const AttachFileMenu = ({
         },
       ];
 
-      if (capabilities.ocrEnabled) {
+      if (capabilities.contextEnabled) {
         items.push({
           label: localize('com_ui_upload_ocr_text'),
           onClick: () => {
-            setToolResource(EToolResources.ocr);
+            setToolResource(EToolResources.context);
             onAction();
           },
           icon: <FileType2Icon className="icon-md" />,

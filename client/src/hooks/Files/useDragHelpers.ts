@@ -71,7 +71,7 @@ export default function useDragHelpers() {
       const capabilities = agentsConfig?.capabilities ?? defaultAgentCapabilities;
       const fileSearchEnabled = capabilities.includes(AgentCapabilities.file_search) === true;
       const codeEnabled = capabilities.includes(AgentCapabilities.execute_code) === true;
-      const ocrEnabled = capabilities.includes(AgentCapabilities.ocr) === true;
+      const contextEnabled = capabilities.includes(AgentCapabilities.context) === true;
 
       /** Get agent permissions at drop time */
       const agentId = conversationRef.current?.agent_id;
@@ -99,7 +99,7 @@ export default function useDragHelpers() {
         allImages ||
         (fileSearchEnabled && fileSearchAllowedByAgent) ||
         (codeEnabled && codeAllowedByAgent) ||
-        ocrEnabled;
+        contextEnabled;
 
       if (!shouldShowModal) {
         // Fallback: directly handle files without showing modal

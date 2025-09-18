@@ -193,8 +193,8 @@ export const primeResources = async ({
         for (const file of resource.files) {
           if (file?.file_id) {
             processedResourceFiles.add(`${resourceType}:${file.file_id}`);
-            // Files from non-OCR resources should not be added to attachments from _attachments
-            if (resourceType !== EToolResources.ocr) {
+            // Files from non-context resources should not be added to attachments from _attachments
+            if (resourceType !== EToolResources.context) {
               attachmentFileIds.add(file.file_id);
             }
           }
@@ -202,14 +202,14 @@ export const primeResources = async ({
       }
     }
 
-    const isOCREnabled = (
+    const isContextEnabled = (
       appConfig?.endpoints?.[EModelEndpoint.agents]?.capabilities ?? []
-    ).includes(AgentCapabilities.ocr);
+    ).includes(AgentCapabilities.context);
 
-    if (tool_resources[EToolResources.ocr]?.file_ids && isOCREnabled) {
+    if (tool_resources[EToolResources.context]?.file_ids && isContextEnabled) {
       const context = await getFiles(
         {
-          file_id: { $in: tool_resources.ocr.file_ids },
+          file_id: { $in: tool_resources.context.file_ids },
         },
         {},
         {},

@@ -47,7 +47,7 @@ export default function FileContext({
 
   const { handleFileChange } = useFileHandling({
     overrideEndpoint: EModelEndpoint.agents,
-    additionalMetadata: { agent_id, tool_resource: EToolResources.ocr },
+    additionalMetadata: { agent_id, tool_resource: EToolResources.context },
     fileSetter: setFiles,
   });
   const { handleSharePointFiles, isProcessing, downloadProgress } = useSharePointFileHandling({
@@ -130,13 +130,13 @@ export default function FileContext({
         </div>
       </HoverCard>
       <div className="flex flex-col gap-3">
-        {/* File Context (OCR) Files */}
+        {/* File Context Files */}
         <FileRow
           files={files}
           setFiles={setFiles}
           setFilesLoading={setFilesLoading}
           agent_id={agent_id}
-          tool_resource={EToolResources.ocr}
+          tool_resource={EToolResources.context}
           Wrapper={({ children }) => <div className="flex flex-wrap gap-2">{children}</div>}
         />
         <div>

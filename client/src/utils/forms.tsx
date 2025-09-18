@@ -135,7 +135,16 @@ export const processAgentOption = ({
       handleFile({
         file_id,
         list: agent.context_files,
-        tool_resource: EToolResources.ocr,
+        tool_resource: EToolResources.context,
+      }),
+    );
+  }
+  if (agent.context_files && _agent?.tool_resources?.context?.file_ids) {
+    _agent.tool_resources.context.file_ids.forEach((file_id) =>
+      handleFile({
+        file_id,
+        list: agent.context_files,
+        tool_resource: EToolResources.context,
       }),
     );
   }

@@ -31,7 +31,7 @@ describe('primeResources', () => {
     mockAppConfig = {
       endpoints: {
         [EModelEndpoint.agents]: {
-          capabilities: [AgentCapabilities.ocr],
+          capabilities: [AgentCapabilities.context],
         } as TAgentsEndpoint,
       },
     } as AppConfig;
@@ -62,7 +62,7 @@ describe('primeResources', () => {
       mockGetFiles.mockResolvedValue(mockOcrFiles);
 
       const tool_resources = {
-        [EToolResources.ocr]: {
+        [EToolResources.context]: {
           file_ids: ['ocr-file-1'],
         },
       };
@@ -92,7 +92,7 @@ describe('primeResources', () => {
       (mockAppConfig.endpoints![EModelEndpoint.agents] as TAgentsEndpoint).capabilities = [];
 
       const tool_resources = {
-        [EToolResources.ocr]: {
+        [EToolResources.context]: {
           file_ids: ['ocr-file-1'],
         },
       };
@@ -405,7 +405,7 @@ describe('primeResources', () => {
       const attachments = Promise.resolve(mockAttachmentFiles);
 
       const tool_resources = {
-        [EToolResources.ocr]: {
+        [EToolResources.context]: {
           file_ids: ['ocr-file-1'],
         },
       };
@@ -457,7 +457,7 @@ describe('primeResources', () => {
       const attachments = Promise.resolve(mockAttachmentFiles);
 
       const tool_resources = {
-        [EToolResources.ocr]: {
+        [EToolResources.context]: {
           file_ids: ['shared-file-id'],
         },
       };
@@ -500,7 +500,7 @@ describe('primeResources', () => {
       const attachments = Promise.resolve(mockAttachmentFiles);
 
       const tool_resources = {
-        [EToolResources.ocr]: {
+        [EToolResources.context]: {
           file_ids: ['shared-file-id'],
         },
       };
@@ -569,7 +569,7 @@ describe('primeResources', () => {
       const attachments = Promise.resolve(mockAttachmentFiles);
 
       const tool_resources = {
-        [EToolResources.ocr]: {
+        [EToolResources.context]: {
           file_ids: ['file-1', 'file-2'],
         },
       };
@@ -628,7 +628,7 @@ describe('primeResources', () => {
       const attachments = Promise.resolve(mockAttachmentFiles);
 
       const tool_resources = {
-        [EToolResources.ocr]: {
+        [EToolResources.context]: {
           file_ids: ['normal-file'],
         },
       };
@@ -847,7 +847,7 @@ describe('primeResources', () => {
       const attachments = Promise.resolve([existingFile, ocrFile, newFile]); // Attachments has duplicates
 
       const existingToolResources = {
-        [EToolResources.ocr]: {
+        [EToolResources.context]: {
           file_ids: ['ocr-file', 'existing-file'],
         },
         [EToolResources.execute_code]: {
@@ -903,7 +903,7 @@ describe('primeResources', () => {
       mockGetFiles.mockRejectedValue(error);
 
       const tool_resources = {
-        [EToolResources.ocr]: {
+        [EToolResources.context]: {
           file_ids: ['ocr-file-1'],
         },
       };
@@ -961,7 +961,7 @@ describe('primeResources', () => {
         requestFileSet,
         attachments: undefined,
         tool_resources: {
-          [EToolResources.ocr]: {
+          [EToolResources.context]: {
             file_ids: ['ocr-file-1'],
           },
         },
