@@ -1,8 +1,8 @@
 import React, { useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
 import { OGDialog, OGDialogTemplate } from '@librechat/client';
-import { ImageUpIcon, FileSearch, TerminalSquareIcon, FileType2Icon } from 'lucide-react';
 import { EToolResources, defaultAgentCapabilities } from 'librechat-data-provider';
+import { ImageUpIcon, FileSearch, TerminalSquareIcon, FileType2Icon } from 'lucide-react';
 import {
   useAgentToolPermissions,
   useAgentCapabilities,
@@ -10,7 +10,7 @@ import {
   useLocalize,
 } from '~/hooks';
 import { ephemeralAgentByConvoId } from '~/store';
-import { useChatContext } from '~/Providers';
+import { useDragDropContext } from '~/Providers';
 
 interface DragDropModalProps {
   onOptionSelect: (option: EToolResources | undefined) => void;
@@ -34,12 +34,10 @@ const DragDropModal = ({ onOptionSelect, setShowModal, files, isVisible }: DragD
    * Use definition for agents endpoint for ephemeral agents
    * */
   const capabilities = useAgentCapabilities(agentsConfig?.capabilities ?? defaultAgentCapabilities);
-  const { conversation } = useChatContext();
-  const ephemeralAgent = useRecoilValue(
-    ephemeralAgentByConvoId(conversation?.conversationId ?? ''),
-  );
+  const { conversationId, agentId } = useDragDropContext();
+  const ephemeralAgent = useRecoilValue(ephemeralAgentByConvoId(conversationId ?? ''));
   const { fileSearchAllowedByAgent, codeAllowedByAgent } = useAgentToolPermissions(
-    conversation?.agent_id,
+    agentId,
     ephemeralAgent,
   );
 
