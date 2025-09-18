@@ -34,13 +34,34 @@ if (FORCED_IN_MEMORY_CACHE_NAMESPACES.length > 0) {
   }
 }
 
+// Helper function to safely read Redis CA certificate
+const getRedisCA = () => {
+  const caPath = process.env.REDIS_CA;
+  if (!caPath) {
+    return null;
+  }
+  
+  try {
+    // Check if file exists and is readable before attempting to read
+    if (fs.existsSync(caPath)) {
+      return fs.readFileSync(caPath, 'utf8');
+    } else {
+      console.warn(`Redis CA certificate file not found: ${caPath}`);
+      return null;
+    }
+  } catch (error) {
+    console.error(`Failed to read Redis CA certificate file '${caPath}':`, error.message);
+    return null;
+  }
+};
+
 const cacheConfig = {
   FORCED_IN_MEMORY_CACHE_NAMESPACES,
   USE_REDIS,
   REDIS_URI: process.env.REDIS_URI,
   REDIS_USERNAME: process.env.REDIS_USERNAME,
   REDIS_PASSWORD: process.env.REDIS_PASSWORD,
-  REDIS_CA: process.env.REDIS_CA ? fs.readFileSync(process.env.REDIS_CA, 'utf8') : null,
+  REDIS_CA: getRedisCA(),
   REDIS_KEY_PREFIX: process.env[REDIS_KEY_PREFIX_VAR] || REDIS_KEY_PREFIX || '',
   REDIS_MAX_LISTENERS: math(process.env.REDIS_MAX_LISTENERS, 40),
   REDIS_PING_INTERVAL: math(process.env.REDIS_PING_INTERVAL, 0),
