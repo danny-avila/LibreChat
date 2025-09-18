@@ -30,8 +30,7 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
     artifacts,
     fileSearch,
     agentsConfig,
-    mcpServerNames,
-    conversationId,
+    mcpServerManager,
     codeApiKeyForm,
     codeInterpreter,
     searchApiKeyForm,
@@ -287,13 +286,16 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
     });
   }
 
-  if (mcpServerNames && mcpServerNames.length > 0) {
+  const { configuredServers } = mcpServerManager;
+  if (configuredServers && configuredServers.length > 0) {
     dropdownItems.push({
       hideOnClick: false,
-      render: (props) => (
-        <MCPSubMenu {...props} placeholder={mcpPlaceholder} conversationId={conversationId} />
-      ),
+      render: (props) => <MCPSubMenu {...props} placeholder={mcpPlaceholder} />,
     });
+  }
+
+  if (dropdownItems.length === 0) {
+    return null;
   }
 
   const menuTrigger = (

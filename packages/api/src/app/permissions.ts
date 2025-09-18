@@ -69,6 +69,8 @@ export async function updateInterfacePermissions({
   const interfaceConfig = appConfig?.config?.interface;
   const memoryConfig = appConfig?.config?.memory;
   const memoryEnabled = isMemoryEnabled(memoryConfig);
+  /** Check if memory is explicitly disabled */
+  const isMemoryExplicitlyDisabled = memoryConfig && !memoryEnabled;
   /** Check if personalization is enabled (defaults to true if memory is configured and enabled) */
   const isPersonalizationEnabled =
     memoryConfig && memoryEnabled && memoryConfig.personalize !== false;
@@ -109,14 +111,20 @@ export async function updateInterfacePermissions({
       const permTypeExists = existingPermissions?.[permType];
       const isExplicitlyConfigured =
         interfaceConfig && hasExplicitConfig(interfaceConfig, permType);
+      const isMemoryDisabled =
+        permType === PermissionTypes.MEMORIES && isMemoryExplicitlyDisabled === true;
 
       // Only update if: doesn't exist OR explicitly configured
-      if (!permTypeExists || isExplicitlyConfigured) {
+      if (!permTypeExists || isExplicitlyConfigured || isMemoryDisabled) {
         permissionsToUpdate[permType] = permissions;
         if (!permTypeExists) {
           logger.debug(`Role '${roleName}': Setting up default permissions for '${permType}'`);
         } else if (isExplicitlyConfigured) {
           logger.debug(`Role '${roleName}': Applying explicit config for '${permType}'`);
+        } else if (isMemoryDisabled) {
+          logger.debug(
+            `Role '${roleName}': Disabling memories as it is explicitly disabled in config`,
+          );
         }
       } else {
         logger.debug(`Role '${roleName}': Preserving existing permissions for '${permType}'`);
@@ -139,11 +147,28 @@ export async function updateInterfacePermissions({
         ),
       },
       [PermissionTypes.MEMORIES]: {
-        [Permissions.USE]: getPermissionValue(
-          loadedInterface.memories,
-          defaultPerms[PermissionTypes.MEMORIES]?.[Permissions.USE],
-          defaults.memories,
-        ),
+        [Permissions.USE]: isMemoryExplicitlyDisabled
+          ? false
+          : getPermissionValue(
+              loadedInterface.memories,
+              defaultPerms[PermissionTypes.MEMORIES]?.[Permissions.USE],
+              defaults.memories,
+            ),
+        ...(defaultPerms[PermissionTypes.MEMORIES]?.[Permissions.CREATE] !== undefined && {
+          [Permissions.CREATE]: isMemoryExplicitlyDisabled
+            ? false
+            : defaultPerms[PermissionTypes.MEMORIES][Permissions.CREATE],
+        }),
+        ...(defaultPerms[PermissionTypes.MEMORIES]?.[Permissions.READ] !== undefined && {
+          [Permissions.READ]: isMemoryExplicitlyDisabled
+            ? false
+            : defaultPerms[PermissionTypes.MEMORIES][Permissions.READ],
+        }),
+        ...(defaultPerms[PermissionTypes.MEMORIES]?.[Permissions.UPDATE] !== undefined && {
+          [Permissions.UPDATE]: isMemoryExplicitlyDisabled
+            ? false
+            : defaultPerms[PermissionTypes.MEMORIES][Permissions.UPDATE],
+        }),
         [Permissions.OPT_OUT]: isPersonalizationEnabled,
       },
       [PermissionTypes.MULTI_CONVO]: {

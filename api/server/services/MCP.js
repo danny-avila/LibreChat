@@ -20,8 +20,8 @@ const {
   ContentTypes,
   isAssistantsEndpoint,
 } = require('librechat-data-provider');
+const { getMCPManager, getFlowStateManager, getOAuthReconnectionManager } = require('~/config');
 const { findToken, createToken, updateToken } = require('~/models');
-const { getMCPManager, getFlowStateManager } = require('~/config');
 const { getCachedTools, getAppConfig } = require('./Config');
 const { reinitMCPServer } = require('./Tools/mcp');
 const { getLogStores } = require('~/cache');
@@ -538,13 +538,20 @@ async function getServerConnectionStatus(
   const baseConnectionState = getConnectionState();
   let finalConnectionState = baseConnectionState;
 
+  // connection state overrides specific to OAuth servers
   if (baseConnectionState === 'disconnected' && oauthServers.has(serverName)) {
-    const { hasActiveFlow, hasFailedFlow } = await checkOAuthFlowStatus(userId, serverName);
-
-    if (hasFailedFlow) {
-      finalConnectionState = 'error';
-    } else if (hasActiveFlow) {
+    // check if server is actively being reconnected
+    const oauthReconnectionManager = getOAuthReconnectionManager();
+    if (oauthReconnectionManager.isReconnecting(userId, serverName)) {
       finalConnectionState = 'connecting';
+    } else {
+      const { hasActiveFlow, hasFailedFlow } = await checkOAuthFlowStatus(userId, serverName);
+
+      if (hasFailedFlow) {
+        finalConnectionState = 'error';
+      } else if (hasActiveFlow) {
+        finalConnectionState = 'connecting';
+      }
     }
   }
 

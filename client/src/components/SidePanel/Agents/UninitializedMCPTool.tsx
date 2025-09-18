@@ -1,68 +1,24 @@
 import React, { useState } from 'react';
-import { useFormContext } from 'react-hook-form';
-import { Constants } from 'librechat-data-provider';
-import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
-import {
-  Label,
-  OGDialog,
-  TrashIcon,
-  OGDialogTrigger,
-  useToastContext,
-  OGDialogTemplate,
-} from '@librechat/client';
-import type { AgentForm, MCPServerInfo } from '~/common';
+import { Label, OGDialog, TrashIcon, OGDialogTrigger, OGDialogTemplate } from '@librechat/client';
+import type { MCPServerInfo } from '~/common';
+import { useLocalize, useMCPServerManager, useRemoveMCPTool } from '~/hooks';
 import MCPServerStatusIcon from '~/components/MCP/MCPServerStatusIcon';
 import MCPConfigDialog from '~/components/MCP/MCPConfigDialog';
-import { useLocalize, useMCPServerManager } from '~/hooks';
 import { cn } from '~/utils';
 
 export default function UninitializedMCPTool({ serverInfo }: { serverInfo?: MCPServerInfo }) {
+  const localize = useLocalize();
+  const { removeTool } = useRemoveMCPTool();
+
   const [isFocused, setIsFocused] = useState(false);
   const [isHovering, setIsHovering] = useState(false);
 
-  const localize = useLocalize();
-  const { showToast } = useToastContext();
-  const updateUserPlugins = useUpdateUserPluginsMutation();
-  const { getValues, setValue } = useFormContext<AgentForm>();
   const { initializeServer, isInitializing, getServerStatusIconProps, getConfigDialogProps } =
     useMCPServerManager();
 
   if (!serverInfo) {
     return null;
   }
-
-  const removeTool = (serverName: string) => {
-    if (!serverName) {
-      return;
-    }
-    updateUserPlugins.mutate(
-      {
-        pluginKey: `${Constants.mcp_prefix}${serverName}`,
-        action: 'uninstall',
-        auth: {},
-        isEntityTool: true,
-      },
-      {
-        onError: (error: unknown) => {
-          showToast({
-            message: localize('com_ui_delete_tool_error', { error: String(error) }),
-            status: 'error',
-          });
-        },
-        onSuccess: () => {
-          const currentTools = getValues('tools');
-          const remainingToolIds =
-            currentTools?.filter(
-              (currentToolId) =>
-                currentToolId !== serverName &&
-                !currentToolId.endsWith(`${Constants.mcp_delimiter}${serverName}`),
-            ) || [];
-          setValue('tools', remainingToolIds);
-          showToast({ message: localize('com_ui_delete_tool_success'), status: 'success' });
-        },
-      },
-    );
-  };
 
   const serverName = serverInfo.serverName;
   const isServerInitializing = isInitializing(serverName);
