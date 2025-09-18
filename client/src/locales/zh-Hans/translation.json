@@ -834,7 +834,6 @@
   "com_ui_delete_tool": "删除工具",
   "com_ui_delete_tool_confirm": "您确定要删除此工具吗？",
   "com_ui_delete_tool_error": "删除工具时发生错误：{{error}}",
-  "com_ui_delete_tool_success": "工具删除成功",
   "com_ui_deleted": "已删除",
   "com_ui_deleting_file": "删除文件中...",
   "com_ui_descending": "降序",
