@@ -113,7 +113,7 @@ export default function FileContext({
           <HoverCardTrigger asChild>
             <span className="flex items-center gap-2">
               <label className="text-token-text-primary block font-medium">
-                {localize('com_agents_file_context')}
+                {localize('com_agents_file_context_label')}
               </label>
               <CircleHelpIcon className="h-4 w-4 text-text-tertiary" />
             </span>
@@ -122,7 +122,7 @@ export default function FileContext({
             <HoverCardContent side={ESide.Top} className="w-80">
               <div className="space-y-2">
                 <p className="text-sm text-text-secondary">
-                  {localize('com_agents_file_context_info')}
+                  {localize('com_agents_file_context_info_new')}
                 </p>
               </div>
             </HoverCardContent>
