@@ -6,6 +6,7 @@ import type { FlowStateManager } from '~/flow/manager';
 import type { FlowMetadata } from '~/flow/types';
 import type * as t from './types';
 import { MCPTokenStorage, MCPOAuthHandler } from '~/mcp/oauth';
+import { sanitizeUrlForLogging } from './utils';
 import { MCPConnection } from './connection';
 import { processMCPEnv } from '~/utils';
 
@@ -308,7 +309,9 @@ export class MCPConnectionFactory {
     metadata?: OAuthMetadata;
   } | null> {
     const serverUrl = (this.serverConfig as t.SSEOptions | t.StreamableHTTPOptions).url;
-    logger.debug(`${this.logPrefix} \`handleOAuthRequired\` called with serverUrl: ${serverUrl}`);
+    logger.debug(
+      `${this.logPrefix} \`handleOAuthRequired\` called with serverUrl: ${serverUrl ? sanitizeUrlForLogging(serverUrl) : 'undefined'}`,
+    );
 
     if (!this.flowManager || !serverUrl) {
       logger.error(

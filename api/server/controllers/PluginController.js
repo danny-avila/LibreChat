@@ -99,6 +99,12 @@ const getAvailableTools = async (req, res) => {
     let toolDefinitions = await getCachedTools({ includeGlobal: true });
     let prelimCachedTools;
 
+    if (toolDefinitions == null && appConfig?.availableTools != null) {
+      logger.warn('[getAvailableTools] Tool cache was empty, re-initializing from app config');
+      await setCachedTools(appConfig.availableTools, { isGlobal: true });
+      toolDefinitions = appConfig.availableTools;
+    }
+
     /** @type {import('@librechat/api').LCManifestTool[]} */
     let pluginManifest = availableTools;
 
@@ -142,10 +148,10 @@ const getAvailableTools = async (req, res) => {
     /** Filter plugins based on availability and add MCP-specific auth config */
     const toolsOutput = [];
     for (const plugin of authenticatedPlugins) {
-      const isToolDefined = toolDefinitions[plugin.pluginKey] !== undefined;
+      const isToolDefined = toolDefinitions?.[plugin.pluginKey] !== undefined;
       const isToolkit =
         plugin.toolkit === true &&
-        Object.keys(toolDefinitions).some(
+        Object.keys(toolDefinitions ?? {}).some(
           (key) => getToolkitKey({ toolkits, toolName: key }) === plugin.pluginKey,
         );
 

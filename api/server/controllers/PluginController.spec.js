@@ -682,5 +682,122 @@ describe('PluginController', () => {
       // Should handle null toolDefinitions gracefully
       expect(mockRes.status).toHaveBeenCalledWith(200);
     });
+
+    it('should handle undefined toolDefinitions when checking isToolDefined (traversaal_search bug)', async () => {
+      // This test reproduces the bug where toolDefinitions is undefined
+      // and accessing toolDefinitions[plugin.pluginKey] causes a TypeError
+      const mockPlugin = {
+        name: 'Traversaal Search',
+        pluginKey: 'traversaal_search',
+        description: 'Search plugin',
+      };
+
+      // Add the plugin to availableTools
+      require('~/app/clients/tools').availableTools.push(mockPlugin);
+
+      mockCache.get.mockResolvedValue(null);
+
+      // First call returns null for user tools
+      getCachedTools.mockResolvedValueOnce(null);
+
+      mockReq.config = {
+        mcpConfig: null,
+        paths: { structuredTools: '/mock/path' },
+      };
+
+      // CRITICAL: Second call (with includeGlobal: true) returns undefined
+      // This is what causes the bug when trying to access toolDefinitions[plugin.pluginKey]
+      getCachedTools.mockResolvedValueOnce(undefined);
+
+      // This should not throw an error with the optional chaining fix
+      await getAvailableTools(mockReq, mockRes);
+
+      // Should handle undefined toolDefinitions gracefully and return empty array
+      expect(mockRes.status).toHaveBeenCalledWith(200);
+      expect(mockRes.json).toHaveBeenCalledWith([]);
+    });
+
+    it('should re-initialize tools from appConfig when cache returns null', async () => {
+      // Setup: Initial state with tools in appConfig
+      const mockAppTools = {
+        tool1: {
+          type: 'function',
+          function: {
+            name: 'tool1',
+            description: 'Tool 1',
+            parameters: {},
+          },
+        },
+        tool2: {
+          type: 'function',
+          function: {
+            name: 'tool2',
+            description: 'Tool 2',
+            parameters: {},
+          },
+        },
+      };
+
+      // Add matching plugins to availableTools
+      require('~/app/clients/tools').availableTools.push(
+        { name: 'Tool 1', pluginKey: 'tool1', description: 'Tool 1' },
+        { name: 'Tool 2', pluginKey: 'tool2', description: 'Tool 2' },
+      );
+
+      // First call: Simulate cache cleared state (returns null for both global and user tools)
+      mockCache.get.mockResolvedValue(null);
+      getCachedTools.mockResolvedValueOnce(null); // User tools
+      getCachedTools.mockResolvedValueOnce(null); // Global tools (cache cleared)
+
+      mockReq.config = {
+        filteredTools: [],
+        includedTools: [],
+        availableTools: mockAppTools,
+      };
+
+      // Mock setCachedTools to verify it's called to re-initialize
+      const { setCachedTools } = require('~/server/services/Config');
+
+      await getAvailableTools(mockReq, mockRes);
+
+      // Should have re-initialized the cache with tools from appConfig
+      expect(setCachedTools).toHaveBeenCalledWith(mockAppTools, { isGlobal: true });
+
+      // Should still return tools successfully
+      expect(mockRes.status).toHaveBeenCalledWith(200);
+      const responseData = mockRes.json.mock.calls[0][0];
+      expect(responseData).toHaveLength(2);
+      expect(responseData.find((t) => t.pluginKey === 'tool1')).toBeDefined();
+      expect(responseData.find((t) => t.pluginKey === 'tool2')).toBeDefined();
+    });
+
+    it('should handle cache clear without appConfig.availableTools gracefully', async () => {
+      // Setup: appConfig without availableTools
+      getAppConfig.mockResolvedValue({
+        filteredTools: [],
+        includedTools: [],
+        // No availableTools property
+      });
+
+      // Clear availableTools array
+      require('~/app/clients/tools').availableTools.length = 0;
+
+      // Cache returns null (cleared state)
+      mockCache.get.mockResolvedValue(null);
+      getCachedTools.mockResolvedValueOnce(null); // User tools
+      getCachedTools.mockResolvedValueOnce(null); // Global tools (cache cleared)
+
+      mockReq.config = {
+        filteredTools: [],
+        includedTools: [],
+        // No availableTools
+      };
+
+      await getAvailableTools(mockReq, mockRes);
+
+      // Should handle gracefully without crashing
+      expect(mockRes.status).toHaveBeenCalledWith(200);
+      expect(mockRes.json).toHaveBeenCalledWith([]);
+    });
   });
 });
