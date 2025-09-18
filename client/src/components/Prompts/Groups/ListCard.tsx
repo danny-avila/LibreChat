@@ -1,5 +1,6 @@
 import React from 'react';
 import { Label } from '@librechat/client';
+import { Paperclip } from 'lucide-react';
 import CategoryIcon from '~/components/Prompts/Groups/CategoryIcon';
 
 export default function ListCard({
@@ -8,12 +9,14 @@ export default function ListCard({
   snippet,
   onClick,
   children,
+  hasFiles,
 }: {
   category: string;
   name: string;
   snippet: string;
   onClick?: React.MouseEventHandler<HTMLDivElement | HTMLButtonElement>;
   children?: React.ReactNode;
+  hasFiles?: boolean;
 }) {
   const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement | HTMLButtonElement>) => {
     if (event.key === 'Enter' || event.key === ' ') {
@@ -35,7 +38,7 @@ export default function ListCard({
     >
       <div className="flex w-full justify-between gap-2">
         <div className="flex flex-row gap-2">
-          <CategoryIcon category={category} className="icon-md" aria-hidden="true" />
+          <CategoryIcon category={category} className="icon-md flex-shrink-0" aria-hidden="true" />
           <Label
             id={`card-title-${name}`}
             className="break-word select-none text-balance text-sm font-semibold text-text-primary"
@@ -43,6 +46,7 @@ export default function ListCard({
           >
             {name}
           </Label>
+          {hasFiles && <Paperclip className="icon-xs mt-1 flex-shrink-0 text-text-secondary" />}
         </div>
         <div>{children}</div>
       </div>

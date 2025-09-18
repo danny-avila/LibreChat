@@ -3,7 +3,7 @@ import { AutoSizer, List } from 'react-virtualized';
 import { Spinner, useCombobox } from '@librechat/client';
 import { useSetRecoilState, useRecoilValue } from 'recoil';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
-import type { TPromptGroup } from 'librechat-data-provider';
+import type { TPromptGroup, AgentToolResources } from 'librechat-data-provider';
 import type { PromptOption } from '~/common';
 import { removeCharIfLast, detectVariables } from '~/utils';
 import VariableDialog from '~/components/Prompts/Groups/VariableDialog';
@@ -51,7 +51,7 @@ function PromptsCommand({
 }: {
   index: number;
   textAreaRef: React.MutableRefObject<HTMLTextAreaElement | null>;
-  submitPrompt: (textPrompt: string) => void;
+  submitPrompt: (textPrompt: string, toolResources?: AgentToolResources) => void;
 }) {
   const localize = useLocalize();
   const hasAccess = useHasAccess({
@@ -95,7 +95,6 @@ function PromptsCommand({
       if (!group) {
         return;
       }
-
       const hasVariables = detectVariables(group.productionPrompt?.prompt ?? '');
       if (hasVariables) {
         if (e && e.key === 'Tab') {
@@ -105,7 +104,7 @@ function PromptsCommand({
         setVariableDialogOpen(true);
         return;
       } else {
-        submitPrompt(group.productionPrompt?.prompt ?? '');
+        submitPrompt(group.productionPrompt?.prompt ?? '', group.productionPrompt?.tool_resources);
       }
     },
     [setSearchValue, setOpen, setShowPromptsPopover, textAreaRef, promptsMap, submitPrompt],

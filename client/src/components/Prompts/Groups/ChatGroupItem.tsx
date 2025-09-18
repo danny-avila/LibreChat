@@ -7,7 +7,7 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from '@librechat/client';
-import { PermissionBits } from 'librechat-data-provider';
+import { PermissionBits, ResourceType } from 'librechat-data-provider';
 import type { TPromptGroup } from 'librechat-data-provider';
 import { useLocalize, useSubmitMessage, useCustomLink, useResourcePermissions } from '~/hooks';
 import VariableDialog from '~/components/Prompts/Groups/VariableDialog';
@@ -34,8 +34,17 @@ function ChatGroupItem({
   );
 
   // Check permissions for the promptGroup
-  const { hasPermission } = useResourcePermissions('promptGroup', group._id || '');
+  const { hasPermission } = useResourcePermissions(ResourceType.PROMPTGROUP, group._id || '');
   const canEdit = hasPermission(PermissionBits.EDIT);
+
+  const hasFiles = useMemo(() => {
+    const toolResources = group.productionPrompt?.tool_resources;
+    if (!toolResources) return false;
+
+    return Object.values(toolResources).some(
+      (resource) => resource?.file_ids && resource.file_ids.length > 0,
+    );
+  }, [group.productionPrompt?.tool_resources]);
 
   const onCardClick: React.MouseEventHandler<HTMLButtonElement> = () => {
     const text = group.productionPrompt?.prompt;
@@ -48,7 +57,7 @@ function ChatGroupItem({
       return;
     }
 
-    submitPrompt(text);
+    submitPrompt(text, group.productionPrompt?.tool_resources);
   };
 
   return (
@@ -57,6 +66,7 @@ function ChatGroupItem({
         name={group.name}
         category={group.category ?? ''}
         onClick={onCardClick}
+        hasFiles={hasFiles}
         snippet={
           typeof group.oneliner === 'string' && group.oneliner.length > 0
             ? group.oneliner

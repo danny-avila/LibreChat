@@ -79,6 +79,7 @@ export default function useChatFunctions({
       parentMessageId = null,
       conversationId = null,
       messageId = null,
+      toolResources,
     },
     {
       editedContent = null,
@@ -204,6 +205,7 @@ export default function useChatFunctions({
       messageId: isContinued && messageId != null && messageId ? messageId : intermediateId,
       thread_id,
       error: false,
+      ...(toolResources && { tool_resources: toolResources }),
     };
 
     const submissionFiles = overrideFiles ?? targetParentMessage?.files;
