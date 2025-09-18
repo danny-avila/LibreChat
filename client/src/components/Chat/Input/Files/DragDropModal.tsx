@@ -1,4 +1,5 @@
 import React, { useMemo } from 'react';
+import { useRecoilValue } from 'recoil';
 import { OGDialog, OGDialogTemplate } from '@librechat/client';
 import { ImageUpIcon, FileSearch, TerminalSquareIcon, FileType2Icon } from 'lucide-react';
 import { EToolResources, defaultAgentCapabilities } from 'librechat-data-provider';
@@ -8,6 +9,7 @@ import {
   useGetAgentsConfig,
   useLocalize,
 } from '~/hooks';
+import { ephemeralAgentByConvoId } from '~/store';
 import { useChatContext } from '~/Providers';
 
 interface DragDropModalProps {
@@ -33,8 +35,12 @@ const DragDropModal = ({ onOptionSelect, setShowModal, files, isVisible }: DragD
    * */
   const capabilities = useAgentCapabilities(agentsConfig?.capabilities ?? defaultAgentCapabilities);
   const { conversation } = useChatContext();
+  const ephemeralAgent = useRecoilValue(
+    ephemeralAgentByConvoId(conversation?.conversationId ?? ''),
+  );
   const { fileSearchAllowedByAgent, codeAllowedByAgent } = useAgentToolPermissions(
     conversation?.agent_id,
+    ephemeralAgent,
   );
 
   const options = useMemo(() => {
