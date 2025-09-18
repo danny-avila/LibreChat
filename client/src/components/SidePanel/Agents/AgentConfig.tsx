@@ -79,9 +79,9 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
   }, [fileMap, agentFiles]);
 
   const {
-    contextEnabled,
     codeEnabled,
     toolsEnabled,
+    contextEnabled,
     actionsEnabled,
     artifactsEnabled,
     webSearchEnabled,
