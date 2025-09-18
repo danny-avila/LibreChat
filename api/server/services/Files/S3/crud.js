@@ -8,7 +8,7 @@ const {
   DeleteObjectCommand,
 } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
-const { initializeS3 } = require('./initialize');
+const { initializeS3, isForcePathStyle } = require('./initialize');
 const { logger } = require('~/config');
 
 const bucketName = process.env.AWS_BUCKET_NAME;
@@ -250,6 +250,13 @@ function extractKeyFromS3Url(fileUrlOrKey) {
 
   try {
     const url = new URL(fileUrlOrKey);
+    // Path-style URLs have a different format and need to be treated as such.
+    if (isForcePathStyle()) {
+      const pathParts = url.pathname.substring(1).split('/');
+      if (pathParts.length > 1) {
+        return pathParts.slice(1).join('/');
+      }
+    }
     return url.pathname.substring(1);
   } catch (error) {
     const parts = fileUrlOrKey.split('/');
