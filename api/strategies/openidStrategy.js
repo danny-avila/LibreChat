@@ -287,18 +287,17 @@ function convertToUsername(input, defaultValue = '') {
  * Can be reused by both the passport strategy and proxy authentication
  *
  * @param {Object} tokenset - The OpenID tokenset containing access_token, id_token, etc.
- * @param {Object} additionalUserinfo - Additional userinfo to merge with token claims
+ * @param {boolean} existingUsersOnly - If true, only existing users will be processed
  * @returns {Promise<Object>} The authenticated user object with tokenset
  */
-async function processOpenIDAuth(tokenset, additionalUserinfo = {}) {
+async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
   const claims = tokenset.claims ? tokenset.claims() : tokenset;
   const userinfo = {
     ...claims,
-    ...additionalUserinfo,
   };
 
   // Get userinfo from provider if we have access_token and haven't already
-  if (tokenset.access_token && !additionalUserinfo.sub) {
+  if (tokenset.access_token) {
     const providerUserinfo = await getUserInfo(openidConfig, tokenset.access_token, claims.sub);
     Object.assign(userinfo, providerUserinfo);
   }
@@ -326,7 +325,7 @@ async function processOpenIDAuth(tokenset, additionalUserinfo = {}) {
 
   const fullName = getFullName(userinfo);
 
-  // Check required role if configured
+  /** Required role if configured */
   const requiredRole = process.env.OPENID_REQUIRED_ROLE;
   if (requiredRole) {
     const requiredRoleParameterPath = process.env.OPENID_REQUIRED_ROLE_PARAMETER_PATH;
@@ -373,6 +372,10 @@ async function processOpenIDAuth(tokenset, additionalUserinfo = {}) {
     username = convertToUsername(
       userinfo.preferred_username || userinfo.username || userinfo.email,
     );
+  }
+
+  if (existingUsersOnly && !user) {
+    throw new Error('User does not exist');
   }
 
   if (!user) {
@@ -442,10 +445,13 @@ async function processOpenIDAuth(tokenset, additionalUserinfo = {}) {
   return { ...user, tokenset };
 }
 
-function createOpenIDCallback() {
+/**
+ * @param {boolean | undefined} [existingUsersOnly]
+ */
+function createOpenIDCallback(existingUsersOnly) {
   return async (tokenset, done) => {
     try {
-      const user = await processOpenIDAuth(tokenset);
+      const user = await processOpenIDAuth(tokenset, existingUsersOnly);
       done(null, user);
     } catch (err) {
       if (err.message === 'Email domain not allowed') {
@@ -481,7 +487,7 @@ const setupOpenIdAdmin = (openidConfig) => {
         clockTolerance: process.env.OPENID_CLOCK_TOLERANCE || 300,
         callbackURL: process.env.DOMAIN_SERVER + '/api/admin/oauth/openid/callback',
       },
-      createOpenIDCallback(),
+      createOpenIDCallback(true),
     );
 
     passport.use('openidAdmin', openidAdminLogin);
