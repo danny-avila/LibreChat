@@ -357,7 +357,7 @@ async function loadAgentTools({ req, res, agent, signal, tool_resources, openAIA
     agent.tools &&
     agent.tools.length === 1 &&
     /** Legacy handling for `ocr` as may still exist in existing Agents */
-    (agent.tools[0] === AgentCapabilities.ocr || agent.tools[0] === AgentCapabilities.context)
+    (agent.tools[0] === AgentCapabilities.context || agent.tools[0] === AgentCapabilities.ocr)
   ) {
     return {};
   }
