@@ -8,7 +8,6 @@ function MCPSelectContent() {
   const { conversationId, mcpServerManager } = useBadgeRowContext();
   const {
     localize,
-    isPinned,
     mcpValues,
     isInitializing,
     placeholderText,
@@ -69,14 +68,6 @@ function MCPSelectContent() {
     [getServerStatusIconProps, isInitializing],
   );
 
-  if ((!mcpValues || mcpValues.length === 0) && !isPinned) {
-    return null;
-  }
-
-  if (!configuredServers || configuredServers.length === 0) {
-    return null;
-  }
-
   const configDialogProps = getConfigDialogProps();
 
   return (
@@ -102,8 +93,13 @@ function MCPSelectContent() {
 }
 
 function MCPSelect() {
-  const { mcpServerNames } = useBadgeRowContext();
-  if ((mcpServerNames?.length ?? 0) === 0) return null;
+  const { mcpServerManager } = useBadgeRowContext();
+  const { configuredServers } = mcpServerManager;
+
+  if (!configuredServers || configuredServers.length === 0) {
+    return null;
+  }
+
   return <MCPSelectContent />;
 }
 
