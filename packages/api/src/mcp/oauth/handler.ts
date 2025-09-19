@@ -501,6 +501,7 @@ export class MCPOAuthHandler {
 
         /** Use the stored client information and metadata to determine the token URL */
         let tokenUrl: string;
+        let authMethods: string[] | undefined;
         if (config?.token_url) {
           tokenUrl = config.token_url;
         } else if (!metadata.serverUrl) {
@@ -515,6 +516,7 @@ export class MCPOAuthHandler {
             throw new Error('No token endpoint found in OAuth metadata');
           }
           tokenUrl = oauthMetadata.token_endpoint;
+          authMethods = oauthMetadata.token_endpoint_auth_methods_supported;
         }
 
         const body = new URLSearchParams({
@@ -532,14 +534,36 @@ export class MCPOAuthHandler {
           Accept: 'application/json',
         };
 
-        /** Use client_secret for authentication if available */
+        /** Handle authentication based on server's advertised methods */
         if (metadata.clientInfo.client_secret) {
-          const clientAuth = Buffer.from(
-            `${metadata.clientInfo.client_id}:${metadata.clientInfo.client_secret}`,
-          ).toString('base64');
-          headers['Authorization'] = `Basic ${clientAuth}`;
+          /** Default to client_secret_basic if no methods specified (per RFC 8414) */
+          const tokenAuthMethods = authMethods ?? ['client_secret_basic'];
+          const usesBasicAuth = tokenAuthMethods.includes('client_secret_basic');
+          const usesClientSecretPost = tokenAuthMethods.includes('client_secret_post');
+
+          if (usesBasicAuth) {
+            /** Use Basic auth */
+            logger.debug('[MCPOAuth] Using client_secret_basic authentication method');
+            const clientAuth = Buffer.from(
+              `${metadata.clientInfo.client_id}:${metadata.clientInfo.client_secret}`,
+            ).toString('base64');
+            headers['Authorization'] = `Basic ${clientAuth}`;
+          } else if (usesClientSecretPost) {
+            /** Use client_secret_post */
+            logger.debug('[MCPOAuth] Using client_secret_post authentication method');
+            body.append('client_id', metadata.clientInfo.client_id);
+            body.append('client_secret', metadata.clientInfo.client_secret);
+          } else {
+            /** No recognized method, default to Basic auth per RFC */
+            logger.debug('[MCPOAuth] No recognized auth method, defaulting to client_secret_basic');
+            const clientAuth = Buffer.from(
+              `${metadata.clientInfo.client_id}:${metadata.clientInfo.client_secret}`,
+            ).toString('base64');
+            headers['Authorization'] = `Basic ${clientAuth}`;
+          }
         } else {
           /** For public clients, client_id must be in the body */
+          logger.debug('[MCPOAuth] Using public client authentication (no secret)');
           body.append('client_id', metadata.clientInfo.client_id);
         }
 
@@ -575,9 +599,6 @@ export class MCPOAuthHandler {
         logger.debug(`[MCPOAuth] Using pre-configured OAuth settings for token refresh`);
 
         const tokenUrl = new URL(config.token_url);
-        const clientAuth = config.client_secret
-          ? Buffer.from(`${config.client_id}:${config.client_secret}`).toString('base64')
-          : null;
 
         const body = new URLSearchParams({
           grant_type: 'refresh_token',
@@ -593,10 +614,44 @@ export class MCPOAuthHandler {
           Accept: 'application/json',
         };
 
-        if (clientAuth) {
-          headers['Authorization'] = `Basic ${clientAuth}`;
+        /** Handle authentication based on configured methods */
+        if (config.client_secret) {
+          /** Default to client_secret_basic if no methods specified (per RFC 8414) */
+          const tokenAuthMethods = config.token_endpoint_auth_methods_supported ?? [
+            'client_secret_basic',
+          ];
+          const usesBasicAuth = tokenAuthMethods.includes('client_secret_basic');
+          const usesClientSecretPost = tokenAuthMethods.includes('client_secret_post');
+
+          if (usesBasicAuth) {
+            /** Use Basic auth */
+            logger.debug(
+              '[MCPOAuth] Using client_secret_basic authentication method (pre-configured)',
+            );
+            const clientAuth = Buffer.from(`${config.client_id}:${config.client_secret}`).toString(
+              'base64',
+            );
+            headers['Authorization'] = `Basic ${clientAuth}`;
+          } else if (usesClientSecretPost) {
+            /** Use client_secret_post */
+            logger.debug(
+              '[MCPOAuth] Using client_secret_post authentication method (pre-configured)',
+            );
+            body.append('client_id', config.client_id);
+            body.append('client_secret', config.client_secret);
+          } else {
+            /** No recognized method, default to Basic auth per RFC */
+            logger.debug(
+              '[MCPOAuth] No recognized auth method, defaulting to client_secret_basic (pre-configured)',
+            );
+            const clientAuth = Buffer.from(`${config.client_id}:${config.client_secret}`).toString(
+              'base64',
+            );
+            headers['Authorization'] = `Basic ${clientAuth}`;
+          }
         } else {
-          // Use client_id in body for public clients
+          /** For public clients, client_id must be in the body */
+          logger.debug('[MCPOAuth] Using public client authentication (no secret, pre-configured)');
           body.append('client_id', config.client_id);
         }
 
