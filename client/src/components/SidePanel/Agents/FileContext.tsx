@@ -122,7 +122,7 @@ export default function FileContext({
             <HoverCardContent side={ESide.Top} className="w-80">
               <div className="space-y-2">
                 <p className="text-sm text-text-secondary">
-                  {localize('com_agents_file_context_info_new')}
+                  {localize('com_agents_file_context_description')}
                 </p>
               </div>
             </HoverCardContent>
