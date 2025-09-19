@@ -105,7 +105,7 @@ export const useAutoSave = ({
       return;
     }
 
-    const handleInput = debounce((value: string) => setDraft({ id: conversationId, value }), 750);
+    const handleInput = debounce((value: string) => setDraft({ id: conversationId, value }), 65);
 
     const eventListener = (e: Event) => {
       const target = e.target as HTMLTextAreaElement;
