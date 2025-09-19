@@ -8,13 +8,14 @@ import {
   Permissions,
   ArtifactModes,
   PermissionTypes,
+  tConvoUpdateSchema,
   defaultAgentCapabilities,
 } from 'librechat-data-provider';
 import { useLocalize, useHasAccess, useAgentCapabilities } from '~/hooks';
 import ArtifactsSubMenu from '~/components/Chat/Input/ArtifactsSubMenu';
 import MCPSubMenu from '~/components/Chat/Input/MCPSubMenu';
 import { useGetStartupConfig } from '~/data-provider';
-import { useBadgeRowContext } from '~/Providers';
+import { useBadgeRowContext, useChatContext  } from '~/Providers';
 import { cn } from '~/utils';
 
 interface ToolsDropdownProps {
@@ -36,6 +37,7 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
     searchApiKeyForm,
   } = useBadgeRowContext();
   const { data: startupConfig } = useGetStartupConfig();
+  const { conversation, setConversation } = useChatContext();
 
   const { codeEnabled, webSearchEnabled, artifactsEnabled, fileSearchEnabled } =
     useAgentCapabilities(agentsConfig?.capabilities ?? defaultAgentCapabilities);
@@ -73,10 +75,14 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
   });
 
   const showWebSearchSettings = useMemo(() => {
+    const isNativeMode = startupConfig?.webSearch?.mode === 'native';
+    if (isNativeMode) {
+      return false;
+    }
     const authTypes = webSearchAuthData?.authTypes ?? [];
     if (authTypes.length === 0) return true;
     return !authTypes.every(([, authType]) => authType === AuthType.SYSTEM_DEFINED);
-  }, [webSearchAuthData?.authTypes]);
+  }, [webSearchAuthData?.authTypes, startupConfig?.webSearch?.mode]);
 
   const showCodeSettings = useMemo(
     () => codeAuthData?.message !== AuthType.SYSTEM_DEFINED,
@@ -85,8 +91,21 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
 
   const handleWebSearchToggle = useCallback(() => {
     const newValue = !webSearch.toggleState;
-    webSearch.debouncedChange({ value: newValue });
-  }, [webSearch]);
+    const isNativeMode = startupConfig?.webSearch?.mode === 'native';
+    const isAuthenticated = webSearchAuthData?.authenticated;
+    const hasServerSideConfig = !!startupConfig?.webSearch && !isNativeMode;
+    
+    if (isNativeMode && conversation && setConversation) {
+      setConversation(
+        tConvoUpdateSchema.parse({
+          ...conversation,
+          web_search: newValue,
+        })
+      );
+    } else {
+      webSearch.debouncedChange({ value: newValue });
+    }
+  }, [webSearch, startupConfig?.webSearch, webSearchAuthData?.authenticated, conversation, setConversation]);
 
   const handleCodeInterpreterToggle = useCallback(() => {
     const newValue = !codeInterpreter.toggleState;

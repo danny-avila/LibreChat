@@ -368,6 +368,11 @@ endpoints:
 #   firecrawlApiKey: '${FIRECRAWL_API_KEY}'
 #   firecrawlApiUrl: '${FIRECRAWL_API_URL}'
 
+# Enable native web search mode
+# webSearch:
+#  mode: 'native'  
+
+
 # Memory configuration for user memories
 # memory:
 #   # (optional) Disable memory functionality
