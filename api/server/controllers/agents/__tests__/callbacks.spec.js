@@ -45,6 +45,11 @@ describe('createToolEndCallback', () => {
   let req, res, artifactPromises, createToolEndCallback;
   let logger;
 
+  const metadata = {
+    run_id: 'run456',
+    thread_id: 'thread789',
+  };
+
   beforeEach(() => {
     jest.clearAllMocks();
 
@@ -79,11 +84,6 @@ describe('createToolEndCallback', () => {
             },
           },
         },
-      };
-
-      const metadata = {
-        run_id: 'run456',
-        thread_id: 'thread789',
       };
 
       await toolEndCallback({ output }, metadata);
@@ -122,11 +122,6 @@ describe('createToolEndCallback', () => {
         },
       };
 
-      const metadata = {
-        run_id: 'run456',
-        thread_id: 'thread789',
-      };
-
       await toolEndCallback({ output }, metadata);
       const results = await Promise.all(artifactPromises);
 
@@ -162,11 +157,6 @@ describe('createToolEndCallback', () => {
         },
       };
 
-      const metadata = {
-        run_id: 'run456',
-        thread_id: 'thread789',
-      };
-
       await toolEndCallback({ output }, metadata);
       const results = await Promise.all(artifactPromises);
 
@@ -192,11 +182,6 @@ describe('createToolEndCallback', () => {
             results: ['result1', 'result2'],
           },
         },
-      };
-
-      const metadata = {
-        run_id: 'run456',
-        thread_id: 'thread789',
       };
 
       await toolEndCallback({ output }, metadata);
@@ -230,11 +215,6 @@ describe('createToolEndCallback', () => {
         // No artifact property
       };
 
-      const metadata = {
-        run_id: 'run456',
-        thread_id: 'thread789',
-      };
-
       await toolEndCallback({ output }, metadata);
 
       expect(artifactPromises).toHaveLength(0);
@@ -253,11 +233,6 @@ describe('createToolEndCallback', () => {
             data: {},
           },
         },
-      };
-
-      const metadata = {
-        run_id: 'run456',
-        thread_id: 'thread789',
       };
 
       await toolEndCallback({ output }, metadata);
@@ -300,24 +275,14 @@ describe('createToolEndCallback', () => {
         },
       };
 
-      const metadata = {
-        run_id: 'run456',
-        thread_id: 'thread789',
-      };
-
       await toolEndCallback({ output }, metadata);
       const results = await Promise.all(artifactPromises);
 
       expect(results[0][Tools.ui_resources]).toEqual(complexData);
     });
 
-    it('should handle when output is undefined', async () => {
+    it('should ignore tool call when output is undefined', async () => {
       const toolEndCallback = createToolEndCallback({ req, res, artifactPromises });
-
-      const metadata = {
-        run_id: 'run456',
-        thread_id: 'thread789',
-      };
 
       await toolEndCallback({ output: undefined }, metadata);
 
@@ -325,13 +290,8 @@ describe('createToolEndCallback', () => {
       expect(res.write).not.toHaveBeenCalled();
     });
 
-    it('should handle when data parameter is undefined', async () => {
+    it('should ignore tool call when data parameter is undefined', async () => {
       const toolEndCallback = createToolEndCallback({ req, res, artifactPromises });
-
-      const metadata = {
-        run_id: 'run456',
-        thread_id: 'thread789',
-      };
 
       await toolEndCallback(undefined, metadata);
 

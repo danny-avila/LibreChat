@@ -1,9 +1,9 @@
 import { useMemo, useState, useEffect, useRef, useLayoutEffect } from 'react';
-import { Button } from '@librechat/client';
 import { TriangleAlert } from 'lucide-react';
 import { actionDelimiter, actionDomainSeparator, Constants } from 'librechat-data-provider';
+import { useLocalize, useProgress, useUIResources } from '~/hooks';
 import type { TAttachment } from 'librechat-data-provider';
-import { useLocalize, useProgress } from '~/hooks';
+import { Button } from '@librechat/client';
 import { AttachmentGroup } from './Parts';
 import ToolCallInfo from './ToolCallInfo';
 import ProgressText from './ProgressText';
@@ -28,6 +28,7 @@ export default function ToolCall({
   expires_at?: number;
 }) {
   const localize = useLocalize();
+  const { storeUIResourcesFromAttachments } = useUIResources();
   const [showInfo, setShowInfo] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
   const [contentHeight, setContentHeight] = useState<number | undefined>(0);
@@ -98,6 +99,13 @@ export default function ToolCall({
 
   const progress = useProgress(initialProgress);
   const cancelled = (!isSubmitting && progress < 1) || error === true;
+
+  // Store UI resources when output is available
+  useEffect(() => {
+    if (output && attachments && !isSubmitting) {
+      storeUIResourcesFromAttachments(attachments);
+    }
+  }, [output, attachments, isSubmitting, storeUIResourcesFromAttachments]);
 
   const getFinishedText = () => {
     if (cancelled) {

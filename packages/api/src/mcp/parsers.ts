@@ -1,6 +1,6 @@
-import { Tools } from 'librechat-data-provider';
-import type { UIResource } from 'librechat-data-provider';
 import type * as t from './types';
+import { uiResourcesInstructions } from './utils';
+import { Tools } from 'librechat-data-provider';
 
 const RECOGNIZED_PROVIDERS = new Set([
   'google',
@@ -146,12 +146,14 @@ export function formatToolContent(
     },
 
     resource: (item) => {
-      if (item.resource.uri.startsWith('ui://')) {
-        uiResources.push(item.resource as UIResource);
+      const isUiResource = item.resource.uri.startsWith('ui://');
+
+      if (isUiResource) {
+        uiResources.push(item.resource as t.UIResource);
       }
 
       const resourceText = [];
-      if (item.resource.text != null && item.resource.text) {
+      if (!isUiResource && item.resource.text != null && item.resource.text) {
         resourceText.push(`Resource Text: ${item.resource.text}`);
       }
       if (item.resource.uri.length) {
@@ -190,6 +192,10 @@ export function formatToolContent(
       ...(imageUrls.length && { content: imageUrls }),
       ...(uiResources.length && { [Tools.ui_resources]: { data: uiResources } }),
     };
+  }
+
+  if (uiResources.length) {
+    formattedContent.push({ type: 'text', text: uiResourcesInstructions });
   }
 
   if (CONTENT_ARRAY_PROVIDERS.has(provider)) {
