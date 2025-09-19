@@ -142,7 +142,6 @@ describe('useAgentToolPermissions', () => {
       (useGetAgentByIdQuery as jest.Mock).mockReturnValue({ data: undefined });
 
       const ephemeralAgent = {
-        [EToolResources.ocr]: true,
         [EToolResources.file_search]: true,
       };
 

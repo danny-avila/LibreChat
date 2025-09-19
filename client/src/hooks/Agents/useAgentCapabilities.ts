@@ -6,6 +6,7 @@ interface AgentCapabilitiesResult {
   actionsEnabled: boolean;
   artifactsEnabled: boolean;
   ocrEnabled: boolean;
+  contextEnabled: boolean;
   fileSearchEnabled: boolean;
   webSearchEnabled: boolean;
   codeEnabled: boolean;
@@ -34,6 +35,11 @@ export default function useAgentCapabilities(
     [capabilities],
   );
 
+  const contextEnabled = useMemo(
+    () => capabilities?.includes(AgentCapabilities.context) ?? false,
+    [capabilities],
+  );
+
   const fileSearchEnabled = useMemo(
     () => capabilities?.includes(AgentCapabilities.file_search) ?? false,
     [capabilities],
@@ -54,6 +60,7 @@ export default function useAgentCapabilities(
     codeEnabled,
     toolsEnabled,
     actionsEnabled,
+    contextEnabled,
     artifactsEnabled,
     webSearchEnabled,
     fileSearchEnabled,
