@@ -44,7 +44,7 @@ async function reinitMCPServer({
     const oauthStart =
       _oauthStart ??
       (async (authURL) => {
-        logger.info(`[MCP Reinitialize] OAuth URL received: ${authURL}`);
+        logger.info(`[MCP Reinitialize] OAuth URL received for ${serverName}`);
         oauthUrl = authURL;
         oauthRequired = true;
       });

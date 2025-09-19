@@ -26,6 +26,8 @@ export const agentToolResourcesSchema = z
     image_edit: agentBaseResourceSchema.optional(),
     execute_code: agentBaseResourceSchema.optional(),
     file_search: agentFileResourceSchema.optional(),
+    context: agentBaseResourceSchema.optional(),
+    /** @deprecated Use context instead */
     ocr: agentBaseResourceSchema.optional(),
   })
   .optional();
