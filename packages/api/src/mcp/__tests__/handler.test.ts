@@ -1,4 +1,5 @@
 import type { MCPOptions } from 'librechat-data-provider';
+import type { AuthorizationServerMetadata } from '@modelcontextprotocol/sdk/shared/auth.js';
 import { MCPOAuthHandler } from '~/mcp/oauth';
 
 jest.mock('@librechat/data-schemas', () => ({
@@ -12,11 +13,19 @@ jest.mock('@librechat/data-schemas', () => ({
 
 jest.mock('@modelcontextprotocol/sdk/client/auth.js', () => ({
   startAuthorization: jest.fn(),
+  discoverAuthorizationServerMetadata: jest.fn(),
 }));
 
-import { startAuthorization } from '@modelcontextprotocol/sdk/client/auth.js';
+import {
+  startAuthorization,
+  discoverAuthorizationServerMetadata,
+} from '@modelcontextprotocol/sdk/client/auth.js';
 
 const mockStartAuthorization = startAuthorization as jest.MockedFunction<typeof startAuthorization>;
+const mockDiscoverAuthorizationServerMetadata =
+  discoverAuthorizationServerMetadata as jest.MockedFunction<
+    typeof discoverAuthorizationServerMetadata
+  >;
 
 describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
   const mockServerName = 'test-server';
@@ -184,6 +193,432 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
             code_challenge_methods_supported: [],
           }),
         }),
+      );
+    });
+  });
+
+  describe('refreshOAuthTokens', () => {
+    const mockRefreshToken = 'refresh-token-12345';
+    const originalFetch = global.fetch;
+    const mockFetch = jest.fn() as unknown as jest.MockedFunction<typeof fetch>;
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+      global.fetch = mockFetch;
+    });
+
+    afterEach(() => {
+      mockFetch.mockClear();
+    });
+
+    afterAll(() => {
+      global.fetch = originalFetch;
+    });
+
+    describe('with stored metadata', () => {
+      it('should use client_secret_post when server only supports that method', async () => {
+        const metadata = {
+          serverName: 'test-server',
+          userId: 'user-123',
+          serverUrl: 'https://auth.example.com',
+          state: 'state-123',
+          clientInfo: {
+            client_id: 'test-client-id',
+            client_secret: 'test-client-secret',
+            grant_types: ['authorization_code', 'refresh_token'],
+            scope: 'read write',
+          },
+        };
+
+        // Mock OAuth metadata discovery
+        mockDiscoverAuthorizationServerMetadata.mockResolvedValueOnce({
+          issuer: 'https://auth.example.com',
+          authorization_endpoint: 'https://auth.example.com/oauth/authorize',
+          token_endpoint: 'https://auth.example.com/oauth/token',
+          token_endpoint_auth_methods_supported: ['client_secret_post'],
+          response_types_supported: ['code'],
+          jwks_uri: 'https://auth.example.com/.well-known/jwks.json',
+          subject_types_supported: ['public'],
+          id_token_signing_alg_values_supported: ['RS256'],
+        } as AuthorizationServerMetadata);
+
+        mockFetch.mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            access_token: 'new-access-token',
+            refresh_token: 'new-refresh-token',
+            expires_in: 3600,
+          }),
+        } as Response);
+
+        const result = await MCPOAuthHandler.refreshOAuthTokens(mockRefreshToken, metadata);
+
+        // Verify the call was made without Authorization header
+        expect(mockFetch).toHaveBeenCalledWith(
+          'https://auth.example.com/oauth/token',
+          expect.objectContaining({
+            method: 'POST',
+            headers: expect.not.objectContaining({
+              Authorization: expect.any(String),
+            }),
+          }),
+        );
+
+        // Verify the body contains client_id and client_secret
+        const callArgs = mockFetch.mock.calls[0];
+        const body = callArgs[1]?.body as URLSearchParams;
+        expect(body.toString()).toContain('client_id=test-client-id');
+        expect(body.toString()).toContain('client_secret=test-client-secret');
+
+        expect(result).toEqual({
+          access_token: 'new-access-token',
+          refresh_token: 'new-refresh-token',
+          expires_in: 3600,
+          obtained_at: expect.any(Number),
+          expires_at: expect.any(Number),
+        });
+      });
+
+      it('should use client_secret_basic when server only supports that method', async () => {
+        const metadata = {
+          serverName: 'test-server',
+          userId: 'user-123',
+          serverUrl: 'https://auth.example.com',
+          state: 'state-123',
+          clientInfo: {
+            client_id: 'test-client-id',
+            client_secret: 'test-client-secret',
+            grant_types: ['authorization_code', 'refresh_token'],
+            scope: 'read write',
+          },
+        };
+
+        // Mock OAuth metadata discovery
+        mockDiscoverAuthorizationServerMetadata.mockResolvedValueOnce({
+          issuer: 'https://auth.example.com',
+          authorization_endpoint: 'https://auth.example.com/oauth/authorize',
+          token_endpoint: 'https://auth.example.com/oauth/token',
+          token_endpoint_auth_methods_supported: ['client_secret_basic'],
+          response_types_supported: ['code'],
+          jwks_uri: 'https://auth.example.com/.well-known/jwks.json',
+          subject_types_supported: ['public'],
+          id_token_signing_alg_values_supported: ['RS256'],
+        } as AuthorizationServerMetadata);
+
+        mockFetch.mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            access_token: 'new-access-token',
+            refresh_token: 'new-refresh-token',
+            expires_in: 3600,
+          }),
+        } as Response);
+
+        await MCPOAuthHandler.refreshOAuthTokens(mockRefreshToken, metadata);
+
+        const expectedAuth = `Basic ${Buffer.from('test-client-id:test-client-secret').toString('base64')}`;
+        expect(mockFetch).toHaveBeenCalledWith(
+          'https://auth.example.com/oauth/token',
+          expect.objectContaining({
+            method: 'POST',
+            headers: expect.objectContaining({
+              Authorization: expectedAuth,
+            }),
+            body: expect.not.stringContaining('client_id='),
+          }),
+        );
+      });
+
+      it('should prefer client_secret_basic when both methods are supported', async () => {
+        const metadata = {
+          serverName: 'test-server',
+          userId: 'user-123',
+          serverUrl: 'https://auth.example.com',
+          state: 'state-123',
+          clientInfo: {
+            client_id: 'test-client-id',
+            client_secret: 'test-client-secret',
+            grant_types: ['authorization_code', 'refresh_token'],
+          },
+        };
+
+        // Mock OAuth metadata discovery
+        mockDiscoverAuthorizationServerMetadata.mockResolvedValueOnce({
+          issuer: 'https://auth.example.com',
+          authorization_endpoint: 'https://auth.example.com/oauth/authorize',
+          token_endpoint: 'https://auth.example.com/oauth/token',
+          token_endpoint_auth_methods_supported: ['client_secret_post', 'client_secret_basic'],
+          response_types_supported: ['code'],
+          jwks_uri: 'https://auth.example.com/.well-known/jwks.json',
+          subject_types_supported: ['public'],
+          id_token_signing_alg_values_supported: ['RS256'],
+        } as AuthorizationServerMetadata);
+
+        mockFetch.mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            access_token: 'new-access-token',
+            refresh_token: 'new-refresh-token',
+            expires_in: 3600,
+          }),
+        } as Response);
+
+        await MCPOAuthHandler.refreshOAuthTokens(mockRefreshToken, metadata);
+
+        const expectedAuth = `Basic ${Buffer.from('test-client-id:test-client-secret').toString('base64')}`;
+        expect(mockFetch).toHaveBeenCalledWith(
+          'https://auth.example.com/oauth/token',
+          expect.objectContaining({
+            headers: expect.objectContaining({
+              Authorization: expectedAuth,
+            }),
+          }),
+        );
+      });
+
+      it('should default to client_secret_basic when no methods are advertised', async () => {
+        const metadata = {
+          serverName: 'test-server',
+          userId: 'user-123',
+          serverUrl: 'https://auth.example.com',
+          state: 'state-123',
+          clientInfo: {
+            client_id: 'test-client-id',
+            client_secret: 'test-client-secret',
+            grant_types: ['authorization_code', 'refresh_token'],
+          },
+        };
+
+        // Mock OAuth metadata discovery with no auth methods specified
+        mockDiscoverAuthorizationServerMetadata.mockResolvedValueOnce({
+          issuer: 'https://auth.example.com',
+          authorization_endpoint: 'https://auth.example.com/oauth/authorize',
+          token_endpoint: 'https://auth.example.com/oauth/token',
+          // No token_endpoint_auth_methods_supported field
+          response_types_supported: ['code'],
+          jwks_uri: 'https://auth.example.com/.well-known/jwks.json',
+          subject_types_supported: ['public'],
+          id_token_signing_alg_values_supported: ['RS256'],
+        } as AuthorizationServerMetadata);
+
+        mockFetch.mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            access_token: 'new-access-token',
+            refresh_token: 'new-refresh-token',
+            expires_in: 3600,
+          }),
+        } as Response);
+
+        await MCPOAuthHandler.refreshOAuthTokens(mockRefreshToken, metadata);
+
+        const expectedAuth = `Basic ${Buffer.from('test-client-id:test-client-secret').toString('base64')}`;
+        expect(mockFetch).toHaveBeenCalledWith(
+          'https://auth.example.com/oauth/token',
+          expect.objectContaining({
+            headers: expect.objectContaining({
+              Authorization: expectedAuth,
+            }),
+          }),
+        );
+      });
+
+      it('should include client_id in body for public clients (no secret)', async () => {
+        const metadata = {
+          serverName: 'test-server',
+          userId: 'user-123',
+          serverUrl: 'https://auth.example.com',
+          state: 'state-123',
+          clientInfo: {
+            client_id: 'test-client-id',
+            // No client_secret - public client
+            grant_types: ['authorization_code', 'refresh_token'],
+          },
+        };
+
+        // Mock OAuth metadata discovery
+        mockDiscoverAuthorizationServerMetadata.mockResolvedValueOnce({
+          issuer: 'https://auth.example.com',
+          authorization_endpoint: 'https://auth.example.com/oauth/authorize',
+          token_endpoint: 'https://auth.example.com/oauth/token',
+          token_endpoint_auth_methods_supported: ['none'],
+          response_types_supported: ['code'],
+          jwks_uri: 'https://auth.example.com/.well-known/jwks.json',
+          subject_types_supported: ['public'],
+          id_token_signing_alg_values_supported: ['RS256'],
+        } as AuthorizationServerMetadata);
+
+        mockFetch.mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            access_token: 'new-access-token',
+            refresh_token: 'new-refresh-token',
+            expires_in: 3600,
+          }),
+        } as Response);
+
+        await MCPOAuthHandler.refreshOAuthTokens(mockRefreshToken, metadata);
+
+        // Verify the call was made without Authorization header
+        expect(mockFetch).toHaveBeenCalledWith(
+          'https://auth.example.com/oauth/token',
+          expect.objectContaining({
+            method: 'POST',
+            headers: expect.not.objectContaining({
+              Authorization: expect.any(String),
+            }),
+          }),
+        );
+
+        // Verify the body contains client_id (public client)
+        const callArgs = mockFetch.mock.calls[0];
+        const body = callArgs[1]?.body as URLSearchParams;
+        expect(body.toString()).toContain('client_id=test-client-id');
+      });
+    });
+
+    describe('with pre-configured OAuth settings', () => {
+      it('should use client_secret_post when configured to only support that method', async () => {
+        const config = {
+          token_url: 'https://auth.example.com/oauth/token',
+          client_id: 'test-client-id',
+          client_secret: 'test-client-secret',
+          token_endpoint_auth_methods_supported: ['client_secret_post'],
+        };
+
+        mockFetch.mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            access_token: 'new-access-token',
+            refresh_token: 'new-refresh-token',
+            expires_in: 3600,
+          }),
+        } as Response);
+
+        await MCPOAuthHandler.refreshOAuthTokens(
+          mockRefreshToken,
+          { serverName: 'test-server' },
+          config,
+        );
+
+        // Verify the call was made without Authorization header
+        expect(mockFetch).toHaveBeenCalledWith(
+          new URL('https://auth.example.com/oauth/token'),
+          expect.objectContaining({
+            method: 'POST',
+            headers: expect.not.objectContaining({
+              Authorization: expect.any(String),
+            }),
+          }),
+        );
+
+        // Verify the body contains client_id and client_secret
+        const callArgs = mockFetch.mock.calls[0];
+        const body = callArgs[1]?.body as URLSearchParams;
+        expect(body.toString()).toContain('client_id=test-client-id');
+        expect(body.toString()).toContain('client_secret=test-client-secret');
+      });
+
+      it('should use client_secret_basic when configured to support that method', async () => {
+        const config = {
+          token_url: 'https://auth.example.com/oauth/token',
+          client_id: 'test-client-id',
+          client_secret: 'test-client-secret',
+          token_endpoint_auth_methods_supported: ['client_secret_basic'],
+        };
+
+        mockFetch.mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            access_token: 'new-access-token',
+            refresh_token: 'new-refresh-token',
+            expires_in: 3600,
+          }),
+        } as Response);
+
+        await MCPOAuthHandler.refreshOAuthTokens(
+          mockRefreshToken,
+          { serverName: 'test-server' },
+          config,
+        );
+
+        const expectedAuth = `Basic ${Buffer.from('test-client-id:test-client-secret').toString('base64')}`;
+        expect(mockFetch).toHaveBeenCalledWith(
+          new URL('https://auth.example.com/oauth/token'),
+          expect.objectContaining({
+            method: 'POST',
+            headers: expect.objectContaining({
+              Authorization: expectedAuth,
+            }),
+            body: expect.not.stringContaining('client_id='),
+          }),
+        );
+      });
+
+      it('should default to client_secret_basic when no auth methods configured', async () => {
+        const config = {
+          token_url: 'https://auth.example.com/oauth/token',
+          client_id: 'test-client-id',
+          client_secret: 'test-client-secret',
+          // No token_endpoint_auth_methods_supported field
+        };
+
+        mockFetch.mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            access_token: 'new-access-token',
+            refresh_token: 'new-refresh-token',
+            expires_in: 3600,
+          }),
+        } as Response);
+
+        await MCPOAuthHandler.refreshOAuthTokens(
+          mockRefreshToken,
+          { serverName: 'test-server' },
+          config,
+        );
+
+        const expectedAuth = `Basic ${Buffer.from('test-client-id:test-client-secret').toString('base64')}`;
+        expect(mockFetch).toHaveBeenCalledWith(
+          new URL('https://auth.example.com/oauth/token'),
+          expect.objectContaining({
+            headers: expect.objectContaining({
+              Authorization: expectedAuth,
+            }),
+          }),
+        );
+      });
+    });
+
+    it('should throw error when refresh fails', async () => {
+      const metadata = {
+        serverName: 'test-server',
+        userId: 'user-123',
+        serverUrl: 'https://auth.example.com',
+        state: 'state-123',
+        clientInfo: {
+          client_id: 'test-client-id',
+          client_secret: 'test-client-secret',
+          grant_types: ['authorization_code', 'refresh_token'],
+        },
+      };
+
+      // Mock OAuth metadata discovery
+      mockDiscoverAuthorizationServerMetadata.mockResolvedValueOnce({
+        token_endpoint: 'https://auth.example.com/oauth/token',
+        token_endpoint_auth_methods_supported: ['client_secret_post'],
+      } as AuthorizationServerMetadata);
+
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 400,
+        statusText: 'Bad Request',
+        text: async () =>
+          '{"error":"invalid_request","error_description":"refresh_token.client_id: Field required"}',
+      } as Response);
+
+      await expect(MCPOAuthHandler.refreshOAuthTokens(mockRefreshToken, metadata)).rejects.toThrow(
+        'Token refresh failed: 400 Bad Request - {"error":"invalid_request","error_description":"refresh_token.client_id: Field required"}',
       );
     });
   });
