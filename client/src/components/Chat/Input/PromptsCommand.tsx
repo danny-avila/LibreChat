@@ -2,14 +2,13 @@ import { useState, useRef, useEffect, useMemo, memo, useCallback } from 'react';
 import { AutoSizer, List } from 'react-virtualized';
 import { Spinner, useCombobox } from '@librechat/client';
 import { useSetRecoilState, useRecoilValue } from 'recoil';
-import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { TPromptGroup } from 'librechat-data-provider';
 import type { PromptOption } from '~/common';
 import { removeCharIfLast, detectVariables } from '~/utils';
 import VariableDialog from '~/components/Prompts/Groups/VariableDialog';
 import { usePromptGroupsContext } from '~/Providers';
-import { useLocalize, useHasAccess } from '~/hooks';
 import MentionItem from './MentionItem';
+import { useLocalize } from '~/hooks';
 import store from '~/store';
 
 const commandChar = '/';
@@ -54,12 +53,7 @@ function PromptsCommand({
   submitPrompt: (textPrompt: string) => void;
 }) {
   const localize = useLocalize();
-  const hasAccess = useHasAccess({
-    permissionType: PermissionTypes.PROMPTS,
-    permission: Permissions.USE,
-  });
-
-  const { allPromptGroups } = usePromptGroupsContext();
+  const { allPromptGroups, hasAccess } = usePromptGroupsContext();
   const { data, isLoading } = allPromptGroups;
 
   const [activeIndex, setActiveIndex] = useState(0);
