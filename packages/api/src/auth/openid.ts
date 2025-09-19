@@ -18,7 +18,7 @@ export async function findOpenIDUser({
   email?: string;
   strategyName?: string;
 }): Promise<{ user: IUser | null; error: string | null; migration: boolean }> {
-  let user = await findUser({ openidId })
+  let user = await findUser({ openidId });
   if (!user && idOnTheSource) { user = await findUser({ idOnTheSource }) };
   if (!user && email) {
     user = await findUser({ email });
