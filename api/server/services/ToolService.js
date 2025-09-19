@@ -353,7 +353,12 @@ async function processRequiredActions(client, requiredActions) {
 async function loadAgentTools({ req, res, agent, signal, tool_resources, openAIApiKey }) {
   if (!agent.tools || agent.tools.length === 0) {
     return {};
-  } else if (agent.tools && agent.tools.length === 1 && agent.tools[0] === AgentCapabilities.ocr) {
+  } else if (
+    agent.tools &&
+    agent.tools.length === 1 &&
+    /** Legacy handling for `ocr` as may still exist in existing Agents */
+    (agent.tools[0] === AgentCapabilities.context || agent.tools[0] === AgentCapabilities.ocr)
+  ) {
     return {};
   }
 
