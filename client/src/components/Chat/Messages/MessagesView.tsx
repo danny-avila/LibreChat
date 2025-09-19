@@ -4,11 +4,12 @@ import { CSSTransition } from 'react-transition-group';
 import type { TMessage } from 'librechat-data-provider';
 import { useScreenshot, useMessageScrolling, useLocalize } from '~/hooks';
 import ScrollToBottom from '~/components/Messages/ScrollToBottom';
+import { MessagesViewProvider } from '~/Providers';
 import MultiMessage from './MultiMessage';
 import { cn } from '~/utils';
 import store from '~/store';
 
-export default function MessagesView({
+function MessagesViewContent({
   messagesTree: _messagesTree,
 }: {
   messagesTree?: TMessage[] | null;
@@ -90,5 +91,13 @@ export default function MessagesView({
         </div>
       </div>
     </>
+  );
+}
+
+export default function MessagesView({ messagesTree }: { messagesTree?: TMessage[] | null }) {
+  return (
+    <MessagesViewProvider>
+      <MessagesViewContent messagesTree={messagesTree} />
+    </MessagesViewProvider>
   );
 }
