@@ -9,6 +9,7 @@
   "com_agents_all_category": "All",
   "com_agents_all_description": "Browse all shared agents across all categories",
   "com_agents_by_librechat": "by LibreChat",
+  "com_agents_chat_with": "Chat with {{name}}",
   "com_agents_category_aftersales": "After Sales",
   "com_agents_category_aftersales_description": "Agents specialized in post-sale support, maintenance, and customer service",
   "com_agents_category_empty": "No agents found in the {{category}} category",
