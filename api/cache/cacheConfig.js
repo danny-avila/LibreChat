@@ -52,7 +52,7 @@ const getRedisCA = () => {
       return null;
     }
   } catch (error) {
-    logger.error(`Failed to read Redis CA certificate file '${caPath}':`, error.message);
+    logger.error(`Failed to read Redis CA certificate file '${caPath}':`, error);
     return null;
   }
 };
