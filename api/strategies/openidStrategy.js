@@ -341,6 +341,7 @@ async function setupOpenId() {
           const claims = tokenset.claims();
           const result = await findOpenIDUser({
             openidId: claims.sub,
+            idOnTheSource: claims.oid,
             email: claims.email,
             strategyName: 'openidStrategy',
             findUser,

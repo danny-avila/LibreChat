@@ -45,6 +45,7 @@ const openIdJwtLogin = (openIdConfig) => {
       try {
         const { user, error, migration } = await findOpenIDUser({
           openidId: payload?.sub,
+          idOnTheSource: payload?.oid,
           email: payload?.email,
           strategyName: 'openIdJwtLogin',
           findUser,
