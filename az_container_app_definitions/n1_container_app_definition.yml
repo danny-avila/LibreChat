@@ -147,6 +147,13 @@ properties:
             value: /app/paychex-root.pem
           - name: RAG_API_URL
             value: http://conpaichateastusn1001:8000
+          - name: RAG_USE_FULL_CONTEXT
+            value: TRUE
+          - name: CONSOLE_JSON
+            value: TRUE
+          - name: DEBUG_LOGGING
+            value: TRUE
+          
         resources:
           cpu: 1
           memory: 2Gi
