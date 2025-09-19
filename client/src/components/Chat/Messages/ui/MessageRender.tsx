@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, memo } from 'react';
+import React, { useCallback, useMemo, memo, useState } from 'react';
 import { useRecoilValue } from 'recoil';
 import { type TMessage } from 'librechat-data-provider';
 import type { TMessageProps, TMessageIcon } from '~/common';
@@ -13,6 +13,7 @@ import { MessageContext } from '~/Providers';
 import { useMessageActions } from '~/hooks';
 import { cn, logger } from '~/utils';
 import store from '~/store';
+import Timestamp from '../Timestamp';
 
 type MessageRenderProps = {
   message?: TMessage;
@@ -36,6 +37,7 @@ const MessageRender = memo(
     setCurrentEditId,
     isSubmittingFamily = false,
   }: MessageRenderProps) => {
+    const [isHovered, setIsHovered] = useState(false);
     const {
       ask,
       edit,
@@ -141,6 +143,8 @@ const MessageRender = memo(
             clickHandler();
           }
         }}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
         role={showCardRender ? 'button' : undefined}
         tabIndex={showCardRender ? 0 : undefined}
       >
@@ -160,7 +164,10 @@ const MessageRender = memo(
             msg.isCreatedByUser ? 'user-turn' : 'agent-turn',
           )}
         >
-          <h2 className={cn('select-none font-semibold', fontSize)}>{messageLabel}</h2>
+          <h2 className={cn('select-none font-semibold', fontSize)}>
+            {messageLabel}
+            <Timestamp message={msg} isVisible={isHovered} />
+          </h2>
 
           <div className="flex flex-col gap-1">
             <div className="flex max-w-full flex-grow flex-col gap-0">

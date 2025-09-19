@@ -1,5 +1,5 @@
 import { useRecoilValue } from 'recoil';
-import { useCallback, useMemo, memo } from 'react';
+import { useCallback, useMemo, memo, useState } from 'react';
 import type { TMessage, TMessageContentParts } from 'librechat-data-provider';
 import type { TMessageProps, TMessageIcon } from '~/common';
 import ContentParts from '~/components/Chat/Messages/Content/ContentParts';
@@ -11,6 +11,7 @@ import { useAttachments, useMessageActions } from '~/hooks';
 import SubRow from '~/components/Chat/Messages/SubRow';
 import { cn, logger } from '~/utils';
 import store from '~/store';
+import Timestamp from '../Chat/Messages/Timestamp';
 
 type ContentRenderProps = {
   message?: TMessage;
@@ -34,6 +35,7 @@ const ContentRender = memo(
     setCurrentEditId,
     isSubmittingFamily = false,
   }: ContentRenderProps) => {
+    const [isHovered, setIsHovered] = useState(false);
     const { attachments, searchResults } = useAttachments({
       messageId: msg?.messageId,
       attachments: msg?.attachments,
@@ -135,6 +137,8 @@ const ContentRender = memo(
           'message-render',
         )}
         onClick={clickHandler}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
         onKeyDown={(e) => {
           if ((e.key === 'Enter' || e.key === ' ') && clickHandler) {
             clickHandler();
@@ -159,7 +163,10 @@ const ContentRender = memo(
             msg.isCreatedByUser ? 'user-turn' : 'agent-turn',
           )}
         >
-          <h2 className={cn('select-none font-semibold', fontSize)}>{messageLabel}</h2>
+          <h2 className={cn('select-none font-semibold', fontSize)}>
+            {messageLabel}
+            <Timestamp message={msg} isVisible={isHovered} />
+          </h2>
 
           <div className="flex flex-col gap-1">
             <div className="flex max-w-full flex-grow flex-col gap-0">
