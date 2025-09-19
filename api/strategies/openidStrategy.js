@@ -409,12 +409,17 @@ async function setupOpenId() {
             );
           }
 
+          const email =
+            (process.env.OPENID_EMAIL_CLAIM
+              ? userinfo[process.env.OPENID_EMAIL_CLAIM]
+              : userinfo.email) ?? '';
+
           if (!user) {
             user = {
               provider: 'openid',
               openidId: userinfo.sub,
               username,
-              email: userinfo.email || '',
+              email,
               emailVerified: userinfo.email_verified || false,
               name: fullName,
               idOnTheSource: userinfo.oid,
