@@ -124,7 +124,7 @@ properties:
           - name: ALLOW_REGISTRATION
             value: FALSE
           - name: ALLOW_EMAIL_LOGIN
-            value: FALSE
+            value: TRUE
           - name: DOMAIN_CLIENT
             value: https://play.ain2a.paychex.com
           - name: DOMAIN_SERVER
