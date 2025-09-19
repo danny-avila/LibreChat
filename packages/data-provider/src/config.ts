@@ -521,6 +521,7 @@ export const interfaceSchema = z
       .optional(),
     termsOfService: termsOfServiceSchema.optional(),
     customWelcome: z.string().optional(),
+    customErrorMessage: z.string().optional(),
     mcpServers: mcpServersSchema.optional(),
     endpointsMenu: z.boolean().optional(),
     modelSelect: z.boolean().optional(),

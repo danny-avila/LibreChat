@@ -89,6 +89,7 @@ interface:
   bookmarks: true
   multiConvo: true
   agents: true
+  customErrorMessage: 'Custom Error Message'
   peoplePicker:
     users: true
     groups: true
