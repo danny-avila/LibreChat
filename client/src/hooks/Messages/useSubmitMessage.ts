@@ -64,7 +64,16 @@ export default function useSubmitMessage() {
           { overrideMessages: rootMessages },
         );
       }
-      methods.reset();
+      // Only reset the form if the textarea is empty or contains only the submitted text
+      // This prevents clearing text that the user has started typing for their next message
+      const currentText = methods.getValues('text');
+      if (currentText === data.text || currentText.trim() === '') {
+        methods.reset();
+      } else {
+        // User has already started typing something new, preserve their input
+        // Just clear the form validation state without clearing the text
+        methods.setValue('text', currentText, { shouldValidate: false });
+      }
     },
     [
       ask,
