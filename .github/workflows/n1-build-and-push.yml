@@ -5,19 +5,16 @@ env:
     ACR_HOST: ${{ vars.REGISTRY_LOGIN_SERVER_PROD }}
     ACR_USER: ${{ secrets.REGISTRY_USERNAME_PROD }}
     ACR_PASS: ${{ secrets.REGISTRY_PASSWORD_PROD }}
-    AZURE_CONFIG_DIR: ${{ github.workspace }}/.azure-cli-tmp
 
 on:
   workflow_dispatch:
-  #push:
-  #  branches:
-  #    - main
 
 jobs:
     build_and_push:
-        runs-on: [self-hosted, nonprod]
+        runs-on: paychex-ai-platform-arc-nonprod
         steps:
             - uses: actions/checkout@v3
+
             - name: Create Config File
               run: |
                 touch librechat.yaml && chmod 755 librechat.yaml |
@@ -27,9 +24,6 @@ jobs:
                 cat .paychex.dockerignore >> .dockerignore |
                 cat .dockerignore
 
-            - name: Prepare Azure CLI config dir
-              run: mkdir -p "$AZURE_CONFIG_DIR"
-              
             - name: log in to ACR
               uses: azure/docker-login@v1
               with:
@@ -53,12 +47,11 @@ jobs:
                 github_token: ${{ secrets.CROSS_REPO_PAT }}
                 ref: 'main'
 
-            - name: Update Azure Container App
+            - name: Azure CLI script
               uses: azure/cli@v2
               with:
-                azcliversion: latest
-                inlineScript: |
-                    az login --identity
+                  inlineScript: |
+                    az login --service-principal -u ${{secrets.ARC_RUNNER_SP_CLIENT_ID_NONPROD}} -p ${{secrets.ARC_RUNNER_SP_CLIENT_SECRET_NONPROD}} --tenant ${{secrets.AZURE_TENANT_ID}}
                     az account set --subscription "${{ secrets.AZURE_NONPROD_SUBSCRIPTION_ID }}"
                     az containerapp update \
                       --name conpaichateastusn1001 \
