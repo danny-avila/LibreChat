@@ -8,7 +8,7 @@ import type * as t from '~/mcp/types';
 import { ConnectionsRepository } from '~/mcp/ConnectionsRepository';
 import { detectOAuthRequirement } from '~/mcp/oauth';
 import { sanitizeUrlForLogging } from '~/mcp/utils';
-import { processMCPEnv } from '~/utils';
+import { processMCPEnv, isEnabled } from '~/utils';
 import { CONSTANTS } from '~/mcp/enum';
 
 /**
@@ -158,8 +158,13 @@ export class MCPServersRegistry {
   private async fetchServerInstructions(serverName: string): Promise<void> {
     const config = this.parsedConfigs[serverName];
     if (!config.serverInstructions) return;
-    if (typeof config.serverInstructions === 'string') return;
 
+    // If it's a string that's not "true", it's a custom instruction
+    if (typeof config.serverInstructions === 'string' && !isEnabled(config.serverInstructions)) {
+      return;
+    }
+
+    // Fetch from server if true (boolean) or "true" (string)
     const conn = await this.connections.get(serverName);
     config.serverInstructions = conn.client.getInstructions();
     if (!config.serverInstructions) {
