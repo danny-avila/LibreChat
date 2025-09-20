@@ -98,12 +98,6 @@ if (typeof window !== 'undefined') {
       if (originalRequest.url?.includes('/api/auth/logout') === true) {
         return Promise.reject(error);
       }
-      if (originalRequest.url?.includes('/api/auth/refresh') === true) {
-        // Refresh token itself failed - redirect to login
-        console.log('Refresh token request failed, redirecting to login...');
-        window.location.href = '/login';
-        return Promise.reject(error);
-      }
 
       if (error.response.status === 401 && !originalRequest._retry) {
         console.warn('401 error, refreshing token');
@@ -124,7 +118,10 @@ if (typeof window !== 'undefined') {
         isRefreshing = true;
 
         try {
-          const response = await refreshToken();
+          const response = await refreshToken(
+            // Handle edge case where we get a blank screen if the initial 401 error is from a refresh token request
+            originalRequest.url?.includes('api/auth/refresh') === true ? true : false,
+          );
 
           const token = response?.token ?? '';
 
