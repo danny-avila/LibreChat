@@ -6,9 +6,9 @@ import { useEditorContext, useArtifactsContext } from '~/Providers';
 import useArtifactProps from '~/hooks/Artifacts/useArtifactProps';
 import { useAutoScroll } from '~/hooks/Artifacts/useAutoScroll';
 import { ArtifactCodeEditor } from './ArtifactCodeEditor';
-import { ArtifactMarkdown } from './ArtifactMarkdown';
 import { useGetStartupConfig } from '~/data-provider';
 import { ArtifactPreview } from './ArtifactPreview';
+import { MermaidMarkdown } from './MermaidMarkdown';
 import { cn } from '~/utils';
 
 export default function ArtifactTabs({
@@ -46,7 +46,7 @@ export default function ArtifactTabs({
         className={cn('flex-grow overflow-auto')}
       >
         {isMermaid ? (
-          <ArtifactMarkdown artifact={artifact} isSubmitting={isSubmitting} />
+          <MermaidMarkdown content={content} isSubmitting={isSubmitting} />
         ) : (
           <ArtifactCodeEditor
             files={files}
