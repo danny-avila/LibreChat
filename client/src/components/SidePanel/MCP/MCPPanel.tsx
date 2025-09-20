@@ -12,7 +12,10 @@ import { useLocalize, useMCPConnectionStatus } from '~/hooks';
 import { useGetStartupConfig } from '~/data-provider';
 import MCPPanelSkeleton from './MCPPanelSkeleton';
 
-const POLL_FOR_CONNECTION_STATUS_INTERVAL = 2_000; // ms
+const MIN_POLL_INTERVAL = 5_000; // 5 seconds
+const MAX_POLL_INTERVAL = 30_000; // 30 seconds
+const POLL_BACKOFF_FACTOR = 1.5;
+const MAX_POLL_ATTEMPTS = 20; // Stop polling after 20 attempts
 
 function MCPPanelContent() {
   const localize = useLocalize();
@@ -27,6 +30,8 @@ function MCPPanelContent() {
   const [selectedServerNameForEditing, setSelectedServerNameForEditing] = useState<string | null>(
     null,
   );
+  const [pollAttempts, setPollAttempts] = useState(0);
+  const [currentPollInterval, setCurrentPollInterval] = useState(MIN_POLL_INTERVAL);
 
   // Check if any connections are in 'connecting' state
   const hasConnectingServers = useMemo(() => {
@@ -38,18 +43,43 @@ function MCPPanelContent() {
     );
   }, [connectionStatus]);
 
-  // Set up polling when servers are connecting
+  // Reset poll attempts when no servers are connecting
   useEffect(() => {
     if (!hasConnectingServers) {
+      setPollAttempts(0);
+      setCurrentPollInterval(MIN_POLL_INTERVAL);
+    }
+  }, [hasConnectingServers]);
+
+  // Set up polling with exponential backoff when servers are connecting
+  useEffect(() => {
+    if (!hasConnectingServers || pollAttempts >= MAX_POLL_ATTEMPTS) {
+      if (pollAttempts >= MAX_POLL_ATTEMPTS && hasConnectingServers) {
+        console.warn('[MCP Panel] Max polling attempts reached, stopping polling');
+        // Mark any still-connecting servers as timed out
+        if (connectionStatus) {
+          Object.entries(connectionStatus).forEach(([serverName, status]) => {
+            if (status?.connectionState === 'connecting') {
+              console.error(`[MCP Panel] Server ${serverName} connection timeout after ${MAX_POLL_ATTEMPTS} attempts`);
+            }
+          });
+        }
+      }
       return;
     }
 
-    const intervalId = setInterval(() => {
+    const timeoutId = setTimeout(() => {
       queryClient.invalidateQueries([QueryKeys.mcpConnectionStatus]);
-    }, POLL_FOR_CONNECTION_STATUS_INTERVAL);
+      
+      // Increment attempts and calculate next interval with exponential backoff
+      setPollAttempts((prev) => prev + 1);
+      setCurrentPollInterval((prev) => 
+        Math.min(prev * POLL_BACKOFF_FACTOR, MAX_POLL_INTERVAL)
+      );
+    }, currentPollInterval);
 
-    return () => clearInterval(intervalId);
-  }, [hasConnectingServers, queryClient]);
+    return () => clearTimeout(timeoutId);
+  }, [hasConnectingServers, queryClient, pollAttempts, currentPollInterval, connectionStatus]);
 
   const updateUserPluginsMutation = useUpdateUserPluginsMutation({
     onSuccess: async () => {
