@@ -1,6 +1,7 @@
-import fs from 'fs';
 import axios from 'axios';
 import FormData from 'form-data';
+import { createReadStream } from 'fs';
+import { stat, readFile } from 'fs/promises';
 import { logger } from '@librechat/data-schemas';
 import { FileSources } from 'librechat-data-provider';
 import type { Request as ServerRequest } from 'express';
@@ -39,17 +40,17 @@ export async function parseText({
 
   try {
     const healthResponse = await axios.get(`${process.env.RAG_API_URL}/health`, {
-      timeout: 5000,
+      timeout: 10000,
     });
     if (healthResponse?.statusText !== 'OK' && healthResponse?.status !== 200) {
       logger.debug('[parseText] RAG API health check failed, falling back to native parsing');
       return parseTextNative(file);
     }
   } catch (healthError) {
-    logger.debug(
-      '[parseText] RAG API health check failed, falling back to native parsing',
-      healthError,
-    );
+    logAxiosError({
+      message: '[parseText] RAG API health check failed, falling back to native parsing:',
+      error: healthError,
+    });
     return parseTextNative(file);
   }
 
@@ -57,7 +58,7 @@ export async function parseText({
     const jwtToken = generateShortLivedToken(userId);
     const formData = new FormData();
     formData.append('file_id', file_id);
-    formData.append('file', fs.createReadStream(file.path));
+    formData.append('file', createReadStream(file.path));
 
     const formHeaders = formData.getHeaders();
 
@@ -83,17 +84,10 @@ export async function parseText({
       source: FileSources.text,
     };
   } catch (error) {
-    if (axios.isAxiosError(error) && error.response) {
-      logAxiosError({
-        message: '[parseText] RAG API text parsing failed, falling back to native parsing',
-        error,
-      });
-    } else {
-      logger.error(
-        '[parseText] RAG API text parsing failed, falling back to native parsing',
-        error,
-      );
-    }
+    logAxiosError({
+      message: '[parseText] RAG API text parsing failed, falling back to native parsing',
+      error,
+    });
     return parseTextNative(file);
   }
 }
@@ -104,22 +98,34 @@ export async function parseText({
  * @param file - The uploaded file
  * @returns
  */
-export function parseTextNative(file: Express.Multer.File): {
+export async function parseTextNative(file: Express.Multer.File): Promise<{
   text: string;
   bytes: number;
   source: string;
-} {
-  try {
-    const text = fs.readFileSync(file.path, 'utf8');
-    const bytes = Buffer.byteLength(text, 'utf8');
+}> {
+  const bytes = file.size || (await stat(file.path)).size;
+  if (bytes > 10 * 1024 * 1024) {
+    const chunks: string[] = [];
+    const stream = createReadStream(file.path, {
+      encoding: 'utf8',
+      highWaterMark: 64 * 1024,
+    });
+
+    for await (const chunk of stream) {
+      chunks.push(chunk);
+    }
 
     return {
-      text,
+      text: chunks.join(''),
       bytes,
       source: FileSources.text,
     };
-  } catch (error) {
-    logger.error('[parseTextNative] Failed to parse file:', error);
-    throw new Error(`Failed to read file as text: ${error}`);
   }
+
+  const text = await readFile(file.path, 'utf8');
+  return {
+    text,
+    bytes,
+    source: FileSources.text,
+  };
 }
