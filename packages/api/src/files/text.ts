@@ -5,14 +5,15 @@ import { logger } from '@librechat/data-schemas';
 import { FileSources } from 'librechat-data-provider';
 import type { Request as ServerRequest } from 'express';
 import { generateShortLivedToken } from '~/crypto/jwt';
+import { logAxiosError } from '~/utils';
 
 /**
  * Attempts to parse text using RAG API, falls back to native text parsing
- * @param {Object} params - The parameters object
- * @param {Express.Request} params.req - The Express request object
- * @param {Express.Multer.File} params.file - The uploaded file
- * @param {string} params.file_id - The file ID
- * @returns {Promise<{text: string, bytes: number, source: string}>}
+ * @param params - The parameters object
+ * @param params.req - The Express request object
+ * @param params.file - The uploaded file
+ * @param params.file_id - The file ID
+ * @returns
  */
 export async function parseText({
   req,
@@ -30,7 +31,8 @@ export async function parseText({
     return parseTextNative(file);
   }
 
-  if (!req.user?.id) {
+  const userId = req.user?.id;
+  if (!userId) {
     logger.debug('[parseText] No user ID provided, falling back to native text parsing');
     return parseTextNative(file);
   }
@@ -52,7 +54,7 @@ export async function parseText({
   }
 
   try {
-    const jwtToken = generateShortLivedToken(req.user.id);
+    const jwtToken = generateShortLivedToken(userId);
     const formData = new FormData();
     formData.append('file_id', file_id);
     formData.append('file', fs.createReadStream(file.path));
@@ -69,7 +71,7 @@ export async function parseText({
     });
 
     const responseData = response.data;
-    logger.debug('[parseText] Response from RAG API', responseData);
+    logger.debug(`[parseText] RAG API completed successfully (${response.status})`);
 
     if (!('text' in responseData)) {
       throw new Error('RAG API did not return parsed text');
@@ -81,7 +83,17 @@ export async function parseText({
       source: FileSources.text,
     };
   } catch (error) {
-    logger.warn('[parseText] RAG API text parsing failed, falling back to native parsing', error);
+    if (axios.isAxiosError(error) && error.response) {
+      logAxiosError({
+        message: '[parseText] RAG API text parsing failed, falling back to native parsing',
+        error,
+      });
+    } else {
+      logger.error(
+        '[parseText] RAG API text parsing failed, falling back to native parsing',
+        error,
+      );
+    }
     return parseTextNative(file);
   }
 }
@@ -89,8 +101,8 @@ export async function parseText({
 /**
  * Native JavaScript text parsing fallback
  * Simple text file reading - complex formats handled by RAG API
- * @param {Express.Multer.File} file - The uploaded file
- * @returns {{text: string, bytes: number, source: string}}
+ * @param file - The uploaded file
+ * @returns
  */
 export function parseTextNative(file: Express.Multer.File): {
   text: string;
@@ -107,7 +119,7 @@ export function parseTextNative(file: Express.Multer.File): {
       source: FileSources.text,
     };
   } catch (error) {
-    console.error('[parseTextNative] Failed to parse file:', error);
+    logger.error('[parseTextNative] Failed to parse file:', error);
     throw new Error(`Failed to read file as text: ${error}`);
   }
 }
