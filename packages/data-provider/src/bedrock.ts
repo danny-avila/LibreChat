@@ -37,6 +37,7 @@ export const bedrockInputSchema = s.tConversationSchema
     stop: true,
     thinking: true,
     thinkingBudget: true,
+    promptCache: true,
     /* Catch-all fields */
     topK: true,
     additionalModelRequestFields: true,
@@ -78,6 +79,7 @@ export const bedrockInputParser = s.tConversationSchema
     stop: true,
     thinking: true,
     thinkingBudget: true,
+    promptCache: true,
     /* Catch-all fields */
     topK: true,
     additionalModelRequestFields: true,
@@ -100,6 +102,7 @@ export const bedrockInputParser = s.tConversationSchema
       'temperature',
       'topP',
       'stop',
+      'promptCache',
     ];
 
     const additionalFields: Record<string, unknown> = {};
