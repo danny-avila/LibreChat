@@ -137,5 +137,4 @@ helm/**/.values.yaml
 /.openai/
 /.tabnine/
 /.codeium
-CLAUDE.md
 *.local.md
