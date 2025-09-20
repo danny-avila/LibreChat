@@ -290,5 +290,33 @@ describe('OAuthReconnectionManager', () => {
       expect(reconnectionTracker.isActive(userId, 'server1')).toBe(false);
       expect(mockMCPManager.disconnectUserConnection).toHaveBeenCalledWith(userId, 'server1');
     });
+
+    it('should handle MCPManager not available gracefully', async () => {
+      const userId = 'user-123';
+
+      // Reset singleton first
+      (OAuthReconnectionManager as unknown as { instance: null }).instance = null;
+
+      // Mock MCPManager.getInstance to throw (simulating no MCP manager available)
+      (MCPManager.getInstance as jest.Mock).mockImplementation(() => {
+        throw new Error('MCPManager has not been initialized.');
+      });
+
+      // Create a reconnection manager without MCPManager available
+      const reconnectionTracker = new OAuthReconnectionTracker();
+      const reconnectionManagerWithoutMCP = await OAuthReconnectionManager.createInstance(
+        flowManager,
+        tokenMethods,
+        reconnectionTracker,
+      );
+
+      // Verify that the method does not throw and completes successfully
+      await expect(reconnectionManagerWithoutMCP.reconnectServers(userId)).resolves.toBeUndefined();
+
+      // Verify that the method returns early without attempting any reconnections
+      expect(tokenMethods.findToken).not.toHaveBeenCalled();
+      expect(mockMCPManager.getUserConnection).not.toHaveBeenCalled();
+      expect(mockMCPManager.disconnectUserConnection).not.toHaveBeenCalled();
+    });
   });
 });
