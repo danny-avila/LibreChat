@@ -53,7 +53,7 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
       showToast({ message: localize('com_nav_mcp_vars_updated'), status: 'success' });
 
       await Promise.all([
-        queryClient.refetchQueries([QueryKeys.tools]),
+        queryClient.refetchQueries([QueryKeys.mcpTools]),
         queryClient.refetchQueries([QueryKeys.mcpAuthValues]),
         queryClient.refetchQueries([QueryKeys.mcpConnectionStatus]),
       ]);
@@ -170,7 +170,7 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
               setMCPValues([...currentValues, serverName]);
             }
 
-            await queryClient.invalidateQueries([QueryKeys.tools]);
+            await queryClient.invalidateQueries([QueryKeys.mcpTools]);
 
             // This delay is to ensure UI has updated with new connection status before cleanup
             // Otherwise servers will show as disconnected for a second after OAuth flow completes

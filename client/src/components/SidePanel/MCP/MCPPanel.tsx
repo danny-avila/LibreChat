@@ -56,7 +56,7 @@ function MCPPanelContent() {
       showToast({ message: localize('com_nav_mcp_vars_updated'), status: 'success' });
 
       await Promise.all([
-        queryClient.refetchQueries([QueryKeys.tools]),
+        queryClient.refetchQueries([QueryKeys.mcpTools]),
         queryClient.refetchQueries([QueryKeys.mcpAuthValues]),
         queryClient.refetchQueries([QueryKeys.mcpConnectionStatus]),
       ]);

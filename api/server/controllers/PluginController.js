@@ -1,16 +1,9 @@
 const { logger } = require('@librechat/data-schemas');
-const { CacheKeys, Constants } = require('librechat-data-provider');
-const {
-  getToolkitKey,
-  checkPluginAuth,
-  filterUniquePlugins,
-  convertMCPToolToPlugin,
-  convertMCPToolsToPlugins,
-} = require('@librechat/api');
-const { getCachedTools, setCachedTools, mergeUserTools } = require('~/server/services/Config');
+const { CacheKeys } = require('librechat-data-provider');
+const { getToolkitKey, checkPluginAuth, filterUniquePlugins } = require('@librechat/api');
+const { getCachedTools, setCachedTools } = require('~/server/services/Config');
 const { availableTools, toolkits } = require('~/app/clients/tools');
 const { getAppConfig } = require('~/server/services/Config');
-const { getMCPManager } = require('~/config');
 const { getLogStores } = require('~/cache');
 
 const getAvailablePluginsController = async (req, res) => {
@@ -72,68 +65,26 @@ const getAvailableTools = async (req, res) => {
     }
     const cache = getLogStores(CacheKeys.CONFIG_STORE);
     const cachedToolsArray = await cache.get(CacheKeys.TOOLS);
-    const cachedUserTools = await getCachedTools({ userId });
 
     const appConfig = req.config ?? (await getAppConfig({ role: req.user?.role }));
 
-    /** @type {TPlugin[]} */
-    let mcpPlugins;
-    if (appConfig?.mcpConfig) {
-      const mcpManager = getMCPManager();
-      mcpPlugins =
-        cachedUserTools != null
-          ? convertMCPToolsToPlugins({ functionTools: cachedUserTools, mcpManager })
-          : undefined;
-    }
-
-    if (
-      cachedToolsArray != null &&
-      (appConfig?.mcpConfig != null ? mcpPlugins != null && mcpPlugins.length > 0 : true)
-    ) {
-      const dedupedTools = filterUniquePlugins([...(mcpPlugins ?? []), ...cachedToolsArray]);
-      res.status(200).json(dedupedTools);
+    // Return early if we have cached tools
+    if (cachedToolsArray != null) {
+      res.status(200).json(cachedToolsArray);
       return;
     }
 
     /** @type {Record<string, FunctionTool> | null} Get tool definitions to filter which tools are actually available */
-    let toolDefinitions = await getCachedTools({ includeGlobal: true });
-    let prelimCachedTools;
+    let toolDefinitions = await getCachedTools();
 
     if (toolDefinitions == null && appConfig?.availableTools != null) {
       logger.warn('[getAvailableTools] Tool cache was empty, re-initializing from app config');
-      await setCachedTools(appConfig.availableTools, { isGlobal: true });
+      await setCachedTools(appConfig.availableTools);
       toolDefinitions = appConfig.availableTools;
     }
 
     /** @type {import('@librechat/api').LCManifestTool[]} */
     let pluginManifest = availableTools;
-
-    if (appConfig?.mcpConfig != null) {
-      try {
-        const mcpManager = getMCPManager();
-        const mcpTools = await mcpManager.getAllToolFunctions(userId);
-        prelimCachedTools = prelimCachedTools ?? {};
-        for (const [toolKey, toolData] of Object.entries(mcpTools)) {
-          const plugin = convertMCPToolToPlugin({
-            toolKey,
-            toolData,
-            mcpManager,
-          });
-          if (plugin) {
-            pluginManifest.push(plugin);
-          }
-          prelimCachedTools[toolKey] = toolData;
-        }
-        await mergeUserTools({ userId, cachedUserTools, userTools: prelimCachedTools });
-      } catch (error) {
-        logger.error(
-          '[getAvailableTools] Error loading MCP Tools, servers may still be initializing:',
-          error,
-        );
-      }
-    } else if (prelimCachedTools != null) {
-      await setCachedTools(prelimCachedTools, { isGlobal: true });
-    }
 
     /** @type {TPlugin[]} Deduplicate and authenticate plugins */
     const uniquePlugins = filterUniquePlugins(pluginManifest);
@@ -145,7 +96,7 @@ const getAvailableTools = async (req, res) => {
       }
     });
 
-    /** Filter plugins based on availability and add MCP-specific auth config */
+    /** Filter plugins based on availability */
     const toolsOutput = [];
     for (const plugin of authenticatedPlugins) {
       const isToolDefined = toolDefinitions?.[plugin.pluginKey] !== undefined;
@@ -159,39 +110,13 @@ const getAvailableTools = async (req, res) => {
         continue;
       }
 
-      const toolToAdd = { ...plugin };
-
-      if (plugin.pluginKey.includes(Constants.mcp_delimiter)) {
-        const parts = plugin.pluginKey.split(Constants.mcp_delimiter);
-        const serverName = parts[parts.length - 1];
-        const serverConfig = appConfig?.mcpConfig?.[serverName];
-
-        if (serverConfig?.customUserVars) {
-          const customVarKeys = Object.keys(serverConfig.customUserVars);
-          if (customVarKeys.length === 0) {
-            toolToAdd.authConfig = [];
-            toolToAdd.authenticated = true;
-          } else {
-            toolToAdd.authConfig = Object.entries(serverConfig.customUserVars).map(
-              ([key, value]) => ({
-                authField: key,
-                label: value.title || key,
-                description: value.description || '',
-              }),
-            );
-            toolToAdd.authenticated = false;
-          }
-        }
-      }
-
-      toolsOutput.push(toolToAdd);
+      toolsOutput.push(plugin);
     }
 
     const finalTools = filterUniquePlugins(toolsOutput);
     await cache.set(CacheKeys.TOOLS, finalTools);
 
-    const dedupedTools = filterUniquePlugins([...(mcpPlugins ?? []), ...finalTools]);
-    res.status(200).json(dedupedTools);
+    res.status(200).json(finalTools);
   } catch (error) {
     logger.error('[getAvailableTools]', error);
     res.status(500).json({ message: error.message });
