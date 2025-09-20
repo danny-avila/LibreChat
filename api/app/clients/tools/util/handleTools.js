@@ -26,6 +26,7 @@ const {
   StructuredWolfram,
   createYouTubeTools,
   TavilySearchResults,
+  GeminiImageGen,
   createOpenAIImageTools,
 } = require('../');
 const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
@@ -171,6 +172,7 @@ const loadTools = async ({
     'azure-ai-search': StructuredACS,
     traversaal_search: TraversaalSearch,
     tavily_search_results_json: TavilySearchResults,
+    gemini_image_gen: GeminiImageGen,
   };
 
   const customConstructors = {
@@ -223,6 +225,38 @@ const loadTools = async ({
         imageFiles,
       });
     },
+    gemini_image_gen: async (toolContextMap) => {
+      const authFields = getAuthFields('gemini_image_gen');
+      const authValues = await loadAuthValues({ userId: user, authFields });
+      const imageFiles = options.tool_resources?.[EToolResources.image_edit]?.files ?? [];
+      let toolContext = '';
+      for (let i = 0; i < imageFiles.length; i++) {
+        const file = imageFiles[i];
+        if (!file) {
+          continue;
+        }
+        if (i === 0) {
+          toolContext =
+            'Image files provided in this request (their image IDs listed in order of appearance) available for image context:';
+        }
+        toolContext += `\n\t- ${file.file_id}`;
+        if (i === imageFiles.length - 1) {
+          toolContext += `\n\nInclude any you need in the \`image_ids\` array when calling \`gemini_image_gen\` to use them as visual context for generation. You may also include previously referenced or generated image IDs.`;
+        }
+      }
+      if (toolContext) {
+        toolContextMap.gemini_image_gen = toolContext;
+      }
+      return new GeminiImageGen({
+        ...authValues,
+        isAgent: !!agent,
+        req: options.req,
+        imageFiles,
+        processFileURL: options.processFileURL,
+        userId: user,
+        fileStrategy: options.fileStrategy,
+      });
+    },
   };
 
   const requestedTools = {};
@@ -246,6 +280,7 @@ const loadTools = async ({
     dalle: imageGenOptions,
     'stable-diffusion': imageGenOptions,
     serpapi: { location: 'Austin,Texas,United States', hl: 'en', gl: 'us' },
+    gemini_image_gen: imageGenOptions,
   };
 
   /** @type {Record<string, string>} */
