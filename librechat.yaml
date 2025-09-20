@@ -1,0 +1,200 @@
+# For more information, see the Configuration Guide:
+# https://www.librechat.ai/docs/configuration/librechat_yaml
+
+# Configuration version (required)
+version: 1.2.1
+
+# Cache settings: Set to true to enable caching
+cache: true
+
+# File strategy s3/firebase
+# fileStrategy: "s3"
+
+# Custom interface configuration
+interface:
+  customWelcome: "Welcome to Woodland! Enjoy your experience."
+  prompts: true
+  runCode: false 
+  webSearch: false 
+  fileSearch: false
+  modelSelect: true
+  sidePanel : true # Enable/disable the side panel (default: false)
+  # MCP Servers UI configuration
+  mcpServers:
+    everything: 
+       url: http://localhost:3001/sse
+  # Ensure Agent/Assistants UI elements are enabled where supported
+  agents: true
+  # Enable/disable file search as a chatarea selection (default: true)
+  # Note: This setting does not disable the Agents File Search Capability.
+  # To disable the Agents Capability, see the Agents Endpoint configuration instead.
+
+  # Temporary chat retention period in hours (default: 720, min: 1, max: 8760)
+  # temporaryChatRetention: 1
+
+# Limit the selector to only show the Agents endpoint
+#modelSpecs:
+  #addedEndpoints:
+    #- agents
+
+# Example Cloudflare turnstile (optional)
+#turnstile:
+#  siteKey: "your-site-key-here"
+#  options:
+#    language: "auto"    # "auto" or an ISO 639-1 language code (e.g. en)
+#    size: "normal"      # Options: "normal", "compact", "flexible", or "invisible"
+
+# Example Registration Object Structure (optional)
+#registration:
+ # socialLogins: ['github', 'google', 'discord', 'openid', 'facebook', 'apple', 'saml']
+  # allowedDomains:
+  # - "gmail.com"
+
+
+# Example Balance settings
+balance:
+   enabled: false
+   startBalance: 1000
+   autoRefillEnabled: false
+   refillIntervalValue: 30
+   refillIntervalUnit: 'seconds'
+   refillAmount: 1000
+
+# speech:
+#   tts:
+#     openai:
+#       url: ''
+#       apiKey: '${TTS_API_KEY}'
+#       model: ''
+#       voices: ['']
+
+#
+#   stt:
+#     openai:
+#       url: ''
+#       apiKey: '${STT_API_KEY}'
+#       model: ''
+
+# rateLimits:
+#   fileUploads:
+#     ipMax: 100
+#     ipWindowInMinutes: 60  # Rate limit window for file uploads per IP
+#     userMax: 50
+#     userWindowInMinutes: 60  # Rate limit window for file uploads per user
+#   conversationsImport:
+#     ipMax: 100
+#     ipWindowInMinutes: 60  # Rate limit window for conversation imports per IP
+#     userMax: 50
+#     userWindowInMinutes: 60  # Rate limit window for conversation imports per user
+
+# Example Actions Object Structure
+actions:
+  allowedDomains:
+    - "search-woodland.search.windows.net"
+    - "http://127.0.0.1:8005"
+    - "http://localhost:5000"
+    - "http://localhost:5050"
+    - "http://127.0.0.1:5050"
+# Example MCP Servers Object Structure
+
+#   puppeteer:
+#     type: stdio
+#     command: npx
+#     args:
+#       - -y
+#       - "@modelcontextprotocol/server-puppeteer"
+#     timeout: 300000  # 5 minutes timeout for this server
+#   filesystem:
+#     # type: stdio
+#     command: npx
+#     args:
+#       - -y
+#       - "@modelcontextprotocol/server-filesystem"
+#       - /home/user/LibreChat/
+#     iconPath: /home/user/LibreChat/client/public/assets/logo.svg
+#   mcp-obsidian:
+#     command: npx
+#     args:
+#       - -y
+#       - "mcp-obsidian"
+#       - /path/to/obsidian/vault
+
+# Definition of custom endpoints
+
+endpoints:
+  azureOpenAI:
+    groups:
+    - group: "rg-woodland-ai-gpt"
+      apiKey: "8mugTjYozcXx4xf4GWE5KN1jJOG7ptwJvDCJxcO1OLnojZ2vI2NlJQQJ99BHACYeBjFXJ3w3AAAAACOGfPtz"  # arbitrary env var name
+      baseURL: "https://ai-hubwppai326115464401.services.ai.azure.com/models/"
+      version: "2024-05-01-preview" # Optional: specify API version
+      serverless: true # Optional: set to true if using serverless deployment
+      dropParams: ["user"]
+      forcePrompt: false
+      models:
+        # Must match the deployment name of the model
+         gpt-4o-mini: true
+         mistral-small-2503 : true
+         Ministral-3B : true
+
+  assistants:
+    disableBuilder: false  # enable Assistants Builder UI
+    pollIntervalMs: 3000   # polling for assistant updates
+    timeoutMs: 180000      # operations timeout
+    # Only show assistants created by this instance (set to true if you want to scope)
+    # privateAssistants: false
+    # Models that support retrieval (optional)
+    retrievalModels: ["gpt-4o-mini"]
+    # Assistant Capabilities available to all users
+    capabilities: ["code_interpreter", "retrieval", "actions", "tools", "image_vision"]
+
+  agents:
+    recursionLimit: 50
+    maxRecursionLimit: 100
+    disableBuilder: false
+    # Limit global Agent capabilities; individual Agents can still narrow these down
+    capabilities: ["actions", "tools"]
+    minRelevanceScore: 0.7
+ 
+# fileConfig:
+#   endpoints:
+#     assistants:
+#       fileLimit: 5
+#       fileSizeLimit: 10  # Maximum size for an individual file in MB
+#       totalSizeLimit: 50  # Maximum total size for all files in a single request in MB
+#       supportedMimeTypes:
+#         - "image/.*"
+#         - "application/pdf"
+#     openAI:
+#       disabled: true  # Disables file uploading to the OpenAI endpoint
+#     default:
+#       totalSizeLimit: 20
+#     YourCustomEndpointName:
+#       fileLimit: 2
+#       fileSizeLimit: 5
+#   serverFileSizeLimit: 100  # Global server file size limit in MB
+#   avatarSizeLimit: 2  # Limit for user avatar image size in MB
+#   imageGeneration: # Image Gen settings, either percentage or px
+#     percentage: 100
+#     px: 1024
+#   # Client-side image resizing to prevent upload errors
+#   clientImageResize:
+#     enabled: false  # Enable/disable client-side image resizing (default: false)
+#     maxWidth: 1900  # Maximum width for resized images (default: 1900)
+#     maxHeight: 1900  # Maximum height for resized images (default: 1900)
+#     quality: 0.92  # JPEG quality for compression (0.0-1.0, default: 0.92)
+# # See the Custom Configuration Guide for more information on Assistants Config:
+# # https://www.librechat.ai/docs/configuration/librechat_yaml/object_structure/assistants_endpoint
+
+# Memory configuration for user memories
+memory:
+  disabled: true
+  validKeys: ["preferences", "work_info", "personal_info", "skills", "interests", "context"]
+  tokenLimit: 10000
+  personalize: true
+  agent:
+    provider: "azureOpenAI"
+    model: "gpt-4o-mini"
+    instructions: "You are a memory management assistant. Store and manage user information accurately."
+    model_parameters:
+      temperature: 0.1

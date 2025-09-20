@@ -12,6 +12,11 @@ const GoogleSearchAPI = require('./structured/GoogleSearch');
 const TraversaalSearch = require('./structured/TraversaalSearch');
 const createOpenAIImageTools = require('./structured/OpenAIImageTools');
 const TavilySearchResults = require('./structured/TavilySearchResults');
+const StructuredWPPACS = require('./structured/WoodlandAISearch');
+const StructuredWPPACSTractor = require('./structured/WoodlandAISearchTractor');
+const StructuredWPPACSCases = require('./structured/WoodlandAISearchCases');
+const StructuredWPPACSAll = require('./structured/WoodlandAISearchAll');
+const StructuredWPPACSGeneral = require('./structured/WoodlandAISearchGeneral');
 
 module.exports = {
   ...manifest,
@@ -27,4 +32,9 @@ module.exports = {
   createYouTubeTools,
   TavilySearchResults,
   createOpenAIImageTools,
+  StructuredWPPACS,
+  StructuredWPPACSTractor,
+  StructuredWPPACSCases,
+  StructuredWPPACSAll
+  ,StructuredWPPACSGeneral
 };
