@@ -1,5 +1,6 @@
 import React from 'react';
-import { SettingsIcon, AlertTriangle, Loader2, KeyRound, PlugZap, X } from 'lucide-react';
+import { Spinner } from '@librechat/client';
+import { SettingsIcon, AlertTriangle, KeyRound, PlugZap, X } from 'lucide-react';
 import type { MCPServerStatus, TPlugin } from 'librechat-data-provider';
 import { useLocalize } from '~/hooks';
 
@@ -96,12 +97,12 @@ function InitializingStatusIcon({ serverName, onCancel, canCancel }: Initializin
       <button
         type="button"
         onClick={onCancel}
-        className="flex h-6 w-6 items-center justify-center rounded p-1 hover:bg-red-100 dark:hover:bg-red-900/20"
+        className="group flex h-6 w-6 items-center justify-center rounded p-1 hover:bg-red-100 dark:hover:bg-red-900/20"
         aria-label={localize('com_ui_cancel')}
         title={localize('com_ui_cancel')}
       >
-        <div className="group relative h-4 w-4">
-          <Loader2 className="h-4 w-4 animate-spin text-blue-500 group-hover:opacity-0" />
+        <div className="relative h-4 w-4">
+          <Spinner className="h-4 w-4 group-hover:opacity-0" />
           <X className="absolute inset-0 h-4 w-4 text-red-500 opacity-0 group-hover:opacity-100" />
         </div>
       </button>
@@ -110,8 +111,8 @@ function InitializingStatusIcon({ serverName, onCancel, canCancel }: Initializin
 
   return (
     <div className="flex h-6 w-6 items-center justify-center rounded p-1">
-      <Loader2
-        className="h-4 w-4 animate-spin text-blue-500"
+      <Spinner
+        className="h-4 w-4"
         aria-label={localize('com_nav_mcp_status_connecting', { 0: serverName })}
       />
     </div>
@@ -121,8 +122,8 @@ function InitializingStatusIcon({ serverName, onCancel, canCancel }: Initializin
 function ConnectingStatusIcon({ serverName }: StatusIconProps) {
   return (
     <div className="flex h-6 w-6 items-center justify-center rounded p-1">
-      <Loader2
-        className="h-4 w-4 animate-spin text-blue-500"
+      <Spinner
+        className="h-4 w-4"
         aria-label={localize('com_nav_mcp_status_connecting', { 0: serverName })}
       />
     </div>

@@ -1,6 +1,5 @@
 // file deepcode ignore HardcodedNonCryptoSecret: No hardcoded secrets
 import { ViolationTypes, ErrorTypes, alternateName } from 'librechat-data-provider';
-import type { TOpenAIMessage } from 'librechat-data-provider';
 import type { LocalizeFunction } from '~/common';
 import { formatJSON, extractJson, isJson } from '~/utils/json';
 import { useLocalize } from '~/hooks';
@@ -25,7 +24,7 @@ type TTokenBalance = {
   prev_count: number;
   violation_count: number;
   date: Date;
-  generations?: TOpenAIMessage[];
+  generations?: unknown[];
 };
 
 type TExpiredKey = {
@@ -44,6 +43,17 @@ const errorMessages = {
   [ErrorTypes.NO_BASE_URL]: 'com_error_no_base_url',
   [ErrorTypes.INVALID_ACTION]: `com_error_${ErrorTypes.INVALID_ACTION}`,
   [ErrorTypes.INVALID_REQUEST]: `com_error_${ErrorTypes.INVALID_REQUEST}`,
+  [ErrorTypes.MISSING_MODEL]: (json: TGenericError, localize: LocalizeFunction) => {
+    const { info: endpoint } = json;
+    const provider = (alternateName[endpoint ?? ''] as string | undefined) ?? endpoint ?? 'unknown';
+    return localize('com_error_missing_model', { 0: provider });
+  },
+  [ErrorTypes.MODELS_NOT_LOADED]: 'com_error_models_not_loaded',
+  [ErrorTypes.ENDPOINT_MODELS_NOT_LOADED]: (json: TGenericError, localize: LocalizeFunction) => {
+    const { info: endpoint } = json;
+    const provider = (alternateName[endpoint ?? ''] as string | undefined) ?? endpoint ?? 'unknown';
+    return localize('com_error_endpoint_models_not_loaded', { 0: provider });
+  },
   [ErrorTypes.NO_SYSTEM_MESSAGES]: `com_error_${ErrorTypes.NO_SYSTEM_MESSAGES}`,
   [ErrorTypes.EXPIRED_USER_KEY]: (json: TExpiredKey, localize: LocalizeFunction) => {
     const { expiredAt, endpoint } = json;
@@ -65,6 +75,12 @@ const errorMessages = {
   [ErrorTypes.GOOGLE_TOOL_CONFLICT]: 'com_error_google_tool_conflict',
   [ViolationTypes.BAN]:
     'Your account has been temporarily banned due to violations of our service.',
+  [ViolationTypes.ILLEGAL_MODEL_REQUEST]: (json: TGenericError, localize: LocalizeFunction) => {
+    const { info } = json;
+    const [endpoint, model = 'unknown'] = info?.split('|') ?? [];
+    const provider = (alternateName[endpoint ?? ''] as string | undefined) ?? endpoint ?? 'unknown';
+    return localize('com_error_illegal_model_request', { 0: model, 1: provider });
+  },
   invalid_api_key:
     'Invalid API key. Please check your API key and try again. You can do this by clicking on the model logo in the left corner of the textbox and selecting "Set Token" for the current selected endpoint. Thank you for your understanding.',
   insufficient_quota:

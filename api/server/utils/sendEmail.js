@@ -1,12 +1,10 @@
-const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
 const FormData = require('form-data');
 const nodemailer = require('nodemailer');
 const handlebars = require('handlebars');
-const { logAxiosError } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
-const { isEnabled } = require('~/server/utils/handleText');
+const { logAxiosError, isEnabled, readFileAsString } = require('@librechat/api');
 
 /**
  * Sends an email using Mailgun API.
@@ -94,8 +92,7 @@ const sendEmailViaSMTP = async ({ transporterOptions, mailOptions }) => {
  */
 const sendEmail = async ({ email, subject, payload, template, throwError = true }) => {
   try {
-    // Read and compile the email template
-    const source = fs.readFileSync(path.join(__dirname, 'emails', template), 'utf8');
+    const { content: source } = await readFileAsString(path.join(__dirname, 'emails', template));
     const compiledTemplate = handlebars.compile(source);
     const html = compiledTemplate(payload);
 

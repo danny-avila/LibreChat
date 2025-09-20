@@ -72,7 +72,7 @@ export default function ExportModal({
 
   const { exportConversation } = useExportConversation({
     conversation,
-    filename,
+    filename: filenamify(filename),
     type,
     includeOptions,
     exportBranches,
@@ -95,7 +95,7 @@ export default function ExportModal({
                 <Input
                   id="filename"
                   value={filename}
-                  onChange={(e) => setFileName(filenamify(e.target.value || ''))}
+                  onChange={(e) => setFileName(e.target.value || '')}
                   placeholder={localize('com_nav_export_filename_placeholder')}
                 />
               </div>

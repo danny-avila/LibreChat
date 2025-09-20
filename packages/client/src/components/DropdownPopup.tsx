@@ -2,6 +2,7 @@ import React from 'react';
 import * as Ariakit from '@ariakit/react';
 import type * as t from '~/common';
 import { cn } from '~/utils';
+import './Dropdown.css';
 
 interface DropdownProps {
   keyPrefix?: string;
@@ -28,7 +29,8 @@ interface DropdownProps {
 type MenuProps = Omit<
   DropdownProps,
   'trigger' | 'isOpen' | 'setIsOpen' | 'focusLoop' | 'mountByState'
->;
+> &
+  Ariakit.MenuProps;
 
 const DropdownPopup: React.FC<DropdownProps> = ({
   trigger,
@@ -69,7 +71,9 @@ const Menu: React.FC<MenuProps> = ({
   finalFocus,
   unmountOnHide,
   preserveTabOrder,
+  ...props
 }) => {
+  const menuStore = Ariakit.useMenuStore();
   const menu = Ariakit.useMenuContext();
   return (
     <Ariakit.Menu
@@ -82,13 +86,53 @@ const Menu: React.FC<MenuProps> = ({
       unmountOnHide={unmountOnHide}
       preserveTabOrder={preserveTabOrder}
       className={cn('popover-ui z-50', className)}
+      {...props}
     >
       {items
         .filter((item) => item.show !== false)
         .map((item, index) => {
+          const { subItems } = item;
           if (item.separate === true) {
             return <Ariakit.MenuSeparator key={index} className="my-1 h-px bg-white/10" />;
           }
+          if (subItems && subItems.length > 0) {
+            return (
+              <Ariakit.MenuProvider
+                store={menuStore}
+                key={`${keyPrefix ?? ''}${index}-${item.id ?? ''}-provider`}
+              >
+                <Ariakit.MenuButton
+                  className={cn(
+                    'group flex w-full cursor-pointer items-center justify-between gap-2 rounded-lg px-3 py-3.5 text-sm text-text-primary outline-none transition-colors duration-200 hover:bg-surface-hover focus:bg-surface-hover md:px-2.5 md:py-2',
+                    itemClassName,
+                  )}
+                  disabled={item.disabled}
+                  id={item.id}
+                  render={item.render}
+                  ref={item.ref}
+                  // hideOnClick={item.hideOnClick}
+                >
+                  <span className="flex items-center gap-2">
+                    {item.icon != null && (
+                      <span className={cn('mr-2 size-4', iconClassName)} aria-hidden="true">
+                        {item.icon}
+                      </span>
+                    )}
+                    {item.label}
+                  </span>
+                  <Ariakit.MenuButtonArrow className="stroke-1 text-base opacity-75" />
+                </Ariakit.MenuButton>
+                <Menu
+                  items={subItems}
+                  menuId={`${menuId}-${index}`}
+                  key={`${keyPrefix ?? ''}${index}-${item.id ?? ''}`}
+                  gutter={12}
+                  portal={true}
+                />
+              </Ariakit.MenuProvider>
+            );
+          }
+
           return (
             <Ariakit.MenuItem
               key={`${keyPrefix ?? ''}${index}-${item.id ?? ''}`}

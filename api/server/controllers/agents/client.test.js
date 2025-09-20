@@ -41,8 +41,16 @@ describe('AgentClient - titleConvo', () => {
 
     // Mock request and response
     mockReq = {
-      app: {
-        locals: {
+      user: {
+        id: 'user-123',
+      },
+      body: {
+        model: 'gpt-4',
+        endpoint: EModelEndpoint.openAI,
+        key: null,
+      },
+      config: {
+        endpoints: {
           [EModelEndpoint.openAI]: {
             // Match the agent endpoint
             titleModel: 'gpt-3.5-turbo',
@@ -51,14 +59,6 @@ describe('AgentClient - titleConvo', () => {
             titlePromptTemplate: 'Template: {{content}}',
           },
         },
-      },
-      user: {
-        id: 'user-123',
-      },
-      body: {
-        model: 'gpt-4',
-        endpoint: EModelEndpoint.openAI,
-        key: null,
       },
     };
 
@@ -143,7 +143,7 @@ describe('AgentClient - titleConvo', () => {
 
     it('should handle missing endpoint config gracefully', async () => {
       // Remove endpoint config
-      mockReq.app.locals[EModelEndpoint.openAI] = undefined;
+      mockReq.config = { endpoints: {} };
 
       const text = 'Test conversation text';
       const abortController = new AbortController();
@@ -161,7 +161,16 @@ describe('AgentClient - titleConvo', () => {
 
     it('should use agent model when titleModel is not provided', async () => {
       // Remove titleModel from config
-      delete mockReq.app.locals[EModelEndpoint.openAI].titleModel;
+      mockReq.config = {
+        endpoints: {
+          [EModelEndpoint.openAI]: {
+            titlePrompt: 'Custom title prompt',
+            titleMethod: 'structured',
+            titlePromptTemplate: 'Template: {{content}}',
+            // titleModel is omitted
+          },
+        },
+      };
 
       const text = 'Test conversation text';
       const abortController = new AbortController();
@@ -173,7 +182,16 @@ describe('AgentClient - titleConvo', () => {
     });
 
     it('should not use titleModel when it equals CURRENT_MODEL constant', async () => {
-      mockReq.app.locals[EModelEndpoint.openAI].titleModel = Constants.CURRENT_MODEL;
+      mockReq.config = {
+        endpoints: {
+          [EModelEndpoint.openAI]: {
+            titleModel: Constants.CURRENT_MODEL,
+            titlePrompt: 'Custom title prompt',
+            titleMethod: 'structured',
+            titlePromptTemplate: 'Template: {{content}}',
+          },
+        },
+      };
 
       const text = 'Test conversation text';
       const abortController = new AbortController();
@@ -216,6 +234,12 @@ describe('AgentClient - titleConvo', () => {
         model: 'gpt-3.5-turbo',
         context: 'title',
         collectedUsage: expect.any(Array),
+        balance: {
+          enabled: false,
+        },
+        transactions: {
+          enabled: true,
+        },
       });
     });
 
@@ -245,10 +269,17 @@ describe('AgentClient - titleConvo', () => {
       process.env.ANTHROPIC_API_KEY = 'test-api-key';
 
       // Add titleEndpoint to the config
-      mockReq.app.locals[EModelEndpoint.openAI].titleEndpoint = EModelEndpoint.anthropic;
-      mockReq.app.locals[EModelEndpoint.openAI].titleMethod = 'structured';
-      mockReq.app.locals[EModelEndpoint.openAI].titlePrompt = 'Custom title prompt';
-      mockReq.app.locals[EModelEndpoint.openAI].titlePromptTemplate = 'Custom template';
+      mockReq.config = {
+        endpoints: {
+          [EModelEndpoint.openAI]: {
+            titleModel: 'gpt-3.5-turbo',
+            titleEndpoint: EModelEndpoint.anthropic,
+            titleMethod: 'structured',
+            titlePrompt: 'Custom title prompt',
+            titlePromptTemplate: 'Custom template',
+          },
+        },
+      };
 
       const text = 'Test conversation text';
       const abortController = new AbortController();
@@ -274,18 +305,16 @@ describe('AgentClient - titleConvo', () => {
     });
 
     it('should use all config when endpoint config is missing', async () => {
-      // Remove endpoint-specific config
-      delete mockReq.app.locals[EModelEndpoint.openAI].titleModel;
-      delete mockReq.app.locals[EModelEndpoint.openAI].titlePrompt;
-      delete mockReq.app.locals[EModelEndpoint.openAI].titleMethod;
-      delete mockReq.app.locals[EModelEndpoint.openAI].titlePromptTemplate;
-
-      // Set 'all' config
-      mockReq.app.locals.all = {
-        titleModel: 'gpt-4o-mini',
-        titlePrompt: 'All config title prompt',
-        titleMethod: 'completion',
-        titlePromptTemplate: 'All config template: {{content}}',
+      // Set 'all' config without endpoint-specific config
+      mockReq.config = {
+        endpoints: {
+          all: {
+            titleModel: 'gpt-4o-mini',
+            titlePrompt: 'All config title prompt',
+            titleMethod: 'completion',
+            titlePromptTemplate: 'All config template: {{content}}',
+          },
+        },
       };
 
       const text = 'Test conversation text';
@@ -309,17 +338,21 @@ describe('AgentClient - titleConvo', () => {
 
     it('should prioritize all config over endpoint config for title settings', async () => {
       // Set both endpoint and 'all' config
-      mockReq.app.locals[EModelEndpoint.openAI].titleModel = 'gpt-3.5-turbo';
-      mockReq.app.locals[EModelEndpoint.openAI].titlePrompt = 'Endpoint title prompt';
-      mockReq.app.locals[EModelEndpoint.openAI].titleMethod = 'structured';
-      // Remove titlePromptTemplate from endpoint config to test fallback
-      delete mockReq.app.locals[EModelEndpoint.openAI].titlePromptTemplate;
-
-      mockReq.app.locals.all = {
-        titleModel: 'gpt-4o-mini',
-        titlePrompt: 'All config title prompt',
-        titleMethod: 'completion',
-        titlePromptTemplate: 'All config template',
+      mockReq.config = {
+        endpoints: {
+          [EModelEndpoint.openAI]: {
+            titleModel: 'gpt-3.5-turbo',
+            titlePrompt: 'Endpoint title prompt',
+            titleMethod: 'structured',
+            // titlePromptTemplate is omitted to test fallback
+          },
+          all: {
+            titleModel: 'gpt-4o-mini',
+            titlePrompt: 'All config title prompt',
+            titleMethod: 'completion',
+            titlePromptTemplate: 'All config template',
+          },
+        },
       };
 
       const text = 'Test conversation text';
@@ -346,17 +379,18 @@ describe('AgentClient - titleConvo', () => {
       const originalApiKey = process.env.ANTHROPIC_API_KEY;
       process.env.ANTHROPIC_API_KEY = 'test-anthropic-key';
 
-      // Remove endpoint-specific config to test 'all' config
-      delete mockReq.app.locals[EModelEndpoint.openAI];
-
       // Set comprehensive 'all' config with all new title options
-      mockReq.app.locals.all = {
-        titleConvo: true,
-        titleModel: 'claude-3-haiku-20240307',
-        titleMethod: 'completion', // Testing the new default method
-        titlePrompt: 'Generate a concise, descriptive title for this conversation',
-        titlePromptTemplate: 'Conversation summary: {{content}}',
-        titleEndpoint: EModelEndpoint.anthropic, // Should switch provider to Anthropic
+      mockReq.config = {
+        endpoints: {
+          all: {
+            titleConvo: true,
+            titleModel: 'claude-3-haiku-20240307',
+            titleMethod: 'completion', // Testing the new default method
+            titlePrompt: 'Generate a concise, descriptive title for this conversation',
+            titlePromptTemplate: 'Conversation summary: {{content}}',
+            titleEndpoint: EModelEndpoint.anthropic, // Should switch provider to Anthropic
+          },
+        },
       };
 
       const text = 'Test conversation about AI and machine learning';
@@ -402,15 +436,16 @@ describe('AgentClient - titleConvo', () => {
         // Clear previous calls
         mockRun.generateTitle.mockClear();
 
-        // Remove endpoint config
-        delete mockReq.app.locals[EModelEndpoint.openAI];
-
         // Set 'all' config with specific titleMethod
-        mockReq.app.locals.all = {
-          titleModel: 'gpt-4o-mini',
-          titleMethod: method,
-          titlePrompt: `Testing ${method} method`,
-          titlePromptTemplate: `Template for ${method}: {{content}}`,
+        mockReq.config = {
+          endpoints: {
+            all: {
+              titleModel: 'gpt-4o-mini',
+              titleMethod: method,
+              titlePrompt: `Testing ${method} method`,
+              titlePromptTemplate: `Template for ${method}: {{content}}`,
+            },
+          },
         };
 
         const text = `Test conversation for ${method} method`;
@@ -455,27 +490,31 @@ describe('AgentClient - titleConvo', () => {
         // Set up Azure endpoint with serverless config
         mockAgent.endpoint = EModelEndpoint.azureOpenAI;
         mockAgent.provider = EModelEndpoint.azureOpenAI;
-        mockReq.app.locals[EModelEndpoint.azureOpenAI] = {
-          titleConvo: true,
-          titleModel: 'grok-3',
-          titleMethod: 'completion',
-          titlePrompt: 'Azure serverless title prompt',
-          streamRate: 35,
-          modelGroupMap: {
-            'grok-3': {
-              group: 'Azure AI Foundry',
-              deploymentName: 'grok-3',
-            },
-          },
-          groupMap: {
-            'Azure AI Foundry': {
-              apiKey: '${AZURE_API_KEY}',
-              baseURL: 'https://test.services.ai.azure.com/models',
-              version: '2024-05-01-preview',
-              serverless: true,
-              models: {
+        mockReq.config = {
+          endpoints: {
+            [EModelEndpoint.azureOpenAI]: {
+              titleConvo: true,
+              titleModel: 'grok-3',
+              titleMethod: 'completion',
+              titlePrompt: 'Azure serverless title prompt',
+              streamRate: 35,
+              modelGroupMap: {
                 'grok-3': {
+                  group: 'Azure AI Foundry',
                   deploymentName: 'grok-3',
+                },
+              },
+              groupMap: {
+                'Azure AI Foundry': {
+                  apiKey: '${AZURE_API_KEY}',
+                  baseURL: 'https://test.services.ai.azure.com/models',
+                  version: '2024-05-01-preview',
+                  serverless: true,
+                  models: {
+                    'grok-3': {
+                      deploymentName: 'grok-3',
+                    },
+                  },
                 },
               },
             },
@@ -503,26 +542,30 @@ describe('AgentClient - titleConvo', () => {
         // Set up Azure endpoint
         mockAgent.endpoint = EModelEndpoint.azureOpenAI;
         mockAgent.provider = EModelEndpoint.azureOpenAI;
-        mockReq.app.locals[EModelEndpoint.azureOpenAI] = {
-          titleConvo: true,
-          titleModel: 'gpt-4o',
-          titleMethod: 'structured',
-          titlePrompt: 'Azure instance title prompt',
-          streamRate: 35,
-          modelGroupMap: {
-            'gpt-4o': {
-              group: 'eastus',
-              deploymentName: 'gpt-4o',
-            },
-          },
-          groupMap: {
-            eastus: {
-              apiKey: '${EASTUS_API_KEY}',
-              instanceName: 'region-instance',
-              version: '2024-02-15-preview',
-              models: {
+        mockReq.config = {
+          endpoints: {
+            [EModelEndpoint.azureOpenAI]: {
+              titleConvo: true,
+              titleModel: 'gpt-4o',
+              titleMethod: 'structured',
+              titlePrompt: 'Azure instance title prompt',
+              streamRate: 35,
+              modelGroupMap: {
                 'gpt-4o': {
+                  group: 'eastus',
                   deploymentName: 'gpt-4o',
+                },
+              },
+              groupMap: {
+                eastus: {
+                  apiKey: '${EASTUS_API_KEY}',
+                  instanceName: 'region-instance',
+                  version: '2024-02-15-preview',
+                  models: {
+                    'gpt-4o': {
+                      deploymentName: 'gpt-4o',
+                    },
+                  },
                 },
               },
             },
@@ -551,27 +594,31 @@ describe('AgentClient - titleConvo', () => {
         mockAgent.endpoint = EModelEndpoint.azureOpenAI;
         mockAgent.provider = EModelEndpoint.azureOpenAI;
         mockAgent.model_parameters.model = 'gpt-4o-latest';
-        mockReq.app.locals[EModelEndpoint.azureOpenAI] = {
-          titleConvo: true,
-          titleModel: Constants.CURRENT_MODEL,
-          titleMethod: 'functions',
-          streamRate: 35,
-          modelGroupMap: {
-            'gpt-4o-latest': {
-              group: 'region-eastus',
-              deploymentName: 'gpt-4o-mini',
-              version: '2024-02-15-preview',
-            },
-          },
-          groupMap: {
-            'region-eastus': {
-              apiKey: '${EASTUS2_API_KEY}',
-              instanceName: 'test-instance',
-              version: '2024-12-01-preview',
-              models: {
+        mockReq.config = {
+          endpoints: {
+            [EModelEndpoint.azureOpenAI]: {
+              titleConvo: true,
+              titleModel: Constants.CURRENT_MODEL,
+              titleMethod: 'functions',
+              streamRate: 35,
+              modelGroupMap: {
                 'gpt-4o-latest': {
+                  group: 'region-eastus',
                   deploymentName: 'gpt-4o-mini',
                   version: '2024-02-15-preview',
+                },
+              },
+              groupMap: {
+                'region-eastus': {
+                  apiKey: '${EASTUS2_API_KEY}',
+                  instanceName: 'test-instance',
+                  version: '2024-12-01-preview',
+                  models: {
+                    'gpt-4o-latest': {
+                      deploymentName: 'gpt-4o-mini',
+                      version: '2024-02-15-preview',
+                    },
+                  },
                 },
               },
             },
@@ -598,54 +645,58 @@ describe('AgentClient - titleConvo', () => {
         // Set up Azure endpoint
         mockAgent.endpoint = EModelEndpoint.azureOpenAI;
         mockAgent.provider = EModelEndpoint.azureOpenAI;
-        mockReq.app.locals[EModelEndpoint.azureOpenAI] = {
-          titleConvo: true,
-          titleModel: 'o1-mini',
-          titleMethod: 'completion',
-          streamRate: 35,
-          modelGroupMap: {
-            'gpt-4o': {
-              group: 'eastus',
-              deploymentName: 'gpt-4o',
-            },
-            'o1-mini': {
-              group: 'region-eastus',
-              deploymentName: 'o1-mini',
-            },
-            'codex-mini': {
-              group: 'codex-mini',
-              deploymentName: 'codex-mini',
-            },
-          },
-          groupMap: {
-            eastus: {
-              apiKey: '${EASTUS_API_KEY}',
-              instanceName: 'region-eastus',
-              version: '2024-02-15-preview',
-              models: {
+        mockReq.config = {
+          endpoints: {
+            [EModelEndpoint.azureOpenAI]: {
+              titleConvo: true,
+              titleModel: 'o1-mini',
+              titleMethod: 'completion',
+              streamRate: 35,
+              modelGroupMap: {
                 'gpt-4o': {
+                  group: 'eastus',
                   deploymentName: 'gpt-4o',
                 },
-              },
-            },
-            'region-eastus': {
-              apiKey: '${EASTUS2_API_KEY}',
-              instanceName: 'region-eastus2',
-              version: '2024-12-01-preview',
-              models: {
                 'o1-mini': {
+                  group: 'region-eastus',
                   deploymentName: 'o1-mini',
                 },
-              },
-            },
-            'codex-mini': {
-              apiKey: '${AZURE_API_KEY}',
-              baseURL: 'https://example.cognitiveservices.azure.com/openai/',
-              version: '2025-04-01-preview',
-              serverless: true,
-              models: {
                 'codex-mini': {
+                  group: 'codex-mini',
                   deploymentName: 'codex-mini',
+                },
+              },
+              groupMap: {
+                eastus: {
+                  apiKey: '${EASTUS_API_KEY}',
+                  instanceName: 'region-eastus',
+                  version: '2024-02-15-preview',
+                  models: {
+                    'gpt-4o': {
+                      deploymentName: 'gpt-4o',
+                    },
+                  },
+                },
+                'region-eastus': {
+                  apiKey: '${EASTUS2_API_KEY}',
+                  instanceName: 'region-eastus2',
+                  version: '2024-12-01-preview',
+                  models: {
+                    'o1-mini': {
+                      deploymentName: 'o1-mini',
+                    },
+                  },
+                },
+                'codex-mini': {
+                  apiKey: '${AZURE_API_KEY}',
+                  baseURL: 'https://example.cognitiveservices.azure.com/openai/',
+                  version: '2025-04-01-preview',
+                  serverless: true,
+                  models: {
+                    'codex-mini': {
+                      deploymentName: 'codex-mini',
+                    },
+                  },
                 },
               },
             },
@@ -679,31 +730,32 @@ describe('AgentClient - titleConvo', () => {
         mockReq.body.endpoint = EModelEndpoint.azureOpenAI;
         mockReq.body.model = 'gpt-4';
 
-        // Remove Azure-specific config
-        delete mockReq.app.locals[EModelEndpoint.azureOpenAI];
-
         // Set 'all' config as fallback with a serverless Azure config
-        mockReq.app.locals.all = {
-          titleConvo: true,
-          titleModel: 'gpt-4',
-          titleMethod: 'structured',
-          titlePrompt: 'Fallback title prompt from all config',
-          titlePromptTemplate: 'Template: {{content}}',
-          modelGroupMap: {
-            'gpt-4': {
-              group: 'default-group',
-              deploymentName: 'gpt-4',
-            },
-          },
-          groupMap: {
-            'default-group': {
-              apiKey: '${AZURE_API_KEY}',
-              baseURL: 'https://default.openai.azure.com/',
-              version: '2024-02-15-preview',
-              serverless: true,
-              models: {
+        mockReq.config = {
+          endpoints: {
+            all: {
+              titleConvo: true,
+              titleModel: 'gpt-4',
+              titleMethod: 'structured',
+              titlePrompt: 'Fallback title prompt from all config',
+              titlePromptTemplate: 'Template: {{content}}',
+              modelGroupMap: {
                 'gpt-4': {
+                  group: 'default-group',
                   deploymentName: 'gpt-4',
+                },
+              },
+              groupMap: {
+                'default-group': {
+                  apiKey: '${AZURE_API_KEY}',
+                  baseURL: 'https://default.openai.azure.com/',
+                  version: '2024-02-15-preview',
+                  serverless: true,
+                  models: {
+                    'gpt-4': {
+                      deploymentName: 'gpt-4',
+                    },
+                  },
                 },
               },
             },
@@ -725,6 +777,466 @@ describe('AgentClient - titleConvo', () => {
           }),
         );
       });
+    });
+  });
+
+  describe('getOptions method - GPT-5+ model handling', () => {
+    let mockReq;
+    let mockRes;
+    let mockAgent;
+    let mockOptions;
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+
+      mockAgent = {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: {
+          model: 'gpt-5',
+        },
+      };
+
+      mockReq = {
+        app: {
+          locals: {},
+        },
+        user: {
+          id: 'user-123',
+        },
+      };
+
+      mockRes = {};
+
+      mockOptions = {
+        req: mockReq,
+        res: mockRes,
+        agent: mockAgent,
+      };
+
+      client = new AgentClient(mockOptions);
+    });
+
+    it('should move maxTokens to modelKwargs.max_completion_tokens for GPT-5 models', () => {
+      const clientOptions = {
+        model: 'gpt-5',
+        maxTokens: 2048,
+        temperature: 0.7,
+      };
+
+      // Simulate the getOptions logic that handles GPT-5+ models
+      if (/\bgpt-[5-9]\b/i.test(clientOptions.model) && clientOptions.maxTokens != null) {
+        clientOptions.modelKwargs = clientOptions.modelKwargs ?? {};
+        clientOptions.modelKwargs.max_completion_tokens = clientOptions.maxTokens;
+        delete clientOptions.maxTokens;
+      }
+
+      expect(clientOptions.maxTokens).toBeUndefined();
+      expect(clientOptions.modelKwargs).toBeDefined();
+      expect(clientOptions.modelKwargs.max_completion_tokens).toBe(2048);
+      expect(clientOptions.temperature).toBe(0.7); // Other options should remain
+    });
+
+    it('should move maxTokens to modelKwargs.max_output_tokens for GPT-5 models with useResponsesApi', () => {
+      const clientOptions = {
+        model: 'gpt-5',
+        maxTokens: 2048,
+        temperature: 0.7,
+        useResponsesApi: true,
+      };
+
+      if (/\bgpt-[5-9]\b/i.test(clientOptions.model) && clientOptions.maxTokens != null) {
+        clientOptions.modelKwargs = clientOptions.modelKwargs ?? {};
+        const paramName =
+          clientOptions.useResponsesApi === true ? 'max_output_tokens' : 'max_completion_tokens';
+        clientOptions.modelKwargs[paramName] = clientOptions.maxTokens;
+        delete clientOptions.maxTokens;
+      }
+
+      expect(clientOptions.maxTokens).toBeUndefined();
+      expect(clientOptions.modelKwargs).toBeDefined();
+      expect(clientOptions.modelKwargs.max_output_tokens).toBe(2048);
+      expect(clientOptions.temperature).toBe(0.7); // Other options should remain
+    });
+
+    it('should handle GPT-5+ models with existing modelKwargs', () => {
+      const clientOptions = {
+        model: 'gpt-6',
+        maxTokens: 1500,
+        temperature: 0.8,
+        modelKwargs: {
+          customParam: 'value',
+        },
+      };
+
+      // Simulate the getOptions logic
+      if (/\bgpt-[5-9]\b/i.test(clientOptions.model) && clientOptions.maxTokens != null) {
+        clientOptions.modelKwargs = clientOptions.modelKwargs ?? {};
+        clientOptions.modelKwargs.max_completion_tokens = clientOptions.maxTokens;
+        delete clientOptions.maxTokens;
+      }
+
+      expect(clientOptions.maxTokens).toBeUndefined();
+      expect(clientOptions.modelKwargs).toEqual({
+        customParam: 'value',
+        max_completion_tokens: 1500,
+      });
+    });
+
+    it('should not modify maxTokens for non-GPT-5+ models', () => {
+      const clientOptions = {
+        model: 'gpt-4',
+        maxTokens: 2048,
+        temperature: 0.7,
+      };
+
+      // Simulate the getOptions logic
+      if (/\bgpt-[5-9]\b/i.test(clientOptions.model) && clientOptions.maxTokens != null) {
+        clientOptions.modelKwargs = clientOptions.modelKwargs ?? {};
+        clientOptions.modelKwargs.max_completion_tokens = clientOptions.maxTokens;
+        delete clientOptions.maxTokens;
+      }
+
+      // Should not be modified since it's GPT-4
+      expect(clientOptions.maxTokens).toBe(2048);
+      expect(clientOptions.modelKwargs).toBeUndefined();
+    });
+
+    it('should handle various GPT-5+ model formats', () => {
+      const testCases = [
+        { model: 'gpt-5', shouldTransform: true },
+        { model: 'gpt-5-turbo', shouldTransform: true },
+        { model: 'gpt-6', shouldTransform: true },
+        { model: 'gpt-7-preview', shouldTransform: true },
+        { model: 'gpt-8', shouldTransform: true },
+        { model: 'gpt-9-mini', shouldTransform: true },
+        { model: 'gpt-4', shouldTransform: false },
+        { model: 'gpt-4o', shouldTransform: false },
+        { model: 'gpt-3.5-turbo', shouldTransform: false },
+        { model: 'claude-3', shouldTransform: false },
+      ];
+
+      testCases.forEach(({ model, shouldTransform }) => {
+        const clientOptions = {
+          model,
+          maxTokens: 1000,
+        };
+
+        // Simulate the getOptions logic
+        if (/\bgpt-[5-9]\b/i.test(clientOptions.model) && clientOptions.maxTokens != null) {
+          clientOptions.modelKwargs = clientOptions.modelKwargs ?? {};
+          clientOptions.modelKwargs.max_completion_tokens = clientOptions.maxTokens;
+          delete clientOptions.maxTokens;
+        }
+
+        if (shouldTransform) {
+          expect(clientOptions.maxTokens).toBeUndefined();
+          expect(clientOptions.modelKwargs?.max_completion_tokens).toBe(1000);
+        } else {
+          expect(clientOptions.maxTokens).toBe(1000);
+          expect(clientOptions.modelKwargs).toBeUndefined();
+        }
+      });
+    });
+
+    it('should not swap max token param for older models when using useResponsesApi', () => {
+      const testCases = [
+        { model: 'gpt-5', shouldTransform: true },
+        { model: 'gpt-5-turbo', shouldTransform: true },
+        { model: 'gpt-6', shouldTransform: true },
+        { model: 'gpt-7-preview', shouldTransform: true },
+        { model: 'gpt-8', shouldTransform: true },
+        { model: 'gpt-9-mini', shouldTransform: true },
+        { model: 'gpt-4', shouldTransform: false },
+        { model: 'gpt-4o', shouldTransform: false },
+        { model: 'gpt-3.5-turbo', shouldTransform: false },
+        { model: 'claude-3', shouldTransform: false },
+      ];
+
+      testCases.forEach(({ model, shouldTransform }) => {
+        const clientOptions = {
+          model,
+          maxTokens: 1000,
+          useResponsesApi: true,
+        };
+
+        if (/\bgpt-[5-9]\b/i.test(clientOptions.model) && clientOptions.maxTokens != null) {
+          clientOptions.modelKwargs = clientOptions.modelKwargs ?? {};
+          const paramName =
+            clientOptions.useResponsesApi === true ? 'max_output_tokens' : 'max_completion_tokens';
+          clientOptions.modelKwargs[paramName] = clientOptions.maxTokens;
+          delete clientOptions.maxTokens;
+        }
+
+        if (shouldTransform) {
+          expect(clientOptions.maxTokens).toBeUndefined();
+          expect(clientOptions.modelKwargs?.max_output_tokens).toBe(1000);
+        } else {
+          expect(clientOptions.maxTokens).toBe(1000);
+          expect(clientOptions.modelKwargs).toBeUndefined();
+        }
+      });
+    });
+
+    it('should not transform if maxTokens is null or undefined', () => {
+      const testCases = [
+        { model: 'gpt-5', maxTokens: null },
+        { model: 'gpt-5', maxTokens: undefined },
+        { model: 'gpt-6', maxTokens: 0 }, // Should transform even if 0
+      ];
+
+      testCases.forEach(({ model, maxTokens }, index) => {
+        const clientOptions = {
+          model,
+          maxTokens,
+          temperature: 0.7,
+        };
+
+        // Simulate the getOptions logic
+        if (/\bgpt-[5-9]\b/i.test(clientOptions.model) && clientOptions.maxTokens != null) {
+          clientOptions.modelKwargs = clientOptions.modelKwargs ?? {};
+          clientOptions.modelKwargs.max_completion_tokens = clientOptions.maxTokens;
+          delete clientOptions.maxTokens;
+        }
+
+        if (index < 2) {
+          // null or undefined cases
+          expect(clientOptions.maxTokens).toBe(maxTokens);
+          expect(clientOptions.modelKwargs).toBeUndefined();
+        } else {
+          // 0 case - should transform
+          expect(clientOptions.maxTokens).toBeUndefined();
+          expect(clientOptions.modelKwargs?.max_completion_tokens).toBe(0);
+        }
+      });
+    });
+  });
+
+  describe('runMemory method', () => {
+    let client;
+    let mockReq;
+    let mockRes;
+    let mockAgent;
+    let mockOptions;
+    let mockProcessMemory;
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+
+      mockAgent = {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: {
+          model: 'gpt-4',
+        },
+      };
+
+      mockReq = {
+        user: {
+          id: 'user-123',
+          personalization: {
+            memories: true,
+          },
+        },
+      };
+
+      // Mock getAppConfig for memory tests
+      mockReq.config = {
+        memory: {
+          messageWindowSize: 3,
+        },
+      };
+
+      mockRes = {};
+
+      mockOptions = {
+        req: mockReq,
+        res: mockRes,
+        agent: mockAgent,
+      };
+
+      mockProcessMemory = jest.fn().mockResolvedValue([]);
+
+      client = new AgentClient(mockOptions);
+      client.processMemory = mockProcessMemory;
+      client.conversationId = 'convo-123';
+      client.responseMessageId = 'response-123';
+    });
+
+    it('should filter out image URLs from message content', async () => {
+      const { HumanMessage, AIMessage } = require('@langchain/core/messages');
+      const messages = [
+        new HumanMessage({
+          content: [
+            {
+              type: 'text',
+              text: 'What is in this image?',
+            },
+            {
+              type: 'image_url',
+              image_url: {
+                url: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+                detail: 'auto',
+              },
+            },
+          ],
+        }),
+        new AIMessage('I can see a small red pixel in the image.'),
+        new HumanMessage({
+          content: [
+            {
+              type: 'text',
+              text: 'What about this one?',
+            },
+            {
+              type: 'image_url',
+              image_url: {
+                url: 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEAYABgAAD/',
+                detail: 'high',
+              },
+            },
+          ],
+        }),
+      ];
+
+      await client.runMemory(messages);
+
+      expect(mockProcessMemory).toHaveBeenCalledTimes(1);
+      const processedMessage = mockProcessMemory.mock.calls[0][0][0];
+
+      // Verify the buffer message was created
+      expect(processedMessage.constructor.name).toBe('HumanMessage');
+      expect(processedMessage.content).toContain('# Current Chat:');
+
+      // Verify that image URLs are not in the buffer string
+      expect(processedMessage.content).not.toContain('image_url');
+      expect(processedMessage.content).not.toContain('data:image');
+      expect(processedMessage.content).not.toContain('base64');
+
+      // Verify text content is preserved
+      expect(processedMessage.content).toContain('What is in this image?');
+      expect(processedMessage.content).toContain('I can see a small red pixel in the image.');
+      expect(processedMessage.content).toContain('What about this one?');
+    });
+
+    it('should handle messages with only text content', async () => {
+      const { HumanMessage, AIMessage } = require('@langchain/core/messages');
+      const messages = [
+        new HumanMessage('Hello, how are you?'),
+        new AIMessage('I am doing well, thank you!'),
+        new HumanMessage('That is great to hear.'),
+      ];
+
+      await client.runMemory(messages);
+
+      expect(mockProcessMemory).toHaveBeenCalledTimes(1);
+      const processedMessage = mockProcessMemory.mock.calls[0][0][0];
+
+      expect(processedMessage.content).toContain('Hello, how are you?');
+      expect(processedMessage.content).toContain('I am doing well, thank you!');
+      expect(processedMessage.content).toContain('That is great to hear.');
+    });
+
+    it('should handle mixed content types correctly', async () => {
+      const { HumanMessage } = require('@langchain/core/messages');
+      const { ContentTypes } = require('librechat-data-provider');
+
+      const messages = [
+        new HumanMessage({
+          content: [
+            {
+              type: 'text',
+              text: 'Here is some text',
+            },
+            {
+              type: ContentTypes.IMAGE_URL,
+              image_url: {
+                url: 'https://example.com/image.png',
+              },
+            },
+            {
+              type: 'text',
+              text: ' and more text',
+            },
+          ],
+        }),
+      ];
+
+      await client.runMemory(messages);
+
+      expect(mockProcessMemory).toHaveBeenCalledTimes(1);
+      const processedMessage = mockProcessMemory.mock.calls[0][0][0];
+
+      // Should contain text parts but not image URLs
+      expect(processedMessage.content).toContain('Here is some text');
+      expect(processedMessage.content).toContain('and more text');
+      expect(processedMessage.content).not.toContain('example.com/image.png');
+      expect(processedMessage.content).not.toContain('IMAGE_URL');
+    });
+
+    it('should preserve original messages without mutation', async () => {
+      const { HumanMessage } = require('@langchain/core/messages');
+      const originalContent = [
+        {
+          type: 'text',
+          text: 'Original text',
+        },
+        {
+          type: 'image_url',
+          image_url: {
+            url: 'data:image/png;base64,ABC123',
+          },
+        },
+      ];
+
+      const messages = [
+        new HumanMessage({
+          content: [...originalContent],
+        }),
+      ];
+
+      await client.runMemory(messages);
+
+      // Verify original message wasn't mutated
+      expect(messages[0].content).toHaveLength(2);
+      expect(messages[0].content[1].type).toBe('image_url');
+      expect(messages[0].content[1].image_url.url).toBe('data:image/png;base64,ABC123');
+    });
+
+    it('should handle message window size correctly', async () => {
+      const { HumanMessage, AIMessage } = require('@langchain/core/messages');
+      const messages = [
+        new HumanMessage('Message 1'),
+        new AIMessage('Response 1'),
+        new HumanMessage('Message 2'),
+        new AIMessage('Response 2'),
+        new HumanMessage('Message 3'),
+        new AIMessage('Response 3'),
+      ];
+
+      // Window size is set to 3 in mockReq
+      await client.runMemory(messages);
+
+      expect(mockProcessMemory).toHaveBeenCalledTimes(1);
+      const processedMessage = mockProcessMemory.mock.calls[0][0][0];
+
+      // Should only include last 3 messages due to window size
+      expect(processedMessage.content).toContain('Message 3');
+      expect(processedMessage.content).toContain('Response 3');
+      expect(processedMessage.content).not.toContain('Message 1');
+      expect(processedMessage.content).not.toContain('Response 1');
+    });
+
+    it('should return early if processMemory is not set', async () => {
+      const { HumanMessage } = require('@langchain/core/messages');
+      client.processMemory = null;
+
+      const result = await client.runMemory([new HumanMessage('Test')]);
+
+      expect(result).toBeUndefined();
+      expect(mockProcessMemory).not.toHaveBeenCalled();
     });
   });
 });

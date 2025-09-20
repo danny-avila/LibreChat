@@ -4,7 +4,7 @@ import { FileSources, LocalStorageKeys } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
 import { useDeleteFilesMutation } from '~/data-provider';
 import DragDropWrapper from '~/components/Chat/Input/Files/DragDropWrapper';
-import { EditorProvider, SidePanelProvider } from '~/Providers';
+import { EditorProvider, SidePanelProvider, ArtifactsProvider } from '~/Providers';
 import Artifacts from '~/components/Artifacts/Artifacts';
 import { SidePanelGroup } from '~/components/SidePanel';
 import { useSetFilesToDelete } from '~/hooks';
@@ -66,9 +66,11 @@ export default function Presentation({ children }: { children: React.ReactNode }
           defaultCollapsed={defaultCollapsed}
           artifacts={
             artifactsVisibility === true && Object.keys(artifacts ?? {}).length > 0 ? (
-              <EditorProvider>
-                <Artifacts />
-              </EditorProvider>
+              <ArtifactsProvider>
+                <EditorProvider>
+                  <Artifacts />
+                </EditorProvider>
+              </ArtifactsProvider>
             ) : null
           }
         >

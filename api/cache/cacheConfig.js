@@ -1,4 +1,5 @@
 const fs = require('fs');
+const { logger } = require('@librechat/data-schemas');
 const { math, isEnabled } = require('@librechat/api');
 const { CacheKeys } = require('librechat-data-provider');
 
@@ -34,13 +35,35 @@ if (FORCED_IN_MEMORY_CACHE_NAMESPACES.length > 0) {
   }
 }
 
+/** Helper function to safely read Redis CA certificate from file
+ * @returns {string|null} The contents of the CA certificate file, or null if not set or on error
+ */
+const getRedisCA = () => {
+  const caPath = process.env.REDIS_CA;
+  if (!caPath) {
+    return null;
+  }
+
+  try {
+    if (fs.existsSync(caPath)) {
+      return fs.readFileSync(caPath, 'utf8');
+    } else {
+      logger.warn(`Redis CA certificate file not found: ${caPath}`);
+      return null;
+    }
+  } catch (error) {
+    logger.error(`Failed to read Redis CA certificate file '${caPath}':`, error);
+    return null;
+  }
+};
+
 const cacheConfig = {
   FORCED_IN_MEMORY_CACHE_NAMESPACES,
   USE_REDIS,
   REDIS_URI: process.env.REDIS_URI,
   REDIS_USERNAME: process.env.REDIS_USERNAME,
   REDIS_PASSWORD: process.env.REDIS_PASSWORD,
-  REDIS_CA: process.env.REDIS_CA ? fs.readFileSync(process.env.REDIS_CA, 'utf8') : null,
+  REDIS_CA: getRedisCA(),
   REDIS_KEY_PREFIX: process.env[REDIS_KEY_PREFIX_VAR] || REDIS_KEY_PREFIX || '',
   REDIS_MAX_LISTENERS: math(process.env.REDIS_MAX_LISTENERS, 40),
   REDIS_PING_INTERVAL: math(process.env.REDIS_PING_INTERVAL, 0),
@@ -52,7 +75,11 @@ const cacheConfig = {
   REDIS_CONNECT_TIMEOUT: math(process.env.REDIS_CONNECT_TIMEOUT, 10000),
   /** Queue commands when disconnected */
   REDIS_ENABLE_OFFLINE_QUEUE: isEnabled(process.env.REDIS_ENABLE_OFFLINE_QUEUE ?? 'true'),
-
+  /** flag to modify redis connection by adding dnsLookup this is required when connecting to elasticache for ioredis
+   * see "Special Note: Aws Elasticache Clusters with TLS" on this webpage:  https://www.npmjs.com/package/ioredis **/
+  REDIS_USE_ALTERNATIVE_DNS_LOOKUP: isEnabled(process.env.REDIS_USE_ALTERNATIVE_DNS_LOOKUP),
+  /** Enable redis cluster without the need of multiple URIs */
+  USE_REDIS_CLUSTER: isEnabled(process.env.USE_REDIS_CLUSTER ?? 'false'),
   CI: isEnabled(process.env.CI),
   DEBUG_MEMORY_CACHE: isEnabled(process.env.DEBUG_MEMORY_CACHE),
 

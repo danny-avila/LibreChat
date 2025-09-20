@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import FormData from 'form-data';
 import { logger } from '@librechat/data-schemas';
+import { HttpsProxyAgent } from 'https-proxy-agent';
 import {
   FileSources,
   envVarRegex,
@@ -9,18 +10,19 @@ import {
   extractVariableName,
 } from 'librechat-data-provider';
 import type { TCustomConfig } from 'librechat-data-provider';
-import type { Request as ServerRequest } from 'express';
-import type { AxiosError } from 'axios';
+import type { AxiosError, AxiosRequestConfig } from 'axios';
 import type {
   MistralFileUploadResponse,
   MistralSignedUrlResponse,
   MistralOCRUploadResult,
   MistralOCRError,
   OCRResultPage,
+  ServerRequest,
   OCRResult,
   OCRImage,
 } from '~/types';
 import { logAxiosError, createAxiosInstance } from '~/utils/axios';
+import { readFileAsBuffer } from '~/utils/files';
 import { loadServiceKey } from '~/utils/key';
 
 const axios = createAxiosInstance();
@@ -42,14 +44,7 @@ interface GoogleServiceAccount {
 
 /** Helper type for OCR request context */
 interface OCRContext {
-  req: Pick<ServerRequest, 'user' | 'app'> & {
-    user?: { id: string };
-    app: {
-      locals?: {
-        ocr?: TCustomConfig['ocr'];
-      };
-    };
-  };
+  req: ServerRequest;
   file: Express.Multer.File;
   loadAuthValues: (params: {
     userId: string;
@@ -84,15 +79,21 @@ export async function uploadDocumentToMistral({
   const fileStream = fs.createReadStream(filePath);
   form.append('file', fileStream, { filename: actualFileName });
 
+  const config: AxiosRequestConfig = {
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      ...form.getHeaders(),
+    },
+    maxBodyLength: Infinity,
+    maxContentLength: Infinity,
+  };
+
+  if (process.env.PROXY) {
+    config.httpsAgent = new HttpsProxyAgent(process.env.PROXY);
+  }
+
   return axios
-    .post(`${baseURL}/files`, form, {
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        ...form.getHeaders(),
-      },
-      maxBodyLength: Infinity,
-      maxContentLength: Infinity,
-    })
+    .post(`${baseURL}/files`, form, config)
     .then((res) => res.data)
     .catch((error) => {
       throw error;
@@ -110,12 +111,18 @@ export async function getSignedUrl({
   expiry?: number;
   baseURL?: string;
 }): Promise<MistralSignedUrlResponse> {
+  const config: AxiosRequestConfig = {
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+    },
+  };
+
+  if (process.env.PROXY) {
+    config.httpsAgent = new HttpsProxyAgent(process.env.PROXY);
+  }
+
   return axios
-    .get(`${baseURL}/files/${fileId}/url?expiry=${expiry}`, {
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-      },
-    })
+    .get(`${baseURL}/files/${fileId}/url?expiry=${expiry}`, config)
     .then((res) => res.data)
     .catch((error) => {
       logger.error('Error fetching signed URL:', error.message);
@@ -146,6 +153,18 @@ export async function performOCR({
   documentType?: 'document_url' | 'image_url';
 }): Promise<OCRResult> {
   const documentKey = documentType === 'image_url' ? 'image_url' : 'document_url';
+
+  const config: AxiosRequestConfig = {
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+    },
+  };
+
+  if (process.env.PROXY) {
+    config.httpsAgent = new HttpsProxyAgent(process.env.PROXY);
+  }
+
   return axios
     .post(
       `${baseURL}/ocr`,
@@ -158,18 +177,48 @@ export async function performOCR({
           [documentKey]: url,
         },
       },
-      {
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${apiKey}`,
-        },
-      },
+      config,
     )
     .then((res) => res.data)
     .catch((error) => {
       logger.error('Error performing OCR:', error.message);
       throw error;
     });
+}
+
+/**
+ * Deletes a file from Mistral API
+ * @param params Delete parameters
+ * @param params.fileId The file ID to delete
+ * @param params.apiKey Mistral API key
+ * @param params.baseURL Mistral API base URL
+ * @returns Promise that resolves when the file is deleted
+ */
+export async function deleteMistralFile({
+  fileId,
+  apiKey,
+  baseURL = DEFAULT_MISTRAL_BASE_URL,
+}: {
+  fileId: string;
+  apiKey: string;
+  baseURL?: string;
+}): Promise<void> {
+  const config: AxiosRequestConfig = {
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+    },
+  };
+
+  if (process.env.PROXY) {
+    config.httpsAgent = new HttpsProxyAgent(process.env.PROXY);
+  }
+
+  try {
+    const result = await axios.delete(`${baseURL}/files/${fileId}`, config);
+    logger.debug(`Mistral file ${fileId} deleted successfully:`, result.data);
+  } catch (error) {
+    logger.error(`Error deleting Mistral file ${fileId}:`, error);
+  }
 }
 
 /**
@@ -212,7 +261,8 @@ async function resolveConfigValue(
  * Loads authentication configuration from OCR config
  */
 async function loadAuthConfig(context: OCRContext): Promise<AuthConfig> {
-  const ocrConfig = context.req.app.locals?.ocr;
+  const appConfig = context.req.config;
+  const ocrConfig = appConfig?.ocr;
   const apiKeyConfig = ocrConfig?.apiKey || '';
   const baseURLConfig = ocrConfig?.baseURL || '';
 
@@ -335,9 +385,15 @@ function createOCRError(error: unknown, baseMessage: string): Error {
  *                       along with the `filename` and `bytes` properties.
  */
 export const uploadMistralOCR = async (context: OCRContext): Promise<MistralOCRUploadResult> => {
+  let mistralFileId: string | undefined;
+  let apiKey: string | undefined;
+  let baseURL: string | undefined;
+
   try {
-    const { apiKey, baseURL } = await loadAuthConfig(context);
-    const model = getModelConfig(context.req.app.locals?.ocr);
+    const authConfig = await loadAuthConfig(context);
+    apiKey = authConfig.apiKey;
+    baseURL = authConfig.baseURL;
+    const model = getModelConfig(context.req.config?.ocr);
 
     const mistralFile = await uploadDocumentToMistral({
       filePath: context.file.path,
@@ -345,6 +401,8 @@ export const uploadMistralOCR = async (context: OCRContext): Promise<MistralOCRU
       apiKey,
       baseURL,
     });
+
+    mistralFileId = mistralFile.id;
 
     const signedUrlResponse = await getSignedUrl({
       apiKey,
@@ -354,11 +412,11 @@ export const uploadMistralOCR = async (context: OCRContext): Promise<MistralOCRU
 
     const documentType = getDocumentType(context.file);
     const ocrResult = await performOCR({
-      apiKey,
-      baseURL,
-      model,
       url: signedUrlResponse.url,
       documentType,
+      baseURL,
+      apiKey,
+      model,
     });
 
     if (!ocrResult || !ocrResult.pages || ocrResult.pages.length === 0) {
@@ -368,6 +426,10 @@ export const uploadMistralOCR = async (context: OCRContext): Promise<MistralOCRU
     }
     const { text, images } = processOCRResult(ocrResult);
 
+    if (mistralFileId && apiKey && baseURL) {
+      await deleteMistralFile({ fileId: mistralFileId, apiKey, baseURL });
+    }
+
     return {
       filename: context.file.originalname,
       bytes: text.length * 4,
@@ -376,6 +438,9 @@ export const uploadMistralOCR = async (context: OCRContext): Promise<MistralOCRU
       images,
     };
   } catch (error) {
+    if (mistralFileId && apiKey && baseURL) {
+      await deleteMistralFile({ fileId: mistralFileId, apiKey, baseURL });
+    }
     throw createOCRError(error, 'Error uploading document to Mistral OCR API:');
   }
 };
@@ -386,6 +451,7 @@ export const uploadMistralOCR = async (context: OCRContext): Promise<MistralOCRU
  * @param params - The params object.
  * @param params.req - The request object from Express. It should have a `user` property with an `id`
  *                       representing the user
+ * @param params.appConfig - Application configuration object
  * @param params.file - The file object, which is part of the request. The file object should
  *                                     have a `mimetype` property that tells us the file type
  * @param params.loadAuthValues - Function to load authentication values
@@ -397,9 +463,11 @@ export const uploadAzureMistralOCR = async (
 ): Promise<MistralOCRUploadResult> => {
   try {
     const { apiKey, baseURL } = await loadAuthConfig(context);
-    const model = getModelConfig(context.req.app.locals?.ocr);
+    const model = getModelConfig(context.req.config?.ocr);
 
-    const buffer = fs.readFileSync(context.file.path);
+    const { content: buffer } = await readFileAsBuffer(context.file.path, {
+      fileSize: context.file.size,
+    });
     const base64 = buffer.toString('base64');
     /** Uses actual mimetype of the file, 'image/jpeg' as fallback since it seems to be accepted regardless of mismatch */
     const base64Prefix = `data:${context.file.mimetype || 'image/jpeg'};base64,`;
@@ -504,17 +572,23 @@ async function createJWT(serviceKey: GoogleServiceAccount): Promise<string> {
  * Exchanges JWT for access token
  */
 async function exchangeJWTForAccessToken(jwt: string): Promise<string> {
+  const config: AxiosRequestConfig = {
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+  };
+
+  if (process.env.PROXY) {
+    config.httpsAgent = new HttpsProxyAgent(process.env.PROXY);
+  }
+
   const response = await axios.post(
     'https://oauth2.googleapis.com/token',
     new URLSearchParams({
       grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
       assertion: jwt,
     }),
-    {
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-    },
+    config,
   );
 
   if (!response.data?.access_token) {
@@ -569,14 +643,20 @@ async function performGoogleVertexOCR({
     },
   });
 
+  const config: AxiosRequestConfig = {
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+      Accept: 'application/json',
+    },
+  };
+
+  if (process.env.PROXY) {
+    config.httpsAgent = new HttpsProxyAgent(process.env.PROXY);
+  }
+
   return axios
-    .post(baseURL, requestBody, {
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${accessToken}`,
-        Accept: 'application/json',
-      },
-    })
+    .post(baseURL, requestBody, config)
     .then((res) => {
       logger.debug('Google Vertex AI response received');
       return res.data;
@@ -600,6 +680,7 @@ async function performGoogleVertexOCR({
  * @param params - The params object.
  * @param params.req - The request object from Express. It should have a `user` property with an `id`
  *                       representing the user
+ * @param params.appConfig - Application configuration object
  * @param params.file - The file object, which is part of the request. The file object should
  *                                     have a `mimetype` property that tells us the file type
  * @param params.loadAuthValues - Function to load authentication values
@@ -611,9 +692,11 @@ export const uploadGoogleVertexMistralOCR = async (
 ): Promise<MistralOCRUploadResult> => {
   try {
     const { serviceAccount, accessToken } = await loadGoogleAuthConfig();
-    const model = getModelConfig(context.req.app.locals?.ocr);
+    const model = getModelConfig(context.req.config?.ocr);
 
-    const buffer = fs.readFileSync(context.file.path);
+    const { content: buffer } = await readFileAsBuffer(context.file.path, {
+      fileSize: context.file.size,
+    });
     const base64 = buffer.toString('base64');
     const base64Prefix = `data:${context.file.mimetype || 'application/pdf'};base64,`;
 
