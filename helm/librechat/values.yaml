@@ -150,8 +150,10 @@ securityContext:
   runAsUser: 1000
 
 service:
-  type: ClusterIP
+  type: ClusterIP # LoadBalancer, NodePort, ClusterIP
   port: 3080
+  targetPort: 3080
+  containerPort: 3080
   annotations: {}
 
 ingress:
@@ -193,11 +195,11 @@ autoscaling:
 livenessProbe:
   httpGet:
     path: /health
-    port: http
+    port: 3080
 readinessProbe:
   httpGet:
     path: /health
-    port: http
+    port: 3080
 
 # Additional volumes on the output Deployment definition.
 volumes: []
