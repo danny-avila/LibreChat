@@ -1,12 +1,11 @@
 import axios from 'axios';
 import FormData from 'form-data';
 import { createReadStream } from 'fs';
-import { stat, readFile } from 'fs/promises';
 import { logger } from '@librechat/data-schemas';
 import { FileSources } from 'librechat-data-provider';
 import type { Request as ServerRequest } from 'express';
+import { logAxiosError, readFileAsString } from '~/utils';
 import { generateShortLivedToken } from '~/crypto/jwt';
-import { logAxiosError } from '~/utils';
 
 /**
  * Attempts to parse text using RAG API, falls back to native text parsing
@@ -103,26 +102,10 @@ export async function parseTextNative(file: Express.Multer.File): Promise<{
   bytes: number;
   source: string;
 }> {
-  const bytes = file.size || (await stat(file.path)).size;
-  if (bytes > 10 * 1024 * 1024) {
-    const chunks: string[] = [];
-    const stream = createReadStream(file.path, {
-      encoding: 'utf8',
-      highWaterMark: 64 * 1024,
-    });
+  const { content: text, bytes } = await readFileAsString(file.path, {
+    fileSize: file.size,
+  });
 
-    for await (const chunk of stream) {
-      chunks.push(chunk);
-    }
-
-    return {
-      text: chunks.join(''),
-      bytes,
-      source: FileSources.text,
-    };
-  }
-
-  const text = await readFile(file.path, 'utf8');
   return {
     text,
     bytes,
