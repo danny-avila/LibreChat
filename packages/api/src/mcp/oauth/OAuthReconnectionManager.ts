@@ -13,6 +13,7 @@ export class OAuthReconnectionManager {
 
   protected readonly flowManager: FlowStateManager<MCPOAuthTokens | null>;
   protected readonly tokenMethods: TokenMethods;
+  private readonly mcpManager: MCPManager | null;
 
   private readonly reconnectionsTracker: OAuthReconnectionTracker;
 
@@ -46,6 +47,12 @@ export class OAuthReconnectionManager {
     this.flowManager = flowManager;
     this.tokenMethods = tokenMethods;
     this.reconnectionsTracker = reconnections ?? new OAuthReconnectionTracker();
+
+    try {
+      this.mcpManager = MCPManager.getInstance();
+    } catch {
+      this.mcpManager = null;
+    }
   }
 
   public isReconnecting(userId: string, serverName: string): boolean {
@@ -53,11 +60,17 @@ export class OAuthReconnectionManager {
   }
 
   public async reconnectServers(userId: string) {
-    const mcpManager = MCPManager.getInstance();
+    // Check if MCPManager is available
+    if (this.mcpManager == null) {
+      logger.warn(
+        '[OAuthReconnectionManager] MCPManager not available, skipping OAuth MCP server reconnection',
+      );
+      return;
+    }
 
     // 1. derive the servers to reconnect
     const serversToReconnect = [];
-    for (const serverName of mcpManager.getOAuthServers() ?? []) {
+    for (const serverName of this.mcpManager.getOAuthServers() ?? []) {
       const canReconnect = await this.canReconnect(userId, serverName);
       if (canReconnect) {
         serversToReconnect.push(serverName);
@@ -81,23 +94,25 @@ export class OAuthReconnectionManager {
   }
 
   private async tryReconnect(userId: string, serverName: string) {
-    const mcpManager = MCPManager.getInstance();
+    if (this.mcpManager == null) {
+      return;
+    }
 
     const logPrefix = `[tryReconnectOAuthMCPServer][User: ${userId}][${serverName}]`;
 
     logger.info(`${logPrefix} Attempting reconnection`);
 
-    const config = mcpManager.getRawConfig(serverName);
+    const config = this.mcpManager.getRawConfig(serverName);
 
     const cleanupOnFailedReconnect = () => {
       this.reconnectionsTracker.setFailed(userId, serverName);
       this.reconnectionsTracker.removeActive(userId, serverName);
-      mcpManager.disconnectUserConnection(userId, serverName);
+      this.mcpManager?.disconnectUserConnection(userId, serverName);
     };
 
     try {
       // attempt to get connection (this will use existing tokens and refresh if needed)
-      const connection = await mcpManager.getUserConnection({
+      const connection = await this.mcpManager.getUserConnection({
         serverName,
         user: { id: userId } as TUser,
         flowManager: this.flowManager,
@@ -125,7 +140,9 @@ export class OAuthReconnectionManager {
   }
 
   private async canReconnect(userId: string, serverName: string) {
-    const mcpManager = MCPManager.getInstance();
+    if (this.mcpManager == null) {
+      return false;
+    }
 
     // if the server has failed reconnection, don't attempt to reconnect
     if (this.reconnectionsTracker.isFailed(userId, serverName)) {
@@ -133,7 +150,7 @@ export class OAuthReconnectionManager {
     }
 
     // if the server is already connected, don't attempt to reconnect
-    const existingConnections = mcpManager.getUserConnections(userId);
+    const existingConnections = this.mcpManager.getUserConnections(userId);
     if (existingConnections?.has(serverName)) {
       const isConnected = await existingConnections.get(serverName)?.isConnected();
       if (isConnected) {
