@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { SettingsIcon } from 'lucide-react';
 import { TooltipAnchor, Spinner } from '@librechat/client';
-import { EModelEndpoint, isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint, isAgentsEndpoint, isAssistantsEndpoint, isA2AEndpoint } from 'librechat-data-provider';
 import type { Endpoint } from '~/common';
 import { CustomMenu as Menu, CustomMenuItem as MenuItem } from '../CustomMenu';
 import { useModelSelectorContext } from '../ModelSelectorContext';
@@ -110,7 +110,7 @@ export function EndpointItem({ endpoint }: EndpointItemProps) {
         )
       : null;
     const placeholder =
-      isAgentsEndpoint(endpoint.value) || isAssistantsEndpoint(endpoint.value)
+      isAgentsEndpoint(endpoint.value) || isAssistantsEndpoint(endpoint.value) || isA2AEndpoint(endpoint.value)
         ? localize('com_endpoint_search_var', { 0: endpoint.label })
         : localize('com_endpoint_search_endpoint_models', { 0: endpoint.label });
     return (

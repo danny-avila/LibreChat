@@ -222,6 +222,46 @@ endpoints:
   #   minRelevanceScore: 0.45
   #   # (optional) Agent Capabilities available to all users. Omit the ones you wish to exclude. Defaults to list below.
   #   capabilities: ["execute_code", "file_search", "actions", "tools"]
+  # a2a:
+  #   # A2A (Agent-to-Agent) Protocol Configuration
+  #   # Enables external agent communication via the A2A protocol standard
+  #   enabled: true
+  #   discovery:
+  #     # Enable automatic agent discovery
+  #     enabled: true
+  #     # Refresh interval for agent discovery (in milliseconds)
+  #     refreshInterval: 300000  # 5 minutes
+  #   # External A2A agents configuration
+  #   agents:
+  #     # Example A2A agent configuration
+  #     - id: "weather-agent"
+  #       name: "Weather Agent"
+  #       description: "Provides weather information and forecasts"
+  #       agentCardUrl: "https://example.com/agents/weather/card"
+  #       preferredTransport: "HTTP+JSON"  # Options: "JSONRPC", "HTTP+JSON", "GRPC"
+  #       authentication:
+  #         type: "bearer"  # Options: "none", "bearer", "apikey", "oauth2"
+  #         # token: "${WEATHER_AGENT_TOKEN}"  # Use environment variable for security
+  #     - id: "code-assistant"
+  #       name: "Code Assistant"
+  #       description: "Helps with code analysis and generation"
+  #       agentCardUrl: "https://example.com/agents/code/card"
+  #       preferredTransport: "JSONRPC"
+  #       authentication:
+  #         type: "apikey"
+  #         # apiKey: "${CODE_ASSISTANT_API_KEY}"
+  #   # Default options for A2A conversations
+  #   defaultOptions:
+  #     # Timeout for A2A requests (in milliseconds)
+  #     timeout: 30000
+  #     # Enable streaming responses
+  #     streaming: true
+  #     # Maximum number of turns in multi-turn conversations
+  #     maxTurns: 50
+  #     # Retry configuration
+  #     retries:
+  #       maxAttempts: 3
+  #       backoffMs: 1000
   custom:
     # Groq Example
     - name: 'groq'

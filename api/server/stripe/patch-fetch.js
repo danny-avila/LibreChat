@@ -76,8 +76,19 @@ function formatUrl(url) {
 
 function formatHeaders(headers) {
   const obj = {};
-  for (const [key, value] of headers) {
-    obj[key] = redactValue(key, value);
+  
+  // Handle Headers object or other iterable
+  if (headers && typeof headers[Symbol.iterator] === 'function') {
+    for (const [key, value] of headers) {
+      obj[key] = redactValue(key, value);
+    }
+  } 
+  // Handle plain object
+  else if (headers && typeof headers === 'object') {
+    for (const [key, value] of Object.entries(headers)) {
+      obj[key] = redactValue(key, value);
+    }
   }
+  
   return obj;
 }

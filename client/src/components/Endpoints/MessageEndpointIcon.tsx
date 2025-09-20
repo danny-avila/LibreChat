@@ -1,5 +1,5 @@
 import { memo } from 'react';
-import { Feather } from 'lucide-react';
+import { Feather, Network } from 'lucide-react';
 import { EModelEndpoint, isAssistantsEndpoint, alternateName } from 'librechat-data-provider';
 import {
   Plugin,
@@ -131,6 +131,16 @@ const MessageEndpointIcon: React.FC<IconProps> = (props) => {
   } = {
     [EModelEndpoint.assistants]: assistantsIcon,
     [EModelEndpoint.agents]: agentsIcon,
+    [EModelEndpoint.a2a]: {
+      icon: (
+        <div className="h-6 w-6">
+          <div className="shadow-stroke flex h-6 w-6 items-center justify-center overflow-hidden rounded-full">
+            <Network className="h-2/3 w-2/3 text-blue-500" />
+          </div>
+        </div>
+      ),
+      name: 'A2A Agents',
+    },
     [EModelEndpoint.azureAssistants]: assistantsIcon,
     [EModelEndpoint.azureOpenAI]: {
       icon: <AzureMinimalIcon size={size * 0.5555555555555556} />,

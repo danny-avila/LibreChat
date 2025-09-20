@@ -23,6 +23,7 @@ export enum EModelEndpoint {
   assistants = 'assistants',
   azureAssistants = 'azureAssistants',
   agents = 'agents',
+  a2a = 'a2a',
   custom = 'custom',
   bedrock = 'bedrock',
   /** @deprecated */
@@ -33,6 +34,7 @@ export enum EModelEndpoint {
 
 export const paramEndpoints = new Set<EModelEndpoint | string>([
   EModelEndpoint.agents,
+  EModelEndpoint.a2a,
   EModelEndpoint.openAI,
   EModelEndpoint.bedrock,
   EModelEndpoint.azureOpenAI,
@@ -88,6 +90,14 @@ export const isAgentsEndpoint = (_endpoint?: EModelEndpoint.agents | null | stri
     return false;
   }
   return endpoint === EModelEndpoint.agents;
+};
+
+export const isA2AEndpoint = (_endpoint?: EModelEndpoint.a2a | null | string): boolean => {
+  const endpoint = _endpoint ?? '';
+  if (!endpoint) {
+    return false;
+  }
+  return endpoint === EModelEndpoint.a2a;
 };
 
 export const isParamEndpoint = (

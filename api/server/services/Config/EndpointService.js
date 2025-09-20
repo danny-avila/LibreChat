@@ -49,5 +49,6 @@ module.exports = {
     ),
     /* key will be part of separate config */
     [EModelEndpoint.agents]: generateConfig('true', undefined, EModelEndpoint.agents),
+    [EModelEndpoint.a2a]: generateConfig('true', undefined, EModelEndpoint.a2a),
   },
 };

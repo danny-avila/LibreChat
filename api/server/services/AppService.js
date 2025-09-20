@@ -10,6 +10,7 @@ const {
   loadOCRConfig,
   EModelEndpoint,
   getConfigDefaults,
+  logger,
 } = require('librechat-data-provider');
 const {
   checkWebSearchConfig,
@@ -21,6 +22,7 @@ const { initializeAzureBlobService } = require('./Files/Azure/initialize');
 const { initializeFirebase } = require('./Files/Firebase/initialize');
 const handleRateLimits = require('./Config/handleRateLimits');
 const loadCustomConfig = require('./Config/loadCustomConfig');
+const a2aConfigLoader = require('./A2AConfigLoader');
 const { loadTurnstileConfig } = require('./start/turnstile');
 const { processModelSpecs } = require('./start/modelSpecs');
 const { initializeS3 } = require('./Files/S3/initialize');
@@ -113,6 +115,14 @@ const AppService = async () => {
 
   checkConfig(config);
   handleRateLimits(config?.rateLimits);
+  
+  // Load A2A configuration
+  try {
+    await a2aConfigLoader.loadA2AConfig(config);
+  } catch (error) {
+    logger.warn('A2A configuration loading failed:', error.message);
+  }
+  
   const loadedEndpoints = loadEndpoints(config, agentsDefaults);
 
   const appConfig = {

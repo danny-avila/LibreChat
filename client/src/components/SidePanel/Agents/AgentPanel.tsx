@@ -89,6 +89,7 @@ export default function AgentPanel() {
             !isAssistantsEndpoint(key) &&
             (allowedProviders.size > 0 ? allowedProviders.has(key) : true) &&
             key !== EModelEndpoint.agents &&
+            key !== EModelEndpoint.a2a &&
             key !== EModelEndpoint.chatGPTBrowser &&
             key !== EModelEndpoint.gptPlugins,
         )

@@ -1,6 +1,6 @@
 import debounce from 'lodash/debounce';
 import React, { createContext, useContext, useState, useMemo } from 'react';
-import { EModelEndpoint, isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint, isAgentsEndpoint, isAssistantsEndpoint, isA2AEndpoint } from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
 import type { Endpoint, SelectedValues } from '~/common';
 import {
@@ -156,6 +156,8 @@ export function ModelSelectorProvider({ children, startupConfig }: ModelSelector
     onSelectSpec?.(spec);
     if (isAgentsEndpoint(spec.preset.endpoint)) {
       model = spec.preset.agent_id ?? '';
+    } else if (isA2AEndpoint(spec.preset.endpoint)) {
+      model = spec.preset.agent_id ?? '';
     } else if (isAssistantsEndpoint(spec.preset.endpoint)) {
       model = spec.preset.assistant_id ?? '';
     }
@@ -184,6 +186,11 @@ export function ModelSelectorProvider({ children, startupConfig }: ModelSelector
       onSelectEndpoint?.(endpoint.value, {
         agent_id: model,
         model: agentsMap?.[model]?.model ?? '',
+      });
+    } else if (isA2AEndpoint(endpoint.value)) {
+      onSelectEndpoint?.(endpoint.value, {
+        agent_id: model,
+        model: model,
       });
     } else if (isAssistantsEndpoint(endpoint.value)) {
       onSelectEndpoint?.(endpoint.value, {

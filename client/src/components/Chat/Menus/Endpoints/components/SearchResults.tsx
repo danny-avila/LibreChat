@@ -1,6 +1,6 @@
 import React, { Fragment } from 'react';
 import { EarthIcon } from 'lucide-react';
-import { isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
+import { isAgentsEndpoint, isAssistantsEndpoint, isA2AEndpoint } from 'librechat-data-provider';
 import type { TModelSpec } from 'librechat-data-provider';
 import type { Endpoint } from '~/common';
 import { useModelSelectorContext } from '../ModelSelectorContext';
@@ -110,6 +110,12 @@ export function SearchResults({ results, localize, searchValue }: SearchResultsP
                   ) {
                     modelName = endpoint.agentNames[model.name];
                   } else if (
+                    isA2AEndpoint(endpoint.value) &&
+                    endpoint.agentNames &&
+                    endpoint.agentNames[model.name]
+                  ) {
+                    modelName = endpoint.agentNames[model.name];
+                  } else if (
                     isAssistantsEndpoint(endpoint.value) &&
                     endpoint.assistantNames &&
                     endpoint.assistantNames[model.name]
@@ -140,6 +146,14 @@ export function SearchResults({ results, localize, searchValue }: SearchResultsP
                   let modelName = modelId;
                   if (
                     isAgentsEndpoint(endpoint.value) &&
+                    endpoint.agentNames &&
+                    endpoint.agentNames[modelId]
+                  ) {
+                    modelName = endpoint.agentNames[modelId];
+                    const modelInfo = endpoint?.models?.find((m) => m.name === modelId);
+                    isGlobal = modelInfo?.isGlobal ?? false;
+                  } else if (
+                    isA2AEndpoint(endpoint.value) &&
                     endpoint.agentNames &&
                     endpoint.agentNames[modelId]
                   ) {

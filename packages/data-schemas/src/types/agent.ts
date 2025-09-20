@@ -5,6 +5,63 @@ export interface ISupportContact {
   email?: string;
 }
 
+export interface IA2ACapabilities {
+  streaming?: boolean;
+  push?: boolean;
+  multiTurn?: boolean;
+  taskBased?: boolean;
+  tools?: boolean;
+}
+
+export interface IA2ASkill {
+  id: string;
+  name: string;
+  description: string;
+  inputModes?: string[];
+  outputModes?: string[];
+}
+
+export interface IA2ASecurityScheme {
+  type: 'apikey' | 'oauth2' | 'openid' | 'http' | 'mutual_tls';
+  scheme?: string;
+  bearerFormat?: string;
+  flows?: Record<string, unknown>;
+  openIdConnectUrl?: string;
+}
+
+export interface IA2AAuthentication {
+  type: 'apikey' | 'oauth2' | 'openid' | 'http' | 'mutual_tls' | 'none';
+  credentials?: Record<string, string>;
+  headers?: Record<string, string>;
+}
+
+export interface IA2AAgentCard {
+  protocolVersion: string;
+  name: string;
+  description: string;
+  url: string;
+  preferredTransport: 'JSONRPC' | 'HTTP+JSON' | 'GRPC';
+  version: string;
+  capabilities: IA2ACapabilities;
+  skills: IA2ASkill[];
+  securitySchemes?: Record<string, IA2ASecurityScheme>;
+  metadata?: Record<string, unknown>;
+}
+
+export interface IA2AConfig {
+  agent_card_url: string;
+  agent_card?: IA2AAgentCard;
+  preferred_transport: 'JSONRPC' | 'HTTP+JSON' | 'GRPC';
+  authentication: IA2AAuthentication;
+  timeout?: number;
+  max_retries?: number;
+  enable_streaming?: boolean;
+  enable_tasks?: boolean;
+  health_check_interval?: number;
+  last_health_check?: Date;
+  status?: 'online' | 'offline' | 'error' | 'unknown';
+}
+
 export interface IAgent extends Omit<Document, 'model'> {
   id: string;
   name?: string;

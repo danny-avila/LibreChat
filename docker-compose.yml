@@ -68,5 +68,25 @@ services:
     env_file:
       - .env
 
+  # Mock A2A Agent for development and testing
+  mock-a2a-agent:
+    build: ./containers/mock-a2a-agent
+    container_name: librechat-mock-a2a-agent
+    ports:
+      - "8080:8080"
+    environment:
+      - NODE_ENV=development
+      - PORT=8080
+      - HOST=0.0.0.0
+      - AGENT_URL=http://mock-a2a-agent:8080
+      - CORS_ORIGIN=http://localhost:${PORT:-3080}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
 volumes:
   pgdata2:

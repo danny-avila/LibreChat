@@ -3,6 +3,7 @@ const {
   EModelEndpoint,
   isAgentsEndpoint,
   isAssistantsEndpoint,
+  isA2AEndpoint,
   defaultRetrievalModels,
   defaultAssistantsVersion,
   defaultAgentCapabilities,
@@ -182,6 +183,8 @@ function generateConfig(key, baseURL, endpoint) {
 
   const assistants = isAssistantsEndpoint(endpoint);
   const agents = isAgentsEndpoint(endpoint);
+  const a2a = isA2AEndpoint(endpoint);
+  
   if (assistants) {
     config.retrievalModels = defaultRetrievalModels;
     config.capabilities = [
@@ -195,6 +198,11 @@ function generateConfig(key, baseURL, endpoint) {
 
   if (agents) {
     config.capabilities = defaultAgentCapabilities;
+  }
+
+  if (a2a) {
+    config.type = EModelEndpoint.a2a;
+    config.capabilities = ['messaging', 'streaming'];
   }
 
   if (assistants && endpoint === EModelEndpoint.azureAssistants) {

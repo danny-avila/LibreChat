@@ -5,6 +5,7 @@ import {
   LocalStorageKeys,
   isAgentsEndpoint,
   isAssistantsEndpoint,
+  isA2AEndpoint,
 } from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
 import type { LocalizeFunction, IconsRecord } from '~/common';

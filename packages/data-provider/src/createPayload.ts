@@ -26,19 +26,37 @@ export default function createPayload(submission: t.TSubmission) {
     server =
       EndpointURLs[(endpointType ?? endpoint) as 'assistants' | 'azureAssistants'] +
       (isEdited ? '/modify' : '');
+  } else if (endpoint === s.EModelEndpoint.a2a) {
+    server = EndpointURLs[s.EModelEndpoint.a2a];
   }
 
-  const payload: t.TPayload = {
-    ...userMessage,
-    ...endpointOption,
-    endpoint,
-    isTemporary,
-    isRegenerate,
-    editedContent,
-    conversationId,
-    isContinued: !!(isEdited && isContinued),
-    ephemeralAgent: s.isAssistantsEndpoint(endpoint) ? undefined : ephemeralAgent,
-  };
+  let payload: t.TPayload;
+  
+  if (endpoint === s.EModelEndpoint.a2a) {
+    // A2A endpoints expect different payload format
+    const agentId = endpointOption?.model || 
+                   endpointOption?.modelLabel || 
+                   'a2a-mock-langchain-a2a-agent-57cd14df'; // Fallback to registered agent ID
+    payload = {
+      agentId: agentId,
+      message: userMessage.text,
+      conversationId: conversationId,
+      taskBased: false, // Default to direct chat mode
+      streaming: true,
+    } as any; // Cast to any since A2A payload has different structure
+  } else {
+    payload = {
+      ...userMessage,
+      ...endpointOption,
+      endpoint,
+      isTemporary,
+      isRegenerate,
+      editedContent,
+      conversationId,
+      isContinued: !!(isEdited && isContinued),
+      ephemeralAgent: s.isAssistantsEndpoint(endpoint) ? undefined : ephemeralAgent,
+    };
+  }
 
   return { server, payload };
 }

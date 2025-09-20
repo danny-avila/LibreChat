@@ -1,6 +1,6 @@
 import React from 'react';
 import { EarthIcon } from 'lucide-react';
-import { isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
+import { isAgentsEndpoint, isAssistantsEndpoint, isA2AEndpoint } from 'librechat-data-provider';
 import type { Endpoint } from '~/common';
 import { useModelSelectorContext } from '../ModelSelectorContext';
 import { CustomMenuItem as MenuItem } from '../CustomMenu';
@@ -43,7 +43,7 @@ export function EndpointModelItem({ modelId, endpoint, isSelected }: EndpointMod
           <div className="flex h-5 w-5 items-center justify-center overflow-hidden rounded-full">
             <img src={avatarUrl} alt={modelName ?? ''} className="h-full w-full object-cover" />
           </div>
-        ) : (isAgentsEndpoint(endpoint.value) || isAssistantsEndpoint(endpoint.value)) &&
+        ) : (isAgentsEndpoint(endpoint.value) || isAssistantsEndpoint(endpoint.value) || isA2AEndpoint(endpoint.value)) &&
           endpoint.icon ? (
           <div className="flex h-5 w-5 items-center justify-center overflow-hidden rounded-full">
             {endpoint.icon}

@@ -287,6 +287,65 @@ export const agentsEndpointSchema = baseEndpointSchema
 
 export type TAgentsEndpoint = z.infer<typeof agentsEndpointSchema>;
 
+export const a2aEndpointSchema = baseEndpointSchema
+  .merge(
+    z.object({
+      /* A2A specific */
+      enabled: z.boolean().optional().default(true),
+      discovery: z.object({
+        enabled: z.boolean().optional().default(true),
+        refreshInterval: z.number().optional().default(300000), // 5 minutes
+      }).optional().default({
+        enabled: true,
+        refreshInterval: 300000,
+      }),
+      agents: z.array(
+        z.object({
+          name: z.string(),
+          agentCardUrl: z.string().url(),
+          authentication: z.object({
+            type: z.enum(['apikey', 'oauth2', 'openid', 'http', 'mutual_tls', 'none']),
+            credentials: z.record(z.string()).optional(),
+            headers: z.record(z.string()).optional(),
+          }),
+          options: z.object({
+            timeout: z.number().optional().default(30000),
+            maxRetries: z.number().optional().default(3),
+            enableStreaming: z.boolean().optional().default(true),
+            enableTasks: z.boolean().optional().default(true),
+          }).optional(),
+        })
+      ).optional().default([]),
+      defaultOptions: z.object({
+        timeout: z.number().optional().default(30000),
+        maxRetries: z.number().optional().default(3),
+        enableStreaming: z.boolean().optional().default(true),
+        enableTasks: z.boolean().optional().default(true),
+      }).optional().default({
+        timeout: 30000,
+        maxRetries: 3,
+        enableStreaming: true,
+        enableTasks: true,
+      }),
+    }),
+  )
+  .default({
+    enabled: true,
+    discovery: {
+      enabled: true,
+      refreshInterval: 300000,
+    },
+    agents: [],
+    defaultOptions: {
+      timeout: 30000,
+      maxRetries: 3,
+      enableStreaming: true,
+      enableTasks: true,
+    },
+  });
+
+export type TA2AEndpoint = z.infer<typeof a2aEndpointSchema>;
+
 export const endpointSchema = baseEndpointSchema.merge(
   z.object({
     name: z.string().refine((value) => !eModelEndpointSchema.safeParse(value).success, {
@@ -854,6 +913,7 @@ export const configSchema = z.object({
       [EModelEndpoint.azureAssistants]: assistantEndpointSchema.optional(),
       [EModelEndpoint.assistants]: assistantEndpointSchema.optional(),
       [EModelEndpoint.agents]: agentsEndpointSchema.optional(),
+      [EModelEndpoint.a2a]: a2aEndpointSchema.optional(),
       [EModelEndpoint.custom]: customEndpointsSchema.optional(),
       [EModelEndpoint.bedrock]: baseEndpointSchema.optional(),
     })
@@ -904,6 +964,7 @@ export const defaultEndpoints: EModelEndpoint[] = [
   EModelEndpoint.azureAssistants,
   EModelEndpoint.azureOpenAI,
   EModelEndpoint.agents,
+  EModelEndpoint.a2a,
   EModelEndpoint.chatGPTBrowser,
   EModelEndpoint.gptPlugins,
   EModelEndpoint.google,
@@ -916,6 +977,7 @@ export const alternateName = {
   [EModelEndpoint.openAI]: 'OpenAI',
   [EModelEndpoint.assistants]: 'Assistants',
   [EModelEndpoint.agents]: 'My Agents',
+  [EModelEndpoint.a2a]: 'A2A Agents',
   [EModelEndpoint.azureAssistants]: 'Azure Assistants',
   [EModelEndpoint.azureOpenAI]: 'Azure OpenAI',
   [EModelEndpoint.chatGPTBrowser]: 'ChatGPT',
@@ -1060,6 +1122,7 @@ export const EndpointURLs = {
   [EModelEndpoint.assistants]: `${apiBaseUrl()}/api/assistants/v2/chat`,
   [EModelEndpoint.azureAssistants]: `${apiBaseUrl()}/api/assistants/v1/chat`,
   [EModelEndpoint.agents]: `${apiBaseUrl()}/api/${EModelEndpoint.agents}/chat`,
+  [EModelEndpoint.a2a]: `${apiBaseUrl()}/api/a2a/chat`,
 } as const;
 
 export const modularEndpoints = new Set<EModelEndpoint | string>([

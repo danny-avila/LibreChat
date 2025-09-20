@@ -73,6 +73,19 @@ async function getEndpointsConfig(req) {
     };
   }
 
+  if (mergedConfig[EModelEndpoint.a2a] && appConfig?.endpoints?.[EModelEndpoint.a2a]) {
+    const { enabled, discovery, agents, defaultOptions, ..._rest } =
+      appConfig.endpoints[EModelEndpoint.a2a];
+
+    mergedConfig[EModelEndpoint.a2a] = {
+      ...mergedConfig[EModelEndpoint.a2a],
+      enabled,
+      discovery,
+      agents,
+      defaultOptions,
+    };
+  }
+
   if (
     mergedConfig[EModelEndpoint.azureAssistants] &&
     appConfig?.endpoints?.[EModelEndpoint.azureAssistants]
