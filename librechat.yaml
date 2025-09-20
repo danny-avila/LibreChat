@@ -17,7 +17,7 @@ interface:
   runCode: false 
   webSearch: false 
   fileSearch: false
-  modelSelect: false
+  modelSelect: true
   sidePanel : true # Enable/disable the side panel (default: false)
   # MCP Servers UI configuration
   mcpServers:
@@ -31,6 +31,11 @@ interface:
 
   # Temporary chat retention period in hours (default: 720, min: 1, max: 8760)
   # temporaryChatRetention: 1
+
+# Limit the selector to only show the Agents endpoint
+#modelSpecs:
+  #addedEndpoints:
+    #- agents
 
 # Example Cloudflare turnstile (optional)
 #turnstile:
@@ -149,6 +154,7 @@ endpoints:
     disableBuilder: false
     # Limit global Agent capabilities; individual Agents can still narrow these down
     capabilities: ["actions", "tools"]
+    minRelevanceScore: 0.7
  
 # fileConfig:
 #   endpoints:
@@ -182,7 +188,7 @@ endpoints:
 
 # Memory configuration for user memories
 memory:
-  disabled: false
+  disabled: true
   validKeys: ["preferences", "work_info", "personal_info", "skills", "interests", "context"]
   tokenLimit: 10000
   personalize: true
