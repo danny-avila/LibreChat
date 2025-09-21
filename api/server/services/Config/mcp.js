@@ -84,45 +84,8 @@ async function cacheMCPServerTools({ serverName, serverTools }) {
   }
 }
 
-/**
- * Clears all MCP tools for a specific server
- * @param {Object} params - Parameters for clearing MCP tools
- * @param {string} params.serverName - MCP server name
- * @returns {Promise<void>}
- */
-async function clearMCPServerTools({ serverName }) {
-  try {
-    const tools = await getCachedTools();
-
-    // Remove all tools for this server
-    const mcpDelimiter = Constants.mcp_delimiter;
-    let removedCount = 0;
-    for (const key of Object.keys(tools)) {
-      if (key.endsWith(`${mcpDelimiter}${serverName}`)) {
-        delete tools[key];
-        removedCount++;
-      }
-    }
-
-    if (removedCount > 0) {
-      await setCachedTools(tools);
-
-      const cache = getLogStores(CacheKeys.CONFIG_STORE);
-      await cache.delete(CacheKeys.TOOLS);
-      // Also clear the server-specific cache
-      await cache.delete(`tools:mcp:${serverName}`);
-
-      logger.debug(`[MCP Cache] Removed ${removedCount} tools for ${serverName} (global)`);
-    }
-  } catch (error) {
-    logger.error(`[MCP Cache] Failed to clear tools for ${serverName}:`, error);
-    throw error;
-  }
-}
-
 module.exports = {
   mergeAppTools,
   cacheMCPServerTools,
-  clearMCPServerTools,
   updateMCPServerTools,
 };

@@ -7,7 +7,7 @@ const { getLogStores } = require('~/cache');
 
 /**
  * @param {Object} params
- * @param {ServerRequest} params.req
+ * @param {string} params.userId
  * @param {string} params.serverName - The name of the MCP server
  * @param {boolean} params.returnOnOAuth - Whether to initiate OAuth and return, or wait for OAuth flow to finish
  * @param {AbortSignal} [params.signal] - The abort signal to handle cancellation.
@@ -18,7 +18,7 @@ const { getLogStores } = require('~/cache');
  * @param {Record<string, Record<string, string>>} [params.userMCPAuthMap]
  */
 async function reinitMCPServer({
-  req,
+  userId,
   signal,
   forceNew,
   serverName,
@@ -51,7 +51,7 @@ async function reinitMCPServer({
 
     try {
       userConnection = await mcpManager.getUserConnection({
-        user: req.user,
+        user: { id: userId },
         signal,
         forceNew,
         oauthStart,

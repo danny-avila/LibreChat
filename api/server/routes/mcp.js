@@ -300,9 +300,9 @@ router.post('/oauth/cancel/:serverName', requireJwtAuth, async (req, res) => {
 router.post('/:serverName/reinitialize', requireJwtAuth, async (req, res) => {
   try {
     const { serverName } = req.params;
-    const user = req.user;
+    const userId = req.user?.id;
 
-    if (!user?.id) {
+    if (!userId) {
       return res.status(401).json({ error: 'User not authenticated' });
     }
 
@@ -316,7 +316,7 @@ router.post('/:serverName/reinitialize', requireJwtAuth, async (req, res) => {
       });
     }
 
-    await mcpManager.disconnectUserConnection(user.id, serverName);
+    await mcpManager.disconnectUserConnection(userId, serverName);
     logger.info(
       `[MCP Reinitialize] Disconnected existing user connection for server: ${serverName}`,
     );
@@ -325,14 +325,14 @@ router.post('/:serverName/reinitialize', requireJwtAuth, async (req, res) => {
     let userMCPAuthMap;
     if (serverConfig.customUserVars && typeof serverConfig.customUserVars === 'object') {
       userMCPAuthMap = await getUserMCPAuthMap({
-        userId: user.id,
+        userId,
         servers: [serverName],
         findPluginAuthsByKeys,
       });
     }
 
     const result = await reinitMCPServer({
-      req,
+      userId,
       serverName,
       userMCPAuthMap,
     });

@@ -22,11 +22,11 @@ const {
 const { updateUserPluginAuth, deleteUserPluginAuth } = require('~/server/services/PluginService');
 const { updateUserPluginsService, deleteUserKey } = require('~/server/services/UserService');
 const { verifyEmail, resendVerificationEmail } = require('~/server/services/AuthService');
-const { getAppConfig, clearMCPServerTools } = require('~/server/services/Config');
 const { needsRefresh, getNewS3URL } = require('~/server/services/Files/S3/crud');
 const { processDeleteRequest } = require('~/server/services/Files/process');
 const { Transaction, Balance, User, Token } = require('~/db/models');
 const { getMCPManager, getFlowStateManager } = require('~/config');
+const { getAppConfig } = require('~/server/services/Config');
 const { deleteToolCalls } = require('~/models/ToolCall');
 const { getLogStores } = require('~/cache');
 
@@ -372,9 +372,6 @@ const maybeUninstallOAuthMCP = async (userId, pluginKey, appConfig) => {
   const flowId = MCPOAuthHandler.generateFlowId(userId, serverName);
   await flowManager.deleteFlow(flowId, 'mcp_get_tokens');
   await flowManager.deleteFlow(flowId, 'mcp_oauth');
-
-  // 6. clear the tools cache for the server
-  await clearMCPServerTools({ userId, serverName });
 };
 
 module.exports = {

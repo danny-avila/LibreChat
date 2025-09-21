@@ -5,7 +5,11 @@
 const { logger } = require('@librechat/data-schemas');
 const { Constants } = require('librechat-data-provider');
 const { convertMCPToolToPlugin } = require('@librechat/api');
-const { getAppConfig, getMCPServerTools } = require('~/server/services/Config');
+const {
+  cacheMCPServerTools,
+  getMCPServerTools,
+  getAppConfig,
+} = require('~/server/services/Config');
 const { getMCPManager } = require('~/config');
 
 /**
@@ -49,7 +53,6 @@ const getMCPTools = async (req, res) => {
 
           // Cache server tools if found
           if (Object.keys(serverTools).length > 0) {
-            const { cacheMCPServerTools } = require('~/server/services/Config');
             await cacheMCPServerTools({ serverName, serverTools });
           }
         }

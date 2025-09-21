@@ -95,21 +95,10 @@ async function getMCPServerTools(serverName) {
   return null;
 }
 
-/**
- * Middleware-friendly function to get tools for a request
- * @function getToolsForRequest
- * @param {Object} [req] - Express request object
- * @returns {Promise<Object|null>} Available tools for the request
- */
-async function getToolsForRequest(_req) {
-  return getCachedTools();
-}
-
 module.exports = {
   ToolCacheKeys,
   getCachedTools,
   setCachedTools,
   getMCPServerTools,
-  getToolsForRequest,
   invalidateCachedTools,
 };
