@@ -223,9 +223,30 @@ const jsonTruncateFormat = winston.format((info) => {
   return truncateObject(info);
 });
 
+/**
+ * Parses rate limiting configuration from the main config object
+ * @param {Object} config - The main configuration object
+ * @returns {Object} - Parsed rate limiting configuration with defaults
+ */
+function parseRateLimitingConfig(config) {
+  const defaults = {
+    enabled: true,
+    redis: { host: 'localhost', port: 6379, db: 1 },
+    limits: {
+      login: { points: 5, duration: 300, blockDuration: 900 },
+      register: { points: 3, duration: 3600 },
+      messages: { points: 100, duration: 60 },
+      fileUploads: { points: 20, duration: 300 },
+      apiKeys: { points: 10, duration: 3600 }
+    }
+  };
+  return { ...defaults, ...config?.rateLimiting };
+}
+
 module.exports = {
   redactFormat,
   redactMessage,
   debugTraverse,
   jsonTruncateFormat,
+  parseRateLimitingConfig
 };
