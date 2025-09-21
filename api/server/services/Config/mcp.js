@@ -4,27 +4,20 @@ const { getCachedTools, setCachedTools } = require('./getCachedTools');
 const { getLogStores } = require('~/cache');
 
 /**
- * Updates MCP tools in the cache for a specific server and user
+ * Updates MCP tools in the cache for a specific server
  * @param {Object} params - Parameters for updating MCP tools
- * @param {string} params.userId - User ID
  * @param {string} params.serverName - MCP server name
  * @param {Array} params.tools - Array of tool objects from MCP server
  * @returns {Promise<LCAvailableTools>}
  */
-async function updateMCPUserTools({ userId, serverName, tools }) {
+async function updateMCPServerTools({ serverName, tools }) {
   try {
-    const userTools = await getCachedTools({ userId });
-
+    const serverTools = {};
     const mcpDelimiter = Constants.mcp_delimiter;
-    for (const key of Object.keys(userTools)) {
-      if (key.endsWith(`${mcpDelimiter}${serverName}`)) {
-        delete userTools[key];
-      }
-    }
 
     for (const tool of tools) {
-      const name = `${tool.name}${Constants.mcp_delimiter}${serverName}`;
-      userTools[name] = {
+      const name = `${tool.name}${mcpDelimiter}${serverName}`;
+      serverTools[name] = {
         type: 'function',
         ['function']: {
           name,
@@ -34,12 +27,12 @@ async function updateMCPUserTools({ userId, serverName, tools }) {
       };
     }
 
-    await setCachedTools(userTools, { userId });
+    await setCachedTools(serverTools, { serverName });
 
     const cache = getLogStores(CacheKeys.CONFIG_STORE);
     await cache.delete(CacheKeys.TOOLS);
-    logger.debug(`[MCP Cache] Updated ${tools.length} tools for ${serverName} user ${userId}`);
-    return userTools;
+    logger.debug(`[MCP Cache] Updated ${tools.length} tools for server ${serverName}`);
+    return serverTools;
   } catch (error) {
     logger.error(`[MCP Cache] Failed to update tools for ${serverName}:`, error);
     throw error;
@@ -57,9 +50,9 @@ async function mergeAppTools(appTools) {
     if (!count) {
       return;
     }
-    const cachedTools = await getCachedTools({ includeGlobal: true });
+    const cachedTools = await getCachedTools();
     const mergedTools = { ...cachedTools, ...appTools };
-    await setCachedTools(mergedTools, { isGlobal: true });
+    await setCachedTools(mergedTools);
     const cache = getLogStores(CacheKeys.CONFIG_STORE);
     await cache.delete(CacheKeys.TOOLS);
     logger.debug(`Merged ${count} app-level tools`);
@@ -70,30 +63,23 @@ async function mergeAppTools(appTools) {
 }
 
 /**
- * Merges user-level tools with global tools
+ * Caches MCP server tools (no longer merges with global)
  * @param {object} params
- * @param {string} params.userId
- * @param {Record<string, FunctionTool>} params.cachedUserTools
- * @param {import('@librechat/api').LCAvailableTools} params.userTools
+ * @param {string} params.serverName
+ * @param {import('@librechat/api').LCAvailableTools} params.serverTools
  * @returns {Promise<void>}
  */
-async function mergeUserTools({ userId, cachedUserTools, userTools }) {
+async function cacheMCPServerTools({ serverName, serverTools }) {
   try {
-    if (!userId) {
-      return;
-    }
-    const count = Object.keys(userTools).length;
+    const count = Object.keys(serverTools).length;
     if (!count) {
       return;
     }
-    const cachedTools = cachedUserTools ?? (await getCachedTools({ userId }));
-    const mergedTools = { ...cachedTools, ...userTools };
-    await setCachedTools(mergedTools, { userId });
-    const cache = getLogStores(CacheKeys.CONFIG_STORE);
-    await cache.delete(CacheKeys.TOOLS);
-    logger.debug(`Merged ${count} user-level tools`);
+    // Only cache server-specific tools, no merging with global
+    await setCachedTools(serverTools, { serverName });
+    logger.debug(`Cached ${count} MCP server tools for ${serverName}`);
   } catch (error) {
-    logger.error('Failed to merge user-level tools:', error);
+    logger.error(`Failed to cache MCP server tools for ${serverName}:`, error);
     throw error;
   }
 }
@@ -101,13 +87,12 @@ async function mergeUserTools({ userId, cachedUserTools, userTools }) {
 /**
  * Clears all MCP tools for a specific server
  * @param {Object} params - Parameters for clearing MCP tools
- * @param {string} [params.userId] - User ID (if clearing user-specific tools)
  * @param {string} params.serverName - MCP server name
  * @returns {Promise<void>}
  */
-async function clearMCPServerTools({ userId, serverName }) {
+async function clearMCPServerTools({ serverName }) {
   try {
-    const tools = await getCachedTools({ userId, includeGlobal: !userId });
+    const tools = await getCachedTools();
 
     // Remove all tools for this server
     const mcpDelimiter = Constants.mcp_delimiter;
@@ -120,14 +105,14 @@ async function clearMCPServerTools({ userId, serverName }) {
     }
 
     if (removedCount > 0) {
-      await setCachedTools(tools, userId ? { userId } : { isGlobal: true });
+      await setCachedTools(tools);
 
       const cache = getLogStores(CacheKeys.CONFIG_STORE);
       await cache.delete(CacheKeys.TOOLS);
+      // Also clear the server-specific cache
+      await cache.delete(`tools:mcp:${serverName}`);
 
-      logger.debug(
-        `[MCP Cache] Removed ${removedCount} tools for ${serverName}${userId ? ` user ${userId}` : ' (global)'}`,
-      );
+      logger.debug(`[MCP Cache] Removed ${removedCount} tools for ${serverName} (global)`);
     }
   } catch (error) {
     logger.error(`[MCP Cache] Failed to clear tools for ${serverName}:`, error);
@@ -137,7 +122,7 @@ async function clearMCPServerTools({ userId, serverName }) {
 
 module.exports = {
   mergeAppTools,
-  mergeUserTools,
-  updateMCPUserTools,
+  cacheMCPServerTools,
   clearMCPServerTools,
+  updateMCPServerTools,
 };
