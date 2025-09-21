@@ -21,6 +21,15 @@ class WoodlandAISearchTractor extends Tool {
     this.schema = z.object({
       query: z.string().describe('Search word or phrase for Tractor Azure AI Search'),
       top: z.number().int().positive().optional(),
+      make: z.string().optional(),
+      model: z.string().optional(),
+      deck_size: z.union([z.string(), z.number()]).optional(),
+      family: z.union([z.string(), z.array(z.string())]).optional(),
+      sku: z.string().optional(),
+      part_type: z.string().optional(),
+      require_active: z.boolean().optional(),
+      // When true, perform a relaxed (free) search: no strict filters; broader recall
+      relaxed: z.boolean().optional(),
     });
 
     // Shared endpoint + key
@@ -116,6 +125,28 @@ class WoodlandAISearchTractor extends Tool {
 
   _escapeLiteral(v) {
     return String(v).replace(/'/g, "''");
+  }
+
+  _normalizeDeckSize(ds) {
+    if (ds == null) return undefined;
+    const s = String(ds).toLowerCase();
+    const m = s.match(/(\d{1,3})(?:\s?(?:in|inch|inches))?/i);
+    return m ? m[1] : undefined;
+  }
+
+  _familyAliases(f) {
+    const map = new Map([
+      ['commander', 'Commander'],
+      ['commander pro', 'Commander'],
+      ['xl', 'XL'],
+      ['z-10', 'Z_10'],
+      ['z10', 'Z_10'],
+      ['z 10', 'Z_10'],
+      ['commercial pro', 'Commercial_Pro'],
+      ['commercial_pro', 'Commercial_Pro'],
+    ]);
+    const key = String(f || '').trim().toLowerCase();
+    return map.get(key) || f;
   }
 
   _provenance(d) {
@@ -381,6 +412,7 @@ class WoodlandAISearchTractor extends Tool {
       'id',
       'title',
       'content',
+      'last_updated',
       'tractor_make',
       'tractor_model',
       'tractor_deck_size',
@@ -417,11 +449,13 @@ class WoodlandAISearchTractor extends Tool {
     }
 
     if (intent === 'compatibility') {
-      // Optionally, we could filter by group_name if a family-like term was extracted
-      let filter;
-      if (extracted.family) {
-        filter = `group_name eq '${this._escapeLiteral(extracted.family)}'`;
-      }
+      // Build progressively strict filters
+      const filts = [];
+      if (extracted.make) filts.push(`tractor_make eq '${this._escapeLiteral(extracted.make)}'`);
+      if (extracted.model) filts.push(`tractor_model eq '${this._escapeLiteral(extracted.model)}'`);
+      if (extracted.deckSize) filts.push(`tractor_deck_size eq '${this._escapeLiteral(extracted.deckSize)}'`);
+      if (extracted.family) filts.push(`group_name eq '${this._escapeLiteral(this._familyAliases(extracted.family))}'`);
+      const filter = filts.length ? filts.map((f) => `(${f})`).join(' and ') : undefined;
       return maybe({ filter, searchFields: this.searchFields }, baseSelect);
     }
 
@@ -439,7 +473,7 @@ class WoodlandAISearchTractor extends Tool {
   }
 
   async _call(data) {
-    const { query, top: topIn } = data;
+    const { query, top: topIn, make, model, deck_size, family, sku, part_type, require_active, relaxed } = data;
     const finalTop = typeof topIn === 'number' && Number.isFinite(topIn) ? Math.max(1, Math.floor(topIn)) : this.top;
 
     try {
@@ -465,8 +499,37 @@ class WoodlandAISearchTractor extends Tool {
       if (this.scoringProfile) baseOptions.scoringProfile = this.scoringProfile;
 
       const { intent, extracted } = this._detectIntent(query);
-      const intentOptions = this._optionsForIntent(intent, extracted);
-      const options = { ...baseOptions, ...intentOptions };
+      const merged = {
+        ...extracted,
+        make: make || extracted.make,
+        model: model || extracted.model,
+        deckSize: this._normalizeDeckSize(deck_size) || extracted.deckSize,
+        family: Array.isArray(family)
+          ? (family.find(Boolean) ? this._familyAliases(family[0]) : undefined)
+          : (family ? this._familyAliases(family) : extracted.family),
+        partType: part_type || extracted.partType,
+        partNumber: sku || extracted.partNumber,
+      };
+
+      const intentOptions = this._optionsForIntent(intent, merged);
+      let options = { ...baseOptions, ...intentOptions };
+
+      // Relaxed mode: remove strict filters and broaden recall
+      if (relaxed === true) {
+        delete options.filter;
+        options.top = Math.max(options.top || this.top, 18);
+        // Prefer any-mode to catch more matches in broad searches
+        options.searchMode = 'any';
+      }
+      // SKU prioritization
+      if (merged.partNumber) {
+        const skuFields = ['mda_sku','ammda_sku','hitch_sku','amhitch_sku','rubbercollar_sku','hose_sku','amhose_sku','upgradehose_sku','amupgradehose_sku'];
+        const eqs = skuFields.map((f) => `${f} eq '${this._escapeLiteral(merged.partNumber)}'`).join(' or ');
+        options.filter = options.filter ? `(${options.filter}) and (${eqs})` : `(${eqs})`;
+      }
+      if (require_active === true) {
+        options.filter = options.filter ? `(${options.filter}) and (is_active eq true)` : '(is_active eq true)';
+      }
 
       // orderBy not supported with semantic ranking
       if (String(options.queryType).toLowerCase() === 'semantic' && options.orderBy) {
@@ -474,6 +537,25 @@ class WoodlandAISearchTractor extends Tool {
       }
 
       let docs = await this._tieredSearch(query, options);
+      // If no hits, relax filters: drop family -> deck -> model
+      if (Array.isArray(docs) && docs.length === 0 && options.filter && relaxed !== true) {
+        const dropOne = (flt, key) => {
+          // remove the first occurrence of a condition with the given key
+          const re = new RegExp(`\\(\n?\s*${key}[^)]*\)`, 'i');
+          return flt.replace(re, '').replace(/\)\s*and\s*\(/g, ') and (').replace(/\(\s*\)/g, '');
+        };
+        const keys = ['group_name', 'tractor_deck_size', 'tractor_model'];
+        for (const k of keys) {
+          if (!options.filter) break;
+          const nf = dropOne(options.filter, k + '\\s+eq');
+          const relaxed = { ...options, filter: nf };
+          const r = await this._tieredSearch(query, relaxed);
+          if (Array.isArray(r) && r.length > 0) {
+            docs = r;
+            break;
+          }
+        }
+      }
       // Attach normalized compatibility projection and provenance to each doc
       if (Array.isArray(docs)) {
         docs = docs.map((d) => (d ? this._normalizeDoc(d) : d));
