@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { ChevronLeft, Trash2 } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Button, useToastContext } from '@librechat/client';
@@ -11,6 +11,8 @@ import { MCPPanelProvider, useMCPPanelContext } from '~/Providers';
 import { useLocalize, useMCPConnectionStatus } from '~/hooks';
 import { useGetStartupConfig } from '~/data-provider';
 import MCPPanelSkeleton from './MCPPanelSkeleton';
+
+const POLL_FOR_CONNECTION_STATUS_INTERVAL = 2_000; // ms
 
 function MCPPanelContent() {
   const localize = useLocalize();
@@ -25,6 +27,29 @@ function MCPPanelContent() {
   const [selectedServerNameForEditing, setSelectedServerNameForEditing] = useState<string | null>(
     null,
   );
+
+  // Check if any connections are in 'connecting' state
+  const hasConnectingServers = useMemo(() => {
+    if (!connectionStatus) {
+      return false;
+    }
+    return Object.values(connectionStatus).some(
+      (status) => status?.connectionState === 'connecting',
+    );
+  }, [connectionStatus]);
+
+  // Set up polling when servers are connecting
+  useEffect(() => {
+    if (!hasConnectingServers) {
+      return;
+    }
+
+    const intervalId = setInterval(() => {
+      queryClient.invalidateQueries([QueryKeys.mcpConnectionStatus]);
+    }, POLL_FOR_CONNECTION_STATUS_INTERVAL);
+
+    return () => clearInterval(intervalId);
+  }, [hasConnectingServers, queryClient]);
 
   const updateUserPluginsMutation = useUpdateUserPluginsMutation({
     onSuccess: async () => {

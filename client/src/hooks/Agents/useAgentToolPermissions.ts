@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
-import { Tools } from 'librechat-data-provider';
+import { Tools, Constants, EToolResources } from 'librechat-data-provider';
+import type { TEphemeralAgent } from 'librechat-data-provider';
 import { useGetAgentByIdQuery } from '~/data-provider';
 import { useAgentsMapContext } from '~/Providers';
 
@@ -9,14 +10,20 @@ interface AgentToolPermissionsResult {
   tools: string[] | undefined;
 }
 
+function isEphemeralAgent(agentId: string | null | undefined): boolean {
+  return agentId == null || agentId === '' || agentId === Constants.EPHEMERAL_AGENT_ID;
+}
+
 /**
  * Hook to determine whether specific tools are allowed for a given agent.
  *
- * @param agentId - The ID of the agent. If null/undefined/empty, returns true for all tools (ephemeral agent behavior)
+ * @param agentId - The ID of the agent. If null/undefined/empty, checks ephemeralAgent settings
+ * @param ephemeralAgent - Optional ephemeral agent settings for tool permissions
  * @returns Object with boolean flags for file_search and execute_code permissions, plus the tools array
  */
 export default function useAgentToolPermissions(
   agentId: string | null | undefined,
+  ephemeralAgent?: TEphemeralAgent | null,
 ): AgentToolPermissionsResult {
   const agentsMap = useAgentsMapContext();
 
@@ -33,22 +40,26 @@ export default function useAgentToolPermissions(
   );
 
   const fileSearchAllowedByAgent = useMemo(() => {
-    // If no agentId, allow for ephemeral agents
-    if (!agentId) return true;
+    // Check ephemeral agent settings
+    if (isEphemeralAgent(agentId)) {
+      return ephemeralAgent?.[EToolResources.file_search] ?? false;
+    }
     // If agentId exists but agent not found, disallow
     if (!selectedAgent) return false;
     // Check if the agent has the file_search tool
     return tools?.includes(Tools.file_search) ?? false;
-  }, [agentId, selectedAgent, tools]);
+  }, [agentId, selectedAgent, tools, ephemeralAgent]);
 
   const codeAllowedByAgent = useMemo(() => {
-    // If no agentId, allow for ephemeral agents
-    if (!agentId) return true;
+    // Check ephemeral agent settings
+    if (isEphemeralAgent(agentId)) {
+      return ephemeralAgent?.[EToolResources.execute_code] ?? false;
+    }
     // If agentId exists but agent not found, disallow
     if (!selectedAgent) return false;
     // Check if the agent has the execute_code tool
     return tools?.includes(Tools.execute_code) ?? false;
-  }, [agentId, selectedAgent, tools]);
+  }, [agentId, selectedAgent, tools, ephemeralAgent]);
 
   return {
     fileSearchAllowedByAgent,

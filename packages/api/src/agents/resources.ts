@@ -183,18 +183,32 @@ export const primeResources = async ({
     const processedResourceFiles = new Set<string>();
     /**
      * The agent's tool resources object that will be updated with categorized files
-     * Initialized from input parameter or empty object if not provided
+     * Create a shallow copy first to avoid mutating the original
      */
-    const tool_resources = _tool_resources ?? {};
+    const tool_resources: AgentToolResources = { ...(_tool_resources ?? {}) };
 
-    // Track existing files in tool_resources to prevent duplicates within resources
+    // Deep copy each resource to avoid mutating nested objects/arrays
     for (const [resourceType, resource] of Object.entries(tool_resources)) {
-      if (resource?.files && Array.isArray(resource.files)) {
+      if (!resource) {
+        continue;
+      }
+
+      // Deep copy the resource to avoid mutations
+      tool_resources[resourceType as keyof AgentToolResources] = {
+        ...resource,
+        // Deep copy arrays to prevent mutations
+        ...(resource.files && { files: [...resource.files] }),
+        ...(resource.file_ids && { file_ids: [...resource.file_ids] }),
+        ...(resource.vector_store_ids && { vector_store_ids: [...resource.vector_store_ids] }),
+      } as AgentBaseResource;
+
+      // Now track existing files
+      if (resource.files && Array.isArray(resource.files)) {
         for (const file of resource.files) {
           if (file?.file_id) {
             processedResourceFiles.add(`${resourceType}:${file.file_id}`);
-            // Files from non-OCR resources should not be added to attachments from _attachments
-            if (resourceType !== EToolResources.ocr) {
+            // Files from non-context resources should not be added to attachments from _attachments
+            if (resourceType !== EToolResources.context && resourceType !== EToolResources.ocr) {
               attachmentFileIds.add(file.file_id);
             }
           }
@@ -202,14 +216,22 @@ export const primeResources = async ({
       }
     }
 
-    const isOCREnabled = (
+    const isContextEnabled = (
       appConfig?.endpoints?.[EModelEndpoint.agents]?.capabilities ?? []
-    ).includes(AgentCapabilities.ocr);
+    ).includes(AgentCapabilities.context);
 
-    if (tool_resources[EToolResources.ocr]?.file_ids && isOCREnabled) {
+    const fileIds = tool_resources[EToolResources.context]?.file_ids ?? [];
+    const ocrFileIds = tool_resources[EToolResources.ocr]?.file_ids;
+    if (ocrFileIds != null) {
+      fileIds.push(...ocrFileIds);
+      delete tool_resources[EToolResources.ocr];
+    }
+
+    if (fileIds.length > 0 && isContextEnabled) {
+      delete tool_resources[EToolResources.context];
       const context = await getFiles(
         {
-          file_id: { $in: tool_resources.ocr.file_ids },
+          file_id: { $in: fileIds },
         },
         {},
         {},
