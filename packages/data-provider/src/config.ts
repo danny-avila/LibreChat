@@ -1122,7 +1122,7 @@ export const EndpointURLs = {
   [EModelEndpoint.assistants]: `${apiBaseUrl()}/api/assistants/v2/chat`,
   [EModelEndpoint.azureAssistants]: `${apiBaseUrl()}/api/assistants/v1/chat`,
   [EModelEndpoint.agents]: `${apiBaseUrl()}/api/${EModelEndpoint.agents}/chat`,
-  [EModelEndpoint.a2a]: `${apiBaseUrl()}/api/a2a/chat`,
+  [EModelEndpoint.a2a]: `${apiBaseUrl()}/api/${EModelEndpoint.agents}/chat`,
 } as const;
 
 export const modularEndpoints = new Set<EModelEndpoint | string>([

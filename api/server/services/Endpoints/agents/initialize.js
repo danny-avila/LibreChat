@@ -12,9 +12,11 @@ const {
   getDefaultHandlers,
 } = require('~/server/controllers/agents/callbacks');
 const { initializeAgent } = require('~/server/services/Endpoints/agents/agent');
+const { initializeA2AAgent } = require('~/server/services/Endpoints/agents/a2a');
 const { getModelsConfig } = require('~/server/controllers/ModelController');
 const { loadAgentTools } = require('~/server/services/ToolService');
 const AgentClient = require('~/server/controllers/agents/client');
+const A2AAgentClient = require('~/server/controllers/agents/A2AAgentClient');
 const { getAgent } = require('~/models/Agent');
 const { logViolation } = require('~/cache');
 
@@ -72,6 +74,33 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     toolEndCallback,
     collectedUsage,
   });
+
+  // Handle A2A endpoint differently 
+  if (endpointOption.endpoint === EModelEndpoint.a2a) {
+    const primaryAgent = await initializeA2AAgent({ req, res, endpointOption });
+    
+    if (!primaryAgent) {
+      throw new Error('A2A agent not found');
+    }
+    
+    // Create a simple client for A2A that uses LibreChat's conversation system
+    const client = new A2AAgentClient({
+      req,
+      res,
+      contentParts,
+      eventHandlers,
+      collectedUsage,
+      aggregateContent,
+      artifactPromises,
+      agent: primaryAgent,
+      spec: endpointOption.spec,
+      iconURL: endpointOption.iconURL,
+      endpointType: endpointOption.endpointType,
+      endpoint: EModelEndpoint.a2a, // Keep A2A endpoint for proper conversation management
+    });
+
+    return { client, userMCPAuthMap: {} };
+  }
 
   if (!endpointOption.agent) {
     throw new Error('No agent promise provided');
