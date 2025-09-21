@@ -99,6 +99,21 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       endpoint: EModelEndpoint.a2a, // Keep A2A endpoint for proper conversation management
     });
 
+    // If there's a conversationId, check for active tasks and recover if needed
+    const conversationId = req.body.conversationId;
+    if (conversationId && conversationId !== 'new') {
+      logger.info(`A2A Agent Initialization - checking for active tasks in conversation: ${conversationId}`);
+      try {
+        await client.recoverActiveTasks(conversationId, req.user);
+        logger.info(`A2A Agent Initialization - task recovery completed for conversation: ${conversationId}`);
+      } catch (error) {
+        logger.warn(`A2A Agent Initialization - failed to recover tasks for conversation ${conversationId}:`, error);
+        // Don't fail initialization if task recovery fails
+      }
+    } else {
+      logger.debug(`A2A Agent Initialization - no task recovery needed (conversationId: ${conversationId})`);
+    }
+
     return { client, userMCPAuthMap: {} };
   }
 

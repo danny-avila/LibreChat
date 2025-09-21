@@ -263,6 +263,171 @@ router.post('/discover', requireJwtAuth, async (req, res) => {
 });
 
 /**
+ * Get task status for a specific task
+ * GET /api/a2a/tasks/:taskId/status
+ */
+router.get('/tasks/:taskId/status', requireJwtAuth, async (req, res) => {
+  try {
+    const { taskId } = req.params;
+    const { agentId } = req.query;
+
+    if (!taskId) {
+      return res.status(400).json({ error: 'Task ID is required' });
+    }
+
+    if (!agentId) {
+      return res.status(400).json({ error: 'Agent ID is required' });
+    }
+
+    // Get the A2A client for the agent
+    const client = discoveryService.getClient(agentId);
+    if (!client) {
+      return res.status(404).json({ error: `A2A client not found for agent: ${agentId}` });
+    }
+
+    // Get task status
+    const taskStatus = await client.getTaskStatus(taskId);
+    
+    console.log(`Task status retrieved: ${taskId} -> ${taskStatus.status}`);
+
+    res.json({
+      success: true,
+      task: taskStatus,
+    });
+
+  } catch (error) {
+    console.error(`Error getting task status for ${req.params.taskId}:`, error);
+    res.status(500).json({
+      error: 'Failed to get task status',
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * Cancel a task
+ * DELETE /api/a2a/tasks/:taskId
+ */
+router.delete('/tasks/:taskId', requireJwtAuth, async (req, res) => {
+  try {
+    const { taskId } = req.params;
+    const { agentId } = req.query;
+
+    if (!taskId) {
+      return res.status(400).json({ error: 'Task ID is required' });
+    }
+
+    if (!agentId) {
+      return res.status(400).json({ error: 'Agent ID is required' });
+    }
+
+    // Get the A2A client for the agent
+    const client = discoveryService.getClient(agentId);
+    if (!client) {
+      return res.status(404).json({ error: `A2A client not found for agent: ${agentId}` });
+    }
+
+    // Cancel the task
+    const result = await client.cancelTask(taskId);
+    
+    console.log(`Task cancelled: ${taskId}`);
+
+    res.json({
+      success: true,
+      result: result,
+    });
+
+  } catch (error) {
+    console.error(`Error cancelling task ${req.params.taskId}:`, error);
+    res.status(500).json({
+      error: 'Failed to cancel task',
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * Get active tasks for a conversation
+ * GET /api/a2a/conversations/:conversationId/tasks
+ */
+router.get('/conversations/:conversationId/tasks', requireJwtAuth, async (req, res) => {
+  try {
+    const { conversationId } = req.params;
+
+    if (!conversationId || conversationId === 'new') {
+      return res.json({
+        success: true,
+        tasks: [],
+      });
+    }
+
+    // Get conversation to check for active tasks
+    const { getConvoById } = require('~/models');
+    const conversation = await getConvoById(req, conversationId);
+
+    if (!conversation?.metadata?.activeTaskId) {
+      return res.json({
+        success: true,
+        tasks: [],
+      });
+    }
+
+    const taskId = conversation.metadata.activeTaskId;
+    const agentId = conversation.metadata.agentId;
+
+    if (!agentId) {
+      console.warn(`No agent ID found in conversation metadata: ${conversationId}`);
+      return res.json({
+        success: true,
+        tasks: [],
+      });
+    }
+
+    // Get the A2A client for the agent
+    const client = discoveryService.getClient(agentId);
+    if (!client) {
+      console.warn(`A2A client not found for agent: ${agentId}`);
+      return res.json({
+        success: true,
+        tasks: [],
+      });
+    }
+
+    // Get current task status
+    try {
+      const taskStatus = await client.getTaskStatus(taskId);
+      
+      res.json({
+        success: true,
+        tasks: [{
+          id: taskId,
+          agentId: agentId,
+          status: taskStatus.status,
+          statusMessage: taskStatus.statusMessage,
+          lastUpdate: conversation.metadata.lastTaskUpdate,
+          artifacts: taskStatus.artifacts || [],
+        }],
+      });
+
+    } catch (taskError) {
+      // Task might not exist anymore, return empty array
+      console.warn(`Task ${taskId} not found:`, taskError.message);
+      res.json({
+        success: true,
+        tasks: [],
+      });
+    }
+
+  } catch (error) {
+    console.error(`Error getting tasks for conversation ${req.params.conversationId}:`, error);
+    res.status(500).json({
+      error: 'Failed to get conversation tasks',
+      message: error.message,
+    });
+  }
+});
+
+/**
  * A2A service status
  * GET /api/a2a/status
  */
