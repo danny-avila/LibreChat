@@ -5,14 +5,23 @@ const { MCPOAuthHandler, getUserMCPAuthMap } = require('@librechat/api');
 const { getMCPManager, getFlowStateManager, getOAuthReconnectionManager } = require('~/config');
 const { getMCPSetupData, getServerConnectionStatus } = require('~/server/services/MCP');
 const { findToken, updateToken, createToken, deleteTokens } = require('~/models');
-const { updateMCPUserTools } = require('~/server/services/Config/mcpToolsCache');
 const { getUserPluginAuthValue } = require('~/server/services/PluginService');
+const { updateMCPServerTools } = require('~/server/services/Config/mcp');
 const { reinitMCPServer } = require('~/server/services/Tools/mcp');
+const { getMCPTools } = require('~/server/controllers/mcp');
 const { requireJwtAuth } = require('~/server/middleware');
 const { findPluginAuthsByKeys } = require('~/models');
 const { getLogStores } = require('~/cache');
 
 const router = Router();
+
+/**
+ * Get all MCP tools available to the user
+ * Returns only MCP tools, completely decoupled from regular LibreChat tools
+ */
+router.get('/tools', requireJwtAuth, async (req, res) => {
+  return getMCPTools(req, res);
+});
 
 /**
  * Initiate OAuth flow
@@ -149,8 +158,7 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
         oauthReconnectionManager.clearReconnection(flowState.userId, serverName);
 
         const tools = await userConnection.fetchTools();
-        await updateMCPUserTools({
-          userId: flowState.userId,
+        await updateMCPServerTools({
           serverName,
           tools,
         });
