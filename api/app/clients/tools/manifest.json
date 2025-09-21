@@ -193,27 +193,164 @@
       }
     ]
   },
-    {
-  "name": "Woodland Search",
-  "pluginKey": "woodland-ai-search",
-  "description": "Prioritized Azure AI Search (Airtable → Cyclopedia → Website) for Woodland.",
-  "icon": "https://i.imgur.com/E7crPze.png",
-  "authConfig": [
+  {
+    "name": "Woodland Search",
+    "pluginKey": "woodland-ai-search",
+    "description": "Azure AI Search (Catalog → Website → Cyclopedia) for Woodland support.",
+    "icon": "https://i.imgur.com/E7crPze.png",
+    "authConfig": [
       {
         "authField": "AZURE_AI_SEARCH_SERVICE_ENDPOINT",
         "label": "Azure AI Search Endpoint",
-        "description": "You need to provide your Endpoint for Azure AI Search."
-      },
-      {
-        "authField": "AZURE_AI_SEARCH_INDEX_NAME",
-        "label": "Azure AI Search Index Name",
-        "description": "You need to provide your Index Name for Azure AI Search."
+        "description": "Your Azure Cognitive Search service endpoint (e.g., https://<service>.search.windows.net)."
       },
       {
         "authField": "AZURE_AI_SEARCH_API_KEY",
         "label": "Azure AI Search API Key",
-        "description": "You need to provide your API Key for Azure AI Search."
+        "description": "Admin or query API key for your Azure Search service."
+      },
+      {
+        "authField": "AZURE_AI_SEARCH_CATALOG_INDEX",
+        "label": "Catalog Index Name",
+        "description": "Index name for the product/parts catalog (e.g., <base>-catalog)."
+      },
+      {
+        "authField": "AZURE_AI_SEARCH_WEBSITE_INDEX",
+        "label": "Website Index Name",
+        "description": "Index name for website content (e.g., <base>-website)."
+      },
+      {
+        "authField": "AZURE_AI_SEARCH_CYCLOPEDIA_INDEX",
+        "label": "Cyclopedia Index Name",
+        "description": "Index name for cyclopedia/procedure content (e.g., <base>-cyclopedia)."
       }
     ]
-}
+  },
+  {
+    "name": "Tractor Search",
+    "pluginKey": "woodland-ai-search-tractor",
+    "description": "Azure AI Search for the Tractor index (single-index, semantic results).",
+    "icon": "https://i.imgur.com/E7crPze.png",
+    "authConfig": [
+      {
+        "authField": "AZURE_AI_SEARCH_SERVICE_ENDPOINT",
+        "label": "Azure AI Search Endpoint",
+        "description": "Your Azure Cognitive Search service endpoint (e.g., https://<service>.search.windows.net)."
+      },
+      {
+        "authField": "AZURE_AI_SEARCH_API_KEY",
+        "label": "Azure AI Search API Key",
+        "description": "Admin or query API key for your Azure Search service."
+      },
+      {
+        "authField": "AZURE_AI_SEARCH_TRACTOR_INDEX||AZURE_AI_SEARCH_INDEX_NAME",
+        "label": "Tractor Index Name",
+        "description": "Index name for the Tractor data (e.g., <base>-tractor). Uses AZURE_AI_SEARCH_INDEX_NAME if not provided."
+      }
+    ]
+  },
+  {
+    "name": "Cases Search",
+    "pluginKey": "woodland-ai-search-cases",
+    "description": "Azure AI Search for the Cases/Knowledge index (single-index, semantic answers).",
+    "icon": "https://i.imgur.com/E7crPze.png",
+    "authConfig": [
+      {
+        "authField": "AZURE_AI_SEARCH_SERVICE_ENDPOINT",
+        "label": "Azure AI Search Endpoint",
+        "description": "Your Azure Cognitive Search service endpoint (e.g., https://<service>.search.windows.net)."
+      },
+      {
+        "authField": "AZURE_AI_SEARCH_API_KEY",
+        "label": "Azure AI Search API Key",
+        "description": "Admin or query API key for your Azure Search service."
+      },
+      {
+        "authField": "AZURE_AI_SEARCH_CASES_INDEX||AZURE_AI_SEARCH_INDEX_NAME",
+        "label": "Cases Index Name",
+        "description": "Index name for the Cases/Knowledge data (e.g., <base>-cases). Uses AZURE_AI_SEARCH_INDEX_NAME if not provided."
+      }
+    ]
+  },
+  {
+    "name": "Woodland Search (All)",
+    "pluginKey": "woodland-ai-search-all",
+    "description": "Calls Woodland, Tractor, and Cases tools in parallel and merges results.",
+    "icon": "https://i.imgur.com/E7crPze.png",
+    "authConfig": [
+      {
+        "authField": "AZURE_AI_SEARCH_SERVICE_ENDPOINT",
+        "label": "Azure AI Search Endpoint",
+        "description": "Your Azure Cognitive Search service endpoint (e.g., https://<service>.search.windows.net)."
+      },
+      {
+        "authField": "AZURE_AI_SEARCH_API_KEY",
+        "label": "Azure AI Search API Key",
+        "description": "Admin or query API key for your Azure Search service."
+      },
+      {
+        "authField": "AZURE_AI_SEARCH_CATALOG_INDEX",
+        "label": "Catalog Index Name",
+        "description": "Index name for product/parts catalog (e.g., <base>-catalog)."
+      },
+      {
+        "authField": "AZURE_AI_SEARCH_WEBSITE_INDEX",
+        "label": "Website Index Name",
+        "description": "Index name for website content (e.g., <base>-website)."
+      },
+      {
+        "authField": "AZURE_AI_SEARCH_CYCLOPEDIA_INDEX",
+        "label": "Cyclopedia Index Name",
+        "description": "Index name for cyclopedia content (e.g., <base>-cyclopedia)."
+      },
+      {
+        "authField": "AZURE_AI_SEARCH_TRACTOR_INDEX||AZURE_AI_SEARCH_INDEX_NAME",
+        "label": "Tractor Index Name",
+        "description": "Index name for tractors data (e.g., <base>-tractors)."
+      },
+      {
+        "authField": "AZURE_AI_SEARCH_CASES_INDEX||AZURE_AI_SEARCH_INDEX_NAME",
+        "label": "Cases Index Name",
+        "description": "Index name for cases/knowledge data (e.g., <base>-cases)."
+      }
+    ]
+  },
+  {
+    "name": "Woodland Search (General)",
+    "pluginKey": "woodland-ai-search-general",
+    "description": "Grounded general search: tries Woodland first, then falls back to Cases if needed.",
+    "icon": "https://i.imgur.com/E7crPze.png",
+    "authConfig": [
+      {
+        "authField": "AZURE_AI_SEARCH_SERVICE_ENDPOINT",
+        "label": "Azure AI Search Endpoint",
+        "description": "Your Azure Cognitive Search service endpoint (e.g., https://<service>.search.windows.net)."
+      },
+      {
+        "authField": "AZURE_AI_SEARCH_API_KEY",
+        "label": "Azure AI Search API Key",
+        "description": "Admin or query API key for your Azure Search service."
+      },
+      {
+        "authField": "AZURE_AI_SEARCH_CATALOG_INDEX",
+        "label": "Catalog Index Name",
+        "description": "Index name for product/parts catalog (e.g., <base>-catalog)."
+      },
+      {
+        "authField": "AZURE_AI_SEARCH_WEBSITE_INDEX",
+        "label": "Website Index Name",
+        "description": "Index name for website content (e.g., <base>-website)."
+      },
+      {
+        "authField": "AZURE_AI_SEARCH_CYCLOPEDIA_INDEX",
+        "label": "Cyclopedia Index Name",
+        "description": "Index name for cyclopedia content (e.g., <base>-cyclopedia)."
+      },
+      {
+        "authField": "AZURE_AI_SEARCH_CASES_INDEX||AZURE_AI_SEARCH_INDEX_NAME",
+        "label": "Cases Index Name",
+        "description": "Index name for cases/knowledge data (e.g., <base>-cases)."
+      }
+    ]
+  }
 ]

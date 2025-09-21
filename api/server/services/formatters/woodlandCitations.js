@@ -1,53 +1,29 @@
-// Strict citation builder for Woodland results
-// - Uses only URL fields present in the payload (never constructs URLs)
-// - Applies allow-list filtering for hosts
+// Simple citation builder for Woodland results
+// Returns URLs exactly as present in the search document payload.
+// Optional: if WOODLAND_CITATIONS_URL_ALLOWLIST is set (comma-separated hosts),
+// only URLs whose hostname matches the allowlist (or its subdomains) are returned.
 
-const allowList = new Set([
-  'airtable.com',
-  // Base domain covers website and subdomains such as support.cyclonerake.com
-  'cyclonerake.com',
-  // Kept for back-compat; optional explicit subdomain entry
-  'support.cyclonerake.com',
-]);
+const rawAllow = (process.env.WOODLAND_CITATIONS_URL_ALLOWLIST || '').split(',').map(s => s.trim()).filter(Boolean);
+const allowSet = new Set(rawAllow);
 
-function isAllowedUrl(u) {
+function isAllowed(u) {
+  if (allowSet.size === 0) return true; // pass-through when no allowlist configured
   try {
     const url = new URL(u);
-    const proto = url.protocol.toLowerCase();
-    if (proto !== 'http:' && proto !== 'https:') return false;
     const host = url.hostname.toLowerCase();
-    for (const d of allowList) {
-      if (host === d || host.endsWith('.' + d)) return true;
+    for (const d of allowSet) {
+      const dd = d.toLowerCase();
+      if (host === dd || host.endsWith('.' + dd)) return true;
     }
     return false;
-  } catch (_) {
-    return false;
-  }
-}
-
-// Extracts the first allowed URL found in a block of text
-function extractAllowedUrl(text) {
-  if (typeof text !== 'string' || !text) return undefined;
-  // Basic http/https URL matcher
-  const urlRegex = /(https?:\/\/[^\s)]+)[)\]\s]?/gi;
-  let match;
-  while ((match = urlRegex.exec(text)) !== null) {
-    const candidate = match[1];
-    if (isAllowedUrl(candidate)) return candidate;
-  }
-  return undefined;
+  } catch (_) { return false; }
 }
 
 function urlFromHit(hit) {
   const u = hit?.url;
-  if (typeof u === 'string' && u && isAllowedUrl(u)) return u;
-  // Fallback: scan chunk/text/snippet for the first allowed URL
-  return (
-    extractAllowedUrl(hit?.chunk) ||
-    extractAllowedUrl(hit?.text) ||
-    extractAllowedUrl(hit?.snippet) ||
-    undefined
-  );
+  if (typeof u !== 'string' || !u) return undefined;
+  if (!isAllowed(u)) return undefined;
+  return u;
 }
 
 function shortSummary(hit) {
@@ -102,8 +78,6 @@ function buildCitations({ airtable = [], cyclopedia = [], website = [] }) {
 }
 
 module.exports = {
-  isAllowedUrl,
-  extractAllowedUrl,
   urlFromHit,
   shortSummary,
   classifySource,
