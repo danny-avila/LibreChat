@@ -7,14 +7,46 @@ const WoodlandAISearch = require('./WoodlandAISearch');
 const WoodlandAISearchTractor = require('./WoodlandAISearchTractor');
 const WoodlandAISearchCases = require('./WoodlandAISearchCases');
 
+const parseNumber = (value, fallback, { min, max } = {}) => {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return fallback;
+  let result = num;
+  if (typeof min === 'number' && result < min) result = min;
+  if (typeof max === 'number' && result > max) result = max;
+  return result;
+};
+
+const parseBool = (value, fallback) => {
+  if (value === undefined || value === null) return fallback;
+  const normalized = String(value).toLowerCase();
+  if (['true', '1', 'yes', 'y', 'on'].includes(normalized)) return true;
+  if (['false', '0', 'no', 'n', 'off'].includes(normalized)) return false;
+  return fallback;
+};
+
 class WoodlandAISearchAll extends Tool {
   static DEFAULT_TOP = 18;
+  static DEFAULT_PRIORITY = ['woodland-ai-search', 'woodland-ai-search-cases', 'woodland-ai-search-tractor'];
+  static DEFAULT_MIN_BASE = {
+    'woodland-ai-search': 3,
+    'woodland-ai-search-cases': 1,
+    'woodland-ai-search-tractor': 1,
+  };
+  static DEFAULT_MIN_RATIO = {
+    'woodland-ai-search': 1 / 3,
+    'woodland-ai-search-cases': 1 / 6,
+    'woodland-ai-search-tractor': 1 / 6,
+  };
+  static DEFAULT_RELAXED_TOP_BOOST = 4;
 
   constructor(fields = {}) {
     super();
     this.name = 'woodland-ai-search-all';
     this.description =
       "Aggregates results from 'woodland-ai-search', 'woodland-ai-search-tractor', and 'woodland-ai-search-cases' in one call.";
+
+    // Persist the caller-provided configuration so sub-tools receive the same overrides.
+    this.fields = { ...fields };
 
     this.schema = z.object({
       query: z.string().describe('Search word or phrase to Woodland All-Tools'),
@@ -27,10 +59,33 @@ class WoodlandAISearchAll extends Tool {
     this.enableTractor = String(fields.WOODLAND_ALL_ENABLE_TRACTOR ?? process.env.WOODLAND_ALL_ENABLE_TRACTOR ?? 'true').toLowerCase() === 'true';
     this.enableCases = String(fields.WOODLAND_ALL_ENABLE_CASES ?? process.env.WOODLAND_ALL_ENABLE_CASES ?? 'true').toLowerCase() === 'true';
 
+    const env = (key) => fields?.[key] ?? process.env?.[key];
+
+    this.minBase = {
+      'woodland-ai-search': parseNumber(env('WOODLAND_ALL_MIN_BASE_WOODLAND'), WoodlandAISearchAll.DEFAULT_MIN_BASE['woodland-ai-search'], { min: 0 }),
+      'woodland-ai-search-cases': parseNumber(env('WOODLAND_ALL_MIN_BASE_CASES'), WoodlandAISearchAll.DEFAULT_MIN_BASE['woodland-ai-search-cases'], { min: 0 }),
+      'woodland-ai-search-tractor': parseNumber(env('WOODLAND_ALL_MIN_BASE_TRACTOR'), WoodlandAISearchAll.DEFAULT_MIN_BASE['woodland-ai-search-tractor'], { min: 0 }),
+    };
+
+    this.minRatio = {
+      'woodland-ai-search': parseNumber(env('WOODLAND_ALL_MIN_RATIO_WOODLAND'), WoodlandAISearchAll.DEFAULT_MIN_RATIO['woodland-ai-search'], { min: 0, max: 1 }),
+      'woodland-ai-search-cases': parseNumber(env('WOODLAND_ALL_MIN_RATIO_CASES'), WoodlandAISearchAll.DEFAULT_MIN_RATIO['woodland-ai-search-cases'], { min: 0, max: 1 }),
+      'woodland-ai-search-tractor': parseNumber(env('WOODLAND_ALL_MIN_RATIO_TRACTOR'), WoodlandAISearchAll.DEFAULT_MIN_RATIO['woodland-ai-search-tractor'], { min: 0, max: 1 }),
+    };
+
+    this.enableRelaxedRetry = parseBool(env('WOODLAND_ALL_ENABLE_RELAXED_RETRY'), true);
+    this.relaxedTopBoost = Math.max(0, Math.floor(parseNumber(env('WOODLAND_ALL_RELAXED_TOP_BOOST'), WoodlandAISearchAll.DEFAULT_RELAXED_TOP_BOOST, { min: 0 })));
+    this.relaxedDisableReviewed = parseBool(env('WOODLAND_ALL_RELAXED_DISABLE_REVIEWED'), true);
+
     logger.info('[woodland-ai-search-all] Initialized', {
       enableWoodland: this.enableWoodland,
       enableTractor: this.enableTractor,
       enableCases: this.enableCases,
+      minBase: this.minBase,
+      minRatio: this.minRatio,
+      enableRelaxedRetry: this.enableRelaxedRetry,
+      relaxedTopBoost: this.relaxedTopBoost,
+      relaxedDisableReviewed: this.relaxedDisableReviewed,
     });
   }
 
@@ -70,102 +125,105 @@ class WoodlandAISearchAll extends Tool {
     const finalTop = typeof topIn === 'number' && Number.isFinite(topIn)
       ? Math.max(1, Math.floor(topIn))
       : WoodlandAISearchAll.DEFAULT_TOP;
-    // Favor balanced breadth across subtools
     const perToolTop = typeof perToolTopIn === 'number' && Number.isFinite(perToolTopIn)
       ? Math.max(1, Math.floor(perToolTopIn))
       : Math.min(10, Math.max(8, Math.ceil(finalTop / 2)));
 
-    const tasks = [];
     try {
-      if (this.enableWoodland) {
-        const w = new WoodlandAISearch();
-        tasks.push(
-          w
-            ._call({ query, top: perToolTop })
-            .then((s) => ({ tool: 'woodland-ai-search', ok: true, docs: JSON.parse(s) }))
-            .catch((e) => ({ tool: 'woodland-ai-search', ok: false, err: e })),
-        );
-      }
-      if (this.enableTractor) {
-        const t = new WoodlandAISearchTractor();
-        tasks.push(
-          t
-            ._call({ query, top: perToolTop })
-            .then((s) => ({ tool: 'woodland-ai-search-tractor', ok: true, docs: JSON.parse(s) }))
-            .catch((e) => ({ tool: 'woodland-ai-search-tractor', ok: false, err: e })),
-        );
-      }
-      if (this.enableCases) {
-        const c = new WoodlandAISearchCases();
-        tasks.push(
-          c
-            ._call({ query, top: perToolTop })
-            .then((s) => ({ tool: 'woodland-ai-search-cases', ok: true, docs: JSON.parse(s) }))
-            .catch((e) => ({ tool: 'woodland-ai-search-cases', ok: false, err: e })),
-        );
-      }
+      const subTools = [];
+      if (this.enableWoodland) subTools.push({ tool: 'woodland-ai-search', Ctor: WoodlandAISearch });
+      if (this.enableTractor) subTools.push({ tool: 'woodland-ai-search-tractor', Ctor: WoodlandAISearchTractor });
+      if (this.enableCases) subTools.push({ tool: 'woodland-ai-search-cases', Ctor: WoodlandAISearchCases });
 
-      const settled = await Promise.all(tasks);
-      const buckets = [];
-      for (const r of settled) {
-        if (!r?.ok) {
-          logger.warn('[woodland-ai-search-all] Subtool failed', { tool: r?.tool, error: r?.err?.message || String(r?.err) });
+      const bucketMap = new Map(subTools.map(({ tool }) => [tool, { tool, docs: [] }]));
+
+      const initialResults = await Promise.all(
+        subTools.map(({ tool, Ctor }) => this._executeSubtool({ tool, Ctor, query, top: perToolTop })),
+      );
+
+      for (const result of initialResults) {
+        if (!result?.ok) {
+          logger.warn('[woodland-ai-search-all] Subtool failed', { tool: result?.tool, error: result?.err?.message || String(result?.err) });
           continue;
         }
-        const arr = Array.isArray(r.docs) ? r.docs : [];
-        // Tag provenance
-        for (const d of arr) {
-          if (!d) continue;
-          if (!d.source_tool) d.source_tool = r.tool;
-          // Add normalized provenance to help downstream reasoning
-          try {
-            const url = (typeof d.url === 'string' && d.url) || (typeof d.website_url_primary === 'string' && d.website_url_primary) || '';
-            const host = url ? new URL(url).hostname : undefined;
-            d.provenance = {
-              source_tool: d.source_tool,
-              index: d.index,
-              site: d.site,
-              page_type: d.page_type,
-              host,
-              url: url || undefined,
-            };
-          } catch (_) {
-            d.provenance = {
-              source_tool: d.source_tool,
-              index: d.index,
-              site: d.site,
-              page_type: d.page_type,
-            };
-          }
-        }
-        buckets.push({ tool: r.tool, docs: arr });
+        const bucket = bucketMap.get(result.tool);
+        const prepared = this._prepareDocs(result.tool, result.docs);
+        if (bucket) bucket.docs.push(...prepared);
       }
 
-      // Merge strategy:
-      // 1) Guarantee minimum per-tool coverage, then 2) fill remaining by priority (woodland -> cases -> tractor)
-      const priority = ['woodland-ai-search', 'woodland-ai-search-cases', 'woodland-ai-search-tractor'];
+      const buckets = Array.from(bucketMap.values());
+      const minPerTool = this._computeMinimums(finalTop);
+
+      if (this.enableRelaxedRetry) {
+        for (const { tool, Ctor } of subTools) {
+          const bucket = bucketMap.get(tool);
+          const current = bucket?.docs?.length || 0;
+          const target = minPerTool[tool] || 0;
+          if (current >= target) continue;
+          const overrides = this._relaxedOverridesFor(tool);
+          if (!overrides) continue;
+          const relaxedTop = Math.max(perToolTop + this.relaxedTopBoost, target);
+          const retry = await this._executeSubtool({ tool, Ctor, query, top: relaxedTop, overrides });
+          if (retry?.ok && Array.isArray(retry.docs) && retry.docs.length) {
+            logger.info('[woodland-ai-search-all] Relaxed retry succeeded', { tool, count: retry.docs.length });
+            const prepared = this._prepareDocs(tool, retry.docs);
+            bucket.docs.push(...prepared);
+          } else if (retry && !retry.ok) {
+            logger.warn('[woodland-ai-search-all] Relaxed retry failed', { tool, error: retry?.err?.message || String(retry?.err) });
+          }
+        }
+      }
+
+      // Merge strategy: minimum quotas first, then round-robin by normalized score.
+      const priority = WoodlandAISearchAll.DEFAULT_PRIORITY;
       buckets.sort((a, b) => priority.indexOf(a.tool) - priority.indexOf(b.tool));
 
-      const minPerTool = { 'woodland-ai-search': 3, 'woodland-ai-search-cases': 1, 'woodland-ai-search-tractor': 1 };
+      const maxScores = this._computeMaxScores(buckets);
       const out = [];
       const seen = new Set();
 
       const addDoc = (doc) => {
-        const k = this._strongKeyOf(doc);
-        if (seen.has(k)) return false;
-        seen.add(k);
+        const key = this._strongKeyOf(doc);
+        if (seen.has(key)) return false;
+        seen.add(key);
+        const normScore = typeof doc.source_score === 'number'
+          ? (doc.source_score / (maxScores[doc.source_tool] || 1)) || 0
+          : 0;
+        const provenance = typeof doc.provenance === 'object' && doc.provenance !== null ? { ...doc.provenance } : {};
+        provenance.normalized_score = normScore;
+        provenance.source_tool = doc.source_tool || provenance.source_tool;
+        doc.provenance = provenance;
         out.push(doc);
         return true;
       };
 
+      const sortByScoreDesc = (docs) => [...docs].sort((a, b) => {
+        const scoreA = typeof a?.source_score === 'number' ? a.source_score : -Infinity;
+        const scoreB = typeof b?.source_score === 'number' ? b.source_score : -Infinity;
+        if (scoreA === scoreB) return 0;
+        return scoreB - scoreA;
+      });
+
+      const bucketState = new Map();
+      for (const bucket of buckets) {
+        bucketState.set(bucket.tool, {
+          tool: bucket.tool,
+          docs: sortByScoreDesc(bucket.docs || []),
+          cursor: 0,
+        });
+      }
+
       // Phase 1: satisfy minimum quotas per tool (if available)
-      for (const b of buckets) {
-        const quota = minPerTool[b.tool] || 0;
+      for (const { tool } of buckets) {
+        const quota = minPerTool[tool] || 0;
         if (quota <= 0) continue;
         let added = 0;
-        for (const d of b.docs) {
+        const state = bucketState.get(tool);
+        if (!state) continue;
+        while (state.cursor < state.docs.length) {
           if (out.length >= finalTop) break;
-          if (addDoc(d)) {
+          const doc = state.docs[state.cursor++];
+          if (addDoc(doc)) {
             added += 1;
             if (added >= quota) break;
           }
@@ -173,24 +231,118 @@ class WoodlandAISearchAll extends Tool {
         if (out.length >= finalTop) break;
       }
 
-      // Phase 2: fill remaining by priority order
-      for (const b of buckets) {
-        for (const d of b.docs) {
-          if (out.length >= finalTop) break;
-          addDoc(d);
+      // Phase 2: round-robin by normalized score bands
+      outer: while (out.length < finalTop) {
+        let addedInCycle = false;
+        for (const tool of priority) {
+          const state = bucketState.get(tool);
+          if (!state) continue;
+          while (state.cursor < state.docs.length) {
+            const candidate = state.docs[state.cursor++];
+            if (addDoc(candidate)) {
+              addedInCycle = true;
+              if (out.length >= finalTop) break outer;
+              break;
+            }
+          }
         }
-        if (out.length >= finalTop) break;
+        if (!addedInCycle) break;
       }
+
+      out.forEach((doc, idx) => {
+        doc.source_rank = idx + 1;
+        if (doc.provenance) {
+          doc.provenance.rank = doc.source_rank;
+        } else {
+          doc.provenance = { rank: doc.source_rank };
+        }
+      });
 
       logger.info('[woodland-ai-search-all] Aggregated results', {
         totalMerged: out.length,
         sources: buckets.map((b) => ({ tool: b.tool, count: b.docs.length })),
+        quotas: minPerTool,
       });
 
       return JSON.stringify(out);
     } catch (error) {
       logger.error('[woodland-ai-search-all] Failed', { error: error?.message || String(error) });
       return `AZURE_SEARCH_FAILED: ${error?.message || String(error)}`;
+    }
+  }
+
+  _prepareDocs(tool, docs) {
+    if (!Array.isArray(docs)) return [];
+    const prepared = [];
+    for (const doc of docs) {
+      if (!doc) continue;
+      if (!doc.source_tool) doc.source_tool = tool;
+      const existingProv = typeof doc.provenance === 'object' && doc.provenance !== null ? { ...doc.provenance } : {};
+      let url;
+      let host;
+      try {
+        url = (typeof doc.url === 'string' && doc.url) || (typeof doc.website_url_primary === 'string' && doc.website_url_primary) || '';
+        host = url ? new URL(url).hostname : undefined;
+      } catch (_) {
+        url = undefined;
+        host = undefined;
+      }
+      const rawScore = typeof doc['@search.score'] === 'number' ? doc['@search.score'] : undefined;
+      if (rawScore !== undefined) doc.source_score = rawScore;
+      doc.provenance = {
+        ...existingProv,
+        source_tool: doc.source_tool,
+        index: doc.index ?? existingProv.index,
+        site: doc.site ?? existingProv.site,
+        page_type: doc.page_type ?? existingProv.page_type,
+        host: host ?? existingProv.host,
+        url: url || existingProv.url,
+        score: rawScore ?? existingProv.score,
+      };
+      prepared.push(doc);
+    }
+    return prepared;
+  }
+
+  _computeMinimums(finalTop) {
+    const minimums = {};
+    for (const key of Object.keys(WoodlandAISearchAll.DEFAULT_MIN_BASE)) {
+      const base = this.minBase[key] || 0;
+      const ratio = this.minRatio[key] || 0;
+      const ratioCount = Math.ceil(finalTop * ratio);
+      minimums[key] = Math.max(base, ratioCount);
+    }
+    return minimums;
+  }
+
+  _computeMaxScores(buckets) {
+    const maxScores = {};
+    for (const bucket of buckets) {
+      const docs = Array.isArray(bucket?.docs) ? bucket.docs : [];
+      let max = 0;
+      for (const doc of docs) {
+        const score = typeof doc?.source_score === 'number' ? doc.source_score : 0;
+        if (score > max) max = score;
+      }
+      maxScores[bucket.tool] = max || 1;
+    }
+    return maxScores;
+  }
+
+  _relaxedOverridesFor(tool) {
+    if (!this.relaxedDisableReviewed) return undefined;
+    if (!['woodland-ai-search', 'woodland-ai-search-cases', 'woodland-ai-search-tractor'].includes(tool)) return undefined;
+    return { AZURE_AI_SEARCH_ENFORCE_REVIEWED_ONLY: 'false' };
+  }
+
+  async _executeSubtool({ tool, Ctor, query, top, overrides = {} }) {
+    try {
+      const instance = new Ctor({ ...this.fields, ...overrides });
+      const raw = await instance._call({ query, top });
+      const docs = JSON.parse(raw);
+      return { tool, ok: true, docs };
+    } catch (err) {
+      return { tool, ok: false, err };
     }
   }
 }
