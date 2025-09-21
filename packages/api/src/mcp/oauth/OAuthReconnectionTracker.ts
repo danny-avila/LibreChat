@@ -12,18 +12,39 @@ export class OAuthReconnectionTracker {
     return this.failed.get(userId)?.has(serverName) ?? false;
   }
 
+  /** Check if server is in the active set (original simple check) */
   public isActive(userId: string, serverName: string): boolean {
-    const key = `${userId}:${serverName}`;
-    const startTime = this.activeTimestamps.get(key);
+    return this.active.get(userId)?.has(serverName) ?? false;
+  }
 
-    // Check if reconnection has timed out
-    if (startTime && Date.now() - startTime > this.RECONNECTION_TIMEOUT_MS) {
-      // Auto-cleanup timed out reconnection
-      this.removeActive(userId, serverName);
+  /** Check if server is still reconnecting (considers timeout) */
+  public isStillReconnecting(userId: string, serverName: string): boolean {
+    if (!this.isActive(userId, serverName)) {
       return false;
     }
 
-    return this.active.get(userId)?.has(serverName) ?? false;
+    const key = `${userId}:${serverName}`;
+    const startTime = this.activeTimestamps.get(key);
+
+    // If there's a timestamp and it has timed out, it's not still reconnecting
+    if (startTime && Date.now() - startTime > this.RECONNECTION_TIMEOUT_MS) {
+      return false;
+    }
+
+    return true;
+  }
+
+  /** Clean up server if it has timed out - returns true if cleanup was performed */
+  public cleanupIfTimedOut(userId: string, serverName: string): boolean {
+    const key = `${userId}:${serverName}`;
+    const startTime = this.activeTimestamps.get(key);
+
+    if (startTime && Date.now() - startTime > this.RECONNECTION_TIMEOUT_MS) {
+      this.removeActive(userId, serverName);
+      return true;
+    }
+
+    return false;
   }
 
   public setFailed(userId: string, serverName: string): void {

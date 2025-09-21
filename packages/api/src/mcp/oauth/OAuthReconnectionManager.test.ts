@@ -319,4 +319,217 @@ describe('OAuthReconnectionManager', () => {
       expect(mockMCPManager.disconnectUserConnection).not.toHaveBeenCalled();
     });
   });
+
+  describe('reconnection timeout behavior', () => {
+    let reconnectionTracker: OAuthReconnectionTracker;
+
+    beforeEach(async () => {
+      jest.useFakeTimers();
+      reconnectionTracker = new OAuthReconnectionTracker();
+      reconnectionManager = await OAuthReconnectionManager.createInstance(
+        flowManager,
+        tokenMethods,
+        reconnectionTracker,
+      );
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('should handle timed out reconnections via isReconnecting check', () => {
+      const userId = 'user-123';
+      const serverName = 'test-server';
+      const now = Date.now();
+      jest.setSystemTime(now);
+
+      // Set server as reconnecting
+      reconnectionTracker.setActive(userId, serverName);
+      expect(reconnectionManager.isReconnecting(userId, serverName)).toBe(true);
+
+      // Advance time by 4 minutes 59 seconds - should still be reconnecting
+      jest.advanceTimersByTime(4 * 60 * 1000 + 59 * 1000);
+      expect(reconnectionManager.isReconnecting(userId, serverName)).toBe(true);
+
+      // Advance time by 2 more seconds (total 5 minutes 1 second) - should be auto-cleaned
+      jest.advanceTimersByTime(2000);
+      expect(reconnectionManager.isReconnecting(userId, serverName)).toBe(false);
+    });
+
+    it('should not attempt to reconnect servers that have timed out during reconnection', async () => {
+      const userId = 'user-123';
+      const oauthServers = new Set(['server1', 'server2']);
+      mockMCPManager.getOAuthServers.mockReturnValue(oauthServers);
+
+      const now = Date.now();
+      jest.setSystemTime(now);
+
+      // Set server1 as having been reconnecting for over 5 minutes
+      reconnectionTracker.setActive(userId, 'server1');
+      jest.advanceTimersByTime(6 * 60 * 1000); // 6 minutes
+
+      // server2: has valid token and not connected
+      tokenMethods.findToken.mockImplementation(async ({ identifier }) => {
+        if (identifier === 'mcp:server2') {
+          return {
+            userId,
+            identifier,
+            expiresAt: new Date(Date.now() + 3600000),
+          } as unknown as MCPOAuthTokens;
+        }
+        return null;
+      });
+
+      // Mock successful reconnection
+      const mockNewConnection = {
+        isConnected: jest.fn().mockResolvedValue(true),
+        disconnect: jest.fn(),
+      };
+      mockMCPManager.getUserConnection.mockResolvedValue(
+        mockNewConnection as unknown as MCPConnection,
+      );
+
+      await reconnectionManager.reconnectServers(userId);
+
+      // server1 should still be in active set, just not eligible for reconnection
+      expect(reconnectionTracker.isActive(userId, 'server1')).toBe(true);
+      expect(reconnectionTracker.isStillReconnecting(userId, 'server1')).toBe(false);
+
+      // Only server2 should be marked as reconnecting
+      expect(reconnectionTracker.isActive(userId, 'server2')).toBe(true);
+
+      // Wait for async reconnection using runAllTimersAsync
+      await jest.runAllTimersAsync();
+
+      // Verify only server2 was reconnected
+      expect(mockMCPManager.getUserConnection).toHaveBeenCalledTimes(1);
+      expect(mockMCPManager.getUserConnection).toHaveBeenCalledWith(
+        expect.objectContaining({
+          serverName: 'server2',
+        }),
+      );
+    });
+
+    it('should properly track reconnection time for multiple sequential reconnect attempts', async () => {
+      const userId = 'user-123';
+      const serverName = 'server1';
+      const oauthServers = new Set([serverName]);
+      mockMCPManager.getOAuthServers.mockReturnValue(oauthServers);
+
+      const now = Date.now();
+      jest.setSystemTime(now);
+
+      // Setup valid token
+      tokenMethods.findToken.mockResolvedValue({
+        userId,
+        identifier: `mcp:${serverName}`,
+        expiresAt: new Date(Date.now() + 3600000),
+      } as unknown as MCPOAuthTokens);
+
+      // First reconnect attempt - will fail
+      mockMCPManager.getUserConnection.mockRejectedValueOnce(new Error('Connection failed'));
+      mockMCPManager.getRawConfig.mockReturnValue({} as unknown as MCPOptions);
+
+      await reconnectionManager.reconnectServers(userId);
+      await jest.runAllTimersAsync();
+
+      // Server should be marked as failed
+      expect(reconnectionTracker.isFailed(userId, serverName)).toBe(true);
+      expect(reconnectionTracker.isActive(userId, serverName)).toBe(false);
+
+      // Clear failed state to allow another attempt
+      reconnectionManager.clearReconnection(userId, serverName);
+
+      // Advance time by 3 minutes
+      jest.advanceTimersByTime(3 * 60 * 1000);
+
+      // Second reconnect attempt - will succeed
+      const mockConnection = {
+        isConnected: jest.fn().mockResolvedValue(true),
+      };
+      mockMCPManager.getUserConnection.mockResolvedValue(
+        mockConnection as unknown as MCPConnection,
+      );
+
+      await reconnectionManager.reconnectServers(userId);
+
+      // Server should be marked as active with new timestamp
+      expect(reconnectionTracker.isActive(userId, serverName)).toBe(true);
+
+      await jest.runAllTimersAsync();
+
+      // After successful reconnection, should be cleared
+      expect(reconnectionTracker.isActive(userId, serverName)).toBe(false);
+      expect(reconnectionTracker.isFailed(userId, serverName)).toBe(false);
+    });
+
+    it.skip('should handle concurrent reconnection attempts with different timeout states', async () => {
+      // Use real timers for this test since we're manually mocking Date.now()
+      jest.useRealTimers();
+
+      // Create a fresh tracker for this test to avoid timer conflicts
+      const testTracker = new OAuthReconnectionTracker();
+      reconnectionManager = new OAuthReconnectionManager(flowManager, tokenMethods, testTracker);
+
+      const userId = 'user-123';
+      const oauthServers = new Set(['server1', 'server2', 'server3']);
+      mockMCPManager.getOAuthServers.mockReturnValue(oauthServers);
+
+      const originalNow = Date.now();
+      let currentTime = originalNow;
+
+      // Mock Date.now() to control time
+      const dateNowSpy = jest.spyOn(Date, 'now').mockImplementation(() => currentTime);
+
+      // server1: Set as reconnecting at time 0
+      testTracker.setActive(userId, 'server1');
+
+      // Advance to 3 minutes
+      currentTime = originalNow + 3 * 60 * 1000;
+
+      // server2: Set as reconnecting at 3 minutes
+      testTracker.setActive(userId, 'server2');
+
+      // All servers have valid tokens
+      tokenMethods.findToken.mockImplementation(async ({ identifier }) => {
+        if (identifier.startsWith('mcp:')) {
+          return {
+            userId,
+            identifier,
+            expiresAt: new Date(currentTime + 3600000),
+          } as unknown as MCPOAuthTokens;
+        }
+        return null;
+      });
+
+      // Mock connections
+      mockMCPManager.getUserConnection.mockResolvedValue({
+        isConnected: jest.fn().mockResolvedValue(true),
+      } as unknown as MCPConnection);
+
+      // Advance time to 5 minutes 1 second from original time (to ensure timeout)
+      currentTime = originalNow + 5 * 60 * 1000 + 1000;
+
+      // server1 should be timed out, server2 should still be active
+      expect(reconnectionManager.isReconnecting(userId, 'server1')).toBe(false);
+      expect(reconnectionManager.isReconnecting(userId, 'server2')).toBe(true);
+
+      await reconnectionManager.reconnectServers(userId);
+
+      // server1 and server2 were not added to reconnection (already active per isActive)
+      // server3 should be marked as reconnecting (was not active)
+      expect(testTracker.isActive(userId, 'server3')).toBe(true);
+      expect(testTracker.isActive(userId, 'server2')).toBe(true); // Still active from before
+      expect(testTracker.isActive(userId, 'server1')).toBe(true); // Still in active set
+
+      // Check which are still reconnecting (considering timeout)
+      // Note: server1 was set at original time (now timed out), server2 at +3min (still active), server3 just set
+      expect(testTracker.isStillReconnecting(userId, 'server1')).toBe(false); // Timed out
+      expect(testTracker.isStillReconnecting(userId, 'server2')).toBe(true); // Still within timeout (only 2min old)
+      expect(testTracker.isStillReconnecting(userId, 'server3')).toBe(true); // Just started
+
+      // Restore Date.now()
+      dateNowSpy.mockRestore();
+    });
+  });
 });

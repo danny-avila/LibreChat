@@ -56,7 +56,9 @@ export class OAuthReconnectionManager {
   }
 
   public isReconnecting(userId: string, serverName: string): boolean {
-    return this.reconnectionsTracker.isActive(userId, serverName);
+    // Clean up if timed out, then return whether still reconnecting
+    this.reconnectionsTracker.cleanupIfTimedOut(userId, serverName);
+    return this.reconnectionsTracker.isStillReconnecting(userId, serverName);
   }
 
   public async reconnectServers(userId: string) {
@@ -146,6 +148,12 @@ export class OAuthReconnectionManager {
 
     // if the server has failed reconnection, don't attempt to reconnect
     if (this.reconnectionsTracker.isFailed(userId, serverName)) {
+      return false;
+    }
+
+    // if the server is already reconnecting, don't attempt to reconnect again
+    // Use isActive which is now a simple check without side effects
+    if (this.reconnectionsTracker.isActive(userId, serverName)) {
       return false;
     }
 
