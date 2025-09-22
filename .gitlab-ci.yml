@@ -1,63 +1,6 @@
 include:
-  - project: 'aurora/pipelines/includes'
-    ref: v1
-    file: '/image.yml'
-
-stages:
-  - build
-  - test
-  - post build dev
-  - post build app
-  - deploy
-
-"build docker librechat-svt":
-  stage: build
-  tags:
-    - k8s
-  extends:
-    - .buildkit_build_image
-  variables:
-    IMAGE: "${AURORA_HARBOR_URI}/llm/librechat-svt:$CI_COMMIT_SHORT_SHA"
-    BUILDKIT_EXTRA_ARGS: --opt build-arg:version=$CI_COMMIT_SHORT_SHA
-
-"release image STAGE librechat-svt":
-  stage: deploy
-  image:
-    name: gcr.io/go-containerregistry/crane:debug
-    entrypoint: [""]
-  tags:
-    - k8s
-  when: manual
-  needs:
-    - "build docker librechat-svt"
-  script:
-    - echo "$AURORA_HARBOR_PASS" | crane auth login -u "$AURORA_HARBOR_USER" --password-stdin "$AURORA_HARBOR_URI"
-    - >
-      crane tag
-      "$DOCKER_IMAGE":"$CI_COMMIT_SHORT_SHA"
-      "dev-$CI_COMMIT_SHORT_SHA-$(date +%s)"
-  variables:
-    DOCKER_IMAGE: "${AURORA_HARBOR_URI}/llm/librechat-svt"
-
-"release image PROD librechat-svt":
-  stage: deploy
-  image:
-    name: gcr.io/go-containerregistry/crane:debug
-    entrypoint: [""]
-  tags:
-    - k8s
-  rules:
-    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
-      when: manual
-    - if: $CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH
-      when: never
-  needs:
-    - "build docker librechat-svt"
-  script:
-    - echo "$AURORA_HARBOR_PASS" | crane auth login -u "$AURORA_HARBOR_USER" --password-stdin "$AURORA_HARBOR_URI"
-    - >
-      crane tag
-      "$DOCKER_IMAGE":"$CI_COMMIT_SHORT_SHA"
-      "prod-$CI_COMMIT_SHORT_SHA-$(date +%s)"
-  variables:
-    DOCKER_IMAGE: "${AURORA_HARBOR_URI}/llm/librechat-svt"
+  - project: 'llm/ci-templates'
+    file: '/gitlab-app-script.yml'
+    inputs:
+      app_name: "librechat-svt"
+      directory: "$CI_PROJECT_DIR"
