@@ -320,6 +320,10 @@ export const useUpdateUserPluginsMutation = (
     onSuccess: (...args) => {
       queryClient.invalidateQueries([QueryKeys.user]);
       onSuccess?.(...args);
+      if (args[1]?.action === 'uninstall' && args[1]?.pluginKey?.startsWith(Constants.mcp_prefix)) {
+        const serverName = args[1]?.pluginKey?.substring(Constants.mcp_prefix.length);
+        queryClient.invalidateQueries([QueryKeys.mcpAuthValues, serverName]);
+      }
     },
   });
 };
