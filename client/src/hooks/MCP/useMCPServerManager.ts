@@ -52,9 +52,9 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
       showToast({ message: localize('com_nav_mcp_vars_updated'), status: 'success' });
 
       await Promise.all([
-        queryClient.refetchQueries([QueryKeys.mcpTools]),
-        queryClient.refetchQueries([QueryKeys.mcpAuthValues]),
-        queryClient.refetchQueries([QueryKeys.mcpConnectionStatus]),
+        queryClient.invalidateQueries([QueryKeys.mcpTools]),
+        queryClient.invalidateQueries([QueryKeys.mcpAuthValues]),
+        queryClient.invalidateQueries([QueryKeys.mcpConnectionStatus]),
       ]);
     },
     onError: (error: unknown) => {
