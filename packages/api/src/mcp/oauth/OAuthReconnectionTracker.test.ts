@@ -207,11 +207,11 @@ describe('OAuthReconnectTracker', () => {
       tracker.setActive(userId, serverName);
       expect(tracker.isStillReconnecting(userId, serverName)).toBe(true);
 
-      // Advance time by 4 minutes 59 seconds - should still be reconnecting
-      jest.advanceTimersByTime(4 * 60 * 1000 + 59 * 1000);
+      // Advance time by 2 minutes 59 seconds - should still be reconnecting
+      jest.advanceTimersByTime(2 * 60 * 1000 + 59 * 1000);
       expect(tracker.isStillReconnecting(userId, serverName)).toBe(true);
 
-      // Advance time by 2 more seconds (total 5 minutes 1 second) - should not be still reconnecting
+      // Advance time by 2 more seconds (total 3 minutes 1 second) - should not be still reconnecting
       jest.advanceTimersByTime(2000);
       expect(tracker.isStillReconnecting(userId, serverName)).toBe(false);
 
