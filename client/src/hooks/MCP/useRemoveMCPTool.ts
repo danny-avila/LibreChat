@@ -10,10 +10,11 @@ import { useLocalize } from '~/hooks';
  * Provides unified logic for MCPTool, UninitializedMCPTool, and UnconfiguredMCPTool components
  * Note: This only removes the tool from the form, it does not delete associated auth credentials
  */
-export function useRemoveMCPTool() {
+export function useRemoveMCPTool(options?: { showToast?: boolean }) {
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const { getValues, setValue } = useFormContext<AgentForm>();
+  const shouldShowToast = options?.showToast !== false;
 
   const removeTool = useCallback(
     (serverName: string) => {
@@ -30,12 +31,14 @@ export function useRemoveMCPTool() {
         ) || [];
       setValue('tools', remainingToolIds, { shouldDirty: true });
 
-      showToast({
-        message: localize('com_ui_delete_tool_save_reminder'),
-        status: 'warning',
-      });
+      if (shouldShowToast) {
+        showToast({
+          message: localize('com_ui_delete_tool_save_reminder'),
+          status: 'warning',
+        });
+      }
     },
-    [getValues, setValue, showToast, localize],
+    [getValues, setValue, showToast, localize, shouldShowToast],
   );
 
   return { removeTool };

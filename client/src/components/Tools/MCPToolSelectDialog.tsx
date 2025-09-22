@@ -7,7 +7,12 @@ import { Dialog, DialogPanel, DialogTitle, Description } from '@headlessui/react
 import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
 import type { TError, AgentToolType } from 'librechat-data-provider';
 import type { AgentForm, TPluginStoreDialogProps } from '~/common';
-import { useLocalize, usePluginDialogHelpers, useMCPServerManager } from '~/hooks';
+import {
+  usePluginDialogHelpers,
+  useMCPServerManager,
+  useRemoveMCPTool,
+  useLocalize,
+} from '~/hooks';
 import CustomUserVarsSection from '~/components/MCP/CustomUserVarsSection';
 import { PluginPagination } from '~/components/Plugins/Store';
 import { useAgentPanelContext } from '~/Providers';
@@ -28,6 +33,7 @@ function MCPToolSelectDialog({
   const queryClient = useQueryClient();
   const { initializeServer } = useMCPServerManager();
   const { getValues, setValue } = useFormContext<AgentForm>();
+  const { removeTool } = useRemoveMCPTool({ showToast: false });
   const { mcpServersMap, startupConfig } = useAgentPanelContext();
   const { refetch: refetchMCPTools } = useMCPToolsQuery({
     enabled: mcpServersMap.size > 0,
@@ -196,17 +202,6 @@ function MCPToolSelectDialog({
     }
   };
 
-  /**
-   * Only remove from the form, don't delete auth credentials
-   */
-  const onRemoveTool = (serverName: string) => {
-    const currentTools = getValues('tools') || [];
-    const remainingTools = currentTools.filter(
-      (tool) => tool !== serverName && !tool.endsWith(`${Constants.mcp_delimiter}${serverName}`),
-    );
-    setValue('tools', remainingTools);
-  };
-
   const installedToolsSet = useMemo(() => {
     return new Set(mcpServerNames);
   }, [mcpServerNames]);
@@ -357,7 +352,7 @@ function MCPToolSelectDialog({
                         isConfiguring={isConfiguring}
                         isInitializing={isServerInitializing}
                         onAddTool={() => onAddTool(serverInfo.serverName)}
-                        onRemoveTool={() => onRemoveTool(serverInfo.serverName)}
+                        onRemoveTool={() => removeTool(serverInfo.serverName)}
                       />
                     );
                   })}
