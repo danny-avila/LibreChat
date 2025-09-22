@@ -343,7 +343,7 @@ export const useReinitializeMCPServerMutation = (): UseMutationResult<
   const queryClient = useQueryClient();
   return useMutation((serverName: string) => dataService.reinitializeMCPServer(serverName), {
     onSuccess: () => {
-      queryClient.refetchQueries([QueryKeys.mcpTools]);
+      queryClient.invalidateQueries([QueryKeys.mcpTools]);
     },
   });
 };
