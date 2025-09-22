@@ -208,7 +208,7 @@ properties:
     volumes:
       - name: fspaichateastusn2a001
         storageType: AzureFile
-        storageName: uploads
+        storageName: uploads-n2a
     serviceBinds: null
   eventStreamEndpoint: https://eastus.azurecontainerapps.dev/subscriptions/819386da-14b6-4ae4-a16d-7475c98e6a9b/resourceGroups/rg-playai-eastus-n2a-001/containerApps/conpaichateastusn2a001/eventstream
   delegatedIdentities: []
