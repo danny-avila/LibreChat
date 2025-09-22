@@ -41,7 +41,7 @@ const limiters = require('./limiters');
 const validate = require('./validate');
 
 // Error handling for required modules
-const loadModule = (modulePath, name) => {
+const _loadModule = (modulePath, name) => {
   try {
     return require(modulePath);
   } catch (error) {

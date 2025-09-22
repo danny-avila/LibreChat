@@ -1,3 +1,4 @@
+// api/server/middleware/limiters/redisRateLimiter.js
 const { RateLimiterRedis } = require('rate-limiter-flexible');
 const { redisClients } = require('../../../cache/redisClients');
 const { LoggingSystem } = require('../../../utils/LoggingSystem');
@@ -11,7 +12,7 @@ class RedisRateLimiter {
 
   initializeLimiter(key, points, duration, options = {}) {
     const limiterKey = `${key}_${points}_${duration}`;
-    
+
     if (!this.limiters.has(limiterKey)) {
       const limiter = new RateLimiterRedis({
         storeClient: this.redisClient,
@@ -20,7 +21,7 @@ class RedisRateLimiter {
         duration: duration,
         blockDuration: options.blockDuration || 0,
         execEvenly: options.execEvenly || false,
-        insuranceLimiter: options.insuranceLimiter
+        insuranceLimiter: options.insuranceLimiter,
       });
 
       this.limiters.set(limiterKey, limiter);
@@ -32,8 +33,13 @@ class RedisRateLimiter {
   async consume(key, points = 1, options = {}) {
     try {
       const { points: limitPoints, duration, ...limiterOptions } = options;
-      const limiter = this.initializeLimiter(key, limitPoints || 10, duration || 60, limiterOptions);
-      
+      const limiter = this.initializeLimiter(
+        key,
+        limitPoints || 10,
+        duration || 60,
+        limiterOptions,
+      );
+
       await limiter.consume(key, points);
       return { success: true };
     } catch (rejRes) {
@@ -46,7 +52,7 @@ class RedisRateLimiter {
         success: false,
         msBeforeNext: rejRes.msBeforeNext,
         remainingPoints: rejRes.remainingPoints,
-        consumedPoints: rejRes.consumedPoints
+        consumedPoints: rejRes.consumedPoints,
       };
     }
   }

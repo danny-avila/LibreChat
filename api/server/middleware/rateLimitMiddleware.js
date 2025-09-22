@@ -1,3 +1,4 @@
+// api/server/middleware/rateLimitMiddleware.js
 const redisRateLimiter = require('./limiters/redisRateLimiter');
 const { getClientIP } = require('../utils/requestUtils');
 const { LoggingSystem } = require('../../utils/LoggingSystem');
@@ -8,13 +9,13 @@ const rateLimitConfig = {
   register: { points: 3, duration: 3600 }, // 3 attempts per hour
   messages: { points: 100, duration: 60 }, // 100 messages per minute
   fileUploads: { points: 20, duration: 300 }, // 20 uploads per 5 minutes
-  apiKeys: { points: 10, duration: 3600 } // 10 key operations per hour
+  apiKeys: { points: 10, duration: 3600 }, // 10 key operations per hour
 };
 
 async function rateLimitMiddleware(req, res, next) {
   const route = getRouteKey(req);
   const clientId = getClientIdentifier(req);
-  
+
   if (!rateLimitConfig[route]) {
     return next();
   }
@@ -24,7 +25,7 @@ async function rateLimitMiddleware(req, res, next) {
 
   if (!result.success) {
     logger.warn(`Rate limit exceeded for ${route} by ${clientId}`);
-    
+
     res.setHeader('Retry-After', Math.ceil(result.msBeforeNext / 1000));
     res.setHeader('X-RateLimit-Limit', config.points);
     res.setHeader('X-RateLimit-Remaining', result.remainingPoints);
@@ -35,7 +36,7 @@ async function rateLimitMiddleware(req, res, next) {
       retryAfter: Math.ceil(result.msBeforeNext / 1000),
       limit: config.points,
       remaining: result.remainingPoints,
-      reset: new Date(Date.now() + result.msBeforeNext).toISOString()
+      reset: new Date(Date.now() + result.msBeforeNext).toISOString(),
     });
   }
 
@@ -48,13 +49,13 @@ async function rateLimitMiddleware(req, res, next) {
 
 function getRouteKey(req) {
   const path = req.route?.path || req.path;
-  
+
   if (path.includes('/auth/login')) return 'login';
   if (path.includes('/auth/register')) return 'register';
   if (path.includes('/api/messages')) return 'messages';
   if (path.includes('/files/upload')) return 'fileUploads';
   if (path.includes('/keys')) return 'apiKeys';
-  
+
   return 'general';
 }
 
@@ -66,5 +67,5 @@ function getClientIdentifier(req) {
 module.exports = {
   rateLimitMiddleware,
   redisRateLimiter,
-  rateLimitConfig
+  rateLimitConfig,
 };

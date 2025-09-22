@@ -1,3 +1,4 @@
+// api/server/routes/auth.js
 const express = require('express');
 const { createSetBalanceConfig } = require('@librechat/api');
 const {
