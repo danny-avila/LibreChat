@@ -22,8 +22,8 @@ import { useFileHandling, useLocalize, useLazyEffect, useSharePointFileHandling 
 import { useGetFileConfig, useGetStartupConfig } from '~/data-provider';
 import { SharePointPickerDialog } from '~/components/SharePoint';
 import FileRow from '~/components/Chat/Input/Files/FileRow';
+import { ESide, isEphemeralAgent } from '~/common';
 import { useChatContext } from '~/Providers';
-import { ESide } from '~/common';
 
 export default function FileContext({
   agent_id,
@@ -156,7 +156,7 @@ export default function FileContext({
           ) : (
             <button
               type="button"
-              disabled={!agent_id}
+              disabled={isEphemeralAgent(agent_id)}
               className="btn btn-neutral border-token-border-light relative h-9 w-full rounded-lg font-medium"
               onClick={handleLocalFileClick}
             >
@@ -173,7 +173,7 @@ export default function FileContext({
             style={{ display: 'none' }}
             tabIndex={-1}
             ref={fileInputRef}
-            disabled={!agent_id}
+            disabled={isEphemeralAgent(agent_id)}
             onChange={handleFileChange}
           />
         </div>

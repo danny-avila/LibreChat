@@ -18,6 +18,7 @@ import { useFileMapContext, useAgentPanelContext } from '~/Providers';
 import AgentCategorySelector from './AgentCategorySelector';
 import Action from '~/components/SidePanel/Builder/Action';
 import { useLocalize, useVisibleTools } from '~/hooks';
+import { Panel, isEphemeralAgent } from '~/common';
 import { useGetAgentFiles } from '~/data-provider';
 import { icons } from '~/hooks/Endpoint/Icons';
 import Instructions from './Instructions';
@@ -29,7 +30,6 @@ import Artifacts from './Artifacts';
 import AgentTool from './AgentTool';
 import CodeForm from './Code/Form';
 import MCPTools from './MCPTools';
-import { Panel } from '~/common';
 
 const labelClass = 'mb-2 text-token-text-primary block font-medium';
 const inputClass = cn(
@@ -149,7 +149,7 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
   }, [agent, agent_id, mergedFileMap]);
 
   const handleAddActions = useCallback(() => {
-    if (!agent_id) {
+    if (isEphemeralAgent(agent_id)) {
       showToast({
         message: localize('com_assistants_actions_disabled'),
         status: 'warning',
@@ -370,7 +370,7 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
               {(actionsEnabled ?? false) && (
                 <button
                   type="button"
-                  disabled={!agent_id}
+                  disabled={isEphemeralAgent(agent_id)}
                   onClick={handleAddActions}
                   className="btn btn-neutral border-token-border-light relative h-9 w-full rounded-lg font-medium"
                   aria-haspopup="dialog"

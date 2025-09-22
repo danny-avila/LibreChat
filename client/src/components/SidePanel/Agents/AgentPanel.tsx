@@ -25,11 +25,11 @@ import { useSelectAgent, useLocalize, useAuthContext } from '~/hooks';
 import { useAgentPanelContext } from '~/Providers/AgentPanelContext';
 import AgentPanelSkeleton from './AgentPanelSkeleton';
 import AdvancedPanel from './Advanced/AdvancedPanel';
+import { Panel, isEphemeralAgent } from '~/common';
 import AgentConfig from './AgentConfig';
 import AgentSelect from './AgentSelect';
 import AgentFooter from './AgentFooter';
 import ModelPanel from './ModelPanel';
-import { Panel } from '~/common';
 
 export default function AgentPanel() {
   const localize = useLocalize();
@@ -298,7 +298,7 @@ export default function AgentPanel() {
               </Button>
               <Button
                 variant="submit"
-                disabled={!agent_id || agentQuery.isInitialLoading}
+                disabled={isEphemeralAgent(agent_id) || agentQuery.isInitialLoading}
                 onClick={(e) => {
                   e.preventDefault();
                   handleSelectAgent();
