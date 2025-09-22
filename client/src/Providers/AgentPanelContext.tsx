@@ -9,7 +9,7 @@ import {
   useMCPToolsQuery,
 } from '~/data-provider';
 import { useLocalize, useGetAgentsConfig, useMCPConnectionStatus } from '~/hooks';
-import { Panel } from '~/common';
+import { Panel, isEphemeralAgent } from '~/common';
 
 const AgentPanelContext = createContext<AgentPanelContextType | undefined>(undefined);
 
@@ -32,15 +32,15 @@ export function AgentPanelProvider({ children }: { children: React.ReactNode }) 
 
   const { data: startupConfig } = useGetStartupConfig();
   const { data: actions } = useGetActionsQuery(EModelEndpoint.agents, {
-    enabled: !!agent_id,
+    enabled: !isEphemeralAgent(agent_id),
   });
 
   const { data: regularTools } = useAvailableToolsQuery(EModelEndpoint.agents, {
-    enabled: !!agent_id,
+    enabled: !isEphemeralAgent(agent_id),
   });
 
   const { data: mcpData } = useMCPToolsQuery({
-    enabled: !!agent_id && startupConfig?.mcpServers != null,
+    enabled: !isEphemeralAgent(agent_id) && startupConfig?.mcpServers != null,
   });
 
   const { agentsConfig, endpointsConfig } = useGetAgentsConfig();
@@ -50,7 +50,7 @@ export function AgentPanelProvider({ children }: { children: React.ReactNode }) 
   );
 
   const { connectionStatus } = useMCPConnectionStatus({
-    enabled: !!agent_id && mcpServerNames.length > 0,
+    enabled: !isEphemeralAgent(agent_id) && mcpServerNames.length > 0,
   });
 
   const mcpServersMap = useMemo(() => {
