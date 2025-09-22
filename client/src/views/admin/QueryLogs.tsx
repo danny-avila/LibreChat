@@ -89,7 +89,9 @@ export function useQueryLogs(limit: number = 10, page: number = 1, search: strin
           if (data.type === 'heartbeat') return;
 
           if (data.type === 'init') {
-            setTotal(data.total || 0);
+            // Only set total during init, using totalCount from the server
+            const normalizedTotal = Math.floor((data.total || 0) / limit) * limit;
+            setTotal(normalizedTotal);
             if (data.count === 0) {
               setLoading(false);
               setIsInitialFetchComplete(true);
@@ -113,17 +115,29 @@ export function useQueryLogs(limit: number = 10, page: number = 1, search: strin
           if (data.event === 'realtime_log') {
             if (typeof data.createdAt !== 'string') return;
             const logData = toRow(data);
-            
-            // Only show real-time logs on the first page
+
+            // Only update logs on the first page
             if (currentPage === 1) {
               setLogs((prevLogs) => {
-                // Add the new log at the beginning
                 const newLogs = [logData, ...prevLogs];
-                // Keep only the limit number of logs to maintain pagination
                 return newLogs.slice(0, currentLimit);
               });
-              // Increment total count for new real-time logs
-              setTotal((prevTotal) => prevTotal + 1);
+              // Explicitly avoid updating total
+              console.log('[useQueryLogs] Skipping total update for realtime_log:', data);
+            } else {
+              console.log('[useQueryLogs] Ignoring realtime_log on page:', currentPage);
+            }
+          }
+
+          // Handle unexpected update events
+          if (data.type === 'update') {
+            console.log('[useQueryLogs] Skipping total update for update event:', data);
+            // Optionally update logs if needed, but do NOT touch total
+            if (currentPage === 1 && data.logIds) {
+              setLogs((prevLogs) => {
+                const newLogs = data.logIds.map(toRow).concat(prevLogs);
+                return newLogs.slice(0, currentLimit);
+              });
             }
           }
 
