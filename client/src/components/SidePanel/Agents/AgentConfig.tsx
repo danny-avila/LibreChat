@@ -473,13 +473,15 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
         setIsOpen={setShowToolDialog}
         endpoint={EModelEndpoint.agents}
       />
-      <MCPToolSelectDialog
-        agentId={agent_id}
-        isOpen={showMCPToolDialog}
-        mcpServerNames={mcpServerNames}
-        setIsOpen={setShowMCPToolDialog}
-        endpoint={EModelEndpoint.agents}
-      />
+      {startupConfig?.mcpServers != null && (
+        <MCPToolSelectDialog
+          agentId={agent_id}
+          isOpen={showMCPToolDialog}
+          mcpServerNames={mcpServerNames}
+          setIsOpen={setShowMCPToolDialog}
+          endpoint={EModelEndpoint.agents}
+        />
+      )}
     </>
   );
 }

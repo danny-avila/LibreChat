@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useMemo } from 'react';
-import { Constants, EModelEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint } from 'librechat-data-provider';
 import type { MCP, Action, TPlugin } from 'librechat-data-provider';
 import type { AgentPanelContextType, MCPServerInfo } from '~/common';
 import {
@@ -30,6 +30,7 @@ export function AgentPanelProvider({ children }: { children: React.ReactNode }) 
   const [activePanel, setActivePanel] = useState<Panel>(Panel.builder);
   const [agent_id, setCurrentAgentId] = useState<string | undefined>(undefined);
 
+  const { data: startupConfig } = useGetStartupConfig();
   const { data: actions } = useGetActionsQuery(EModelEndpoint.agents, {
     enabled: !!agent_id,
   });
@@ -38,11 +39,10 @@ export function AgentPanelProvider({ children }: { children: React.ReactNode }) 
     enabled: !!agent_id,
   });
 
-  const { data: mcpTools } = useMCPToolsQuery({
-    enabled: !!agent_id,
+  const { data: mcpData } = useMCPToolsQuery({
+    enabled: !!agent_id && startupConfig?.mcpServers != null,
   });
 
-  const { data: startupConfig } = useGetStartupConfig();
   const { agentsConfig, endpointsConfig } = useGetAgentsConfig();
   const mcpServerNames = useMemo(
     () => Object.keys(startupConfig?.mcpServers ?? {}),
@@ -57,33 +57,34 @@ export function AgentPanelProvider({ children }: { children: React.ReactNode }) 
     const configuredServers = new Set(mcpServerNames);
     const serversMap = new Map<string, MCPServerInfo>();
 
-    if (mcpTools) {
-      for (const pluginTool of mcpTools) {
-        if (pluginTool.pluginKey.includes(Constants.mcp_delimiter)) {
-          const [_toolName, serverName] = pluginTool.pluginKey.split(Constants.mcp_delimiter);
+    if (mcpData?.servers) {
+      for (const [serverName, serverData] of Object.entries(mcpData.servers)) {
+        const metadata = {
+          name: serverName,
+          pluginKey: serverName,
+          description: `${localize('com_ui_tool_collection_prefix')} ${serverName}`,
+          icon: serverData.icon || '',
+          authConfig: serverData.authConfig,
+          authenticated: serverData.authenticated,
+        } as TPlugin;
 
-          if (!serversMap.has(serverName)) {
-            const metadata = {
-              name: serverName,
-              pluginKey: serverName,
-              description: `${localize('com_ui_tool_collection_prefix')} ${serverName}`,
-              icon: pluginTool.icon || '',
-            } as TPlugin;
+        const tools = serverData.tools.map((tool) => ({
+          tool_id: tool.pluginKey,
+          metadata: {
+            ...tool,
+            icon: serverData.icon,
+            authConfig: serverData.authConfig,
+            authenticated: serverData.authenticated,
+          } as TPlugin,
+        }));
 
-            serversMap.set(serverName, {
-              serverName,
-              tools: [],
-              isConfigured: configuredServers.has(serverName),
-              isConnected: connectionStatus?.[serverName]?.connectionState === 'connected',
-              metadata,
-            });
-          }
-
-          serversMap.get(serverName)!.tools.push({
-            tool_id: pluginTool.pluginKey,
-            metadata: pluginTool as TPlugin,
-          });
-        }
+        serversMap.set(serverName, {
+          serverName,
+          tools,
+          isConfigured: configuredServers.has(serverName),
+          isConnected: connectionStatus?.[serverName]?.connectionState === 'connected',
+          metadata,
+        });
       }
     }
 
@@ -109,7 +110,7 @@ export function AgentPanelProvider({ children }: { children: React.ReactNode }) 
     }
 
     return serversMap;
-  }, [mcpTools, localize, mcpServerNames, connectionStatus]);
+  }, [mcpData, localize, mcpServerNames, connectionStatus]);
 
   const value: AgentPanelContextType = {
     mcp,
@@ -120,7 +121,6 @@ export function AgentPanelProvider({ children }: { children: React.ReactNode }) 
     setMcps,
     agent_id,
     setAction,
-    mcpTools,
     activePanel,
     regularTools,
     agentsConfig,

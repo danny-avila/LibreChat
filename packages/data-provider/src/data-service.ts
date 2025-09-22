@@ -299,7 +299,7 @@ export const getAvailableTools = (
 
 /* MCP Tools - Decoupled from regular tools */
 
-export const getMCPTools = (): Promise<s.TPlugin[]> => {
+export const getMCPTools = (): Promise<q.MCPServersResponse> => {
   return request.get(endpoints.mcp.tools);
 };
 

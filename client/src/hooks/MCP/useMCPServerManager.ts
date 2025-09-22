@@ -7,9 +7,9 @@ import {
   useUpdateUserPluginsMutation,
   useReinitializeMCPServerMutation,
 } from 'librechat-data-provider/react-query';
-import type { TUpdateUserPlugins, TPlugin } from 'librechat-data-provider';
+import type { TUpdateUserPlugins, TPlugin, MCPServersResponse } from 'librechat-data-provider';
 import type { ConfigFieldDetail } from '~/common';
-import { useLocalize, useMCPSelect, useGetMCPTools, useMCPConnectionStatus } from '~/hooks';
+import { useLocalize, useMCPSelect, useMCPConnectionStatus } from '~/hooks';
 import { useGetStartupConfig } from '~/data-provider';
 
 interface ServerState {
@@ -24,7 +24,6 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
   const localize = useLocalize();
   const queryClient = useQueryClient();
   const { showToast } = useToastContext();
-  const { mcpToolDetails } = useGetMCPTools();
   const { data: startupConfig } = useGetStartupConfig();
   const { mcpValues, setMCPValues, isPinned, setIsPinned } = useMCPSelect({ conversationId });
 
@@ -448,7 +447,10 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
 
   const getServerStatusIconProps = useCallback(
     (serverName: string) => {
-      const tool = mcpToolDetails?.find((t) => t.name === serverName);
+      const mcpData = queryClient.getQueryData<MCPServersResponse | undefined>([
+        QueryKeys.mcpTools,
+      ]);
+      const serverData = mcpData?.servers?.[serverName];
       const serverStatus = connectionStatus?.[serverName];
       const serverConfig = startupConfig?.mcpServers?.[serverName];
 
@@ -458,17 +460,20 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
 
         previousFocusRef.current = document.activeElement as HTMLElement;
 
-        const configTool = tool || {
+        /** Minimal TPlugin object for the config dialog */
+        const configTool: TPlugin = {
           name: serverName,
           pluginKey: `${Constants.mcp_prefix}${serverName}`,
-          authConfig: serverConfig?.customUserVars
-            ? Object.entries(serverConfig.customUserVars).map(([key, config]) => ({
-                authField: key,
-                label: config.title,
-                description: config.description,
-              }))
-            : [],
-          authenticated: false,
+          authConfig:
+            serverData?.authConfig ||
+            (serverConfig?.customUserVars
+              ? Object.entries(serverConfig.customUserVars).map(([key, config]) => ({
+                  authField: key,
+                  label: config.title,
+                  description: config.description,
+                }))
+              : []),
+          authenticated: serverData?.authenticated ?? false,
         };
         setSelectedToolForConfig(configTool);
         setIsConfigModalOpen(true);
@@ -486,7 +491,14 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
       return {
         serverName,
         serverStatus,
-        tool,
+        tool: serverData
+          ? ({
+              name: serverName,
+              pluginKey: `${Constants.mcp_prefix}${serverName}`,
+              icon: serverData.icon,
+              authenticated: serverData.authenticated,
+            } as TPlugin)
+          : undefined,
         onConfigClick: handleConfigClick,
         isInitializing: isInitializing(serverName),
         canCancel: isCancellable(serverName),
@@ -495,8 +507,8 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
       };
     },
     [
+      queryClient,
       isCancellable,
-      mcpToolDetails,
       isInitializing,
       cancelOAuthFlow,
       connectionStatus,
