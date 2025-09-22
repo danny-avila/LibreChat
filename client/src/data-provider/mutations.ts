@@ -96,7 +96,7 @@ export const useArchiveConvoMutation = (
   const queryClient = useQueryClient();
   const convoQueryKey = [QueryKeys.allConversations];
   const archivedConvoQueryKey = [QueryKeys.archivedConversations];
-  const { onMutate, onError, onSettled, onSuccess, ..._options } = options || {};
+  const { onMutate, onError, onSuccess, ..._options } = options || {};
 
   return useMutation(
     (payload: t.TArchiveConversationRequest) => dataService.archiveConversation(payload),
@@ -567,6 +567,19 @@ export const useDuplicateConversationMutation = (
         queryKey: [QueryKeys.allConversations],
         refetchPage: (_, index) => index === 0,
       });
+
+      if (duplicatedConversation.tags && duplicatedConversation.tags.length > 0) {
+        queryClient.setQueryData<t.TConversationTag[]>([QueryKeys.conversationTags], (oldTags) => {
+          if (!oldTags) return oldTags;
+          return oldTags.map((tag) => {
+            if (duplicatedConversation.tags?.includes(tag.tag)) {
+              return { ...tag, count: tag.count + 1 };
+            }
+            return tag;
+          });
+        });
+      }
+
       onSuccess?.(data, vars, context);
     },
     ..._options,
@@ -597,6 +610,19 @@ export const useForkConvoMutation = (
         queryKey: [QueryKeys.allConversations],
         refetchPage: (_, index) => index === 0,
       });
+
+      if (forkedConversation.tags && forkedConversation.tags.length > 0) {
+        queryClient.setQueryData<t.TConversationTag[]>([QueryKeys.conversationTags], (oldTags) => {
+          if (!oldTags) return oldTags;
+          return oldTags.map((tag) => {
+            if (forkedConversation.tags?.includes(tag.tag)) {
+              return { ...tag, count: tag.count + 1 };
+            }
+            return tag;
+          });
+        });
+      }
+
       onSuccess?.(data, vars, context);
     },
     ..._options,
@@ -871,7 +897,7 @@ export const useUploadAssistantAvatarMutation = (
   unknown // context
 > => {
   return useMutation([MutationKeys.assistantAvatarUpload], {
-    mutationFn: ({ postCreation, ...variables }: t.AssistantAvatarVariables) =>
+    mutationFn: ({ postCreation: _postCreation, ...variables }: t.AssistantAvatarVariables) =>
       dataService.uploadAssistantAvatar(variables),
     ...(options || {}),
   });

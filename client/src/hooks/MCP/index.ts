@@ -1,4 +1,3 @@
-export * from './useGetMCPTools';
 export * from './useMCPConnectionStatus';
 export * from './useMCPSelect';
 export * from './useVisibleTools';

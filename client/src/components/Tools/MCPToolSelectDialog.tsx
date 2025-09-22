@@ -7,10 +7,10 @@ import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-quer
 import type { TError, AgentToolType } from 'librechat-data-provider';
 import type { AgentForm, TPluginStoreDialogProps } from '~/common';
 import { useLocalize, usePluginDialogHelpers, useMCPServerManager } from '~/hooks';
-import { useGetStartupConfig, useAvailableToolsQuery } from '~/data-provider';
 import CustomUserVarsSection from '~/components/MCP/CustomUserVarsSection';
 import { PluginPagination } from '~/components/Plugins/Store';
 import { useAgentPanelContext } from '~/Providers';
+import { useMCPToolsQuery } from '~/data-provider';
 import MCPToolItem from './MCPToolItem';
 
 function MCPToolSelectDialog({
@@ -24,11 +24,12 @@ function MCPToolSelectDialog({
   endpoint: EModelEndpoint.agents;
 }) {
   const localize = useLocalize();
-  const { mcpServersMap } = useAgentPanelContext();
   const { initializeServer } = useMCPServerManager();
-  const { data: startupConfig } = useGetStartupConfig();
   const { getValues, setValue } = useFormContext<AgentForm>();
-  const { refetch: refetchAvailableTools } = useAvailableToolsQuery(EModelEndpoint.agents);
+  const { mcpServersMap, startupConfig } = useAgentPanelContext();
+  const { refetch: refetchMCPTools } = useMCPToolsQuery({
+    enabled: mcpServersMap.size > 0,
+  });
 
   const [isInitializing, setIsInitializing] = useState<string | null>(null);
   const [configuringServer, setConfiguringServer] = useState<string | null>(null);
@@ -90,18 +91,17 @@ function MCPToolSelectDialog({
             setIsInitializing(null);
           },
           onSuccess: async () => {
-            const { data: updatedAvailableTools } = await refetchAvailableTools();
+            const { data: updatedMCPData } = await refetchMCPTools();
 
             const currentTools = getValues('tools') || [];
             const toolsToAdd: string[] = [
               `${Constants.mcp_server}${Constants.mcp_delimiter}${serverName}`,
             ];
 
-            if (updatedAvailableTools) {
-              updatedAvailableTools.forEach((tool) => {
-                if (tool.pluginKey.endsWith(`${Constants.mcp_delimiter}${serverName}`)) {
-                  toolsToAdd.push(tool.pluginKey);
-                }
+            if (updatedMCPData?.servers?.[serverName]) {
+              const serverData = updatedMCPData.servers[serverName];
+              serverData.tools.forEach((tool) => {
+                toolsToAdd.push(tool.pluginKey);
               });
             }
 

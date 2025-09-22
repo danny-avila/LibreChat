@@ -1,37 +1,34 @@
 const { logger } = require('@librechat/data-schemas');
+const { Tools, CacheKeys, Constants, FileSources } = require('librechat-data-provider');
 const {
   webSearchKeys,
-  extractWebSearchEnvVars,
-  normalizeHttpError,
+  MCPOAuthHandler,
   MCPTokenStorage,
+  normalizeHttpError,
+  extractWebSearchEnvVars,
 } = require('@librechat/api');
 const {
   getFiles,
+  findToken,
   updateUser,
   deleteFiles,
   deleteConvos,
   deletePresets,
   deleteMessages,
   deleteUserById,
+  deleteAllSharedLinks,
   deleteAllUserSessions,
 } = require('~/models');
 const { updateUserPluginAuth, deleteUserPluginAuth } = require('~/server/services/PluginService');
 const { updateUserPluginsService, deleteUserKey } = require('~/server/services/UserService');
 const { verifyEmail, resendVerificationEmail } = require('~/server/services/AuthService');
 const { needsRefresh, getNewS3URL } = require('~/server/services/Files/S3/crud');
-const { Tools, Constants, FileSources } = require('librechat-data-provider');
 const { processDeleteRequest } = require('~/server/services/Files/process');
 const { Transaction, Balance, User, Token } = require('~/db/models');
+const { getMCPManager, getFlowStateManager } = require('~/config');
 const { getAppConfig } = require('~/server/services/Config');
 const { deleteToolCalls } = require('~/models/ToolCall');
-const { deleteAllSharedLinks } = require('~/models');
-const { getMCPManager } = require('~/config');
-const { MCPOAuthHandler } = require('@librechat/api');
-const { getFlowStateManager } = require('~/config');
-const { CacheKeys } = require('librechat-data-provider');
 const { getLogStores } = require('~/cache');
-const { clearMCPServerTools } = require('~/server/services/Config/mcpToolsCache');
-const { findToken } = require('~/models');
 
 const getUserController = async (req, res) => {
   const appConfig = await getAppConfig({ role: req.user?.role });
@@ -375,9 +372,6 @@ const maybeUninstallOAuthMCP = async (userId, pluginKey, appConfig) => {
   const flowId = MCPOAuthHandler.generateFlowId(userId, serverName);
   await flowManager.deleteFlow(flowId, 'mcp_get_tokens');
   await flowManager.deleteFlow(flowId, 'mcp_oauth');
-
-  // 6. clear the tools cache for the server
-  await clearMCPServerTools({ userId, serverName });
 };
 
 module.exports = {
