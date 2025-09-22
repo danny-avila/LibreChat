@@ -151,8 +151,6 @@ export class OAuthReconnectionManager {
       return false;
     }
 
-    // if the server is already reconnecting, don't attempt to reconnect again
-    // Use isActive which is now a simple check without side effects
     if (this.reconnectionsTracker.isActive(userId, serverName)) {
       return false;
     }
