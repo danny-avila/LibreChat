@@ -129,7 +129,7 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
     (serverName: string) => {
       const state = serverStates[serverName];
       if (state?.pollInterval) {
-        clearInterval(state.pollInterval);
+        clearTimeout(state.pollInterval);
       }
       updateServerState(serverName, {
         isInitializing: false,
@@ -144,8 +144,53 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
 
   const startServerPolling = useCallback(
     (serverName: string) => {
-      const pollInterval = setInterval(async () => {
+      // Prevent duplicate polling for the same server
+      const existingState = serverStates[serverName];
+      if (existingState?.pollInterval) {
+        console.debug(`[MCP Manager] Polling already active for ${serverName}, skipping duplicate`);
+        return;
+      }
+
+      let pollAttempts = 0;
+      let timeoutId: NodeJS.Timeout | null = null;
+
+      /** OAuth typically completes in 5 seconds to 3 minutes
+       * We enforce a strict 3-minute timeout with gradual backoff
+       */
+      const getPollInterval = (attempt: number): number => {
+        if (attempt < 12) return 5000; // First minute: every 5s (12 polls)
+        if (attempt < 22) return 6000; // Second minute: every 6s (10 polls)
+        return 7500; // Final minute: every 7.5s (8 polls)
+      };
+
+      const maxAttempts = 30; // Exactly 3 minutes (180 seconds) total
+      const OAUTH_TIMEOUT_MS = 180000; // 3 minutes in milliseconds
+
+      const pollOnce = async () => {
         try {
+          pollAttempts++;
+          const state = serverStates[serverName];
+
+          /** Stop polling after 3 minutes or max attempts */
+          const elapsedTime = state?.oauthStartTime
+            ? Date.now() - state.oauthStartTime
+            : pollAttempts * 5000; // Rough estimate if no start time
+
+          if (pollAttempts > maxAttempts || elapsedTime > OAUTH_TIMEOUT_MS) {
+            console.warn(
+              `[MCP Manager] OAuth timeout for ${serverName} after ${(elapsedTime / 1000).toFixed(0)}s (attempt ${pollAttempts})`,
+            );
+            showToast({
+              message: localize('com_ui_mcp_oauth_timeout', { 0: serverName }),
+              status: 'error',
+            });
+            if (timeoutId) {
+              clearTimeout(timeoutId);
+            }
+            cleanupServerState(serverName);
+            return;
+          }
+
           await queryClient.refetchQueries([QueryKeys.mcpConnectionStatus]);
 
           const freshConnectionData = queryClient.getQueryData([
@@ -153,11 +198,12 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
           ]) as any;
           const freshConnectionStatus = freshConnectionData?.connectionStatus || {};
 
-          const state = serverStates[serverName];
           const serverStatus = freshConnectionStatus[serverName];
 
           if (serverStatus?.connectionState === 'connected') {
-            clearInterval(pollInterval);
+            if (timeoutId) {
+              clearTimeout(timeoutId);
+            }
 
             showToast({
               message: localize('com_ui_mcp_authenticated_success', { 0: serverName }),
@@ -179,12 +225,15 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
             return;
           }
 
-          if (state?.oauthStartTime && Date.now() - state.oauthStartTime > 180000) {
+          // Check for OAuth timeout (should align with maxAttempts)
+          if (state?.oauthStartTime && Date.now() - state.oauthStartTime > OAUTH_TIMEOUT_MS) {
             showToast({
               message: localize('com_ui_mcp_oauth_timeout', { 0: serverName }),
               status: 'error',
             });
-            clearInterval(pollInterval);
+            if (timeoutId) {
+              clearTimeout(timeoutId);
+            }
             cleanupServerState(serverName);
             return;
           }
@@ -194,19 +243,38 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
               message: localize('com_ui_mcp_init_failed'),
               status: 'error',
             });
-            clearInterval(pollInterval);
+            if (timeoutId) {
+              clearTimeout(timeoutId);
+            }
             cleanupServerState(serverName);
             return;
           }
+
+          // Schedule next poll with smart intervals based on OAuth timing
+          const nextInterval = getPollInterval(pollAttempts);
+
+          // Log progress periodically
+          if (pollAttempts % 5 === 0 || pollAttempts <= 2) {
+            console.debug(
+              `[MCP Manager] Polling ${serverName} attempt ${pollAttempts}/${maxAttempts}, next in ${nextInterval / 1000}s`,
+            );
+          }
+
+          timeoutId = setTimeout(pollOnce, nextInterval);
+          updateServerState(serverName, { pollInterval: timeoutId });
         } catch (error) {
           console.error(`[MCP Manager] Error polling server ${serverName}:`, error);
-          clearInterval(pollInterval);
+          if (timeoutId) {
+            clearTimeout(timeoutId);
+          }
           cleanupServerState(serverName);
           return;
         }
-      }, 3500);
+      };
 
-      updateServerState(serverName, { pollInterval });
+      // Start the first poll
+      timeoutId = setTimeout(pollOnce, getPollInterval(0));
+      updateServerState(serverName, { pollInterval: timeoutId });
     },
     [
       queryClient,

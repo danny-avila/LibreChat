@@ -409,12 +409,16 @@ Current Date & Time: ${replaceSpecialVars({ text: '{{iso_datetime}}' })}
   const mcpToolPromises = [];
   /** MCP server tools are initialized sequentially by server */
   let index = -1;
+  const failedMCPServers = new Set();
   for (const [serverName, toolConfigs] of Object.entries(requestedMCPTools)) {
     index++;
     /** @type {LCAvailableTools} */
     let availableTools;
     for (const config of toolConfigs) {
       try {
+        if (failedMCPServers.has(serverName)) {
+          continue;
+        }
         const mcpParams = {
           res: options.res,
           userId: user,
@@ -458,6 +462,11 @@ Current Date & Time: ${replaceSpecialVars({ text: '{{iso_datetime}}' })}
           loadedTools.push(...mcpTool);
         } else if (mcpTool) {
           loadedTools.push(mcpTool);
+        } else {
+          failedMCPServers.add(serverName);
+          logger.warn(
+            `MCP tool creation failed for "${config.toolKey}", server may be unavailable or unauthenticated.`,
+          );
         }
       } catch (error) {
         logger.error(`Error loading MCP tool for server ${serverName}:`, error);
