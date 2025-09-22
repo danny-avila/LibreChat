@@ -831,7 +831,6 @@
   "com_ui_delete_success": "Vellykket slettet",
   "com_ui_delete_tool": "Slett verktøy",
   "com_ui_delete_tool_confirm": "Er du sikker på at du vil slette dette verktøyet?",
-  "com_ui_delete_tool_error": "En feil oppstod ved sletting av verktøyet: {{error}}",
   "com_ui_deleted": "Slettet",
   "com_ui_deleting_file": "Sletter fil ...",
   "com_ui_descending": "Synkende",
