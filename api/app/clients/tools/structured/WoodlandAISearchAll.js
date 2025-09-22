@@ -38,6 +38,16 @@ class WoodlandAISearchAll extends Tool {
     'woodland-ai-search-tractor': 1 / 6,
   };
   static DEFAULT_RELAXED_TOP_BOOST = 4;
+  static DEFAULT_WOODLAND_INDEX_MIN_BASE = {
+    catalog: 2,
+    cyclopedia: 1,
+    website: 1,
+  };
+  static DEFAULT_WOODLAND_INDEX_MIN_RATIO = {
+    catalog: 1 / 4,
+    cyclopedia: 1 / 6,
+    website: 1 / 6,
+  };
 
   constructor(fields = {}) {
     super();
@@ -73,6 +83,18 @@ class WoodlandAISearchAll extends Tool {
       'woodland-ai-search-tractor': parseNumber(env('WOODLAND_ALL_MIN_RATIO_TRACTOR'), WoodlandAISearchAll.DEFAULT_MIN_RATIO['woodland-ai-search-tractor'], { min: 0, max: 1 }),
     };
 
+    this.woodlandIndexMinBase = {
+      catalog: parseNumber(env('WOODLAND_ALL_MIN_BASE_CATALOG'), WoodlandAISearchAll.DEFAULT_WOODLAND_INDEX_MIN_BASE.catalog, { min: 0 }),
+      cyclopedia: parseNumber(env('WOODLAND_ALL_MIN_BASE_CYCLOPEDIA'), WoodlandAISearchAll.DEFAULT_WOODLAND_INDEX_MIN_BASE.cyclopedia, { min: 0 }),
+      website: parseNumber(env('WOODLAND_ALL_MIN_BASE_WEBSITE'), WoodlandAISearchAll.DEFAULT_WOODLAND_INDEX_MIN_BASE.website, { min: 0 }),
+    };
+
+    this.woodlandIndexMinRatio = {
+      catalog: parseNumber(env('WOODLAND_ALL_MIN_RATIO_CATALOG'), WoodlandAISearchAll.DEFAULT_WOODLAND_INDEX_MIN_RATIO.catalog, { min: 0, max: 1 }),
+      cyclopedia: parseNumber(env('WOODLAND_ALL_MIN_RATIO_CYCLOPEDIA'), WoodlandAISearchAll.DEFAULT_WOODLAND_INDEX_MIN_RATIO.cyclopedia, { min: 0, max: 1 }),
+      website: parseNumber(env('WOODLAND_ALL_MIN_RATIO_WEBSITE'), WoodlandAISearchAll.DEFAULT_WOODLAND_INDEX_MIN_RATIO.website, { min: 0, max: 1 }),
+    };
+
     this.enableRelaxedRetry = parseBool(env('WOODLAND_ALL_ENABLE_RELAXED_RETRY'), true);
     this.relaxedTopBoost = Math.max(0, Math.floor(parseNumber(env('WOODLAND_ALL_RELAXED_TOP_BOOST'), WoodlandAISearchAll.DEFAULT_RELAXED_TOP_BOOST, { min: 0 })));
     this.relaxedDisableReviewed = parseBool(env('WOODLAND_ALL_RELAXED_DISABLE_REVIEWED'), true);
@@ -83,6 +105,8 @@ class WoodlandAISearchAll extends Tool {
       enableCases: this.enableCases,
       minBase: this.minBase,
       minRatio: this.minRatio,
+      woodlandIndexMinBase: this.woodlandIndexMinBase,
+      woodlandIndexMinRatio: this.woodlandIndexMinRatio,
       enableRelaxedRetry: this.enableRelaxedRetry,
       relaxedTopBoost: this.relaxedTopBoost,
       relaxedDisableReviewed: this.relaxedDisableReviewed,
@@ -179,12 +203,27 @@ class WoodlandAISearchAll extends Tool {
       buckets.sort((a, b) => priority.indexOf(a.tool) - priority.indexOf(b.tool));
 
       const maxScores = this._computeMaxScores(buckets);
+      const woodlandIndexMinimums = this._computeWoodlandIndexMinimums(finalTop);
+      const woodlandIndexCounts = Object.fromEntries(
+        Object.keys(WoodlandAISearchAll.DEFAULT_WOODLAND_INDEX_MIN_BASE).map((key) => [key, 0]),
+      );
+
       const out = [];
       const seen = new Set();
 
-      const addDoc = (doc) => {
+      const addDoc = (doc, { allowUnderMin = false } = {}) => {
         const key = this._strongKeyOf(doc);
-        if (seen.has(key)) return false;
+        if (seen.has(key)) return 'duplicate';
+        let idx;
+        if (doc.source_tool === 'woodland-ai-search') {
+          idx = this._docIndex(doc);
+          if (idx && Object.prototype.hasOwnProperty.call(woodlandIndexCounts, idx)) {
+            const outstanding = Object.entries(woodlandIndexMinimums).some(([name, min]) => woodlandIndexCounts[name] < min);
+            if (!allowUnderMin && woodlandIndexCounts[idx] >= (woodlandIndexMinimums[idx] || 0) && outstanding) {
+              return 'defer';
+            }
+          }
+        }
         seen.add(key);
         const normScore = typeof doc.source_score === 'number'
           ? (doc.source_score / (maxScores[doc.source_tool] || 1)) || 0
@@ -193,8 +232,11 @@ class WoodlandAISearchAll extends Tool {
         provenance.normalized_score = normScore;
         provenance.source_tool = doc.source_tool || provenance.source_tool;
         doc.provenance = provenance;
+        if (doc.source_tool === 'woodland-ai-search' && idx && Object.prototype.hasOwnProperty.call(woodlandIndexCounts, idx)) {
+          woodlandIndexCounts[idx] += 1;
+        }
         out.push(doc);
-        return true;
+        return 'added';
       };
 
       const sortByScoreDesc = (docs) => [...docs].sort((a, b) => {
@@ -205,13 +247,49 @@ class WoodlandAISearchAll extends Tool {
       });
 
       const bucketState = new Map();
+      const deferredSeen = new WeakSet();
       for (const bucket of buckets) {
         bucketState.set(bucket.tool, {
           tool: bucket.tool,
           docs: sortByScoreDesc(bucket.docs || []),
           cursor: 0,
+          deferred: [],
         });
       }
+
+      const pullDoc = (state, preferPredicate) => {
+        if (!state) return null;
+        if (typeof preferPredicate === 'function') {
+          for (let i = 0; i < state.deferred.length; i += 1) {
+            const item = state.deferred[i];
+            if (preferPredicate(item.doc)) {
+              state.deferred.splice(i, 1);
+              return { doc: item.doc, source: item.source };
+            }
+          }
+          while (state.cursor < state.docs.length) {
+            const doc = state.docs[state.cursor++];
+            if (preferPredicate(doc)) return { doc, source: 'main' };
+            state.deferred.push({ doc, source: 'main' });
+          }
+        }
+        if (state.deferred.length) {
+          const item = state.deferred.shift();
+          return { doc: item.doc, source: item.source };
+        }
+        if (state.cursor < state.docs.length) {
+          return { doc: state.docs[state.cursor++], source: 'main' };
+        }
+        return null;
+      };
+
+      const needsIndex = (doc) => {
+        if (!doc) return false;
+        const idx = this._docIndex(doc);
+        if (!idx) return false;
+        if (!Object.prototype.hasOwnProperty.call(woodlandIndexCounts, idx)) return false;
+        return woodlandIndexCounts[idx] < (woodlandIndexMinimums[idx] || 0);
+      };
 
       // Phase 1: satisfy minimum quotas per tool (if available)
       for (const { tool } of buckets) {
@@ -220,12 +298,23 @@ class WoodlandAISearchAll extends Tool {
         let added = 0;
         const state = bucketState.get(tool);
         if (!state) continue;
-        while (state.cursor < state.docs.length) {
-          if (out.length >= finalTop) break;
-          const doc = state.docs[state.cursor++];
-          if (addDoc(doc)) {
+        while ((state.cursor < state.docs.length || state.deferred.length) && out.length < finalTop) {
+          let pulled;
+          if (tool === 'woodland-ai-search') {
+            pulled = pullDoc(state, needsIndex) || pullDoc(state);
+          } else {
+            pulled = pullDoc(state);
+          }
+          if (!pulled) break;
+          const { doc, source } = typeof pulled === 'object' && pulled.doc ? pulled : { doc: pulled, source: 'main' };
+          if (!doc) break;
+          const status = addDoc(doc, { allowUnderMin: tool !== 'woodland-ai-search' });
+          if (status === 'added') {
             added += 1;
             if (added >= quota) break;
+          } else if (status === 'defer' && tool === 'woodland-ai-search' && source === 'main' && !deferredSeen.has(doc)) {
+            deferredSeen.add(doc);
+            state.deferred.push({ doc, source: 'deferred' });
           }
         }
         if (out.length >= finalTop) break;
@@ -237,12 +326,27 @@ class WoodlandAISearchAll extends Tool {
         for (const tool of priority) {
           const state = bucketState.get(tool);
           if (!state) continue;
-          while (state.cursor < state.docs.length) {
-            const candidate = state.docs[state.cursor++];
-            if (addDoc(candidate)) {
+          while ((state.cursor < state.docs.length || state.deferred.length) && out.length < finalTop) {
+            let pulled;
+            const outstanding = tool === 'woodland-ai-search'
+              ? Object.entries(woodlandIndexMinimums).some(([name, min]) => woodlandIndexCounts[name] < min)
+              : false;
+            if (tool === 'woodland-ai-search' && outstanding) {
+              pulled = pullDoc(state, needsIndex) || pullDoc(state);
+            } else {
+              pulled = pullDoc(state);
+            }
+            if (!pulled) break;
+            const { doc, source } = typeof pulled === 'object' && pulled.doc ? pulled : { doc: pulled, source: 'main' };
+            if (!doc) break;
+            const status = addDoc(doc, { allowUnderMin: tool !== 'woodland-ai-search' });
+            if (status === 'added') {
               addedInCycle = true;
               if (out.length >= finalTop) break outer;
               break;
+            } else if (status === 'defer' && tool === 'woodland-ai-search' && source === 'main' && !deferredSeen.has(doc)) {
+              deferredSeen.add(doc);
+              state.deferred.push({ doc, source: 'deferred' });
             }
           }
         }
@@ -262,6 +366,8 @@ class WoodlandAISearchAll extends Tool {
         totalMerged: out.length,
         sources: buckets.map((b) => ({ tool: b.tool, count: b.docs.length })),
         quotas: minPerTool,
+        woodlandIndexMinimums,
+        woodlandIndexCounts,
       });
 
       return JSON.stringify(out);
@@ -293,6 +399,7 @@ class WoodlandAISearchAll extends Tool {
         ...existingProv,
         source_tool: doc.source_tool,
         index: doc.index ?? existingProv.index,
+        index_family: existingProv.index_family || this._docIndex(doc),
         site: doc.site ?? existingProv.site,
         page_type: doc.page_type ?? existingProv.page_type,
         host: host ?? existingProv.host,
@@ -327,6 +434,30 @@ class WoodlandAISearchAll extends Tool {
       maxScores[bucket.tool] = max || 1;
     }
     return maxScores;
+  }
+
+  _computeWoodlandIndexMinimums(finalTop) {
+    const mins = {};
+    for (const key of Object.keys(WoodlandAISearchAll.DEFAULT_WOODLAND_INDEX_MIN_BASE)) {
+      const base = this.woodlandIndexMinBase[key] || 0;
+      const ratio = this.woodlandIndexMinRatio[key] || 0;
+      const ratioCount = Math.ceil(finalTop * ratio);
+      mins[key] = Math.max(base, ratioCount);
+    }
+    return mins;
+  }
+
+  _docIndex(doc) {
+    const raw = doc?.index || doc?.source_index || doc?.provenance?.index;
+    if (typeof raw !== 'string') return undefined;
+    const trimmed = raw.trim();
+    if (!trimmed) return undefined;
+    const lowered = trimmed.toLowerCase();
+    if (lowered.includes('catalog')) return 'catalog';
+    if (lowered.includes('cyclopedia')) return 'cyclopedia';
+    if (lowered.includes('website')) return 'website';
+    if (lowered.includes('case')) return 'cases';
+    return undefined;
   }
 
   _relaxedOverridesFor(tool) {
