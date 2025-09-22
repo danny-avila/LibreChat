@@ -6,7 +6,7 @@ export class OAuthReconnectionTracker {
   /** Map of userId:serverName -> timestamp when reconnection started */
   private activeTimestamps: Map<string, number> = new Map();
   /** Maximum time (ms) a server can be in reconnecting state before auto-cleanup */
-  private readonly RECONNECTION_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+  private readonly RECONNECTION_TIMEOUT_MS = 3 * 60 * 1000; // 3 minutes
 
   public isFailed(userId: string, serverName: string): boolean {
     return this.failed.get(userId)?.has(serverName) ?? false;
