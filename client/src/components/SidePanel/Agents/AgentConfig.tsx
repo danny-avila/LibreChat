@@ -48,12 +48,12 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
   const {
     actions,
     setAction,
+    regularTools,
     agentsConfig,
     startupConfig,
     mcpServersMap,
     setActivePanel,
     endpointsConfig,
-    groupedTools: allTools,
   } = useAgentPanelContext();
 
   const {
@@ -177,7 +177,7 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
     Icon = icons[iconKey];
   }
 
-  const { toolIds, mcpServerNames } = useVisibleTools(tools, allTools, mcpServersMap);
+  const { toolIds, mcpServerNames } = useVisibleTools(tools, regularTools, mcpServersMap);
 
   return (
     <>
@@ -326,16 +326,15 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
           </label>
           <div>
             <div className="mb-1">
-              {/* Render all visible IDs (including groups with subtools selected) */}
+              {/* Render all visible IDs */}
               {toolIds.map((toolId, i) => {
-                if (!allTools) return null;
-                const tool = allTools[toolId];
+                const tool = regularTools?.find((t) => t.pluginKey === toolId);
                 if (!tool) return null;
                 return (
                   <AgentTool
                     key={`${toolId}-${i}-${agent_id}`}
                     tool={toolId}
-                    allTools={allTools}
+                    regularTools={regularTools}
                     agent_id={agent_id}
                   />
                 );
@@ -474,13 +473,15 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
         setIsOpen={setShowToolDialog}
         endpoint={EModelEndpoint.agents}
       />
-      <MCPToolSelectDialog
-        agentId={agent_id}
-        isOpen={showMCPToolDialog}
-        mcpServerNames={mcpServerNames}
-        setIsOpen={setShowMCPToolDialog}
-        endpoint={EModelEndpoint.agents}
-      />
+      {startupConfig?.mcpServers != null && (
+        <MCPToolSelectDialog
+          agentId={agent_id}
+          isOpen={showMCPToolDialog}
+          mcpServerNames={mcpServerNames}
+          setIsOpen={setShowMCPToolDialog}
+          endpoint={EModelEndpoint.agents}
+        />
+      )}
     </>
   );
 }
