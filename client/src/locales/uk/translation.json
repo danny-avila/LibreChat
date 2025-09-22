@@ -831,7 +831,6 @@
   "com_ui_delete_success": "Успішно видалено",
   "com_ui_delete_tool": "Видалити інструмент",
   "com_ui_delete_tool_confirm": "Ви дійсно хочете видалити цей інструмент?",
-  "com_ui_delete_tool_error": "Помилка під час видалення інструменту: {{error}}",
   "com_ui_deleted": "Видалено",
   "com_ui_deleting_file": "Видалення файлу...",
   "com_ui_descending": "За спаданням",

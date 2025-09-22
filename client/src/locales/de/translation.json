@@ -830,7 +830,6 @@
   "com_ui_delete_success": "Erfolgreich gelöscht",
   "com_ui_delete_tool": "Werkzeug löschen",
   "com_ui_delete_tool_confirm": "Bist du sicher, dass du dieses Werkzeug löschen möchtest?",
-  "com_ui_delete_tool_error": "Fehler beim Löschen des Tools: {{error}}",
   "com_ui_deleted": "Gelöscht",
   "com_ui_deleting_file": "Lösche Datei...",
   "com_ui_descending": "Absteigend",
