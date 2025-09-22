@@ -12,18 +12,16 @@ import { useLocalize, useMCPConnectionStatus } from '~/hooks';
 import { useGetStartupConfig } from '~/data-provider';
 import MCPPanelSkeleton from './MCPPanelSkeleton';
 
-/** OAuth typically completes in 5 seconds to 3 minutes, so we poll with gradual backoff */
+/** OAuth typically completes in 5 seconds to 3 minutes - enforce strict 3-minute limit */
 const POLL_INTERVALS = [
   // First minute: poll every 5 seconds (12 polls)
   ...Array(12).fill(5_000),
-  // Next minute: poll every 6 seconds (10 polls)
+  // Second minute: poll every 6 seconds (10 polls)
   ...Array(10).fill(6_000),
-  // Next 70 seconds: poll every 7 seconds (10 polls)
-  ...Array(10).fill(7_000),
-  // Remaining time: poll every 8 seconds (15 polls for ~2 more minutes)
-  ...Array(15).fill(8_000),
+  // Final minute: poll every 7.5 seconds (8 polls)
+  ...Array(8).fill(7_500),
 ];
-/** 47 total attempts */
+/** 30 total attempts = exactly 180 seconds (3 minutes) */
 const MAX_POLL_ATTEMPTS = POLL_INTERVALS.length;
 
 function MCPPanelContent() {
@@ -60,8 +58,9 @@ function MCPPanelContent() {
   useEffect(() => {
     if (!hasConnectingServers || pollAttempts >= MAX_POLL_ATTEMPTS) {
       if (pollAttempts >= MAX_POLL_ATTEMPTS && hasConnectingServers) {
+        const totalTime = POLL_INTERVALS.reduce((sum, interval) => sum + interval, 0);
         console.warn(
-          `[MCP Panel] Max polling attempts (${MAX_POLL_ATTEMPTS}) reached after ~5.5 minutes`,
+          `[MCP Panel] OAuth timeout reached after ${(totalTime / 1000).toFixed(0)} seconds (${MAX_POLL_ATTEMPTS} attempts)`,
         );
         // Mark any still-connecting servers as timed out
         if (connectionStatus) {

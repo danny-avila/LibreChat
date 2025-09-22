@@ -147,27 +147,34 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
       let pollAttempts = 0;
       let timeoutId: NodeJS.Timeout | null = null;
 
-      // OAuth typically completes in 5 seconds to 3 minutes
-      // Poll with gradual backoff from 5 to 8 seconds
+      /** OAuth typically completes in 5 seconds to 3 minutes
+       * We enforce a strict 3-minute timeout with gradual backoff
+       */
       const getPollInterval = (attempt: number): number => {
         if (attempt < 12) return 5000; // First minute: every 5s (12 polls)
-        if (attempt < 22) return 6000; // Next minute: every 6s (10 polls)
-        if (attempt < 32) return 7000; // Next 70s: every 7s (10 polls)
-        return 8000; // Remaining time: every 8s
+        if (attempt < 22) return 6000; // Second minute: every 6s (10 polls)
+        return 7500; // Final minute: every 7.5s (8 polls)
       };
 
-      const maxAttempts = 47; // ~5.5 minutes total
+      const maxAttempts = 30; // Exactly 3 minutes (180 seconds) total
+      const OAUTH_TIMEOUT_MS = 180000; // 3 minutes in milliseconds
 
       const pollOnce = async () => {
         try {
           pollAttempts++;
+          const state = serverStates[serverName];
 
-          if (pollAttempts > maxAttempts) {
+          /** Stop polling after 3 minutes or max attempts */
+          const elapsedTime = state?.oauthStartTime
+            ? Date.now() - state.oauthStartTime
+            : pollAttempts * 5000; // Rough estimate if no start time
+
+          if (pollAttempts > maxAttempts || elapsedTime > OAUTH_TIMEOUT_MS) {
             console.warn(
-              `[MCP Manager] Max polling attempts (${maxAttempts}) reached for ${serverName}`,
+              `[MCP Manager] OAuth timeout for ${serverName} after ${(elapsedTime / 1000).toFixed(0)}s (attempt ${pollAttempts})`,
             );
             showToast({
-              message: localize('com_ui_mcp_connection_timeout', { 0: serverName }),
+              message: localize('com_ui_mcp_oauth_timeout', { 0: serverName }),
               status: 'error',
             });
             if (timeoutId) {
@@ -184,7 +191,6 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
           ]) as any;
           const freshConnectionStatus = freshConnectionData?.connectionStatus || {};
 
-          const state = serverStates[serverName];
           const serverStatus = freshConnectionStatus[serverName];
 
           if (serverStatus?.connectionState === 'connected') {
@@ -212,8 +218,8 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
             return;
           }
 
-          // Check for OAuth timeout (3 minutes)
-          if (state?.oauthStartTime && Date.now() - state.oauthStartTime > 180000) {
+          // Check for OAuth timeout (should align with maxAttempts)
+          if (state?.oauthStartTime && Date.now() - state.oauthStartTime > OAUTH_TIMEOUT_MS) {
             showToast({
               message: localize('com_ui_mcp_oauth_timeout', { 0: serverName }),
               status: 'error',
