@@ -1,7 +1,6 @@
 const { v4: uuidv4 } = require('uuid');
-const { sendEvent } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
-const { saveMessage, saveConvo } = require('~/models');
+const { saveMessage, saveConvo, getConvoById, getMessages } = require('~/models');
 const { EModelEndpoint } = require('librechat-data-provider');
 
 /**
@@ -346,19 +345,14 @@ class A2AAgentClient {
    */
   async sendTaskCompletionMessage(taskId, taskStatus, contextId, user) {
     try {
-      logger.info(`A2A Task Completion - Sending completion message for task: ${taskId}`);
-
       // Extract final response from task history
       const finalResponse = taskStatus.history
         ?.filter(msg => msg.role === 'agent')
         ?.pop()?.parts?.[0]?.content || 'Task completed successfully!';
 
-      logger.debug(`A2A Task Completion - Final response length: ${finalResponse.length}`);
-
       // Format artifacts if available
       let artifactsText = '';
       if (taskStatus.artifacts && taskStatus.artifacts.length > 0) {
-        logger.info(`A2A Task Completion - Formatting ${taskStatus.artifacts.length} artifacts for task: ${taskId}`);
         artifactsText = '\n\n**Generated Artifacts:**\n';
         taskStatus.artifacts.forEach(artifact => {
           artifactsText += `- **${artifact.name}** (${artifact.type})\n`;
@@ -370,15 +364,19 @@ class A2AAgentClient {
 
       const completionText = `✅ **Task Completed:** \`${taskId}\`\n\n${finalResponse}${artifactsText}`;
 
+      // Find the most recent message in this conversation to use as parent
+      const parentMessageId = await this.getLastMessageId(contextId);
+
       const completionMessage = {
         messageId: uuidv4(),
         conversationId: contextId,
-        parentMessageId: null, // This will be a new message in the conversation
+        parentMessageId: parentMessageId,
         role: 'assistant',
         text: completionText,
         user: user,
         endpoint: 'a2a',
         model: this.agent.id,
+        sender: this.agent.name,
         metadata: {
           agentId: this.agent.id,
           agentName: this.agent.name,
@@ -397,8 +395,6 @@ class A2AAgentClient {
 
       // Update conversation metadata to mark task as completed
       await this.updateConversationTaskStatus(contextId, taskId, 'completed', user);
-
-      logger.info(`A2A Task Completion - Completion message saved for task: ${taskId}`);
       
     } catch (error) {
       logger.error(`Failed to send task completion message for ${taskId}:`, error);
@@ -414,21 +410,23 @@ class A2AAgentClient {
    */
   async sendTaskFailureMessage(taskId, taskStatus, contextId, user) {
     try {
-      logger.debug(`Sending task failure message for task: ${taskId}`);
-
       const failureText = `❌ **Task Failed:** \`${taskId}\`\n\n` +
                          `**Error:** ${taskStatus.statusMessage || 'Unknown error occurred'}\n\n` +
                          `The task could not be completed. You can try rephrasing your request or contact support if the issue persists.`;
 
+      // Find the most recent message in this conversation to use as parent
+      const parentMessageId = await this.getLastMessageId(contextId);
+
       const failureMessage = {
         messageId: uuidv4(),
         conversationId: contextId,
-        parentMessageId: null,
+        parentMessageId: parentMessageId,
         role: 'assistant', 
         text: failureText,
         user: user,
         endpoint: 'a2a',
         model: this.agent.id,
+        sender: this.agent.name,
         metadata: {
           agentId: this.agent.id,
           agentName: this.agent.name,
@@ -446,8 +444,6 @@ class A2AAgentClient {
 
       // Update conversation metadata to mark task as failed
       await this.updateConversationTaskStatus(contextId, taskId, 'failed', user);
-
-      logger.debug(`Task failure message saved for task: ${taskId}`);
       
     } catch (error) {
       logger.error(`Failed to send task failure message for ${taskId}:`, error);
@@ -592,20 +588,26 @@ class A2AAgentClient {
    */
   async sendTaskStatusUpdate(taskId, taskStatus, contextId, user) {
     try {
+      logger.info(`A2A Task Status Update - Sending status update for task: ${taskId}`);
+
       const statusText = `🔄 **Task Status Update:** \`${taskId}\`\n\n` +
                         `**Status:** ${taskStatus.status}\n` +
                         `**Message:** ${taskStatus.statusMessage || 'Still processing...'}\n\n` +
                         `I'm continuing to work on your request. You'll be notified when it's complete.`;
 
+      // Find the most recent message in this conversation to use as parent
+      const parentMessageId = await this.getLastMessageId(contextId);
+
       const statusMessage = {
         messageId: uuidv4(),
         conversationId: contextId,
-        parentMessageId: null,
+        parentMessageId: parentMessageId, // Link to the most recent message for proper threading
         role: 'assistant',
         text: statusText,
         user: user,
         endpoint: 'a2a',
         model: this.agent.id,
+        sender: this.agent.name,
         metadata: {
           agentId: this.agent.id,
           agentName: this.agent.name,
@@ -620,7 +622,12 @@ class A2AAgentClient {
         context: 'A2A Agent Client - Task Status Update',
       });
 
-      logger.debug(`Task status update sent for task: ${taskId}`);
+      // Note: Real-time events cannot be sent from background task polling 
+      // since the original HTTP response has closed. The frontend should poll
+      // for task completion or detect new messages through existing mechanisms.
+      logger.info(`A2A Task Status Update - Message saved for task: ${taskId}, frontend will detect on next poll`);
+
+      logger.info(`A2A Task Status Update - Status update sent for task: ${taskId}`);
       
     } catch (error) {
       logger.error(`Failed to send task status update for ${taskId}:`, error);
@@ -634,12 +641,31 @@ class A2AAgentClient {
    */
   async getConversation(conversationId) {
     try {
-      // This would typically use LibreChat's conversation model
-      // For now, we'll use a placeholder that matches the expected structure
-      const { getConvoById } = require('~/models');
       return await getConvoById(this.req, conversationId);
     } catch (error) {
       logger.error(`Failed to get conversation ${conversationId}: ${error.message}`);
+      return null;
+    }
+  }
+
+  /**
+   * Get the last message ID from a conversation for proper threading
+   * @param {string} conversationId - Conversation identifier
+   * @returns {Promise<string|null>} Last message ID
+   */
+  async getLastMessageId(conversationId) {
+    try {
+      const messages = await getMessages({ conversationId }, 'messageId createdAt');
+      
+      if (messages && messages.length > 0) {
+        // Sort messages by creation date (newest first) to get the latest message
+        const sortedMessages = messages.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+        return sortedMessages[0].messageId;
+      }
+      
+      return null;
+    } catch (error) {
+      logger.error(`Failed to get last message ID for conversation ${conversationId}:`, error);
       return null;
     }
   }

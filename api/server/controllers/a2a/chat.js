@@ -391,6 +391,7 @@ const handleTaskCompletion = async (taskStatus, agent, contextId, messageId, res
       conversationId: contextId,
       parentMessageId: null,
       role: 'user',
+      text: message,
     },
     responseMessage: {
       messageId: responseMessageId,
