@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { ChevronLeft, Trash2 } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Button, useToastContext } from '@librechat/client';
@@ -11,18 +11,6 @@ import { MCPPanelProvider, useMCPPanelContext } from '~/Providers';
 import { useLocalize, useMCPConnectionStatus } from '~/hooks';
 import { useGetStartupConfig } from '~/data-provider';
 import MCPPanelSkeleton from './MCPPanelSkeleton';
-
-/** OAuth typically completes in 5 seconds to 3 minutes - enforce strict 3-minute limit */
-const POLL_INTERVALS = [
-  // First minute: poll every 5 seconds (12 polls)
-  ...Array(12).fill(5_000),
-  // Second minute: poll every 6 seconds (10 polls)
-  ...Array(10).fill(6_000),
-  // Final minute: poll every 7.5 seconds (8 polls)
-  ...Array(8).fill(7_500),
-];
-/** 30 total attempts = exactly 180 seconds (3 minutes) */
-const MAX_POLL_ATTEMPTS = POLL_INTERVALS.length;
 
 function MCPPanelContent() {
   const localize = useLocalize();
@@ -37,63 +25,6 @@ function MCPPanelContent() {
   const [selectedServerNameForEditing, setSelectedServerNameForEditing] = useState<string | null>(
     null,
   );
-  const [pollAttempts, setPollAttempts] = useState(0);
-
-  const hasConnectingServers = useMemo(() => {
-    if (!connectionStatus) {
-      return false;
-    }
-    return Object.values(connectionStatus).some(
-      (status) => status?.connectionState === 'connecting',
-    );
-  }, [connectionStatus]);
-
-  // Reset poll attempts when no servers are connecting
-  useEffect(() => {
-    if (!hasConnectingServers) {
-      setPollAttempts(0);
-    }
-  }, [hasConnectingServers]);
-
-  useEffect(() => {
-    if (!hasConnectingServers || pollAttempts >= MAX_POLL_ATTEMPTS) {
-      if (pollAttempts >= MAX_POLL_ATTEMPTS && hasConnectingServers) {
-        const totalTime = POLL_INTERVALS.reduce((sum, interval) => sum + interval, 0);
-        console.warn(
-          `[MCP Panel] OAuth timeout reached after ${(totalTime / 1000).toFixed(0)} seconds (${MAX_POLL_ATTEMPTS} attempts)`,
-        );
-        // Mark any still-connecting servers as timed out
-        if (connectionStatus) {
-          Object.entries(connectionStatus).forEach(([serverName, status]) => {
-            if (status?.connectionState === 'connecting') {
-              console.error(`[MCP Panel] Server ${serverName} connection timeout`);
-            }
-          });
-        }
-      }
-      return;
-    }
-
-    const currentInterval = POLL_INTERVALS[pollAttempts] || 20_000;
-    const elapsedTime = POLL_INTERVALS.slice(0, pollAttempts).reduce(
-      (sum, interval) => sum + interval,
-      0,
-    );
-
-    if (pollAttempts % 5 === 0) {
-      console.debug(
-        `[MCP Panel] Polling attempt ${pollAttempts + 1}/${MAX_POLL_ATTEMPTS}, ` +
-          `elapsed: ${(elapsedTime / 1000).toFixed(0)}s, next in: ${(currentInterval / 1000).toFixed(0)}s`,
-      );
-    }
-
-    const timeoutId = setTimeout(() => {
-      queryClient.invalidateQueries([QueryKeys.mcpConnectionStatus]);
-      setPollAttempts((prev) => prev + 1);
-    }, currentInterval);
-
-    return () => clearTimeout(timeoutId);
-  }, [hasConnectingServers, queryClient, pollAttempts, connectionStatus]);
 
   const updateUserPluginsMutation = useUpdateUserPluginsMutation({
     onSuccess: async () => {

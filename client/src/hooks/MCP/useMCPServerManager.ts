@@ -144,6 +144,13 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
 
   const startServerPolling = useCallback(
     (serverName: string) => {
+      // Prevent duplicate polling for the same server
+      const existingState = serverStates[serverName];
+      if (existingState?.pollInterval) {
+        console.debug(`[MCP Manager] Polling already active for ${serverName}, skipping duplicate`);
+        return;
+      }
+
       let pollAttempts = 0;
       let timeoutId: NodeJS.Timeout | null = null;
 
