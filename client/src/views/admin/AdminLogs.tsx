@@ -10,6 +10,7 @@ import { cn } from '~/utils';
 import moment from 'moment';
 import { useAdminLogs } from './useAdmin';
 import AdminLogsDialog from './AdminLogsDialog';
+import { useNavigate } from 'react-router-dom';
 
 type RawUser = { _id: string; email?: string; username?: string; name?: string } | string;
 
@@ -70,6 +71,15 @@ export default function AdminLogs() {
 
   // Process logs from useAdminLogs
   const rows = useMemo(() => logs.map((log: any) => toRow(log, userCache)), [logs, userCache]);
+  const navigate = useNavigate();
+
+  const handleGoBack = () => {
+    // Retrieve the previous page URL from sessionStorage
+    const previousPage = sessionStorage.getItem('previousPage') || '/dashboard'; // Default to '/dashboard'
+
+    // Navigate back to the previous page
+    navigate(previousPage);
+  };
 
   // Log for debugging
   useEffect(() => {
@@ -245,7 +255,7 @@ export default function AdminLogs() {
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => (window.location.href = '/c/new')}
+            onClick={handleGoBack}
             className="rounded-full"
           >
             <ArrowLeft className="h-5 w-5" />

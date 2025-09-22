@@ -79,6 +79,7 @@ export function useQueryLogs(limit: number = 10, page: number = 1, search: strin
         console.log('[useQueryLogs] SSE connected');
         setConnected(true);
       };
+     
 
       es.onmessage = (event) => {
         if (!event.data || event.data.trim() === '') return;
@@ -188,7 +189,15 @@ export function useQueryLogs(limit: number = 10, page: number = 1, search: strin
 }
 
 const QueryLogs: React.FC = () => {
-  const navigate = useNavigate();
+   const navigate = useNavigate();
+      
+        const handleGoBack = () => {
+          // Retrieve the previous page URL from sessionStorage
+          const previousPage = sessionStorage.getItem('previousPage') || '/dashboard'; // Default to '/dashboard'
+      
+          // Navigate back to the previous page
+          navigate(previousPage);
+        };
   const mainContainerRef = useRef<HTMLDivElement>(null);
 
   const [search, setSearch] = useState('');
@@ -199,6 +208,7 @@ const QueryLogs: React.FC = () => {
   const limit = 10;
 
   const { logs, connected, total, loading, error } = useQueryLogs(limit, page, search);
+  
 
   const handleSearch = (searchTerm: string) => {
     setSearch(searchTerm);
@@ -331,7 +341,8 @@ const QueryLogs: React.FC = () => {
         <Button
           variant="ghost"
           size="icon"
-          onClick={() => navigate('/c/new')}
+         // onClick={() => navigate('/c/new')}
+         onClick={handleGoBack}
           className="rounded-full hover:bg-surface-secondary"
           aria-label="Back to Admin Dashboard"
         >
