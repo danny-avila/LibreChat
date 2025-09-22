@@ -3,6 +3,7 @@ const { EModelEndpoint } = require('librechat-data-provider');
 const { getCustomEndpointConfig } = require('@librechat/api');
 const initAnthropic = require('~/server/services/Endpoints/anthropic/initialize');
 const getBedrockOptions = require('~/server/services/Endpoints/bedrock/options');
+const initOpenRouter = require('~/server/services/Endpoints/openrouter/initialize');
 const initOpenAI = require('~/server/services/Endpoints/openAI/initialize');
 const initCustom = require('~/server/services/Endpoints/custom/initialize');
 const initGoogle = require('~/server/services/Endpoints/google/initialize');
@@ -12,7 +13,7 @@ const initGoogle = require('~/server/services/Endpoints/google/initialize');
  * @returns {boolean} - True if the provider is a known custom provider, false otherwise
  */
 function isKnownCustomProvider(provider) {
-  return [Providers.XAI, Providers.OLLAMA, Providers.DEEPSEEK, Providers.OPENROUTER].includes(
+  return [Providers.XAI, Providers.OLLAMA, Providers.DEEPSEEK].includes(
     provider?.toLowerCase() || '',
   );
 }
@@ -21,11 +22,13 @@ const providerConfigMap = {
   [Providers.XAI]: initCustom,
   [Providers.OLLAMA]: initCustom,
   [Providers.DEEPSEEK]: initCustom,
-  [Providers.OPENROUTER]: initCustom,
+  [Providers.OPENROUTER]: initOpenRouter,  // Use initOpenRouter for Providers.OPENROUTER
+  ['openrouter']: initOpenRouter,  // Also map lowercase 'openrouter' string
   [EModelEndpoint.openAI]: initOpenAI,
   [EModelEndpoint.google]: initGoogle,
   [EModelEndpoint.azureOpenAI]: initOpenAI,
   [EModelEndpoint.anthropic]: initAnthropic,
+  [EModelEndpoint.openrouter]: initOpenRouter,
   [EModelEndpoint.bedrock]: getBedrockOptions,
 };
 

@@ -24,6 +24,7 @@ import type { SetterOrUpdater } from 'recoil';
 import type { TAskFunction, ExtendedFile } from '~/common';
 import useSetFilesToDelete from '~/hooks/Files/useSetFilesToDelete';
 import useGetSender from '~/hooks/Conversations/useGetSender';
+import { useOpenRouterCredits } from '~/hooks/Credits';
 import store, { useGetEphemeralAgent } from '~/store';
 import { getEndpointField, logger } from '~/utils';
 import useUserKey from '~/hooks/Input/useUserKey';
@@ -70,6 +71,7 @@ export default function useChatFunctions({
   const { getExpiry } = useUserKey(immutableConversation?.endpoint ?? '');
   const setShowStopButton = useSetRecoilState(store.showStopButtonByIndex(index));
   const resetLatestMultiMessage = useResetRecoilState(store.latestMessageFamily(index + 1));
+  const { optimisticUpdate, debouncedFetchCredits } = useOpenRouterCredits();
 
   const ask: TAskFunction = (
     {
@@ -298,6 +300,7 @@ export default function useChatFunctions({
     }
 
     logger.log('message_state', initialResponse);
+
     const submission: TSubmission = {
       conversation: {
         ...conversation,
@@ -330,6 +333,20 @@ export default function useChatFunctions({
 
     setSubmission(submission);
     logger.dir('message_stream', submission, { depth: null });
+
+    // Apply optimistic credits update for OpenRouter
+    if (conversation?.endpoint === EModelEndpoint.openrouter) {
+      // Estimate cost based on message length (rough approximation)
+      // Average cost per 1K tokens is around $0.0001
+      const estimatedTokens = text.length / 4; // Rough token estimation
+      const estimatedCost = (estimatedTokens / 1000) * 0.0001;
+
+      // Apply optimistic update
+      optimisticUpdate(estimatedCost);
+
+      // Schedule debounced refresh for real credits
+      debouncedFetchCredits();
+    }
   };
 
   const regenerate = ({ parentMessageId }) => {

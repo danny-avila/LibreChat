@@ -41,14 +41,6 @@ export default function MessageIcon(
     }
     return result;
   }, [assistant, agent, assistantAvatar, agentAvatar]);
-  console.log('MessageIcon', {
-    endpoint,
-    iconURL,
-    assistantName,
-    assistantAvatar,
-    agentName,
-    agentAvatar,
-  });
   if (message?.isCreatedByUser !== true && iconURL && iconURL.includes('http')) {
     return (
       <ConvoIconURL

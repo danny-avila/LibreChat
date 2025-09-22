@@ -436,6 +436,7 @@ export default function useEventHandlers({
 
   const finalHandler = useCallback(
     (data: TFinalResData, submission: EventSubmission) => {
+      console.log('finalHandler', data);
       const { requestMessage, responseMessage, conversation, runMessages } = data;
       const {
         messages,

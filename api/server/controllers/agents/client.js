@@ -154,7 +154,7 @@ class AgentClient extends BaseClient {
   }
 
   setOptions(options) {
-    logger.info('[api/server/controllers/agents/client.js] setOptions', options);
+    logger.debug('[api/server/controllers/agents/client.js] setOptions', options);
   }
 
   /**
@@ -833,9 +833,9 @@ class AgentClient extends BaseClient {
         config.configurable.agent_id = agent.id;
         config.configurable.name = agent.name;
         config.configurable.agent_index = i;
-        const noSystemMessages = noSystemModelRegex.some((regex) =>
-          agent.model_parameters.model.match(regex),
-        );
+        const noSystemMessages = agent.model_parameters?.model
+          ? noSystemModelRegex.some((regex) => agent.model_parameters.model.match(regex))
+          : false;
 
         const systemMessage = Object.values(agent.toolContextMap ?? {})
           .join('\n')
@@ -890,6 +890,17 @@ class AgentClient extends BaseClient {
           agent.model_parameters.configuration.defaultHeaders = resolveHeaders({
             headers: agent.model_parameters.configuration.defaultHeaders,
             body: config.configurable.requestBody,
+          });
+        }
+
+        // Log OpenRouter configuration before creating run
+        if (agent.provider === 'openrouter' || agent.provider === Providers.OPENROUTER) {
+          logger.debug('[AgentClient] Creating run for OpenRouter with config:', {
+            provider: agent.provider,
+            model: agent.model,
+            baseURL: agent.model_parameters?.configuration?.baseURL,
+            hasConfiguration: !!agent.model_parameters?.configuration,
+            hasApiKey: !!agent.model_parameters?.apiKey,
           });
         }
 

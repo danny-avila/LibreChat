@@ -2,6 +2,7 @@ require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 require('module-alias')({ base: path.resolve(__dirname, '..') });
+const { validateOnStartup } = require('./utils/envValidation');
 const cors = require('cors');
 const axios = require('axios');
 const express = require('express');
@@ -134,6 +135,7 @@ const startServer = async () => {
   app.use('/api/banner', routes.banner);
   app.use('/api/memories', routes.memories);
   app.use('/api/permissions', routes.accessPermissions);
+  app.use('/api/endpoints/openrouter', routes.openrouter);
 
   app.use('/api/tags', routes.tags);
   app.use('/api/mcp', routes.mcp);
@@ -156,6 +158,10 @@ const startServer = async () => {
   });
 
   app.listen(port, host, async () => {
+    // Validate environment variables on startup
+    // In production, exit on error to prevent running with invalid config
+    validateOnStartup(process.env.NODE_ENV === 'production');
+
     if (host === '0.0.0.0') {
       logger.info(
         `Server listening on all interfaces at port ${port}. Use http://localhost:${port} to access it`,

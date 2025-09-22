@@ -33,11 +33,14 @@ const EditController = async (req, res, next, initializeClient) => {
   let cleanupHandlers = [];
   let clientRef = null; // Declare clientRef here
 
+  logger.info('[EditController] Processing request for endpoint:', endpointOption?.endpoint);
   logger.debug('[EditController]', {
     text,
     generation,
     isContinued,
     conversationId,
+    endpoint: endpointOption?.endpoint,
+    model: endpointOption?.model || endpointOption?.modelOptions?.model,
     ...endpointOption,
     modelsConfig: endpointOption.modelsConfig ? 'exists' : '',
   });
@@ -49,11 +52,21 @@ const EditController = async (req, res, next, initializeClient) => {
 
   const sender = getResponseSender({
     ...endpointOption,
-    model: endpointOption.modelOptions.model,
+    model: endpointOption?.modelOptions?.model || endpointOption?.model,
     modelDisplayLabel,
   });
   const userMessageId = parentMessageId;
   const userId = req.user.id;
+
+  const isEditedRequest = Boolean(isContinued || overrideParentMessageId);
+
+  logger.info('[EditController] Request details:', {
+    conversationId,
+    isEditedRequest,
+    isContinued,
+    hasOverrideParentMessageId: !!overrideParentMessageId,
+    endpoint: endpointOption?.endpoint
+  });
 
   let reqDataContext = { userMessage, userMessagePromise, responseMessageId, promptTokens };
 
@@ -131,12 +144,12 @@ const EditController = async (req, res, next, initializeClient) => {
       return {
         sender,
         conversationId,
-        messageId: reqDataContext.responseMessageId,
+        messageId: reqDataContext?.responseMessageId || responseMessageId,
         parentMessageId: overrideParentMessageId ?? userMessageId,
         text: currentText,
         userMessage: userMessage,
         userMessagePromise: userMessagePromise,
-        promptTokens: reqDataContext.promptTokens,
+        promptTokens: reqDataContext?.promptTokens || promptTokens,
       };
     };
 
@@ -169,10 +182,10 @@ const EditController = async (req, res, next, initializeClient) => {
       user: userId,
       generation,
       isContinued,
-      isEdited: true,
+      isEdited: isEditedRequest,
       conversationId,
       parentMessageId,
-      responseMessageId: reqDataContext.responseMessageId,
+      responseMessageId: reqDataContext?.responseMessageId || responseMessageId,
       overrideParentMessageId,
       getReqData: updateReqData,
       onStart,
@@ -184,6 +197,11 @@ const EditController = async (req, res, next, initializeClient) => {
     });
 
     const databasePromise = response.databasePromise;
+    logger.info('[EditController] Database promise:', {
+      hasDatabasePromise: !!databasePromise,
+      endpoint: endpointOption?.endpoint,
+      conversationId
+    });
     delete response.databasePromise;
 
     const { conversation: convoData = {} } = await databasePromise;
@@ -231,7 +249,7 @@ const EditController = async (req, res, next, initializeClient) => {
       sender,
       partialText,
       conversationId,
-      messageId: reqDataContext.responseMessageId,
+      messageId: reqDataContext?.responseMessageId || responseMessageId,
       parentMessageId: overrideParentMessageId ?? userMessageId ?? parentMessageId,
       userMessageId,
     })

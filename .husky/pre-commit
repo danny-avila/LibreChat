@@ -1,5 +1,21 @@
-#!/usr/bin/env sh 
+#!/usr/bin/env sh
 set -e
 . "$(dirname -- "$0")/_/husky.sh"
 [ -n "$CI" ] && exit 0
+
+# Run existing lint-staged
 npx lint-staged --config ./.husky/lint-staged.config.js
+
+# Run security scan on API files (only if API files changed)
+if git diff --cached --name-only | grep -q "^api/"; then
+  echo "🔍 Running security scan on API changes..."
+  npm run security:scan
+
+  # Check exit code
+  if [ $? -ne 0 ]; then
+    echo "❌ Security scan failed! Please fix the issues before committing."
+    exit 1
+  fi
+
+  echo "✅ Security scan passed"
+fi

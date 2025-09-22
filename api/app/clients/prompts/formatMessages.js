@@ -42,6 +42,12 @@ const formatVisionMessage = ({ message, image_urls, endpoint }) => {
  * @returns {(Object|HumanMessage|AIMessage|SystemMessage)} - The formatted message.
  */
 const formatMessage = ({ message, userName, assistantName, endpoint, langChain = false }) => {
+  // Handle undefined or null messages
+  if (!message) {
+    console.error('[formatMessage] Received undefined/null message, returning null');
+    return null;
+  }
+
   let { role: _role, _name, sender, text, content: _content, lc_id } = message;
   if (lc_id && lc_id[2] && !langChain) {
     const roleMapping = {
@@ -112,7 +118,10 @@ const formatMessage = ({ message, userName, assistantName, endpoint, langChain =
  * @returns {Array<(HumanMessage|AIMessage|SystemMessage)>} - The array of formatted LangChain messages.
  */
 const formatLangChainMessages = (messages, formatOptions) =>
-  messages.map((msg) => formatMessage({ ...formatOptions, message: msg, langChain: true }));
+  messages
+    .filter((msg) => msg != null) // Filter out null/undefined messages
+    .map((msg) => formatMessage({ ...formatOptions, message: msg, langChain: true }))
+    .filter((formatted) => formatted != null); // Filter out any nulls returned by formatMessage
 
 /**
  * Formats a LangChain message object by merging properties from `lc_kwargs` or `kwargs` and `additional_kwargs`.

@@ -60,6 +60,10 @@ const Bedrock = ({ className = '' }: IconMapProps) => {
   return <BedrockIcon className={cn(className, 'h-full w-full')} />;
 };
 
+const OpenRouter = ({ className = '', size = 20 }: IconMapProps) => {
+  return <img src="assets/openrouter.png" alt="OpenRouter" className={cn(className)} style={{ width: size, height: size }} />;
+};
+
 export const icons: IconsRecord = {
   [EModelEndpoint.azureOpenAI]: AzureMinimalIcon,
   [EModelEndpoint.openAI]: GPTIcon,
@@ -72,5 +76,6 @@ export const icons: IconsRecord = {
   [EModelEndpoint.azureAssistants]: AssistantAvatar,
   [EModelEndpoint.agents]: AgentAvatar,
   [EModelEndpoint.bedrock]: Bedrock,
+  [EModelEndpoint.openrouter]: OpenRouter,
   unknown: UnknownIcon,
 };

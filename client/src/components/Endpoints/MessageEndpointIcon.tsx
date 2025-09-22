@@ -156,6 +156,17 @@ const MessageEndpointIcon: React.FC<IconProps> = (props) => {
       bg: '#d09a74',
       name: 'Claude',
     },
+    [EModelEndpoint.openrouter]: {
+      icon: (
+        <img
+          src="assets/openrouter.png"
+          alt="OpenRouter"
+          style={{ width: size * 0.6, height: size * 0.6 }}
+        />
+      ),
+      bg: '#000000',
+      name: 'OpenRouter',
+    },
     [EModelEndpoint.bedrock]: {
       icon: <BedrockIcon className="icon-xl text-white" />,
       bg: '#268672',

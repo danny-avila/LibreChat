@@ -20,6 +20,7 @@ export enum EModelEndpoint {
   openAI = 'openAI',
   google = 'google',
   anthropic = 'anthropic',
+  openrouter = 'openrouter',
   assistants = 'assistants',
   azureAssistants = 'azureAssistants',
   agents = 'agents',
@@ -37,6 +38,7 @@ export const paramEndpoints = new Set<EModelEndpoint | string>([
   EModelEndpoint.bedrock,
   EModelEndpoint.azureOpenAI,
   EModelEndpoint.anthropic,
+  EModelEndpoint.openrouter,
   EModelEndpoint.custom,
   EModelEndpoint.google,
 ]);
@@ -248,6 +250,21 @@ export const openAISettings = {
     min: 0 as const,
     max: 2 as const,
     step: 1 as const,
+  },
+};
+
+export const openRouterSettings = {
+  model: {
+    default: 'openrouter/auto' as const,
+  },
+  fallbackModels: {
+    default: [] as string[],
+  },
+  autoRouter: {
+    default: false as const,
+  },
+  providerPreferences: {
+    default: 'balanced' as const,
   },
 };
 
@@ -1124,6 +1141,29 @@ export const openAIBaseSchema = tConversationSchema.pick({
 });
 
 export const openAISchema = openAIBaseSchema
+  .transform((obj: Partial<TConversation>) => removeNullishValues(obj, true))
+  .catch(() => ({}));
+
+// OpenRouter-specific schema with extended fields for routing and credits
+export const openRouterBaseSchema = openAIBaseSchema.extend({
+  // Model routing - array of fallback models
+  models: z.array(z.string()).optional(),
+  // Route (auto or custom)
+  route: z.enum(['auto', 'fallback']).optional(),
+  // Provider preferences for auto routing
+  providerPreferences: z.array(z.string()).optional(),
+  // Transforms for request/response
+  transforms: z.array(z.string()).optional(),
+  // Include reasoning in response (for o1 models)
+  includeReasoning: z.boolean().optional(),
+  // Credits tracking
+  maxCreditsPerRequest: z.number().optional(),
+  // Site attribution (for API headers)
+  siteUrl: z.string().optional(),
+  siteName: z.string().optional(),
+});
+
+export const openRouterSchema = openRouterBaseSchema
   .transform((obj: Partial<TConversation>) => removeNullishValues(obj, true))
   .catch(() => ({}));
 
