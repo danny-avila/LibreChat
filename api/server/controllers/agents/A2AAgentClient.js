@@ -36,6 +36,7 @@ class A2AAgentClient {
     this.endpoint = endpoint;
     this.savedMessageIds = new Set();
     this.skipSaveUserMessage = false;
+    this.taskLastStatus = new Map(); // taskId -> { status, statusMessage }
     
     // Add options for compatibility with LibreChat's agents system
     this.options = {
@@ -319,6 +320,20 @@ class A2AAgentClient {
           await this.sendTaskFailureMessage(taskId, taskStatus, contextId, user);
         } else if (taskStatus.status === 'working') {
           logger.debug(`A2A Task Polling - Task still working, continuing to poll: ${taskId}`);
+          // Save a status update message only when status text changes to avoid duplicates
+          const last = this.taskLastStatus.get(taskId) || {};
+          if (last.status !== taskStatus.status || last.statusMessage !== taskStatus.statusMessage) {
+            try {
+              await this.sendTaskStatusUpdate(taskId, taskStatus, contextId, user);
+              await this.updateConversationTaskStatus(contextId, taskId, 'working', user);
+              this.taskLastStatus.set(taskId, {
+                status: taskStatus.status,
+                statusMessage: taskStatus.statusMessage,
+              });
+            } catch (e) {
+              logger.warn(`A2A Task Polling - Failed to persist status update for ${taskId}:`, e);
+            }
+          }
           // Continue polling for working tasks
           setTimeout(poll, pollInterval);
         } else {

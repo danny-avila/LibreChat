@@ -1,10 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { v4 } from 'uuid';
 import { SSE } from 'sse.js';
 import { useSetRecoilState } from 'recoil';
 import {
   request,
   Constants,
+  QueryKeys,
   /* @ts-ignore */
   createPayload,
   LocalStorageKeys,
@@ -45,6 +47,7 @@ export default function useSSE(
   runIndex = 0,
 ) {
   const genTitle = useGenTitleMutation();
+  const queryClient = useQueryClient();
   const setActiveRunId = useSetRecoilState(store.activeRunFamily(runIndex));
 
   const { token, isAuthenticated } = useAuthContext();
@@ -60,6 +63,113 @@ export default function useSSE(
     newConversation,
     resetLatestMessage,
   } = chatHelpers;
+
+  // A2A task polling controls (exponential backoff, cancel on unmount)
+  const a2aPollCancelRef = useRef<boolean>(false);
+  const a2aPollTimerRef = useRef<number | null>(null);
+  const a2aBackoffMsRef = useRef<number>(3000); // start at 3s, cap at 30s
+  const a2aLastStateRef = useRef<Record<string, { status?: string; statusMessage?: string; messageId?: string }>>({});
+
+  const stopA2APolling = () => {
+    a2aPollCancelRef.current = true;
+    if (a2aPollTimerRef.current != null) {
+      window.clearTimeout(a2aPollTimerRef.current);
+      a2aPollTimerRef.current = null;
+    }
+    a2aBackoffMsRef.current = 3000;
+  };
+
+  const startA2APolling = (
+    taskId: string,
+    agentId: string,
+    conversationId?: string | null,
+  ) => {
+    stopA2APolling();
+    a2aPollCancelRef.current = false;
+
+    const poll = async () => {
+      if (a2aPollCancelRef.current) {
+        return;
+      }
+      try {
+        const res = await fetch(
+          `/api/a2a/tasks/${encodeURIComponent(taskId)}/status?agentId=${encodeURIComponent(
+            agentId,
+          )}`,
+          {
+            method: 'GET',
+            headers: {
+              Authorization: `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+          },
+        );
+        if (res.ok) {
+          const json = await res.json();
+          const status = json?.task?.status as string | undefined;
+          const statusMessage = json?.task?.statusMessage as string | undefined;
+
+          if (status) {
+            const statusText = `Task ${taskId}: ${status}${statusMessage ? ` — ${statusMessage}` : ''}`;
+            const current = getMessages() ?? [];
+
+            const last = a2aLastStateRef.current[taskId];
+            const changed = !last || last.status !== status || last.statusMessage !== statusMessage;
+
+            if (changed) {
+              // append a new conversation item for status change
+              const parentId = current.length ? current[current.length - 1].messageId : null;
+              const messageId = v4();
+              const statusMsg: TMessage = {
+                messageId,
+                conversationId: (conversationId as string) ?? null,
+                parentMessageId: parentId,
+                role: 'assistant',
+                text: statusText,
+                isCreatedByUser: false,
+              } as TMessage;
+              const next = [...current, statusMsg];
+              setMessages(next);
+              if (conversationId) {
+                queryClient.setQueryData<TMessage[]>([QueryKeys.messages, conversationId], next);
+              }
+              a2aLastStateRef.current[taskId] = { status, statusMessage, messageId };
+            } else if (last?.messageId) {
+              // update the last status line immutably to reflect any text tweaks
+              const idx = current.findIndex((m) => m.messageId === last.messageId);
+              if (idx !== -1) {
+                const immutable = current.slice();
+                immutable[idx] = { ...immutable[idx], text: statusText } as TMessage;
+                setMessages(immutable);
+                if (conversationId) {
+                  queryClient.setQueryData<TMessage[]>([QueryKeys.messages, conversationId], immutable);
+                }
+              }
+            }
+
+            if (status === 'completed' || status === 'failed' || status === 'canceled') {
+              stopA2APolling();
+              // Refresh the full conversation from server to get the saved completion message with artifacts
+              if (conversationId) {
+                queryClient.invalidateQueries({ queryKey: [QueryKeys.messages, conversationId] });
+              }
+              return;
+            }
+          }
+        }
+      } catch (_e) {
+        // ignore transient errors
+      }
+
+      // Exponential backoff up to 30s
+      const delay = Math.min(a2aBackoffMsRef.current, 30000);
+      a2aBackoffMsRef.current = Math.min(delay * 2, 30000);
+      a2aPollTimerRef.current = window.setTimeout(poll, delay);
+    };
+
+    // start immediately
+    a2aPollTimerRef.current = window.setTimeout(poll, 0);
+  };
 
   const {
     clearStepMaps,
@@ -127,6 +237,19 @@ export default function useSSE(
         finalHandler(data, { ...submission, plugins } as EventSubmission);
         (startupConfig?.balance?.enabled ?? false) && balanceQuery.refetch();
         console.log('final', data);
+
+        // If this is an A2A task, begin status polling after stream closes
+        try {
+          const endpointFromResponse = data?.responseMessage?.endpoint as string | undefined;
+          const taskId = data?.responseMessage?.metadata?.taskId as string | undefined;
+          const agentId = data?.responseMessage?.metadata?.agentId as string | undefined;
+          const convoId = data?.conversation?.conversationId as string | undefined;
+          if (endpointFromResponse === 'a2a' && taskId && agentId) {
+            startA2APolling(taskId, agentId, convoId);
+          }
+        } catch (_err) {
+          // no-op
+        }
         return;
       } else if (data.created != null) {
         const runId = v4();
@@ -222,6 +345,8 @@ export default function useSSE(
     sse.stream();
 
     return () => {
+      // Stop any in-flight A2A polling if component unmounts or request cancels
+      stopA2APolling();
       const isCancelled = sse.readyState <= 1;
       sse.close();
       if (isCancelled) {
