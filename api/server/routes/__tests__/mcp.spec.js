@@ -47,8 +47,8 @@ jest.mock('~/server/services/Config', () => ({
   loadCustomConfig: jest.fn(),
 }));
 
-jest.mock('~/server/services/Config/mcpToolsCache', () => ({
-  updateMCPUserTools: jest.fn(),
+jest.mock('~/server/services/Config/mcp', () => ({
+  updateMCPServerTools: jest.fn(),
 }));
 
 jest.mock('~/server/services/MCP', () => ({
@@ -778,10 +778,10 @@ describe('MCP Routes', () => {
       require('~/cache').getLogStores.mockReturnValue({});
 
       const { getCachedTools, setCachedTools } = require('~/server/services/Config');
-      const { updateMCPUserTools } = require('~/server/services/Config/mcpToolsCache');
+      const { updateMCPServerTools } = require('~/server/services/Config/mcp');
       getCachedTools.mockResolvedValue({});
       setCachedTools.mockResolvedValue();
-      updateMCPUserTools.mockResolvedValue();
+      updateMCPServerTools.mockResolvedValue();
 
       require('~/server/services/Tools/mcp').reinitMCPServer.mockResolvedValue({
         success: true,
@@ -836,10 +836,10 @@ describe('MCP Routes', () => {
       ]);
 
       const { getCachedTools, setCachedTools } = require('~/server/services/Config');
-      const { updateMCPUserTools } = require('~/server/services/Config/mcpToolsCache');
+      const { updateMCPServerTools } = require('~/server/services/Config/mcp');
       getCachedTools.mockResolvedValue({});
       setCachedTools.mockResolvedValue();
-      updateMCPUserTools.mockResolvedValue();
+      updateMCPServerTools.mockResolvedValue();
 
       require('~/server/services/Tools/mcp').reinitMCPServer.mockResolvedValue({
         success: true,
