@@ -22,12 +22,12 @@ version: 0.5.2
 # It is recommended to use it with quotes.
 
 # renovate: image=ghcr.io/danny-avila/librechat-rag-api-dev
-appVersion: "v0.4.0"
+appVersion: 'v0.4.0'
 
 home: https://www.librechat.ai
 
 dependencies:
   - name: postgresql
-    version: "15.5.38"
+    version: '15.5.38'
     condition: postgresql.enabled
-    repository: "https://charts.bitnami.com/bitnami"
+    repository: 'https://charts.bitnami.com/bitnami'

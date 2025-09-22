@@ -18,21 +18,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Use Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20.x'
-          
+
       - name: Install dependencies
         run: cd packages/data-schemas && npm ci
-        
+
       - name: Build
         run: cd packages/data-schemas && npm run build
-        
+
       - name: Set up npm authentication
         run: echo "//registry.npmjs.org/:_authToken=${{ secrets.PUBLISH_NPM_TOKEN }}" > ~/.npmrc
-        
+
       - name: Check version change
         id: check
         working-directory: packages/data-schemas
@@ -46,12 +46,12 @@ jobs:
             echo "Version changed, proceeding with publish"
             echo "skip=false" >> $GITHUB_OUTPUT
           fi
-            
+
       - name: Pack package
         if: steps.check.outputs.skip != 'true'
         working-directory: packages/data-schemas
         run: npm pack
-        
+
       - name: Publish
         if: steps.check.outputs.skip != 'true'
         working-directory: packages/data-schemas

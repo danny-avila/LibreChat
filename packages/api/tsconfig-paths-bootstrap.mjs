@@ -6,7 +6,7 @@ import * as tsConfigPaths from 'tsconfig-paths';
 
 // @ts-ignore
 const { absoluteBaseUrl, paths } = tsConfigPaths.loadConfig(
-  path.resolve('./tsconfig.json'),  // Updated path
+  path.resolve('./tsconfig.json'), // Updated path
 );
 const matchPath = tsConfigPaths.createMatchPath(absoluteBaseUrl, paths);
 

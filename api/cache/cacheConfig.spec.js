@@ -160,10 +160,7 @@ describe('cacheConfig', () => {
       process.env.FORCED_IN_MEMORY_CACHE_NAMESPACES = ' ROLES, MESSAGES ';
 
       const { cacheConfig } = require('./cacheConfig');
-      expect(cacheConfig.FORCED_IN_MEMORY_CACHE_NAMESPACES).toEqual([
-        'ROLES',
-        'MESSAGES',
-      ]);
+      expect(cacheConfig.FORCED_IN_MEMORY_CACHE_NAMESPACES).toEqual(['ROLES', 'MESSAGES']);
     });
 
     test('should throw error for invalid cache keys', () => {

@@ -5,16 +5,19 @@ This directory contains comprehensive Redis configuration files and scripts for 
 ## Supported Configurations
 
 ### 1. Redis Cluster (3 Nodes)
+
 - **3 Redis nodes** running on ports 7001, 7002, and 7003
 - **No replicas** (each node is a master)
 - **Automatic hash slot distribution** across all nodes
 
 ### 2. Single Redis with TLS Encryption
+
 - **Single Redis instance** on port 6380 with TLS encryption
 - **CA certificate validation** for secure connections
 - **Self-signed certificates** with proper Subject Alternative Names
 
 ### 3. Standard Single Redis
+
 - **Basic Redis instance** on port 6379 (default)
 - **No encryption** - suitable for local development
 
@@ -23,13 +26,14 @@ All configurations are designed for **local development and testing**.
 ## Prerequisites
 
 1. **Redis** must be installed on your system:
+
    ```bash
    # macOS
    brew install redis
-   
+
    # Ubuntu/Debian
    sudo apt-get install redis-server
-   
+
    # CentOS/RHEL
    sudo yum install redis
    ```
@@ -65,6 +69,7 @@ redis-server
 ## Testing Your Setup
 
 ### Test Cluster
+
 ```bash
 # Connect to the cluster
 redis-cli -c -p 7001
@@ -75,12 +80,14 @@ GET test_key
 ```
 
 ### Test TLS Redis
+
 ```bash
 # Test with CA certificate validation
 redis-cli --tls --cacert certs/ca-cert.pem -p 6380 ping
 ```
 
 ### Test Standard Redis
+
 ```bash
 # Connect to default Redis
 redis-cli ping
@@ -89,11 +96,13 @@ redis-cli ping
 ## Stopping Services
 
 ### Stop Cluster
+
 ```bash
 ./stop-cluster.sh
 ```
 
 ### Stop TLS Redis
+
 ```bash
 # Find and stop TLS Redis process
 ps aux | grep "redis-server.*6380"
@@ -146,12 +155,14 @@ redis-config/
 Update your `.env` file based on your chosen Redis configuration:
 
 ### For Redis Cluster
+
 ```bash
 USE_REDIS=true
 REDIS_URI=redis://127.0.0.1:7001,redis://127.0.0.1:7002,redis://127.0.0.1:7003
 ```
 
 ### For TLS Redis
+
 ```bash
 USE_REDIS=true
 REDIS_URI=rediss://127.0.0.1:6380
@@ -159,12 +170,14 @@ REDIS_CA=/path/to/LibreChat/redis-config/certs/ca-cert.pem
 ```
 
 ### For Standard Redis
+
 ```bash
 USE_REDIS=true
 REDIS_URI=redis://127.0.0.1:6379
 ```
 
 ### Optional Configuration
+
 ```bash
 # Use environment variable for dynamic key prefixing
 REDIS_KEY_PREFIX_VAR=K_REVISION
@@ -241,7 +254,7 @@ The TLS setup includes:
 - **Server Certificate**: Contains Subject Alternative Names (SAN) for:
   - `DNS: localhost`
   - `IP: 127.0.0.1`
-- **TLS Configuration**: 
+- **TLS Configuration**:
   - TLS v1.2 and v1.3 support
   - No client certificate authentication required
   - Strong cipher suites (AES-256-GCM, ChaCha20-Poly1305)
@@ -333,6 +346,7 @@ redis-cli -p 7003 info memory
 ### Node Configuration
 
 Each node is configured with:
+
 - **Memory limit**: 256MB with LRU eviction
 - **Persistence**: AOF + RDB snapshots
 - **Clustering**: Enabled with 15-second timeout
@@ -341,6 +355,7 @@ Each node is configured with:
 ### Hash Slot Distribution
 
 With 3 nodes and no replicas:
+
 - Node 1 (7001): Hash slots 0-5460
 - Node 2 (7002): Hash slots 5461-10922
 - Node 3 (7003): Hash slots 10923-16383
@@ -348,17 +363,22 @@ With 3 nodes and no replicas:
 ## Security Note
 
 ### Development Setup
+
 The basic Redis cluster setup is designed for **local development only**.
 
 ### TLS Setup
+
 The TLS Redis configuration provides:
+
 - ✅ **TLS encryption** with CA certificate validation
 - ✅ **Server certificate** with proper Subject Alternative Names
 - ✅ **Strong cipher suites** (AES-256-GCM, ChaCha20-Poly1305)
 - ✅ **Certificate validation** via self-signed CA
 
 ### Production Considerations
+
 For production use, consider:
+
 - Authentication (`requirepass` or `AUTH` commands)
 - Client certificate authentication (`tls-auth-clients yes`)
 - Firewall configuration
@@ -401,8 +421,10 @@ cp backup/dump-7003.rdb data/7003/dump.rdb
 ## Support
 
 For Redis-specific issues:
+
 - [Redis Documentation](https://redis.io/docs/)
 - [Redis Cluster Tutorial](https://redis.io/docs/manual/scaling/)
 
 For LibreChat integration:
+
 - [LibreChat Documentation](https://github.com/danny-avila/LibreChat)

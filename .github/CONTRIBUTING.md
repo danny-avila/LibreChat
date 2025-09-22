@@ -33,24 +33,24 @@ Project maintainers have the right and responsibility to remove, edit, or reject
 5. Build data schemas: `npm run build:data-schemas`.
 6. Build API methods: `npm run build:api`.
 7. Setup and run unit tests:
-    - Copy `.env.test`: `cp api/test/.env.test.example api/test/.env.test`.
-    - Run backend unit tests: `npm run test:api`.
-    - Run frontend unit tests: `npm run test:client`.
+   - Copy `.env.test`: `cp api/test/.env.test.example api/test/.env.test`.
+   - Run backend unit tests: `npm run test:api`.
+   - Run frontend unit tests: `npm run test:client`.
 8. Setup and run integration tests:
-    - Build client: `cd client && npm run build`.
-    - Create `.env`: `cp .env.example .env`.
-    - Install [MongoDB Community Edition](https://www.mongodb.com/docs/manual/administration/install-community/), ensure that `mongosh` connects to your local instance.
-    - Run: `npx install playwright`, then `npx playwright install`.
-    - Copy `config.local`: `cp e2e/config.local.example.ts e2e/config.local.ts`.
-    - Copy `librechat.yaml`: `cp librechat.example.yaml librechat.yaml`.
-    - Run: `npm run e2e`.
+   - Build client: `cd client && npm run build`.
+   - Create `.env`: `cp .env.example .env`.
+   - Install [MongoDB Community Edition](https://www.mongodb.com/docs/manual/administration/install-community/), ensure that `mongosh` connects to your local instance.
+   - Run: `npx install playwright`, then `npx playwright install`.
+   - Copy `config.local`: `cp e2e/config.local.example.ts e2e/config.local.ts`.
+   - Copy `librechat.yaml`: `cp librechat.example.yaml librechat.yaml`.
+   - Run: `npm run e2e`.
 
 ## 2. Development Notes
 
 1. Before starting work, make sure your main branch has the latest commits with `npm run update`.
-3. Run linting command to find errors: `npm run lint`. Alternatively, ensure husky pre-commit checks are functioning.
-3. After your changes, reinstall packages in your current branch using `npm run reinstall` and ensure everything still works. 
-    - Restart the ESLint server ("ESLint: Restart ESLint Server" in VS Code command bar) and your IDE after reinstalling or updating.
+2. Run linting command to find errors: `npm run lint`. Alternatively, ensure husky pre-commit checks are functioning.
+3. After your changes, reinstall packages in your current branch using `npm run reinstall` and ensure everything still works.
+   - Restart the ESLint server ("ESLint: Restart ESLint Server" in VS Code command bar) and your IDE after reinstalling or updating.
 4. Clear web app localStorage and cookies before and after changes.
 5. For frontend changes, compile typescript before and after changes to check for introduced errors: `cd client && npm run build`.
 6. Run backend unit tests: `npm run test:api`.
@@ -83,8 +83,10 @@ feat: add hat wobble
 ```
 
 ### Commit Guidelines
+
 - Do your best to reduce the number of commits, organizing them as much possible. Look into [squashing commits](https://www.freecodecamp.org/news/git-squash-commits/) in order to keep a neat history.
 - For those that care about maximizing commits for stats, adhere to the above as I 'squash and merge' an unorganized and/or unformatted commit history, which reduces the number of your commits to 1,:
+
 ```
 * Update Br.tsx
 
@@ -92,7 +94,6 @@ feat: add hat wobble
 
 * Update Br.tsx
 ```
-
 
 ## 5. Pull Request Process
 
@@ -123,39 +124,39 @@ Apply the following naming conventions to branches, labels, and other Git-relate
 1. **Original State**: The project was initially developed entirely in JavaScript (JS).
 
 2. **Frontend Transition**:
+
    - We are in the process of transitioning the frontend from JS to TypeScript (TS).
    - The transition is nearing completion.
    - This conversion is feasible due to React's capability to intermix JS and TS prior to code compilation. It's standard practice to compile/bundle the code in such scenarios.
 
 3. **Backend Considerations**:
+
    - Transitioning the backend to TypeScript would be a more intricate process, especially for an established Express.js server.
-   
    - **Options for Transition**:
-      - **Single Phase Overhaul**: This involves converting the entire backend to TypeScript in one go. It's the most straightforward approach but can be disruptive, especially for larger codebases.
-      
-      - **Incremental Transition**: Convert parts of the backend progressively. This can be done by:
-         - Maintaining a separate directory for TypeScript files.
-         - Gradually migrating and testing individual modules or routes.
-         - Using a build tool like `tsc` to compile TypeScript files independently until the entire transition is complete.
-         
-   - **Compilation Considerations**: 
-      - Introducing a compilation step for the server is an option. This would involve using tools like `ts-node` for development and `tsc` for production builds.
-      - However, this is not a conventional approach for Express.js servers and could introduce added complexity, especially in terms of build and deployment processes.
-      
+     - **Single Phase Overhaul**: This involves converting the entire backend to TypeScript in one go. It's the most straightforward approach but can be disruptive, especially for larger codebases.
+     - **Incremental Transition**: Convert parts of the backend progressively. This can be done by:
+       - Maintaining a separate directory for TypeScript files.
+       - Gradually migrating and testing individual modules or routes.
+       - Using a build tool like `tsc` to compile TypeScript files independently until the entire transition is complete.
+   - **Compilation Considerations**:
+     - Introducing a compilation step for the server is an option. This would involve using tools like `ts-node` for development and `tsc` for production builds.
+     - However, this is not a conventional approach for Express.js servers and could introduce added complexity, especially in terms of build and deployment processes.
    - **Current Stance**: At present, this backend transition is of lower priority and might not be pursued.
 
 ## 8. Module Import Conventions
 
-- `npm` packages first, 
-     - from longest line (top) to shortest (bottom)
+- `npm` packages first,
+
+  - from longest line (top) to shortest (bottom)
 
 - Followed by typescript types (pertains to data-provider and client workspaces)
-     - longest line (top) to shortest (bottom)
-     - types from package come first
+
+  - longest line (top) to shortest (bottom)
+  - types from package come first
 
 - Lastly, local imports
-     - longest line (top) to shortest (bottom)
-     - imports with alias `~` treated the same as relative import with respect to line length
+  - longest line (top) to shortest (bottom)
+  - imports with alias `~` treated the same as relative import with respect to line length
 
 **Note:** ESLint will automatically enforce these import conventions when you run `npm run lint --fix` or through pre-commit hooks.
 

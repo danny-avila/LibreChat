@@ -62,7 +62,7 @@ const shouldRebase = process.argv.includes('--rebase');
   console.green('Your LibreChat app is now up to date! Start the app with the following command:');
   console.purple(startCommand);
   console.orange(
-    'Note: it\'s also recommended to clear your browser cookies and localStorage for LibreChat to assure a fully clean installation.',
+    "Note: it's also recommended to clear your browser cookies and localStorage for LibreChat to assure a fully clean installation.",
   );
-  console.orange('Also: Don\'t worry, your data is safe :)');
+  console.orange("Also: Don't worry, your data is safe :)");
 })();
