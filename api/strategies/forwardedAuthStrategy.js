@@ -59,6 +59,7 @@ const forwardedAuthStrategy = () => {
         if (Object.keys(updates).length > 0) {
           user = await updateUser(user._id, updates);
         }
+        user.id = user._id.toString();
       } else {
         // User doesn't exist, create a new one
         logger.info(`[forwardedAuthStrategy] Creating new user with username: ${username}`);
@@ -82,11 +83,8 @@ const forwardedAuthStrategy = () => {
 
         const newUserId = await createUser(newUserData);
         user = await getUserById(newUserId, '-password -__v -totpSecret');
+        user.id = newUserId.toString();
       }
-
-      // Add id property for consistency with other auth strategies
-      user.id = user._id.toString();
-
       return done(null, user);
     } catch (err) {
       logger.error('[forwardedAuthStrategy] Error:', err);
