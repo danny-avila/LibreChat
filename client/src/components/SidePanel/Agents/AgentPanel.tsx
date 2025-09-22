@@ -5,7 +5,6 @@ import { useWatch, useForm, FormProvider } from 'react-hook-form';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
 import {
   Tools,
-  Constants,
   SystemRoles,
   ResourceType,
   EModelEndpoint,
@@ -57,11 +56,7 @@ export default function AgentPanel() {
   const canEdit = hasPermission(PermissionBits.EDIT);
 
   const expandedAgentQuery = useGetExpandedAgentByIdQuery(current_agent_id ?? '', {
-    enabled:
-      !!(current_agent_id ?? '') &&
-      current_agent_id !== Constants.EPHEMERAL_AGENT_ID &&
-      canEdit &&
-      !permissionsLoading,
+    enabled: !isEphemeralAgent(current_agent_id) && canEdit && !permissionsLoading,
   });
 
   const agentQuery = canEdit && expandedAgentQuery.data ? expandedAgentQuery : basicAgentQuery;
