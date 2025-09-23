@@ -1,5 +1,6 @@
 import React, { useMemo, useEffect } from 'react';
 import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
+import { mayTrainOnUserData } from '~/utils/openRouterPrivacy';
 import { SelectDropDown } from '@librechat/client';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -97,7 +98,6 @@ export default function OpenRouterEnhanced({
   // Check if current model is hidden by filter
   const isCurrentModelHidden = useMemo(() => {
     if (!filterNoTrain || !currentModel) return false;
-    const { mayTrainOnUserData } = require('~/utils/openRouterPrivacy');
     return mayTrainOnUserData(currentModel) && currentModel !== 'openrouter/auto';
   }, [currentModel, filterNoTrain]);
 

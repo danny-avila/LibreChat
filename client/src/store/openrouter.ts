@@ -1,5 +1,6 @@
 import { atom, selector } from 'recoil';
 import { atomWithLocalStorage } from './utils';
+import { filterModelsByPrivacy, sortModels } from '~/utils/openRouterPrivacy';
 
 // TypeScript interfaces for OpenRouter state
 export interface OpenRouterCredits {
@@ -33,7 +34,7 @@ export interface OpenRouterState {
 const DEFAULT_MODEL = ''; // No default model - user must select
 const DEFAULT_ROUTE: OpenRouterState['route'] = 'fallback';
 
-// Persistent atoms with localStorage
+// Create atoms directly - simplified approach
 export const openRouterModelState = atomWithLocalStorage<string>('openRouterModel', DEFAULT_MODEL);
 
 export const openRouterFallbackChainState = atomWithLocalStorage<string[]>(
@@ -188,9 +189,6 @@ export const openRouterModelsDerivedSelector = selector<OpenRouterModel[]>({
     // Separate Auto Router from other models
     const autoRouter = models.find(m => m.id === 'openrouter/auto');
     const otherModels = models.filter(m => m.id !== 'openrouter/auto');
-
-    // Import privacy utilities dynamically to avoid circular deps
-    const { filterModelsByPrivacy, sortModels } = require('~/utils/openRouterPrivacy');
 
     // Apply privacy filter
     const filtered = filterModelsByPrivacy(otherModels, filterNoTrain);

@@ -32,7 +32,10 @@ import {
 } from '~/utils';
 import useAttachmentHandler from '~/hooks/SSE/useAttachmentHandler';
 import useContentHandler from '~/hooks/SSE/useContentHandler';
-import store, { useApplyNewAgentTemplate } from '~/store';
+// Import from specific store modules to avoid circular dependency
+// Cannot import from both ~/store barrel export and ~/store/openrouter
+import { useApplyNewAgentTemplate } from '~/store/agents';
+import settingsStore from '~/store/settings';
 import { openRouterActualModelState } from '~/store/openrouter';
 import useStepHandler from '~/hooks/SSE/useStepHandler';
 import { useAuthContext } from '~/hooks/AuthContext';
@@ -175,7 +178,7 @@ export default function useEventHandlers({
   const queryClient = useQueryClient();
   const { announcePolite } = useLiveAnnouncer();
   const applyAgentTemplate = useApplyNewAgentTemplate();
-  const setAbortScroll = useSetRecoilState(store.abortScroll);
+  const setAbortScroll = useSetRecoilState(settingsStore.abortScroll);
   const navigate = useNavigate();
   const location = useLocation();
 

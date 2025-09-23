@@ -12,11 +12,10 @@
 > This fork includes full native integration for [OpenRouter](https://openrouter.ai), providing access to 100+ AI models through a single API with enterprise features:
 > - ✅ **Full Agent System Compatibility** - Unlike YAML config, works seamlessly with LibreChat Agents
 > - 🛠️ **Native Tool/Function Calling** - Complete OpenAI-compatible tool support for all agent capabilities
-> - ✅ **Automatic Model Fallbacks** - Define backup models for reliability
 > - 🤖 **Auto-Router™** - Toggle intelligent model selection that automatically chooses the best model for each request
 > - 💰 **Real-time Credits Tracking** - Monitor usage directly in the UI
-> - ✅ **Provider Preferences** - Control which providers to use
 > - 🔄 **Seamless Model Switching** - Change models mid-conversation without losing context
+> **🔒 Zero Data Retention (ZDR)**: - Toggle whether requests should be routed only through ZDR providers
 >
 > **[📖 OpenRouter Documentation](docs/features/providers/openrouter.md)** | **[🚀 Quick Start](docs/features/providers/openrouter.md#quick-start)** | **[🔒 Privacy Settings](docs/features/openrouter-privacy.md)** | **[⚙️ API Reference](docs/api-reference/openrouter.md)**
 
@@ -66,7 +65,7 @@
 
 - 🤖 **AI Model Selection**:
   - Anthropic (Claude), AWS Bedrock, OpenAI, Azure OpenAI, Google, Vertex AI, OpenAI Responses API (incl. Azure)
-  - **OpenRouter Native Integration**: Access 100+ models with automatic fallbacks, smart routing, and credits tracking
+  - **OpenRouter Native Integration**: Access 100+ models, smart routing, and credits tracking
   - [Custom Endpoints](https://www.librechat.ai/docs/quick_start/custom_endpoints): Use any OpenAI-compatible API with LibreChat, no proxy required
   - Compatible with [Local & Remote AI Providers](https://www.librechat.ai/docs/configuration/librechat_yaml/ai_endpoints):
     - Ollama, groq, Cohere, Mistral AI, Apple MLX, koboldcpp, together.ai,
@@ -369,6 +368,6 @@ We thank [Locize](https://locize.com) for their translation management tools tha
 - Implementation of native OpenRouter provider support
 - Full Agent system compatibility for OpenRouter
 - Real-time credits tracking integration
-- Auto Router toggle and fallback chain management
+- Auto Router toggle
 
 The OpenRouter native integration enables access to 100+ AI models through a single API with enterprise features, solving the limitation where YAML configuration was incompatible with LibreChat's Agent system.

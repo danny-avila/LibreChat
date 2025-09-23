@@ -1,9 +1,11 @@
 import React, { useEffect, useMemo, useCallback } from 'react';
 import { useRecoilValue, useRecoilState, useSetRecoilState } from 'recoil';
 import { EModelEndpoint, QueryKeys } from 'librechat-data-provider';
+import type { TConversation } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
 import { HoverCard, HoverCardContent, HoverCardTrigger, Button, Switch } from '@librechat/client';
 import { AlertTriangle, RefreshCw, DollarSign, TrendingDown, Zap, Shield } from 'lucide-react';
+// Import all openrouter atoms directly to avoid circular dependency
 import {
   openRouterCreditsState,
   openRouterCreditsLoadingState,
@@ -12,9 +14,10 @@ import {
   openRouterActualModelState,
   openRouterZDREnabledState,
 } from '~/store/openrouter';
+// Import conversationByIndex directly from families to avoid circular dependency
+import families from '~/store/families';
 import { DynamicProviderIcon } from '../Endpoints/DynamicProviderIcon';
 import { useOpenRouterCredits } from '~/hooks/Credits';
-import store from '~/store';
 import { cn } from '~/utils';
 import { useLocalize } from '~/hooks';
 
@@ -33,7 +36,7 @@ const getProviderFromModel = (model?: string | null): string | null => {
 
 export default function OpenRouterCredits({ className, compact = false }: OpenRouterCreditsProps) {
   const queryClient = useQueryClient();
-  const conversation = useRecoilValue(store.conversationByIndex(0));
+  const conversation = useRecoilValue(families.conversationByIndex(0));
   const credits = useRecoilValue(openRouterCreditsState);
   const isLoading = useRecoilValue(openRouterCreditsLoadingState);
   const error = useRecoilValue(openRouterCreditsErrorState);
@@ -61,7 +64,7 @@ export default function OpenRouterCredits({ className, compact = false }: OpenRo
     });
   }, [autoRouterEnabled, actualModel, conversation]);
   const setActualModel = useSetRecoilState(openRouterActualModelState);
-  const setConversation = useSetRecoilState(store.conversationByIndex(0));
+  const setConversation = useSetRecoilState(families.conversationByIndex(0));
   const { fetchCredits, manualRefresh, isManualRefreshing } = useOpenRouterCredits();
   const localize = useLocalize();
 

@@ -12,7 +12,8 @@ import lang from './language';
 import settings from './settings';
 import misc from './misc';
 import isTemporary from './temporary';
-import openrouter from './openrouter';
+// Don't add openrouter to default export to avoid circular dependencies
+// Import directly from './openrouter' when needed
 export * from './agents';
 export * from './mcp';
 
@@ -31,5 +32,4 @@ export default {
   ...settings,
   ...misc,
   ...isTemporary,
-  ...openrouter,
 };
