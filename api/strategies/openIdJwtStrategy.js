@@ -41,14 +41,18 @@ const openIdJwtLogin = (openIdConfig) => {
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       secretOrKeyProvider: jwksRsa.passportJwtSecret(jwksRsaOptions),
     },
+    /**
+     * @param {import('openid-client').IDToken} payload
+     * @param {import('passport-jwt').VerifyCallback} done
+     */
     async (payload, done) => {
       try {
         const { user, error, migration } = await findOpenIDUser({
+          findUser,
+          email: payload?.email,
           openidId: payload?.sub,
           idOnTheSource: payload?.oid,
-          email: payload?.email,
           strategyName: 'openIdJwtLogin',
-          findUser,
         });
 
         if (error) {

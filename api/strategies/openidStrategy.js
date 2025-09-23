@@ -337,6 +337,10 @@ async function setupOpenId() {
         clockTolerance: process.env.OPENID_CLOCK_TOLERANCE || 300,
         usePKCE,
       },
+      /**
+       * @param {import('openid-client').TokenEndpointResponseHelpers} tokenset
+       * @param {import('passport-jwt').VerifyCallback} done
+       */
       async (tokenset, done) => {
         try {
           const claims = tokenset.claims();
@@ -354,11 +358,11 @@ async function setupOpenId() {
           }
 
           const result = await findOpenIDUser({
+            findUser,
+            email: claims.email,
             openidId: claims.sub,
             idOnTheSource: claims.oid,
-            email: claims.email,
             strategyName: 'openidStrategy',
-            findUser,
           });
           let user = result.user;
           const error = result.error;
