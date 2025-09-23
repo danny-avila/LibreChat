@@ -54,6 +54,16 @@ const MinimalIcon: React.FC<IconProps> = (props) => {
       icon: <BedrockIcon className="icon-xl text-text-primary" />,
       name: props.modelLabel ?? alternateName[EModelEndpoint.bedrock],
     },
+    [EModelEndpoint.openrouter]: {
+      icon: (
+        <img
+          src="/assets/openrouter.png"
+          alt="OpenRouter"
+          className="h-5 w-5 object-contain"
+        />
+      ),
+      name: props.modelLabel ?? 'OpenRouter',
+    },
     default: {
       icon: <UnknownIcon iconURL={iconURL} endpoint={endpoint} className="icon-sm" context="nav" />,
       name: endpoint,

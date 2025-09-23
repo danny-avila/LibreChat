@@ -52,6 +52,13 @@ class OpenRouterClient extends BaseClient {
     const incomingClientModelOptions = options.modelOptions || {};
     const incomingEndpointModelOptions = options.endpointOption?.modelOptions || {};
 
+    // CRITICAL: Extract autoRouter from multiple possible locations
+    const autoRouter = options.endpointOption?.autoRouter ||
+                      incomingEndpointModelOptions?.autoRouter ||
+                      incomingClientModelOptions?.autoRouter ||
+                      options.autoRouter ||
+                      false;
+
     if (isUpdate) {
       // 2a. Subsequent update: Merge incoming options into existing this.options immutably
 
@@ -60,6 +67,8 @@ class OpenRouterClient extends BaseClient {
         ...(this.options.modelOptions || {}),
         ...incomingClientModelOptions,
         ...incomingEndpointModelOptions,
+        // Ensure autoRouter is preserved in modelOptions
+        autoRouter: autoRouter || this.options.modelOptions?.autoRouter,
       };
 
       // Update this.options safely. We do NOT delete properties from the input 'options'.
@@ -68,6 +77,8 @@ class OpenRouterClient extends BaseClient {
         ...options,
         // Ensure the fully merged modelOptions are set
         modelOptions: mergedModelOptions,
+        // Also preserve autoRouter at root level
+        autoRouter: autoRouter || this.options.autoRouter,
       };
     } else {
       // 2b. Initial setup (this.options is undefined) OR replacement (options.replaceOptions is true)
@@ -76,12 +87,16 @@ class OpenRouterClient extends BaseClient {
       const mergedModelOptions = {
         ...incomingClientModelOptions,
         ...incomingEndpointModelOptions,
+        // Ensure autoRouter is in modelOptions
+        autoRouter: autoRouter,
       };
 
       // Set this.options
       this.options = {
         ...options,
         modelOptions: mergedModelOptions,
+        // Also set autoRouter at root level
+        autoRouter: autoRouter,
       };
     }
 
@@ -95,10 +110,16 @@ class OpenRouterClient extends BaseClient {
       ...(this.options.modelOptions || {}),
     };
 
+    // Store autoRouter at instance level for easy access
+    this.autoRouter = this.options.autoRouter || this.modelOptions.autoRouter || false;
+
     logger.debug('[OpenRouterClient.setOptions] Finalized configuration:', {
       model: this.modelOptions?.model,
       hasModelOptions: !!this.modelOptions,
       modelKeys: Object.keys(this.modelOptions || {}),
+      autoRouter: this.autoRouter,
+      autoRouterFromOptions: this.options.autoRouter,
+      autoRouterFromModelOptions: this.modelOptions.autoRouter,
     });
 
     // Set sender name based on model
@@ -152,12 +173,16 @@ class OpenRouterClient extends BaseClient {
    * @returns {Promise<Object>} The chat completion response
    */
   async chatCompletion(params) {
-    const { messages, model, models, ...otherParams } = params;
+    const { messages, model, models, autoRouter, ...otherParams } = params;
 
     // Enhanced debug logging
-    logger.debug('[OpenRouterClient] chatCompletion called with:', {
+    logger.info('[OpenRouterClient] chatCompletion called with:', {
       modelFromParams: model,
       modelFromOptions: this.modelOptions?.model,
+      autoRouterFromParams: autoRouter,
+      autoRouterFromInstance: this.autoRouter,
+      autoRouterFromModelOptions: this.modelOptions?.autoRouter,
+      autoRouterEnabled: autoRouter || this.autoRouter || this.modelOptions?.autoRouter,
       allModelOptions: this.modelOptions,
       hasMessages: messages?.length > 0,
       messagePreview: messages?.[0]?.content?.substring(0, 50),
@@ -169,34 +194,58 @@ class OpenRouterClient extends BaseClient {
       throw new Error('Messages array is required for OpenRouter API');
     }
 
+    // Determine the base model (user's selection)
+    const userSelectedModel = model || this.modelOptions?.model;
+
+    // Check if auto-router should be applied (from params, instance, or modelOptions)
+    const shouldUseAutoRouter = autoRouter || this.autoRouter || this.modelOptions?.autoRouter;
+
+    // Apply auto-router transformation at request time
+    const effectiveModel = shouldUseAutoRouter ? 'openrouter/auto' : userSelectedModel;
+
+    // Store original model for metadata
+    const originalModel = userSelectedModel;
+
+    logger.info('[OpenRouterClient] Model transformation:', {
+      shouldUseAutoRouter,
+      originalModel,
+      effectiveModel,
+      transformation: shouldUseAutoRouter ? 'AUTO-ROUTER ACTIVE' : 'USING SELECTED MODEL',
+    });
+
     const requestBody = {
       messages,
-      model: model || this.modelOptions?.model,
+      model: effectiveModel,
       ...otherParams,
       // Add transforms to control data privacy
       // This prevents the "No endpoints found matching your data policy" error
       transforms: ['middle-out'], // This allows the request without data collection
     };
 
-    // If no model specified, throw error instead of using auto-router
+    // If no model specified and auto-router is not enabled, throw error
     if (!requestBody.model) {
       throw new Error('No model specified for OpenRouter. Please select a model.');
     }
 
-    // Check if it's trying to use auto-router
-    if (requestBody.model.includes('auto')) {
-      logger.warn('[OpenRouterClient] AUTO-ROUTER DETECTED:', requestBody.model);
+    // Log auto-router usage for debugging
+    if (shouldUseAutoRouter) {
+      logger.info('[OpenRouterClient] Auto-router enabled:', {
+        originalModel,
+        effectiveModel,
+        reason: 'User enabled auto-router toggle',
+      });
     }
 
     logger.debug('[OpenRouterClient] FINAL MODEL BEING USED:', requestBody.model);
 
-    // Add fallback models if provided
+    // Add fallback models if provided (but not when auto-router is active)
     if (models && Array.isArray(models) && models.length > 0) {
       // OpenRouter doesn't allow fallbacks with auto router
-      if (!requestBody.model.includes('openrouter/auto')) {
+      if (!shouldUseAutoRouter && !requestBody.model.includes('openrouter/auto')) {
         requestBody.models = models.slice(0, 10); // Max 10 fallback models
-      } else {
-        logger.warn('[OpenRouterClient] Fallback models not supported with Auto Router');
+        logger.debug('[OpenRouterClient] Fallback models configured:', requestBody.models);
+      } else if (shouldUseAutoRouter) {
+        logger.info('[OpenRouterClient] Fallback models ignored - Auto Router handles model selection');
       }
     }
 
@@ -232,6 +281,16 @@ class OpenRouterClient extends BaseClient {
       // Store usage data if available
       if (data.usage) {
         this.usage = data.usage;
+      }
+
+      // Add metadata about auto-router usage
+      if (shouldUseAutoRouter) {
+        data._metadata = {
+          autoRouterUsed: true,
+          requestedModel: originalModel,
+          effectiveModel: effectiveModel,
+          actualModelUsed: data.model || effectiveModel, // The model OpenRouter actually used
+        };
       }
 
       return data;

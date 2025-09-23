@@ -82,6 +82,7 @@ export default function OpenRouterSettings({
 
   const handleAutoRouterChange = useCallback(
     (checked: boolean) => {
+      console.log('[OpenRouter Settings] Auto-router toggle changed:', checked);
       const newModelOptions = {
         ...modelOptions,
         autoRouter: checked,
@@ -90,9 +91,15 @@ export default function OpenRouterSettings({
         // Clear fallback chain when Auto Router is enabled
         newModelOptions.fallbackModels = [];
       }
+      console.log('[OpenRouter Settings] Setting modelOptions:', newModelOptions);
       setModelOptions(newModelOptions);
+
+      // CRITICAL: Also set at root level for schema compatibility
+      if (setOption && setOption('autoRouter')) {
+        setOption('autoRouter')(checked);
+      }
     },
-    [modelOptions, setModelOptions],
+    [modelOptions, setModelOptions, setOption],
   );
 
   const handleProviderPreferencesChange = useCallback(
@@ -114,6 +121,16 @@ export default function OpenRouterSettings({
       <div className="col-span-5 flex flex-col items-center justify-start gap-6 sm:col-span-3">
         {/* Primary Model Selection */}
         <div className="grid w-full items-center gap-2">
+          <div className="flex items-center justify-between">
+            <Label className="text-left text-sm font-medium">
+              {localize('com_ui_model')}
+              {autoRouter && (
+                <span className="ml-2 rounded bg-green-100 px-2 py-1 text-xs text-green-700 dark:bg-green-900 dark:text-green-300">
+                  {localize('com_endpoint_openrouter_auto_router_active')}
+                </span>
+              )}
+            </Label>
+          </div>
           <SelectDropDown
             title={localize('com_ui_model')}
             value={conversation.model ?? ''}
@@ -123,6 +140,11 @@ export default function OpenRouterSettings({
             className={cn(defaultTextProps, 'flex w-full resize-none', removeFocusRings)}
             containerClassName="flex w-full resize-none"
           />
+          {autoRouter && (
+            <p className="text-xs text-muted-foreground">
+              {localize('com_endpoint_openrouter_auto_router_model_hint')}
+            </p>
+          )}
         </div>
 
         {/* Model Label */}

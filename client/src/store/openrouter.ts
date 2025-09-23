@@ -99,24 +99,16 @@ export const openRouterConfigSelector = selector<OpenRouterState>({
     const includeReasoning = get(openRouterIncludeReasoningState);
     const autoRouterEnabled = get(openRouterAutoRouterEnabledState);
 
-    // Auto Router disabled to fix issue
-    // if (autoRouterEnabled) {
-    //   return {
-    //     model: 'openrouter/auto', // Explicitly use auto-router
-    //     models: [],
-    //     route: 'auto',
-    //     providerPreferences,
-    //     maxCreditsPerRequest,
-    //     includeReasoning,
-    //   };
-    // }
-
+    // Pass auto-router as a separate flag, don't override the model
+    // This maintains state isolation - UI shows user's selection,
+    // backend handles the transformation to 'openrouter/auto'
     return {
-      model,
-      models,
+      model, // Keep the user's selected model
+      autoRouter: autoRouterEnabled, // Pass as separate flag for backend
+      models: autoRouterEnabled ? [] : models, // Clear fallback when auto-router is on
       // Note: Route is automatically set to 'fallback' if a fallback chain exists,
       // otherwise the user's selected route preference is used
-      route: models.length > 0 ? 'fallback' : route,
+      route: autoRouterEnabled ? 'auto' : (models.length > 0 ? 'fallback' : route),
       providerPreferences,
       maxCreditsPerRequest,
       includeReasoning,
@@ -131,10 +123,11 @@ export const openRouterEffectiveFallbackChainSelector = selector<string[]>({
     const fallbackChain = get(openRouterFallbackChainState);
     const autoRouterEnabled = get(openRouterAutoRouterEnabledState);
 
-    // Auto Router disabled to fix issue
-    // if (autoRouterEnabled || model === 'openrouter/auto') {
-    //   return [];
-    // }
+    // When auto-router is enabled, return empty array
+    // (auto-router handles model selection internally)
+    if (autoRouterEnabled) {
+      return [];
+    }
 
     // Return the fallback chain with the primary model prepended if not already included
     if (!fallbackChain.includes(model)) {
@@ -146,17 +139,15 @@ export const openRouterEffectiveFallbackChainSelector = selector<string[]>({
 });
 
 // Helper selector to check if using Auto Router
-// Disabled to fix issue
-/*
 export const isUsingAutoRouterSelector = selector<boolean>({
   key: 'isUsingAutoRouterSelector',
   get: ({ get }) => {
-    const model = get(openRouterModelState);
+    // Only check the toggle state, not the model
+    // This prevents the state contamination issue
     const autoRouterEnabled = get(openRouterAutoRouterEnabledState);
-    return autoRouterEnabled || model === 'openrouter/auto';
+    return autoRouterEnabled;
   },
 });
-*/
 
 // Export all atoms and selectors as default
 export default {
@@ -176,5 +167,5 @@ export default {
   // Selectors
   openRouterConfigSelector,
   openRouterEffectiveFallbackChainSelector,
-  // isUsingAutoRouterSelector, // Removed - was causing undefined reference error
+  isUsingAutoRouterSelector,
 };

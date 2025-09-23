@@ -67,7 +67,16 @@ const initializeAgent = async ({
     Object.assign(
       { model: agent.model },
       agent.model_parameters ?? { model: agent.model },
+      // User's UI selections should override the saved agent model
       isInitialAgent === true ? endpointOption?.model_parameters : {},
+      // Priority override: If user selected a model in the UI, always use that
+      isInitialAgent === true && endpointOption?.model_parameters?.model
+        ? { model: endpointOption.model_parameters.model }
+        : {},
+      // Priority override: If user toggled autoRouter in the UI, always use that
+      isInitialAgent === true && endpointOption?.model_parameters?.autoRouter !== undefined
+        ? { autoRouter: endpointOption.model_parameters.autoRouter }
+        : {},
     ),
   );
 

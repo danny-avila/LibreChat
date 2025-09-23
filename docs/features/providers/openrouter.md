@@ -148,22 +148,40 @@ Configure automatic fallbacks for maximum reliability:
 - Preserves conversation context
 - Each attempt counts toward rate limits
 
-### Auto Router
+### Auto Router™
 
-Let OpenRouter intelligently select the best model:
+LibreChat provides a seamless toggle interface for OpenRouter's intelligent model selection:
 
+#### How to Use
+1. Select OpenRouter as your provider
+2. Toggle the "Auto-Router" switch in the navigation bar
+3. When enabled, the model selector will display "openrouter/auto"
+4. Send your message - OpenRouter automatically selects the optimal model
+
+#### Auto Router Benefits
+- **Intelligent Selection**: Analyzes each prompt to choose the best model
+- **Cost Optimization**: Balances quality vs cost based on complexity
+- **Automatic Failover**: Falls back to alternative models if needed
+- **No Manual Management**: No need to select models manually
+
+#### Important Notes
+- Auto-Router toggle state syncs with your conversation
+- When manually selecting a specific model, Auto-Router automatically disables
+- The toggle appears in the navigation bar next to the credits display
+- Model shows as "openrouter/auto" in the selector when active
+
+#### Technical Implementation
 ```javascript
+// When Auto-Router is enabled
 {
-  "model": "openrouter/auto"
-  // OpenRouter analyzes prompt and selects optimal model
+  "model": "openrouter/auto",
+  "autoRouter": true
 }
-```
 
-**Auto Router Benefits:**
-- Cost optimization based on prompt complexity
-- Automatic model selection for task type
-- Quality/speed balance
-- No manual model management
+// UI automatically handles state synchronization
+// Toggle → Updates conversation model to "openrouter/auto"
+// Manual model selection → Disables Auto-Router toggle
+```
 
 ### Provider Preferences
 
@@ -396,6 +414,22 @@ npm run test:api -- --testPathPattern=openrouter
   - Don't use `openrouter/auto` with fallback chains
   - Verify all models in chain support required features
   - Check model compatibility in OpenRouter dashboard
+
+#### Auto-Router Toggle Issues
+- **Cause**: State synchronization between toggle and model selector
+- **Solution**:
+  - Toggle syncs with conversation model state
+  - If model shows "openrouter/auto" but toggle is off, click toggle twice to resync
+  - Manual model selection automatically disables Auto-Router (expected behavior)
+  - Clear browser localStorage if persistent sync issues
+
+#### First Message Fails with Auto-Router
+- **Cause**: Conflicting state between saved conversation and toggle
+- **Solution**:
+  - Ensure toggle matches model selector state
+  - If using existing conversation, toggle may need to be clicked to sync
+  - Start new conversation if issues persist
+  - The system now auto-syncs on conversation load
 
 #### Agent Features Not Working
 - **Cause**: Selected model doesn't support required features

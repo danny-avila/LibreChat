@@ -38,6 +38,9 @@ RUN \
 
 COPY --chown=node:node . .
 
+# Set NODE_ENV before building to ensure production build
+ENV NODE_ENV=production
+
 RUN \
     # React client build
     NODE_OPTIONS="--max-old-space-size=2048" npm run frontend; \

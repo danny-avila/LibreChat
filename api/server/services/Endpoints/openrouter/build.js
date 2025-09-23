@@ -26,9 +26,11 @@ const buildOptions = (endpoint, parsedBody) => {
     providerPreferences,
     maxCreditsPerRequest,
     includeReasoning,
-    autoRouterEnabled,
     ...modelOptions
   } = parsedBody;
+
+  // Extract autoRouter from either root level OR nested in modelOptions
+  const autoRouter = parsedBody.autoRouter || parsedBody.modelOptions?.autoRouter || modelOptions?.autoRouter || false;
 
   // Log the incoming model selection for debugging
   logger.info('[OpenRouter buildOptions] Extracted values:', {
@@ -37,7 +39,13 @@ const buildOptions = (endpoint, parsedBody) => {
     modelFromOptions: modelOptions?.model,
     modelFromParams: parsedBody.model_parameters?.model,
     models,
-    autoRouterEnabled,
+    autoRouter,
+    autoRouterSources: {
+      fromRoot: parsedBody.autoRouter,
+      fromModelOptions: parsedBody.modelOptions?.autoRouter,
+      fromSpread: modelOptions?.autoRouter,
+    },
+    fullParsedBody: JSON.stringify(parsedBody, null, 2),
   });
 
   const endpointOption = removeNullishValues({
@@ -60,6 +68,7 @@ const buildOptions = (endpoint, parsedBody) => {
       providerPreferences,
       maxCreditsPerRequest,
       includeReasoning,
+      autoRouter, // Pass the auto-router flag through
     },
   });
 

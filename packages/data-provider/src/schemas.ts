@@ -1150,6 +1150,8 @@ export const openRouterBaseSchema = openAIBaseSchema.extend({
   models: z.array(z.string()).optional(),
   // Route (auto or custom)
   route: z.enum(['auto', 'fallback']).optional(),
+  // Auto-router toggle - enables openrouter/auto model selection
+  autoRouter: z.boolean().optional().default(false),
   // Provider preferences for auto routing
   providerPreferences: z.array(z.string()).optional(),
   // Transforms for request/response

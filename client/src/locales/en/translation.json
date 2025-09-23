@@ -1297,6 +1297,7 @@
   "com_endpoint_openrouter_auto_router_active": "Auto Router Active",
   "com_endpoint_openrouter_model_disabled": "Model selection is disabled while Auto Router is active",
   "com_endpoint_openrouter_auto_router_help": "Automatically selects the best available model based on context and availability. Disables fallback chains while active.",
+  "com_endpoint_openrouter_auto_router_model_hint": "Your selected model will be shown here for reference, but Auto Router will choose the optimal model at request time.",
   "com_endpoint_openrouter_fallback_label": "Fallback Chain",
   "com_endpoint_openrouter_fallback_help": "Configure up to five fallback models that will be tried in order if the primary model fails.",
   "com_endpoint_openrouter_fallback_select": "Select a model to add",

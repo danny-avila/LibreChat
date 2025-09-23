@@ -1,5 +1,5 @@
-import { useEffect, useMemo } from 'react';
-import { useRecoilValue, useRecoilState } from 'recoil';
+import { useEffect, useMemo, useCallback } from 'react';
+import { useRecoilValue, useRecoilState, useSetRecoilState } from 'recoil';
 import { EModelEndpoint } from 'librechat-data-provider';
 import { HoverCard, HoverCardContent, HoverCardTrigger, Button, Switch } from '@librechat/client';
 import { AlertTriangle, RefreshCw, DollarSign, TrendingDown, Zap } from 'lucide-react';
@@ -24,13 +24,61 @@ export default function OpenRouterCredits({ className, compact = false }: OpenRo
   const credits = useRecoilValue(openRouterCreditsState);
   const isLoading = useRecoilValue(openRouterCreditsLoadingState);
   const error = useRecoilValue(openRouterCreditsErrorState);
-  const [autoRouterEnabled, setAutoRouterEnabled] = useRecoilState(openRouterAutoRouterEnabledState);
+  const [autoRouterEnabled, setAutoRouterEnabled] = useRecoilState(
+    openRouterAutoRouterEnabledState,
+  );
+  const setConversation = useSetRecoilState(store.conversationByIndex(0));
   const { fetchCredits, manualRefresh, isManualRefreshing } = useOpenRouterCredits();
   const localize = useLocalize();
 
   // Only show for OpenRouter endpoint
   const endpoint = conversation?.endpoint;
   const isOpenRouter = endpoint === EModelEndpoint.openrouter;
+
+  // Handle auto-router toggle with conversation sync
+  const handleAutoRouterChange = useCallback(
+    (checked: boolean) => {
+      setAutoRouterEnabled(checked);
+
+      // Also update the current conversation's modelOptions if it's OpenRouter
+      if (isOpenRouter && conversation) {
+        setConversation((prev) => ({
+          ...prev,
+          // When enabling auto-router, set model to 'openrouter/auto'
+          // When disabling, keep current model (unless it's 'openrouter/auto')
+          model: checked ? 'openrouter/auto' : prev?.model === 'openrouter/auto' ? '' : prev?.model,
+          autoRouter: checked, // Set at root level for schema compatibility
+          modelOptions: {
+            ...prev?.modelOptions,
+            autoRouter: checked, // Keep in modelOptions for UI state
+            // Clear fallback models when auto-router is enabled
+            fallbackModels: checked ? [] : prev?.modelOptions?.fallbackModels,
+          },
+        }));
+      }
+    },
+    [setAutoRouterEnabled, setConversation, isOpenRouter, conversation],
+  );
+
+  // Sync the toggle state with conversation on mount
+  // Check if model is 'openrouter/auto' to determine toggle state
+  // Also check modelOptions.autoRouter for explicit state
+  useEffect(() => {
+    if (isOpenRouter) {
+      // If model is 'openrouter/auto', toggle should be ON
+      if (conversation?.model === 'openrouter/auto') {
+        setAutoRouterEnabled(true);
+      }
+      // Otherwise check modelOptions for explicit autoRouter state
+      else if (conversation?.modelOptions && 'autoRouter' in conversation.modelOptions) {
+        setAutoRouterEnabled(conversation.modelOptions.autoRouter);
+      }
+      // If model is a specific model (not auto), ensure toggle is OFF
+      else if (conversation?.model && conversation.model !== 'openrouter/auto') {
+        setAutoRouterEnabled(false);
+      }
+    }
+  }, [isOpenRouter, conversation?.model, conversation?.modelOptions, setAutoRouterEnabled]);
 
   // Fetch credits on mount and when endpoint changes
   useEffect(() => {
@@ -141,7 +189,9 @@ export default function OpenRouterCredits({ className, compact = false }: OpenRo
           )}
           title={compactTitle}
         >
-          <span className="text-sm font-normal text-text-secondary">Credits:</span>
+          <span className="text-sm font-normal text-text-secondary">
+            {localize('com_endpoint_openrouter_label')}:
+          </span>
           {compactContent}
         </button>
 
@@ -152,7 +202,7 @@ export default function OpenRouterCredits({ className, compact = false }: OpenRo
         <div className="flex items-center gap-2">
           <HoverCard>
             <HoverCardTrigger asChild>
-              <button className="flex items-center gap-1.5 text-sm text-text-secondary hover:text-text-primary transition-colors">
+              <button className="flex items-center gap-1.5 text-sm text-text-secondary transition-colors hover:text-text-primary">
                 <Zap className={cn('h-4 w-4', autoRouterEnabled && 'text-green-500')} />
                 <span className="hidden sm:inline">
                   {localize('com_endpoint_openrouter_auto_router')}
@@ -160,15 +210,13 @@ export default function OpenRouterCredits({ className, compact = false }: OpenRo
               </button>
             </HoverCardTrigger>
             <HoverCardContent>
-              <p className="text-sm">
-                {localize('com_endpoint_openrouter_auto_router_tooltip')}
-              </p>
+              <p className="text-sm">{localize('com_endpoint_openrouter_auto_router_tooltip')}</p>
             </HoverCardContent>
           </HoverCard>
           <Switch
             id="autoRouter"
             checked={autoRouterEnabled}
-            onCheckedChange={setAutoRouterEnabled}
+            onCheckedChange={handleAutoRouterChange}
             className="h-4 w-8"
             aria-label={localize('com_endpoint_openrouter_auto_router')}
           />

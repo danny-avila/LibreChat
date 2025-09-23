@@ -30,7 +30,7 @@ services:
       - ./images:/app/client/public/images
       - ./uploads:/app/uploads
       - ./logs:/app/api/logs
-      - ./client/dist:/app/client/dist
+      # - ./client/dist:/app/client/dist  # Commented out to use production build from image
   mongodb:
     container_name: chat-mongodb
     image: mongo

@@ -14,6 +14,9 @@ const initializeClient = async ({ req, res, endpointOption, overrideModel, optio
     fallbackModels: endpointOption?.model_parameters?.models,
     modelFromOption: endpointOption?.model,
     modelOptionsModel: endpointOption?.modelOptions?.model,
+    autoRouterRoot: endpointOption?.autoRouter,
+    autoRouterModelOptions: endpointOption?.modelOptions?.autoRouter,
+    fullModelOptions: endpointOption?.modelOptions,
   });
 
   const { OPENROUTER_API_KEY, PROXY } = process.env;
@@ -73,7 +76,26 @@ const initializeClient = async ({ req, res, endpointOption, overrideModel, optio
     // For agents, return config that will be used by ChatOpenRouter
     const baseURL = process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1';
 
-    logger.info(`[OpenRouter Initialize] Returning agent config with baseURL: ${baseURL}`);
+    // Extract autoRouter flag from endpointOption - check all possible locations
+    const autoRouter =
+      endpointOption?.autoRouter ||
+      endpointOption?.modelOptions?.autoRouter ||
+      endpointOption?.model_parameters?.autoRouter ||
+      false;
+
+    logger.info('[OpenRouter Initialize] autoRouter detection:', {
+      fromRoot: endpointOption?.autoRouter,
+      fromModelOptions: endpointOption?.modelOptions?.autoRouter,
+      fromModelParams: endpointOption?.model_parameters?.autoRouter,
+      final: autoRouter,
+    });
+
+    // If auto-router is enabled, transform the model to 'openrouter/auto'
+    const effectiveModel = autoRouter ? 'openrouter/auto' : selectedModel;
+
+    logger.info(
+      `[OpenRouter Initialize] Returning agent config with baseURL: ${baseURL}, autoRouter: ${autoRouter}, model: ${effectiveModel}`,
+    );
 
     // Return the configuration that will be used as llmConfig in agent.js
     // ChatOpenRouter extends ChatOpenAI which expects:
@@ -93,8 +115,14 @@ const initializeClient = async ({ req, res, endpointOption, overrideModel, optio
           },
         },
         ...clientOptions.modelOptions,
+        model: effectiveModel, // Use the transformed model
+        autoRouter: autoRouter, // Pass the flag for reference
       },
       ...clientOptions,
+      modelOptions: {
+        ...clientOptions.modelOptions,
+        model: effectiveModel,
+      },
     };
   }
 

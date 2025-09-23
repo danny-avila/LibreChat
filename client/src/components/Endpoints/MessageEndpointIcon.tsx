@@ -159,7 +159,7 @@ const MessageEndpointIcon: React.FC<IconProps> = (props) => {
     [EModelEndpoint.openrouter]: {
       icon: (
         <img
-          src="assets/openrouter.png"
+          src="/assets/openrouter.png"
           alt="OpenRouter"
           style={{ width: size * 0.6, height: size * 0.6 }}
         />

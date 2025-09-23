@@ -171,10 +171,23 @@ export default function useChatFunctions({
     const endpointType = getEndpointField(endpointsConfig, endpoint, 'type');
 
     /** This becomes part of the `endpointOption` */
+    console.log('[DEBUG] Conversation before parseCompactConvo:', {
+      endpoint,
+      model: conversation?.model,
+      modelOptions: conversation?.modelOptions,
+      autoRouter: conversation?.modelOptions?.autoRouter,
+    });
+
     const convo = parseCompactConvo({
       endpoint: endpoint as EndpointSchemaKey,
       endpointType: endpointType as EndpointSchemaKey,
       conversation: conversation ?? {},
+    });
+
+    console.log('[DEBUG] After parseCompactConvo:', {
+      model: convo?.model,
+      modelOptions: convo?.modelOptions,
+      autoRouter: convo?.modelOptions?.autoRouter,
     });
 
     const { modelDisplayLabel } = endpointsConfig?.[endpoint ?? ''] ?? {};
@@ -187,6 +200,19 @@ export default function useChatFunctions({
       },
       convo,
     ) as TEndpointOption;
+
+    // CRITICAL: Ensure autoRouter is at root level for OpenRouter
+    if (endpoint === EModelEndpoint.openrouter && convo?.modelOptions?.autoRouter) {
+      endpointOption.autoRouter = convo.modelOptions.autoRouter;
+    }
+
+    console.log('[DEBUG] endpointOption after assign:', {
+      endpoint: endpointOption.endpoint,
+      model: endpointOption.model,
+      modelOptions: endpointOption.modelOptions,
+      autoRouter: endpointOption.autoRouter,
+      autoRouterFromModelOptions: endpointOption.modelOptions?.autoRouter,
+    });
     if (endpoint !== EModelEndpoint.agents) {
       endpointOption.key = getExpiry();
       endpointOption.thread_id = thread_id;
