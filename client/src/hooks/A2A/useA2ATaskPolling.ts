@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { v4 } from 'uuid';
 import { useQueryClient } from '@tanstack/react-query';
 import { QueryKeys } from 'librechat-data-provider';
@@ -106,3 +106,49 @@ export default function useA2ATaskPolling() {
 }
 
 
+// Optional: stop polling on full page unload to avoid orphaned loops.
+export function useA2APollingOnUnload() {
+  const cancelRef = useRef<() => void>();
+  const attach = (stop: () => void) => (cancelRef.current = stop);
+  useEffect(() => {
+    const onBeforeUnload = () => {
+      try {
+        cancelRef.current?.();
+      } catch {}
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeunload);
+  }, []);
+  return { attach };
+}
+// Small helper to wire A2A polling from a final SSE event.
+// Keeps A2A logic out of the generic useSSE hook.
+export function startPollingFromFinalEvent(
+  a2a:
+    | {
+        start: (args: {
+          taskId: string;
+          agentId: string;
+          conversationId?: string | null;
+          getMessages: () => TMessage[] | undefined;
+          setMessages: (messages: TMessage[]) => void;
+        }) => void;
+      }
+    | null,
+  data: any,
+  getMessages: () => TMessage[] | undefined,
+  setMessages: (messages: TMessage[]) => void,
+) {
+  try {
+    const endpoint = data?.responseMessage?.endpoint as string | undefined;
+    const taskId = data?.responseMessage?.metadata?.taskId as string | undefined;
+    const agentId = data?.responseMessage?.metadata?.agentId as string | undefined;
+    const conversationId = data?.conversation?.conversationId as string | undefined;
+
+    if (a2a && endpoint === 'a2a' && taskId && agentId) {
+      a2a.start({ taskId, agentId, conversationId, getMessages, setMessages });
+    }
+  } catch (_e) {
+    // no-op
+  }
+}

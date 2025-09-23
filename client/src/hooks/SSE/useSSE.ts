@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import useA2ATaskPolling from '~/hooks/A2A/useA2ATaskPolling';
+import useA2ATaskPolling, { startPollingFromFinalEvent } from '~/hooks/A2A/useA2ATaskPolling';
+import { extractMetaFromFinal, logA2ACreated, logA2AFinal } from '~/hooks/A2A/useA2ASSE';
 import { v4 } from 'uuid';
 import { SSE } from 'sse.js';
 import { useSetRecoilState } from 'recoil';
@@ -136,78 +137,17 @@ export default function useSSE(
         const { plugins } = data;
         finalHandler(data, { ...submission, plugins } as EventSubmission);
         (startupConfig?.balance?.enabled ?? false) && balanceQuery.refetch();
-        // Debug aid: log A2A final to verify message and parent linkage end-to-end
-        try {
-          const rm = data?.responseMessage ?? {};
-          const reqm = data?.requestMessage ?? {};
-          console.log('[A2A][SSE] final event', {
-            endpoint: rm?.endpoint,
-            request: {
-              messageId: reqm?.messageId,
-              parentMessageId: reqm?.parentMessageId,
-              conversationId: reqm?.conversationId,
-            },
-            response: {
-              messageId: rm?.messageId,
-              parentMessageId: rm?.parentMessageId,
-              conversationId: rm?.conversationId,
-              metadata: rm?.metadata,
-            },
-            convo: data?.conversation?.conversationId,
-          });
-        } catch {}
+        // Debug aid: log A2A final for troubleshooting
+        logA2AFinal(data);
 
-        // A2A-only: after the stream finishes, begin polling task status.
-        // We do not create local placeholder messages; instead, we refetch
-        // so the UI renders server-saved messages with authoritative parents.
-        try {
-          const endpointFromResponse = data?.responseMessage?.endpoint as string | undefined;
-          const taskId = data?.responseMessage?.metadata?.taskId as string | undefined;
-          const agentId = data?.responseMessage?.metadata?.agentId as string | undefined;
-          const convoId = data?.conversation?.conversationId as string | undefined;
-          // Strictly limit polling to A2A tasks only
-          if (endpointFromResponse === 'a2a' && taskId && agentId) {
-            console.log('[A2A][SSE] starting polling', {
-              taskId,
-              agentId,
-              conversationId: convoId,
-            });
-            a2aPolling.start({
-              taskId,
-              agentId,
-              conversationId: convoId,
-              getMessages,
-              setMessages,
-            });
-          }
-        } catch (_err) {
-          // no-op
-        }
+        // A2A-only: use extracted meta and delegate to helper
+        startPollingFromFinalEvent(a2aPolling, data, getMessages, setMessages);
         return;
       } else if (data.created != null) {
         const runId = v4();
         setActiveRunId(runId);
-        // Debug aid: log A2A created to see if parent/conversation is well-formed
-        try {
-          const msg = data?.message ?? {};
-          const current = getMessages();
-          const last = current && current.length ? current[current.length - 1] : null;
-          console.log('[A2A][SSE] created event', {
-            incoming: {
-              messageId: msg?.messageId,
-              parentMessageId: msg?.parentMessageId,
-              conversationId: msg?.conversationId,
-            },
-            currentLast: last
-              ? {
-                  messageId: last.messageId,
-                  parentMessageId: last.parentMessageId,
-                  conversationId: last.conversationId,
-                }
-              : null,
-            submissionConvo: submission.conversation?.conversationId,
-          });
-        } catch {}
+        // Debug aid: log A2A created
+        logA2ACreated(data, getMessages);
         // Do not override parents here. The server determines final parentage
         // to avoid mid-task forks. We simply forward the created event.
         userMessage = {
