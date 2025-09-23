@@ -1,4 +1,5 @@
 import { logger } from '@librechat/data-schemas';
+import { ErrorTypes } from 'librechat-data-provider';
 import type { IUser, UserMethods } from '@librechat/data-schemas';
 
 /**
@@ -18,9 +19,19 @@ export async function findOpenIDUser({
   idOnTheSource?: string;
   strategyName?: string;
 }): Promise<{ user: IUser | null; error: string | null; migration: boolean }> {
-  let user = await findUser({ openidId });
-  if (!user && idOnTheSource) {
-    user = await findUser({ idOnTheSource });
+  const primaryConditions = [];
+
+  if (openidId && typeof openidId === 'string') {
+    primaryConditions.push({ openidId });
+  }
+
+  if (idOnTheSource && typeof idOnTheSource === 'string') {
+    primaryConditions.push({ idOnTheSource });
+  }
+
+  let user = null;
+  if (primaryConditions.length > 0) {
+    user = await findUser({ $or: primaryConditions });
   }
   if (!user && email) {
     user = await findUser({ email });
@@ -33,7 +44,7 @@ export async function findOpenIDUser({
       logger.warn(
         `[${strategyName}] Attempted OpenID login by user ${user.email}, was registered with "${user.provider}" provider`,
       );
-      return { user: null, error: 'AUTH_FAILED', migration: false };
+      return { user: null, error: ErrorTypes.AUTH_FAILED, migration: false };
     }
 
     // If user found by email but doesn't have openidId, prepare for migration
