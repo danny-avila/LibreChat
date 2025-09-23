@@ -1,6 +1,7 @@
-import { useCallback, useState, useMemo } from 'react';
+import { useCallback, useState, useMemo, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { TrashIcon, MessageSquare } from 'lucide-react';
+import type { ColumnDef, SortingState } from '@tanstack/react-table';
 import type { SharedLinkItem, SharedLinksListParams } from 'librechat-data-provider';
 import {
   OGDialog,
@@ -18,8 +19,8 @@ import {
 } from '@librechat/client';
 import { useDeleteSharedLinkMutation, useSharedLinksQuery } from '~/data-provider';
 import { NotificationSeverity } from '~/common';
+import { formatDate, cn } from '~/utils';
 import { useLocalize } from '~/hooks';
-import { formatDate } from '~/utils';
 
 const DEFAULT_PARAMS: SharedLinksListParams = {
   pageSize: 25,
@@ -29,14 +30,35 @@ const DEFAULT_PARAMS: SharedLinksListParams = {
   search: '',
 };
 
+type SortKey = 'createdAt' | 'title';
+const isSortKey = (v: string): v is SortKey => v === 'createdAt' || v === 'title';
+
+const defaultSort: SortingState = [
+  {
+    id: 'createdAt',
+    desc: true,
+  },
+];
+
+type TableColumn<TData, TValue> = ColumnDef<TData, TValue> & {
+  meta?: {
+    className?: string;
+    hideOnMobile?: boolean;
+  };
+};
+
 export default function SharedLinks() {
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
-  const [queryParams, setQueryParams] = useState<SharedLinksListParams>(DEFAULT_PARAMS);
-  const [deleteRow, setDeleteRow] = useState<SharedLinkItem | null>(null);
-  const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+
   const [isOpen, setIsOpen] = useState(false);
+  const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+  const [deleteRow, setDeleteRow] = useState<SharedLinkItem | null>(null);
+
+  const [queryParams, setQueryParams] = useState<SharedLinksListParams>(DEFAULT_PARAMS);
+  const [sorting, setSorting] = useState<SortingState>(defaultSort);
+  const [searchValue, setSearchValue] = useState('');
 
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isFetching, refetch, isLoading } =
     useSharedLinksQuery(queryParams, {
@@ -47,38 +69,115 @@ export default function SharedLinks() {
       refetchOnMount: false,
     });
 
-  const handleSort = useCallback((sortField: string, sortOrder: 'asc' | 'desc') => {
+  const [allKnownLinks, setAllKnownLinks] = useState<SharedLinkItem[]>([]);
+
+  const handleSearchChange = useCallback((value: string) => {
+    const trimmedValue = value.trim();
+    setSearchValue(trimmedValue);
+    setAllKnownLinks([]);
     setQueryParams((prev) => ({
       ...prev,
-      sortBy: sortField as 'title' | 'createdAt',
-      sortDirection: sortOrder,
+      search: trimmedValue,
     }));
   }, []);
 
-  const handleFilterChange = useCallback((value: string) => {
-    const encodedValue = encodeURIComponent(value.trim());
-    setQueryParams((prev) => ({
-      ...prev,
-      search: encodedValue,
-    }));
-  }, []);
+  const handleSortingChange = useCallback(
+    (updater: SortingState | ((old: SortingState) => SortingState)) => {
+      setSorting((prev) => {
+        const next = typeof updater === 'function' ? updater(prev) : updater;
 
-  const allLinks = useMemo(() => {
-    if (!data?.pages) {
-      return [];
+        const coerced = next;
+        const primary = coerced[0];
+
+        // Seed allKnown with current data before changing params
+        if (data?.pages) {
+          const currentFlattened = data.pages.flatMap((page) => page?.links?.filter(Boolean) ?? []);
+          setAllKnownLinks(currentFlattened);
+        }
+
+        setQueryParams((p) => {
+          let sortBy: SortKey;
+          let sortDirection: 'asc' | 'desc';
+
+          if (primary && isSortKey(primary.id)) {
+            sortBy = primary.id;
+            sortDirection = primary.desc ? 'desc' : 'asc';
+          } else {
+            sortBy = 'createdAt';
+            sortDirection = 'desc';
+          }
+
+          const newParams = {
+            ...p,
+            sortBy,
+            sortDirection,
+          };
+
+          return newParams;
+        });
+
+        return coerced;
+      });
+    },
+    [setQueryParams, data?.pages],
+  );
+
+  const handleError = useCallback(
+    (error: Error) => {
+      console.error('DataTable error:', error);
+      showToast({
+        message: localize('com_ui_share_error'),
+        severity: NotificationSeverity.ERROR,
+      });
+    },
+    [showToast, localize],
+  );
+
+  useEffect(() => {
+    if (!data?.pages) return;
+
+    const newFlattened = data.pages.flatMap((page) => page?.links?.filter(Boolean) ?? []);
+
+    const toAdd = newFlattened.filter(
+      (link: SharedLinkItem) => !allKnownLinks.some((known) => known.shareId === link.shareId),
+    );
+
+    if (toAdd.length > 0) {
+      setAllKnownLinks((prev) => [...prev, ...toAdd]);
     }
-
-    return data.pages.flatMap((page) => page.links.filter(Boolean));
   }, [data?.pages]);
 
+  const displayData = useMemo(() => {
+    const primary = sorting[0];
+    if (!primary || allKnownLinks.length === 0) return allKnownLinks;
+
+    return [...allKnownLinks].sort((a: SharedLinkItem, b: SharedLinkItem) => {
+      let compare: number;
+      if (primary.id === 'createdAt') {
+        const aDate = new Date(a.createdAt || 0);
+        const bDate = new Date(b.createdAt || 0);
+        compare = aDate.getTime() - bDate.getTime();
+      } else if (primary.id === 'title') {
+        compare = (a.title || '').localeCompare(b.title || '');
+      } else {
+        return 0;
+      }
+      return primary.desc ? -compare : compare;
+    });
+  }, [allKnownLinks, sorting]);
+
   const deleteMutation = useDeleteSharedLinkMutation({
-    onSuccess: async () => {
+    onSuccess: (data, variables) => {
+      const { shareId } = variables;
+      setAllKnownLinks((prev) => prev.filter((link) => link.shareId !== shareId));
+      showToast({
+        message: localize('com_ui_shared_link_delete_success'),
+        severity: NotificationSeverity.SUCCESS,
+      });
       setIsDeleteOpen(false);
-      setDeleteRow(null);
-      await refetch();
+      refetch();
     },
-    onError: (error) => {
-      console.error('Delete error:', error);
+    onError: () => {
       showToast({
         message: localize('com_ui_share_delete_error'),
         severity: NotificationSeverity.ERROR,
@@ -86,78 +185,47 @@ export default function SharedLinks() {
     },
   });
 
-  const handleDelete = useCallback(
-    async (selectedRows: SharedLinkItem[]) => {
-      const validRows = selectedRows.filter(
-        (row) => typeof row.shareId === 'string' && row.shareId.length > 0,
-      );
-
-      if (validRows.length === 0) {
-        return;
-      }
-
-      try {
-        for (const row of validRows) {
-          await deleteMutation.mutateAsync({ shareId: row.shareId });
-        }
-
-        showToast({
-          message: localize(
-            validRows.length === 1
-              ? 'com_ui_shared_link_delete_success'
-              : 'com_ui_shared_link_bulk_delete_success',
-          ),
-          severity: NotificationSeverity.SUCCESS,
-        });
-      } catch (error) {
-        console.error('Failed to delete shared links:', error);
-        showToast({
-          message: localize('com_ui_share_delete_error'),
-          severity: NotificationSeverity.ERROR,
-        });
-      }
-    },
-    [deleteMutation, showToast, localize],
-  );
-
   const handleFetchNextPage = useCallback(async () => {
-    if (hasNextPage !== true || isFetchingNextPage) {
-      return;
-    }
+    if (!hasNextPage || isFetchingNextPage) return;
+    await fetchNextPage();
+  }, [fetchNextPage, hasNextPage, isFetchingNextPage]);
 
-    try {
-      await fetchNextPage();
-    } catch (error) {
-      console.error('Failed to fetch next page:', error);
-      showToast({
-        message: localize('com_ui_share_delete_error'),
-        severity: NotificationSeverity.ERROR,
-      });
-    }
-  }, [fetchNextPage, hasNextPage, isFetchingNextPage, showToast, localize]);
+  const effectiveIsLoading = isLoading && displayData.length === 0;
+  const effectiveIsFetching = isFetchingNextPage;
 
   const confirmDelete = useCallback(() => {
-    if (deleteRow) {
-      handleDelete([deleteRow]);
+    if (!deleteRow?.shareId) {
+      showToast({
+        message: localize('com_ui_share_delete_error'),
+        severity: NotificationSeverity.WARNING,
+      });
+      return;
     }
-    setIsDeleteOpen(false);
-  }, [deleteRow, handleDelete]);
+    deleteMutation.mutate({ shareId: deleteRow.shareId });
+  }, [deleteMutation, deleteRow, localize, showToast]);
 
-  const columns = useMemo(
+  const columns: TableColumn<Record<string, unknown>, unknown>[] = useMemo(
     () => [
       {
         accessorKey: 'title',
-        header: () => <span className="text-xs sm:text-sm">{localize('com_ui_name')}</span>,
+        accessorFn: (row: Record<string, unknown>): unknown => {
+          const link = row as SharedLinkItem;
+          return link.title;
+        },
+        header: () => (
+          <span className="text-xs text-text-primary sm:text-sm">{localize('com_ui_name')}</span>
+        ),
         cell: ({ row }) => {
-          const { title, shareId } = row.original;
+          const link = row.original as SharedLinkItem;
+          const { title, shareId } = link;
           return (
             <div className="flex items-center gap-2">
               <Link
                 to={`/share/${shareId}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="block truncate text-blue-500 hover:underline"
-                title={title}
+                className="flex items-center truncate text-blue-500 hover:underline"
+                aria-label={localize('com_ui_open_link', { 0: title })}
               >
                 {title}
               </Link>
@@ -165,54 +233,81 @@ export default function SharedLinks() {
           );
         },
         meta: {
-          size: '35%',
-          mobileSize: '50%',
-          enableSorting: true,
+          className: 'min-w-[150px] flex-1',
         },
+        enableSorting: true,
       },
       {
         accessorKey: 'createdAt',
-        header: () => <span className="text-xs sm:text-sm">{localize('com_ui_date')}</span>,
-        cell: ({ row }) => formatDate(row.original.createdAt?.toString() ?? '', isSmallScreen),
-        meta: {
-          size: '10%',
-          mobileSize: '20%',
-          enableSorting: true,
+        accessorFn: (row: Record<string, unknown>): unknown => {
+          const link = row as SharedLinkItem;
+          return link.createdAt;
         },
+        header: () => (
+          <span className="text-xs text-text-primary sm:text-sm">{localize('com_ui_date')}</span>
+        ),
+        cell: ({ row }) => {
+          const link = row.original as SharedLinkItem;
+          return formatDate(link.createdAt?.toString() ?? '', isSmallScreen);
+        },
+        meta: {
+          className: 'w-32 sm:w-40',
+          hideOnMobile: true,
+        },
+        enableSorting: true,
       },
       {
-        accessorKey: 'actions',
-        header: () => <Label>{localize('com_assistants_actions')}</Label>,
-        meta: {
-          size: '7%',
-          mobileSize: '25%',
-          enableSorting: false,
-        },
-        cell: ({ row }) => (
-          <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              className="h-8 w-8 p-0 hover:bg-surface-hover"
-              onClick={() => {
-                window.open(`/c/${row.original.conversationId}`, '_blank');
-              }}
-              aria-label={`${localize('com_ui_view_source')} - ${row.original.title || localize('com_ui_untitled')}`}
-            >
-              <MessageSquare className="size-4" aria-hidden="true" />
-            </Button>
-            <Button
-              variant="ghost"
-              className="h-8 w-8 p-0 hover:bg-surface-hover"
-              onClick={() => {
-                setDeleteRow(row.original);
-                setIsDeleteOpen(true);
-              }}
-              aria-label={`${localize('com_ui_delete')} - ${row.original.title || localize('com_ui_untitled')}`}
-            >
-              <TrashIcon className="size-4" aria-hidden="true" />
-            </Button>
-          </div>
+        id: 'actions',
+        accessorFn: (row: Record<string, unknown>): unknown => null,
+        header: () => (
+          <span className="text-xs text-text-primary sm:text-sm">
+            {localize('com_assistants_actions')}
+          </span>
         ),
+        cell: ({ row }) => {
+          const link = row.original as SharedLinkItem;
+          const { title, conversationId, shareId } = link;
+
+          return (
+            <div className="flex items-center gap-2">
+              <TooltipAnchor
+                description={localize('com_ui_view_source')}
+                render={
+                  <Button
+                    variant="ghost"
+                    className="h-8 w-8 p-0 hover:bg-surface-hover"
+                    onClick={() => {
+                      window.open(`/c/${conversationId}`, '_blank');
+                    }}
+                    aria-label={localize('com_ui_view_source_conversation', { 0: title })}
+                  >
+                    <MessageSquare className="size-4" />
+                  </Button>
+                }
+              />
+              <TooltipAnchor
+                description={localize('com_ui_delete')}
+                render={
+                  <Button
+                    variant="destructive"
+                    className="h-8 w-8 p-0"
+                    onClick={() => {
+                      setDeleteRow(link);
+                      setIsDeleteOpen(true);
+                    }}
+                    aria-label={localize('com_ui_delete_link_title', { 0: title })}
+                  >
+                    <TrashIcon className="size-4" />
+                  </Button>
+                }
+              />
+            </div>
+          );
+        },
+        meta: {
+          className: 'w-24',
+        },
+        enableSorting: false,
       },
     ],
     [isSmallScreen, localize],
@@ -222,40 +317,40 @@ export default function SharedLinks() {
     <div className="flex items-center justify-between">
       <Label id="shared-links-label">{localize('com_nav_shared_links')}</Label>
       <OGDialog open={isOpen} onOpenChange={setIsOpen}>
-        <OGDialogTrigger asChild onClick={() => setIsOpen(true)}>
+        <OGDialogTrigger asChild>
           <Button aria-labelledby="shared-links-label" variant="outline">
             {localize('com_ui_manage')}
           </Button>
         </OGDialogTrigger>
-        <OGDialogContent className="w-11/12 max-w-5xl">
+        <OGDialogContent className={cn('w-11/12 max-w-6xl', isSmallScreen && 'px-0 pb-0')}>
           <OGDialogHeader>
             <OGDialogTitle>{localize('com_nav_shared_links')}</OGDialogTitle>
           </OGDialogHeader>
           <DataTable
             columns={columns}
-            data={allLinks}
-            onDelete={handleDelete}
+            data={displayData}
+            isLoading={effectiveIsLoading}
+            isFetching={effectiveIsFetching}
             config={{
-              skeleton: { count: 10 },
+              skeleton: { count: 11 },
               search: {
                 filterColumn: 'title',
                 enableSearch: true,
                 debounce: 300,
               },
               selection: {
-                enableRowSelection: true,
-                showCheckboxes: true,
+                enableRowSelection: false,
+                showCheckboxes: false,
               },
             }}
+            filterValue={searchValue}
+            onFilterChange={handleSearchChange}
+            fetchNextPage={handleFetchNextPage}
             hasNextPage={hasNextPage}
             isFetchingNextPage={isFetchingNextPage}
-            isFetching={isFetching}
-            fetchNextPage={handleFetchNextPage}
-            onFilterChange={handleFilterChange}
-            isLoading={isLoading}
-            onSortingChange={handleSort}
-            sortBy={queryParams.sortBy}
-            sortDirection={queryParams.sortDirection}
+            sorting={sorting}
+            onSortingChange={handleSortingChange}
+            onError={handleError}
           />
         </OGDialogContent>
       </OGDialog>
@@ -265,15 +360,13 @@ export default function SharedLinks() {
           title={localize('com_ui_delete_shared_link')}
           className="w-11/12 max-w-md"
           main={
-            <>
-              <div className="flex w-full flex-col items-center gap-2">
-                <div className="grid w-full items-center gap-2">
-                  <Label htmlFor="dialog-confirm-delete" className="text-left text-sm font-medium">
-                    {localize('com_ui_delete_confirm')} <strong>{deleteRow?.title}</strong>
-                  </Label>
-                </div>
+            <div className="flex w-full flex-col items-center gap-2">
+              <div className="grid w-full items-center gap-2">
+                <Label className="text-left text-sm font-medium">
+                  {localize('com_ui_delete_confirm')} <strong>{deleteRow?.title}</strong>
+                </Label>
               </div>
-            </>
+            </div>
           }
           selection={{
             selectHandler: confirmDelete,

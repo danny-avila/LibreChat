@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import { TrashIcon, ArchiveRestore } from 'lucide-react';
 import type { ColumnDef, SortingState } from '@tanstack/react-table';
 import {
@@ -14,6 +14,7 @@ import {
   Spinner,
   useToastContext,
   useMediaQuery,
+  DataTable,
 } from '@librechat/client';
 import type { ConversationListParams, TConversation } from 'librechat-data-provider';
 import {
@@ -23,9 +24,8 @@ import {
 } from '~/data-provider';
 import { MinimalIcon } from '~/components/Endpoints';
 import { NotificationSeverity } from '~/common';
+import { formatDate, cn } from '~/utils';
 import { useLocalize } from '~/hooks';
-import { formatDate } from '~/utils';
-import DataTable from './DataTable';
 
 const DEFAULT_PARAMS = {
   isArchived: true,
@@ -76,9 +76,12 @@ export default function ArchivedChatsTable() {
       refetchOnMount: false,
     });
 
+  const [allKnownConversations, setAllKnownConversations] = useState<TConversation[]>([]);
+
   const handleSearchChange = useCallback((value: string) => {
     const trimmedValue = value.trim();
     setSearchValue(trimmedValue);
+    setAllKnownConversations([]);
     setQueryParams((prev) => ({
       ...prev,
       search: trimmedValue,
@@ -93,25 +96,31 @@ export default function ArchivedChatsTable() {
         const coerced = next;
         const primary = coerced[0];
 
-        setQueryParams((p) => {
-          const newParams = (() => {
-            if (primary && isSortKey(primary.id)) {
-              return {
-                ...p,
-                sortBy: primary.id,
-                sortDirection: primary.desc ? 'desc' : 'asc',
-              };
-            }
-            return {
-              ...p,
-              sortBy: 'createdAt',
-              sortDirection: 'desc',
-            };
-          })();
+        // Seed allKnown with current data before changing params
+        if (data?.pages) {
+          const currentFlattened = data.pages.flatMap(
+            (page) => page?.conversations?.filter(Boolean) ?? [],
+          );
+          setAllKnownConversations(currentFlattened);
+        }
 
-          setTimeout(() => {
-            refetch();
-          }, 0);
+        setQueryParams((p) => {
+          let sortBy: SortKey;
+          let sortDirection: 'asc' | 'desc';
+
+          if (primary && isSortKey(primary.id)) {
+            sortBy = primary.id;
+            sortDirection = primary.desc ? 'desc' : 'asc';
+          } else {
+            sortBy = 'createdAt';
+            sortDirection = 'desc';
+          }
+
+          const newParams = {
+            ...p,
+            sortBy,
+            sortDirection,
+          };
 
           return newParams;
         });
@@ -119,7 +128,7 @@ export default function ArchivedChatsTable() {
         return coerced;
       });
     },
-    [setQueryParams, setSorting, refetch],
+    [setQueryParams, data?.pages],
   );
 
   const handleError = useCallback(
@@ -133,14 +142,45 @@ export default function ArchivedChatsTable() {
     [showToast, localize],
   );
 
-  const allConversations = useMemo(() => {
-    if (!data?.pages) return [];
-    return data.pages.flatMap((page) => page?.conversations?.filter(Boolean) ?? []);
+  useEffect(() => {
+    if (!data?.pages) return;
+
+    const newFlattened = data.pages.flatMap((page) => page?.conversations?.filter(Boolean) ?? []);
+
+    const toAdd = newFlattened.filter(
+      (convo: TConversation) =>
+        !allKnownConversations.some((known) => known.conversationId === convo.conversationId),
+    );
+
+    if (toAdd.length > 0) {
+      setAllKnownConversations((prev) => [...prev, ...toAdd]);
+    }
   }, [data?.pages]);
 
+  const displayData = useMemo(() => {
+    const primary = sorting[0];
+    if (!primary || allKnownConversations.length === 0) return allKnownConversations;
+
+    return [...allKnownConversations].sort((a: TConversation, b: TConversation) => {
+      let compare: number;
+      if (primary.id === 'createdAt') {
+        const aDate = new Date(a.createdAt || 0);
+        const bDate = new Date(b.createdAt || 0);
+        compare = aDate.getTime() - bDate.getTime();
+      } else if (primary.id === 'title') {
+        compare = (a.title || '').localeCompare(b.title || '');
+      } else {
+        return 0;
+      }
+      return primary.desc ? -compare : compare;
+    });
+  }, [allKnownConversations, sorting]);
+
   const unarchiveMutation = useArchiveConvoMutation({
-    onSuccess: async () => {
-      await refetch();
+    onSuccess: (data, variables) => {
+      const { conversationId } = variables;
+      setAllKnownConversations((prev) => prev.filter((c) => c.conversationId !== conversationId));
+      refetch();
     },
     onError: () => {
       showToast({
@@ -151,13 +191,15 @@ export default function ArchivedChatsTable() {
   });
 
   const deleteMutation = useDeleteConversationMutation({
-    onSuccess: async () => {
+    onSuccess: (data, variables) => {
+      const { conversationId } = variables;
+      setAllKnownConversations((prev) => prev.filter((c) => c.conversationId !== conversationId));
       showToast({
         message: localize('com_ui_archived_conversation_delete_success'),
         severity: NotificationSeverity.SUCCESS,
       });
       setIsDeleteOpen(false);
-      await refetch();
+      refetch();
     },
     onError: () => {
       showToast({
@@ -172,6 +214,9 @@ export default function ArchivedChatsTable() {
     await fetchNextPage();
   }, [fetchNextPage, hasNextPage, isFetchingNextPage]);
 
+  const effectiveIsLoading = isLoading && displayData.length === 0;
+  const effectiveIsFetching = isFetchingNextPage;
+
   const confirmDelete = useCallback(() => {
     if (!deleteRow?.conversationId) {
       showToast({
@@ -183,19 +228,37 @@ export default function ArchivedChatsTable() {
     deleteMutation.mutate({ conversationId: deleteRow.conversationId });
   }, [deleteMutation, deleteRow, localize, showToast]);
 
-  const columns: TableColumn<TConversation, any>[] = useMemo(
+  const handleUnarchive = useCallback(
+    (conversationId: string) => {
+      setUnarchivingId(conversationId);
+      unarchiveMutation.mutate(
+        { conversationId, isArchived: false },
+        { onSettled: () => setUnarchivingId(null) },
+      );
+    },
+    [unarchiveMutation],
+  );
+
+  const columns: TableColumn<Record<string, unknown>, unknown>[] = useMemo(
     () => [
       {
         accessorKey: 'title',
+        accessorFn: (row: Record<string, unknown>): unknown => {
+          const convo = row as TConversation;
+          return convo.title;
+        },
         header: () => (
-          <span className="text-xs sm:text-sm">{localize('com_nav_archive_name')}</span>
+          <span className="text-xs text-text-primary sm:text-sm">
+            {localize('com_nav_archive_name')}
+          </span>
         ),
         cell: ({ row }) => {
-          const { conversationId, title } = row.original;
+          const convo = row.original as TConversation;
+          const { conversationId, title } = convo;
           return (
             <div className="flex items-center gap-2">
               <MinimalIcon
-                endpoint={row.original.endpoint}
+                endpoint={convo.endpoint}
                 size={28}
                 isCreatedByUser={false}
                 iconClassName="size-4"
@@ -214,34 +277,43 @@ export default function ArchivedChatsTable() {
           );
         },
         meta: {
-          priority: 3,
-          minWidth: 'min-content',
+          className: 'min-w-[150px] flex-1',
         },
         enableSorting: true,
       },
       {
         accessorKey: 'createdAt',
+        accessorFn: (row: Record<string, unknown>): unknown => {
+          const convo = row as TConversation;
+          return convo.createdAt;
+        },
         header: () => (
-          <span className="text-xs sm:text-sm">{localize('com_nav_archive_created_at')}</span>
+          <span className="text-xs text-text-primary sm:text-sm">
+            {localize('com_nav_archive_created_at')}
+          </span>
         ),
-        cell: ({ row }) => formatDate(row.original.createdAt?.toString() ?? '', isSmallScreen),
+        cell: ({ row }) => {
+          const convo = row.original as TConversation;
+          return formatDate(convo.createdAt?.toString() ?? '', isSmallScreen);
+        },
         meta: {
-          priority: 2,
-          minWidth: '80px',
+          className: 'w-32 sm:w-40',
+          hideOnMobile: true,
         },
         enableSorting: true,
       },
       {
         id: 'actions',
+        accessorFn: (row: Record<string, unknown>): unknown => null,
         header: () => (
-          <Label className="px-2 py-0 text-xs sm:px-2 sm:py-2 sm:text-sm">
+          <span className="text-xs text-text-primary sm:text-sm">
             {localize('com_assistants_actions')}
-          </Label>
+          </span>
         ),
         cell: ({ row }) => {
-          const conversation = row.original;
-          const { title } = conversation;
-          const isRowUnarchiving = unarchivingId === conversation.conversationId;
+          const convo = row.original as TConversation;
+          const { title } = convo;
+          const isRowUnarchiving = unarchivingId === convo.conversationId;
 
           return (
             <div className="flex items-center gap-2">
@@ -252,13 +324,9 @@ export default function ArchivedChatsTable() {
                     variant="ghost"
                     className="h-8 w-8 p-0 hover:bg-surface-hover"
                     onClick={() => {
-                      const conversationId = conversation.conversationId;
+                      const conversationId = convo.conversationId;
                       if (!conversationId) return;
-                      setUnarchivingId(conversationId);
-                      unarchiveMutation.mutate(
-                        { conversationId, isArchived: false },
-                        { onSettled: () => setUnarchivingId(null) },
-                      );
+                      handleUnarchive(conversationId);
                     }}
                     disabled={isRowUnarchiving}
                     aria-label={localize('com_ui_unarchive_conversation_title', { 0: title })}
@@ -272,9 +340,9 @@ export default function ArchivedChatsTable() {
                 render={
                   <Button
                     variant="destructive"
-                    className="h-8 w-8 p-0 hover:bg-surface-hover"
+                    className="h-8 w-8 p-0"
                     onClick={() => {
-                      setDeleteRow(row.original);
+                      setDeleteRow(convo);
                       setIsDeleteOpen(true);
                     }}
                     aria-label={localize('com_ui_delete_conversation_title', { 0: title })}
@@ -287,13 +355,12 @@ export default function ArchivedChatsTable() {
           );
         },
         meta: {
-          priority: 1,
-          minWidth: '120px',
+          className: 'w-24',
         },
         enableSorting: false,
       },
     ],
-    [isSmallScreen, localize, unarchiveMutation, unarchivingId],
+    [isSmallScreen, localize, handleUnarchive, unarchivingId],
   );
 
   return (
@@ -305,17 +372,17 @@ export default function ArchivedChatsTable() {
             {localize('com_ui_manage')}
           </Button>
         </OGDialogTrigger>
-        <OGDialogContent className="w-11/12 max-w-5xl">
+        <OGDialogContent className={cn('w-11/12 max-w-6xl', isSmallScreen && 'px-0 pb-0')}>
           <OGDialogHeader>
             <OGDialogTitle>{localize('com_nav_archived_chats')}</OGDialogTitle>
           </OGDialogHeader>
           <DataTable
             columns={columns}
-            data={allConversations}
-            isLoading={isLoading}
-            isFetching={isFetching}
+            data={displayData}
+            isLoading={effectiveIsLoading}
+            isFetching={effectiveIsFetching}
             config={{
-              skeleton: { count: 10 },
+              skeleton: { count: 11 },
               search: {
                 filterColumn: 'title',
                 enableSearch: true,
