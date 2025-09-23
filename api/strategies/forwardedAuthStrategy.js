@@ -60,8 +60,6 @@ const forwardedAuthStrategy = () => {
           user = await updateUser(user._id, updates);
         }
       } else {
-        // User doesn't exist, create a new one
-        logger.info(`[forwardedAuthStrategy] Creating new user with username: ${username}`);
 
         // Check if this is the first user to register
         const isFirstRegisteredUser = (await countUsers()) === 0;
@@ -79,9 +77,8 @@ const forwardedAuthStrategy = () => {
         if (email) {
           newUserData.email = email;
         }
-        logger.info(`[forwardedAuthStrategy] email=${email}`);
         user = await createUser(newUserData, null, true, true);
-        logger.info(`[forwardedAuthStrategy] userId=${user._id}`);
+        logger.info(`[forwardedAuthStrategy] CANONICAL-NEW-USER-LINE user=${username}`);
       }
       if (!user) {
         throw new Error(`User not found email=${email}`);
