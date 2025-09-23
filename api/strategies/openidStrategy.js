@@ -429,6 +429,10 @@ async function setupOpenId() {
             user.username = username;
             user.name = fullName;
             user.idOnTheSource = userinfo.oid;
+            if (userinfo.email && userinfo.email !== user.email) {
+              user.email = userinfo.email;
+              user.emailVerified = userinfo.email_verified || false;
+            }
           }
 
           if (!!userinfo && userinfo.picture && !user.avatar?.includes('manual=true')) {
