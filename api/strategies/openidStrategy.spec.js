@@ -339,6 +339,24 @@ describe('setupOpenId', () => {
     expect(details.message).toBe('You must have "requiredRole" role to log in.');
   });
 
+  it('should allow login when single required role is present (backward compatibility)', async () => {
+    // Arrange – ensure single role configuration (as set in beforeEach)
+    // OPENID_REQUIRED_ROLE = 'requiredRole'
+    // Default jwtDecode mock in beforeEach already returns this role
+    jwtDecode.mockReturnValue({
+      roles: ['requiredRole', 'anotherRole'],
+    });
+
+    // Act
+    const { user } = await validate(tokenset);
+
+    // Assert – verify that login succeeds with single role configuration
+    expect(user).toBeTruthy();
+    expect(user.email).toBe(tokenset.claims().email);
+    expect(user.username).toBe(tokenset.claims().preferred_username);
+    expect(createUser).toHaveBeenCalled();
+  });
+
   it('should attempt to download and save the avatar if picture is provided', async () => {
     // Act
     const { user } = await validate(tokenset);
