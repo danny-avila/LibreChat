@@ -1,7 +1,7 @@
 const { v4: uuidv4 } = require('uuid');
 const { logger } = require('@librechat/data-schemas');
 const { saveMessage, saveConvo, getConvoById, getMessages } = require('~/models');
-const { EModelEndpoint } = require('librechat-data-provider');
+const { EModelEndpoint, Constants } = require('librechat-data-provider');
 
 /**
  * A2A Agent Client that integrates with LibreChat's conversation system
@@ -95,10 +95,13 @@ class A2AAgentClient {
       }
 
       // Create user message
+      // Ensure brand-new threads use the sentinel NO_PARENT so the client
+      // recognizes it as a new conversation and updates the sidebar immediately.
+      const parentIdForUserMsg = effectiveParentId || Constants.NO_PARENT;
       const userMessage = {
         messageId: userMessageId,
         conversationId: contextId,
-        parentMessageId: effectiveParentId,
+        parentMessageId: parentIdForUserMsg,
         role: 'user',
         text: text,
         user: user,

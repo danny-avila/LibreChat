@@ -560,6 +560,12 @@ export default function useEventHandlers({
           if (!cachedConvo) {
             queryClient.setQueryData([QueryKeys.conversation, conversation.conversationId], update);
           }
+          // Ensure new conversations appear in the sidebar immediately
+          try {
+            if (isNewConvo) {
+              addConvoToAllQueries(queryClient, update);
+            }
+          } catch {}
           return update;
         });
 
@@ -575,6 +581,13 @@ export default function useEventHandlers({
           navigate(`/c/${conversation.conversationId}`, { replace: true });
         }
       }
+
+      // Ensure new conversations appear in sidebar even if created-handler path was skipped
+      try {
+        if (isNewConvo && requestMessage?.parentMessageId === Constants.NO_PARENT) {
+          addConvoToAllQueries(queryClient, conversation as TConversation);
+        }
+      } catch {}
 
       setIsSubmitting(false);
     },
