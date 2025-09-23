@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import { TrashIcon, ArchiveRestore } from 'lucide-react';
-import type { ColumnDef, SortingState } from '@tanstack/react-table';
+import type { SortingState } from '@tanstack/react-table';
 import {
   Button,
   OGDialog,
@@ -15,6 +15,7 @@ import {
   useToastContext,
   useMediaQuery,
   DataTable,
+  type TableColumn,
 } from '@librechat/client';
 import type { ConversationListParams, TConversation } from 'librechat-data-provider';
 import {
@@ -43,15 +44,6 @@ const defaultSort: SortingState = [
     desc: true,
   },
 ];
-
-type TableColumn<TData, TValue> = ColumnDef<TData, TValue> & {
-  meta?: {
-    size?: string | number;
-    mobileSize?: string | number;
-    minWidth?: string | number;
-    priority?: number;
-  };
-};
 
 export default function ArchivedChatsTable() {
   const localize = useLocalize();
@@ -298,7 +290,7 @@ export default function ArchivedChatsTable() {
         },
         meta: {
           className: 'w-32 sm:w-40',
-          hideOnMobile: true,
+          desktopOnly: true,
         },
         enableSorting: true,
       },

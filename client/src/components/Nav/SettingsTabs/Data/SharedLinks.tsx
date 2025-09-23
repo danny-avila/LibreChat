@@ -43,7 +43,7 @@ const defaultSort: SortingState = [
 type TableColumn<TData, TValue> = ColumnDef<TData, TValue> & {
   meta?: {
     className?: string;
-    hideOnMobile?: boolean;
+    desktopOnly?: boolean;
   };
 };
 
@@ -252,7 +252,7 @@ export default function SharedLinks() {
         },
         meta: {
           className: 'w-32 sm:w-40',
-          hideOnMobile: true,
+          desktopOnly: true,
         },
         enableSorting: true,
       },

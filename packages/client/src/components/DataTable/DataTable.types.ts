@@ -8,6 +8,8 @@ export type TableColumn<TData, TValue> = ColumnDef<TData, TValue> & {
     mobileSize?: string | number;
     minWidth?: string | number;
     priority?: number;
+    className?: string;
+    desktopOnly?: boolean;
   };
 };
 
