@@ -82,9 +82,9 @@ properties:
       - name: AZURE_OPENAI_API_KEY
         secretRef: maas-api-key
       - name: ALLOW_REGISTRATION
-        value: "false"
+        value: FALSE
       - name: ALLOW_EMAIL_LOGIN
-        value: "false"
+        value: FALSE
       - name: DOMAIN_CLIENT
         value: "https://play.ai.paychex.com"
       - name: DOMAIN_SERVER
@@ -96,11 +96,17 @@ properties:
       - name: CREDS_IV
         secretRef: creds-iv
       - name: ALLOW_SOCIAL_LOGIN
-        value: "true"
+        value: TRUE
       - name: NODE_EXTRA_CA_CERTS
         value: "/app/paychex-root.pem"
       - name: RAG_API_URL
         value: http://conpaichateastusprod001:8000
+      - name: RAG_USE_FULL_CONTEXT
+        value: TRUE
+      - name: CONSOLE_JSON
+        value: TRUE
+      - name: DEBUG_LOGGING
+        value: TRUE
       resources:
         cpu: 1
         memory: 8Gi
@@ -133,9 +139,9 @@ properties:
         - name: REQUESTS_CA_BUNDLE
           value: /etc/ssl/certs/ca-certificates.crt
         - name: RAG_USE_FULL_CONTEXT
-          value: "true"
+          value: TRUE
         - name: DEBUG_RAG_API
-          value: "true"
+          value: TRUE
         - name: CURL_CA_BUNDLE
           value: /app/paychex-root.pem
       resources:
@@ -144,11 +150,11 @@ properties:
         ephemeralStorage: 4Gi
       probes: []
       volumeMounts:
-        - volumeName: uploads
+        - volumeName: fspaichateastusprod001
           mountPath: /app/uploads
     scale:
-      minReplicas: 3
-      maxReplicas: 6
+      minReplicas: 6
+      maxReplicas: 24
       rules:
       - name: httpscalingrule
         custom:
@@ -156,6 +162,6 @@ properties:
           metadata:
             concurrentRequests: '25'
     volumes:
-      - name: uploads
+      - name: fspaichateastusprod001
         storageType: AzureFile
-        storageName: uploads
+        storageName: uploads-prod
