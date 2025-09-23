@@ -72,7 +72,7 @@ const refreshController = async (req, res) => {
       const openIdConfig = getOpenIdConfig();
       const tokenset = await openIdClient.refreshTokenGrant(openIdConfig, refreshToken);
       const claims = tokenset.claims();
-      let user = await findUser({ openidId: claims.sub })
+      let user = await findUser({ openidId: claims.sub });
       if (!user && claims.oid) {
         user = await findUser({ idOnTheSource: claims.oid });
       }
