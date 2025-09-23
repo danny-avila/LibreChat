@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRecoilValue } from 'recoil';
 import { useProgress, useLocalize } from '~/hooks';
 import ProgressText from './ProgressText';
@@ -18,6 +18,13 @@ export default function CodeAnalyze({
   const progress = useProgress(initialProgress);
   const showAnalysisCode = useRecoilValue(store.showCode);
   const [showCode, setShowCode] = useState(showAnalysisCode);
+
+  // Auto-collapse the analysis block when finished
+  useEffect(() => {
+    if (progress >= 1.0) {
+      setShowCode(false);
+    }
+  }, [progress]);
 
   const logs = outputs.reduce((acc, output) => {
     if (output['logs']) {
