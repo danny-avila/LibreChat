@@ -70,11 +70,35 @@ class A2AAgentClient {
       logger.debug(`A2A Agent Client - sending message to ${this.agent.name} (${this.agent.id})`);
       logger.debug(`A2A Agent Client - contextId: ${contextId}`);
 
+      // Determine parent for linear conversation linking
+      let effectiveParentId = parentMessageId || overrideParentMessageId || null;
+      if (!effectiveParentId) {
+        try {
+          effectiveParentId = await this.getLastMessageId(contextId);
+        } catch (_) {
+          effectiveParentId = null;
+        }
+      } else {
+        // Validate that the provided parent exists in this conversation; fallback if it doesn't
+        try {
+          const existing = await getMessages({ conversationId: contextId }, 'messageId createdAt');
+          const exists = Array.isArray(existing)
+            ? existing.some((m) => m.messageId === effectiveParentId)
+            : false;
+          if (!exists) {
+            const fallback = await this.getLastMessageId(contextId);
+            effectiveParentId = fallback || null;
+          }
+        } catch (_) {
+          // ignore and keep effectiveParentId as-is
+        }
+      }
+
       // Create user message
       const userMessage = {
         messageId: userMessageId,
         conversationId: contextId,
-        parentMessageId: parentMessageId,
+        parentMessageId: effectiveParentId,
         role: 'user',
         text: text,
         user: user,
@@ -94,6 +118,11 @@ class A2AAgentClient {
         });
         onStart(userMessage);
       }
+      logger.debug('[A2A][Server] onStart payload', {
+        conversationId: contextId,
+        userMessageId: userMessageId,
+        parentMessageId: userMessage.parentMessageId,
+      });
 
       // Detect if this should be a task-based workflow
       const shouldUseTask = this.shouldUseTaskBasedWorkflow(text);
@@ -165,6 +194,12 @@ class A2AAgentClient {
       // Save agent response message
       await saveMessage(this.req, responseMessage, {
         context: 'A2A Agent Client - Agent Response',
+      });
+      logger.debug('[A2A][Server] saved messages', {
+        conversationId: contextId,
+        userMessageId,
+        responseMessageId,
+        responseParent: responseMessage.parentMessageId,
       });
 
       logger.debug(`A2A Agent Client - response: ${responseText.substring(0, 100)}...`);

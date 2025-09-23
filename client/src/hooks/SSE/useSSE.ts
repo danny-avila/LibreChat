@@ -133,7 +133,25 @@ export default function useSSE(
         const { plugins } = data;
         finalHandler(data, { ...submission, plugins } as EventSubmission);
         (startupConfig?.balance?.enabled ?? false) && balanceQuery.refetch();
-        console.log('final', data);
+        try {
+          const rm = data?.responseMessage ?? {};
+          const reqm = data?.requestMessage ?? {};
+          console.log('[A2A][SSE] final event', {
+            endpoint: rm?.endpoint,
+            request: {
+              messageId: reqm?.messageId,
+              parentMessageId: reqm?.parentMessageId,
+              conversationId: reqm?.conversationId,
+            },
+            response: {
+              messageId: rm?.messageId,
+              parentMessageId: rm?.parentMessageId,
+              conversationId: rm?.conversationId,
+              metadata: rm?.metadata,
+            },
+            convo: data?.conversation?.conversationId,
+          });
+        } catch {}
 
         // If this is an A2A task, begin status polling after stream closes
         try {
@@ -143,6 +161,11 @@ export default function useSSE(
           const convoId = data?.conversation?.conversationId as string | undefined;
           // Strictly limit polling to A2A tasks only
           if (endpointFromResponse === 'a2a' && taskId && agentId) {
+            console.log('[A2A][SSE] starting polling', {
+              taskId,
+              agentId,
+              conversationId: convoId,
+            });
             a2aPolling.start({
               taskId,
               agentId,
@@ -158,6 +181,26 @@ export default function useSSE(
       } else if (data.created != null) {
         const runId = v4();
         setActiveRunId(runId);
+        try {
+          const msg = data?.message ?? {};
+          const current = getMessages();
+          const last = current && current.length ? current[current.length - 1] : null;
+          console.log('[A2A][SSE] created event', {
+            incoming: {
+              messageId: msg?.messageId,
+              parentMessageId: msg?.parentMessageId,
+              conversationId: msg?.conversationId,
+            },
+            currentLast: last
+              ? {
+                  messageId: last.messageId,
+                  parentMessageId: last.parentMessageId,
+                  conversationId: last.conversationId,
+                }
+              : null,
+            submissionConvo: submission.conversation?.conversationId,
+          });
+        } catch {}
         userMessage = {
           ...userMessage,
           ...data.message,
@@ -249,8 +292,7 @@ export default function useSSE(
     sse.stream();
 
     return () => {
-      // Stop any in-flight A2A polling if component unmounts or request cancels
-      a2aPolling.stop();
+      // Do not stop A2A polling here; a new sync chat should not cancel task polling
       const isCancelled = sse.readyState <= 1;
       sse.close();
       if (isCancelled) {
@@ -261,4 +303,20 @@ export default function useSSE(
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [submission]);
+}
+
+// Ensure background polling is halted on full page unload/navigation
+// without interfering with in-app sync chats between polls
+export function useA2APollingOnUnload() {
+  const a2aPolling = useA2ATaskPolling();
+  useEffect(() => {
+    const onBeforeUnload = () => {
+      a2aPolling.stop();
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', onBeforeUnload);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 }
