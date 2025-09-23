@@ -1,12 +1,18 @@
 import { useEffect, useState, useMemo } from 'react';
 import { Search, X } from 'lucide-react';
 import { useFormContext } from 'react-hook-form';
-import { Constants, EModelEndpoint } from 'librechat-data-provider';
+import { useQueryClient } from '@tanstack/react-query';
+import { Constants, EModelEndpoint, QueryKeys } from 'librechat-data-provider';
 import { Dialog, DialogPanel, DialogTitle, Description } from '@headlessui/react';
 import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
 import type { TError, AgentToolType } from 'librechat-data-provider';
 import type { AgentForm, TPluginStoreDialogProps } from '~/common';
-import { useLocalize, usePluginDialogHelpers, useMCPServerManager } from '~/hooks';
+import {
+  usePluginDialogHelpers,
+  useMCPServerManager,
+  useRemoveMCPTool,
+  useLocalize,
+} from '~/hooks';
 import CustomUserVarsSection from '~/components/MCP/CustomUserVarsSection';
 import { PluginPagination } from '~/components/Plugins/Store';
 import { useAgentPanelContext } from '~/Providers';
@@ -24,13 +30,16 @@ function MCPToolSelectDialog({
   endpoint: EModelEndpoint.agents;
 }) {
   const localize = useLocalize();
+  const queryClient = useQueryClient();
   const { initializeServer } = useMCPServerManager();
   const { getValues, setValue } = useFormContext<AgentForm>();
+  const { removeTool } = useRemoveMCPTool({ showToast: false });
   const { mcpServersMap, startupConfig } = useAgentPanelContext();
   const { refetch: refetchMCPTools } = useMCPToolsQuery({
     enabled: mcpServersMap.size > 0,
   });
 
+  const [isSavingCustomVars, setIsSavingCustomVars] = useState(false);
   const [isInitializing, setIsInitializing] = useState<string | null>(null);
   const [configuringServer, setConfiguringServer] = useState<string | null>(null);
 
@@ -67,9 +76,27 @@ function MCPToolSelectDialog({
     }, 5000);
   };
 
-  const handleDirectAdd = async (serverName: string) => {
+  const handleDirectAdd = async (serverName: string, authData?: Record<string, string>) => {
     try {
       setIsInitializing(serverName);
+
+      // First, save auth if provided
+      if (authData && Object.keys(authData).length > 0) {
+        await updateUserPlugins.mutateAsync({
+          pluginKey: `${Constants.mcp_prefix}${serverName}`,
+          action: 'install',
+          auth: authData,
+          isEntityTool: true,
+        });
+
+        // Invalidate auth values query to ensure fresh data
+        await queryClient.invalidateQueries([QueryKeys.mcpAuthValues, serverName]);
+
+        // Small delay to ensure backend has processed the auth
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+
+      // Then initialize server if needed
       const serverInfo = mcpServersMap.get(serverName);
       if (!serverInfo?.isConnected) {
         const result = await initializeServer(serverName);
@@ -78,64 +105,65 @@ function MCPToolSelectDialog({
           return;
         }
       }
-      updateUserPlugins.mutate(
-        {
-          pluginKey: `${Constants.mcp_prefix}${serverName}`,
-          action: 'install',
-          auth: {},
-          isEntityTool: true,
-        },
-        {
-          onError: (error: unknown) => {
-            handleInstallError(error as TError);
-            setIsInitializing(null);
-          },
-          onSuccess: async () => {
-            const { data: updatedMCPData } = await refetchMCPTools();
 
-            const currentTools = getValues('tools') || [];
-            const toolsToAdd: string[] = [
-              `${Constants.mcp_server}${Constants.mcp_delimiter}${serverName}`,
-            ];
-
-            if (updatedMCPData?.servers?.[serverName]) {
-              const serverData = updatedMCPData.servers[serverName];
-              serverData.tools.forEach((tool) => {
-                toolsToAdd.push(tool.pluginKey);
-              });
-            }
-
-            const newTools = toolsToAdd.filter((tool) => !currentTools.includes(tool));
-            if (newTools.length > 0) {
-              setValue('tools', [...currentTools, ...newTools]);
-            }
-            setIsInitializing(null);
-          },
-        },
-      );
+      // Finally, add tools to form
+      await addToolsToForm(serverName);
+      setIsInitializing(null);
     } catch (error) {
       console.error('Error adding MCP server:', error);
+      handleInstallError(error as TError);
+      setIsInitializing(null);
+    }
+  };
+
+  const addToolsToForm = async (serverName: string) => {
+    const { data: updatedMCPData } = await refetchMCPTools();
+
+    const currentTools = getValues('tools') || [];
+    const toolsToAdd: string[] = [`${Constants.mcp_server}${Constants.mcp_delimiter}${serverName}`];
+
+    if (updatedMCPData?.servers?.[serverName]) {
+      const serverData = updatedMCPData.servers[serverName];
+      serverData.tools.forEach((tool) => {
+        toolsToAdd.push(tool.pluginKey);
+      });
+    }
+
+    const newTools = toolsToAdd.filter((tool) => !currentTools.includes(tool));
+    if (newTools.length > 0) {
+      setValue('tools', [...currentTools, ...newTools]);
     }
   };
 
   const handleSaveCustomVars = async (serverName: string, authData: Record<string, string>) => {
     try {
-      await updateUserPlugins.mutateAsync({
-        pluginKey: `${Constants.mcp_prefix}${serverName}`,
-        action: 'install',
-        auth: authData,
-        isEntityTool: true,
+      setIsSavingCustomVars(true);
+
+      // Filter out empty values to avoid overwriting existing values with empty ones
+      const filteredAuthData: Record<string, string> = {};
+      Object.entries(authData).forEach(([key, value]) => {
+        if (value && value.trim()) {
+          filteredAuthData[key] = value.trim();
+        }
       });
 
-      await handleDirectAdd(serverName);
-
+      // Always add the tool, but only pass auth data if there are values to save
+      // Empty auth data is fine - the tool can work without credentials
+      await handleDirectAdd(
+        serverName,
+        Object.keys(filteredAuthData).length > 0 ? filteredAuthData : undefined,
+      );
       setConfiguringServer(null);
     } catch (error) {
       console.error('Error saving custom vars:', error);
+      handleInstallError(error as TError);
+    } finally {
+      setIsSavingCustomVars(false);
     }
   };
 
   const handleRevokeCustomVars = (serverName: string) => {
+    setIsSavingCustomVars(true);
     updateUserPlugins.mutate(
       {
         pluginKey: `${Constants.mcp_prefix}${serverName}`,
@@ -144,9 +172,13 @@ function MCPToolSelectDialog({
         isEntityTool: true,
       },
       {
-        onError: (error: unknown) => handleInstallError(error as TError),
-        onSuccess: () => {
+        onError: (error: unknown) => {
+          handleInstallError(error as TError);
+          setIsSavingCustomVars(false);
+        },
+        onSuccess: async () => {
           setConfiguringServer(null);
+          setIsSavingCustomVars(false);
         },
       },
     );
@@ -168,28 +200,6 @@ function MCPToolSelectDialog({
     } else {
       await handleDirectAdd(serverName);
     }
-  };
-
-  const onRemoveTool = (serverName: string) => {
-    updateUserPlugins.mutate(
-      {
-        pluginKey: `${Constants.mcp_prefix}${serverName}`,
-        action: 'uninstall',
-        auth: {},
-        isEntityTool: true,
-      },
-      {
-        onError: (error: unknown) => handleInstallError(error as TError),
-        onSuccess: () => {
-          const currentTools = getValues('tools') || [];
-          const remainingTools = currentTools.filter(
-            (tool) =>
-              tool !== serverName && !tool.endsWith(`${Constants.mcp_delimiter}${serverName}`),
-          );
-          setValue('tools', remainingTools);
-        },
-      },
-    );
   };
 
   const installedToolsSet = useMemo(() => {
@@ -289,10 +299,10 @@ function MCPToolSelectDialog({
               </div>
               <CustomUserVarsSection
                 serverName={configuringServer}
+                isSubmitting={isSavingCustomVars}
                 fields={startupConfig?.mcpServers?.[configuringServer]?.customUserVars || {}}
                 onSave={(authData) => handleSaveCustomVars(configuringServer, authData)}
                 onRevoke={() => handleRevokeCustomVars(configuringServer)}
-                isSubmitting={updateUserPlugins.isLoading}
               />
             </div>
           )}
@@ -342,7 +352,7 @@ function MCPToolSelectDialog({
                         isConfiguring={isConfiguring}
                         isInitializing={isServerInitializing}
                         onAddTool={() => onAddTool(serverInfo.serverName)}
-                        onRemoveTool={() => onRemoveTool(serverInfo.serverName)}
+                        onRemoveTool={() => removeTool(serverInfo.serverName)}
                       />
                     );
                   })}
