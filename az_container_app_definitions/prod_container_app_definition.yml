@@ -36,7 +36,6 @@ properties:
         keyVaultUrl: https://kv-pyxplayai-prod-001.vault.azure.net/secrets/PROD-MAAS-API-KEY
         identity: system
     ingress:
-      fqdn: "conpaichateastusprod001.agreeableflower-d1b0364a.eastus.azurecontainerapps.io"
       external: true
       allowInsecure: false
       targetPort: 3080
