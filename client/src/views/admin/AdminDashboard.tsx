@@ -31,6 +31,14 @@ export default function AdminDashboard() {
   const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null);
   const [usageOpen, setUsageOpen] = useState(false);
 
+  const handleGoBack = () => {
+    // Retrieve the previous page URL from sessionStorage
+    const previousPage = sessionStorage.getItem('previousPage') || '/dashboard'; // Default to '/dashboard'
+
+    // Navigate back to the previous page
+    navigate(previousPage);
+  };
+
   // --- Fetch Users ---
   const usersQuery = useQuery({
     queryKey: [QueryKeys.roles, 'admin', 'users', { page, limit, search }],
@@ -186,7 +194,7 @@ export default function AdminDashboard() {
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => navigate('/c/new')}
+            onClick={handleGoBack}
             className="rounded-full"
           >
             <ArrowLeft className="h-5 w-5" />

@@ -53,7 +53,9 @@ export function useAdminLogs(limit: number = 10, page: number = 1, search: strin
         });
         if (json?.success && json?.data) {
           setLogs(json.data.logs || []);
-          setTotal(json.data.pagination?.totalCount || 0);
+          // Normalize total to align with pagination
+          const normalizedTotal = Math.floor((json.data.pagination?.totalCount || 0) / limit) * limit;
+          setTotal(normalizedTotal);
           setIsInitialFetchComplete(true);
         } else {
           throw new Error(json?.message || 'Failed to fetch logs');
@@ -64,14 +66,13 @@ export function useAdminLogs(limit: number = 10, page: number = 1, search: strin
       } finally {
         setLoading(false);
       }
-    }, 50), // Reduced to 50ms
+    }, 50),
     []
   );
 
   // Cancel pending debounced fetch on unmount to avoid setState on unmounted component
   useEffect(() => {
     return () => {
-      // lodash debounce adds cancel method
       (fetchLogs as any)?.cancel?.();
     };
   }, [fetchLogs]);
@@ -141,8 +142,8 @@ export function useAdminLogs(limit: number = 10, page: number = 1, search: strin
             console.log('[useAdminLogs] SSE appended logs, new length:', uniqueLogs.length);
             return uniqueLogs;
           });
-          // increment total to reflect new live items when on first page (unfiltered)
-          setTotal((t) => t + (msg.data.logs?.length || 0));
+          // Do NOT increment total here
+          console.log('[useAdminLogs] Skipping total update for activity event:', msg.data);
         }
       } catch (e) {
         console.error('[useAdminLogs] ❌ Failed to parse activity:', e);
@@ -164,12 +165,12 @@ export function useAdminLogs(limit: number = 10, page: number = 1, search: strin
     fetchLogs(page, limit, search, action);
   }, [page, limit, search, action, fetchLogs]);
 
-  return { 
-    logs, 
-    connected, 
-    total, 
-    loading, 
-    error, 
-    refetchLogs 
+  return {
+    logs,
+    connected,
+    total,
+    loading,
+    error,
+    refetchLogs,
   };
 }
