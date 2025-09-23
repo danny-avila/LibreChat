@@ -1,17 +1,14 @@
 import { useMemo } from 'react';
-import { Tools, Constants, EToolResources } from 'librechat-data-provider';
+import { Tools, EToolResources } from 'librechat-data-provider';
 import type { TEphemeralAgent } from 'librechat-data-provider';
 import { useGetAgentByIdQuery } from '~/data-provider';
 import { useAgentsMapContext } from '~/Providers';
+import { isEphemeralAgent } from '~/common';
 
 interface AgentToolPermissionsResult {
   fileSearchAllowedByAgent: boolean;
   codeAllowedByAgent: boolean;
   tools: string[] | undefined;
-}
-
-function isEphemeralAgent(agentId: string | null | undefined): boolean {
-  return agentId == null || agentId === '' || agentId === Constants.EPHEMERAL_AGENT_ID;
 }
 
 /**

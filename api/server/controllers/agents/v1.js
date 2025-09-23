@@ -71,7 +71,7 @@ const createAgentHandler = async (req, res) => {
     agentData.author = userId;
     agentData.tools = [];
 
-    const availableTools = await getCachedTools({ includeGlobal: true });
+    const availableTools = await getCachedTools();
     for (const tool of tools) {
       if (availableTools[tool]) {
         agentData.tools.push(tool);
