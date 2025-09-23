@@ -1,5 +1,5 @@
 const { SplitStreamHandler } = require('@librechat/agents');
-const { anthropicSettings } = require('librechat-data-provider');
+const { anthropicSettings, AuthKeys } = require('librechat-data-provider');
 const AnthropicClient = require('~/app/clients/AnthropicClient');
 
 const HUMAN_PROMPT = '\n\nHuman:';
@@ -28,7 +28,7 @@ describe('AnthropicClient', () => {
         temperature: anthropicSettings.temperature.default,
       },
     };
-    client = new AnthropicClient('test-api-key');
+    client = new AnthropicClient({ [AuthKeys.ANTHROPIC_API_KEY]: 'test-api-key' });
     client.setOptions(options);
   });
 
@@ -40,7 +40,7 @@ describe('AnthropicClient', () => {
     });
 
     it('should set legacy maxOutputTokens for non-Claude-3 models', () => {
-      const client = new AnthropicClient('test-api-key');
+      const client = new AnthropicClient({ [AuthKeys.ANTHROPIC_API_KEY]: 'test-api-key' });
       client.setOptions({
         modelOptions: {
           model: 'claude-2',
@@ -52,7 +52,7 @@ describe('AnthropicClient', () => {
       );
     });
     it('should not set maxOutputTokens if not provided', () => {
-      const client = new AnthropicClient('test-api-key');
+      const client = new AnthropicClient({ [AuthKeys.ANTHROPIC_API_KEY]: 'test-api-key' });
       client.setOptions({
         modelOptions: {
           model: 'claude-3',
@@ -62,7 +62,7 @@ describe('AnthropicClient', () => {
     });
 
     it('should not set legacy maxOutputTokens for Claude-3 models', () => {
-      const client = new AnthropicClient('test-api-key');
+      const client = new AnthropicClient({ [AuthKeys.ANTHROPIC_API_KEY]: 'test-api-key' });
       client.setOptions({
         modelOptions: {
           model: 'claude-3-opus-20240229',
@@ -177,7 +177,7 @@ describe('AnthropicClient', () => {
 
   describe('getClient', () => {
     it('should set legacy maxOutputTokens for non-Claude-3 models', () => {
-      const client = new AnthropicClient('test-api-key');
+      const client = new AnthropicClient({ [AuthKeys.ANTHROPIC_API_KEY]: 'test-api-key' });
       client.setOptions({
         modelOptions: {
           model: 'claude-2',
@@ -190,7 +190,7 @@ describe('AnthropicClient', () => {
     });
 
     it('should not set legacy maxOutputTokens for Claude-3 models', () => {
-      const client = new AnthropicClient('test-api-key');
+      const client = new AnthropicClient({ [AuthKeys.ANTHROPIC_API_KEY]: 'test-api-key' });
       client.setOptions({
         modelOptions: {
           model: 'claude-3-opus-20240229',
@@ -203,7 +203,7 @@ describe('AnthropicClient', () => {
     });
 
     it('should add "max-tokens" & "prompt-caching" beta header for claude-3-5-sonnet model', () => {
-      const client = new AnthropicClient('test-api-key');
+      const client = new AnthropicClient({ [AuthKeys.ANTHROPIC_API_KEY]: 'test-api-key' });
       const modelOptions = {
         model: 'claude-3-5-sonnet-20241022',
       };
@@ -217,7 +217,7 @@ describe('AnthropicClient', () => {
     });
 
     it('should add "prompt-caching" beta header for claude-3-haiku model', () => {
-      const client = new AnthropicClient('test-api-key');
+      const client = new AnthropicClient({ [AuthKeys.ANTHROPIC_API_KEY]: 'test-api-key' });
       const modelOptions = {
         model: 'claude-3-haiku-2028',
       };
@@ -231,7 +231,7 @@ describe('AnthropicClient', () => {
     });
 
     it('should add "prompt-caching" beta header for claude-3-opus model', () => {
-      const client = new AnthropicClient('test-api-key');
+      const client = new AnthropicClient({ [AuthKeys.ANTHROPIC_API_KEY]: 'test-api-key' });
       const modelOptions = {
         model: 'claude-3-opus-2028',
       };
@@ -246,7 +246,7 @@ describe('AnthropicClient', () => {
 
     describe('Claude 4 model headers', () => {
       it('should add "prompt-caching" and "context-1m" beta headers for claude-sonnet-4 model', () => {
-        const client = new AnthropicClient('test-api-key');
+        const client = new AnthropicClient({ [AuthKeys.ANTHROPIC_API_KEY]: 'test-api-key' });
         const modelOptions = {
           model: 'claude-sonnet-4-20250514',
         };
@@ -260,7 +260,7 @@ describe('AnthropicClient', () => {
       });
 
       it('should add "prompt-caching" and "context-1m" beta headers for claude-sonnet-4 model formats', () => {
-        const client = new AnthropicClient('test-api-key');
+        const client = new AnthropicClient({ [AuthKeys.ANTHROPIC_API_KEY]: 'test-api-key' });
         const modelVariations = [
           'claude-sonnet-4-20250514',
           'claude-sonnet-4-latest',
@@ -280,7 +280,7 @@ describe('AnthropicClient', () => {
       });
 
       it('should add "prompt-caching" beta header for claude-opus-4 model', () => {
-        const client = new AnthropicClient('test-api-key');
+        const client = new AnthropicClient({ [AuthKeys.ANTHROPIC_API_KEY]: 'test-api-key' });
         const modelOptions = {
           model: 'claude-opus-4-20250514',
         };
@@ -294,7 +294,7 @@ describe('AnthropicClient', () => {
       });
 
       it('should add "prompt-caching" beta header for claude-4-opus model', () => {
-        const client = new AnthropicClient('test-api-key');
+        const client = new AnthropicClient({ [AuthKeys.ANTHROPIC_API_KEY]: 'test-api-key' });
         const modelOptions = {
           model: 'claude-4-opus-20250514',
         };
@@ -309,7 +309,7 @@ describe('AnthropicClient', () => {
     });
 
     it('should not add beta header for claude-3-5-sonnet-latest model', () => {
-      const client = new AnthropicClient('test-api-key');
+      const client = new AnthropicClient({ [AuthKeys.ANTHROPIC_API_KEY]: 'test-api-key' });
       const modelOptions = {
         model: 'anthropic/claude-3-5-sonnet-latest',
       };
@@ -319,7 +319,7 @@ describe('AnthropicClient', () => {
     });
 
     it('should not add beta header for other models', () => {
-      const client = new AnthropicClient('test-api-key');
+      const client = new AnthropicClient({ [AuthKeys.ANTHROPIC_API_KEY]: 'test-api-key' });
       client.setOptions({
         modelOptions: {
           model: 'claude-2',
@@ -334,7 +334,7 @@ describe('AnthropicClient', () => {
     let client;
 
     beforeEach(() => {
-      client = new AnthropicClient('test-api-key');
+      client = new AnthropicClient({ [AuthKeys.ANTHROPIC_API_KEY]: 'test-api-key' });
     });
 
     it('should calculate correct token count when usage is provided', () => {
@@ -473,7 +473,7 @@ describe('AnthropicClient', () => {
 
   describe('maxOutputTokens handling for different models', () => {
     it('should not cap maxOutputTokens for Claude 3.5 Sonnet models', () => {
-      const client = new AnthropicClient('test-api-key');
+      const client = new AnthropicClient({ [AuthKeys.ANTHROPIC_API_KEY]: 'test-api-key' });
       const highTokenValue = anthropicSettings.legacy.maxOutputTokens.default * 10;
 
       client.setOptions({
@@ -497,7 +497,7 @@ describe('AnthropicClient', () => {
     });
 
     it('should not cap maxOutputTokens for Claude 3.7 models', () => {
-      const client = new AnthropicClient('test-api-key');
+      const client = new AnthropicClient({ [AuthKeys.ANTHROPIC_API_KEY]: 'test-api-key' });
       const highTokenValue = anthropicSettings.legacy.maxOutputTokens.default * 2;
 
       client.setOptions({
@@ -521,7 +521,7 @@ describe('AnthropicClient', () => {
     });
 
     it('should not cap maxOutputTokens for Claude 4 Sonnet models', () => {
-      const client = new AnthropicClient('test-api-key');
+      const client = new AnthropicClient({ [AuthKeys.ANTHROPIC_API_KEY]: 'test-api-key' });
       const highTokenValue = anthropicSettings.legacy.maxOutputTokens.default * 10; // 40,960 tokens
 
       client.setOptions({
@@ -535,7 +535,7 @@ describe('AnthropicClient', () => {
     });
 
     it('should not cap maxOutputTokens for Claude 4 Opus models', () => {
-      const client = new AnthropicClient('test-api-key');
+      const client = new AnthropicClient({ [AuthKeys.ANTHROPIC_API_KEY]: 'test-api-key' });
       const highTokenValue = anthropicSettings.legacy.maxOutputTokens.default * 6; // 24,576 tokens (under 32K limit)
 
       client.setOptions({
@@ -549,7 +549,7 @@ describe('AnthropicClient', () => {
     });
 
     it('should cap maxOutputTokens for Claude 3.5 Haiku models', () => {
-      const client = new AnthropicClient('test-api-key');
+      const client = new AnthropicClient({ [AuthKeys.ANTHROPIC_API_KEY]: 'test-api-key' });
       const highTokenValue = anthropicSettings.legacy.maxOutputTokens.default * 2;
 
       client.setOptions({
@@ -577,7 +577,7 @@ describe('AnthropicClient', () => {
     });
 
     it('should cap maxOutputTokens for Claude 3 Haiku and Opus models', () => {
-      const client = new AnthropicClient('test-api-key');
+      const client = new AnthropicClient({ [AuthKeys.ANTHROPIC_API_KEY]: 'test-api-key' });
       const highTokenValue = anthropicSettings.legacy.maxOutputTokens.default * 2;
 
       // Test haiku
@@ -617,7 +617,7 @@ describe('AnthropicClient', () => {
     });
 
     it('should include top_k and top_p parameters for non-claude-3.7 models', async () => {
-      const client = new AnthropicClient('test-api-key');
+      const client = new AnthropicClient({ [AuthKeys.ANTHROPIC_API_KEY]: 'test-api-key' });
 
       // Create a mock async generator function
       async function* mockAsyncGenerator() {
@@ -656,7 +656,7 @@ describe('AnthropicClient', () => {
     });
 
     it('should include top_k and top_p parameters for claude-3-5-sonnet models', async () => {
-      const client = new AnthropicClient('test-api-key');
+      const client = new AnthropicClient({ [AuthKeys.ANTHROPIC_API_KEY]: 'test-api-key' });
 
       // Create a mock async generator function
       async function* mockAsyncGenerator() {
@@ -695,7 +695,7 @@ describe('AnthropicClient', () => {
     });
 
     it('should not include top_k and top_p parameters for claude-3-7-sonnet models', async () => {
-      const client = new AnthropicClient('test-api-key');
+      const client = new AnthropicClient({ [AuthKeys.ANTHROPIC_API_KEY]: 'test-api-key' });
 
       // Create a mock async generator function
       async function* mockAsyncGenerator() {
@@ -734,7 +734,7 @@ describe('AnthropicClient', () => {
     });
 
     it('should not include top_k and top_p parameters for models with decimal notation (claude-3.7)', async () => {
-      const client = new AnthropicClient('test-api-key');
+      const client = new AnthropicClient({ [AuthKeys.ANTHROPIC_API_KEY]: 'test-api-key' });
 
       // Create a mock async generator function
       async function* mockAsyncGenerator() {
@@ -774,15 +774,18 @@ describe('AnthropicClient', () => {
   });
 
   it('should include top_k and top_p parameters for Claude-3.7 models when thinking is explicitly disabled', async () => {
-    const client = new AnthropicClient('test-api-key', {
-      modelOptions: {
-        model: 'claude-3-7-sonnet',
-        temperature: 0.7,
-        topK: 10,
-        topP: 0.9,
+    const client = new AnthropicClient(
+      { [AuthKeys.ANTHROPIC_API_KEY]: 'test-api-key' },
+      {
+        modelOptions: {
+          model: 'claude-3-7-sonnet',
+          temperature: 0.7,
+          topK: 10,
+          topP: 0.9,
+        },
+        thinking: false,
       },
-      thinking: false,
-    });
+    );
 
     async function* mockAsyncGenerator() {
       yield { type: 'message_start', message: { usage: {} } };
@@ -824,7 +827,7 @@ describe('AnthropicClient', () => {
 
   describe('isClaudeLatest', () => {
     it('should set isClaudeLatest to true for claude-3 models', () => {
-      const client = new AnthropicClient('test-api-key');
+      const client = new AnthropicClient({ [AuthKeys.ANTHROPIC_API_KEY]: 'test-api-key' });
       client.setOptions({
         modelOptions: {
           model: 'claude-3-sonnet-20240229',
@@ -834,7 +837,7 @@ describe('AnthropicClient', () => {
     });
 
     it('should set isClaudeLatest to true for claude-3.5 models', () => {
-      const client = new AnthropicClient('test-api-key');
+      const client = new AnthropicClient({ [AuthKeys.ANTHROPIC_API_KEY]: 'test-api-key' });
       client.setOptions({
         modelOptions: {
           model: 'claude-3.5-sonnet-20240229',
@@ -844,7 +847,7 @@ describe('AnthropicClient', () => {
     });
 
     it('should set isClaudeLatest to true for claude-sonnet-4 models', () => {
-      const client = new AnthropicClient('test-api-key');
+      const client = new AnthropicClient({ [AuthKeys.ANTHROPIC_API_KEY]: 'test-api-key' });
       client.setOptions({
         modelOptions: {
           model: 'claude-sonnet-4-20240229',
@@ -854,7 +857,7 @@ describe('AnthropicClient', () => {
     });
 
     it('should set isClaudeLatest to true for claude-opus-4 models', () => {
-      const client = new AnthropicClient('test-api-key');
+      const client = new AnthropicClient({ [AuthKeys.ANTHROPIC_API_KEY]: 'test-api-key' });
       client.setOptions({
         modelOptions: {
           model: 'claude-opus-4-20240229',
@@ -864,7 +867,7 @@ describe('AnthropicClient', () => {
     });
 
     it('should set isClaudeLatest to true for claude-3.5-haiku models', () => {
-      const client = new AnthropicClient('test-api-key');
+      const client = new AnthropicClient({ [AuthKeys.ANTHROPIC_API_KEY]: 'test-api-key' });
       client.setOptions({
         modelOptions: {
           model: 'claude-3.5-haiku-20240229',
@@ -874,7 +877,7 @@ describe('AnthropicClient', () => {
     });
 
     it('should set isClaudeLatest to false for claude-2 models', () => {
-      const client = new AnthropicClient('test-api-key');
+      const client = new AnthropicClient({ [AuthKeys.ANTHROPIC_API_KEY]: 'test-api-key' });
       client.setOptions({
         modelOptions: {
           model: 'claude-2',
@@ -884,7 +887,7 @@ describe('AnthropicClient', () => {
     });
 
     it('should set isClaudeLatest to false for claude-instant models', () => {
-      const client = new AnthropicClient('test-api-key');
+      const client = new AnthropicClient({ [AuthKeys.ANTHROPIC_API_KEY]: 'test-api-key' });
       client.setOptions({
         modelOptions: {
           model: 'claude-instant',
@@ -894,7 +897,7 @@ describe('AnthropicClient', () => {
     });
 
     it('should set isClaudeLatest to false for claude-sonnet-3 models', () => {
-      const client = new AnthropicClient('test-api-key');
+      const client = new AnthropicClient({ [AuthKeys.ANTHROPIC_API_KEY]: 'test-api-key' });
       client.setOptions({
         modelOptions: {
           model: 'claude-sonnet-3-20240229',
@@ -904,7 +907,7 @@ describe('AnthropicClient', () => {
     });
 
     it('should set isClaudeLatest to false for claude-opus-3 models', () => {
-      const client = new AnthropicClient('test-api-key');
+      const client = new AnthropicClient({ [AuthKeys.ANTHROPIC_API_KEY]: 'test-api-key' });
       client.setOptions({
         modelOptions: {
           model: 'claude-opus-3-20240229',
@@ -914,7 +917,7 @@ describe('AnthropicClient', () => {
     });
 
     it('should set isClaudeLatest to false for claude-haiku-3 models', () => {
-      const client = new AnthropicClient('test-api-key');
+      const client = new AnthropicClient({ [AuthKeys.ANTHROPIC_API_KEY]: 'test-api-key' });
       client.setOptions({
         modelOptions: {
           model: 'claude-haiku-3-20240229',
@@ -926,7 +929,7 @@ describe('AnthropicClient', () => {
 
   describe('configureReasoning', () => {
     it('should enable thinking for claude-opus-4 and claude-sonnet-4 models', async () => {
-      const client = new AnthropicClient('test-api-key');
+      const client = new AnthropicClient({ [AuthKeys.ANTHROPIC_API_KEY]: 'test-api-key' });
       // Create a mock async generator function
       async function* mockAsyncGenerator() {
         yield { type: 'message_start', message: { usage: {} } };
@@ -985,7 +988,7 @@ describe('AnthropicClient', () => {
 
 describe('Claude Model Tests', () => {
   it('should handle Claude 3 and 4 series models correctly', () => {
-    const client = new AnthropicClient('test-key');
+    const client = new AnthropicClient({ [AuthKeys.ANTHROPIC_API_KEY]: 'test-key' });
     // Claude 3 series models
     const claude3Models = [
       'claude-3-opus-20240229',

@@ -1,5 +1,6 @@
 const Anthropic = require('@anthropic-ai/sdk');
 const { logger } = require('@librechat/data-schemas');
+const { AnthropicVertex } = require('@anthropic-ai/vertex-sdk');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const {
   Constants,
@@ -9,6 +10,7 @@ const {
   anthropicSettings,
   getResponseSender,
   validateVisionModel,
+  AuthKeys,
 } = require('librechat-data-provider');
 const { sleep, SplitStreamHandler: _Handler, addCacheControl } = require('@librechat/agents');
 const {
@@ -21,6 +23,7 @@ const {
   checkPromptCacheSupport,
   getModelMaxOutputTokens,
   createStreamEventHandlers,
+  isEnabled,
 } = require('@librechat/api');
 const {
   truncateText,
@@ -54,9 +57,21 @@ const tokenEventTypes = new Set(['message_start', 'message_delta']);
 const { legacy } = anthropicSettings;
 
 class AnthropicClient extends BaseClient {
-  constructor(apiKey, options = {}) {
-    super(apiKey, options);
-    this.apiKey = apiKey || process.env.ANTHROPIC_API_KEY;
+  constructor(credentials, options = {}) {
+    super(credentials, options);
+
+    if (typeof credentials === 'string') {
+      credentials = JSON.parse(credentials);
+    }
+
+    const vertexServiceKey = credentials[AuthKeys.GOOGLE_SERVICE_KEY] ?? {};
+    this.vertexServiceKey =
+      vertexServiceKey && typeof vertexServiceKey === 'string'
+        ? JSON.parse(vertexServiceKey)
+        : (vertexServiceKey ?? {});
+    this.vertexProjectId = this.vertexServiceKey.project_id;
+
+    this.apiKey = credentials[AuthKeys.ANTHROPIC_API_KEY];
     this.userLabel = HUMAN_PROMPT;
     this.assistantLabel = AI_PROMPT;
     this.contextStrategy = options.contextStrategy
@@ -182,31 +197,47 @@ class AnthropicClient extends BaseClient {
   /**
    * Get the initialized Anthropic client.
    * @param {Partial<Anthropic.ClientOptions>} requestOptions - The options for the client.
-   * @returns {Anthropic} The Anthropic client instance.
+   * @returns {Anthropic|AnthropicVertex} The Anthropic client instance.
    */
   getClient(requestOptions) {
-    /** @type {Anthropic.ClientOptions} */
-    const options = {
+    // Check if Vertex AI should be used
+    const useVertex = isEnabled(process.env.ANTHROPIC_USE_VERTEX);
+
+    // Shared configuration options
+    const sharedOptions = {
       fetch: createFetch({
         directEndpoint: this.options.directEndpoint,
         reverseProxyUrl: this.options.reverseProxyUrl,
       }),
-      apiKey: this.apiKey,
       fetchOptions: {},
     };
 
     if (this.options.proxy) {
-      options.fetchOptions.agent = new HttpsProxyAgent(this.options.proxy);
+      sharedOptions.fetchOptions.agent = new HttpsProxyAgent(this.options.proxy);
     }
 
     if (this.options.reverseProxyUrl) {
-      options.baseURL = this.options.reverseProxyUrl;
+      sharedOptions.baseURL = this.options.reverseProxyUrl;
     }
 
     const headers = getClaudeHeaders(requestOptions?.model, this.supportsCacheControl);
     if (headers) {
-      options.defaultHeaders = headers;
+      sharedOptions.defaultHeaders = headers;
     }
+
+    if (useVertex) {
+      return new AnthropicVertex({
+        projectId: this.vertexProjectId,
+        region: process.env.ANTHROPIC_VERTEX_REGION || 'global',
+        ...sharedOptions,
+      });
+    }
+
+    /** @type {Anthropic.ClientOptions} */
+    const options = {
+      apiKey: this.apiKey,
+      ...sharedOptions,
+    };
 
     return new Anthropic(options);
   }

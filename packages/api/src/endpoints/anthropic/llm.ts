@@ -1,7 +1,13 @@
 import { Dispatcher, ProxyAgent } from 'undici';
+import { AnthropicVertex } from '@anthropic-ai/vertex-sdk';
+import { GoogleAuth } from 'google-auth-library';
 import { AnthropicClientOptions } from '@librechat/agents';
-import { anthropicSettings, removeNullishValues } from 'librechat-data-provider';
-import type { AnthropicLLMConfigResult, AnthropicConfigOptions } from '~/types/anthropic';
+import { anthropicSettings, removeNullishValues, AuthKeys } from 'librechat-data-provider';
+import type {
+  AnthropicLLMConfigResult,
+  AnthropicConfigOptions,
+  AnthropicCredentials,
+} from '~/types/anthropic';
 import { checkPromptCacheSupport, getClaudeHeaders, configureReasoning } from './helpers';
 
 /** Known Anthropic parameters that map directly to the client config */
@@ -38,13 +44,13 @@ function applyDefaultParams(target: Record<string, unknown>, defaults: Record<st
 
 /**
  * Generates configuration options for creating an Anthropic language model (LLM) instance.
- * @param apiKey - The API key for authentication with Anthropic.
+ * @param credentials - The API key for authentication with Anthropic, or credentials object for Vertex AI.
  * @param options={} - Additional options for configuring the LLM.
  * @returns Configuration options for creating an Anthropic LLM instance, with null and undefined values removed.
  */
 function getLLMConfig(
-  apiKey?: string,
-  options: AnthropicConfigOptions = {} as AnthropicConfigOptions,
+  credentials: string | AnthropicCredentials | undefined,
+  options: AnthropicConfigOptions = {},
 ): AnthropicLLMConfigResult {
   const systemOptions = {
     thinking: options.modelOptions?.thinking ?? anthropicSettings.thinking.default,
@@ -73,8 +79,29 @@ function getLLMConfig(
 
   let enableWebSearch = mergedOptions.web_search;
 
+  let creds: AnthropicCredentials = {};
+  if (typeof credentials === 'string') {
+    try {
+      creds = JSON.parse(credentials);
+    } catch (err: unknown) {
+      throw new Error(
+        `Error parsing string credentials: ${err instanceof Error ? err.message : 'Unknown error'}`,
+      );
+    }
+  } else if (credentials && typeof credentials === 'object') {
+    creds = credentials;
+  }
+
+  const vertexServiceKeyRaw = creds[AuthKeys.GOOGLE_SERVICE_KEY] ?? {};
+  const vertexServiceKey =
+    typeof vertexServiceKeyRaw === 'string'
+      ? JSON.parse(vertexServiceKeyRaw)
+      : (vertexServiceKeyRaw ?? {});
+
+  const apiKey = creds[AuthKeys.ANTHROPIC_API_KEY] ?? null;
+  const vertexProjectId = !apiKey ? (vertexServiceKey?.project_id ?? null) : null;
+
   let requestOptions: AnthropicClientOptions & { stream?: boolean } = {
-    apiKey,
     model: mergedOptions.model,
     stream: mergedOptions.stream,
     temperature: mergedOptions.temperature,
@@ -88,6 +115,36 @@ function getLLMConfig(
       },
     },
   };
+
+  if (vertexProjectId) {
+    // Vertex AI configuration - use custom client
+    const location = process.env.ANTHROPIC_VERTEX_REGION || 'global';
+
+    try {
+      const googleAuth = new GoogleAuth({
+        credentials: vertexServiceKey,
+        scopes: 'https://www.googleapis.com/auth/cloud-platform',
+      });
+
+      const vertexClient = new AnthropicVertex({
+        projectId: vertexProjectId,
+        region: location,
+        googleAuth: googleAuth,
+      });
+
+      requestOptions.createClient = () => vertexClient;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to create Vertex AI client: ${message}`);
+    }
+  } else if (apiKey) {
+    // Direct API configuration
+    requestOptions.apiKey = apiKey;
+  } else {
+    throw new Error(
+      'Invalid credentials provided. Please provide either a valid Anthropic API key or service account credentials for Vertex AI.',
+    );
+  }
 
   requestOptions = configureReasoning(requestOptions, systemOptions);
 
