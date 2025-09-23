@@ -355,6 +355,7 @@ async function setupOpenId() {
 
           const result = await findOpenIDUser({
             openidId: claims.sub,
+            idOnTheSource: claims.oid,
             email: claims.email,
             strategyName: 'openidStrategy',
             findUser,

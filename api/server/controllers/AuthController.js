@@ -72,7 +72,9 @@ const refreshController = async (req, res) => {
       const openIdConfig = getOpenIdConfig();
       const tokenset = await openIdClient.refreshTokenGrant(openIdConfig, refreshToken);
       const claims = tokenset.claims();
-      const user = await findUser({ email: claims.email });
+      const user = await findUser({ openidId: claims.sub }) ||
+        claims.oid ? await findUser({ idOnTheSource: claims.oid }) : null ||
+        claims.email ? await findUser({ email: claims.email }) : null;
       if (!user) {
         return res.status(401).redirect('/login');
       }

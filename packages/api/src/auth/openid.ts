@@ -7,16 +7,19 @@ import type { IUser, UserMethods } from '@librechat/data-schemas';
  */
 export async function findOpenIDUser({
   openidId,
+  idOnTheSource,
   email,
   findUser,
   strategyName = 'openid',
 }: {
   openidId: string;
+  idOnTheSource?: string;
   findUser: UserMethods['findUser'];
   email?: string;
   strategyName?: string;
 }): Promise<{ user: IUser | null; error: string | null; migration: boolean }> {
   let user = await findUser({ openidId });
+  if (!user && idOnTheSource) { user = await findUser({ idOnTheSource }) };
   if (!user && email) {
     user = await findUser({ email });
     logger.warn(
