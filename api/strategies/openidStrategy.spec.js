@@ -274,10 +274,7 @@ describe('setupOpenId', () => {
       name: '',
     };
     findUser.mockImplementation(async (query) => {
-      if (
-        query.openidId === tokenset.claims().sub ||
-        (query.email === tokenset.claims().email && query.provider === 'openid')
-      ) {
+      if (query.openidId === tokenset.claims().sub || query.email === tokenset.claims().email) {
         return existingUser;
       }
       return null;
