@@ -23,6 +23,7 @@ async function loadDefaultEndpointsConfig(appConfig) {
     [EModelEndpoint.chatGPTBrowser]: chatGPTBrowser,
     [EModelEndpoint.gptPlugins]: gptPlugins,
     [EModelEndpoint.anthropic]: config[EModelEndpoint.anthropic],
+    [EModelEndpoint.openrouter]: config[EModelEndpoint.openrouter],
     [EModelEndpoint.bedrock]: config[EModelEndpoint.bedrock],
   };
 

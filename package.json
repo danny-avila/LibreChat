@@ -80,7 +80,11 @@
     "migrate:agent-permissions:batch": "node config/migrate-agent-permissions.js --batch-size=50",
     "migrate:prompt-permissions:dry-run": "node config/migrate-prompt-permissions.js --dry-run",
     "migrate:prompt-permissions": "node config/migrate-prompt-permissions.js",
-    "migrate:prompt-permissions:batch": "node config/migrate-prompt-permissions.js --batch-size=50"
+    "migrate:prompt-permissions:batch": "node config/migrate-prompt-permissions.js --batch-size=50",
+    "security:scan": "node api/scripts/security-scan.js",
+    "security:scan:ci": "node api/scripts/security-scan.js && exit 0",
+    "test:security": "cd api && jest --testPathPattern=security.test.js",
+    "test:security:watch": "cd api && jest --watch --testPathPattern=security.test.js"
   },
   "repository": {
     "type": "git",
@@ -153,5 +157,10 @@
       "admin/",
       "packages/"
     ]
+  },
+  "dependencies": {
+    "dotenv-safe": "^9.1.0",
+    "glob": "^11.0.3",
+    "minimatch": "^10.0.3"
   }
 }

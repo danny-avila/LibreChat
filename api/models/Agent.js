@@ -112,7 +112,10 @@ const loadEphemeralAgent = async ({ req, agent_id, endpoint, model_parameters: _
     id: agent_id,
     instructions,
     provider: endpoint,
-    model_parameters,
+    model_parameters: {
+      ...model_parameters,
+      model: model || model_parameters.model || 'openrouter/auto',
+    },
     model,
     tools,
   };
@@ -149,6 +152,12 @@ const loadAgent = async ({ req, agent_id, endpoint, model_parameters }) => {
   }
 
   agent.version = agent.versions ? agent.versions.length : 0;
+
+  // Ensure model_parameters.model exists for compatibility
+  if (agent.model_parameters && !agent.model_parameters.model && agent.model) {
+    agent.model_parameters.model = agent.model;
+  }
+
   return agent;
 };
 

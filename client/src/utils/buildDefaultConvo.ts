@@ -83,6 +83,22 @@ const buildDefaultConvo = ({
 
   defaultConvo.tools = lastConversationSetup?.tools ?? lastSelectedTools ?? defaultConvo.tools;
 
+  // Ensure OpenRouter has default modelOptions
+  if (endpoint === EModelEndpoint.openrouter) {
+    // Ensure modelOptions exists with defaults
+    if (!defaultConvo.modelOptions) {
+      defaultConvo.modelOptions = {
+        autoRouter: false,
+        fallbackModels: [],
+        providerPreferences: 'balanced'
+      };
+    }
+    // CRITICAL: Also set autoRouter at root level for schema compatibility
+    if (defaultConvo.modelOptions.autoRouter !== undefined) {
+      defaultConvo.autoRouter = defaultConvo.modelOptions.autoRouter;
+    }
+  }
+
   return defaultConvo;
 };
 

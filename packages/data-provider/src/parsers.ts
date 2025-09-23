@@ -6,6 +6,7 @@ import type * as t from './types';
 import { ContentTypes } from './types/runs';
 import {
   openAISchema,
+  openRouterSchema,
   googleSchema,
   EModelEndpoint,
   anthropicSchema,
@@ -22,6 +23,7 @@ import { alternateName } from './config';
 
 type EndpointSchema =
   | typeof openAISchema
+  | typeof openRouterSchema
   | typeof googleSchema
   | typeof anthropicSchema
   | typeof gptPluginsSchema
@@ -37,6 +39,7 @@ const endpointSchemas: Record<EndpointSchemaKey, EndpointSchema> = {
   [EModelEndpoint.custom]: openAISchema,
   [EModelEndpoint.google]: googleSchema,
   [EModelEndpoint.anthropic]: anthropicSchema,
+  [EModelEndpoint.openrouter]: openRouterSchema,
   [EModelEndpoint.gptPlugins]: gptPluginsSchema,
   [EModelEndpoint.assistants]: assistantSchema,
   [EModelEndpoint.azureAssistants]: assistantSchema,
@@ -60,6 +63,7 @@ export function getEnabledEndpoints() {
     EModelEndpoint.chatGPTBrowser,
     EModelEndpoint.gptPlugins,
     EModelEndpoint.anthropic,
+    EModelEndpoint.openrouter,
     EModelEndpoint.bedrock,
   ];
 
@@ -294,6 +298,7 @@ export const getResponseSender = (endpointOption: t.TEndpointOption): string => 
 
 type CompactEndpointSchema =
   | typeof openAISchema
+  | typeof openRouterSchema
   | typeof compactAssistantSchema
   | typeof compactAgentsSchema
   | typeof compactGoogleSchema
@@ -311,6 +316,7 @@ const compactEndpointSchemas: Record<EndpointSchemaKey, CompactEndpointSchema> =
   [EModelEndpoint.google]: compactGoogleSchema,
   [EModelEndpoint.bedrock]: bedrockInputSchema,
   [EModelEndpoint.anthropic]: anthropicSchema,
+  [EModelEndpoint.openrouter]: openRouterSchema,
   [EModelEndpoint.gptPlugins]: compactPluginsSchema,
 };
 

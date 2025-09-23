@@ -138,3 +138,31 @@ helm/**/.values.yaml
 /.tabnine/
 /.codeium
 *.local.md
+
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+dev-debug.log
+# Dependency directories
+# Environment variables
+.env
+# Editor directories and files
+.vscode
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+# OS specific
+
+# Task files
+# tasks.json
+# tasks/
+
+# Task Master files
+.taskmaster/
+
+# GitHub instructions and AI assistant files
+.github/instructions/
+.mcp.json
+Claude.md 

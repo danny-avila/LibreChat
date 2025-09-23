@@ -7,6 +7,18 @@
   </h1>
 </p>
 
+> **🚀 This Fork Features Native OpenRouter Support**
+>
+> This fork includes full native integration for [OpenRouter](https://openrouter.ai), providing access to 100+ AI models through a single API with enterprise features:
+> - ✅ **Full Agent System Compatibility** - Unlike YAML config, works seamlessly with LibreChat Agents
+> - ✅ **Automatic Model Fallbacks** - Define backup models for reliability
+> - 🤖 **Auto-Router™** - Toggle intelligent model selection that automatically chooses the best model for each request
+> - ✅ **Real-time Credits Tracking** - Monitor usage directly in the UI
+> - ✅ **Provider Preferences** - Control which providers to use
+> - 🔄 **Seamless Model Switching** - Change models mid-conversation without losing context
+>
+> **[📖 OpenRouter Documentation](docs/features/providers/openrouter.md)** | **[🚀 Quick Start](docs/features/providers/openrouter.md#quick-start)** | **[⚙️ API Reference](docs/api-reference/openrouter.md)**
+
 <p align="center">
   <a href="https://discord.librechat.ai"> 
     <img
@@ -51,12 +63,13 @@
 
 - 🖥️ **UI & Experience** inspired by ChatGPT with enhanced design and features
 
-- 🤖 **AI Model Selection**:  
+- 🤖 **AI Model Selection**:
   - Anthropic (Claude), AWS Bedrock, OpenAI, Azure OpenAI, Google, Vertex AI, OpenAI Responses API (incl. Azure)
+  - **OpenRouter Native Integration**: Access 100+ models with automatic fallbacks, smart routing, and credits tracking
   - [Custom Endpoints](https://www.librechat.ai/docs/quick_start/custom_endpoints): Use any OpenAI-compatible API with LibreChat, no proxy required
   - Compatible with [Local & Remote AI Providers](https://www.librechat.ai/docs/configuration/librechat_yaml/ai_endpoints):
     - Ollama, groq, Cohere, Mistral AI, Apple MLX, koboldcpp, together.ai,
-    - OpenRouter, Perplexity, ShuttleAI, Deepseek, Qwen, and more
+    - Perplexity, ShuttleAI, Deepseek, Qwen, and more
 
 - 🔧 **[Code Interpreter API](https://www.librechat.ai/docs/features/code_interpreter)**: 
   - Secure, Sandboxed Execution in Python, Node.js (JS/TS), Go, C/C++, Java, PHP, Rust, and Fortran
@@ -134,6 +147,125 @@
   - Community-driven development, support, and feedback
 
 [For a thorough review of our features, see our docs here](https://docs.librechat.ai/) 📚
+
+## 🚀 OpenRouter Native Integration
+
+> **⚠️ Note: This is a proof-of-concept implementation**. While OpenRouter is now integrated as a native provider with Agent system compatibility, comprehensive testing is still ongoing.
+>
+> **This fork with native OpenRouter integration was developed by Sergey Kornilov (Biostochastics)**
+
+### Motivation
+
+The existing YAML configuration approach for OpenRouter (as documented in [Issue #6763](https://github.com/danny-avila/LibreChat/issues/6763)) had a critical limitation: it was incompatible with LibreChat's Agent system. Since LibreChat routes all conversations through its agent infrastructure—not just agent-specific features—this incompatibility meant missing out on core functionality. Native provider status was necessary to enable full feature parity with other providers.
+
+### Implementation Details
+
+#### The Core Problem
+LibreChat's architecture uses the agent system (`@librechat/agents` package) for all chat interactions. The package includes a `ChatOpenRouter` class that extends `ChatOpenAI` from langchain, but getting it to work required understanding the exact configuration structure it expected.
+
+#### Specific Changes Made
+
+**1. Configuration Structure Matching**
+The `ChatOpenRouter` class required a specific nested structure that wasn't obvious from the documentation:
+```javascript
+// What ChatOpenRouter actually expects:
+{
+  apiKey: 'sk-or-...',
+  configuration: {  // Must be nested exactly like this
+    baseURL: 'https://openrouter.ai/api/v1',
+    defaultHeaders: {
+      'HTTP-Referer': 'http://localhost:3080',
+      'X-Title': 'LibreChat'
+    }
+  }
+}
+```
+Initial attempts placed `baseURL` at the root level or used different nesting, causing all requests to route to OpenAI's API instead.
+
+**2. Provider Registration and Mapping**
+- Modified `/api/server/services/Endpoints/index.js` to map OpenRouter to its own initialization function (`initOpenRouter`) rather than the generic `initCustom`
+- Added multiple mapping entries to handle case variations and different property names used throughout the codebase
+
+**3. Initialization Flow (`/api/server/services/Endpoints/openrouter/initialize.js`)**
+- When `optionsOnly=true` (agent mode), returns configuration formatted for `ChatOpenRouter`
+- When `optionsOnly=false` (direct client mode), instantiates `OpenRouterClient` for non-agent operations
+- Handles both user-provided and environment-configured API keys
+
+**4. Frontend Registry Fix**
+The frontend was throwing `TypeError: undefined is not an object (evaluating 'e.key')` because OpenRouter wasn't registered in `/client/src/components/Endpoints/Settings/settings.ts`. Added the registration to fix the undefined reference.
+
+**5. Credits Tracking and Auto Router Toggle Feature**
+- Implemented `/api/endpoints/openrouter/credits` endpoint
+- Added caching layer (5-minute TTL) to avoid excessive API calls
+- Created unified control bar with credits display and Auto Router toggle
+- **Auto Router Toggle Implementation**:
+  - Toggle positioned next to credits for prominent visibility
+  - When enabled, automatically sets model to `openrouter/auto`
+  - Disables model dropdown with clear "Auto Router Active" message
+  - State persists via Recoil atom with localStorage
+  - Visual feedback with green lightning icon when active
+  - Responsive design - compact on mobile, full on desktop
+
+### Auto Router Toggle Technical Implementation
+
+**Files Modified for Auto Router Feature:**
+1. `/client/src/components/Nav/OpenRouterCredits.tsx`
+   - Extended to include Auto Router toggle alongside credits
+   - Added Switch component with Zap icon for visual feedback
+   - Implemented responsive layout with divider separator
+
+2. `/client/src/components/Input/ModelSelect/OpenRouter.tsx`
+   - Added conditional rendering based on `openRouterAutoRouterEnabledState`
+   - When enabled, displays disabled state with "Auto Router Active" message
+   - Prevents manual model selection when Auto Router is active
+
+3. `/client/src/store/openrouter.ts`
+   - Already contained `openRouterAutoRouterEnabledState` atom with localStorage persistence
+   - `openRouterConfigSelector` automatically sets model to `openrouter/auto` when enabled
+
+4. `/client/src/locales/en/translation.json`
+   - Added localization keys for Auto Router UI elements
+   - Includes toggle label, tooltip, and disabled state messages
+
+### Caveats and Issues Encountered
+
+1. **API Routing Confusion**: The most time-consuming issue was requests being sent to `https://api.openai.com` instead of `https://openrouter.ai/api/v1`. This happened because the configuration structure wasn't matching what `ChatOpenAI` (parent class) expected.
+
+2. **Multiple Provider Names**: OpenRouter is referenced differently across the codebase (`openrouter`, `OPENROUTER`, `EModelEndpoint.openrouter`), requiring multiple mapping entries.
+
+3. **Agent System Dependency**: Initially attempted to make OpenRouter work independently of the agent system, but discovered this was architecturally impossible given LibreChat's design.
+
+4. **Debugging Challenges**: The actual configuration being passed to `ChatOpenRouter` wasn't logged by default, making it difficult to identify the structure mismatch. Added extensive logging to trace the configuration flow.
+
+### Current Features
+- **✅ Full Agent Compatibility**: Required for any chat functionality in LibreChat
+- **✅ Credits Tracking**: Real-time balance monitoring with intelligent caching
+- **✅ Model Selection**: Access to 100+ models through OpenRouter's unified API
+- **✅ Proper API Routing**: Requests correctly sent to OpenRouter's endpoints
+- **✅ Environment Configuration**: Support for API keys and site attribution headers
+
+### Quick Setup
+1. Get your API key from [OpenRouter](https://openrouter.ai/keys)
+2. Add to your `.env` file:
+   ```bash
+   OPENROUTER_API_KEY=sk-or-v1-xxxxxxxxxx
+   OPENROUTER_SITE_URL=http://localhost:3080  # Optional
+   OPENROUTER_SITE_NAME=LibreChat             # Optional
+   ```
+3. Select OpenRouter from the provider dropdown in LibreChat
+4. Choose from 100+ available models or use Auto Router for intelligent model selection
+
+### Production Readiness Checklist
+- [x] Core functionality (chat, agents, credits)
+- [x] Proper API routing and authentication
+- [x] Basic caching implementation
+- [ ] Comprehensive error handling
+- [ ] Unit and integration tests
+- [ ] Rate limiting implementation
+- [ ] Complete API documentation
+- [ ] Migration guide from YAML config
+
+[Learn more about the implementation →](docs/configuration/providers/openrouter.md)
 
 ## 🪶 All-In-One AI Conversations with LibreChat
 
@@ -215,3 +347,18 @@ We thank [Locize](https://locize.com) for their translation management tools tha
     <img src="https://github.com/user-attachments/assets/d6b70894-6064-475e-bb65-92a9e23e0077" alt="Locize Logo" height="50">
   </a>
 </p>
+
+---
+
+## 🚀 Fork Attribution
+
+**This fork featuring native OpenRouter integration was developed by:**
+
+### Sergey Kornilov (Biostochastics)
+- GitHub: [@biostochastics](https://github.com/biostochastics)
+- Implementation of native OpenRouter provider support
+- Full Agent system compatibility for OpenRouter
+- Real-time credits tracking integration
+- Auto Router toggle and fallback chain management
+
+The OpenRouter native integration enables access to 100+ AI models through a single API with enterprise features, solving the limitation where YAML configuration was incompatible with LibreChat's Agent system.

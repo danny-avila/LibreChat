@@ -21,6 +21,7 @@ const TextStream = require('./TextStream');
 class BaseClient {
   constructor(apiKey, options = {}) {
     this.apiKey = apiKey;
+    // this.options is intentionally not set here - subclasses handle this in setOptions
     this.sender = options.sender ?? 'AI';
     this.contextStrategy = null;
     this.currentDateString = new Date().toLocaleDateString('en-us', {
@@ -198,12 +199,21 @@ class BaseClient {
     let responseMessageId = opts.responseMessageId ?? crypto.randomUUID();
     let head = isEdited ? responseMessageId : parentMessageId;
     this.currentMessages = (await this.loadHistory(conversationId, head)) ?? [];
+
     this.conversationId = conversationId;
 
     if (isEdited && !isContinued) {
       responseMessageId = crypto.randomUUID();
       head = responseMessageId;
-      this.currentMessages[this.currentMessages.length - 1].messageId = head;
+      const lastIndex = this.currentMessages.length - 1;
+      if (lastIndex >= 0 && this.currentMessages[lastIndex]) {
+        this.currentMessages[lastIndex].messageId = head;
+      } else {
+        logger.warn('[BaseClient] Missing response message for edit operation', {
+          conversationId,
+          head,
+        });
+      }
     }
 
     if (opts.isRegenerate && responseMessageId.endsWith('_')) {
@@ -237,6 +247,13 @@ class BaseClient {
   }
 
   async handleStartMethods(message, opts) {
+    let messageOptionsResult;
+    try {
+      messageOptionsResult = await this.setMessageOptions(opts);
+    } catch (error) {
+      throw error;
+    }
+
     const {
       user,
       head,
@@ -246,7 +263,7 @@ class BaseClient {
       conversationId,
       parentMessageId,
       responseMessageId,
-    } = await this.setMessageOptions(opts);
+    } = messageOptionsResult;
 
     const userMessage = opts.isEdited
       ? this.currentMessages[this.currentMessages.length - 2]
@@ -264,6 +281,7 @@ class BaseClient {
         responseMessageId,
         sender: this.sender,
       });
+    } else {
     }
 
     if (typeof opts?.onStart === 'function') {
@@ -574,9 +592,10 @@ class BaseClient {
   }
 
   async sendMessage(message, opts = {}) {
-    const appConfig = this.options.req?.config;
+    const appConfig = this.options?.req?.config;
     /** @type {Promise<TMessage>} */
     let userMessagePromise;
+
     const { user, head, isEdited, conversationId, responseMessageId, saveOptions, userMessage } =
       await this.handleStartMethods(message, opts);
 
@@ -682,6 +701,7 @@ class BaseClient {
 
     /** @type {string|string[]|undefined} */
     const completion = await this.sendCompletion(payload, opts);
+
     if (this.abortController) {
       this.abortController.requestCompleted = true;
     }

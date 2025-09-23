@@ -1,6 +1,7 @@
 const { isUserProvided } = require('@librechat/api');
 const { EModelEndpoint } = require('librechat-data-provider');
 const { generateConfig } = require('~/server/utils/handleText');
+const getOpenRouterConfig = require('./openrouter');
 
 const {
   OPENAI_API_KEY: openAIApiKey,
@@ -8,6 +9,7 @@ const {
   ASSISTANTS_API_KEY: assistantsApiKey,
   AZURE_API_KEY: azureOpenAIApiKey,
   ANTHROPIC_API_KEY: anthropicApiKey,
+  OPENROUTER_API_KEY: openrouterApiKey,
   CHATGPT_TOKEN: chatGPTToken,
   PLUGINS_USE_AZURE,
   GOOGLE_KEY: googleKey,
@@ -31,6 +33,7 @@ module.exports = {
     userProvidedOpenAI,
     googleKey,
     [EModelEndpoint.anthropic]: generateConfig(anthropicApiKey),
+    [EModelEndpoint.openrouter]: openrouterApiKey ? getOpenRouterConfig() : false,
     [EModelEndpoint.chatGPTBrowser]: generateConfig(chatGPTToken),
     [EModelEndpoint.openAI]: generateConfig(openAIApiKey, OPENAI_REVERSE_PROXY),
     [EModelEndpoint.azureOpenAI]: generateConfig(azureOpenAIApiKey, AZURE_OPENAI_BASEURL),

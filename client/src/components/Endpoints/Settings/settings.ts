@@ -6,6 +6,7 @@ import AssistantsSettings from './Assistants';
 import AnthropicSettings from './Anthropic';
 import BedrockSettings from './Bedrock';
 import OpenAISettings from './OpenAI';
+import OpenRouterSettings from './OpenRouter';
 
 const settings: { [key: string]: FC<TModelSelectProps> | undefined } = {
   [EModelEndpoint.assistants]: AssistantsSettings,
@@ -16,6 +17,7 @@ const settings: { [key: string]: FC<TModelSelectProps> | undefined } = {
   [EModelEndpoint.azureOpenAI]: OpenAISettings,
   [EModelEndpoint.anthropic]: AnthropicSettings,
   [EModelEndpoint.bedrock]: BedrockSettings,
+  [EModelEndpoint.openrouter]: OpenRouterSettings,
 };
 
 export const getSettings = () => {

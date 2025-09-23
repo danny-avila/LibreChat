@@ -3,6 +3,7 @@ const openAI = require('./openAI');
 const custom = require('./custom');
 const google = require('./google');
 const anthropic = require('./anthropic');
+const openrouter = require('./openrouter');
 const { isEnabled } = require('~/server/utils');
 const { EModelEndpoint } = require('librechat-data-provider');
 const {
@@ -40,6 +41,7 @@ router.use(validateConvoAccess);
 router.use([`/${EModelEndpoint.azureOpenAI}`, `/${EModelEndpoint.openAI}`], openAI);
 router.use(`/${EModelEndpoint.anthropic}`, anthropic);
 router.use(`/${EModelEndpoint.google}`, google);
+router.use(`/${EModelEndpoint.openrouter}`, openrouter);
 router.use(`/${EModelEndpoint.custom}`, custom);
 
 module.exports = router;

@@ -10,6 +10,7 @@ import {
   LocalStorageKeys,
   SettingDefinition,
   agentParamSettings,
+  EModelEndpoint,
 } from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
 import type { AgentForm, AgentModelPanelProps, StringOption } from '~/common';

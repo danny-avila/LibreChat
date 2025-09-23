@@ -920,6 +920,7 @@ export const alternateName = {
   [EModelEndpoint.gptPlugins]: 'Plugins',
   [EModelEndpoint.google]: 'Google',
   [EModelEndpoint.anthropic]: 'Anthropic',
+  [EModelEndpoint.openrouter]: 'OpenRouter',
   [EModelEndpoint.custom]: 'Custom',
   [EModelEndpoint.bedrock]: 'AWS Bedrock',
   [KnownEndpoints.ollama]: 'Ollama',
@@ -1052,6 +1053,14 @@ export const initialModelsConfig: TModelsConfig = {
   [EModelEndpoint.google]: defaultModels[EModelEndpoint.google],
   [EModelEndpoint.anthropic]: defaultModels[EModelEndpoint.anthropic],
   [EModelEndpoint.bedrock]: defaultModels[EModelEndpoint.bedrock],
+  [EModelEndpoint.openrouter]: [
+    'openrouter/auto',
+    'anthropic/claude-3.5-sonnet',
+    'anthropic/claude-3-opus',
+    'openai/gpt-4-turbo-preview',
+    'google/gemini-pro-1.5',
+    'meta-llama/llama-3-70b-instruct',
+  ],
 };
 
 export const EndpointURLs = {
@@ -1061,14 +1070,13 @@ export const EndpointURLs = {
 } as const;
 
 export const modularEndpoints = new Set<EModelEndpoint | string>([
-  EModelEndpoint.gptPlugins,
   EModelEndpoint.anthropic,
   EModelEndpoint.google,
   EModelEndpoint.openAI,
   EModelEndpoint.azureOpenAI,
   EModelEndpoint.custom,
-  EModelEndpoint.agents,
   EModelEndpoint.bedrock,
+  EModelEndpoint.openrouter,
 ]);
 
 export const supportsBalanceCheck = {
@@ -1078,6 +1086,7 @@ export const supportsBalanceCheck = {
   [EModelEndpoint.gptPlugins]: true,
   [EModelEndpoint.assistants]: true,
   [EModelEndpoint.agents]: true,
+  [EModelEndpoint.openrouter]: true,
   [EModelEndpoint.azureAssistants]: true,
   [EModelEndpoint.azureOpenAI]: true,
   [EModelEndpoint.bedrock]: true,
@@ -1229,6 +1238,14 @@ export enum CacheKeys {
    * Key for accessing Abort Keys
    */
   ABORT_KEYS = 'ABORT_KEYS',
+  /**
+   * Key for OpenRouter credits cache
+   */
+  OPENROUTER_CREDITS = 'OPENROUTER_CREDITS',
+  /**
+   * Key for OpenRouter models cache
+   */
+  OPENROUTER_MODELS = 'OPENROUTER_MODELS',
   /**
    * Key for the bans cache.
    */
@@ -1676,6 +1693,7 @@ export const providerEndpointMap = {
   [EModelEndpoint.bedrock]: EModelEndpoint.bedrock,
   [EModelEndpoint.anthropic]: EModelEndpoint.anthropic,
   [EModelEndpoint.azureOpenAI]: EModelEndpoint.azureOpenAI,
+  [EModelEndpoint.openrouter]: EModelEndpoint.openrouter,
 };
 
 export const specialVariables = {

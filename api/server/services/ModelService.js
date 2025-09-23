@@ -329,6 +329,39 @@ const getBedrockModels = () => {
   return models;
 };
 
+const getOpenRouterModels = async (opts = {}) => {
+  // Default OpenRouter models if API call fails or user-provided key
+  const defaultOpenRouterModels = [
+    'openrouter/auto',
+    'anthropic/claude-3.5-sonnet',
+    'anthropic/claude-3-opus',
+    'openai/gpt-4-turbo-preview',
+    'google/gemini-pro-1.5',
+    'meta-llama/llama-3-70b-instruct',
+  ];
+
+  if (process.env.OPENROUTER_MODELS) {
+    return splitAndTrim(process.env.OPENROUTER_MODELS);
+  }
+
+  if (!process.env.OPENROUTER_API_KEY || isUserProvided(process.env.OPENROUTER_API_KEY)) {
+    return defaultOpenRouterModels;
+  }
+
+  try {
+    const { openRouterService } = require('~/server/services/Endpoints/openrouter');
+    const models = await openRouterService.getModels(process.env.OPENROUTER_API_KEY);
+    if (models && Array.isArray(models)) {
+      // Extract model IDs from the OpenRouter response
+      return models.map(model => model.id || model);
+    }
+    return defaultOpenRouterModels;
+  } catch (error) {
+    logger.error('Error fetching OpenRouter models:', error);
+    return defaultOpenRouterModels;
+  }
+};
+
 module.exports = {
   fetchModels,
   splitAndTrim,
@@ -337,4 +370,5 @@ module.exports = {
   getChatGPTBrowserModels,
   getAnthropicModels,
   getGoogleModels,
+  getOpenRouterModels,
 };

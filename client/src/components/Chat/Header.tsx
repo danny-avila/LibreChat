@@ -6,6 +6,8 @@ import type { ContextType } from '~/common';
 import ModelSelector from './Menus/Endpoints/ModelSelector';
 import { PresetsMenu, HeaderNewChat, OpenSidebar } from './Menus';
 import { useGetStartupConfig } from '~/data-provider';
+import OpenRouterCredits from '~/components/Nav/OpenRouterCredits';
+import CreditsErrorBoundary from '~/components/Nav/CreditsErrorBoundary';
 import ExportAndShareMenu from './ExportAndShareMenu';
 import BookmarkMenu from './Menus/BookmarkMenu';
 import { TemporaryChat } from './TemporaryChat';
@@ -62,6 +64,9 @@ export default function Header() {
             {hasAccessToMultiConvo === true && <AddMultiConvo />}
             {isSmallScreen && (
               <>
+                <CreditsErrorBoundary>
+                  <OpenRouterCredits compact />
+                </CreditsErrorBoundary>
                 <ExportAndShareMenu
                   isSharedButtonEnabled={startupConfig?.sharedLinksEnabled ?? false}
                 />
@@ -72,6 +77,9 @@ export default function Header() {
         </div>
         {!isSmallScreen && (
           <div className="flex items-center gap-2">
+            <CreditsErrorBoundary>
+              <OpenRouterCredits compact />
+            </CreditsErrorBoundary>
             <ExportAndShareMenu
               isSharedButtonEnabled={startupConfig?.sharedLinksEnabled ?? false}
             />

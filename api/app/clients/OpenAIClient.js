@@ -71,14 +71,19 @@ class OpenAIClient extends BaseClient {
   // TODO: PluginsClient calls this 3x, unneeded
   setOptions(options) {
     if (this.options && !this.options.replaceOptions) {
-      this.options.modelOptions = {
-        ...this.options.modelOptions,
-        ...options.modelOptions,
+      // Merge modelOptions immutably
+      const mergedModelOptions = {
+        ...(this.options.modelOptions || {}),
+        ...(options.modelOptions || {}),
       };
-      delete options.modelOptions;
+
+      // Create a new options object without mutating the input
+      const { modelOptions: _incomingModelOptions, ...restOptions } = options;
+
       this.options = {
         ...this.options,
-        ...options,
+        ...restOptions,
+        modelOptions: mergedModelOptions,
       };
     } else {
       this.options = options;
@@ -690,7 +695,7 @@ class OpenAIClient extends BaseClient {
    *                            In case of failure, it will return the default title, "New Chat".
    */
   async titleConvo({ text, conversationId, responseText = '' }) {
-    const appConfig = this.options.req?.config;
+    const appConfig = this.options?.req?.config;
     this.conversationId = conversationId;
 
     if (this.options.attachments) {
@@ -1108,7 +1113,7 @@ ${convo}
   }
 
   async chatCompletion({ payload, onProgress, abortController = null }) {
-    const appConfig = this.options.req?.config;
+    const appConfig = this.options?.req?.config;
     let error = null;
     let intermediateReply = [];
     const errorCallback = (err) => (error = err);

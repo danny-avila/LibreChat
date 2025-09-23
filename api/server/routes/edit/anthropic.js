@@ -6,12 +6,14 @@ const {
   validateModel,
   validateEndpoint,
   buildEndpointOption,
+  configMiddleware,
 } = require('~/server/middleware');
 
 const router = express.Router();
 
 router.post(
   '/',
+  configMiddleware,
   validateEndpoint,
   validateModel,
   buildEndpointOption,

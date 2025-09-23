@@ -5,6 +5,7 @@ const {
   getBedrockModels,
   getOpenAIModels,
   getGoogleModels,
+  getOpenRouterModels,
 } = require('~/server/services/ModelService');
 
 /**
@@ -15,7 +16,7 @@ const {
  */
 async function loadDefaultModels(req) {
   try {
-    const [openAI, anthropic, azureOpenAI, assistants, azureAssistants, google, bedrock] =
+    const [openAI, anthropic, azureOpenAI, assistants, azureAssistants, google, bedrock, openrouter] =
       await Promise.all([
         getOpenAIModels({ user: req.user.id }).catch((error) => {
           logger.error('Error fetching OpenAI models:', error);
@@ -45,6 +46,10 @@ async function loadDefaultModels(req) {
           logger.error('Error getting Bedrock models:', error);
           return [];
         }),
+        getOpenRouterModels({ user: req.user.id }).catch((error) => {
+          logger.error('Error fetching OpenRouter models:', error);
+          return [];
+        }),
       ]);
 
     return {
@@ -55,6 +60,7 @@ async function loadDefaultModels(req) {
       [EModelEndpoint.assistants]: assistants,
       [EModelEndpoint.azureAssistants]: azureAssistants,
       [EModelEndpoint.bedrock]: bedrock,
+      [EModelEndpoint.openrouter]: openrouter,
     };
   } catch (error) {
     logger.error('Error fetching default models:', error);

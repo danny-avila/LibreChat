@@ -27,6 +27,7 @@ const edit = require('./edit');
 const keys = require('./keys');
 const user = require('./user');
 const mcp = require('./mcp');
+const openrouter = require('./openrouter');
 
 module.exports = {
   mcp,
@@ -56,6 +57,7 @@ module.exports = {
   tokenizer,
   assistants,
   categories,
+  openrouter,
   staticRoute,
   accessPermissions,
 };

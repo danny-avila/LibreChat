@@ -1,4 +1,5 @@
 const { Providers } = require('@librechat/agents');
+const { logger } = require('@librechat/data-schemas');
 const {
   primeResources,
   getModelMaxTokens,
@@ -18,6 +19,7 @@ const { getProviderConfig } = require('~/server/services/Endpoints');
 const { processFiles } = require('~/server/services/Files/process');
 const { getFiles, getToolFilesByIds } = require('~/models/File');
 const { getConvoFiles } = require('~/models/Conversation');
+const { getUserKey } = require('~/server/services/UserService');
 
 /**
  * @param {object} params
@@ -65,7 +67,16 @@ const initializeAgent = async ({
     Object.assign(
       { model: agent.model },
       agent.model_parameters ?? { model: agent.model },
+      // User's UI selections should override the saved agent model
       isInitialAgent === true ? endpointOption?.model_parameters : {},
+      // Priority override: If user selected a model in the UI, always use that
+      isInitialAgent === true && endpointOption?.model_parameters?.model
+        ? { model: endpointOption.model_parameters.model }
+        : {},
+      // Priority override: If user toggled autoRouter in the UI, always use that
+      isInitialAgent === true && endpointOption?.model_parameters?.autoRouter !== undefined
+        ? { autoRouter: endpointOption.model_parameters.autoRouter }
+        : {},
     ),
   );
 
@@ -179,6 +190,23 @@ const initializeAgent = async ({
   agent.model_parameters = { ...options.llmConfig };
   if (options.configOptions) {
     agent.model_parameters.configuration = options.configOptions;
+  }
+
+  // Log OpenRouter configuration when detected
+  if (
+    agent.provider === Providers.OPENROUTER ||
+    agent.provider === 'openrouter' ||
+    agent.endpoint === EModelEndpoint.openrouter ||
+    agent.endpoint === 'openrouter'
+  ) {
+    logger.debug('[Agent] OpenRouter provider detected');
+    logger.debug('[Agent] OpenRouter configuration from initOpenRouter:', {
+      provider: agent.provider,
+      endpoint: agent.endpoint,
+      baseURL: options.llmConfig?.configuration?.baseURL,
+      hasApiKey: !!options.llmConfig?.apiKey,
+      hasConfiguration: !!options.llmConfig?.configuration,
+    });
   }
 
   if (agent.instructions && agent.instructions !== '') {

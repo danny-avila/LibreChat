@@ -121,16 +121,20 @@ class GoogleClient extends BaseClient {
   /* Required Client methods */
   setOptions(options) {
     if (this.options && !this.options.replaceOptions) {
-      // nested options aren't spread properly, so we need to do this manually
-      this.options.modelOptions = {
-        ...this.options.modelOptions,
-        ...options.modelOptions,
+      // Merge modelOptions immutably
+      const mergedModelOptions = {
+        ...(this.options.modelOptions || {}),
+        ...(options.modelOptions || {}),
       };
-      delete options.modelOptions;
+
+      // Create a new options object without mutating the input
+      const { modelOptions: _incomingModelOptions, ...restOptions } = options;
+
       // now we can merge options
       this.options = {
         ...this.options,
-        ...options,
+        ...restOptions,
+        modelOptions: mergedModelOptions,
       };
     } else {
       this.options = options;
@@ -303,7 +307,7 @@ class GoogleClient extends BaseClient {
    */
   async addImageURLs(message, attachments, mode = '') {
     const { files, image_urls } = await encodeAndFormat(
-      this.options.req,
+      this.options?.req,
       attachments,
       EModelEndpoint.google,
       mode,
@@ -320,7 +324,7 @@ class GoogleClient extends BaseClient {
   async buildAugmentedPrompt(messages = []) {
     const attachments = await this.options.attachments;
     const latestMessage = { ...messages[messages.length - 1] };
-    this.contextHandlers = createContextHandlers(this.options.req, latestMessage.text);
+    this.contextHandlers = createContextHandlers(this.options?.req, latestMessage.text);
 
     if (this.contextHandlers) {
       for (const file of attachments) {
