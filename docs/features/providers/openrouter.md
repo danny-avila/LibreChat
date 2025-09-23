@@ -15,10 +15,9 @@ OpenRouter is a unified API gateway providing access to 100+ AI models from Open
 
 - **100+ AI Models** - Access models from all major providers through a single API
 - **Full Agent Support** - Native integration enables complete Agent system functionality
-- **Model Fallback Chains** - Automatic failover across up to 10 models for reliability
+- **Zero Data Retention (ZDR)** - Toggle to enforce privacy-compliant routing, only using providers that don't store data
 - **Auto Router** - Intelligent model selection based on prompt analysis
 - **Real-time Credits** - Live balance tracking with intelligent caching
-- **Provider Preferences** - Configure preferred and avoided providers
 - **Streaming Support** - Server-sent events for real-time responses
 
 ### Native vs YAML Configuration
@@ -27,11 +26,10 @@ OpenRouter is a unified API gateway providing access to 100+ AI models from Open
 |---------|-------------|-----------------|
 | Basic Chat | ✅ | ✅ |
 | Agent System | ❌ | ✅ |
-| Model Fallbacks | ❌ | ✅ |
 | Credits Display | ❌ | ✅ |
 | Smart Caching | ❌ | ✅ |
-| Auto Router | Limited | ✅ Full |
-| Provider Preferences | ❌ | ✅ |
+| Auto Router | ❌ | ✅ |
+| Zero Data Retention | ❌ | ✅ |
 
 ## Quick Start
 
@@ -69,6 +67,16 @@ OpenRouter is a unified API gateway providing access to 100+ AI models from Open
    - Select "OpenRouter" from the provider dropdown
    - Choose a model or use Auto Router
    - Start chatting!
+
+### Privacy-First Quick Start
+
+For maximum privacy protection:
+
+1. **Enable ZDR immediately**: Click the shield icon in the navigation bar
+2. **Configure OpenRouter account**: Visit [Privacy Settings](https://openrouter.ai/settings/privacy)
+3. **Set strict policies**: Enable "Deny training on all models" in your account
+4. **Use privacy-safe providers**: Anthropic, Mistral, DeepSeek are recommended
+5. **Monitor the shield icon**: Amber = ZDR active, ensuring privacy compliance
 
 ## Configuration
 
@@ -127,26 +135,6 @@ OpenRouter's native integration provides full compatibility with LibreChat's Age
 }
 ```
 
-### Model Fallback Chains
-
-Configure automatic fallbacks for maximum reliability:
-
-```javascript
-{
-  "model": "openai/gpt-4",
-  "models": [
-    "anthropic/claude-3-opus-20240229",
-    "google/gemini-pro-1.5",
-    "openai/gpt-3.5-turbo"
-  ]
-}
-```
-
-**Fallback Behavior:**
-- Automatically switches to next model on error
-- Supports up to 10 models in chain
-- Preserves conversation context
-- Each attempt counts toward rate limits
 
 ### Auto Router™
 
@@ -183,20 +171,31 @@ LibreChat provides a seamless toggle interface for OpenRouter's intelligent mode
 // Manual model selection → Disables Auto-Router toggle
 ```
 
-### Provider Preferences
+### Zero Data Retention (ZDR)
 
-Configure routing preferences:
+Enforce privacy-compliant routing with the ZDR toggle in the navigation bar:
 
-```javascript
-{
-  "provider": {
-    "order": ["openai", "anthropic", "google"],
-    "require_parameters": true,
-    "data_collection": "deny",
-    "allow_fallbacks": true
-  }
-}
-```
+#### How to Enable ZDR
+1. Select OpenRouter as your provider
+2. Look for the **shield icon** in the navigation bar (next to the Auto-Router lightning icon)
+3. Click the switch to enable ZDR
+4. The shield icon turns **amber** when ZDR is active
+
+#### How It Works
+- When enabled, adds `zdr: true` parameter to all OpenRouter API requests
+- OpenRouter will only route to providers that guarantee zero data retention
+- May limit available models based on provider policies
+- Helps comply with privacy requirements and data protection regulations
+- State is preserved across sessions and conversations
+
+#### Privacy Policy Errors
+If you see "404 No endpoints found matching your data policy", this means:
+- Your OpenRouter account has privacy restrictions enabled
+- The selected model doesn't comply with your account's privacy settings
+- Solution: Enable ZDR or adjust your [OpenRouter privacy settings](https://openrouter.ai/settings/privacy)
+
+For detailed privacy information, see our [Privacy Settings Documentation](../../features/openrouter-privacy.md).
+
 
 ### Credits Tracking
 

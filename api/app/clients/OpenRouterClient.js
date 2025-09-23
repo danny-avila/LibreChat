@@ -202,11 +202,20 @@ class OpenRouterClient extends BaseClient {
     // Store original model for metadata
     const originalModel = userSelectedModel;
 
+    // Store these values on the instance for use in streaming handler
+    this._currentShouldUseAutoRouter = shouldUseAutoRouter;
+    this._currentEffectiveModel = effectiveModel;
+
+
+    // Extract ZDR (Zero Data Retention) setting from modelOptions or params
+    const enforceZDR = this.modelOptions?.zdr || params.zdr || false;
 
     const requestBody = {
       messages,
       model: effectiveModel,
       ...otherParams,
+      // Add ZDR parameter if enabled - enforces Zero Data Retention policy
+      ...(enforceZDR && { zdr: true }),
       // Add transforms to control data privacy
       // This prevents the "No endpoints found matching your data policy" error
       transforms: ['middle-out'], // This allows the request without data collection
@@ -650,34 +659,21 @@ class OpenRouterClient extends BaseClient {
 
                     logger.info('[OpenRouter] Model detected in response:', {
                       actualModel: actualModelUsed,
+                      requestedModel: this.modelOptions?.model,
                       autoRouter: this.autoRouter,
                       modelOptionsAutoRouter: this.modelOptions?.autoRouter,
-                      willSendToken: !!(this.modelOptions?.autoRouter || this.autoRouter),
                     });
 
-                    // Send a special token to indicate model info if auto-router was used
-                    // Check multiple locations for the autoRouter flag
-                    const isAutoRouter = this.modelOptions?.autoRouter ||
-                                       this.autoRouter ||
-                                       this.options?.autoRouter ||
-                                       this.options?.modelOptions?.autoRouter ||
-                                       requestOptions.model === 'openrouter/auto';
+                    // Store model in the options so it can be accessed later
+                    if (this.options) {
+                      this.options.openRouterActualModel = actualModelUsed;
+                    }
 
-                    logger.info('[OpenRouter] AutoRouter check:', {
-                      fromModelOptions: this.modelOptions?.autoRouter,
-                      fromThis: this.autoRouter,
-                      fromOptions: this.options?.autoRouter,
-                      fromOptionsModelOptions: this.options?.modelOptions?.autoRouter,
-                      isAutoModel: requestOptions.model === 'openrouter/auto',
-                      final: isAutoRouter,
-                    });
-
-                    if (isAutoRouter) {
-                      if (onProgress) {
-                        // Send model info as a special prefix that can be extracted by the UI
-                        logger.info('[OpenRouter] Sending MODEL token:', actualModelUsed);
-                        onProgress(`[MODEL:${actualModelUsed}]`);
-                      }
+                    // Also send it as a special token that will be parsed on the frontend
+                    // Use a different format that won't conflict with content
+                    if (onProgress && actualModelUsed) {
+                      logger.info('[OpenRouter] Sending model indicator:', actualModelUsed);
+                      onProgress(`\n[OPENROUTER_MODEL:${actualModelUsed}]\n`);
                     }
                   }
 
@@ -811,6 +807,21 @@ class OpenRouterClient extends BaseClient {
    * @returns {Promise<string>} A promise that resolves to the generated conversation title.
    *                            In case of failure, it will return the default title, "New Chat".
    */
+  /**
+   * Override getResponseModel to return the actual model used when auto-router is enabled
+   * @returns {string} The model identifier to be displayed in the response
+   */
+  getResponseModel() {
+    // If we have detected an actual model used (from auto-router), use it
+    if (this.actualModelUsed) {
+      logger.debug('[OpenRouterClient] getResponseModel returning actual model:', this.actualModelUsed);
+      return this.actualModelUsed;
+    }
+
+    // Otherwise use the base implementation
+    return super.getResponseModel();
+  }
+
   async titleConvo({ text, conversationId, responseText = '' }) {
     this.conversationId = conversationId;
     if (this.options.attachments) {

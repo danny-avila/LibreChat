@@ -12,6 +12,7 @@ import {
   tMessageSchema,
   tConvoUpdateSchema,
   isAssistantsEndpoint,
+  EModelEndpoint,
 } from 'librechat-data-provider';
 import type { TMessage, TConversation, EventSubmission } from 'librechat-data-provider';
 import type { TResData, TFinalResData, ConvoGenerator } from '~/common';
@@ -32,6 +33,7 @@ import {
 import useAttachmentHandler from '~/hooks/SSE/useAttachmentHandler';
 import useContentHandler from '~/hooks/SSE/useContentHandler';
 import store, { useApplyNewAgentTemplate } from '~/store';
+import { openRouterActualModelState } from '~/store/openrouter';
 import useStepHandler from '~/hooks/SSE/useStepHandler';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { MESSAGE_UPDATE_INTERVAL } from '~/common';
@@ -283,8 +285,25 @@ export default function useEventHandlers({
   const syncHandler = useCallback(
     (data: TSyncData, submission: EventSubmission) => {
       const { conversationId, thread_id, responseMessage, requestMessage } = data;
-      const { initialResponse, messages: _messages, userMessage } = submission;
+      const { initialResponse, messages: _messages, userMessage, conversation: submissionConvo } = submission;
       const messages = _messages.filter((msg) => msg.messageId !== userMessage.messageId);
+
+      // Check if this is an OpenRouter response with a model
+      console.log('[useEventHandlers syncHandler] Checking for OpenRouter model:', {
+        endpoint: submissionConvo?.endpoint,
+        isOpenRouter: submissionConvo?.endpoint === EModelEndpoint.openrouter,
+        responseMessageModel: responseMessage?.model,
+        responseMessage: responseMessage,
+      });
+
+      if (submissionConvo?.endpoint === EModelEndpoint.openrouter) {
+        if (responseMessage?.model) {
+          console.log('[useEventHandlers syncHandler] OpenRouter model detected:', responseMessage.model);
+          setActualModel(responseMessage.model);
+        } else {
+          console.log('[useEventHandlers syncHandler] No model in response, will wait for streaming token');
+        }
+      }
 
       setMessages([
         ...messages,
@@ -350,6 +369,7 @@ export default function useEventHandlers({
       setConversation,
       setShowStopButton,
       resetLatestMessage,
+      setActualModel,
     ],
   );
 
@@ -434,6 +454,8 @@ export default function useEventHandlers({
     ],
   );
 
+  const setActualModel = useSetRecoilState(openRouterActualModelState);
+
   const finalHandler = useCallback(
     (data: TFinalResData, submission: EventSubmission) => {
       console.log('finalHandler', data);
@@ -444,6 +466,28 @@ export default function useEventHandlers({
         isRegenerate = false,
         isTemporary = false,
       } = submission;
+
+      // Check if this is an OpenRouter response with a model
+      console.log('[useEventHandlers finalHandler] Checking for OpenRouter model:', {
+        endpoint: conversation?.endpoint,
+        isOpenRouter: conversation?.endpoint === EModelEndpoint.openrouter,
+        responseMessageModel: responseMessage?.model,
+        responseMessage: responseMessage,
+      });
+
+      if (conversation?.endpoint === EModelEndpoint.openrouter) {
+        if (responseMessage?.model) {
+          console.log('[useEventHandlers] OpenRouter model detected in response:', responseMessage.model);
+          setActualModel(responseMessage.model);
+        } else {
+          console.log('[useEventHandlers] No model in OpenRouter response, checking conversation');
+          // Also try from conversation if available
+          if (conversation?.model && conversation.model !== 'openrouter/auto') {
+            console.log('[useEventHandlers] Using model from conversation:', conversation.model);
+            setActualModel(conversation.model);
+          }
+        }
+      }
 
       if (responseMessage?.attachments && responseMessage.attachments.length > 0) {
         // Process each attachment through the attachmentHandler
@@ -594,6 +638,7 @@ export default function useEventHandlers({
       location.pathname,
       applyAgentTemplate,
       attachmentHandler,
+      setActualModel,
     ],
   );
 

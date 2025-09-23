@@ -46,6 +46,11 @@ export const openRouterAutoRouterEnabledState = atomWithLocalStorage<boolean>(
   false, // Disabled by default - user must explicitly enable
 );
 
+export const openRouterZDREnabledState = atomWithLocalStorage<boolean>(
+  'openRouterZDREnabled',
+  false, // Disabled by default - user must explicitly enable for privacy
+);
+
 export const openRouterRouteState = atomWithLocalStorage<OpenRouterState['route']>(
   'openRouterRoute',
   DEFAULT_ROUTE,

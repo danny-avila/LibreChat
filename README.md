@@ -18,7 +18,7 @@
 > - ✅ **Provider Preferences** - Control which providers to use
 > - 🔄 **Seamless Model Switching** - Change models mid-conversation without losing context
 >
-> **[📖 OpenRouter Documentation](docs/features/providers/openrouter.md)** | **[🚀 Quick Start](docs/features/providers/openrouter.md#quick-start)** | **[⚙️ API Reference](docs/api-reference/openrouter.md)**
+> **[📖 OpenRouter Documentation](docs/features/providers/openrouter.md)** | **[🚀 Quick Start](docs/features/providers/openrouter.md#quick-start)** | **[🔒 Privacy Settings](docs/features/openrouter-privacy.md)** | **[⚙️ API Reference](docs/api-reference/openrouter.md)**
 
 <p align="center">
   <a href="https://discord.librechat.ai"> 
@@ -154,6 +154,15 @@
 > **⚠️ Note: This is a proof-of-concept implementation**. While OpenRouter is now integrated as a native provider with Agent system compatibility, comprehensive testing is still ongoing.
 >
 > **This fork with native OpenRouter integration was developed by Sergey Kornilov (Biostochastics)**
+
+### Key Features
+- **🔒 Zero Data Retention (ZDR)**: Privacy toggle in navigation bar - enforce routing only through providers that guarantee no data storage
+  - Shield icon toggle next to Auto-Router for quick access
+  - Shield turns amber when ZDR is active
+  - Automatically adds `zdr: true` to all API requests
+- **📊 Real-time Credits Display**: Monitor your OpenRouter balance in the navigation bar
+- **🤖 Auto-Router Toggle**: Lightning icon in nav bar for intelligent model selection
+- **📚 Comprehensive Privacy Documentation**: Clear explanations for privacy policy errors and solutions
 
 ### Motivation
 

@@ -61,21 +61,32 @@ export default function useContentHandler({ setMessages, getMessages }: TUseCont
 
       // Check for OpenRouter model indicator token and extract it
       if (textPart && typeof textPart === 'string') {
-        const modelMatch = textPart.match(/^\[MODEL:([^\]]+)\]/);
+        // Debug log all text content
+        if (textPart.includes('OPENROUTER_MODEL') || textPart.includes('[')) {
+          console.log('[useContentHandler] Checking text for model token:', textPart);
+        }
+
+        // Look for the new format with newlines for better isolation
+        const modelMatch = textPart.match(/\n?\[OPENROUTER_MODEL:([^\]]+)\]\n?/);
         if (modelMatch) {
           // Extract model name and store it
           const actualModel = modelMatch[1];
-          console.log('[useContentHandler] MODEL TOKEN DETECTED:', actualModel);
+          console.log('[useContentHandler] OPENROUTER MODEL TOKEN DETECTED:', actualModel);
+          console.log('[useContentHandler] Setting actualModel in Recoil state');
           setActualModel(actualModel);
 
           // Remove the token from the text content
-          textPart = textPart.replace(/^\[MODEL:[^\]]+\]/, '');
+          textPart = textPart.replace(/\n?\[OPENROUTER_MODEL:[^\]]+\]\n?/, '');
           console.log('[useContentHandler] Removed token, remaining text:', textPart);
 
           // If the text is now empty after removing the token, skip this update
           if (!textPart) {
+            console.log('[useContentHandler] Text empty after token removal, skipping update');
             return;
           }
+        } else if (textPart.includes('[OPENROUTER_MODEL:')) {
+          // Debug: Log if we see MODEL token but it doesn't match the regex
+          console.log('[useContentHandler] Saw OPENROUTER_MODEL token but regex did not match:', textPart);
         }
       }
 
