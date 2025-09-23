@@ -2808,10 +2808,10 @@ html {
 
 /* Hide scrollbar for IE, Edge and Firefox */
 .no-scrollbar {
-  -ms-overflow-style: none;  /* IE and Edge */
-  scrollbar-width: none;  /* Firefox */
+  -ms-overflow-style: none; /* IE and Edge */
+  scrollbar-width: none; /* Firefox */
 }
 
-.sharepoint-picker-bg{
-  background-color: #F5F5F5;
+.sharepoint-picker-bg {
+  background-color: #f5f5f5;
 }

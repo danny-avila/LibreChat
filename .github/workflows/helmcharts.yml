@@ -4,7 +4,7 @@ name: Build Helm Charts on Tag
 on:
   push:
     tags:
-      - "chart-*"
+      - 'chart-*'
 
 jobs:
   release:
@@ -26,14 +26,14 @@ jobs:
       - name: Install Helm
         uses: azure/setup-helm@v4
         env:
-          GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
-      
+          GITHUB_TOKEN: '${{ secrets.GITHUB_TOKEN }}'
+
       - name: Build Subchart Deps
         run: |
           cd helm/librechat
           helm dependency build  
           cd ../librechat-rag-api
-          helm dependency build      
+          helm dependency build
 
       - name: Get Chart Version
         id: chart-version
@@ -61,7 +61,7 @@ jobs:
           registry: ghcr.io
           registry_username: ${{ github.actor }}
           registry_password: ${{ secrets.GITHUB_TOKEN }}
-      
+
       # this is for the librechat-rag-api chart
       - name: Release Helm OCI Charts for librechat-rag-api
         uses: appany/helm-oci-chart-releaser@v0.4.2

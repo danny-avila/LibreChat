@@ -1,13 +1,13 @@
 name: Bug Report
 description: File a bug report
-title: "[Bug]: "
-labels: ["🐛 bug"]
+title: '[Bug]: '
+labels: ['🐛 bug']
 body:
   - type: markdown
     attributes:
       value: |
         Thanks for taking the time to fill out this bug report!
-        
+
         Before submitting, please:
         - Search existing [Issues and Discussions](https://github.com/danny-avila/LibreChat/discussions) to see if your bug has already been reported
         - Use [Discussions](https://github.com/danny-avila/LibreChat/discussions) instead of Issues for:
@@ -31,7 +31,7 @@ body:
         ```bash
         docker images | grep librechat
         ```
-        
+
         If running from source, please run and provide the output of:
         ```bash
         git rev-parse HEAD
@@ -65,15 +65,15 @@ body:
       label: Relevant log output
       description: |
         Please paste relevant logs that were created when reproducing the error.
-        
+
         Log locations:
         - Docker: Project root directory ./logs
         - npm: ./api/logs
-        
+
         There are two types of logs that can help diagnose the issue:
         - debug logs (debug-YYYY-MM-DD.log)
         - error logs (error-YYYY-MM-DD.log)
-        
+
         Error logs contain exact stack traces and are especially helpful, but both can provide valuable information.
         Please only include the relevant portions of logs that correspond to when you reproduced the error.
 

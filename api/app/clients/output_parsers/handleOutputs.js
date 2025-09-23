@@ -65,14 +65,14 @@ function buildPromptPrefix({ result, message, functionsAgent }) {
   const preliminaryAnswer =
     result.output?.length > 0 ? `Preliminary Answer: "${result.output.trim()}"` : '';
   const prefix = preliminaryAnswer
-    ? 'review and improve the answer you generated using plugins in response to the User Message below. The user hasn\'t seen your answer or thoughts yet.'
+    ? "review and improve the answer you generated using plugins in response to the User Message below. The user hasn't seen your answer or thoughts yet."
     : 'respond to the User Message below based on your preliminary thoughts & actions.';
 
   return `As a helpful AI Assistant, ${prefix}${errorMessage}\n${internalActions}
 ${preliminaryAnswer}
 Reply conversationally to the User based on your ${
-  preliminaryAnswer ? 'preliminary answer, ' : ''
-}internal actions, thoughts, and observations, making improvements wherever possible, but do not modify URLs.
+    preliminaryAnswer ? 'preliminary answer, ' : ''
+  }internal actions, thoughts, and observations, making improvements wherever possible, but do not modify URLs.
 ${
   preliminaryAnswer
     ? ''

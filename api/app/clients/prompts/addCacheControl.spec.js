@@ -6,7 +6,7 @@ describe('addCacheControl', () => {
       { role: 'user', content: [{ type: 'text', text: 'Hello' }] },
       { role: 'assistant', content: [{ type: 'text', text: 'Hi there' }] },
       { role: 'user', content: [{ type: 'text', text: 'How are you?' }] },
-      { role: 'assistant', content: [{ type: 'text', text: 'I\'m doing well, thanks!' }] },
+      { role: 'assistant', content: [{ type: 'text', text: "I'm doing well, thanks!" }] },
       { role: 'user', content: [{ type: 'text', text: 'Great!' }] },
     ];
 
@@ -22,7 +22,7 @@ describe('addCacheControl', () => {
       { role: 'user', content: 'Hello' },
       { role: 'assistant', content: 'Hi there' },
       { role: 'user', content: 'How are you?' },
-      { role: 'assistant', content: 'I\'m doing well, thanks!' },
+      { role: 'assistant', content: "I'm doing well, thanks!" },
       { role: 'user', content: 'Great!' },
     ];
 
@@ -140,7 +140,7 @@ describe('addCacheControl', () => {
       { role: 'user', content: 'Hello' },
       { role: 'assistant', content: 'Hi there' },
       { role: 'user', content: [{ type: 'text', text: 'How are you?' }] },
-      { role: 'assistant', content: 'I\'m doing well, thanks!' },
+      { role: 'assistant', content: "I'm doing well, thanks!" },
       { role: 'user', content: 'Great!' },
     ];
 
@@ -160,7 +160,7 @@ describe('addCacheControl', () => {
       },
     ]);
     expect(result[1].content).toBe('Hi there');
-    expect(result[3].content).toBe('I\'m doing well, thanks!');
+    expect(result[3].content).toBe("I'm doing well, thanks!");
   });
 
   test('should handle edge case with multiple content types', () => {

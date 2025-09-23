@@ -69,4 +69,4 @@ jobs:
             ${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.image_name }}:${{ github.sha }}
             ${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.image_name }}:latest
           platforms: linux/amd64,linux/arm64
-          target: ${{ matrix.target }} 
+          target: ${{ matrix.target }}

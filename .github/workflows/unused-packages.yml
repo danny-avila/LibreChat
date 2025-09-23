@@ -67,7 +67,7 @@ jobs:
               # Extract require() statements
               grep -rEho "require\\(['\"]([a-zA-Z0-9@/._-]+)['\"]\\)" "$folder" --include=\*.{js,ts,tsx,jsx,mjs,cjs} | \
                 sed -E "s/require\\(['\"]([a-zA-Z0-9@/._-]+)['\"]\\)/\1/" > "$output_file"
-          
+
               # Extract ES6 imports - various patterns
               # import x from 'module'
               grep -rEho "import .* from ['\"]([a-zA-Z0-9@/._-]+)['\"]" "$folder" --include=\*.{js,ts,tsx,jsx,mjs,cjs} | \
@@ -84,7 +84,7 @@ jobs:
               # import type { x } from 'module' (TypeScript)
               grep -rEho "import type .* from ['\"]([a-zA-Z0-9@/._-]+)['\"]" "$folder" --include=\*.{ts,tsx} | \
                 sed -E "s/import type .* from ['\"]([a-zA-Z0-9@/._-]+)['\"]/\1/" >> "$output_file"
-          
+
               # Remove subpath imports but keep the base package
               # e.g., '@tanstack/react-query/devtools' becomes '@tanstack/react-query'
               sed -i -E 's|^(@?[a-zA-Z0-9-]+(/[a-zA-Z0-9-]+)?)/.*|\1|' "$output_file"
@@ -98,7 +98,7 @@ jobs:
           extract_deps_from_code "." root_used_code.txt
           extract_deps_from_code "client" client_used_code.txt
           extract_deps_from_code "api" api_used_code.txt
-          
+
           # Extract dependencies used by @librechat/client package
           extract_deps_from_code "packages/client" packages_client_used_code.txt
 
@@ -159,7 +159,7 @@ jobs:
               touch "$output_file"
             fi
           }
-          
+
           # Get workspace dependencies for each package
           get_workspace_package_deps "package.json" root_workspace_deps.txt
           get_workspace_package_deps "client/package.json" client_workspace_deps.txt

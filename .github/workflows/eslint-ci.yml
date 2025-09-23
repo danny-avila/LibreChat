@@ -36,7 +36,7 @@ jobs:
       # Run ESLint on changed files within the api/ and client/ directories.
       - name: Run ESLint on changed files
         env:
-          SARIF_ESLINT_IGNORE_SUPPRESSED: "true"
+          SARIF_ESLINT_IGNORE_SUPPRESSED: 'true'
         run: |
           # Extract the base commit SHA from the pull_request event payload.
           BASE_SHA=$(jq --raw-output .pull_request.base.sha "$GITHUB_EVENT_PATH")

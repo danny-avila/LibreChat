@@ -223,9 +223,55 @@ const jsonTruncateFormat = winston.format((info) => {
   return truncateObject(info);
 });
 
+/**
+ * Parses rate limiting configuration from the main config object.
+ * - Detects if Redis is configured and sets backend accordingly.
+ * - Falls back to 'memory' if Redis config is incomplete or missing.
+ * - Validates Redis config only if backend is explicitly 'redis'.
+ * @param {Object} config - The main configuration object (e.g., from librechat.yaml).
+ * @returns {Object} - Parsed rate limiting configuration with defaults and backend flag.
+ */
+function parseRateLimitingConfig(config) {
+  const defaults = {
+    enabled: true,
+    backend: 'memory', // Default to in-memory (existing limiters)
+    redis: { host: 'localhost', port: 6379, db: 1 },
+    limits: {
+      login: { points: 5, duration: 300, blockDuration: 900 },
+      register: { points: 3, duration: 3600 },
+      messages: { points: 100, duration: 60 },
+      fileUploads: { points: 20, duration: 300 },
+      apiKeys: { points: 10, duration: 3600 },
+    },
+  };
+
+  const userConfig = config?.rateLimiting || {};
+
+  // Merge user config with defaults
+  const mergedConfig = { ...defaults, ...userConfig };
+
+  // Auto-detect backend: Use 'redis' only if fully configured
+  if (userConfig.backend === 'redis') {
+    if (!mergedConfig.redis || !mergedConfig.redis.host || !mergedConfig.redis.port) {
+      console.warn(
+        'Redis backend selected but configuration is incomplete. Falling back to memory.',
+      );
+      mergedConfig.backend = 'memory';
+    }
+  } else if (mergedConfig.redis && mergedConfig.redis.host && mergedConfig.redis.port) {
+    // If Redis config is provided but backend not specified, enable it
+    mergedConfig.backend = 'redis';
+  } else {
+    mergedConfig.backend = 'memory';
+  }
+
+  return mergedConfig;
+}
+
 module.exports = {
   redactFormat,
   redactMessage,
   debugTraverse,
   jsonTruncateFormat,
+  parseRateLimitingConfig,
 };

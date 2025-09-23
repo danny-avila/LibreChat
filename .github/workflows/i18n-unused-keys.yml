@@ -8,11 +8,11 @@ name: Detect Unused i18next Strings
 on:
   pull_request:
     paths:
-      - "client/src/**"
-      - "api/**"
-      - "packages/data-provider/src/**"
-      - "packages/client/**"
-      - "packages/data-schemas/src/**"
+      - 'client/src/**'
+      - 'api/**'
+      - 'packages/data-provider/src/**'
+      - 'packages/client/**'
+      - 'packages/data-schemas/src/**'
 
 jobs:
   detect-unused-i18n-keys:
@@ -101,7 +101,7 @@ jobs:
                 fi
               done
             fi
-          
+
             if [[ "$FOUND" == false ]]; then
               UNUSED_KEYS+=("$KEY")
             fi

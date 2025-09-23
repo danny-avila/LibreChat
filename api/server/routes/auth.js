@@ -1,3 +1,4 @@
+// api/server/routes/auth.js
 const express = require('express');
 const { createSetBalanceConfig } = require('@librechat/api');
 const {
@@ -21,55 +22,90 @@ const { getAppConfig } = require('~/server/services/Config');
 const middleware = require('~/server/middleware');
 const { Balance } = require('~/db/models');
 
+// Configure balance integration
 const setBalanceConfig = createSetBalanceConfig({
   getAppConfig,
   Balance,
 });
 
+// Initialize router
 const router = express.Router();
 
-const ldapAuth = !!process.env.LDAP_URL && !!process.env.LDAP_USER_SEARCH_BASE;
-//Local
+// Determine LDAP availability with fallback
+const ldapAuth = process.env.LDAP_URL && process.env.LDAP_USER_SEARCH_BASE;
+const requireAuthMiddleware = ldapAuth ? middleware.requireLdapAuth : middleware.requireLocalAuth;
+
+// Centralize security middleware
+const applySecurityMiddleware = (req, res, next) => {
+  try {
+    middleware.checkBan(req, res, (err) => {
+      if (err) return res.status(403).json({ error: 'User is banned' });
+      next();
+    });
+  } catch (error) {
+    console.error('Security middleware error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+// Authentication Routes
 router.post('/logout', middleware.requireJwtAuth, logoutController);
+
 router.post(
   '/login',
   middleware.logHeaders,
-  middleware.loginLimiter,
-  middleware.checkBan,
-  ldapAuth ? middleware.requireLdapAuth : middleware.requireLocalAuth,
+  middleware.rateLimitMiddleware, // Replace loginLimiter with Redis-based
+  applySecurityMiddleware,
+  requireAuthMiddleware,
   setBalanceConfig,
   loginController,
 );
+
 router.post('/refresh', refreshController);
+
 router.post(
   '/register',
-  middleware.registerLimiter,
-  middleware.checkBan,
+  middleware.rateLimitMiddleware, // Replace registerLimiter with Redis-based
+  applySecurityMiddleware,
   middleware.checkInviteUser,
   middleware.validateRegistration,
   registrationController,
 );
+
 router.post(
   '/requestPasswordReset',
-  middleware.resetPasswordLimiter,
-  middleware.checkBan,
+  middleware.rateLimitMiddleware, // Replace resetPasswordLimiter with Redis-based
+  applySecurityMiddleware,
   middleware.validatePasswordReset,
   resetPasswordRequestController,
 );
+
 router.post(
   '/resetPassword',
-  middleware.checkBan,
+  applySecurityMiddleware,
   middleware.validatePasswordReset,
   resetPasswordController,
 );
 
+// Two-Factor Authentication Routes
 router.get('/2fa/enable', middleware.requireJwtAuth, enable2FA);
+
 router.post('/2fa/verify', middleware.requireJwtAuth, verify2FA);
-router.post('/2fa/verify-temp', middleware.checkBan, verify2FAWithTempToken);
+
+router.post(
+  '/2fa/verify-temp',
+  applySecurityMiddleware,
+  middleware.rateLimitMiddleware, // Added for security against abuse
+  verify2FAWithTempToken,
+);
+
 router.post('/2fa/confirm', middleware.requireJwtAuth, confirm2FA);
+
 router.post('/2fa/disable', middleware.requireJwtAuth, disable2FA);
+
 router.post('/2fa/backup/regenerate', middleware.requireJwtAuth, regenerateBackupCodes);
 
+// Additional Auth Routes
 router.get('/graph-token', middleware.requireJwtAuth, graphTokenController);
 
 module.exports = router;
