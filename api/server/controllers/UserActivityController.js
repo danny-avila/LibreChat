@@ -1,6 +1,7 @@
 const { logger } = require('~/config');
 const { UserActivityLog, User, Message } = require('~/db/models');
 const mongoose = require('mongoose');
+const { exportLogsToCSV } = require('~/server/utils/excelExport');
 
 /** ---------------- Shared helpers ---------------- **/
 const buildFilterFromQuery = (query = {}) => {
@@ -362,10 +363,61 @@ const getUserActivitySummary = async (req, res) => {
   }
 };
 
+/**
+ * Export activity logs to CSV format
+ * Query: userId, action, startDate, endDate, search
+ */
+const exportActivityLogs = async (req, res) => {
+  try {
+    const { filter } = buildFilterFromQuery(req.query);
+    
+    // Get all matching logs (no pagination for export)
+    const logs = await UserActivityLog.aggregate([
+      { $match: filter },
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'user',
+          foreignField: '_id',
+          as: 'userInfo',
+          pipeline: [
+            { $project: { name: 1, email: 1, username: 1, avatar: 1, role: 1 } }
+          ]
+        }
+      },
+      { $unwind: { path: '$userInfo', preserveNullAndEmptyArrays: true } },
+      { $sort: { timestamp: -1 } }
+    ]);
+
+    if (!logs || logs.length === 0) {
+      return res.status(404).json({ message: 'No logs found matching the criteria' });
+    }
+
+    // Generate CSV
+    const csv = await exportLogsToCSV(logs);
+    
+    // Set headers for file download
+    const date = new Date().toISOString().split('T')[0];
+    const filename = `activity-logs-${date}.csv`;
+    
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Pragma', 'no-cache');
+    
+    // Send the CSV file
+    return res.send(csv);
+  } catch (error) {
+    logger.error('Error exporting activity logs to CSV:', error);
+    return res.status(500).json({ message: 'Failed to export activity logs', error: error.message });
+  }
+};
+
 module.exports = {
   getUserActivityLogs,
   getActivityStats,
   getUserActivitySummary,
+  exportActivityLogs,
   getTokenUsageForModelChange,
   fetchActivityLogs, // exported for streaming service
 };

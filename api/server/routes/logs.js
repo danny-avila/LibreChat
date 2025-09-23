@@ -3,6 +3,7 @@ const router = express.Router();
 const { requireJwtAuth, checkAdmin } = require('~/server/middleware');
 const queryLogger = require('~/server/services/QueryLogger');
 const { Message, User } = require('~/db/models');
+const { exportQueryLogsToCSV } = require('~/server/utils/excelExport');
 
 router.use(requireJwtAuth, checkAdmin);
 
@@ -192,4 +193,73 @@ router.get('/query/:messageId', async (req, res) => {
   }
 });
 
+// Endpoint to export query logs as CSV
+// Endpoint to export query logs as CSV
+router.get('/queries/export', async (req, res) => {
+  try {
+    const search = req.query.search ? req.query.search.trim() : null;
+    
+    // Build search filter
+    const filter = {};
+    if (search) {
+      filter.$or = [
+        { model: { $regex: search, $options: 'i' } },
+        { text: { $regex: search, $options: 'i' } },
+        { 'user.name': { $regex: search, $options: 'i' } },
+        { 'user.email': { $regex: search, $options: 'i' } }
+      ];
+    }
+
+    // Get all matching messages with required fields and populate user data
+    const messages = await Message.find(filter)
+      .populate({
+        path: 'user',
+        select: 'name email',
+        model: 'User'
+      })
+      .select('user text model tokenCount createdAt')
+      .sort({ createdAt: -1 })
+      .lean();
+
+    if (!messages || messages.length === 0) {
+      return res.status(404).json({ message: 'No query logs found matching the criteria' });
+    }
+
+    // Format messages for CSV export
+    const formattedLogs = messages.map((message) => {
+      const user = message.user || {};
+      const isAI = !!message.model;
+      
+      return {
+        role: isAI ? 'assistant' : 'user',
+        model: message.model || null,
+        text: message.text || '',
+        tokenCount: message.tokenCount || 0,
+        createdAt: message.createdAt ? message.createdAt.toISOString() : new Date().toISOString(),
+        user: {
+          name: user.name || 'N/A',
+          email: user.email || 'N/A'
+        }
+      };
+    });
+
+    // Generate CSV
+    const csv = await exportQueryLogsToCSV(formattedLogs);
+    
+    // Set headers for file download
+    const date = new Date().toISOString().split('T')[0];
+    const filename = `query-logs-${date}.csv`;
+    
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Pragma', 'no-cache');
+    
+    // Send the CSV file
+    return res.send(csv);
+  } catch (error) {
+    console.error('Error exporting query logs to CSV:', error);
+    return res.status(500).json({ message: 'Failed to export query logs', error: error.message });
+  }
+});
 module.exports = router;

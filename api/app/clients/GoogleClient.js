@@ -616,7 +616,10 @@ class GoogleClient extends BaseClient {
       return client;
     } else if (!EXCLUDED_GENAI_MODELS.test(model)) {
       logger.debug('Creating GenAI client');
-      return new GenAI(this.apiKey).getGenerativeModel({ model }, requestOptions);
+      return new GenAI(this.apiKey).getGenerativeModel(
+        { model, ...clientOptions,},
+        requestOptions,
+      );
     }
 
     logger.debug('Creating Chat Google Generative AI client');
@@ -635,10 +638,6 @@ class GoogleClient extends BaseClient {
       };
     }
 
-    if (this.isGenerativeModel && !this.project_id) {
-      clientOptions.modelName = clientOptions.model;
-      delete clientOptions.model;
-    }
 
     this.client = this.createLLM(clientOptions);
     return this.client;
@@ -661,7 +660,12 @@ class GoogleClient extends BaseClient {
         const requestOptions = {
           safetySettings,
           contents: _payload,
-          generationConfig: googleGenConfigSchema.parse(this.modelOptions),
+          generationConfig: {
+            ...googleGenConfigSchema.parse(this.modelOptions),
+            ...(modelName.toLowerCase().includes('flash')
+              ? { thinkingConfig: { thinkingBudget: 0 } }
+              : {}),
+          },
         };
 
         const promptPrefix = (this.systemMessage ?? '').trim();
@@ -916,6 +920,9 @@ class GoogleClient extends BaseClient {
         safetySettings,
         generationConfig: {
           temperature: 0.5,
+          ...(model.toLowerCase().includes('flash')
+            ? { thinkingConfig: { thinkingBudget: 0 } }
+            : {}),
         },
       };
 

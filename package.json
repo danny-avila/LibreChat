@@ -146,6 +146,7 @@
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.15",
+    "csv-stringify": "^6.6.0",
     "dedent": "^1.6.0",
     "event-source-polyfill": "^1.0.31",
     "ioredis": "^5.7.0",

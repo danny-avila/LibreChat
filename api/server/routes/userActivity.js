@@ -2,7 +2,11 @@ const express = require('express');
 const { requireJwtAuth, checkAdmin } = require('~/server/middleware');
 const sseAuthBridge = require('~/server/middleware/sseAuthBridge');
 const { userActivityService } = require('~/server/services/UserActivityService');
-const { getUserActivityLogs, getUserActivitySummary } = require('~/server/controllers/UserActivityController');
+const { 
+  getUserActivityLogs, 
+  getUserActivitySummary, 
+  exportActivityLogs 
+} = require('~/server/controllers/UserActivityController');
 const { UserActivityLog } = require('~/db/models');
 const { logger } = require('~/config');
 
@@ -38,6 +42,9 @@ router.get('/test', requireJwtAuth, checkAdmin, async (req, res) => {
     });
   }
 });
+
+// Export logs to Excel
+router.get('/export', requireJwtAuth, checkAdmin, exportActivityLogs);
 
 // GET SSE stream
 router.get('/stream', sseAuthBridge, requireJwtAuth, checkAdmin, async (req, res) => {
