@@ -205,13 +205,23 @@ class A2AAgentClient {
       logger.debug(`A2A Agent Client - response: ${responseText.substring(0, 100)}...`);
 
       // Save conversation to database with task metadata
+      // Title policy for A2A:
+      // - Generate a concise title from the first user message on new threads
+      // - Do not overwrite titles on continued threads
       const conversationData = {
         conversationId: contextId,
-        title: `A2A Chat with ${this.agent.name}`,
         endpoint: 'a2a',
         model: this.agent.id,
         user: user,
       };
+      try {
+        const isNewThread = userMessage.parentMessageId == null;
+        if (isNewThread) {
+          conversationData.title = await this.titleConvo({ text });
+        }
+      } catch {
+        // If title generation fails, omit title and let client-side titlegen (if any) handle it
+      }
 
       // Add task information to conversation metadata if this is a task
       if (shouldUseTask && response.task) {
