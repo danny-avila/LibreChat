@@ -79,10 +79,9 @@ const forwardedAuthStrategy = () => {
         if (email) {
           newUserData.email = email;
         }
-
-        const newUserId = await createUser(newUserData);
-        user = await findUser({ email }, '-password -__v -totpSecret');
-        logger.info(`[forwardedAuthStrategy] email=${email} userId=${newUserId}`);
+        logger.info(`[forwardedAuthStrategy] email=${email}`);
+        user = await createUser(newUserData, null, true, true);
+        logger.info(`[forwardedAuthStrategy] userId=${user._id}`);
       }
       if (!user) {
         throw new Error(`User not found email=${email}`);
