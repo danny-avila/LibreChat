@@ -12,6 +12,9 @@ type StartParams = {
   setMessages: (messages: TMessage[]) => void;
 };
 
+// Polls A2A task status and triggers UI to refetch server-saved messages.
+// We intentionally avoid injecting local placeholder messages because
+// server decides authoritative parentMessageId, preventing mid-task forks.
 export default function useA2ATaskPolling() {
   const queryClient = useQueryClient();
   const cancelRef = useRef<boolean>(false);
@@ -19,6 +22,7 @@ export default function useA2ATaskPolling() {
   const backoffRef = useRef<number>(3000);
   const lastStateRef = useRef<Record<string, { status?: string; statusMessage?: string; messageId?: string }>>({});
 
+  // Stop polling loop and reset backoff.
   const stop = () => {
     cancelRef.current = true;
     if (timerRef.current != null) {
@@ -56,6 +60,9 @@ export default function useA2ATaskPolling() {
             const changed = !last || last.status !== status || last.statusMessage !== statusMessage;
 
             if (changed) {
+              //Append a lightweight local placeholder
+              // so the user sees progress immediately; server-saved messages will
+              // normalize on completion/refresh.
               const parentId = current.length ? current[current.length - 1].messageId : null;
               const messageId = v4();
               const statusMsg: TMessage = {

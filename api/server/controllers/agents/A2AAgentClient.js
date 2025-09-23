@@ -414,7 +414,9 @@ class A2AAgentClient {
 
       const completionText = `✅ **Task Completed:** \`${taskId}\`\n\n${finalResponse}${artifactsText}`;
 
-      // Find the most recent message in this conversation to use as parent
+      // Parent selection for status updates:
+      // Link to the most recent message in this conversation (authoritative order)
+      // so incremental refetch renders linearly without relying on client hints.
       const parentMessageId = await this.getLastMessageId(contextId);
 
       const completionMessage = {

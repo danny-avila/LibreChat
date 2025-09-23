@@ -125,6 +125,9 @@ export default function useSSE(
       }
     });
 
+    // Main SSE handler: routes server events to existing chat handlers.
+    // For A2A tasks: we only start polling after the final event,
+    // and we avoid mutating local message parents to prevent permanent forks.
     sse.addEventListener('message', (e: MessageEvent) => {
       const data = JSON.parse(e.data);
 
@@ -133,6 +136,7 @@ export default function useSSE(
         const { plugins } = data;
         finalHandler(data, { ...submission, plugins } as EventSubmission);
         (startupConfig?.balance?.enabled ?? false) && balanceQuery.refetch();
+        // Debug aid: log A2A final to verify message and parent linkage end-to-end
         try {
           const rm = data?.responseMessage ?? {};
           const reqm = data?.requestMessage ?? {};
@@ -153,7 +157,9 @@ export default function useSSE(
           });
         } catch {}
 
-        // If this is an A2A task, begin status polling after stream closes
+        // A2A-only: after the stream finishes, begin polling task status.
+        // We do not create local placeholder messages; instead, we refetch
+        // so the UI renders server-saved messages with authoritative parents.
         try {
           const endpointFromResponse = data?.responseMessage?.endpoint as string | undefined;
           const taskId = data?.responseMessage?.metadata?.taskId as string | undefined;
@@ -181,6 +187,7 @@ export default function useSSE(
       } else if (data.created != null) {
         const runId = v4();
         setActiveRunId(runId);
+        // Debug aid: log A2A created to see if parent/conversation is well-formed
         try {
           const msg = data?.message ?? {};
           const current = getMessages();
@@ -201,6 +208,8 @@ export default function useSSE(
             submissionConvo: submission.conversation?.conversationId,
           });
         } catch {}
+        // Do not override parents here. The server determines final parentage
+        // to avoid mid-task forks. We simply forward the created event.
         userMessage = {
           ...userMessage,
           ...data.message,
@@ -292,7 +301,8 @@ export default function useSSE(
     sse.stream();
 
     return () => {
-      // Do not stop A2A polling here; a new sync chat should not cancel task polling
+      // Do not stop A2A polling here; starting a new request should not cancel
+      // background task polling. Polling stops on terminal status or page unload.
       const isCancelled = sse.readyState <= 1;
       sse.close();
       if (isCancelled) {
