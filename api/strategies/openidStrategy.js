@@ -337,6 +337,10 @@ async function setupOpenId() {
         clockTolerance: process.env.OPENID_CLOCK_TOLERANCE || 300,
         usePKCE,
       },
+      /**
+       * @param {import('openid-client').TokenEndpointResponseHelpers} tokenset
+       * @param {import('passport-jwt').VerifyCallback} done
+       */
       async (tokenset, done) => {
         try {
           const claims = tokenset.claims();
@@ -354,10 +358,11 @@ async function setupOpenId() {
           }
 
           const result = await findOpenIDUser({
-            openidId: claims.sub,
-            email: claims.email,
-            strategyName: 'openidStrategy',
             findUser,
+            email: claims.email,
+            openidId: claims.sub,
+            idOnTheSource: claims.oid,
+            strategyName: 'openidStrategy',
           });
           let user = result.user;
           const error = result.error;
@@ -436,6 +441,10 @@ async function setupOpenId() {
             user.username = username;
             user.name = fullName;
             user.idOnTheSource = userinfo.oid;
+            if (userinfo.email && userinfo.email !== user.email) {
+              user.email = userinfo.email;
+              user.emailVerified = userinfo.email_verified || false;
+            }
           }
 
           if (!!userinfo && userinfo.picture && !user.avatar?.includes('manual=true')) {
