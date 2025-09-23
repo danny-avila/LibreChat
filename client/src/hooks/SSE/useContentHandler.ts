@@ -1,6 +1,8 @@
 import { useCallback, useMemo } from 'react';
 import { ContentTypes } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
+import { useSetRecoilState } from 'recoil';
+import { openRouterActualModelState } from '~/store/openrouter';
 
 import type {
   Text,
@@ -26,7 +28,9 @@ type TContentHandler = {
 
 export default function useContentHandler({ setMessages, getMessages }: TUseContentHandler) {
   const queryClient = useQueryClient();
+  const setActualModel = useSetRecoilState(openRouterActualModelState);
   const messageMap = useMemo(() => new Map<string, TMessage>(), []);
+
   return useCallback(
     ({ data, submission }: TContentHandler) => {
       const { type, messageId, thread_id, conversationId, index } = data;
@@ -53,7 +57,28 @@ export default function useContentHandler({ setMessages, getMessages }: TUseCont
       }
 
       // TODO: handle streaming for non-text
-      const textPart: Text | string | undefined = data[ContentTypes.TEXT];
+      let textPart: Text | string | undefined = data[ContentTypes.TEXT];
+
+      // Check for OpenRouter model indicator token and extract it
+      if (textPart && typeof textPart === 'string') {
+        const modelMatch = textPart.match(/^\[MODEL:([^\]]+)\]/);
+        if (modelMatch) {
+          // Extract model name and store it
+          const actualModel = modelMatch[1];
+          console.log('[useContentHandler] MODEL TOKEN DETECTED:', actualModel);
+          setActualModel(actualModel);
+
+          // Remove the token from the text content
+          textPart = textPart.replace(/^\[MODEL:[^\]]+\]/, '');
+          console.log('[useContentHandler] Removed token, remaining text:', textPart);
+
+          // If the text is now empty after removing the token, skip this update
+          if (!textPart) {
+            return;
+          }
+        }
+      }
+
       const part: ContentPart =
         textPart != null && typeof textPart === 'string' ? { value: textPart } : data[type];
 
@@ -78,6 +103,6 @@ export default function useContentHandler({ setMessages, getMessages }: TUseCont
 
       setMessages([...messages, response]);
     },
-    [queryClient, getMessages, messageMap, setMessages],
+    [queryClient, getMessages, messageMap, setMessages, setActualModel],
   );
 }

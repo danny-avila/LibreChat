@@ -87,6 +87,12 @@ export const openRouterCreditsErrorState = atom<string | null>({
   default: null,
 });
 
+// Store the actual model used by OpenRouter (when auto-router selects a model)
+export const openRouterActualModelState = atom<string | null>({
+  key: 'openRouterActualModel',
+  default: null,
+});
+
 // Selectors
 export const openRouterConfigSelector = selector<OpenRouterState>({
   key: 'openRouterConfigSelector',
@@ -149,6 +155,49 @@ export const isUsingAutoRouterSelector = selector<boolean>({
   },
 });
 
+// New atoms for sorting and filtering
+export const openRouterSortKeyState = atomWithLocalStorage<'provider' | 'name'>(
+  'openRouterSortKey',
+  'provider',
+);
+
+export const openRouterSortDirState = atomWithLocalStorage<'asc' | 'desc'>(
+  'openRouterSortDir',
+  'asc',
+);
+
+export const openRouterFilterNoTrainState = atomWithLocalStorage<boolean>(
+  'openRouterFilterNoTrain',
+  false, // Default: show all models
+);
+
+// Selector for sorted and filtered models
+export const openRouterModelsDerivedSelector = selector<OpenRouterModel[]>({
+  key: 'openRouterModelsDerivedSelector',
+  get: ({ get }) => {
+    const models = get(openRouterModelsListState);
+    const sortKey = get(openRouterSortKeyState);
+    const sortDir = get(openRouterSortDirState);
+    const filterNoTrain = get(openRouterFilterNoTrainState);
+
+    // Separate Auto Router from other models
+    const autoRouter = models.find(m => m.id === 'openrouter/auto');
+    const otherModels = models.filter(m => m.id !== 'openrouter/auto');
+
+    // Import privacy utilities dynamically to avoid circular deps
+    const { filterModelsByPrivacy, sortModels } = require('~/utils/openRouterPrivacy');
+
+    // Apply privacy filter
+    const filtered = filterModelsByPrivacy(otherModels, filterNoTrain);
+
+    // Apply sorting
+    const sorted = sortModels(filtered, sortKey, sortDir);
+
+    // Return with Auto Router pinned at top
+    return autoRouter ? [autoRouter, ...sorted] : sorted;
+  },
+});
+
 // Export all atoms and selectors as default
 export default {
   // Atoms
@@ -163,9 +212,14 @@ export default {
   openRouterModelsListState,
   openRouterCreditsLoadingState,
   openRouterCreditsErrorState,
+  openRouterActualModelState,
+  openRouterSortKeyState,
+  openRouterSortDirState,
+  openRouterFilterNoTrainState,
 
   // Selectors
   openRouterConfigSelector,
   openRouterEffectiveFallbackChainSelector,
   isUsingAutoRouterSelector,
+  openRouterModelsDerivedSelector,
 };

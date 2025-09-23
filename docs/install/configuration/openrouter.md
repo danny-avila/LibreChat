@@ -10,7 +10,8 @@ OpenRouter is now a **native provider** in LibreChat, providing access to 100+ A
 - **Automatic Fallback**: Configure fallback chains for high availability
 - **Smart Routing**: Automatic selection of the best model for your request
 - **Credits Tracking**: Real-time credits display and usage monitoring
-- **Agent Compatibility**: Full support for LibreChat's Agent system
+- **Agent Compatibility**: Full support for LibreChat's Agent system with tool calling
+- **Native Tool Support**: Complete OpenAI-compatible tool/function calling for agents
 - **Native Integration**: No YAML configuration required
 
 ## Setup
@@ -135,6 +136,44 @@ Your OpenRouter balance is displayed in the UI:
 - Configure fallback to cheaper models
 - Monitor usage through the dashboard
 - Set daily/monthly spending limits
+
+## Tool Calling and Agents
+
+### Native Tool Support
+
+OpenRouter now supports OpenAI-compatible tool/function calling, enabling full agent functionality:
+
+- **Tool Definitions**: Define tools in OpenAI format
+- **Tool Choice**: Control tool selection with `auto`, `none`, `required`, or specific tool
+- **Parallel Execution**: Enable parallel tool calls for efficiency
+- **Legacy Support**: Backward compatible with function_call format
+
+### Using with Agents
+
+1. Create an agent in the Agent Builder
+2. Select OpenRouter as the provider
+3. Choose a model that supports tool calling (e.g., GPT-4, Claude 3)
+4. Add tools to your agent
+5. The agent will automatically use tools when appropriate
+
+### Supported Models for Tools
+
+Most modern models support tool calling:
+- OpenAI GPT-4 family
+- Claude 3 models
+- Gemini Pro models
+- Other models with function calling capability
+
+### Example Tool Usage
+
+```javascript
+// Tools are automatically handled by the agent system
+const agent = {
+  provider: 'openrouter',
+  model: 'openai/gpt-4-turbo',
+  tools: ['calculator', 'web_search', 'code_interpreter']
+};
+```
 
 ## Advanced Configuration
 

@@ -252,6 +252,19 @@ export function getIconKey({
 }): keyof IconsRecord {
   const endpointType = _eType ?? getEndpointField(endpointsConfig, endpoint, 'type') ?? '';
   const endpointIconURL = iconURL ?? getEndpointField(endpointsConfig, endpoint, 'iconURL') ?? '';
+
+  // Debug logging for OpenRouter
+  if (endpoint === 'openrouter' || endpoint === EModelEndpoint.openrouter) {
+    console.log('[getIconKey] OpenRouter debug:', {
+      endpoint,
+      endpointType,
+      endpointIconURL,
+      hasEndpointIconURL: !!endpointIconURL,
+      endpointIconURLEnum: EModelEndpoint[endpointIconURL],
+      willReturn: endpointIconURL && EModelEndpoint[endpointIconURL] != null ? endpointIconURL : (endpointType ? 'unknown' : endpoint),
+    });
+  }
+
   if (endpointIconURL && EModelEndpoint[endpointIconURL] != null) {
     return endpointIconURL;
   }

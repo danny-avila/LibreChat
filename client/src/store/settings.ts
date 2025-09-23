@@ -26,6 +26,7 @@ const localStorageAtoms = {
     LocalStorageKeys.ENABLE_USER_MSG_MARKDOWN,
     true,
   ),
+  useProviderIcons: atomWithLocalStorage('openRouterUseProviderIcons', true),
 
   // Chat settings
   enterToSend: atomWithLocalStorage('enterToSend', true),

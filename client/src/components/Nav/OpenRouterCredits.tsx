@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useCallback } from 'react';
+import React, { useEffect, useMemo, useCallback } from 'react';
 import { useRecoilValue, useRecoilState, useSetRecoilState } from 'recoil';
 import { EModelEndpoint } from 'librechat-data-provider';
 import { HoverCard, HoverCardContent, HoverCardTrigger, Button, Switch } from '@librechat/client';
@@ -8,7 +8,9 @@ import {
   openRouterCreditsLoadingState,
   openRouterCreditsErrorState,
   openRouterAutoRouterEnabledState,
+  openRouterActualModelState,
 } from '~/store/openrouter';
+import { DynamicProviderIcon } from '../Endpoints/DynamicProviderIcon';
 import { useOpenRouterCredits } from '~/hooks/Credits';
 import store from '~/store';
 import { cn } from '~/utils';
@@ -19,6 +21,14 @@ interface OpenRouterCreditsProps {
   compact?: boolean;
 }
 
+// Extract provider from model ID (e.g., "google/gemini-2.0-flash-exp" -> "google")
+const getProviderFromModel = (model?: string | null): string | null => {
+  if (!model || !model.includes('/')) {
+    return null;
+  }
+  return model.split('/')[0].toLowerCase();
+};
+
 export default function OpenRouterCredits({ className, compact = false }: OpenRouterCreditsProps) {
   const conversation = useRecoilValue(store.conversationByIndex(0));
   const credits = useRecoilValue(openRouterCreditsState);
@@ -27,58 +37,78 @@ export default function OpenRouterCredits({ className, compact = false }: OpenRo
   const [autoRouterEnabled, setAutoRouterEnabled] = useRecoilState(
     openRouterAutoRouterEnabledState,
   );
+  const actualModel = useRecoilValue(openRouterActualModelState);
+
+  // Debug logging
+  React.useEffect(() => {
+    console.log('[OpenRouterCredits] Debug state:', {
+      autoRouterEnabled,
+      actualModel,
+      shouldShowModel: autoRouterEnabled && actualModel,
+      endpoint: conversation?.endpoint,
+      conversationModel: conversation?.model,
+      modelOptions: conversation?.modelOptions,
+      conversationId: conversation?.conversationId,
+    });
+  }, [autoRouterEnabled, actualModel, conversation]);
+  const setActualModel = useSetRecoilState(openRouterActualModelState);
   const setConversation = useSetRecoilState(store.conversationByIndex(0));
   const { fetchCredits, manualRefresh, isManualRefreshing } = useOpenRouterCredits();
   const localize = useLocalize();
 
   // Only show for OpenRouter endpoint
-  const endpoint = conversation?.endpoint;
-  const isOpenRouter = endpoint === EModelEndpoint.openrouter;
+  const isOpenRouter = conversation?.endpoint === EModelEndpoint.openrouter;
 
   // Handle auto-router toggle with conversation sync
   const handleAutoRouterChange = useCallback(
     (checked: boolean) => {
       setAutoRouterEnabled(checked);
 
-      // Also update the current conversation's modelOptions if it's OpenRouter
+      // Clear actual model when disabling auto-router
+      if (!checked) {
+        setActualModel(null);
+      }
+
+      // Also update the current conversation if it's OpenRouter
       if (isOpenRouter && conversation) {
-        setConversation((prev) => ({
-          ...prev,
-          // When enabling auto-router, set model to 'openrouter/auto'
-          // When disabling, keep current model (unless it's 'openrouter/auto')
-          model: checked ? 'openrouter/auto' : prev?.model === 'openrouter/auto' ? '' : prev?.model,
-          autoRouter: checked, // Set at root level for schema compatibility
-          modelOptions: {
-            ...prev?.modelOptions,
-            autoRouter: checked, // Keep in modelOptions for UI state
-            // Clear fallback models when auto-router is enabled
-            fallbackModels: checked ? [] : prev?.modelOptions?.fallbackModels,
-          },
-        }));
+        setConversation((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            // When enabling auto-router, set model to 'openrouter/auto'
+            // When disabling, keep current model (unless it's 'openrouter/auto')
+            model: checked ? 'openrouter/auto' : prev.model === 'openrouter/auto' ? '' : prev.model,
+            // Set autoRouter in modelOptions for backend
+            modelOptions: {
+              ...prev.modelOptions,
+              autoRouter: checked,
+            },
+          } as typeof prev;
+        });
       }
     },
-    [setAutoRouterEnabled, setConversation, isOpenRouter, conversation],
+    [setAutoRouterEnabled, setActualModel, setConversation, isOpenRouter, conversation],
   );
 
   // Sync the toggle state with conversation on mount
   // Check if model is 'openrouter/auto' to determine toggle state
-  // Also check modelOptions.autoRouter for explicit state
+  // Also check autoRouter field for explicit state
   useEffect(() => {
     if (isOpenRouter) {
       // If model is 'openrouter/auto', toggle should be ON
       if (conversation?.model === 'openrouter/auto') {
         setAutoRouterEnabled(true);
       }
-      // Otherwise check modelOptions for explicit autoRouter state
+      // Otherwise check autoRouter field in modelOptions
       else if (conversation?.modelOptions && 'autoRouter' in conversation.modelOptions) {
-        setAutoRouterEnabled(conversation.modelOptions.autoRouter);
+        setAutoRouterEnabled(conversation.modelOptions.autoRouter || false);
       }
       // If model is a specific model (not auto), ensure toggle is OFF
       else if (conversation?.model && conversation.model !== 'openrouter/auto') {
         setAutoRouterEnabled(false);
       }
     }
-  }, [isOpenRouter, conversation?.model, conversation?.modelOptions, setAutoRouterEnabled]);
+  }, [isOpenRouter, conversation?.model, conversation, setAutoRouterEnabled]);
 
   // Fetch credits on mount and when endpoint changes
   useEffect(() => {
@@ -86,6 +116,18 @@ export default function OpenRouterCredits({ className, compact = false }: OpenRo
       fetchCredits();
     }
   }, [isOpenRouter, fetchCredits]);
+
+  // Clear actual model when switching to a different conversation
+  const prevConversationIdRef = React.useRef<string | null>(null);
+  useEffect(() => {
+    if (conversation?.conversationId && conversation.conversationId !== prevConversationIdRef.current) {
+      // Only clear if we're actually switching to a different conversation
+      if (prevConversationIdRef.current !== null && conversation.conversationId !== 'new') {
+        setActualModel(null);
+      }
+      prevConversationIdRef.current = conversation.conversationId;
+    }
+  }, [conversation?.conversationId, setActualModel]);
 
   // Auto-refresh every 5 minutes
   useEffect(() => {
@@ -221,6 +263,33 @@ export default function OpenRouterCredits({ className, compact = false }: OpenRo
             aria-label={localize('com_endpoint_openrouter_auto_router')}
           />
         </div>
+
+        {/* Display actual model used when auto-router is enabled */}
+        {autoRouterEnabled && actualModel && (
+          <>
+            <div className="h-5 w-px bg-border-light" />
+            <div className="flex items-center gap-1.5 text-xs text-text-secondary">
+              {(() => {
+                const provider = getProviderFromModel(actualModel);
+                if (provider) {
+                  return (
+                    <>
+                      <DynamicProviderIcon provider={provider} size={14} />
+                      <span className="truncate max-w-[150px]" title={actualModel}>
+                        {actualModel.split('/')[1] || actualModel}
+                      </span>
+                    </>
+                  );
+                }
+                return (
+                  <span className="truncate max-w-[150px]" title={actualModel}>
+                    {actualModel}
+                  </span>
+                );
+              })()}
+            </div>
+          </>
+        )}
       </div>
     );
   }

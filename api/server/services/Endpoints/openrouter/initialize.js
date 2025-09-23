@@ -46,6 +46,13 @@ const initializeClient = async ({ req, res, endpointOption, overrideModel, optio
 
   logger.info('[OpenRouter Initialize] Selected model:', selectedModel);
 
+  // Extract autoRouter flag early
+  const autoRouterFlag =
+    endpointOption?.autoRouter ||
+    endpointOption?.modelOptions?.autoRouter ||
+    endpointOption?.model_parameters?.autoRouter ||
+    false;
+
   let clientOptions = {
     // CRITICAL: Include endpoint metadata for message identification
     endpoint: endpointOption?.endpoint ?? EModelEndpoint.openrouter,
@@ -59,6 +66,7 @@ const initializeClient = async ({ req, res, endpointOption, overrideModel, optio
       model: selectedModel,
       models: endpointOption?.model_parameters?.models ?? endpointOption?.models,
       route: endpointOption?.model_parameters?.route,
+      autoRouter: autoRouterFlag,
       ...endpointOption?.model_parameters,
     },
   };
@@ -76,25 +84,19 @@ const initializeClient = async ({ req, res, endpointOption, overrideModel, optio
     // For agents, return config that will be used by ChatOpenRouter
     const baseURL = process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1';
 
-    // Extract autoRouter flag from endpointOption - check all possible locations
-    const autoRouter =
-      endpointOption?.autoRouter ||
-      endpointOption?.modelOptions?.autoRouter ||
-      endpointOption?.model_parameters?.autoRouter ||
-      false;
-
+    // Use the already extracted autoRouter flag
     logger.info('[OpenRouter Initialize] autoRouter detection:', {
       fromRoot: endpointOption?.autoRouter,
       fromModelOptions: endpointOption?.modelOptions?.autoRouter,
       fromModelParams: endpointOption?.model_parameters?.autoRouter,
-      final: autoRouter,
+      final: autoRouterFlag,
     });
 
     // If auto-router is enabled, transform the model to 'openrouter/auto'
-    const effectiveModel = autoRouter ? 'openrouter/auto' : selectedModel;
+    const effectiveModel = autoRouterFlag ? 'openrouter/auto' : selectedModel;
 
     logger.info(
-      `[OpenRouter Initialize] Returning agent config with baseURL: ${baseURL}, autoRouter: ${autoRouter}, model: ${effectiveModel}`,
+      `[OpenRouter Initialize] Returning agent config with baseURL: ${baseURL}, autoRouter: ${autoRouterFlag}, model: ${effectiveModel}`,
     );
 
     // Return the configuration that will be used as llmConfig in agent.js
@@ -116,7 +118,7 @@ const initializeClient = async ({ req, res, endpointOption, overrideModel, optio
         },
         ...clientOptions.modelOptions,
         model: effectiveModel, // Use the transformed model
-        autoRouter: autoRouter, // Pass the flag for reference
+        autoRouter: autoRouterFlag, // Pass the flag for reference
       },
       ...clientOptions,
       modelOptions: {
@@ -134,8 +136,11 @@ const initializeClient = async ({ req, res, endpointOption, overrideModel, optio
     endpointOption.modelOptions.model = selectedModel;
   }
 
+  logger.info('[OpenRouter Initialize] Creating client with autoRouter:', autoRouterFlag);
+
   const openRouterClient = new OpenRouterClient(openRouterApiKey, {
     ...clientOptions,
+    autoRouter: autoRouterFlag,
     req,
     res,
     endpointOption,

@@ -113,14 +113,6 @@ class OpenRouterClient extends BaseClient {
     // Store autoRouter at instance level for easy access
     this.autoRouter = this.options.autoRouter || this.modelOptions.autoRouter || false;
 
-    logger.debug('[OpenRouterClient.setOptions] Finalized configuration:', {
-      model: this.modelOptions?.model,
-      hasModelOptions: !!this.modelOptions,
-      modelKeys: Object.keys(this.modelOptions || {}),
-      autoRouter: this.autoRouter,
-      autoRouterFromOptions: this.options.autoRouter,
-      autoRouterFromModelOptions: this.modelOptions.autoRouter,
-    });
 
     // Set sender name based on model
     this.sender =
@@ -170,23 +162,27 @@ class OpenRouterClient extends BaseClient {
    * @param {Object} [params.route] - Routing preferences
    * @param {Array} [params.provider] - Provider preferences
    * @param {Object} [params.transforms] - Message transformations
-   * @returns {Promise<Object>} The chat completion response
+   * @param {Array} [params.tools] - Array of tool definitions (OpenAI format)
+   * @param {string|Object} [params.tool_choice] - Tool selection control
+   * @param {boolean} [params.parallel_tool_calls] - Enable parallel tool execution
+   * @param {Array} [params.functions] - Legacy function definitions
+   * @param {string|Object} [params.function_call] - Legacy function call control
+   * @returns {Promise<Object>} The chat completion response with potential tool_calls
    */
   async chatCompletion(params) {
-    const { messages, model, models, autoRouter, ...otherParams } = params;
+    const {
+      messages,
+      model,
+      models,
+      autoRouter,
+      tools,
+      tool_choice,
+      parallel_tool_calls,
+      functions,
+      function_call,
+      ...otherParams
+    } = params;
 
-    // Enhanced debug logging
-    logger.info('[OpenRouterClient] chatCompletion called with:', {
-      modelFromParams: model,
-      modelFromOptions: this.modelOptions?.model,
-      autoRouterFromParams: autoRouter,
-      autoRouterFromInstance: this.autoRouter,
-      autoRouterFromModelOptions: this.modelOptions?.autoRouter,
-      autoRouterEnabled: autoRouter || this.autoRouter || this.modelOptions?.autoRouter,
-      allModelOptions: this.modelOptions,
-      hasMessages: messages?.length > 0,
-      messagePreview: messages?.[0]?.content?.substring(0, 50),
-    });
 
     // Ensure messages exist
     if (!messages || messages.length === 0) {
@@ -206,12 +202,6 @@ class OpenRouterClient extends BaseClient {
     // Store original model for metadata
     const originalModel = userSelectedModel;
 
-    logger.info('[OpenRouterClient] Model transformation:', {
-      shouldUseAutoRouter,
-      originalModel,
-      effectiveModel,
-      transformation: shouldUseAutoRouter ? 'AUTO-ROUTER ACTIVE' : 'USING SELECTED MODEL',
-    });
 
     const requestBody = {
       messages,
@@ -220,6 +210,13 @@ class OpenRouterClient extends BaseClient {
       // Add transforms to control data privacy
       // This prevents the "No endpoints found matching your data policy" error
       transforms: ['middle-out'], // This allows the request without data collection
+      // Add tool/function calling parameters if provided
+      ...(tools && { tools }),
+      ...(tool_choice && { tool_choice }),
+      ...(parallel_tool_calls !== undefined && { parallel_tool_calls }),
+      // Legacy function calling support
+      ...(functions && { functions }),
+      ...(function_call && { function_call }),
     };
 
     // If no model specified and auto-router is not enabled, throw error
@@ -227,25 +224,12 @@ class OpenRouterClient extends BaseClient {
       throw new Error('No model specified for OpenRouter. Please select a model.');
     }
 
-    // Log auto-router usage for debugging
-    if (shouldUseAutoRouter) {
-      logger.info('[OpenRouterClient] Auto-router enabled:', {
-        originalModel,
-        effectiveModel,
-        reason: 'User enabled auto-router toggle',
-      });
-    }
-
-    logger.debug('[OpenRouterClient] FINAL MODEL BEING USED:', requestBody.model);
 
     // Add fallback models if provided (but not when auto-router is active)
     if (models && Array.isArray(models) && models.length > 0) {
       // OpenRouter doesn't allow fallbacks with auto router
       if (!shouldUseAutoRouter && !requestBody.model.includes('openrouter/auto')) {
         requestBody.models = models.slice(0, 10); // Max 10 fallback models
-        logger.debug('[OpenRouterClient] Fallback models configured:', requestBody.models);
-      } else if (shouldUseAutoRouter) {
-        logger.info('[OpenRouterClient] Fallback models ignored - Auto Router handles model selection');
       }
     }
 
@@ -255,8 +239,6 @@ class OpenRouterClient extends BaseClient {
     }
 
     try {
-      logger.debug('[OpenRouterClient] Fetching from OpenRouter API with stream:', !!params.stream);
-
       const response = await fetch(`${this.baseURL}/chat/completions`, {
         method: 'POST',
         headers: this.buildHeaders(),
@@ -270,12 +252,9 @@ class OpenRouterClient extends BaseClient {
       }
 
       if (params.stream) {
-        logger.debug('[OpenRouterClient] Returning raw Response object for streaming');
-        // Make sure we're returning the actual Response object
         return response; // Return stream for processing
       }
 
-      logger.debug('[OpenRouterClient] Parsing JSON response for non-streaming');
       const data = await response.json();
 
       // Store usage data if available
@@ -283,14 +262,34 @@ class OpenRouterClient extends BaseClient {
         this.usage = data.usage;
       }
 
-      // Add metadata about auto-router usage
-      if (shouldUseAutoRouter) {
+      // Preserve tool_calls and function_call in the response if present
+      // This is critical for agent system compatibility
+      if (data.choices && data.choices[0]) {
+        const message = data.choices[0].message;
+
+        // Ensure tool_calls are preserved in the response
+        if (message.tool_calls) {
+          // Tool calls are already in the correct format from OpenRouter
+          logger.debug('[OpenRouterClient] Tool calls in response:', message.tool_calls);
+        }
+
+        // Legacy function_call support
+        if (message.function_call) {
+          logger.debug('[OpenRouterClient] Function call in response:', message.function_call);
+        }
+      }
+
+      // Add metadata about auto-router usage and actual model used
+      if (shouldUseAutoRouter || data.model !== originalModel) {
         data._metadata = {
-          autoRouterUsed: true,
+          autoRouterUsed: shouldUseAutoRouter,
           requestedModel: originalModel,
           effectiveModel: effectiveModel,
           actualModelUsed: data.model || effectiveModel, // The model OpenRouter actually used
         };
+
+        // Store for later reference
+        this.actualModelUsed = data.model;
       }
 
       return data;
@@ -299,6 +298,14 @@ class OpenRouterClient extends BaseClient {
       logger.error('[OpenRouterClient] Chat completion error:', sanitized);
       throw sanitized;
     }
+  }
+
+  /**
+   * Gets the actual model used in the last request
+   * @returns {string|null} The model that was actually used, or null if not available
+   */
+  getActualModelUsed() {
+    return this.actualModelUsed || null;
   }
 
   /**
@@ -316,7 +323,6 @@ class OpenRouterClient extends BaseClient {
       this.cache.creditsTimestamp &&
       now - this.cache.creditsTimestamp < this.cacheSettings.creditsTTL
     ) {
-      logger.debug('[OpenRouterClient] Returning cached credits');
       return this.cache.credits;
     }
 
@@ -372,7 +378,6 @@ class OpenRouterClient extends BaseClient {
       this.cache.modelsTimestamp &&
       now - this.cache.modelsTimestamp < this.cacheSettings.modelsTTL
     ) {
-      logger.debug('[OpenRouterClient] Returning cached models');
       return this.cache.models;
     }
 
@@ -459,7 +464,6 @@ class OpenRouterClient extends BaseClient {
     // Filter out invalid messages robustly, but log if it happens
     const validMessages = messages.filter((msg) => {
       if (!msg || typeof msg !== 'object') {
-        logger.warn('[OpenRouterClient] Found invalid message object in history:', msg);
         return false;
       }
       return true;
@@ -512,13 +516,6 @@ class OpenRouterClient extends BaseClient {
     const { messages, prompt, ...params } = input;
     const finalMessages = messages || prompt;
 
-    logger.debug('[OpenRouterClient] getCompletion called with:', {
-      hasMessages: !!messages,
-      hasPrompt: !!prompt,
-      finalMessagesCount: finalMessages?.length,
-      inputKeys: Object.keys(input),
-      optionsKeys: Object.keys(options),
-    });
 
     if (!finalMessages || finalMessages.length === 0) {
       logger.error('[OpenRouterClient] No messages in getCompletion');
@@ -570,27 +567,13 @@ class OpenRouterClient extends BaseClient {
         model: this.modelOptions?.model, // Set model last to ensure it's not overridden
       };
 
-      logger.debug('[OpenRouterClient] Calling chatCompletion with:', {
-        messageCount: messages.length,
-        model: chatRequest.model,
-        stream: chatRequest.stream,
-      });
-
       const response = await this.chatCompletion(chatRequest);
 
-      logger.debug('[OpenRouterClient] Response type:', typeof response);
-      logger.debug('[OpenRouterClient] Response has body:', !!response?.body);
-      const isFetchResponse =
-        response != null && typeof response === 'object' && typeof response.body?.on === 'function';
-      logger.debug('[OpenRouterClient] Response is stream-capable:', isFetchResponse);
-
       if (!onProgress) {
-        logger.debug('[OpenRouterClient] Non-streaming response received');
         return response.choices[0].message.content;
       }
 
       // Handle streaming response
-      logger.debug('[OpenRouterClient] Handling streaming response');
 
       // Check if we got a Response object or parsed JSON
       if (response && response.choices) {
@@ -615,6 +598,9 @@ class OpenRouterClient extends BaseClient {
       let fullContent = '';
       let buffer = '';
       let streamCleaned = false;
+      let actualModelUsed = null; // Track the actual model used by OpenRouter
+      let toolCalls = []; // Track tool calls in streaming
+      let currentToolCall = null; // Current tool call being built
 
       const cleanup = () => {
         if (!streamCleaned) {
@@ -654,6 +640,48 @@ class OpenRouterClient extends BaseClient {
 
                 try {
                   const parsed = JSON.parse(data);
+
+                  // Capture the actual model used from the response
+                  // OpenRouter includes the model in the response chunks
+                  if (parsed.model && !actualModelUsed) {
+                    actualModelUsed = parsed.model;
+                    // Store it for later use
+                    this.actualModelUsed = actualModelUsed;
+
+                    logger.info('[OpenRouter] Model detected in response:', {
+                      actualModel: actualModelUsed,
+                      autoRouter: this.autoRouter,
+                      modelOptionsAutoRouter: this.modelOptions?.autoRouter,
+                      willSendToken: !!(this.modelOptions?.autoRouter || this.autoRouter),
+                    });
+
+                    // Send a special token to indicate model info if auto-router was used
+                    // Check multiple locations for the autoRouter flag
+                    const isAutoRouter = this.modelOptions?.autoRouter ||
+                                       this.autoRouter ||
+                                       this.options?.autoRouter ||
+                                       this.options?.modelOptions?.autoRouter ||
+                                       requestOptions.model === 'openrouter/auto';
+
+                    logger.info('[OpenRouter] AutoRouter check:', {
+                      fromModelOptions: this.modelOptions?.autoRouter,
+                      fromThis: this.autoRouter,
+                      fromOptions: this.options?.autoRouter,
+                      fromOptionsModelOptions: this.options?.modelOptions?.autoRouter,
+                      isAutoModel: requestOptions.model === 'openrouter/auto',
+                      final: isAutoRouter,
+                    });
+
+                    if (isAutoRouter) {
+                      if (onProgress) {
+                        // Send model info as a special prefix that can be extracted by the UI
+                        logger.info('[OpenRouter] Sending MODEL token:', actualModelUsed);
+                        onProgress(`[MODEL:${actualModelUsed}]`);
+                      }
+                    }
+                  }
+
+                  // Handle regular content
                   const content = parsed.choices?.[0]?.delta?.content || '';
                   if (content) {
                     fullContent += content;
@@ -661,8 +689,60 @@ class OpenRouterClient extends BaseClient {
                       onProgress(content);
                     }
                   }
+
+                  // Handle tool calls in streaming
+                  const deltaToolCalls = parsed.choices?.[0]?.delta?.tool_calls;
+                  if (deltaToolCalls && Array.isArray(deltaToolCalls)) {
+                    for (const toolCallDelta of deltaToolCalls) {
+                      const index = toolCallDelta.index;
+
+                      // Initialize tool call at index if needed
+                      if (!toolCalls[index]) {
+                        toolCalls[index] = {
+                          id: '',
+                          type: 'function',
+                          function: {
+                            name: '',
+                            arguments: '',
+                          },
+                        };
+                      }
+
+                      // Update tool call data
+                      if (toolCallDelta.id) {
+                        toolCalls[index].id = toolCallDelta.id;
+                      }
+                      if (toolCallDelta.type) {
+                        toolCalls[index].type = toolCallDelta.type;
+                      }
+                      if (toolCallDelta.function) {
+                        if (toolCallDelta.function.name) {
+                          toolCalls[index].function.name = toolCallDelta.function.name;
+                        }
+                        if (toolCallDelta.function.arguments) {
+                          toolCalls[index].function.arguments += toolCallDelta.function.arguments;
+                        }
+                      }
+                    }
+                  }
+
+                  // Handle legacy function_call in streaming
+                  const deltaFunctionCall = parsed.choices?.[0]?.delta?.function_call;
+                  if (deltaFunctionCall) {
+                    if (!currentToolCall) {
+                      currentToolCall = {
+                        name: '',
+                        arguments: '',
+                      };
+                    }
+                    if (deltaFunctionCall.name) {
+                      currentToolCall.name = deltaFunctionCall.name;
+                    }
+                    if (deltaFunctionCall.arguments) {
+                      currentToolCall.arguments += deltaFunctionCall.arguments;
+                    }
+                  }
                 } catch (e) {
-                  logger.debug('[OpenRouterClient] Error parsing streaming chunk:', e);
                 }
               }
             }
@@ -672,9 +752,32 @@ class OpenRouterClient extends BaseClient {
         });
 
         response.body.on('end', () => {
-          logger.debug('[OpenRouterClient] Stream completed, content length:', fullContent.length);
           cleanup();
-          resolve(fullContent);
+
+          // If we have tool calls, we need to return a properly formatted response
+          // that matches what the agent system expects
+          if (toolCalls.length > 0 || currentToolCall) {
+            const formattedResponse = {
+              choices: [
+                {
+                  message: {
+                    content: fullContent || null,
+                    tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
+                    function_call: currentToolCall || undefined,
+                  },
+                  finish_reason: 'tool_calls',
+                },
+              ],
+            };
+            logger.debug('[OpenRouterClient] Streaming ended with tool calls:', {
+              toolCallsCount: toolCalls.length,
+              hasFunctionCall: !!currentToolCall,
+            });
+            resolve(formattedResponse);
+          } else {
+            // Regular content-only response
+            resolve(fullContent);
+          }
         });
 
         response.body.on('error', handleError);
@@ -758,11 +861,9 @@ ${convo}
         }
       }
     } catch (error) {
-      logger.warn('[OpenRouterClient] Error generating title:', error.message);
       // Fall back to default title on error
     }
 
-    logger.debug('[OpenRouterClient] Generated title:', title);
     return title || 'New Chat';
   }
 }

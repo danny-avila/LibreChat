@@ -11,9 +11,10 @@
 >
 > This fork includes full native integration for [OpenRouter](https://openrouter.ai), providing access to 100+ AI models through a single API with enterprise features:
 > - ✅ **Full Agent System Compatibility** - Unlike YAML config, works seamlessly with LibreChat Agents
+> - 🛠️ **Native Tool/Function Calling** - Complete OpenAI-compatible tool support for all agent capabilities
 > - ✅ **Automatic Model Fallbacks** - Define backup models for reliability
 > - 🤖 **Auto-Router™** - Toggle intelligent model selection that automatically chooses the best model for each request
-> - ✅ **Real-time Credits Tracking** - Monitor usage directly in the UI
+> - 💰 **Real-time Credits Tracking** - Monitor usage directly in the UI
 > - ✅ **Provider Preferences** - Control which providers to use
 > - 🔄 **Seamless Model Switching** - Change models mid-conversation without losing context
 >

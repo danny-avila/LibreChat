@@ -55,6 +55,7 @@ const MinimalIcon: React.FC<IconProps> = (props) => {
       name: props.modelLabel ?? alternateName[EModelEndpoint.bedrock],
     },
     [EModelEndpoint.openrouter]: {
+      // Always use OpenRouter icon in sidebar and conversation list
       icon: (
         <img
           src="/assets/openrouter.png"
