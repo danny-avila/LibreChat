@@ -81,7 +81,7 @@ const forwardedAuthStrategy = () => {
         logger.info(`[forwardedAuthStrategy] CANONICAL-NEW-USER-LINE user=${username}`);
       }
       if (!user) {
-        throw new Error(`User not found email=${email}`);
+        throw new Error(`User not found user=${username}`);
       }
       user.id = user._id.toString();
 
