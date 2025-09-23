@@ -1,7 +1,7 @@
 const { Router } = require('express');
 const { logger } = require('@librechat/data-schemas');
 const { CacheKeys, Constants } = require('librechat-data-provider');
-const { MCPOAuthHandler, getUserMCPAuthMap } = require('@librechat/api');
+const { MCPOAuthHandler, MCPTokenStorage, getUserMCPAuthMap } = require('@librechat/api');
 const { getMCPManager, getFlowStateManager, getOAuthReconnectionManager } = require('~/config');
 const { getMCPSetupData, getServerConnectionStatus } = require('~/server/services/MCP');
 const { findToken, updateToken, createToken, deleteTokens } = require('~/models');
@@ -129,6 +129,41 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
     logger.debug('[MCP OAuth] Completing OAuth flow');
     const tokens = await MCPOAuthHandler.completeOAuthFlow(flowId, code, flowManager);
     logger.info('[MCP OAuth] OAuth flow completed, tokens received in callback route');
+
+    /** Persist tokens immediately so reconnection uses fresh credentials */
+    if (flowState?.userId && tokens) {
+      try {
+        await MCPTokenStorage.storeTokens({
+          userId: flowState.userId,
+          serverName,
+          tokens,
+          createToken,
+          updateToken,
+          findToken,
+          clientInfo: flowState.clientInfo,
+          metadata: flowState.metadata,
+        });
+        logger.debug('[MCP OAuth] Stored OAuth tokens prior to reconnection', {
+          serverName,
+          userId: flowState.userId,
+        });
+      } catch (error) {
+        logger.error('[MCP OAuth] Failed to store OAuth tokens after callback', error);
+        throw error;
+      }
+
+      /**
+       * Clear any cached `mcp_get_tokens` flow result so subsequent lookups
+       * re-fetch the freshly stored credentials instead of returning stale nulls.
+       */
+      if (typeof flowManager?.deleteFlow === 'function') {
+        try {
+          await flowManager.deleteFlow(flowId, 'mcp_get_tokens');
+        } catch (error) {
+          logger.warn('[MCP OAuth] Failed to clear cached token flow state', error);
+        }
+      }
+    }
 
     try {
       const mcpManager = getMCPManager(flowState.userId);
