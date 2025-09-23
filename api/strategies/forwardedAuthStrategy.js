@@ -83,6 +83,8 @@ const forwardedAuthStrategy = () => {
       if (!user) {
         throw new Error(`User not found user=${username}`);
       }
+
+      // Add id property for consistency with other auth strategies
       user.id = user._id.toString();
 
       return done(null, user);
