@@ -74,7 +74,7 @@ const initializeClient = async ({ req, res, endpointOption, overrideModel, optio
     return getLLMConfig(credentials, clientOptions);
   }
 
-  const client = new AnthropicClient(credentials, {
+  const client = new AnthropicClient(anthropicApiKey, {
     req,
     res,
     reverseProxyUrl: ANTHROPIC_REVERSE_PROXY ?? null,
