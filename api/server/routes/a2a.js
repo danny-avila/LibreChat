@@ -1,6 +1,5 @@
 const express = require('express');
 const { 
-  handleA2AChat,
   getA2AAgents,
   registerA2AAgent,
   unregisterA2AAgent,
@@ -35,7 +34,7 @@ router.use((req, res, next) => {
  * - taskBased: boolean (optional, default: false) - Use task-based workflow
  * - streaming: boolean (optional, default: true) - Enable streaming response
  */
-router.post('/chat', requireJwtAuth, handleA2AChat);
+// router.post('/chat', requireJwtAuth, handleA2AChat);
 
 /**
  * Get all registered A2A agents

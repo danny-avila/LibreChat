@@ -22,12 +22,15 @@ export default function createPayload(submission: t.TSubmission) {
 
   const endpoint = _e as s.EModelEndpoint;
   let server = `${EndpointURLs[s.EModelEndpoint.agents]}/${endpoint}`;
+  console.log('Creatign payload for endpoint', endpoint);
   if (s.isAssistantsEndpoint(endpoint)) {
     server =
       EndpointURLs[(endpointType ?? endpoint) as 'assistants' | 'azureAssistants'] +
       (isEdited ? '/modify' : '');
   } else if (endpoint === s.EModelEndpoint.a2a) {
+    // TODO: Remove this after testing
     server = EndpointURLs[s.EModelEndpoint.a2a];
+    console.log('A2A server - ', server);
   }
 
   let payload: t.TPayload;
