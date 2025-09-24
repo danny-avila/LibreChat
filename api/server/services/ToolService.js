@@ -383,6 +383,10 @@ async function loadAgentTools({ req, res, agent, signal, tool_resources, openAIA
   const areToolsEnabled = checkCapability(AgentCapabilities.tools);
 
   let includesWebSearch = false;
+
+  const availableTools = await getCachedTools({ userId: req.user?.id, includeGlobal: true });
+  const staleMCPTools = [];
+
   const _agentTools = agent.tools?.filter((tool) => {
     if (tool === Tools.file_search) {
       return checkCapability(AgentCapabilities.file_search);
@@ -394,8 +398,20 @@ async function loadAgentTools({ req, res, agent, signal, tool_resources, openAIA
     } else if (!areToolsEnabled && !tool.includes(actionDelimiter)) {
       return false;
     }
+    if (tool.includes(Constants.mcp_delimiter)) {
+      if (!availableTools || !availableTools[tool]) {
+        staleMCPTools.push(tool);
+        return false;
+      }
+    }
     return true;
   });
+
+  if (staleMCPTools.length > 0) {
+    logger.warn(
+      `[Agent ${agent.id}] Filtered out ${staleMCPTools.length} stale MCP tools: ${staleMCPTools.join(', ')}`,
+    );
+  }
 
   if (!_agentTools || _agentTools.length === 0) {
     return {};
