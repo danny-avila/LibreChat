@@ -11,6 +11,7 @@ import {
   validateEmail,
   getIconKey,
   cn,
+
 } from "~/utils";
 import { ToolSelectDialog, MCPToolSelectDialog } from "~/components/Tools";
 import useAgentCapabilities from "~/hooks/Agents/useAgentCapabilities";
@@ -190,6 +191,7 @@ export default function AgentConfig({
     });
     Icon = icons[iconKey];
   }
+
 
   const { toolIds, mcpServerNames } = useVisibleTools(
     tools,

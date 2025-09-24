@@ -55,6 +55,11 @@ export default function AgentPanel() {
   const canEdit = hasPermission(PermissionBits.EDIT);
 
 
+  const expandedAgentQuery = useGetExpandedAgentByIdQuery(current_agent_id ?? '', {
+    enabled: !isEphemeralAgent(current_agent_id) && canEdit && !permissionsLoading,
+  });
+
+
   const expandedAgentQuery = useGetExpandedAgentByIdQuery(
     current_agent_id ?? "",
     {
