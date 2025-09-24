@@ -1,5 +1,7 @@
 version: 1.0.0
 cache: true
+interface:
+  agents: false
 endpoints:
   azureOpenAI:
     # Endpoint-level configuration
@@ -25,8 +27,5 @@ endpoints:
           deploymentName: gpt-41
           version: "2024-10-21"
         gpt-41-mini:
-          deploymentName: gpt-4o
-          version: "2024-10-21"
-        gpt-4o-nano:
-          deploymentName: gpt-4o
+          deploymentName: gpt-41-mini
           version: "2024-10-21"
