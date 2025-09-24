@@ -138,12 +138,14 @@ export function formatToolContent(
     },
 
     resource: (item) => {
-      if (item.resource.uri.startsWith('ui://')) {
+      const isUiResource = item.resource.uri.startsWith('ui://');
+
+      if (isUiResource) {
         uiResources.push(item.resource as UIResource);
       }
 
       const resourceText = [];
-      if (item.resource.text != null && item.resource.text) {
+      if (!isUiResource && item.resource.text != null && item.resource.text) {
         resourceText.push(`Resource Text: ${item.resource.text}`);
       }
       if (item.resource.uri.length) {
@@ -177,10 +179,14 @@ export function formatToolContent(
   }
 
   let artifacts: t.Artifacts = undefined;
-  if (imageUrls.length || uiResources.length) {
+  if (imageUrls.length) {
+    artifacts = { content: imageUrls };
+  }
+
+  if (uiResources.length) {
     artifacts = {
-      ...(imageUrls.length && { content: imageUrls }),
-      ...(uiResources.length && { [Tools.ui_resources]: { data: uiResources } }),
+      ...artifacts,
+      [Tools.ui_resources]: { data: uiResources },
     };
   }
 

@@ -84,11 +84,7 @@ export type Provider =
 export type FormattedContent =
   | {
       type: 'text';
-      metadata?: {
-        type: string;
-        data: UIResource[];
-      };
-      text?: string;
+      text: string;
     }
   | {
       type: 'image';
