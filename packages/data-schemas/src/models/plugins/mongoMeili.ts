@@ -1,6 +1,6 @@
 import _ from 'lodash';
 import { MeiliSearch } from 'meilisearch';
-import type { SearchResponse, Index } from 'meilisearch';
+import type { SearchResponse, SearchParams, Index } from 'meilisearch';
 import type {
   CallbackWithoutResultAndOptionalError,
   FilterQuery,
@@ -75,7 +75,7 @@ export interface SchemaWithMeiliMethods extends Model<DocumentWithMeiliIndex> {
   setMeiliIndexSettings(settings: Record<string, unknown>): Promise<unknown>;
   meiliSearch(
     q: string,
-    params?: Record<string, unknown>,
+    params?: SearchParams,
     populate?: boolean,
   ): Promise<SearchResponse<MeiliIndexable, Record<string, unknown>>>;
 }
@@ -386,7 +386,7 @@ const createMeiliMongooseModel = ({
     static async meiliSearch(
       this: SchemaWithMeiliMethods,
       q: string,
-      params: Record<string, unknown>,
+      params: SearchParams,
       populate: boolean,
     ): Promise<SearchResponse<MeiliIndexable, Record<string, unknown>>> {
       const data = await index.search(q, params);
