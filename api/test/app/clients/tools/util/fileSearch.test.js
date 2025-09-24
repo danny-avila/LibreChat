@@ -46,7 +46,7 @@ describe('fileSearch.js - test only new file_id and page additions', () => {
     queryVectors.mockResolvedValue(mockResults);
 
     const fileSearchTool = await createFileSearchTool({
-      req: { user: { id: 'user1' } },
+      userId: 'user1',
       files: mockFiles,
       entity_id: 'agent-123',
     });
