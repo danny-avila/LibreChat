@@ -56,7 +56,7 @@ Canvas is a collaborative workspace for creating and editing documents, notes, a
 
 ## When to use Canvas:
 - Creating substantial documents (articles, reports, essays, etc.)
-- Collaborative writing and editing sessions  
+- Collaborative writing and editing sessions
 - Structured content that benefits from a dedicated editing interface
 - Content that the user wants to iterate on and refine
 - Documents intended for export or external use
@@ -103,7 +103,7 @@ Canvas is a collaborative workspace for creating and editing documents, notes, a
 
 ## When to use Canvas:
 - Creating substantial documents (articles, reports, essays, etc.)
-- Collaborative writing and editing sessions  
+- Collaborative writing and editing sessions
 - Structured content that benefits from a dedicated editing interface
 - Content that the user wants to iterate on and refine
 - Documents intended for export or external use
@@ -165,7 +165,6 @@ ALWAYS use Canvas directives for ANY response when Canvas is enabled. Create des
 
 The Canvas interface provides a dedicated space for document creation and editing, separate from the main conversation flow.`;
 
-
 /**
  * Generate Canvas prompt based on endpoint and canvas mode
  * @param {Object} params
@@ -183,12 +182,12 @@ const generateCanvasPrompt = ({ endpoint, canvas, model }) => {
   if (model && model.toLowerCase().includes('gpt-5')) {
     return gpt5CanvasPrompt;
   }
-  
+
   // Return appropriate prompt based on endpoint for other models
   if (endpoint === EModelEndpoint.anthropic) {
     return canvasPrompt;
   }
-  
+
   return canvasOpenAIPrompt;
 };
 

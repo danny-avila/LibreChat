@@ -1,25 +1,19 @@
-const mongoose = require("mongoose");
-const crypto = require("node:crypto");
-const { logger } = require("@librechat/data-schemas");
-const {
-  ResourceType,
-  SystemRoles,
-  Tools,
-  actionDelimiter,
-} = require("librechat-data-provider");
+const mongoose = require('mongoose');
+const crypto = require('node:crypto');
+const { logger } = require('@librechat/data-schemas');
+const { ResourceType, SystemRoles, Tools, actionDelimiter } = require('librechat-data-provider');
 const { GLOBAL_PROJECT_NAME, EPHEMERAL_AGENT_ID, mcp_all, mcp_delimiter } =
-  require("librechat-data-provider").Constants;
+  require('librechat-data-provider').Constants;
 const {
   removeAgentFromAllProjects,
   removeAgentIdsFromProject,
   addAgentIdsToProject,
   getProjectByName,
-} = require("./Project");
-const { removeAllPermissions } = require("~/server/services/PermissionService");
-const { getMCPServerTools } = require("~/server/services/Config");
-const { getActions } = require("./Action");
-const { Agent } = require("~/db/models");
-
+} = require('./Project');
+const { removeAllPermissions } = require('~/server/services/PermissionService');
+const { getMCPServerTools } = require('~/server/services/Config');
+const { getActions } = require('./Action');
+const { Agent } = require('~/db/models');
 
 /**
  * Create an agent with the provided data.
@@ -39,7 +33,7 @@ const createAgent = async (agentData) => {
         updatedAt: timestamp,
       },
     ],
-    category: agentData.category || "general",
+    category: agentData.category || 'general',
   };
 
   return (await Agent.create(initialAgentData)).toObject();
@@ -53,8 +47,7 @@ const createAgent = async (agentData) => {
  * @param {string} searchParameter.author - The user ID of the agent's author.
  * @returns {Promise<Agent|null>} The agent document as a plain object, or null if not found.
  */
-const getAgent = async (searchParameter) =>
-  await Agent.findOne(searchParameter).lean();
+const getAgent = async (searchParameter) => await Agent.findOne(searchParameter).lean();
 
 /**
  * Get multiple agent documents based on the provided search parameters.
@@ -62,8 +55,7 @@ const getAgent = async (searchParameter) =>
  * @param {Object} searchParameter - The search parameters to find agents.
  * @returns {Promise<Agent[]>} Array of agent documents as plain objects.
  */
-const getAgents = async (searchParameter) =>
-  await Agent.find(searchParameter).lean();
+const getAgents = async (searchParameter) => await Agent.find(searchParameter).lean();
 
 /**
  * Load an agent based on the provided ID
@@ -75,12 +67,7 @@ const getAgents = async (searchParameter) =>
  * @param {import('@librechat/agents').ClientOptions} [params.model_parameters]
  * @returns {Promise<Agent|null>} The agent document as a plain object, or null if not found.
  */
-const loadEphemeralAgent = async ({
-  req,
-  agent_id,
-  endpoint,
-  model_parameters: _m,
-}) => {
+const loadEphemeralAgent = async ({ req, agent_id, endpoint, model_parameters: _m }) => {
   const { model, ...model_parameters } = _m;
   /** @type {TEphemeralAgent | null} */
   const ephemeralAgent = req.body.ephemeralAgent;
@@ -177,36 +164,26 @@ const loadAgent = async ({ req, agent_id, endpoint, model_parameters }) => {
  * @param {string} [actionsHash] - Hash of current action metadata
  * @returns {Object|null} - The matching version if found, null otherwise
  */
-const isDuplicateVersion = (
-  updateData,
-  currentData,
-  versions,
-  actionsHash = null,
-) => {
+const isDuplicateVersion = (updateData, currentData, versions, actionsHash = null) => {
   if (!versions || versions.length === 0) {
     return null;
   }
 
   const excludeFields = [
-    "_id",
-    "id",
-    "createdAt",
-    "updatedAt",
-    "author",
-    "updatedBy",
-    "created_at",
-    "updated_at",
-    "__v",
-    "versions",
-    "actionsHash", // Exclude actionsHash from direct comparison
+    '_id',
+    'id',
+    'createdAt',
+    'updatedAt',
+    'author',
+    'updatedBy',
+    'created_at',
+    'updated_at',
+    '__v',
+    'versions',
+    'actionsHash', // Exclude actionsHash from direct comparison
   ];
 
-  const {
-    $push: _$push,
-    $pull: _$pull,
-    $addToSet: _$addToSet,
-    ...directUpdates
-  } = updateData;
+  const { $push: _$push, $pull: _$pull, $addToSet: _$addToSet, ...directUpdates } = updateData;
 
   if (Object.keys(directUpdates).length === 0 && !actionsHash) {
     return null;
@@ -219,14 +196,9 @@ const isDuplicateVersion = (
     return null;
   }
 
-  const allFields = new Set([
-    ...Object.keys(wouldBeVersion),
-    ...Object.keys(lastVersion),
-  ]);
+  const allFields = new Set([...Object.keys(wouldBeVersion), ...Object.keys(lastVersion)]);
 
-  const importantFields = Array.from(allFields).filter(
-    (field) => !excludeFields.includes(field),
-  );
+  const importantFields = Array.from(allFields).filter((field) => !excludeFields.includes(field));
 
   let isMatch = true;
   for (const field of importantFields) {
@@ -265,7 +237,7 @@ const isDuplicateVersion = (
       }
 
       // Special handling for projectIds (MongoDB ObjectIds)
-      if (field === "projectIds") {
+      if (field === 'projectIds') {
         const wouldBeIds = wouldBeArr.map((id) => id.toString()).sort();
         const versionIds = lastVersionArr.map((id) => id.toString()).sort();
 
@@ -277,15 +249,11 @@ const isDuplicateVersion = (
       // Handle arrays of objects
       else if (
         wouldBeArr.length > 0 &&
-        typeof wouldBeArr[0] === "object" &&
+        typeof wouldBeArr[0] === 'object' &&
         wouldBeArr[0] !== null
       ) {
-        const sortedWouldBe = [...wouldBeArr]
-          .map((item) => JSON.stringify(item))
-          .sort();
-        const sortedVersion = [...lastVersionArr]
-          .map((item) => JSON.stringify(item))
-          .sort();
+        const sortedWouldBe = [...wouldBeArr].map((item) => JSON.stringify(item)).sort();
+        const sortedVersion = [...lastVersionArr].map((item) => JSON.stringify(item)).sort();
 
         if (!sortedWouldBe.every((item, i) => item === sortedVersion[i])) {
           isMatch = false;
@@ -302,11 +270,9 @@ const isDuplicateVersion = (
       }
     }
     // Handle objects
-    else if (typeof wouldBeValue === "object" && wouldBeValue !== null) {
+    else if (typeof wouldBeValue === 'object' && wouldBeValue !== null) {
       const lastVersionObj =
-        typeof lastVersionValue === "object" && lastVersionValue !== null
-          ? lastVersionValue
-          : {};
+        typeof lastVersionValue === 'object' && lastVersionValue !== null ? lastVersionValue : {};
 
       // For empty objects, normalize the comparison
       const wouldBeKeys = Object.keys(wouldBeValue);
@@ -329,7 +295,7 @@ const isDuplicateVersion = (
       if (wouldBeValue !== lastVersionValue) {
         // Special handling for boolean false vs undefined
         if (
-          typeof wouldBeValue === "boolean" &&
+          typeof wouldBeValue === 'boolean' &&
           wouldBeValue === false &&
           lastVersionValue === undefined
         ) {
@@ -337,8 +303,8 @@ const isDuplicateVersion = (
         }
         // Special handling for empty string vs undefined
         if (
-          typeof wouldBeValue === "string" &&
-          wouldBeValue === "" &&
+          typeof wouldBeValue === 'string' &&
+          wouldBeValue === '' &&
           lastVersionValue === undefined
         ) {
           continue;
@@ -369,11 +335,7 @@ const isDuplicateVersion = (
  * @throws {Error} If the update would create a duplicate version
  */
 const updateAgent = async (searchParameter, updateData, options = {}) => {
-  const {
-    updatingUserId = null,
-    forceVersion = false,
-    skipVersioning = false,
-  } = options;
+  const { updatingUserId = null, forceVersion = false, skipVersioning = false } = options;
   const mongoOptions = { new: true, upsert: false };
 
   const currentAgent = await Agent.findOne(searchParameter);
@@ -392,7 +354,7 @@ const updateAgent = async (searchParameter, updateData, options = {}) => {
 
     // Generate actions hash if agent has actions
     if (currentAgent.actions && currentAgent.actions.length > 0) {
-      // Extract action IDs from the format "domain_action_id"
+      // Extract action IDs from the format 'domain_action_id'
       const actionIds = currentAgent.actions
         .map((action) => {
           const parts = action.split(actionDelimiter);
@@ -409,31 +371,19 @@ const updateAgent = async (searchParameter, updateData, options = {}) => {
             true,
           ); // Include sensitive data for hash
 
-          actionsHash = await generateActionMetadataHash(
-            currentAgent.actions,
-            actions,
-          );
+          actionsHash = await generateActionMetadataHash(currentAgent.actions, actions);
         } catch (error) {
-          logger.error("Error fetching actions for hash generation:", error);
+          logger.error('Error fetching actions for hash generation:', error);
         }
       }
     }
 
     const shouldCreateVersion =
       !skipVersioning &&
-      (forceVersion ||
-        Object.keys(directUpdates).length > 0 ||
-        $push ||
-        $pull ||
-        $addToSet);
+      (forceVersion || Object.keys(directUpdates).length > 0 || $push || $pull || $addToSet);
 
     if (shouldCreateVersion) {
-      const duplicateVersion = isDuplicateVersion(
-        updateData,
-        versionData,
-        versions,
-        actionsHash,
-      );
+      const duplicateVersion = isDuplicateVersion(updateData, versionData, versions, actionsHash);
       if (duplicateVersion && !forceVersion) {
         // No changes detected, return the current agent without creating a new version
         const agentObj = currentAgent.toObject();
@@ -466,11 +416,7 @@ const updateAgent = async (searchParameter, updateData, options = {}) => {
     }
   }
 
-  return Agent.findOneAndUpdate(
-    searchParameter,
-    updateData,
-    mongoOptions,
-  ).lean();
+  return Agent.findOneAndUpdate(searchParameter, updateData, mongoOptions).lean();
 };
 
 /**
@@ -482,16 +428,11 @@ const updateAgent = async (searchParameter, updateData, options = {}) => {
  * @param {string} params.file_id
  * @returns {Promise<Agent>} The updated agent.
  */
-const addAgentResourceFile = async ({
-  req,
-  agent_id,
-  tool_resource,
-  file_id,
-}) => {
+const addAgentResourceFile = async ({ req, agent_id, tool_resource, file_id }) => {
   const searchParameter = { id: agent_id };
   let agent = await getAgent(searchParameter);
   if (!agent) {
-    throw new Error("Agent not found for adding resource file");
+    throw new Error('Agent not found for adding resource file');
   }
   const fileIdsPath = `tool_resources.${tool_resource}.file_ids`;
   await Agent.updateOne(
@@ -519,7 +460,7 @@ const addAgentResourceFile = async ({
   if (updatedAgent) {
     return updatedAgent;
   } else {
-    throw new Error("Agent not found for adding resource file");
+    throw new Error('Agent not found for adding resource file');
   }
 };
 
@@ -553,23 +494,19 @@ const removeAgentResourceFiles = async ({ agent_id, files }) => {
   }
 
   const updatePullData = { $pull: pullOps };
-  const agentAfterPull = await Agent.findOneAndUpdate(
-    searchParameter,
-    updatePullData,
-    {
-      new: true,
-    },
-  ).lean();
+  const agentAfterPull = await Agent.findOneAndUpdate(searchParameter, updatePullData, {
+    new: true,
+  }).lean();
 
   if (!agentAfterPull) {
     // Agent might have been deleted concurrently, or never existed.
     // Check if it existed before trying to throw.
     const agentExists = await getAgent(searchParameter);
     if (!agentExists) {
-      throw new Error("Agent not found for removing resource files");
+      throw new Error('Agent not found for removing resource files');
     }
     // If it existed but findOneAndUpdate returned null, something else went wrong.
-    throw new Error("Failed to update agent during file removal (pull step)");
+    throw new Error('Failed to update agent during file removal (pull step)');
   }
 
   // Return the agent state directly after the $pull operation.
@@ -614,9 +551,7 @@ const getListAgentsByAccess = async ({
   after = null,
 }) => {
   const isPaginated = limit !== null && limit !== undefined;
-  const normalizedLimit = isPaginated
-    ? Math.min(Math.max(1, parseInt(limit) || 20), 100)
-    : null;
+  const normalizedLimit = isPaginated ? Math.min(Math.max(1, parseInt(limit) || 20), 100) : null;
 
   // Build base query combining ACL accessible agents with other filters
   const baseQuery = { ...otherParams, _id: { $in: accessibleIds } };
@@ -624,7 +559,7 @@ const getListAgentsByAccess = async ({
   // Add cursor condition
   if (after) {
     try {
-      const cursor = JSON.parse(Buffer.from(after, "base64").toString("utf8"));
+      const cursor = JSON.parse(Buffer.from(after, 'base64').toString('utf8'));
       const { updatedAt, _id } = cursor;
 
       const cursorCondition = {
@@ -642,13 +577,13 @@ const getListAgentsByAccess = async ({
         baseQuery.$and = [{ ...baseQuery }, cursorCondition];
         // Remove the original conditions from baseQuery to avoid duplication
         Object.keys(baseQuery).forEach((key) => {
-          if (key !== "$and") delete baseQuery[key];
+          if (key !== '$and') delete baseQuery[key];
         });
       } else {
         Object.assign(baseQuery, cursorCondition);
       }
     } catch (error) {
-      logger.warn("Invalid cursor:", error.message);
+      logger.warn('Invalid cursor:', error.message);
     }
   }
 
@@ -674,14 +609,12 @@ const getListAgentsByAccess = async ({
   const agents = await query.lean();
 
   const hasMore = isPaginated ? agents.length > normalizedLimit : false;
-  const data = (isPaginated ? agents.slice(0, normalizedLimit) : agents).map(
-    (agent) => {
-      if (agent.author) {
-        agent.author = agent.author.toString();
-      }
-      return agent;
-    },
-  );
+  const data = (isPaginated ? agents.slice(0, normalizedLimit) : agents).map((agent) => {
+    if (agent.author) {
+      agent.author = agent.author.toString();
+    }
+    return agent;
+  });
 
   // Generate next cursor only if paginated
   let nextCursor = null;
@@ -692,11 +625,11 @@ const getListAgentsByAccess = async ({
         updatedAt: lastAgent.updatedAt.toISOString(),
         _id: lastAgent._id.toString(),
       }),
-    ).toString("base64");
+    ).toString('base64');
   }
 
   return {
-    object: "list",
+    object: 'list',
     data,
     first_id: data.length > 0 ? data[0].id : null,
     last_id: data.length > 0 ? data[data.length - 1].id : null,
@@ -717,9 +650,7 @@ const getListAgents = async (searchParameter) => {
 
   let query = Object.assign({ author }, otherParams);
 
-  const globalProject = await getProjectByName(GLOBAL_PROJECT_NAME, [
-    "agentIds",
-  ]);
+  const globalProject = await getProjectByName(GLOBAL_PROJECT_NAME, ['agentIds']);
   if (globalProject && (globalProject.agentIds?.length ?? 0) > 0) {
     const globalQuery = { id: { $in: globalProject.agentIds }, ...otherParams };
     delete globalQuery.author;
@@ -772,12 +703,7 @@ const getListAgents = async (searchParameter) => {
  * @returns {Promise<MongoAgent>} The updated agent document.
  * @throws {Error} If there's an error updating the agent or projects.
  */
-const updateAgentProjects = async ({
-  user,
-  agentId,
-  projectIds,
-  removeProjectIds,
-}) => {
+const updateAgentProjects = async ({ user, agentId, projectIds, removeProjectIds }) => {
   const updateOps = {};
 
   if (removeProjectIds && removeProjectIds.length > 0) {
@@ -835,7 +761,7 @@ const updateAgentProjects = async ({
 const revertAgentVersion = async (searchParameter, versionIndex) => {
   const agent = await Agent.findOne(searchParameter);
   if (!agent) {
-    throw new Error("Agent not found");
+    throw new Error('Agent not found');
   }
 
   if (!agent.versions || !agent.versions[versionIndex]) {
@@ -861,13 +787,13 @@ const revertAgentVersion = async (searchParameter, versionIndex) => {
 
 /**
  * Generates a hash of action metadata for version comparison
- * @param {string[]} actionIds - Array of action IDs in format "domain_action_id"
+ * @param {string[]} actionIds - Array of action IDs in format 'domain_action_id'
  * @param {Action[]} actions - Array of action documents
  * @returns {Promise<string>} - SHA256 hash of the action metadata
  */
 const generateActionMetadataHash = async (actionIds, actions) => {
   if (!actionIds || actionIds.length === 0) {
-    return "";
+    return '';
   }
 
   // Create a map of action_id to metadata for quick lookup
@@ -895,19 +821,17 @@ const generateActionMetadataHash = async (actionIds, actions) => {
       const sortedKeys = Object.keys(metadata).sort();
       const metadataStr = sortedKeys
         .map((key) => `${key}:${JSON.stringify(metadata[key])}`)
-        .join(",");
+        .join(',');
       return `${actionId}:{${metadataStr}}`;
     })
-    .join(";");
+    .join(';');
 
   // Use Web Crypto API to generate hash
   const encoder = new TextEncoder();
   const data = encoder.encode(metadataString);
-  const hashBuffer = await crypto.webcrypto.subtle.digest("SHA-256", data);
+  const hashBuffer = await crypto.webcrypto.subtle.digest('SHA-256', data);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
-  const hashHex = hashArray
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
+  const hashHex = hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
 
   return hashHex;
 };

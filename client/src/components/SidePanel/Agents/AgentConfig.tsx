@@ -15,7 +15,7 @@ import {
 } from "~/utils";
 import { ToolSelectDialog, MCPToolSelectDialog } from "~/components/Tools";
 import useAgentCapabilities from "~/hooks/Agents/useAgentCapabilities";
-import { isEphemeralAgent } from "~/hooks/Agents/useAgentToolPermissions";
+import { isEphemeralAgent } from "~/common";
 import { useFileMapContext, useAgentPanelContext } from "~/Providers";
 import AgentCategorySelector from "./AgentCategorySelector";
 import Action from "~/components/SidePanel/Builder/Action";

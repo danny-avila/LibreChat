@@ -6,9 +6,7 @@
  * @returns {string} - The date string in 'YYYY-MM-DD' format.
  */
 function getDateStr(clientTimestamp) {
-  return clientTimestamp
-    ? clientTimestamp.split("T")[0]
-    : new Date().toISOString().split("T")[0];
+  return clientTimestamp ? clientTimestamp.split('T')[0] : new Date().toISOString().split('T')[0];
 }
 
 /**
@@ -20,8 +18,8 @@ function getDateStr(clientTimestamp) {
  */
 function getTimeStr(clientTimestamp) {
   return clientTimestamp
-    ? clientTimestamp.split("T")[1].split(".")[0]
-    : new Date().toTimeString().split(" ")[0];
+    ? clientTimestamp.split('T')[1].split('.')[0]
+    : new Date().toTimeString().split(' ')[0];
 }
 
 /**
@@ -50,7 +48,7 @@ const createRunBody = ({
     model,
   };
 
-  let systemInstructions = "";
+  let systemInstructions = '';
 
   if (endpointOption.assistant?.append_current_datetime) {
     const dateStr = getDateStr(clientTimestamp);
@@ -62,17 +60,11 @@ const createRunBody = ({
     systemInstructions += promptPrefix;
   }
 
-  if (
-    typeof endpointOption?.artifactsPrompt === "string" &&
-    endpointOption.artifactsPrompt
-  ) {
+  if (typeof endpointOption?.artifactsPrompt === 'string' && endpointOption.artifactsPrompt) {
     systemInstructions += `\n${endpointOption.artifactsPrompt}`;
   }
 
-  if (
-    typeof endpointOption?.canvasPrompt === "string" &&
-    endpointOption.canvasPrompt
-  ) {
+  if (typeof endpointOption?.canvasPrompt === 'string' && endpointOption.canvasPrompt) {
     systemInstructions += `\n${endpointOption.canvasPrompt}`;
   }
 

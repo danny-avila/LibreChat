@@ -21,7 +21,7 @@ import {
 import { createProviderOption, getDefaultAgentFormValues } from "~/utils";
 import { useResourcePermissions } from "~/hooks/useResourcePermissions";
 import { useSelectAgent, useLocalize, useAuthContext } from "~/hooks";
-import { isEphemeralAgent } from "~/hooks/Agents/useAgentToolPermissions";
+import { isEphemeralAgent } from "~/common";
 import { useAgentPanelContext } from "~/Providers/AgentPanelContext";
 import AgentPanelSkeleton from "./AgentPanelSkeleton";
 import AdvancedPanel from "./Advanced/AdvancedPanel";
@@ -60,16 +60,6 @@ export default function AgentPanel() {
   });
 
 
-  const expandedAgentQuery = useGetExpandedAgentByIdQuery(
-    current_agent_id ?? "",
-    {
-      enabled:
-        !!(current_agent_id ?? "") &&
-        current_agent_id !== Constants.EPHEMERAL_AGENT_ID &&
-        canEdit &&
-        !permissionsLoading,
-    },
-  );
 
   const agentQuery =
     canEdit && expandedAgentQuery.data ? expandedAgentQuery : basicAgentQuery;
