@@ -285,28 +285,14 @@ export default function useEventHandlers({
     [setMessages, setConversation, genTitle, isAddedRequest, queryClient, setIsSubmitting],
   );
 
+  // Define setActualModel before syncHandler to avoid initialization error
+  const setActualModel = useSetRecoilState(openRouterActualModelState);
+
   const syncHandler = useCallback(
     (data: TSyncData, submission: EventSubmission) => {
       const { conversationId, thread_id, responseMessage, requestMessage } = data;
-      const { initialResponse, messages: _messages, userMessage, conversation: submissionConvo } = submission;
+      const { initialResponse, messages: _messages, userMessage } = submission;
       const messages = _messages.filter((msg) => msg.messageId !== userMessage.messageId);
-
-      // Check if this is an OpenRouter response with a model
-      console.log('[useEventHandlers syncHandler] Checking for OpenRouter model:', {
-        endpoint: submissionConvo?.endpoint,
-        isOpenRouter: submissionConvo?.endpoint === EModelEndpoint.openrouter,
-        responseMessageModel: responseMessage?.model,
-        responseMessage: responseMessage,
-      });
-
-      if (submissionConvo?.endpoint === EModelEndpoint.openrouter) {
-        if (responseMessage?.model) {
-          console.log('[useEventHandlers syncHandler] OpenRouter model detected:', responseMessage.model);
-          setActualModel(responseMessage.model);
-        } else {
-          console.log('[useEventHandlers syncHandler] No model in response, will wait for streaming token');
-        }
-      }
 
       setMessages([
         ...messages,
@@ -372,7 +358,6 @@ export default function useEventHandlers({
       setConversation,
       setShowStopButton,
       resetLatestMessage,
-      setActualModel,
     ],
   );
 
@@ -457,8 +442,6 @@ export default function useEventHandlers({
     ],
   );
 
-  const setActualModel = useSetRecoilState(openRouterActualModelState);
-
   const finalHandler = useCallback(
     (data: TFinalResData, submission: EventSubmission) => {
       console.log('finalHandler', data);
@@ -479,13 +462,13 @@ export default function useEventHandlers({
       });
 
       if (conversation?.endpoint === EModelEndpoint.openrouter) {
-        if (responseMessage?.model) {
+        if (responseMessage?.model && responseMessage.model !== 'openrouter/auto' && responseMessage.model !== 'auto') {
           console.log('[useEventHandlers] OpenRouter model detected in response:', responseMessage.model);
           setActualModel(responseMessage.model);
         } else {
-          console.log('[useEventHandlers] No model in OpenRouter response, checking conversation');
+          console.log('[useEventHandlers] No valid model in OpenRouter response, checking conversation');
           // Also try from conversation if available
-          if (conversation?.model && conversation.model !== 'openrouter/auto') {
+          if (conversation?.model && conversation.model !== 'openrouter/auto' && conversation.model !== 'auto') {
             console.log('[useEventHandlers] Using model from conversation:', conversation.model);
             setActualModel(conversation.model);
           }

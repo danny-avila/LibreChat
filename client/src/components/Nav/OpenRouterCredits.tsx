@@ -86,10 +86,10 @@ export default function OpenRouterCredits({ className, compact = false }: OpenRo
     (checked: boolean) => {
       setAutoRouterEnabled(checked);
 
-      // Clear actual model when disabling auto-router
-      if (!checked) {
-        setActualModel(null);
-      }
+      // Clear actual model when toggling auto-router
+      // When enabling: we're waiting for OpenRouter to tell us the actual model
+      // When disabling: clear the auto-router selected model
+      setActualModel(null);
 
       // Also update the current conversation if it's OpenRouter
       if (isOpenRouter && conversation) {
@@ -356,28 +356,13 @@ export default function OpenRouterCredits({ className, compact = false }: OpenRo
         </div>
 
         {/* Display actual model used when auto-router is enabled */}
-        {autoRouterEnabled && actualModel ? (
+        {autoRouterEnabled && actualModel && actualModel !== 'openrouter/auto' && actualModel !== 'auto' ? (
           <>
             <div className="h-5 w-px bg-border-light" />
             <div className="flex items-center gap-1.5 text-xs text-text-secondary">
-              {(() => {
-                const provider = getProviderFromModel(actualModel);
-                if (provider) {
-                  return (
-                    <>
-                      <DynamicProviderIcon provider={provider} size={14} />
-                      <span className="truncate max-w-[150px]" title={actualModel}>
-                        {actualModel.split('/')[1] || actualModel}
-                      </span>
-                    </>
-                  );
-                }
-                return (
-                  <span className="truncate max-w-[150px]" title={actualModel}>
-                    {actualModel}
-                  </span>
-                );
-              })()}
+              <span className="truncate max-w-[150px]" title={actualModel}>
+                {actualModel.split('/')[1] || actualModel}
+              </span>
             </div>
           </>
         ) : autoRouterEnabled ? (

@@ -159,6 +159,7 @@
     ]
   },
   "dependencies": {
+    "@librechat/agents": "github:biostochastics/librechat-agents-openrouter#main",
     "dotenv-safe": "^9.1.0",
     "glob": "^11.0.3",
     "minimatch": "^10.0.3"

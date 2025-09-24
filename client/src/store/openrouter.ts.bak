@@ -99,75 +99,67 @@ export const openRouterActualModelState = atom<string | null>({
   default: null,
 });
 
-// Selectors - COMMENTED OUT TO FIX CIRCULAR DEPENDENCY
-// These selectors cause initialization issues when imported during module load
-// TODO: Replace with runtime hooks
-/*
+// Selectors - TEMPORARILY DISABLED TO DEBUG CIRCULAR DEPENDENCY
 // export const openRouterConfigSelector = selector<OpenRouterState>({
 //   key: 'openRouterConfigSelector',
 //   get: ({ get }) => {
-    const model = get(openRouterModelState);
-    const models = get(openRouterFallbackChainState);
-    const route = get(openRouterRouteState);
-    const providerPreferences = get(openRouterProviderPreferencesState);
-    const maxCreditsPerRequest = get(openRouterMaxCreditsPerRequestState);
-    const includeReasoning = get(openRouterIncludeReasoningState);
-    const autoRouterEnabled = get(openRouterAutoRouterEnabledState);
+//     const model = get(openRouterModelState);
+//     const models = get(openRouterFallbackChainState);
+//     const route = get(openRouterRouteState);
+//     const providerPreferences = get(openRouterProviderPreferencesState);
+//     const maxCreditsPerRequest = get(openRouterMaxCreditsPerRequestState);
+//     const includeReasoning = get(openRouterIncludeReasoningState);
+//     const autoRouterEnabled = get(openRouterAutoRouterEnabledState);
 
-    // Pass auto-router as a separate flag, don't override the model
-    // This maintains state isolation - UI shows user's selection,
-    // backend handles the transformation to 'openrouter/auto'
-    return {
-      model, // Keep the user's selected model
-      autoRouter: autoRouterEnabled, // Pass as separate flag for backend
-      models: autoRouterEnabled ? [] : models, // Clear fallback when auto-router is on
-      // Note: Route is automatically set to 'fallback' if a fallback chain exists,
-      // otherwise the user's selected route preference is used
-      route: autoRouterEnabled ? 'auto' : (models.length > 0 ? 'fallback' : route),
-      providerPreferences,
-      maxCreditsPerRequest,
-      includeReasoning,
-    };
-  },
-});
-*/
+//     // Pass auto-router as a separate flag, don't override the model
+//     // This maintains state isolation - UI shows user's selection,
+//     // backend handles the transformation to 'openrouter/auto'
+//     return {
+//       model, // Keep the user's selected model
+//       autoRouter: autoRouterEnabled, // Pass as separate flag for backend
+//       models: autoRouterEnabled ? [] : models, // Clear fallback when auto-router is on
+//       // Note: Route is automatically set to 'fallback' if a fallback chain exists,
+//       // otherwise the user's selected route preference is used
+//       route: autoRouterEnabled ? 'auto' : (models.length > 0 ? 'fallback' : route),
+//       providerPreferences,
+//       maxCreditsPerRequest,
+//       includeReasoning,
+//     };
+//   },
+// });
 
-/*
-export const openRouterEffectiveFallbackChainSelector = selector<string[]>({
-  key: 'openRouterEffectiveFallbackChainSelector',
-  get: ({ get }) => {
-    const model = get(openRouterModelState);
-    const fallbackChain = get(openRouterFallbackChainState);
-    const autoRouterEnabled = get(openRouterAutoRouterEnabledState);
+// export const openRouterEffectiveFallbackChainSelector = selector<string[]>({
+//   key: 'openRouterEffectiveFallbackChainSelector',
+//   get: ({ get }) => {
+//     const model = get(openRouterModelState);
+//     const fallbackChain = get(openRouterFallbackChainState);
+//     const autoRouterEnabled = get(openRouterAutoRouterEnabledState);
 
-    // When auto-router is enabled, return empty array
-    // (auto-router handles model selection internally)
-    if (autoRouterEnabled) {
-      return [];
-    }
+//     // When auto-router is enabled, return empty array
+//     // (auto-router handles model selection internally)
+//     if (autoRouterEnabled) {
+//       return [];
+//     }
 
-    // Return the fallback chain with the primary model prepended if not already included
-    if (!fallbackChain.includes(model)) {
-      return [model, ...fallbackChain];
-    }
+//     // Return the fallback chain with the primary model prepended if not already included
+//     if (!fallbackChain.includes(model)) {
+//       return [model, ...fallbackChain];
+//     }
 
-    return fallbackChain;
-  },
-});
-*/
+//     return fallbackChain;
+//   },
+// });
 
-// Helper selector to check if using Auto Router
-/*
-export const isUsingAutoRouterSelector = selector<boolean>({
-  key: 'isUsingAutoRouterSelector',
-  get: ({ get }) => {
-    // Only check the toggle state, not the model
-    // This prevents the state contamination issue
-    const autoRouterEnabled = get(openRouterAutoRouterEnabledState);
-    return autoRouterEnabled;
-  },
-});
-*/
+// Helper selector to check if using Auto Router - TEMPORARILY DISABLED
+// export const isUsingAutoRouterSelector = selector<boolean>({
+//   key: 'isUsingAutoRouterSelector',
+//   get: ({ get }) => {
+//     // Only check the toggle state, not the model
+//     // This prevents the state contamination issue
+//     const autoRouterEnabled = get(openRouterAutoRouterEnabledState);
+//     return autoRouterEnabled;
+//   },
+// });
 
 // New atoms for sorting and filtering
 export const openRouterSortKeyState = atomWithLocalStorage<'provider' | 'name'>(
@@ -186,32 +178,30 @@ export const openRouterFilterNoTrainState = atomWithLocalStorage<boolean>(
 );
 
 // Selector for sorted and filtered models
-/*
-export const openRouterModelsDerivedSelector = selector<OpenRouterModel[]>({
-  key: 'openRouterModelsDerivedSelector',
-  get: ({ get }) => {
-    const models = get(openRouterModelsListState);
-    const sortKey = get(openRouterSortKeyState);
-    const sortDir = get(openRouterSortDirState);
-    const filterNoTrain = get(openRouterFilterNoTrainState);
+// export const openRouterModelsDerivedSelector = selector<OpenRouterModel[]>({
+//   key: 'openRouterModelsDerivedSelector',
+//   get: ({ get }) => {
+//     const models = get(openRouterModelsListState);
+//     const sortKey = get(openRouterSortKeyState);
+//     const sortDir = get(openRouterSortDirState);
+//     const filterNoTrain = get(openRouterFilterNoTrainState);
 
-    // Separate Auto Router from other models
-    const autoRouter = models.find(m => m.id === 'openrouter/auto');
-    const otherModels = models.filter(m => m.id !== 'openrouter/auto');
+//     // Separate Auto Router from other models
+//     const autoRouter = models.find(m => m.id === 'openrouter/auto');
+//     const otherModels = models.filter(m => m.id !== 'openrouter/auto');
 
-    // Apply privacy filter
-    const filtered = filterModelsByPrivacy(otherModels, filterNoTrain);
+//     // Apply privacy filter
+//     const filtered = filterModelsByPrivacy(otherModels, filterNoTrain);
 
-    // Apply sorting
-    const sorted = sortModels(filtered, sortKey, sortDir);
+//     // Apply sorting
+//     const sorted = sortModels(filtered, sortKey, sortDir);
 
-    // Return with Auto Router pinned at top
-    return autoRouter ? [autoRouter, ...sorted] : sorted;
-  },
-});
-*/
+//     // Return with Auto Router pinned at top
+//     return autoRouter ? [autoRouter, ...sorted] : sorted;
+//   },
+// });
 
-// Export all atoms as default (selectors have been replaced with hooks)
+// Export all atoms and selectors as default
 export default {
   // Atoms
   openRouterModelState,
@@ -229,8 +219,10 @@ export default {
   openRouterSortKeyState,
   openRouterSortDirState,
   openRouterFilterNoTrainState,
-  openRouterZDREnabledState,
 
-  // Note: Selectors have been replaced with hooks in hooks/Credits/
-  // to avoid circular dependency issues
+  // Selectors - COMMENTED OUT
+  // openRouterConfigSelector,
+  // openRouterEffectiveFallbackChainSelector,
+  // isUsingAutoRouterSelector,
+  // openRouterModelsDerivedSelector,
 };

@@ -112,6 +112,8 @@ class OpenRouterClient extends BaseClient {
 
     // Store autoRouter at instance level for easy access
     this.autoRouter = this.options.autoRouter || this.modelOptions.autoRouter || false;
+    // Store ZDR flag at instance level
+    this.zdr = this.options.zdr || this.modelOptions.zdr || false;
 
 
     // Set sender name based on model
@@ -149,6 +151,14 @@ class OpenRouterClient extends BaseClient {
     // Add data privacy headers to avoid the "No endpoints found matching your data policy" error
     // This allows OpenRouter to use models without requiring data privacy configuration
     headers['X-Data-Collection'] = 'deny'; // Deny data collection for training
+
+    // Add ZDR (Zero Data Retention) header if enabled
+    // This tells OpenRouter not to store any data from the request/response
+    // Check multiple possible locations for the ZDR flag
+    const zdrEnabled = this.zdr || this.options?.zdr || this.options?.modelOptions?.zdr || false;
+    if (zdrEnabled) {
+      headers['X-OpenRouter-ZDR'] = 'true';
+    }
 
     return headers;
   }
@@ -265,6 +275,14 @@ class OpenRouterClient extends BaseClient {
       }
 
       const data = await response.json();
+
+      // Log the full response when using auto-router to debug model detection
+      if (shouldUseAutoRouter) {
+        logger.info('[OpenRouter] Auto-router non-streaming response:', {
+          model: data.model,
+          fullResponse: JSON.stringify(data),
+        });
+      }
 
       // Store usage data if available
       if (data.usage) {
@@ -651,29 +669,56 @@ class OpenRouterClient extends BaseClient {
                   const parsed = JSON.parse(data);
 
                   // Capture the actual model used from the response
-                  // OpenRouter includes the model in the response chunks
-                  if (parsed.model && !actualModelUsed) {
-                    actualModelUsed = parsed.model;
-                    // Store it for later use
-                    this.actualModelUsed = actualModelUsed;
+                  // OpenRouter returns the actual model in the "model" field of the streaming chunks
+                  const detectedModel = parsed.model;
 
-                    logger.info('[OpenRouter] Model detected in response:', {
-                      actualModel: actualModelUsed,
-                      requestedModel: this.modelOptions?.model,
-                      autoRouter: this.autoRouter,
-                      modelOptionsAutoRouter: this.modelOptions?.autoRouter,
+                  // Debug logging to understand what's happening
+                  if (this._currentShouldUseAutoRouter && parsed.model) {
+                    logger.info('[OpenRouter] Streaming chunk received:', {
+                      model: parsed.model,
+                      hasActualModelUsed: !!actualModelUsed,
+                      shouldUseAutoRouter: this._currentShouldUseAutoRouter,
+                      isFirstChunk: !actualModelUsed,
+                    });
+                  }
+
+                  // When using auto-router, capture the actual model from the first chunk that has it
+                  // OpenRouter sends the actual model (e.g., "openai/gpt-4o-mini") in every chunk
+                  if (this._currentShouldUseAutoRouter && detectedModel && !actualModelUsed) {
+                    // Check if this is an actual model, not the auto-router indicator
+                    const isActualModel = detectedModel !== 'openrouter/auto' && detectedModel !== 'auto';
+
+                    logger.info('[OpenRouter] Model detection check:', {
+                      detectedModel,
+                      isActualModel,
+                      willSendToFrontend: isActualModel,
                     });
 
-                    // Store model in the options so it can be accessed later
-                    if (this.options) {
-                      this.options.openRouterActualModel = actualModelUsed;
-                    }
+                    if (isActualModel) {
+                      actualModelUsed = detectedModel;
 
-                    // Also send it as a special token that will be parsed on the frontend
-                    // Use a different format that won't conflict with content
-                    if (onProgress && actualModelUsed) {
-                      logger.info('[OpenRouter] Sending model indicator:', actualModelUsed);
-                      onProgress(`\n[OPENROUTER_MODEL:${actualModelUsed}]\n`);
+                      // Store it for later use
+                      this.actualModelUsed = actualModelUsed;
+
+                      logger.info('[OpenRouter] ✓ Auto-router selected model:', {
+                        actualModel: actualModelUsed,
+                        requestedModel: this.modelOptions?.model,
+                        autoRouter: this.autoRouter,
+                      });
+
+                      // Store model in the options so it can be accessed later
+                      if (this.options) {
+                        this.options.openRouterActualModel = actualModelUsed;
+                      }
+
+                      // Send model indicator to frontend for display
+                      if (onProgress) {
+                        const modelIndicator = `\n[OPENROUTER_MODEL:${actualModelUsed}]\n`;
+                        logger.info('[OpenRouter] ✓ Sending model indicator to frontend:', modelIndicator);
+                        onProgress(modelIndicator);
+                      } else {
+                        logger.warn('[OpenRouter] No onProgress callback to send model indicator');
+                      }
                     }
                   }
 
