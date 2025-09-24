@@ -53,11 +53,19 @@ const TableRowComponent = <TData extends Record<string, unknown>>({
     className="border-none hover:bg-surface-secondary"
   >
     {row.getVisibleCells().map((cell) => {
-      const meta = cell.column.columnDef.meta as { className?: string } | undefined;
+      const meta = cell.column.columnDef.meta as
+        | { className?: string; desktopOnly?: boolean }
+        | undefined;
+      const isDesktopOnly = meta?.desktopOnly;
       return (
         <TableCell
           key={cell.id}
-          className={cn('truncate p-3', cell.column.id === 'select' && 'p-1', meta?.className)}
+          className={cn(
+            'truncate p-3',
+            cell.column.id === 'select' && 'p-1',
+            meta?.className,
+            isDesktopOnly && 'hidden md:table-cell',
+          )}
         >
           {flexRender(cell.column.columnDef.cell, cell.getContext())}
         </TableCell>
@@ -89,9 +97,16 @@ export const SkeletonRows = memo(
             const columnKey = String(
               column.id ?? ('accessorKey' in column && column.accessorKey) ?? '',
             );
-            const meta = column.meta as { className?: string } | undefined;
+            const meta = column.meta as { className?: string; desktopOnly?: boolean } | undefined;
             return (
-              <TableCell key={columnKey} className={cn('px-2 py-2 md:px-3', meta?.className)}>
+              <TableCell
+                key={columnKey}
+                className={cn(
+                  'px-2 py-2 md:px-3',
+                  meta?.className,
+                  meta?.desktopOnly && 'hidden md:table-cell',
+                )}
+              >
                 <Skeleton className="h-6 w-full" />
               </TableCell>
             );

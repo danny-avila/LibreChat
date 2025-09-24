@@ -57,7 +57,6 @@ export interface DataTableProps<TData extends Record<string, unknown>, TValue> {
     selectedCount: number;
     selectedRows: TData[];
     table: Table<TData & { _id: string }>;
-    showToast: (message: string) => void;
   }) => React.ReactNode;
 }
 
