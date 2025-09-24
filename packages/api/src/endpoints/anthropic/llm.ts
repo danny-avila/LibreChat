@@ -1,6 +1,4 @@
 import { Dispatcher, ProxyAgent } from 'undici';
-import { AnthropicVertex } from '@anthropic-ai/vertex-sdk';
-import { GoogleAuth } from 'google-auth-library';
 import { AnthropicClientOptions } from '@librechat/agents';
 import { anthropicSettings, removeNullishValues, AuthKeys } from 'librechat-data-provider';
 import type {
@@ -9,6 +7,25 @@ import type {
   AnthropicCredentials,
 } from '~/types/anthropic';
 import { checkPromptCacheSupport, getClaudeHeaders, configureReasoning } from './helpers';
+import { createAnthropicVertexClient, isAnthropicVertexCredentials } from './vertex';
+
+/**
+ * Parses credentials from string or object format
+ */
+function parseCredentials(
+  credentials: string | AnthropicCredentials | undefined,
+): AnthropicCredentials {
+  if (typeof credentials === 'string') {
+    try {
+      return JSON.parse(credentials);
+    } catch (err: unknown) {
+      throw new Error(
+        `Error parsing string credentials: ${err instanceof Error ? err.message : 'Unknown error'}`,
+      );
+    }
+  }
+  return credentials && typeof credentials === 'object' ? credentials : {};
+}
 
 /** Known Anthropic parameters that map directly to the client config */
 export const knownAnthropicParams = new Set([
@@ -79,28 +96,6 @@ function getLLMConfig(
 
   let enableWebSearch = mergedOptions.web_search;
 
-  let creds: AnthropicCredentials = {};
-  if (typeof credentials === 'string') {
-    try {
-      creds = JSON.parse(credentials);
-    } catch (err: unknown) {
-      throw new Error(
-        `Error parsing string credentials: ${err instanceof Error ? err.message : 'Unknown error'}`,
-      );
-    }
-  } else if (credentials && typeof credentials === 'object') {
-    creds = credentials;
-  }
-
-  const vertexServiceKeyRaw = creds[AuthKeys.GOOGLE_SERVICE_KEY] ?? {};
-  const vertexServiceKey =
-    typeof vertexServiceKeyRaw === 'string'
-      ? JSON.parse(vertexServiceKeyRaw)
-      : (vertexServiceKeyRaw ?? {});
-
-  const apiKey = creds[AuthKeys.ANTHROPIC_API_KEY] ?? null;
-  const vertexProjectId = !apiKey ? (vertexServiceKey?.project_id ?? null) : null;
-
   let requestOptions: AnthropicClientOptions & { stream?: boolean } = {
     model: mergedOptions.model,
     stream: mergedOptions.stream,
@@ -116,27 +111,12 @@ function getLLMConfig(
     },
   };
 
-  if (vertexProjectId) {
+  const creds = parseCredentials(credentials);
+  const apiKey = creds[AuthKeys.ANTHROPIC_API_KEY] ?? null;
+
+  if (isAnthropicVertexCredentials(creds)) {
     // Vertex AI configuration - use custom client
-    const location = process.env.ANTHROPIC_VERTEX_REGION || 'global';
-
-    try {
-      const googleAuth = new GoogleAuth({
-        credentials: vertexServiceKey,
-        scopes: 'https://www.googleapis.com/auth/cloud-platform',
-      });
-
-      const vertexClient = new AnthropicVertex({
-        projectId: vertexProjectId,
-        region: location,
-        googleAuth: googleAuth,
-      });
-
-      requestOptions.createClient = () => vertexClient;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      throw new Error(`Failed to create Vertex AI client: ${message}`);
-    }
+    requestOptions.createClient = () => createAnthropicVertexClient(creds);
   } else if (apiKey) {
     // Direct API configuration
     requestOptions.apiKey = apiKey;

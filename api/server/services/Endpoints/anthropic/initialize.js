@@ -1,5 +1,4 @@
-const path = require('path');
-const { getLLMConfig, loadServiceKey, isEnabled } = require('@librechat/api');
+const { getLLMConfig, loadAnthropicVertexCredentials, isEnabled } = require('@librechat/api');
 const { EModelEndpoint, AuthKeys } = require('librechat-data-provider');
 const { getUserKey, checkUserKeyExpiry } = require('~/server/services/UserService');
 const AnthropicClient = require('~/app/clients/AnthropicClient');
@@ -13,20 +12,7 @@ const initializeClient = async ({ req, res, endpointOption, overrideModel, optio
   let anthropicApiKey = null;
 
   if (isEnabled(process.env.ANTHROPIC_USE_VERTEX)) {
-    let serviceKey = {};
-    try {
-      const serviceKeyPath =
-        process.env.GOOGLE_SERVICE_KEY_FILE ||
-        path.join(__dirname, '../../../..', 'data', 'auth.json');
-      serviceKey = await loadServiceKey(serviceKeyPath);
-      if (!serviceKey) {
-        serviceKey = {};
-      }
-    } catch (_e) {
-      // Service key loading failed, but that's okay if not required
-      serviceKey = {};
-    }
-    credentials[AuthKeys.GOOGLE_SERVICE_KEY] = serviceKey;
+    credentials = await loadAnthropicVertexCredentials();
   } else {
     const isUserProvided = ANTHROPIC_API_KEY === 'user_provided';
     anthropicApiKey = isUserProvided

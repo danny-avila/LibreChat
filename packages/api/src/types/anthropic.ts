@@ -3,11 +3,12 @@ import { Dispatcher } from 'undici';
 import { AuthKeys, anthropicSchema } from 'librechat-data-provider';
 import type { AnthropicClientOptions } from '@librechat/agents';
 import type { LLMConfigResult } from './openai';
+import type { GoogleServiceKey } from '../utils/key';
 
 export type AnthropicParameters = z.infer<typeof anthropicSchema>;
 
 export type AnthropicCredentials = {
-  [AuthKeys.GOOGLE_SERVICE_KEY]?: string;
+  [AuthKeys.GOOGLE_SERVICE_KEY]?: GoogleServiceKey;
   [AuthKeys.ANTHROPIC_API_KEY]?: string;
 };
 
