@@ -58,7 +58,7 @@ router.get('/', async (req, res) => {
       const nextCursor = messages.length > pageSize ? messages.pop()[sortField] : null;
       response = { messages, nextCursor };
     } else if (search) {
-      const searchResults = await Message.meiliSearch(search, undefined, true);
+      const searchResults = await Message.meiliSearch(search, { filter: `user = "${user}"` }, true);
 
       const messages = searchResults.hits || [];
 

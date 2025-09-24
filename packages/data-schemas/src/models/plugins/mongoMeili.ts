@@ -644,6 +644,16 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
         logger.error(`[mongoMeili] Error checking index ${indexName}:`, error);
       }
     }
+
+    // Configure index settings to make 'user' field filterable
+    try {
+      await index.updateSettings({
+        filterableAttributes: ['user'],
+      });
+      logger.debug(`[mongoMeili] Updated index ${indexName} settings to make 'user' filterable`);
+    } catch (settingsError) {
+      logger.error(`[mongoMeili] Error updating index settings for ${indexName}:`, settingsError);
+    }
   })();
 
   // Collect attributes from the schema that should be indexed
@@ -653,6 +663,13 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
       return schemaValue.meiliIndex ? [...results, key] : results;
     }, []),
   ];
+
+  // CRITICAL: Always include 'user' field for proper filtering
+  // This ensures existing deployments can filter by user after migration
+  if (schema.obj.user && !attributesToIndex.includes('user')) {
+    attributesToIndex.push('user');
+    logger.debug(`[mongoMeili] Added 'user' field to ${indexName} index attributes`);
+  }
 
   schema.loadClass(createMeiliMongooseModel({ index, attributesToIndex, syncOptions }));
 
