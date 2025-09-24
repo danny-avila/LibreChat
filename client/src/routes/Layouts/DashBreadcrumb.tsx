@@ -1,6 +1,6 @@
 import { useMemo, useCallback } from 'react';
 import { useLocation } from 'react-router-dom';
-import { SystemRoles } from 'librechat-data-provider';
+import { SystemRoles, LocalStorageKeys, Constants } from 'librechat-data-provider';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
 import { ArrowLeft, MessageSquareQuote } from 'lucide-react';
 import {
@@ -26,8 +26,16 @@ import store from '~/store';
 const promptsPathPattern = /prompts\/(?!new(?:\/|$)).*$/;
 
 const getConversationId = (prevLocationPath: string) => {
+  // If coming from dashboard paths or unknown, try to restore last convo from localStorage
   if (!prevLocationPath || prevLocationPath.includes('/d/')) {
-    return 'new';
+    try {
+      const raw = localStorage.getItem(LocalStorageKeys.LAST_CONVO_SETUP + '_0') ?? '{}';
+      const lastConvo = JSON.parse(raw || '{}');
+      const lastId = typeof lastConvo?.conversationId === 'string' ? lastConvo.conversationId : '';
+      return lastId && lastId !== Constants.NEW_CONVO ? lastId : 'new';
+    } catch {
+      return 'new';
+    }
   }
   const lastPathnameParts = prevLocationPath.split('/');
   return lastPathnameParts[lastPathnameParts.length - 1];

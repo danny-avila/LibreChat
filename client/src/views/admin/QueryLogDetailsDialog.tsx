@@ -5,6 +5,8 @@ import ReactMarkdown from 'react-markdown';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import {cn} from '~/utils';
+import React from 'react';
+import { EventSourcePolyfill } from 'event-source-polyfill';
 interface MessageSegment {
   type: 'markdown' | 'code';
   content: string;
@@ -94,12 +96,13 @@ const renderJsonContent = (json: any) => {
 
 interface QueryLog {
   _id: string;
+  conversationId: string;
   user: { name?: string; email?: string; id?: string };
-  role: 'user' | 'ai';
-  model: string | null;
-  text: string;
-  tokenCount: number;
+  title?: string;
+  totalTokens?: number;
+  messageCount?: number;
   createdAt: string;
+  updatedAt?: string;
 }
 
 interface QueryLogDetailsDialogProps {
@@ -113,8 +116,130 @@ const QueryLogDetailsDialog: React.FC<QueryLogDetailsDialogProps> = ({
   setDialogOpen,
   selectedLog,
 }) => {
-  const message = selectedLog?.text || 'No message available';
+  const message = '';
   const messageType = detectMessageType(message);
+
+  const [loadingHistory, setLoadingHistory] = React.useState(false);
+  const [historyError, setHistoryError] = React.useState<string | null>(null);
+  const [history, setHistory] = React.useState<
+    { id?: string; role: 'ai' | 'user'; text: string; createdAt: string; model?: string | null; tokenCount?: number; conversationId?: string }[]
+  >([]);
+  const sseRef = React.useRef<EventSourcePolyfill | null>(null);
+  const messageIdsRef = React.useRef<Set<string>>(new Set());
+
+  React.useEffect(() => {
+    const abort = new AbortController();
+    async function fetchAllUserMessages(userId: string) {
+      try {
+        setLoadingHistory(true);
+        setHistoryError(null);
+        const token = localStorage.getItem('token');
+        if (!token) {
+          throw new Error('No authentication token found');
+        }
+        const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
+        if (!selectedLog?.conversationId) {
+          setHistory([]);
+          setLoadingHistory(false);
+          return;
+        }
+        // Initial snapshot: fetch JSON list (non-SSE) by querying messages route used by admin
+        const resp = await fetch(`${API_BASE}/api/messages/${selectedLog.conversationId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: abort.signal,
+        });
+        const data = await resp.json();
+        const msgs = Array.isArray(data) ? data : [];
+        const normalized = msgs
+          .map((m: any) => ({
+            id: String(m?.messageId || ''),
+            role: (m?.model ? 'ai' : 'user') as 'ai' | 'user',
+            text: String(m?.text || ''),
+            createdAt: String(m?.createdAt || ''),
+            model: m?.model ?? null,
+            tokenCount: m?.tokenCount ?? 0,
+            conversationId: m?.conversationId,
+          }))
+          .sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        messageIdsRef.current = new Set(normalized.map((m: any) => m.id || ''));
+        setHistory(normalized);
+      } catch (err: any) {
+        setHistoryError(err?.message || 'Failed to load conversation history');
+        setHistory([]);
+      } finally {
+        setLoadingHistory(false);
+      }
+    }
+
+    if (dialogOpen && selectedLog?.user?.id) {
+      fetchAllUserMessages(selectedLog.user.id);
+    } else {
+      setHistory([]);
+      setHistoryError(null);
+    }
+
+    return () => abort.abort();
+  }, [dialogOpen, selectedLog?.conversationId, selectedLog?.user?.id]);
+
+  // Live updates via SSE for the selected conversation messages
+  React.useEffect(() => {
+    const conversationId = selectedLog?.conversationId;
+    if (!dialogOpen || !conversationId) {
+      if (sseRef.current) {
+        sseRef.current.close();
+        sseRef.current = null;
+      }
+      return;
+    }
+
+    const token = localStorage.getItem('token');
+    if (!token) return;
+    const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
+    const es = new EventSourcePolyfill(
+      `${API_BASE}/api/logs/conversations/${conversationId}/messages`,
+      {
+        headers: { Authorization: `Bearer ${token}` },
+        heartbeatTimeout: 60000,
+      },
+    );
+    sseRef.current = es;
+
+    es.onmessage = (event) => {
+      if (!event.data) return;
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === 'heartbeat' || data.type === 'init' || data.type === 'historical_complete') return;
+        if (!data || data.conversationId !== conversationId) return;
+        const id = String(data.messageId || '');
+        if (id && messageIdsRef.current.has(id)) return;
+        if (id) messageIdsRef.current.add(id);
+        const entry = {
+          id,
+          role: (data.model ? 'ai' : 'user') as 'ai' | 'user',
+          text: String(data.text || ''),
+          createdAt: String(data.createdAt || ''),
+          model: data.model ?? null,
+          tokenCount: data.tokenCount ?? 0,
+          conversationId: data.conversationId,
+        };
+        setHistory((prev) => [entry, ...prev]);
+      } catch (e) {
+        // ignore
+      }
+    };
+
+    es.onerror = () => {
+      es.close();
+      sseRef.current = null;
+    };
+
+    return () => {
+      if (sseRef.current) {
+        sseRef.current.close();
+        sseRef.current = null;
+      }
+    };
+  }, [dialogOpen, selectedLog?.user?.id]);
 
   return (
     <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -129,18 +254,8 @@ const QueryLogDetailsDialog: React.FC<QueryLogDetailsDialogProps> = ({
         <DialogHeader className="border-b border-border-light pb-3 pt-2 flex-shrink-0">
           <DialogTitle className="flex items-start justify-between text-base font-semibold">
             <div className="flex items-center gap-2">
-              <span
-                className={`rounded-full p-1.5 ${
-                  selectedLog?.role === 'ai'
-                    ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300'
-                    : 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300'
-                }`}
-              >
-                {selectedLog?.role === 'ai' ? (
-                  <Info className="h-4 w-4" />
-                ) : (
-                  <ArrowLeft className="h-4 w-4" />
-                )}
+              <span className={`rounded-full p-1.5 bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300`}>
+                <Info className="h-4 w-4" />
               </span>
               <span className="text-foreground">Query Log Details</span>
             </div>
@@ -163,38 +278,14 @@ const QueryLogDetailsDialog: React.FC<QueryLogDetailsDialogProps> = ({
                 </div>
               </div>
 
-              <div className="flex flex-col gap-1 min-w-0">
-                <label className="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">
-                  Role
-                </label>
-                <div className="rounded-md border border-gray-200 bg-white px-3 py-2 shadow-sm dark:border-gray-700 dark:bg-gray-800">
-                  <span
-                    className={`inline-block rounded px-2 py-0.5 text-xs font-semibold ${
-                      selectedLog.role === 'ai'
-                        ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300'
-                        : 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300'
-                    }`}
-                  >
-                    {selectedLog.role === 'ai' ? 'AI' : 'User'}
-                  </span>
-                </div>
-              </div>
-
-              <div className="flex flex-col gap-1 min-w-0">
-                <label className="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">
-                  Model
-                </label>
-                <div className="rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 shadow-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 truncate">
-                  {selectedLog.model ?? '—'}
-                </div>
-              </div>
+              {/* Role and Model blocks removed as requested */}
 
               <div className="flex flex-col gap-1">
                 <label className="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">
                   Tokens
                 </label>
                 <div className="rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 shadow-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
-                  {selectedLog.tokenCount ?? 0}
+                  {history.reduce((acc, m) => acc + (m.tokenCount || 0), 0)}
                 </div>
               </div>
 
@@ -208,47 +299,53 @@ const QueryLogDetailsDialog: React.FC<QueryLogDetailsDialogProps> = ({
               </div>
             </div>
 
-            {/* Message Content - Fixed overflow handling */}
+            {/* Conversation History */}
             <div className="min-w-0">
-              <p className="text-muted-foreground font-medium mb-2">Message</p>
-              <div className="max-h-[calc(100% - 100px)] overflow-y-auto rounded-md border bg-muted p-3 pb-6 text-sm text-muted-foreground dark:bg-muted/50 min-w-0">
-                {messageType.type === 'json' && renderJsonContent(messageType.content)}
-                {messageType.type === 'mixed' && (
-                  <>
-                    {messageType.content.map((segment: MessageSegment, index: number) => (
-                      <div key={index} className="mb-3 min-w-0">
-                        {segment.type === 'markdown' && (
-                          <div className="prose prose-sm max-w-none break-words">
-                            <ReactMarkdown>{segment.content}</ReactMarkdown>
-                          </div>
-                        )}
-                        {segment.type === 'code' && (
-                          <div className="mb-3 min-w-0 overflow-hidden">
-                            <div className="overflow-x-auto">
-                              <SyntaxHighlighter
-                                language={segment.language}
-                                style={vscDarkPlus}
-                                customStyle={{
-                                  margin: 0,
-                                  padding: '0.75rem',
-                                  fontSize: '0.875rem',
-                                  minWidth: 0,
-                                  maxWidth: '100%',
-                                }}
-                                wrapLongLines={true}
-                                showLineNumbers={false}
-                              >
-                                {segment.content}
-                              </SyntaxHighlighter>
+              <p className="text-muted-foreground font-medium mb-2">Conversation History</p>
+              <div className="max-h-[calc(90vh - 260px)] overflow-y-auto rounded-md border bg-muted p-3 pb-6 text-sm text-muted-foreground dark:bg-muted/50 min-w-0">
+                {loadingHistory && (
+                  <div className="text-xs">Loading history…</div>
+                )}
+                {historyError && (
+                  <div className="text-xs text-red-600 dark:text-red-400">{historyError}</div>
+                )}
+                {!loadingHistory && !historyError && history.length === 0 && (
+                  <div className="text-xs">No history available.</div>
+                )}
+                {!loadingHistory && history.length > 0 && (
+                  <ul className="space-y-3">
+                    {history.map((h, idx) => (
+                      <li key={idx} className="min-w-0">
+                        <div className="flex items-start gap-2">
+                          <span className={`shrink-0 rounded px-2 py-0.5 text-xs font-semibold ${
+                            h.role === 'ai'
+                              ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300'
+                              : 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300'
+                          }`}>
+                            {h.role === 'ai' ? `AI${h.model ? ` · ${h.model}` : ''}` : 'User'}
+                          </span>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between gap-3 mb-1">
+                              <div className="text-[10px] text-muted-foreground">
+                                {moment(h.createdAt).format('Do MMM YYYY, h:mm:ss a')}
+                              </div>
+                              <div className="text-[10px] text-muted-foreground">
+                                {typeof h.tokenCount === 'number' ? `${h.tokenCount} tokens` : ''}
+                              </div>
+                            </div>
+                            <div className="prose prose-sm max-w-none break-words">
+                              <ReactMarkdown>{h.text || ''}</ReactMarkdown>
                             </div>
                           </div>
-                        )}
-                      </div>
+                        </div>
+                      </li>
                     ))}
-                  </>
+                  </ul>
                 )}
               </div>
             </div>
+
+            {/* Removed standalone Message block as per requirements */}
           </div>
         )}
       </DialogContent>

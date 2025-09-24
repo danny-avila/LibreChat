@@ -12,24 +12,26 @@ import moment from 'moment';
 import QueryLogDetailsDialog from './QueryLogDetailsDialog';
 
 interface QueryLog {
-  _id: string;
+  _id: string; // use conversationId
+  conversationId: string;
   user: { name?: string; email?: string; id?: string };
-  role: 'user' | 'ai';
-  model: string | null;
-  text: string;
-  tokenCount: number;
-  createdAt: string;
+  title?: string;
+  totalTokens: number;
+  messageCount: number;
+  createdAt: string; // first message time
+  updatedAt: string; // last message time
 }
 
-function toRow(data: any): QueryLog {
+function toConversationRow(data: any): QueryLog {
   return {
-    _id: data.messageId || `${data.createdAt}-${Math.random()}`,
+    _id: data.conversationId,
+    conversationId: data.conversationId,
     user: data.user || { id: 'unknown' },
-    role: data.role || 'user',
-    model: data.model || null,
-    text: data.text || '',
-    tokenCount: data.tokenCount || 0,
+    title: data.title || 'New Chat',
+    totalTokens: data.totalTokens || 0,
+    messageCount: data.messageCount || 0,
     createdAt: data.createdAt,
+    updatedAt: data.updatedAt || data.createdAt,
   };
 }
 
@@ -41,6 +43,7 @@ export function useQueryLogs(limit: number = 10, page: number = 1, search: strin
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isInitialFetchComplete, setIsInitialFetchComplete] = useState(false);
+  const initTotalRef = useRef(0);
 
   const fetchLogs = useCallback(
     debounce(async (currentPage: number, currentLimit: number, currentSearch: string) => {
@@ -67,13 +70,13 @@ export function useQueryLogs(limit: number = 10, page: number = 1, search: strin
       if (esRef.current) {
         esRef.current.close();
       }
-      const es = new EventSourcePolyfill(`${API_BASE}/api/logs/queries?${params}`, {
+      const es = new EventSourcePolyfill(`${API_BASE}/api/logs/conversations?${params}`, {
         headers: { Authorization: `Bearer ${token}` },
         heartbeatTimeout: 60000,
       });
       esRef.current = es;
 
-      let tempLogs: QueryLog[] = [];
+      let tempConversations: QueryLog[] = [];
 
       es.onopen = () => {
         console.log('[useQueryLogs] SSE connected');
@@ -90,9 +93,26 @@ export function useQueryLogs(limit: number = 10, page: number = 1, search: strin
           if (data.type === 'heartbeat') return;
 
           if (data.type === 'init') {
-            // Only set total during init, using totalCount from the server
-            const normalizedTotal = Math.floor((data.total || 0) / limit) * limit;
-            setTotal(normalizedTotal);
+            // Best-effort: server should send total; if not, fetch explicit count
+            const t = data.total;
+            if (typeof t === 'number') {
+              initTotalRef.current = t;
+              setTotal(t);
+            } else {
+              (async () => {
+                try {
+                  const countRes = await fetch(
+                    `${API_BASE}/api/logs/conversations/count${currentSearch ? `?search=${encodeURIComponent(currentSearch)}` : ''}`,
+                    { headers: { Authorization: `Bearer ${token}` } },
+                  );
+                  const { total: ct = 0 } = await countRes.json();
+                  initTotalRef.current = ct;
+                  setTotal(ct);
+                } catch (e) {
+                  setTotal(0);
+                }
+              })();
+            }
             if (data.count === 0) {
               setLoading(false);
               setIsInitialFetchComplete(true);
@@ -101,45 +121,49 @@ export function useQueryLogs(limit: number = 10, page: number = 1, search: strin
           }
 
           if (data.type === 'historical_complete') {
-            setLogs(tempLogs.reverse());
+            setLogs(tempConversations);
+            if (!initTotalRef.current) {
+              // fallback: if server didn't provide total, approximate it
+              const approx = (page - 1) * limit + tempConversations.length;
+              setTotal(approx);
+            }
             setIsInitialFetchComplete(true);
             setLoading(false);
             return;
           }
 
-          if (data.event === 'historical_log') {
-            if (typeof data.createdAt !== 'string') return;
-            const logData = toRow(data);
-            tempLogs.push(logData);
+          if (data.event === 'historical_conversation') {
+            if (typeof data.updatedAt !== 'string') return;
+            const row = toConversationRow(data);
+            tempConversations.push(row);
           }
 
-          if (data.event === 'realtime_log') {
-            if (typeof data.createdAt !== 'string') return;
-            const logData = toRow(data);
-
-            // Only update logs on the first page
+          if (data.event === 'realtime_conversation') {
+            if (typeof data.updatedAt !== 'string') return;
+            const row = toConversationRow(data);
             if (currentPage === 1) {
-              setLogs((prevLogs) => {
-                const newLogs = [logData, ...prevLogs];
-                return newLogs.slice(0, currentLimit);
+              let existed = false;
+              setLogs((prev) => {
+                const byId = new Map(prev.map((p) => [p.conversationId, p]));
+                existed = byId.has(row.conversationId);
+                byId.set(row.conversationId, row);
+                const merged = Array.from(byId.values()).sort(
+                  (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+                );
+                return merged.slice(0, currentLimit);
               });
-              // Explicitly avoid updating total
-              console.log('[useQueryLogs] Skipping total update for realtime_log:', data);
-            } else {
-              console.log('[useQueryLogs] Ignoring realtime_log on page:', currentPage);
+              if (!existed) {
+                setTotal((prev) => prev + 1);
+              }
             }
           }
 
-          // Handle unexpected update events
-          if (data.type === 'update') {
-            console.log('[useQueryLogs] Skipping total update for update event:', data);
-            // Optionally update logs if needed, but do NOT touch total
-            if (currentPage === 1 && data.logIds) {
-              setLogs((prevLogs) => {
-                const newLogs = data.logIds.map(toRow).concat(prevLogs);
-                return newLogs.slice(0, currentLimit);
-              });
-            }
+          if (data.event === 'conversation_update' && data.type === 'title') {
+            setLogs((prev) => prev.map((p) => (p.conversationId === data.conversationId ? {
+              ...p,
+              title: data.title || p.title,
+              updatedAt: data.updatedAt || p.updatedAt,
+            } : p)));
           }
 
           if (data.event === 'error') {
@@ -264,50 +288,50 @@ const QueryLogs: React.FC = () => {
         ),
       },
       {
-        accessorKey: 'createdAt',
-        header: 'Timestamp',
+        accessorKey: 'updatedAt',
+        header: 'Last Updated',
         meta: { size: '180px' },
         cell: ({ row }: any) => (
-            <span className="text-xs text-gray-500">
-              {row.original.createdAt
-                ? moment(row.original.createdAt).format('Do MMM YY, h:mm:ss a')
-                : '—'}
-            </span>
-          ),
-          
-      },
-      {
-        accessorKey: 'role',
-        header: 'Role',
-        meta: { size: '120px' },
-        cell: ({ row }: any) => {
-          const isAI = row.original.role === 'ai';
-          return (
-            <span
-              className={`rounded px-2 py-0.5 text-xs font-semibold ${
-                isAI ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'
-              }`}
-            >
-              {isAI ? 'AI' : 'User'}
-            </span>
-          );
-        },
-      },
-      {
-        accessorKey: 'model',
-        header: 'Model',
-        meta: { size: '150px' },
-        cell: ({ row }: any) => (
-          <span className="text-xs text-gray-700">{row.original.model ?? '—'}</span>
+          <span className="text-xs text-gray-500">
+            {row.original.updatedAt
+              ? moment(row.original.updatedAt).format('Do MMM YY, h:mm:ss a')
+              : '—'}
+          </span>
         ),
       },
+      // Role 
+      // {
+      //   accessorKey: 'role',
+      //   header: 'Role',
+      //   meta: { size: '120px' },
+      //   cell: ({ row }: any) => {
+      //     const isAI = row.original.role === 'ai';
+      //     return (
+      //       <span
+      //         className={`rounded px-2 py-0.5 text-xs font-semibold ${
+      //           isAI ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'
+      //         }`}
+      //       >
+      //         {isAI ? 'AI' : 'User'}
+      //       </span>
+      //     );
+      //   },
+      // },
+      // {
+      //   accessorKey: 'model',
+      //   header: 'Model',
+      //   meta: { size: '150px' },
+      //   cell: ({ row }: any) => (
+      //     <span className="text-xs text-gray-700">{row.original.model ?? '—'}</span>
+      //   ),
+      // },
       {
-        accessorKey: 'tokenCount',
+        accessorKey: 'totalTokens',
         header: 'Tokens',
         meta: { size: '100px' },
         cell: ({ row }: any) => (
           <span className="text-xs font-medium text-gray-600">
-            {row.original.tokenCount ?? 0}
+            {row.original.totalTokens ?? 0}
           </span>
         ),
       },
