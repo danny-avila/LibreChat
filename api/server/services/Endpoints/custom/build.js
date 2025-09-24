@@ -1,5 +1,6 @@
-const { removeNullishValues } = require('librechat-data-provider');
-const generateArtifactsPrompt = require('~/app/clients/prompts/artifacts');
+const { removeNullishValues } = require("librechat-data-provider");
+const generateArtifactsPrompt = require("~/app/clients/prompts/artifacts");
+const generateCanvasPrompt = require("~/app/clients/prompts/canvas");
 
 const buildOptions = (endpoint, parsedBody, endpointType) => {
   const {
@@ -14,6 +15,7 @@ const buildOptions = (endpoint, parsedBody, endpointType) => {
     greeting,
     spec,
     artifacts,
+    canvas,
     ...modelOptions
   } = parsedBody;
   const endpointOption = removeNullishValues({
@@ -32,8 +34,19 @@ const buildOptions = (endpoint, parsedBody, endpointType) => {
     modelOptions,
   });
 
-  if (typeof artifacts === 'string') {
-    endpointOption.artifactsPrompt = generateArtifactsPrompt({ endpoint, artifacts });
+  if (typeof artifacts === "string") {
+    endpointOption.artifactsPrompt = generateArtifactsPrompt({
+      endpoint,
+      artifacts,
+    });
+  }
+
+  if (typeof canvas === "string") {
+    endpointOption.canvasPrompt = generateCanvasPrompt({
+      endpoint,
+      canvas,
+      model: modelLabel,
+    });
   }
 
   return endpointOption;

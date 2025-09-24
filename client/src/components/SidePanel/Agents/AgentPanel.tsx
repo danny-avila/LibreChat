@@ -1,35 +1,35 @@
-import { Plus } from 'lucide-react';
-import React, { useMemo, useCallback, useRef } from 'react';
-import { Button, useToastContext } from '@librechat/client';
-import { useWatch, useForm, FormProvider } from 'react-hook-form';
-import { useGetModelsQuery } from 'librechat-data-provider/react-query';
+import { Plus } from "lucide-react";
+import React, { useMemo, useCallback, useRef } from "react";
+import { Button, useToastContext } from "@librechat/client";
+import { useWatch, useForm, FormProvider } from "react-hook-form";
+import { useGetModelsQuery } from "librechat-data-provider/react-query";
 import {
   Tools,
-  Constants,
   SystemRoles,
   ResourceType,
   EModelEndpoint,
   PermissionBits,
   isAssistantsEndpoint,
-} from 'librechat-data-provider';
-import type { AgentForm, StringOption } from '~/common';
+} from "librechat-data-provider";
+import type { AgentForm, StringOption } from "~/common";
 import {
   useCreateAgentMutation,
   useUpdateAgentMutation,
   useGetAgentByIdQuery,
   useGetExpandedAgentByIdQuery,
-} from '~/data-provider';
-import { createProviderOption, getDefaultAgentFormValues } from '~/utils';
-import { useResourcePermissions } from '~/hooks/useResourcePermissions';
-import { useSelectAgent, useLocalize, useAuthContext } from '~/hooks';
-import { useAgentPanelContext } from '~/Providers/AgentPanelContext';
-import AgentPanelSkeleton from './AgentPanelSkeleton';
-import AdvancedPanel from './Advanced/AdvancedPanel';
-import AgentConfig from './AgentConfig';
-import AgentSelect from './AgentSelect';
-import AgentFooter from './AgentFooter';
-import ModelPanel from './ModelPanel';
-import { Panel } from '~/common';
+} from "~/data-provider";
+import { createProviderOption, getDefaultAgentFormValues } from "~/utils";
+import { useResourcePermissions } from "~/hooks/useResourcePermissions";
+import { useSelectAgent, useLocalize, useAuthContext } from "~/hooks";
+import { isEphemeralAgent } from "~/hooks/Agents/useAgentToolPermissions";
+import { useAgentPanelContext } from "~/Providers/AgentPanelContext";
+import AgentPanelSkeleton from "./AgentPanelSkeleton";
+import AdvancedPanel from "./Advanced/AdvancedPanel";
+import AgentConfig from "./AgentConfig";
+import AgentSelect from "./AgentSelect";
+import AgentFooter from "./AgentFooter";
+import ModelPanel from "./ModelPanel";
+import { Panel } from "~/common";
 
 export default function AgentPanel() {
   const localize = useLocalize();
@@ -49,31 +49,34 @@ export default function AgentPanel() {
   const modelsQuery = useGetModelsQuery();
   const basicAgentQuery = useGetAgentByIdQuery(current_agent_id);
 
-  const { hasPermission, isLoading: permissionsLoading } = useResourcePermissions(
-    ResourceType.AGENT,
-    basicAgentQuery.data?._id || '',
-  );
+  const { hasPermission, isLoading: permissionsLoading } =
+    useResourcePermissions(ResourceType.AGENT, basicAgentQuery.data?._id || "");
 
   const canEdit = hasPermission(PermissionBits.EDIT);
 
-  const expandedAgentQuery = useGetExpandedAgentByIdQuery(current_agent_id ?? '', {
-    enabled:
-      !!(current_agent_id ?? '') &&
-      current_agent_id !== Constants.EPHEMERAL_AGENT_ID &&
-      canEdit &&
-      !permissionsLoading,
-  });
 
-  const agentQuery = canEdit && expandedAgentQuery.data ? expandedAgentQuery : basicAgentQuery;
+  const expandedAgentQuery = useGetExpandedAgentByIdQuery(
+    current_agent_id ?? "",
+    {
+      enabled:
+        !!(current_agent_id ?? "") &&
+        current_agent_id !== Constants.EPHEMERAL_AGENT_ID &&
+        canEdit &&
+        !permissionsLoading,
+    },
+  );
+
+  const agentQuery =
+    canEdit && expandedAgentQuery.data ? expandedAgentQuery : basicAgentQuery;
 
   const models = useMemo(() => modelsQuery.data ?? {}, [modelsQuery.data]);
   const methods = useForm<AgentForm>({
     defaultValues: getDefaultAgentFormValues(),
-    mode: 'onChange',
+    mode: "onChange",
   });
 
   const { control, handleSubmit, reset } = methods;
-  const agent_id = useWatch({ control, name: 'id' });
+  const agent_id = useWatch({ control, name: "id" });
   const previousVersionRef = useRef<number | undefined>();
 
   const allowedProviders = useMemo(
@@ -104,15 +107,18 @@ export default function AgentPanel() {
     },
     onSuccess: (data) => {
       // Check if agent version is the same (no changes were made)
-      if (previousVersionRef.current !== undefined && data.version === previousVersionRef.current) {
+      if (
+        previousVersionRef.current !== undefined &&
+        data.version === previousVersionRef.current
+      ) {
         showToast({
-          message: localize('com_ui_no_changes'),
-          status: 'info',
+          message: localize("com_ui_no_changes"),
+          status: "info",
         });
       } else {
         showToast({
-          message: `${localize('com_assistants_update_success')} ${
-            data.name ?? localize('com_ui_agent')
+          message: `${localize("com_assistants_update_success")} ${
+            data.name ?? localize("com_ui_agent")
           }`,
         });
       }
@@ -122,10 +128,10 @@ export default function AgentPanel() {
     onError: (err) => {
       const error = err as Error;
       showToast({
-        message: `${localize('com_agents_update_error')}${
-          error.message ? ` ${localize('com_ui_error')}: ${error.message}` : ''
+        message: `${localize("com_agents_update_error")}${
+          error.message ? ` ${localize("com_ui_error")}: ${error.message}` : ""
         }`,
-        status: 'error',
+        status: "error",
       });
     },
   });
@@ -134,18 +140,18 @@ export default function AgentPanel() {
     onSuccess: (data) => {
       setCurrentAgentId(data.id);
       showToast({
-        message: `${localize('com_assistants_create_success')} ${
-          data.name ?? localize('com_ui_agent')
+        message: `${localize("com_assistants_create_success")} ${
+          data.name ?? localize("com_ui_agent")
         }`,
       });
     },
     onError: (err) => {
       const error = err as Error;
       showToast({
-        message: `${localize('com_agents_create_error')}${
-          error.message ? ` ${localize('com_ui_error')}: ${error.message}` : ''
+        message: `${localize("com_agents_create_error")}${
+          error.message ? ` ${localize("com_ui_error")}: ${error.message}` : ""
         }`,
-        status: 'error',
+        status: "error",
       });
     },
   });
@@ -167,6 +173,7 @@ export default function AgentPanel() {
       const {
         name,
         artifacts,
+        canvas,
         description,
         instructions,
         model: _model,
@@ -180,9 +187,11 @@ export default function AgentPanel() {
         support_contact,
       } = data;
 
-      const model = _model ?? '';
+      const model = _model ?? "";
       const provider =
-        (typeof _provider === 'string' ? _provider : (_provider as StringOption).value) ?? '';
+        (typeof _provider === "string"
+          ? _provider
+          : (_provider as StringOption).value) ?? "";
 
       if (agent_id) {
         update.mutate({
@@ -190,6 +199,7 @@ export default function AgentPanel() {
           data: {
             name,
             artifacts,
+            canvas,
             description,
             instructions,
             model,
@@ -209,20 +219,21 @@ export default function AgentPanel() {
 
       if (!provider || !model) {
         return showToast({
-          message: localize('com_agents_missing_provider_model'),
-          status: 'error',
+          message: localize("com_agents_missing_provider_model"),
+          status: "error",
         });
       }
       if (!name) {
         return showToast({
-          message: localize('com_agents_missing_name'),
-          status: 'error',
+          message: localize("com_agents_missing_name"),
+          status: "error",
         });
       }
 
       create.mutate({
         name,
         artifacts,
+        canvas,
         description,
         instructions,
         model,
@@ -273,7 +284,9 @@ export default function AgentPanel() {
               setCurrentAgentId={setCurrentAgentId}
               // The following is required to force re-render the component when the form's agent ID changes
               // Also maintains ComboBox Focus for Accessibility
-              selectedAgentId={agentQuery.isInitialLoading ? null : (current_agent_id ?? null)}
+              selectedAgentId={
+                agentQuery.isInitialLoading ? null : (current_agent_id ?? null)
+              }
             />
           </div>
           {/* Create + Select Button */}
@@ -290,22 +303,24 @@ export default function AgentPanel() {
                 disabled={agentQuery.isInitialLoading}
               >
                 <Plus className="mr-1 h-4 w-4" />
-                {localize('com_ui_create') +
-                  ' ' +
-                  localize('com_ui_new') +
-                  ' ' +
-                  localize('com_ui_agent')}
+                {localize("com_ui_create") +
+                  " " +
+                  localize("com_ui_new") +
+                  " " +
+                  localize("com_ui_agent")}
               </Button>
               <Button
                 variant="submit"
-                disabled={!agent_id || agentQuery.isInitialLoading}
+                disabled={isEphemeralAgent(agent_id) || agentQuery.isInitialLoading}
                 onClick={(e) => {
                   e.preventDefault();
                   handleSelectAgent();
                 }}
-                aria-label={localize('com_ui_select') + ' ' + localize('com_ui_agent')}
+                aria-label={
+                  localize("com_ui_select") + " " + localize("com_ui_agent")
+                }
               >
-                {localize('com_ui_select')}
+                {localize("com_ui_select")}
               </Button>
             </div>
           )}
@@ -315,21 +330,31 @@ export default function AgentPanel() {
           <div className="flex h-[30vh] w-full items-center justify-center">
             <div className="text-center">
               <h2 className="text-token-text-primary m-2 text-xl font-semibold">
-                {localize('com_agents_not_available')}
+                {localize("com_agents_not_available")}
               </h2>
-              <p className="text-token-text-secondary">{localize('com_agents_no_access')}</p>
+              <p className="text-token-text-secondary">
+                {localize("com_agents_no_access")}
+              </p>
             </div>
           </div>
         )}
-        {canEditAgent && !agentQuery.isInitialLoading && activePanel === Panel.model && (
-          <ModelPanel models={models} providers={providers} setActivePanel={setActivePanel} />
-        )}
-        {canEditAgent && !agentQuery.isInitialLoading && activePanel === Panel.builder && (
-          <AgentConfig createMutation={create} />
-        )}
-        {canEditAgent && !agentQuery.isInitialLoading && activePanel === Panel.advanced && (
-          <AdvancedPanel />
-        )}
+        {canEditAgent &&
+          !agentQuery.isInitialLoading &&
+          activePanel === Panel.model && (
+            <ModelPanel
+              models={models}
+              providers={providers}
+              setActivePanel={setActivePanel}
+            />
+          )}
+        {canEditAgent &&
+          !agentQuery.isInitialLoading &&
+          activePanel === Panel.builder && (
+            <AgentConfig createMutation={create} />
+          )}
+        {canEditAgent &&
+          !agentQuery.isInitialLoading &&
+          activePanel === Panel.advanced && <AdvancedPanel />}
         {canEditAgent && !agentQuery.isInitialLoading && (
           <AgentFooter
             createMutation={create}

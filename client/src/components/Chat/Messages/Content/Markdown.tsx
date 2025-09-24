@@ -1,34 +1,39 @@
-import React, { memo, useMemo } from 'react';
-import remarkGfm from 'remark-gfm';
-import remarkMath from 'remark-math';
-import supersub from 'remark-supersub';
-import rehypeKatex from 'rehype-katex';
-import { useRecoilValue } from 'recoil';
-import ReactMarkdown from 'react-markdown';
-import rehypeHighlight from 'rehype-highlight';
-import remarkDirective from 'remark-directive';
-import type { Pluggable } from 'unified';
-import { Citation, CompositeCitation, HighlightedText } from '~/components/Web/Citation';
-import { Artifact, artifactPlugin } from '~/components/Artifacts/Artifact';
-import { ArtifactProvider, CodeBlockProvider } from '~/Providers';
-import MarkdownErrorBoundary from './MarkdownErrorBoundary';
-import { langSubset, preprocessLaTeX } from '~/utils';
-import { unicodeCitation } from '~/components/Web';
-import { code, a, p } from './MarkdownComponents';
-import store from '~/store';
+import React, { memo, useMemo } from "react";
+import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import supersub from "remark-supersub";
+import rehypeKatex from "rehype-katex";
+import { useRecoilValue } from "recoil";
+import ReactMarkdown from "react-markdown";
+import rehypeHighlight from "rehype-highlight";
+import remarkDirective from "remark-directive";
+import type { Pluggable } from "unified";
+import {
+  Citation,
+  CompositeCitation,
+  HighlightedText,
+} from "~/components/Web/Citation";
+import { Artifact, artifactPlugin } from "~/components/Artifacts/Artifact";
+import { ArtifactProvider, CodeBlockProvider } from "~/Providers";
+import { CanvasComponent, canvasPlugin } from "~/components/Canvas";
+import MarkdownErrorBoundary from "./MarkdownErrorBoundary";
+import { langSubset, preprocessLaTeX } from "~/utils";
+import { unicodeCitation } from "~/components/Web";
+import { code, a, p } from "./MarkdownComponents";
+import store from "~/store";
 
 type TContentProps = {
   content: string;
   isLatestMessage: boolean;
 };
 
-const Markdown = memo(({ content = '', isLatestMessage }: TContentProps) => {
+const Markdown = memo(({ content = "", isLatestMessage }: TContentProps) => {
   const LaTeXParsing = useRecoilValue<boolean>(store.LaTeXParsing);
-  const isInitializing = content === '';
+  const isInitializing = content === "";
 
   const currentContent = useMemo(() => {
     if (isInitializing) {
-      return '';
+      return "";
     }
     return LaTeXParsing ? preprocessLaTeX(content) : content;
   }, [content, LaTeXParsing, isInitializing]);
@@ -53,6 +58,7 @@ const Markdown = memo(({ content = '', isLatestMessage }: TContentProps) => {
     remarkGfm,
     remarkDirective,
     artifactPlugin,
+    canvasPlugin,
     [remarkMath, { singleDollarTextMath: false }],
     unicodeCitation,
   ];
@@ -61,7 +67,7 @@ const Markdown = memo(({ content = '', isLatestMessage }: TContentProps) => {
     return (
       <div className="absolute">
         <p className="relative">
-          <span className={isLatestMessage ? 'result-thinking' : ''} />
+          <span className={isLatestMessage ? "result-thinking" : ""} />
         </p>
       </div>
     );
@@ -82,9 +88,10 @@ const Markdown = memo(({ content = '', isLatestMessage }: TContentProps) => {
                 a,
                 p,
                 artifact: Artifact,
+                canvas: CanvasComponent,
                 citation: Citation,
-                'highlighted-text': HighlightedText,
-                'composite-citation': CompositeCitation,
+                "highlighted-text": HighlightedText,
+                "composite-citation": CompositeCitation,
               } as {
                 [nodeType: string]: React.ElementType;
               }

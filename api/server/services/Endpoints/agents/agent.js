@@ -1,10 +1,10 @@
-const { Providers } = require('@librechat/agents');
+const { Providers } = require("@librechat/agents");
 const {
   primeResources,
   getModelMaxTokens,
   extractLibreChatParams,
   optionalChainWithEmptyCheck,
-} = require('@librechat/api');
+} = require("@librechat/api");
 const {
   ErrorTypes,
   EModelEndpoint,
@@ -12,12 +12,12 @@ const {
   isAgentsEndpoint,
   replaceSpecialVars,
   providerEndpointMap,
-} = require('librechat-data-provider');
-const generateArtifactsPrompt = require('~/app/clients/prompts/artifacts');
-const { getProviderConfig } = require('~/server/services/Endpoints');
-const { processFiles } = require('~/server/services/Files/process');
-const { getFiles, getToolFilesByIds } = require('~/models/File');
-const { getConvoFiles } = require('~/models/Conversation');
+} = require("librechat-data-provider");
+const generateArtifactsPrompt = require("~/app/clients/prompts/artifacts");
+const { getProviderConfig } = require("~/server/services/Endpoints");
+const { processFiles } = require("~/server/services/Files/process");
+const { getFiles, getToolFilesByIds } = require("~/models/File");
+const { getConvoFiles } = require("~/models/Conversation");
 
 /**
  * @param {object} params
@@ -69,7 +69,8 @@ const initializeAgent = async ({
     ),
   );
 
-  const { resendFiles, maxContextTokens, modelOptions } = extractLibreChatParams(_modelOptions);
+  const { resendFiles, maxContextTokens, modelOptions } =
+    extractLibreChatParams(_modelOptions);
 
   if (isInitialAgent && conversationId != null && resendFiles) {
     const fileIds = (await getConvoFiles(conversationId)) ?? [];
@@ -114,7 +115,10 @@ const initializeAgent = async ({
   })) ?? {};
 
   agent.endpoint = provider;
-  const { getOptions, overrideProvider } = getProviderConfig({ provider, appConfig });
+  const { getOptions, overrideProvider } = getProviderConfig({
+    provider,
+    appConfig,
+  });
   if (overrideProvider !== agent.provider) {
     agent.provider = overrideProvider;
   }
@@ -134,7 +138,9 @@ const initializeAgent = async ({
   });
 
   const tokensModel =
-    agent.provider === EModelEndpoint.azureOpenAI ? agent.model : modelOptions.model;
+    agent.provider === EModelEndpoint.azureOpenAI
+      ? agent.model
+      : modelOptions.model;
   const maxTokens = optionalChainWithEmptyCheck(
     modelOptions.maxOutputTokens,
     modelOptions.maxTokens,
@@ -142,7 +148,11 @@ const initializeAgent = async ({
   );
   const agentMaxContextTokens = optionalChainWithEmptyCheck(
     maxContextTokens,
-    getModelMaxTokens(tokensModel, providerEndpointMap[provider], options.endpointTokenConfig),
+    getModelMaxTokens(
+      tokensModel,
+      providerEndpointMap[provider],
+      options.endpointTokenConfig,
+    ),
     4096,
   );
 
@@ -160,7 +170,8 @@ const initializeAgent = async ({
   /** @type {import('@librechat/agents').GenericTool[]} */
   let tools = options.tools?.length ? options.tools : structuredTools;
   if (
-    (agent.provider === Providers.GOOGLE || agent.provider === Providers.VERTEXAI) &&
+    (agent.provider === Providers.GOOGLE ||
+      agent.provider === Providers.VERTEXAI) &&
     options.tools?.length &&
     structuredTools?.length
   ) {
@@ -181,18 +192,33 @@ const initializeAgent = async ({
     agent.model_parameters.configuration = options.configOptions;
   }
 
-  if (agent.instructions && agent.instructions !== '') {
+  if (agent.instructions && agent.instructions !== "") {
     agent.instructions = replaceSpecialVars({
       text: agent.instructions,
       user: req.user,
     });
   }
 
-  if (typeof agent.artifacts === 'string' && agent.artifacts !== '') {
+  if (typeof agent.artifacts === "string" && agent.artifacts !== "") {
     agent.additional_instructions = generateArtifactsPrompt({
       endpoint: agent.provider,
       artifacts: agent.artifacts,
     });
+  }
+
+  if (typeof agent.canvas === "string" && agent.canvas !== "") {
+    const generateCanvasPrompt = require("~/app/clients/prompts/canvas");
+    const canvasPrompt = generateCanvasPrompt({
+      endpoint: agent.provider,
+      canvas: agent.canvas,
+      model: agent.model,
+    });
+    // Append canvas prompt to existing instructions
+    if (agent.additional_instructions) {
+      agent.additional_instructions += `\n${canvasPrompt}`;
+    } else {
+      agent.additional_instructions = canvasPrompt;
+    }
   }
 
   return {

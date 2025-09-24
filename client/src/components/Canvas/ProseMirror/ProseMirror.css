@@ -1,0 +1,289 @@
+/* ProseMirror Editor Styles */
+.prosemirror-editor-container {
+    position: relative;
+    height: 100%;
+    width: 100%;
+    overflow: visible; /* Allow absolutely positioned children to show outside */
+    z-index: 1; /* Ensure proper stacking context for dialogs */
+  }
+  
+  .prosemirror-editor {
+    height: 100%;
+    width: 100%;
+    overflow-y: auto;
+    padding: 1rem 0 5rem 0; /* Clean padding - horizontal padding handled by Canvas.css */
+    line-height: 1.6;
+    font-family:
+      -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen", "Ubuntu",
+      "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue", sans-serif;
+    box-sizing: border-box;
+  }
+  
+  .prosemirror-editor:focus {
+    outline: none;
+  }
+  
+  /* ProseMirror specific styles with beautiful prose formatting */
+  .ProseMirror {
+    outline: none;
+    min-height: calc(100% - 5rem); /* Adjust for container padding */
+    padding: 0;
+    margin: 0;
+    word-wrap: break-word;
+    white-space: pre-wrap;
+  
+    /* 🎨 Beautiful prose styling like main chat */
+    color: rgb(55 65 81); /* text-gray-700 */
+    font-size: 1rem;
+    line-height: 1.5; /* Reduced global line height */
+    max-width: none;
+  }
+  
+  /* Dark mode support */
+  .dark .ProseMirror {
+    color: rgb(229 231 235); /* text-gray-200 */
+  }
+  
+  /* 📝 Beautiful paragraph styling like main chat */
+  .ProseMirror p {
+    margin: 0 0 0.5em 0; /* Reduced margin since we use line breaks instead of new paragraphs */
+    line-height: 1.75;
+    color: inherit;
+    white-space: pre-wrap;
+  }
+  
+  /* 🎯 Professional heading styling */
+  .ProseMirror h1,
+  .ProseMirror h2,
+  .ProseMirror h3,
+  .ProseMirror h4,
+  .ProseMirror h5,
+  .ProseMirror h6 {
+    font-weight: 700; /* font-bold */
+    line-height: 1.25;
+    letter-spacing: -0.025em;
+    color: rgb(17 24 39); /* text-gray-900 */
+    margin-top: 1.5em;
+    margin-bottom: 0.75em;
+  }
+  
+  .dark .ProseMirror h1,
+  .dark .ProseMirror h2,
+  .dark .ProseMirror h3,
+  .dark .ProseMirror h4,
+  .dark .ProseMirror h5,
+  .dark .ProseMirror h6 {
+    color: rgb(243 244 246); /* text-gray-100 */
+  }
+  
+  .ProseMirror h1 {
+    font-size: 2.25em; /* text-4xl */
+  }
+  
+  .ProseMirror h2 {
+    font-size: 1.5em;
+  }
+  
+  .ProseMirror h3 {
+    font-size: 1.25em;
+  }
+  
+  .ProseMirror h4 {
+    font-size: 1.1em;
+  }
+  
+  .ProseMirror h5 {
+    font-size: 1em;
+  }
+  
+  .ProseMirror h6 {
+    font-size: 0.9em;
+  }
+  
+  .ProseMirror blockquote {
+    border-left: 4px solid #ddd;
+    margin: 1em 0;
+    padding-left: 1em;
+    font-style: italic;
+    color: #666;
+  }
+  
+  .ProseMirror strong {
+    font-weight: 700; /* font-bold */
+    color: rgb(17 24 39); /* text-gray-900 */
+  }
+  
+  .dark .ProseMirror strong {
+    color: rgb(243 244 246); /* text-gray-100 */
+  }
+  
+  .ProseMirror em {
+    font-style: italic;
+    color: rgb(55 65 81); /* text-gray-700 */
+  }
+  
+  .dark .ProseMirror em {
+    color: rgb(209 213 219); /* text-gray-300 */
+  }
+  
+  .ProseMirror ul,
+  .ProseMirror ol {
+    margin: 0.75em 0;
+    padding-left: 2em;
+  }
+  
+  .ProseMirror li {
+    margin: 0.25em 0;
+  }
+  
+  .ProseMirror hr {
+    border: none;
+    border-top: 2px solid #ddd;
+    margin: 2em 0;
+  }
+  
+  .ProseMirror a {
+    color: #0066cc;
+    text-decoration: underline;
+  }
+  
+  .ProseMirror a:hover {
+    color: #0052a3;
+  }
+  
+  .ProseMirror strong {
+    font-weight: bold;
+  }
+  
+  .ProseMirror em {
+    font-style: italic;
+  }
+  
+  /* Dark mode styles */
+  .dark .ProseMirror {
+    color: #e5e7eb;
+  }
+  
+  .dark .ProseMirror blockquote {
+    border-left-color: #4b5563;
+    color: #9ca3af;
+  }
+  
+  .dark .ProseMirror hr {
+    border-top-color: #4b5563;
+  }
+  
+  .dark .ProseMirror a {
+    color: #60a5fa;
+  }
+  
+  .dark .ProseMirror a:hover {
+    color: #93c5fd;
+  }
+  
+  /* Selection styles */
+  .ProseMirror-selectednode {
+    outline: 2px solid #68d391;
+    outline-offset: 2px;
+  }
+  
+  /* Placeholder styles */
+  .ProseMirror p.is-editor-empty:first-child::before {
+    content: attr(data-placeholder);
+    float: left;
+    color: #adb5bd;
+    pointer-events: none;
+    height: 0;
+  }
+  
+  /* Streaming animation */
+  .submitting .ProseMirror {
+    position: relative;
+  }
+  
+  .result-streaming .ProseMirror::after {
+    content: "";
+    position: absolute;
+    bottom: 0;
+    right: 0;
+    width: 8px;
+    height: 20px;
+    background: #3b82f6;
+    animation: blink 1s infinite;
+  }
+  
+  @keyframes blink {
+    0%,
+    50% {
+      opacity: 1;
+    }
+    51%,
+    100% {
+      opacity: 0;
+    }
+  }
+  
+  /* Responsive adjustments */
+  @media (max-width: 768px) {
+    .prosemirror-editor {
+      padding: 0.75rem 0 3rem 0; /* Clean mobile padding - horizontal padding handled by Canvas.css */
+    }
+  
+    .ProseMirror {
+      font-size: 16px; /* Prevent zoom on iOS */
+    }
+  }
+  
+  /* Focus styles - Remove all focus outlines */
+  .prosemirror-editor-container:focus-within {
+    /* Removed focus outline for cleaner appearance */
+  }
+  
+  .prosemirror-editor-container:focus,
+  .prosemirror-editor-container *:focus,
+  .prosemirror-editor:focus,
+  .ProseMirror:focus {
+    outline: none !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+  
+  /* Remove any default browser focus styles */
+  .prosemirror-editor-container,
+  .prosemirror-editor,
+  .ProseMirror {
+    -webkit-tap-highlight-color: transparent;
+    -webkit-focus-ring-color: transparent;
+  }
+  
+  /* Scrollbar styles */
+  .prosemirror-editor::-webkit-scrollbar {
+    width: 8px;
+  }
+  
+  .prosemirror-editor::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 4px;
+  }
+  
+  .prosemirror-editor::-webkit-scrollbar-thumb {
+    background: #c1c1c1;
+    border-radius: 4px;
+  }
+  
+  .prosemirror-editor::-webkit-scrollbar-thumb:hover {
+    background: #a8a8a8;
+  }
+  
+  .dark .prosemirror-editor::-webkit-scrollbar-track {
+    background: #2f2f2f;
+  }
+  
+  .dark .prosemirror-editor::-webkit-scrollbar-thumb {
+    background: #6b7280;
+  }
+  
+  .dark .prosemirror-editor::-webkit-scrollbar-thumb:hover {
+    background: #9ca3af;
+  }
+  

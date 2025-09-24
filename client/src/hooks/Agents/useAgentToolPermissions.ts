@@ -10,7 +10,7 @@ interface AgentToolPermissionsResult {
   tools: string[] | undefined;
 }
 
-function isEphemeralAgent(agentId: string | null | undefined): boolean {
+export function isEphemeralAgent(agentId: string | null | undefined): boolean {
   return agentId == null || agentId === '' || agentId === Constants.EPHEMERAL_AGENT_ID;
 }
 
