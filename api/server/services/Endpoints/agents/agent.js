@@ -1,6 +1,7 @@
 const { Providers } = require('@librechat/agents');
 const {
   primeResources,
+  getModelMaxTokens,
   extractLibreChatParams,
   optionalChainWithEmptyCheck,
 } = require('@librechat/api');
@@ -17,7 +18,6 @@ const { getProviderConfig } = require('~/server/services/Endpoints');
 const { processFiles } = require('~/server/services/Files/process');
 const { getFiles, getToolFilesByIds } = require('~/models/File');
 const { getConvoFiles } = require('~/models/Conversation');
-const { getModelMaxTokens } = require('~/utils');
 
 /**
  * @param {object} params

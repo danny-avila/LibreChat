@@ -1,9 +1,16 @@
 const { logger } = require('@librechat/data-schemas');
 const { SerpAPI } = require('@langchain/community/tools/serpapi');
 const { Calculator } = require('@langchain/community/tools/calculator');
-const { mcpToolPattern, loadWebSearchAuth } = require('@librechat/api');
+const { mcpToolPattern, loadWebSearchAuth, checkAccess } = require('@librechat/api');
 const { EnvVar, createCodeExecutionTool, createSearchTool } = require('@librechat/agents');
-const { Tools, Constants, EToolResources, replaceSpecialVars } = require('librechat-data-provider');
+const {
+  Tools,
+  Constants,
+  Permissions,
+  EToolResources,
+  PermissionTypes,
+  replaceSpecialVars,
+} = require('librechat-data-provider');
 const {
   availableTools,
   manifestToolMap,
@@ -26,7 +33,8 @@ const { createFileSearchTool, primeFiles: primeSearchFiles } = require('./fileSe
 const { getUserPluginAuthValue } = require('~/server/services/PluginService');
 const { createMCPTool, createMCPTools } = require('~/server/services/MCP');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
-const { getCachedTools } = require('~/server/services/Config');
+const { getMCPServerTools } = require('~/server/services/Config');
+const { getRoleByName } = require('~/models/Role');
 
 /**
  * Validates the availability and authentication of tools for a user based on environment variables or user-specific plugin authentication values.
@@ -242,7 +250,6 @@ const loadTools = async ({
 
   /** @type {Record<string, string>} */
   const toolContextMap = {};
-  const cachedTools = (await getCachedTools({ userId: user, includeGlobal: true })) ?? {};
   const requestedMCPTools = {};
 
   for (const tool of tools) {
@@ -281,7 +288,29 @@ const loadTools = async ({
         if (toolContext) {
           toolContextMap[tool] = toolContext;
         }
-        return createFileSearchTool({ req: options.req, files, entity_id: agent?.id });
+
+        /** @type {boolean | undefined} Check if user has FILE_CITATIONS permission */
+        let fileCitations;
+        if (fileCitations == null && options.req?.user != null) {
+          try {
+            fileCitations = await checkAccess({
+              user: options.req.user,
+              permissionType: PermissionTypes.FILE_CITATIONS,
+              permissions: [Permissions.USE],
+              getRoleByName,
+            });
+          } catch (error) {
+            logger.error('[handleTools] FILE_CITATIONS permission check failed:', error);
+            fileCitations = false;
+          }
+        }
+
+        return createFileSearchTool({
+          userId: user,
+          files,
+          entity_id: agent?.id,
+          fileCitations,
+        });
       };
       continue;
     } else if (tool === Tools.web_search) {
@@ -310,7 +339,7 @@ Current Date & Time: ${replaceSpecialVars({ text: '{{iso_datetime}}' })}
         });
       };
       continue;
-    } else if (tool && cachedTools && mcpToolPattern.test(tool)) {
+    } else if (tool && mcpToolPattern.test(tool)) {
       const [toolName, serverName] = tool.split(Constants.mcp_delimiter);
       if (toolName === Constants.mcp_server) {
         /** Placeholder used for UI purposes */
@@ -323,33 +352,21 @@ Current Date & Time: ${replaceSpecialVars({ text: '{{iso_datetime}}' })}
         continue;
       }
       if (toolName === Constants.mcp_all) {
-        const currentMCPGenerator = async (index) =>
-          createMCPTools({
-            req: options.req,
-            res: options.res,
-            index,
+        requestedMCPTools[serverName] = [
+          {
+            type: 'all',
             serverName,
-            userMCPAuthMap,
-            model: agent?.model ?? model,
-            provider: agent?.provider ?? endpoint,
-            signal,
-          });
-        requestedMCPTools[serverName] = [currentMCPGenerator];
+          },
+        ];
         continue;
       }
-      const currentMCPGenerator = async (index) =>
-        createMCPTool({
-          index,
-          req: options.req,
-          res: options.res,
-          toolKey: tool,
-          userMCPAuthMap,
-          model: agent?.model ?? model,
-          provider: agent?.provider ?? endpoint,
-          signal,
-        });
+
       requestedMCPTools[serverName] = requestedMCPTools[serverName] || [];
-      requestedMCPTools[serverName].push(currentMCPGenerator);
+      requestedMCPTools[serverName].push({
+        type: 'single',
+        toolKey: tool,
+        serverName,
+      });
       continue;
     }
 
@@ -392,24 +409,64 @@ Current Date & Time: ${replaceSpecialVars({ text: '{{iso_datetime}}' })}
   const mcpToolPromises = [];
   /** MCP server tools are initialized sequentially by server */
   let index = -1;
-  for (const [serverName, generators] of Object.entries(requestedMCPTools)) {
+  const failedMCPServers = new Set();
+  for (const [serverName, toolConfigs] of Object.entries(requestedMCPTools)) {
     index++;
-    for (const generator of generators) {
+    /** @type {LCAvailableTools} */
+    let availableTools;
+    for (const config of toolConfigs) {
       try {
-        if (generator && generators.length === 1) {
+        if (failedMCPServers.has(serverName)) {
+          continue;
+        }
+        const mcpParams = {
+          res: options.res,
+          userId: user,
+          index,
+          serverName: config.serverName,
+          userMCPAuthMap,
+          model: agent?.model ?? model,
+          provider: agent?.provider ?? endpoint,
+          signal,
+        };
+
+        if (config.type === 'all' && toolConfigs.length === 1) {
+          /** Handle async loading for single 'all' tool config */
           mcpToolPromises.push(
-            generator(index).catch((error) => {
+            createMCPTools(mcpParams).catch((error) => {
               logger.error(`Error loading ${serverName} tools:`, error);
               return null;
             }),
           );
           continue;
         }
-        const mcpTool = await generator(index);
+        if (!availableTools) {
+          try {
+            availableTools = await getMCPServerTools(serverName);
+          } catch (error) {
+            logger.error(`Error fetching available tools for MCP server ${serverName}:`, error);
+          }
+        }
+
+        /** Handle synchronous loading */
+        const mcpTool =
+          config.type === 'all'
+            ? await createMCPTools(mcpParams)
+            : await createMCPTool({
+                ...mcpParams,
+                availableTools,
+                toolKey: config.toolKey,
+              });
+
         if (Array.isArray(mcpTool)) {
           loadedTools.push(...mcpTool);
         } else if (mcpTool) {
           loadedTools.push(mcpTool);
+        } else {
+          failedMCPServers.add(serverName);
+          logger.warn(
+            `MCP tool creation failed for "${config.toolKey}", server may be unavailable or unauthenticated.`,
+          );
         }
       } catch (error) {
         logger.error(`Error loading MCP tool for server ${serverName}:`, error);

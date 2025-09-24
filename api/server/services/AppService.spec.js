@@ -152,6 +152,7 @@ describe('AppService', () => {
         webSearch: expect.objectContaining({
           safeSearch: 1,
           jinaApiKey: '${JINA_API_KEY}',
+          jinaApiUrl: '${JINA_API_URL}',
           cohereApiKey: '${COHERE_API_KEY}',
           serperApiKey: '${SERPER_API_KEY}',
           searxngApiKey: '${SEARXNG_API_KEY}',

@@ -1,6 +1,6 @@
 {
   "name": "@librechat/data-schemas",
-  "version": "0.0.20",
+  "version": "0.0.22",
   "description": "Mongoose schemas and models for LibreChat",
   "type": "module",
   "main": "dist/index.cjs",
@@ -53,7 +53,6 @@
     "mongodb-memory-server": "^10.1.4",
     "rimraf": "^5.0.1",
     "rollup": "^4.22.4",
-    "rollup-plugin-generate-package-json": "^3.2.0",
     "rollup-plugin-peer-deps-external": "^2.2.4",
     "rollup-plugin-typescript2": "^0.35.0",
     "ts-node": "^10.9.2",

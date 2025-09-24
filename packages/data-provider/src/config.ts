@@ -180,6 +180,7 @@ export enum AgentCapabilities {
   web_search = 'web_search',
   artifacts = 'artifacts',
   actions = 'actions',
+  context = 'context',
   tools = 'tools',
   chain = 'chain',
   ocr = 'ocr',
@@ -253,6 +254,7 @@ export const defaultAgentCapabilities = [
   AgentCapabilities.web_search,
   AgentCapabilities.artifacts,
   AgentCapabilities.actions,
+  AgentCapabilities.context,
   AgentCapabilities.tools,
   AgentCapabilities.chain,
   AgentCapabilities.ocr,
@@ -577,6 +579,7 @@ export const interfaceSchema = z
 
 export type TInterfaceConfig = z.infer<typeof interfaceSchema>;
 export type TBalanceConfig = z.infer<typeof balanceSchema>;
+export type TTransactionsConfig = z.infer<typeof transactionsSchema>;
 
 export const turnstileOptionsSchema = z
   .object({
@@ -601,6 +604,7 @@ export type TStartupConfig = {
   interface?: TInterfaceConfig;
   turnstile?: TTurnstileConfig;
   balance?: TBalanceConfig;
+  transactions?: TTransactionsConfig;
   discordLoginEnabled: boolean;
   facebookLoginEnabled: boolean;
   githubLoginEnabled: boolean;
@@ -706,6 +710,7 @@ export const webSearchSchema = z.object({
   firecrawlApiKey: z.string().optional().default('${FIRECRAWL_API_KEY}'),
   firecrawlApiUrl: z.string().optional().default('${FIRECRAWL_API_URL}'),
   jinaApiKey: z.string().optional().default('${JINA_API_KEY}'),
+  jinaApiUrl: z.string().optional().default('${JINA_API_URL}'),
   cohereApiKey: z.string().optional().default('${COHERE_API_KEY}'),
   searchProvider: z.nativeEnum(SearchProviders).optional(),
   scraperType: z.nativeEnum(ScraperTypes).optional(),
@@ -776,6 +781,10 @@ export const balanceSchema = z.object({
   refillAmount: z.number().optional().default(10000),
 });
 
+export const transactionsSchema = z.object({
+  enabled: z.boolean().optional().default(true),
+});
+
 export const memorySchema = z.object({
   disabled: z.boolean().optional(),
   validKeys: z.array(z.string()).optional(),
@@ -829,6 +838,7 @@ export const configSchema = z.object({
     })
     .default({ socialLogins: defaultSocialLogins }),
   balance: balanceSchema.optional(),
+  transactions: transactionsSchema.optional(),
   speech: z
     .object({
       tts: ttsSchema.optional(),
@@ -887,6 +897,7 @@ export enum KnownEndpoints {
   shuttleai = 'shuttleai',
   'together.ai' = 'together.ai',
   unify = 'unify',
+  vercel = 'vercel',
   xai = 'xai',
 }
 
@@ -923,6 +934,7 @@ export const alternateName = {
   [KnownEndpoints.ollama]: 'Ollama',
   [KnownEndpoints.deepseek]: 'DeepSeek',
   [KnownEndpoints.xai]: 'xAI',
+  [KnownEndpoints.vercel]: 'Vercel',
 };
 
 const sharedOpenAIModels = [
@@ -1219,14 +1231,6 @@ export enum CacheKeys {
    * Key for accessing the model token config cache.
    */
   TOKEN_CONFIG = 'TOKEN_CONFIG',
-  /**
-   * Key for the librechat yaml config cache.
-   */
-  LIBRECHAT_YAML_CONFIG = 'LIBRECHAT_YAML_CONFIG',
-  /**
-   * Key for the static config namespace.
-   */
-  STATIC_CONFIG = 'STATIC_CONFIG',
   /**
    * Key for the app config namespace.
    */
@@ -1534,9 +1538,9 @@ export enum TTSProviders {
 /** Enum for app-wide constants */
 export enum Constants {
   /** Key for the app's version. */
-  VERSION = 'v0.8.0-rc3',
+  VERSION = 'v0.8.0-rc4',
   /** Key for the Custom Config's version (librechat.yaml). */
-  CONFIG_VERSION = '1.2.8',
+  CONFIG_VERSION = '1.2.9',
   /** Standard value for the first message's `parentMessageId` value, to indicate no parent exists. */
   NO_PARENT = '00000000-0000-0000-0000-000000000000',
   /** Standard value to use whatever the submission prelim. `responseMessageId` is */

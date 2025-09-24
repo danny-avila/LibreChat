@@ -39,6 +39,7 @@ function AttachFileChat({
       <AttachFileMenu
         disabled={disableInputs}
         conversationId={conversationId}
+        agentId={conversation?.agent_id}
         endpointFileConfig={endpointFileConfig}
       />
     );

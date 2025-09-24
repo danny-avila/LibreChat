@@ -69,6 +69,12 @@ export async function updateInterfacePermissions({
   const interfaceConfig = appConfig?.config?.interface;
   const memoryConfig = appConfig?.config?.memory;
   const memoryEnabled = isMemoryEnabled(memoryConfig);
+  /** Check if memory is explicitly disabled (memory.disabled === true) */
+  const isMemoryExplicitlyDisabled = memoryConfig?.disabled === true;
+  /** Check if memory should be enabled (explicitly enabled or valid config) */
+  const shouldEnableMemory =
+    memoryConfig?.disabled === false ||
+    (memoryConfig && memoryEnabled && memoryConfig.disabled === undefined);
   /** Check if personalization is enabled (defaults to true if memory is configured and enabled) */
   const isPersonalizationEnabled =
     memoryConfig && memoryEnabled && memoryConfig.personalize !== false;
@@ -109,14 +115,25 @@ export async function updateInterfacePermissions({
       const permTypeExists = existingPermissions?.[permType];
       const isExplicitlyConfigured =
         interfaceConfig && hasExplicitConfig(interfaceConfig, permType);
+      const isMemoryDisabled = permType === PermissionTypes.MEMORIES && isMemoryExplicitlyDisabled;
+      const isMemoryReenabling =
+        permType === PermissionTypes.MEMORIES &&
+        shouldEnableMemory &&
+        existingPermissions?.[PermissionTypes.MEMORIES]?.[Permissions.USE] === false;
 
-      // Only update if: doesn't exist OR explicitly configured
-      if (!permTypeExists || isExplicitlyConfigured) {
+      // Only update if: doesn't exist OR explicitly configured OR memory state change
+      if (!permTypeExists || isExplicitlyConfigured || isMemoryDisabled || isMemoryReenabling) {
         permissionsToUpdate[permType] = permissions;
         if (!permTypeExists) {
           logger.debug(`Role '${roleName}': Setting up default permissions for '${permType}'`);
         } else if (isExplicitlyConfigured) {
           logger.debug(`Role '${roleName}': Applying explicit config for '${permType}'`);
+        } else if (isMemoryDisabled) {
+          logger.debug(`Role '${roleName}': Disabling memories as memory.disabled is true`);
+        } else if (isMemoryReenabling) {
+          logger.debug(
+            `Role '${roleName}': Re-enabling memories due to valid memory configuration`,
+          );
         }
       } else {
         logger.debug(`Role '${roleName}': Preserving existing permissions for '${permType}'`);
@@ -139,12 +156,33 @@ export async function updateInterfacePermissions({
         ),
       },
       [PermissionTypes.MEMORIES]: {
-        [Permissions.USE]: getPermissionValue(
-          loadedInterface.memories,
-          defaultPerms[PermissionTypes.MEMORIES]?.[Permissions.USE],
-          defaults.memories,
-        ),
-        [Permissions.OPT_OUT]: isPersonalizationEnabled,
+        [Permissions.USE]: (() => {
+          if (isMemoryExplicitlyDisabled) return false;
+          if (shouldEnableMemory) return true;
+          return getPermissionValue(
+            loadedInterface.memories,
+            defaultPerms[PermissionTypes.MEMORIES]?.[Permissions.USE],
+            defaults.memories,
+          );
+        })(),
+        ...(defaultPerms[PermissionTypes.MEMORIES]?.[Permissions.CREATE] !== undefined && {
+          [Permissions.CREATE]: isMemoryExplicitlyDisabled
+            ? false
+            : defaultPerms[PermissionTypes.MEMORIES][Permissions.CREATE],
+        }),
+        ...(defaultPerms[PermissionTypes.MEMORIES]?.[Permissions.READ] !== undefined && {
+          [Permissions.READ]: isMemoryExplicitlyDisabled
+            ? false
+            : defaultPerms[PermissionTypes.MEMORIES][Permissions.READ],
+        }),
+        ...(defaultPerms[PermissionTypes.MEMORIES]?.[Permissions.UPDATE] !== undefined && {
+          [Permissions.UPDATE]: isMemoryExplicitlyDisabled
+            ? false
+            : defaultPerms[PermissionTypes.MEMORIES][Permissions.UPDATE],
+        }),
+        [Permissions.OPT_OUT]: isMemoryExplicitlyDisabled
+          ? false
+          : isPersonalizationEnabled || undefined,
       },
       [PermissionTypes.MULTI_CONVO]: {
         [Permissions.USE]: getPermissionValue(

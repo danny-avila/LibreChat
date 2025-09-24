@@ -1,6 +1,6 @@
 import React, { useRef, useState, useMemo } from 'react';
 import * as Ariakit from '@ariakit/react';
-import { useSetRecoilState } from 'recoil';
+import { useRecoilState } from 'recoil';
 import { FileSearch, ImageUpIcon, TerminalSquareIcon, FileType2Icon } from 'lucide-react';
 import { EToolResources, EModelEndpoint, defaultAgentCapabilities } from 'librechat-data-provider';
 import {
@@ -11,7 +11,13 @@ import {
   SharePointIcon,
 } from '@librechat/client';
 import type { EndpointFileConfig } from 'librechat-data-provider';
-import { useLocalize, useGetAgentsConfig, useFileHandling, useAgentCapabilities } from '~/hooks';
+import {
+  useAgentToolPermissions,
+  useAgentCapabilities,
+  useGetAgentsConfig,
+  useFileHandling,
+  useLocalize,
+} from '~/hooks';
 import useSharePointFileHandling from '~/hooks/Files/useSharePointFileHandling';
 import { SharePointPickerDialog } from '~/components/SharePoint';
 import { useGetStartupConfig } from '~/data-provider';
@@ -21,16 +27,24 @@ import { cn } from '~/utils';
 
 interface AttachFileMenuProps {
   conversationId: string;
+  agentId?: string | null;
   disabled?: boolean | null;
   endpointFileConfig?: EndpointFileConfig;
 }
 
-const AttachFileMenu = ({ disabled, conversationId, endpointFileConfig }: AttachFileMenuProps) => {
+const AttachFileMenu = ({
+  agentId,
+  disabled,
+  conversationId,
+  endpointFileConfig,
+}: AttachFileMenuProps) => {
   const localize = useLocalize();
   const isUploadDisabled = disabled ?? false;
   const inputRef = useRef<HTMLInputElement>(null);
   const [isPopoverActive, setIsPopoverActive] = useState(false);
-  const setEphemeralAgent = useSetRecoilState(ephemeralAgentByConvoId(conversationId));
+  const [ephemeralAgent, setEphemeralAgent] = useRecoilState(
+    ephemeralAgentByConvoId(conversationId),
+  );
   const [toolResource, setToolResource] = useState<EToolResources | undefined>();
   const { handleFileChange } = useFileHandling({
     overrideEndpoint: EModelEndpoint.agents,
@@ -51,6 +65,11 @@ const AttachFileMenu = ({ disabled, conversationId, endpointFileConfig }: Attach
    * Use definition for agents endpoint for ephemeral agents
    * */
   const capabilities = useAgentCapabilities(agentsConfig?.capabilities ?? defaultAgentCapabilities);
+
+  const { fileSearchAllowedByAgent, codeAllowedByAgent } = useAgentToolPermissions(
+    agentId,
+    ephemeralAgent,
+  );
 
   const handleUploadClick = (isImage?: boolean) => {
     if (!inputRef.current) {
@@ -75,29 +94,33 @@ const AttachFileMenu = ({ disabled, conversationId, endpointFileConfig }: Attach
         },
       ];
 
-      if (capabilities.ocrEnabled) {
+      if (capabilities.contextEnabled) {
         items.push({
           label: localize('com_ui_upload_ocr_text'),
           onClick: () => {
-            setToolResource(EToolResources.ocr);
+            setToolResource(EToolResources.context);
             onAction();
           },
           icon: <FileType2Icon className="icon-md" />,
         });
       }
 
-      if (capabilities.fileSearchEnabled) {
+      if (capabilities.fileSearchEnabled && fileSearchAllowedByAgent) {
         items.push({
           label: localize('com_ui_upload_file_search'),
           onClick: () => {
             setToolResource(EToolResources.file_search);
+            setEphemeralAgent((prev) => ({
+              ...prev,
+              [EToolResources.file_search]: true,
+            }));
             onAction();
           },
           icon: <FileSearch className="icon-md" />,
         });
       }
 
-      if (capabilities.codeEnabled) {
+      if (capabilities.codeEnabled && codeAllowedByAgent) {
         items.push({
           label: localize('com_ui_upload_code_files'),
           onClick: () => {
@@ -138,6 +161,8 @@ const AttachFileMenu = ({ disabled, conversationId, endpointFileConfig }: Attach
     setToolResource,
     setEphemeralAgent,
     sharePointEnabled,
+    codeAllowedByAgent,
+    fileSearchAllowedByAgent,
     setIsSharePointDialogOpen,
   ]);
 

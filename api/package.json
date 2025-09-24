@@ -1,6 +1,6 @@
 {
   "name": "@librechat/backend",
-  "version": "v0.8.0-rc3",
+  "version": "v0.8.0-rc4",
   "description": "",
   "scripts": {
     "start": "echo 'please run this from the root directory'",
@@ -51,7 +51,7 @@
     "@langchain/google-vertexai": "^0.2.13",
     "@langchain/openai": "^0.5.18",
     "@langchain/textsplitters": "^0.1.0",
-    "@librechat/agents": "^2.4.76",
+    "@librechat/agents": "^2.4.80",
     "@librechat/api": "*",
     "@librechat/data-schemas": "*",
     "@microsoft/microsoft-graph-client": "^3.0.7",
@@ -61,7 +61,7 @@
     "@smithy/protocol-http": "^3.3.0",
     "@smithy/signature-v4": "^2.3.0",
     "@waylaidwanderer/fetch-event-source": "^3.0.1",
-    "axios": "^1.8.2",
+    "axios": "^1.12.1",
     "bcryptjs": "^2.4.3",
     "compression": "^1.8.1",
     "connect-redis": "^8.1.0",

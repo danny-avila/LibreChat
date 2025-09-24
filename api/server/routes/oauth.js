@@ -26,9 +26,12 @@ const domains = {
 router.use(logHeaders);
 router.use(loginLimiter);
 
-const oauthHandler = async (req, res) => {
+const oauthHandler = async (req, res, next) => {
   try {
-    await checkDomainAllowed(req, res);
+    if (res.headersSent) {
+      return;
+    }
+
     await checkBan(req, res);
     if (req.banned) {
       return;
@@ -39,13 +42,14 @@ const oauthHandler = async (req, res) => {
       isEnabled(process.env.OPENID_REUSE_TOKENS) === true
     ) {
       await syncUserEntraGroupMemberships(req.user, req.user.tokenset.access_token);
-      setOpenIDAuthTokens(req.user.tokenset, res);
+      setOpenIDAuthTokens(req.user.tokenset, res, req.user._id.toString());
     } else {
       await setAuthTokens(req.user._id, res);
     }
     res.redirect(domains.client);
   } catch (err) {
     logger.error('Error in setting authentication tokens:', err);
+    next(err);
   }
 };
 
@@ -79,6 +83,7 @@ router.get(
     scope: ['openid', 'profile', 'email'],
   }),
   setBalanceConfig,
+  checkDomainAllowed,
   oauthHandler,
 );
 
@@ -104,6 +109,7 @@ router.get(
     profileFields: ['id', 'email', 'name'],
   }),
   setBalanceConfig,
+  checkDomainAllowed,
   oauthHandler,
 );
 
@@ -125,6 +131,7 @@ router.get(
     session: false,
   }),
   setBalanceConfig,
+  checkDomainAllowed,
   oauthHandler,
 );
 
@@ -148,6 +155,7 @@ router.get(
     scope: ['user:email', 'read:user'],
   }),
   setBalanceConfig,
+  checkDomainAllowed,
   oauthHandler,
 );
 
@@ -171,6 +179,7 @@ router.get(
     scope: ['identify', 'email'],
   }),
   setBalanceConfig,
+  checkDomainAllowed,
   oauthHandler,
 );
 
@@ -192,6 +201,7 @@ router.post(
     session: false,
   }),
   setBalanceConfig,
+  checkDomainAllowed,
   oauthHandler,
 );
 

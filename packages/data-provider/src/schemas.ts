@@ -552,20 +552,33 @@ export type MemoryArtifact = {
   type: 'update' | 'delete' | 'error';
 };
 
+export type UIResource = {
+  type?: string;
+  data?: unknown;
+  uri?: string;
+  mimeType?: string;
+  text?: string;
+  [key: string]: unknown;
+};
+
 export type TAttachmentMetadata = {
   type?: Tools;
   messageId: string;
   toolCallId: string;
+  [Tools.memory]?: MemoryArtifact;
+  [Tools.ui_resources]?: UIResource[];
   [Tools.web_search]?: SearchResultData;
   [Tools.file_search]?: SearchResultData;
-  [Tools.memory]?: MemoryArtifact;
 };
 
 export type TAttachment =
   | (TFile & TAttachmentMetadata)
   | (Pick<TFile, 'filename' | 'filepath' | 'conversationId'> & {
       expiresAt: number;
-    } & TAttachmentMetadata);
+    } & TAttachmentMetadata)
+  | (Partial<Pick<TFile, 'filename' | 'filepath'>> &
+      Pick<TFile, 'conversationId'> &
+      TAttachmentMetadata);
 
 export type TMessage = z.input<typeof tMessageSchema> & {
   children?: TMessage[];
@@ -619,14 +632,14 @@ export const tConversationSchema = z.object({
   userLabel: z.string().optional(),
   model: z.string().nullable().optional(),
   promptPrefix: z.string().nullable().optional(),
-  temperature: z.number().optional(),
+  temperature: z.number().nullable().optional(),
   topP: z.number().optional(),
   topK: z.number().optional(),
   top_p: z.number().optional(),
   frequency_penalty: z.number().optional(),
   presence_penalty: z.number().optional(),
   parentMessageId: z.string().optional(),
-  maxOutputTokens: coerceNumber.optional(),
+  maxOutputTokens: coerceNumber.nullable().optional(),
   maxContextTokens: coerceNumber.optional(),
   max_tokens: coerceNumber.optional(),
   /* Anthropic */
@@ -634,6 +647,7 @@ export const tConversationSchema = z.object({
   system: z.string().optional(),
   thinking: z.boolean().optional(),
   thinkingBudget: coerceNumber.optional(),
+  stream: z.boolean().optional(),
   /* artifacts */
   artifacts: z.string().optional(),
   /* google */
@@ -1152,6 +1166,8 @@ export const anthropicBaseSchema = tConversationSchema.pick({
   maxContextTokens: true,
   web_search: true,
   fileTokenLimit: true,
+  stop: true,
+  stream: true,
 });
 
 export const anthropicSchema = anthropicBaseSchema

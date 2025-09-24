@@ -1,8 +1,8 @@
 const cookies = require('cookie');
 const jwt = require('jsonwebtoken');
 const openIdClient = require('openid-client');
-const { isEnabled } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
+const { isEnabled, findOpenIDUser } = require('@librechat/api');
 const {
   requestPasswordReset,
   setOpenIDAuthTokens,
@@ -11,8 +11,9 @@ const {
   registerUser,
 } = require('~/server/services/AuthService');
 const { findUser, getUserById, deleteAllUserSessions, findSession } = require('~/models');
-const { getOpenIdConfig } = require('~/strategies');
 const { getGraphApiToken } = require('~/server/services/GraphTokenService');
+const { getOAuthReconnectionManager } = require('~/config');
+const { getOpenIdConfig } = require('~/strategies');
 
 const registrationController = async (req, res) => {
   try {
@@ -71,11 +72,17 @@ const refreshController = async (req, res) => {
       const openIdConfig = getOpenIdConfig();
       const tokenset = await openIdClient.refreshTokenGrant(openIdConfig, refreshToken);
       const claims = tokenset.claims();
-      const user = await findUser({ email: claims.email });
-      if (!user) {
+      const { user, error } = await findOpenIDUser({
+        findUser,
+        email: claims.email,
+        openidId: claims.sub,
+        idOnTheSource: claims.oid,
+        strategyName: 'refreshController',
+      });
+      if (error || !user) {
         return res.status(401).redirect('/login');
       }
-      const token = setOpenIDAuthTokens(tokenset, res);
+      const token = setOpenIDAuthTokens(tokenset, res, user._id.toString());
       return res.status(200).send({ token, user });
     } catch (error) {
       logger.error('[refreshController] OpenID token refresh error', error);
@@ -96,14 +103,25 @@ const refreshController = async (req, res) => {
       return res.status(200).send({ token, user });
     }
 
-    // Find the session with the hashed refresh token
-    const session = await findSession({
-      userId: userId,
-      refreshToken: refreshToken,
-    });
+    /** Session with the hashed refresh token */
+    const session = await findSession(
+      {
+        userId: userId,
+        refreshToken: refreshToken,
+      },
+      { lean: false },
+    );
 
     if (session && session.expiration > new Date()) {
-      const token = await setAuthTokens(userId, res, session._id);
+      const token = await setAuthTokens(userId, res, session);
+
+      // trigger OAuth MCP server reconnection asynchronously (best effort)
+      void getOAuthReconnectionManager()
+        .reconnectServers(userId)
+        .catch((err) => {
+          logger.error('Error reconnecting OAuth MCP servers:', err);
+        });
+
       res.status(200).send({ token, user });
     } else if (req?.query?.retry) {
       // Retrying from a refresh token request that failed (401)
@@ -114,7 +132,7 @@ const refreshController = async (req, res) => {
       res.status(401).send('Refresh token expired or not found for this user');
     }
   } catch (err) {
-    logger.error(`[refreshController] Refresh token: ${refreshToken}`, err);
+    logger.error(`[refreshController] Invalid refresh token:`, err);
     res.status(403).send('Invalid refresh token');
   }
 };

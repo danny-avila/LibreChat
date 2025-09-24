@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback } from 'react';
-import { ChevronLeft } from 'lucide-react';
+import { ChevronLeft, Trash2 } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Button, useToastContext } from '@librechat/client';
 import { Constants, QueryKeys } from 'librechat-data-provider';
@@ -31,9 +31,9 @@ function MCPPanelContent() {
       showToast({ message: localize('com_nav_mcp_vars_updated'), status: 'success' });
 
       await Promise.all([
-        queryClient.refetchQueries([QueryKeys.tools]),
-        queryClient.refetchQueries([QueryKeys.mcpAuthValues]),
-        queryClient.refetchQueries([QueryKeys.mcpConnectionStatus]),
+        queryClient.invalidateQueries([QueryKeys.mcpTools]),
+        queryClient.invalidateQueries([QueryKeys.mcpAuthValues]),
+        queryClient.invalidateQueries([QueryKeys.mcpConnectionStatus]),
       ]);
     },
     onError: (error: unknown) => {
@@ -123,6 +123,7 @@ function MCPPanelContent() {
     }
 
     const serverStatus = connectionStatus?.[selectedServerNameForEditing];
+    const isConnected = serverStatus?.connectionState === 'connected';
 
     return (
       <div className="h-auto max-w-full space-y-4 overflow-x-hidden py-2">
@@ -159,6 +160,17 @@ function MCPPanelContent() {
             Object.keys(serverBeingEdited.config.customUserVars).length > 0
           }
         />
+        {serverStatus?.requiresOAuth && isConnected && (
+          <Button
+            className="w-full"
+            size="sm"
+            variant="destructive"
+            onClick={() => handleConfigRevoke(selectedServerNameForEditing)}
+          >
+            <Trash2 className="h-4 w-4" />
+            {localize('com_ui_oauth_revoke')}
+          </Button>
+        )}
       </div>
     );
   } else {

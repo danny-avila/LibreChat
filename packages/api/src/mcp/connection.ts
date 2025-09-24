@@ -1,19 +1,28 @@
 import { EventEmitter } from 'events';
+import { logger } from '@librechat/data-schemas';
+import { fetch as undiciFetch, Agent } from 'undici';
 import {
   StdioClientTransport,
   getDefaultEnvironment,
 } from '@modelcontextprotocol/sdk/client/stdio.js';
-import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-import { ResourceListChangedNotificationSchema } from '@modelcontextprotocol/sdk/types.js';
-import { WebSocketClientTransport } from '@modelcontextprotocol/sdk/client/websocket.js';
-import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { logger } from '@librechat/data-schemas';
+import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
+import { WebSocketClientTransport } from '@modelcontextprotocol/sdk/client/websocket.js';
+import { ResourceListChangedNotificationSchema } from '@modelcontextprotocol/sdk/types.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js';
+import type {
+  RequestInit as UndiciRequestInit,
+  RequestInfo as UndiciRequestInfo,
+  Response as UndiciResponse,
+} from 'undici';
 import type { MCPOAuthTokens } from './oauth/types';
-import { mcpConfig } from './mcpConfig';
 import type * as t from './types';
+import { sanitizeUrlForLogging } from './utils';
+import { mcpConfig } from './mcpConfig';
+
+type FetchLike = (url: string | URL, init?: RequestInit) => Promise<Response>;
 
 function isStdioOptions(options: t.MCPOptions): options is t.StdioOptions {
   return 'command' in options;
@@ -57,6 +66,7 @@ function isStreamableHTTPOptions(options: t.MCPOptions): options is t.Streamable
 }
 
 const FIVE_MINUTES = 5 * 60 * 1000;
+const DEFAULT_TIMEOUT = 60000;
 
 interface MCPConnectionParams {
   serverName: string;
@@ -95,9 +105,6 @@ export class MCPConnection extends EventEmitter {
     for (const [key, value] of Object.entries(headers)) {
       normalizedHeaders[key.toLowerCase()] = value;
     }
-    logger.debug(
-      `${this.getLogPrefix()} Setting request headers: ${JSON.stringify(normalizedHeaders)}`,
-    );
     this.requestHeaders = normalizedHeaders;
   }
 
@@ -140,15 +147,25 @@ export class MCPConnection extends EventEmitter {
    * This helps prevent memory leaks by only passing necessary dependencies.
    *
    * @param getHeaders Function to retrieve request headers
+   * @param timeout Timeout value for the agent (in milliseconds)
    * @returns A fetch function that merges headers appropriately
    */
   private createFetchFunction(
     getHeaders: () => Record<string, string> | null | undefined,
-  ): (input: RequestInfo | URL, init?: RequestInit) => Promise<Response> {
-    return function customFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+    timeout?: number,
+  ): (input: UndiciRequestInfo, init?: UndiciRequestInit) => Promise<UndiciResponse> {
+    return function customFetch(
+      input: UndiciRequestInfo,
+      init?: UndiciRequestInit,
+    ): Promise<UndiciResponse> {
       const requestHeaders = getHeaders();
+      const effectiveTimeout = timeout || DEFAULT_TIMEOUT;
+      const agent = new Agent({
+        bodyTimeout: effectiveTimeout,
+        headersTimeout: effectiveTimeout,
+      });
       if (!requestHeaders) {
-        return fetch(input, init);
+        return undiciFetch(input, { ...init, dispatcher: agent });
       }
 
       let initHeaders: Record<string, string> = {};
@@ -162,12 +179,13 @@ export class MCPConnection extends EventEmitter {
         }
       }
 
-      return fetch(input, {
+      return undiciFetch(input, {
         ...init,
         headers: {
           ...initHeaders,
           ...requestHeaders,
         },
+        dispatcher: agent,
       });
     };
   }
@@ -221,7 +239,9 @@ export class MCPConnection extends EventEmitter {
           }
           this.url = options.url;
           const url = new URL(options.url);
-          logger.info(`${this.getLogPrefix()} Creating SSE transport: ${url.toString()}`);
+          logger.info(
+            `${this.getLogPrefix()} Creating SSE transport: ${sanitizeUrlForLogging(url)}`,
+          );
           const abortController = new AbortController();
 
           /** Add OAuth token to headers if available */
@@ -230,6 +250,7 @@ export class MCPConnection extends EventEmitter {
             headers['Authorization'] = `Bearer ${this.oauthTokens.access_token}`;
           }
 
+          const timeoutValue = this.timeout || DEFAULT_TIMEOUT;
           const transport = new SSEClientTransport(url, {
             requestInit: {
               headers,
@@ -238,13 +259,21 @@ export class MCPConnection extends EventEmitter {
             eventSourceInit: {
               fetch: (url, init) => {
                 const fetchHeaders = new Headers(Object.assign({}, init?.headers, headers));
-                return fetch(url, {
+                const agent = new Agent({
+                  bodyTimeout: timeoutValue,
+                  headersTimeout: timeoutValue,
+                });
+                return undiciFetch(url, {
                   ...init,
+                  dispatcher: agent,
                   headers: fetchHeaders,
                 });
               },
             },
-            fetch: this.createFetchFunction(this.getRequestHeaders.bind(this)),
+            fetch: this.createFetchFunction(
+              this.getRequestHeaders.bind(this),
+              this.timeout,
+            ) as unknown as FetchLike,
           });
 
           transport.onclose = () => {
@@ -267,7 +296,7 @@ export class MCPConnection extends EventEmitter {
           this.url = options.url;
           const url = new URL(options.url);
           logger.info(
-            `${this.getLogPrefix()} Creating streamable-http transport: ${url.toString()}`,
+            `${this.getLogPrefix()} Creating streamable-http transport: ${sanitizeUrlForLogging(url)}`,
           );
           const abortController = new AbortController();
 
@@ -282,7 +311,10 @@ export class MCPConnection extends EventEmitter {
               headers,
               signal: abortController.signal,
             },
-            fetch: this.createFetchFunction(this.getRequestHeaders.bind(this)),
+            fetch: this.createFetchFunction(
+              this.getRequestHeaders.bind(this),
+              this.timeout,
+            ) as unknown as FetchLike,
           });
 
           transport.onclose = () => {
@@ -444,7 +476,9 @@ export class MCPConnection extends EventEmitter {
           logger.warn(`${this.getLogPrefix()} OAuth authentication required`);
           this.oauthRequired = true;
           const serverUrl = this.url;
-          logger.debug(`${this.getLogPrefix()} Server URL for OAuth: ${serverUrl}`);
+          logger.debug(
+            `${this.getLogPrefix()} Server URL for OAuth: ${serverUrl ? sanitizeUrlForLogging(serverUrl) : 'undefined'}`,
+          );
 
           const oauthTimeout = this.options.initTimeout ?? 60000 * 2;
           /** Promise that will resolve when OAuth is handled */

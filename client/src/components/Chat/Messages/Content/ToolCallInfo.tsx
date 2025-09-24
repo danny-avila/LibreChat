@@ -1,8 +1,9 @@
 import React from 'react';
 import { useLocalize } from '~/hooks';
+import { Tools } from 'librechat-data-provider';
 import { UIResourceRenderer } from '@mcp-ui/client';
-import UIResourceGrid from './UIResourceGrid';
-import type { UIResource } from '~/common';
+import UIResourceCarousel from './UIResourceCarousel';
+import type { TAttachment, UIResource } from 'librechat-data-provider';
 
 function OptimizedCodeBlock({ text, maxHeight = 320 }: { text: string; maxHeight?: number }) {
   return (
@@ -27,12 +28,14 @@ export default function ToolCallInfo({
   domain,
   function_name,
   pendingAuth,
+  attachments,
 }: {
   input: string;
   function_name: string;
   output?: string | null;
   domain?: string;
   pendingAuth?: boolean;
+  attachments?: TAttachment[];
 }) {
   const localize = useLocalize();
   const formatText = (text: string) => {
@@ -54,20 +57,12 @@ export default function ToolCallInfo({
         : localize('com_assistants_attempt_info');
   }
 
-  // Extract ui_resources from the output to display them in the UI
-  let uiResources: UIResource[] = [];
-  if (output?.includes('ui_resources')) {
-    const parsedOutput = JSON.parse(output);
-    const uiResourcesItem = parsedOutput.find(
-      (contentItem) => contentItem.metadata === 'ui_resources',
-    );
-    if (uiResourcesItem?.text) {
-      uiResources = JSON.parse(atob(uiResourcesItem.text)) as UIResource[];
-    }
-    output = JSON.stringify(
-      parsedOutput.filter((contentItem) => contentItem.metadata !== 'ui_resources'),
-    );
-  }
+  const uiResources: UIResource[] =
+    attachments
+      ?.filter((attachment) => attachment.type === Tools.ui_resources)
+      .flatMap((attachment) => {
+        return attachment[Tools.ui_resources] as UIResource[];
+      }) ?? [];
 
   return (
     <div className="w-full p-2">
@@ -90,7 +85,7 @@ export default function ToolCallInfo({
               </div>
             )}
             <div>
-              {uiResources.length > 1 && <UIResourceGrid uiResources={uiResources} />}
+              {uiResources.length > 1 && <UIResourceCarousel uiResources={uiResources} />}
 
               {uiResources.length === 1 && (
                 <UIResourceRenderer

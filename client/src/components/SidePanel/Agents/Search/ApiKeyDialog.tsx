@@ -91,6 +91,14 @@ export default function ApiKeyDialog({
             text: localize('com_ui_web_search_reranker_jina_key'),
           },
         },
+        jinaApiUrl: {
+          placeholder: localize('com_ui_web_search_jina_url'),
+          type: 'text' as const,
+          link: {
+            url: 'https://api.jina.ai/v1/rerank',
+            text: localize('com_ui_web_search_reranker_jina_url_help'),
+          },
+        },
       },
     },
     {

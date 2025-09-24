@@ -1,4 +1,5 @@
 const { google } = require('googleapis');
+const { getModelMaxTokens } = require('@librechat/api');
 const { concat } = require('@langchain/core/utils/stream');
 const { ChatVertexAI } = require('@langchain/google-vertexai');
 const { Tokenizer, getSafetySettings } = require('@librechat/api');
@@ -21,7 +22,6 @@ const {
 } = require('librechat-data-provider');
 const { encodeAndFormat } = require('~/server/services/Files/images');
 const { spendTokens } = require('~/models/spendTokens');
-const { getModelMaxTokens } = require('~/utils');
 const { sleep } = require('~/server/utils');
 const { logger } = require('~/config');
 const {

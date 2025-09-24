@@ -3,12 +3,12 @@ const jwt = require('jsonwebtoken');
 const { webcrypto } = require('node:crypto');
 const { logger } = require('@librechat/data-schemas');
 const { isEnabled, checkEmailConfig } = require('@librechat/api');
-const { SystemRoles, errorsToString } = require('librechat-data-provider');
+const { ErrorTypes, SystemRoles, errorsToString } = require('librechat-data-provider');
 const {
   findUser,
+  findToken,
   createUser,
   updateUser,
-  findToken,
   countUsers,
   getUserById,
   findSession,
@@ -181,6 +181,14 @@ const registerUser = async (user, additionalData = {}) => {
 
   let newUserId;
   try {
+    const appConfig = await getAppConfig();
+    if (!isEmailDomainAllowed(email, appConfig?.registration?.allowedDomains)) {
+      const errorMessage =
+        'The email address provided cannot be used. Please use a different email address.';
+      logger.error(`[registerUser] [Registration not allowed] [Email: ${user.email}]`);
+      return { status: 403, message: errorMessage };
+    }
+
     const existingUser = await findUser({ email }, 'email _id');
 
     if (existingUser) {
@@ -193,14 +201,6 @@ const registerUser = async (user, additionalData = {}) => {
       // Sleep for 1 second
       await new Promise((resolve) => setTimeout(resolve, 1000));
       return { status: 200, message: genericVerificationMessage };
-    }
-
-    const appConfig = await getAppConfig({ role: user.role });
-    if (!isEmailDomainAllowed(email, appConfig?.registration?.allowedDomains)) {
-      const errorMessage =
-        'The email address provided cannot be used. Please use a different email address.';
-      logger.error(`[registerUser] [Registration not allowed] [Email: ${user.email}]`);
-      return { status: 403, message: errorMessage };
     }
 
     //determine if this is the first registered user (not counting anonymous_user)
@@ -252,6 +252,13 @@ const registerUser = async (user, additionalData = {}) => {
  */
 const requestPasswordReset = async (req) => {
   const { email } = req.body;
+  const appConfig = await getAppConfig();
+  if (!isEmailDomainAllowed(email, appConfig?.registration?.allowedDomains)) {
+    const error = new Error(ErrorTypes.AUTH_FAILED);
+    error.code = ErrorTypes.AUTH_FAILED;
+    error.message = 'Email domain not allowed';
+    return error;
+  }
   const user = await findUser({ email }, 'email _id');
   const emailEnabled = checkEmailConfig();
 
@@ -350,23 +357,18 @@ const resetPassword = async (userId, token, password) => {
 
 /**
  * Set Auth Tokens
- *
  * @param {String | ObjectId} userId
- * @param {Object} res
- * @param {String} sessionId
+ * @param {ServerResponse} res
+ * @param {ISession | null} [session=null]
  * @returns
  */
-const setAuthTokens = async (userId, res, sessionId = null) => {
+const setAuthTokens = async (userId, res, _session = null) => {
   try {
-    const user = await getUserById(userId);
-    const token = await generateToken(user);
-
-    let session;
+    let session = _session;
     let refreshToken;
     let refreshTokenExpires;
 
-    if (sessionId) {
-      session = await findSession({ sessionId: sessionId }, { lean: false });
+    if (session && session._id && session.expiration != null) {
       refreshTokenExpires = session.expiration.getTime();
       refreshToken = await generateRefreshToken(session);
     } else {
@@ -375,6 +377,9 @@ const setAuthTokens = async (userId, res, sessionId = null) => {
       refreshToken = result.refreshToken;
       refreshTokenExpires = session.expiration.getTime();
     }
+
+    const user = await getUserById(userId);
+    const token = await generateToken(user);
 
     res.cookie('refreshToken', refreshToken, {
       expires: new Date(refreshTokenExpires),
@@ -402,9 +407,10 @@ const setAuthTokens = async (userId, res, sessionId = null) => {
  * @param {import('openid-client').TokenEndpointResponse & import('openid-client').TokenEndpointResponseHelpers} tokenset
  * - The tokenset object containing access and refresh tokens
  * @param {Object} res - response object
+ * @param {string} [userId] - Optional MongoDB user ID for image path validation
  * @returns {String} - access token
  */
-const setOpenIDAuthTokens = (tokenset, res) => {
+const setOpenIDAuthTokens = (tokenset, res, userId) => {
   try {
     if (!tokenset) {
       logger.error('[setOpenIDAuthTokens] No tokenset found in request');
@@ -435,6 +441,18 @@ const setOpenIDAuthTokens = (tokenset, res) => {
       secure: isProduction,
       sameSite: 'strict',
     });
+    if (userId && isEnabled(process.env.OPENID_REUSE_TOKENS)) {
+      /** JWT-signed user ID cookie for image path validation when OPENID_REUSE_TOKENS is enabled */
+      const signedUserId = jwt.sign({ id: userId }, process.env.JWT_REFRESH_SECRET, {
+        expiresIn: expiryInMilliseconds / 1000,
+      });
+      res.cookie('openid_user_id', signedUserId, {
+        expires: expirationDate,
+        httpOnly: true,
+        secure: isProduction,
+        sameSite: 'strict',
+      });
+    }
     return tokenset.access_token;
   } catch (error) {
     logger.error('[setOpenIDAuthTokens] Error in setting authentication tokens:', error);
@@ -452,7 +470,7 @@ const setOpenIDAuthTokens = (tokenset, res) => {
 const resendVerificationEmail = async (req) => {
   try {
     const { email } = req.body;
-    await deleteTokens(email);
+    await deleteTokens({ email });
     const user = await findUser({ email }, 'email _id name');
 
     if (!user) {

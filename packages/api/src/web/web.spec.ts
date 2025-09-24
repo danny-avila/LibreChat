@@ -81,6 +81,7 @@ describe('web.ts', () => {
         firecrawlApiKey: '${FIRECRAWL_API_KEY}',
         firecrawlApiUrl: '${FIRECRAWL_API_URL}',
         jinaApiKey: '${JINA_API_KEY}',
+        jinaApiUrl: '${JINA_API_URL}',
         cohereApiKey: '${COHERE_API_KEY}',
         safeSearch: SafeSearchTypes.MODERATE,
       };
@@ -300,6 +301,7 @@ describe('web.ts', () => {
         firecrawlApiKey: '${FIRECRAWL_API_KEY}',
         firecrawlApiUrl: '${FIRECRAWL_API_URL}',
         jinaApiKey: '${JINA_API_KEY}',
+        jinaApiUrl: '${JINA_API_URL}',
         cohereApiKey: '${COHERE_API_KEY}',
         safeSearch: SafeSearchTypes.MODERATE,
       };
@@ -351,6 +353,7 @@ describe('web.ts', () => {
         firecrawlApiKey: '${FIRECRAWL_API_KEY}',
         firecrawlApiUrl: '${FIRECRAWL_API_URL}',
         jinaApiKey: '${JINA_API_KEY}',
+        jinaApiUrl: '${JINA_API_URL}',
         cohereApiKey: '${COHERE_API_KEY}',
         safeSearch: SafeSearchTypes.MODERATE,
         // Specify which services to use
@@ -432,6 +435,7 @@ describe('web.ts', () => {
         CUSTOM_FIRECRAWL_URL: 'https://custom.firecrawl.dev',
         CUSTOM_JINA_KEY: 'custom-jina-key',
         CUSTOM_COHERE_KEY: 'custom-cohere-key',
+        CUSTOM_JINA_URL: 'https://custom.jina.ai',
       };
 
       // Initialize webSearchConfig with custom variable names
@@ -442,6 +446,7 @@ describe('web.ts', () => {
         firecrawlApiKey: '${CUSTOM_FIRECRAWL_KEY}',
         firecrawlApiUrl: '${CUSTOM_FIRECRAWL_URL}',
         jinaApiKey: '${CUSTOM_JINA_KEY}',
+        jinaApiUrl: '${CUSTOM_JINA_URL}',
         cohereApiKey: '${CUSTOM_COHERE_KEY}',
         safeSearch: SafeSearchTypes.MODERATE,
         // Specify which services to use
@@ -512,6 +517,7 @@ describe('web.ts', () => {
         firecrawlApiKey: '${FIRECRAWL_API_KEY}',
         firecrawlApiUrl: '${FIRECRAWL_API_URL}',
         jinaApiKey: '${JINA_API_KEY}',
+        jinaApiUrl: '${JINA_API_URL}',
         cohereApiKey: '${COHERE_API_KEY}',
         safeSearch: SafeSearchTypes.MODERATE,
       };
@@ -573,6 +579,7 @@ describe('web.ts', () => {
         firecrawlApiKey: '${FIRECRAWL_API_KEY}',
         firecrawlApiUrl: '${FIRECRAWL_API_URL}',
         jinaApiKey: '${JINA_API_KEY}',
+        jinaApiUrl: '${JINA_API_URL}',
         cohereApiKey: '${COHERE_API_KEY}',
         safeSearch: SafeSearchTypes.MODERATE,
       };
@@ -682,6 +689,7 @@ describe('web.ts', () => {
         firecrawlApiKey: '${FIRECRAWL_API_KEY}',
         firecrawlApiUrl: '${FIRECRAWL_API_URL}',
         jinaApiKey: '${JINA_API_KEY}',
+        jinaApiUrl: '${JINA_API_URL}',
         cohereApiKey: '${COHERE_API_KEY}',
         safeSearch: SafeSearchTypes.MODERATE,
         searchProvider: 'serper' as SearchProviders,
@@ -722,6 +730,7 @@ describe('web.ts', () => {
         firecrawlApiKey: '${FIRECRAWL_API_KEY}',
         firecrawlApiUrl: '${FIRECRAWL_API_URL}',
         jinaApiKey: '${JINA_API_KEY}',
+        jinaApiUrl: '${JINA_API_URL}',
         cohereApiKey: '${COHERE_API_KEY}',
         safeSearch: SafeSearchTypes.MODERATE,
         scraperType: 'firecrawl' as ScraperTypes,
@@ -762,6 +771,7 @@ describe('web.ts', () => {
         firecrawlApiKey: '${FIRECRAWL_API_KEY}',
         firecrawlApiUrl: '${FIRECRAWL_API_URL}',
         jinaApiKey: '${JINA_API_KEY}',
+        jinaApiUrl: '${JINA_API_URL}',
         cohereApiKey: '${COHERE_API_KEY}',
         safeSearch: SafeSearchTypes.MODERATE,
         rerankerType: 'jina' as RerankerTypes,
@@ -808,6 +818,7 @@ describe('web.ts', () => {
         firecrawlApiKey: '${FIRECRAWL_API_KEY}',
         firecrawlApiUrl: '${FIRECRAWL_API_URL}',
         jinaApiKey: '${JINA_API_KEY}',
+        jinaApiUrl: '${JINA_API_URL}',
         cohereApiKey: '${COHERE_API_KEY}',
         safeSearch: SafeSearchTypes.MODERATE,
         searchProvider: 'invalid-provider' as SearchProviders,
@@ -842,6 +853,7 @@ describe('web.ts', () => {
         firecrawlApiKey: '${FIRECRAWL_API_KEY}',
         firecrawlApiUrl: '${FIRECRAWL_API_URL}',
         jinaApiKey: '${JINA_API_KEY}',
+        jinaApiUrl: '${JINA_API_URL}',
         cohereApiKey: '${COHERE_API_KEY}',
         safeSearch: SafeSearchTypes.MODERATE,
         rerankerType: 'jina' as RerankerTypes,
@@ -892,6 +904,7 @@ describe('web.ts', () => {
         firecrawlApiKey: '${FIRECRAWL_API_KEY}',
         firecrawlApiUrl: '${FIRECRAWL_API_URL}',
         jinaApiKey: '${JINA_API_KEY}',
+        jinaApiUrl: '${JINA_API_URL}',
         cohereApiKey: '${COHERE_API_KEY}',
         safeSearch: SafeSearchTypes.MODERATE,
       };
@@ -932,6 +945,7 @@ describe('web.ts', () => {
         firecrawlApiKey: '${FIRECRAWL_API_KEY}',
         firecrawlApiUrl: '${FIRECRAWL_API_URL}',
         jinaApiKey: '${JINA_API_KEY}',
+        jinaApiUrl: '${JINA_API_URL}',
         cohereApiKey: '${COHERE_API_KEY}',
         safeSearch: SafeSearchTypes.MODERATE,
         firecrawlOptions: {
@@ -991,6 +1005,7 @@ describe('web.ts', () => {
         firecrawlApiKey: '${FIRECRAWL_API_KEY}',
         firecrawlApiUrl: '${FIRECRAWL_API_URL}',
         jinaApiKey: '${JINA_API_KEY}',
+        jinaApiUrl: '${JINA_API_URL}',
         safeSearch: SafeSearchTypes.MODERATE,
         scraperTimeout: 15000, // This should take priority
         firecrawlOptions: {
@@ -1032,6 +1047,7 @@ describe('web.ts', () => {
         firecrawlApiKey: '${FIRECRAWL_API_KEY}',
         firecrawlApiUrl: '${FIRECRAWL_API_URL}',
         jinaApiKey: '${JINA_API_KEY}',
+        jinaApiUrl: '${JINA_API_URL}',
         safeSearch: SafeSearchTypes.MODERATE,
         firecrawlOptions: {
           includeTags: ['p'],
@@ -1070,6 +1086,7 @@ describe('web.ts', () => {
         firecrawlApiKey: '${FIRECRAWL_API_KEY}',
         firecrawlApiUrl: '${FIRECRAWL_API_URL}',
         jinaApiKey: '${JINA_API_KEY}',
+        jinaApiUrl: '${JINA_API_URL}',
         safeSearch: SafeSearchTypes.MODERATE,
         firecrawlOptions: {
           timeout: 12000, // Only timeout provided
@@ -1106,6 +1123,7 @@ describe('web.ts', () => {
         firecrawlApiKey: '${FIRECRAWL_API_KEY}',
         firecrawlApiUrl: '${FIRECRAWL_API_URL}',
         jinaApiKey: '${JINA_API_KEY}',
+        jinaApiUrl: '${JINA_API_URL}',
         safeSearch: SafeSearchTypes.MODERATE,
         firecrawlOptions: {
           formats: ['html', 'markdown'], // Only formats provided
@@ -1142,6 +1160,7 @@ describe('web.ts', () => {
         firecrawlApiKey: '${FIRECRAWL_API_KEY}',
         firecrawlApiUrl: '${FIRECRAWL_API_URL}',
         jinaApiKey: '${JINA_API_KEY}',
+        jinaApiUrl: '${JINA_API_URL}',
         safeSearch: SafeSearchTypes.MODERATE,
         firecrawlOptions: {
           timeout: 8000,

@@ -23,6 +23,7 @@ export enum Tools {
   retrieval = 'retrieval',
   function = 'function',
   memory = 'memory',
+  ui_resources = 'ui_resources',
 }
 
 export enum EToolResources {
@@ -30,6 +31,7 @@ export enum EToolResources {
   execute_code = 'execute_code',
   file_search = 'file_search',
   image_edit = 'image_edit',
+  context = 'context',
   ocr = 'ocr',
 }
 
@@ -181,6 +183,8 @@ export interface AgentToolResources {
   [EToolResources.image_edit]?: AgentBaseResource;
   [EToolResources.execute_code]?: ExecuteCodeResource;
   [EToolResources.file_search]?: AgentFileResource;
+  [EToolResources.context]?: AgentBaseResource;
+  /** @deprecated Use context instead */
   [EToolResources.ocr]?: AgentBaseResource;
 }
 /**

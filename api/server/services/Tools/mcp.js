@@ -2,12 +2,12 @@ const { logger } = require('@librechat/data-schemas');
 const { CacheKeys, Constants } = require('librechat-data-provider');
 const { findToken, createToken, updateToken, deleteTokens } = require('~/models');
 const { getMCPManager, getFlowStateManager } = require('~/config');
-const { updateMCPUserTools } = require('~/server/services/Config');
+const { updateMCPServerTools } = require('~/server/services/Config');
 const { getLogStores } = require('~/cache');
 
 /**
  * @param {Object} params
- * @param {ServerRequest} params.req
+ * @param {string} params.userId
  * @param {string} params.serverName - The name of the MCP server
  * @param {boolean} params.returnOnOAuth - Whether to initiate OAuth and return, or wait for OAuth flow to finish
  * @param {AbortSignal} [params.signal] - The abort signal to handle cancellation.
@@ -18,7 +18,7 @@ const { getLogStores } = require('~/cache');
  * @param {Record<string, Record<string, string>>} [params.userMCPAuthMap]
  */
 async function reinitMCPServer({
-  req,
+  userId,
   signal,
   forceNew,
   serverName,
@@ -44,14 +44,14 @@ async function reinitMCPServer({
     const oauthStart =
       _oauthStart ??
       (async (authURL) => {
-        logger.info(`[MCP Reinitialize] OAuth URL received: ${authURL}`);
+        logger.info(`[MCP Reinitialize] OAuth URL received for ${serverName}`);
         oauthUrl = authURL;
         oauthRequired = true;
       });
 
     try {
       userConnection = await mcpManager.getUserConnection({
-        user: req.user,
+        user: { id: userId },
         signal,
         forceNew,
         oauthStart,
@@ -97,8 +97,7 @@ async function reinitMCPServer({
 
     if (userConnection && !oauthRequired) {
       tools = await userConnection.fetchTools();
-      availableTools = await updateMCPUserTools({
-        userId: req.user.id,
+      availableTools = await updateMCPServerTools({
         serverName,
         tools,
       });
