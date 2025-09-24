@@ -150,8 +150,10 @@ securityContext:
   runAsUser: 1000
 
 service:
-  type: ClusterIP
+  type: ClusterIP # LoadBalancer, NodePort, ClusterIP
   port: 3080
+  targetPort: 3080
+  containerPort: 3080
   annotations: {}
 
 ingress:
@@ -193,11 +195,11 @@ autoscaling:
 livenessProbe:
   httpGet:
     path: /health
-    port: http
+    port: 3080
 readinessProbe:
   httpGet:
     path: /health
-    port: http
+    port: 3080
 
 # Additional volumes on the output Deployment definition.
 volumes: []
@@ -217,6 +219,25 @@ nodeSelector: {}
 tolerations: []
 
 affinity: {}
+
+# DNS Configuration
+# Customize DNS resolution for redirecting traffic to proxy servers
+dnsPolicy: ""  # Options: ClusterFirst, Default, None, ClusterFirstWithHostNet
+dnsConfig: {}
+# Example configuration for custom DNS:
+# dnsPolicy: "None"  # Use only custom DNS settings
+# dnsConfig:
+#   nameservers:
+#     - "10.0.0.10"  # Your custom DNS server
+#     - "8.8.8.8"    # Fallback DNS
+#   searches:
+#     - "svc.cluster.local"
+#     - "cluster.local"
+#   options:
+#     - name: ndots
+#       value: "2"
+#     - name: timeout
+#       value: "1"
 
 # Strategy for LibreChat deployment updates
 updateStrategy:

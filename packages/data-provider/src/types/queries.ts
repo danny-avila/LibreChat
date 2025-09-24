@@ -101,6 +101,25 @@ export type AllPromptGroupsResponse = t.TPromptGroup[];
 
 export type ConversationTagsResponse = s.TConversationTag[];
 
+/* MCP Types */
+export type MCPTool = {
+  name: string;
+  pluginKey: string;
+  description: string;
+};
+
+export type MCPServer = {
+  name: string;
+  icon: string;
+  authenticated: boolean;
+  authConfig: s.TPluginAuthConfig[];
+  tools: MCPTool[];
+};
+
+export type MCPServersResponse = {
+  servers: Record<string, MCPServer>;
+};
+
 export type VerifyToolAuthParams = { toolId: string };
 export type VerifyToolAuthResponse = {
   authenticated: boolean;

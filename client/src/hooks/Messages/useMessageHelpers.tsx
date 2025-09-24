@@ -2,7 +2,7 @@ import throttle from 'lodash/throttle';
 import { useEffect, useRef, useCallback, useMemo } from 'react';
 import { Constants, isAssistantsEndpoint, isAgentsEndpoint } from 'librechat-data-provider';
 import type { TMessageProps } from '~/common';
-import { useChatContext, useAssistantsMapContext, useAgentsMapContext } from '~/Providers';
+import { useMessagesViewContext, useAssistantsMapContext, useAgentsMapContext } from '~/Providers';
 import useCopyToClipboard from './useCopyToClipboard';
 import { getTextKey, logger } from '~/utils';
 
@@ -20,9 +20,9 @@ export default function useMessageHelpers(props: TMessageProps) {
     setAbortScroll,
     handleContinue,
     setLatestMessage,
-  } = useChatContext();
-  const assistantMap = useAssistantsMapContext();
+  } = useMessagesViewContext();
   const agentsMap = useAgentsMapContext();
+  const assistantMap = useAssistantsMapContext();
 
   const { text, content, children, messageId = null, isCreatedByUser } = message ?? {};
   const edit = messageId === currentEditId;

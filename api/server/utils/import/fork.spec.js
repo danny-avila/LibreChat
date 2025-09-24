@@ -10,6 +10,10 @@ jest.mock('~/models/Message', () => ({
   bulkSaveMessages: jest.fn(),
 }));
 
+jest.mock('~/models/ConversationTag', () => ({
+  bulkIncrementTagCounts: jest.fn(),
+}));
+
 let mockIdCounter = 0;
 jest.mock('uuid', () => {
   return {
@@ -22,11 +26,13 @@ jest.mock('uuid', () => {
 
 const {
   forkConversation,
+  duplicateConversation,
   splitAtTargetLevel,
   getAllMessagesUpToParent,
   getMessagesUpToTargetLevel,
   cloneMessagesWithTimestamps,
 } = require('./fork');
+const { bulkIncrementTagCounts } = require('~/models/ConversationTag');
 const { getConvo, bulkSaveConvos } = require('~/models/Conversation');
 const { getMessages, bulkSaveMessages } = require('~/models/Message');
 const { createImportBatchBuilder } = require('./importBatchBuilder');
@@ -180,6 +186,120 @@ describe('forkConversation', () => {
         requestUserId: 'user1',
       }),
     ).rejects.toThrow('Failed to fetch messages');
+  });
+
+  test('should increment tag counts when forking conversation with tags', async () => {
+    const mockConvoWithTags = {
+      ...mockConversation,
+      tags: ['bookmark1', 'bookmark2'],
+    };
+    getConvo.mockResolvedValue(mockConvoWithTags);
+
+    await forkConversation({
+      originalConvoId: 'abc123',
+      targetMessageId: '3',
+      requestUserId: 'user1',
+      option: ForkOptions.DIRECT_PATH,
+    });
+
+    // Verify that bulkIncrementTagCounts was called with correct tags
+    expect(bulkIncrementTagCounts).toHaveBeenCalledWith('user1', ['bookmark1', 'bookmark2']);
+  });
+
+  test('should handle conversation without tags when forking', async () => {
+    const mockConvoWithoutTags = {
+      ...mockConversation,
+      // No tags field
+    };
+    getConvo.mockResolvedValue(mockConvoWithoutTags);
+
+    await forkConversation({
+      originalConvoId: 'abc123',
+      targetMessageId: '3',
+      requestUserId: 'user1',
+      option: ForkOptions.DIRECT_PATH,
+    });
+
+    // bulkIncrementTagCounts will be called with array containing undefined
+    expect(bulkIncrementTagCounts).toHaveBeenCalled();
+  });
+
+  test('should handle empty tags array when forking', async () => {
+    const mockConvoWithEmptyTags = {
+      ...mockConversation,
+      tags: [],
+    };
+    getConvo.mockResolvedValue(mockConvoWithEmptyTags);
+
+    await forkConversation({
+      originalConvoId: 'abc123',
+      targetMessageId: '3',
+      requestUserId: 'user1',
+      option: ForkOptions.DIRECT_PATH,
+    });
+
+    // bulkIncrementTagCounts will be called with empty array
+    expect(bulkIncrementTagCounts).toHaveBeenCalledWith('user1', []);
+  });
+});
+
+describe('duplicateConversation', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockIdCounter = 0;
+    getConvo.mockResolvedValue(mockConversation);
+    getMessages.mockResolvedValue(mockMessages);
+    bulkSaveConvos.mockResolvedValue(null);
+    bulkSaveMessages.mockResolvedValue(null);
+    bulkIncrementTagCounts.mockResolvedValue(null);
+  });
+
+  test('should duplicate conversation and increment tag counts', async () => {
+    const mockConvoWithTags = {
+      ...mockConversation,
+      tags: ['important', 'work', 'project'],
+    };
+    getConvo.mockResolvedValue(mockConvoWithTags);
+
+    await duplicateConversation({
+      userId: 'user1',
+      conversationId: 'abc123',
+    });
+
+    // Verify that bulkIncrementTagCounts was called with correct tags
+    expect(bulkIncrementTagCounts).toHaveBeenCalledWith('user1', ['important', 'work', 'project']);
+  });
+
+  test('should duplicate conversation without tags', async () => {
+    const mockConvoWithoutTags = {
+      ...mockConversation,
+      // No tags field
+    };
+    getConvo.mockResolvedValue(mockConvoWithoutTags);
+
+    await duplicateConversation({
+      userId: 'user1',
+      conversationId: 'abc123',
+    });
+
+    // bulkIncrementTagCounts will be called with array containing undefined
+    expect(bulkIncrementTagCounts).toHaveBeenCalled();
+  });
+
+  test('should handle empty tags array when duplicating', async () => {
+    const mockConvoWithEmptyTags = {
+      ...mockConversation,
+      tags: [],
+    };
+    getConvo.mockResolvedValue(mockConvoWithEmptyTags);
+
+    await duplicateConversation({
+      userId: 'user1',
+      conversationId: 'abc123',
+    });
+
+    // bulkIncrementTagCounts will be called with empty array
+    expect(bulkIncrementTagCounts).toHaveBeenCalledWith('user1', []);
   });
 });
 

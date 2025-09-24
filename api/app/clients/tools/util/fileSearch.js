@@ -68,19 +68,19 @@ const primeFiles = async (options) => {
 /**
  *
  * @param {Object} options
- * @param {ServerRequest} options.req
+ * @param {string} options.userId
  * @param {Array<{ file_id: string; filename: string }>} options.files
  * @param {string} [options.entity_id]
  * @param {boolean} [options.fileCitations=false] - Whether to include citation instructions
  * @returns
  */
-const createFileSearchTool = async ({ req, files, entity_id, fileCitations = false }) => {
+const createFileSearchTool = async ({ userId, files, entity_id, fileCitations = false }) => {
   return tool(
     async ({ query }) => {
       if (files.length === 0) {
         return 'No files to search. Instruct the user to add files for the search.';
       }
-      const jwtToken = generateShortLivedToken(req.user.id);
+      const jwtToken = generateShortLivedToken(userId);
       if (!jwtToken) {
         return 'There was an error authenticating the file search request.';
       }

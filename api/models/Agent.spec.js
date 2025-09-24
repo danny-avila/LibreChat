@@ -8,6 +8,7 @@ process.env.CREDS_IV = '0123456789abcdef';
 
 jest.mock('~/server/services/Config', () => ({
   getCachedTools: jest.fn(),
+  getMCPServerTools: jest.fn(),
 }));
 
 const mongoose = require('mongoose');
@@ -30,7 +31,7 @@ const {
   generateActionMetadataHash,
 } = require('./Agent');
 const permissionService = require('~/server/services/PermissionService');
-const { getCachedTools } = require('~/server/services/Config');
+const { getCachedTools, getMCPServerTools } = require('~/server/services/Config');
 const { AclEntry } = require('~/db/models');
 
 /**
@@ -1929,6 +1930,16 @@ describe('models/Agent', () => {
         another_tool: {},
       });
 
+      // Mock getMCPServerTools to return tools for each server
+      getMCPServerTools.mockImplementation(async (server) => {
+        if (server === 'server1') {
+          return { tool1_mcp_server1: {} };
+        } else if (server === 'server2') {
+          return { tool2_mcp_server2: {} };
+        }
+        return null;
+      });
+
       const mockReq = {
         user: { id: 'user123' },
         body: {
@@ -2112,6 +2123,14 @@ describe('models/Agent', () => {
         }, {});
 
         getCachedTools.mockResolvedValue(availableTools);
+
+        // Mock getMCPServerTools to return all tools for server1
+        getMCPServerTools.mockImplementation(async (server) => {
+          if (server === 'server1') {
+            return availableTools; // All 100 tools belong to server1
+          }
+          return null;
+        });
 
         const mockReq = {
           user: { id: 'user123' },
@@ -2652,6 +2671,17 @@ describe('models/Agent', () => {
         tool__server1: {}, // Wrong delimiter
         tool_mcp_server1: {}, // Correct format
         tool_mcp_server2: {}, // Different server
+      });
+
+      // Mock getMCPServerTools to return only tools matching the server
+      getMCPServerTools.mockImplementation(async (server) => {
+        if (server === 'server1') {
+          // Only return tool that correctly matches server1 format
+          return { tool_mcp_server1: {} };
+        } else if (server === 'server2') {
+          return { tool_mcp_server2: {} };
+        }
+        return null;
       });
 
       const mockReq = {

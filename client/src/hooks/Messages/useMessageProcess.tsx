@@ -3,7 +3,7 @@ import { useRecoilValue } from 'recoil';
 import { Constants } from 'librechat-data-provider';
 import { useEffect, useRef, useCallback, useMemo, useState } from 'react';
 import type { TMessage } from 'librechat-data-provider';
-import { useChatContext, useAddedChatContext } from '~/Providers';
+import { useMessagesViewContext } from '~/Providers';
 import { getTextKey, logger } from '~/utils';
 import store from '~/store';
 
@@ -18,14 +18,9 @@ export default function useMessageProcess({ message }: { message?: TMessage | nu
     latestMessage,
     setAbortScroll,
     setLatestMessage,
-    isSubmitting: isSubmittingRoot,
-  } = useChatContext();
-  const { isSubmitting: isSubmittingAdditional } = useAddedChatContext();
+    isSubmittingFamily,
+  } = useMessagesViewContext();
   const latestMultiMessage = useRecoilValue(store.latestMessageFamily(index + 1));
-  const isSubmittingFamily = useMemo(
-    () => isSubmittingRoot || isSubmittingAdditional,
-    [isSubmittingRoot, isSubmittingAdditional],
-  );
 
   useEffect(() => {
     const convoId = conversation?.conversationId;

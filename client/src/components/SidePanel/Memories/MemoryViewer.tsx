@@ -362,7 +362,7 @@ export default function MemoryViewer() {
                     colSpan={hasUpdateAccess ? 2 : 1}
                     className="h-24 text-center text-sm text-text-secondary"
                   >
-                    {localize('com_ui_no_data')}
+                    {localize('com_ui_no_memories')}
                   </TableCell>
                 </TableRow>
               )}

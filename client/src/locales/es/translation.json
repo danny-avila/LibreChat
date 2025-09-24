@@ -10,7 +10,6 @@
   "com_agents_create_error": "Hubo un error al crear su agente.",
   "com_agents_description_placeholder": "Opcional: Describa su Agente aquí",
   "com_agents_enable_file_search": "Habilitar búsqueda de archivos",
-  "com_agents_file_context": "Archivo de contexto (OCR)",
   "com_agents_file_context_disabled": "Es necesario crear el Agente antes de subir archivos.",
   "com_agents_file_search_disabled": "Es necesario crear el Agente antes de subir archivos para la Búsqueda de Archivos.",
   "com_agents_file_search_info": "Cuando está habilitado, se informará al agente sobre los nombres exactos de los archivos listados a continuación, permitiéndole recuperar el contexto relevante de estos archivos.",

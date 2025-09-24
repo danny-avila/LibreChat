@@ -3,7 +3,7 @@ import { useRecoilState } from 'recoil';
 import { usePromptGroupsInfiniteQuery } from '~/data-provider';
 import store from '~/store';
 
-export default function usePromptGroupsNav() {
+export default function usePromptGroupsNav(hasAccess = true) {
   const [pageSize] = useRecoilState(store.promptsPageSize);
   const [category] = useRecoilState(store.promptsCategory);
   const [name, setName] = useRecoilState(store.promptsName);
@@ -14,21 +14,26 @@ export default function usePromptGroupsNav() {
 
   const prevFiltersRef = useRef({ name, category });
 
-  const groupsQuery = usePromptGroupsInfiniteQuery({
-    name,
-    pageSize,
-    category,
-  });
+  const groupsQuery = usePromptGroupsInfiniteQuery(
+    {
+      name,
+      pageSize,
+      category,
+    },
+    {
+      enabled: hasAccess,
+    },
+  );
 
   // Get the current page data
   const currentPageData = useMemo(() => {
-    if (!groupsQuery.data?.pages || groupsQuery.data.pages.length === 0) {
+    if (!hasAccess || !groupsQuery.data?.pages || groupsQuery.data.pages.length === 0) {
       return null;
     }
     // Ensure we don't go out of bounds
     const pageIndex = Math.min(currentPageIndex, groupsQuery.data.pages.length - 1);
     return groupsQuery.data.pages[pageIndex];
-  }, [groupsQuery.data?.pages, currentPageIndex]);
+  }, [hasAccess, groupsQuery.data?.pages, currentPageIndex]);
 
   // Get prompt groups for current page
   const promptGroups = useMemo(() => {
@@ -54,7 +59,7 @@ export default function usePromptGroupsNav() {
 
   // Navigate to next page
   const nextPage = useCallback(async () => {
-    if (!hasNextPage) return;
+    if (!hasAccess || !hasNextPage) return;
 
     const nextPageIndex = currentPageIndex + 1;
 
@@ -72,16 +77,18 @@ export default function usePromptGroupsNav() {
     }
 
     setCurrentPageIndex(nextPageIndex);
-  }, [currentPageIndex, hasNextPage, groupsQuery]);
+  }, [hasAccess, currentPageIndex, hasNextPage, groupsQuery]);
 
   // Navigate to previous page
   const prevPage = useCallback(() => {
-    if (!hasPreviousPage) return;
+    if (!hasAccess || !hasPreviousPage) return;
     setCurrentPageIndex(currentPageIndex - 1);
-  }, [currentPageIndex, hasPreviousPage]);
+  }, [hasAccess, currentPageIndex, hasPreviousPage]);
 
   // Reset when filters change
   useEffect(() => {
+    if (!hasAccess) return;
+
     const filtersChanged =
       prevFiltersRef.current.name !== name || prevFiltersRef.current.category !== category;
 
@@ -90,18 +97,18 @@ export default function usePromptGroupsNav() {
       cursorHistoryRef.current = [null];
       prevFiltersRef.current = { name, category };
     }
-  }, [name, category]);
+  }, [hasAccess, name, category]);
 
   return {
-    promptGroups,
+    promptGroups: hasAccess ? promptGroups : [],
     groupsQuery,
     currentPage,
     totalPages,
-    hasNextPage,
-    hasPreviousPage,
+    hasNextPage: hasAccess && hasNextPage,
+    hasPreviousPage: hasAccess && hasPreviousPage,
     nextPage,
     prevPage,
-    isFetching: groupsQuery.isFetching,
+    isFetching: hasAccess ? groupsQuery.isFetching : false,
     name,
     setName,
   };

@@ -8,7 +8,6 @@
   "com_agents_description_placeholder": "Tùy chọn: Mô tả Agent của bạn ở đây",
   "com_agents_enable_file_search": "Bật Tìm kiếm Tệp",
   "com_agents_file_context_disabled": "Phải tạo Agent trước khi tải tệp lên cho File Context.",
-  "com_agents_file_context_info": "Các tệp được tải lên dưới dạng \"Context\" được xử lý bằng OCR để trích xuất văn bản, sau đó được thêm vào hướng dẫn của Agent. Lý tưởng cho các tài liệu, hình ảnh có văn bản hoặc PDF khi bạn cần nội dung văn bản đầy đủ của tệp",
   "com_agents_file_search_disabled": "Phải tạo Agent trước khi tải tệp lên cho Tìm kiếm Tệp.",
   "com_agents_file_search_info": "Khi được bật, Agent sẽ được thông báo về tên tệp chính xác được liệt kê bên dưới, cho phép agent truy xuất ngữ cảnh có liên quan từ các tệp này.",
   "com_agents_instructions_placeholder": "\nCác hướng dẫn hệ thống mà agent sử dụng",

@@ -22,6 +22,7 @@ import type {
   OCRImage,
 } from '~/types';
 import { logAxiosError, createAxiosInstance } from '~/utils/axios';
+import { readFileAsBuffer } from '~/utils/files';
 import { loadServiceKey } from '~/utils/key';
 
 const axios = createAxiosInstance();
@@ -464,7 +465,9 @@ export const uploadAzureMistralOCR = async (
     const { apiKey, baseURL } = await loadAuthConfig(context);
     const model = getModelConfig(context.req.config?.ocr);
 
-    const buffer = fs.readFileSync(context.file.path);
+    const { content: buffer } = await readFileAsBuffer(context.file.path, {
+      fileSize: context.file.size,
+    });
     const base64 = buffer.toString('base64');
     /** Uses actual mimetype of the file, 'image/jpeg' as fallback since it seems to be accepted regardless of mismatch */
     const base64Prefix = `data:${context.file.mimetype || 'image/jpeg'};base64,`;
@@ -691,7 +694,9 @@ export const uploadGoogleVertexMistralOCR = async (
     const { serviceAccount, accessToken } = await loadGoogleAuthConfig();
     const model = getModelConfig(context.req.config?.ocr);
 
-    const buffer = fs.readFileSync(context.file.path);
+    const { content: buffer } = await readFileAsBuffer(context.file.path, {
+      fileSize: context.file.size,
+    });
     const base64 = buffer.toString('base64');
     const base64Prefix = `data:${context.file.mimetype || 'application/pdf'};base64,`;
 

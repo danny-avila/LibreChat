@@ -7,6 +7,7 @@ import CategorySelector from '~/components/Prompts/Groups/CategorySelector';
 import VariablesDropdown from '~/components/Prompts/VariablesDropdown';
 import PromptVariables from '~/components/Prompts/PromptVariables';
 import Description from '~/components/Prompts/Description';
+import { usePromptGroupsContext } from '~/Providers';
 import { useLocalize, useHasAccess } from '~/hooks';
 import Command from '~/components/Prompts/Command';
 import { useCreatePrompt } from '~/data-provider';
@@ -37,10 +38,12 @@ const CreatePromptForm = ({
 }) => {
   const localize = useLocalize();
   const navigate = useNavigate();
-  const hasAccess = useHasAccess({
+  const { hasAccess: hasUseAccess } = usePromptGroupsContext();
+  const hasCreateAccess = useHasAccess({
     permissionType: PermissionTypes.PROMPTS,
     permission: Permissions.CREATE,
   });
+  const hasAccess = hasUseAccess && hasCreateAccess;
 
   useEffect(() => {
     let timeoutId: ReturnType<typeof setTimeout>;

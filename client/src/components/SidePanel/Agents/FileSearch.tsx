@@ -18,6 +18,7 @@ import { SharePointPickerDialog } from '~/components/SharePoint';
 import FileRow from '~/components/Chat/Input/Files/FileRow';
 import FileSearchCheckbox from './FileSearchCheckbox';
 import { useChatContext } from '~/Providers';
+import { isEphemeralAgent } from '~/common';
 
 export default function FileSearch({
   agent_id,
@@ -69,7 +70,7 @@ export default function FileSearch({
   const isUploadDisabled = endpointFileConfig.disabled ?? false;
 
   const sharePointEnabled = startupConfig?.sharePointFilePickerEnabled;
-  const disabledUploadButton = !agent_id || fileSearchChecked === false;
+  const disabledUploadButton = isEphemeralAgent(agent_id) || fileSearchChecked === false;
 
   const handleSharePointFilesSelected = async (sharePointFiles: any[]) => {
     try {

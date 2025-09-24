@@ -313,7 +313,7 @@ const ensurePrincipalExists = async function (principal) {
       idOnTheSource: principal.idOnTheSource,
     };
 
-    const userId = await createUser(userData, true, false);
+    const userId = await createUser(userData, true, true);
     return userId.toString();
   }
 

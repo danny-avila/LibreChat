@@ -22,8 +22,8 @@ import { useFileHandling, useLocalize, useLazyEffect, useSharePointFileHandling 
 import { useGetFileConfig, useGetStartupConfig } from '~/data-provider';
 import { SharePointPickerDialog } from '~/components/SharePoint';
 import FileRow from '~/components/Chat/Input/Files/FileRow';
+import { ESide, isEphemeralAgent } from '~/common';
 import { useChatContext } from '~/Providers';
-import { ESide } from '~/common';
 
 export default function FileContext({
   agent_id,
@@ -47,7 +47,7 @@ export default function FileContext({
 
   const { handleFileChange } = useFileHandling({
     overrideEndpoint: EModelEndpoint.agents,
-    additionalMetadata: { agent_id, tool_resource: EToolResources.ocr },
+    additionalMetadata: { agent_id, tool_resource: EToolResources.context },
     fileSetter: setFiles,
   });
   const { handleSharePointFiles, isProcessing, downloadProgress } = useSharePointFileHandling({
@@ -113,7 +113,7 @@ export default function FileContext({
           <HoverCardTrigger asChild>
             <span className="flex items-center gap-2">
               <label className="text-token-text-primary block font-medium">
-                {localize('com_agents_file_context')}
+                {localize('com_agents_file_context_label')}
               </label>
               <CircleHelpIcon className="h-4 w-4 text-text-tertiary" />
             </span>
@@ -122,7 +122,7 @@ export default function FileContext({
             <HoverCardContent side={ESide.Top} className="w-80">
               <div className="space-y-2">
                 <p className="text-sm text-text-secondary">
-                  {localize('com_agents_file_context_info')}
+                  {localize('com_agents_file_context_description')}
                 </p>
               </div>
             </HoverCardContent>
@@ -130,13 +130,13 @@ export default function FileContext({
         </div>
       </HoverCard>
       <div className="flex flex-col gap-3">
-        {/* File Context (OCR) Files */}
+        {/* File Context Files */}
         <FileRow
           files={files}
           setFiles={setFiles}
           setFilesLoading={setFilesLoading}
           agent_id={agent_id}
-          tool_resource={EToolResources.ocr}
+          tool_resource={EToolResources.context}
           Wrapper={({ children }) => <div className="flex flex-wrap gap-2">{children}</div>}
         />
         <div>
@@ -156,7 +156,7 @@ export default function FileContext({
           ) : (
             <button
               type="button"
-              disabled={!agent_id}
+              disabled={isEphemeralAgent(agent_id)}
               className="btn btn-neutral border-token-border-light relative h-9 w-full rounded-lg font-medium"
               onClick={handleLocalFileClick}
             >
@@ -173,7 +173,7 @@ export default function FileContext({
             style={{ display: 'none' }}
             tabIndex={-1}
             ref={fileInputRef}
-            disabled={!agent_id}
+            disabled={isEphemeralAgent(agent_id)}
             onChange={handleFileChange}
           />
         </div>

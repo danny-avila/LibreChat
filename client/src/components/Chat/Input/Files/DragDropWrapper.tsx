@@ -1,6 +1,7 @@
 import { useDragHelpers } from '~/hooks';
 import DragDropOverlay from '~/components/Chat/Input/Files/DragDropOverlay';
 import DragDropModal from '~/components/Chat/Input/Files/DragDropModal';
+import { DragDropProvider } from '~/Providers';
 import { cn } from '~/utils';
 
 interface DragDropWrapperProps {
@@ -19,12 +20,14 @@ export default function DragDropWrapper({ children, className }: DragDropWrapper
       {children}
       {/** Always render overlay to avoid mount/unmount overhead */}
       <DragDropOverlay isActive={isActive} />
-      <DragDropModal
-        files={draggedFiles}
-        isVisible={showModal}
-        setShowModal={setShowModal}
-        onOptionSelect={handleOptionSelect}
-      />
+      <DragDropProvider>
+        <DragDropModal
+          files={draggedFiles}
+          isVisible={showModal}
+          setShowModal={setShowModal}
+          onOptionSelect={handleOptionSelect}
+        />
+      </DragDropProvider>
     </div>
   );
 }

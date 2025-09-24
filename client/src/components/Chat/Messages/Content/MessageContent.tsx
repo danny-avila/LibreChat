@@ -5,7 +5,7 @@ import type { TMessage } from 'librechat-data-provider';
 import type { TMessageContentProps, TDisplayProps } from '~/common';
 import Error from '~/components/Messages/Content/Error';
 import Thinking from '~/components/Artifacts/Thinking';
-import { useChatContext } from '~/Providers';
+import { useMessageContext } from '~/Providers';
 import MarkdownLite from './MarkdownLite';
 import EditMessage from './EditMessage';
 import { useLocalize } from '~/hooks';
@@ -70,15 +70,11 @@ export const ErrorMessage = ({
 };
 
 const DisplayMessage = ({ text, isCreatedByUser, message, showCursor }: TDisplayProps) => {
-  const { isSubmitting, latestMessage } = useChatContext();
+  const { isSubmitting = false, isLatestMessage = false } = useMessageContext();
   const enableUserMsgMarkdown = useRecoilValue(store.enableUserMsgMarkdown);
   const showCursorState = useMemo(
     () => showCursor === true && isSubmitting,
     [showCursor, isSubmitting],
-  );
-  const isLatestMessage = useMemo(
-    () => message.messageId === latestMessage?.messageId,
-    [message.messageId, latestMessage?.messageId],
   );
 
   let content: React.ReactElement;

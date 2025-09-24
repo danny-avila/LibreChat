@@ -288,5 +288,74 @@ describe('MCPServersRegistry - Initialize Function', () => {
       // Compare the actual parsedConfigs against the expected fixture
       expect(registry.parsedConfigs).toEqual(expectedParsedConfigs);
     });
+
+    it('should handle serverInstructions as string "true" correctly and fetch from server', async () => {
+      // Create test config with serverInstructions as string "true"
+      const testConfig: t.MCPServers = {
+        test_server_string_true: {
+          type: 'stdio',
+          args: [],
+          command: 'test-command',
+          serverInstructions: 'true', // Simulating string "true" from YAML parsing
+        },
+        test_server_custom_string: {
+          type: 'stdio',
+          args: [],
+          command: 'test-command',
+          serverInstructions: 'Custom instructions here',
+        },
+        test_server_bool_true: {
+          type: 'stdio',
+          args: [],
+          command: 'test-command',
+          serverInstructions: true,
+        },
+      };
+
+      const registry = new MCPServersRegistry(testConfig);
+
+      // Setup mock connection for servers that should fetch
+      const mockClient = {
+        listTools: jest.fn().mockResolvedValue({ tools: [] }),
+        getInstructions: jest.fn().mockReturnValue('Fetched instructions from server'),
+        getServerCapabilities: jest.fn().mockReturnValue({ tools: {} }),
+      };
+      const mockConnection = {
+        client: mockClient,
+      } as unknown as jest.Mocked<MCPConnection>;
+
+      mockConnectionsRepo.get.mockResolvedValue(mockConnection);
+      mockConnectionsRepo.getLoaded.mockResolvedValue(
+        new Map([
+          ['test_server_string_true', mockConnection],
+          ['test_server_bool_true', mockConnection],
+        ]),
+      );
+      mockDetectOAuthRequirement.mockResolvedValue({
+        requiresOAuth: false,
+        method: 'no-metadata-found',
+        metadata: null,
+      });
+
+      await registry.initialize();
+
+      // Verify that string "true" was treated as fetch-from-server
+      expect(registry.parsedConfigs['test_server_string_true'].serverInstructions).toBe(
+        'Fetched instructions from server',
+      );
+
+      // Verify that custom string was kept as-is
+      expect(registry.parsedConfigs['test_server_custom_string'].serverInstructions).toBe(
+        'Custom instructions here',
+      );
+
+      // Verify that boolean true also fetched from server
+      expect(registry.parsedConfigs['test_server_bool_true'].serverInstructions).toBe(
+        'Fetched instructions from server',
+      );
+
+      // Verify getInstructions was called for both "true" cases
+      expect(mockClient.getInstructions).toHaveBeenCalledTimes(2);
+    });
   });
 });

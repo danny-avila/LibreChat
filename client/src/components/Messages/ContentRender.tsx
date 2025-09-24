@@ -173,6 +173,7 @@ const ContentRender = memo(
                 isSubmitting={isSubmitting}
                 searchResults={searchResults}
                 setSiblingIdx={setSiblingIdx}
+                isLatestMessage={isLatestMessage}
                 isCreatedByUser={msg.isCreatedByUser}
                 conversationId={conversation?.conversationId}
                 content={msg.content as Array<TMessageContentParts | undefined>}

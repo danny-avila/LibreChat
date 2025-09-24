@@ -297,6 +297,12 @@ export const getAvailableTools = (
   return request.get(path);
 };
 
+/* MCP Tools - Decoupled from regular tools */
+
+export const getMCPTools = (): Promise<q.MCPServersResponse> => {
+  return request.get(endpoints.mcp.tools);
+};
+
 export const getVerifyAgentToolAuth = (
   params: q.VerifyToolAuthParams,
 ): Promise<q.VerifyToolAuthResponse> => {

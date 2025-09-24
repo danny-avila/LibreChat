@@ -13,7 +13,6 @@ import { ConnectionsRepository } from '~/mcp/ConnectionsRepository';
 import { formatToolContent } from './parsers';
 import { MCPConnection } from './connection';
 import { processMCPEnv } from '~/utils/env';
-import { CONSTANTS } from './enum';
 
 /**
  * Centralized manager for MCP server connections and tool execution.
@@ -78,6 +77,28 @@ export class MCPManager extends UserConnectionManager {
 
     return allToolFunctions;
   }
+  /** Returns all available tool functions from all connections available to user */
+  public async getServerToolFunctions(
+    userId: string,
+    serverName: string,
+  ): Promise<t.LCAvailableTools | null> {
+    if (this.appConnections?.has(serverName)) {
+      return this.serversRegistry.getToolFunctions(
+        serverName,
+        await this.appConnections.get(serverName),
+      );
+    }
+
+    const userConnections = this.getUserConnections(userId);
+    if (!userConnections || userConnections.size === 0) {
+      return null;
+    }
+    if (!userConnections.has(serverName)) {
+      return null;
+    }
+
+    return this.serversRegistry.getToolFunctions(serverName, userConnections.get(serverName)!);
+  }
 
   /**
    * Get instructions for MCP servers
@@ -119,72 +140,6 @@ The following MCP servers are available with their specific instructions:
 ${formattedInstructions}
 
 Please follow these instructions when using tools from the respective MCP servers.`;
-  }
-
-  private async loadAppManifestTools(): Promise<t.LCManifestTool[]> {
-    const connections = await this.appConnections!.getAll();
-    return await this.loadManifestTools(connections);
-  }
-
-  private async loadUserManifestTools(userId: string): Promise<t.LCManifestTool[]> {
-    const connections = this.getUserConnections(userId);
-    return await this.loadManifestTools(connections);
-  }
-
-  public async loadAllManifestTools(userId: string): Promise<t.LCManifestTool[]> {
-    const appTools = await this.loadAppManifestTools();
-    const userTools = await this.loadUserManifestTools(userId);
-    return [...appTools, ...userTools];
-  }
-
-  /** Loads tools from all app-level connections into the manifest. */
-  private async loadManifestTools(
-    connections?: Map<string, MCPConnection> | null,
-  ): Promise<t.LCToolManifest> {
-    const mcpTools: t.LCManifestTool[] = [];
-    if (!connections || connections.size === 0) {
-      return mcpTools;
-    }
-    for (const [serverName, connection] of connections.entries()) {
-      try {
-        if (!(await connection.isConnected())) {
-          logger.warn(
-            `[MCP][${serverName}] Connection not available for ${serverName} manifest tools.`,
-          );
-          continue;
-        }
-
-        const tools = await connection.fetchTools();
-        const serverTools: t.LCManifestTool[] = [];
-        for (const tool of tools) {
-          const pluginKey = `${tool.name}${CONSTANTS.mcp_delimiter}${serverName}`;
-
-          const config = this.serversRegistry.parsedConfigs[serverName];
-          const manifestTool: t.LCManifestTool = {
-            name: tool.name,
-            pluginKey,
-            description: tool.description ?? '',
-            icon: connection.iconPath,
-            authConfig: config?.customUserVars
-              ? Object.entries(config.customUserVars).map(([key, value]) => ({
-                  authField: key,
-                  label: value.title || key,
-                  description: value.description || '',
-                }))
-              : undefined,
-          };
-          if (config?.chatMenu === false) {
-            manifestTool.chatMenu = false;
-          }
-          mcpTools.push(manifestTool);
-          serverTools.push(manifestTool);
-        }
-      } catch (error) {
-        logger.error(`[MCP][${serverName}] Error fetching tools for manifest:`, error);
-      }
-    }
-
-    return mcpTools;
   }
 
   /**

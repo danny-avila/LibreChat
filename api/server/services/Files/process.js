@@ -552,7 +552,7 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
       throw new Error('File search is not enabled for Agents');
     }
     // Note: File search processing continues to dual storage logic below
-  } else if (tool_resource === EToolResources.ocr) {
+  } else if (tool_resource === EToolResources.context) {
     const { file_id, temp_file_id = null } = metadata;
 
     /**

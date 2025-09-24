@@ -1,18 +1,19 @@
-import fs from 'fs';
 import axios from 'axios';
 import FormData from 'form-data';
+import { createReadStream } from 'fs';
 import { logger } from '@librechat/data-schemas';
 import { FileSources } from 'librechat-data-provider';
 import type { Request as ServerRequest } from 'express';
+import { logAxiosError, readFileAsString } from '~/utils';
 import { generateShortLivedToken } from '~/crypto/jwt';
 
 /**
  * Attempts to parse text using RAG API, falls back to native text parsing
- * @param {Object} params - The parameters object
- * @param {Express.Request} params.req - The Express request object
- * @param {Express.Multer.File} params.file - The uploaded file
- * @param {string} params.file_id - The file ID
- * @returns {Promise<{text: string, bytes: number, source: string}>}
+ * @param params - The parameters object
+ * @param params.req - The Express request object
+ * @param params.file - The uploaded file
+ * @param params.file_id - The file ID
+ * @returns
  */
 export async function parseText({
   req,
@@ -30,32 +31,33 @@ export async function parseText({
     return parseTextNative(file);
   }
 
-  if (!req.user?.id) {
+  const userId = req.user?.id;
+  if (!userId) {
     logger.debug('[parseText] No user ID provided, falling back to native text parsing');
     return parseTextNative(file);
   }
 
   try {
     const healthResponse = await axios.get(`${process.env.RAG_API_URL}/health`, {
-      timeout: 5000,
+      timeout: 10000,
     });
     if (healthResponse?.statusText !== 'OK' && healthResponse?.status !== 200) {
       logger.debug('[parseText] RAG API health check failed, falling back to native parsing');
       return parseTextNative(file);
     }
   } catch (healthError) {
-    logger.debug(
-      '[parseText] RAG API health check failed, falling back to native parsing',
-      healthError,
-    );
+    logAxiosError({
+      message: '[parseText] RAG API health check failed, falling back to native parsing:',
+      error: healthError,
+    });
     return parseTextNative(file);
   }
 
   try {
-    const jwtToken = generateShortLivedToken(req.user.id);
+    const jwtToken = generateShortLivedToken(userId);
     const formData = new FormData();
     formData.append('file_id', file_id);
-    formData.append('file', fs.createReadStream(file.path));
+    formData.append('file', createReadStream(file.path));
 
     const formHeaders = formData.getHeaders();
 
@@ -69,7 +71,7 @@ export async function parseText({
     });
 
     const responseData = response.data;
-    logger.debug('[parseText] Response from RAG API', responseData);
+    logger.debug(`[parseText] RAG API completed successfully (${response.status})`);
 
     if (!('text' in responseData)) {
       throw new Error('RAG API did not return parsed text');
@@ -81,7 +83,10 @@ export async function parseText({
       source: FileSources.text,
     };
   } catch (error) {
-    logger.warn('[parseText] RAG API text parsing failed, falling back to native parsing', error);
+    logAxiosError({
+      message: '[parseText] RAG API text parsing failed, falling back to native parsing',
+      error,
+    });
     return parseTextNative(file);
   }
 }
@@ -89,25 +94,21 @@ export async function parseText({
 /**
  * Native JavaScript text parsing fallback
  * Simple text file reading - complex formats handled by RAG API
- * @param {Express.Multer.File} file - The uploaded file
- * @returns {{text: string, bytes: number, source: string}}
+ * @param file - The uploaded file
+ * @returns
  */
-export function parseTextNative(file: Express.Multer.File): {
+export async function parseTextNative(file: Express.Multer.File): Promise<{
   text: string;
   bytes: number;
   source: string;
-} {
-  try {
-    const text = fs.readFileSync(file.path, 'utf8');
-    const bytes = Buffer.byteLength(text, 'utf8');
+}> {
+  const { content: text, bytes } = await readFileAsString(file.path, {
+    fileSize: file.size,
+  });
 
-    return {
-      text,
-      bytes,
-      source: FileSources.text,
-    };
-  } catch (error) {
-    console.error('[parseTextNative] Failed to parse file:', error);
-    throw new Error(`Failed to read file as text: ${error}`);
-  }
+  return {
+    text,
+    bytes,
+    source: FileSources.text,
+  };
 }

@@ -1,7 +1,7 @@
-import fs from 'fs';
 import path from 'path';
 import axios from 'axios';
 import { logger } from '@librechat/data-schemas';
+import { readFileAsString } from './files';
 
 export interface GoogleServiceKey {
   type?: string;
@@ -63,7 +63,7 @@ export async function loadServiceKey(keyPath: string): Promise<GoogleServiceKey 
     // It's a file path
     try {
       const absolutePath = path.isAbsolute(keyPath) ? keyPath : path.resolve(keyPath);
-      const fileContent = fs.readFileSync(absolutePath, 'utf8');
+      const { content: fileContent } = await readFileAsString(absolutePath);
       serviceKey = JSON.parse(fileContent);
     } catch (error) {
       logger.error(`Failed to load service key from file: ${keyPath}`, error);

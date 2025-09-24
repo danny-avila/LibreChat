@@ -222,6 +222,10 @@ export const agents = ({ path = '', options }: { path?: string; options?: object
   return url;
 };
 
+export const mcp = {
+  tools: `${BASE_URL}/api/mcp/tools`,
+};
+
 export const revertAgentVersion = (agent_id: string) => `${agents({ path: `${agent_id}/revert` })}`;
 
 export const files = () => `${BASE_URL}/api/files`;

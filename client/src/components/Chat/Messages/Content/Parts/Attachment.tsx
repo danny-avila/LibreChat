@@ -70,7 +70,7 @@ const ImageAttachment = memo(({ attachment }: { attachment: TAttachment }) => {
       }}
     >
       <Image
-        altText={attachment.filename}
+        altText={attachment.filename || 'attachment image'}
         imagePath={filepath ?? ''}
         height={height ?? 0}
         width={width ?? 0}
@@ -89,8 +89,9 @@ export default function Attachment({ attachment }: { attachment?: TAttachment })
   }
 
   const { width, height, filepath = null } = attachment as TFile & TAttachmentMetadata;
-  const isImage =
-    imageExtRegex.test(attachment.filename) && width != null && height != null && filepath != null;
+  const isImage = attachment.filename
+    ? imageExtRegex.test(attachment.filename) && width != null && height != null && filepath != null
+    : false;
 
   if (isImage) {
     return <ImageAttachment attachment={attachment} />;
@@ -110,11 +111,12 @@ export function AttachmentGroup({ attachments }: { attachments?: TAttachment[] }
 
   attachments.forEach((attachment) => {
     const { width, height, filepath = null } = attachment as TFile & TAttachmentMetadata;
-    const isImage =
-      imageExtRegex.test(attachment.filename) &&
-      width != null &&
-      height != null &&
-      filepath != null;
+    const isImage = attachment.filename
+      ? imageExtRegex.test(attachment.filename) &&
+        width != null &&
+        height != null &&
+        filepath != null
+      : false;
 
     if (isImage) {
       imageAttachments.push(attachment);
