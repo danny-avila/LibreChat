@@ -67,8 +67,13 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
     assistant_id: conversation?.assistant_id,
   });
 
-  const name = entity?.name ?? '';
-  const description = (entity?.description || conversation?.greeting) ?? '';
+  const specName = startupConfig?.modelSpecs?.list?.find(
+    (spec) => spec.name === conversation?.spec,
+  );
+
+  const name = entity?.name ?? specName?.label ?? '';
+  const description =
+    (entity?.description || conversation?.greeting || specName?.description) ?? '';
 
   const getGreeting = useCallback(() => {
     if (typeof startupConfig?.interface?.customWelcome === 'string') {

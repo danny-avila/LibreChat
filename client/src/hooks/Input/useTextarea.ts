@@ -14,7 +14,7 @@ import { useAssistantsMapContext } from '~/Providers/AssistantsMapContext';
 import { useAgentsMapContext } from '~/Providers/AgentsMapContext';
 import useGetSender from '~/hooks/Conversations/useGetSender';
 import useFileHandling from '~/hooks/Files/useFileHandling';
-import { useInteractionHealthCheck } from '~/data-provider';
+import { useGetStartupConfig, useInteractionHealthCheck } from '~/data-provider';
 import { useChatContext } from '~/Providers/ChatContext';
 import { globalAudioId } from '~/common';
 import { useLocalize } from '~/hooks';
@@ -41,6 +41,7 @@ export default function useTextarea({
   const assistantMap = useAssistantsMapContext();
   const checkHealth = useInteractionHealthCheck();
   const enterToSend = useRecoilValue(store.enterToSend);
+  const { data: startupConfig } = useGetStartupConfig();
 
   const { index, conversation, isSubmitting, filesLoading, latestMessage, setFilesLoading } =
     useChatContext();
@@ -54,7 +55,10 @@ export default function useTextarea({
     agent_id: conversation?.agent_id,
     assistant_id: conversation?.assistant_id,
   });
-  const entityName = entity?.name ?? '';
+  const currentSpecLabel = startupConfig?.modelSpecs?.list?.find(
+    (spec) => spec.name === conversation?.spec,
+  )?.label;
+  const entityName = currentSpecLabel ?? entity?.name ?? '';
 
   const isNotAppendable =
     (((latestMessage?.unfinished ?? false) && !isSubmitting) || (latestMessage?.error ?? false)) &&
@@ -97,7 +101,7 @@ export default function useTextarea({
       }
 
       const sender =
-        isAssistant || isAgent
+        isAssistant || isAgent || currentSpecLabel
           ? getEntityName({ name: entityName, isAgent, localize })
           : getSender(conversation as TEndpointOption);
 
@@ -138,6 +142,7 @@ export default function useTextarea({
     conversation,
     latestMessage,
     isNotAppendable,
+    currentSpecLabel,
   ]);
 
   const handleKeyDown = useCallback(
