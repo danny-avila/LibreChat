@@ -1,6 +1,10 @@
 services:
   librechat_api:
-    image: ghcr.io/lexgovai/librechat-api:${LIBRECHAT_TAG:-latest}
+    # image: ghcr.io/lexgovai/librechat-api:${LIBRECHAT_TAG:-latest}
+    build:
+      context: .
+      dockerfile: Dockerfile.GovAI.multi
+      target: api-build
     container_name: librechat_api
     restart: unless-stopped
     labels:
@@ -63,27 +67,27 @@ services:
     restart: unless-stopped
     depends_on:
       - vectordb
-      - ollama
+      # - ollama
     environment:
       DB_HOST: vectordb
       RAG_PORT: 8000
       OPENAI_API_KEY: ${OPENAI_API_KEY}
-      OLLAMA_HOST: http://ollama:11434
+      # OLLAMA_HOST: http://ollama:11434
     env_file:
       - .env
 
-  # Ollama – text-embedding model server
-  ollama:
-    image: ollama/ollama:latest
-    container_name: prod-ollama
-    restart: unless-stopped
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama:/root/.ollama
-    environment:
-      - OLLAMA_DISABLE_TELEMETRY=1
+  # # Ollama – text-embedding model server
+  # ollama:
+  #   image: ollama/ollama:latest
+  #   container_name: prod-ollama
+  #   restart: unless-stopped
+  #   ports:
+  #     - "11434:11434"
+  #   volumes:
+  #     - ollama:/root/.ollama
+  #   environment:
+  #     - OLLAMA_DISABLE_TELEMETRY=1
 
 volumes:
   pgdata2:
-  ollama: 
+  # ollama: 

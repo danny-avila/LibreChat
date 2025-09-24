@@ -789,7 +789,7 @@ ${convo}
             useChatCompletion,
             context: 'title',
           })
-        ).replaceAll('"', '');
+        ).replace(/^[“”‘’"'*]+|[“”‘’"'*]+$/g, '');
 
         const completionTokens = this.getTokenCount(title);
 
@@ -805,7 +805,7 @@ ${convo}
     if (this.options.titleMethod === 'completion') {
       await titleChatCompletion();
       logger.debug('[OpenAIClient] Convo Title: ' + title);
-      return title;
+      return (title ?? '').replace(/^[“”‘’"'*]+|[“”‘’"'*]+$/g, '');
     }
 
     try {
@@ -832,7 +832,7 @@ ${convo}
     }
 
     logger.debug('[OpenAIClient] Convo Title: ' + title);
-    return title;
+    return (title ?? '').replace(/^[“”‘’"'*]+|[“”‘’"'*]+$/g, '');
   }
 
   /**

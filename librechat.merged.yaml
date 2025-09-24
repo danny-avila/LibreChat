@@ -9,7 +9,7 @@ version: 1.2.1
 
 # Custom interface configuration
 interface:
-  customWelcome: "Welkom bij GovAI!"
+  customWelcome: "Welkom bij NEO NL!"
   # Privacy policy settings
   privacyPolicy:
     externalUrl: 'https://gradient-ds.com/'
@@ -97,7 +97,7 @@ actions:
     - "google.com"
 
 # MCP Servers Configuration
-# mcpServers:
+mcpServers:
 #   # Your localhost MCP server with API key authentication
 #   WUR:
 #     type: streamable-http  # or "sse" depending on your server's transport
@@ -109,14 +109,14 @@ actions:
 #     serverInstructions: true  # Enable server-provided instructions
 #     chatMenu: true  # Show in chat dropdown (set to false to only use with agents)
     
-#   NEO NL:
-#     type: streamable-http
-#     url: http://localhost:3435/mcp
-#     headers:
-#       Authorization: Bearer ${NEONL_MCP_KEY}
-#     timeout: 60000
-#     serverInstructions: true
-#     chatMenu: true
+  NEO NL:
+    type: streamable-http
+    url: http://host.docker.internal:3435/mcp
+    headers:
+      Authorization: Bearer ${NEONL_MCP_KEY}
+    timeout: 60000
+    serverInstructions: true
+    chatMenu: true
 
   # Example additional MCP servers (commented out)
   # filesystem:
@@ -163,10 +163,9 @@ endpoints:
       # Models configuration
       models:
         # List of default models to use. At least one value is required.
-        default: ['mistral-medium', 'mistral-large', 'mistral-tiny', 'mistral-small']
+        default: ['mistral-medium-latest']
         # Fetch option: Set to true to fetch models from API.
         fetch: true # Defaults to false.
-
       # Optional configurations
 
       # Title Conversation setting
@@ -176,7 +175,7 @@ endpoints:
       # titleMethod: "completion"  # Defaults to "completion" if omitted.
 
       # Title Model: Specify the model to use for titles.
-      titleModel: 'mistral-small' # Defaults to "gpt-3.5-turbo" if omitted.
+      titleModel: 'mistral-small-latest' # Defaults to "gpt-3.5-turbo" if omitted.
 
       # Summarize setting: Set to true to enable summarization.
       # summarize: false
@@ -297,3 +296,22 @@ webSearch:
     removeBase64Images: true
 
   safeSearch: 1
+
+modelSpecs:
+  enforce: true
+  prioritize: true
+  list:
+    - name: 'Mistral RAG Citations'
+      label: 'Mistral RAG Citations'
+      preset:
+        endpoint: Mistral
+        model: mistral-medium-latest
+        promptPrefix: |
+          When referencing information retrieved from uploaded files or file_search results, include a bracketed citation with the source title and page number when present, e.g. [Title, p. 12]. Use the RAG metadata provided by the file search results (title/fileName and page). If multiple sources support a statement, include multiple citations in order of relevance (e.g., [Doc A, p. 3] [Doc B, p. 10]). If no page is available, cite the title only. Place citations at the end of the sentence(s) that use the information.
+    - name: 'Open Source RAG Citations'
+      label: 'Open Source RAG Citations'
+      preset:
+        endpoint: 'Open Source'
+        model: openai/gpt-oss-20b
+        promptPrefix: |
+          When referencing information retrieved from uploaded files or file_search results, include a bracketed citation with the source title and page number when present, e.g. [Title, p. 12]. Use the RAG metadata provided by the file search results (title/fileName and page). If multiple sources support a statement, include multiple citations in order of relevance (e.g., [Doc A, p. 3] [Doc B, p. 10]). If no page is available, cite the title only. Place citations at the end of the sentence(s) that use the information.
