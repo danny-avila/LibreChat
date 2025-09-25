@@ -8,6 +8,12 @@ env:
 
 on:
   workflow_dispatch:
+      inputs:
+          build_rag_api_image:
+            description: 'Build RAG API Docker Image'
+            required: true
+            default: true
+            type: boolean
 
 jobs:
     build_and_push:
@@ -40,6 +46,7 @@ jobs:
                 docker push ${{ env.ACR_HOST }}/paychex/librechat:n1.latest
 
             - name: Trigger rag_api Workflow
+              if: ${{inputs.build_rag_api_image}}
               uses: BeewiseTechnologiesLTD/remote-workflow-trigger@v1
               with:
                 target_repo: 'paychex/rag_api'
