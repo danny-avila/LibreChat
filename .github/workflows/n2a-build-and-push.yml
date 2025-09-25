@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
       inputs:
           build_rag_api_image:
-            description: 'Whether to build the RAG API Docker image'
+            description: 'Build RAG API Docker Image'
             required: true
             default: true
             type: boolean
