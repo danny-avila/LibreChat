@@ -1,7 +1,12 @@
 const { Router } = require('express');
 const { logger } = require('@librechat/data-schemas');
 const { CacheKeys, Constants } = require('librechat-data-provider');
-const { MCPOAuthHandler, MCPTokenStorage, getUserMCPAuthMap } = require('@librechat/api');
+const {
+  createSafeUser,
+  MCPOAuthHandler,
+  MCPTokenStorage,
+  getUserMCPAuthMap,
+} = require('@librechat/api');
 const { getMCPManager, getFlowStateManager, getOAuthReconnectionManager } = require('~/config');
 const { getMCPSetupData, getServerConnectionStatus } = require('~/server/services/MCP');
 const { findToken, updateToken, createToken, deleteTokens } = require('~/models');
@@ -335,9 +340,9 @@ router.post('/oauth/cancel/:serverName', requireJwtAuth, async (req, res) => {
 router.post('/:serverName/reinitialize', requireJwtAuth, async (req, res) => {
   try {
     const { serverName } = req.params;
-    const userId = req.user?.id;
+    const user = createSafeUser(req.user);
 
-    if (!userId) {
+    if (!user.id) {
       return res.status(401).json({ error: 'User not authenticated' });
     }
 
@@ -351,7 +356,7 @@ router.post('/:serverName/reinitialize', requireJwtAuth, async (req, res) => {
       });
     }
 
-    await mcpManager.disconnectUserConnection(userId, serverName);
+    await mcpManager.disconnectUserConnection(user.id, serverName);
     logger.info(
       `[MCP Reinitialize] Disconnected existing user connection for server: ${serverName}`,
     );
@@ -360,14 +365,14 @@ router.post('/:serverName/reinitialize', requireJwtAuth, async (req, res) => {
     let userMCPAuthMap;
     if (serverConfig.customUserVars && typeof serverConfig.customUserVars === 'object') {
       userMCPAuthMap = await getUserMCPAuthMap({
-        userId,
+        userId: user.id,
         servers: [serverName],
         findPluginAuthsByKeys,
       });
     }
 
     const result = await reinitMCPServer({
-      userId,
+      user,
       serverName,
       userMCPAuthMap,
     });
