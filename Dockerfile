@@ -40,7 +40,7 @@ COPY --chown=node:node . .
 # Build the application
 ENV NODE_ENV=production
 RUN NODE_OPTIONS="--max-old-space-size=4096" npm run frontend && \
-    npm prune --production && \
+    npm prune --production --legacy-peer-deps && \
     npm cache clean --force
 
 # Stage 3: Production image
@@ -58,9 +58,7 @@ COPY --from=builder --chown=node:node /app/api ./api
 COPY --from=builder --chown=node:node /app/config ./config
 COPY --from=builder --chown=node:node /app/package*.json ./
 
-# Copy OpenRouter-specific files
-COPY --from=builder --chown=node:node /app/docs/configuration/pre_configured_ai ./docs/configuration/pre_configured_ai
-COPY --from=builder --chown=node:node /app/docs/features/openrouter.md ./docs/features/
+# OpenRouter documentation is in the main repository docs folder
 
 # Create necessary directories
 RUN mkdir -p /app/client/public/images /app/api/logs /app/uploads
