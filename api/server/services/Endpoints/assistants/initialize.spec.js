@@ -2,7 +2,7 @@
 const { ProxyAgent } = require('undici');
 const { ErrorTypes } = require('librechat-data-provider');
 const { getUserKey, getUserKeyExpiry, getUserKeyValues } = require('~/server/services/UserService');
-const initializeClient = require('./initalize');
+const initializeClient = require('./initialize');
 // const { OpenAIClient } = require('~/app');
 
 jest.mock('~/server/services/UserService', () => ({

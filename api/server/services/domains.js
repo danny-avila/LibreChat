@@ -24,13 +24,8 @@ function isEmailDomainAllowed(email, allowedDomains) {
 }
 
 /**
- * Normalizes a domain string
- * @param {string} domain
- * @returns {string|null}
- */
-/**
- * Normalizes a domain string. If the domain is invalid, returns null.
- * Normalized === lowercase, trimmed, and protocol added if missing.
+ * Normalizes a domain string. Returns the domain hostname lowercased and trimmed, or null if invalid.
+ * Protocol is added temporarily for parsing but removed from the returned hostname.
  * @param {string} domain
  * @returns {string|null}
  */
