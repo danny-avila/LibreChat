@@ -29,7 +29,7 @@ interface:
   modelSelect: true
   parameters: false
   sidePanel: true
-  presets: true
+  presets: false
   prompts: true
   bookmarks: true
   multiConvo: false
@@ -318,7 +318,7 @@ endpoints:
 
 includedTools:
   - __none__
-  
+
 webSearch:
   searchProvider: "serper"
   scraperType: "firecrawl"
@@ -330,6 +330,7 @@ webSearch:
   # Scraper timeout configuration (in milliseconds)
   scraperTimeout: 30000       # Increased timeout for better reliability
   topResults: 3
+  numResults: 3
   # Firecrawl optimization options
   firecrawlOptions:
     timeout: 30000            # Increased timeout to match scraperTimeout
