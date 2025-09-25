@@ -61,7 +61,7 @@ const Bedrock = ({ className = '' }: IconMapProps) => {
 };
 
 const OpenRouter = ({ className = '', size = 20 }: IconMapProps) => {
-  return <img src="assets/openrouter.png" alt="OpenRouter" className={cn(className)} style={{ width: size, height: size }} />;
+  return <img src="/assets/openrouter.png" alt="OpenRouter" className={cn(className)} style={{ width: size, height: size }} />;
 };
 
 export const icons: IconsRecord = {

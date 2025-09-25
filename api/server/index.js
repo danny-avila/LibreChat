@@ -2,6 +2,7 @@ require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 require('module-alias')({ base: path.resolve(__dirname, '..') });
+
 const { validateOnStartup } = require('./utils/envValidation');
 const cors = require('cors');
 const axios = require('axios');
@@ -151,7 +152,29 @@ const startServer = async () => {
 
     const lang = req.cookies.lang || req.headers['accept-language']?.split(',')[0] || 'en-US';
     const saneLang = lang.replace(/"/g, '&quot;');
-    let updatedIndexHtml = indexHTML.replace(/lang="en-US"/g, `lang="${saneLang}"`);
+
+    // In development, read the HTML fresh to pick up frontend rebuilds
+    let htmlToServe = indexHTML;
+    if (process.env.NODE_ENV !== 'production') {
+      try {
+        htmlToServe = fs.readFileSync(indexPath, 'utf8');
+        // Apply base href transformation if needed
+        if (process.env.DOMAIN_CLIENT) {
+          const clientUrl = new URL(process.env.DOMAIN_CLIENT);
+          const baseHref = clientUrl.pathname.endsWith('/')
+            ? clientUrl.pathname
+            : `${clientUrl.pathname}/`;
+          if (baseHref !== '/') {
+            htmlToServe = htmlToServe.replace(/base href="\/"/, `base href="${baseHref}"`);
+          }
+        }
+      } catch (err) {
+        // Fall back to cached version if read fails
+        htmlToServe = indexHTML;
+      }
+    }
+
+    let updatedIndexHtml = htmlToServe.replace(/lang="en-US"/g, `lang="${saneLang}"`);
 
     res.type('html');
     res.send(updatedIndexHtml);

@@ -18,6 +18,7 @@ All notable changes to this project will be documented in this file.
 - 📊 feat: Improve Helm Chart by **@hofq** in [#3638](https://github.com/danny-avila/LibreChat/pull/3638)
 - 🦾 feat: Claude-4 Support by **@danny-avila** in [#7509](https://github.com/danny-avila/LibreChat/pull/7509)
 - 🪨 feat: Bedrock Support for Claude-4 Reasoning by **@danny-avila** in [#7517](https://github.com/danny-avila/LibreChat/pull/7517)
+- 🛠️ feat: Native OpenRouter Tool/Function Calling Support - Full compatibility with Agent system and OpenAI-compatible tool calling for 100+ models
 
 ### 🌍 Internationalization
 

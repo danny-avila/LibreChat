@@ -1,4 +1,5 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useRecoilState } from 'recoil';
 import {
   Input,
   Label,
@@ -12,6 +13,7 @@ import {
 import { Info, Plus, X, ChevronUp, ChevronDown } from 'lucide-react';
 import OpenRouterCredits from '~/components/Nav/OpenRouterCredits';
 import CreditsErrorBoundary from '~/components/Nav/CreditsErrorBoundary';
+import { openRouterZDREnabledState } from '~/store/openrouter';
 import type { TModelSelectProps } from '~/common';
 import { cn, defaultTextProps, removeFocusOutlines, removeFocusRings } from '~/utils';
 import { useLocalize } from '~/hooks';
@@ -23,6 +25,7 @@ export default function OpenRouterSettings({
   readonly,
 }: TModelSelectProps) {
   const localize = useLocalize();
+  const [globalZDREnabled, setGlobalZDREnabled] = useRecoilState(openRouterZDREnabledState);
 
   const [selectedModel, setSelectedModel] = useState('');
   const setModel = setOption('model');
@@ -111,6 +114,36 @@ export default function OpenRouterSettings({
     },
     [modelOptions, setModelOptions],
   );
+
+  const handleZDRChange = useCallback(
+    (checked: boolean) => {
+      console.log('[OpenRouter Settings] ZDR toggle changed:', checked);
+      // Update global state
+      setGlobalZDREnabled(checked);
+
+      // Update conversation model options
+      setModelOptions({
+        ...modelOptions,
+        zdr: checked,
+      });
+      // Also set at root level for schema compatibility
+      if (setOption && setOption('zdr')) {
+        setOption('zdr')(checked);
+      }
+    },
+    [modelOptions, setModelOptions, setOption, setGlobalZDREnabled],
+  );
+
+  // Sync ZDR state on mount and when global state changes
+  useEffect(() => {
+    if (globalZDREnabled !== Boolean(modelOptions.zdr)) {
+      // Global state has changed, update conversation
+      setModelOptions({
+        ...modelOptions,
+        zdr: globalZDREnabled,
+      });
+    }
+  }, [globalZDREnabled]); // Deliberately omitting modelOptions to avoid loop
 
   if (!conversation) {
     return null;
@@ -275,6 +308,39 @@ export default function OpenRouterSettings({
             )}
           </div>
         )}
+
+        {/* Zero Data Retention (ZDR) Toggle */}
+        <div className="grid w-full items-center gap-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Label htmlFor="zdr" className="text-left text-sm font-medium">
+                {localize('com_endpoint_openrouter_zdr_label')}
+              </Label>
+              <HoverCard openDelay={300}>
+                <HoverCardTrigger>
+                  <Info className="h-4 w-4 text-gray-500" />
+                </HoverCardTrigger>
+                <HoverCardContent className="w-80">
+                  <p className="text-sm">{localize('com_endpoint_openrouter_zdr_help')}</p>
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    {localize('com_endpoint_openrouter_zdr_note')}
+                  </p>
+                </HoverCardContent>
+              </HoverCard>
+            </div>
+            <Switch
+              id="zdr"
+              checked={globalZDREnabled}
+              onCheckedChange={handleZDRChange}
+              disabled={readonly}
+            />
+          </div>
+          {globalZDREnabled && (
+            <p className="text-xs text-amber-600 dark:text-amber-400">
+              {localize('com_endpoint_openrouter_zdr_active')}
+            </p>
+          )}
+        </div>
 
         {/* Provider Preferences */}
         <div className="grid w-full items-center gap-2">

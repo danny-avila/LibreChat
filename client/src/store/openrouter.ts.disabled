@@ -1,0 +1,128 @@
+import { atom } from 'recoil';
+
+// Temporary dummy exports to prevent build errors
+export const openRouterModelState = atom<string>({
+  key: 'openRouterModel',
+  default: '',
+});
+
+export const openRouterFallbackChainState = atom<string[]>({
+  key: 'openRouterFallbackChain',
+  default: [],
+});
+
+export const openRouterAutoRouterEnabledState = atom<boolean>({
+  key: 'openRouterAutoRouterEnabled',
+  default: false,
+});
+
+export const openRouterZDREnabledState = atom<boolean>({
+  key: 'openRouterZDREnabled',
+  default: false,
+});
+
+export const openRouterActualModelState = atom<string | null>({
+  key: 'openRouterActualModel',
+  default: null,
+});
+
+export const openRouterCreditsState = atom({
+  key: 'openRouterCredits',
+  default: null,
+});
+
+export const openRouterCreditsLoadingState = atom({
+  key: 'openRouterCreditsLoading',
+  default: false,
+});
+
+export const openRouterCreditsErrorState = atom({
+  key: 'openRouterCreditsError',
+  default: null,
+});
+
+export const openRouterModelsListState = atom({
+  key: 'openRouterModelsList',
+  default: [],
+});
+
+export const openRouterRouteState = atom({
+  key: 'openRouterRoute',
+  default: 'fallback',
+});
+
+export const openRouterProviderPreferencesState = atom({
+  key: 'openRouterProviderPreferences',
+  default: [],
+});
+
+export const openRouterMaxCreditsPerRequestState = atom({
+  key: 'openRouterMaxCreditsPerRequest',
+  default: undefined,
+});
+
+export const openRouterIncludeReasoningState = atom({
+  key: 'openRouterIncludeReasoning',
+  default: false,
+});
+
+export const openRouterSortKeyState = atom({
+  key: 'openRouterSortKey',
+  default: 'provider',
+});
+
+export const openRouterSortDirState = atom({
+  key: 'openRouterSortDir',
+  default: 'asc',
+});
+
+export const openRouterFilterNoTrainState = atom({
+  key: 'openRouterFilterNoTrain',
+  default: false,
+});
+
+export interface OpenRouterCredits {
+  balance: number;
+  currency: string;
+  lastUpdated: number;
+  optimistic?: boolean;
+}
+
+export interface OpenRouterModel {
+  id: string;
+  name: string;
+  pricing?: {
+    prompt: number;
+    completion: number;
+  };
+  contextLength?: number;
+  provider?: string;
+}
+
+export interface OpenRouterState {
+  model: string;
+  models: string[];
+  route: 'auto' | 'fallback';
+  providerPreferences: string[];
+  maxCreditsPerRequest?: number;
+  includeReasoning?: boolean;
+}
+
+export default {
+  openRouterModelState,
+  openRouterFallbackChainState,
+  openRouterAutoRouterEnabledState,
+  openRouterZDREnabledState,
+  openRouterActualModelState,
+  openRouterCreditsState,
+  openRouterCreditsLoadingState,
+  openRouterCreditsErrorState,
+  openRouterModelsListState,
+  openRouterRouteState,
+  openRouterProviderPreferencesState,
+  openRouterMaxCreditsPerRequestState,
+  openRouterIncludeReasoningState,
+  openRouterSortKeyState,
+  openRouterSortDirState,
+  openRouterFilterNoTrainState,
+};

@@ -1,5 +1,6 @@
 const { ChatOpenAI } = require('@langchain/openai');
 const { isEnabled, sanitizeModelName, constructAzureURL } = require('@librechat/api');
+const ChatOpenRouter = require('./ChatOpenRouter');
 
 /**
  * Creates a new instance of a language model (LLM) for chat interactions.
@@ -64,7 +65,18 @@ function createLLM({
     )[0];
   }
 
-  return new ChatOpenAI(
+  // Check if this is OpenRouter based on the baseURL
+  const isOpenRouter = configOptions.basePath && configOptions.basePath.includes('openrouter.ai');
+
+  // Detect auto-router usage
+  const isAutoRouter = modelOptions?.modelName === 'openrouter/auto' ||
+                       modelOptions?.model === 'openrouter/auto' ||
+                       modelOptions?.autoRouter === true;
+
+  // Use ChatOpenRouter for OpenRouter requests, ChatOpenAI for others
+  const LLMClass = isOpenRouter ? ChatOpenRouter : ChatOpenAI;
+
+  return new LLMClass(
     {
       streaming,
       credentials,
@@ -73,6 +85,8 @@ function createLLM({
       ...modelOptions,
       ...credentials,
       callbacks,
+      // Pass autoRouter flag if using ChatOpenRouter
+      ...(isOpenRouter && { autoRouter: isAutoRouter }),
     },
     configOptions,
   );

@@ -1,16 +1,23 @@
-import { useEffect, useMemo, useCallback } from 'react';
+import React, { useEffect, useMemo, useCallback } from 'react';
 import { useRecoilValue, useRecoilState, useSetRecoilState } from 'recoil';
-import { EModelEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint, QueryKeys } from 'librechat-data-provider';
+import type { TConversation } from 'librechat-data-provider';
+import { useQueryClient } from '@tanstack/react-query';
 import { HoverCard, HoverCardContent, HoverCardTrigger, Button, Switch } from '@librechat/client';
-import { AlertTriangle, RefreshCw, DollarSign, TrendingDown, Zap } from 'lucide-react';
+import { AlertTriangle, RefreshCw, DollarSign, TrendingDown, Zap, Shield } from 'lucide-react';
+// Import all openrouter atoms directly to avoid circular dependency
 import {
   openRouterCreditsState,
   openRouterCreditsLoadingState,
   openRouterCreditsErrorState,
   openRouterAutoRouterEnabledState,
+  openRouterActualModelState,
+  openRouterZDREnabledState,
 } from '~/store/openrouter';
+// Import conversationByIndex directly from families to avoid circular dependency
+import families from '~/store/families';
+import { DynamicProviderIcon } from '../Endpoints/DynamicProviderIcon';
 import { useOpenRouterCredits } from '~/hooks/Credits';
-import store from '~/store';
 import { cn } from '~/utils';
 import { useLocalize } from '~/hooks';
 
@@ -19,66 +26,135 @@ interface OpenRouterCreditsProps {
   compact?: boolean;
 }
 
+// Extract provider from model ID (e.g., "google/gemini-2.0-flash-exp" -> "google")
+const getProviderFromModel = (model?: string | null): string | null => {
+  if (!model || !model.includes('/')) {
+    return null;
+  }
+  return model.split('/')[0].toLowerCase();
+};
+
 export default function OpenRouterCredits({ className, compact = false }: OpenRouterCreditsProps) {
-  const conversation = useRecoilValue(store.conversationByIndex(0));
+  const queryClient = useQueryClient();
+  const conversation = useRecoilValue(families.conversationByIndex(0));
   const credits = useRecoilValue(openRouterCreditsState);
   const isLoading = useRecoilValue(openRouterCreditsLoadingState);
   const error = useRecoilValue(openRouterCreditsErrorState);
   const [autoRouterEnabled, setAutoRouterEnabled] = useRecoilState(
     openRouterAutoRouterEnabledState,
   );
-  const setConversation = useSetRecoilState(store.conversationByIndex(0));
+  const [zdrEnabled, setZDREnabled] = useRecoilState(openRouterZDREnabledState);
+  const actualModel = useRecoilValue(openRouterActualModelState);
+
+  // Debug logging
+  React.useEffect(() => {
+    console.log('[OpenRouterCredits] Debug state:', {
+      autoRouterEnabled,
+      actualModel,
+      shouldShowModel: !!(autoRouterEnabled && actualModel),
+      actualModelType: typeof actualModel,
+      actualModelValue: actualModel,
+      actualModelNull: actualModel === null,
+      actualModelUndefined: actualModel === undefined,
+      actualModelEmpty: actualModel === '',
+      endpoint: conversation?.endpoint,
+      conversationModel: conversation?.model,
+      modelOptions: conversation?.modelOptions,
+      conversationId: conversation?.conversationId,
+    });
+  }, [autoRouterEnabled, actualModel, conversation]);
+  const setActualModel = useSetRecoilState(openRouterActualModelState);
+  const setConversation = useSetRecoilState(families.conversationByIndex(0));
   const { fetchCredits, manualRefresh, isManualRefreshing } = useOpenRouterCredits();
   const localize = useLocalize();
 
   // Only show for OpenRouter endpoint
-  const endpoint = conversation?.endpoint;
-  const isOpenRouter = endpoint === EModelEndpoint.openrouter;
+  const isOpenRouter = conversation?.endpoint === EModelEndpoint.openrouter;
+
+  // Debug the endpoint
+  React.useEffect(() => {
+    console.log('[OpenRouterCredits] Endpoint check:', {
+      endpoint: conversation?.endpoint,
+      isOpenRouter,
+      EModelEndpointValue: EModelEndpoint.openrouter,
+      exactMatch: conversation?.endpoint === EModelEndpoint.openrouter,
+    });
+  }, [conversation?.endpoint, isOpenRouter]);
 
   // Handle auto-router toggle with conversation sync
   const handleAutoRouterChange = useCallback(
     (checked: boolean) => {
       setAutoRouterEnabled(checked);
 
-      // Also update the current conversation's modelOptions if it's OpenRouter
+      // Clear actual model when toggling auto-router
+      // When enabling: we're waiting for OpenRouter to tell us the actual model
+      // When disabling: clear the auto-router selected model
+      setActualModel(null);
+
+      // Also update the current conversation if it's OpenRouter
       if (isOpenRouter && conversation) {
-        setConversation((prev) => ({
-          ...prev,
-          // When enabling auto-router, set model to 'openrouter/auto'
-          // When disabling, keep current model (unless it's 'openrouter/auto')
-          model: checked ? 'openrouter/auto' : prev?.model === 'openrouter/auto' ? '' : prev?.model,
-          autoRouter: checked, // Set at root level for schema compatibility
-          modelOptions: {
-            ...prev?.modelOptions,
-            autoRouter: checked, // Keep in modelOptions for UI state
-            // Clear fallback models when auto-router is enabled
-            fallbackModels: checked ? [] : prev?.modelOptions?.fallbackModels,
-          },
-        }));
+        setConversation((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            // When enabling auto-router, set model to 'openrouter/auto'
+            // When disabling, keep current model (unless it's 'openrouter/auto')
+            model: checked ? 'openrouter/auto' : prev.model === 'openrouter/auto' ? '' : prev.model,
+            // Set autoRouter in modelOptions for backend
+            modelOptions: {
+              ...prev.modelOptions,
+              autoRouter: checked,
+            },
+          } as typeof prev;
+        });
       }
     },
-    [setAutoRouterEnabled, setConversation, isOpenRouter, conversation],
+    [setAutoRouterEnabled, setActualModel, setConversation, isOpenRouter, conversation],
   );
 
-  // Sync the toggle state with conversation on mount
+  // Handle ZDR toggle with conversation sync
+  const handleZDRChange = useCallback(
+    (checked: boolean) => {
+      setZDREnabled(checked);
+
+      // Also update the current conversation if it's OpenRouter
+      if (isOpenRouter && conversation) {
+        setConversation((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            // Set zdr in modelOptions for backend
+            modelOptions: {
+              ...prev.modelOptions,
+              zdr: checked,
+            },
+          } as typeof prev;
+        });
+      }
+    },
+    [setZDREnabled, setConversation, isOpenRouter, conversation],
+  );
+
+  // Sync the toggle states with conversation on mount
   // Check if model is 'openrouter/auto' to determine toggle state
-  // Also check modelOptions.autoRouter for explicit state
+  // Also check autoRouter and zdr fields for explicit state
   useEffect(() => {
     if (isOpenRouter) {
-      // If model is 'openrouter/auto', toggle should be ON
+      // Sync Auto-Router state
       if (conversation?.model === 'openrouter/auto') {
         setAutoRouterEnabled(true);
-      }
-      // Otherwise check modelOptions for explicit autoRouter state
-      else if (conversation?.modelOptions && 'autoRouter' in conversation.modelOptions) {
-        setAutoRouterEnabled(conversation.modelOptions.autoRouter);
-      }
-      // If model is a specific model (not auto), ensure toggle is OFF
-      else if (conversation?.model && conversation.model !== 'openrouter/auto') {
+      } else if (conversation?.modelOptions && 'autoRouter' in conversation.modelOptions) {
+        setAutoRouterEnabled(conversation.modelOptions.autoRouter || false);
+      } else if (conversation?.model && conversation.model !== 'openrouter/auto') {
         setAutoRouterEnabled(false);
       }
+
+      // Sync ZDR state
+      if (conversation?.modelOptions && 'zdr' in conversation.modelOptions) {
+        setZDREnabled(conversation.modelOptions.zdr || false);
+      }
     }
-  }, [isOpenRouter, conversation?.model, conversation?.modelOptions, setAutoRouterEnabled]);
+  }, [isOpenRouter, conversation?.model, conversation, setAutoRouterEnabled, setZDREnabled]);
 
   // Fetch credits on mount and when endpoint changes
   useEffect(() => {
@@ -86,6 +162,37 @@ export default function OpenRouterCredits({ className, compact = false }: OpenRo
       fetchCredits();
     }
   }, [isOpenRouter, fetchCredits]);
+
+  // Clear actual model when switching to a different conversation
+  // But check if the latest message has a model (for existing conversations)
+  const prevConversationIdRef = React.useRef<string | null>(null);
+  useEffect(() => {
+    if (conversation?.conversationId && conversation.conversationId !== prevConversationIdRef.current) {
+      // Only clear if we're actually switching to a different conversation
+      if (prevConversationIdRef.current !== null && conversation.conversationId !== 'new') {
+        setActualModel(null);
+
+        // If auto-router is enabled, try to get the model from the latest message
+        if (autoRouterEnabled && conversation.endpoint === EModelEndpoint.openrouter) {
+          // Try to get the model from the latest assistant message using React Query
+          const messages = queryClient.getQueryData([QueryKeys.messages, conversation.conversationId]);
+          console.log('[OpenRouterCredits] Checking messages from React Query:', messages);
+          if (Array.isArray(messages) && messages.length > 0) {
+            // Find the last assistant message
+            for (let i = messages.length - 1; i >= 0; i--) {
+              const msg = messages[i];
+              if (msg.isCreatedByUser === false && msg.model) {
+                console.log('[OpenRouterCredits] Found model in message history:', msg.model);
+                setActualModel(msg.model);
+                break;
+              }
+            }
+          }
+        }
+      }
+      prevConversationIdRef.current = conversation.conversationId;
+    }
+  }, [conversation?.conversationId, conversation?.endpoint, autoRouterEnabled, setActualModel, queryClient]);
 
   // Auto-refresh every 5 minutes
   useEffect(() => {
@@ -221,6 +328,51 @@ export default function OpenRouterCredits({ className, compact = false }: OpenRo
             aria-label={localize('com_endpoint_openrouter_auto_router')}
           />
         </div>
+
+        {/* Divider */}
+        <div className="h-5 w-px bg-border-light" />
+
+        {/* ZDR Toggle */}
+        <div className="flex items-center gap-2">
+          <HoverCard>
+            <HoverCardTrigger asChild>
+              <button className="flex items-center gap-1.5 text-sm text-text-secondary transition-colors hover:text-text-primary">
+                <Shield className={cn('h-4 w-4', zdrEnabled && 'text-amber-500')} />
+                <span className="hidden sm:inline">ZDR</span>
+              </button>
+            </HoverCardTrigger>
+            <HoverCardContent className="w-80">
+              <p className="text-sm font-medium">{localize('com_endpoint_openrouter_zdr_label')}</p>
+              <p className="mt-1 text-sm">{localize('com_endpoint_openrouter_zdr_help')}</p>
+            </HoverCardContent>
+          </HoverCard>
+          <Switch
+            id="zdr"
+            checked={zdrEnabled}
+            onCheckedChange={handleZDRChange}
+            className="h-4 w-8"
+            aria-label={localize('com_endpoint_openrouter_zdr_label')}
+          />
+        </div>
+
+        {/* Display actual model used when auto-router is enabled */}
+        {autoRouterEnabled && actualModel && actualModel !== 'openrouter/auto' && actualModel !== 'auto' ? (
+          <>
+            <div className="h-5 w-px bg-border-light" />
+            <div className="flex items-center gap-1.5 text-xs text-text-secondary">
+              <span className="truncate max-w-[150px]" title={actualModel}>
+                {actualModel.split('/')[1] || actualModel}
+              </span>
+            </div>
+          </>
+        ) : autoRouterEnabled ? (
+          <>
+            <div className="h-5 w-px bg-border-light" />
+            <span className="text-xs text-text-secondary ml-2 animate-pulse">
+              waiting for model...
+            </span>
+          </>
+        ) : null}
       </div>
     );
   }

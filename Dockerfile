@@ -34,7 +34,7 @@ RUN \
     npm config set fetch-retry-maxtimeout 600000 ; \
     npm config set fetch-retries 5 ; \
     npm config set fetch-retry-mintimeout 15000 ; \
-    npm ci --no-audit
+    npm install --legacy-peer-deps --no-audit
 
 COPY --chown=node:node . .
 
@@ -43,7 +43,7 @@ ENV NODE_ENV=production
 
 RUN \
     # React client build
-    NODE_OPTIONS="--max-old-space-size=2048" npm run frontend; \
+    NODE_OPTIONS="--max-old-space-size=4096" npm run frontend; \
     npm prune --production; \
     npm cache clean --force
 

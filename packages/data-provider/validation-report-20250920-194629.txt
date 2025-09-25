@@ -1,0 +1,23 @@
+OpenRouter Deployment Validation Report
+Generated: Sat Sep 20 19:46:29 PDT 2025
+
+Summary:
+  Passed: 9
+  Failed: 1
+  Warnings: 4
+
+Details:
+  PASS: node is installed
+  PASS: npm is installed
+  PASS: curl is installed
+  PASS: jq is installed
+  PASS: Node.js version 22.17.1 is supported
+  FAIL: .env file not found
+  PASS: OPENROUTER_API_KEY format is valid
+  PASS: OpenRouter API key is valid and working
+  WARN: Could not fetch credit balance
+  WARN: OpenRouter unit tests not found or failed
+  PASS: No API key logging detected
+  PASS: Application is running and healthy
+  WARN: Could not confirm OpenRouter initialization in logs
+  WARN: Validation script is not executable

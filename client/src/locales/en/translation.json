@@ -480,6 +480,7 @@
   "com_nav_font_size_xs": "Extra Small",
   "com_nav_help_faq": "Help & FAQ",
   "com_nav_hide_panel": "Hide right-most side panel",
+  "com_nav_use_provider_icons": "Show provider icons for OpenRouter models",
   "com_nav_info_balance": "Balance shows how many token credits you have left to use. Token credits translate to monetary value (e.g., 1000 credits = $0.001 USD)",
   "com_nav_info_code_artifacts": "Enables the display of experimental code artifacts next to the chat",
   "com_nav_info_code_artifacts_agent": "Enables the use of code artifacts for this agent. By default, additional instructions specific to the use of artifacts are added, unless \"Custom Prompt Mode\" is enabled.",
@@ -1314,5 +1315,19 @@
   "com_endpoint_openrouter_tooltip_refresh": "Click to refresh",
   "com_endpoint_openrouter_refresh": "Refresh credits",
   "com_endpoint_openrouter_warning_critical": "Critical: Balance is very low. Please add credits to continue using OpenRouter.",
-  "com_endpoint_openrouter_warning_low": "Warning: Balance is running low. Consider adding credits soon."
+  "com_endpoint_openrouter_warning_low": "Warning: Balance is running low. Consider adding credits soon.",
+  "com_endpoint_openrouter_zdr_label": "Zero Data Retention (ZDR)",
+  "com_endpoint_openrouter_zdr_help": "When enabled, requests will only be routed to providers that guarantee Zero Data Retention, meaning they will not store your data for any period of time.",
+  "com_endpoint_openrouter_zdr_note": "Note: Enabling ZDR may limit available models. Some models may return errors if they don't support this privacy policy.",
+  "com_endpoint_openrouter_zdr_active": "ZDR is active - Only using providers with Zero Data Retention",
+  "com_endpoint_openrouter_privacy_error_info": "If you receive a '404 No endpoints found matching your data policy' error, it means the selected model is incompatible with your OpenRouter account's privacy settings. You can either: 1) Choose a different model, 2) Enable ZDR above, or 3) Adjust your privacy settings at https://openrouter.ai/settings/privacy",
+  "com_ui_sort_models": "Sort models",
+  "com_ui_provider": "Provider",
+  "com_ui_name": "Name",
+  "com_ui_privacy_mode": "Privacy Mode",
+  "com_ui_privacy_filter": "Hide models that train on data",
+  "com_ui_privacy_filter_desc": "When enabled, only shows models that don't train on user data according to their provider policies.",
+  "com_ui_privacy_filter_note": "Note: Auto Router is never filtered. Check provider documentation for the latest privacy policies.",
+  "com_ui_model_hidden_by_filter": "Your selected model is hidden by the privacy filter",
+  "com_ui_show_anyway": "Show anyway"
 }

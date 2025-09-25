@@ -1,4 +1,5 @@
 import React, { useMemo } from 'react';
+import { useRecoilValue } from 'recoil';
 import type { ModelSelectorProps } from '~/common';
 import { ModelSelectorProvider, useModelSelectorContext } from './ModelSelectorContext';
 import { ModelSelectorChatProvider } from './ModelSelectorChatContext';
@@ -7,9 +8,11 @@ import { getSelectedIcon, getDisplayValue } from './utils';
 import { CustomMenu as Menu } from './CustomMenu';
 import DialogManager from './DialogManager';
 import { useLocalize } from '~/hooks';
+import { openRouterActualModelState } from '~/store/openrouter';
 
 function ModelSelectorContent() {
   const localize = useLocalize();
+  const actualModel = useRecoilValue(openRouterActualModelState);
 
   const {
     // LibreChat
@@ -42,15 +45,21 @@ function ModelSelectorContent() {
     [mappedEndpoints, selectedValues, modelSpecs, endpointsConfig],
   );
   const selectedDisplayValue = useMemo(
-    () =>
-      getDisplayValue({
+    () => {
+      // If OpenRouter auto-router has selected a model, display it
+      if (selectedValues.endpoint === 'openrouter' && selectedValues.model === 'openrouter/auto' && actualModel) {
+        return actualModel;
+      }
+
+      return getDisplayValue({
         localize,
         agentsMap,
         modelSpecs,
         selectedValues,
         mappedEndpoints,
-      }),
-    [localize, agentsMap, modelSpecs, selectedValues, mappedEndpoints],
+      });
+    },
+    [localize, agentsMap, modelSpecs, selectedValues, mappedEndpoints, actualModel],
   );
 
   const trigger = (

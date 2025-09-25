@@ -46,6 +46,20 @@ const initializeClient = async ({ req, res, endpointOption, overrideModel, optio
 
   logger.info('[OpenRouter Initialize] Selected model:', selectedModel);
 
+  // Extract autoRouter flag early
+  const autoRouterFlag =
+    endpointOption?.autoRouter ||
+    endpointOption?.modelOptions?.autoRouter ||
+    endpointOption?.model_parameters?.autoRouter ||
+    false;
+
+  // Extract ZDR (Zero Data Retention) flag
+  const zdrFlag =
+    endpointOption?.zdr ||
+    endpointOption?.modelOptions?.zdr ||
+    endpointOption?.model_parameters?.zdr ||
+    false;
+
   let clientOptions = {
     // CRITICAL: Include endpoint metadata for message identification
     endpoint: endpointOption?.endpoint ?? EModelEndpoint.openrouter,
@@ -59,6 +73,7 @@ const initializeClient = async ({ req, res, endpointOption, overrideModel, optio
       model: selectedModel,
       models: endpointOption?.model_parameters?.models ?? endpointOption?.models,
       route: endpointOption?.model_parameters?.route,
+      autoRouter: autoRouterFlag,
       ...endpointOption?.model_parameters,
     },
   };
@@ -73,55 +88,56 @@ const initializeClient = async ({ req, res, endpointOption, overrideModel, optio
   }
 
   if (optionsOnly) {
-    // For agents, return config that will be used by ChatOpenRouter
+    // For agents, return config that will be used by the agent system
+    // IMPORTANT: The @librechat/agents package will create the LLM instance
+    // To ensure our custom ChatOpenRouter is used, we rely on createLLM.js
+    // which detects OpenRouter by baseURL and uses our ChatOpenRouter
     const baseURL = process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1';
 
-    // Extract autoRouter flag from endpointOption - check all possible locations
-    const autoRouter =
-      endpointOption?.autoRouter ||
-      endpointOption?.modelOptions?.autoRouter ||
-      endpointOption?.model_parameters?.autoRouter ||
-      false;
-
+    // Use the already extracted autoRouter flag
     logger.info('[OpenRouter Initialize] autoRouter detection:', {
       fromRoot: endpointOption?.autoRouter,
       fromModelOptions: endpointOption?.modelOptions?.autoRouter,
       fromModelParams: endpointOption?.model_parameters?.autoRouter,
-      final: autoRouter,
+      final: autoRouterFlag,
     });
 
     // If auto-router is enabled, transform the model to 'openrouter/auto'
-    const effectiveModel = autoRouter ? 'openrouter/auto' : selectedModel;
+    const effectiveModel = autoRouterFlag ? 'openrouter/auto' : selectedModel;
 
     logger.info(
-      `[OpenRouter Initialize] Returning agent config with baseURL: ${baseURL}, autoRouter: ${autoRouter}, model: ${effectiveModel}`,
+      `[OpenRouter Initialize] Returning agent config with baseURL: ${baseURL}, autoRouter: ${autoRouterFlag}, model: ${effectiveModel}`,
     );
 
-    // Return the configuration that will be used as llmConfig in agent.js
-    // ChatOpenRouter extends ChatOpenAI which expects:
-    // - apiKey at root level
-    // - configuration object with baseURL and defaultHeaders
+    // Return configuration for agent system
+    // The key is to ensure the baseURL triggers our ChatOpenRouter in createLLM
     return {
       llmConfig: {
         apiKey: openRouterApiKey,
         configuration: {
-          baseURL,
+          baseURL, // This will trigger our ChatOpenRouter in createLLM.js
           defaultHeaders: {
             'HTTP-Referer':
               process.env.OPENROUTER_SITE_URL ||
               process.env.DOMAIN_CLIENT ||
               'http://localhost:3080',
             'X-Title': process.env.OPENROUTER_SITE_NAME || 'LibreChat',
+            // Add ZDR header directly here for agents (since they use external ChatOpenRouter)
+            ...(zdrFlag && { 'X-OpenRouter-ZDR': 'true' }),
           },
         },
+        // Pass these flags so ChatOpenRouter can use them
+        autoRouter: autoRouterFlag,
+        zdr: zdrFlag,
         ...clientOptions.modelOptions,
-        model: effectiveModel, // Use the transformed model
-        autoRouter: autoRouter, // Pass the flag for reference
+        model: effectiveModel,
       },
       ...clientOptions,
       modelOptions: {
         ...clientOptions.modelOptions,
         model: effectiveModel,
+        autoRouter: autoRouterFlag,
+        zdr: zdrFlag,
       },
     };
   }
@@ -134,8 +150,12 @@ const initializeClient = async ({ req, res, endpointOption, overrideModel, optio
     endpointOption.modelOptions.model = selectedModel;
   }
 
+  logger.info('[OpenRouter Initialize] Creating client with autoRouter:', autoRouterFlag, 'ZDR:', zdrFlag);
+
   const openRouterClient = new OpenRouterClient(openRouterApiKey, {
     ...clientOptions,
+    autoRouter: autoRouterFlag,
+    zdr: zdrFlag,
     req,
     res,
     endpointOption,

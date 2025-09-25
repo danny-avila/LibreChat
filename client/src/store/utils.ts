@@ -7,6 +7,11 @@ export function atomWithLocalStorage<T>(key: string, defaultValue: T) {
     default: defaultValue,
     effects_UNSTABLE: [
       ({ setSelf, onSet }) => {
+        // Ensure we're in a browser environment
+        if (typeof window === 'undefined' || typeof localStorage === 'undefined') {
+          return;
+        }
+
         const savedValue = localStorage.getItem(key);
         if (savedValue !== null) {
           try {
@@ -14,7 +19,7 @@ export function atomWithLocalStorage<T>(key: string, defaultValue: T) {
             setSelf(parsedValue);
           } catch (e) {
             console.error(
-              `Error parsing localStorage key "${key}", \`savedValue\`: defaultValue, error:`,
+              `Error parsing localStorage key "${key}", savedValue: ${savedValue}, using defaultValue, error:`,
               e,
             );
             localStorage.setItem(key, JSON.stringify(defaultValue));
@@ -23,7 +28,9 @@ export function atomWithLocalStorage<T>(key: string, defaultValue: T) {
         }
 
         onSet((newValue: T) => {
-          localStorage.setItem(key, JSON.stringify(newValue));
+          if (typeof localStorage !== 'undefined') {
+            localStorage.setItem(key, JSON.stringify(newValue));
+          }
         });
       },
     ],

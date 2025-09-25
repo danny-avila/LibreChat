@@ -29,6 +29,13 @@ const toggleSwitchConfigs = [
     hoverCardText: undefined,
     key: 'hideSidePanel',
   },
+  {
+    stateAtom: store.useProviderIcons,
+    localizationKey: 'com_nav_use_provider_icons',
+    switchId: 'useProviderIcons',
+    hoverCardText: 'Display original provider icons for OpenRouter models (e.g., Google icon for Gemini models)',
+    key: 'useProviderIcons',
+  },
 ];
 
 export const ThemeSelector = ({

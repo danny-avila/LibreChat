@@ -1,6 +1,8 @@
 import { useCallback, useMemo } from 'react';
 import { ContentTypes } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
+import { useSetRecoilState } from 'recoil';
+import { openRouterActualModelState } from '~/store/openrouter';
 
 import type {
   Text,
@@ -26,7 +28,9 @@ type TContentHandler = {
 
 export default function useContentHandler({ setMessages, getMessages }: TUseContentHandler) {
   const queryClient = useQueryClient();
+  const setActualModel = useSetRecoilState(openRouterActualModelState);
   const messageMap = useMemo(() => new Map<string, TMessage>(), []);
+
   return useCallback(
     ({ data, submission }: TContentHandler) => {
       const { type, messageId, thread_id, conversationId, index } = data;
@@ -53,7 +57,39 @@ export default function useContentHandler({ setMessages, getMessages }: TUseCont
       }
 
       // TODO: handle streaming for non-text
-      const textPart: Text | string | undefined = data[ContentTypes.TEXT];
+      let textPart: Text | string | undefined = data[ContentTypes.TEXT];
+
+      // Check for OpenRouter model indicator token and extract it
+      if (textPart && typeof textPart === 'string') {
+        // Debug log all text content
+        if (textPart.includes('OPENROUTER_MODEL') || textPart.includes('[')) {
+          console.log('[useContentHandler] Checking text for model token:', textPart);
+        }
+
+        // Look for the new format with newlines for better isolation
+        const modelMatch = textPart.match(/\n?\[OPENROUTER_MODEL:([^\]]+)\]\n?/);
+        if (modelMatch) {
+          // Extract model name and store it
+          const actualModel = modelMatch[1];
+          console.log('[useContentHandler] OPENROUTER MODEL TOKEN DETECTED:', actualModel);
+          console.log('[useContentHandler] Setting actualModel in Recoil state');
+          setActualModel(actualModel);
+
+          // Remove the token from the text content
+          textPart = textPart.replace(/\n?\[OPENROUTER_MODEL:[^\]]+\]\n?/, '');
+          console.log('[useContentHandler] Removed token, remaining text:', textPart);
+
+          // If the text is now empty after removing the token, skip this update
+          if (!textPart) {
+            console.log('[useContentHandler] Text empty after token removal, skipping update');
+            return;
+          }
+        } else if (textPart.includes('[OPENROUTER_MODEL:')) {
+          // Debug: Log if we see MODEL token but it doesn't match the regex
+          console.log('[useContentHandler] Saw OPENROUTER_MODEL token but regex did not match:', textPart);
+        }
+      }
+
       const part: ContentPart =
         textPart != null && typeof textPart === 'string' ? { value: textPart } : data[type];
 
@@ -78,6 +114,6 @@ export default function useContentHandler({ setMessages, getMessages }: TUseCont
 
       setMessages([...messages, response]);
     },
-    [queryClient, getMessages, messageMap, setMessages],
+    [queryClient, getMessages, messageMap, setMessages, setActualModel],
   );
 }

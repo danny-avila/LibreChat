@@ -5,17 +5,10 @@ import {
   openRouterModelState,
   openRouterFallbackChainState,
   openRouterAutoRouterEnabledState,
-  // Selectors commented out to fix circular dependency
-  // openRouterConfigSelector,
-  // openRouterEffectiveFallbackChainSelector,
-  // isUsingAutoRouterSelector,
+  openRouterConfigSelector,
+  openRouterEffectiveFallbackChainSelector,
+  isUsingAutoRouterSelector,
 } from '../openrouter';
-// Import hook replacements instead
-import {
-  useOpenRouterConfig,
-  useOpenRouterEffectiveFallbackChain,
-  useIsUsingAutoRouter,
-} from '../../hooks/Credits';
 
 // Helper wrapper for Recoil hooks
 const wrapper = ({ children }: { children: React.ReactNode }) => (
@@ -29,16 +22,16 @@ describe('OpenRouter State Management', () => {
   });
 
   describe('Atoms', () => {
-    test('openRouterModelState defaults to empty string', () => {
+    test('openRouterModelState defaults to auto router', () => {
       const { result } = renderHook(() => useRecoilValue(openRouterModelState), { wrapper });
-      expect(result.current).toBe('');
+      expect(result.current).toBe('openrouter/auto');
     });
 
-    test('openRouterAutoRouterEnabledState defaults to false', () => {
+    test('openRouterAutoRouterEnabledState defaults to true', () => {
       const { result } = renderHook(() => useRecoilValue(openRouterAutoRouterEnabledState), {
         wrapper,
       });
-      expect(result.current).toBe(false);
+      expect(result.current).toBe(true);
     });
 
     test('openRouterFallbackChainState defaults to empty array', () => {
@@ -49,16 +42,14 @@ describe('OpenRouter State Management', () => {
     });
   });
 
-  describe('useOpenRouterConfig hook', () => {
+  describe('openRouterConfigSelector', () => {
     test('returns auto configuration when auto router is enabled', () => {
-      const { result } = renderHook(() => useOpenRouterConfig(), { wrapper });
+      const { result } = renderHook(() => useRecoilValue(openRouterConfigSelector), { wrapper });
 
       expect(result.current).toEqual({
-        model: '',
-        autoRouter: false,
-        zdrEnabled: false,
+        model: 'openrouter/auto',
         models: [],
-        route: 'fallback',
+        route: 'auto',
         providerPreferences: [],
         maxCreditsPerRequest: undefined,
         includeReasoning: false,
@@ -71,7 +62,7 @@ describe('OpenRouter State Management', () => {
           const [, setAutoEnabled] = useRecoilState(openRouterAutoRouterEnabledState);
           const [, setModel] = useRecoilState(openRouterModelState);
           const [, setFallbackChain] = useRecoilState(openRouterFallbackChainState);
-          const config = useOpenRouterConfig();
+          const config = useRecoilValue(openRouterConfigSelector);
 
           return { setAutoEnabled, setModel, setFallbackChain, config };
         },
@@ -86,8 +77,6 @@ describe('OpenRouter State Management', () => {
 
       expect(result.current.config).toEqual({
         model: 'gpt-4',
-        autoRouter: false,
-        zdrEnabled: false,
         models: ['claude-3-opus', 'gemini-pro'],
         route: 'fallback',
         providerPreferences: [],
@@ -97,10 +86,10 @@ describe('OpenRouter State Management', () => {
     });
   });
 
-  describe('useOpenRouterEffectiveFallbackChain hook', () => {
+  describe('openRouterEffectiveFallbackChainSelector', () => {
     test('returns empty array when auto router is enabled', () => {
       const { result } = renderHook(
-        () => useOpenRouterEffectiveFallbackChain(),
+        () => useRecoilValue(openRouterEffectiveFallbackChainSelector),
         { wrapper },
       );
       expect(result.current).toEqual([]);
@@ -112,7 +101,7 @@ describe('OpenRouter State Management', () => {
           const [, setAutoEnabled] = useRecoilState(openRouterAutoRouterEnabledState);
           const [, setModel] = useRecoilState(openRouterModelState);
           const [, setFallbackChain] = useRecoilState(openRouterFallbackChainState);
-          const effectiveChain = useOpenRouterEffectiveFallbackChain();
+          const effectiveChain = useRecoilValue(openRouterEffectiveFallbackChainSelector);
 
           return { setAutoEnabled, setModel, setFallbackChain, effectiveChain };
         },
@@ -134,7 +123,7 @@ describe('OpenRouter State Management', () => {
           const [, setAutoEnabled] = useRecoilState(openRouterAutoRouterEnabledState);
           const [, setModel] = useRecoilState(openRouterModelState);
           const [, setFallbackChain] = useRecoilState(openRouterFallbackChainState);
-          const effectiveChain = useOpenRouterEffectiveFallbackChain();
+          const effectiveChain = useRecoilValue(openRouterEffectiveFallbackChainSelector);
 
           return { setAutoEnabled, setModel, setFallbackChain, effectiveChain };
         },
@@ -151,10 +140,10 @@ describe('OpenRouter State Management', () => {
     });
   });
 
-  describe('useIsUsingAutoRouter hook', () => {
-    test('returns false when auto router is disabled by default', () => {
-      const { result } = renderHook(() => useIsUsingAutoRouter(), { wrapper });
-      expect(result.current).toBe(false);
+  describe('isUsingAutoRouterSelector', () => {
+    test('returns true when auto router is enabled', () => {
+      const { result } = renderHook(() => useRecoilValue(isUsingAutoRouterSelector), { wrapper });
+      expect(result.current).toBe(true);
     });
 
     test('returns true when model is openrouter/auto', () => {
@@ -162,7 +151,7 @@ describe('OpenRouter State Management', () => {
         () => {
           const [, setAutoEnabled] = useRecoilState(openRouterAutoRouterEnabledState);
           const [, setModel] = useRecoilState(openRouterModelState);
-          const isAutoRouter = useIsUsingAutoRouter();
+          const isAutoRouter = useRecoilValue(isUsingAutoRouterSelector);
 
           return { setAutoEnabled, setModel, isAutoRouter };
         },
@@ -182,7 +171,7 @@ describe('OpenRouter State Management', () => {
         () => {
           const [, setAutoEnabled] = useRecoilState(openRouterAutoRouterEnabledState);
           const [, setModel] = useRecoilState(openRouterModelState);
-          const isAutoRouter = useIsUsingAutoRouter();
+          const isAutoRouter = useRecoilValue(isUsingAutoRouterSelector);
 
           return { setAutoEnabled, setModel, isAutoRouter };
         },

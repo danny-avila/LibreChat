@@ -48,6 +48,17 @@ export default function ConvoIcon({
   const iconKey = getIconKey({ endpoint, endpointsConfig, endpointIconURL });
   const Icon = icons[iconKey] ?? null;
 
+  // Debug OpenRouter icons
+  if (endpoint === 'openrouter') {
+    console.log('[ConvoIcon] OpenRouter debug:', {
+      endpoint,
+      iconKey,
+      hasIcon: !!Icon,
+      endpointIconURL,
+      conversation,
+    });
+  }
+
   return (
     <>
       {iconURL && iconURL.includes('http') ? (

@@ -12,6 +12,7 @@ import {
   tMessageSchema,
   tConvoUpdateSchema,
   isAssistantsEndpoint,
+  EModelEndpoint,
 } from 'librechat-data-provider';
 import type { TMessage, TConversation, EventSubmission } from 'librechat-data-provider';
 import type { TResData, TFinalResData, ConvoGenerator } from '~/common';
@@ -31,7 +32,11 @@ import {
 } from '~/utils';
 import useAttachmentHandler from '~/hooks/SSE/useAttachmentHandler';
 import useContentHandler from '~/hooks/SSE/useContentHandler';
-import store, { useApplyNewAgentTemplate } from '~/store';
+// Import from specific store modules to avoid circular dependency
+// Cannot import from both ~/store barrel export and ~/store/openrouter
+import { useApplyNewAgentTemplate } from '~/store/agents';
+import settingsStore from '~/store/settings';
+import { openRouterActualModelState } from '~/store/openrouter';
 import useStepHandler from '~/hooks/SSE/useStepHandler';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { MESSAGE_UPDATE_INTERVAL } from '~/common';
@@ -173,7 +178,7 @@ export default function useEventHandlers({
   const queryClient = useQueryClient();
   const { announcePolite } = useLiveAnnouncer();
   const applyAgentTemplate = useApplyNewAgentTemplate();
-  const setAbortScroll = useSetRecoilState(store.abortScroll);
+  const setAbortScroll = useSetRecoilState(settingsStore.abortScroll);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -279,6 +284,9 @@ export default function useEventHandlers({
     },
     [setMessages, setConversation, genTitle, isAddedRequest, queryClient, setIsSubmitting],
   );
+
+  // Define setActualModel before syncHandler to avoid initialization error
+  const setActualModel = useSetRecoilState(openRouterActualModelState);
 
   const syncHandler = useCallback(
     (data: TSyncData, submission: EventSubmission) => {
@@ -445,6 +453,28 @@ export default function useEventHandlers({
         isTemporary = false,
       } = submission;
 
+      // Check if this is an OpenRouter response with a model
+      console.log('[useEventHandlers finalHandler] Checking for OpenRouter model:', {
+        endpoint: conversation?.endpoint,
+        isOpenRouter: conversation?.endpoint === EModelEndpoint.openrouter,
+        responseMessageModel: responseMessage?.model,
+        responseMessage: responseMessage,
+      });
+
+      if (conversation?.endpoint === EModelEndpoint.openrouter) {
+        if (responseMessage?.model && responseMessage.model !== 'openrouter/auto' && responseMessage.model !== 'auto') {
+          console.log('[useEventHandlers] OpenRouter model detected in response:', responseMessage.model);
+          setActualModel(responseMessage.model);
+        } else {
+          console.log('[useEventHandlers] No valid model in OpenRouter response, checking conversation');
+          // Also try from conversation if available
+          if (conversation?.model && conversation.model !== 'openrouter/auto' && conversation.model !== 'auto') {
+            console.log('[useEventHandlers] Using model from conversation:', conversation.model);
+            setActualModel(conversation.model);
+          }
+        }
+      }
+
       if (responseMessage?.attachments && responseMessage.attachments.length > 0) {
         // Process each attachment through the attachmentHandler
         responseMessage.attachments.forEach((attachment) => {
@@ -594,6 +624,7 @@ export default function useEventHandlers({
       location.pathname,
       applyAgentTemplate,
       attachmentHandler,
+      setActualModel,
     ],
   );
 

@@ -1,0 +1,149 @@
+diff --git a/node_modules/@librechat/agents/src/llm/openrouter/index.ts b/node_modules/@librechat/agents/src/llm/openrouter/index.ts
+index 1234567..abcdefg 100644
+--- a/node_modules/@librechat/agents/src/llm/openrouter/index.ts
++++ b/node_modules/@librechat/agents/src/llm/openrouter/index.ts
+@@ -11,14 +11,130 @@ import { ChatOpenAI } from '@/llm/openai';
+
+ export interface ChatOpenRouterCallOptions extends ChatOpenAICallOptions {
+   include_reasoning?: boolean;
++  autoRouter?: boolean;
++  zdr?: boolean;
+ }
++
+ export class ChatOpenRouter extends ChatOpenAI {
++  private autoRouter: boolean;
++  private zdr: boolean;
++  private actualModelUsed: string | null = null;
++  private _modelIndicatorSent = false;
++  private _rawModelDetected: string | null = null;
++
+   constructor(_fields: Partial<ChatOpenRouterCallOptions>) {
+-    const { include_reasoning, ...fields } = _fields;
++    const { include_reasoning, autoRouter, zdr, ...fields } = _fields;
++
++    // Add ZDR header if enabled
++    if (zdr) {
++      fields.configuration = fields.configuration || {};
++      fields.configuration.clientConfig = fields.configuration.clientConfig || {};
++      fields.configuration.clientConfig.defaultHeaders = {
++        ...fields.configuration.clientConfig.defaultHeaders,
++        'X-OpenRouter-ZDR': 'true',
++      };
++    }
++
+     super({
+       ...fields,
+       modelKwargs: {
+         include_reasoning,
+       },
+     });
++
++    this.autoRouter = autoRouter || false;
++    this.zdr = zdr || false;
+   }
++
++  /**
++   * Override completionWithRetry to intercept the raw OpenRouter response
++   */
++  async completionWithRetry(request: any, options?: any) {
++    const logger = console; // Use console for logging in package
++
++    // If auto-router is enabled and streaming, we need to intercept the response
++    if (this.autoRouter && request.stream) {
++      // Store original fetch to intercept response
++      const originalFetch = (this as any).caller?.fetch || globalThis.fetch;
++      let modelDetected = false;
++
++      // Temporarily override fetch to intercept the streaming response
++      const interceptedFetch = async (...args: any[]) => {
++        const response = await originalFetch(...args);
++
++        // Create a new response that intercepts the stream
++        const originalBody = response.body;
++        if (originalBody && !modelDetected) {
++          const reader = originalBody.getReader();
++          const decoder = new TextDecoder();
++          let buffer = '';
++
++          // Create a new readable stream that processes chunks
++          const stream = new ReadableStream({
++            async start(controller) {
++              try {
++                while (true) {
++                  const { done, value } = await reader.read();
++                  if (done) break;
++
++                  // Pass through the original chunk
++                  controller.enqueue(value);
++
++                  // Decode and look for model info if not detected yet
++                  if (!modelDetected) {
++                    const text = decoder.decode(value, { stream: true });
++                    buffer += text;
++
++                    // Look for model in SSE data
++                    const lines = buffer.split('\n');
++                    for (const line of lines) {
++                      if (line.startsWith('data: ') && line.includes('"model":')) {
++                        try {
++                          const data = JSON.parse(line.substring(6));
++                          if (data.model && data.model !== 'openrouter/auto') {
++                            this._rawModelDetected = data.model;
++                            this.actualModelUsed = data.model;
++                            modelDetected = true;
++                            logger.info('[ChatOpenRouter] Auto-router detected model from stream:', data.model);
++                            break;
++                          }
++                        } catch (e) {
++                          // Not valid JSON, continue
++                        }
++                      }
++                    }
++                    // Keep last incomplete line in buffer
++                    buffer = lines[lines.length - 1];
++                  }
++                }
++                controller.close();
++              } catch (error) {
++                controller.error(error);
++              }
++            }
++          });
++
++          // Return a new response with our intercepted stream
++          return new Response(stream, {
++            status: response.status,
++            statusText: response.statusText,
++            headers: response.headers,
++          });
++        }
++
++        return response;
++      };
++
++      // Override fetch temporarily
++      if ((this as any).caller?.fetch) {
++        (this as any).caller.fetch = interceptedFetch;
++      } else {
++        globalThis.fetch = interceptedFetch;
++      }
++
++      try {
++        const result = await super.completionWithRetry(request, options);
++        return result;
++      } finally {
++        // Restore original fetch
++        if ((this as any).caller?.fetch) {
++          (this as any).caller.fetch = originalFetch;
++        } else {
++          globalThis.fetch = originalFetch;
++        }
++      }
++    }
++
++    // Non-streaming or non-auto-router, proceed normally
++    return super.completionWithRetry(request, options);
++  }
++
+   static lc_name(): 'LibreChatOpenRouter' {
+     return 'LibreChatOpenRouter';
