@@ -2,6 +2,7 @@ version: 1.0.0
 cache: true
 interface:
   agents: false
+  webSearch: false
 endpoints:
   azureOpenAI:
     # Endpoint-level configuration
