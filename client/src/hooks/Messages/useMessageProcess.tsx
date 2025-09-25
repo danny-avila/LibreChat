@@ -27,27 +27,19 @@ export default function useMessageProcess({ message }: { message?: TMessage | nu
     [isSubmittingRoot, isSubmittingAdditional],
   );
 
+  // Track latest message text and update latestMessage state
   useEffect(() => {
     const convoId = conversation?.conversationId;
-    if (convoId === Constants.NEW_CONVO) {
-      return;
-    }
-    if (!message) {
-      return;
-    }
-    if (!hasNoChildren) {
-      return;
-    }
+    if (convoId === Constants.NEW_CONVO || !message || !hasNoChildren) return;
 
     const textKey = getTextKey(message, convoId);
-
-    // Check for text/conversation change
     const logInfo = {
       textKey,
       'latestText.current': latestText.current,
       messageId: message.messageId,
       convoId,
     };
+
     if (
       textKey !== latestText.current ||
       (convoId != null &&
@@ -62,24 +54,20 @@ export default function useMessageProcess({ message }: { message?: TMessage | nu
     }
   }, [hasNoChildren, message, setLatestMessage, conversation?.conversationId]);
 
-  const handleScroll = useCallback(
-    (event: unknown | TouchEvent | WheelEvent) => {
-      throttle(() => {
-        logger.log(
-          'message_scrolling',
-          `useMessageProcess: setting abort scroll to ${isSubmittingFamily}, handleScroll event`,
-          event,
-        );
-        if (isSubmittingFamily) {
-          setAbortScroll(true);
-        } else {
-          setAbortScroll(false);
-        }
-      }, 500)();
-    },
-    [isSubmittingFamily, setAbortScroll],
-  );
+  // Throttled scroll handler
+  const throttledScroll = useRef(
+    throttle((isSubmitting: boolean) => {
+      setAbortScroll(isSubmitting);
+      // Optional minimal logging (can comment out if not needed)
+      // logger.log('message_scrolling', `useMessageProcess: setAbortScroll = ${isSubmitting}`);
+    }, 500)
+  ).current;
 
+  const handleScroll = useCallback(() => {
+    throttledScroll(isSubmittingFamily);
+  }, [isSubmittingFamily, throttledScroll]);
+
+  // Determine if sibling message should be shown
   const showSibling = useMemo(
     () =>
       (hasNoChildren && latestMultiMessage && (latestMultiMessage.children?.length ?? 0) === 0) ||
@@ -87,6 +75,7 @@ export default function useMessageProcess({ message }: { message?: TMessage | nu
     [hasNoChildren, latestMultiMessage, siblingMessage],
   );
 
+  // Update sibling message when new multi-message arrives
   useEffect(() => {
     if (
       hasNoChildren &&

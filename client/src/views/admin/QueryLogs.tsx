@@ -99,20 +99,13 @@ export function useQueryLogs(limit: number = 10, page: number = 1, search: strin
               initTotalRef.current = t;
               setTotal(t);
             } else {
-              (async () => {
-                try {
-                  const countRes = await fetch(
-                    `${API_BASE}/api/logs/conversations/count${currentSearch ? `?search=${encodeURIComponent(currentSearch)}` : ''}`,
-                    { headers: { Authorization: `Bearer ${token}` } },
-                  );
-                  const { total: ct = 0 } = await countRes.json();
-                  initTotalRef.current = ct;
-                  setTotal(ct);
-                } catch (e) {
-                  setTotal(0);
-                }
-              })();
+              // Fallback to approximate total
+              const approxTotal = currentPage * currentLimit;
+              initTotalRef.current = approxTotal;
+              setTotal(approxTotal);
             }
+            
+            
             if (data.count === 0) {
               setLoading(false);
               setIsInitialFetchComplete(true);
@@ -122,11 +115,11 @@ export function useQueryLogs(limit: number = 10, page: number = 1, search: strin
 
           if (data.type === 'historical_complete') {
             setLogs(tempConversations);
-            if (!initTotalRef.current) {
-              // fallback: if server didn't provide total, approximate it
-              const approx = (page - 1) * limit + tempConversations.length;
-              setTotal(approx);
-            }
+            // if (!initTotalRef.current) {
+            //   // fallback: if server didn't provide total, approximate it
+            //   const approx = (page - 1) * limit + tempConversations.length;
+            //   setTotal(approx);
+            // }
             setIsInitialFetchComplete(true);
             setLoading(false);
             return;
