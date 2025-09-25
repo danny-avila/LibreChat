@@ -5,7 +5,6 @@ identity:
 properties:
   environmentId: "/subscriptions/9c0bd682-b2b9-49a2-996a-f33eb0af2fff/resourceGroups/rg-playai-eastus-prod-001/providers/Microsoft.App/managedEnvironments/cenv-playai-eastus-prod-001"
   workloadProfileName: paychexai
-  activeRevisionsMode: single
   configuration:
     secrets:
       - name: openid-session-secret
@@ -35,6 +34,7 @@ properties:
       - name: maas-api-key
         keyVaultUrl: https://kv-pyxplayai-prod-001.vault.azure.net/secrets/PROD-MAAS-API-KEY
         identity: system
+    activeRevisionsMode: single
     ingress:
       external: true
       allowInsecure: false
