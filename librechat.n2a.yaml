@@ -3,6 +3,7 @@ cache: true
 interface:
   agents: false
   webSearch: false
+  runCode: false
 endpoints:
   azureOpenAI:
     # Endpoint-level configuration
