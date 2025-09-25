@@ -164,4 +164,6 @@ client/src/components/Messages/HoverButtons.tsx -> buttons below message.
 
 client/src/components/Nav/SettingsTabs/Chat/Chat.tsx -> added the setttings for turning on the other options below chatmessages.
 
+Components/Auth/AuthLayout.tsx -> larger logos for the login page
+
 Added some languages for the new settings
