@@ -11,20 +11,20 @@ version: 1.2.1
 interface:
   customWelcome: "Welkom bij GovAI!"
   # Privacy policy settings
-  privacyPolicy:
-    externalUrl: 'https://gradient-ds.com/'
-    openNewTab: true
+  # privacyPolicy:
+  #   externalUrl: 'https://gradient-ds.com/'
+  #   openNewTab: true
 
-  # Terms of service
-  termsOfService:
-    externalUrl: 'https://gradient-ds.com/'
-    openNewTab: true
-    modalAcceptance: true
-    modalTitle: "Terms of Service for LibreChat"
-    modalContent: |
-      # Terms and Conditions for GovAI
+  # # Terms of service
+  # termsOfService:
+  #   externalUrl: 'https://gradient-ds.com/'
+  #   openNewTab: true
+  #   modalAcceptance: true
+  #   modalTitle: "Terms of Service for LibreChat"
+  #   modalContent: |
+  #     # Terms and Conditions for GovAI
 
-      This is a demo version, no terms and conditions apply beyond fair use.
+  #     This is a demo version, no terms and conditions apply beyond fair use.
   endpointsMenu: true
   modelSelect: true
   parameters: false
