@@ -9,6 +9,7 @@ import {
   useCodeApiKeyForm,
   useToolToggle,
 } from '~/hooks';
+import { useChatContext } from '~/Providers';
 import { getTimestampedValue, setTimestamp } from '~/utils/timestamps';
 import { ephemeralAgentByConvoId } from '~/store';
 
@@ -177,6 +178,25 @@ export default function BadgeRowProvider({
     localStorageKey: LocalStorageKeys.LAST_FILE_SEARCH_TOGGLE_,
     isAuthenticated: true,
   });
+
+  /** Remove non-image attachments when file_search is toggled off */
+  const { setFiles } = useChatContext();
+  useEffect(() => {
+    if (fileSearch.isToolEnabled === false) {
+      setFiles((currentFiles) => {
+        const updated = new Map(currentFiles);
+        let changed = false;
+        for (const [id, f] of updated) {
+          const isImage = f.type?.startsWith('image/');
+          if (!isImage) {
+            updated.delete(id);
+            changed = true;
+          }
+        }
+        return changed ? updated : currentFiles;
+      });
+    }
+  }, [fileSearch.isToolEnabled, setFiles]);
 
   /** Artifacts hook - using a custom key since it's not a Tool but a capability */
   const artifacts = useToolToggle({

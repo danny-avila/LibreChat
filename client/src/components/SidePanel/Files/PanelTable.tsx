@@ -30,12 +30,16 @@ import {
   mergeFileConfig,
   megabyte,
   isAssistantsEndpoint,
+  EToolResources,
+  Constants,
+  Tools,
   type TFile,
 } from 'librechat-data-provider';
 import { useFileMapContext, useChatContext } from '~/Providers';
 import { useLocalize, useUpdateFiles } from '~/hooks';
 import { useGetFileConfig } from '~/data-provider';
 import store from '~/store';
+import { ephemeralAgentByConvoId } from '~/store';
 
 interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[];
@@ -90,6 +94,9 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
     select: (data) => mergeFileConfig(data),
   });
   const { addFile } = useUpdateFiles(setFiles);
+  const setEphemeralAgent = useSetRecoilState(
+    ephemeralAgentByConvoId(conversation?.conversationId ?? Constants.NEW_CONVO),
+  );
 
   const handleFileClick = useCallback(
     (file: TFile) => {
@@ -147,6 +154,15 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
         return;
       }
 
+      const isImage = fileData.type?.startsWith('image/') === true;
+
+      if (!isImage) {
+        setEphemeralAgent((prev) => ({
+          ...prev,
+          [EToolResources.file_search]: true,
+        }));
+      }
+
       addFile({
         progress: 1,
         attached: true,
@@ -162,7 +178,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
         metadata: fileData.metadata,
       });
     },
-    [addFile, fileMap, conversation, localize, showToast, fileConfig.endpoints],
+    [addFile, fileMap, conversation, localize, showToast, fileConfig.endpoints, setEphemeralAgent],
   );
 
   const filenameFilter = table.getColumn('filename')?.getFilterValue() as string;
