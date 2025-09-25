@@ -1,7 +1,7 @@
+apiVersion: 2025-02-02-preview
+name: conpaichateastusprod001
 identity:
   type: SystemAssigned
-  principalId: 6f004e25-0444-473e-b8e2-550860ee0565
-  tenantId: bcc529c5-dfce-4f97-b44f-debd50891d83
 properties:
   environmentId: "/subscriptions/9c0bd682-b2b9-49a2-996a-f33eb0af2fff/resourceGroups/rg-playai-eastus-prod-001/providers/Microsoft.App/managedEnvironments/cenv-playai-eastus-prod-001"
   workloadProfileName: paychexai
@@ -46,6 +46,10 @@ properties:
         - name: play.ai.paychex.com
           certificateId: "/subscriptions/9c0bd682-b2b9-49a2-996a-f33eb0af2fff/resourceGroups/rg-playai-eastus-prod-001/providers/Microsoft.App/managedEnvironments/cenv-playai-eastus-prod-001/certificates/play-ai-paychex-com"
           bindingType: SniEnabled
+      allowInsecure: false
+      ipSecurityRestrictions: null
+      corsPolicy: null
+      clientCertificateMode: Ignore
       stickySessions:
         affinity: sticky
       additionalPortMappings:
@@ -55,57 +59,57 @@ properties:
     maxInactiveRevisions: 100
   template:
     containers:
-    - image: conpaychexaiprod001.azurecr.io/paychex/librechat:prod.895d2c4555a89ee6c1917500ae8af321df6c0326
+    - image: conpaychexaiprod001.azurecr.io/paychex/librechat:prod.latest
       name: conpaichat
       env:
-      - name: OPENID_CALLBACK_URL
-        value: "/oauth/openid/callback"
-      - name: MONGO_URI
-        secretRef: mongo-connection-string
-      - name: OPENID_SCOPE
-        value: "openid profile email"
-      - name: OPENID_SESSION_SECRET
-        secretRef: openid-session-secret
-      - name: OPENID_ISSUER
-        value: "https://login.microsoftonline.com/bcc529c5-dfce-4f97-b44f-debd50891d83/v2.0/"
-      - name: OPENID_CLIENT_SECRET
-        secretRef: client-secret
-      - name: OPENID_CLIENT_ID
-        value: "a641b00b-5902-413c-b5e7-9d5b8cb57445"
-      - name: JWT_SECRET
-        secretRef: jwt-secret
-      - name: JWT_REFRESH_SECRET
-        secretRef: jwt-refresh-secret
-      - name: AZURE_OPENAI_BASEURL
-        value: "https://service-internal.paychex.com/is/librechat/azure/openai/deployments/${DEPLOYMENT_NAME}"
-      - name: AZURE_OPENAI_API_KEY
-        secretRef: maas-api-key
-      - name: ALLOW_REGISTRATION
-        value: FALSE
-      - name: ALLOW_EMAIL_LOGIN
-        value: FALSE
-      - name: DOMAIN_CLIENT
-        value: "https://play.ai.paychex.com"
-      - name: DOMAIN_SERVER
-        value: "https://play.ai.paychex.com"
-      - name: HOST
-        value: "0.0.0.0"
-      - name: CREDS_KEY
-        secretRef: creds-key
-      - name: CREDS_IV
-        secretRef: creds-iv
-      - name: ALLOW_SOCIAL_LOGIN
-        value: TRUE
-      - name: NODE_EXTRA_CA_CERTS
-        value: "/app/paychex-root.pem"
-      - name: RAG_API_URL
-        value: http://conpaichateastusprod001:8000
-      - name: RAG_USE_FULL_CONTEXT
-        value: TRUE
-      - name: CONSOLE_JSON
-        value: TRUE
-      - name: DEBUG_LOGGING
-        value: TRUE
+        - name: OPENID_CALLBACK_URL
+          value: "/oauth/openid/callback"
+        - name: MONGO_URI
+          secretRef: mongo-connection-string
+        - name: OPENID_SCOPE
+          value: "openid profile email"
+        - name: OPENID_SESSION_SECRET
+          secretRef: openid-session-secret
+        - name: OPENID_ISSUER
+          value: "https://login.microsoftonline.com/bcc529c5-dfce-4f97-b44f-debd50891d83/v2.0/"
+        - name: OPENID_CLIENT_SECRET
+          secretRef: client-secret
+        - name: OPENID_CLIENT_ID
+          value: "a641b00b-5902-413c-b5e7-9d5b8cb57445"
+        - name: JWT_SECRET
+          secretRef: jwt-secret
+        - name: JWT_REFRESH_SECRET
+          secretRef: jwt-refresh-secret
+        - name: AZURE_OPENAI_BASEURL
+          value: "https://service-internal.paychex.com/is/librechat/azure/openai/deployments/${DEPLOYMENT_NAME}"
+        - name: AZURE_OPENAI_API_KEY
+          secretRef: maas-api-key
+        - name: ALLOW_REGISTRATION
+          value: FALSE
+        - name: ALLOW_EMAIL_LOGIN
+          value: FALSE
+        - name: DOMAIN_CLIENT
+          value: "https://play.ai.paychex.com"
+        - name: DOMAIN_SERVER
+          value: "https://play.ai.paychex.com"
+        - name: HOST
+          value: "0.0.0.0"
+        - name: CREDS_KEY
+          secretRef: creds-key
+        - name: CREDS_IV
+          secretRef: creds-iv
+        - name: ALLOW_SOCIAL_LOGIN
+          value: TRUE
+        - name: NODE_EXTRA_CA_CERTS
+          value: "/app/paychex-root.pem"
+        - name: RAG_API_URL
+          value: http://conpaichateastusprod001:8000
+        - name: RAG_USE_FULL_CONTEXT
+          value: TRUE
+        - name: CONSOLE_JSON
+          value: TRUE
+        - name: DEBUG_LOGGING
+          value: TRUE
       resources:
         cpu: 1
         memory: 8Gi
