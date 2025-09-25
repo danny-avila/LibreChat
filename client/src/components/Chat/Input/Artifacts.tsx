@@ -79,19 +79,17 @@ function Artifacts() {
             )}
             onClick={(e) => e.stopPropagation()}
           >
-            <ChevronDown className="ml-1 h-4 w-4 text-text-secondary md:ml-0" />
+            <ChevronDown className="ml-0.5 h-4 w-4 text-text-secondary" />
           </Ariakit.MenuButton>
 
           <Ariakit.Menu
-            gutter={8}
+            gutter={4}
             className={cn(
-              'animate-popover z-50 flex max-h-[300px]',
-              'flex-col overflow-auto overscroll-contain rounded-xl',
-              'bg-surface-secondary px-1.5 py-1 text-text-primary shadow-lg',
-              'border border-border-light',
-              'min-w-[250px] outline-none',
+              'animate-popover-top-left z-50 flex min-w-[250px] flex-col rounded-xl',
+              'border border-border-light bg-surface-secondary shadow-lg',
             )}
-            portal
+            portal={true}
+            unmountOnHide={true}
           >
             <div className="px-2 py-1.5">
               <div className="mb-2 text-xs font-medium text-text-secondary">
@@ -106,18 +104,16 @@ function Artifacts() {
                   event.stopPropagation();
                   handleShadcnToggle();
                 }}
-                disabled={isCustomEnabled}
                 className={cn(
-                  'mb-1 flex items-center justify-between rounded-lg px-2 py-2',
-                  'cursor-pointer outline-none transition-colors',
-                  'hover:bg-black/[0.075] dark:hover:bg-white/10',
-                  'data-[active-item]:bg-black/[0.075] dark:data-[active-item]:bg-white/10',
-                  isCustomEnabled && 'cursor-not-allowed opacity-50',
+                  'mb-1 flex items-center justify-between gap-2 rounded-lg px-2 py-2',
+                  'cursor-pointer bg-surface-secondary text-text-primary outline-none transition-colors',
+                  'hover:bg-surface-hover data-[active-item]:bg-surface-hover',
+                  isShadcnEnabled && 'bg-surface-active',
                 )}
               >
-                <div className="flex items-center gap-2">
+                <span className="text-sm">{localize('com_ui_include_shadcnui' as any)}</span>
+                <div className="ml-auto flex items-center">
                   <Ariakit.MenuItemCheck checked={isShadcnEnabled} />
-                  <span className="text-sm">{localize('com_ui_include_shadcnui' as any)}</span>
                 </div>
               </Ariakit.MenuItem>
 
@@ -130,15 +126,15 @@ function Artifacts() {
                   handleCustomToggle();
                 }}
                 className={cn(
-                  'flex items-center justify-between rounded-lg px-2 py-2',
-                  'cursor-pointer outline-none transition-colors',
-                  'hover:bg-black/[0.075] dark:hover:bg-white/10',
-                  'data-[active-item]:bg-black/[0.075] dark:data-[active-item]:bg-white/10',
+                  'mb-1 flex items-center justify-between gap-2 rounded-lg px-2 py-2',
+                  'cursor-pointer bg-surface-secondary text-text-primary outline-none transition-colors',
+                  'hover:bg-surface-hover data-[active-item]:bg-surface-hover',
+                  isCustomEnabled && 'bg-surface-active',
                 )}
               >
-                <div className="flex items-center gap-2">
+                <span className="text-sm">{localize('com_ui_custom_prompt_mode' as any)}</span>
+                <div className="ml-auto flex items-center">
                   <Ariakit.MenuItemCheck checked={isCustomEnabled} />
-                  <span className="text-sm">{localize('com_ui_custom_prompt_mode' as any)}</span>
                 </div>
               </Ariakit.MenuItem>
             </div>
