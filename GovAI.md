@@ -152,3 +152,6 @@ At runtime the sequence is:
 ## Changed files:
 server/index.js -> Mount point for the adminpanel
 server/controller/agents/client.js -> more strong opiniation towards using the file search tool
+
+client/src/components/Chat/Input/Files/AttachFileMenu.tsx -> hide the image upload in the UI, auto-enable file upload
+client/src/components/Chat/Input/Files/ -> hide the image upload in the UI, auto-enable file upload

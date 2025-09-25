@@ -37,6 +37,8 @@ interface:
   fileCitations: true
   memories: false
   fileSearch: true
+  marketplace: 
+    use: false
   # Temporary chat retention period in hours (default: 720, min: 1, max: 8760)
   # temporaryChatRetention: 1
 
@@ -287,7 +289,7 @@ endpoints:
   #   # (optional) Disable the builder interface for agents
     disableBuilder: false
   #   # (optional) Agent Capabilities available to all users. Omit the ones you wish to exclude. Defaults to list below.
-    capabilities: ["file_search", "web_search", "tools", "chain"]
+    capabilities: ["file_search", "web_search", "chain"]
   
 webSearch:
   searchProvider: "serper"
