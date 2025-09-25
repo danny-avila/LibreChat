@@ -174,7 +174,7 @@ module.exports = {
 
     if (search) {
       try {
-        const meiliResults = await Conversation.meiliSearch(search);
+        const meiliResults = await Conversation.meiliSearch(search, { filter: `user = "${user}"` });
         const matchingIds = Array.isArray(meiliResults.hits)
           ? meiliResults.hits.map((result) => result.conversationId)
           : [];
