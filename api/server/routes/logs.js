@@ -197,13 +197,15 @@ async function buildLogData(message, eventType = 'log') {
   return {
     event: eventType,
     type: 'message',
-    role: message.model ? 'ai' : 'user',
+    role: message.model ? 'assistant' : message.toolCalls?.length ? 'tool' : 'user',
     messageId: message.messageId,
     text: message.text || '',
     model: message.model || null,
     user: userInfo,
     tokenCount: message.tokenCount || 0,
     createdAt: message.createdAt.toISOString(),
+    toolType: message.toolCalls?.[0]?.type || null,
+    searchQuery: message.toolCalls?.find(t => t.type === 'web_search')?.query || null,
   };
 }
 
@@ -232,13 +234,27 @@ router.get('/queries/export', async (req, res) => {
       ],
     } : {};
 
+    // Add user name/email search
+    if (search) {
+      const matchingUsers = await User.find({
+        $or: [
+          { name: { $regex: search, $options: 'i' } },
+          { email: { $regex: search, $options: 'i' } },
+        ],
+      }).distinct('_id');
+      if (matchingUsers.length > 0) {
+        filter.$or = filter.$or || [];
+        filter.$or.push({ user: { $in: matchingUsers } });
+      }
+    }
+
     const messages = await Message.find(filter)
       .populate({
         path: 'user',
         select: 'name email',
         model: 'User',
       })
-      .select('user text model tokenCount createdAt')
+      .select('user text model tokenCount createdAt toolCalls')
       .sort({ createdAt: -1 })
       .lean();
 
@@ -247,7 +263,7 @@ router.get('/queries/export', async (req, res) => {
     }
 
     const formattedLogs = messages.map((message) => ({
-      role: message.model ? 'assistant' : 'user',
+      role: message.model ? 'assistant' : message.toolCalls?.length ? 'tool' : 'user',
       model: message.model || null,
       text: message.text || '',
       tokenCount: message.tokenCount || 0,
@@ -256,6 +272,8 @@ router.get('/queries/export', async (req, res) => {
         name: message.user?.name || 'N/A',
         email: message.user?.email || 'N/A',
       },
+      toolType: message.toolCalls?.[0]?.type || null,
+      searchQuery: message.toolCalls?.find(t => t.type === 'web_search')?.query || null,
     }));
 
     const csv = await exportQueryLogsToCSV(formattedLogs);
@@ -271,6 +289,83 @@ router.get('/queries/export', async (req, res) => {
   } catch (error) {
     logger.error('[logs/queries/export] Error exporting query logs to CSV:', error);
     return res.status(500).json({ message: 'Failed to export query logs', error: error.message });
+  }
+});
+
+// New Endpoint: Export messages for a specific conversation to CSV
+router.get('/conversations/:conversationId/export', async (req, res) => {
+  try {
+    const { conversationId } = req.params;
+    const { search } = req.query;
+
+    // Build filter
+    const filter = { conversationId };
+    if (search) {
+      filter.$or = [
+        { model: { $regex: search, $options: 'i' } },
+        { text: { $regex: search, $options: 'i' } },
+      ];
+      const matchingUsers = await User.find({
+        $or: [
+          { name: { $regex: search, $options: 'i' } },
+          { email: { $regex: search, $options: 'i' } },
+        ],
+      }).distinct('_id');
+      if (matchingUsers.length > 0) {
+        filter.$or.push({ user: { $in: matchingUsers } });
+      }
+    }
+
+    // Query messages
+    const messages = await Message.find(filter)
+      .populate({
+        path: 'user',
+        select: 'name email',
+        model: 'User',
+      })
+      .select('user text model tokenCount createdAt toolCalls')
+      .sort({ createdAt: 1 }) // Chronological order for chat history
+      .lean();
+
+    if (!messages || messages.length === 0) {
+      return res.status(404).json({ message: 'No messages found for this conversation' });
+    }
+
+    // Get conversation title
+    const conversation = await Conversation.findOne({ conversationId }).select('title').lean();
+    const title = conversation?.title || 'New Chat';
+
+    // Format for CSV
+    const formattedLogs = messages.map((message) => ({
+      role: message.model ? 'assistant' : message.toolCalls?.length ? 'tool' : 'user',
+      model: message.model || null,
+      text: message.text || '',
+      tokenCount: message.tokenCount || 0,
+      createdAt: message.createdAt ? message.createdAt.toISOString() : new Date().toISOString(),
+      user: {
+        name: message.user?.name || 'N/A',
+        email: message.user?.email || 'N/A',
+      },
+      toolType: message.toolCalls?.[0]?.type || null,
+      searchQuery: message.toolCalls?.find(t => t.type === 'web_search')?.query || null,
+      conversationId,
+      conversationTitle: title,
+    }));
+
+    // Generate CSV
+    const csv = await exportQueryLogsToCSV(formattedLogs);
+    const date = new Date().toISOString().split('T')[0];
+    const filename = `conversation-${conversationId}-${date}.csv`;
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Pragma', 'no-cache');
+
+    return res.send(csv);
+  } catch (error) {
+    logger.error(`[logs/conversations/${req.params.conversationId}/export] Error exporting conversation messages to CSV:`, error);
+    return res.status(500).json({ message: 'Failed to export conversation messages', error: error.message });
   }
 });
 
@@ -474,7 +569,7 @@ router.get('/conversations/:conversationId/messages', async (req, res) => {
 
   try {
     const messages = await Message.find({ conversationId })
-      .select('messageId conversationId user model text tokenCount createdAt')
+      .select('messageId conversationId user model text tokenCount createdAt toolCalls')
       .sort({ createdAt: 1 })
       .lean();
 
@@ -512,23 +607,7 @@ router.get('/conversations/:conversationId/messages', async (req, res) => {
         const resolvedUser =
           (typeof message.user === 'string' && userInfoMap[message.user]) || null;
 
-        const messageData = {
-          event: 'historical_message',
-          type: 'message_detail',
-          messageId: message.messageId,
-          conversationId: message.conversationId,
-          role: message.model ? 'ai' : 'user',
-          text: message.text || '',
-          model: message.model || null,
-          tokenCount: message.tokenCount || 0,
-          user: resolvedUser || {
-            name: 'Unknown',
-            email: 'N/A',
-            id: typeof message.user === 'string' ? message.user : undefined,
-          },
-          createdAt: (message.createdAt ? new Date(message.createdAt).toISOString() : new Date().toISOString()),
-        };
-
+        const messageData = await buildLogData(message, 'historical_message');
         res.write(`data: ${JSON.stringify(messageData)}\n\n`);
         res.flush();
       } catch (error) {
@@ -572,33 +651,7 @@ router.get('/conversations/:conversationId/messages', async (req, res) => {
       processedMessageIds.add(newMessage._id.toString());
 
       try {
-        let user = null;
-        if (
-          typeof newMessage.user === 'string' &&
-          mongoose.Types.ObjectId.isValid(newMessage.user)
-        ) {
-          user = await User.findById(newMessage.user).select('name email').lean();
-        }
-
-        const messageData = {
-          event: 'realtime_message',
-          type: 'message_detail',
-          messageId: newMessage.messageId,
-          conversationId: newMessage.conversationId,
-          role: newMessage.model ? 'ai' : 'user',
-          text: newMessage.text || '',
-          model: newMessage.model || null,
-          tokenCount: newMessage.tokenCount || 0,
-          user: user
-            ? { name: user.name || 'Unknown', email: user.email || 'N/A', id: newMessage.user }
-            : {
-                name: 'Unknown',
-                email: 'N/A',
-                id: typeof newMessage.user === 'string' ? newMessage.user : undefined,
-              },
-          createdAt: newMessage.createdAt.toISOString(),
-        };
-
+        const messageData = await buildLogData(newMessage, 'realtime_message');
         res.write(`data: ${JSON.stringify(messageData)}\n\n`);
         res.flush();
       } catch (error) {

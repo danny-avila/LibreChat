@@ -1,10 +1,11 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '~/components/ui/Dialog';
-import { Info } from 'lucide-react';
+import { Info, Download } from 'lucide-react';
 import moment from 'moment';
 import ReactMarkdown from 'react-markdown';
 import { cn } from '~/utils';
 import React from 'react';
 import { EventSourcePolyfill } from 'event-source-polyfill';
+import { Button } from '~/components/ui/Button';
 
 interface MessageSegment {
   type: 'markdown' | 'code';
@@ -15,6 +16,37 @@ interface MessageSegment {
 interface MessageType {
   type: 'json' | 'mixed';
   content: any;
+}
+
+interface QueryLog {
+  _id: string;
+  conversationId: string;
+  user: { name?: string; email?: string; id?: string };
+  title?: string;
+  totalTokens?: number;
+  messageCount?: number;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+// Define interface for SSE data
+interface SSEMessageData {
+  type: string;
+  event: string;
+  messageId?: string;
+  text?: string;
+  createdAt?: string;
+  model?: string | null;
+  tokenCount?: number;
+  conversationId?: string;
+  toolType?: string | null;
+  searchQuery?: string | null;
+}
+
+interface QueryLogDetailsDialogProps {
+  dialogOpen: boolean;
+  setDialogOpen: (open: boolean) => void;
+  selectedLog: QueryLog | null;
 }
 
 const parseMessageSegments = (text: string): MessageSegment[] => {
@@ -64,23 +96,6 @@ const detectMessageType = (text: string): MessageType => {
   }
 };
 
-interface QueryLog {
-  _id: string;
-  conversationId: string;
-  user: { name?: string; email?: string; id?: string };
-  title?: string;
-  totalTokens?: number;
-  messageCount?: number;
-  createdAt: string;
-  updatedAt?: string;
-}
-
-interface QueryLogDetailsDialogProps {
-  dialogOpen: boolean;
-  setDialogOpen: (open: boolean) => void;
-  selectedLog: QueryLog | null;
-}
-
 const QueryLogDetailsDialog: React.FC<QueryLogDetailsDialogProps> = ({
   dialogOpen,
   setDialogOpen,
@@ -89,7 +104,7 @@ const QueryLogDetailsDialog: React.FC<QueryLogDetailsDialogProps> = ({
   const [loadingHistory, setLoadingHistory] = React.useState(false);
   const [historyError, setHistoryError] = React.useState<string | null>(null);
   const [history, setHistory] = React.useState<
-    { id?: string; role: 'ai' | 'user'; text: string; createdAt: string; model?: string | null; tokenCount?: number; conversationId?: string }[]
+    { id?: string; role: 'ai' | 'user' | 'tool'; text: string; createdAt: string; model?: string | null; tokenCount?: number; conversationId?: string; toolType?: string | null; searchQuery?: string | null }[]
   >([]);
 
   const sseRef = React.useRef<EventSourcePolyfill | null>(null);
@@ -126,7 +141,7 @@ const QueryLogDetailsDialog: React.FC<QueryLogDetailsDialogProps> = ({
     es.onmessage = (event) => {
       if (!event.data) return;
       try {
-        const data = JSON.parse(event.data);
+        const data: SSEMessageData = JSON.parse(event.data);
 
         if (data.type === 'heartbeat' || data.type === 'init' || data.type === 'historical_complete') {
           setLoadingHistory(false);
@@ -138,14 +153,18 @@ const QueryLogDetailsDialog: React.FC<QueryLogDetailsDialogProps> = ({
           if (id && messageIdsRef.current.has(id)) return;
           if (id) messageIdsRef.current.add(id);
 
+          const role: 'ai' | 'user' | 'tool' = data.toolType ? 'tool' : data.model ? 'ai' : 'user';
+
           const entry = {
             id,
-            role: (data.model ? 'ai' : 'user') as 'ai' | 'user',
+            role,
             text: String(data.text || ''),
             createdAt: String(data.createdAt || ''),
             model: data.model ?? null,
             tokenCount: data.tokenCount ?? 0,
             conversationId: data.conversationId,
+            toolType: data.toolType ?? null,
+            searchQuery: data.searchQuery ?? null,
           };
 
           setHistory((prev) => [entry, ...prev]);
@@ -170,6 +189,37 @@ const QueryLogDetailsDialog: React.FC<QueryLogDetailsDialogProps> = ({
     };
   }, [dialogOpen, selectedLog?.conversationId]);
 
+  // Function to trigger CSV export
+  const handleExportCSV = async () => {
+    if (!selectedLog?.conversationId) return;
+    const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
+    const token = localStorage.getItem('token');
+    if (!token) {
+      alert('No authentication token found');
+      return;
+    }
+    try {
+      const response = await fetch(`${API_BASE}/api/logs/conversations/${selectedLog.conversationId}/export`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) throw new Error('Failed to export');
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `conversation-${selectedLog.conversationId}-${new Date().toISOString().split('T')[0]}.csv`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+    }catch (error) {
+      if (error instanceof Error) {
+        alert('Failed to export conversation: ' + error.message);
+      } else {
+        alert('Failed to export conversation: Unknown error');
+      }
+    }
+    
+  };
+
   return (
     <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
       <DialogContent
@@ -188,6 +238,16 @@ const QueryLogDetailsDialog: React.FC<QueryLogDetailsDialogProps> = ({
               </span>
               <span className="text-foreground">Query Log Details</span>
             </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleExportCSV}
+              disabled={!selectedLog?.conversationId}
+              className="flex items-center gap-2"
+            >
+              <Download className="h-4 w-4" />
+              Export to CSV
+            </Button>
           </DialogTitle>
         </DialogHeader>
 
@@ -249,11 +309,15 @@ const QueryLogDetailsDialog: React.FC<QueryLogDetailsDialogProps> = ({
                             className={`shrink-0 rounded px-2 py-0.5 text-xs font-semibold ${
                               h.role === 'ai'
                                 ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300'
+                                : h.role === 'tool'
+                                ? 'bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300'
                                 : 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300'
                             }`}
                           >
                             {h.role === 'ai'
                               ? `AI${h.model ? ` · ${h.model}` : ''}`
+                              : h.role === 'tool'
+                              ? `Tool${h.toolType ? ` · ${h.toolType}` : ''}`
                               : 'User'}
                           </span>
                           <div className="flex-1 min-w-0">
@@ -270,6 +334,11 @@ const QueryLogDetailsDialog: React.FC<QueryLogDetailsDialogProps> = ({
                             <div className="prose prose-sm max-w-none break-words">
                               <ReactMarkdown>{h.text || ''}</ReactMarkdown>
                             </div>
+                            {h.toolType === 'web_search' && h.searchQuery && (
+                              <div className="text-xs text-muted-foreground mt-1">
+                                Search Query: {h.searchQuery}
+                              </div>
+                            )}
                           </div>
                         </div>
                       </li>
