@@ -1,4 +1,4 @@
-import React, { memo, useState, useCallback, useMemo } from 'react';
+import React, { memo, useState, useCallback, useMemo, useEffect } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { CheckboxButton } from '@librechat/client';
 import { ArtifactModes } from 'librechat-data-provider';
@@ -18,6 +18,7 @@ function Artifacts() {
   const { toggleState, debouncedChange, isPinned } = artifacts;
 
   const [isPopoverOpen, setIsPopoverOpen] = useState(false);
+  const [isButtonExpanded, setIsButtonExpanded] = useState(false);
 
   const currentState = useMemo<ArtifactsToggleState>(() => {
     if (typeof toggleState === 'string' && toggleState) {
@@ -33,10 +34,25 @@ function Artifacts() {
   const handleToggle = useCallback(() => {
     if (isEnabled) {
       debouncedChange({ value: '' });
+      setIsButtonExpanded(false);
     } else {
       debouncedChange({ value: ArtifactModes.DEFAULT });
     }
   }, [isEnabled, debouncedChange]);
+
+  const handleMenuButtonClick = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      setIsButtonExpanded(!isButtonExpanded);
+    },
+    [isButtonExpanded],
+  );
+
+  useEffect(() => {
+    if (!isPopoverOpen) {
+      setIsButtonExpanded(false);
+    }
+  }, [isPopoverOpen]);
 
   const handleShadcnToggle = useCallback(() => {
     if (isShadcnEnabled) {
@@ -77,9 +93,14 @@ function Artifacts() {
               'border-amber-600/40 bg-amber-500/10 hover:bg-amber-700/10',
               'transition-colors',
             )}
-            onClick={(e) => e.stopPropagation()}
+            onClick={handleMenuButtonClick}
           >
-            <ChevronDown className="ml-0.5 h-4 w-4 text-text-secondary" />
+            <ChevronDown
+              className={cn(
+                'ml-1 h-4 w-4 text-text-secondary transition-transform duration-300 md:ml-0.5',
+                isButtonExpanded && 'rotate-180',
+              )}
+            />
           </Ariakit.MenuButton>
 
           <Ariakit.Menu
