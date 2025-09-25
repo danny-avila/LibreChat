@@ -37,6 +37,7 @@ interface:
   fileCitations: true
   memories: false
   fileSearch: true
+  webSearch: true
   marketplace: 
     use: false
   # Temporary chat retention period in hours (default: 720, min: 1, max: 8760)
@@ -57,13 +58,13 @@ registration:
 
 
 # Example Balance settings
-# balance:
-#   enabled: false
-#   startBalance: 20000
-#   autoRefillEnabled: false
-#   refillIntervalValue: 30
-#   refillIntervalUnit: 'days'
-#   refillAmount: 10000
+balance:
+  enabled: true
+  startBalance: 500000
+  autoRefillEnabled: true
+  refillIntervalValue: 1
+  refillIntervalUnit: 'days'
+  refillAmount: 100000
 
 # speech:
 #   tts:
@@ -93,11 +94,11 @@ registration:
 #     userWindowInMinutes: 60  # Rate limit window for conversation imports per user
 
 # Example Actions Object Structure
-actions:
-  allowedDomains:
-    - "swapi.dev"
-    - "librechat.ai"
-    - "google.com"
+# actions:
+#   allowedDomains:
+#     - "swapi.dev"
+#     - "librechat.ai"
+#     - "google.com"
 
 fileConfig:
   endpoints:
@@ -220,12 +221,36 @@ endpoints:
       baseURL: 'https://router.huggingface.co/v1'
       models:
         default:
-          - 'openai/gpt-oss-120b'
+          - 'openai/gpt-oss-120b:groq'
         fetch: false
       titleConvo: true
-      titleModel: 'openai/gpt-oss-120b'
-      addParams:
-        tool_choice: 'required'
+      titleModel: 'openai/gpt-oss-120b:groq'
+      # addParams:
+      #   tool_choice: 'required'
+
+    # - name: 'UbiOps llama'
+    #   apiKey: '${UBIOPS_KEY_LLAMA}'
+    #   baseURL: 'https://api.intermax.ubiops.com/v2.1/projects/gradient-ds-proxy/openai-compatible/v1'
+    #   models:
+    #     default:
+    #       - 'ubiops-deployment/llama-3-3//llama-3-3'
+    #     fetch: false
+    #   titleConvo: true
+    #   titleModel: 'ubiops-deployment/llama-3-3//llama-3-3'
+    #   addParams:
+    #     tool_choice: 'required'
+
+    # - name: 'UbiOps GPT'
+    #   apiKey: '${UBIOPS_KEY_GPT}'
+    #   baseURL: 'https://api.ubiops.com/v2.1/projects/gen-ai/openai-compatible/v1'
+    #   models:
+    #     default:
+    #       - 'ubiops-deployment/gpt-oss//openai/gpt-oss-120b'
+    #     fetch: false
+    #   titleConvo: true
+    #   titleModel: 'ubiops-deployment/gpt-oss//openai/gpt-oss-120b'
+
+
     # Together AI
     # - name: 'Local'
     #   apiKey: '${TOGETHER_API_KEY}'
@@ -280,7 +305,6 @@ endpoints:
     # # OpenRouter Example
     # - name: 'OpenRouter'
     #   # For `apiKey` and `
-    
   agents:
   #   # (optional) Default recursion depth for agents, defaults to 25
   #   recursionLimit: 50
@@ -289,7 +313,11 @@ endpoints:
   #   # (optional) Disable the builder interface for agents
     disableBuilder: false
   #   # (optional) Agent Capabilities available to all users. Omit the ones you wish to exclude. Defaults to list below.
-    capabilities: ["file_search", "web_search", "chain"]
+    capabilities: ["file_search", "web_search", "tools", "chain"]
+
+
+includedTools:
+  - __none__
   
 webSearch:
   searchProvider: "serper"
