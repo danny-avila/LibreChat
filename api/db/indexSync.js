@@ -1,10 +1,8 @@
 const mongoose = require('mongoose');
 const { MeiliSearch } = require('meilisearch');
 const { logger } = require('@librechat/data-schemas');
-const { FlowStateManager } = require('@librechat/api');
 const { CacheKeys } = require('librechat-data-provider');
-
-const { isEnabled } = require('~/server/utils');
+const { isEnabled, FlowStateManager } = require('@librechat/api');
 const { getLogStores } = require('~/cache');
 
 const Conversation = mongoose.models.Conversation;
@@ -32,6 +30,81 @@ class MeiliSearchClient {
 }
 
 /**
+ * Ensures indexes have proper filterable attributes configured and checks if documents have user field
+ * @param {MeiliSearch} client - MeiliSearch client instance
+ * @returns {Promise<boolean>} - true if configuration was updated or re-sync is needed
+ */
+async function ensureFilterableAttributes(client) {
+  try {
+    // Check and update messages index
+    try {
+      const messagesIndex = client.index('messages');
+      const settings = await messagesIndex.getSettings();
+
+      if (!settings.filterableAttributes || !settings.filterableAttributes.includes('user')) {
+        logger.info('[indexSync] Configuring messages index to filter by user...');
+        await messagesIndex.updateSettings({
+          filterableAttributes: ['user'],
+        });
+        logger.info('[indexSync] Messages index configured for user filtering');
+        logger.info('[indexSync] Index configuration updated. Full re-sync will be triggered.');
+        return true;
+      }
+
+      // Check if existing documents have user field indexed
+      try {
+        const searchResult = await messagesIndex.search('', { limit: 1 });
+        if (searchResult.hits.length > 0 && !searchResult.hits[0].user) {
+          logger.info('[indexSync] Existing messages missing user field, re-sync needed');
+          return true;
+        }
+      } catch (searchError) {
+        logger.debug('[indexSync] Could not check message documents:', searchError.message);
+      }
+    } catch (error) {
+      if (error.code !== 'index_not_found') {
+        logger.warn('[indexSync] Could not check/update messages index settings:', error.message);
+      }
+    }
+
+    // Check and update conversations index
+    try {
+      const convosIndex = client.index('convos');
+      const settings = await convosIndex.getSettings();
+
+      if (!settings.filterableAttributes || !settings.filterableAttributes.includes('user')) {
+        logger.info('[indexSync] Configuring convos index to filter by user...');
+        await convosIndex.updateSettings({
+          filterableAttributes: ['user'],
+        });
+        logger.info('[indexSync] Convos index configured for user filtering');
+        logger.info('[indexSync] Index configuration updated. Full re-sync will be triggered.');
+        return true;
+      }
+
+      // Check if existing documents have user field indexed
+      try {
+        const searchResult = await convosIndex.search('', { limit: 1 });
+        if (searchResult.hits.length > 0 && !searchResult.hits[0].user) {
+          logger.info('[indexSync] Existing conversations missing user field, re-sync needed');
+          return true;
+        }
+      } catch (searchError) {
+        logger.debug('[indexSync] Could not check conversation documents:', searchError.message);
+      }
+    } catch (error) {
+      if (error.code !== 'index_not_found') {
+        logger.warn('[indexSync] Could not check/update convos index settings:', error.message);
+      }
+    }
+  } catch (error) {
+    logger.error('[indexSync] Error ensuring filterable attributes:', error);
+  }
+
+  return false;
+}
+
+/**
  * Performs the actual sync operations for messages and conversations
  */
 async function performSync() {
@@ -47,12 +120,27 @@ async function performSync() {
     return { messagesSync: false, convosSync: false };
   }
 
+  /** Ensures indexes have proper filterable attributes configured */
+  const configUpdated = await ensureFilterableAttributes(client);
+
   let messagesSync = false;
   let convosSync = false;
 
+  // If configuration was just updated or documents are missing user field, force a full re-sync
+  if (configUpdated) {
+    logger.info('[indexSync] Forcing full re-sync to ensure user field is properly indexed...');
+
+    // Reset sync flags to force full re-sync
+    await Message.collection.updateMany({ _meiliIndex: true }, { $set: { _meiliIndex: false } });
+    await Conversation.collection.updateMany(
+      { _meiliIndex: true },
+      { $set: { _meiliIndex: false } },
+    );
+  }
+
   // Check if we need to sync messages
   const messageProgress = await Message.getSyncProgress();
-  if (!messageProgress.isComplete) {
+  if (!messageProgress.isComplete || configUpdated) {
     logger.info(
       `[indexSync] Messages need syncing: ${messageProgress.totalProcessed}/${messageProgress.totalDocuments} indexed`,
     );
@@ -79,7 +167,7 @@ async function performSync() {
 
   // Check if we need to sync conversations
   const convoProgress = await Conversation.getSyncProgress();
-  if (!convoProgress.isComplete) {
+  if (!convoProgress.isComplete || configUpdated) {
     logger.info(
       `[indexSync] Conversations need syncing: ${convoProgress.totalProcessed}/${convoProgress.totalDocuments} indexed`,
     );

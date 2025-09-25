@@ -1,13 +1,45 @@
 const { logger } = require('@librechat/data-schemas');
 const { MCPOAuthHandler } = require('@librechat/api');
 const { CacheKeys } = require('librechat-data-provider');
-const { getMCPSetupData, checkOAuthFlowStatus, getServerConnectionStatus } = require('./MCP');
+const {
+  createMCPTool,
+  createMCPTools,
+  getMCPSetupData,
+  checkOAuthFlowStatus,
+  getServerConnectionStatus,
+} = require('./MCP');
 
 // Mock all dependencies
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
     debug: jest.fn(),
     error: jest.fn(),
+    info: jest.fn(),
+    warn: jest.fn(),
+  },
+}));
+
+jest.mock('@langchain/core/tools', () => ({
+  tool: jest.fn((fn, config) => {
+    const toolInstance = { _call: fn, ...config };
+    return toolInstance;
+  }),
+}));
+
+jest.mock('@librechat/agents', () => ({
+  Providers: {
+    VERTEXAI: 'vertexai',
+    GOOGLE: 'google',
+  },
+  StepTypes: {
+    TOOL_CALLS: 'tool_calls',
+  },
+  GraphEvents: {
+    ON_RUN_STEP_DELTA: 'on_run_step_delta',
+    ON_RUN_STEP: 'on_run_step',
+  },
+  Constants: {
+    CONTENT_AND_ARTIFACT: 'content_and_artifact',
   },
 }));
 
@@ -15,11 +47,26 @@ jest.mock('@librechat/api', () => ({
   MCPOAuthHandler: {
     generateFlowId: jest.fn(),
   },
+  sendEvent: jest.fn(),
+  normalizeServerName: jest.fn((name) => name),
+  convertWithResolvedRefs: jest.fn((params) => params),
 }));
 
 jest.mock('librechat-data-provider', () => ({
   CacheKeys: {
     FLOWS: 'flows',
+  },
+  Constants: {
+    USE_PRELIM_RESPONSE_MESSAGE_ID: 'prelim_response_id',
+    mcp_delimiter: '::',
+    mcp_prefix: 'mcp_',
+  },
+  ContentTypes: {
+    TEXT: 'text',
+  },
+  isAssistantsEndpoint: jest.fn(() => false),
+  Time: {
+    TWO_MINUTES: 120000,
   },
 }));
 
@@ -44,8 +91,11 @@ jest.mock('~/models', () => ({
   updateToken: jest.fn(),
 }));
 
+jest.mock('./Tools/mcp', () => ({
+  reinitMCPServer: jest.fn(),
+}));
+
 describe('tests for the new helper functions used by the MCP connection status endpoints', () => {
-  let mockLoadCustomConfig;
   let mockGetMCPManager;
   let mockGetFlowStateManager;
   let mockGetLogStores;
@@ -54,7 +104,6 @@ describe('tests for the new helper functions used by the MCP connection status e
   beforeEach(() => {
     jest.clearAllMocks();
 
-    mockLoadCustomConfig = require('./Config').loadCustomConfig;
     mockGetMCPManager = require('~/config').getMCPManager;
     mockGetFlowStateManager = require('~/config').getFlowStateManager;
     mockGetLogStores = require('~/cache').getLogStores;
@@ -564,6 +613,278 @@ describe('tests for the new helper functions used by the MCP connection status e
 
       // Should not call flow manager since server doesn't require OAuth
       expect(mockFlowManager.getFlowState).not.toHaveBeenCalled();
+    });
+  });
+});
+
+describe('User parameter passing tests', () => {
+  let mockReinitMCPServer;
+  let mockGetFlowStateManager;
+  let mockGetLogStores;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockReinitMCPServer = require('./Tools/mcp').reinitMCPServer;
+    mockGetFlowStateManager = require('~/config').getFlowStateManager;
+    mockGetLogStores = require('~/cache').getLogStores;
+
+    // Setup default mocks
+    mockGetLogStores.mockReturnValue({});
+    mockGetFlowStateManager.mockReturnValue({
+      createFlowWithHandler: jest.fn(),
+      failFlow: jest.fn(),
+    });
+  });
+
+  describe('createMCPTools', () => {
+    it('should pass user parameter to reinitMCPServer when calling reconnectServer internally', async () => {
+      const mockUser = { id: 'test-user-123', name: 'Test User' };
+      const mockRes = { write: jest.fn(), flush: jest.fn() };
+      const mockSignal = new AbortController().signal;
+
+      mockReinitMCPServer.mockResolvedValue({
+        tools: [{ name: 'test-tool' }],
+        availableTools: {
+          'test-tool::test-server': {
+            function: {
+              description: 'Test tool',
+              parameters: { type: 'object', properties: {} },
+            },
+          },
+        },
+      });
+
+      await createMCPTools({
+        res: mockRes,
+        user: mockUser,
+        serverName: 'test-server',
+        provider: 'openai',
+        signal: mockSignal,
+        userMCPAuthMap: {},
+      });
+
+      // Verify reinitMCPServer was called with the user
+      expect(mockReinitMCPServer).toHaveBeenCalledWith(
+        expect.objectContaining({
+          user: mockUser,
+          serverName: 'test-server',
+        }),
+      );
+      expect(mockReinitMCPServer.mock.calls[0][0].user).toBe(mockUser);
+    });
+
+    it('should throw error if user is not provided', async () => {
+      const mockRes = { write: jest.fn(), flush: jest.fn() };
+
+      mockReinitMCPServer.mockResolvedValue({
+        tools: [],
+        availableTools: {},
+      });
+
+      // Call without user should throw error
+      await expect(
+        createMCPTools({
+          res: mockRes,
+          user: undefined,
+          serverName: 'test-server',
+          provider: 'openai',
+          userMCPAuthMap: {},
+        }),
+      ).rejects.toThrow("Cannot read properties of undefined (reading 'id')");
+
+      // Verify reinitMCPServer was not called due to early error
+      expect(mockReinitMCPServer).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('createMCPTool', () => {
+    it('should pass user parameter to reinitMCPServer when tool not in cache', async () => {
+      const mockUser = { id: 'test-user-456', email: 'test@example.com' };
+      const mockRes = { write: jest.fn(), flush: jest.fn() };
+      const mockSignal = new AbortController().signal;
+
+      mockReinitMCPServer.mockResolvedValue({
+        availableTools: {
+          'test-tool::test-server': {
+            function: {
+              description: 'Test tool',
+              parameters: { type: 'object', properties: {} },
+            },
+          },
+        },
+      });
+
+      // Call without availableTools to trigger reinit
+      await createMCPTool({
+        res: mockRes,
+        user: mockUser,
+        toolKey: 'test-tool::test-server',
+        provider: 'openai',
+        signal: mockSignal,
+        userMCPAuthMap: {},
+        availableTools: undefined, // Force reinit
+      });
+
+      // Verify reinitMCPServer was called with the user
+      expect(mockReinitMCPServer).toHaveBeenCalledWith(
+        expect.objectContaining({
+          user: mockUser,
+          serverName: 'test-server',
+        }),
+      );
+      expect(mockReinitMCPServer.mock.calls[0][0].user).toBe(mockUser);
+    });
+
+    it('should not call reinitMCPServer when tool is in cache', async () => {
+      const mockUser = { id: 'test-user-789' };
+      const mockRes = { write: jest.fn(), flush: jest.fn() };
+
+      const availableTools = {
+        'test-tool::test-server': {
+          function: {
+            description: 'Cached tool',
+            parameters: { type: 'object', properties: {} },
+          },
+        },
+      };
+
+      await createMCPTool({
+        res: mockRes,
+        user: mockUser,
+        toolKey: 'test-tool::test-server',
+        provider: 'openai',
+        userMCPAuthMap: {},
+        availableTools: availableTools,
+      });
+
+      // Verify reinitMCPServer was NOT called since tool was in cache
+      expect(mockReinitMCPServer).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('reinitMCPServer (via reconnectServer)', () => {
+    it('should always receive user parameter when called from createMCPTools', async () => {
+      const mockUser = { id: 'user-001', role: 'admin' };
+      const mockRes = { write: jest.fn(), flush: jest.fn() };
+
+      // Track all calls to reinitMCPServer
+      const reinitCalls = [];
+      mockReinitMCPServer.mockImplementation((params) => {
+        reinitCalls.push(params);
+        return Promise.resolve({
+          tools: [{ name: 'tool1' }, { name: 'tool2' }],
+          availableTools: {
+            'tool1::server1': { function: { description: 'Tool 1', parameters: {} } },
+            'tool2::server1': { function: { description: 'Tool 2', parameters: {} } },
+          },
+        });
+      });
+
+      await createMCPTools({
+        res: mockRes,
+        user: mockUser,
+        serverName: 'server1',
+        provider: 'anthropic',
+        userMCPAuthMap: {},
+      });
+
+      // Verify all calls to reinitMCPServer had the user
+      expect(reinitCalls.length).toBeGreaterThan(0);
+      reinitCalls.forEach((call) => {
+        expect(call.user).toBe(mockUser);
+        expect(call.user.id).toBe('user-001');
+      });
+    });
+
+    it('should always receive user parameter when called from createMCPTool', async () => {
+      const mockUser = { id: 'user-002', permissions: ['read', 'write'] };
+      const mockRes = { write: jest.fn(), flush: jest.fn() };
+
+      // Track all calls to reinitMCPServer
+      const reinitCalls = [];
+      mockReinitMCPServer.mockImplementation((params) => {
+        reinitCalls.push(params);
+        return Promise.resolve({
+          availableTools: {
+            'my-tool::my-server': {
+              function: { description: 'My Tool', parameters: {} },
+            },
+          },
+        });
+      });
+
+      await createMCPTool({
+        res: mockRes,
+        user: mockUser,
+        toolKey: 'my-tool::my-server',
+        provider: 'google',
+        userMCPAuthMap: {},
+        availableTools: undefined, // Force reinit
+      });
+
+      // Verify the call to reinitMCPServer had the user
+      expect(reinitCalls.length).toBe(1);
+      expect(reinitCalls[0].user).toBe(mockUser);
+      expect(reinitCalls[0].user.id).toBe('user-002');
+    });
+  });
+
+  describe('User parameter integrity', () => {
+    it('should preserve user object properties through the call chain', async () => {
+      const complexUser = {
+        id: 'complex-user',
+        name: 'John Doe',
+        email: 'john@example.com',
+        metadata: { subscription: 'premium', settings: { theme: 'dark' } },
+      };
+      const mockRes = { write: jest.fn(), flush: jest.fn() };
+
+      let capturedUser = null;
+      mockReinitMCPServer.mockImplementation((params) => {
+        capturedUser = params.user;
+        return Promise.resolve({
+          tools: [{ name: 'test' }],
+          availableTools: {
+            'test::server': { function: { description: 'Test', parameters: {} } },
+          },
+        });
+      });
+
+      await createMCPTools({
+        res: mockRes,
+        user: complexUser,
+        serverName: 'server',
+        provider: 'openai',
+        userMCPAuthMap: {},
+      });
+
+      // Verify the complete user object was passed
+      expect(capturedUser).toEqual(complexUser);
+      expect(capturedUser.id).toBe('complex-user');
+      expect(capturedUser.metadata.subscription).toBe('premium');
+      expect(capturedUser.metadata.settings.theme).toBe('dark');
+    });
+
+    it('should throw error when user is null', async () => {
+      const mockRes = { write: jest.fn(), flush: jest.fn() };
+
+      mockReinitMCPServer.mockResolvedValue({
+        tools: [],
+        availableTools: {},
+      });
+
+      await expect(
+        createMCPTools({
+          res: mockRes,
+          user: null,
+          serverName: 'test-server',
+          provider: 'openai',
+          userMCPAuthMap: {},
+        }),
+      ).rejects.toThrow("Cannot read properties of null (reading 'id')");
+
+      // Verify reinitMCPServer was not called due to early error
+      expect(mockReinitMCPServer).not.toHaveBeenCalled();
     });
   });
 });

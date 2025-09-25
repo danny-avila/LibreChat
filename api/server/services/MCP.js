@@ -153,7 +153,7 @@ function createOAuthCallback({ runStepEmitter, runStepDeltaEmitter }) {
 /**
  * @param {Object} params
  * @param {ServerResponse} params.res - The Express response object for sending events.
- * @param {string} params.userId - The user ID from the request object.
+ * @param {IUser} params.user - The user from the request object.
  * @param {string} params.serverName
  * @param {AbortSignal} params.signal
  * @param {string} params.model
@@ -161,9 +161,9 @@ function createOAuthCallback({ runStepEmitter, runStepDeltaEmitter }) {
  * @param {Record<string, Record<string, string>>} [params.userMCPAuthMap]
  * @returns { Promise<Array<typeof tool | { _call: (toolInput: Object | string) => unknown}>> } An object with `_call` method to execute the tool input.
  */
-async function reconnectServer({ res, userId, index, signal, serverName, userMCPAuthMap }) {
+async function reconnectServer({ res, user, index, signal, serverName, userMCPAuthMap }) {
   const runId = Constants.USE_PRELIM_RESPONSE_MESSAGE_ID;
-  const flowId = `${userId}:${serverName}:${Date.now()}`;
+  const flowId = `${user.id}:${serverName}:${Date.now()}`;
   const flowManager = getFlowStateManager(getLogStores(CacheKeys.FLOWS));
   const stepId = 'step_oauth_login_' + serverName;
   const toolCall = {
@@ -192,7 +192,7 @@ async function reconnectServer({ res, userId, index, signal, serverName, userMCP
     flowManager,
   });
   return await reinitMCPServer({
-    userId,
+    user,
     signal,
     serverName,
     oauthStart,
@@ -212,7 +212,7 @@ async function reconnectServer({ res, userId, index, signal, serverName, userMCP
  *
  * @param {Object} params
  * @param {ServerResponse} params.res - The Express response object for sending events.
- * @param {string} params.userId - The user ID from the request object.
+ * @param {IUser} params.user - The user from the request object.
  * @param {string} params.serverName
  * @param {string} params.model
  * @param {Providers | EModelEndpoint} params.provider - The provider for the tool.
@@ -221,16 +221,8 @@ async function reconnectServer({ res, userId, index, signal, serverName, userMCP
  * @param {Record<string, Record<string, string>>} [params.userMCPAuthMap]
  * @returns { Promise<Array<typeof tool | { _call: (toolInput: Object | string) => unknown}>> } An object with `_call` method to execute the tool input.
  */
-async function createMCPTools({
-  res,
-  userId,
-  index,
-  signal,
-  serverName,
-  provider,
-  userMCPAuthMap,
-}) {
-  const result = await reconnectServer({ res, userId, index, signal, serverName, userMCPAuthMap });
+async function createMCPTools({ res, user, index, signal, serverName, provider, userMCPAuthMap }) {
+  const result = await reconnectServer({ res, user, index, signal, serverName, userMCPAuthMap });
   if (!result || !result.tools) {
     logger.warn(`[MCP][${serverName}] Failed to reinitialize MCP server.`);
     return;
@@ -240,7 +232,7 @@ async function createMCPTools({
   for (const tool of result.tools) {
     const toolInstance = await createMCPTool({
       res,
-      userId,
+      user,
       provider,
       userMCPAuthMap,
       availableTools: result.availableTools,
@@ -258,7 +250,7 @@ async function createMCPTools({
  * Creates a single tool from the specified MCP Server via `toolKey`.
  * @param {Object} params
  * @param {ServerResponse} params.res - The Express response object for sending events.
- * @param {string} params.userId - The user ID from the request object.
+ * @param {IUser} params.user - The user from the request object.
  * @param {string} params.toolKey - The toolKey for the tool.
  * @param {string} params.model - The model for the tool.
  * @param {number} [params.index]
@@ -270,7 +262,7 @@ async function createMCPTools({
  */
 async function createMCPTool({
   res,
-  userId,
+  user,
   index,
   signal,
   toolKey,
@@ -288,7 +280,7 @@ async function createMCPTool({
     );
     const result = await reconnectServer({
       res,
-      userId,
+      user,
       index,
       signal,
       serverName,
