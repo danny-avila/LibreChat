@@ -155,3 +155,13 @@ server/controller/agents/client.js -> more strong opiniation towards using the f
 
 client/src/components/Chat/Input/Files/AttachFileMenu.tsx -> hide the image upload in the UI, auto-enable file upload
 client/src/components/Chat/Input/Files/ -> hide the image upload in the UI, auto-enable file upload
+
+BadgeRowContext.tsx -> Made sure that file addition leads to activated file_search 
+BadgeRowContext -> Made sure that file addition leads to activated file_search 
+
+client/store/settings.ts -> buttons below message.
+client/src/components/Messages/HoverButtons.tsx -> buttons below message.
+
+client/src/components/Nav/SettingsTabs/Chat/Chat.tsx -> added the setttings for turning on the other options below chatmessages.
+
+Added some languages for the new settings

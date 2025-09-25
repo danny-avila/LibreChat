@@ -39,6 +39,10 @@ const localStorageAtoms = {
   rememberDefaultFork: atomWithLocalStorage(LocalStorageKeys.REMEMBER_FORK_OPTION, false),
   showThinking: atomWithLocalStorage('showThinking', false),
   saveBadgesState: atomWithLocalStorage('saveBadgesState', false),
+  // Message action visibility
+  showForkButton: atomWithLocalStorage('showForkButton', false),
+  showEditButton: atomWithLocalStorage('showEditButton', false),
+  showContinueButton: atomWithLocalStorage('showContinueButton', false),
 
   // Beta features settings
   modularChat: atomWithLocalStorage('modularChat', true),
@@ -55,14 +59,14 @@ const localStorageAtoms = {
   conversationMode: atomWithLocalStorage('conversationMode', false),
   advancedMode: atomWithLocalStorage('advancedMode', false),
 
-  speechToText: atomWithLocalStorage('speechToText', true),
+  speechToText: atomWithLocalStorage('speechToText', false),
   engineSTT: atomWithLocalStorage('engineSTT', 'browser'),
   languageSTT: atomWithLocalStorage('languageSTT', ''),
   autoTranscribeAudio: atomWithLocalStorage('autoTranscribeAudio', false),
   decibelValue: atomWithLocalStorage('decibelValue', -45),
   autoSendText: atomWithLocalStorage('autoSendText', -1),
 
-  textToSpeech: atomWithLocalStorage('textToSpeech', true),
+  textToSpeech: atomWithLocalStorage('textToSpeech', false),
   engineTTS: atomWithLocalStorage('engineTTS', 'browser'),
   voice: atomWithLocalStorage<string | undefined>('voice', undefined),
   cloudBrowserVoices: atomWithLocalStorage('cloudBrowserVoices', false),

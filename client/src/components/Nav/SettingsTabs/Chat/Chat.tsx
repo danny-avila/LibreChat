@@ -42,6 +42,27 @@ const toggleSwitchConfigs = [
     key: 'showCode',
   },
   {
+    stateAtom: store.showEditButton,
+    localizationKey: 'com_nav_show_edit_button',
+    switchId: 'showEditButton',
+    hoverCardText: undefined,
+    key: 'showEditButton',
+  },
+  {
+    stateAtom: store.showForkButton,
+    localizationKey: 'com_nav_show_fork_button',
+    switchId: 'showForkButton',
+    hoverCardText: undefined,
+    key: 'showForkButton',
+  },
+  {
+    stateAtom: store.showContinueButton,
+    localizationKey: 'com_nav_show_continue_button',
+    switchId: 'showContinueButton',
+    hoverCardText: undefined,
+    key: 'showContinueButton',
+  },
+  {
     stateAtom: store.LaTeXParsing,
     localizationKey: 'com_nav_latex_parsing',
     switchId: 'latexParsing',

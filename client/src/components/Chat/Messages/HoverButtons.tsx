@@ -123,6 +123,9 @@ const HoverButtons = ({
   const localize = useLocalize();
   const [isCopied, setIsCopied] = useState(false);
   const [TextToSpeech] = useRecoilState<boolean>(store.textToSpeech);
+  const [showForkButton] = useRecoilState<boolean>(store.showForkButton);
+  const [showEditButton] = useRecoilState<boolean>(store.showEditButton);
+  const [showContinueButton] = useRecoilState<boolean>(store.showContinueButton);
 
   const endpoint = useMemo(() => {
     if (!conversation) {
@@ -214,7 +217,7 @@ const HoverButtons = ({
       />
 
       {/* Edit Button */}
-      {isEditableEndpoint && (
+      {isEditableEndpoint && showEditButton && (
         <HoverButton
           id={`edit-${message.messageId}`}
           onClick={onEdit}
@@ -229,13 +232,15 @@ const HoverButtons = ({
       )}
 
       {/* Fork Button */}
-      <Fork
-        messageId={message.messageId}
-        conversationId={conversation.conversationId}
-        forkingSupported={forkingSupported}
-        latestMessageId={latestMessage?.messageId}
-        isLast={isLast}
-      />
+      {showForkButton && (
+        <Fork
+          messageId={message.messageId}
+          conversationId={conversation.conversationId}
+          forkingSupported={forkingSupported}
+          latestMessageId={latestMessage?.messageId}
+          isLast={isLast}
+        />
+      )}
 
       {/* Feedback Buttons */}
       {!isCreatedByUser && handleFeedback != null && (
@@ -254,7 +259,7 @@ const HoverButtons = ({
       )}
 
       {/* Continue Button */}
-      {continueSupported && (
+      {continueSupported && showContinueButton && (
         <HoverButton
           onClick={(e) => e && handleContinue(e)}
           title={localize('com_ui_continue')}
