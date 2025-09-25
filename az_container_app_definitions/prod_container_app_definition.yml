@@ -35,6 +35,11 @@ properties:
         keyVaultUrl: https://kv-pyxplayai-prod-001.vault.azure.net/secrets/PROD-MAAS-API-KEY
         identity: system
     activeRevisionsMode: single
+    registries:
+      - server: conpaychexaiprod001.azurecr.io
+        username: ""
+        passwordSecretRef: ""
+        identity: system
     ingress:
       external: true
       allowInsecure: false
