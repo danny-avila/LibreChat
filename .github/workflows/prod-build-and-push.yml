@@ -5,17 +5,13 @@ env:
     ACR_HOST: ${{ vars.REGISTRY_LOGIN_SERVER_PROD }}
     ACR_USER: ${{ secrets.REGISTRY_USERNAME_PROD }}
     ACR_PASS: ${{ secrets.REGISTRY_PASSWORD_PROD }}
-    AZURE_CONFIG_DIR: ${{ github.workspace }}/.azure-cli-tmp
 
 on:
   workflow_dispatch:
-  #push:
-  #  branches:
-  #    - main
 
 jobs:
     build_and_push:
-        runs-on: [self-hosted, nonprod]
+        runs-on: paychex-ai-platform-arc-prod
         steps:
             - uses: actions/checkout@v3
 
@@ -54,12 +50,14 @@ jobs:
                 github_token: ${{ secrets.CROSS_REPO_PAT }}
                 ref: 'main'
 
-            - name: Update Azure Container App
-              run: |
-                az login --identity
-                az account set --subscription "${{ secrets.AZURE_PROD_SUBSCRIPTION_ID }}"
-                az containerapp update \
-                  --name conpaichateastusprod001 \
-                  --resource-group rg-playai-eastus-prod-001 \
-                  --yaml $GITHUB_WORKSPACE/az_container_app_definitions/prod_container_app_definition.yml
+            - name: Azure CLI script
+              uses: azure/cli@v2
+              with:
+                  inlineScript: |
+                    az login --service-principal -u ${{secrets.ARC_RUNNER_SP_CLIENT_ID_PROD}} -p ${{secrets.ARC_RUNNER_SP_CLIENT_SECRET_PROD}} --tenant ${{secrets.AZURE_TENANT_ID}}
+                    az account set --subscription "${{ secrets.AZURE_PROD_SUBSCRIPTION_ID }}"
+                    az containerapp create \
+                      --name conpaichateastusprod001 \
+                      --resource-group rg-playai-eastus-prod-001 \
+                      --yaml $GITHUB_WORKSPACE/az_container_app_definitions/prod_container_app_definition.yml
                 
