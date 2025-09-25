@@ -24,9 +24,6 @@ jobs:
                 cat .paychex.dockerignore >> .dockerignore |
                 cat .dockerignore
 
-            - name: Prepare Azure CLI config dir
-              run: mkdir -p "$AZURE_CONFIG_DIR"
-
             - name: log in to ACR
               uses: azure/docker-login@v1
               with:
