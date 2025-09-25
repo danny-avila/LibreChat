@@ -352,5 +352,28 @@
         "description": "Index name for cases/knowledge data (e.g., <base>-cases)."
       }
     ]
+  },
+  {
+    "name": "Woodland History",
+    "pluginKey": "woodland-ai-history",
+    "description": "Query prior Woodland conversations/searches by user/session/time window.",
+    "icon": "https://i.imgur.com/E7crPze.png",
+    "authConfig": [
+      {
+        "authField": "AZURE_AI_SEARCH_SERVICE_ENDPOINT",
+        "label": "Azure AI Search Endpoint",
+        "description": "Your Azure Cognitive Search service endpoint (e.g., https://<service>.search.windows.net)."
+      },
+      {
+        "authField": "AZURE_AI_SEARCH_API_KEY",
+        "label": "Azure AI Search API Key",
+        "description": "Admin or query API key for your Azure Search service."
+      },
+      {
+        "authField": "AZURE_AI_SEARCH_HISTORY_INDEX||AZURE_AI_SEARCH_INDEX_NAME",
+        "label": "History Index Name",
+        "description": "Index name for history data (e.g., &lt;base&gt;-history). Uses AZURE_AI_SEARCH_INDEX_NAME if not provided."
+      }
+    ]
   }
 ]

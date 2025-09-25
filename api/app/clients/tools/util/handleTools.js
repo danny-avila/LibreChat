@@ -32,6 +32,7 @@ const {
   createYouTubeTools,
   TavilySearchResults,
   createOpenAIImageTools,
+  StructuredWoodlandAIHistory,
 } = require('../');
 const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
 const { createFileSearchTool, primeFiles: primeSearchFiles } = require('./fileSearch');
@@ -179,6 +180,7 @@ const loadTools = async ({
     'woodland-ai-search-cases': StructuredWPPACSCases,
     'woodland-ai-search-all': StructuredWPPACSAll,
     'woodland-ai-search-general': StructuredWPPACSGeneral,
+    'woodland-ai-history': StructuredWoodlandAIHistory,
     traversaal_search: TraversaalSearch,
     tavily_search_results_json: TavilySearchResults,
   };
