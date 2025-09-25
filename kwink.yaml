@@ -36,7 +36,6 @@ interface:
   agents: true
   fileCitations: true
   memories: false
-  fileSearch: true
   # Temporary chat retention period in hours (default: 720, min: 1, max: 8760)
   # temporaryChatRetention: 1
 
@@ -97,21 +96,6 @@ actions:
     - "librechat.ai"
     - "google.com"
 
-fileConfig:
-  endpoints:
-    agents:
-      disabled: false
-      supportedMimeTypes:
-        - "application/pdf"
-        - "text/plain"
-        - "text/markdown"
-        - "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        - "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        - "text/csv"
-        - "application/json"
-
-
-    # If you use a named custom provider (e.g., 'Open Source'), add it here too with the same list.
 # MCP Servers Configuration
 # mcpServers:
 #   # Your localhost MCP server with API key authentication
@@ -125,14 +109,14 @@ fileConfig:
 #     serverInstructions: true  # Enable server-provided instructions
 #     chatMenu: true  # Show in chat dropdown (set to false to only use with agents)
     
-  # NEO NL:
-  #   type: streamable-http
-  #   url: http://host.docker.internal:3435/mcp
-  #   headers:
-  #     Authorization: Bearer ${NEONL_MCP_KEY}
-  #   timeout: 60000
-  #   serverInstructions: true
-  #   chatMenu: true
+#   NEO NL:
+#     type: streamable-http
+#     url: http://localhost:3435/mcp
+#     headers:
+#       Authorization: Bearer ${NEONL_MCP_KEY}
+#     timeout: 60000
+#     serverInstructions: true
+#     chatMenu: true
 
   # Example additional MCP servers (commented out)
   # filesystem:
@@ -169,49 +153,24 @@ endpoints:
   #   capabilities: ["code_interpreter", "retrieval", "actions", "tools", "image_vision"]
 
   custom:
-    #   # Mistral AI Example
-    # - name: 'Mistral' # Unique name for the endpoint
-    #   # For `apiKey` and `baseURL`, you can use environment variables that you define.
-    #   # recommended environment variables:
-    #   apiKey: '${MISTRAL_API_KEY}'
-    #   baseURL: 'https://api.mistral.ai/v1'
+    - name: 'Mistral' # Unique name for the endpoint
+      apiKey: '${MISTRAL_API_KEY}'
+      baseURL: 'https://api.mistral.ai/v1'
 
-    #   # Models configuration
-    #   models:
-    #     # List of default models to use. At least one value is required.
-    #     default: ['mistral-medium-latest']
-    #     # Fetch option: Set to true to fetch models from API.
-    #     fetch: true # Defaults to false.
-    #   # Optional configurations
+      models:
+        default: ['mistral-medium', 'mistral-large', 'mistral-tiny', 'mistral-small']
+        fetch: true # Defaults to false.
 
-    #   # Title Conversation setting
-    #   titleConvo: true # Set to true to enable title conversation
+      titleConvo: true # Set to true to enable title conversation
 
-    #   # Title Method: Choose between "completion" or "functions".
-    #   # titleMethod: "completion"  # Defaults to "completion" if omitted.
+      # Title Method: Choose between "completion" or "functions".
+      # titleMethod: "completion"  # Defaults to "completion" if omitted.
 
-    #   # Title Model: Specify the model to use for titles.
-    #   titleModel: 'mistral-small-latest' # Defaults to "gpt-3.5-turbo" if omitted.
+      # Title Model: Specify the model to use for titles.
+      titleModel: 'mistral-small' # Defaults to "gpt-3.5-turbo" if omitted.
+      modelDisplayLabel: 'Mistral' # Default is "AI" when not set.
 
-    #   # Summarize setting: Set to true to enable summarization.
-    #   # summarize: false
-
-    #   # Summary Model: Specify the model to use if summarization is enabled.
-    #   # summaryModel: "mistral-tiny"  # Defaults to "gpt-3.5-turbo" if omitted.
-
-    #   # Force Prompt setting: If true, sends a `prompt` parameter instead of `messages`.
-    #   # forcePrompt: false
-
-    #   # The label displayed for the AI model in messages.
-    #   modelDisplayLabel: 'Mistral' # Default is "AI" when not set.
-
-    #   # Add additional parameters to the request. Default params will be overwritten.
-    #   # addParams:
-    #   # safe_prompt: true # This field is specific to Mistral AI: https://docs.mistral.ai/api/
-
-    #   # Drop Default params parameters from the request. See default params in guide linked below.
-    #   # NOTE: For Mistral, it is necessary to drop the following parameters or you will encounter a 422 Error:
-    #   dropParams: ['stop', 'user', 'frequency_penalty', 'presence_penalty']
+      dropParams: ['stop', 'user', 'frequency_penalty', 'presence_penalty']
       
     - name: 'Open Source'
       apiKey: '${HF_KEY}'
@@ -222,8 +181,7 @@ endpoints:
         fetch: false
       titleConvo: true
       titleModel: 'openai/gpt-oss-120b'
-      addParams:
-        tool_choice: 'required'
+      modelDisplayLabel: 'Open Source'
     # Together AI
     # - name: 'Local'
     #   apiKey: '${TOGETHER_API_KEY}'
@@ -289,6 +247,7 @@ endpoints:
   #   # (optional) Agent Capabilities available to all users. Omit the ones you wish to exclude. Defaults to list below.
     capabilities: ["file_search", "web_search", "tools", "chain"]
   
+
 webSearch:
   searchProvider: "serper"
   scraperType: "firecrawl"

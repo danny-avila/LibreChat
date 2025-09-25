@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
 import { OGDialog, OGDialogTemplate } from '@librechat/client';
 import { EToolResources, defaultAgentCapabilities } from 'librechat-data-provider';
-import { ImageUpIcon, FileSearch, TerminalSquareIcon, FileType2Icon } from 'lucide-react';
+import { FileSearch, TerminalSquareIcon, FileType2Icon } from 'lucide-react';
 import {
   useAgentToolPermissions,
   useAgentCapabilities,
@@ -42,21 +42,12 @@ const DragDropModal = ({ onOptionSelect, setShowModal, files, isVisible }: DragD
   );
 
   const options = useMemo(() => {
-    const _options: FileOption[] = [
-      {
-        label: localize('com_ui_upload_image_input'),
-        value: undefined,
-        icon: <ImageUpIcon className="icon-md" />,
-        condition: files.every((file) => file.type?.startsWith('image/')),
-      },
-    ];
-    if (capabilities.fileSearchEnabled && fileSearchAllowedByAgent) {
-      _options.push({
-        label: localize('com_ui_upload_file_search'),
-        value: EToolResources.file_search,
-        icon: <FileSearch className="icon-md" />,
-      });
-    }
+    const _options: FileOption[] = [];
+    _options.push({
+      label: localize('com_ui_upload_file_search'),
+      value: EToolResources.file_search,
+      icon: <FileSearch className="icon-md" />,
+    });
     if (capabilities.codeEnabled && codeAllowedByAgent) {
       _options.push({
         label: localize('com_ui_upload_code_files'),

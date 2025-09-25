@@ -77,6 +77,13 @@ const primeFiles = async (options) => {
 const createFileSearchTool = async ({ userId, files, entity_id, fileCitations = false }) => {
   return tool(
     async ({ query }) => {
+      logger.info(`[${Tools.file_search}] called`, {
+        userId,
+        entity_id,
+        query,
+        fileCount: files.length,
+        fileIds: files.map((f) => f.file_id),
+      });
       if (files.length === 0) {
         return 'No files to search. Instruct the user to add files for the search.';
       }
@@ -119,6 +126,10 @@ const createFileSearchTool = async ({ userId, files, entity_id, fileCitations = 
       );
 
       const results = await Promise.all(queryPromises);
+      logger.info(`[${Tools.file_search}] responses`, {
+        total: results.length,
+        ok: results.filter((r) => r !== null).length,
+      });
       const validResults = results.filter((result) => result !== null);
 
       if (validResults.length === 0) {
@@ -158,7 +169,10 @@ const createFileSearchTool = async ({ userId, files, entity_id, fileCitations = 
         pages: result.page ? [result.page] : [],
         pageRelevance: result.page ? { [result.page]: 1.0 - result.distance } : {},
       }));
-
+      logger.debug(`[${Tools.file_search}] formatted results`, {
+        count: formattedResults.length,
+        withCitations: fileCitations,
+      });
       return [formattedString, { [Tools.file_search]: { sources, fileCitations } }];
     },
     {

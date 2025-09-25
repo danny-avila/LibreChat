@@ -265,6 +265,20 @@ class AgentClient extends BaseClient {
       this.options.attachments = files;
     }
 
+    const hasAttachedFiles =
+      this.message_file_map && Object.values(this.message_file_map).some((arr) => arr?.length);
+    const hasFileSearchTool = Array.isArray(this.options.agent?.tools)
+      ? this.options.agent.tools.some((t) => t?.name === 'file_search')
+      : false;
+    if (hasAttachedFiles && hasFileSearchTool) {
+      const biasInstruction = [
+        'When files are attached, first call the file_search tool to retrieve the most relevant passages.',
+        'Use the retrieved quotes to draft the answer and include citation anchors as instructed.',
+      ].join(' ');
+      systemContent = [biasInstruction, systemContent].filter(Boolean).join('\n');
+      logger.debug('[AgentClient] Prepended file_search bias instruction');
+    }
+
     /** Note: Bedrock uses legacy RAG API handling */
     if (this.message_file_map && !isAgentsEndpoint(this.options.endpoint)) {
       this.contextHandlers = createContextHandlers(

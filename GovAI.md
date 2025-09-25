@@ -147,3 +147,8 @@ At runtime the sequence is:
    router from `packages/librechat-admin`, and mounts it.
 3. Requests to `/admin/*` are now handled by the router and serve the
    admin React bundle.
+
+
+## Changed files:
+server/index.js -> Mount point for the adminpanel
+server/controller/agents/client.js -> more strong opiniation towards using the file search tool

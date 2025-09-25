@@ -39,8 +39,7 @@ export default function useDragHelpers() {
 
   const handleOptionSelect = useCallback(
     (toolResource: EToolResources | undefined) => {
-      /** File search is not automatically enabled to simulate legacy behavior */
-      if (toolResource && toolResource !== EToolResources.file_search) {
+      if (toolResource) {
         setEphemeralAgent((prev) => ({
           ...prev,
           [toolResource]: true,
@@ -97,10 +96,7 @@ export default function useDragHelpers() {
       const allImages = item.files.every((f) => f.type?.startsWith('image/'));
 
       const shouldShowModal =
-        allImages ||
-        (fileSearchEnabled && fileSearchAllowedByAgent) ||
-        (codeEnabled && codeAllowedByAgent) ||
-        contextEnabled;
+        true;
 
       if (!shouldShowModal) {
         // Fallback: directly handle files without showing modal

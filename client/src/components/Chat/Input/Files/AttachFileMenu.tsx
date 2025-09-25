@@ -1,7 +1,7 @@
 import React, { useRef, useState, useMemo } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { useRecoilState } from 'recoil';
-import { FileSearch, ImageUpIcon, TerminalSquareIcon, FileType2Icon } from 'lucide-react';
+import { FileSearch, TerminalSquareIcon, FileType2Icon } from 'lucide-react';
 import { EToolResources, EModelEndpoint, defaultAgentCapabilities } from 'librechat-data-provider';
 import {
   FileUpload,
@@ -83,16 +83,7 @@ const AttachFileMenu = ({
 
   const dropdownItems = useMemo(() => {
     const createMenuItems = (onAction: (isImage?: boolean) => void) => {
-      const items: MenuItemProps[] = [
-        {
-          label: localize('com_ui_upload_image_input'),
-          onClick: () => {
-            setToolResource(undefined);
-            onAction(true);
-          },
-          icon: <ImageUpIcon className="icon-md" />,
-        },
-      ];
+      const items: MenuItemProps[] = [];
 
       if (capabilities.contextEnabled) {
         items.push({
@@ -105,20 +96,18 @@ const AttachFileMenu = ({
         });
       }
 
-      if (capabilities.fileSearchEnabled && fileSearchAllowedByAgent) {
-        items.push({
-          label: localize('com_ui_upload_file_search'),
-          onClick: () => {
-            setToolResource(EToolResources.file_search);
-            setEphemeralAgent((prev) => ({
-              ...prev,
-              [EToolResources.file_search]: true,
-            }));
-            onAction();
-          },
-          icon: <FileSearch className="icon-md" />,
-        });
-      }
+      items.push({
+        label: localize('com_ui_upload_file_search'),
+        onClick: () => {
+          setToolResource(EToolResources.file_search);
+          setEphemeralAgent((prev) => ({
+            ...prev,
+            [EToolResources.file_search]: true,
+          }));
+          onAction();
+        },
+        icon: <FileSearch className="icon-md" />,
+      });
 
       if (capabilities.codeEnabled && codeAllowedByAgent) {
         items.push({
