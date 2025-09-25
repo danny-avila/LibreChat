@@ -88,6 +88,47 @@ Access 100+ models from major providers:
 - **Meta**: Llama 3 70B/8B
 - **Plus**: Mistral, Mixtral, Command R, and many more
 
+## Docker Deployment
+
+### Build Instructions
+
+Due to Docker Hub's rate limiting (100 pulls/6 hours for anonymous users), we use a multi-stage build approach:
+
+```bash
+# Standard build command
+docker compose build --no-cache api
+
+# The build process:
+# 1. Uses ghcr.io/danny-avila/librechat-dev:latest as base (no auth required)
+# 2. Installs git and build tools for GitHub packages
+# 3. Installs all dependencies including our agents fork
+# 4. Builds the production image with all OpenRouter features
+```
+
+### Dockerfile Architecture
+
+Our enhanced Dockerfile uses a 3-stage build:
+1. **Base Stage**: Uses GitHub Container Registry image (bypasses Docker Hub auth)
+2. **Builder Stage**: Installs git, builds dependencies, compiles frontend
+3. **Production Stage**: Optimized final image with only runtime requirements
+
+### Troubleshooting Docker Build
+
+If you encounter authentication errors:
+```bash
+# Pull the base image first
+docker pull ghcr.io/danny-avila/librechat-dev:latest
+
+# Then build
+docker compose build api
+```
+
+The multi-stage Dockerfile ensures:
+- ✅ GitHub packages (like our agents fork) install correctly
+- ✅ No Docker Hub authentication required
+- ✅ Optimized image size through multi-stage builds
+- ✅ All OpenRouter features available in container
+
 ## Troubleshooting
 
 ### Common Issues
@@ -95,5 +136,7 @@ Access 100+ models from major providers:
 - **"No models available"**: Check API key and account credits
 - **"404 No endpoints found"**: Enable ZDR or adjust privacy settings
 - **Auto-Router not working**: Ensure toggle is enabled and model shows "auto"
+- **Docker build fails with auth error**: Docker Hub rate limiting - use our multi-stage Dockerfile
+- **ChatOpenRouter not found in container**: Ensure git is installed during build for GitHub packages
 
 For detailed setup instructions, see [Configuration Guide](/docs/configuration/pre_configured_ai/openrouter).

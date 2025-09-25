@@ -194,6 +194,28 @@ npm install github:biostochastics/librechat-agents-openrouter#main
 ```
 The fork adds auto-router detection and ZDR support to the agent system.
 
+### Docker Build Instructions
+
+**Important**: Due to Docker Hub rate limiting (100 pulls/6hrs for anonymous users), we use a multi-stage build with GitHub Container Registry:
+
+```bash
+# Build the Docker image with OpenRouter support
+docker compose build --no-cache api
+
+# Or if you encounter authentication issues:
+# 1. Ensure you have the ghcr.io/danny-avila/librechat-dev:latest image
+docker pull ghcr.io/danny-avila/librechat-dev:latest
+
+# 2. Build using our enhanced Dockerfile
+docker compose build api
+```
+
+The Dockerfile uses:
+- **Multi-stage build** for optimized image size
+- **ghcr.io base image** to bypass Docker Hub authentication
+- **Git installation** for GitHub package dependencies
+- **Proper npm configuration** for workspace and GitHub packages
+
 [Full Configuration Guide →](docs/configuration/pre_configured_ai/openrouter.md) | [Features Documentation →](docs/features/openrouter.md)
 
 ## 🪶 All-In-One AI Conversations with LibreChat

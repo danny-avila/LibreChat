@@ -1,60 +1,78 @@
-# v0.8.0-rc4
+# v0.8.0-rc4 - OpenRouter Enhanced Edition
 
-# Base node image
-FROM node:20-alpine AS node
+# Stage 1: Use the pre-downloaded LibreChat image as base to avoid Docker Hub auth
+FROM ghcr.io/danny-avila/librechat-dev:latest AS base
 
-# Install jemalloc
-RUN apk add --no-cache jemalloc
-RUN apk add --no-cache python3 py3-pip uv
+# Stage 2: Build environment with git for GitHub packages
+FROM base AS builder
 
-# Set environment variable to use jemalloc
-ENV LD_PRELOAD=/usr/lib/libjemalloc.so.2
+USER root
 
-# Add `uv` for extended MCP support
-COPY --from=ghcr.io/astral-sh/uv:0.6.13 /uv /uvx /bin/
-RUN uv --version
+# Install git and build dependencies for GitHub packages
+RUN apk add --no-cache git python3 make g++ bash
 
-RUN mkdir -p /app && chown node:node /app
+# Set working directory
 WORKDIR /app
 
+# Copy package files first for better caching
+COPY --chown=node:node package*.json ./
+COPY --chown=node:node api/package*.json ./api/
+COPY --chown=node:node client/package*.json ./client/
+COPY --chown=node:node packages/data-provider/package*.json ./packages/data-provider/
+COPY --chown=node:node packages/data-schemas/package*.json ./packages/data-schemas/
+COPY --chown=node:node packages/api/package*.json ./packages/api/
+
+# Configure npm for GitHub packages
+RUN npm config set fetch-retry-maxtimeout 600000 && \
+    npm config set fetch-retries 5 && \
+    npm config set fetch-retry-mintimeout 15000
+
+# Switch to node user for npm operations
 USER node
 
-COPY --chown=node:node package.json package-lock.json ./
-COPY --chown=node:node api/package.json ./api/package.json
-COPY --chown=node:node client/package.json ./client/package.json
-COPY --chown=node:node packages/data-provider/package.json ./packages/data-provider/package.json
-COPY --chown=node:node packages/data-schemas/package.json ./packages/data-schemas/package.json
-COPY --chown=node:node packages/api/package.json ./packages/api/package.json
+# Install dependencies including GitHub packages
+# The @librechat/agents from GitHub needs git available
+RUN npm install --legacy-peer-deps --no-audit
 
-RUN \
-    # Allow mounting of these files, which have no default
-    touch .env ; \
-    # Create directories for the volumes to inherit the correct permissions
-    mkdir -p /app/client/public/images /app/api/logs /app/uploads ; \
-    npm config set fetch-retry-maxtimeout 600000 ; \
-    npm config set fetch-retries 5 ; \
-    npm config set fetch-retry-mintimeout 15000 ; \
-    npm install --legacy-peer-deps --no-audit
-
+# Copy all source code
 COPY --chown=node:node . .
 
-# Set NODE_ENV before building to ensure production build
+# Build the application
 ENV NODE_ENV=production
-
-RUN \
-    # React client build
-    NODE_OPTIONS="--max-old-space-size=4096" npm run frontend; \
-    npm prune --production; \
+RUN NODE_OPTIONS="--max-old-space-size=4096" npm run frontend && \
+    npm prune --production && \
     npm cache clean --force
 
-# Node API setup
-EXPOSE 3080
-ENV HOST=0.0.0.0
-CMD ["npm", "run", "backend"]
+# Stage 3: Production image
+FROM base AS production
 
-# Optional: for client with nginx routing
-# FROM nginx:stable-alpine AS nginx-client
-# WORKDIR /usr/share/nginx/html
-# COPY --from=node /app/client/dist /usr/share/nginx/html
-# COPY client/nginx.conf /etc/nginx/conf.d/default.conf
-# ENTRYPOINT ["nginx", "-g", "daemon off;"]
+USER node
+WORKDIR /app
+
+# Copy built application from builder stage
+COPY --from=builder --chown=node:node /app/node_modules ./node_modules
+COPY --from=builder --chown=node:node /app/api/node_modules ./api/node_modules
+COPY --from=builder --chown=node:node /app/client/dist ./client/dist
+COPY --from=builder --chown=node:node /app/packages ./packages
+COPY --from=builder --chown=node:node /app/api ./api
+COPY --from=builder --chown=node:node /app/config ./config
+COPY --from=builder --chown=node:node /app/package*.json ./
+
+# Copy OpenRouter-specific files
+COPY --from=builder --chown=node:node /app/docs/configuration/pre_configured_ai ./docs/configuration/pre_configured_ai
+COPY --from=builder --chown=node:node /app/docs/features/openrouter.md ./docs/features/
+
+# Create necessary directories
+RUN mkdir -p /app/client/public/images /app/api/logs /app/uploads
+
+# Environment setup
+ENV NODE_ENV=production
+ENV HOST=0.0.0.0
+EXPOSE 3080
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+  CMD node -e "require('http').get('http://localhost:3080/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})" || exit 1
+
+# Start the application
+CMD ["npm", "run", "backend"]
