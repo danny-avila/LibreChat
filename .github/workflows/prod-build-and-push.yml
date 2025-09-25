@@ -8,6 +8,12 @@ env:
 
 on:
   workflow_dispatch:
+      inputs:
+          build_rag_api_image:
+            description: 'Build RAG API Docker Image'
+            required: true
+            default: true
+            type: boolean
 
 jobs:
     build_and_push:
@@ -38,7 +44,16 @@ jobs:
 
                 docker build . -t ${{ env.ACR_HOST }}/paychex/librechat:prod.latest
                 docker push ${{ env.ACR_HOST }}/paychex/librechat:prod.latest
-
+                
+            - name: Trigger rag_api Workflow
+              if: ${{inputs.build_rag_api_image}}
+              uses: BeewiseTechnologiesLTD/remote-workflow-trigger@v1
+              with:
+                target_repo: 'paychex/rag_api'
+                workflow_id: '.github/workflows/n2-build-and-push.yml'
+                github_token: ${{ secrets.CROSS_REPO_PAT }}
+                ref: 'main'
+                
             - name: Azure CLI script
               uses: azure/cli@v2
               with:
