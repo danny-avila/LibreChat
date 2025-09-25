@@ -290,7 +290,7 @@ export default function ArchivedChatsTable() {
         },
         meta: {
           className: 'w-32 sm:w-40',
-          desktopOnly: true,
+          // desktopOnly: true, // WIP
         },
         enableSorting: true,
       },
