@@ -172,7 +172,7 @@ test('calls loginUser.mutate on login', async () => {
   await userEvent.type(passwordInput, 'password');
   await userEvent.click(submitButton);
 
-  waitFor(() => expect(mutate).toHaveBeenCalled());
+  await waitFor(() => expect(mutate).toHaveBeenCalled());
 });
 
 test('Navigates to / on successful login', async () => {
@@ -202,5 +202,5 @@ test('Navigates to / on successful login', async () => {
   await userEvent.type(passwordInput, 'password');
   await userEvent.click(submitButton);
 
-  waitFor(() => expect(history.location.pathname).toBe('/'));
+  await waitFor(() => expect(history.location.pathname).toBe('/'));
 });
