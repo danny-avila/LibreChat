@@ -4,7 +4,6 @@ export * from './AlertDialog';
 export * from './Breadcrumb';
 export * from './Button';
 export * from './Checkbox';
-export * from './DataTable/DataTable.types';
 
 export * from './Dialog';
 export * from './DropdownMenu';
@@ -46,7 +45,6 @@ export { default as DropdownPopup } from './DropdownPopup';
 export { default as DelayedRender } from './DelayedRender';
 export { default as ThemeSelector } from './ThemeSelector';
 export { default as InfoHoverCard } from './InfoHoverCard';
-export { default as DataTable } from './DataTable/DataTable';
 export { default as CheckboxButton } from './CheckboxButton';
 export { default as DialogTemplate } from './DialogTemplate';
 export { default as SelectDropDown } from './SelectDropDown';

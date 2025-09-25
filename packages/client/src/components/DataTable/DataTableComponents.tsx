@@ -2,7 +2,9 @@ import { memo } from 'react';
 import { flexRender } from '@tanstack/react-table';
 import type { Row, ColumnDef } from '@tanstack/react-table';
 import type { TableColumn } from './DataTable.types';
-import { Checkbox, TableCell, TableRow, Skeleton } from '~/components';
+import { TableCell, TableRow } from '../Table';
+import { Checkbox } from '../Checkbox';
+import { Skeleton } from '../Skeleton';
 import { cn } from '~/utils';
 
 export const SelectionCheckbox = memo(

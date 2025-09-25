@@ -1,8 +1,8 @@
 import { memo } from 'react';
 import { startTransition } from 'react';
 import type { DataTableSearchProps } from './DataTable.types';
-import { Input } from '~/components';
 import { useLocalize } from '~/hooks';
+import { Input } from '../Input';
 import { cn } from '~/utils';
 
 export const DataTableSearch = memo(
