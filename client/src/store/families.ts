@@ -255,6 +255,11 @@ const messagesSiblingIdxFamily = atomFamily<number, string | null | undefined>({
   default: 0,
 });
 
+const messageTimestampState = atomFamily<string | null, string>({
+  key: 'messageTimestampState',
+  default: null,
+});
+
 function useCreateConversationAtom(key: string | number) {
   const hasSetConversation = useSetConvoContext();
   const [keys, setKeys] = useRecoilState(conversationKeysAtom);
@@ -399,6 +404,7 @@ export default {
   showPopoverFamily,
   latestMessageFamily,
   messagesSiblingIdxFamily,
+  messageTimestampState,
   allConversationsSelector,
   conversationByKeySelector,
   useClearConvoState,
