@@ -1,21 +1,33 @@
-import React, { useState, useMemo, useCallback } from 'react';
-import * as Ariakit from '@ariakit/react';
-import { Globe, Settings, Settings2, TerminalSquareIcon } from 'lucide-react';
-import { TooltipAnchor, DropdownPopup, PinIcon, VectorIcon } from '@librechat/client';
-import type { MenuItemProps } from '~/common';
+import React, { useState, useMemo, useCallback } from "react";
+import * as Ariakit from "@ariakit/react";
+import {
+  Globe,
+  Settings,
+  Settings2,
+  TerminalSquareIcon,
+  Palette,
+} from "lucide-react";
+import {
+  TooltipAnchor,
+  DropdownPopup,
+  PinIcon,
+  VectorIcon,
+} from "@librechat/client";
+import type { MenuItemProps } from "~/common";
 import {
   AuthType,
   Permissions,
   ArtifactModes,
   PermissionTypes,
   defaultAgentCapabilities,
-} from 'librechat-data-provider';
-import { useLocalize, useHasAccess, useAgentCapabilities } from '~/hooks';
-import ArtifactsSubMenu from '~/components/Chat/Input/ArtifactsSubMenu';
-import MCPSubMenu from '~/components/Chat/Input/MCPSubMenu';
-import { useGetStartupConfig } from '~/data-provider';
-import { useBadgeRowContext } from '~/Providers';
-import { cn } from '~/utils';
+} from "librechat-data-provider";
+import { useLocalize, useHasAccess, useAgentCapabilities } from "~/hooks";
+import ArtifactsSubMenu from "~/components/Chat/Input/ArtifactsSubMenu";
+import MCPSubMenu from "~/components/Chat/Input/MCPSubMenu";
+import { useGetStartupConfig } from "~/data-provider";
+import { useBadgeRowContext, useChatContext } from "~/Providers";
+import { useGetAgentByIdQuery } from "~/data-provider";
+import { cn } from "~/utils";
 
 interface ToolsDropdownProps {
   disabled?: boolean;
@@ -25,9 +37,11 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
   const localize = useLocalize();
   const isDisabled = disabled ?? false;
   const [isPopoverActive, setIsPopoverActive] = useState(false);
+  const { conversation } = useChatContext();
   const {
     webSearch,
     artifacts,
+    canvas,
     fileSearch,
     agentsConfig,
     mcpServerManager,
@@ -37,13 +51,50 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
   } = useBadgeRowContext();
   const { data: startupConfig } = useGetStartupConfig();
 
-  const { codeEnabled, webSearchEnabled, artifactsEnabled, fileSearchEnabled } =
-    useAgentCapabilities(agentsConfig?.capabilities ?? defaultAgentCapabilities);
+  const { data: currentAgent } = useGetAgentByIdQuery(
+    conversation?.agent_id ?? "",
+    {
+      enabled: !!conversation?.agent_id,
+    },
+  );
 
-  const { setIsDialogOpen: setIsCodeDialogOpen, menuTriggerRef: codeMenuTriggerRef } =
-    codeApiKeyForm;
-  const { setIsDialogOpen: setIsSearchDialogOpen, menuTriggerRef: searchMenuTriggerRef } =
-    searchApiKeyForm;
+  const { codeEnabled, webSearchEnabled, artifactsEnabled, fileSearchEnabled } =
+    useAgentCapabilities(
+      agentsConfig?.capabilities ?? defaultAgentCapabilities,
+    );
+
+  // Enhanced Canvas enablement: check both global config AND individual agent setting
+  const canvasEnabled = useMemo(() => {
+    const globalCanvasEnabled = (
+      agentsConfig?.capabilities ?? defaultAgentCapabilities
+    ).includes("canvas");
+    const agentCanvasEnabled = currentAgent?.canvas === true;
+    const result = globalCanvasEnabled || agentCanvasEnabled;
+
+    console.log("🎨 Canvas enablement check:", {
+      globalCanvasEnabled,
+      agentCanvasEnabled,
+      currentAgent: currentAgent?.name,
+      agentId: conversation?.agent_id,
+      result,
+    });
+
+    return result;
+  }, [
+    agentsConfig?.capabilities,
+    currentAgent?.canvas,
+    currentAgent?.name,
+    conversation?.agent_id,
+  ]);
+
+  const {
+    setIsDialogOpen: setIsCodeDialogOpen,
+    menuTriggerRef: codeMenuTriggerRef,
+  } = codeApiKeyForm;
+  const {
+    setIsDialogOpen: setIsSearchDialogOpen,
+    menuTriggerRef: searchMenuTriggerRef,
+  } = searchApiKeyForm;
   const {
     isPinned: isSearchPinned,
     setIsPinned: setIsSearchPinned,
@@ -54,8 +105,11 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
     setIsPinned: setIsCodePinned,
     authData: codeAuthData,
   } = codeInterpreter;
-  const { isPinned: isFileSearchPinned, setIsPinned: setIsFileSearchPinned } = fileSearch;
-  const { isPinned: isArtifactsPinned, setIsPinned: setIsArtifactsPinned } = artifacts;
+  const { isPinned: isFileSearchPinned, setIsPinned: setIsFileSearchPinned } =
+    fileSearch;
+  const { isPinned: isArtifactsPinned, setIsPinned: setIsArtifactsPinned } =
+    artifacts;
+  const { isPinned: isCanvasPinned, setIsPinned: setIsCanvasPinned } = canvas;
 
   const canUseWebSearch = useHasAccess({
     permissionType: PermissionTypes.WEB_SEARCH,
@@ -75,7 +129,9 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
   const showWebSearchSettings = useMemo(() => {
     const authTypes = webSearchAuthData?.authTypes ?? [];
     if (authTypes.length === 0) return true;
-    return !authTypes.every(([, authType]) => authType === AuthType.SYSTEM_DEFINED);
+    return !authTypes.every(
+      ([, authType]) => authType === AuthType.SYSTEM_DEFINED,
+    );
   }, [webSearchAuthData?.authTypes]);
 
   const showCodeSettings = useMemo(
@@ -100,12 +156,21 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
 
   const handleArtifactsToggle = useCallback(() => {
     const currentState = artifacts.toggleState;
-    if (!currentState || currentState === '') {
+    if (!currentState || currentState === "") {
       artifacts.debouncedChange({ value: ArtifactModes.DEFAULT });
     } else {
-      artifacts.debouncedChange({ value: '' });
+      artifacts.debouncedChange({ value: "" });
     }
   }, [artifacts]);
+
+  const handleCanvasToggle = useCallback(() => {
+    const currentState = canvas.toggleState;
+    if (!currentState || currentState === "") {
+      canvas.debouncedChange({ value: "enabled" });
+    } else {
+      canvas.debouncedChange({ value: "" });
+    }
+  }, [canvas]);
 
   const handleShadcnToggle = useCallback(() => {
     const currentState = artifacts.toggleState;
@@ -137,7 +202,7 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
         <div {...props}>
           <div className="flex items-center gap-2">
             <VectorIcon className="icon-md" />
-            <span>{localize('com_assistants_file_search')}</span>
+            <span>{localize("com_assistants_file_search")}</span>
           </div>
           <button
             type="button"
@@ -146,11 +211,12 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
               setIsFileSearchPinned(!isFileSearchPinned);
             }}
             className={cn(
-              'rounded p-1 transition-all duration-200',
-              'hover:bg-surface-secondary hover:shadow-sm',
-              !isFileSearchPinned && 'text-text-secondary hover:text-text-primary',
+              "rounded p-1 transition-all duration-200",
+              "hover:bg-surface-secondary hover:shadow-sm",
+              !isFileSearchPinned &&
+                "text-text-secondary hover:text-text-primary",
             )}
-            aria-label={isFileSearchPinned ? 'Unpin' : 'Pin'}
+            aria-label={isFileSearchPinned ? "Unpin" : "Pin"}
           >
             <div className="h-4 w-4">
               <PinIcon unpin={isFileSearchPinned} />
@@ -169,7 +235,7 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
         <div {...props}>
           <div className="flex items-center gap-2">
             <Globe className="icon-md" />
-            <span>{localize('com_ui_web_search')}</span>
+            <span>{localize("com_ui_web_search")}</span>
           </div>
           <div className="flex items-center gap-1">
             {showWebSearchSettings && (
@@ -180,9 +246,9 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
                   setIsSearchDialogOpen(true);
                 }}
                 className={cn(
-                  'rounded p-1 transition-all duration-200',
-                  'hover:bg-surface-secondary hover:shadow-sm',
-                  'text-text-secondary hover:text-text-primary',
+                  "rounded p-1 transition-all duration-200",
+                  "hover:bg-surface-secondary hover:shadow-sm",
+                  "text-text-secondary hover:text-text-primary",
                 )}
                 aria-label="Configure web search"
                 ref={searchMenuTriggerRef}
@@ -199,11 +265,12 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
                 setIsSearchPinned(!isSearchPinned);
               }}
               className={cn(
-                'rounded p-1 transition-all duration-200',
-                'hover:bg-surface-secondary hover:shadow-sm',
-                !isSearchPinned && 'text-text-secondary hover:text-text-primary',
+                "rounded p-1 transition-all duration-200",
+                "hover:bg-surface-secondary hover:shadow-sm",
+                !isSearchPinned &&
+                  "text-text-secondary hover:text-text-primary",
               )}
-              aria-label={isSearchPinned ? 'Unpin' : 'Pin'}
+              aria-label={isSearchPinned ? "Unpin" : "Pin"}
             >
               <div className="h-4 w-4">
                 <PinIcon unpin={isSearchPinned} />
@@ -223,7 +290,7 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
         <div {...props}>
           <div className="flex items-center gap-2">
             <TerminalSquareIcon className="icon-md" />
-            <span>{localize('com_assistants_code_interpreter')}</span>
+            <span>{localize("com_assistants_code_interpreter")}</span>
           </div>
           <div className="flex items-center gap-1">
             {showCodeSettings && (
@@ -235,9 +302,9 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
                 }}
                 ref={codeMenuTriggerRef}
                 className={cn(
-                  'rounded p-1 transition-all duration-200',
-                  'hover:bg-surface-secondary hover:shadow-sm',
-                  'text-text-secondary hover:text-text-primary',
+                  "rounded p-1 transition-all duration-200",
+                  "hover:bg-surface-secondary hover:shadow-sm",
+                  "text-text-secondary hover:text-text-primary",
                 )}
                 aria-label="Configure code interpreter"
               >
@@ -253,11 +320,11 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
                 setIsCodePinned(!isCodePinned);
               }}
               className={cn(
-                'rounded p-1 transition-all duration-200',
-                'hover:bg-surface-secondary hover:shadow-sm',
-                !isCodePinned && 'text-text-primary hover:text-text-primary',
+                "rounded p-1 transition-all duration-200",
+                "hover:bg-surface-secondary hover:shadow-sm",
+                !isCodePinned && "text-text-primary hover:text-text-primary",
               )}
-              aria-label={isCodePinned ? 'Unpin' : 'Pin'}
+              aria-label={isCodePinned ? "Unpin" : "Pin"}
             >
               <div className="h-4 w-4">
                 <PinIcon unpin={isCodePinned} />
@@ -286,6 +353,57 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
     });
   }
 
+  if (canvasEnabled) {
+    dropdownItems.push({
+      onClick: handleCanvasToggle,
+      hideOnClick: false,
+      render: (props) => (
+        <div
+          {...props}
+          className={cn(
+            props.className,
+            canvas.toggleState ? "bg-surface-secondary" : "",
+          )}
+        >
+          <div className="flex items-center gap-2">
+            <Palette
+              className={cn(
+                "icon-md",
+                canvas.toggleState ? "text-orange-500" : "",
+              )}
+            />
+            <span
+              className={cn(
+                canvas.toggleState ? "text-orange-500 font-medium" : "",
+              )}
+            >
+              {localize("com_ui_canvas")}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsCanvasPinned(!isCanvasPinned);
+            }}
+            className={cn(
+              "rounded p-1 transition-all duration-200",
+              "hover:bg-surface-secondary hover:shadow-sm",
+              !isCanvasPinned
+                ? "text-text-secondary hover:text-text-primary"
+                : "",
+            )}
+            aria-label={isCanvasPinned ? "Unpin" : "Pin"}
+          >
+            <div className="h-4 w-4">
+              <PinIcon unpin={isCanvasPinned} />
+            </div>
+          </button>
+        </div>
+      ),
+    });
+  }
+
   const { configuredServers } = mcpServerManager;
   if (configuredServers && configuredServers.length > 0) {
     dropdownItems.push({
@@ -306,7 +424,7 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
           id="tools-dropdown-button"
           aria-label="Tools Options"
           className={cn(
-            'flex size-9 items-center justify-center rounded-full p-1 transition-colors hover:bg-surface-hover focus:outline-none focus:ring-2 focus:ring-primary focus:ring-opacity-50',
+            "flex size-9 items-center justify-center rounded-full p-1 transition-colors hover:bg-surface-hover focus:outline-none focus:ring-2 focus:ring-primary focus:ring-opacity-50",
           )}
         >
           <div className="flex w-full items-center justify-center gap-2">
@@ -315,7 +433,7 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
         </Ariakit.MenuButton>
       }
       id="tools-dropdown-button"
-      description={localize('com_ui_tools')}
+      description={localize("com_ui_tools")}
       disabled={isDisabled}
     />
   );
