@@ -135,7 +135,12 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
     const selectColumn: ColumnDef<ProcessedDataRow<TData>, TValue> = {
       id: 'select',
       header: ({ table }) => (
-        <div className="flex h-full items-center justify-center">
+        <div
+          className="flex h-full items-center justify-center"
+          role="button"
+          tabIndex={0}
+          aria-label={localize('com_ui_select_all')}
+        >
           <SelectionCheckbox
             checked={table.getIsAllRowsSelected()}
             onChange={(value) => table.toggleAllRowsSelected(value)}
@@ -143,15 +148,25 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
           />
         </div>
       ),
-      cell: ({ row }) => (
-        <div className="flex h-full items-center justify-center">
-          <SelectionCheckbox
-            checked={row.getIsSelected()}
-            onChange={(value) => row.toggleSelected(value)}
-            ariaLabel={`Select row ${row.index + 1}`}
-          />
-        </div>
-      ),
+      cell: ({ row }) => {
+        const rowDescription = row.original.name
+          ? `named ${row.original.name}`
+          : `at position ${row.index + 1}`;
+        return (
+          <div
+            className="flex h-full items-center justify-center"
+            role="button"
+            tabIndex={0}
+            aria-label={localize(`com_ui_select_row`, { rowDescription })}
+          >
+            <SelectionCheckbox
+              checked={row.getIsSelected()}
+              onChange={(value) => row.toggleSelected(value)}
+              ariaLabel={localize(`com_ui_select_row`, { rowDescription })}
+            />
+          </div>
+        );
+      },
       meta: {
         className: 'w-12',
       },
@@ -292,6 +307,8 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
         'h-[calc(100vh-8rem)] max-h-[80vh]',
         className,
       )}
+      role="region"
+      aria-label={localize('com_ui_data_table')}
     >
       <div className="flex w-full shrink-0 items-center gap-3 border-b border-border-light">
         {shouldShowSearch && <DataTableSearch value={searchTerm} onChange={setSearchTerm} />}
@@ -312,8 +329,11 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
             overscrollBehavior: 'contain',
           } as React.CSSProperties
         }
+        role="region"
+        aria-label={localize('com_ui_data_table_scroll_area')}
+        aria-describedby={showSkeletons ? 'loading-status' : undefined}
       >
-        <Table>
+        <Table role="table" aria-label={localize('com_ui_data_table')}>
           <TableHeader className="sticky top-0 z-10 bg-surface-secondary">
             {headerGroups.map((headerGroup) => (
               <TableRow key={headerGroup.id}>
@@ -328,24 +348,47 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
 
                   const isSelectHeader = header.id === 'select';
                   const meta = header.column.columnDef.meta as { className?: string } | undefined;
+                  const canSort = header.column.getCanSort();
+                  const sortAriaLabel = canSort
+                    ? `${header.column.columnDef.header} column, ${header.column.getIsSorted() === 'asc' ? 'ascending' : header.column.getIsSorted() === 'desc' ? 'descending' : 'sortable'}`
+                    : undefined;
+
+                  const handleSortingKeyDown = (e: React.KeyboardEvent) => {
+                    if (canSort && (e.key === 'Enter' || e.key === ' ')) {
+                      e.preventDefault();
+                      header.column.toggleSorting();
+                    }
+                  };
+
                   return (
                     <TableHead
                       key={header.id}
                       className={cn(
                         'border-b border-border-light py-2',
                         isSelectHeader ? 'px-0 text-center' : 'px-3',
-                        header.column.getCanSort() && 'cursor-pointer hover:bg-surface-tertiary',
+                        canSort && 'cursor-pointer hover:bg-surface-tertiary',
                         meta?.className,
                       )}
                       onClick={header.column.getToggleSortingHandler()}
+                      onKeyDown={handleSortingKeyDown}
+                      role={canSort ? 'button' : undefined}
+                      tabIndex={canSort ? 0 : undefined}
+                      aria-label={sortAriaLabel}
+                      aria-sort={
+                        header.column.getIsSorted() as
+                          | 'ascending'
+                          | 'descending'
+                          | 'none'
+                          | undefined
+                      }
                     >
                       {isSelectHeader ? (
                         flexRender(header.column.columnDef.header, header.getContext())
                       ) : (
                         <div className="flex items-center gap-2">
                           {flexRender(header.column.columnDef.header, header.getContext())}
-                          {header.column.getCanSort() && (
-                            <span className="text-text-primary">
+                          {canSort && (
+                            <span className="text-text-primary" aria-hidden="true">
                               {{
                                 asc: <ArrowUp className="size-4 text-text-primary" />,
                                 desc: <ArrowDown className="size-4 text-text-primary" />,
@@ -402,9 +445,16 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
             )}
             {isFetchingNextPage && (
               <TableRow>
-                <TableCell colSpan={tableColumns.length} className="p-4 text-center">
+                <TableCell
+                  colSpan={tableColumns.length}
+                  className="p-4 text-center"
+                  id="loading-status"
+                  role="status"
+                  aria-live="polite"
+                >
                   <div className="flex items-center justify-center gap-2">
-                    <Spinner className="h-5 w-5" />
+                    <Spinner className="h-5 w-5" aria-hidden="true" />
+                    <span className="sr-only">{localize('com_ui_loading_more_data')}</span>
                   </div>
                 </TableCell>
               </TableRow>
@@ -413,9 +463,13 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
         </Table>
 
         {!isLoading && !showSkeletons && rows.length === 0 && (
-          <div className="flex flex-col items-center justify-center py-12">
+          <div
+            className="flex flex-col items-center justify-center py-12"
+            role="status"
+            aria-live="polite"
+          >
             <Label className="text-center text-text-secondary">
-              {searchTerm ? 'No search results' : localize('com_ui_no_data')}
+              {searchTerm ? localize('com_ui_no_search_results') : localize('com_ui_no_data')}
             </Label>
           </div>
         )}

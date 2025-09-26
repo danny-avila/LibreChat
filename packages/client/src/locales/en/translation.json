@@ -8,7 +8,6 @@
   "com_ui_no_results_found": "No results found",
   "com_ui_no_data_available": "No data available",
   "com_ui_select_all": "Select All",
-  "com_ui_select_row": "Select Row",
   "com_ui_no_selection": "No selection",
   "com_ui_confirm_bulk_delete": "Are you sure you want to delete the selected items? This action cannot be undone.",
   "com_ui_delete_success": "Items deleted successfully",
@@ -19,5 +18,9 @@
   "com_ui_delete_selected": "Delete Selected",
   "com_ui_search_table": "Search table",
   "com_ui_search_table_description": "Type to filter results",
-  "com_ui_search": "Search"
+  "com_ui_search": "Search",
+  "com_ui_data_table_scroll_area": "Scrollable data table area",
+  "com_ui_select_row": "Select Row {{0}}",
+  "com_ui_loading_more_data": "Loading more data...",
+  "com_ui_no_search_results": "No search results found"
 }
