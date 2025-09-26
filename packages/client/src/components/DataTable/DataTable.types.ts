@@ -1,6 +1,10 @@
 import type { ColumnDef, SortingState, Table } from '@tanstack/react-table';
 import type React from 'react';
 
+export type ProcessedDataRow<TData> = TData & { _id: string; _index: number };
+
+export type TableColumnDef<TData, TValue> = ColumnDef<ProcessedDataRow<TData>, TValue>;
+
 export type TableColumn<TData, TValue> = ColumnDef<TData, TValue> & {
   accessorKey?: string | number;
   meta?: {
@@ -56,7 +60,7 @@ export interface DataTableProps<TData extends Record<string, unknown>, TValue> {
   customActionsRenderer?: (params: {
     selectedCount: number;
     selectedRows: TData[];
-    table: Table<TData & { _id: string }>;
+    table: Table<ProcessedDataRow<TData>>;
   }) => React.ReactNode;
 }
 

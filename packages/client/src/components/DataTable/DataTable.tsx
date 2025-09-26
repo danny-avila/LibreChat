@@ -9,9 +9,8 @@ import {
   type VisibilityState,
   type ColumnDef,
   type Row,
-  type Table as TTable,
 } from '@tanstack/react-table';
-import type { DataTableProps } from './DataTable.types';
+import type { DataTableProps, ProcessedDataRow, TableColumnDef } from './DataTable.types';
 import { SelectionCheckbox, MemoizedTableRow, SkeletonRows } from './DataTableComponents';
 import { Table, TableBody, TableHead, TableHeader, TableCell, TableRow } from '../Table';
 import { useDebounced, useOptimizedRowSelection } from './DataTable.hooks';
@@ -22,10 +21,6 @@ import { cn, logger } from '~/utils';
 import { Button } from '../Button';
 import { Label } from '../Label';
 import { Spinner } from '~/svgs';
-
-type ProcessedDataRow<TData> = TData & { _id: string; _index: number };
-
-type TableColumnDef<TData, TValue> = ColumnDef<ProcessedDataRow<TData>, TValue>;
 
 function DataTable<TData extends Record<string, unknown>, TValue>({
   columns,
@@ -190,7 +185,7 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
 
   const virtualRows = rowVirtualizer.getVirtualItems();
   const totalSize = rowVirtualizer.getTotalSize();
-  const paddingTop = virtualRows.length > 0 ? (virtualRows[0]?.start ?? 0) : 0;
+  const paddingTop = virtualRows[0]?.start ?? 0;
   const paddingBottom =
     virtualRows.length > 0 ? totalSize - (virtualRows[virtualRows.length - 1]?.end ?? 0) : 0;
 
@@ -294,7 +289,7 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
           customActionsRenderer({
             selectedCount,
             selectedRows: table.getSelectedRowModel().rows.map((r) => r.original),
-            table: table as unknown as TTable<TData & { _id: string }>,
+            table,
           })}
       </div>
 
