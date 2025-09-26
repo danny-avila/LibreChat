@@ -182,7 +182,6 @@ describe('formatToolContent', () => {
         {
           type: 'text',
           text:
-            'Resource Text: {"items": []}\n' +
             'Resource URI: ui://carousel\n' +
             'Resource: carousel\n' +
             'Resource Description: A carousel component\n' +
@@ -288,7 +287,6 @@ describe('formatToolContent', () => {
           type: 'text',
           text:
             'Some text\n\n' +
-            'Resource Text: {"label": "Click me"}\n' +
             'Resource URI: ui://button\n' +
             'Resource MIME Type: application/json\n\n' +
             'Resource URI: file://data.csv\n' +
@@ -332,10 +330,7 @@ describe('formatToolContent', () => {
         },
         {
           type: 'text',
-          text:
-            'Resource Text: {"type": "line"}\n' +
-            'Resource URI: ui://graph\n' +
-            'Resource MIME Type: application/json',
+          text: 'Resource URI: ui://graph\n' + 'Resource MIME Type: application/json',
         },
       ]);
       expect(artifacts).toEqual({
@@ -414,7 +409,6 @@ describe('formatToolContent', () => {
           type: 'text',
           text:
             'Middle section\n\n' +
-            'Resource Text: {"type": "bar"}\n' +
             'Resource URI: ui://chart\n' +
             'Resource MIME Type: application/json\n\n' +
             'Resource URI: https://api.example.com/data\n' +
