@@ -20,8 +20,6 @@ import { processMCPEnv } from '~/utils/env';
  */
 export class MCPManager extends UserConnectionManager {
   private static instance: MCPManager | null;
-  // Connections shared by all users.
-  private appConnections: ConnectionsRepository | null = null;
 
   /** Creates and initializes the singleton MCPManager instance */
   public static async createInstance(configs: t.MCPServers): Promise<MCPManager> {
@@ -43,9 +41,25 @@ export class MCPManager extends UserConnectionManager {
     this.appConnections = new ConnectionsRepository(this.serversRegistry.appServerConfigs!);
   }
 
-  /** Returns all app-level connections */
-  public async getAllConnections(): Promise<Map<string, MCPConnection> | null> {
-    return this.appConnections!.getAll();
+  /** Retrieves an app-level or user-specific connection based on provided arguments */
+  public async getConnection(
+    args: {
+      serverName: string;
+      user?: TUser;
+      forceNew?: boolean;
+      flowManager?: FlowStateManager<MCPOAuthTokens | null>;
+    } & Omit<t.OAuthConnectionOptions, 'useOAuth' | 'user' | 'flowManager'>,
+  ): Promise<MCPConnection> {
+    if (this.appConnections!.has(args.serverName)) {
+      return this.appConnections!.get(args.serverName);
+    } else if (args.user?.id) {
+      return this.getUserConnection(args as Parameters<typeof this.getUserConnection>[0]);
+    } else {
+      throw new McpError(
+        ErrorCode.InvalidRequest,
+        `No connection found for server ${args.serverName}`,
+      );
+    }
   }
 
   /** Get servers that require OAuth */
@@ -180,30 +194,19 @@ Please follow these instructions when using tools from the respective MCP server
     const logPrefix = userId ? `[MCP][User: ${userId}][${serverName}]` : `[MCP][${serverName}]`;
 
     try {
-      if (!this.appConnections?.has(serverName) && userId && user) {
-        this.updateUserLastActivity(userId);
-        /** Get or create user-specific connection */
-        connection = await this.getUserConnection({
-          user,
-          serverName,
-          flowManager,
-          tokenMethods,
-          oauthStart,
-          oauthEnd,
-          signal: options?.signal,
-          customUserVars,
-          requestBody,
-        });
-      } else {
-        /** App-level connection */
-        connection = await this.appConnections!.get(serverName);
-        if (!connection) {
-          throw new McpError(
-            ErrorCode.InvalidRequest,
-            `${logPrefix} No app-level connection found. Cannot execute tool ${toolName}.`,
-          );
-        }
-      }
+      if (userId && user) this.updateUserLastActivity(userId);
+
+      connection = await this.getConnection({
+        serverName,
+        user,
+        flowManager,
+        tokenMethods,
+        oauthStart,
+        oauthEnd,
+        signal: options?.signal,
+        customUserVars,
+        requestBody,
+      });
 
       if (!(await connection.isConnected())) {
         /** May happen if getUserConnection failed silently or app connection dropped */
