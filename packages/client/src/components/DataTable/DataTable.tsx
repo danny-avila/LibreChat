@@ -8,28 +8,24 @@ import {
   type SortingState,
   type VisibilityState,
   type ColumnDef,
-  type CellContext,
   type Row,
+  type Table as TTable,
 } from '@tanstack/react-table';
 import type { DataTableProps } from './DataTable.types';
-import {
-  Table,
-  TableBody,
-  TableHead,
-  TableHeader,
-  TableCell,
-  TableRow,
-  Button,
-  Label,
-} from '~/components';
 import { SelectionCheckbox, MemoizedTableRow, SkeletonRows } from './DataTableComponents';
+import { Table, TableBody, TableHead, TableHeader, TableCell, TableRow } from '../Table';
 import { useDebounced, useOptimizedRowSelection } from './DataTable.hooks';
 import { DataTableErrorBoundary } from './DataTableErrorBoundary';
-import { DataTableSearch } from './DataTableSearch';
 import { useMediaQuery, useLocalize } from '~/hooks';
-import { useToastContext } from '~/Providers';
+import { DataTableSearch } from './DataTableSearch';
 import { cn, logger } from '~/utils';
+import { Button } from '../Button';
+import { Label } from '../Label';
 import { Spinner } from '~/svgs';
+
+type ProcessedDataRow<TData> = TData & { _id: string; _index: number };
+
+type TableColumnDef<TData, TValue> = ColumnDef<ProcessedDataRow<TData>, TValue>;
 
 function DataTable<TData extends Record<string, unknown>, TValue>({
   columns,
@@ -50,9 +46,8 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
   customActionsRenderer,
 }: DataTableProps<TData, TValue>) {
   const localize = useLocalize();
-  const { showToast } = useToastContext();
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
-  const isDesktop = useMediaQuery('(min-width: 1024px)');
+
   const tableContainerRef = useRef<HTMLDivElement>(null);
   const scrollTimeoutRef = useRef<number | null>(null);
   const scrollRAFRef = useRef<number | null>(null);
@@ -71,29 +66,49 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
   const [internalSorting, setInternalSorting] = useState<SortingState>(defaultSort);
   const [isScrollingFetching, setIsScrollingFetching] = useState(false);
 
+  const cleanupTimers = useCallback(() => {
+    if (scrollRAFRef.current) {
+      cancelAnimationFrame(scrollRAFRef.current);
+      scrollRAFRef.current = null;
+    }
+    if (scrollTimeoutRef.current) {
+      clearTimeout(scrollTimeoutRef.current);
+      scrollTimeoutRef.current = null;
+    }
+  }, []);
+
   const debouncedTerm = useDebounced(searchTerm, debounceDelay);
   const finalSorting = sorting ?? internalSorting;
 
-  // Memoize column visibility calculations
   const calculatedVisibility = useMemo(() => {
     const newVisibility: VisibilityState = {};
-    if (isSmallScreen) {
-      columns.forEach((col: ColumnDef<TData, TValue> & { meta?: { hideOnMobile?: boolean } }) => {
-        if (col.id && col.meta?.hideOnMobile) {
-          newVisibility[col.id] = false;
-        }
-      });
-    }
+    columns.forEach((col) => {
+      const meta = (col as { meta?: { desktopOnly?: boolean } }).meta;
+      if (!meta?.desktopOnly) return;
+
+      const rawId =
+        (col as { id?: string | number; accessorKey?: string | number }).id ??
+        (col as { accessorKey?: string | number }).accessorKey;
+
+      if ((typeof rawId === 'string' || typeof rawId === 'number') && String(rawId).length > 0) {
+        newVisibility[String(rawId)] = !isSmallScreen;
+      } else {
+        logger.warn(
+          'DataTable: A desktopOnly column is missing id/accessorKey; cannot control header visibility automatically.',
+          col,
+        );
+      }
+    });
     return newVisibility;
   }, [isSmallScreen, columns]);
 
   useEffect(() => {
-    setColumnVisibility(calculatedVisibility);
+    setColumnVisibility((prev) => ({ ...prev, ...calculatedVisibility }));
   }, [calculatedVisibility]);
 
   const processedData = useMemo(
     () =>
-      data.map((item, index) => {
+      data.map((item, index): ProcessedDataRow<TData> => {
         if (item.id === null || item.id === undefined) {
           logger.warn(
             'DataTable Warning: A data row is missing a unique "id" property. Using index as a fallback. This can lead to unexpected behavior with selection and sorting.',
@@ -110,46 +125,19 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
     [data],
   );
 
-  // Enhanced columns with desktop-only cell rendering
-  const enhancedColumns = useMemo(() => {
-    return columns.map((col) => {
-      const originalCol = col as ColumnDef<TData, TValue> & {
-        meta?: {
-          hideOnMobile?: boolean;
-          desktopOnly?: boolean;
-          className?: string;
-        };
-      };
-
-      if (originalCol.meta?.desktopOnly && originalCol.cell) {
-        const originalCell = originalCol.cell;
-        return {
-          ...originalCol,
-          cell: (props: CellContext<TData, TValue>) => {
-            if (!isDesktop) {
-              return null;
-            }
-            return typeof originalCell === 'function' ? originalCell(props) : originalCell;
-          },
-        };
-      }
-      return originalCol;
-    });
-  }, [columns, isDesktop]);
-
-  const tableColumns = useMemo(() => {
+  const tableColumns = useMemo((): TableColumnDef<TData, TValue>[] => {
     if (!enableRowSelection || !showCheckboxes) {
-      return enhancedColumns as ColumnDef<TData & { _id: string }, TValue>[];
+      return columns as TableColumnDef<TData, TValue>[];
     }
 
-    const selectColumn: ColumnDef<TData & { _id: string }, boolean> = {
+    const selectColumn: ColumnDef<ProcessedDataRow<TData>, TValue> = {
       id: 'select',
       header: ({ table }) => (
         <div className="flex h-full items-center justify-center">
           <SelectionCheckbox
             checked={table.getIsAllRowsSelected()}
             onChange={(value) => table.toggleAllRowsSelected(value)}
-            ariaLabel={localize('com_ui_select_all' as string)}
+            ariaLabel={localize('com_ui_select_all')}
           />
         </div>
       ),
@@ -165,15 +153,12 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
       meta: {
         className: 'w-12',
       },
-    };
+    } as TableColumnDef<TData, TValue>;
 
-    return [
-      selectColumn,
-      ...(enhancedColumns as ColumnDef<TData & { _id: string }, TValue>[]),
-    ] as ColumnDef<TData & { _id: string }, TValue>[];
-  }, [enhancedColumns, enableRowSelection, showCheckboxes, localize]);
+    return [selectColumn, ...(columns as TableColumnDef<TData, TValue>[])];
+  }, [columns, enableRowSelection, showCheckboxes, localize]);
 
-  const table = useReactTable<TData & { _id: string }>({
+  const table = useReactTable<ProcessedDataRow<TData>>({
     data: processedData,
     columns: tableColumns,
     getRowId: (row) => row._id,
@@ -227,7 +212,6 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
     }
   }, [debouncedTerm, filterValue, onFilterChange, setOptimizedRowSelection]);
 
-  // Optimized scroll handler with RAF
   const handleScroll = useCallback(() => {
     if (scrollRAFRef.current !== null) {
       cancelAnimationFrame(scrollRAFRef.current);
@@ -261,7 +245,7 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
         }
 
         scrollTimeoutRef.current = null;
-      }, 150); // Slightly increased debounce for better performance
+      }, 150);
 
       scrollRAFRef.current = null;
     });
@@ -274,14 +258,9 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
     scrollElement.addEventListener('scroll', handleScroll, { passive: true });
     return () => {
       scrollElement.removeEventListener('scroll', handleScroll);
-      if (scrollTimeoutRef.current) {
-        clearTimeout(scrollTimeoutRef.current);
-      }
-      if (scrollRAFRef.current) {
-        cancelAnimationFrame(scrollRAFRef.current);
-      }
+      cleanupTimers();
     };
-  }, [handleScroll]);
+  }, [handleScroll, cleanupTimers]);
 
   const handleReset = useCallback(() => {
     setError(null);
@@ -295,7 +274,7 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
       <DataTableErrorBoundary onReset={handleReset}>
         <div className="flex flex-col items-center justify-center p-8">
           <p className="mb-4 text-red-500">{error.message}</p>
-          <Button onClick={handleReset}>{localize('com_ui_retry' as string)}</Button>
+          <Button onClick={handleReset}>{localize('com_ui_retry')}</Button>
         </div>
       </DataTableErrorBoundary>
     );
@@ -315,8 +294,7 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
           customActionsRenderer({
             selectedCount,
             selectedRows: table.getSelectedRowModel().rows.map((r) => r.original),
-            table,
-            showToast,
+            table: table as unknown as TTable<TData & { _id: string }>,
           })}
       </div>
 
@@ -330,11 +308,19 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
           } as React.CSSProperties
         }
       >
-        <Table className="w-full">
+        <Table>
           <TableHeader className="sticky top-0 z-10 bg-surface-secondary">
             {headerGroups.map((headerGroup) => (
               <TableRow key={headerGroup.id}>
                 {headerGroup.headers.map((header) => {
+                  const isDesktopOnly =
+                    (header.column.columnDef.meta as { desktopOnly?: boolean } | undefined)
+                      ?.desktopOnly ?? false;
+
+                  if (!header.column.getIsVisible() || (isSmallScreen && isDesktopOnly)) {
+                    return null;
+                  }
+
                   const isSelectHeader = header.id === 'select';
                   const meta = header.column.columnDef.meta as { className?: string } | undefined;
                   return (
@@ -376,8 +362,7 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
             {showSkeletons ? (
               <SkeletonRows
                 count={skeletonCount}
-                columns={tableColumns}
-                containerRef={tableContainerRef}
+                columns={tableColumns as ColumnDef<Record<string, unknown>>[]}
               />
             ) : (
               <>
@@ -395,8 +380,8 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
                   return (
                     <MemoizedTableRow
                       key={virtualRow.key}
-                      row={row as Row<TData & { _id: string }>}
-                      columns={tableColumns}
+                      row={row as Row<ProcessedDataRow<TData>>}
+                      columns={tableColumns as ColumnDef<Record<string, unknown>>[]}
                       index={virtualRow.index}
                       virtualIndex={virtualRow.index}
                     />
