@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { TrashIcon, ArchiveRestore } from 'lucide-react';
 import type { SortingState } from '@tanstack/react-table';
 import {
@@ -18,6 +18,7 @@ import {
   type TableColumn,
 } from '@librechat/client';
 import type { ConversationListParams, TConversation } from 'librechat-data-provider';
+import { QueryKeys } from 'librechat-data-provider';
 import {
   useArchiveConvoMutation,
   useConversationsInfiniteQuery,
@@ -27,6 +28,7 @@ import { MinimalIcon } from '~/components/Endpoints';
 import { NotificationSeverity } from '~/common';
 import { formatDate, cn } from '~/utils';
 import { useLocalize } from '~/hooks';
+import { useQueryClient, InfiniteData } from '@tanstack/react-query';
 
 const DEFAULT_PARAMS = {
   isArchived: true,
@@ -45,10 +47,36 @@ const defaultSort: SortingState = [
   },
 ];
 
+/**
+ * Helper: remove a conversation from all infinite queries whose key starts with the provided root
+ */
+function removeConversationFromInfinite(
+  queryClient: ReturnType<typeof useQueryClient>,
+  rootKey: string,
+  conversationId: string,
+) {
+  const queries = queryClient.getQueryCache().findAll([rootKey], { exact: false });
+  for (const query of queries) {
+    queryClient.setQueryData<
+      InfiniteData<{ conversations: TConversation[]; nextCursor?: string | null }>
+    >(query.queryKey, (old) => {
+      if (!old) return old;
+      return {
+        ...old,
+        pages: old.pages.map((page) => ({
+          ...page,
+          conversations: page.conversations.filter((c) => c.conversationId !== conversationId),
+        })),
+      };
+    });
+  }
+}
+
 export default function ArchivedChatsTable() {
   const localize = useLocalize();
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const { showToast } = useToastContext();
+  const queryClient = useQueryClient();
 
   const [isOpen, setIsOpen] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
@@ -59,21 +87,22 @@ export default function ArchivedChatsTable() {
   const [sorting, setSorting] = useState<SortingState>(defaultSort);
   const [searchValue, setSearchValue] = useState('');
 
-  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isFetching, refetch, isLoading } =
+  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isFetching, isLoading } =
     useConversationsInfiniteQuery(queryParams, {
       enabled: isOpen,
-      keepPreviousData: true,
+      // Critical for "server-only sorting" UX: we disable keepPreviousData so that
+      // a sort (or search) change clears the table immediately and skeletons show
+      // while the new order is fetched from the server. This prevents any client-side
+      // reordering of stale rows.
+      keepPreviousData: false,
       staleTime: 30 * 1000,
       refetchOnWindowFocus: false,
       refetchOnMount: false,
     });
 
-  const [allKnownConversations, setAllKnownConversations] = useState<TConversation[]>([]);
-
   const handleSearchChange = useCallback((value: string) => {
     const trimmedValue = value.trim();
     setSearchValue(trimmedValue);
-    setAllKnownConversations([]);
     setQueryParams((prev) => ({
       ...prev,
       search: trimmedValue,
@@ -84,43 +113,24 @@ export default function ArchivedChatsTable() {
     (updater: SortingState | ((old: SortingState) => SortingState)) => {
       setSorting((prev) => {
         const next = typeof updater === 'function' ? updater(prev) : updater;
-
-        const coerced = next;
-        const primary = coerced[0];
-
-        // Seed allKnown with current data before changing params
-        if (data?.pages) {
-          const currentFlattened = data.pages.flatMap(
-            (page) => page?.conversations?.filter(Boolean) ?? [],
-          );
-          setAllKnownConversations(currentFlattened);
-        }
-
+        const primary = next[0];
         setQueryParams((p) => {
-          let sortBy: SortKey;
-          let sortDirection: 'asc' | 'desc';
-
+          let sortBy: SortKey = 'createdAt';
+          let sortDirection: 'asc' | 'desc' = 'desc';
           if (primary && isSortKey(primary.id)) {
             sortBy = primary.id;
             sortDirection = primary.desc ? 'desc' : 'asc';
-          } else {
-            sortBy = 'createdAt';
-            sortDirection = 'desc';
           }
-
-          const newParams = {
+          return {
             ...p,
             sortBy,
             sortDirection,
           };
-
-          return newParams;
         });
-
-        return coerced;
+        return next;
       });
     },
-    [setQueryParams, data?.pages],
+    [],
   );
 
   const handleError = useCallback(
@@ -134,64 +144,50 @@ export default function ArchivedChatsTable() {
     [showToast, localize],
   );
 
-  useEffect(() => {
-    if (!data?.pages) return;
-
-    const newFlattened = data.pages.flatMap((page) => page?.conversations?.filter(Boolean) ?? []);
-
-    const toAdd = newFlattened.filter(
-      (convo: TConversation) =>
-        !allKnownConversations.some((known) => known.conversationId === convo.conversationId),
-    );
-
-    if (toAdd.length > 0) {
-      setAllKnownConversations((prev) => [...prev, ...toAdd]);
-    }
-  }, [data?.pages]);
-
-  const displayData = useMemo(() => {
-    const primary = sorting[0];
-    if (!primary || allKnownConversations.length === 0) return allKnownConversations;
-
-    return [...allKnownConversations].sort((a: TConversation, b: TConversation) => {
-      let compare: number;
-      if (primary.id === 'createdAt') {
-        const aDate = new Date(a.createdAt || 0);
-        const bDate = new Date(b.createdAt || 0);
-        compare = aDate.getTime() - bDate.getTime();
-      } else if (primary.id === 'title') {
-        compare = (a.title || '').localeCompare(b.title || '');
-      } else {
-        return 0;
-      }
-      return primary.desc ? -compare : compare;
-    });
-  }, [allKnownConversations, sorting]);
+  // Flatten server-provided pages directly; no client sorting or aggregation cache
+  const flattenedConversations = useMemo(
+    () => data?.pages?.flatMap((page) => page?.conversations?.filter(Boolean) ?? []) ?? [],
+    [data?.pages],
+  );
 
   const unarchiveMutation = useArchiveConvoMutation({
-    onSuccess: (data, variables) => {
+    onSuccess: (_res, variables) => {
       const { conversationId } = variables;
-      setAllKnownConversations((prev) => prev.filter((c) => c.conversationId !== conversationId));
-      refetch();
+      if (conversationId) {
+        removeConversationFromInfinite(
+          queryClient,
+          QueryKeys.archivedConversations,
+          conversationId,
+        );
+      }
+      // Ensure appearance in non-archived queries is refreshed
+      queryClient.invalidateQueries([QueryKeys.allConversations]);
+      setUnarchivingId(null);
     },
     onError: () => {
       showToast({
         message: localize('com_ui_unarchive_error'),
         severity: NotificationSeverity.ERROR,
       });
+      setUnarchivingId(null);
     },
   });
 
   const deleteMutation = useDeleteConversationMutation({
-    onSuccess: (data, variables) => {
+    onSuccess: (_data, variables) => {
       const { conversationId } = variables;
-      setAllKnownConversations((prev) => prev.filter((c) => c.conversationId !== conversationId));
+      if (conversationId) {
+        removeConversationFromInfinite(
+          queryClient,
+          QueryKeys.archivedConversations,
+          conversationId,
+        );
+      }
       showToast({
         message: localize('com_ui_archived_conversation_delete_success'),
         severity: NotificationSeverity.SUCCESS,
       });
       setIsDeleteOpen(false);
-      refetch();
     },
     onError: () => {
       showToast({
@@ -206,7 +202,7 @@ export default function ArchivedChatsTable() {
     await fetchNextPage();
   }, [fetchNextPage, hasNextPage, isFetchingNextPage]);
 
-  const effectiveIsLoading = isLoading && displayData.length === 0;
+  const effectiveIsLoading = isLoading;
   const effectiveIsFetching = isFetchingNextPage;
 
   const confirmDelete = useCallback(() => {
@@ -290,13 +286,13 @@ export default function ArchivedChatsTable() {
         },
         meta: {
           className: 'w-32 sm:w-40',
-          // desktopOnly: true, // WIP
+          // desktopOnly: true, // Potential future use
         },
         enableSorting: true,
       },
       {
         id: 'actions',
-        accessorFn: (row: Record<string, unknown>): unknown => null,
+        accessorFn: () => null,
         header: () => (
           <span className="text-xs text-text-primary sm:text-sm">
             {localize('com_assistants_actions')}
@@ -368,9 +364,15 @@ export default function ArchivedChatsTable() {
           <OGDialogHeader>
             <OGDialogTitle>{localize('com_nav_archived_chats')}</OGDialogTitle>
           </OGDialogHeader>
+          {/*
+            Server-only sorting strategy:
+            - Query key changes (sort/search) trigger immediate empty state (keepPreviousData:false)
+            - DataTable shows skeletons instead of client re-sorting stale rows
+            - No local caching/aggregation layer (flatten derived straight from query pages)
+          */}
           <DataTable
             columns={columns}
-            data={displayData}
+            data={flattenedConversations}
             isLoading={effectiveIsLoading}
             isFetching={effectiveIsFetching}
             config={{

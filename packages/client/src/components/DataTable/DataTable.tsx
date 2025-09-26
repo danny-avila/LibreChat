@@ -152,8 +152,6 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
         return (
           <div
             className="flex h-full items-center justify-center"
-            role="button"
-            tabIndex={0}
             aria-label={localize('com_ui_select_all')}
           >
             <SelectionCheckbox
