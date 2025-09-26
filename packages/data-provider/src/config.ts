@@ -1428,6 +1428,12 @@ export enum AuthKeys {
    * Note: this is not for Environment Variables, but to access encrypted object values.
    */
   GOOGLE_API_KEY = 'GOOGLE_API_KEY',
+  /**
+   * API key to use Anthropic.
+   *
+   * Note: this is not for Environment Variables, but to access encrypted object values.
+   */
+  ANTHROPIC_API_KEY = 'ANTHROPIC_API_KEY',
 }
 
 /**

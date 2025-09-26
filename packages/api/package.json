@@ -72,6 +72,7 @@
     "registry": "https://registry.npmjs.org/"
   },
   "peerDependencies": {
+    "@anthropic-ai/vertex-sdk": "^0.14.0",
     "@langchain/core": "^0.3.62",
     "@librechat/agents": "^2.4.81",
     "@librechat/data-schemas": "*",
