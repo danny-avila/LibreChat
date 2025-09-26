@@ -129,8 +129,17 @@ export function getOpenAILLMConfig({
     hasModelKwargs = true;
   }
 
+  let enableWebSearch = web_search;
+
   if (addParams && typeof addParams === 'object') {
     for (const [key, value] of Object.entries(addParams)) {
+      /** Handle web_search directly here instead of adding to modelKwargs or llmConfig */
+      if (key === 'web_search') {
+        if (typeof value === 'boolean') {
+          enableWebSearch = value;
+        }
+        continue;
+      }
       if (knownOpenAIParams.has(key)) {
         (llmConfig as Record<string, unknown>)[key] = value;
       } else {
@@ -166,7 +175,12 @@ export function getOpenAILLMConfig({
 
   const tools: BindToolsInput[] = [];
 
-  if (web_search) {
+  /** Check if web_search should be disabled via dropParams */
+  if (dropParams && dropParams.includes('web_search')) {
+    enableWebSearch = false;
+  }
+
+  if (enableWebSearch) {
     llmConfig.useResponsesApi = true;
     tools.push({ type: 'web_search_preview' });
   }

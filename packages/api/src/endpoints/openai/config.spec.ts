@@ -151,6 +151,114 @@ describe('getOpenAIConfig', () => {
     expect(result.tools).toEqual([{ type: 'web_search_preview' }]);
   });
 
+  it('should handle web_search from addParams overriding modelOptions', () => {
+    const modelOptions = {
+      model: 'gpt-5',
+      web_search: false,
+    };
+
+    const addParams = {
+      web_search: true,
+      customParam: 'value',
+    };
+
+    const result = getOpenAIConfig(mockApiKey, { modelOptions, addParams });
+
+    expect(result.llmConfig.useResponsesApi).toBe(true);
+    expect(result.tools).toEqual([{ type: 'web_search_preview' }]);
+    // web_search should not be in modelKwargs or llmConfig
+    expect((result.llmConfig as Record<string, unknown>).web_search).toBeUndefined();
+    expect(result.llmConfig.modelKwargs).toEqual({ customParam: 'value' });
+  });
+
+  it('should disable web_search when included in dropParams', () => {
+    const modelOptions = {
+      model: 'gpt-5',
+      web_search: true,
+    };
+
+    const result = getOpenAIConfig(mockApiKey, {
+      modelOptions,
+      dropParams: ['web_search'],
+    });
+
+    expect(result.llmConfig.useResponsesApi).toBeUndefined();
+    expect(result.tools).toEqual([]);
+  });
+
+  it('should handle web_search false from addParams', () => {
+    const modelOptions = {
+      model: 'gpt-5',
+      web_search: true,
+    };
+
+    const addParams = {
+      web_search: false,
+    };
+
+    const result = getOpenAIConfig(mockApiKey, { modelOptions, addParams });
+
+    expect(result.llmConfig.useResponsesApi).toBeUndefined();
+    expect(result.tools).toEqual([]);
+  });
+
+  it('should ignore non-boolean web_search values in addParams', () => {
+    const modelOptions = {
+      model: 'gpt-5',
+      web_search: true,
+    };
+
+    const addParams = {
+      web_search: 'string-value' as unknown,
+      temperature: 0.7,
+    };
+
+    const result = getOpenAIConfig(mockApiKey, { modelOptions, addParams });
+
+    // Should keep the original web_search from modelOptions since addParams value is not boolean
+    expect(result.llmConfig.useResponsesApi).toBe(true);
+    expect(result.tools).toEqual([{ type: 'web_search_preview' }]);
+    expect(result.llmConfig.temperature).toBe(0.7);
+    // web_search should not be added to modelKwargs
+    expect(result.llmConfig.modelKwargs).toBeUndefined();
+  });
+
+  it('should handle web_search with both addParams and dropParams', () => {
+    const modelOptions = {
+      model: 'gpt-5',
+    };
+
+    const addParams = {
+      web_search: true,
+    };
+
+    const result = getOpenAIConfig(mockApiKey, {
+      modelOptions,
+      addParams,
+      dropParams: ['web_search'], // dropParams takes precedence
+    });
+
+    expect(result.llmConfig.useResponsesApi).toBeUndefined();
+    expect(result.tools).toEqual([]);
+  });
+
+  it('should not add web_search to modelKwargs or llmConfig', () => {
+    const addParams = {
+      web_search: true,
+      customParam1: 'value1',
+      temperature: 0.5,
+    };
+
+    const result = getOpenAIConfig(mockApiKey, { addParams });
+
+    // web_search should trigger the tool but not appear in config
+    expect(result.llmConfig.useResponsesApi).toBe(true);
+    expect(result.tools).toEqual([{ type: 'web_search_preview' }]);
+    expect((result.llmConfig as Record<string, unknown>).web_search).toBeUndefined();
+    expect(result.llmConfig.temperature).toBe(0.5);
+    expect(result.llmConfig.modelKwargs).toEqual({ customParam1: 'value1' });
+  });
+
   it('should drop params for search models', () => {
     const modelOptions = {
       model: 'gpt-4o-search',
