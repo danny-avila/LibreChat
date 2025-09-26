@@ -180,7 +180,12 @@ export function getOpenAILLMConfig({
     enableWebSearch = false;
   }
 
-  if (enableWebSearch) {
+  if (useOpenRouter && enableWebSearch) {
+    /** OpenRouter expects web search as a plugins parameter */
+    modelKwargs.plugins = [{ id: 'web' }];
+    hasModelKwargs = true;
+  } else if (enableWebSearch) {
+    /** Standard OpenAI web search uses tools API */
     llmConfig.useResponsesApi = true;
     tools.push({ type: 'web_search_preview' });
   }

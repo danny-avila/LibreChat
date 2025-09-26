@@ -687,6 +687,82 @@ describe('getOpenAIConfig', () => {
       expect(result.provider).toBe('openrouter');
     });
 
+    it('should handle web_search with OpenRouter using plugins format', () => {
+      const modelOptions = {
+        model: 'gpt-4',
+        web_search: true,
+      };
+
+      const result = getOpenAIConfig(mockApiKey, {
+        reverseProxyUrl: 'https://openrouter.ai/api/v1',
+        modelOptions,
+      });
+
+      // Should use plugins format for OpenRouter, not tools
+      expect(result.llmConfig.modelKwargs).toEqual({
+        plugins: [{ id: 'web' }],
+      });
+      expect(result.tools).toEqual([]);
+      // Should NOT set useResponsesApi for OpenRouter
+      expect(result.llmConfig.useResponsesApi).toBeUndefined();
+      expect(result.provider).toBe('openrouter');
+    });
+
+    it('should handle web_search false with OpenRouter', () => {
+      const modelOptions = {
+        model: 'gpt-4',
+        web_search: false,
+      };
+
+      const result = getOpenAIConfig(mockApiKey, {
+        reverseProxyUrl: 'https://openrouter.ai/api/v1',
+        modelOptions,
+      });
+
+      // Should not have plugins when web_search is false
+      expect(result.llmConfig.modelKwargs).toBeUndefined();
+      expect(result.tools).toEqual([]);
+      expect(result.provider).toBe('openrouter');
+    });
+
+    it('should handle web_search with OpenRouter from addParams', () => {
+      const addParams = {
+        web_search: true,
+        customParam: 'value',
+      };
+
+      const result = getOpenAIConfig(mockApiKey, {
+        reverseProxyUrl: 'https://openrouter.ai/api/v1',
+        addParams,
+      });
+
+      // Should use plugins format and include other params
+      expect(result.llmConfig.modelKwargs).toEqual({
+        plugins: [{ id: 'web' }],
+        customParam: 'value',
+      });
+      expect(result.tools).toEqual([]);
+      expect(result.provider).toBe('openrouter');
+    });
+
+    it('should handle web_search with OpenRouter and dropParams', () => {
+      const modelOptions = {
+        model: 'gpt-4',
+        web_search: true,
+      };
+
+      const result = getOpenAIConfig(mockApiKey, {
+        reverseProxyUrl: 'https://openrouter.ai/api/v1',
+        modelOptions,
+        dropParams: ['web_search'],
+      });
+
+      // dropParams should disable web_search even for OpenRouter
+      expect(result.llmConfig.modelKwargs).toBeUndefined();
+      expect(result.tools).toEqual([]);
+      expect(result.provider).toBe('openrouter');
+    });
+
     it('should handle OpenRouter with reasoning params', () => {
       const modelOptions = {
         reasoning_effort: ReasoningEffort.high,
@@ -994,6 +1070,45 @@ describe('getOpenAIConfig', () => {
           dispatcher: expect.any(Object),
         }),
       });
+    });
+
+    it('should handle all configuration with OpenRouter and web_search', () => {
+      const complexConfig = {
+        modelOptions: {
+          model: 'gpt-4-turbo',
+          temperature: 0.7,
+          max_tokens: 2000,
+          verbosity: Verbosity.medium,
+          reasoning_effort: ReasoningEffort.high,
+          web_search: true,
+        },
+        reverseProxyUrl: 'https://openrouter.ai/api/v1',
+        headers: { 'X-Custom': 'value' },
+        streaming: false,
+        addParams: {
+          customParam: 'custom-value',
+          temperature: 0.8,
+        },
+      };
+
+      const result = getOpenAIConfig(mockApiKey, complexConfig);
+
+      expect(result.llmConfig).toMatchObject({
+        model: 'gpt-4-turbo',
+        temperature: 0.8,
+        streaming: false,
+        include_reasoning: true, // OpenRouter specific
+      });
+      // Should NOT have useResponsesApi for OpenRouter
+      expect(result.llmConfig.useResponsesApi).toBeUndefined();
+      expect(result.llmConfig.maxTokens).toBe(2000);
+      expect(result.llmConfig.modelKwargs).toEqual({
+        verbosity: Verbosity.medium,
+        customParam: 'custom-value',
+        plugins: [{ id: 'web' }], // OpenRouter web search format
+      });
+      expect(result.tools).toEqual([]); // No tools for OpenRouter web search
+      expect(result.provider).toBe('openrouter');
     });
   });
 
