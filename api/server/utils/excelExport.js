@@ -1,5 +1,6 @@
 const { stringify } = require('csv-stringify/sync');
 const { logger } = require('~/config');
+const moment = require('moment');
 
 /**
  * Converts an array of log objects to CSV format with specific fields
@@ -10,7 +11,10 @@ const exportLogsToCSV = (logs) => {
   try {
     // Format the data for CSV with the required fields
     const formattedData = logs.map(log => ({
-      'Timestamp': new Date(log.timestamp).toISOString(),
+      'Timestamp': moment(log.timestamp).isValid()
+  ? moment(log.timestamp).format('Do MMMM YY, h:mm:ss a')
+  : moment().format('Do MMMM YY, h:mm:ss a'),
+
       'Event': log.action || 'N/A',
       'Name': log.userInfo?.name || 'N/A',
       'Email': log.userInfo?.email || log.userInfo?.username || 'N/A',

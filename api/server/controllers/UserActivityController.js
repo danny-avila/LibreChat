@@ -2,6 +2,8 @@ const { logger } = require('~/config');
 const { UserActivityLog, User, Message } = require('~/db/models');
 const mongoose = require('mongoose');
 const { exportLogsToCSV } = require('~/server/utils/excelExport');
+const moment = require('moment');
+
 
 /** ---------------- Shared helpers ---------------- **/
 const buildFilterFromQuery = (query = {}) => {
@@ -394,7 +396,13 @@ const exportActivityLogs = async (req, res) => {
     }
 
     // Generate CSV
-    const csv = await exportLogsToCSV(logs);
+    const formattedLogs = logs.map(log => ({
+      ...log,
+      timestamp: log.timestamp ? moment(log.timestamp).format('Do MMMM YYYY, h:mm:ss a') : '',
+    }));
+
+    const csv = await exportLogsToCSV(formattedLogs);
+
     
     // Set headers for file download
     const date = new Date().toISOString().split('T')[0];

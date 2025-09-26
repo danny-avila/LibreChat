@@ -6,7 +6,7 @@ import { SearchBar } from '~/views/admin/AdminSearchBar';
 import { Pagination } from '~/components/ui/Pagination';
 import { Button } from '~/components/ui/Button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '~/components/ui/Dialog';
-import { ArrowLeft, Info } from 'lucide-react';
+import { ArrowLeft, Info, Download } from 'lucide-react';
 import { debounce } from 'lodash';
 import moment from 'moment';
 import QueryLogDetailsDialog from './QueryLogDetailsDialog';
@@ -82,7 +82,6 @@ export function useQueryLogs(limit: number = 10, page: number = 1, search: strin
         console.log('[useQueryLogs] SSE connected');
         setConnected(true);
       };
-     
 
       es.onmessage = (event) => {
         if (!event.data || event.data.trim() === '') return;
@@ -93,19 +92,16 @@ export function useQueryLogs(limit: number = 10, page: number = 1, search: strin
           if (data.type === 'heartbeat') return;
 
           if (data.type === 'init') {
-            // Best-effort: server should send total; if not, fetch explicit count
             const t = data.total;
             if (typeof t === 'number') {
               initTotalRef.current = t;
               setTotal(t);
             } else {
-              // Fallback to approximate total
               const approxTotal = currentPage * currentLimit;
               initTotalRef.current = approxTotal;
               setTotal(approxTotal);
             }
-            
-            
+
             if (data.count === 0) {
               setLoading(false);
               setIsInitialFetchComplete(true);
@@ -115,11 +111,6 @@ export function useQueryLogs(limit: number = 10, page: number = 1, search: strin
 
           if (data.type === 'historical_complete') {
             setLogs(tempConversations);
-            // if (!initTotalRef.current) {
-            //   // fallback: if server didn't provide total, approximate it
-            //   const approx = (page - 1) * limit + tempConversations.length;
-            //   setTotal(approx);
-            // }
             setIsInitialFetchComplete(true);
             setLoading(false);
             return;
@@ -206,30 +197,61 @@ export function useQueryLogs(limit: number = 10, page: number = 1, search: strin
 }
 
 const QueryLogs: React.FC = () => {
-   const navigate = useNavigate();
-      
-        const handleGoBack = () => {
-          // Retrieve the previous page URL from sessionStorage
-          const previousPage = sessionStorage.getItem('previousPage') || '/dashboard'; // Default to '/dashboard'
-      
-          // Navigate back to the previous page
-          navigate(previousPage);
-        };
+  const navigate = useNavigate();
+  const handleGoBack = () => {
+    const previousPage = sessionStorage.getItem('previousPage') || '/dashboard';
+    navigate(previousPage);
+  };
   const mainContainerRef = useRef<HTMLDivElement>(null);
 
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedLog, setSelectedLog] = useState<QueryLog | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   const limit = 10;
 
   const { logs, connected, total, loading, error } = useQueryLogs(limit, page, search);
-  
 
   const handleSearch = (searchTerm: string) => {
     setSearch(searchTerm);
     setPage(1);
+  };
+
+  // Function to trigger CSV export for all conversations
+  const handleExportAllConversations = async () => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      setExportError('No authentication token found');
+      return;
+    }
+    setExporting(true);
+    setExportError(null);
+    try {
+      const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
+      const params = new URLSearchParams();
+      if (search) params.append('search', search);
+      const response = await fetch(`${API_BASE}/api/logs/conversations/export?${params}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) throw new Error(`Failed to export: ${response.statusText}`);
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `all-conversations-${new Date().toISOString().split('T')[0]}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Export error:', err);
+      setExportError(err instanceof Error ? err.message : 'Unknown error during export');
+    } finally {
+      setExporting(false);
+    }    
   };
 
   // Adjust container height
@@ -249,7 +271,7 @@ const QueryLogs: React.FC = () => {
     return () => window.removeEventListener('resize', adjustTableHeight);
   }, [logs, page]);
 
-  // Columns
+  // Columns (added Title column for completeness)
   const columns = useMemo(
     () => [
       {
@@ -281,6 +303,16 @@ const QueryLogs: React.FC = () => {
         ),
       },
       {
+        accessorKey: 'title',
+        header: 'Title',
+        meta: { size: '200px' },
+        cell: ({ row }: any) => (
+          <span className="text-sm text-gray-800 truncate max-w-[150px]">
+            {row.original.title ?? 'New Chat'}
+          </span>
+        ),
+      },
+      {
         accessorKey: 'updatedAt',
         header: 'Last Updated',
         meta: { size: '180px' },
@@ -292,32 +324,6 @@ const QueryLogs: React.FC = () => {
           </span>
         ),
       },
-      // Role 
-      // {
-      //   accessorKey: 'role',
-      //   header: 'Role',
-      //   meta: { size: '120px' },
-      //   cell: ({ row }: any) => {
-      //     const isAI = row.original.role === 'ai';
-      //     return (
-      //       <span
-      //         className={`rounded px-2 py-0.5 text-xs font-semibold ${
-      //           isAI ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'
-      //         }`}
-      //       >
-      //         {isAI ? 'AI' : 'User'}
-      //       </span>
-      //     );
-      //   },
-      // },
-      // {
-      //   accessorKey: 'model',
-      //   header: 'Model',
-      //   meta: { size: '150px' },
-      //   cell: ({ row }: any) => (
-      //     <span className="text-xs text-gray-700">{row.original.model ?? '—'}</span>
-      //   ),
-      // },
       {
         accessorKey: 'totalTokens',
         header: 'Tokens',
@@ -351,88 +357,101 @@ const QueryLogs: React.FC = () => {
   );
 
   return (
-  <div className="flex h-full flex-col px-6 py-4 sm:py-6">
-    {/* Header */}
-    <div className="mb-4 flex items-center justify-between border-b border-border-light pb-3">
-      <div className="flex items-center gap-3">
-        <Button
-          variant="ghost"
-          size="icon"
-         // onClick={() => navigate('/c/new')}
-         onClick={handleGoBack}
-          className="rounded-full hover:bg-surface-secondary"
-          aria-label="Back to Admin Dashboard"
-        >
-          <ArrowLeft className="h-5 w-5 text-muted-foreground" />
-        </Button>
-        <h2 className="text-lg font-semibold text-foreground sm:text-2xl">
-          Query Logs
-        </h2>
-      </div>
-    </div>
-
-    {/* Error Message */}
-    {error && (
-      <div className="mb-4 rounded-md border-l-4 border-red-500 bg-red-100 p-4 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
-        {error}
-      </div>
-    )}
-
-    {/* Search */}
-    <div className="mb-4">
-      <SearchBar
-        search={search}
-        setSearch={handleSearch}
-        placeholder="Search by user name, email, or model"
-      />
-    </div>
-
-    {/* Loading Spinner */}
-    {loading && (
-      <div className="flex items-center justify-center py-6">
-        <div className="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-blue-500" />
-        <span className="ml-3 text-sm text-muted-foreground">Loading query logs...</span>
-      </div>
-    )}
-
-    {/* Empty State */}
-    {!loading && logs.length === 0 && (
-      <div className="flex flex-1 items-center justify-center text-center text-muted-foreground">
-        <p className="text-base">
-          {search ? 'No logs match your search.' : 'No query logs available.'}
-        </p>
-      </div>
-    )}
-
-    {/* Data Table */}
-    {!loading && logs.length > 0 && (
-      <div className="flex flex-1 flex-col gap-4">
-        <div ref={mainContainerRef} className="min-h-[400px] flex-grow">
-          <DataTable
-            columns={columns}
-            data={logs.map((log, i) => ({ ...log, id: log._id || `${i}` }))}
-            className="h-full"
-            enableRowSelection={false}
-            showCheckboxes={false}
-            isLoading={false}
-          />
+    <div className="flex h-full flex-col px-6 py-4 sm:py-6">
+      {/* Header */}
+      <div className="mb-4 flex items-center justify-between border-b border-border-light pb-3">
+        <div className="flex items-center gap-3">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleGoBack}
+            className="rounded-full hover:bg-surface-secondary"
+            aria-label="Back to Admin Dashboard"
+          >
+            <ArrowLeft className="h-5 w-5 text-muted-foreground" />
+          </Button>
+          <h2 className="text-lg font-semibold text-foreground sm:text-2xl">
+            Query Logs
+          </h2>
         </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleExportAllConversations}
+          disabled={exporting || loading}
+          className="flex items-center gap-2"
+        >
+          <Download className="h-4 w-4" />
+          {exporting ? 'Exporting...' : 'Export All Conversations'}
+        </Button>
+      </div>
 
-        {/* Pagination */}
-        <Pagination
-          page={page}
-          limit={limit}
-          total={total}
-          onPageChange={setPage}
+      {/* Error Messages */}
+      {error && (
+        <div className="mb-4 rounded-md border-l-4 border-red-500 bg-red-100 p-4 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
+          {error}
+        </div>
+      )}
+      {exportError && (
+        <div className="mb-4 rounded-md border-l-4 border-red-500 bg-red-100 p-4 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
+          {exportError}
+        </div>
+      )}
+
+      {/* Search */}
+      <div className="mb-4">
+        <SearchBar
+          search={search}
+          setSearch={handleSearch}
+          placeholder="Search by user name, email, or title"
         />
       </div>
-    )}
 
-    {/* Log Detail Dialog */}
-    <QueryLogDetailsDialog dialogOpen={dialogOpen}setDialogOpen={setDialogOpen}selectedLog={selectedLog}/>
-  </div>
-);
+      {/* Loading Spinner */}
+      {loading && (
+        <div className="flex items-center justify-center py-6">
+          <div className="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-blue-500" />
+          <span className="ml-3 text-sm text-muted-foreground">Loading query logs...</span>
+        </div>
+      )}
 
+      {/* Empty State */}
+      {!loading && logs.length === 0 && (
+        <div className="flex flex-1 items-center justify-center text-center text-muted-foreground">
+          <p className="text-base">
+            {search ? 'No logs match your search.' : 'No query logs available.'}
+          </p>
+        </div>
+      )}
+
+      {/* Data Table */}
+      {!loading && logs.length > 0 && (
+        <div className="flex flex-1 flex-col gap-4">
+          <div ref={mainContainerRef} className="min-h-[400px] flex-grow">
+            <DataTable
+              columns={columns}
+              data={logs.map((log, i) => ({ ...log, id: log._id || `${i}` }))}
+              className="h-full"
+              enableRowSelection={false}
+              showCheckboxes={false}
+              isLoading={false}
+            />
+          </div>
+
+          {/* Pagination */}
+          <Pagination
+            page={page}
+            limit={limit}
+            total={total}
+            onPageChange={setPage}
+          />
+        </div>
+      )}
+
+      {/* Log Detail Dialog */}
+      <QueryLogDetailsDialog dialogOpen={dialogOpen} setDialogOpen={setDialogOpen} selectedLog={selectedLog} />
+    </div>
+  );
 };
 
 export default QueryLogs;

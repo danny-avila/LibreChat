@@ -1,5 +1,6 @@
 const express = require('express');
 const mongoose = require('mongoose');
+const moment = require('moment'); // Ensure Moment.js is imported
 const router = express.Router();
 const { requireJwtAuth, checkAdmin } = require('~/server/middleware');
 const queryLogger = require('~/server/services/QueryLogger');
@@ -18,16 +19,19 @@ const buildFilterFromQuery = (query = {}) => {
   let userMatchExpr = null;
 
   if (search) {
+    filter.$or = [
+      { model: { $regex: search, $options: 'i' } },
+      { text: { $regex: search, $options: 'i' } },
+    ];
     userMatchExpr = {
       $expr: {
         $or: [
           { $regexMatch: { input: '$userInfo.name', regex: search, options: 'i' } },
           { $regexMatch: { input: '$userInfo.email', regex: search, options: 'i' } },
-          { $regexMatch: { input: '$conversationDoc.title', regex: search, options: 'i' } },
+          { $regexMatch: { input: '$conversationDoc.title', regex: search, $options: 'i' } },
         ],
       },
     };
-    filter.model = { $regex: search, $options: 'i' }; // Also search by model for messages
   }
 
   return { filter, userMatchExpr };
@@ -116,7 +120,6 @@ const fetchConversations = async (query = {}) => {
   logger.info('[fetchConversations] Query params:', query);
   logger.info('[fetchConversations] Built filter:', filter);
 
-  // Compute total count with search filter
   const countPipeline = [
     { $match: filter },
     {
@@ -234,7 +237,6 @@ router.get('/queries/export', async (req, res) => {
       ],
     } : {};
 
-    // Add user name/email search
     if (search) {
       const matchingUsers = await User.find({
         $or: [
@@ -254,26 +256,38 @@ router.get('/queries/export', async (req, res) => {
         select: 'name email',
         model: 'User',
       })
-      .select('user text model tokenCount createdAt toolCalls')
-      .sort({ createdAt: -1 })
+      .select('user text model tokenCount createdAt toolCalls conversationId')
+      .sort({ createdAt: -1 }) // Sort newest first
       .lean();
 
     if (!messages || messages.length === 0) {
       return res.status(404).json({ message: 'No query logs found matching the criteria' });
     }
 
+    // Fetch conversation titles
+    const conversationIds = [...new Set(messages.map((m) => m.conversationId))];
+    const conversations = await Conversation.find({ conversationId: { $in: conversationIds } })
+      .select('conversationId title')
+      .lean();
+    const conversationTitleMap = conversations.reduce((acc, conv) => {
+      acc[conv.conversationId] = conv.title || 'New Chat';
+      return acc;
+    }, {});
+
     const formattedLogs = messages.map((message) => ({
       role: message.model ? 'assistant' : message.toolCalls?.length ? 'tool' : 'user',
       model: message.model || null,
       text: message.text || '',
       tokenCount: message.tokenCount || 0,
-      createdAt: message.createdAt ? message.createdAt.toISOString() : new Date().toISOString(),
+      createdAt: message.createdAt ? moment(message.createdAt).format('Do MMMM YY, h:mm:ss a') : moment().format('Do MMM YY, h:mm:ss a'),
       user: {
         name: message.user?.name || 'N/A',
         email: message.user?.email || 'N/A',
       },
       toolType: message.toolCalls?.[0]?.type || null,
       searchQuery: message.toolCalls?.find(t => t.type === 'web_search')?.query || null,
+      conversationId: message.conversationId,
+      conversationTitle: conversationTitleMap[message.conversationId] || 'New Chat',
     }));
 
     const csv = await exportQueryLogsToCSV(formattedLogs);
@@ -292,13 +306,92 @@ router.get('/queries/export', async (req, res) => {
   }
 });
 
-// New Endpoint: Export messages for a specific conversation to CSV
+// Modified Endpoint: Export all conversation messages to CSV
+router.get('/conversations/export', async (req, res) => {
+  try {
+    const { search } = req.query;
+
+    // Build search filter
+    const filter = {};
+    if (search) {
+      filter.$or = [
+        { model: { $regex: search, $options: 'i' } },
+      ];
+    }
+
+    // Find matching users for name/email search
+    if (search) {
+      const matchingUsers = await User.find({
+        $or: [
+          { name: { $regex: search, $options: 'i' } },
+          { email: { $regex: search, $options: 'i' } },
+        ],
+      }).distinct('_id');
+      if (matchingUsers.length > 0) {
+        filter.$or = filter.$or || [];
+        filter.$or.push({ user: { $in: matchingUsers } });
+      }
+    }
+
+    // Get all matching messages with required fields and populate user data
+    const messages = await Message.find(filter)
+      .populate({
+        path: 'user',
+        select: 'name email',
+        model: 'User'
+      })
+      .select('user text model tokenCount createdAt')
+      .sort({ createdAt: -1 }) // Sort newest first
+      .lean();
+
+    if (!messages || messages.length === 0) {
+      return res.status(404).json({ message: 'No messages found matching the criteria' });
+    }
+
+    // Format messages for CSV export
+    const formattedLogs = messages.map((message) => {
+      const user = message.user || {};
+      const isAI = !!message.model;
+      
+      return {
+        role: isAI ? 'assistant' : 'user',
+        model: message.model || null,
+        text: message.text || '',
+        tokenCount: message.tokenCount || 0,
+        createdAt: message.createdAt ? moment(message.createdAt).format('Do MMM YY, h:mm:ss a') : moment().format('Do MMM YY, h:mm:ss a'),
+        user: {
+          name: user.name || 'N/A',
+          email: user.email || 'N/A'
+        }
+      };
+    });
+
+    // Generate CSV
+    const csv = await exportQueryLogsToCSV(formattedLogs);
+    
+    // Set headers for file download
+    const date = new Date().toISOString().split('T')[0];
+    const filename = `all-conversations-${date}.csv`;
+    
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Pragma', 'no-cache');
+    
+    // Send the CSV file
+    return res.send(csv);
+  } catch (error) {
+    logger.error('[logs/conversations/export] Error exporting conversation messages to CSV:', error);
+    return res.status(500).json({ message: 'Failed to export conversation messages', error: error.message });
+  }
+});
+
+// Endpoint: Export messages for a specific conversation to CSV
 router.get('/conversations/:conversationId/export', async (req, res) => {
   try {
     const { conversationId } = req.params;
     const { search } = req.query;
 
-    // Build filter
     const filter = { conversationId };
     if (search) {
       filter.$or = [
@@ -316,7 +409,6 @@ router.get('/conversations/:conversationId/export', async (req, res) => {
       }
     }
 
-    // Query messages
     const messages = await Message.find(filter)
       .populate({
         path: 'user',
@@ -324,24 +416,22 @@ router.get('/conversations/:conversationId/export', async (req, res) => {
         model: 'User',
       })
       .select('user text model tokenCount createdAt toolCalls')
-      .sort({ createdAt: 1 }) // Chronological order for chat history
+      .sort({ createdAt: -1 }) // Sort newest first
       .lean();
 
     if (!messages || messages.length === 0) {
       return res.status(404).json({ message: 'No messages found for this conversation' });
     }
 
-    // Get conversation title
     const conversation = await Conversation.findOne({ conversationId }).select('title').lean();
     const title = conversation?.title || 'New Chat';
 
-    // Format for CSV
     const formattedLogs = messages.map((message) => ({
       role: message.model ? 'assistant' : message.toolCalls?.length ? 'tool' : 'user',
       model: message.model || null,
       text: message.text || '',
       tokenCount: message.tokenCount || 0,
-      createdAt: message.createdAt ? message.createdAt.toISOString() : new Date().toISOString(),
+      createdAt: message.createdAt ? moment(message.createdAt).format('Do MMM YY, h:mm:ss a') : moment().format('Do MMM YY, h:mm:ss a'),
       user: {
         name: message.user?.name || 'N/A',
         email: message.user?.email || 'N/A',
@@ -352,7 +442,6 @@ router.get('/conversations/:conversationId/export', async (req, res) => {
       conversationTitle: title,
     }));
 
-    // Generate CSV
     const csv = await exportQueryLogsToCSV(formattedLogs);
     const date = new Date().toISOString().split('T')[0];
     const filename = `conversation-${conversationId}-${date}.csv`;
