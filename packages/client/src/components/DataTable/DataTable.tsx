@@ -10,7 +10,7 @@ import {
   type ColumnDef,
   type Row,
 } from '@tanstack/react-table';
-import type { DataTableProps, ProcessedDataRow, TableColumnDef } from './DataTable.types';
+import type { DataTableProps, ProcessedDataRow } from './DataTable.types';
 import { SelectionCheckbox, MemoizedTableRow, SkeletonRows } from './DataTableComponents';
 import { Table, TableBody, TableHead, TableHeader, TableCell, TableRow } from '../Table';
 import { useDebounced, useOptimizedRowSelection } from './DataTable.hooks';
@@ -75,6 +75,17 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
   const debouncedTerm = useDebounced(searchTerm, debounceDelay);
   const finalSorting = sorting ?? internalSorting;
 
+  const processedData = useMemo<ProcessedDataRow<TData>[]>(() => {
+    return data.map((item, index) => {
+      const id = item.id;
+      return {
+        ...item,
+        _id: String(id ?? `row-${index}`),
+        _index: index,
+      };
+    });
+  }, [data]);
+
   const calculatedVisibility = useMemo(() => {
     const newVisibility: VisibilityState = {};
     columns.forEach((col) => {
@@ -101,28 +112,24 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
     setColumnVisibility((prev) => ({ ...prev, ...calculatedVisibility }));
   }, [calculatedVisibility]);
 
-  const processedData = useMemo(
-    () =>
-      data.map((item, index): ProcessedDataRow<TData> => {
-        if (item.id === null || item.id === undefined) {
-          logger.warn(
-            'DataTable Warning: A data row is missing a unique "id" property. Using index as a fallback. This can lead to unexpected behavior with selection and sorting.',
-            item,
-          );
-        }
+  const hasWarnedAboutMissingIds = useRef(false);
 
-        return {
-          ...item,
-          _index: index,
-          _id: String(item.id ?? `row-${index}`),
-        };
-      }),
-    [data],
-  );
+  useEffect(() => {
+    if (data.length > 0 && !hasWarnedAboutMissingIds.current) {
+      const missing = data.filter((item) => item.id === null || item.id === undefined);
+      if (missing.length > 0) {
+        logger.warn(
+          `DataTable Warning: ${missing.length} data rows are missing a unique "id" property. Using index as a fallback. This can lead to unexpected behavior with selection and sorting.`,
+          { missingCount: missing.length, sample: missing.slice(0, 3) },
+        );
+        hasWarnedAboutMissingIds.current = true;
+      }
+    }
+  }, [data]);
 
-  const tableColumns = useMemo((): TableColumnDef<TData, TValue>[] => {
+  const tableColumns = useMemo((): ColumnDef<ProcessedDataRow<TData>, TValue>[] => {
     if (!enableRowSelection || !showCheckboxes) {
-      return columns as TableColumnDef<TData, TValue>[];
+      return columns.map((col) => col as unknown as ColumnDef<ProcessedDataRow<TData>, TValue>);
     }
 
     const selectColumn: ColumnDef<ProcessedDataRow<TData>, TValue> = {
@@ -148,9 +155,12 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
       meta: {
         className: 'w-12',
       },
-    } as TableColumnDef<TData, TValue>;
+    };
 
-    return [selectColumn, ...(columns as TableColumnDef<TData, TValue>[])];
+    return [
+      selectColumn,
+      ...columns.map((col) => col as unknown as ColumnDef<ProcessedDataRow<TData>, TValue>),
+    ];
   }, [columns, enableRowSelection, showCheckboxes, localize]);
 
   const table = useReactTable<ProcessedDataRow<TData>>({
@@ -240,7 +250,7 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
         }
 
         scrollTimeoutRef.current = null;
-      }, 150);
+      }, 50);
 
       scrollRAFRef.current = null;
     });
@@ -288,7 +298,7 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
         {customActionsRenderer &&
           customActionsRenderer({
             selectedCount,
-            selectedRows: table.getSelectedRowModel().rows.map((r) => r.original),
+            selectedRows: table.getSelectedRowModel().rows.map((r) => r.original as TData),
             table,
           })}
       </div>
@@ -375,9 +385,7 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
                   return (
                     <MemoizedTableRow
                       key={virtualRow.key}
-                      row={row as Row<ProcessedDataRow<TData>>}
-                      columns={tableColumns as ColumnDef<Record<string, unknown>>[]}
-                      index={virtualRow.index}
+                      row={row as unknown as Row<TData>}
                       virtualIndex={virtualRow.index}
                     />
                   );

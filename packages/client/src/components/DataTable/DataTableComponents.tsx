@@ -1,7 +1,7 @@
 import { memo } from 'react';
 import { flexRender } from '@tanstack/react-table';
-import type { Row, ColumnDef } from '@tanstack/react-table';
 import type { TableColumn } from './DataTable.types';
+import type { Row } from '@tanstack/react-table';
 import { TableCell, TableRow } from '../Table';
 import { Checkbox } from '../Checkbox';
 import { Skeleton } from '../Skeleton';
@@ -45,8 +45,6 @@ const TableRowComponent = <TData extends Record<string, unknown>>({
   virtualIndex,
 }: {
   row: Row<TData>;
-  columns: ColumnDef<TData, unknown>[];
-  index: number;
   virtualIndex?: number;
 }) => (
   <TableRow
@@ -80,8 +78,7 @@ export const MemoizedTableRow = memo(
   TableRowComponent,
   (prev, next) =>
     prev.row.original === next.row.original &&
-    prev.row.getIsSelected() === next.row.getIsSelected() &&
-    prev.columns === next.columns,
+    prev.row.getIsSelected() === next.row.getIsSelected(),
 );
 
 export const SkeletonRows = memo(
