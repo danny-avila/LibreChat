@@ -133,7 +133,7 @@ export const defaultOCRMimeTypes = [
   /^application\/epub\+zip$/,
 ];
 
-export const defaultTextMimeTypes = [textMimeTypes];
+export const defaultTextMimeTypes = [/^[\w.-]+\/[\w.-]+$/];
 
 export const defaultSTTMimeTypes = [audioMimeTypes];
 

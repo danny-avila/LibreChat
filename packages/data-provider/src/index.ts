@@ -9,7 +9,6 @@ export * from './messages';
 export * from './artifacts';
 /* schema helpers  */
 export * from './parsers';
-export * from './ocr';
 /* custom/dynamic configurations  */
 export * from './generate';
 export * from './models';

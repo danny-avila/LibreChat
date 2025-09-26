@@ -1,4 +1,5 @@
-export * from './mistral/crud';
 export * from './audio';
-export * from './text';
+export * from './mistral/crud';
+export * from './ocr';
 export * from './parse';
+export * from './text';
