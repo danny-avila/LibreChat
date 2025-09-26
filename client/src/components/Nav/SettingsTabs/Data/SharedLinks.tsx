@@ -322,7 +322,7 @@ export default function SharedLinks() {
             {localize('com_ui_manage')}
           </Button>
         </OGDialogTrigger>
-        <OGDialogContent className={cn('w-11/12 max-w-6xl', isSmallScreen && 'px-0 pb-0')}>
+        <OGDialogContent className={cn('w-11/12 max-w-6xl', isSmallScreen && 'px-1 pb-1')}>
           <OGDialogHeader>
             <OGDialogTitle>{localize('com_nav_shared_links')}</OGDialogTitle>
           </OGDialogHeader>

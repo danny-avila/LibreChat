@@ -364,7 +364,7 @@ export default function ArchivedChatsTable() {
             {localize('com_ui_manage')}
           </Button>
         </OGDialogTrigger>
-        <OGDialogContent className={cn('w-11/12 max-w-6xl', isSmallScreen && 'px-0 pb-0')}>
+        <OGDialogContent className={cn('w-11/12 max-w-6xl', isSmallScreen && 'px-1 pb-1')}>
           <OGDialogHeader>
             <OGDialogTitle>{localize('com_nav_archived_chats')}</OGDialogTitle>
           </OGDialogHeader>
@@ -381,8 +381,8 @@ export default function ArchivedChatsTable() {
                 debounce: 300,
               },
               selection: {
-                enableRowSelection: false,
-                showCheckboxes: false,
+                enableRowSelection: true,
+                showCheckboxes: true,
               },
             }}
             filterValue={searchValue}

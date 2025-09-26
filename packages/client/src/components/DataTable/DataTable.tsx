@@ -9,6 +9,7 @@ import {
   type VisibilityState,
   type ColumnDef,
   type Row,
+  type Table as TTable,
 } from '@tanstack/react-table';
 import type { DataTableProps, ProcessedDataRow } from './DataTable.types';
 import { SelectionCheckbox, MemoizedTableRow, SkeletonRows } from './DataTableComponents';
@@ -51,7 +52,7 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
     selection: { enableRowSelection = true, showCheckboxes = true } = {},
     search: { enableSearch = true, debounce: debounceDelay = 300 } = {},
     skeleton: { count: skeletonCount = 10 } = {},
-    virtualization: { overscan = 5 } = {},
+    virtualization: { overscan = 10 } = {},
   } = config || {};
 
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
@@ -59,7 +60,27 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
   const [error, setError] = useState<Error | null>(null);
   const [searchTerm, setSearchTerm] = useState(filterValue);
   const [internalSorting, setInternalSorting] = useState<SortingState>(defaultSort);
-  const [isScrollingFetching, setIsScrollingFetching] = useState(false);
+
+  const selectedCount = Object.keys(optimizedRowSelection).length;
+  const isAllSelected = useMemo(
+    () => data.length > 0 && selectedCount === data.length,
+    [data.length, selectedCount],
+  );
+  const isIndeterminate = selectedCount > 0 && !isAllSelected;
+
+  const getRowId = useCallback(
+    (row: TData, index?: number) => String(row.id ?? `row-${index ?? 0}`),
+    [],
+  );
+
+  const selectedRows = useMemo(() => {
+    if (Object.keys(optimizedRowSelection).length === 0) return [];
+
+    const dataMap = new Map(data.map((item, index) => [getRowId(item, index), item]));
+    return Object.keys(optimizedRowSelection)
+      .map((id) => dataMap.get(id))
+      .filter(Boolean) as TData[];
+  }, [optimizedRowSelection, data, getRowId]);
 
   const cleanupTimers = useCallback(() => {
     if (scrollRAFRef.current) {
@@ -74,17 +95,6 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
 
   const debouncedTerm = useDebounced(searchTerm, debounceDelay);
   const finalSorting = sorting ?? internalSorting;
-
-  const processedData = useMemo<ProcessedDataRow<TData>[]>(() => {
-    return data.map((item, index) => {
-      const id = item.id;
-      return {
-        ...item,
-        _id: String(id ?? `row-${index}`),
-        _index: index,
-      };
-    });
-  }, [data]);
 
   const calculatedVisibility = useMemo(() => {
     const newVisibility: VisibilityState = {};
@@ -127,27 +137,44 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
     }
   }, [data]);
 
-  const tableColumns = useMemo((): ColumnDef<ProcessedDataRow<TData>, TValue>[] => {
+  const tableColumns = useMemo((): ColumnDef<TData, TValue>[] => {
     if (!enableRowSelection || !showCheckboxes) {
-      return columns.map((col) => col as unknown as ColumnDef<ProcessedDataRow<TData>, TValue>);
+      return columns.map((col) => col as unknown as ColumnDef<TData, TValue>);
     }
 
-    const selectColumn: ColumnDef<ProcessedDataRow<TData>, TValue> = {
+    const selectColumn: ColumnDef<TData, TValue> = {
       id: 'select',
-      header: ({ table }) => (
-        <div
-          className="flex h-full items-center justify-center"
-          role="button"
-          tabIndex={0}
-          aria-label={localize('com_ui_select_all')}
-        >
-          <SelectionCheckbox
-            checked={table.getIsAllRowsSelected()}
-            onChange={(value) => table.toggleAllRowsSelected(value)}
-            ariaLabel={localize('com_ui_select_all')}
-          />
-        </div>
-      ),
+      header: () => {
+        const extraCheckboxProps = (isIndeterminate ? { indeterminate: true } : {}) as Record<
+          string,
+          unknown
+        >;
+        return (
+          <div
+            className="flex h-full items-center justify-center"
+            role="button"
+            tabIndex={0}
+            aria-label={localize('com_ui_select_all')}
+          >
+            <SelectionCheckbox
+              checked={isAllSelected}
+              onChange={(value) => {
+                if (isAllSelected || !value) {
+                  setOptimizedRowSelection({});
+                } else {
+                  const allSelection = data.reduce<Record<string, boolean>>((acc, item, index) => {
+                    acc[getRowId(item, index)] = true;
+                    return acc;
+                  }, {});
+                  setOptimizedRowSelection(allSelection);
+                }
+              }}
+              ariaLabel={localize('com_ui_select_all')}
+              {...extraCheckboxProps}
+            />
+          </div>
+        );
+      },
       cell: ({ row }) => {
         const rowDescription = row.original.name
           ? `named ${row.original.name}`
@@ -172,16 +199,13 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
       },
     };
 
-    return [
-      selectColumn,
-      ...columns.map((col) => col as unknown as ColumnDef<ProcessedDataRow<TData>, TValue>),
-    ];
+    return [selectColumn, ...columns.map((col) => col as unknown as ColumnDef<TData, TValue>)];
   }, [columns, enableRowSelection, showCheckboxes, localize]);
 
-  const table = useReactTable<ProcessedDataRow<TData>>({
-    data: processedData,
+  const table = useReactTable<TData>({
+    data,
     columns: tableColumns,
-    getRowId: (row) => row._id,
+    getRowId: getRowId,
     getCoreRowModel: getCoreRowModel(),
     enableRowSelection,
     enableMultiRowSelection: true,
@@ -198,13 +222,13 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
   });
 
   const rowVirtualizer = useVirtualizer({
-    count: processedData.length,
+    count: data.length,
     getScrollElement: () => tableContainerRef.current,
-    estimateSize: useCallback(() => 50, []),
+    estimateSize: useCallback(() => 60, []),
     overscan,
     measureElement:
-      typeof window !== 'undefined' && navigator.userAgent.indexOf('Firefox') === -1
-        ? (element) => element?.getBoundingClientRect().height ?? 50
+      typeof window !== 'undefined'
+        ? (element) => element?.getBoundingClientRect().height ?? 60
         : undefined,
   });
 
@@ -216,10 +240,19 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
 
   const { rows } = table.getRowModel();
   const headerGroups = table.getHeaderGroups();
-  const selectedCount = Object.keys(optimizedRowSelection).length;
 
   const showSkeletons = isLoading || (isFetching && !isFetchingNextPage);
   const shouldShowSearch = enableSearch && onFilterChange;
+
+  // useEffect(() => {
+  //   if (data.length > 1000) {
+  //     const cleanup = setTimeout(() => {
+  //       rowVirtualizer.scrollToIndex(0, { align: 'start' });
+  //       rowVirtualizer.measure();
+  //     }, 1000);
+  //     return () => clearTimeout(cleanup);
+  //   }
+  // }, [data.length, rowVirtualizer]);
 
   useEffect(() => {
     setSearchTerm(filterValue);
@@ -232,44 +265,28 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
     }
   }, [debouncedTerm, filterValue, onFilterChange, setOptimizedRowSelection]);
 
-  const handleScroll = useCallback(() => {
-    if (scrollRAFRef.current !== null) {
-      cancelAnimationFrame(scrollRAFRef.current);
-    }
+  const handleScroll = useMemo(() => {
+    let rafId: number | null = null;
+    let timeoutId: number | null = null;
 
-    scrollRAFRef.current = requestAnimationFrame(() => {
-      if (scrollTimeoutRef.current !== null) {
-        clearTimeout(scrollTimeoutRef.current);
-      }
+    return () => {
+      if (rafId) cancelAnimationFrame(rafId);
 
-      scrollTimeoutRef.current = window.setTimeout(() => {
-        if (
-          !fetchNextPage ||
-          !hasNextPage ||
-          isFetchingNextPage ||
-          isScrollingFetching ||
-          !tableContainerRef.current
-        ) {
-          return;
-        }
+      rafId = requestAnimationFrame(() => {
+        if (timeoutId) clearTimeout(timeoutId);
 
-        const { scrollTop, scrollHeight, clientHeight } = tableContainerRef.current;
-        const scrollBottom = scrollTop + clientHeight;
-        const threshold = scrollHeight - 200;
+        timeoutId = window.setTimeout(() => {
+          const container = tableContainerRef.current;
+          if (!container || !fetchNextPage || !hasNextPage || isFetchingNextPage) return;
 
-        if (scrollBottom >= threshold) {
-          setIsScrollingFetching(true);
-          fetchNextPage().finally(() => {
-            setIsScrollingFetching(false);
-          });
-        }
-
-        scrollTimeoutRef.current = null;
-      }, 50);
-
-      scrollRAFRef.current = null;
-    });
-  }, [fetchNextPage, hasNextPage, isFetchingNextPage, isScrollingFetching]);
+          const { scrollTop, scrollHeight, clientHeight } = container;
+          if (scrollTop + clientHeight >= scrollHeight - 200) {
+            fetchNextPage().finally();
+          }
+        }, 100);
+      });
+    };
+  }, [fetchNextPage, hasNextPage, isFetchingNextPage]);
 
   useEffect(() => {
     const scrollElement = tableContainerRef.current;
@@ -315,11 +332,10 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
         {customActionsRenderer &&
           customActionsRenderer({
             selectedCount,
-            selectedRows: table.getSelectedRowModel().rows.map((r) => r.original as TData),
-            table,
+            selectedRows,
+            table: table as unknown as TTable<ProcessedDataRow<TData>>,
           })}
       </div>
-
       <div
         ref={tableContainerRef}
         className="overflow-anchor-none relative min-h-0 flex-1 overflow-auto will-change-scroll"
@@ -349,9 +365,23 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
                   const isSelectHeader = header.id === 'select';
                   const meta = header.column.columnDef.meta as { className?: string } | undefined;
                   const canSort = header.column.getCanSort();
-                  const sortAriaLabel = canSort
-                    ? `${header.column.columnDef.header} column, ${header.column.getIsSorted() === 'asc' ? 'ascending' : header.column.getIsSorted() === 'desc' ? 'descending' : 'sortable'}`
-                    : undefined;
+                  let sortAriaLabel: string | undefined;
+                  if (canSort) {
+                    const sortState = header.column.getIsSorted();
+                    let sortStateLabel = 'sortable';
+                    if (sortState === 'asc') {
+                      sortStateLabel = 'ascending';
+                    } else if (sortState === 'desc') {
+                      sortStateLabel = 'descending';
+                    }
+
+                    const headerLabel =
+                      typeof header.column.columnDef.header === 'string'
+                        ? header.column.columnDef.header
+                        : header.column.id;
+
+                    sortAriaLabel = `${headerLabel ?? ''} column, ${sortStateLabel}`;
+                  }
 
                   const handleSortingKeyDown = (e: React.KeyboardEvent) => {
                     if (canSort && (e.key === 'Enter' || e.key === ' ')) {
@@ -427,7 +457,7 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
                   if (!row) return null;
                   return (
                     <MemoizedTableRow
-                      key={virtualRow.key}
+                      key={`${virtualRow.key}-${row.getIsSelected() ? 'selected' : 'unselected'}`}
                       row={row as unknown as Row<TData>}
                       virtualIndex={virtualRow.index}
                     />
