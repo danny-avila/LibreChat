@@ -1,7 +1,12 @@
 const { Router } = require('express');
 const { logger } = require('@librechat/data-schemas');
 const { CacheKeys, Constants } = require('librechat-data-provider');
-const { MCPOAuthHandler, getUserMCPAuthMap } = require('@librechat/api');
+const {
+  createSafeUser,
+  MCPOAuthHandler,
+  MCPTokenStorage,
+  getUserMCPAuthMap,
+} = require('@librechat/api');
 const { getMCPManager, getFlowStateManager, getOAuthReconnectionManager } = require('~/config');
 const { getMCPSetupData, getServerConnectionStatus } = require('~/server/services/MCP');
 const { findToken, updateToken, createToken, deleteTokens } = require('~/models');
@@ -129,6 +134,41 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
     logger.debug('[MCP OAuth] Completing OAuth flow');
     const tokens = await MCPOAuthHandler.completeOAuthFlow(flowId, code, flowManager);
     logger.info('[MCP OAuth] OAuth flow completed, tokens received in callback route');
+
+    /** Persist tokens immediately so reconnection uses fresh credentials */
+    if (flowState?.userId && tokens) {
+      try {
+        await MCPTokenStorage.storeTokens({
+          userId: flowState.userId,
+          serverName,
+          tokens,
+          createToken,
+          updateToken,
+          findToken,
+          clientInfo: flowState.clientInfo,
+          metadata: flowState.metadata,
+        });
+        logger.debug('[MCP OAuth] Stored OAuth tokens prior to reconnection', {
+          serverName,
+          userId: flowState.userId,
+        });
+      } catch (error) {
+        logger.error('[MCP OAuth] Failed to store OAuth tokens after callback', error);
+        throw error;
+      }
+
+      /**
+       * Clear any cached `mcp_get_tokens` flow result so subsequent lookups
+       * re-fetch the freshly stored credentials instead of returning stale nulls.
+       */
+      if (typeof flowManager?.deleteFlow === 'function') {
+        try {
+          await flowManager.deleteFlow(flowId, 'mcp_get_tokens');
+        } catch (error) {
+          logger.warn('[MCP OAuth] Failed to clear cached token flow state', error);
+        }
+      }
+    }
 
     try {
       const mcpManager = getMCPManager(flowState.userId);
@@ -300,9 +340,9 @@ router.post('/oauth/cancel/:serverName', requireJwtAuth, async (req, res) => {
 router.post('/:serverName/reinitialize', requireJwtAuth, async (req, res) => {
   try {
     const { serverName } = req.params;
-    const userId = req.user?.id;
+    const user = createSafeUser(req.user);
 
-    if (!userId) {
+    if (!user.id) {
       return res.status(401).json({ error: 'User not authenticated' });
     }
 
@@ -316,7 +356,7 @@ router.post('/:serverName/reinitialize', requireJwtAuth, async (req, res) => {
       });
     }
 
-    await mcpManager.disconnectUserConnection(userId, serverName);
+    await mcpManager.disconnectUserConnection(user.id, serverName);
     logger.info(
       `[MCP Reinitialize] Disconnected existing user connection for server: ${serverName}`,
     );
@@ -325,14 +365,14 @@ router.post('/:serverName/reinitialize', requireJwtAuth, async (req, res) => {
     let userMCPAuthMap;
     if (serverConfig.customUserVars && typeof serverConfig.customUserVars === 'object') {
       userMCPAuthMap = await getUserMCPAuthMap({
-        userId,
+        userId: user.id,
         servers: [serverName],
         findPluginAuthsByKeys,
       });
     }
 
     const result = await reinitMCPServer({
-      userId,
+      user,
       serverName,
       userMCPAuthMap,
     });
