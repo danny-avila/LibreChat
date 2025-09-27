@@ -106,7 +106,7 @@ export function formatToolContent(
   const formattedContent: t.FormattedContent[] = [];
   const imageUrls: t.FormattedContent[] = [];
   let currentTextBlock = '';
-  const uiResources: UIResource[] = [];
+  let uiResources: t.UIResource[] = [];
 
   type ContentHandler = undefined | ((item: t.ToolContentPart) => void);
 
@@ -176,14 +176,11 @@ export function formatToolContent(
     formattedContent.push({ type: 'text', text: currentTextBlock });
   }
 
-  let artifacts: t.Artifacts = undefined;
-  if (imageUrls.length || uiResources.length) {
-    artifacts = {
-      ...(imageUrls.length && { content: imageUrls }),
-      ...(uiResources.length && { [Tools.ui_resources]: { data: uiResources } }),
-    };
+  if (uiResources.length) {
+    formattedContent.push({ type: 'text', metadata: 'ui_resources', text: btoa(JSON.stringify(uiResources))});
   }
 
+  const artifacts = imageUrls.length ? { content: imageUrls } : undefined;
   if (CONTENT_ARRAY_PROVIDERS.has(provider)) {
     return [formattedContent, artifacts];
   }

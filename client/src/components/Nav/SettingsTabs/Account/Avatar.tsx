@@ -4,6 +4,7 @@ import AvatarEditor from 'react-avatar-editor';
 import { FileImage, RotateCw, Upload } from 'lucide-react';
 import { fileConfig as defaultFileConfig, mergeFileConfig } from 'librechat-data-provider';
 import {
+  Label,
   Slider,
   Button,
   Spinner,
@@ -199,25 +200,27 @@ function Avatar() {
               </Button>
             </>
           ) : (
-            <div
-              className="flex h-64 w-11/12 flex-col items-center justify-center rounded-lg border-2 border-dashed border-gray-300 bg-transparent dark:border-gray-600"
-              onDrop={handleDrop}
-              onDragOver={handleDragOver}
-            >
-              <FileImage className="mb-4 size-12 text-gray-400" />
-              <p className="mb-2 text-center text-sm text-gray-500 dark:text-gray-400">
-                {localize('com_ui_drag_drop')}
-              </p>
-              <Button variant="secondary" onClick={openFileDialog}>
+            <div className="flex w-full flex-col items-center space-y-4">
+              <div
+                className="flex h-64 w-11/12 flex-col items-center justify-center rounded-lg border-2 border-dashed border-border-light bg-transparent"
+                onDrop={handleDrop}
+                onDragOver={handleDragOver}
+              >
+                <FileImage className="mb-4 size-12 text-text-tertiary" />
+                <Label className="mb-2 px-2 text-center text-sm text-text-tertiary">
+                  {localize('com_ui_drag_drop_image')}
+                </Label>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  className="hidden"
+                  accept=".png, .jpg, .jpeg"
+                  onChange={handleFileChange}
+                />
+              </div>
+              <Button variant="secondary" onClick={openFileDialog} className="w-11/12">
                 {localize('com_ui_select_file')}
               </Button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                className="hidden"
-                accept=".png, .jpg, .jpeg"
-                onChange={handleFileChange}
-              />
             </div>
           )}
         </div>

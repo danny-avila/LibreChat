@@ -247,6 +247,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
             )}
           >
             <TextareaHeader addedConvo={addedConvo} setAddedConvo={setAddedConvo} />
+            {/* WIP */}
             <EditBadges
               isEditingChatBadges={isEditingBadges}
               handleCancelBadges={handleCancelBadges}
