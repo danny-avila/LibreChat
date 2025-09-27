@@ -36,8 +36,8 @@ jest.mock('passport-ldapauth', () => {
 });
 
 const { ErrorTypes } = require('librechat-data-provider');
+const { isEmailDomainAllowed } = require('@librechat/api');
 const { findUser, createUser, updateUser, countUsers } = require('~/models');
-const { isEmailDomainAllowed } = require('~/server/services/domains');
 
 // Helper to call the verify callback and wrap in a Promise for convenience
 const callVerify = (userinfo) =>
