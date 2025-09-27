@@ -69,7 +69,7 @@ function MCPSelectContent() {
     [getServerStatusIconProps, isInitializing],
   );
 
-  if (!isPinned && mcpValues.length === 0) {
+  if (!isPinned && mcpValues?.length === 0) {
     return null;
   }
 
