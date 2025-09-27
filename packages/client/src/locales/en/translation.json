@@ -22,5 +22,8 @@
   "com_ui_data_table_scroll_area": "Scrollable data table area",
   "com_ui_select_row": "Select Row {{0}}",
   "com_ui_loading_more_data": "Loading more data...",
-  "com_ui_no_search_results": "No search results found"
+  "com_ui_no_search_results": "No search results found",
+  "com_ui_table_error": "Table Error",
+  "com_ui_table_error_description": "Table failed to load. Please refresh or try again.",
+  "com_ui_error_details": "Error Details (Dev)"
 }

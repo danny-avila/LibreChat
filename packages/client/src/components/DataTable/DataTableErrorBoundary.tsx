@@ -1,6 +1,8 @@
-import { Component, ErrorInfo, ReactNode } from 'react';
-import { Button } from '../Button';
+import { Component, ErrorInfo, ReactNode, createRef } from 'react';
 import { RefreshCw } from 'lucide-react';
+import { Button } from '../Button';
+import { logger } from '~/utils';
+import { useLocalize } from '~/hooks';
 
 /**
  * Error boundary specifically for DataTable component.
@@ -17,27 +19,37 @@ interface DataTableErrorBoundaryProps {
   onError?: (error: Error) => void;
   onReset?: () => void;
 }
+interface DataTableErrorBoundaryInnerProps extends DataTableErrorBoundaryProps {
+  localize: ReturnType<typeof useLocalize>;
+}
 
-export class DataTableErrorBoundary extends Component<
-  DataTableErrorBoundaryProps,
+class DataTableErrorBoundaryInner extends Component<
+  DataTableErrorBoundaryInnerProps,
   DataTableErrorBoundaryState
 > {
-  constructor(props: DataTableErrorBoundaryProps) {
+  private errorCardRef = createRef<HTMLDivElement>();
+
+  constructor(props: DataTableErrorBoundaryInnerProps) {
     super(props);
     this.state = { hasError: false };
   }
 
   static getDerivedStateFromError(error: Error): DataTableErrorBoundaryState {
-    // Update state to show fallback UI and store error for logging
     return { hasError: true, error };
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    // Log the error (you can also log to an error reporting service)
-    console.error('DataTable Error Boundary caught an error:', error, errorInfo);
-
-    // Call parent error handler if provided
+    logger.error('DataTable Error Boundary caught an error:', error, errorInfo);
     this.props.onError?.(error);
+  }
+
+  componentDidUpdate(
+    _prevProps: DataTableErrorBoundaryInnerProps,
+    prevState: DataTableErrorBoundaryState,
+  ) {
+    if (!prevState.hasError && this.state.hasError && this.errorCardRef.current) {
+      this.errorCardRef.current.focus();
+    }
   }
 
   /**
@@ -51,36 +63,45 @@ export class DataTableErrorBoundary extends Component<
 
   render() {
     if (this.state.hasError) {
-      // Custom fallback UI for DataTable errors
       return (
         <div className="flex h-full w-full flex-col items-center justify-center p-8">
-          <div className="max-w-md rounded-lg border border-red-200 bg-red-50 p-6 shadow-sm dark:border-red-800 dark:bg-red-950/20">
-            <div className="flex items-center gap-2 text-red-800 dark:text-red-200">
-              <RefreshCw className="h-4 w-4" />
-              <h3 className="text-sm font-medium">Table Error</h3>
+          <div
+            ref={this.errorCardRef}
+            role="alert"
+            aria-live="assertive"
+            aria-labelledby="datatable-error-title"
+            aria-describedby="datatable-error-desc"
+            tabIndex={-1}
+            className="before:bg-surface-destructive/80 relative w-full max-w-md overflow-hidden rounded-lg border border-border-light bg-surface-primary-alt p-6 shadow-sm outline-none before:absolute before:left-0 before:top-0 before:h-full before:w-1 focus:ring-2 focus:ring-ring focus:ring-offset-2 dark:border-border-medium dark:bg-surface-secondary"
+          >
+            <div className="flex items-center gap-2">
+              <RefreshCw className="h-4 w-4 text-surface-destructive" />
+              <h3 id="datatable-error-title" className="text-sm font-medium text-text-primary">
+                {this.props.localize('com_ui_table_error')}
+              </h3>
             </div>
-            <p className="mt-2 text-sm text-red-700 dark:text-red-300">
-              Table failed to load. Please refresh or try again.
+            <p id="datatable-error-desc" className="mt-2 text-sm text-text-secondary">
+              {this.props.localize('com_ui_table_error_description')}
             </p>
             <div className="mt-4 flex justify-center">
               <Button
                 variant="outline"
                 onClick={this.handleReset}
-                className="flex items-center gap-2 border-red-300 bg-red-50 px-3 py-1.5 text-sm hover:bg-red-100 dark:border-red-700 dark:bg-red-950/20 dark:hover:bg-red-900/20"
+                className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-surface-hover dark:hover:bg-surface-active"
                 aria-label="Retry loading table"
               >
                 <RefreshCw className="h-3 w-3" />
-                Retry
+                {this.props.localize('com_ui_retry')}
               </Button>
             </div>
           </div>
 
           {import.meta.env.MODE === 'development' && this.state.error && (
-            <details className="mt-4 max-w-md rounded-md bg-gray-100 p-3 text-xs dark:bg-gray-800">
-              <summary className="cursor-pointer font-medium text-gray-900 dark:text-gray-100">
-                Error Details (Dev)
+            <details className="mt-4 max-w-md rounded-md bg-surface-secondary p-3 text-xs dark:bg-surface-tertiary">
+              <summary className="cursor-pointer font-medium text-text-primary">
+                {this.props.localize('com_ui_error_details')}
               </summary>
-              <pre className="mt-2 whitespace-pre-wrap text-gray-700 dark:text-gray-300">
+              <pre className="mt-2 whitespace-pre-wrap text-text-secondary">
                 {this.state.error.message}
               </pre>
             </details>
@@ -93,5 +114,9 @@ export class DataTableErrorBoundary extends Component<
   }
 }
 
-// Named export for convenience
+export function DataTableErrorBoundary(props: DataTableErrorBoundaryProps) {
+  const localize = useLocalize();
+  return <DataTableErrorBoundaryInner {...props} localize={localize} />;
+}
+
 export default DataTableErrorBoundary;
