@@ -7,7 +7,7 @@ export function isEmailDomainAllowed(email: string, allowedDomains?: string[] | 
     return false;
   }
 
-  const domain = email.split('@')[1];
+  const domain = email.split('@')[1]?.toLowerCase();
 
   if (!domain) {
     return false;
@@ -19,7 +19,7 @@ export function isEmailDomainAllowed(email: string, allowedDomains?: string[] | 
     return true;
   }
 
-  return allowedDomains.includes(domain);
+  return allowedDomains.some((allowedDomain) => allowedDomain?.toLowerCase() === domain);
 }
 
 /**

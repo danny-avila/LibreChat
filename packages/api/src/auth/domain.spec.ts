@@ -41,6 +41,51 @@ describe('isEmailDomainAllowed', () => {
     const result = isEmailDomainAllowed(email, ['domain1.com', 'domain2.com']);
     expect(result).toBe(false);
   });
+
+  describe('case-insensitive domain matching', () => {
+    it('should match domains case-insensitively when email has uppercase domain', () => {
+      const email = 'user@DOMAIN1.COM';
+      const result = isEmailDomainAllowed(email, ['domain1.com', 'domain2.com']);
+      expect(result).toBe(true);
+    });
+
+    it('should match domains case-insensitively when allowedDomains has uppercase', () => {
+      const email = 'user@domain1.com';
+      const result = isEmailDomainAllowed(email, ['DOMAIN1.COM', 'DOMAIN2.COM']);
+      expect(result).toBe(true);
+    });
+
+    it('should match domains with mixed case in email', () => {
+      const email = 'user@Example.Com';
+      const result = isEmailDomainAllowed(email, ['example.com', 'domain2.com']);
+      expect(result).toBe(true);
+    });
+
+    it('should match domains with mixed case in allowedDomains', () => {
+      const email = 'user@example.com';
+      const result = isEmailDomainAllowed(email, ['Example.Com', 'Domain2.Com']);
+      expect(result).toBe(true);
+    });
+
+    it('should match when both email and allowedDomains have different mixed cases', () => {
+      const email = 'user@ExAmPlE.cOm';
+      const result = isEmailDomainAllowed(email, ['eXaMpLe.CoM', 'domain2.com']);
+      expect(result).toBe(true);
+    });
+
+    it('should still return false for non-matching domains regardless of case', () => {
+      const email = 'user@DOMAIN3.COM';
+      const result = isEmailDomainAllowed(email, ['domain1.com', 'DOMAIN2.COM']);
+      expect(result).toBe(false);
+    });
+
+    it('should handle null/undefined entries in allowedDomains gracefully', () => {
+      const email = 'user@domain1.com';
+      // @ts-expect-error Testing invalid input
+      const result = isEmailDomainAllowed(email, [null, 'DOMAIN1.COM', undefined]);
+      expect(result).toBe(true);
+    });
+  });
 });
 
 describe('isActionDomainAllowed', () => {
