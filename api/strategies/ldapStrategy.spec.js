@@ -11,6 +11,7 @@ jest.mock('@librechat/data-schemas', () => ({
 jest.mock('@librechat/api', () => ({
   // isEnabled used for TLS flags
   isEnabled: jest.fn(() => false),
+  isEmailDomainAllowed: jest.fn(() => true),
   getBalanceConfig: jest.fn(() => ({ enabled: false })),
 }));
 
@@ -23,10 +24,6 @@ jest.mock('~/models', () => ({
 
 jest.mock('~/server/services/Config', () => ({
   getAppConfig: jest.fn().mockResolvedValue({}),
-}));
-
-jest.mock('~/server/services/domains', () => ({
-  isEmailDomainAllowed: jest.fn(() => true),
 }));
 
 // Mock passport-ldapauth to capture verify callback
