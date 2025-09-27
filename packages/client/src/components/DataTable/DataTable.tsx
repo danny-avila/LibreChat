@@ -52,8 +52,35 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
     selection: { enableRowSelection = true, showCheckboxes = true } = {},
     search: { enableSearch = true, debounce: debounceDelay = 300 } = {},
     skeleton: { count: skeletonCount = 10 } = {},
-    virtualization: { overscan = 10 } = {},
+    virtualization: {
+      overscan = 10,
+      minRows = 50,
+      rowHeight = 56,
+      fastOverscanMultiplier = 4,
+    } = {},
   } = config || {};
+
+  const virtualizationActive = data.length >= minRows;
+
+  // Dynamic overscan adjustment for fast scroll bursts (state kept stable, minimal updates)
+  const [dynamicOverscan, setDynamicOverscan] = useState(overscan);
+  const lastScrollTopRef = useRef(0);
+  const lastScrollTimeRef = useRef(performance.now());
+  const fastScrollTimeoutRef = useRef<number | null>(null);
+
+  // Sync overscan prop changes
+  useEffect(() => {
+    setDynamicOverscan(overscan);
+  }, [overscan]);
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (fastScrollTimeoutRef.current) {
+        clearTimeout(fastScrollTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
   const [optimizedRowSelection, setOptimizedRowSelection] = useOptimizedRowSelection();
@@ -220,14 +247,12 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
   });
 
   const rowVirtualizer = useVirtualizer({
+    enabled: virtualizationActive,
     count: data.length,
     getScrollElement: () => tableContainerRef.current,
-    estimateSize: useCallback(() => 60, []),
-    overscan,
-    measureElement:
-      typeof window !== 'undefined'
-        ? (element) => element?.getBoundingClientRect().height ?? 60
-        : undefined,
+    getItemKey: (index) => getRowId(data[index] as TData, index),
+    estimateSize: useCallback(() => rowHeight, [rowHeight]),
+    overscan: dynamicOverscan,
   });
 
   const virtualRows = rowVirtualizer.getVirtualItems();
@@ -263,6 +288,25 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
     }
   }, [debouncedTerm, filterValue, onFilterChange, setOptimizedRowSelection]);
 
+  // Re-measure on key state changes that can affect layout
+  useEffect(() => {
+    if (!virtualizationActive) return;
+    // With fixed rowHeight, just ensure the range recalculates
+    rowVirtualizer.calculateRange();
+  }, [data.length, finalSorting, columnVisibility, virtualizationActive, rowVirtualizer]);
+
+  // ResizeObserver to re-measure when container size changes
+  useEffect(() => {
+    if (!virtualizationActive) return;
+    const container = tableContainerRef.current;
+    if (!container) return;
+    const ro = new ResizeObserver(() => {
+      rowVirtualizer.calculateRange();
+    });
+    ro.observe(container);
+    return () => ro.disconnect();
+  }, [virtualizationActive, rowVirtualizer]);
+
   const handleScroll = useMemo(() => {
     let rafId: number | null = null;
     let timeoutId: number | null = null;
@@ -271,20 +315,53 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
       if (rafId) cancelAnimationFrame(rafId);
 
       rafId = requestAnimationFrame(() => {
+        const container = tableContainerRef.current;
+        if (container) {
+          const now = performance.now();
+          const delta = Math.abs(container.scrollTop - lastScrollTopRef.current);
+          const dt = now - lastScrollTimeRef.current;
+          if (dt > 0) {
+            const velocity = delta / dt; // px per ms
+            if (
+              velocity > 2 &&
+              virtualizationActive &&
+              dynamicOverscan === overscan /* only expand if not already expanded */
+            ) {
+              if (fastScrollTimeoutRef.current) {
+                window.clearTimeout(fastScrollTimeoutRef.current);
+              }
+              setDynamicOverscan(Math.min(overscan * fastOverscanMultiplier, overscan * 8));
+              fastScrollTimeoutRef.current = window.setTimeout(() => {
+                setDynamicOverscan((current) => (current !== overscan ? overscan : current));
+              }, 160);
+            }
+          }
+          lastScrollTopRef.current = container.scrollTop;
+          lastScrollTimeRef.current = now;
+        }
+
         if (timeoutId) clearTimeout(timeoutId);
 
         timeoutId = window.setTimeout(() => {
-          const container = tableContainerRef.current;
-          if (!container || !fetchNextPage || !hasNextPage || isFetchingNextPage) return;
+          const loaderContainer = tableContainerRef.current;
+          if (!loaderContainer || !fetchNextPage || !hasNextPage || isFetchingNextPage) return;
 
-          const { scrollTop, scrollHeight, clientHeight } = container;
+          const { scrollTop, scrollHeight, clientHeight } = loaderContainer;
           if (scrollTop + clientHeight >= scrollHeight - 200) {
             fetchNextPage().finally();
           }
         }, 100);
       });
     };
-  }, [fetchNextPage, hasNextPage, isFetchingNextPage]);
+  }, [
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    overscan,
+    fastOverscanMultiplier,
+    virtualizationActive,
+    dynamicOverscan,
+  ]);
 
   useEffect(() => {
     const scrollElement = tableContainerRef.current;
@@ -347,7 +424,7 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
         aria-label={localize('com_ui_data_table_scroll_area')}
         aria-describedby={showSkeletons ? 'loading-status' : undefined}
       >
-        <Table role="table" aria-label={localize('com_ui_data_table')}>
+        <Table role="table" aria-label={localize('com_ui_data_table')} aria-rowcount={data.length}>
           <TableHeader className="sticky top-0 z-10 bg-surface-secondary">
             {headerGroups.map((headerGroup) => (
               <TableRow key={headerGroup.id}>
@@ -440,7 +517,7 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
                 count={skeletonCount}
                 columns={tableColumns as ColumnDef<Record<string, unknown>>[]}
               />
-            ) : (
+            ) : virtualizationActive ? (
               <>
                 {paddingTop > 0 && (
                   <TableRow aria-hidden="true">
@@ -455,9 +532,11 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
                   if (!row) return null;
                   return (
                     <MemoizedTableRow
-                      key={`${virtualRow.key}-${row.getIsSelected() ? 'selected' : 'unselected'}`}
+                      key={virtualRow.key}
                       row={row as unknown as Row<TData>}
                       virtualIndex={virtualRow.index}
+                      selected={row.getIsSelected()}
+                      style={{ height: rowHeight }}
                     />
                   );
                 })}
@@ -470,6 +549,16 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
                   </TableRow>
                 )}
               </>
+            ) : (
+              rows.map((row) => (
+                <MemoizedTableRow
+                  key={getRowId(row.original as TData, row.index)}
+                  row={row as unknown as Row<TData>}
+                  virtualIndex={row.index}
+                  selected={row.getIsSelected()}
+                  style={{ height: rowHeight }}
+                />
+              ))
             )}
             {isFetchingNextPage && (
               <TableRow>

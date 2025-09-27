@@ -1,8 +1,6 @@
 import { useCallback, useState, useMemo, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { TrashIcon, MessageSquare } from 'lucide-react';
-import type { ColumnDef, SortingState } from '@tanstack/react-table';
-import type { SharedLinkItem, SharedLinksListParams } from 'librechat-data-provider';
 import {
   OGDialog,
   useToastContext,
@@ -17,6 +15,8 @@ import {
   Button,
   Label,
 } from '@librechat/client';
+import type { SharedLinkItem, SharedLinksListParams } from 'librechat-data-provider';
+import type { ColumnDef, SortingState } from '@tanstack/react-table';
 import { useDeleteSharedLinkMutation, useSharedLinksQuery } from '~/data-provider';
 import { NotificationSeverity } from '~/common';
 import { formatDate, cn } from '~/utils';
@@ -89,7 +89,6 @@ export default function SharedLinks() {
         const coerced = next;
         const primary = coerced[0];
 
-        // Seed allKnown with current data before changing params
         if (data?.pages) {
           const currentFlattened = data.pages.flatMap((page) => page?.links?.filter(Boolean) ?? []);
           setAllKnownLinks(currentFlattened);

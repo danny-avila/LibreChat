@@ -1,6 +1,7 @@
 import { useState, useCallback, useMemo } from 'react';
+import { QueryKeys } from 'librechat-data-provider';
 import { TrashIcon, ArchiveRestore } from 'lucide-react';
-import type { SortingState } from '@tanstack/react-table';
+import { useQueryClient, InfiniteData } from '@tanstack/react-query';
 import {
   Button,
   OGDialog,
@@ -18,7 +19,7 @@ import {
   type TableColumn,
 } from '@librechat/client';
 import type { ConversationListParams, TConversation } from 'librechat-data-provider';
-import { QueryKeys } from 'librechat-data-provider';
+import type { SortingState } from '@tanstack/react-table';
 import {
   useArchiveConvoMutation,
   useConversationsInfiniteQuery,
@@ -28,7 +29,6 @@ import { MinimalIcon } from '~/components/Endpoints';
 import { NotificationSeverity } from '~/common';
 import { formatDate, cn } from '~/utils';
 import { useLocalize } from '~/hooks';
-import { useQueryClient, InfiniteData } from '@tanstack/react-query';
 
 const DEFAULT_PARAMS = {
   isArchived: true,
@@ -87,13 +87,9 @@ export default function ArchivedChatsTable() {
   const [sorting, setSorting] = useState<SortingState>(defaultSort);
   const [searchValue, setSearchValue] = useState('');
 
-  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isFetching, isLoading } =
+  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } =
     useConversationsInfiniteQuery(queryParams, {
       enabled: isOpen,
-      // Critical for "server-only sorting" UX: we disable keepPreviousData so that
-      // a sort (or search) change clears the table immediately and skeletons show
-      // while the new order is fetched from the server. This prevents any client-side
-      // reordering of stale rows.
       keepPreviousData: false,
       staleTime: 30 * 1000,
       refetchOnWindowFocus: false,
@@ -144,7 +140,6 @@ export default function ArchivedChatsTable() {
     [showToast, localize],
   );
 
-  // Flatten server-provided pages directly; no client sorting or aggregation cache
   const flattenedConversations = useMemo(
     () => data?.pages?.flatMap((page) => page?.conversations?.filter(Boolean) ?? []) ?? [],
     [data?.pages],
@@ -160,7 +155,6 @@ export default function ArchivedChatsTable() {
           conversationId,
         );
       }
-      // Ensure appearance in non-archived queries is refreshed
       queryClient.invalidateQueries([QueryKeys.allConversations]);
       setUnarchivingId(null);
     },

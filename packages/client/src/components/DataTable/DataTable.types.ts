@@ -32,6 +32,9 @@ export interface DataTableConfig {
   };
   virtualization?: {
     overscan?: number;
+    minRows?: number;
+    rowHeight?: number; // fixed row height to disable costly dynamic measurements
+    fastOverscanMultiplier?: number; // multiplier applied during fast scroll bursts
   };
   pinning?: {
     enableColumnPinning?: boolean;

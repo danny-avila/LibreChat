@@ -1,4 +1,4 @@
-import { memo } from 'react';
+import React, { memo, forwardRef } from 'react';
 import { flexRender } from '@tanstack/react-table';
 import type { TableColumn } from './DataTable.types';
 import type { Row } from '@tanstack/react-table';
@@ -40,17 +40,26 @@ export const SelectionCheckbox = memo(
 
 SelectionCheckbox.displayName = 'SelectionCheckbox';
 
-const TableRowComponent = <TData extends Record<string, unknown>>({
-  row,
-  virtualIndex,
-}: {
-  row: Row<TData>;
-  virtualIndex?: number;
-}) => (
+const TableRowComponent = <TData extends Record<string, unknown>>(
+  {
+    row,
+    virtualIndex,
+    style,
+    selected,
+  }: {
+    row: Row<TData>;
+    virtualIndex?: number;
+    style?: React.CSSProperties;
+    selected: boolean;
+  },
+  ref: React.Ref<HTMLTableRowElement>,
+) => (
   <TableRow
-    data-state={row.getIsSelected() ? 'selected' : undefined}
+    ref={ref}
+    data-state={selected ? 'selected' : undefined}
     data-index={virtualIndex}
     className="border-none hover:bg-surface-secondary"
+    style={style}
   >
     {row.getVisibleCells().map((cell) => {
       const meta = cell.column.columnDef.meta as
@@ -74,11 +83,27 @@ const TableRowComponent = <TData extends Record<string, unknown>>({
   </TableRow>
 );
 
+type ForwardTableRowComponentType = <TData extends Record<string, unknown>>(
+  props: {
+    row: Row<TData>;
+    virtualIndex?: number;
+    style?: React.CSSProperties;
+  } & React.RefAttributes<HTMLTableRowElement>,
+) => JSX.Element;
+
+const ForwardTableRowComponent = forwardRef(TableRowComponent) as ForwardTableRowComponentType;
+
+interface GenericRowProps {
+  row: Row<Record<string, unknown>>;
+  virtualIndex?: number;
+  style?: React.CSSProperties;
+  selected: boolean;
+}
+
 export const MemoizedTableRow = memo(
-  TableRowComponent,
-  (prev, next) =>
-    prev.row.original === next.row.original &&
-    prev.row.getIsSelected() === next.row.getIsSelected(),
+  ForwardTableRowComponent as (props: GenericRowProps) => JSX.Element,
+  (prev: GenericRowProps, next: GenericRowProps) =>
+    prev.row.original === next.row.original && prev.selected === next.selected,
 );
 
 export const SkeletonRows = memo(

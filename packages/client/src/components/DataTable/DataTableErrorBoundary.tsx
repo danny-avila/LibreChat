@@ -1,4 +1,4 @@
-import React, { Component, ErrorInfo, ReactNode } from 'react';
+import { Component, ErrorInfo, ReactNode } from 'react';
 import { Button } from '../Button';
 import { RefreshCw } from 'lucide-react';
 
@@ -75,8 +75,7 @@ export class DataTableErrorBoundary extends Component<
             </div>
           </div>
 
-          {/* Optional: Show technical error details in development */}
-          {process.env.NODE_ENV === 'development' && this.state.error && (
+          {import.meta.env.MODE === 'development' && this.state.error && (
             <details className="mt-4 max-w-md rounded-md bg-gray-100 p-3 text-xs dark:bg-gray-800">
               <summary className="cursor-pointer font-medium text-gray-900 dark:text-gray-100">
                 Error Details (Dev)
