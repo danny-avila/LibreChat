@@ -1,0 +1,117 @@
+{
+  "name": "LibreChat-N8N Integration ",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "webhook-trigger",
+      "name": "LibreChat Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "librechat-trigger"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:3080/api/chat",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpBasicAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer {{$json.token}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "message",
+              "value": "{{$json.message}}"
+            },
+            {
+              "name": "model",
+              "value": "gpt-3.5-turbo"
+            }
+          ]
+        }
+      },
+      "id": "send-to-librechat",
+      "name": "Send to LibreChat",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "{{$json.response_webhook_url}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "response",
+              "value": "{{$json.response}}"
+            },
+            {
+              "name": "status",
+              "value": "completed"
+            },
+            {
+              "name": "timestamp",
+              "value": "{{$now}}"
+            }
+          ]
+        }
+      },
+      "id": "send-response-back",
+      "name": "Send Response Back",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [680, 300]
+    }
+  ],
+  "connections": {
+    "LibreChat Webhook": {
+      "main": [
+        [
+          {
+            "node": "Send to LibreChat",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send to LibreChat": {
+      "main": [
+        [
+          {
+            "node": "Send Response Back",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {},
+  "versionId": "1"
+}
