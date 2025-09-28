@@ -13,9 +13,9 @@ const {
   safeStringify,
   findOpenIDUser,
   getBalanceConfig,
+  isEmailDomainAllowed,
 } = require('@librechat/api');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
-const { isEmailDomainAllowed } = require('~/server/services/domains');
 const { findUser, createUser, updateUser } = require('~/models');
 const { getAppConfig } = require('~/server/services/Config');
 const getLogStores = require('~/cache/getLogStores');
