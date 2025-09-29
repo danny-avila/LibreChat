@@ -8,11 +8,33 @@ export type TableColumnDef<TData, TValue> = ColumnDef<ProcessedDataRow<TData>, T
 export type TableColumn<TData, TValue> = ColumnDef<TData, TValue> & {
   accessorKey?: string | number;
   meta?: {
-    size?: string | number;
-    mobileSize?: string | number;
-    minWidth?: string | number;
-    priority?: number;
+    /** Column width as a percentage (1-100). Used for proportional column sizing. */
+    width?: number;
+    /** Additional CSS classes to apply to the column cells and header. */
     className?: string;
+    /**
+     * When true, this column will be hidden on mobile devices (viewport < 768px).
+     * This is useful for hiding less critical information on smaller screens.
+     *
+     * **Usage Example:**
+     * ```typescript
+     * {
+     *   accessorKey: 'createdAt',
+     *   header: 'Date Created',
+     *   cell: ({ row }) => formatDate(row.original.createdAt),
+     *   meta: {
+     *     desktopOnly: true,  // Hide this column on mobile
+     *     width: 20,
+     *     className: 'min-w-[6rem]'
+     *   }
+     * }
+     * ```
+     *
+     * The column will be completely hidden including:
+     * - Header cell
+     * - Data cells
+     * - Skeleton loading cells
+     */
     desktopOnly?: boolean;
   };
 };
@@ -33,8 +55,8 @@ export interface DataTableConfig {
   virtualization?: {
     overscan?: number;
     minRows?: number;
-    rowHeight?: number; // fixed row height to disable costly dynamic measurements
-    fastOverscanMultiplier?: number; // multiplier applied during fast scroll bursts
+    rowHeight?: number;
+    fastOverscanMultiplier?: number;
   };
   pinning?: {
     enableColumnPinning?: boolean;
@@ -55,8 +77,6 @@ export interface DataTableProps<TData extends Record<string, unknown>, TValue> {
   isFetchingNextPage?: boolean;
   hasNextPage?: boolean;
   fetchNextPage?: () => Promise<unknown>;
-  onError?: (error: Error) => void;
-  onReset?: () => void;
   sorting?: SortingState;
   onSortingChange?: (updater: SortingState | ((old: SortingState) => SortingState)) => void;
   conversationIndex?: number;

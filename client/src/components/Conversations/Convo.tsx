@@ -132,7 +132,7 @@ export default function Conversation({ conversation, retainView, toggleNav }: Co
   return (
     <div
       className={cn(
-        'group relative flex h-12 w-full items-center rounded-lg transition-colors duration-200 md:h-9',
+        'group relative flex h-12 w-full items-center rounded-lg md:h-9',
         isActiveConvo ? 'bg-surface-active-alt' : 'hover:bg-surface-active-alt',
       )}
       role="button"

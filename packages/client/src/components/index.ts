@@ -4,7 +4,6 @@ export * from './AlertDialog';
 export * from './Breadcrumb';
 export * from './Button';
 export * from './Checkbox';
-
 export * from './Dialog';
 export * from './DropdownMenu';
 export * from './HoverCard';
@@ -31,6 +30,7 @@ export * from './InputOTP';
 export * from './MultiSearch';
 export * from './Resizable';
 export * from './Select';
+export * from './DataTable/index';
 export { default as Radio } from './Radio';
 export { default as Badge } from './Badge';
 export { default as Avatar } from './Avatar';

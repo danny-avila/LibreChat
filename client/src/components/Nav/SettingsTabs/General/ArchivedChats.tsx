@@ -129,17 +129,6 @@ export default function ArchivedChatsTable() {
     [],
   );
 
-  const handleError = useCallback(
-    (error: Error) => {
-      console.error('DataTable error:', error);
-      showToast({
-        message: localize('com_ui_unarchive_error'),
-        severity: NotificationSeverity.ERROR,
-      });
-    },
-    [showToast, localize],
-  );
-
   const flattenedConversations = useMemo(
     () => data?.pages?.flatMap((page) => page?.conversations?.filter(Boolean) ?? []) ?? [],
     [data?.pages],
@@ -259,7 +248,8 @@ export default function ArchivedChatsTable() {
           );
         },
         meta: {
-          className: 'min-w-[150px] flex-1',
+          width: 65,
+          className: 'min-w-[150px]',
         },
         enableSorting: true,
       },
@@ -279,8 +269,9 @@ export default function ArchivedChatsTable() {
           return formatDate(convo.createdAt?.toString() ?? '', isSmallScreen);
         },
         meta: {
-          className: 'w-32 sm:w-40',
-          // desktopOnly: true, // Potential future use
+          width: 20,
+          className: 'min-w-[6rem]',
+          desktopOnly: true,
         },
         enableSorting: true,
       },
@@ -298,13 +289,13 @@ export default function ArchivedChatsTable() {
           const isRowUnarchiving = unarchivingId === convo.conversationId;
 
           return (
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 md:gap-2">
               <TooltipAnchor
                 description={localize('com_ui_unarchive')}
                 render={
                   <Button
                     variant="ghost"
-                    className="h-8 w-8 p-0 hover:bg-surface-hover"
+                    className="h-9 w-9 p-0 hover:bg-surface-hover md:h-8 md:w-8"
                     onClick={() => {
                       const conversationId = convo.conversationId;
                       if (!conversationId) return;
@@ -322,7 +313,7 @@ export default function ArchivedChatsTable() {
                 render={
                   <Button
                     variant="destructive"
-                    className="h-8 w-8 p-0"
+                    className="h-9 w-9 p-0 md:h-8 md:w-8"
                     onClick={() => {
                       setDeleteRow(convo);
                       setIsDeleteOpen(true);
@@ -337,7 +328,8 @@ export default function ArchivedChatsTable() {
           );
         },
         meta: {
-          className: 'w-24',
+          width: 30,
+          className: 'min-w-[5rem]',
         },
         enableSorting: false,
       },
@@ -358,12 +350,6 @@ export default function ArchivedChatsTable() {
           <OGDialogHeader>
             <OGDialogTitle>{localize('com_nav_archived_chats')}</OGDialogTitle>
           </OGDialogHeader>
-          {/*
-            Server-only sorting strategy:
-            - Query key changes (sort/search) trigger immediate empty state (keepPreviousData:false)
-            - DataTable shows skeletons instead of client re-sorting stale rows
-            - No local caching/aggregation layer (flatten derived straight from query pages)
-          */}
           <DataTable
             columns={columns}
             data={flattenedConversations}
@@ -388,7 +374,6 @@ export default function ArchivedChatsTable() {
             isFetchingNextPage={isFetchingNextPage}
             sorting={sorting}
             onSortingChange={handleSortingChange}
-            onError={handleError}
           />
         </OGDialogContent>
       </OGDialog>

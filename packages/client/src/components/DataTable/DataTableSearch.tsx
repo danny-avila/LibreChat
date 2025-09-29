@@ -24,7 +24,7 @@ export const DataTableSearch = memo(
           aria-label={localize('com_ui_search_table')}
           aria-describedby="search-description"
           placeholder={placeholder || localize('com_ui_search')}
-          className={cn('h-12 rounded-b-none border-0 bg-surface-secondary', className)}
+          className={cn('h-10 rounded-b-none border-0 bg-surface-secondary md:h-12', className)}
         />
         <span id="search-description" className="sr-only">
           {localize('com_ui_search_table_description')}

@@ -15,11 +15,9 @@ import type { DataTableProps, ProcessedDataRow } from './DataTable.types';
 import { SelectionCheckbox, MemoizedTableRow, SkeletonRows } from './DataTableComponents';
 import { Table, TableBody, TableHead, TableHeader, TableCell, TableRow } from '../Table';
 import { useDebounced, useOptimizedRowSelection } from './DataTable.hooks';
-import { DataTableErrorBoundary } from './DataTableErrorBoundary';
 import { useMediaQuery, useLocalize } from '~/hooks';
 import { DataTableSearch } from './DataTableSearch';
 import { cn, logger } from '~/utils';
-import { Button } from '../Button';
 import { Label } from '../Label';
 import { Spinner } from '~/svgs';
 
@@ -36,7 +34,6 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
   isFetchingNextPage = false,
   hasNextPage = false,
   fetchNextPage,
-  onReset,
   sorting,
   onSortingChange,
   customActionsRenderer,
@@ -84,7 +81,6 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
 
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
   const [optimizedRowSelection, setOptimizedRowSelection] = useOptimizedRowSelection();
-  const [error, setError] = useState<Error | null>(null);
   const [searchTerm, setSearchTerm] = useState(filterValue);
   const [internalSorting, setInternalSorting] = useState<SortingState>(defaultSort);
 
@@ -123,6 +119,17 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
   const debouncedTerm = useDebounced(searchTerm, debounceDelay);
   const finalSorting = sorting ?? internalSorting;
 
+  /**
+   * Mobile responsive column visibility system
+   *
+   * Calculates which columns should be hidden on mobile devices based on the `desktopOnly` meta property.
+   * When a column has `meta.desktopOnly: true`, it will be hidden on viewports < 768px (mobile).
+   *
+   * This works in conjunction with:
+   * - Header rendering (lines 479-485): Conditionally renders headers based on visibility
+   * - Cell rendering (DataTableComponents.tsx): Applies CSS classes to hide cells
+   * - Skeleton rendering (DataTableComponents.tsx): Applies same CSS to skeleton cells
+   */
   const calculatedVisibility = useMemo(() => {
     const newVisibility: VisibilityState = {};
     columns.forEach((col) => {
@@ -171,6 +178,7 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
 
     const selectColumn: ColumnDef<TData, TValue> = {
       id: 'select',
+      enableResizing: false,
       header: () => {
         const extraCheckboxProps = (isIndeterminate ? { indeterminate: true } : {}) as Record<
           string,
@@ -220,16 +228,29 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
         );
       },
       meta: {
-        className: 'w-12',
+        className: 'max-w-[20px] flex-1',
       },
     };
 
     return [selectColumn, ...columns.map((col) => col as unknown as ColumnDef<TData, TValue>)];
-  }, [columns, enableRowSelection, showCheckboxes, localize]);
+  }, [
+    columns,
+    enableRowSelection,
+    showCheckboxes,
+    localize,
+    data,
+    getRowId,
+    isAllSelected,
+    isIndeterminate,
+    setOptimizedRowSelection,
+  ]);
+
+  // No transformation for sizing; width handled via meta.width percentages.
+  const sizedColumns = tableColumns;
 
   const table = useReactTable<TData>({
     data,
-    columns: tableColumns,
+    columns: sizedColumns,
     getRowId: getRowId,
     getCoreRowModel: getCoreRowModel(),
     enableRowSelection,
@@ -245,6 +266,8 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
     onColumnVisibilityChange: setColumnVisibility,
     onRowSelectionChange: setOptimizedRowSelection,
   });
+
+  // Removed column size initialization (deprecated)
 
   const rowVirtualizer = useVirtualizer({
     enabled: virtualizationActive,
@@ -267,15 +290,60 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
   const showSkeletons = isLoading || (isFetching && !isFetchingNextPage);
   const shouldShowSearch = enableSearch && onFilterChange;
 
-  // useEffect(() => {
-  //   if (data.length > 1000) {
-  //     const cleanup = setTimeout(() => {
-  //       rowVirtualizer.scrollToIndex(0, { align: 'start' });
-  //       rowVirtualizer.measure();
-  //     }, 1000);
-  //     return () => clearTimeout(cleanup);
-  //   }
-  // }, [data.length, rowVirtualizer]);
+  let tableBodyContent: React.ReactNode;
+  if (showSkeletons) {
+    tableBodyContent = (
+      <SkeletonRows
+        count={skeletonCount}
+        columns={tableColumns as ColumnDef<Record<string, unknown>>[]}
+      />
+    );
+  } else if (virtualizationActive) {
+    tableBodyContent = (
+      <>
+        {paddingTop > 0 && (
+          <TableRow aria-hidden="true">
+            <TableCell
+              colSpan={tableColumns.length}
+              style={{ height: paddingTop, padding: 0, border: 0 }}
+            />
+          </TableRow>
+        )}
+        {virtualRows.map((virtualRow) => {
+          const row = rows[virtualRow.index];
+          if (!row) return null;
+
+          return (
+            <MemoizedTableRow
+              key={virtualRow.key}
+              row={row as unknown as Row<Record<string, unknown>>}
+              virtualIndex={virtualRow.index}
+              selected={row.getIsSelected()}
+              style={{ height: rowHeight }}
+            />
+          );
+        })}
+        {paddingBottom > 0 && (
+          <TableRow aria-hidden="true">
+            <TableCell
+              colSpan={tableColumns.length}
+              style={{ height: paddingBottom, padding: 0, border: 0 }}
+            />
+          </TableRow>
+        )}
+      </>
+    );
+  } else {
+    tableBodyContent = rows.map((row) => (
+      <MemoizedTableRow
+        key={getRowId(row.original as TData, row.index)}
+        row={row as unknown as Row<Record<string, unknown>>}
+        virtualIndex={row.index}
+        selected={row.getIsSelected()}
+        style={{ height: rowHeight }}
+      />
+    ));
+  }
 
   useEffect(() => {
     setSearchTerm(filterValue);
@@ -294,6 +362,8 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
     // With fixed rowHeight, just ensure the range recalculates
     rowVirtualizer.calculateRange();
   }, [data.length, finalSorting, columnVisibility, virtualizationActive, rowVirtualizer]);
+
+  // Removed manual column sizing dependency effect
 
   // ResizeObserver to re-measure when container size changes
   useEffect(() => {
@@ -374,24 +444,6 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
     };
   }, [handleScroll, cleanupTimers]);
 
-  const handleReset = useCallback(() => {
-    setError(null);
-    setOptimizedRowSelection({});
-    setSearchTerm('');
-    onReset?.();
-  }, [onReset, setOptimizedRowSelection]);
-
-  if (error) {
-    return (
-      <DataTableErrorBoundary onReset={handleReset}>
-        <div className="flex flex-col items-center justify-center p-8">
-          <p className="mb-4 text-red-500">{error.message}</p>
-          <Button onClick={handleReset}>{localize('com_ui_retry')}</Button>
-        </div>
-      </DataTableErrorBoundary>
-    );
-  }
-
   return (
     <div
       className={cn(
@@ -402,7 +454,7 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
       role="region"
       aria-label={localize('com_ui_data_table')}
     >
-      <div className="flex w-full shrink-0 items-center gap-3 border-b border-border-light">
+      <div className="flex w-full shrink-0 items-center gap-2 border-b border-border-light md:gap-3">
         {shouldShowSearch && <DataTableSearch value={searchTerm} onChange={setSearchTerm} />}
         {customActionsRenderer &&
           customActionsRenderer({
@@ -424,15 +476,22 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
         aria-label={localize('com_ui_data_table_scroll_area')}
         aria-describedby={showSkeletons ? 'loading-status' : undefined}
       >
-        <Table role="table" aria-label={localize('com_ui_data_table')} aria-rowcount={data.length}>
+        <Table
+          role="table"
+          aria-label={localize('com_ui_data_table')}
+          aria-rowcount={data.length}
+          className="table-fixed"
+        >
           <TableHeader className="sticky top-0 z-10 bg-surface-secondary">
             {headerGroups.map((headerGroup) => (
               <TableRow key={headerGroup.id}>
                 {headerGroup.headers.map((header) => {
+                  // Check if this column should be hidden on mobile (desktopOnly feature)
                   const isDesktopOnly =
                     (header.column.columnDef.meta as { desktopOnly?: boolean } | undefined)
                       ?.desktopOnly ?? false;
 
+                  // Hide header if column is not visible or if it's desktop-only on a mobile viewport
                   if (!header.column.getIsVisible() || (isSmallScreen && isDesktopOnly)) {
                     return null;
                   }
@@ -465,15 +524,24 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
                     }
                   };
 
+                  const metaWidth = (header.column.columnDef.meta as { width?: number } | undefined)
+                    ?.width;
+                  const widthStyle = isSelectHeader
+                    ? { width: '32px', maxWidth: '32px' }
+                    : metaWidth && metaWidth >= 1 && metaWidth <= 100
+                      ? { width: `${metaWidth}%`, maxWidth: `${metaWidth}%` }
+                      : {};
                   return (
                     <TableHead
                       key={header.id}
                       className={cn(
-                        'border-b border-border-light py-2',
-                        isSelectHeader ? 'px-0 text-center' : 'px-3',
+                        'border-b border-border-light px-2 py-2 md:px-3 md:py-2',
+                        isSelectHeader && 'px-0 text-center',
                         canSort && 'cursor-pointer hover:bg-surface-tertiary',
                         meta?.className,
+                        header.column.getIsResizing() && 'bg-surface-tertiary/60',
                       )}
+                      style={widthStyle}
                       onClick={header.column.getToggleSortingHandler()}
                       onKeyDown={handleSortingKeyDown}
                       role={canSort ? 'button' : undefined}
@@ -490,7 +558,7 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
                       {isSelectHeader ? (
                         flexRender(header.column.columnDef.header, header.getContext())
                       ) : (
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1 md:gap-2">
                           {flexRender(header.column.columnDef.header, header.getContext())}
                           {canSort && (
                             <span className="text-text-primary" aria-hidden="true">
@@ -504,6 +572,7 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
                           )}
                         </div>
                       )}
+                      {/* Resizer removed (manual resizing deprecated) */}
                     </TableHead>
                   );
                 })}
@@ -512,54 +581,7 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
           </TableHeader>
 
           <TableBody>
-            {showSkeletons ? (
-              <SkeletonRows
-                count={skeletonCount}
-                columns={tableColumns as ColumnDef<Record<string, unknown>>[]}
-              />
-            ) : virtualizationActive ? (
-              <>
-                {paddingTop > 0 && (
-                  <TableRow aria-hidden="true">
-                    <TableCell
-                      colSpan={tableColumns.length}
-                      style={{ height: paddingTop, padding: 0, border: 0 }}
-                    />
-                  </TableRow>
-                )}
-                {virtualRows.map((virtualRow) => {
-                  const row = rows[virtualRow.index];
-                  if (!row) return null;
-                  return (
-                    <MemoizedTableRow
-                      key={virtualRow.key}
-                      row={row as unknown as Row<TData>}
-                      virtualIndex={virtualRow.index}
-                      selected={row.getIsSelected()}
-                      style={{ height: rowHeight }}
-                    />
-                  );
-                })}
-                {paddingBottom > 0 && (
-                  <TableRow aria-hidden="true">
-                    <TableCell
-                      colSpan={tableColumns.length}
-                      style={{ height: paddingBottom, padding: 0, border: 0 }}
-                    />
-                  </TableRow>
-                )}
-              </>
-            ) : (
-              rows.map((row) => (
-                <MemoizedTableRow
-                  key={getRowId(row.original as TData, row.index)}
-                  row={row as unknown as Row<TData>}
-                  virtualIndex={row.index}
-                  selected={row.getIsSelected()}
-                  style={{ height: rowHeight }}
-                />
-              ))
-            )}
+            {tableBodyContent}
             {isFetchingNextPage && (
               <TableRow>
                 <TableCell

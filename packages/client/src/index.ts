@@ -1,7 +1,5 @@
 // Components
 export * from './components';
-export { default as DataTable } from './components/DataTable/DataTable';
-export * from './components/DataTable/DataTable.types';
 
 // Hooks
 export * from './hooks';
