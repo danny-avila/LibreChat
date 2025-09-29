@@ -1013,6 +1013,10 @@ export const defaultModels = {
   [EModelEndpoint.assistants]: [...sharedOpenAIModels, 'chatgpt-4o-latest'],
   [EModelEndpoint.agents]: sharedOpenAIModels, // TODO: Add agent models (agentsModels)
   [EModelEndpoint.google]: [
+    // Gemini 2.5 Models
+    'gemini-2.5-pro',
+    'gemini-2.5-flash',
+    'gemini-2.5-flash-lite',
     // Gemini 2.0 Models
     'gemini-2.0-flash-001',
     'gemini-2.0-flash-exp',
@@ -1107,6 +1111,7 @@ export const visionModels = [
   'gemini-exp',
   'gemini-1.5',
   'gemini-2',
+  'gemini-2.5',
   'gemini-3',
   'moondream',
   'llama3.2-vision',
