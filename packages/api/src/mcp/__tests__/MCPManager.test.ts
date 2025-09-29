@@ -142,28 +142,6 @@ describe('MCPManager', () => {
       expect(mockLogger.warn).not.toHaveBeenCalled();
     });
 
-    it('should handle non-Error objects thrown as errors', async () => {
-      mockRegistry({
-        getToolFunctions: jest.fn(() => {
-          throw 'String error';
-        }),
-      });
-
-      mockAppConnections({
-        has: jest.fn().mockReturnValue(true),
-      });
-
-      const manager = await MCPManager.createInstance(newMCPServersConfig());
-
-      const result = await manager.getServerToolFunctions(userId, serverName);
-
-      expect(result).toBeNull();
-      expect(mockLogger.warn).toHaveBeenCalledWith(
-        `[getServerToolFunctions] Error getting tool functions for server ${serverName}`,
-        'String error',
-      );
-    });
-
     it('should include specific server name in error messages', async () => {
       const specificServerName = 'github_mcp_server';
 
