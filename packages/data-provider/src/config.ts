@@ -1019,16 +1019,7 @@ export const defaultModels = {
     'gemini-2.5-flash-lite',
     // Gemini 2.0 Models
     'gemini-2.0-flash-001',
-    'gemini-2.0-flash-exp',
     'gemini-2.0-flash-lite',
-    'gemini-2.0-pro-exp-02-05',
-    // Gemini 1.5 Models
-    'gemini-1.5-flash-001',
-    'gemini-1.5-flash-002',
-    'gemini-1.5-pro-001',
-    'gemini-1.5-pro-002',
-    // Gemini 1.0 Models
-    'gemini-1.0-pro-001',
   ],
   [EModelEndpoint.anthropic]: sharedAnthropicModels,
   [EModelEndpoint.openAI]: [
