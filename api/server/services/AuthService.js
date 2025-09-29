@@ -2,7 +2,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { webcrypto } = require('node:crypto');
 const { logger } = require('@librechat/data-schemas');
-const { isEnabled, checkEmailConfig } = require('@librechat/api');
+const { isEnabled, checkEmailConfig, isEmailDomainAllowed } = require('@librechat/api');
 const { ErrorTypes, SystemRoles, errorsToString } = require('librechat-data-provider');
 const {
   findUser,
@@ -20,7 +20,6 @@ const {
   deleteUserById,
   generateRefreshToken,
 } = require('~/models');
-const { isEmailDomainAllowed } = require('~/server/services/domains');
 const { registerSchema } = require('~/strategies/validators');
 const { getAppConfig } = require('~/server/services/Config');
 const { sendEmail } = require('~/server/utils');

@@ -1,14 +1,13 @@
 /**
- * @param {string} email
- * @param {string[]} [allowedDomains]
- * @returns {boolean}
+ * @param email
+ * @param allowedDomains
  */
-function isEmailDomainAllowed(email, allowedDomains) {
+export function isEmailDomainAllowed(email: string, allowedDomains?: string[] | null): boolean {
   if (!email) {
     return false;
   }
 
-  const domain = email.split('@')[1];
+  const domain = email.split('@')[1]?.toLowerCase();
 
   if (!domain) {
     return false;
@@ -20,21 +19,15 @@ function isEmailDomainAllowed(email, allowedDomains) {
     return true;
   }
 
-  return allowedDomains.includes(domain);
+  return allowedDomains.some((allowedDomain) => allowedDomain?.toLowerCase() === domain);
 }
 
 /**
- * Normalizes a domain string
- * @param {string} domain
- * @returns {string|null}
- */
-/**
  * Normalizes a domain string. If the domain is invalid, returns null.
  * Normalized === lowercase, trimmed, and protocol added if missing.
- * @param {string} domain
- * @returns {string|null}
+ * @param domain
  */
-function normalizeDomain(domain) {
+function normalizeDomain(domain: string): string | null {
   try {
     let normalizedDomain = domain.toLowerCase().trim();
 
@@ -62,11 +55,13 @@ function normalizeDomain(domain) {
 
 /**
  * Checks if the given domain is allowed. If no restrictions are set, allows all domains.
- * @param {string} [domain]
- * @param {string[]} [allowedDomains]
- * @returns {Promise<boolean>}
+ * @param domain
+ * @param allowedDomains
  */
-async function isActionDomainAllowed(domain, allowedDomains) {
+export async function isActionDomainAllowed(
+  domain?: string | null,
+  allowedDomains?: string[] | null,
+): Promise<boolean> {
   if (!domain || typeof domain !== 'string') {
     return false;
   }
@@ -101,5 +96,3 @@ async function isActionDomainAllowed(domain, allowedDomains) {
 
   return false;
 }
-
-module.exports = { isEmailDomainAllowed, isActionDomainAllowed };
