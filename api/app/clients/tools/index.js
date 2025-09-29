@@ -18,6 +18,8 @@ const StructuredWPPACSCases = require('./structured/WoodlandAISearchCases');
 const StructuredWPPACSAll = require('./structured/WoodlandAISearchAll');
 const StructuredWPPACSGeneral = require('./structured/WoodlandAISearchGeneral');
 const StructuredWoodlandAIHistory = require('./structured/WoodlandAIHistory');
+const StructuredWoodlandAIEngineHistory = require('./structured/WoodlandEngineHistory');
+const StructuredWoodlandAIProductHistory = require('./structured/WoodlandProductHistory');
 module.exports = {
   ...manifest,
   // Structured Tools
@@ -37,5 +39,7 @@ module.exports = {
   StructuredWPPACSCases,
   StructuredWPPACSAll
   ,StructuredWPPACSGeneral,
-  StructuredWoodlandAIHistory
+  StructuredWoodlandAIHistory,
+  StructuredWoodlandAIEngineHistory,
+  StructuredWoodlandAIProductHistory
 };

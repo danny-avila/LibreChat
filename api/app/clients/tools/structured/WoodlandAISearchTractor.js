@@ -221,11 +221,26 @@ class WoodlandAISearchTractor extends Tool {
       exhaust_deflection_needed: bool(d?.need_to_deflect_mower),
       compatible_with_large_rakes: bool(d?.can_connect_to_large_rakes),
       aftermarket: {
-        mda: str(d?.ammda_sku) || str(d?.mda_sku),
-        hitch: str(d?.amhitch_sku) || str(d?.hitch_sku),
-        hose: str(d?.amhose_sku) || str(d?.hose_sku),
-        upgrade_hose: str(d?.amupgradehose_sku) || str(d?.upgradehose_sku),
+        mda: str(d?.ammda_sku),
+        mda_url: str(d?.ammda_sku_url),
+        hitch: str(d?.amhitch_sku),
+        hitch_url: str(d?.amhitch_sku_url),
+        hose: str(d?.amhose_sku),
+        hose_url: str(d?.amhose_sku_url),
+        upgrade_hose: str(d?.amupgradehose_sku),
+        upgrade_hose_url: str(d?.amupgradehose_sku_url),
+      },
+      oem: {
+        mda: str(d?.mda_sku),
+        mda_url: str(d?.mda_sku_url),
+        hitch: str(d?.hitch_sku),
+        hitch_url: str(d?.hitch_sku_url),
+        hose: str(d?.hose_sku),
+        hose_url: str(d?.hose_sku_url),
+        upgrade_hose: str(d?.upgradehose_sku),
+        upgrade_hose_url: str(d?.upgradehose_sku_url),
         rubber_collar: str(d?.rubbercollar_sku),
+        rubber_collar_url: str(d?.rubbercollar_sku_url),
       },
       compatible_with:
         list(d?.compatible_models) ||
@@ -239,6 +254,31 @@ class WoodlandAISearchTractor extends Tool {
     };
 
     return { ...d, normalized_compat: normalized };
+  }
+
+  _formatSupportAnswer(doc) {
+    const n = doc?.normalized_compat;
+    if (!n) return 'No compatibility data available.';
+
+    const yn = (v) => (v === true ? 'Yes' : v === false ? 'No' : 'Unknown');
+    const link = (label, url) => (url ? `[${label}](${url})` : label || 'N/A');
+
+    const titleRight = n.kit_or_assembly ? ` — ${n.kit_or_assembly}` : '';
+
+    return `**${n.tractor}${titleRight}**\n\n` +
+      `**Parts & Kits**\n` +
+      `- **MDA:** ${link(n.oem?.mda || 'N/A', n.oem?.mda_url)} (Aftermarket: ${link(n.aftermarket?.mda || 'N/A', n.aftermarket?.mda_url)})\n` +
+      `- **Hitch:** ${link(n.oem?.hitch || 'N/A', n.oem?.hitch_url)} (Aftermarket: ${link(n.aftermarket?.hitch || 'N/A', n.aftermarket?.hitch_url)})\n` +
+      `- **Rubber Collar Kit:** ${link(n.oem?.rubber_collar || 'N/A', n.oem?.rubber_collar_url)}\n` +
+      `- **Hose:** ${link(n.oem?.hose || 'N/A', n.oem?.hose_url)} (Aftermarket: ${link(n.aftermarket?.hose || 'N/A', n.aftermarket?.hose_url)})\n` +
+      `- **Upgrade Hose:** ${link(n.oem?.upgrade_hose || 'N/A', n.oem?.upgrade_hose_url)} (Aftermarket: ${link(n.aftermarket?.upgrade_hose || 'N/A', n.aftermarket?.upgrade_hose_url)})\n\n` +
+      `**Installation / SOP Flags**\n` +
+      `- Deck opening measurements required? → ${yn(n.deck_opening_measurements_required)}\n` +
+      `- Is the MDA pre-cut? → ${yn(n.mda_pre_cut)}\n` +
+      `- Does the customer have to drill their deck? → ${yn(n.customer_drilling_required)}\n` +
+      `- Exhaust deflection needed? → ${yn(n.exhaust_deflection_needed)}\n` +
+      `- Compatible with Comm Pro / XL / Z-10? → ${yn(n.compatible_with_large_rakes)}\n` +
+      (n.picture_thumbnail_url ? `\n![Thumbnail](${n.picture_thumbnail_url})` : '');
   }
 
   _sanitizeSearchOptions(opts) {
@@ -420,13 +460,24 @@ class WoodlandAISearchTractor extends Tool {
       'is_active',
       'mda_sku',
       'ammda_sku',
+      'mda_instructions',
+      'mda_sku_url',
+      'ammda_sku_url',
       'hitch_sku',
       'amhitch_sku',
+      'hitch_instructions',
+      'hitch_sku_url',
+      'amhitch_sku_url',
       'rubbercollar_sku',
+      'rubbercollar_sku_url',
       'hose_sku',
       'amhose_sku',
+      'hose_sku_url',
+      'amhose_sku_url',
       'upgradehose_sku',
       'amupgradehose_sku',
+      'upgradehose_sku_url',
+      'amupgradehose_sku_url',
       'is_boot_pre_cut',
       'can_connect_to_large_rakes',
       'need_to_drill_deck',
@@ -436,7 +487,7 @@ class WoodlandAISearchTractor extends Tool {
       'picture_thumbnail_url',
       'tags',
       'mda_instructions',
-      'hitch_instructions',
+      'hitch_instructions'
     ];
 
     if (intent === 'parts') {
@@ -562,7 +613,8 @@ class WoodlandAISearchTractor extends Tool {
       }
       logger.info('[woodland-ai-search-tractor] Query done', { count: Array.isArray(docs) ? docs.length : 0 });
 
-      return JSON.stringify(docs || []);
+      const supportAnswers = Array.isArray(docs) ? docs.map((d) => this._formatSupportAnswer(d)) : [];
+      return JSON.stringify({ docs: docs || [], support_answers: supportAnswers });
     } catch (error) {
       logger.error('[woodland-ai-search-tractor] Azure AI Search request failed', {
         error: error?.message || String(error),
