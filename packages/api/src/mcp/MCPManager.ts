@@ -96,22 +96,30 @@ export class MCPManager extends UserConnectionManager {
     userId: string,
     serverName: string,
   ): Promise<t.LCAvailableTools | null> {
-    if (this.appConnections?.has(serverName)) {
-      return this.serversRegistry.getToolFunctions(
-        serverName,
-        await this.appConnections.get(serverName),
+    try {
+      if (this.appConnections?.has(serverName)) {
+        return this.serversRegistry.getToolFunctions(
+          serverName,
+          await this.appConnections.get(serverName),
+        );
+      }
+
+      const userConnections = this.getUserConnections(userId);
+      if (!userConnections || userConnections.size === 0) {
+        return null;
+      }
+      if (!userConnections.has(serverName)) {
+        return null;
+      }
+
+      return this.serversRegistry.getToolFunctions(serverName, userConnections.get(serverName)!);
+    } catch (error) {
+      logger.warn(
+        `[getServerToolFunctions] Error getting tool functions for server ${serverName}`,
+        error,
       );
-    }
-
-    const userConnections = this.getUserConnections(userId);
-    if (!userConnections || userConnections.size === 0) {
       return null;
     }
-    if (!userConnections.has(serverName)) {
-      return null;
-    }
-
-    return this.serversRegistry.getToolFunctions(serverName, userConnections.get(serverName)!);
   }
 
   /**
