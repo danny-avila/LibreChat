@@ -13,6 +13,8 @@
   "com_agents_file_search_disabled": "Než nahrajete soubory pro vyhledávání, musíte vytvořit agenta.",
   "com_agents_file_search_info": "Při povolení bude agent informován o přesných názvech souborů uvedených níže, což mu umožní získat relevantní kontext z těchto souborů.",
   "com_agents_instructions_placeholder": "Systémové instrukce, které agent používá",
+  "com_agents_link_copied": "Odkaz zkopírován",
+  "com_agents_link_copy_failed": "Kopírování odkazu se nezdařilo",
   "com_agents_missing_provider_model": "Před vytvořením agenta vyberte poskytovatele a model.",
   "com_agents_name_placeholder": "Volitelné: Název agenta",
   "com_agents_no_access": "Nemáte oprávnění upravovat tohoto agenta.",

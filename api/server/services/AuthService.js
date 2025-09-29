@@ -129,7 +129,7 @@ const verifyEmail = async (req) => {
     return { message: 'Email already verified', status: 'success' };
   }
 
-  let emailVerificationData = await findToken({ email: decodedEmail });
+  let emailVerificationData = await findToken({ email: decodedEmail }, { sort: { createdAt: -1 } });
 
   if (!emailVerificationData) {
     logger.warn(`[verifyEmail] [No email verification data found] [Email: ${decodedEmail}]`);
@@ -319,9 +319,12 @@ const requestPasswordReset = async (req) => {
  * @returns
  */
 const resetPassword = async (userId, token, password) => {
-  let passwordResetToken = await findToken({
-    userId,
-  });
+  let passwordResetToken = await findToken(
+    {
+      userId,
+    },
+    { sort: { createdAt: -1 } },
+  );
 
   if (!passwordResetToken) {
     return new Error('Invalid or expired password reset token');
