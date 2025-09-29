@@ -9,7 +9,7 @@ import { detectOAuthRequirement } from '~/mcp/oauth';
 import { sanitizeUrlForLogging } from '~/mcp/utils';
 import { processMCPEnv, isEnabled } from '~/utils';
 
-const DEFAULT_INIT_TIMEOUT_MS = 30000;
+const DEFAULT_INIT_TIMEOUT_MS = 30_000;
 
 /**
  * Manages MCP server configurations and metadata discovery.
