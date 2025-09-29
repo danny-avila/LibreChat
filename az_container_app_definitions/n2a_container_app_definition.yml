@@ -23,15 +23,10 @@ tags:
 
 properties:
   provisioningState: Succeeded
-  # runningStatus: Running
   managedEnvironmentId: /subscriptions/819386da-14b6-4ae4-a16d-7475c98e6a9b/resourceGroups/rg-playai-eastus-n2a-001/providers/Microsoft.App/managedEnvironments/cenv-playai-eastus-n2a-001
   environmentId: /subscriptions/819386da-14b6-4ae4-a16d-7475c98e6a9b/resourceGroups/rg-playai-eastus-n2a-001/providers/Microsoft.App/managedEnvironments/cenv-playai-eastus-n2a-001
   workloadProfileName: paychexai
   outboundIpAddresses: null
-  # latestRevisionName: conpaichateastusn2a001--0000024
-  # latestReadyRevisionName: conpaichateastusn1001--0000024
-  # latestRevisionFqdn: conpaichateastusn1001--0000024.wittysmoke-fd7d7688.eastus.azurecontainerapps.io
-  # customDomainVerificationId: 05E5DEA83F4117621C7BB09FF979569CF31EE59F1D7D28098CB323154D696151
   configuration:
     secrets:
       - name: openid-session-secret
@@ -148,8 +143,8 @@ properties:
           - name: DEBUG_LOGGING
             value: TRUE
         resources:
-          cpu: 1
-          memory: 2Gi
+          cpu: 2
+          memory: 4Gi
           ephemeralStorage: 4Gi
         probes: []
       - image: conpaychexaiprod001.azurecr.io/paychex/rag_api:n2a.latest
