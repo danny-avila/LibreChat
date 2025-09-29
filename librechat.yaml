@@ -5,7 +5,7 @@ server:
 
 mcpServers:
   pushover-mcp:
-    url: "https://server.smithery.ai/@AshikNesin/pushover-mcp/mcp?api_key=${SMITHERY_KEY1}&profile=${SMITHERY_PROFILE1}"
+    url: "https://server.smithery.ai/@AshikNesin/pushover-mcp/mcp?api_key=${SMITHERY_KEY}&profile=${SMITHERY_PROFILE}"
 
 googleSuite:
   enabled: true
