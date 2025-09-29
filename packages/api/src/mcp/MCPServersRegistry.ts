@@ -2,14 +2,14 @@ import pick from 'lodash/pick';
 import pickBy from 'lodash/pickBy';
 import mapValues from 'lodash/mapValues';
 import { logger } from '@librechat/data-schemas';
+import { Constants } from 'librechat-data-provider';
 import type { MCPConnection } from '~/mcp/connection';
 import type { JsonSchemaType } from '~/types';
 import type * as t from '~/mcp/types';
 import { ConnectionsRepository } from '~/mcp/ConnectionsRepository';
 import { detectOAuthRequirement } from '~/mcp/oauth';
 import { sanitizeUrlForLogging } from '~/mcp/utils';
-import { processMCPEnv } from '~/utils';
-import { CONSTANTS } from '~/mcp/enum';
+import { processMCPEnv, isEnabled } from '~/utils';
 
 /**
  * Manages MCP server configurations and metadata discovery.
@@ -127,7 +127,7 @@ export class MCPServersRegistry {
 
     const toolFunctions: t.LCAvailableTools = {};
     tools.forEach((tool) => {
-      const name = `${tool.name}${CONSTANTS.mcp_delimiter}${serverName}`;
+      const name = `${tool.name}${Constants.mcp_delimiter}${serverName}`;
       toolFunctions[name] = {
         type: 'function',
         ['function']: {
@@ -158,8 +158,13 @@ export class MCPServersRegistry {
   private async fetchServerInstructions(serverName: string): Promise<void> {
     const config = this.parsedConfigs[serverName];
     if (!config.serverInstructions) return;
-    if (typeof config.serverInstructions === 'string') return;
 
+    // If it's a string that's not "true", it's a custom instruction
+    if (typeof config.serverInstructions === 'string' && !isEnabled(config.serverInstructions)) {
+      return;
+    }
+
+    // Fetch from server if true (boolean) or "true" (string)
     const conn = await this.connections.get(serverName);
     config.serverInstructions = conn.client.getInstructions();
     if (!config.serverInstructions) {

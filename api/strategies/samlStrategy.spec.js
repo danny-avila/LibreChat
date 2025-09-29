@@ -26,6 +26,7 @@ jest.mock('~/server/services/Config', () => ({
   getAppConfig: jest.fn().mockResolvedValue({}),
 }));
 jest.mock('@librechat/api', () => ({
+  isEmailDomainAllowed: jest.fn(() => true),
   getBalanceConfig: jest.fn(() => ({
     tokenCredits: 1000,
     startBalance: 1000,
