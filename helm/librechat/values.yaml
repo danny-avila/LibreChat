@@ -220,6 +220,14 @@ tolerations: []
 
 affinity: {}
 
+# Host aliases for custom domain-to-IP mappings (adds entries to /etc/hosts)
+hostAliases: []
+# Example - Redirect AWS Bedrock to proxy:
+# hostAliases:
+#   - ip: "10.1.2.3"
+#     hostnames:
+#       - "bedrock-runtime.eu-central-1.amazonaws.com"
+
 # DNS Configuration
 # Customize DNS resolution for redirecting traffic to proxy servers
 dnsPolicy: ""  # Options: ClusterFirst, Default, None, ClusterFirstWithHostNet

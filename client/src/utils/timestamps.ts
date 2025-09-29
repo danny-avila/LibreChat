@@ -84,7 +84,9 @@ export function cleanupTimestampedStorage(): void {
       }
 
       // Check if this key should be timestamped
-      const isTimestampedKey = TIMESTAMPED_KEYS.some((prefix) => key.startsWith(prefix));
+      const isTimestampedKey = TIMESTAMPED_KEYS.some(
+        (prefix) => key.startsWith(prefix) && !key.includes('pinned'),
+      );
 
       if (isTimestampedKey && !key.endsWith(TIMESTAMP_SUFFIX)) {
         const timestampKey = `${key}${TIMESTAMP_SUFFIX}`;
