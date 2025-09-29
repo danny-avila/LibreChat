@@ -1,0 +1,33 @@
+server:
+  host: 0.0.0.0
+  port: ${PORT:-3080}
+
+
+mcpServers:
+  pushover-mcp:
+    url: "https://server.smithery.ai/@AshikNesin/pushover-mcp/mcp?api_key=${SMITHERY_KEY1}&profile=${SMITHERY_PROFILE1}"
+
+googleSuite:
+  enabled: true
+  projectId: ${GOOGLE_PROJECT_ID}
+  clientId: ${GOOGLE_CLIENT_ID}
+  clientSecret: ${GOOGLE_CLIENT_SECRET}
+  redirectUri: ${GOOGLE_REDIRECT_URI}
+  scopes:
+    - https://www.googleapis.com/auth/drive
+    - https://www.googleapis.com/auth/calendar
+    - https://www.googleapis.com/auth/gmail.modify
+    - https://www.googleapis.com/auth/contacts.readonly
+  services:
+    drive:
+      enabled: true
+      permissions: readwrite
+    calendar:
+      enabled: true
+      permissions: readwrite
+    gmail:
+      enabled: true
+      permissions: readwrite
+    contacts:
+      enabled: true
+      permissions: readonly
