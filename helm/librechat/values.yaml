@@ -7,14 +7,26 @@ replicaCount: 1
 
 
 global:
-   # existing Secret for all envs/ only Passwords. Can be locally generated with: kubectl create secret generic librechat-secret-envs --from-env-file=.env.example --dry-run=client -o yaml > secret-envs.yaml
+   # default Secret for envs/ only Passwords. Can be locally generated with: kubectl create secret generic librechat-secret-envs --from-env-file=.env.example --dry-run=client -o yaml > secret-envs.yaml
    # For better maintainabillity, you can put all vars directly in the config Section and only overwrite Secrets with this if nessesary.
    # Required Values:
+   # - CREDS_KEY
+   # - CREDS_IV
+   # - JWT_SECRET
+   # - JWT_REFRESH_SECRET
    # - MEILI_MASTER_KEY
   librechat:
     existingSecretName: "librechat-credentials-env"
     # Used for Setting the Right Key, can be something like AZURE_API_KEY, if Azure OpenAI is used
     existingSecretApiKey: OPENAI_API_KEY
+    # Optionally add names of extra secrets here. They will be merged with the default secret
+    # extraSecretNames:
+    #  - shared-secret
+    #  - extra-secret 
+    # Optioanlly add names of extra config maps here. They will be merged with the default config map
+    # extraConfigMapNames:
+    #  - librechat-extra-config
+    #  - shared-config
 
 librechat:
   configEnv:
@@ -27,12 +39,6 @@ librechat:
     JWT_REFRESH_SECRET: eaa5191f2914e30b9387fd84e254e4ba6fc51b4654968a9b0803b456a54b8418
     # Set Config Params here
     # ENV_NAME: env-value
-
-    # existing Secret for all envs/ only Passwords. Can be locally generated with: kubectl create secret generic librechat-secret-envs --from-env-file=.env.example --dry-run=client -o yaml > secret-envs.yaml
-    # For better maintainabillity, you can put all vars directly in the config Section and only overwrite Secrets with this if nessesary.
-    # Required Values:
-    # - MEILI_MASTER_KEY
-  existingSecretName: "librechat-credentials-env"
   
   # For adding a custom config yaml-file you can set the contents in this var. See https://www.librechat.ai/docs/configuration/librechat_yaml/example
   configYamlContent: ""

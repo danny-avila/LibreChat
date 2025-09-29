@@ -84,6 +84,16 @@ spec:
               name: {{ .Values.global.librechat.existingSecretName }}
               optional: true
           {{- end }}
+          {{- range .Values.global.librechat.extraSecretNames }}
+          - secretRef:
+              name: {{ . }}
+              optional: true
+          {{- end }}
+          {{- range .Values.global.librechat.extraConfigMapNames }}
+          - configMapRef:
+              name: {{ . }}
+              optional: true
+          {{- end }}
       volumes:
       {{- if or .Values.librechat.configYamlContent .Values.librechat.existingConfigYaml }}
       - name: config-yaml
