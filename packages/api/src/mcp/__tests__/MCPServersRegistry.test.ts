@@ -161,6 +161,7 @@ describe('MCPServersRegistry - Initialize Function', () => {
   });
 
   afterEach(() => {
+    delete process.env.MCP_INIT_TIMEOUT_MS;
     jest.clearAllMocks();
   });
 
@@ -480,9 +481,9 @@ describe('MCPServersRegistry - Initialize Function', () => {
     it('should timeout individual server initialization after configured timeout', async () => {
       const timeout = 2000;
       // Create registry with a short timeout for testing
-      const registry = new MCPServersRegistry(rawConfigs, {
-        initTimeoutMs: timeout,
-      }); // 2 seconds timeout
+      process.env.MCP_INIT_TIMEOUT_MS = `${timeout}`;
+
+      const registry = new MCPServersRegistry(rawConfigs);
 
       // Make one server hang indefinitely during OAuth detection
       mockDetectOAuthRequirement.mockImplementation((url: string) => {

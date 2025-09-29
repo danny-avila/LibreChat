@@ -9,7 +9,13 @@ import { detectOAuthRequirement } from '~/mcp/oauth';
 import { sanitizeUrlForLogging } from '~/mcp/utils';
 import { processMCPEnv, isEnabled } from '~/utils';
 
-const DEFAULT_INIT_TIMEOUT_MS = 30_000;
+const DEFAULT_MCP_INIT_TIMEOUT_MS = 30_000;
+
+function getMCPInitTimeout(): number {
+  return process.env.MCP_INIT_TIMEOUT_MS != null
+    ? parseInt(process.env.MCP_INIT_TIMEOUT_MS)
+    : DEFAULT_MCP_INIT_TIMEOUT_MS;
+}
 
 /**
  * Manages MCP server configurations and metadata discovery.
@@ -30,16 +36,11 @@ export class MCPServersRegistry {
   public toolFunctions: t.LCAvailableTools = {};
   public appServerConfigs: t.MCPServers = {};
 
-  constructor(
-    configs: t.MCPServers,
-    options?: {
-      initTimeoutMs: number;
-    },
-  ) {
+  constructor(configs: t.MCPServers) {
     this.rawConfigs = configs;
     this.parsedConfigs = mapValues(configs, (con) => processMCPEnv({ options: con }));
     this.connections = new ConnectionsRepository(configs);
-    this.initTimeoutMs = options?.initTimeoutMs ?? DEFAULT_INIT_TIMEOUT_MS;
+    this.initTimeoutMs = getMCPInitTimeout();
   }
 
   /** Initializes all startup-enabled servers by gathering their metadata asynchronously */
