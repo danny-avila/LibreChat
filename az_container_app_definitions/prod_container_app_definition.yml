@@ -1,0 +1,174 @@
+apiVersion: 2025-02-02-preview
+name: conpaichateastusprod001
+identity:
+  type: SystemAssigned
+properties:
+  environmentId: "/subscriptions/9c0bd682-b2b9-49a2-996a-f33eb0af2fff/resourceGroups/rg-playai-eastus-prod-001/providers/Microsoft.App/managedEnvironments/cenv-playai-eastus-prod-001"
+  workloadProfileName: paychexai
+  configuration:
+    secrets:
+      - name: openid-session-secret
+        keyVaultUrl: https://kv-pyxplayai-prod-001.vault.azure.net/secrets/PROD-OPENID-SESSION-SECRET
+        identity: system
+      - name: creds-iv
+        keyVaultUrl: https://kv-pyxplayai-prod-001.vault.azure.net/secrets/PROD-CREDS-IV
+        identity: system
+      - name: jwt-refresh-secret
+        keyVaultUrl: https://kv-pyxplayai-prod-001.vault.azure.net/secrets/PROD-JWT-REFRESH-SECRET
+        identity: system
+      - name: jwt-secret
+        keyVaultUrl: https://kv-pyxplayai-prod-001.vault.azure.net/secrets/PROD-JWT-SECRET
+        identity: system
+      - name: mongo-connection-string
+        keyVaultUrl: https://kv-pyxplayai-prod-001.vault.azure.net/secrets/PROD-MONGO-CONNECTION-STRING
+        identity: system
+      - name: rag-mongo-connection-string
+        keyVaultUrl: https://kv-pyxplayai-prod-001.vault.azure.net/secrets/PROD-RAG-API-MONGO-CONNECTION-STRING
+        identity: system
+      - name: client-secret
+        keyVaultUrl: https://kv-pyxplayai-prod-001.vault.azure.net/secrets/PROD-OPENID-CLIENT-SECRET
+        identity: system
+      - name: creds-key
+        keyVaultUrl: https://kv-pyxplayai-prod-001.vault.azure.net/secrets/PROD-CREDS-KEY
+        identity: system
+      - name: maas-api-key
+        keyVaultUrl: https://kv-pyxplayai-prod-001.vault.azure.net/secrets/PROD-MAAS-API-KEY
+        identity: system
+    activeRevisionsMode: single
+    registries:
+      - server: conpaychexaiprod001.azurecr.io
+        username: ""
+        passwordSecretRef: ""
+        identity: system
+    ingress:
+      external: true
+      allowInsecure: false
+      targetPort: 3080
+      traffic:
+        - weight: 100
+          latestRevision: true
+      customDomains:
+        - name: play.ai.paychex.com
+          certificateId: "/subscriptions/9c0bd682-b2b9-49a2-996a-f33eb0af2fff/resourceGroups/rg-playai-eastus-prod-001/providers/Microsoft.App/managedEnvironments/cenv-playai-eastus-prod-001/certificates/play-ai-paychex-com"
+          bindingType: SniEnabled
+      ipSecurityRestrictions: null
+      corsPolicy: null
+      clientCertificateMode: Ignore
+      stickySessions:
+        affinity: sticky
+      additionalPortMappings:
+        - external: false
+          targetPort: 8000
+          exposedPort: 8000
+    maxInactiveRevisions: 100
+  template:
+    containers:
+    - image: conpaychexaiprod001.azurecr.io/paychex/librechat:prod.latest
+      name: conpaichat
+      env:
+        - name: OPENID_CALLBACK_URL
+          value: "/oauth/openid/callback"
+        - name: MONGO_URI
+          secretRef: mongo-connection-string
+        - name: OPENID_SCOPE
+          value: "openid profile email"
+        - name: OPENID_SESSION_SECRET
+          secretRef: openid-session-secret
+        - name: OPENID_ISSUER
+          value: "https://login.microsoftonline.com/bcc529c5-dfce-4f97-b44f-debd50891d83/v2.0/"
+        - name: OPENID_CLIENT_SECRET
+          secretRef: client-secret
+        - name: OPENID_CLIENT_ID
+          value: "a641b00b-5902-413c-b5e7-9d5b8cb57445"
+        - name: JWT_SECRET
+          secretRef: jwt-secret
+        - name: JWT_REFRESH_SECRET
+          secretRef: jwt-refresh-secret
+        - name: AZURE_OPENAI_BASEURL
+          value: "https://service-internal.paychex.com/is/librechat/azure/openai/deployments/${DEPLOYMENT_NAME}"
+        - name: AZURE_OPENAI_API_KEY
+          secretRef: maas-api-key
+        - name: ALLOW_REGISTRATION
+          value: FALSE
+        - name: ALLOW_EMAIL_LOGIN
+          value: FALSE
+        - name: DOMAIN_CLIENT
+          value: "https://play.ai.paychex.com"
+        - name: DOMAIN_SERVER
+          value: "https://play.ai.paychex.com"
+        - name: HOST
+          value: "0.0.0.0"
+        - name: CREDS_KEY
+          secretRef: creds-key
+        - name: CREDS_IV
+          secretRef: creds-iv
+        - name: ALLOW_SOCIAL_LOGIN
+          value: TRUE
+        - name: NODE_EXTRA_CA_CERTS
+          value: "/app/paychex-root.pem"
+        - name: RAG_API_URL
+          value: http://conpaichateastusprod001:8000
+        - name: RAG_USE_FULL_CONTEXT
+          value: TRUE
+        - name: CONSOLE_JSON
+          value: TRUE
+        - name: DEBUG_LOGGING
+          value: TRUE
+      resources:
+        cpu: 1
+        memory: 8Gi
+        ephemeralStorage: 4Gi
+    - image: conpaychexaiprod001.azurecr.io/paychex/rag_api:prod.latest
+      name: conpairag
+      env:
+        - name: RAG_AZURE_OPENAI_API_KEY
+          secretRef: maas-api-key
+        - name: RAG_AZURE_OPENAI_ENDPOINT
+          value: https://service-internal.paychex.com/is/librechat/azure/
+        - name: RAG_AZURE_OPENAI_API_VERSION
+          value: 2024-10-21
+        - name: EMBEDDINGS_PROVIDER
+          value: azure
+        - name: EMBEDDINGS_MODEL
+          value: text-embedding-ada-002
+        - name: RAG_PORT
+          value: '8000'
+        - name: RAG_HOST
+          value: 0.0.0.0
+        - name: COLLECTION_NAME
+          value: ragcollection
+        - name: ATLAS_SEARCH_INDEX
+          value: vectorindex
+        - name: VECTOR_DB_TYPE
+          value: atlas-mongo
+        - name: ATLAS_MONGO_DB_URI
+          secretRef: rag-mongo-connection-string
+        - name: REQUESTS_CA_BUNDLE
+          value: /etc/ssl/certs/ca-certificates.crt
+        - name: RAG_USE_FULL_CONTEXT
+          value: TRUE
+        - name: DEBUG_RAG_API
+          value: TRUE
+        - name: CURL_CA_BUNDLE
+          value: /app/paychex-root.pem
+      resources:
+        cpu: 1
+        memory: 8Gi
+        ephemeralStorage: 4Gi
+      probes: []
+      volumeMounts:
+        - volumeName: fspaichateastusprod001
+          mountPath: /app/uploads
+    scale:
+      minReplicas: 6
+      maxReplicas: 24
+      rules:
+      - name: httpscalingrule
+        custom:
+          type: http
+          metadata:
+            concurrentRequests: '25'
+    volumes:
+      - name: fspaichateastusprod001
+        storageType: AzureFile
+        storageName: uploads-prod
