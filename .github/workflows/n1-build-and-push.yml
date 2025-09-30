@@ -14,6 +14,11 @@ on:
             required: true
             default: true
             type: boolean
+          tag:
+            description: 'Version to build (must have payx suffix)'
+            required: true
+            default: ''
+            type: string 
 
 jobs:
     build_and_push:
