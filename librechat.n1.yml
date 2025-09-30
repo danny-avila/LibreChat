@@ -32,4 +32,3 @@ endpoints:
         gpt-41-nano:
           deploymentName: gpt-41-nano
           version: "2024-10-21"
-

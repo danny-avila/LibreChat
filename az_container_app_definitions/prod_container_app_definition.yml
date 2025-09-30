@@ -51,7 +51,6 @@ properties:
         - name: play.ai.paychex.com
           certificateId: "/subscriptions/9c0bd682-b2b9-49a2-996a-f33eb0af2fff/resourceGroups/rg-playai-eastus-prod-001/providers/Microsoft.App/managedEnvironments/cenv-playai-eastus-prod-001/certificates/play-ai-paychex-com"
           bindingType: SniEnabled
-      allowInsecure: false
       ipSecurityRestrictions: null
       corsPolicy: null
       clientCertificateMode: Ignore

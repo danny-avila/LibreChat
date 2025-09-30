@@ -14,6 +14,11 @@ on:
             required: true
             default: true
             type: boolean
+          tag:
+            description: 'Version to build (must have payx suffix)'
+            required: true
+            default: ''
+            type: string
 
 permissions:
   id-token: write
@@ -23,18 +28,26 @@ jobs:
         runs-on: paychex-ai-platform-arc-nonprod
         steps:
             - uses: actions/checkout@v3
-
-            - name: Azure CLI script
-              uses: azure/cli@v2
               with:
-                  inlineScript: |
-                    az login --service-principal -u ${{secrets.ARC_RUNNER_SP_CLIENT_ID_NONPROD}} -p ${{secrets.ARC_RUNNER_SP_CLIENT_SECRET_NONPROD}} --tenant ${{secrets.AZURE_TENANT_ID}}
-                    az account set --subscription ${{vars.AZURE_SUBSCRIPTION_NAME_NONPROD}}
+                fetch-depth: 0 # fetch all tags
+
+            - name: Ensure tag ends with payx
+              run: |
+                if [[ ! "${{ inputs.tag }}" =~ payx$ ]]; then
+                  echo "Tag must end with 'payx'."
+                  exit 1
+                fi
+
+            - name: Checkout tag
+              if: ${{ inputs.tag != '' }}
+              run: |
+                git fetch --tags
+                git checkout tags/${{ inputs.tag }}
 
             - name: Create Config File
               run: |
                 touch librechat.yaml && chmod 755 librechat.yaml |
-                cat librechat.n2a.yaml >> librechat.yaml |
+                cat librechat.n2a.yml >> librechat.yaml |
                 rm -rf .dockerignore |
                 touch .dockerignore && chmod 755 .dockerignore |
                 cat .paychex.dockerignore >> .dockerignore
