@@ -9,8 +9,6 @@ jest.mock('@librechat/data-schemas', () => ({
   },
 }));
 
-import { parseTextNative, parseText } from './text';
-
 jest.mock('fs', () => ({
   readFileSync: jest.fn(),
   createReadStream: jest.fn(),
@@ -36,10 +34,24 @@ jest.mock('form-data', () => {
   }));
 });
 
+// Mock the utils module to avoid AWS SDK issues
+jest.mock('../utils', () => ({
+  logAxiosError: jest.fn((args) => {
+    if (typeof args === 'object' && args.message) {
+      return args.message;
+    }
+    return 'Error';
+  }),
+  readFileAsString: jest.fn(),
+}));
+
+// Now import everything after mocks are in place
+import { parseTextNative, parseText } from './text';
 import fs, { ReadStream } from 'fs';
 import axios from 'axios';
 import FormData from 'form-data';
 import { generateShortLivedToken } from '../crypto/jwt';
+import { readFileAsString } from '../utils';
 
 const mockedFs = fs as jest.Mocked<typeof fs>;
 const mockedAxios = axios as jest.Mocked<typeof axios>;
@@ -47,6 +59,7 @@ const mockedFormData = FormData as jest.MockedClass<typeof FormData>;
 const mockedGenerateShortLivedToken = generateShortLivedToken as jest.MockedFunction<
   typeof generateShortLivedToken
 >;
+const mockedReadFileAsString = readFileAsString as jest.MockedFunction<typeof readFileAsString>;
 
 describe('text', () => {
   const mockFile: Express.Multer.File = {
@@ -74,29 +87,32 @@ describe('text', () => {
   });
 
   describe('parseTextNative', () => {
-    it('should successfully parse a text file', () => {
+    it('should successfully parse a text file', async () => {
       const mockText = 'Hello, world!';
-      mockedFs.readFileSync.mockReturnValue(mockText);
+      const mockBytes = Buffer.byteLength(mockText, 'utf8');
 
-      const result = parseTextNative(mockFile);
+      mockedReadFileAsString.mockResolvedValue({
+        content: mockText,
+        bytes: mockBytes,
+      });
 
-      expect(mockedFs.readFileSync).toHaveBeenCalledWith('/tmp/test.txt', 'utf8');
+      const result = await parseTextNative(mockFile);
+
+      expect(mockedReadFileAsString).toHaveBeenCalledWith('/tmp/test.txt', {
+        fileSize: 100,
+      });
       expect(result).toEqual({
         text: mockText,
-        bytes: Buffer.byteLength(mockText, 'utf8'),
+        bytes: mockBytes,
         source: FileSources.text,
       });
     });
 
-    it('should throw an error when file cannot be read', () => {
+    it('should handle file read errors', async () => {
       const mockError = new Error('File not found');
-      mockedFs.readFileSync.mockImplementation(() => {
-        throw mockError;
-      });
+      mockedReadFileAsString.mockRejectedValue(mockError);
 
-      expect(() => parseTextNative(mockFile)).toThrow(
-        'Failed to read file as text: Error: File not found',
-      );
+      await expect(parseTextNative(mockFile)).rejects.toThrow('File not found');
     });
   });
 
@@ -115,7 +131,12 @@ describe('text', () => {
 
     it('should fall back to native parsing when RAG_API_URL is not defined', async () => {
       const mockText = 'Native parsing result';
-      mockedFs.readFileSync.mockReturnValue(mockText);
+      const mockBytes = Buffer.byteLength(mockText, 'utf8');
+
+      mockedReadFileAsString.mockResolvedValue({
+        content: mockText,
+        bytes: mockBytes,
+      });
 
       const result = await parseText({
         req: mockReq,
@@ -125,7 +146,7 @@ describe('text', () => {
 
       expect(result).toEqual({
         text: mockText,
-        bytes: Buffer.byteLength(mockText, 'utf8'),
+        bytes: mockBytes,
         source: FileSources.text,
       });
       expect(mockedAxios.get).not.toHaveBeenCalled();
@@ -134,7 +155,12 @@ describe('text', () => {
     it('should fall back to native parsing when health check fails', async () => {
       process.env.RAG_API_URL = 'http://rag-api.test';
       const mockText = 'Native parsing result';
-      mockedFs.readFileSync.mockReturnValue(mockText);
+      const mockBytes = Buffer.byteLength(mockText, 'utf8');
+
+      mockedReadFileAsString.mockResolvedValue({
+        content: mockText,
+        bytes: mockBytes,
+      });
 
       mockedAxios.get.mockRejectedValue(new Error('Health check failed'));
 
@@ -145,11 +171,11 @@ describe('text', () => {
       });
 
       expect(mockedAxios.get).toHaveBeenCalledWith('http://rag-api.test/health', {
-        timeout: 5000,
+        timeout: 10000,
       });
       expect(result).toEqual({
         text: mockText,
-        bytes: Buffer.byteLength(mockText, 'utf8'),
+        bytes: mockBytes,
         source: FileSources.text,
       });
     });
@@ -157,7 +183,12 @@ describe('text', () => {
     it('should fall back to native parsing when health check returns non-OK status', async () => {
       process.env.RAG_API_URL = 'http://rag-api.test';
       const mockText = 'Native parsing result';
-      mockedFs.readFileSync.mockReturnValue(mockText);
+      const mockBytes = Buffer.byteLength(mockText, 'utf8');
+
+      mockedReadFileAsString.mockResolvedValue({
+        content: mockText,
+        bytes: mockBytes,
+      });
 
       mockedAxios.get.mockResolvedValue({
         status: 500,
@@ -172,7 +203,7 @@ describe('text', () => {
 
       expect(result).toEqual({
         text: mockText,
-        bytes: Buffer.byteLength(mockText, 'utf8'),
+        bytes: mockBytes,
         source: FileSources.text,
       });
     });
@@ -207,7 +238,12 @@ describe('text', () => {
     it('should fall back to native parsing when RAG API response lacks text property', async () => {
       process.env.RAG_API_URL = 'http://rag-api.test';
       const mockText = 'Native parsing result';
-      mockedFs.readFileSync.mockReturnValue(mockText);
+      const mockBytes = Buffer.byteLength(mockText, 'utf8');
+
+      mockedReadFileAsString.mockResolvedValue({
+        content: mockText,
+        bytes: mockBytes,
+      });
 
       mockedAxios.get.mockResolvedValue({
         status: 200,
@@ -226,7 +262,7 @@ describe('text', () => {
 
       expect(result).toEqual({
         text: mockText,
-        bytes: Buffer.byteLength(mockText, 'utf8'),
+        bytes: mockBytes,
         source: FileSources.text,
       });
     });
@@ -234,7 +270,12 @@ describe('text', () => {
     it('should fall back to native parsing when user is undefined', async () => {
       process.env.RAG_API_URL = 'http://rag-api.test';
       const mockText = 'Native parsing result';
-      mockedFs.readFileSync.mockReturnValue(mockText);
+      const mockBytes = Buffer.byteLength(mockText, 'utf8');
+
+      mockedReadFileAsString.mockResolvedValue({
+        content: mockText,
+        bytes: mockBytes,
+      });
 
       const result = await parseText({
         req: { user: undefined },
@@ -247,7 +288,7 @@ describe('text', () => {
       expect(mockedAxios.post).not.toHaveBeenCalled();
       expect(result).toEqual({
         text: mockText,
-        bytes: Buffer.byteLength(mockText, 'utf8'),
+        bytes: mockBytes,
         source: FileSources.text,
       });
     });

@@ -150,7 +150,9 @@ export function createShareMethods(mongoose: typeof import('mongoose')) {
 
       if (search && search.trim()) {
         try {
-          const searchResults = await Conversation.meiliSearch(search);
+          const searchResults = await Conversation.meiliSearch(search, {
+            filter: `user = "${user}"`,
+          });
 
           if (!searchResults?.hits?.length) {
             return {

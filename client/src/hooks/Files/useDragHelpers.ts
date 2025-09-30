@@ -17,6 +17,7 @@ import type { DropTargetMonitor } from 'react-dnd';
 import type * as t from 'librechat-data-provider';
 import store, { ephemeralAgentByConvoId } from '~/store';
 import useFileHandling from './useFileHandling';
+import { isEphemeralAgent } from '~/common';
 
 export default function useDragHelpers() {
   const queryClient = useQueryClient();
@@ -78,7 +79,7 @@ export default function useDragHelpers() {
       let fileSearchAllowedByAgent = true;
       let codeAllowedByAgent = true;
 
-      if (agentId && agentId !== Constants.EPHEMERAL_AGENT_ID) {
+      if (agentId && !isEphemeralAgent(agentId)) {
         /** Agent data from cache */
         const agent = queryClient.getQueryData<t.Agent>([QueryKeys.agent, agentId]);
         if (agent) {
