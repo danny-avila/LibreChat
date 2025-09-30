@@ -170,7 +170,7 @@ describe('tests for the new helper functions used by the MCP connection status e
       const mockMCPManager = {
         appConnections: { getAll: jest.fn(() => null) },
         getUserConnections: jest.fn(() => null),
-        getOAuthServers: jest.fn(() => null),
+        getOAuthServers: jest.fn(() => new Set()),
       };
       mockGetMCPManager.mockReturnValue(mockMCPManager);
 
