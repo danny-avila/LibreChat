@@ -44,6 +44,10 @@ jobs:
                 git fetch --tags
                 git checkout tags/${{ inputs.tag }}
 
+            - name: Get tag commit SHA
+              id: tag_sha
+              run: echo "TAG_SHA=$(git rev-parse HEAD)" >> $GITHUB_ENV
+
             - name: Create Config File
               run: |
                 touch librechat.yaml && chmod 755 librechat.yaml |
@@ -61,8 +65,8 @@ jobs:
 
             - name: build and push docker container
               run: |
-                docker build . -t ${{ env.ACR_HOST }}/paychex/librechat:n2a.${{ github.sha }}
-                docker push ${{ env.ACR_HOST }}/paychex/librechat:n2a.${{ github.sha }}
+                docker build . -t ${{ env.ACR_HOST }}/paychex/librechat:n2a.${{ env.TAG_SHA }}
+                docker push ${{ env.ACR_HOST }}/paychex/librechat:n2a.${{ env.TAG_SHA }}
 
                 docker build . -t ${{ env.ACR_HOST }}/paychex/librechat:n2a.latest
                 docker push ${{ env.ACR_HOST }}/paychex/librechat:n2a.latest
@@ -79,7 +83,7 @@ jobs:
             - name: Update librechat image in YAML
               uses: mikefarah/yq@master
               with:
-                cmd: yq -i '.properties.template.containers[] |= select(.name == "conpaichat").image = "${{ env.ACR_HOST }}/paychex/librechat:n2a.${{ github.sha }}"' az_container_app_definitions/n2a_container_app_definition.yml
+                cmd: yq -i '.properties.template.containers[] |= select(.name == "conpaichat").image = "${{ env.ACR_HOST }}/paychex/librechat:n2a.${{ env.TAG_SHA }}"' az_container_app_definitions/n2a_container_app_definition.yml
                     
             - name: Azure CLI script
               uses: azure/cli@v2
