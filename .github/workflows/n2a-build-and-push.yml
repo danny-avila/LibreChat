@@ -79,13 +79,7 @@ jobs:
             - name: Update librechat image in YAML
               uses: mikefarah/yq@master
               with:
-                cmd: >
-                  yq -i '.properties.template.containers[] |=
-                    if .name == "conpaichat" then
-                      .image = "${{ env.ACR_HOST }}/paychex/librechat:n2a.${{ github.sha }}"
-                    else
-                      .
-                    end' az_container_app_definitions/n2a_container_app_definition.yml
+                cmd: yq -i '.properties.template.containers[] |= select(.name == "conpaichat").image = "${{ env.ACR_HOST }}/paychex/librechat:n2a.${{ github.sha }}"' az_container_app_definitions/n2a_container_app_definition.yml
                     
             - name: Azure CLI script
               uses: azure/cli@v2
