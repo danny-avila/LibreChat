@@ -20,11 +20,26 @@ jobs:
         runs-on: paychex-ai-platform-arc-prod
         steps:
             - uses: actions/checkout@v3
+              with:
+                fetch-depth: 0 # fetch all tags
+
+            - name: Ensure tag ends with payx
+              run: |
+                if [[ ! "${{ inputs.tag }}" =~ payx$ ]]; then
+                  echo "Tag must end with 'payx'."
+                  exit 1
+                fi
+
+            - name: Checkout tag
+              if: ${{ inputs.tag != '' }}
+              run: |
+                git fetch --tags
+                git checkout tags/${{ inputs.tag }}
 
             - name: Create Config File
               run: |
                 touch librechat.yaml && chmod 755 librechat.yaml |
-                cat librechat.prod.yaml >> librechat.yaml |
+                cat librechat.prod.yml >> librechat.yaml |
                 rm -rf .dockerignore |
                 touch .dockerignore && chmod 755 .dockerignore |
                 cat .paychex.dockerignore >> .dockerignore |
