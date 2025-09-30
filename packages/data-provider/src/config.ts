@@ -889,6 +889,7 @@ export enum KnownEndpoints {
   shuttleai = 'shuttleai',
   'together.ai' = 'together.ai',
   unify = 'unify',
+  vercel = 'vercel',
   xai = 'xai',
 }
 
@@ -925,6 +926,7 @@ export const alternateName = {
   [KnownEndpoints.ollama]: 'Ollama',
   [KnownEndpoints.deepseek]: 'DeepSeek',
   [KnownEndpoints.xai]: 'xAI',
+  [KnownEndpoints.vercel]: 'Vercel',
 };
 
 const sharedOpenAIModels = [
@@ -950,10 +952,14 @@ const sharedOpenAIModels = [
 ];
 
 const sharedAnthropicModels = [
+  'claude-sonnet-4-5',
+  'claude-sonnet-4-5-20250929',
+  'claude-opus-4-1',
+  'claude-opus-4-1-20250805',
   'claude-sonnet-4-20250514',
-  'claude-sonnet-4-latest',
+  'claude-sonnet-4-0',
   'claude-opus-4-20250514',
-  'claude-opus-4-latest',
+  'claude-opus-4-0',
   'claude-3-7-sonnet-latest',
   'claude-3-7-sonnet-20250219',
   'claude-3-5-haiku-20241022',
@@ -1011,18 +1017,13 @@ export const defaultModels = {
   [EModelEndpoint.assistants]: [...sharedOpenAIModels, 'chatgpt-4o-latest'],
   [EModelEndpoint.agents]: sharedOpenAIModels, // TODO: Add agent models (agentsModels)
   [EModelEndpoint.google]: [
+    // Gemini 2.5 Models
+    'gemini-2.5-pro',
+    'gemini-2.5-flash',
+    'gemini-2.5-flash-lite',
     // Gemini 2.0 Models
     'gemini-2.0-flash-001',
-    'gemini-2.0-flash-exp',
     'gemini-2.0-flash-lite',
-    'gemini-2.0-pro-exp-02-05',
-    // Gemini 1.5 Models
-    'gemini-1.5-flash-001',
-    'gemini-1.5-flash-002',
-    'gemini-1.5-pro-001',
-    'gemini-1.5-pro-002',
-    // Gemini 1.0 Models
-    'gemini-1.0-pro-001',
   ],
   [EModelEndpoint.anthropic]: sharedAnthropicModels,
   [EModelEndpoint.openAI]: [
@@ -1105,6 +1106,7 @@ export const visionModels = [
   'gemini-exp',
   'gemini-1.5',
   'gemini-2',
+  'gemini-2.5',
   'gemini-3',
   'moondream',
   'llama3.2-vision',

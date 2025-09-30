@@ -1,10 +1,10 @@
 import {
-  Constants,
   isAgentsEndpoint,
   tQueryParamsSchema,
   isAssistantsEndpoint,
 } from 'librechat-data-provider';
 import type { TConversation, TPreset } from 'librechat-data-provider';
+import { isEphemeralAgent } from '~/common';
 
 const allowedParams = Object.keys(tQueryParamsSchema.shape);
 export default function createChatSearchParams(
@@ -33,7 +33,7 @@ export default function createChatSearchParams(
   if (
     isAgentsEndpoint(endpoint) &&
     conversation.agent_id &&
-    conversation.agent_id !== Constants.EPHEMERAL_AGENT_ID
+    !isEphemeralAgent(conversation.agent_id)
   ) {
     return new URLSearchParams({ agent_id: String(conversation.agent_id) });
   } else if (isAssistantsEndpoint(endpoint) && conversation.assistant_id) {
@@ -53,7 +53,7 @@ export default function createChatSearchParams(
 
   const paramMap: Record<string, any> = {};
   allowedParams.forEach((key) => {
-    if (key === 'agent_id' && conversation.agent_id === Constants.EPHEMERAL_AGENT_ID) {
+    if (key === 'agent_id' && isEphemeralAgent(conversation.agent_id)) {
       return;
     }
     if (key !== 'endpoint' && key !== 'model') {
