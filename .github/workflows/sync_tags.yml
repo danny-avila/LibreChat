@@ -1,0 +1,26 @@
+name: Sync Tags
+
+on:
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+    sync_tags:
+        runs-on: paychex-ai-platform-arc-nonprod
+        steps:
+            - uses: actions/checkout@v3
+
+            - name: Fetch upstream tags
+              run: |
+                git remote add upstream https://github.com/danny-avila/LibreChat.git
+                git fetch upstream --tags
+
+            - name: Push upstream tags to origin
+              env:
+                GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              run: |
+                git push origin --tags
