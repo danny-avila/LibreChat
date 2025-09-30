@@ -114,6 +114,11 @@ const loadEphemeralAgent = async ({ req, agent_id, endpoint, model_parameters: _
   if (ephemeralAgent?.artifacts != null && ephemeralAgent.artifacts) {
     result.artifacts = ephemeralAgent.artifacts;
   }
+
+  if (ephemeralAgent?.canvas != null && ephemeralAgent.canvas) {
+    result.canvas = ephemeralAgent.canvas;
+  }
+
   return result;
 };
 
@@ -132,7 +137,12 @@ const loadAgent = async ({ req, agent_id, endpoint, model_parameters }) => {
     return null;
   }
   if (agent_id === EPHEMERAL_AGENT_ID) {
-    return await loadEphemeralAgent({ req, agent_id, endpoint, model_parameters });
+    return await loadEphemeralAgent({
+      req,
+      agent_id,
+      endpoint,
+      model_parameters,
+    });
   }
   const agent = await getAgent({
     id: agent_id,
@@ -344,7 +354,7 @@ const updateAgent = async (searchParameter, updateData, options = {}) => {
 
     // Generate actions hash if agent has actions
     if (currentAgent.actions && currentAgent.actions.length > 0) {
-      // Extract action IDs from the format "domain_action_id"
+      // Extract action IDs from the format 'domain_action_id'
       const actionIds = currentAgent.actions
         .map((action) => {
           const parts = action.split(actionDelimiter);
@@ -555,7 +565,10 @@ const getListAgentsByAccess = async ({
       const cursorCondition = {
         $or: [
           { updatedAt: { $lt: new Date(updatedAt) } },
-          { updatedAt: new Date(updatedAt), _id: { $gt: new mongoose.Types.ObjectId(_id) } },
+          {
+            updatedAt: new Date(updatedAt),
+            _id: { $gt: new mongoose.Types.ObjectId(_id) },
+          },
         ],
       };
 
@@ -767,12 +780,14 @@ const revertAgentVersion = async (searchParameter, versionIndex) => {
   delete updateData.author;
   delete updateData.updatedBy;
 
-  return Agent.findOneAndUpdate(searchParameter, updateData, { new: true }).lean();
+  return Agent.findOneAndUpdate(searchParameter, updateData, {
+    new: true,
+  }).lean();
 };
 
 /**
  * Generates a hash of action metadata for version comparison
- * @param {string[]} actionIds - Array of action IDs in format "domain_action_id"
+ * @param {string[]} actionIds - Array of action IDs in format 'domain_action_id'
  * @param {Action[]} actions - Array of action documents
  * @returns {Promise<string>} - SHA256 hash of the action metadata
  */
