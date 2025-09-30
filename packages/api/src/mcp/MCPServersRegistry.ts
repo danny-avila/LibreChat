@@ -1,5 +1,3 @@
-import pick from 'lodash/pick';
-import pickBy from 'lodash/pickBy';
 import mapValues from 'lodash/mapValues';
 import { logger } from '@librechat/data-schemas';
 import { Constants } from 'librechat-data-provider';
@@ -11,6 +9,14 @@ import { detectOAuthRequirement } from '~/mcp/oauth';
 import { sanitizeUrlForLogging } from '~/mcp/utils';
 import { processMCPEnv, isEnabled } from '~/utils';
 
+const DEFAULT_MCP_INIT_TIMEOUT_MS = 30_000;
+
+function getMCPInitTimeout(): number {
+  return process.env.MCP_INIT_TIMEOUT_MS != null
+    ? parseInt(process.env.MCP_INIT_TIMEOUT_MS)
+    : DEFAULT_MCP_INIT_TIMEOUT_MS;
+}
+
 /**
  * Manages MCP server configurations and metadata discovery.
  * Fetches server capabilities, OAuth requirements, and tool definitions for registry.
@@ -20,19 +26,21 @@ import { processMCPEnv, isEnabled } from '~/utils';
 export class MCPServersRegistry {
   private initialized: boolean = false;
   private connections: ConnectionsRepository;
+  private initTimeoutMs: number;
 
   public readonly rawConfigs: t.MCPServers;
   public readonly parsedConfigs: Record<string, t.ParsedServerConfig>;
 
-  public oauthServers: Set<string> | null = null;
-  public serverInstructions: Record<string, string> | null = null;
-  public toolFunctions: t.LCAvailableTools | null = null;
-  public appServerConfigs: t.MCPServers | null = null;
+  public oauthServers: Set<string> = new Set();
+  public serverInstructions: Record<string, string> = {};
+  public toolFunctions: t.LCAvailableTools = {};
+  public appServerConfigs: t.MCPServers = {};
 
   constructor(configs: t.MCPServers) {
     this.rawConfigs = configs;
     this.parsedConfigs = mapValues(configs, (con) => processMCPEnv({ options: con }));
     this.connections = new ConnectionsRepository(configs);
+    this.initTimeoutMs = getMCPInitTimeout();
   }
 
   /** Initializes all startup-enabled servers by gathering their metadata asynchronously */
@@ -42,21 +50,43 @@ export class MCPServersRegistry {
 
     const serverNames = Object.keys(this.parsedConfigs);
 
-    await Promise.allSettled(serverNames.map((serverName) => this.gatherServerInfo(serverName)));
-
-    this.setOAuthServers();
-    this.setServerInstructions();
-    this.setAppServerConfigs();
-    await this.setAppToolFunctions();
-
-    this.connections.disconnectAll();
+    await Promise.allSettled(
+      serverNames.map((serverName) => this.initializeServerWithTimeout(serverName)),
+    );
   }
 
-  /** Fetches all metadata for a single server in parallel */
-  private async gatherServerInfo(serverName: string): Promise<void> {
+  /** Wraps server initialization with a timeout to prevent hanging */
+  private async initializeServerWithTimeout(serverName: string): Promise<void> {
+    let timeoutId: NodeJS.Timeout | null = null;
+
+    try {
+      await Promise.race([
+        this.initializeServer(serverName),
+        new Promise<never>((_, reject) => {
+          timeoutId = setTimeout(() => {
+            reject(new Error('Server initialization timed out'));
+          }, this.initTimeoutMs);
+        }),
+      ]);
+    } catch (error) {
+      logger.warn(`${this.prefix(serverName)} Server initialization failed:`, error);
+      throw error;
+    } finally {
+      if (timeoutId != null) {
+        clearTimeout(timeoutId);
+      }
+    }
+  }
+
+  /** Initializes a single server with all its metadata and adds it to appropriate collections */
+  private async initializeServer(serverName: string): Promise<void> {
+    logger.info(`${this.prefix(serverName)} Initializing server`);
+    const start = Date.now();
+
+    const config = this.parsedConfigs[serverName];
+
     try {
       await this.fetchOAuthRequirement(serverName);
-      const config = this.parsedConfigs[serverName];
 
       if (config.startup !== false && !config.requiresOAuth) {
         await Promise.allSettled([
@@ -73,49 +103,39 @@ export class MCPServersRegistry {
     } catch (error) {
       logger.warn(`${this.prefix(serverName)} Failed to initialize server:`, error);
     }
-  }
 
-  /** Sets app-level server configs (startup enabled, non-OAuth servers) */
-  private setAppServerConfigs(): void {
-    const appServers = Object.keys(
-      pickBy(
-        this.parsedConfigs,
-        (config) => config.startup !== false && config.requiresOAuth === false,
-      ),
-    );
-    this.appServerConfigs = pick(this.rawConfigs, appServers);
-  }
-
-  /** Creates set of server names that require OAuth authentication */
-  private setOAuthServers(): Set<string> {
-    if (this.oauthServers) return this.oauthServers;
-    this.oauthServers = new Set(
-      Object.keys(pickBy(this.parsedConfigs, (config) => config.requiresOAuth)),
-    );
-    return this.oauthServers;
-  }
-
-  /** Collects server instructions from all configured servers */
-  private setServerInstructions(): void {
-    this.serverInstructions = mapValues(
-      pickBy(this.parsedConfigs, (config) => config.serverInstructions),
-      (config) => config.serverInstructions as string,
-    );
-  }
-
-  /** Builds registry of all available tool functions from loaded connections */
-  private async setAppToolFunctions(): Promise<void> {
-    const connections = (await this.connections.getLoaded()).entries();
-    const allToolFunctions: t.LCAvailableTools = {};
-    for (const [serverName, conn] of connections) {
-      try {
-        const toolFunctions = await this.getToolFunctions(serverName, conn);
-        Object.assign(allToolFunctions, toolFunctions);
-      } catch (error) {
-        logger.warn(`${this.prefix(serverName)} Error fetching tool functions:`, error);
-      }
+    // Add to OAuth servers if needed
+    if (config.requiresOAuth) {
+      this.oauthServers.add(serverName);
     }
-    this.toolFunctions = allToolFunctions;
+
+    // Add server instructions if available
+    if (config.serverInstructions != null) {
+      this.serverInstructions[serverName] = config.serverInstructions as string;
+    }
+
+    // Add to app server configs if eligible (startup enabled, non-OAuth servers)
+    if (config.startup !== false && config.requiresOAuth === false) {
+      this.appServerConfigs[serverName] = this.rawConfigs[serverName];
+    }
+
+    // Fetch tool functions for this server if a connection was established
+    try {
+      const conn = await this.connections.get(serverName);
+      const toolFunctions = await this.getToolFunctions(serverName, conn);
+      Object.assign(this.toolFunctions, toolFunctions);
+    } catch (error) {
+      logger.warn(`${this.prefix(serverName)} Error fetching tool functions:`, error);
+    }
+
+    // Disconnect this server's connection after initialization
+    try {
+      await this.connections.disconnect(serverName);
+    } catch (disconnectError) {
+      logger.debug(`${this.prefix(serverName)} Failed to disconnect:`, disconnectError);
+    }
+
+    logger.info(`${this.prefix(serverName)} Initialized server in ${Date.now() - start}ms`);
   }
 
   /** Converts server tools to LibreChat-compatible tool functions format */
