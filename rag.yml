@@ -18,6 +18,8 @@ services:
       - POSTGRES_DB=mydatabase
       - POSTGRES_USER=myuser
       - POSTGRES_PASSWORD=mypassword
+      - VECTOR_DB_TYPE=atlas-mongo
+      - EMBEDDINGS_PROVIDER=openai
     ports:
       - "${RAG_PORT}:${RAG_PORT}"
     depends_on:

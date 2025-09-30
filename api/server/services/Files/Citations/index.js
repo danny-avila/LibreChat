@@ -59,7 +59,7 @@ async function processFileCitations({ user, appConfig, toolArtifact, toolCallId,
       appConfig.endpoints?.[EModelEndpoint.agents]?.minRelevanceScore ?? 0.45;
 
     const sources = toolArtifact[Tools.file_search].sources || [];
-    const filteredSources = sources.filter((source) => source.relevance >= minRelevanceScore);
+    const filteredSources = sources; //.filter((source) => source.relevance >= minRelevanceScore);
     if (filteredSources.length === 0) {
       logger.debug(
         `[processFileCitations] No sources above relevance threshold of ${minRelevanceScore}`,

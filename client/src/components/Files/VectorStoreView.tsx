@@ -1,7 +1,7 @@
 import React from 'react';
 import VectorStoreSidePanel from './VectorStore/VectorStoreSidePanel';
 import FilesSectionSelector from './FilesSectionSelector';
-import { Button } from '../ui';
+import { Button } from '@librechat/client';
 import { Outlet, useNavigate, useParams } from 'react-router-dom';
 
 export default function VectorStoreView() {

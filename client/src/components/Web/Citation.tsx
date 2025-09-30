@@ -6,6 +6,7 @@ import { SourceHovercard, FaviconImage, getCleanDomain } from '~/components/Web/
 import { CitationContext, useCitation, useCompositeCitations } from './Context';
 import { useFileDownload } from '~/data-provider';
 import { useLocalize } from '~/hooks';
+import { useArtifactContext } from '~/contexts/ArtifactContext';
 import store from '~/store';
 
 interface CompositeCitationProps {
@@ -122,6 +123,7 @@ export function Citation(props: CitationComponentProps) {
   const { showToast } = useToastContext();
   const { citation, citationId } = props.node?.properties ?? {};
   const { setHoveredCitationId } = useContext(CitationContext);
+  const { openArtifactWithPage } = useArtifactContext();
   const refData = useCitation({
     turn: citation?.turn || 0,
     refType: citation?.refType,
@@ -136,14 +138,52 @@ export function Citation(props: CitationComponentProps) {
     isFileType && !isLocalFile ? (refData as any).fileId : '',
   );
 
-  const handleFileDownload = useCallback(
+  const handleFileClick = useCallback(
     async (e: React.MouseEvent) => {
       e.preventDefault();
       e.stopPropagation();
 
       if (!isFileType || !(refData as any)?.fileId) return;
 
-      // Don't allow download for local files
+      // Check if this is a PDF file and has page information
+      const fileName = (refData as any)?.fileName || '';
+      const fileId = (refData as any)?.fileId || '';
+      const fileType = (refData as any)?.type || 'application/pdf';
+      const isPDF = fileName.toLowerCase().endsWith('.pdf') || fileType.includes('pdf');
+      const pages = (refData as any)?.pages || [];
+      const pageRelevance = (refData as any)?.pageRelevance || {};
+
+      if (isPDF && openArtifactWithPage) {
+        // Create a PDF artifact and open it in the artifact viewer
+        const pdfArtifact = {
+          id: `pdf-${fileId}`,
+          type: 'pdf',
+          filename: fileName,
+          fileId: fileId,
+          fileType: fileType,
+          content: '', // PDF content will be loaded by the viewer
+          pages: pages,
+          pageRelevance: pageRelevance,
+          lastUpdateTime: Date.now(),
+        };
+
+        console.log('Creating PDF artifact:', pdfArtifact);
+
+        // Store the artifact in the artifacts state
+        const { setArtifacts } = await import('~/store');
+        setArtifacts((prev) => ({
+          ...prev,
+          [`pdf-${fileId}`]: pdfArtifact,
+        }));
+
+        // Open artifact viewer with the first page (most relevant)
+        const firstPage = pages.length > 0 ? pages[0] : 1;
+        console.log('Opening artifact viewer with page:', firstPage, 'artifactId:', `pdf-${fileId}`);
+        openArtifactWithPage(firstPage, `pdf-${fileId}`);
+        return;
+      }
+
+      // For non-PDF files or files without page info, try to download
       if (isLocalFile) {
         showToast({
           status: 'error',
@@ -177,7 +217,7 @@ export function Citation(props: CitationComponentProps) {
         });
       }
     },
-    [downloadFile, isFileType, isLocalFile, refData, localize, showToast],
+    [downloadFile, isFileType, isLocalFile, refData, localize, showToast, openArtifactWithPage],
   );
 
   if (!refData) return null;
@@ -197,7 +237,7 @@ export function Citation(props: CitationComponentProps) {
       label={getCitationLabel()}
       onMouseEnter={() => setHoveredCitationId(citationId || null)}
       onMouseLeave={() => setHoveredCitationId(null)}
-      onClick={isFileType && !isLocalFile ? handleFileDownload : undefined}
+      onClick={isFileType ? handleFileClick : undefined}
       isFile={isFileType}
       isLocalFile={isLocalFile}
     />

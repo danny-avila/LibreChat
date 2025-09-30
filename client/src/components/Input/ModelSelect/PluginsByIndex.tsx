@@ -5,10 +5,10 @@ import { useAvailablePluginsQuery } from 'librechat-data-provider/react-query';
 import {
   Button,
   SelectDropDown,
-  SelectDropDownPop,
-  MultiSelectDropDown,
   useMediaQuery,
 } from '@librechat/client';
+import SelectDropDownPop from './SelectDropDownPop';
+import MultiSelectDropDown from './MultiSelectDropDown';
 import type { TPlugin } from 'librechat-data-provider';
 import type { TModelSelectProps } from '~/common';
 import { useSetIndexOptions, useAuthContext, useLocalize } from '~/hooks';

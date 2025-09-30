@@ -1,16 +1,16 @@
 import React from 'react';
 import { ECallState } from 'librechat-data-provider';
-import { CircleIcon, CircleDotsIcon } from '@librechat/client';
+import { Loader2, Circle } from 'lucide-react';
 
 const CircleRender = ({ rmsLevel, isCameraOn, state }) => {
   const getIconComponent = (state) => {
     switch (state) {
       case ECallState.Thinking:
-        return <CircleDotsIcon />;
+        return <Loader2 className="w-8 h-8 animate-spin" />;
       default:
         return (
           <div className="smooth-transition" style={{ transform: `scale(${transformScale})` }}>
-            <CircleIcon state={state} size="256" />
+            <Circle className="w-8 h-8" />
           </div>
         );
     }
