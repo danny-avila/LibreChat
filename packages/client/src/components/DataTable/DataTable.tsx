@@ -527,9 +527,15 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
                   const metaWidth = (header.column.columnDef.meta as { width?: number } | undefined)
                     ?.width;
                   const widthStyle = isSelectHeader
-                    ? { width: '32px', maxWidth: '32px' }
+                    ? { width: '32px', maxWidth: '32px', minWidth: '32px' }
                     : metaWidth && metaWidth >= 1 && metaWidth <= 100
-                      ? { width: `${metaWidth}%`, maxWidth: `${metaWidth}%` }
+                      ? {
+                          width: `${metaWidth}%`,
+                          maxWidth: `${metaWidth}%`,
+                          minWidth: isSmallScreen
+                            ? `${Math.max(metaWidth * 0.8, 60)}px`
+                            : `${metaWidth}%`,
+                        }
                       : {};
                   return (
                     <TableHead

@@ -248,8 +248,7 @@ export default function ArchivedChatsTable() {
           );
         },
         meta: {
-          width: 65,
-          className: 'min-w-[150px]',
+          className: 'min-w-[150px] flex-1',
         },
         enableSorting: true,
       },
@@ -269,8 +268,7 @@ export default function ArchivedChatsTable() {
           return formatDate(convo.createdAt?.toString() ?? '', isSmallScreen);
         },
         meta: {
-          width: 20,
-          className: 'min-w-[6rem]',
+          className: 'w-32 sm:w-40',
           desktopOnly: true,
         },
         enableSorting: true,
@@ -328,8 +326,7 @@ export default function ArchivedChatsTable() {
           );
         },
         meta: {
-          width: 30,
-          className: 'min-w-[5rem]',
+          className: 'w-24',
         },
         enableSorting: false,
       },
@@ -363,8 +360,8 @@ export default function ArchivedChatsTable() {
                 debounce: 300,
               },
               selection: {
-                enableRowSelection: true,
-                showCheckboxes: true,
+                enableRowSelection: false,
+                showCheckboxes: false,
               },
             }}
             filterValue={searchValue}

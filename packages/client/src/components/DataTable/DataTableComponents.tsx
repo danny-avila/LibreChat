@@ -50,44 +50,53 @@ interface TableRowComponentProps<TData extends Record<string, unknown>> {
 const TableRowComponent = <TData extends Record<string, unknown>>(
   { row, virtualIndex, style, selected }: TableRowComponentProps<TData>,
   ref: React.Ref<HTMLTableRowElement>,
-) => (
-  <TableRow
-    ref={ref}
-    data-state={selected ? 'selected' : undefined}
-    data-index={virtualIndex}
-    className="border-none hover:bg-surface-secondary"
-    style={style}
-  >
-    {row.getVisibleCells().map((cell) => {
-      const meta = cell.column.columnDef.meta as
-        | { className?: string; desktopOnly?: boolean; width?: number }
-        | undefined;
-      const isDesktopOnly = meta?.desktopOnly;
-      const percent = meta?.width;
-      const widthStyle =
-        cell.column.id === 'select'
-          ? { width: '32px', maxWidth: '32px' }
-          : percent && percent >= 1 && percent <= 100
-            ? { width: `${percent}%`, maxWidth: `${percent}%` }
-            : undefined;
+) => {
+  // Check if we're on mobile - use window.innerWidth for component-level check
+  const isSmallScreen = typeof window !== 'undefined' && window.innerWidth < 768;
 
-      return (
-        <TableCell
-          key={cell.id}
-          className={cn(
-            'truncate px-2 py-2 md:px-3 md:py-3',
-            cell.column.id === 'select' && 'w-8 p-1',
-            meta?.className,
-            isDesktopOnly && 'hidden md:table-cell',
-          )}
-          style={widthStyle}
-        >
-          {flexRender(cell.column.columnDef.cell, cell.getContext())}
-        </TableCell>
-      );
-    })}
-  </TableRow>
-);
+  return (
+    <TableRow
+      ref={ref}
+      data-state={selected ? 'selected' : undefined}
+      data-index={virtualIndex}
+      className="border-none hover:bg-surface-secondary"
+      style={style}
+    >
+      {row.getVisibleCells().map((cell) => {
+        const meta = cell.column.columnDef.meta as
+          | { className?: string; desktopOnly?: boolean; width?: number }
+          | undefined;
+        const isDesktopOnly = meta?.desktopOnly;
+        const percent = meta?.width;
+        const widthStyle =
+          cell.column.id === 'select'
+            ? { width: '32px', maxWidth: '32px', minWidth: '32px' }
+            : percent && percent >= 1 && percent <= 100
+              ? {
+                  width: `${percent}%`,
+                  maxWidth: `${percent}%`,
+                  minWidth: isSmallScreen ? `${Math.max(percent * 0.8, 60)}px` : `${percent}%`,
+                }
+              : undefined;
+
+        return (
+          <TableCell
+            key={cell.id}
+            className={cn(
+              'truncate px-2 py-2 md:px-3 md:py-3',
+              cell.column.id === 'select' && 'w-8 p-1',
+              meta?.className,
+              isDesktopOnly && 'hidden md:table-cell',
+            )}
+            style={widthStyle}
+          >
+            {flexRender(cell.column.columnDef.cell, cell.getContext())}
+          </TableCell>
+        );
+      })}
+    </TableRow>
+  );
+};
 
 type ForwardTableRowComponentType = <TData extends Record<string, unknown>>(
   props: TableRowComponentProps<TData> & React.RefAttributes<HTMLTableRowElement>,
