@@ -121,17 +121,6 @@ export default function SharedLinks() {
     [setQueryParams, data?.pages],
   );
 
-  const handleError = useCallback(
-    (error: Error) => {
-      console.error('DataTable error:', error);
-      showToast({
-        message: localize('com_ui_share_error'),
-        severity: NotificationSeverity.ERROR,
-      });
-    },
-    [showToast, localize],
-  );
-
   useEffect(() => {
     if (!data?.pages) return;
 
@@ -251,7 +240,7 @@ export default function SharedLinks() {
         },
         meta: {
           className: 'w-32 sm:w-40',
-          // desktopOnly: true, // WIP
+          desktopOnly: true,
         },
         enableSorting: true,
       },
@@ -349,7 +338,6 @@ export default function SharedLinks() {
             isFetchingNextPage={isFetchingNextPage}
             sorting={sorting}
             onSortingChange={handleSortingChange}
-            onError={handleError}
           />
         </OGDialogContent>
       </OGDialog>
