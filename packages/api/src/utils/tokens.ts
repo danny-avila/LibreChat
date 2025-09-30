@@ -91,6 +91,7 @@ const googleModels = {
   'gemini-2.5': 1000000, // 1M input tokens, 64k output tokens
   'gemini-2.5-pro': 1000000,
   'gemini-2.5-flash': 1000000,
+  'gemini-2.5-flash-lite': 1000000,
   'gemini-2.0': 2000000,
   'gemini-2.0-flash': 1000000,
   'gemini-2.0-flash-lite': 1000000,
@@ -132,9 +133,9 @@ const anthropicModels = {
 };
 
 const deepseekModels = {
-  'deepseek-reasoner': 63000, // -1000 from max (API)
-  deepseek: 63000, // -1000 from max (API)
-  'deepseek.r1': 127500,
+  'deepseek-reasoner': 128000,
+  deepseek: 128000,
+  'deepseek.r1': 128000,
 };
 
 const metaModels = {
