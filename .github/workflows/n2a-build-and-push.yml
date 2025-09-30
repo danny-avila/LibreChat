@@ -1,0 +1,75 @@
+name: N2A - Build and Push
+
+env:
+    # Azure ACR
+    ACR_HOST: ${{ vars.REGISTRY_LOGIN_SERVER_PROD }}
+    ACR_USER: ${{ secrets.REGISTRY_USERNAME_PROD }}
+    ACR_PASS: ${{ secrets.REGISTRY_PASSWORD_PROD }}
+
+on:
+  workflow_dispatch:
+      inputs:
+          build_rag_api_image:
+            description: 'Build RAG API Docker Image'
+            required: true
+            default: true
+            type: boolean
+
+permissions:
+  id-token: write
+
+jobs:
+    build_and_push:
+        runs-on: paychex-ai-platform-arc-nonprod
+        steps:
+            - uses: actions/checkout@v3
+
+            - name: Azure CLI script
+              uses: azure/cli@v2
+              with:
+                  inlineScript: |
+                    az login --service-principal -u ${{secrets.ARC_RUNNER_SP_CLIENT_ID_NONPROD}} -p ${{secrets.ARC_RUNNER_SP_CLIENT_SECRET_NONPROD}} --tenant ${{secrets.AZURE_TENANT_ID}}
+                    az account set --subscription ${{vars.AZURE_SUBSCRIPTION_NAME_NONPROD}}
+
+            - name: Create Config File
+              run: |
+                touch librechat.yaml && chmod 755 librechat.yaml |
+                cat librechat.n2a.yaml >> librechat.yaml |
+                rm -rf .dockerignore |
+                touch .dockerignore && chmod 755 .dockerignore |
+                cat .paychex.dockerignore >> .dockerignore
+
+            - name: log in to ACR
+              uses: azure/docker-login@v1
+              with:
+                login-server: ${{ env.ACR_HOST }}
+                username: ${{ env.ACR_USER }}
+                password: ${{ env.ACR_PASS }}
+
+            - name: build and push docker container
+              run: |
+                docker build . -t ${{ env.ACR_HOST }}/paychex/librechat:n2a.${{ github.sha }}
+                docker push ${{ env.ACR_HOST }}/paychex/librechat:n2a.${{ github.sha }}
+
+                docker build . -t ${{ env.ACR_HOST }}/paychex/librechat:n2a.latest
+                docker push ${{ env.ACR_HOST }}/paychex/librechat:n2a.latest
+
+            - name: Trigger rag_api Workflow
+              if: ${{inputs.build_rag_api_image}}
+              uses: BeewiseTechnologiesLTD/remote-workflow-trigger@v1
+              with:
+                target_repo: 'paychex/rag_api'
+                workflow_id: '.github/workflows/n2-build-and-push.yml'
+                github_token: ${{ secrets.CROSS_REPO_PAT }}
+                ref: 'main'
+
+            - name: Azure CLI script
+              uses: azure/cli@v2
+              with:
+                  inlineScript: |
+                    az login --service-principal -u ${{secrets.ARC_RUNNER_SP_CLIENT_ID_NONPROD}} -p ${{secrets.ARC_RUNNER_SP_CLIENT_SECRET_NONPROD}} --tenant ${{secrets.AZURE_TENANT_ID}}
+                    az account set --subscription "${{ secrets.AZURE_NONPROD_SUBSCRIPTION_ID }}"
+                    az containerapp create \
+                      --name conpaichateastusn2a001 \
+                      --resource-group rg-playai-eastus-n2a-001 \
+                      --yaml $GITHUB_WORKSPACE/az_container_app_definitions/n2a_container_app_definition.yml

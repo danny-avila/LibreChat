@@ -1,0 +1,38 @@
+version: 1.0.0
+cache: true
+interface:
+  agents: false
+  webSearch: false
+  runCode: false
+endpoints:
+  agents:
+    capabilities:
+      - "file_search"
+      - "context"
+    
+  azureOpenAI:
+    # Endpoint-level configuration
+    titleModel: "gpt-4o-mini"
+    plugins: false
+    assistants: false
+    groups:
+    # Group-level configuration
+    - group: "N2A East US"
+      instanceName: "N2A OpenAI"
+      apiKey: "${AZURE_OPENAI_API_KEY}"
+      baseURL: "${AZURE_OPENAI_BASEURL}"
+      version: "2024-10-21"
+      # Model-level configuration
+      models:
+        gpt-4o:
+          deploymentName: gpt-4o
+          version: "2024-10-21"
+        gpt-4o-mini:
+          deploymentName: gpt-4o-mini
+          version: "2024-10-21"
+        gpt-41:
+          deploymentName: gpt-41
+          version: "2024-10-21"
+        gpt-41-mini:
+          deploymentName: gpt-41-mini
+          version: "2024-10-21"
