@@ -19,14 +19,18 @@ global:
     existingSecretName: "librechat-credentials-env"
     # Used for Setting the Right Key, can be something like AZURE_API_KEY, if Azure OpenAI is used
     existingSecretApiKey: OPENAI_API_KEY
-    # Optionally add names of extra secrets here. They will be merged with the default secret
-    # extraSecretNames:
-    #  - shared-secret
-    #  - extra-secret 
-    # Optioanlly add names of extra config maps here. They will be merged with the default config map
-    # extraConfigMapNames:
-    #  - librechat-extra-config
-    #  - shared-config
+    # Optionally add extra globally accessible environment variables here. These can be referenced under ConfigEnv to make them accessible inside LibreChat
+    # env:
+    #  - name: API_KEY
+    #    valueFrom:
+    #      secretKeyRef:
+    #        name: api_access
+    #        key: api_key
+    #  - name: CLIENT_ID
+    #    valueFrom:
+    #      secretKeyRef:
+    #        name: credentials
+    #        key: client_id
 
 librechat:
   configEnv:
