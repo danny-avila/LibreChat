@@ -14,6 +14,11 @@ on:
             required: true
             default: true
             type: boolean
+          tag:
+            description: 'Version to build (must have payx suffix)'
+            required: true
+            default: ''
+            type: string 
 
 jobs:
     build_and_push:
@@ -36,6 +41,10 @@ jobs:
                 git fetch --tags
                 git checkout tags/${{ inputs.tag }}
 
+            - name: Get tag commit SHA
+              id: tag_sha
+              run: echo "TAG_SHA=$(git rev-parse HEAD)" >> $GITHUB_ENV
+
             - name: Create Config File
               run: |
                 touch librechat.yaml && chmod 755 librechat.yaml |
@@ -54,8 +63,8 @@ jobs:
                 
             - name: build and push docker container
               run: |
-                docker build . -t ${{ env.ACR_HOST }}/paychex/librechat:prod.${{ github.sha }}
-                docker push ${{ env.ACR_HOST }}/paychex/librechat:prod.${{ github.sha }}
+                docker build . -t ${{ env.ACR_HOST }}/paychex/librechat:prod.${{ env.TAG_SHA }}
+                docker push ${{ env.ACR_HOST }}/paychex/librechat:prod.${{ env.TAG_SHA }}
 
                 docker build . -t ${{ env.ACR_HOST }}/paychex/librechat:prod.latest
                 docker push ${{ env.ACR_HOST }}/paychex/librechat:prod.latest
@@ -65,9 +74,14 @@ jobs:
               uses: BeewiseTechnologiesLTD/remote-workflow-trigger@v1
               with:
                 target_repo: 'paychex/rag_api'
-                workflow_id: '.github/workflows/n2-build-and-push.yml'
+                workflow_id: '.github/workflows/prod-build-and-push.yml'
                 github_token: ${{ secrets.CROSS_REPO_PAT }}
                 ref: 'main'
+
+            - name: Update librechat image in YAML
+              uses: mikefarah/yq@master
+              with:
+                cmd: yq -i '.properties.template.containers[] |= select(.name == "conpaichat").image = "${{ env.ACR_HOST }}/paychex/librechat:prod.${{ env.TAG_SHA }}"' az_container_app_definitions/prod_container_app_definition.yml
                 
             - name: Azure CLI script
               uses: azure/cli@v2
