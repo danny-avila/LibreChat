@@ -1,7 +1,7 @@
 import React, { memo } from 'react';
 import type { TModelSpec, TEndpointsConfig } from 'librechat-data-provider';
 import type { IconMapProps } from '~/common';
-import { getModelSpecIconURL, getIconKey, getEndpointField } from '~/utils';
+import { getModelSpecIconURL, getIconKey, getEndpointField, isUrl } from '~/utils';
 import { URLIcon } from '~/components/Endpoints/URLIcon';
 import { icons } from '~/hooks/Endpoint/Icons';
 
@@ -19,7 +19,7 @@ const SpecIcon: React.FC<SpecIconProps> = ({ currentSpec, endpointsConfig }) => 
   const iconKey = getIconKey({ endpoint, endpointsConfig, endpointIconURL });
   let Icon: IconType;
 
-  if (!iconURL.includes('http')) {
+  if (!isUrl(iconURL)) {
     Icon = (icons[iconURL] ?? icons[iconKey] ?? icons.unknown) as IconType;
   } else if (iconURL) {
     return (
