@@ -1,11 +1,18 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '~/components/ui/Dialog';
 import { Info, Download } from 'lucide-react';
 import moment from 'moment';
-import ReactMarkdown from 'react-markdown';
+import ReactMarkdown, { Components } from 'react-markdown';
 import { cn } from '~/utils';
 import React from 'react';
 import { EventSourcePolyfill } from 'event-source-polyfill';
 import { Button } from '~/components/ui/Button';
+
+type CodeProps = React.HTMLAttributes<HTMLElement> & {
+  node?: any; // The node from remark-parse, which we don't use but is passed by ReactMarkdown
+  inline?: boolean;
+  className?: string;
+  children?: React.ReactNode;
+};
 
 interface MessageSegment {
   type: 'markdown' | 'code';
@@ -331,8 +338,34 @@ const QueryLogDetailsDialog: React.FC<QueryLogDetailsDialogProps> = ({
                                   : ''}
                               </div>
                             </div>
-                            <div className="prose prose-sm max-w-none break-words">
-                              <ReactMarkdown>{h.text || ''}</ReactMarkdown>
+                            <div className="prose prose-sm max-w-none break-words dark:prose-invert">
+                              <ReactMarkdown
+                                components={{
+code: ({
+                                    inline,
+                                    className,
+                                    children,
+                                    ...props
+                                  }: CodeProps) => {
+                                    const match = /language-(\w+)/.exec(className || '');
+                                    return !inline && match ? (
+                                      <div className="bg-black rounded-md p-3 my-2 overflow-x-auto">
+                                        <pre className="m-0">
+                                          <code className={`text-gray-200 ${className || ''}`} {...props}>
+                                            {children}
+                                          </code>
+                                        </pre>
+                                      </div>
+                                    ) : (
+                                      <code className="bg-gray-100 dark:bg-gray-700 rounded px-1 py-0.5 text-sm" {...props}>
+                                        {children}
+                                      </code>
+                                    );
+                                  },
+                                } as Components}
+                              >
+                                {h.text || ''}
+                              </ReactMarkdown>
                             </div>
                             {h.toolType === 'web_search' && h.searchQuery && (
                               <div className="text-xs text-muted-foreground mt-1">

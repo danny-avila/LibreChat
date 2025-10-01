@@ -12,8 +12,8 @@ const exportLogsToCSV = (logs) => {
     // Format the data for CSV with the required fields
     const formattedData = logs.map(log => ({
       'Timestamp': moment(log.timestamp).isValid()
-  ? moment(log.timestamp).format('Do MMMM YY, h:mm:ss a')
-  : moment().format('Do MMMM YY, h:mm:ss a'),
+      ? moment(log.timestamp).format('Do MMMM YY, h:mm:ss a')
+      : moment().format('Do MMMM YY, h:mm:ss a'),
 
       'Event': log.action || 'N/A',
       'Name': log.userInfo?.name || 'N/A',

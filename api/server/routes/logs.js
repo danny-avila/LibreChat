@@ -358,7 +358,7 @@ router.get('/conversations/export', async (req, res) => {
         model: message.model || null,
         text: message.text || '',
         tokenCount: message.tokenCount || 0,
-        createdAt: message.createdAt ? moment(message.createdAt).format('Do MMM YY, h:mm:ss a') : moment().format('Do MMM YY, h:mm:ss a'),
+        createdAt: message.createdAt ? moment(message.createdAt).format('Do MMMM YY, h:mm:ss a') : moment().format('Do MMMM YY, h:mm:ss a'),
         user: {
           name: user.name || 'N/A',
           email: user.email || 'N/A'
