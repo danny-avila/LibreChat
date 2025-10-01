@@ -79,6 +79,22 @@ const TableCell = React.forwardRef<
 ));
 TableCell.displayName = 'TableCell';
 
+const TableRowHeader = React.forwardRef<
+  HTMLTableCellElement,
+  React.ThHTMLAttributes<HTMLTableCellElement>
+>(({ className, ...props }, ref) => (
+  <th
+    ref={ref}
+    scope="row"
+    className={cn(
+      'p-4 text-left align-middle font-medium [&:has([role=checkbox])]:pr-0',
+      className,
+    )}
+    {...props}
+  />
+));
+TableRowHeader.displayName = 'TableRowHeader';
+
 const TableCaption = React.forwardRef<
   HTMLTableCaptionElement,
   React.HTMLAttributes<HTMLTableCaptionElement>
@@ -87,4 +103,14 @@ const TableCaption = React.forwardRef<
 ));
 TableCaption.displayName = 'TableCaption';
 
-export { Table, TableHeader, TableBody, TableFooter, TableHead, TableRow, TableCell, TableCaption };
+export {
+  Table,
+  TableHeader,
+  TableBody,
+  TableFooter,
+  TableHead,
+  TableRow,
+  TableCell,
+  TableRowHeader,
+  TableCaption,
+};

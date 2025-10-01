@@ -403,6 +403,7 @@
   "com_nav_archive_created_at": "Date Archived",
   "com_nav_archive_name": "Name",
   "com_nav_archived_chats": "Archived chats",
+  "com_ui_manage_archived_chats": "Manage archived chats",
   "com_nav_at_command": "@-Command",
   "com_nav_at_command_description": "Toggle command \"@\" for switching endpoints, models, presets, etc.",
   "com_nav_audio_play_error": "Error playing audio: {{0}}",

@@ -123,15 +123,21 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
    * Mobile responsive column visibility system
    *
    * Calculates which columns should be hidden on mobile devices based on the `desktopOnly` meta property.
-   * When a column has `meta.desktopOnly: true`, it will be hidden on viewports < 768px (mobile).
+   * When a column has `meta.desktopOnly: true`, it will be visually hidden on viewports < 768px (mobile)
+   * but still accessible to screen readers.
    *
    * This works in conjunction with:
-   * - Header rendering (lines 479-485): Conditionally renders headers based on visibility
-   * - Cell rendering (DataTableComponents.tsx): Applies CSS classes to hide cells
+   * - Header rendering: Headers are still rendered but with CSS hiding on mobile
+   * - Cell rendering (DataTableComponents.tsx): Applies CSS classes to hide cells visually
    * - Skeleton rendering (DataTableComponents.tsx): Applies same CSS to skeleton cells
+   *
+   * Note: We keep columns visible in React Table's state to maintain them in the DOM
+   * for screen reader accessibility, relying on CSS classes for visual hiding.
    */
   const calculatedVisibility = useMemo(() => {
     const newVisibility: VisibilityState = {};
+    // Don't hide columns in React Table state - let CSS handle visual hiding
+    // This keeps content accessible to screen readers
     columns.forEach((col) => {
       const meta = (col as { meta?: { desktopOnly?: boolean } }).meta;
       if (!meta?.desktopOnly) return;
@@ -141,7 +147,9 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
         (col as { accessorKey?: string | number }).accessorKey;
 
       if ((typeof rawId === 'string' || typeof rawId === 'number') && String(rawId).length > 0) {
-        newVisibility[String(rawId)] = !isSmallScreen;
+        // Always keep column visible in React Table state
+        // CSS classes will handle visual hiding on mobile
+        newVisibility[String(rawId)] = true;
       } else {
         logger.warn(
           'DataTable: A desktopOnly column is missing id/accessorKey; cannot control header visibility automatically.',
@@ -491,8 +499,9 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
                     (header.column.columnDef.meta as { desktopOnly?: boolean } | undefined)
                       ?.desktopOnly ?? false;
 
-                  // Hide header if column is not visible or if it's desktop-only on a mobile viewport
-                  if (!header.column.getIsVisible() || (isSmallScreen && isDesktopOnly)) {
+                  // Hide header if column is not visible in React Table state
+                  // Note: We don't hide desktopOnly columns from DOM, only visually via CSS
+                  if (!header.column.getIsVisible()) {
                     return null;
                   }
 
@@ -540,12 +549,14 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
                   return (
                     <TableHead
                       key={header.id}
+                      scope="col"
                       className={cn(
                         'border-b border-border-light px-2 py-2 md:px-3 md:py-2',
                         isSelectHeader && 'px-0 text-center',
                         canSort && 'cursor-pointer hover:bg-surface-tertiary',
                         meta?.className,
                         header.column.getIsResizing() && 'bg-surface-tertiary/60',
+                        isDesktopOnly && 'hidden md:table-cell',
                       )}
                       style={widthStyle}
                       onClick={header.column.getToggleSortingHandler()}

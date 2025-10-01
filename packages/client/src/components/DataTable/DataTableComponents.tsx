@@ -2,7 +2,7 @@ import React, { memo, forwardRef } from 'react';
 import { flexRender } from '@tanstack/react-table';
 import type { TableColumn } from './DataTable.types';
 import type { Row } from '@tanstack/react-table';
-import { TableCell, TableRow } from '../Table';
+import { TableCell, TableRow, TableRowHeader } from '../Table';
 import { Checkbox } from '../Checkbox';
 import { Skeleton } from '../Skeleton';
 import { cn } from '~/utils';
@@ -64,9 +64,10 @@ const TableRowComponent = <TData extends Record<string, unknown>>(
     >
       {row.getVisibleCells().map((cell) => {
         const meta = cell.column.columnDef.meta as
-          | { className?: string; desktopOnly?: boolean; width?: number }
+          | { className?: string; desktopOnly?: boolean; width?: number; isRowHeader?: boolean }
           | undefined;
         const isDesktopOnly = meta?.desktopOnly;
+        const isRowHeader = meta?.isRowHeader;
         const percent = meta?.width;
         const widthStyle =
           cell.column.id === 'select'
@@ -79,8 +80,17 @@ const TableRowComponent = <TData extends Record<string, unknown>>(
                 }
               : undefined;
 
+        const CellComponent = isRowHeader ? TableRowHeader : TableCell;
+
+        // For desktop-only columns on mobile, keep them in DOM but visually hidden
+        // This ensures screen readers can still access the content
+        const cellProps =
+          isDesktopOnly && isSmallScreen
+            ? { 'aria-hidden': false as const } // Keep accessible to screen readers
+            : {};
+
         return (
-          <TableCell
+          <CellComponent
             key={cell.id}
             className={cn(
               'truncate px-2 py-2 md:px-3 md:py-3',
@@ -89,9 +99,10 @@ const TableRowComponent = <TData extends Record<string, unknown>>(
               isDesktopOnly && 'hidden md:table-cell',
             )}
             style={widthStyle}
+            {...cellProps}
           >
             {flexRender(cell.column.columnDef.cell, cell.getContext())}
-          </TableCell>
+          </CellComponent>
         );
       })}
     </TableRow>

@@ -36,6 +36,26 @@ export type TableColumn<TData, TValue> = ColumnDef<TData, TValue> & {
      * - Skeleton loading cells
      */
     desktopOnly?: boolean;
+    /**
+     * When true, this column's cells will use `<th scope="row">` instead of `<td>`.
+     * This is important for accessibility as it marks the cell as a row header,
+     * providing context for screen readers about what each row represents.
+     *
+     * Typically the first column (e.g., name, title) should be marked as a row header.
+     *
+     * **Usage Example:**
+     * ```typescript
+     * {
+     *   accessorKey: 'title',
+     *   header: 'Conversation Name',
+     *   cell: ({ row }) => row.original.title,
+     *   meta: {
+     *     isRowHeader: true  // Mark this column as row headers
+     *   }
+     * }
+     * ```
+     */
+    isRowHeader?: boolean;
   };
 };
 

@@ -249,6 +249,7 @@ export default function ArchivedChatsTable() {
         },
         meta: {
           className: 'min-w-[150px] flex-1',
+          isRowHeader: true,
         },
         enableSorting: true,
       },
@@ -336,10 +337,16 @@ export default function ArchivedChatsTable() {
 
   return (
     <div className="flex items-center justify-between">
-      <div>{localize('com_nav_archived_chats')}</div>
+      <Label htmlFor="archived-chats-button" className="text-sm font-medium">
+        {localize('com_nav_archived_chats')}
+      </Label>
       <OGDialog open={isOpen} onOpenChange={setIsOpen}>
         <OGDialogTrigger asChild>
-          <Button variant="outline" aria-label="Archived chats">
+          <Button
+            id="archived-chats-button"
+            variant="outline"
+            aria-label={localize('com_ui_manage_archived_chats')}
+          >
             {localize('com_ui_manage')}
           </Button>
         </OGDialogTrigger>
