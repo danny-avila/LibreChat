@@ -1311,6 +1311,142 @@ describe('updateInterfacePermissions - permissions', () => {
     });
   });
 
+  it('should re-enable memory permissions when memory.disabled changes from true to false', async () => {
+    // Mock existing memory permissions that are disabled
+    mockGetRoleByName.mockResolvedValue({
+      permissions: {
+        [PermissionTypes.MEMORIES]: {
+          [Permissions.USE]: false,
+          [Permissions.CREATE]: false,
+          [Permissions.READ]: false,
+          [Permissions.UPDATE]: false,
+          [Permissions.OPT_OUT]: false,
+        },
+        // Other existing permissions
+        [PermissionTypes.PROMPTS]: { [Permissions.USE]: true },
+        [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: true },
+      },
+    });
+
+    const config = {
+      interface: {
+        // Not explicitly configuring memories in interface
+        prompts: true,
+        bookmarks: true,
+      },
+      memory: {
+        disabled: false, // Memory is explicitly enabled (changed from true to false)
+        agent: {
+          id: 'test-agent-id',
+        },
+        personalize: true,
+      } as unknown as TCustomConfig['memory'],
+    };
+    const configDefaults = {
+      interface: {
+        memories: true,
+        prompts: true,
+        bookmarks: true,
+      },
+    } as TConfigDefaults;
+    const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
+    const appConfig = { config, interfaceConfig } as unknown as AppConfig;
+
+    await updateInterfacePermissions({
+      appConfig,
+      getRoleByName: mockGetRoleByName,
+      updateAccessPermissions: mockUpdateAccessPermissions,
+    });
+
+    // Check USER role call
+    const userCall = mockUpdateAccessPermissions.mock.calls.find(
+      (call) => call[0] === SystemRoles.USER,
+    );
+    // Memory permissions should be re-enabled
+    expect(userCall[1][PermissionTypes.MEMORIES]).toEqual({
+      [Permissions.USE]: true,
+      [Permissions.CREATE]:
+        roleDefaults[SystemRoles.USER].permissions[PermissionTypes.MEMORIES]?.[Permissions.CREATE],
+      [Permissions.READ]:
+        roleDefaults[SystemRoles.USER].permissions[PermissionTypes.MEMORIES]?.[Permissions.READ],
+      [Permissions.UPDATE]:
+        roleDefaults[SystemRoles.USER].permissions[PermissionTypes.MEMORIES]?.[Permissions.UPDATE],
+      [Permissions.OPT_OUT]: true, // Should be true when personalize is enabled
+    });
+
+    // Check ADMIN role call
+    const adminCall = mockUpdateAccessPermissions.mock.calls.find(
+      (call) => call[0] === SystemRoles.ADMIN,
+    );
+    expect(adminCall[1][PermissionTypes.MEMORIES]).toEqual({
+      [Permissions.USE]: true,
+      [Permissions.CREATE]:
+        roleDefaults[SystemRoles.ADMIN].permissions[PermissionTypes.MEMORIES]?.[Permissions.CREATE],
+      [Permissions.READ]:
+        roleDefaults[SystemRoles.ADMIN].permissions[PermissionTypes.MEMORIES]?.[Permissions.READ],
+      [Permissions.UPDATE]:
+        roleDefaults[SystemRoles.ADMIN].permissions[PermissionTypes.MEMORIES]?.[Permissions.UPDATE],
+      [Permissions.OPT_OUT]: true, // Should be true when personalize is enabled
+    });
+
+    // Verify the existing role data was passed to updateAccessPermissions
+    expect(userCall[2]).toMatchObject({
+      permissions: expect.objectContaining({
+        [PermissionTypes.MEMORIES]: expect.any(Object),
+      }),
+    });
+  });
+
+  it('should re-enable memory permissions when valid memory config exists without disabled field', async () => {
+    // Mock existing memory permissions that are disabled
+    mockGetRoleByName.mockResolvedValue({
+      permissions: {
+        [PermissionTypes.MEMORIES]: {
+          [Permissions.USE]: false,
+          [Permissions.CREATE]: false,
+          [Permissions.READ]: false,
+          [Permissions.UPDATE]: false,
+          [Permissions.OPT_OUT]: false,
+        },
+      },
+    });
+
+    const config = {
+      memory: {
+        // No disabled field, but valid config
+        agent: {
+          id: 'test-agent-id',
+          provider: 'openai',
+        },
+        personalize: false,
+      } as unknown as TCustomConfig['memory'],
+    };
+    const configDefaults = { interface: {} } as TConfigDefaults;
+    const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
+    const appConfig = { config, interfaceConfig } as unknown as AppConfig;
+
+    await updateInterfacePermissions({
+      appConfig,
+      getRoleByName: mockGetRoleByName,
+      updateAccessPermissions: mockUpdateAccessPermissions,
+    });
+
+    // Check USER role call - memory should be re-enabled
+    const userCall = mockUpdateAccessPermissions.mock.calls.find(
+      (call) => call[0] === SystemRoles.USER,
+    );
+    expect(userCall[1][PermissionTypes.MEMORIES]).toEqual({
+      [Permissions.USE]: true,
+      [Permissions.CREATE]:
+        roleDefaults[SystemRoles.USER].permissions[PermissionTypes.MEMORIES]?.[Permissions.CREATE],
+      [Permissions.READ]:
+        roleDefaults[SystemRoles.USER].permissions[PermissionTypes.MEMORIES]?.[Permissions.READ],
+      [Permissions.UPDATE]:
+        roleDefaults[SystemRoles.USER].permissions[PermissionTypes.MEMORIES]?.[Permissions.UPDATE],
+      [Permissions.OPT_OUT]: undefined, // Should be undefined when personalize is false
+    });
+  });
+
   it('should override existing memory permissions when memory.disabled is true', async () => {
     // Mock existing memory permissions that are enabled
     mockGetRoleByName.mockResolvedValue({

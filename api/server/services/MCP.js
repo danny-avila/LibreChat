@@ -20,10 +20,10 @@ const {
   ContentTypes,
   isAssistantsEndpoint,
 } = require('librechat-data-provider');
+const { getMCPManager, getFlowStateManager, getOAuthReconnectionManager } = require('~/config');
 const { findToken, createToken, updateToken } = require('~/models');
-const { getMCPManager, getFlowStateManager } = require('~/config');
-const { getCachedTools, getAppConfig } = require('./Config');
 const { reinitMCPServer } = require('./Tools/mcp');
+const { getAppConfig } = require('./Config');
 const { getLogStores } = require('~/cache');
 
 /**
@@ -152,8 +152,8 @@ function createOAuthCallback({ runStepEmitter, runStepDeltaEmitter }) {
 
 /**
  * @param {Object} params
- * @param {ServerRequest} params.req - The Express request object, containing user/request info.
  * @param {ServerResponse} params.res - The Express response object for sending events.
+ * @param {IUser} params.user - The user from the request object.
  * @param {string} params.serverName
  * @param {AbortSignal} params.signal
  * @param {string} params.model
@@ -161,9 +161,9 @@ function createOAuthCallback({ runStepEmitter, runStepDeltaEmitter }) {
  * @param {Record<string, Record<string, string>>} [params.userMCPAuthMap]
  * @returns { Promise<Array<typeof tool | { _call: (toolInput: Object | string) => unknown}>> } An object with `_call` method to execute the tool input.
  */
-async function reconnectServer({ req, res, index, signal, serverName, userMCPAuthMap }) {
+async function reconnectServer({ res, user, index, signal, serverName, userMCPAuthMap }) {
   const runId = Constants.USE_PRELIM_RESPONSE_MESSAGE_ID;
-  const flowId = `${req.user?.id}:${serverName}:${Date.now()}`;
+  const flowId = `${user.id}:${serverName}:${Date.now()}`;
   const flowManager = getFlowStateManager(getLogStores(CacheKeys.FLOWS));
   const stepId = 'step_oauth_login_' + serverName;
   const toolCall = {
@@ -192,7 +192,7 @@ async function reconnectServer({ req, res, index, signal, serverName, userMCPAut
     flowManager,
   });
   return await reinitMCPServer({
-    req,
+    user,
     signal,
     serverName,
     oauthStart,
@@ -211,8 +211,8 @@ async function reconnectServer({ req, res, index, signal, serverName, userMCPAut
  * i.e. `availableTools`, and will reinitialize the MCP server to ensure all tools are generated.
  *
  * @param {Object} params
- * @param {ServerRequest} params.req - The Express request object, containing user/request info.
  * @param {ServerResponse} params.res - The Express response object for sending events.
+ * @param {IUser} params.user - The user from the request object.
  * @param {string} params.serverName
  * @param {string} params.model
  * @param {Providers | EModelEndpoint} params.provider - The provider for the tool.
@@ -221,8 +221,8 @@ async function reconnectServer({ req, res, index, signal, serverName, userMCPAut
  * @param {Record<string, Record<string, string>>} [params.userMCPAuthMap]
  * @returns { Promise<Array<typeof tool | { _call: (toolInput: Object | string) => unknown}>> } An object with `_call` method to execute the tool input.
  */
-async function createMCPTools({ req, res, index, signal, serverName, provider, userMCPAuthMap }) {
-  const result = await reconnectServer({ req, res, index, signal, serverName, userMCPAuthMap });
+async function createMCPTools({ res, user, index, signal, serverName, provider, userMCPAuthMap }) {
+  const result = await reconnectServer({ res, user, index, signal, serverName, userMCPAuthMap });
   if (!result || !result.tools) {
     logger.warn(`[MCP][${serverName}] Failed to reinitialize MCP server.`);
     return;
@@ -231,8 +231,8 @@ async function createMCPTools({ req, res, index, signal, serverName, provider, u
   const serverTools = [];
   for (const tool of result.tools) {
     const toolInstance = await createMCPTool({
-      req,
       res,
+      user,
       provider,
       userMCPAuthMap,
       availableTools: result.availableTools,
@@ -249,8 +249,8 @@ async function createMCPTools({ req, res, index, signal, serverName, provider, u
 /**
  * Creates a single tool from the specified MCP Server via `toolKey`.
  * @param {Object} params
- * @param {ServerRequest} params.req - The Express request object, containing user/request info.
  * @param {ServerResponse} params.res - The Express response object for sending events.
+ * @param {IUser} params.user - The user from the request object.
  * @param {string} params.toolKey - The toolKey for the tool.
  * @param {string} params.model - The model for the tool.
  * @param {number} [params.index]
@@ -261,26 +261,31 @@ async function createMCPTools({ req, res, index, signal, serverName, provider, u
  * @returns { Promise<typeof tool | { _call: (toolInput: Object | string) => unknown}> } An object with `_call` method to execute the tool input.
  */
 async function createMCPTool({
-  req,
   res,
+  user,
   index,
   signal,
   toolKey,
   provider,
   userMCPAuthMap,
-  availableTools: tools,
+  availableTools,
 }) {
   const [toolName, serverName] = toolKey.split(Constants.mcp_delimiter);
 
-  const availableTools =
-    tools ?? (await getCachedTools({ userId: req.user?.id, includeGlobal: true }));
   /** @type {LCTool | undefined} */
   let toolDefinition = availableTools?.[toolKey]?.function;
   if (!toolDefinition) {
     logger.warn(
       `[MCP][${serverName}][${toolName}] Requested tool not found in available tools, re-initializing MCP server.`,
     );
-    const result = await reconnectServer({ req, res, index, signal, serverName, userMCPAuthMap });
+    const result = await reconnectServer({
+      res,
+      user,
+      index,
+      signal,
+      serverName,
+      userMCPAuthMap,
+    });
     toolDefinition = result?.availableTools?.[toolKey]?.function;
   }
 
@@ -437,10 +442,10 @@ async function getMCPSetupData(userId) {
   }
 
   const mcpManager = getMCPManager(userId);
-  /** @type {ReturnType<MCPManager['getAllConnections']>} */
+  /** @type {Map<string, import('@librechat/api').MCPConnection>} */
   let appConnections = new Map();
   try {
-    appConnections = (await mcpManager.getAllConnections()) || new Map();
+    appConnections = (await mcpManager.appConnections?.getAll()) || new Map();
   } catch (error) {
     logger.error(`[MCP][User: ${userId}] Error getting app connections:`, error);
   }
@@ -538,13 +543,20 @@ async function getServerConnectionStatus(
   const baseConnectionState = getConnectionState();
   let finalConnectionState = baseConnectionState;
 
+  // connection state overrides specific to OAuth servers
   if (baseConnectionState === 'disconnected' && oauthServers.has(serverName)) {
-    const { hasActiveFlow, hasFailedFlow } = await checkOAuthFlowStatus(userId, serverName);
-
-    if (hasFailedFlow) {
-      finalConnectionState = 'error';
-    } else if (hasActiveFlow) {
+    // check if server is actively being reconnected
+    const oauthReconnectionManager = getOAuthReconnectionManager();
+    if (oauthReconnectionManager.isReconnecting(userId, serverName)) {
       finalConnectionState = 'connecting';
+    } else {
+      const { hasActiveFlow, hasFailedFlow } = await checkOAuthFlowStatus(userId, serverName);
+
+      if (hasFailedFlow) {
+        finalConnectionState = 'error';
+      } else if (hasActiveFlow) {
+        finalConnectionState = 'connecting';
+      }
     }
   }
 

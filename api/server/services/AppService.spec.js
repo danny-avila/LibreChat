@@ -142,7 +142,6 @@ describe('AppService', () => {
         turnstileConfig: mockedTurnstileConfig,
         modelSpecs: undefined,
         paths: expect.anything(),
-        ocr: expect.anything(),
         imageOutputType: expect.any(String),
         fileConfig: undefined,
         secureImageLinks: undefined,

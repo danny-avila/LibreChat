@@ -74,7 +74,7 @@ export class FlowStateManager<T = unknown> {
       createdAt: Date.now(),
     };
 
-    logger.debug('Creating initial flow state:', flowKey);
+    logger.debug(`[${flowKey}] Creating initial flow state`);
     await this.keyv.set(flowKey, initialState, this.ttl);
     return this.monitorFlow(flowKey, type, signal);
   }

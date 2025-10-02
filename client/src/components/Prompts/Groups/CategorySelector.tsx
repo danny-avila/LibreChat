@@ -6,6 +6,7 @@ import { LocalStorageKeys } from 'librechat-data-provider';
 import { useFormContext, Controller } from 'react-hook-form';
 import type { MenuItemProps } from '@librechat/client';
 import type { ReactNode } from 'react';
+import { usePromptGroupsContext } from '~/Providers';
 import { useCategories } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -22,8 +23,9 @@ const CategorySelector: React.FC<CategorySelectorProps> = ({
 }) => {
   const { t } = useTranslation();
   const formContext = useFormContext();
-  const { categories, emptyCategory } = useCategories();
   const [isOpen, setIsOpen] = useState(false);
+  const { hasAccess } = usePromptGroupsContext();
+  const { categories, emptyCategory } = useCategories({ hasAccess });
 
   const control = formContext?.control;
   const watch = formContext?.watch;
