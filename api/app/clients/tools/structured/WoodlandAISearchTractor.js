@@ -30,6 +30,8 @@ class WoodlandAISearchTractor extends Tool {
       require_active: z.boolean().optional(),
       // When true, perform a relaxed (free) search: no strict filters; broader recall
       relaxed: z.boolean().optional(),
+      // Optional dense embedding (vector) for hybrid search
+      embedding: z.array(z.number()).min(3).optional(),
     });
 
     // Shared endpoint + key
@@ -93,6 +95,12 @@ class WoodlandAISearchTractor extends Tool {
     )
       .toLowerCase()
       .trim() === 'true';
+
+    // Vector search field (name of the vector column in the index)
+    this.vectorField =
+      this._env(fields.AZURE_AI_SEARCH_TRACTOR_VECTOR_FIELD, process.env.AZURE_AI_SEARCH_TRACTOR_VECTOR_FIELD) ||
+      this._env(fields.AZURE_AI_SEARCH_VECTOR_FIELD, process.env.AZURE_AI_SEARCH_VECTOR_FIELD) ||
+      'contentVector';
 
     // Initialize SearchClient
     const credential = new AzureKeyCredential(this.apiKey);
@@ -202,6 +210,18 @@ class WoodlandAISearchTractor extends Tool {
     }
   }
 
+  _cleanCompat(arr) {
+    try {
+      const a = Array.isArray(arr) ? arr : [];
+      return a
+        .map((x) => String(x).trim())
+        .filter((x) => /^[A-Za-z0-9][A-Za-z0-9 _-]{0,40}$/.test(x) && !x.includes(':'))
+        .filter((x, i, self) => x && self.indexOf(x) === i);
+    } catch (_) {
+      return undefined;
+    }
+  }
+
   _normalizeDoc(d) {
     const bool = (v) => (typeof v === 'boolean' ? v : undefined);
     const str = (v) => (v == null ? undefined : String(v));
@@ -243,9 +263,9 @@ class WoodlandAISearchTractor extends Tool {
         rubber_collar_url: str(d?.rubbercollar_sku_url),
       },
       compatible_with:
-        list(d?.compatible_models) ||
-        list(d?.compatible_series) ||
-        this._extractCompatFromText(d?.content, d?.tags) ||
+        this._cleanCompat(list(d?.compatible_models)) ||
+        this._cleanCompat(list(d?.compatible_series)) ||
+        this._cleanCompat(this._extractCompatFromText(d?.content, d?.tags)) ||
         undefined,
       notes: str(d?.content),
       picture_thumbnail_url: str(d?.picture_thumbnail_url),
@@ -261,24 +281,37 @@ class WoodlandAISearchTractor extends Tool {
     if (!n) return 'No compatibility data available.';
 
     const yn = (v) => (v === true ? 'Yes' : v === false ? 'No' : 'Unknown');
-    const link = (label, url) => (url ? `[${label}](${url})` : label || 'N/A');
+    const link = (label, url) => {
+      const L = String(label ?? 'N/A').trim();
+      return url ? `[${L}](${url})` : (L || 'N/A');
+    };
+    const field = (label, sku, url, aftermarketSku, aftermarketUrl) => {
+      const main = `${label}: ${sku ? link(sku, url) : 'N/A'}`;
+      const am = aftermarketSku ? ` (Aftermarket: ${link(aftermarketSku, aftermarketUrl)})` : '';
+      return `- **${main}${am}**`;
+    };
 
     const titleRight = n.kit_or_assembly ? ` — ${n.kit_or_assembly}` : '';
+    const head = `**${n.tractor || doc.title || 'Tractor'}${titleRight}**`;
 
-    return `**${n.tractor}${titleRight}**\n\n` +
-      `**Parts & Kits**\n` +
-      `- **MDA:** ${link(n.oem?.mda || 'N/A', n.oem?.mda_url)} (Aftermarket: ${link(n.aftermarket?.mda || 'N/A', n.aftermarket?.mda_url)})\n` +
-      `- **Hitch:** ${link(n.oem?.hitch || 'N/A', n.oem?.hitch_url)} (Aftermarket: ${link(n.aftermarket?.hitch || 'N/A', n.aftermarket?.hitch_url)})\n` +
-      `- **Rubber Collar Kit:** ${link(n.oem?.rubber_collar || 'N/A', n.oem?.rubber_collar_url)}\n` +
-      `- **Hose:** ${link(n.oem?.hose || 'N/A', n.oem?.hose_url)} (Aftermarket: ${link(n.aftermarket?.hose || 'N/A', n.aftermarket?.hose_url)})\n` +
-      `- **Upgrade Hose:** ${link(n.oem?.upgrade_hose || 'N/A', n.oem?.upgrade_hose_url)} (Aftermarket: ${link(n.aftermarket?.upgrade_hose || 'N/A', n.aftermarket?.upgrade_hose_url)})\n\n` +
-      `**Installation / SOP Flags**\n` +
+    const parts = [
+      field('MDA', n.oem?.mda, n.oem?.mda_url, n.aftermarket?.mda, n.aftermarket?.mda_url),
+      field('Hitch', n.oem?.hitch, n.oem?.hitch_url, n.aftermarket?.hitch, n.aftermarket?.hitch_url),
+      field('Rubber Collar Kit', n.oem?.rubber_collar, n.oem?.rubber_collar_url),
+      field('Hose', n.oem?.hose, n.oem?.hose_url, n.aftermarket?.hose, n.aftermarket?.hose_url),
+      field('Upgrade Hose', n.oem?.upgrade_hose, n.oem?.upgrade_hose_url, n.aftermarket?.upgrade_hose, n.aftermarket?.upgrade_hose_url),
+    ].join('\n');
+
+    const flags =
       `- Deck opening measurements required? → ${yn(n.deck_opening_measurements_required)}\n` +
       `- Is the MDA pre-cut? → ${yn(n.mda_pre_cut)}\n` +
       `- Does the customer have to drill their deck? → ${yn(n.customer_drilling_required)}\n` +
       `- Exhaust deflection needed? → ${yn(n.exhaust_deflection_needed)}\n` +
-      `- Compatible with Comm Pro / XL / Z-10? → ${yn(n.compatible_with_large_rakes)}\n` +
-      (n.picture_thumbnail_url ? `\n![Thumbnail](${n.picture_thumbnail_url})` : '');
+      `- Compatible with Comm Pro / XL / Z-10? → ${yn(n.compatible_with_large_rakes)}`;
+
+    const img = n.picture_thumbnail_url ? `\n\n![Thumbnail](${n.picture_thumbnail_url})` : '';
+
+    return `${head}\n\n**Parts &amp; Kits**\n${parts}\n\n**Installation / SOP Flags**\n${flags}${img}`;
   }
 
   _sanitizeSearchOptions(opts) {
@@ -452,6 +485,7 @@ class WoodlandAISearchTractor extends Tool {
       'id',
       'title',
       'content',
+      'url',
       'last_updated',
       'tractor_make',
       'tractor_model',
@@ -524,7 +558,7 @@ class WoodlandAISearchTractor extends Tool {
   }
 
   async _call(data) {
-    const { query, top: topIn, make, model, deck_size, family, sku, part_type, require_active, relaxed } = data;
+    const { query, top: topIn, make, model, deck_size, family, sku, part_type, require_active, relaxed, embedding } = data;
     const finalTop = typeof topIn === 'number' && Number.isFinite(topIn) ? Math.max(1, Math.floor(topIn)) : this.top;
 
     try {
@@ -548,6 +582,20 @@ class WoodlandAISearchTractor extends Tool {
         select: this.returnAllFields ? undefined : this.select,
       };
       if (this.scoringProfile) baseOptions.scoringProfile = this.scoringProfile;
+
+      // If a vector embedding is provided, enable hybrid semantic + vector search
+      if (Array.isArray(embedding) && embedding.length >= 3) {
+        baseOptions.vectorSearchOptions = {
+          queries: [
+            {
+              kind: 'vector',
+              vector: embedding,
+              fields: [this.vectorField],
+              kNearestNeighborsCount: finalTop
+            }
+          ]
+        };
+      }
 
       const { intent, extracted } = this._detectIntent(query);
       const merged = {
@@ -611,10 +659,28 @@ class WoodlandAISearchTractor extends Tool {
       if (Array.isArray(docs)) {
         docs = docs.map((d) => (d ? this._normalizeDoc(d) : d));
       }
-      logger.info('[woodland-ai-search-tractor] Query done', { count: Array.isArray(docs) ? docs.length : 0 });
+      // Build minimal, safe projection (avoid leaking noisy root fields that may confuse renderers)
+      const projectedDocs = Array.isArray(docs)
+        ? docs.map(d => ({
+            id: d?.id,
+            title: d?.title,
+            url: d?.url,
+            normalized_compat: d?.normalized_compat
+          }))
+        : [];
+      logger.info('[woodland-ai-search-tractor] Query done', { count: projectedDocs.length });
 
       const supportAnswers = Array.isArray(docs) ? docs.map((d) => this._formatSupportAnswer(d)) : [];
-      return JSON.stringify({ docs: docs || [], support_answers: supportAnswers });
+      const includeRaw = String(
+        this._env(
+          /* fields override first */ undefined,
+          process.env.AZURE_AI_SEARCH_INCLUDE_RAW || 'false'
+        )
+      ).toLowerCase().trim() === 'true';
+      const payload = includeRaw
+        ? { docs: projectedDocs, raw_docs: docs || [], support_answers: supportAnswers }
+        : { docs: projectedDocs, support_answers: supportAnswers };
+      return JSON.stringify(payload);
     } catch (error) {
       logger.error('[woodland-ai-search-tractor] Azure AI Search request failed', {
         error: error?.message || String(error),

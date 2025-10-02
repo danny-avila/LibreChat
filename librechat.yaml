@@ -153,8 +153,9 @@ endpoints:
     maxRecursionLimit: 100
     disableBuilder: false
     # Limit global Agent capabilities; individual Agents can still narrow these down
-    capabilities: ["actions", "tools"]
+    capabilities: ["actions", "tools","chain"]
     minRelevanceScore: 0.7
+    
  
 # fileConfig:
 #   endpoints:

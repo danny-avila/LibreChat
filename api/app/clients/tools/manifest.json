@@ -194,39 +194,6 @@
     ]
   },
   {
-    "name": "Woodland Search",
-    "pluginKey": "woodland-ai-search",
-    "description": "Azure AI Search (Catalog → Website → Cyclopedia) for Woodland support.",
-    "icon": "https://i.imgur.com/E7crPze.png",
-    "authConfig": [
-      {
-        "authField": "AZURE_AI_SEARCH_SERVICE_ENDPOINT",
-        "label": "Azure AI Search Endpoint",
-        "description": "Your Azure Cognitive Search service endpoint (e.g., https://<service>.search.windows.net)."
-      },
-      {
-        "authField": "AZURE_AI_SEARCH_API_KEY",
-        "label": "Azure AI Search API Key",
-        "description": "Admin or query API key for your Azure Search service."
-      },
-      {
-        "authField": "AZURE_AI_SEARCH_CATALOG_INDEX",
-        "label": "Catalog Index Name",
-        "description": "Index name for the product/parts catalog (e.g., <base>-catalog)."
-      },
-      {
-        "authField": "AZURE_AI_SEARCH_WEBSITE_INDEX",
-        "label": "Website Index Name",
-        "description": "Index name for website content (e.g., <base>-website)."
-      },
-      {
-        "authField": "AZURE_AI_SEARCH_CYCLOPEDIA_INDEX",
-        "label": "Cyclopedia Index Name",
-        "description": "Index name for cyclopedia/procedure content (e.g., <base>-cyclopedia)."
-      }
-    ]
-  },
-  {
     "name": "Tractor Search",
     "pluginKey": "woodland-ai-search-tractor",
     "description": "Azure AI Search for the Tractor index (single-index, semantic results).",
@@ -273,9 +240,9 @@
     ]
   },
   {
-    "name": "Woodland Search (All)",
-    "pluginKey": "woodland-ai-search-all",
-    "description": "Calls Woodland, Tractor, and Cases tools in parallel and merges results.",
+    "name": "Catalog Search",
+    "pluginKey": "woodland-ai-search-catalog",
+    "description": "Azure AI Search for the Catalog index (single-index, semantic/vector results).",
     "icon": "https://i.imgur.com/E7crPze.png",
     "authConfig": [
       {
@@ -289,36 +256,16 @@
         "description": "Admin or query API key for your Azure Search service."
       },
       {
-        "authField": "AZURE_AI_SEARCH_CATALOG_INDEX",
+        "authField": "AZURE_AI_SEARCH_CATALOG_INDEX||AZURE_AI_SEARCH_INDEX_NAME",
         "label": "Catalog Index Name",
-        "description": "Index name for product/parts catalog (e.g., <base>-catalog)."
-      },
-      {
-        "authField": "AZURE_AI_SEARCH_WEBSITE_INDEX",
-        "label": "Website Index Name",
-        "description": "Index name for website content (e.g., <base>-website)."
-      },
-      {
-        "authField": "AZURE_AI_SEARCH_CYCLOPEDIA_INDEX",
-        "label": "Cyclopedia Index Name",
-        "description": "Index name for cyclopedia content (e.g., <base>-cyclopedia)."
-      },
-      {
-        "authField": "AZURE_AI_SEARCH_TRACTOR_INDEX||AZURE_AI_SEARCH_INDEX_NAME",
-        "label": "Tractor Index Name",
-        "description": "Index name for tractors data (e.g., <base>-tractors)."
-      },
-      {
-        "authField": "AZURE_AI_SEARCH_CASES_INDEX||AZURE_AI_SEARCH_INDEX_NAME",
-        "label": "Cases Index Name",
-        "description": "Index name for cases/knowledge data (e.g., <base>-cases)."
+        "description": "Index name for the Catalog data (e.g., <base>-catalog). Uses AZURE_AI_SEARCH_INDEX_NAME if not provided."
       }
     ]
   },
   {
-    "name": "Woodland Search (General)",
-    "pluginKey": "woodland-ai-search-general",
-    "description": "Grounded general search: tries Woodland first, then falls back to Cases if needed.",
+    "name": "Cyclopedia Search",
+    "pluginKey": "woodland-ai-search-cyclopedia",
+    "description": "Azure AI Search for the Cyclopedia/Help Center index (single-index, semantic/vector results).",
     "icon": "https://i.imgur.com/E7crPze.png",
     "authConfig": [
       {
@@ -332,47 +279,9 @@
         "description": "Admin or query API key for your Azure Search service."
       },
       {
-        "authField": "AZURE_AI_SEARCH_CATALOG_INDEX",
-        "label": "Catalog Index Name",
-        "description": "Index name for product/parts catalog (e.g., <base>-catalog)."
-      },
-      {
-        "authField": "AZURE_AI_SEARCH_WEBSITE_INDEX",
-        "label": "Website Index Name",
-        "description": "Index name for website content (e.g., <base>-website)."
-      },
-      {
-        "authField": "AZURE_AI_SEARCH_CYCLOPEDIA_INDEX",
+        "authField": "AZURE_AI_SEARCH_CYCLOPEDIA_INDEX||AZURE_AI_SEARCH_INDEX_NAME",
         "label": "Cyclopedia Index Name",
-        "description": "Index name for cyclopedia content (e.g., <base>-cyclopedia)."
-      },
-      {
-        "authField": "AZURE_AI_SEARCH_CASES_INDEX||AZURE_AI_SEARCH_INDEX_NAME",
-        "label": "Cases Index Name",
-        "description": "Index name for cases/knowledge data (e.g., <base>-cases)."
-      }
-    ]
-  },
-  {
-    "name": "Woodland History",
-    "pluginKey": "woodland-ai-history",
-    "description": "Query prior Woodland conversations/searches by user/session/time window.",
-    "icon": "https://i.imgur.com/E7crPze.png",
-    "authConfig": [
-      {
-        "authField": "AZURE_AI_SEARCH_SERVICE_ENDPOINT",
-        "label": "Azure AI Search Endpoint",
-        "description": "Your Azure Cognitive Search service endpoint (e.g., https://<service>.search.windows.net)."
-      },
-      {
-        "authField": "AZURE_AI_SEARCH_API_KEY",
-        "label": "Azure AI Search API Key",
-        "description": "Admin or query API key for your Azure Search service."
-      },
-      {
-        "authField": "AZURE_AI_SEARCH_HISTORY_INDEX||AZURE_AI_SEARCH_INDEX_NAME",
-        "label": "History Index Name",
-        "description": "Index name for history data (e.g., &lt;base&gt;-history). Uses AZURE_AI_SEARCH_INDEX_NAME if not provided."
+        "description": "Index name for the Cyclopedia data (e.g., <base>-cyclopedia). Uses AZURE_AI_SEARCH_INDEX_NAME if not provided."
       }
     ]
   },
@@ -400,6 +309,29 @@
     ]
   }
   ,
+  {
+    "name": "Website Search",
+    "pluginKey": "woodland-ai-search-website",
+    "description": "Azure AI Search for the public Website index (single-index, semantic/vector results).",
+    "icon": "https://i.imgur.com/E7crPze.png",
+    "authConfig": [
+      {
+        "authField": "AZURE_AI_SEARCH_SERVICE_ENDPOINT",
+        "label": "Azure AI Search Endpoint",
+        "description": "Your Azure Cognitive Search service endpoint (e.g., https://<service>.search.windows.net)."
+      },
+      {
+        "authField": "AZURE_AI_SEARCH_API_KEY",
+        "label": "Azure AI Search API Key",
+        "description": "Admin or query API key for your Azure Search service."
+      },
+      {
+        "authField": "AZURE_AI_SEARCH_WEBSITE_INDEX||AZURE_AI_SEARCH_INDEX_NAME",
+        "label": "Website Index Name",
+        "description": "Index name for the Website data (e.g., <base>-website). Uses AZURE_AI_SEARCH_INDEX_NAME if not provided."
+      }
+    ]
+  },
   {
     "name": "Woodland Product History",
     "pluginKey": "woodland-ai-product-history",

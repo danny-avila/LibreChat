@@ -27,17 +27,19 @@ const {
   OpenWeather,
   StructuredSD,
   StructuredACS,
-  StructuredWPPACS,
+
   StructuredWPPACSTractor,
   StructuredWPPACSCases,
-  StructuredWPPACSAll,
-  StructuredWPPACSGeneral,
+  StructuredWPPACSCatalog,
+  StructuredWPPACSCyclopedia,
+  StructuredWPPACSWebsite,
+
   TraversaalSearch,
   StructuredWolfram,
   createYouTubeTools,
   TavilySearchResults,
   createOpenAIImageTools,
-  StructuredWoodlandAIHistory,
+
   StructuredWoodlandAIEngineHistory,
   StructuredWoodlandAIProductHistory
 } = require('../');
@@ -182,12 +184,13 @@ const loadTools = async ({
     wolfram: StructuredWolfram,
     'stable-diffusion': StructuredSD,
     'azure-ai-search': StructuredACS,
-    'woodland-ai-search': StructuredWPPACS,
+
     'woodland-ai-search-tractor': StructuredWPPACSTractor,
     'woodland-ai-search-cases': StructuredWPPACSCases,
-    'woodland-ai-search-all': StructuredWPPACSAll,
-    'woodland-ai-search-general': StructuredWPPACSGeneral,
-    'woodland-ai-history': StructuredWoodlandAIHistory,
+    'woodland-ai-search-catalog': StructuredWPPACSCatalog,
+    'woodland-ai-search-cyclopedia': StructuredWPPACSCyclopedia,
+    'woodland-ai-search-website': StructuredWPPACSWebsite,
+
     'woodland-ai-product-history': StructuredWoodlandAIProductHistory,
     'woodland-ai-engine-history': StructuredWoodlandAIEngineHistory,
     traversaal_search: TraversaalSearch,
@@ -412,6 +415,7 @@ Current Date & Time: ${replaceSpecialVars({ text: '{{iso_datetime}}' })}
   if (returnMap) {
     return requestedTools;
   }
+  logger.info('[handleTools] Tools queued for initialization', { queued: Object.keys(requestedTools) });
 
   const toolPromises = [];
   for (const tool of tools) {
