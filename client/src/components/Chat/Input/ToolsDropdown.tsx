@@ -269,7 +269,10 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
     });
   }
 
-  if (artifactsEnabled) {
+  // <Stripe> added environment variable check
+  const showArtifacts = artifactsEnabled && !!process.env.SANDPACK_BUNDLER_URL;
+  if (showArtifacts) {
+    // </Stripe>
     dropdownItems.push({
       hideOnClick: false,
       render: (props) => (

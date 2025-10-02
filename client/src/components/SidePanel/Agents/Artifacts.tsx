@@ -37,6 +37,12 @@ export default function Artifacts() {
     });
   };
 
+  // <Stripe> added environment variable check
+  if (!process.env.SANDPACK_BUNDLER_URL) {
+    return null;
+  }
+  // </Stripe>
+
   const isEnabled = artifactsMode !== undefined && artifactsMode !== '';
   const isCustomEnabled = artifactsMode === ArtifactModes.CUSTOM;
   const isShadcnEnabled = artifactsMode === ArtifactModes.SHADCNUI;
