@@ -80,14 +80,9 @@ export class MCPServersRegistry {
 
   /** Initializes a single server with all its metadata and adds it to appropriate collections */
   private async initializeServer(serverName: string): Promise<void> {
-    logger.info(`${this.prefix(serverName)} Initializing server`);
     const start = Date.now();
 
     const config = this.parsedConfigs[serverName];
-    if (config == null) {
-      logger.warn(`${this.prefix(serverName)} Server config not found`);
-      return;
-    }
 
     // 1. Detect OAuth requirements if not already specified
     try {
@@ -103,8 +98,6 @@ export class MCPServersRegistry {
           ),
         ]);
       }
-
-      this.logUpdatedConfig(serverName);
     } catch (error) {
       logger.warn(`${this.prefix(serverName)} Failed to initialize server:`, error);
     }
@@ -127,7 +120,7 @@ export class MCPServersRegistry {
 
     // 3. Disconnect this server's connection if it was established
     try {
-      await this.connections.disconnect(serverName);
+      void this.connections.disconnect(serverName);
     } catch (disconnectError) {
       logger.debug(`${this.prefix(serverName)} Failed to disconnect:`, disconnectError);
     }
@@ -150,7 +143,8 @@ export class MCPServersRegistry {
       Object.assign(this.toolFunctions, toolFunctions);
     }
 
-    logger.info(`${this.prefix(serverName)} Initialized server in ${Date.now() - start}ms`);
+    const duration = Date.now() - start;
+    this.logUpdatedConfig(serverName, duration);
   }
 
   /** Converts server tools to LibreChat-compatible tool functions format */
@@ -220,7 +214,7 @@ export class MCPServersRegistry {
   }
 
   // Logs server configuration summary after initialization
-  private logUpdatedConfig(serverName: string): void {
+  private logUpdatedConfig(serverName: string, initDuration: number): void {
     const prefix = this.prefix(serverName);
     const config = this.parsedConfigs[serverName];
     logger.info(`${prefix} -------------------------------------------------┐`);
@@ -229,6 +223,7 @@ export class MCPServersRegistry {
     logger.info(`${prefix} Capabilities: ${config.capabilities}`);
     logger.info(`${prefix} Tools: ${config.tools}`);
     logger.info(`${prefix} Server Instructions: ${config.serverInstructions}`);
+    logger.info(`${prefix} Initialized in: ${initDuration}ms`);
     logger.info(`${prefix} -------------------------------------------------┘`);
   }
 
