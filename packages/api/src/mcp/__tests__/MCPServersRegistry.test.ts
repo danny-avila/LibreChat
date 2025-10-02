@@ -445,11 +445,11 @@ describe('MCPServersRegistry - Initialize Function', () => {
 
       // Failed servers should not crash the whole initialization
       expect(mockLogger.warn).toHaveBeenCalledWith(
-        expect.stringContaining('[MCP][stdio_server] Error fetching tool functions:'),
+        expect.stringContaining('[MCP][stdio_server] Failed to fetch server capabilities:'),
         expect.any(Error),
       );
       expect(mockLogger.warn).toHaveBeenCalledWith(
-        expect.stringContaining('[MCP][websocket_server] Error fetching tool functions:'),
+        expect.stringContaining('[MCP][websocket_server] Failed to fetch server capabilities:'),
         expect.any(Error),
       );
     });
@@ -512,5 +512,86 @@ describe('MCPServersRegistry - Initialize Function', () => {
       expect(registry.appServerConfigs).toHaveProperty('stdio_server');
       expect(registry.appServerConfigs).toHaveProperty('non_oauth_server');
     }, 10_000); // 10 second Jest timeout
+
+    it('should skip tool function fetching if connection was not established', async () => {
+      const testConfig: t.MCPServers = {
+        server_with_connection: {
+          type: 'stdio',
+          args: [],
+          command: 'test-command',
+        },
+        server_without_connection: {
+          type: 'stdio',
+          args: [],
+          command: 'failing-command',
+        },
+      };
+
+      const registry = new MCPServersRegistry(testConfig);
+
+      const mockClient = {
+        listTools: jest.fn().mockResolvedValue({
+          tools: [
+            {
+              name: 'test_tool',
+              description: 'Test tool',
+              inputSchema: { type: 'object', properties: {} },
+            },
+          ],
+        }),
+        getInstructions: jest.fn().mockReturnValue(undefined),
+        getServerCapabilities: jest.fn().mockReturnValue({ tools: {} }),
+      };
+      const mockConnection = {
+        client: mockClient,
+      } as unknown as jest.Mocked<MCPConnection>;
+
+      mockConnectionsRepo.get.mockImplementation((serverName: string) => {
+        if (serverName === 'server_with_connection') {
+          return Promise.resolve(mockConnection);
+        }
+        throw new Error('Connection failed');
+      });
+
+      // Mock getLoaded to return connections map - the real implementation returns all loaded connections at once
+      mockConnectionsRepo.getLoaded.mockResolvedValue(
+        new Map([['server_with_connection', mockConnection]]),
+      );
+
+      mockDetectOAuthRequirement.mockResolvedValue({
+        requiresOAuth: false,
+        method: 'no-metadata-found',
+        metadata: null,
+      });
+
+      await registry.initialize();
+
+      expect(registry.toolFunctions).toHaveProperty('test_tool_mcp_server_with_connection');
+      expect(Object.keys(registry.toolFunctions)).toHaveLength(1);
+    });
+
+    it('should handle getLoaded returning empty map gracefully', async () => {
+      const testConfig: t.MCPServers = {
+        test_server: {
+          type: 'stdio',
+          args: [],
+          command: 'test-command',
+        },
+      };
+
+      const registry = new MCPServersRegistry(testConfig);
+
+      mockConnectionsRepo.get.mockRejectedValue(new Error('All connections failed'));
+      mockConnectionsRepo.getLoaded.mockResolvedValue(new Map());
+      mockDetectOAuthRequirement.mockResolvedValue({
+        requiresOAuth: false,
+        method: 'no-metadata-found',
+        metadata: null,
+      });
+
+      await registry.initialize();
+
+      expect(registry.toolFunctions).toEqual({});
+    });
   });
 });

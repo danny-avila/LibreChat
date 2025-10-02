@@ -84,7 +84,12 @@ export class MCPServersRegistry {
     const start = Date.now();
 
     const config = this.parsedConfigs[serverName];
+    if (config == null) {
+      logger.warn(`${this.prefix(serverName)} Server config not found`);
+      return;
+    }
 
+    // 1. Detect OAuth requirements if not already specified
     try {
       await this.fetchOAuthRequirement(serverName);
 
@@ -104,35 +109,45 @@ export class MCPServersRegistry {
       logger.warn(`${this.prefix(serverName)} Failed to initialize server:`, error);
     }
 
-    // Add to OAuth servers if needed
-    if (config.requiresOAuth) {
-      this.oauthServers.add(serverName);
-    }
+    // 2. Fetch tool functions for this server if a connection was established
+    const getToolFunctions = async (): Promise<t.LCAvailableTools | null> => {
+      try {
+        const loadedConns = await this.connections.getLoaded();
+        const conn = loadedConns.get(serverName);
+        if (conn == null) {
+          return null;
+        }
+        return this.getToolFunctions(serverName, conn);
+      } catch (error) {
+        logger.warn(`${this.prefix(serverName)} Error fetching tool functions:`, error);
+        return null;
+      }
+    };
+    const toolFunctions = await getToolFunctions();
 
-    // Add server instructions if available
-    if (config.serverInstructions != null) {
-      this.serverInstructions[serverName] = config.serverInstructions as string;
-    }
-
-    // Add to app server configs if eligible (startup enabled, non-OAuth servers)
-    if (config.startup !== false && config.requiresOAuth === false) {
-      this.appServerConfigs[serverName] = this.rawConfigs[serverName];
-    }
-
-    // Fetch tool functions for this server if a connection was established
-    try {
-      const conn = await this.connections.get(serverName);
-      const toolFunctions = await this.getToolFunctions(serverName, conn);
-      Object.assign(this.toolFunctions, toolFunctions);
-    } catch (error) {
-      logger.warn(`${this.prefix(serverName)} Error fetching tool functions:`, error);
-    }
-
-    // Disconnect this server's connection after initialization
+    // 3. Disconnect this server's connection if it was established
     try {
       await this.connections.disconnect(serverName);
     } catch (disconnectError) {
       logger.debug(`${this.prefix(serverName)} Failed to disconnect:`, disconnectError);
+    }
+
+    // 4. Side effects
+    // 4.1 Add to OAuth servers if needed
+    if (config.requiresOAuth) {
+      this.oauthServers.add(serverName);
+    }
+    // 4.2 Add server instructions if available
+    if (config.serverInstructions != null) {
+      this.serverInstructions[serverName] = config.serverInstructions as string;
+    }
+    // 4.3 Add to app server configs if eligible (startup enabled, non-OAuth servers)
+    if (config.startup !== false && config.requiresOAuth === false) {
+      this.appServerConfigs[serverName] = this.rawConfigs[serverName];
+    }
+    // 4.4 Add tool functions if available
+    if (toolFunctions != null) {
+      Object.assign(this.toolFunctions, toolFunctions);
     }
 
     logger.info(`${this.prefix(serverName)} Initialized server in ${Date.now() - start}ms`);
