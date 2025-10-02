@@ -1,7 +1,7 @@
-const fs = require('fs');
-const { logger } = require('@librechat/data-schemas');
-const { math, isEnabled } = require('@librechat/api');
-const { CacheKeys } = require('librechat-data-provider');
+import { readFileSync, existsSync } from 'fs';
+import { logger } from '@librechat/data-schemas';
+import { CacheKeys } from 'librechat-data-provider';
+import { math, isEnabled } from '~/utils';
 
 // To ensure that different deployments do not interfere with each other's cache, we use a prefix for the Redis keys.
 // This prefix is usually the deployment ID, which is often passed to the container or pod as an env var.
@@ -25,7 +25,7 @@ const FORCED_IN_MEMORY_CACHE_NAMESPACES = process.env.FORCED_IN_MEMORY_CACHE_NAM
 
 // Validate against CacheKeys enum
 if (FORCED_IN_MEMORY_CACHE_NAMESPACES.length > 0) {
-  const validKeys = Object.values(CacheKeys);
+  const validKeys = Object.values(CacheKeys) as string[];
   const invalidKeys = FORCED_IN_MEMORY_CACHE_NAMESPACES.filter((key) => !validKeys.includes(key));
 
   if (invalidKeys.length > 0) {
@@ -38,15 +38,15 @@ if (FORCED_IN_MEMORY_CACHE_NAMESPACES.length > 0) {
 /** Helper function to safely read Redis CA certificate from file
  * @returns {string|null} The contents of the CA certificate file, or null if not set or on error
  */
-const getRedisCA = () => {
+const getRedisCA = (): string | null => {
   const caPath = process.env.REDIS_CA;
   if (!caPath) {
     return null;
   }
 
   try {
-    if (fs.existsSync(caPath)) {
-      return fs.readFileSync(caPath, 'utf8');
+    if (existsSync(caPath)) {
+      return readFileSync(caPath, 'utf8');
     } else {
       logger.warn(`Redis CA certificate file not found: ${caPath}`);
       return null;
@@ -64,7 +64,7 @@ const cacheConfig = {
   REDIS_USERNAME: process.env.REDIS_USERNAME,
   REDIS_PASSWORD: process.env.REDIS_PASSWORD,
   REDIS_CA: getRedisCA(),
-  REDIS_KEY_PREFIX: process.env[REDIS_KEY_PREFIX_VAR] || REDIS_KEY_PREFIX || '',
+  REDIS_KEY_PREFIX: process.env[REDIS_KEY_PREFIX_VAR ?? ''] || REDIS_KEY_PREFIX || '',
   REDIS_MAX_LISTENERS: math(process.env.REDIS_MAX_LISTENERS, 40),
   REDIS_PING_INTERVAL: math(process.env.REDIS_PING_INTERVAL, 0),
   /** Max delay between reconnection attempts in ms */
@@ -86,4 +86,4 @@ const cacheConfig = {
   BAN_DURATION: math(process.env.BAN_DURATION, 7200000), // 2 hours
 };
 
-module.exports = { cacheConfig };
+export { cacheConfig };
