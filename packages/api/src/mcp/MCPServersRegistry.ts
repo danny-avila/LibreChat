@@ -118,12 +118,8 @@ export class MCPServersRegistry {
     };
     const toolFunctions = await getToolFunctions();
 
-    // 3. Disconnect this server's connection if it was established
-    try {
-      void this.connections.disconnect(serverName);
-    } catch (disconnectError) {
-      logger.debug(`${this.prefix(serverName)} Failed to disconnect:`, disconnectError);
-    }
+    // 3. Disconnect this server's connection if it was established (fire-and-forget)
+    void this.connections.disconnect(serverName);
 
     // 4. Side effects
     // 4.1 Add to OAuth servers if needed
