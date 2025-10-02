@@ -1,6 +1,30 @@
-import React, { memo, useState } from 'react';
+import React, { memo, useEffect, useState } from 'react';
 import { AlertCircle } from 'lucide-react';
 import { icons } from '~/hooks/Endpoint/Icons';
+
+/**
+ * Dynamically load an SVG icon from a URL
+ * This is needed in order to support the currentColor attribute in the SVG icon.
+ * @param url - The URL of the SVG icon
+ * @returns Div with the SVG icon
+ */
+const DynamicSVGIcon = ({ url }: { url: string }) => {
+  const [svgContent, setSvgContent] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch(url)
+      .then((res) => res.text())
+      .then((svg) => {
+        setSvgContent(svg);
+      });
+  }, [url]);
+
+  if (!svgContent) {
+    return null;
+  }
+
+  return <div dangerouslySetInnerHTML={{ __html: svgContent }} />;
+};
 
 export const URLIcon = memo(
   ({
@@ -45,19 +69,24 @@ export const URLIcon = memo(
       );
     }
 
+    console.log('iconURL', iconURL);
     return (
       <div className={className} style={containerStyle}>
-        <img
-          src={iconURL}
-          alt={altName ?? 'Icon'}
-          style={imageStyle}
-          className="object-cover"
-          onError={handleImageError}
-          loading="lazy"
-          decoding="async"
-          width={Number(containerStyle.width) || 20}
-          height={Number(containerStyle.height) || 20}
-        />
+        {iconURL.endsWith('.svg') ? (
+          <DynamicSVGIcon url={iconURL} />
+        ) : (
+          <img
+            src={iconURL}
+            alt={altName ?? 'Icon'}
+            style={imageStyle}
+            className="object-cover"
+            onError={handleImageError}
+            loading="lazy"
+            decoding="async"
+            width={Number(containerStyle.width) || 20}
+            height={Number(containerStyle.height) || 20}
+          />
+        )}
       </div>
     );
   },
