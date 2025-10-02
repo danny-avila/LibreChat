@@ -2,6 +2,7 @@ import { extractEnvVariable } from 'librechat-data-provider';
 import type { TUser, MCPOptions } from 'librechat-data-provider';
 import type { IUser } from '@librechat/data-schemas';
 import type { RequestBody } from '~/types';
+import { extractOpenIDTokenInfo, processOpenIDPlaceholders, isOpenIDTokenValid } from './oidc';
 
 /**
  * List of allowed user fields that can be used in MCP environment variables.
@@ -152,12 +153,18 @@ function processSingleValue({
   // 2. Replace user field placeholders (e.g., {{LIBRECHAT_USER_EMAIL}}, {{LIBRECHAT_USER_ID}})
   value = processUserPlaceholders(value, user);
 
-  // 3. Replace body field placeholders (e.g., {{LIBRECHAT_BODY_CONVERSATIONID}}, {{LIBRECHAT_BODY_PARENTMESSAGEID}})
+  // 3. Replace OpenID Connect federated provider token placeholders (e.g., {{LIBRECHAT_OPENID_TOKEN}}, {{LIBRECHAT_OPENID_ACCESS_TOKEN}})
+  const openidTokenInfo = extractOpenIDTokenInfo(user);
+  if (openidTokenInfo && isOpenIDTokenValid(openidTokenInfo)) {
+    value = processOpenIDPlaceholders(value, openidTokenInfo);
+  }
+
+  // 4. Replace body field placeholders (e.g., {{LIBRECHAT_BODY_CONVERSATIONID}}, {{LIBRECHAT_BODY_PARENTMESSAGEID}})
   if (body) {
     value = processBodyPlaceholders(value, body);
   }
 
-  // 4. Replace system environment variables
+  // 5. Replace system environment variables
   value = extractEnvVariable(value);
 
   return value;
