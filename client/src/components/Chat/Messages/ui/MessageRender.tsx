@@ -13,6 +13,7 @@ import { MessageContext } from '~/Providers';
 import { useMessageActions } from '~/hooks';
 import { cn, logger } from '~/utils';
 import store from '~/store';
+import Timestamp from '../Timestamp';
 
 type MessageRenderProps = {
   message?: TMessage;
@@ -134,6 +135,7 @@ const MessageRender = memo(
           conditionalClasses.cardRender,
           conditionalClasses.focus,
           'message-render',
+          'group',
         )}
         onClick={clickHandler}
         onKeyDown={(e) => {
@@ -160,7 +162,10 @@ const MessageRender = memo(
             msg.isCreatedByUser ? 'user-turn' : 'agent-turn',
           )}
         >
-          <h2 className={cn('select-none font-semibold', fontSize)}>{messageLabel}</h2>
+          <h2 className={cn('select-none font-semibold', fontSize)}>
+            {messageLabel}
+            <Timestamp message={msg} />
+          </h2>
 
           <div className="flex flex-col gap-1">
             <div className="flex max-w-full flex-grow flex-col gap-0">
