@@ -3,7 +3,7 @@ const path = require('path');
 const mime = require('mime');
 const axios = require('axios');
 const fetch = require('node-fetch');
-const { logger } = require('~/config');
+const { logger } = require('@librechat/data-schemas');
 const { getAzureContainerClient } = require('./initialize');
 
 const defaultBasePath = 'images';

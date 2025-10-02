@@ -2,7 +2,7 @@
 const mongoose = require('mongoose');
 const EventEmitter = require('events');
 const { GridFSBucket } = require('mongodb');
-const { logger } = require('~/config');
+const { logger } = require('@librechat/data-schemas');
 
 const storeMap = new Map();
 

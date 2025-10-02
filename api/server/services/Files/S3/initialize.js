@@ -1,5 +1,5 @@
 const { S3Client } = require('@aws-sdk/client-s3');
-const { logger } = require('~/config');
+const { logger } = require('@librechat/data-schemas');
 
 let s3 = null;
 

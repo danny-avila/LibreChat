@@ -1,7 +1,7 @@
+const { logger } = require('@librechat/data-schemas');
 const { PrincipalType, PermissionTypes, Permissions } = require('librechat-data-provider');
 const { checkPeoplePickerAccess } = require('./checkPeoplePickerAccess');
 const { getRoleByName } = require('~/models/Role');
-const { logger } = require('~/config');
 
 jest.mock('~/models/Role');
 jest.mock('~/config', () => ({
