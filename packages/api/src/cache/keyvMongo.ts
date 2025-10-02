@@ -1,65 +1,68 @@
-// api/cache/keyvMongo.js
-const mongoose = require('mongoose');
-const EventEmitter = require('events');
-const { GridFSBucket } = require('mongodb');
-const { logger } = require('@librechat/data-schemas');
+import mongoose from 'mongoose';
+import { EventEmitter } from 'events';
+import { logger } from '@librechat/data-schemas';
+import { GridFSBucket, type Db, type ReadPreference, type Collection } from 'mongodb';
 
-const storeMap = new Map();
+interface KeyvMongoOptions {
+  url?: string;
+  collection?: string;
+  useGridFS?: boolean;
+  readPreference?: ReadPreference;
+}
+
+interface GridFSClient {
+  bucket: GridFSBucket;
+  store: Collection;
+  db: Db;
+}
+
+interface CollectionClient {
+  store: Collection;
+  db: Db;
+}
+
+type Client = GridFSClient | CollectionClient;
+
+const storeMap = new Map<string, Client>();
 
 class KeyvMongoCustom extends EventEmitter {
-  constructor(url, options = {}) {
-    super();
+  private opts: KeyvMongoOptions;
+  public ttlSupport: boolean;
+  public namespace?: string;
 
-    url = url || {};
-    if (typeof url === 'string') {
-      url = { url };
-    }
-    if (url.uri) {
-      url = { url: url.uri, ...url };
-    }
+  constructor(options: KeyvMongoOptions = {}) {
+    super();
 
     this.opts = {
       url: 'mongodb://127.0.0.1:27017',
       collection: 'keyv',
-      ...url,
       ...options,
     };
 
     this.ttlSupport = false;
-
-    // Filter valid options
-    const keyvMongoKeys = new Set([
-      'url',
-      'collection',
-      'namespace',
-      'serialize',
-      'deserialize',
-      'uri',
-      'useGridFS',
-      'dialect',
-    ]);
-    this.opts = Object.fromEntries(Object.entries(this.opts).filter(([k]) => keyvMongoKeys.has(k)));
   }
 
   // Helper to access the store WITHOUT storing a promise on the instance
-  _getClient() {
+  private async _getClient(): Promise<Client> {
     const storeKey = `${this.opts.collection}:${this.opts.useGridFS ? 'gridfs' : 'collection'}`;
 
     // If we already have the store initialized, return it directly
     if (storeMap.has(storeKey)) {
-      return Promise.resolve(storeMap.get(storeKey));
+      return storeMap.get(storeKey)!;
     }
 
     // Check mongoose connection state
     if (mongoose.connection.readyState !== 1) {
-      return Promise.reject(
-        new Error('Mongoose connection not ready. Ensure connectDb() is called first.'),
-      );
+      throw new Error('Mongoose connection not ready. Ensure connectDb() is called first.');
     }
 
     try {
-      const db = mongoose.connection.db;
-      let client;
+      const db = mongoose.connection.db as unknown as Db | undefined;
+      if (!db) {
+        throw new Error('MongoDB database not available');
+      }
+
+      let client: Client;
 
       if (this.opts.useGridFS) {
         const bucket = new GridFSBucket(db, {
@@ -75,17 +78,17 @@ class KeyvMongoCustom extends EventEmitter {
       }
 
       storeMap.set(storeKey, client);
-      return Promise.resolve(client);
+      return client;
     } catch (error) {
       this.emit('error', error);
-      return Promise.reject(error);
+      throw error;
     }
   }
 
-  async get(key) {
+  async get(key: string): Promise<unknown> {
     const client = await this._getClient();
 
-    if (this.opts.useGridFS) {
+    if (this.opts.useGridFS && this.isGridFSClient(client)) {
       await client.store.updateOne(
         {
           filename: key,
@@ -100,7 +103,7 @@ class KeyvMongoCustom extends EventEmitter {
       const stream = client.bucket.openDownloadStreamByName(key);
 
       return new Promise((resolve) => {
-        const resp = [];
+        const resp: Buffer[] = [];
         stream.on('error', () => {
           resolve(undefined);
         });
@@ -110,7 +113,7 @@ class KeyvMongoCustom extends EventEmitter {
           resolve(data);
         });
 
-        stream.on('data', (chunk) => {
+        stream.on('data', (chunk: Buffer) => {
           resp.push(chunk);
         });
       });
@@ -125,7 +128,7 @@ class KeyvMongoCustom extends EventEmitter {
     return document.value;
   }
 
-  async getMany(keys) {
+  async getMany(keys: string[]): Promise<unknown[]> {
     const client = await this._getClient();
 
     if (this.opts.useGridFS) {
@@ -135,9 +138,9 @@ class KeyvMongoCustom extends EventEmitter {
       }
 
       const values = await Promise.allSettled(promises);
-      const data = [];
+      const data: unknown[] = [];
       for (const value of values) {
-        data.push(value.value);
+        data.push(value.status === 'fulfilled' ? value.value : undefined);
       }
 
       return data;
@@ -148,7 +151,7 @@ class KeyvMongoCustom extends EventEmitter {
       .project({ _id: 0, value: 1, key: 1 })
       .toArray();
 
-    const results = [...keys];
+    const results: unknown[] = [...keys];
     let i = 0;
     for (const key of keys) {
       const rowIndex = values.findIndex((row) => row.key === key);
@@ -159,11 +162,11 @@ class KeyvMongoCustom extends EventEmitter {
     return results;
   }
 
-  async set(key, value, ttl) {
+  async set(key: string, value: string, ttl?: number): Promise<unknown> {
     const client = await this._getClient();
     const expiresAt = typeof ttl === 'number' ? new Date(Date.now() + ttl) : null;
 
-    if (this.opts.useGridFS) {
+    if (this.opts.useGridFS && this.isGridFSClient(client)) {
       const stream = client.bucket.openUploadStream(key, {
         metadata: {
           expiresAt,
@@ -186,20 +189,18 @@ class KeyvMongoCustom extends EventEmitter {
     );
   }
 
-  async delete(key) {
-    if (typeof key !== 'string') {
-      return false;
-    }
-
+  async delete(key: string): Promise<boolean> {
     const client = await this._getClient();
 
-    if (this.opts.useGridFS) {
+    if (this.opts.useGridFS && this.isGridFSClient(client)) {
       try {
         const bucket = new GridFSBucket(client.db, {
           bucketName: this.opts.collection,
         });
         const files = await bucket.find({ filename: key }).toArray();
-        await client.bucket.delete(files[0]._id);
+        if (files.length > 0) {
+          await client.bucket.delete(files[0]._id);
+        }
         return true;
       } catch {
         return false;
@@ -210,10 +211,10 @@ class KeyvMongoCustom extends EventEmitter {
     return object.deletedCount > 0;
   }
 
-  async deleteMany(keys) {
+  async deleteMany(keys: string[]): Promise<boolean> {
     const client = await this._getClient();
 
-    if (this.opts.useGridFS) {
+    if (this.opts.useGridFS && this.isGridFSClient(client)) {
       const bucket = new GridFSBucket(client.db, {
         bucketName: this.opts.collection,
       });
@@ -230,15 +231,17 @@ class KeyvMongoCustom extends EventEmitter {
     return object.deletedCount > 0;
   }
 
-  async clear() {
+  async clear(): Promise<void> {
     const client = await this._getClient();
 
-    if (this.opts.useGridFS) {
+    if (this.opts.useGridFS && this.isGridFSClient(client)) {
       try {
         await client.bucket.drop();
-      } catch (error) {
+      } catch (error: unknown) {
         // Throw error if not "namespace not found" error
-        if (!(error.code === 26)) {
+        const errorCode =
+          error instanceof Error && 'code' in error ? (error as { code?: number }).code : undefined;
+        if (errorCode !== 26) {
           throw error;
         }
       }
@@ -249,7 +252,7 @@ class KeyvMongoCustom extends EventEmitter {
     });
   }
 
-  async has(key) {
+  async has(key: string): Promise<boolean> {
     const client = await this._getClient();
     const filter = { [this.opts.useGridFS ? 'filename' : 'key']: { $eq: key } };
     const document = await client.store.countDocuments(filter, { limit: 1 });
@@ -257,9 +260,13 @@ class KeyvMongoCustom extends EventEmitter {
   }
 
   // No-op disconnect
-  async disconnect() {
+  async disconnect(): Promise<boolean> {
     // This is a no-op since we don't want to close the shared mongoose connection
     return true;
+  }
+
+  private isGridFSClient(client: Client): client is GridFSClient {
+    return (client as GridFSClient).bucket != null;
   }
 }
 
@@ -269,4 +276,4 @@ const keyvMongo = new KeyvMongoCustom({
 
 keyvMongo.on('error', (err) => logger.error('KeyvMongo connection error:', err));
 
-module.exports = keyvMongo;
+export default keyvMongo;

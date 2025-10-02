@@ -1,26 +1,26 @@
-const IoRedis = require('ioredis');
-const { logger } = require('@librechat/data-schemas');
-const { createClient, createCluster } = require('@keyv/redis');
-const { cacheConfig } = require('./cacheConfig');
+import IoRedis from 'ioredis';
+import type { Redis, Cluster } from 'ioredis';
+import { logger } from '@librechat/data-schemas';
+import { createClient, createCluster } from '@keyv/redis';
+import type { RedisClientType, RedisClusterType } from '@redis/client';
+import { cacheConfig } from './cacheConfig';
 
 const GLOBAL_PREFIX_SEPARATOR = '::';
 
-const urls = cacheConfig.REDIS_URI?.split(',').map((uri) => new URL(uri));
-const username = urls?.[0].username || cacheConfig.REDIS_USERNAME;
-const password = urls?.[0].password || cacheConfig.REDIS_PASSWORD;
+const urls = cacheConfig.REDIS_URI?.split(',').map((uri) => new URL(uri)) || [];
+const username = urls?.[0]?.username || cacheConfig.REDIS_USERNAME;
+const password = urls?.[0]?.password || cacheConfig.REDIS_PASSWORD;
 const ca = cacheConfig.REDIS_CA;
 
-/** @type {import('ioredis').Redis | import('ioredis').Cluster | null} */
-let ioredisClient = null;
+let ioredisClient: Redis | Cluster | null = null;
 if (cacheConfig.USE_REDIS) {
-  /** @type {import('ioredis').RedisOptions | import('ioredis').ClusterOptions} */
-  const redisOptions = {
+  const redisOptions: Record<string, unknown> = {
     username: username,
     password: password,
     tls: ca ? { ca } : undefined,
     keyPrefix: `${cacheConfig.REDIS_KEY_PREFIX}${GLOBAL_PREFIX_SEPARATOR}`,
     maxListeners: cacheConfig.REDIS_MAX_LISTENERS,
-    retryStrategy: (times) => {
+    retryStrategy: (times: number) => {
       if (
         cacheConfig.REDIS_RETRY_MAX_ATTEMPTS > 0 &&
         times > cacheConfig.REDIS_RETRY_MAX_ATTEMPTS
@@ -34,7 +34,7 @@ if (cacheConfig.USE_REDIS) {
       logger.info(`ioredis reconnecting... attempt ${times}, delay ${delay}ms`);
       return delay;
     },
-    reconnectOnError: (err) => {
+    reconnectOnError: (err: Error) => {
       const targetError = 'READONLY';
       if (err.message.includes(targetError)) {
         logger.warn('ioredis reconnecting due to READONLY error');
@@ -49,15 +49,20 @@ if (cacheConfig.USE_REDIS) {
 
   ioredisClient =
     urls.length === 1 && !cacheConfig.USE_REDIS_CLUSTER
-      ? new IoRedis(cacheConfig.REDIS_URI, redisOptions)
+      ? new IoRedis(cacheConfig.REDIS_URI!, redisOptions)
       : new IoRedis.Cluster(
           urls.map((url) => ({ host: url.hostname, port: parseInt(url.port, 10) || 6379 })),
           {
             ...(cacheConfig.REDIS_USE_ALTERNATIVE_DNS_LOOKUP
-              ? { dnsLookup: (address, callback) => callback(null, address) }
+              ? {
+                  dnsLookup: (
+                    address: string,
+                    callback: (err: Error | null, address: string) => void,
+                  ) => callback(null, address),
+                }
               : {}),
             redisOptions,
-            clusterRetryStrategy: (times) => {
+            clusterRetryStrategy: (times: number) => {
               if (
                 cacheConfig.REDIS_RETRY_MAX_ATTEMPTS > 0 &&
                 times > cacheConfig.REDIS_RETRY_MAX_ATTEMPTS
@@ -87,7 +92,7 @@ if (cacheConfig.USE_REDIS) {
     logger.info('ioredis client ready');
   });
 
-  ioredisClient.on('reconnecting', (delay) => {
+  ioredisClient.on('reconnecting', (delay: number) => {
     logger.info(`ioredis client reconnecting in ${delay}ms`);
   });
 
@@ -96,7 +101,7 @@ if (cacheConfig.USE_REDIS) {
   });
 
   /** Ping Interval to keep the Redis server connection alive (if enabled) */
-  let pingInterval = null;
+  let pingInterval: NodeJS.Timeout | null = null;
   const clearPingInterval = () => {
     if (pingInterval) {
       clearInterval(pingInterval);
@@ -117,22 +122,20 @@ if (cacheConfig.USE_REDIS) {
   }
 }
 
-/** @type {import('@keyv/redis').RedisClient | import('@keyv/redis').RedisCluster | null} */
-let keyvRedisClient = null;
+let keyvRedisClient: RedisClientType | RedisClusterType | null = null;
 if (cacheConfig.USE_REDIS) {
   /**
    * ** WARNING ** Keyv Redis client does not support Prefix like ioredis above.
    * The prefix feature will be handled by the Keyv-Redis store in cacheFactory.js
-   * @type {import('@keyv/redis').RedisClientOptions | import('@keyv/redis').RedisClusterOptions}
    */
-  const redisOptions = {
+  const redisOptions: Record<string, unknown> = {
     username,
     password,
     socket: {
       tls: ca != null,
       ca,
       connectTimeout: cacheConfig.REDIS_CONNECT_TIMEOUT,
-      reconnectStrategy: (retries) => {
+      reconnectStrategy: (retries: number) => {
         if (
           cacheConfig.REDIS_RETRY_MAX_ATTEMPTS > 0 &&
           retries > cacheConfig.REDIS_RETRY_MAX_ATTEMPTS
@@ -148,6 +151,9 @@ if (cacheConfig.USE_REDIS) {
       },
     },
     disableOfflineQueue: !cacheConfig.REDIS_ENABLE_OFFLINE_QUEUE,
+    ...(cacheConfig.REDIS_PING_INTERVAL > 0
+      ? { pingInterval: cacheConfig.REDIS_PING_INTERVAL * 1000 }
+      : {}),
   };
 
   keyvRedisClient =
@@ -184,27 +190,6 @@ if (cacheConfig.USE_REDIS) {
     logger.error('@keyv/redis initial connection failed:', err);
     throw err;
   });
-
-  /** Ping Interval to keep the Redis server connection alive (if enabled) */
-  let pingInterval = null;
-  const clearPingInterval = () => {
-    if (pingInterval) {
-      clearInterval(pingInterval);
-      pingInterval = null;
-    }
-  };
-
-  if (cacheConfig.REDIS_PING_INTERVAL > 0) {
-    pingInterval = setInterval(() => {
-      if (keyvRedisClient && keyvRedisClient.isReady) {
-        keyvRedisClient.ping().catch((err) => {
-          logger.error('@keyv/redis ping failed:', err);
-        });
-      }
-    }, cacheConfig.REDIS_PING_INTERVAL * 1000);
-    keyvRedisClient.on('disconnect', clearPingInterval);
-    keyvRedisClient.on('end', clearPingInterval);
-  }
 }
 
-module.exports = { ioredisClient, keyvRedisClient, GLOBAL_PREFIX_SEPARATOR };
+export { ioredisClient, keyvRedisClient, GLOBAL_PREFIX_SEPARATOR };
