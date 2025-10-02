@@ -552,6 +552,7 @@ export const interfaceSchema = z
       .optional(),
     fileSearch: z.boolean().optional(),
     fileCitations: z.boolean().optional(),
+    thinkingIndicatorText: z.string().optional(),
   })
   .default({
     endpointsMenu: true,
