@@ -1,6 +1,6 @@
 {
   "name": "@librechat/api",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "type": "commonjs",
   "description": "MCP services for LibreChat",
   "main": "dist/index.js",
@@ -73,7 +73,7 @@
   },
   "peerDependencies": {
     "@langchain/core": "^0.3.62",
-    "@librechat/agents": "^2.4.81",
+    "@librechat/agents": "^2.4.82",
     "@librechat/data-schemas": "*",
     "@modelcontextprotocol/sdk": "^1.17.1",
     "axios": "^1.12.1",
