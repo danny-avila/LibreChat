@@ -305,7 +305,7 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
   const appConfig = await getAppConfig();
   if (!isEmailDomainAllowed(userinfo.email, appConfig?.registration?.allowedDomains)) {
     logger.error(
-      `[OpenID Auth] Authentication blocked - email domain not allowed [Email: ${userinfo.email}]`,
+      `[OpenID Strategy] Authentication blocked - email domain not allowed [Email: ${userinfo.email}]`,
     );
     throw new Error('Email domain not allowed');
   }
@@ -355,7 +355,7 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
 
     if (!found) {
       logger.error(
-        `[OpenID Auth] Key '${requiredRoleParameterPath}' not found in ${requiredRoleTokenKind} token!`,
+        `[openidStrategy] Key '${requiredRoleParameterPath}' not found in ${requiredRoleTokenKind} token!`,
       );
     }
 
@@ -438,7 +438,7 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
   user = await updateUser(user._id, user);
 
   logger.info(
-    `[OpenID Auth] login success openidId: ${user.openidId} | email: ${user.email} | username: ${user.username}`,
+    `[openidStrategy] login success openidId: ${user.openidId} | email: ${user.email} | username: ${user.username} `,
     {
       user: {
         openidId: user.openidId,
