@@ -17,19 +17,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Echo sanitized GitHub ref and commit SHA
-        run: |
-          echo "GitHub commit SHA: ${{ github.sha }}"
-          echo "GitHub ref name: ${{ github.ref_name }}"
-          SANITIZED_REF_NAME=$(echo "${{ github.ref_name }}" | sed 's/\//-/g')
-          echo "SANITIZED_REF_NAME=${SANITIZED_REF_NAME}" >> $GITHUB_ENV
-          echo "SANITIZED_REF_NAME=${SANITIZED_REF_NAME}"
-
-      - name: Fetch tags and set the latest tag
-        run: |
-          git fetch --tags
-          echo "LATEST_TAG=$(git describe --tags `git rev-list --tags --max-count=1`)" >> $GITHUB_ENV
-
       # Set up QEMU
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -50,7 +37,16 @@ jobs:
         run: |
           cp .env.example .env
 
-
+      # Generate image tags and labels
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: stripe/librechat
+          tags: |
+            type=sha,format=long,prefix=
+            type=ref,event=branch
+            type=raw,value=latest,enable={{is_default_branch}}
 
       # Build and push Docker images for each target
       - name: Build and push Docker images
@@ -59,9 +55,7 @@ jobs:
           context: .
           file: Dockerfile
           push: true
-          tags: |
-            stripe/librechat:${{ github.sha }}
-            stripe/librechat:${{ env.SANITIZED_REF_NAME }}-${{ github.sha }}
-            ${{ github.ref_name == 'develop' && 'stripe/librechat:latest' || '' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
           platforms: linux/arm64
           target: node
