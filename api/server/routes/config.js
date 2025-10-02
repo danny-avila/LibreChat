@@ -157,7 +157,8 @@ router.get('/', async function (req, res) {
       webSearchConfig != null &&
       (webSearchConfig.searchProvider ||
         webSearchConfig.scraperType ||
-        webSearchConfig.rerankerType)
+        webSearchConfig.rerankerType ||
+        webSearchConfig.mode)
     ) {
       payload.webSearch = {};
     }
@@ -170,6 +171,9 @@ router.get('/', async function (req, res) {
     }
     if (webSearchConfig?.rerankerType) {
       payload.webSearch.rerankerType = webSearchConfig.rerankerType;
+    }
+    if (webSearchConfig?.mode) {
+      payload.webSearch.mode = webSearchConfig.mode;
     }
 
     if (ldap) {
