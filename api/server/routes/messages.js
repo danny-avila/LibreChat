@@ -3,8 +3,8 @@ const { logger } = require('@librechat/data-schemas');
 const { ContentTypes } = require('librechat-data-provider');
 const {
   saveConvo,
-  saveMessage,
   getMessage,
+  saveMessage,
   getMessages,
   updateMessage,
   deleteMessages,
@@ -58,32 +58,49 @@ router.get('/', async (req, res) => {
       const nextCursor = messages.length > pageSize ? messages.pop()[sortField] : null;
       response = { messages, nextCursor };
     } else if (search) {
-      const searchResults = await Message.meiliSearch(search, undefined, true);
+      const searchResults = await Message.meiliSearch(search, { filter: `user = "${user}"` }, true);
 
       const messages = searchResults.hits || [];
 
       const result = await getConvosQueried(req.user.id, messages, cursor);
 
-      const activeMessages = [];
+      const messageIds = [];
+      const cleanedMessages = [];
       for (let i = 0; i < messages.length; i++) {
         let message = messages[i];
         if (message.conversationId.includes('--')) {
           message.conversationId = cleanUpPrimaryKeyValue(message.conversationId);
         }
         if (result.convoMap[message.conversationId]) {
-          const convo = result.convoMap[message.conversationId];
-
-          const dbMessage = await getMessage({ user, messageId: message.messageId });
-          activeMessages.push({
-            ...message,
-            title: convo.title,
-            conversationId: message.conversationId,
-            model: convo.model,
-            isCreatedByUser: dbMessage?.isCreatedByUser,
-            endpoint: dbMessage?.endpoint,
-            iconURL: dbMessage?.iconURL,
-          });
+          messageIds.push(message.messageId);
+          cleanedMessages.push(message);
         }
+      }
+
+      const dbMessages = await getMessages({
+        user,
+        messageId: { $in: messageIds },
+      });
+
+      const dbMessageMap = {};
+      for (const dbMessage of dbMessages) {
+        dbMessageMap[dbMessage.messageId] = dbMessage;
+      }
+
+      const activeMessages = [];
+      for (const message of cleanedMessages) {
+        const convo = result.convoMap[message.conversationId];
+        const dbMessage = dbMessageMap[message.messageId];
+
+        activeMessages.push({
+          ...message,
+          title: convo.title,
+          conversationId: message.conversationId,
+          model: convo.model,
+          isCreatedByUser: dbMessage?.isCreatedByUser,
+          endpoint: dbMessage?.endpoint,
+          iconURL: dbMessage?.iconURL,
+        });
       }
 
       response = { messages: activeMessages, nextCursor: null };

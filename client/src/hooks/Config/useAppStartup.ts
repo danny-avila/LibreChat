@@ -7,6 +7,7 @@ import type { TStartupConfig, TPlugin, TUser } from 'librechat-data-provider';
 import { mapPlugins, selectPlugins, processPlugins } from '~/utils';
 import { cleanupTimestampedStorage } from '~/utils/timestamps';
 import useSpeechSettingsInit from './useSpeechSettingsInit';
+import { useMCPToolsQuery } from '~/data-provider';
 import store from '~/store';
 
 const pluginStore: TPlugin = {
@@ -34,6 +35,10 @@ export default function useAppStartup({
   });
 
   useSpeechSettingsInit(!!user);
+
+  useMCPToolsQuery({
+    enabled: !!startupConfig?.mcpServers && !!user,
+  });
 
   /** Clean up old localStorage entries on startup */
   useEffect(() => {
