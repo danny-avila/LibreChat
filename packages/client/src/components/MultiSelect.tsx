@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   Select,
   SelectArrow,
@@ -61,6 +61,7 @@ export default function MultiSelect<T extends string>({
   renderItemContent,
 }: MultiSelectProps<T>) {
   const selectRef = useRef<HTMLButtonElement>(null);
+  const [isPopoverOpen, setIsPopoverOpen] = useState(false);
 
   const handleValueChange = (values: T[]) => {
     setSelectedValues(values);
@@ -71,7 +72,12 @@ export default function MultiSelect<T extends string>({
 
   return (
     <div className={className}>
-      <SelectProvider value={selectedValues} setValue={handleValueChange}>
+      <SelectProvider
+        value={selectedValues}
+        setValue={handleValueChange}
+        open={isPopoverOpen}
+        setOpen={setIsPopoverOpen}
+      >
         {label && (
           <SelectLabel className={cn('mb-1 block text-sm text-text-primary', labelClassName)}>
             {label}
@@ -92,7 +98,12 @@ export default function MultiSelect<T extends string>({
           <span className="mr-auto hidden truncate md:block">
             {renderSelectedValues(selectedValues, placeholder)}
           </span>
-          <SelectArrow className="ml-1 hidden stroke-1 text-base opacity-75 md:block" />
+          <SelectArrow
+            className={cn(
+              'ml-1 hidden stroke-1 text-base opacity-75 transition-transform duration-300 md:block',
+              isPopoverOpen && 'rotate-180',
+            )}
+          />
         </Select>
         <SelectPopover
           gutter={4}

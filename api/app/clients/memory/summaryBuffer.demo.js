@@ -9,7 +9,7 @@ const chatPromptMemory = new ConversationSummaryBufferMemory({
 });
 
 (async () => {
-  await chatPromptMemory.saveContext({ input: 'hi my name\'s Danny' }, { output: 'whats up' });
+  await chatPromptMemory.saveContext({ input: "hi my name's Danny" }, { output: 'whats up' });
   await chatPromptMemory.saveContext({ input: 'not much you' }, { output: 'not much' });
   await chatPromptMemory.saveContext(
     { input: 'are you excited for the olympics?' },
