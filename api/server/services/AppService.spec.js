@@ -230,6 +230,63 @@ describe('AppService', () => {
     );
   });
 
+  it('should correctly read default_agent from endpoints.agents configuration', async () => {
+    const testAgentId = 'agent_test123xyz';
+    loadCustomConfig.mockImplementationOnce(() =>
+      Promise.resolve({
+        version: '1.2.2',
+        endpoints: {
+          agents: {
+            default_agent: testAgentId,
+            recursionLimit: 50,
+          },
+        },
+      }),
+    );
+
+    const result = await AppService();
+
+    // Verify default_agent is correctly stored in config
+    expect(result.config.endpoints.agents.default_agent).toEqual(testAgentId);
+
+    // Verify processed endpoint includes other agent settings (default_agent stays in config)
+    expect(result.endpoints.agents).toEqual(
+      expect.objectContaining({
+        recursionLimit: 50,
+        disableBuilder: false,
+        capabilities: expect.arrayContaining([...defaultAgentCapabilities]),
+      }),
+    );
+  });
+
+  it('should handle missing default_agent in endpoints.agents configuration', async () => {
+    loadCustomConfig.mockImplementationOnce(() =>
+      Promise.resolve({
+        version: '1.2.4',
+        endpoints: {
+          agents: {
+            recursionLimit: 50,
+            // default_agent intentionally omitted
+          },
+        },
+      }),
+    );
+
+    const result = await AppService();
+
+    // Verify default_agent is undefined when not provided
+    expect(result.config.endpoints.agents.default_agent).toBeUndefined();
+
+    // Verify processed endpoint still includes default agent settings
+    expect(result.endpoints.agents).toEqual(
+      expect.objectContaining({
+        recursionLimit: 50,
+        disableBuilder: false,
+        capabilities: expect.arrayContaining([...defaultAgentCapabilities]),
+      }),
+    );
+  });
+
   it('should initialize Firebase when fileStrategy is firebase', async () => {
     loadCustomConfig.mockImplementationOnce(() =>
       Promise.resolve({

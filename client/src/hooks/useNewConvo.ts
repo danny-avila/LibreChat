@@ -8,6 +8,7 @@ import {
   isParamEndpoint,
   LocalStorageKeys,
   isAssistantsEndpoint,
+  isAgentsEndpoint,
 } from 'librechat-data-provider';
 import { useRecoilState, useRecoilValue, useSetRecoilState, useRecoilCallback } from 'recoil';
 import type {
@@ -25,6 +26,7 @@ import {
   getModelSpecPreset,
   getDefaultModelSpec,
   updateLastSelectedModel,
+  getDefaultAgentFromConfig
 } from '~/utils';
 import { useDeleteFilesMutation, useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
 import useAssistantListMap from './Assistants/useAssistantListMap';
@@ -144,6 +146,18 @@ const useNewConvo = (index = 0) => {
 
           if (currentAssistantId && !isAssistantEndpoint) {
             conversation.assistant_id = undefined;
+          }
+
+          // Handle agents with default_agent priority
+          if (isAgentsEndpoint(defaultEndpoint)) {
+            const defaultAgentFromConfig = getDefaultAgentFromConfig({
+              startupConfig,
+              endpoint: defaultEndpoint,
+            });
+
+            if (defaultAgentFromConfig) {
+              conversation.agent_id = defaultAgentFromConfig;
+            }
           }
 
           const models = modelsConfig?.[defaultEndpoint] ?? [];
