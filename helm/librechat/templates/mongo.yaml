@@ -1,0 +1,54 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: librechat-mongodb
+  annotations:
+    "helm.sh/hook": pre-install, pre-upgrade
+    "helm.sh/hook-delete-policy": before-hook-creation
+    "helm.sh/hook-weight": "1"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: "librechat-mongodb"
+  template:
+    metadata:
+      labels:
+        app: "librechat-mongodb"
+    spec:
+      containers:
+        - name: mongodb
+          image: mongo:8.0.14
+          volumeMounts:
+            - mountPath: /data/db
+              name: librechat-mongodb
+      volumes:
+        - name: librechat-mongodb
+          persistentVolumeClaim:
+            claimName: librechat-mongodb
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: librechat-mongodb
+spec:
+  ports:
+    - port: 27017
+  selector:
+    app: librechat-mongodb
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: librechat-mongodb
+  annotations:
+    "helm.sh/hook": pre-install
+    "helm.sh/hook-weight": "0"
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 32Gi
+  storageClassName: default
+

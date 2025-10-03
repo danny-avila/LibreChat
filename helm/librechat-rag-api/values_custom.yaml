@@ -14,13 +14,6 @@ global:
 rag:
   enabled: true
   existingSecret: 'librechat-credentials-env'
-  configEnv:
-    DB_PORT: '5432'
-    EMBEDDINGS_PROVIDER: "azure"
-    EMBEDDINGS_MODEL: "text-embedding-ada-002-deployment"
-    RAG_AZURE_OPENAI_ENDPOINT: "https://nodeenergy.openai.azure.com"
-    RAG_AZURE_OPENAI_API_VERSION: "2023-05-15"
-
 
 image:
   repository: danny-avila/librechat-rag-api-dev-lite # there is rag-api-dev and rag-api-dev-lite. currently only lite is docuimented
@@ -32,10 +25,10 @@ image:
 postgresql:
   enabled: true
   # nameOverride: vectordb
-  image:
-    registry: ghcr.io
-    repository: bat-bs/bitnami-pgvector
-    tag: pg16
+#  image:
+#    registry: ghcr.io
+#    repository: bat-bs/bitnami-pgvector
+#    tag: pg16
   auth:
     database: librechat-vectordb
     username: postgres
@@ -45,8 +38,8 @@ postgresql:
     existingSecretKey: "password"
 
 imagePullSecrets: []
-nameOverride: ''
-fullnameOverride: ''
+nameOverride: 'librechat-rag-api'
+fullnameOverride: 'librechat-rag-api'
 
 podAnnotations: {}
 podLabels: {}

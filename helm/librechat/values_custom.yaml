@@ -211,9 +211,8 @@ affinity: {}
 updateStrategy:
   type: Recreate
 
-# MongoDB Parameters
 mongodb:
-  enabled: true
+  enabled: false
   auth:
     enabled: false
   databases:

@@ -1,0 +1,53 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: librechat-pgvector
+spec:
+  ports:
+    - port: 5432
+      name: postgres
+  clusterIP: None   # Headless service required for StatefulSet
+  selector:
+    app: librechat-pgvector
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: librechat-pgvector
+spec:
+  serviceName: librechat-pgvector
+  replicas: 1
+  selector:
+    matchLabels:
+      app: librechat-pgvector
+  template:
+    metadata:
+      labels:
+        app: librechat-pgvector
+    spec:
+      containers:
+      - name: pgvector
+        image: pgvector/pgvector:pg15
+        ports:
+        - containerPort: 5432
+          name: postgres
+        envFrom:
+          - configMapRef:
+              name: librechat-librechat-configenv
+          - secretRef:
+              name: librechat-credentials-env
+        env:
+        - name: PGDATA
+          value: /var/lib/postgresql/data/pgdata
+        volumeMounts:
+        - name: data
+          mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      resources:
+        requests:
+          storage: 16Gi
+      storageClassName: default
