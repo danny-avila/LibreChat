@@ -398,7 +398,6 @@ const exportActivityLogs = async (req, res) => {
     // Generate CSV
     const formattedLogs = logs.map(log => ({
       ...log,
-      timestamp: log.timestamp ? moment(log.timestamp).format('Do MMMM YYYY, h:mm:ss a') : '',
     }));
 
     const csv = await exportLogsToCSV(formattedLogs);
