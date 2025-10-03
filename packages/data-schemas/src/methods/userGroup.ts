@@ -241,6 +241,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
    * @param params - Parameters object
    * @param params.userId - The user ID
    * @param params.role - Optional user role (if not provided, will query from DB)
+   * @param params.includeGroups - Whether to include group principals (default: true)
    * @param session - Optional MongoDB session for transactions
    * @returns Array of principal objects with type and id
    */
@@ -248,10 +249,11 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
     params: {
       userId: string | Types.ObjectId;
       role?: string | null;
+      includeGroups?: boolean;
     },
     session?: ClientSession,
   ): Promise<Array<{ principalType: string; principalId?: string | Types.ObjectId }>> {
-    const { userId, role } = params;
+    const { userId, role, includeGroups = true } = params;
     /** `userId` must be an `ObjectId` for USER principal since ACL entries store `ObjectId`s */
     const userObjectId = typeof userId === 'string' ? new Types.ObjectId(userId) : userId;
     const principals: Array<{ principalType: string; principalId?: string | Types.ObjectId }> = [
@@ -275,11 +277,14 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
       principals.push({ principalType: PrincipalType.ROLE, principalId: userRole });
     }
 
-    const userGroups = await getUserGroups(userId, session);
-    if (userGroups && userGroups.length > 0) {
-      userGroups.forEach((group) => {
-        principals.push({ principalType: PrincipalType.GROUP, principalId: group._id });
-      });
+    // Optionally include groups
+    if (includeGroups) {
+      const userGroups = await getUserGroups(userId, session);
+      if (userGroups && userGroups.length > 0) {
+        userGroups.forEach((group) => {
+          principals.push({ principalType: PrincipalType.GROUP, principalId: group._id });
+        });
+      }
     }
 
     principals.push({ principalType: PrincipalType.PUBLIC });

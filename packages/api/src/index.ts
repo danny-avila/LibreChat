@@ -7,6 +7,8 @@ export * from './mcp/connection';
 export * from './mcp/oauth';
 export * from './mcp/auth';
 export * from './mcp/zod';
+/* Config */
+export * from './config/resolution';
 /* Utilities */
 export * from './format';
 export * from './mcp/utils';
