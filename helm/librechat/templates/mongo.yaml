@@ -51,4 +51,3 @@ spec:
     requests:
       storage: 32Gi
   storageClassName: default
-
