@@ -2,7 +2,7 @@
 # https://www.librechat.ai/docs/configuration/librechat_yaml
 
 # Configuration version (required)
-version: 1.2.1
+version: 1.2.2
 
 # Cache settings: Set to true to enable caching
 cache: true
@@ -207,6 +207,10 @@ endpoints:
   #   # (optional) Assistant Capabilities available to all users. Omit the ones you wish to exclude. Defaults to list below.
   #   capabilities: ["code_interpreter", "retrieval", "actions", "tools", "image_vision"]
   # agents:
+  #   # (optional) Default agent for new conversations
+  #   # Specify the agent ID that users will be redirected to when creating a new conversation, if agents is the default endpoint
+  #   # agents must be the first endpoint of the ENDPOINTS list
+  #   # default_agent: "agent_8jxdBTEJiX5dTrSbz7yl7"
   #   # (optional) Default recursion depth for agents, defaults to 25
   #   recursionLimit: 50
   #   # (optional) Max recursion depth for agents, defaults to 25

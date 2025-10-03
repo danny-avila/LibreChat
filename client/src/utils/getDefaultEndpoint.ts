@@ -3,7 +3,9 @@ import type {
   TConversation,
   EModelEndpoint,
   TEndpointsConfig,
+  TStartupConfig,
 } from 'librechat-data-provider';
+import { isAgentsEndpoint } from 'librechat-data-provider';
 import { getLocalStorageItems } from './localStorage';
 import { mapEndpoints } from './endpoints';
 
@@ -54,12 +56,46 @@ const getDefinedEndpoint = (endpointsConfig: TEndpointsConfig) => {
 const getDefaultEndpoint = ({
   convoSetup,
   endpointsConfig,
-}: TDefaultEndpoint): EModelEndpoint | undefined => {
+  startupConfig,
+}: TDefaultEndpoint & { startupConfig?: TStartupConfig }): EModelEndpoint | undefined => {
+  if (startupConfig?.defaultAgent && endpointsConfig?.['agents']) {
+    return 'agents' as EModelEndpoint;
+  }
+
   return (
     getEndpointFromSetup(convoSetup, endpointsConfig) ||
     getEndpointFromLocalStorage(endpointsConfig) ||
     getDefinedEndpoint(endpointsConfig)
   );
+};
+
+/**
+ * Gets the default agent ID from startup configuration
+ *
+ * @param startupConfig - Startup configuration from the API
+ * @param endpoint - The current endpoint
+ * @returns The configured default agent ID or null
+ */
+export const getDefaultAgentFromConfig = ({
+  startupConfig,
+  endpoint,
+}: {
+  startupConfig?: TStartupConfig;
+  endpoint?: string | null;
+}): string | null => {
+  // Check if we're on the agents endpoint
+  if (!endpoint || !isAgentsEndpoint(endpoint)) {
+    return null;
+  }
+
+  const defaultAgentId = startupConfig?.defaultAgent;
+
+  // If default_agent is not defined
+  if (!defaultAgentId) {
+    return null;
+  }
+
+  return defaultAgentId;
 };
 
 export default getDefaultEndpoint;
