@@ -951,7 +951,7 @@ class AgentClient extends BaseClient {
         this.agentConfigs.size > 0 &&
         (await checkCapability(this.options.req, AgentCapabilities.chain))
       ) {
-        const windowSize = 5;
+        const windowSize = 3;
         let latestMessage = initialMessages.pop().content;
         if (typeof latestMessage !== 'string') {
           latestMessage = latestMessage[0].text;

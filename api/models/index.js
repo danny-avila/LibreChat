@@ -24,10 +24,13 @@ const { getConvoTitle, getConvo, saveConvo, deleteConvos } = require('./Conversa
 const { getPreset, getPresets, savePreset, deletePresets } = require('./Preset');
 const { File } = require('~/db/models');
 
+const { seedWoodlandAgents } = require('./AgentSeed');
+
 const seedDatabase = async () => {
   await methods.initializeRoles();
   await methods.seedDefaultRoles();
   await methods.ensureDefaultCategories();
+  await seedWoodlandAgents();
 };
 
 module.exports = {
