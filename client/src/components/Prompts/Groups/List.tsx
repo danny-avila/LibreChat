@@ -40,7 +40,7 @@ export default function List({
           </Button>
         </div>
       )}
-      <div className="flex-grow overflow-y-auto">
+      <div className="flex-grow overflow-y-auto" aria-label={localize('com_ui_prompt_groups')}>
         <div className="overflow-y-auto overflow-x-hidden">
           {isLoading && isChatRoute && (
             <Skeleton className="my-2 flex h-[84px] w-full rounded-2xl border-0 px-3 pb-4 pt-3" />
