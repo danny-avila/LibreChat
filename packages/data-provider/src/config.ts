@@ -634,6 +634,7 @@ export type TStartupConfig = {
   helpAndFaqURL: string;
   customFooter?: string;
   modelSpecs?: TSpecsConfig;
+  tokenRates?: TModelTokenRates;
   sharedLinksEnabled: boolean;
   publicSharedLinksEnabled: boolean;
   analyticsGtmId?: string;
@@ -668,6 +669,31 @@ export type TStartupConfig = {
   >;
   mcpPlaceholder?: string;
 };
+
+
+// Token cost schema type
+export type TTokenCost = {
+  prompt?: number;
+  completion?: number;
+  cache?: {
+    write?: number;
+    read?: number;
+  };
+};
+
+// Endpoint token rates schema type
+export type TModelTokenRates = Record<string, TTokenCost>;
+
+const tokenCostSchema = z.object({
+  prompt: z.number().optional(),     // e.g. 1.5 => $1.50 / 1M tokens
+  completion: z.number().optional(), // e.g. 2.0 => $2.00 / 1M tokens
+  cache: z
+    .object({
+      write: z.number().optional(),
+      read: z.number().optional(),
+    })
+    .optional(),
+});
 
 export enum OCRStrategy {
   MISTRAL_OCR = 'mistral_ocr',
@@ -841,6 +867,7 @@ export const configSchema = z.object({
   rateLimits: rateLimitSchema.optional(),
   fileConfig: fileConfigSchema.optional(),
   modelSpecs: specsConfigSchema.optional(),
+  tokenRates: tokenCostSchema.optional(),
   endpoints: z
     .object({
       all: baseEndpointSchema.optional(),

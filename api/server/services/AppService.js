@@ -23,6 +23,7 @@ const { initializeS3 } = require('./Files/S3/initialize');
 const { loadAndFormatTools } = require('./start/tools');
 const { loadEndpoints } = require('./start/endpoints');
 const paths = require('~/config/paths');
+const { loadTokenRatesConfig } = require('./Config/loadTokenRatesConfig');
 
 /**
  * Loads custom config and initializes app-wide variables.
@@ -32,6 +33,7 @@ const AppService = async () => {
   /** @type {TCustomConfig} */
   const config = (await loadCustomConfig()) ?? {};
   const configDefaults = getConfigDefaults();
+  loadTokenRatesConfig(config, configDefaults);
 
   const ocr = loadOCRConfig(config.ocr);
   const webSearch = loadWebSearchConfig(config.webSearch);
