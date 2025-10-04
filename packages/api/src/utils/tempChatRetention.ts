@@ -73,7 +73,5 @@ export function getTempChatRetentionHours(
  */
 export function createTempChatExpirationDate(interfaceConfig?: AppConfig['interfaceConfig']): Date {
   const retentionHours = getTempChatRetentionHours(interfaceConfig);
-  const expiredAt = new Date();
-  expiredAt.setHours(expiredAt.getHours() + retentionHours);
-  return expiredAt;
+  return new Date(Date.now() + retentionHours * 60 * 60 * 1000);
 }
