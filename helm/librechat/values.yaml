@@ -7,14 +7,30 @@ replicaCount: 1
 
 
 global:
-   # existing Secret for all envs/ only Passwords. Can be locally generated with: kubectl create secret generic librechat-secret-envs --from-env-file=.env.example --dry-run=client -o yaml > secret-envs.yaml
+   # default Secret for envs/ only Passwords. Can be locally generated with: kubectl create secret generic librechat-secret-envs --from-env-file=.env.example --dry-run=client -o yaml > secret-envs.yaml
    # For better maintainabillity, you can put all vars directly in the config Section and only overwrite Secrets with this if nessesary.
    # Required Values:
+   # - CREDS_KEY
+   # - CREDS_IV
+   # - JWT_SECRET
+   # - JWT_REFRESH_SECRET
    # - MEILI_MASTER_KEY
   librechat:
     existingSecretName: "librechat-credentials-env"
     # Used for Setting the Right Key, can be something like AZURE_API_KEY, if Azure OpenAI is used
     existingSecretApiKey: OPENAI_API_KEY
+    # Optionally add extra globally accessible environment variables here. These can be referenced under ConfigEnv to make them accessible inside LibreChat
+    # env:
+    #  - name: API_KEY
+    #    valueFrom:
+    #      secretKeyRef:
+    #        name: api_access
+    #        key: api_key
+    #  - name: CLIENT_ID
+    #    valueFrom:
+    #      secretKeyRef:
+    #        name: credentials
+    #        key: client_id
 
 librechat:
   configEnv:

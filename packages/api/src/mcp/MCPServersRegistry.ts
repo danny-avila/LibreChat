@@ -9,14 +9,6 @@ import { detectOAuthRequirement } from '~/mcp/oauth';
 import { sanitizeUrlForLogging } from '~/mcp/utils';
 import { processMCPEnv, isEnabled } from '~/utils';
 
-const DEFAULT_MCP_INIT_TIMEOUT_MS = 30_000;
-
-function getMCPInitTimeout(): number {
-  return process.env.MCP_INIT_TIMEOUT_MS != null
-    ? parseInt(process.env.MCP_INIT_TIMEOUT_MS)
-    : DEFAULT_MCP_INIT_TIMEOUT_MS;
-}
-
 /**
  * Manages MCP server configurations and metadata discovery.
  * Fetches server capabilities, OAuth requirements, and tool definitions for registry.
