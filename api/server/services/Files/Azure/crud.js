@@ -4,7 +4,7 @@ const mime = require('mime');
 const axios = require('axios');
 const fetch = require('node-fetch');
 const { logger } = require('@librechat/data-schemas');
-const { getAzureContainerClient } = require('./initialize');
+const { getAzureContainerClient } = require('@librechat/api');
 
 const defaultBasePath = 'images';
 const { AZURE_STORAGE_PUBLIC_ACCESS = 'true', AZURE_CONTAINER_NAME = 'files' } = process.env;
