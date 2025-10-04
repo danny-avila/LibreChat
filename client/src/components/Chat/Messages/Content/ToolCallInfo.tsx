@@ -73,15 +73,12 @@ export default function ToolCallInfo({
     let mounted = true;
     (async () => {
       try {
-        // @ts-ignore
-        const specifier = '@mcp-ui' + '/client';
-        // @ts-ignore
-        const mod = await import(/* @vite-ignore */ specifier);
-        if (mounted && mod?.UIResourceRenderer) {
-          setUIResourceRenderer(() => mod.UIResourceRenderer as React.ComponentType<any>);
+        const { UIResourceRenderer: Renderer } = await import('@mcp-ui/client');
+        if (mounted && Renderer) {
+          setUIResourceRenderer(() => Renderer);
         }
-      } catch (err) {
-        // Optional dependency not installed
+      } catch {
+        return;
       }
     })();
     return () => {
